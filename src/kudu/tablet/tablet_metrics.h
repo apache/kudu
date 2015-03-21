@@ -25,38 +25,38 @@ struct TabletMetrics {
   void AddProbeStats(const ProbeStats& stats);
 
   // Operation rates
-  Counter* rows_inserted;
-  Counter* rows_updated;
-  Counter* rows_deleted;
-  Counter* insertions_failed_dup_key;
-  Counter* scans_started;
+  scoped_refptr<Counter> rows_inserted;
+  scoped_refptr<Counter> rows_updated;
+  scoped_refptr<Counter> rows_deleted;
+  scoped_refptr<Counter> insertions_failed_dup_key;
+  scoped_refptr<Counter> scans_started;
 
   // Probe stats
-  Counter* blooms_consulted;
-  Counter* keys_consulted;
-  Counter* deltas_consulted;
-  Counter* mrs_consulted;
-  Counter* bytes_flushed;
+  scoped_refptr<Counter> blooms_consulted;
+  scoped_refptr<Counter> keys_consulted;
+  scoped_refptr<Counter> deltas_consulted;
+  scoped_refptr<Counter> mrs_consulted;
+  scoped_refptr<Counter> bytes_flushed;
 
-  Histogram* blooms_consulted_per_op;
-  Histogram* keys_consulted_per_op;
-  Histogram* deltas_consulted_per_op;
+  scoped_refptr<Histogram> blooms_consulted_per_op;
+  scoped_refptr<Histogram> keys_consulted_per_op;
+  scoped_refptr<Histogram> deltas_consulted_per_op;
 
-  Histogram* commit_wait_duration;
-  Histogram* snapshot_scan_inflight_wait_duration;
-  Histogram* write_op_duration_no_consistency;
-  Histogram* write_op_duration_client_propagated_consistency;
-  Histogram* write_op_duration_commit_wait_consistency;
+  scoped_refptr<Histogram> commit_wait_duration;
+  scoped_refptr<Histogram> snapshot_scan_inflight_wait_duration;
+  scoped_refptr<Histogram> write_op_duration_no_consistency;
+  scoped_refptr<Histogram> write_op_duration_client_propagated_consistency;
+  scoped_refptr<Histogram> write_op_duration_commit_wait_consistency;
 
-  AtomicGauge<uint32_t>* flush_dms_running;
-  AtomicGauge<uint32_t>* flush_mrs_running;
-  AtomicGauge<uint32_t>* compact_rs_running;
-  AtomicGauge<uint32_t>* delta_minor_compact_rs_running;
+  scoped_refptr<AtomicGauge<uint32_t> > flush_dms_running;
+  scoped_refptr<AtomicGauge<uint32_t> > flush_mrs_running;
+  scoped_refptr<AtomicGauge<uint32_t> > compact_rs_running;
+  scoped_refptr<AtomicGauge<uint32_t> > delta_minor_compact_rs_running;
 
-  Histogram* flush_dms_duration;
-  Histogram* flush_mrs_duration;
-  Histogram* compact_rs_duration;
-  Histogram* delta_minor_compact_rs_duration;
+  scoped_refptr<Histogram> flush_dms_duration;
+  scoped_refptr<Histogram> flush_mrs_duration;
+  scoped_refptr<Histogram> compact_rs_duration;
+  scoped_refptr<Histogram> delta_minor_compact_rs_duration;
 };
 
 class ProbeStatsSubmitter {

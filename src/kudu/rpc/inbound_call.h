@@ -128,13 +128,13 @@ class InboundCall {
   // Updates the Histogram with time elapsed since the call was received,
   // and should only be called once on a given instance.
   // Not thread-safe. Should only be called by the current "owner" thread.
-  void RecordHandlingStarted(Histogram* incoming_queue_time);
+  void RecordHandlingStarted(scoped_refptr<Histogram> incoming_queue_time);
 
   // When RPC call Handle() completed execution on the server side.
   // Updates the Histogram with time elapsed since the call was started,
   // and should only be called once on a given instance.
   // Not thread-safe. Should only be called by the current "owner" thread.
-  void RecordHandlingCompleted(Histogram* handler_run_time);
+  void RecordHandlingCompleted(scoped_refptr<Histogram> handler_run_time);
 
   // Return true if the deadline set by the client has already elapsed.
   // In this case, the server may stop processing the call, since the

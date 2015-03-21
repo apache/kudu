@@ -35,7 +35,7 @@ class MultiThreadedMetricsTest : public KuduTest {
 };
 
 // Call increment on a Counter a bunch of times.
-static void CountWithCounter(Counter* counter, int num_increments) {
+static void CountWithCounter(scoped_refptr<Counter> counter, int num_increments) {
   for (int i = 0; i < num_increments; i++) {
     counter->Increment();
   }
@@ -59,13 +59,13 @@ METRIC_DEFINE_counter(test_counter, MetricUnit::kRequests, "Test counter");
 
 // Ensure that incrementing a counter is thread-safe.
 TEST_F(MultiThreadedMetricsTest, CounterIncrementTest) {
-  Counter counter(METRIC_test_counter);
+  scoped_refptr<Counter> counter = new Counter(METRIC_test_counter);
   int num_threads = FLAGS_mt_metrics_test_num_threads;
   int num_increments = 1000;
   boost::function<void()> f =
-      boost::bind(CountWithCounter, &counter, num_increments);
+      boost::bind(CountWithCounter, counter, num_increments);
   RunWithManyThreads(&f, num_threads);
-  ASSERT_EQ(num_threads * num_increments, counter.value());
+  ASSERT_EQ(num_threads * num_increments, counter->value());
 }
 
 // Helper function to register a bunch of counters in a loop.

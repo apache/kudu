@@ -35,9 +35,9 @@ namespace {
 
 void InitiateHighWaterMark(const string& id,
                            const string& descr,
-                           gscoped_ptr<HighWaterMark<int64_t> >* hwm) {
+                           scoped_refptr<HighWaterMark<int64_t> >* hwm) {
   GaugePrototype<int64_t> proto(id.c_str(), MetricUnit::kBytes, descr.c_str());
-  hwm->reset(new HighWaterMark<int64_t>(proto, 0));
+  *hwm = new HighWaterMark<int64_t>(proto, 0);
 }
 
 } // anonymous namespace

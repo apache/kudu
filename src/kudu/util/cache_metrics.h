@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 
 namespace kudu {
 
@@ -17,15 +18,15 @@ class MetricContext;
 struct CacheMetrics {
   explicit CacheMetrics(const MetricContext& metric_ctx);
 
-  Counter* inserts;
-  Counter* lookups;
-  Counter* evictions;
-  Counter* cache_hits;
-  Counter* cache_hits_caching;
-  Counter* cache_misses;
-  Counter* cache_misses_caching;
+  scoped_refptr<Counter> inserts;
+  scoped_refptr<Counter> lookups;
+  scoped_refptr<Counter> evictions;
+  scoped_refptr<Counter> cache_hits;
+  scoped_refptr<Counter> cache_hits_caching;
+  scoped_refptr<Counter> cache_misses;
+  scoped_refptr<Counter> cache_misses_caching;
 
-  AtomicGauge<uint64_t>* cache_usage;
+  scoped_refptr<AtomicGauge<uint64_t> > cache_usage;
 };
 
 } // namespace kudu

@@ -88,7 +88,7 @@ TEST_F(TabletServerTest, TestInsert) {
 
   scoped_refptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
-  Counter* rows_inserted =
+  scoped_refptr<Counter> rows_inserted =
       METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContext());
   ASSERT_EQ(0, rows_inserted->value());
   tablet.reset();
@@ -186,7 +186,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
   ASSERT_TRUE(
       mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
                                                              &tablet));
-  Counter* rows_inserted =
+  scoped_refptr<Counter> rows_inserted =
       METRIC_rows_inserted.Instantiate(
           *tablet->tablet()->GetMetricContext());
   ASSERT_EQ(0, rows_inserted->value());
@@ -238,7 +238,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
   ASSERT_TRUE(
       mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
                                                              &tablet));
-  Counter* rows_inserted =
+  scoped_refptr<Counter> rows_inserted =
       METRIC_rows_inserted.Instantiate(
           *tablet->tablet()->GetMetricContext());
   ASSERT_EQ(0, rows_inserted->value());
@@ -300,11 +300,11 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 
   scoped_refptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
-  Counter* rows_inserted =
+  scoped_refptr<Counter> rows_inserted =
       METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContext());
-  Counter* rows_updated =
+  scoped_refptr<Counter> rows_updated =
       METRIC_rows_updated.Instantiate(*tablet->tablet()->GetMetricContext());
-  Counter* rows_deleted =
+  scoped_refptr<Counter> rows_deleted =
       METRIC_rows_deleted.Instantiate(*tablet->tablet()->GetMetricContext());
   ASSERT_EQ(0, rows_inserted->value());
   ASSERT_EQ(0, rows_updated->value());
@@ -1711,7 +1711,7 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
                                 10000000,
                                 2);
 
-  Histogram* histogram = hist_proto.Instantiate(ts_test_metric_context_);
+  scoped_refptr<Histogram> histogram = hist_proto.Instantiate(ts_test_metric_context_);
 
   uint64_t warmup = AllowSlowTests() ?
       FLAGS_single_threaded_insert_latency_bench_warmup_rows : 10;

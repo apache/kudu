@@ -3,6 +3,8 @@
 #ifndef KUDU_TSERVER_SCANNER_METRICS_H
 #define KUDU_TSERVER_SCANNER_METRICS_H
 
+#include "kudu/gutil/ref_counted.h"
+
 namespace kudu {
 
 class MetricContext;
@@ -23,10 +25,10 @@ struct ScannerMetrics {
 
   // Keeps track of the total number of scanners that have been
   // expired since the start of service.
-  Counter* scanners_expired_since_start;
+  scoped_refptr<Counter> scanners_expired_since_start;
 
   // Keeps track of the duration of scanners.
-  Histogram* scanner_duration;
+  scoped_refptr<Histogram> scanner_duration;
 };
 
 } // namespace tserver

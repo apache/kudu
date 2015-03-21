@@ -4,6 +4,7 @@
 #define KUDU_CONSENSUS_LOG_METRICS_H
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
 
 namespace kudu {
@@ -18,14 +19,14 @@ struct LogMetrics {
   explicit LogMetrics(const MetricContext& metric_ctx);
 
   // Global stats
-  Counter* bytes_logged;
+  scoped_refptr<Counter> bytes_logged;
 
   // Per-group group commit stats
-  Histogram* sync_latency;
-  Histogram* append_latency;
-  Histogram* group_commit_latency;
-  Histogram* roll_latency;
-  Histogram* entry_batches_per_group;
+  scoped_refptr<Histogram> sync_latency;
+  scoped_refptr<Histogram> append_latency;
+  scoped_refptr<Histogram> group_commit_latency;
+  scoped_refptr<Histogram> roll_latency;
+  scoped_refptr<Histogram> entry_batches_per_group;
 };
 
 // TODO extract and generalize this for all histogram metrics

@@ -193,10 +193,10 @@ class LogCache {
     explicit Metrics(const MetricContext& metric_ctx);
 
     // Keeps track of the total number of operations in the cache.
-    AtomicGauge<int64_t>* log_cache_total_num_ops;
+    scoped_refptr<AtomicGauge<int64_t> > log_cache_total_num_ops;
 
     // Keeps track of the memory consumed by the cache, in bytes.
-    AtomicGauge<int64_t>* log_cache_size_bytes;
+    scoped_refptr<AtomicGauge<int64_t> > log_cache_size_bytes;
   };
   Metrics metrics_;
 

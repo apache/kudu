@@ -100,10 +100,9 @@ MetricRegistry::MetricRegistry() {
 }
 
 MetricRegistry::~MetricRegistry() {
-  STLDeleteValues(&metrics_);
 }
 
-Histogram* MetricRegistry::FindHistogram(const std::string& name) const {
+scoped_refptr<Histogram> MetricRegistry::FindHistogram(const std::string& name) const {
   lock_guard<simple_spinlock> l(&lock_);
   return FindMetricUnlocked<Histogram>(name, MetricType::kHistogram);
 }
@@ -112,20 +111,20 @@ Histogram* MetricRegistry::FindHistogram(const std::string& name) const {
 template<typename T>
 T* MetricRegistry::FindMetricUnlocked(const std::string& name,
                                       MetricType::Type metric_type) const {
-  Metric* metric = FindPtrOrNull(metrics_, name);
+  scoped_refptr<Metric> metric = FindPtrOrNull(metrics_, name);
   if (metric != NULL) {
     CHECK_EQ(metric_type, metric->type())
           << "Downcast expects " << MetricType::Name(metric_type)
           << " but found " << MetricType::Name(metric->type()) << " for " << name;
-    return down_cast<T*>(metric);
+    return down_cast<T*>(metric.get());
   }
   return NULL;
 }
 
-Counter* MetricRegistry::FindOrCreateCounter(const std::string& name,
+scoped_refptr<Counter> MetricRegistry::FindOrCreateCounter(const std::string& name,
                                              const CounterPrototype& proto) {
   lock_guard<simple_spinlock> l(&lock_);
-  Counter* counter = FindMetricUnlocked<Counter>(name, MetricType::kCounter);
+  scoped_refptr<Counter> counter = FindMetricUnlocked<Counter>(name, MetricType::kCounter);
   if (!counter) {
     counter = new Counter(proto);
     InsertOrDie(&metrics_, name, counter);
@@ -134,7 +133,7 @@ Counter* MetricRegistry::FindOrCreateCounter(const std::string& name,
 }
 
 template<typename T>
-Gauge* MetricRegistry::CreateGauge(const std::string& name,
+scoped_refptr<Gauge> MetricRegistry::CreateGauge(const std::string& name,
                                    const GaugePrototype<T>& proto,
                                    const T& initial_value) {
   return new AtomicGauge<T>(proto, initial_value);
@@ -142,25 +141,26 @@ Gauge* MetricRegistry::CreateGauge(const std::string& name,
 
 // Specialization for StringGauge.
 template<>
-Gauge* MetricRegistry::CreateGauge(const std::string& name,
+scoped_refptr<Gauge> MetricRegistry::CreateGauge(const std::string& name,
                                    const GaugePrototype<std::string>& proto,
                                    const std::string& initial_value) {
   return new StringGauge(proto, initial_value);
 }
 
 template<typename T>
-FunctionGauge<T>* MetricRegistry::CreateFunctionGauge(const std::string& name,
-                                           const GaugePrototype<T>& proto,
-                                           const Callback<T()>& function) {
+scoped_refptr<FunctionGauge<T> > MetricRegistry::CreateFunctionGauge(
+    const std::string& name,
+    const GaugePrototype<T>& proto,
+    const Callback<T()>& function) {
   return new FunctionGauge<T>(proto, function);
 }
 
 template<typename T>
-Gauge* MetricRegistry::FindOrCreateGauge(const std::string& name,
+scoped_refptr<Gauge> MetricRegistry::FindOrCreateGauge(const std::string& name,
                                          const GaugePrototype<T>& proto,
                                          const T& initial_value) {
   lock_guard<simple_spinlock> l(&lock_);
-  Gauge* gauge = FindMetricUnlocked<Gauge>(name, MetricType::kGauge);
+  scoped_refptr<Gauge> gauge = FindMetricUnlocked<Gauge>(name, MetricType::kGauge);
   if (!gauge) {
     gauge = CreateGauge(name, proto, initial_value);
     InsertOrDie(&metrics_, name, gauge);
@@ -169,8 +169,8 @@ Gauge* MetricRegistry::FindOrCreateGauge(const std::string& name,
 }
 
 // Explicit instantiation.
-#define INSTANTIATE(T)                                       \
-  template Gauge* MetricRegistry::FindOrCreateGauge<T>(      \
+#define INSTANTIATE(T)                                                \
+  template scoped_refptr<Gauge> MetricRegistry::FindOrCreateGauge<T>( \
     const std::string&, const GaugePrototype<T>&, const T&);
 INSTANTIATE(bool);
 INSTANTIATE(int32_t);
@@ -182,11 +182,13 @@ INSTANTIATE(string);
 #undef INSTANTIATE
 
 template<typename T>
-FunctionGauge<T>* MetricRegistry::FindOrCreateFunctionGauge(const std::string& name,
-                                                            const GaugePrototype<T>& proto,
-                                                            const Callback<T()>& function) {
+scoped_refptr<FunctionGauge<T> > MetricRegistry::FindOrCreateFunctionGauge(
+  const std::string& name,
+  const GaugePrototype<T>& proto,
+  const Callback<T()>& function) {
   lock_guard<simple_spinlock> l(&lock_);
-  FunctionGauge<T>* gauge = FindMetricUnlocked<FunctionGauge<T> >(name, MetricType::kGauge);
+  scoped_refptr<FunctionGauge<T> > gauge = FindMetricUnlocked<FunctionGauge<T> >(
+    name, MetricType::kGauge);
   if (!gauge) {
     gauge = CreateFunctionGauge(name, proto, function);
     InsertOrDie(&metrics_, name, gauge);
@@ -195,9 +197,10 @@ FunctionGauge<T>* MetricRegistry::FindOrCreateFunctionGauge(const std::string& n
 }
 
 // Explicit instantiation.
-#define INSTANTIATE(T)                                                        \
-  template FunctionGauge<T>* MetricRegistry::FindOrCreateFunctionGauge<T>(    \
-      const std::string&, const GaugePrototype<T>&, const Callback<T()>&);
+#define INSTANTIATE(T)                                \
+  template scoped_refptr<FunctionGauge<T> >           \
+    MetricRegistry::FindOrCreateFunctionGauge<T>(     \
+      const std::string&, const GaugePrototype<T>&, const Callback<T()>&)
 INSTANTIATE(bool);
 INSTANTIATE(int32_t);
 INSTANTIATE(uint32_t);
@@ -207,10 +210,11 @@ INSTANTIATE(double);
 INSTANTIATE(string);
 #undef INSTANTIATE
 
-Histogram* MetricRegistry::FindOrCreateHistogram(const std::string& name,
-                                                 const HistogramPrototype& proto) {
+scoped_refptr<Histogram> MetricRegistry::FindOrCreateHistogram(
+    const std::string& name,
+    const HistogramPrototype& proto) {
   lock_guard<simple_spinlock> l(&lock_);
-  Histogram* histogram = FindMetricUnlocked<Histogram>(name, MetricType::kHistogram);
+  scoped_refptr<Histogram> histogram = FindMetricUnlocked<Histogram>(name, MetricType::kHistogram);
   if (!histogram) {
     histogram = new Histogram(proto);
     InsertOrDie(&metrics_, name, histogram);
@@ -249,7 +253,7 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
                                    const vector<string>& requested_metrics,
                                    const vector<string>& requested_detail_metrics) const {
   // We want the keys to be in alphabetical order when printing, so we use an ordered map here.
-  typedef std::map<string, Metric*> OrderedMetricMap;
+  typedef std::map<string, scoped_refptr<Metric> > OrderedMetricMap;
   OrderedMetricMap metrics;
   std::set<string> requested_detail_metrics_set;
   {
@@ -301,6 +305,15 @@ MetricContext::MetricContext(MetricRegistry* metrics, const string& root_name)
 MetricContext::MetricContext(const MetricContext& parent, const string& name)
   : metrics_(parent.metrics_),
     prefix_(parent.prefix_ + "." + name) {
+}
+
+//
+// Metric
+//
+Metric::Metric() {
+}
+
+Metric::~Metric() {
 }
 
 //
@@ -364,7 +377,7 @@ void StringGauge::WriteValue(JsonWriter* writer) const {
 // See: http://www.cs.bgu.ac.il/~hendlerd/papers/flat-combining.pdf
 // Or: use thread locals and then sum them
 
-Counter* CounterPrototype::Instantiate(const MetricContext& context) {
+scoped_refptr<Counter> CounterPrototype::Instantiate(const MetricContext& context) {
   return context.metrics()->FindOrCreateCounter(
     context.prefix() + "." + name(), *this);
 }
@@ -431,7 +444,7 @@ HistogramPrototype::HistogramPrototype(const char* name, MetricUnit::Type unit,
                     name, num_sig_digits);
 }
 
-Histogram* HistogramPrototype::Instantiate(const MetricContext& context) {
+scoped_refptr<Histogram> HistogramPrototype::Instantiate(const MetricContext& context) {
   return context.metrics()->FindOrCreateHistogram(
     context.prefix() + "." + name(), *this);
 }
@@ -514,7 +527,7 @@ double Histogram::MeanValueForTests() const {
   return histogram_->MeanValue();
 }
 
-ScopedLatencyMetric::ScopedLatencyMetric(Histogram* latency_hist)
+ScopedLatencyMetric::ScopedLatencyMetric(scoped_refptr<Histogram> latency_hist)
   : latency_hist_(latency_hist),
     time_started_(MonoTime::Now(MonoTime::FINE)) {
 }

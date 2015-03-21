@@ -57,7 +57,7 @@ class TSStressTest : public TabletServerTestBase {
   void InserterThread(int thread_idx);
 
  protected:
-  Histogram* histogram_;
+  scoped_refptr<Histogram> histogram_;
   CountDownLatch start_latch_;
   std::vector<scoped_refptr<kudu::Thread> > threads_;
 };

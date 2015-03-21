@@ -17,6 +17,13 @@ using strings::Substitute;
 namespace kudu {
 namespace rpc {
 
+RpcMethodMetrics::RpcMethodMetrics()
+  : handler_latency(NULL) {
+}
+
+RpcMethodMetrics::~RpcMethodMetrics() {
+}
+
 ServiceIf::~ServiceIf() {
 }
 

@@ -738,11 +738,11 @@ class CompactRowSetsOp : public MaintenanceOp {
                 Substitute("Compaction failed on $0", tablet_->tablet_id()));
   }
 
-  virtual Histogram* DurationHistogram() OVERRIDE {
+  virtual scoped_refptr<Histogram> DurationHistogram() OVERRIDE {
     return tablet_->metrics()->compact_rs_duration;
   }
 
-  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE {
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() OVERRIDE {
     return tablet_->metrics()->compact_rs_running;
   }
 
@@ -787,11 +787,11 @@ class MinorDeltaCompactionOp : public MaintenanceOp {
                 Substitute("Minor delta compaction failed on $0", tablet_->tablet_id()));
   }
 
-  virtual Histogram* DurationHistogram() OVERRIDE {
+  virtual scoped_refptr<Histogram> DurationHistogram() OVERRIDE {
     return tablet_->metrics()->delta_minor_compact_rs_duration;
   }
 
-  virtual AtomicGauge<uint32_t>* RunningGauge() OVERRIDE {
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() OVERRIDE {
     return tablet_->metrics()->delta_minor_compact_rs_running;
   }
 

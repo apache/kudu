@@ -5,7 +5,9 @@
 
 #include <string>
 
-#include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
 
 namespace google {
@@ -23,10 +25,10 @@ namespace rpc {
 class InboundCall;
 
 struct RpcMethodMetrics {
-  RpcMethodMetrics()
-    : handler_latency(NULL) {
-  }
-  Histogram* handler_latency;
+  RpcMethodMetrics();
+  ~RpcMethodMetrics();
+
+  scoped_refptr<Histogram> handler_latency;
 };
 
 // Handles incoming messages that initiate an RPC.

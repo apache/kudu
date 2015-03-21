@@ -214,7 +214,7 @@ void InboundCall::RecordCallReceived() {
   timing_.time_received = MonoTime::Now(MonoTime::FINE);
 }
 
-void InboundCall::RecordHandlingStarted(Histogram* incoming_queue_time) {
+void InboundCall::RecordHandlingStarted(scoped_refptr<Histogram> incoming_queue_time) {
   DCHECK(incoming_queue_time != NULL);
   DCHECK(!timing_.time_handled.Initialized());  // Protect against multiple calls.
   timing_.time_handled = MonoTime::Now(MonoTime::FINE);
@@ -222,7 +222,7 @@ void InboundCall::RecordHandlingStarted(Histogram* incoming_queue_time) {
       timing_.time_handled.GetDeltaSince(timing_.time_received).ToMicroseconds());
 }
 
-void InboundCall::RecordHandlingCompleted(Histogram* handler_run_time) {
+void InboundCall::RecordHandlingCompleted(scoped_refptr<Histogram> handler_run_time) {
   DCHECK(handler_run_time != NULL);
   DCHECK(!timing_.time_completed.Initialized());  // Protect against multiple calls.
   timing_.time_completed = MonoTime::Now(MonoTime::FINE);

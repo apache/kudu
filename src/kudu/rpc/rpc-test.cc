@@ -411,15 +411,15 @@ TEST_F(TestRpc, TestRpcHandlerLatencyMetric) {
   SleepResponsePB resp;
   ASSERT_STATUS_OK(p.SyncRequest("Sleep", req, &resp, &controller));
 
-  const unordered_map<string, Metric*> metric_map =
+  const unordered_map<string, scoped_refptr<Metric> > metric_map =
       server_messenger_->metric_context()->metrics()->UnsafeMetricsMapForTests();
   vector<string> keys;
   AppendKeysFromMap(metric_map, &keys);
   LOG(INFO) << "Metrics: " << JoinStrings(keys, ", ");
 
-  Histogram* latency_histogram =
-      down_cast<Histogram *>(CHECK_NOTNULL(FindOrDie(metric_map,
-          "test.rpc_test.handler_latency_kudu_rpc_test_CalculatorService_Sleep")));
+  scoped_refptr<Histogram> latency_histogram =
+    down_cast<Histogram *>(CHECK_NOTNULL(FindOrDie(metric_map,
+        "test.rpc_test.handler_latency_kudu_rpc_test_CalculatorService_Sleep").get()));
 
   LOG(INFO) << "Sleep() min lat: " << latency_histogram->MinValueForTests();
   LOG(INFO) << "Sleep() mean lat: " << latency_histogram->MeanValueForTests();

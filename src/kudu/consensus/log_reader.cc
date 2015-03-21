@@ -91,9 +91,9 @@ LogReader::LogReader(FsManager *fs_manager,
     state_(kLogReaderInitialized) {
   if (parent_metric_context) {
     metric_context_.reset(new MetricContext(*parent_metric_context, "log-reader"));
-    bytes_read = METRIC_bytes_read.Instantiate(*metric_context_);
-    entries_read = METRIC_entries_read.Instantiate(*metric_context_);
-    read_batch_latency = METRIC_read_batch_latency.Instantiate(*metric_context_);
+    bytes_read_ = METRIC_bytes_read.Instantiate(*metric_context_);
+    entries_read_ = METRIC_entries_read.Instantiate(*metric_context_);
+    read_batch_latency_ = METRIC_read_batch_latency.Instantiate(*metric_context_);
   }
 }
 
@@ -270,7 +270,7 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
   uint64_t offset = index_entry.offset_in_segment;
   gscoped_ptr<ScopedLatencyMetric> scoped;
   if (metric_context_) {
-    scoped.reset(new ScopedLatencyMetric(read_batch_latency));
+    scoped.reset(new ScopedLatencyMetric(read_batch_latency_));
   }
   RETURN_NOT_OK_PREPEND(segment->ReadEntryHeaderAndBatch(&offset, tmp_buf, batch),
                         Substitute("Failed to read LogEntry for index $0 from log segment "
@@ -280,8 +280,8 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
                                    index_entry.offset_in_segment));
 
   if (metric_context_) {
-    bytes_read->IncrementBy(kEntryHeaderSize + tmp_buf->length());
-    entries_read->IncrementBy((**batch).entry_size());
+    bytes_read_->IncrementBy(kEntryHeaderSize + tmp_buf->length());
+    entries_read_->IncrementBy((**batch).entry_size());
   }
 
   return Status::OK();

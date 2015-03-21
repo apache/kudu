@@ -35,6 +35,23 @@
 //
 // TODO: Implement Meter, Timer.
 //
+//
+// =================
+// Metrics ownership
+// =================
+//
+// Metrics are reference-counted, and one of the references is always held by the metrics
+// registry itself. Users of metrics should typically hold a scoped_refptr to their metrics
+// within class instances, so that they also hold a reference. The one exception to this
+// is FunctionGauges: see the class documentation below for a typical Gauge ownership pattern.
+//
+// Because the metrics registry holds a reference to the metric, this means that metrics will
+// not be immediately destructed when your class instance publishing them is destructed.
+// This is on purpose: metrics are retained for a configurable time interval even after they
+// are no longer being published. The purpose of this is to allow monitoring systems, which
+// only poll metrics infrequently (eg once a minute) to see the last value of a metric whose
+// owner was destructed in between two polls.
+//
 // =================
 // Gauge vs. Counter
 // =================
@@ -54,7 +71,7 @@
 //   METRIC_DEFINE_counter(ping_requests, kudu::MetricUnit::kRequests,
 //       "Number of Ping() RPC requests this server has handled since service start");
 //
-//   Counter* ping_requests_ = METRIC_ping_requests.Instantiate(metric_context_);
+//   scoped_refptr<Counter> ping_requests_ = METRIC_ping_requests.Instantiate(metric_context_);
 //   ping_requests_->Increment();
 //
 // Using the above API, you can pass a MetricRegistry to subsystems so that they can register
@@ -102,6 +119,7 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/locks.h"
@@ -212,24 +230,28 @@ enum MetricWriteGranularity {
 };
 
 // Base class to allow for putting all metrics into a single container.
-class Metric {
+// See documentation at the top of this file for information on metrics ownership.
+class Metric : public RefCountedThreadSafe<Metric> {
  public:
-  virtual ~Metric() {}
   // All metrics must be able to render themselves as JSON.
   virtual Status WriteAsJson(const std::string& name,
                              JsonWriter* writer,
                              MetricWriteGranularity granularity) const = 0;
   virtual MetricType::Type type() const = 0;
+
  protected:
-  Metric() {}
+  Metric();
+  virtual ~Metric();
+
  private:
+  friend class RefCountedThreadSafe<Metric>;
   DISALLOW_COPY_AND_ASSIGN(Metric);
 };
 
 // Registry of all the metrics for a given subsystem.
 class MetricRegistry {
  public:
-  typedef std::tr1::unordered_map<std::string, Metric*> UnorderedMetricMap;
+  typedef std::tr1::unordered_map<std::string, scoped_refptr<Metric> > UnorderedMetricMap;
 
   MetricRegistry();
   ~MetricRegistry();
@@ -249,25 +271,26 @@ class MetricRegistry {
                      const std::vector<std::string>& requested_metrics,
                      const std::vector<std::string>& requested_detail_metrics) const;
 
-  Counter* FindOrCreateCounter(const std::string& name,
-                               const CounterPrototype& proto);
+  scoped_refptr<Counter> FindOrCreateCounter(const std::string& name,
+                                             const CounterPrototype& proto);
 
   template<typename T>
-  Gauge* FindOrCreateGauge(const std::string& name,
-                           const GaugePrototype<T>& proto,
-                           const T& initial_value);
+  scoped_refptr<Gauge> FindOrCreateGauge(const std::string& name,
+                                         const GaugePrototype<T>& proto,
+                                         const T& initial_value);
 
   template<typename T>
-  FunctionGauge<T>* FindOrCreateFunctionGauge(const std::string& name,
-                                              const GaugePrototype<T>& proto,
-                                              const Callback<T()>& function);
+  scoped_refptr<FunctionGauge<T> > FindOrCreateFunctionGauge(
+    const std::string& name,
+    const GaugePrototype<T>& proto,
+    const Callback<T()>& function);
 
-  Histogram* FindOrCreateHistogram(const std::string& name,
-                                   const HistogramPrototype& proto);
+  scoped_refptr<Histogram> FindOrCreateHistogram(const std::string& name,
+                                                 const HistogramPrototype& proto);
 
   // Returns the Histogram with name equal to 'name' or NULL is no
   // such histogram can be found.
-  Histogram* FindHistogram(const std::string& name) const;
+  scoped_refptr<Histogram> FindHistogram(const std::string& name) const;
 
   // Not thread-safe, used for tests.
   const UnorderedMetricMap& UnsafeMetricsMapForTests() const { return metrics_; }
@@ -284,14 +307,14 @@ class MetricRegistry {
                         MetricType::Type metric_type) const;
 
   template<typename T>
-  Gauge* CreateGauge(const std::string& name,
-                     const GaugePrototype<T>& proto,
-                     const T& initial_value);
+  scoped_refptr<Gauge> CreateGauge(const std::string& name,
+                                   const GaugePrototype<T>& proto,
+                                   const T& initial_value);
 
   template<typename T>
-  FunctionGauge<T>* CreateFunctionGauge(const std::string& name,
-                                        const GaugePrototype<T>& proto,
-                                        const Callback<T()>& function);
+  scoped_refptr<FunctionGauge<T> > CreateFunctionGauge(const std::string& name,
+                                                       const GaugePrototype<T>& proto,
+                                                       const Callback<T()>& function);
 
   UnorderedMetricMap metrics_;
   mutable simple_spinlock lock_;
@@ -339,17 +362,18 @@ class GaugePrototype {
   const char* description() const { return description_; }
 
   // Instantiate a "manual" gauge.
-  Gauge* Instantiate(const MetricContext& context,
-                     const T& initial_value) const {
+  scoped_refptr<Gauge> Instantiate(const MetricContext& context,
+                                   const T& initial_value) const {
     return context.metrics()->FindOrCreateGauge(
-        context.prefix() + "." + name(), *this, initial_value);
+      context.prefix() + "." + name(), *this, initial_value);
   }
 
   // Instantiate a gauge that is backed by the given callback.
-  FunctionGauge<T>* InstantiateFunctionGauge(const MetricContext& context,
-                                             const Callback<T()>& function) const {
+  scoped_refptr<FunctionGauge<T> > InstantiateFunctionGauge(
+    const MetricContext& context,
+    const Callback<T()>& function) const {
     return context.metrics()->FindOrCreateFunctionGauge(
-        context.prefix() + "." + name(), *this, function);
+      context.prefix() + "." + name(), *this, function);
   }
 
  private:
@@ -399,9 +423,10 @@ class StringGauge : public Gauge {
 template <typename T>
 class AtomicGauge : public Gauge {
  public:
-  static AtomicGauge<T>* Instantiate(const GaugePrototype<T>& prototype,
-                                     const MetricContext& context) {
-    return down_cast<AtomicGauge<T>*>(prototype.Instantiate(context, 0));
+  static scoped_refptr<AtomicGauge<T> > Instantiate(const GaugePrototype<T>& prototype,
+                                                    const MetricContext& context) {
+    scoped_refptr<Gauge> gauge(prototype.Instantiate(context, 0));
+    return down_cast<AtomicGauge<T>*>(gauge.get());
   }
 
   AtomicGauge(const GaugePrototype<T>& proto, T initial_value)
@@ -638,7 +663,7 @@ class CounterPrototype {
   MetricUnit::Type unit() const { return unit_; }
   const char* description() const { return description_; }
 
-  Counter* Instantiate(const MetricContext& context);
+  scoped_refptr<Counter> Instantiate(const MetricContext& context);
 
  private:
   const char* name_;
@@ -682,7 +707,7 @@ class HistogramPrototype {
   HistogramPrototype(const char* name, MetricUnit::Type unit,
                      const char* description,
                      uint64_t max_trackable_value, int num_sig_digits);
-  Histogram* Instantiate(const MetricContext& context);
+  scoped_refptr<Histogram> Instantiate(const MetricContext& context);
   const char* name() const { return name_; }
   MetricUnit::Type unit() const { return unit_; }
   const char* description() const { return description_; }
@@ -738,11 +763,11 @@ class Histogram : public Metric {
 // Measures a duration while in scope. Adds this duration to specified histogram on destruction.
 class ScopedLatencyMetric {
  public:
-  explicit ScopedLatencyMetric(Histogram* latency_hist);
+  explicit ScopedLatencyMetric(scoped_refptr<Histogram> latency_hist);
   ~ScopedLatencyMetric();
 
  private:
-  Histogram* latency_hist_;
+  scoped_refptr<Histogram> latency_hist_;
   MonoTime time_started_;
 };
 

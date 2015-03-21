@@ -870,12 +870,12 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
         }
       }
 
-      int64_t bytes_read = log_->reader_->bytes_read->value();
-      int64_t entries_read = log_->reader_->entries_read->value();
-      int64_t read_batch_count = log_->reader_->read_batch_latency->TotalCountForTests();
-      EXPECT_GT(log_->reader_->bytes_read->value(), 0);
-      EXPECT_GT(log_->reader_->entries_read->value(), 0);
-      EXPECT_GT(log_->reader_->read_batch_latency->TotalCountForTests(), 0);
+      int64_t bytes_read = log_->reader_->bytes_read_->value();
+      int64_t entries_read = log_->reader_->entries_read_->value();
+      int64_t read_batch_count = log_->reader_->read_batch_latency_->TotalCountForTests();
+      EXPECT_GT(log_->reader_->bytes_read_->value(), 0);
+      EXPECT_GT(log_->reader_->entries_read_->value(), 0);
+      EXPECT_GT(log_->reader_->read_batch_latency_->TotalCountForTests(), 0);
 
       // Test a size-limited read.
       int size_limit = RandInRange(&rng, 1, 1000);
@@ -901,9 +901,9 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
         }
       }
 
-      EXPECT_GT(log_->reader_->bytes_read->value(), bytes_read);
-      EXPECT_GT(log_->reader_->entries_read->value(), entries_read);
-      EXPECT_GT(log_->reader_->read_batch_latency->TotalCountForTests(), read_batch_count);
+      EXPECT_GT(log_->reader_->bytes_read_->value(), bytes_read);
+      EXPECT_GT(log_->reader_->entries_read_->value(), entries_read);
+      EXPECT_GT(log_->reader_->read_batch_latency_->TotalCountForTests(), read_batch_count);
     }
 
     int num_gced = 0;

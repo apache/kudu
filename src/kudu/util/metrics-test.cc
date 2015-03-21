@@ -25,13 +25,14 @@ METRIC_DEFINE_counter(reqs_pending, MetricUnit::kRequests,
                       "Number of requests pending");
 
 TEST_F(MetricsTest, SimpleCounterTest) {
-  Counter requests(METRIC_reqs_pending);
-  ASSERT_EQ("Number of requests pending", requests.description());
-  ASSERT_EQ(0, requests.value());
-  requests.Increment();
-  ASSERT_EQ(1, requests.value());
-  requests.IncrementBy(2);
-  ASSERT_EQ(3, requests.value());
+  scoped_refptr<Counter> requests =
+    new Counter(METRIC_reqs_pending);
+  ASSERT_EQ("Number of requests pending", requests->description());
+  ASSERT_EQ(0, requests->value());
+  requests->Increment();
+  ASSERT_EQ(1, requests->value());
+  requests->IncrementBy(2);
+  ASSERT_EQ(3, requests->value());
 }
 
 METRIC_DEFINE_gauge_uint64(fake_memory_usage, MetricUnit::kBytes, "Test Gauge 1");
@@ -40,8 +41,9 @@ TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
   MetricRegistry registry;
   MetricContext context(&registry, "test");
 
-  AtomicGauge<uint64_t>* mem_usage = AtomicGauge<uint64_t>::Instantiate(METRIC_fake_memory_usage,
-                                                                context);
+  scoped_refptr<AtomicGauge<uint64_t> > mem_usage =
+    AtomicGauge<uint64_t>::Instantiate(METRIC_fake_memory_usage,
+                                       context);
   ASSERT_EQ(METRIC_fake_memory_usage.description(), mem_usage->description());
   ASSERT_EQ(0, mem_usage->value());
   mem_usage->IncrementBy(7);
@@ -52,16 +54,17 @@ TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
 
 TEST_F(MetricsTest, HighWaterMarkTest) {
   GaugePrototype<int64_t> proto("test", MetricUnit::kBytes, "Test HighWaterMark");
-  HighWaterMark<int64_t> hwm(proto, 0);
-  hwm.IncrementBy(1);
-  ASSERT_EQ(1, hwm.current_value());
-  ASSERT_EQ(1, hwm.value());
-  hwm.IncrementBy(42);
-  ASSERT_EQ(43, hwm.current_value());
-  ASSERT_EQ(43, hwm.value());
-  hwm.DecrementBy(1);
-  ASSERT_EQ(42, hwm.current_value());
-  ASSERT_EQ(43, hwm.value());
+  scoped_refptr<HighWaterMark<int64_t> > hwm =
+    new HighWaterMark<int64_t>(proto, 0);
+  hwm->IncrementBy(1);
+  ASSERT_EQ(1, hwm->current_value());
+  ASSERT_EQ(1, hwm->value());
+  hwm->IncrementBy(42);
+  ASSERT_EQ(43, hwm->current_value());
+  ASSERT_EQ(43, hwm->value());
+  hwm->DecrementBy(1);
+  ASSERT_EQ(42, hwm->current_value());
+  ASSERT_EQ(43, hwm->value());
 }
 
 METRIC_DEFINE_gauge_int64(test_func_gauge, MetricUnit::kBytes, "Test Gauge 2");
@@ -74,7 +77,7 @@ TEST_F(MetricsTest, SimpleFunctionGaugeTest) {
   MetricRegistry registry;
   MetricContext context(&registry, "test");
   int metric_val = 1000;
-  FunctionGauge<int64_t>* gauge =
+  scoped_refptr<FunctionGauge<int64_t> > gauge =
     METRIC_test_func_gauge.InstantiateFunctionGauge(
       context, Bind(&MyFunction, Unretained(&metric_val)));
 
@@ -96,7 +99,7 @@ TEST_F(MetricsTest, AutoDetachToLastValue) {
   MetricContext context(&registry, "test");
 
   int metric_val = 1000;
-  FunctionGauge<int64_t>* gauge =
+  scoped_refptr<FunctionGauge<int64_t> > gauge =
     METRIC_test_func_gauge.InstantiateFunctionGauge(
       context, Bind(&MyFunction, Unretained(&metric_val)));
 
@@ -118,7 +121,7 @@ TEST_F(MetricsTest, AutoDetachToConstant) {
   MetricContext context(&registry, "test");
 
   int metric_val = 1000;
-  FunctionGauge<int64_t>* gauge =
+  scoped_refptr<FunctionGauge<int64_t> > gauge =
     METRIC_test_func_gauge.InstantiateFunctionGauge(
       context, Bind(&MyFunction, Unretained(&metric_val)));
 
@@ -140,7 +143,7 @@ METRIC_DEFINE_histogram(test_hist, MetricUnit::kMilliseconds, "foo", 1000000, 3)
 TEST_F(MetricsTest, SimpleHistogramTest) {
   MetricRegistry registry;
   MetricContext context(&registry, "test");
-  Histogram* hist = METRIC_test_hist.Instantiate(context);
+  scoped_refptr<Histogram> hist = METRIC_test_hist.Instantiate(context);
   hist->Increment(2);
   hist->IncrementBy(4, 1);
   ASSERT_EQ(2, hist->histogram_->MinValue());
@@ -152,8 +155,8 @@ TEST_F(MetricsTest, SimpleHistogramTest) {
 
 TEST_F(MetricsTest, JsonPrintTest) {
   MetricRegistry metrics;
-  Counter* bytes_seen = CHECK_NOTNULL(
-    metrics.FindOrCreateCounter("reqs_pending", METRIC_reqs_pending));
+  scoped_refptr<Counter> bytes_seen = CHECK_NOTNULL(
+    metrics.FindOrCreateCounter("reqs_pending", METRIC_reqs_pending).get());
   bytes_seen->Increment();
 
   // Generate the JSON.

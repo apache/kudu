@@ -146,11 +146,11 @@ class TestMaintenanceOp : public MaintenanceOp {
     perf_improvement_ = perf_improvement;
   }
 
-  virtual Histogram* DurationHistogram() {
+  virtual scoped_refptr<Histogram> DurationHistogram() {
     return duration_histogram_;
   }
 
-  virtual AtomicGauge<uint32_t>* RunningGauge() {
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() {
     return running_gauge_;
   }
 
@@ -163,8 +163,8 @@ class TestMaintenanceOp : public MaintenanceOp {
   uint64_t perf_improvement_;
   MetricRegistry metric_registry_;
   MetricContext metric_ctx_;
-  Histogram* duration_histogram_;
-  AtomicGauge<uint32_t>* running_gauge_;
+  scoped_refptr<Histogram> duration_histogram_;
+  scoped_refptr<AtomicGauge<uint32_t> > running_gauge_;
 };
 
 // Create an op and wait for it to start running.  Unregister it while it is

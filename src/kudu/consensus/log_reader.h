@@ -13,6 +13,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/spinlock.h"
 
 namespace kudu {
@@ -169,9 +170,9 @@ class LogReader {
 
   // Metrics
   gscoped_ptr<MetricContext> metric_context_;
-  Counter *bytes_read;
-  Counter *entries_read;
-  Histogram *read_batch_latency;
+  scoped_refptr<Counter> bytes_read_;
+  scoped_refptr<Counter> entries_read_;
+  scoped_refptr<Histogram> read_batch_latency_;
 
   // The sequence of all current log segments in increasing sequence number
   // order.

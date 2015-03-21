@@ -133,13 +133,13 @@ static void CheckLogMetrics(const MetricRegistry::UnorderedMetricMap& metrics,
                             int bytes_under_management, int blocks_under_management,
                             int total_containers, int total_full_containers) {
     ASSERT_EQ(bytes_under_management, down_cast<AtomicGauge<uint64_t>*>(
-        FindOrDie(metrics, "test.block_manager.bytes_under_management"))->value());
+        FindOrDie(metrics, "test.block_manager.bytes_under_management").get())->value());
     ASSERT_EQ(blocks_under_management, down_cast<AtomicGauge<uint64_t>*>(
-        FindOrDie(metrics, "test.block_manager.blocks_under_management"))->value());
+        FindOrDie(metrics, "test.block_manager.blocks_under_management").get())->value());
     ASSERT_EQ(total_containers, down_cast<Counter*>(
-        FindOrDie(metrics, "test.block_manager.total_containers"))->value());
+        FindOrDie(metrics, "test.block_manager.total_containers").get())->value());
     ASSERT_EQ(total_full_containers, down_cast<Counter*>(
-        FindOrDie(metrics, "test.block_manager.total_full_containers"))->value());
+        FindOrDie(metrics, "test.block_manager.total_full_containers").get())->value());
 }
 
 template <>
@@ -514,17 +514,17 @@ static void CheckMetrics(const MetricRegistry::UnorderedMetricMap& metrics,
                          int total_readable_blocks, int total_writable_blocks,
                          int total_bytes_read, int total_bytes_written) {
   ASSERT_EQ(blocks_open_reading, down_cast<AtomicGauge<uint64_t>*>(
-      FindOrDie(metrics, "test.block_manager.blocks_open_reading"))->value());
+      FindOrDie(metrics, "test.block_manager.blocks_open_reading").get())->value());
   ASSERT_EQ(blocks_open_writing, down_cast<AtomicGauge<uint64_t>*>(
-      FindOrDie(metrics, "test.block_manager.blocks_open_writing"))->value());
+      FindOrDie(metrics, "test.block_manager.blocks_open_writing").get())->value());
   ASSERT_EQ(total_readable_blocks, down_cast<Counter*>(
-      FindOrDie(metrics, "test.block_manager.total_readable_blocks"))->value());
+      FindOrDie(metrics, "test.block_manager.total_readable_blocks").get())->value());
   ASSERT_EQ(total_writable_blocks, down_cast<Counter*>(
-      FindOrDie(metrics, "test.block_manager.total_writable_blocks"))->value());
+      FindOrDie(metrics, "test.block_manager.total_writable_blocks").get())->value());
   ASSERT_EQ(total_bytes_read, down_cast<Counter*>(
-      FindOrDie(metrics, "test.block_manager.total_bytes_read"))->value());
+      FindOrDie(metrics, "test.block_manager.total_bytes_read").get())->value());
   ASSERT_EQ(total_bytes_written, down_cast<Counter*>(
-      FindOrDie(metrics, "test.block_manager.total_bytes_written"))->value());
+      FindOrDie(metrics, "test.block_manager.total_bytes_written").get())->value());
 }
 
 TYPED_TEST(BlockManagerTest, MetricsTest) {

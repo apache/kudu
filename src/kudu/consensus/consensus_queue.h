@@ -210,9 +210,9 @@ class PeerMessageQueue {
   struct Metrics {
     // Keeps track of the number of ops. that are completed by a majority but still need
     // to be replicated to a minority (IsDone() is true, IsAllDone() is false).
-    AtomicGauge<int64_t>* num_majority_done_ops;
+    scoped_refptr<AtomicGauge<int64_t> > num_majority_done_ops;
     // Keeps track of the number of ops. that are still in progress (IsDone() returns false).
-    AtomicGauge<int64_t>* num_in_progress_ops;
+    scoped_refptr<AtomicGauge<int64_t> > num_in_progress_ops;
 
     explicit Metrics(const MetricContext& metric_ctx);
   };

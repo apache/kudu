@@ -5,6 +5,8 @@
 
 #include <stdint.h>
 
+#include "kudu/gutil/ref_counted.h"
+
 namespace kudu {
 
 class Counter;
@@ -18,13 +20,13 @@ namespace internal {
 struct BlockManagerMetrics {
   explicit BlockManagerMetrics(const MetricContext& metric_ctx);
 
-  AtomicGauge<uint64_t>* blocks_open_reading;
-  AtomicGauge<uint64_t>* blocks_open_writing;
+  scoped_refptr<AtomicGauge<uint64_t> > blocks_open_reading;
+  scoped_refptr<AtomicGauge<uint64_t> > blocks_open_writing;
 
-  Counter* total_readable_blocks;
-  Counter* total_writable_blocks;
-  Counter* total_bytes_read;
-  Counter* total_bytes_written;
+  scoped_refptr<Counter> total_readable_blocks;
+  scoped_refptr<Counter> total_writable_blocks;
+  scoped_refptr<Counter> total_bytes_read;
+  scoped_refptr<Counter> total_bytes_written;
 };
 
 } // namespace internal

@@ -57,11 +57,11 @@ struct LogBlockManagerMetrics {
   // Implementation-agnostic metrics.
   BlockManagerMetrics generic_metrics;
 
-  AtomicGauge<uint64_t>* bytes_under_management;
-  AtomicGauge<uint64_t>* blocks_under_management;
+  scoped_refptr<AtomicGauge<uint64_t> > bytes_under_management;
+  scoped_refptr<AtomicGauge<uint64_t> > blocks_under_management;
 
-  Counter* total_containers;
-  Counter* total_full_containers;
+  scoped_refptr<Counter> total_containers;
+  scoped_refptr<Counter> total_full_containers;
 };
 
 METRIC_DEFINE_gauge_uint64(bytes_under_management, kudu::MetricUnit::kBytes,

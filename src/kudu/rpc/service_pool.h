@@ -47,11 +47,11 @@ class ServicePool : public RpcService {
   virtual Status QueueInboundCall(gscoped_ptr<InboundCall> call) OVERRIDE;
 
   const Counter* RpcsTimedOutInQueueMetricForTests() const {
-    return rpcs_timed_out_in_queue_;
+    return rpcs_timed_out_in_queue_.get();
   }
 
   const Counter* RpcsQueueOverflowMetric() const {
-    return rpcs_queue_overflow_;
+    return rpcs_queue_overflow_.get();
   }
 
   const std::string service_name() const;
@@ -61,9 +61,9 @@ class ServicePool : public RpcService {
   gscoped_ptr<ServiceIf> service_;
   std::vector<scoped_refptr<kudu::Thread> > threads_;
   BlockingQueue<InboundCall*> service_queue_;
-  Histogram* incoming_queue_time_;
-  Counter* rpcs_timed_out_in_queue_;
-  Counter* rpcs_queue_overflow_;
+  scoped_refptr<Histogram> incoming_queue_time_;
+  scoped_refptr<Counter> rpcs_timed_out_in_queue_;
+  scoped_refptr<Counter> rpcs_queue_overflow_;
 
   mutable Mutex shutdown_lock_;
   bool closing_;

@@ -10,6 +10,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
@@ -256,7 +257,7 @@ class MemTracker {
   const std::string descr_;
   std::tr1::shared_ptr<MemTracker> parent_;
 
-  gscoped_ptr<HighWaterMark<int64_t> > consumption_;
+  scoped_refptr<HighWaterMark<int64_t> > consumption_;
 
   FunctionGauge<uint64_t>* consumption_metric_;
 
