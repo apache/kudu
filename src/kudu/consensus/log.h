@@ -117,7 +117,7 @@ class Log : public RefCountedThreadSafe<Log> {
 
 
   // Blocks the current thread until all the entries in the log queue
-  // are flushed.
+  // are flushed and fsynced (if fsync of log entries is enabled).
   Status WaitUntilAllFlushed();
 
   // Kick off an asynchronous task that pre-allocates a new

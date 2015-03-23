@@ -66,13 +66,10 @@ class TransactionTracker;
 //      is enqueued to the WAL in order to store information about the operation result
 //      and provide correct recovery.
 //
-//      Currently, we wait until the CommitMsg is durably persisted in the WAL before
-//      replying to clients. However, KUDU-120 provides a design which can reply _before_
-//      the CommitMsg is persisted, so long as we ensure that the CommitMsg is durable
-//      before any modified in-memory data structures are flushed.
-//
-//  5 - Finalize() is called when the CommitMsg has been made durable and performs some cleanup
-//      and updates metrics.
+//      After the commit message has been enqueued in the Log, the driver executes Finalize()
+//      which, in turn, makes transactions make their changes visible to other transactions.
+//      After this step the driver replies to the client if needed and the transaction
+//      is completed.
 //      In-mem data structures that contain the changes made by the transaction can now
 //      be made durable.
 //
@@ -180,15 +177,13 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   // requested consistency mode.
   Status CommitWait();
 
-  void CommitCallback(const Status& s);
-
   // Handle a failure in any of the stages of the operation.
   // In some cases, this will end the operation and call its callback.
   // In others, where we can't recover, this will FATAL.
   void HandleFailure(const Status& s);
 
-  // Called when both Transaction::Apply() and Consensus::Commit() successfully
-  // completed. When this is called the commit message was appended to the WAL.
+  // Called on Transaction::Apply() after the CommitMsg has been successfully
+  // appended to the WAL.
   void Finalize();
 
   // Returns the mutable state of the transaction being executed by
