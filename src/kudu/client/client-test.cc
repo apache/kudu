@@ -8,6 +8,7 @@
 
 #include <tr1/memory>
 #include <vector>
+#include <algorithm>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
@@ -429,6 +430,23 @@ class ClientTest : public KuduTest {
 const char *ClientTest::kTableName = "client-testtb";
 const char *ClientTest::kTable2Name = "client-testtb2";
 const uint32_t ClientTest::kNoBound = kuint32max;
+
+TEST_F(ClientTest, TestListTables) {
+  vector<string> tables;
+  ASSERT_TRUE(client_->ListTables(&tables).ok());
+  std::sort(tables.begin(), tables.end());
+  ASSERT_EQ(string(kTableName), tables[0]);
+  ASSERT_EQ(string(kTable2Name), tables[1]);
+  tables.clear();
+  ASSERT_TRUE(client_->ListTables("testtb2", &tables).ok());
+  ASSERT_EQ(1, tables.size());
+  ASSERT_EQ(string(kTable2Name), tables[0]);
+}
+
+TEST_F(ClientTest, TestListTabletServers) {
+  vector<string> tss;
+  ASSERT_TRUE(client_->ListTabletServers(&tss).ok());
+}
 
 TEST_F(ClientTest, TestBadTable) {
   scoped_refptr<KuduTable> t;

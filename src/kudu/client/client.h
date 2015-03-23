@@ -152,6 +152,15 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   Status GetTableSchema(const std::string& table_name,
                         KuduSchema* schema);
 
+  Status ListTabletServers(std::vector<std::string> * tablet_servers);
+
+  Status ListTables(const std::string& filter,
+                    std::vector<std::string> * tables);
+
+  Status ListTables(std::vector<std::string> * tables);
+
+  Status TableExists(const std::string& table_name, bool * exists);
+
   // Open the table with the given name. If the table has not been opened before
   // in this client, this will do an RPC to ensure that the table exists and
   // look up its schema.

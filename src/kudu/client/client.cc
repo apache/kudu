@@ -188,6 +188,38 @@ Status KuduClient::GetTableSchema(const string& table_name,
                                schema);
 }
 
+Status KuduClient::ListTabletServers(std::vector<std::string> * tablet_servers) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(default_admin_operation_timeout());
+  return data_->ListTabletServers(this, deadline, tablet_servers);
+}
+
+Status KuduClient::ListTables(const std::string& filter,
+                                 std::vector<std::string> * tables) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(default_admin_operation_timeout());
+  return data_->ListTables(this, deadline, filter, tables);
+}
+
+Status KuduClient::ListTables(std::vector<std::string> * tables) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(default_admin_operation_timeout());
+  return data_->ListTables(this, deadline, std::string(), tables);
+}
+
+Status KuduClient::TableExists(const std::string& table_name, bool * exists) {
+  std::vector<std::string> tables;
+  RETURN_NOT_OK(ListTables(table_name, &tables));
+  BOOST_FOREACH(const string& table, tables) {
+    if (table == table_name) {
+      *exists = true;
+      return Status::OK();
+    }
+  }
+  *exists = false;
+  return Status::OK();
+}
+
 Status KuduClient::OpenTable(const string& table_name,
                              scoped_refptr<KuduTable>* table) {
   KuduSchema schema;
