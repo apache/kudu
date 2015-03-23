@@ -1065,7 +1065,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
     ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
     req.set_call_seq_id(0);
     scan->set_read_mode(READ_AT_SNAPSHOT);
-    scan->set_order_by_primary_key(true);
+    scan->set_order_mode(ORDERED);
 
     // Send the call
     {

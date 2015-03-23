@@ -35,6 +35,7 @@ KuduScanner::Data::Data(KuduTable* table)
     batch_size_bytes_(0),
     selection_(KuduClient::CLOSEST_REPLICA),
     read_mode_(READ_LATEST),
+    order_mode_(UNORDERED),
     snapshot_timestamp_(kNoTimestamp),
     table_(DCHECK_NOTNULL(table)),
     projection_(table->schema().schema_.get()),
@@ -96,6 +97,18 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
     case READ_AT_SNAPSHOT: scan->set_read_mode(kudu::READ_AT_SNAPSHOT); break;
     default: LOG(FATAL) << "Unexpected read mode.";
   }
+
+  switch (order_mode_) {
+    case UNORDERED: scan->set_order_mode(kudu::UNORDERED); break;
+    case ORDERED: scan->set_order_mode(kudu::ORDERED); break;
+    default: LOG(FATAL) << "Unexpected order mode.";
+  }
+
+  if (encoded_last_row_key_.length() > 0) {
+    VLOG(1) << "Setting NewScanRequestPB encoded_last_row_key to " << encoded_last_row_key_;
+    scan->set_encoded_last_row_key(encoded_last_row_key_);
+  }
+
   scan->set_cache_blocks(spec_.cache_blocks());
 
   if (snapshot_timestamp_ != kNoTimestamp) {
@@ -154,6 +167,7 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
         &ts));
     CHECK(ts);
     CHECK(ts->proxy());
+    ts_ = ts;
     proxy_ = ts->proxy();
     Status s = proxy_->Scan(next_req_, &last_response_, &controller_);
     if (s.ok()) {
@@ -176,6 +190,16 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
     VLOG(1) << "Opened tablet " << remote_->tablet_id() << ", no scanner ID assigned";
   } else {
     VLOG(1) << "Opened tablet " << remote_->tablet_id() << " (no rows), no scanner ID assigned";
+  }
+
+  // If present in the response, set the snapshot timestamp and the encoded last row key.
+  // This is used when retrying the scan elsewhere.
+  // The last row key is also updated on each scan response.
+  if (order_mode_ == ORDERED) {
+    CHECK(last_response_.has_snap_timestamp());
+    CHECK(last_response_.has_encoded_last_row_key());
+    snapshot_timestamp_ = last_response_.snap_timestamp();
+    encoded_last_row_key_ = last_response_.encoded_last_row_key();
   }
 
   return Status::OK();

@@ -65,8 +65,13 @@ class KuduScanner::Data {
   KuduClient::ReplicaSelection selection_;
 
   ReadMode read_mode_;
+  OrderMode order_mode_;
   int64_t snapshot_timestamp_;
 
+  // The encoded last row key from the most recent scan response.
+  std::string encoded_last_row_key_;
+
+  internal::RemoteTabletServer* ts_;
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   // The next scan request to be sent. This is cached as a field

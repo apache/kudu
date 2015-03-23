@@ -199,7 +199,7 @@ message NewScanRequestPB {
 
   // Whether to order the returned rows by primary key.
   // This is used for scanner fault-tolerance.
-  optional bool order_by_primary_key = 11 [default = false];
+  optional OrderMode order_mode = 11 [default = UNORDERED];
 
   // If retrying a scan, the last key returned in the previous scan response.
   optional bytes encoded_last_row_key = 12;

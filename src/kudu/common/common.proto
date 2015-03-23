@@ -183,3 +183,15 @@ enum ReadMode {
   // TODO implement actually signing the propagated timestamp.
   READ_AT_SNAPSHOT = 2;
 }
+
+// The possible order modes for clients.
+// Clients specify these in new scan requests.
+// Ordered scans are fault-tolerant, and can be retried elsewhere in the case
+// of tablet server failure. However, ordered scans impose additional overhead
+// since the tablet server needs to sort the result rows.
+enum OrderMode {
+    // This is the default order mode.
+    UNORDERED = 1;
+    ORDERED = 2;
+}
+

@@ -60,6 +60,10 @@ MAKE_ENUM_LIMITS(kudu::client::KuduScanner::ReadMode,
                  kudu::client::KuduScanner::READ_LATEST,
                  kudu::client::KuduScanner::READ_AT_SNAPSHOT);
 
+MAKE_ENUM_LIMITS(kudu::client::KuduScanner::OrderMode,
+                 kudu::client::KuduScanner::UNORDERED,
+                 kudu::client::KuduScanner::ORDERED);
+
 namespace kudu {
 namespace client {
 
@@ -679,6 +683,17 @@ Status KuduScanner::SetReadMode(ReadMode read_mode) {
   return Status::OK();
 }
 
+Status KuduScanner::SetOrderMode(OrderMode order_mode) {
+  if (data_->open_) {
+    return Status::IllegalState("Order mode must be set before Open()");
+  }
+  if (!tight_enum_test<OrderMode>(order_mode)) {
+    return Status::InvalidArgument("Bad order mode");
+  }
+  data_->order_mode_ = order_mode;
+  return Status::OK();
+}
+
 Status KuduScanner::SetSnapshotMicros(uint64_t snapshot_timestamp_micros) {
   if (data_->open_) {
     return Status::IllegalState("Snapshot timestamp must be set before Open()");
@@ -797,25 +812,25 @@ void KuduScanner::Close() {
   CHECK(data_->proxy_);
 
   VLOG(1) << "Ending scan " << ToString();
-  if (data_->next_req_.scanner_id().empty()) {
-    // In the case that the scan matched no rows, and this was determined
-    // in the Open() call, then we won't have been assigned a scanner ID
-    // at all. So, no need to close on the server side.
-    data_->open_ = false;
-    return;
-  }
 
-  gscoped_ptr<CloseCallback> closer(new CloseCallback);
-  closer->scanner_id = data_->next_req_.scanner_id();
-  data_->PrepareRequest(KuduScanner::Data::CLOSE);
-  data_->next_req_.set_close_scanner(true);
-  closer->controller.set_timeout(data_->timeout_);
-  data_->proxy_->ScanAsync(data_->next_req_, &closer->response, &closer->controller,
-                           boost::bind(&CloseCallback::Callback, closer.get()));
-  ignore_result(closer.release());
-  data_->next_req_.Clear();
+  // Close the scanner on the server-side, if necessary.
+  //
+  // If the scan did not match any rows, the tserver will not assign a scanner ID.
+  // This is reflected in the Open() response. In this case, there is no server-side state
+  // to clean up.
+  if (!data_->next_req_.scanner_id().empty()) {
+    gscoped_ptr<CloseCallback> closer(new CloseCallback);
+    closer->scanner_id = data_->next_req_.scanner_id();
+    data_->PrepareRequest(KuduScanner::Data::CLOSE);
+    data_->next_req_.set_close_scanner(true);
+    closer->controller.set_timeout(data_->timeout_);
+    data_->proxy_->ScanAsync(data_->next_req_, &closer->response, &closer->controller,
+                             boost::bind(&CloseCallback::Callback, closer.get()));
+    ignore_result(closer.release());
+  }
   data_->proxy_.reset();
   data_->open_ = false;
+  return;
 }
 
 bool KuduScanner::HasMoreRows() const {
@@ -840,18 +855,30 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
     return data_->ExtractRows(rows);
   } else if (data_->last_response_.has_more_results()) {
     // More data is available in this tablet.
-    //
-    // Note that, in this case, we can't fail to a replica on error. Why?
-    // Because we're mid-tablet, and we might end up rereading some rows.
-    // Only fault tolerant scans can try other replicas here.
     VLOG(1) << "Continuing scan " << ToString();
 
     data_->controller_.Reset();
     data_->controller_.set_timeout(data_->timeout_);
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
-    RETURN_NOT_OK(data_->proxy_->Scan(data_->next_req_,
-                                      &data_->last_response_,
-                                      &data_->controller_));
+    Status s = data_->proxy_->Scan(data_->next_req_,
+                                   &data_->last_response_,
+                                   &data_->controller_);
+    // If the RPC failed, mark this tablet server as failed.
+    // Ordered scans can be restarted at another tablet server via a fresh open.
+    // Unordered scans must return an error status up to the client.
+    if (!s.ok()) {
+      data_->table_->client()->data_->meta_cache_->MarkTSFailed(data_->ts_, s);
+      if (data_->order_mode_ == ORDERED) {
+        LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
+            << ToString() << " failed, retrying scan elsewhere.";
+        // Use the start key of the current tablet as the start key.
+        return data_->OpenTablet(data_->remote_->start_key());
+      }
+      return s;
+    }
+    if (data_->last_response_.has_encoded_last_row_key()) {
+      data_->encoded_last_row_key_ = data_->last_response_.encoded_last_row_key();
+    }
     RETURN_NOT_OK(data_->CheckForErrors());
     return data_->ExtractRows(rows);
   } else if (data_->MoreTablets()) {

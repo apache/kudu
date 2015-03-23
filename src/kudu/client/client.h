@@ -221,6 +221,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   friend class internal::RemoteTabletServer;
   friend class internal::WriteRpc;
 
+  FRIEND_TEST(ClientTest, TestScanFaultTolerance);
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
   FRIEND_TEST(ClientTest, TestReplicatedTabletWritesWithLeaderElection);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);
@@ -714,6 +715,21 @@ class KUDU_EXPORT KuduScanner {
     READ_AT_SNAPSHOT
   };
 
+  // Whether the rows should be returned in order. This affects the fault-tolerance properties
+  // of a scanner.
+  enum OrderMode {
+    // Rows will be returned in an arbitrary order determined by the tablet server.
+    // This is efficient, but unordered scans are not fault-tolerant and cannot be resumed
+    // in the case of tablet server failure.
+    //
+    // This is the default mode.
+    UNORDERED,
+    // Rows will be returned ordered by primary key. Sorting the rows imposes additional overhead
+    // on the tablet server, but means that scans are fault-tolerant and will be resumed at
+    // another tablet server in the case of failure.
+    ORDERED
+  };
+
   // Default scanner timeout.
   enum { kRpcTimeoutMillis = 5000 };
 
@@ -764,6 +780,8 @@ class KUDU_EXPORT KuduScanner {
   //
   // Note: will be true provided there's at least one more tablet left to
   // scan, even if that tablet has no data (we'll only know once we scan it).
+  // It will also be true after the initially opening the scanner before
+  // NextBatch is called for the first time.
   bool HasMoreRows() const;
 
   // Appends the next batch of rows to the 'rows' vector.
@@ -781,6 +799,9 @@ class KUDU_EXPORT KuduScanner {
 
   // Sets the ReadMode. Default is READ_LATEST.
   Status SetReadMode(ReadMode read_mode) WARN_UNUSED_RESULT;
+
+  // Sets the OrderMode. Default is UNORDERED.
+  Status SetOrderMode(OrderMode order_mode) WARN_UNUSED_RESULT;
 
   // Sets the snapshot timestamp, in microseconds since the epoch, for scans in
   // READ_AT_SNAPSHOT mode.
@@ -800,6 +821,8 @@ class KUDU_EXPORT KuduScanner {
   class KUDU_NO_EXPORT Data;
 
   FRIEND_TEST(ClientTest, TestScanNoBlockCaching);
+  FRIEND_TEST(ClientTest, TestScanCloseProxy);
+  FRIEND_TEST(ClientTest, TestScanFaultTolerance);
 
   gscoped_ptr<Data> data_;
 

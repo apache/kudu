@@ -16,6 +16,7 @@
 #include "kudu/client/encoded_key.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/scanner-internal.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.proxy.h"
@@ -774,6 +775,101 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
     }
   }
   ASSERT_EQ(nrows, 6);
+}
+
+// Check that the tserver proxy is reset on close, even for empty tables.
+TEST_F(ClientTest, TestScanCloseProxy) {
+  const std::string kEmptyTable = "TestScanCloseProxy";
+  scoped_refptr<KuduTable> table;
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kEmptyTable, 3, GenerateSplitKeys(), &table));
+
+  {
+    // Open and close an empty scanner.
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.Open());
+    scanner.Close();
+    CHECK_EQ(0, scanner.data_->proxy_.use_count()) << "Proxy was not reset!";
+  }
+
+  // Insert some test rows.
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(),
+                                         FLAGS_test_scan_num_rows));
+
+  {
+    // Open and close a scanner with rows.
+    KuduScanner scanner(table.get());
+    ASSERT_OK(scanner.Open());
+    scanner.Close();
+    CHECK_EQ(0, scanner.data_->proxy_.use_count()) << "Proxy was not reset!";
+  }
+}
+
+// Test that ordered snapshot scans can be resumed in the case of tablet server failure.
+TEST_F(ClientTest, TestScanFaultTolerance) {
+  // Create test table and insert test rows.
+  const std::string kScanTable = "TestScanFaultTolerance";
+  scoped_refptr<KuduTable> table;
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, 3, GenerateSplitKeys(), &table));
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(),
+                                         FLAGS_test_scan_num_rows));
+
+  // Do an initial scan to determine the expected rows for later verification.
+  vector<std::string> expected_rows;
+  ScanTableToStrings(table.get(), &expected_rows);
+
+  // Initialize ordered snapshot scanner.
+  KuduScanner scanner(table.get());
+  ASSERT_OK(scanner.SetOrderMode(KuduScanner::ORDERED));
+  ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+  // Set a small batch size so it reads in multiple batches.
+  ASSERT_OK(scanner.SetBatchSizeBytes(1));
+
+  ASSERT_OK(scanner.Open());
+  vector<std::string> rows;
+
+  // Do a first scan to get us started.
+  {
+    ASSERT_TRUE(scanner.HasMoreRows());
+    vector<KuduRowResult> result_rows;
+    ASSERT_OK(scanner.NextBatch(&result_rows));
+    ASSERT_GT(result_rows.size(), 0);
+    BOOST_FOREACH(KuduRowResult& r, result_rows) {
+      rows.push_back(r.ToString());
+    }
+    ASSERT_TRUE(scanner.HasMoreRows());
+  }
+
+  // Kill the tablet serving the scan.
+  {
+    bool ts_killed = false;
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+      if (ts->server()->instance_pb().permanent_uuid() == scanner.data_->ts_->permanent_uuid()) {
+        LOG(INFO) << "Killing TS running on " << ts->bound_rpc_addr().ToString();
+        ts->Shutdown();
+        ts_killed = true;
+        break;
+      }
+    }
+    ASSERT_TRUE(ts_killed);
+  }
+  // Check that we can still read the next batch.
+  ASSERT_TRUE(scanner.HasMoreRows());
+  ASSERT_OK(scanner.SetBatchSizeBytes(1024*1024));
+  while (scanner.HasMoreRows()) {
+    vector<KuduRowResult> result_rows;
+    ASSERT_OK(scanner.NextBatch(&result_rows));
+    BOOST_FOREACH(KuduRowResult& r, result_rows) {
+      rows.push_back(r.ToString());
+    }
+  }
+  scanner.Close();
+
+  // Verify results from the scan with failure.
+  ASSERT_EQ(expected_rows.size(), rows.size());
+  for (int i = 0; i < rows.size(); i++) {
+    ASSERT_EQ(expected_rows[i], rows[i]);
+  }
 }
 
 TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {

@@ -927,19 +927,18 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
                           "Invalid scan stop key");
   }
 
-  if (scan_pb.order_by_primary_key() && scan_pb.has_encoded_last_row_key()) {
+  if (scan_pb.order_mode() == ORDERED && scan_pb.has_encoded_last_row_key()) {
     if (start) {
       return Status::InvalidArgument("Cannot specify both a start key and a last key");
     }
     // Set the start key to the last key from a previous scan result.
-    // Need to trim this key at the end, to prevent including it multiple times.
     RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(
                             tablet_schema, scanner->arena(),
                             scan_pb.encoded_last_row_key(), &start),
-                          "Invalid scan last key");
-    // Increment the last key, so we don't return the last row again.
+                          "Failed to decode encoded last row key");
+    // Increment the start key, so we don't return the last row again.
     RETURN_NOT_OK_PREPEND(EncodedKey::IncrementEncodedKey(tablet_schema, &start),
-                          "Invalid scan last key");
+                          "Failed to increment encoded last row key");
   }
 
   if (start) {
@@ -1006,7 +1005,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
 
   // When doing an ordered scan, we need to include the key columns to be able to encode
   // the last row key for the scan response.
-  if (scan_pb.order_by_primary_key() &&
+  if (scan_pb.order_mode() == kudu::ORDERED &&
       projection.num_key_columns() != tablet_schema.num_key_columns()) {
     for (int i = 0; i < tablet_schema.num_key_columns(); i++) {
       const ColumnSchema &col = tablet_schema.column(i);
@@ -1061,7 +1060,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     return Status::InvalidArgument("User requests should not have Column IDs");
   }
 
-  if (scan_pb.order_by_primary_key()) {
+  if (scan_pb.order_mode() == ORDERED) {
     // Ordered scans must be at a snapshot so that we perform a serializable read (which can be
     // resumed). Otherwise, this would be read committed isolation, which is not resumable.
     if (scan_pb.read_mode() != READ_AT_SNAPSHOT) {
@@ -1138,6 +1137,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   TRACE("has_more: $0", *has_more_results);
   if (!*has_more_results) {
     // If there are no more rows, we can short circuit some work and respond immediately.
+    VLOG(1) << "No more rows, short-circuiting out without creating a server-side scanner.";
     return Status::OK();
   }
 
@@ -1297,8 +1297,12 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   tablet_peer->tablet()->metrics()->snapshot_scan_inflight_wait_duration->Increment(duration_usec);
   TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);
 
-  tablet::Tablet::OrderMode order =
-      scan_pb.order_by_primary_key() ? tablet::Tablet::ORDERED : tablet::Tablet::UNORDERED;
+  tablet::Tablet::OrderMode order;
+  switch (scan_pb.order_mode()) {
+    case UNORDERED: order = tablet::Tablet::UNORDERED; break;
+    case ORDERED: order = tablet::Tablet::ORDERED; break;
+    default: LOG(FATAL) << "Unexpected order mode.";
+  }
   RETURN_NOT_OK(tablet_peer->tablet()->NewRowIterator(projection, snap,
                                                       order, iter));
   *snap_timestamp = tmp_snap_timestamp;
