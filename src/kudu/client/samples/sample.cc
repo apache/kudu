@@ -1,6 +1,7 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <ctime>
 #include <iostream>
 #include <sstream>
 #include <tr1/memory>
@@ -174,7 +175,25 @@ static Status ScanRows(scoped_refptr<KuduTable>& table) {
   return Status::OK();
 }
 
+static void LogCb(kudu::KuduLogSeverity severity,
+                  const string& filename,
+                  int line_number,
+                  const struct ::tm* time,
+                  const string& msg) {
+  LOG(INFO) << "Received log message from Kudu client library";
+  LOG(INFO) << " Severity: " << severity;
+  LOG(INFO) << " Filename: " << filename;
+  LOG(INFO) << " Line number: " << line_number;
+  char time_buf[32];
+  // Example: Tue Mar 24 11:46:43 2015.
+  CHECK(strftime(time_buf, sizeof(time_buf), "%a %b %d %T %Y", time));
+  LOG(INFO) << " Time: " << time_buf;
+  LOG(INFO) << " Message: " << msg;
+}
+
 int main(int argc, char* argv[]) {
+  kudu::client::InstallLoggingCallback(kudu::Bind(&LogCb));
+
   const string kTableName = "test_table";
 
   // Create and connect a client.

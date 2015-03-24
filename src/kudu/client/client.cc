@@ -31,6 +31,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/net/dns_resolver.h"
+#include "kudu/util/logging.h"
 
 using std::string;
 using std::tr1::shared_ptr;
@@ -67,6 +68,16 @@ static const int kHtTimestampBitsToShift = 12;
 using internal::Batcher;
 using internal::ErrorCollector;
 using internal::MetaCache;
+
+static const char* kProgName = "kudu_client";
+
+void InstallLoggingCallback(const LoggingCallback& cb) {
+  InitGoogleLoggingSafeBasic(kProgName, cb);
+}
+
+void UninstallLoggingCallback() {
+  ShutdownLoggingSafe();
+}
 
 KuduClientBuilder::KuduClientBuilder() {
   data_.reset(new KuduClientBuilder::Data());

@@ -138,6 +138,7 @@ if (KUDU_EXPORTED_CLIENT)
   # Headers: util
   install(FILES
     ../util/faststring.h
+    ../util/logging_callback.h
     ../util/monotime.h
     ../util/slice.h
     ../util/status.h

@@ -23,6 +23,8 @@
 #include <iostream>
 #include <fstream>
 #include <glog/logging.h>
+
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/spinlock.h"
 
 DEFINE_string(log_filename, "",
@@ -42,6 +44,54 @@ using base::SpinLockHolder;
 SpinLock logging_mutex;
 
 namespace kudu {
+
+namespace {
+
+class SimpleSink : public google::LogSink {
+ public:
+  explicit SimpleSink(const LoggingCallback& cb)
+    : cb_(cb) {
+  }
+
+  virtual ~SimpleSink() OVERRIDE {
+  }
+
+  virtual void send(google::LogSeverity severity, const char* full_filename,
+                    const char* base_filename, int line,
+                    const struct ::tm* tm_time,
+                    const char* message, size_t message_len) OVERRIDE {
+    KuduLogSeverity kudu_severity;
+    switch (severity) {
+      case google::INFO:
+        kudu_severity = SEVERITY_INFO;
+        break;
+      case google::WARNING:
+        kudu_severity = SEVERITY_WARNING;
+        break;
+      case google::ERROR:
+        kudu_severity = SEVERITY_ERROR;
+        break;
+      case google::FATAL:
+        kudu_severity = SEVERITY_FATAL;
+        break;
+      default:
+        LOG(FATAL) << "Unknown glog severity: " << severity;
+    }
+    string msg(message, message_len);
+    cb_.Run(kudu_severity, string(full_filename), line, tm_time, string(message, message_len));
+  }
+
+ private:
+
+  LoggingCallback cb_;
+};
+
+// There can only be a single instance of a SimpleSink.
+//
+// Protected by 'logging_mutex'.
+SimpleSink* registered_sink = NULL;
+
+} // anonymous namespace
 
 void InitGoogleLoggingSafe(const char* arg) {
   SpinLockHolder logging_lock(&logging_mutex);
@@ -93,6 +143,28 @@ void InitGoogleLoggingSafe(const char* arg) {
   logging_initialized = true;
 }
 
+void InitGoogleLoggingSafeBasic(const char* arg, const LoggingCallback& cb) {
+  SpinLockHolder logging_lock(&logging_mutex);
+  if (logging_initialized) return;
+
+  google::InitGoogleLogging(arg);
+
+  DCHECK(!registered_sink);
+  registered_sink = new SimpleSink(cb);
+
+  // AddLogSink() claims to take ownership of the sink, but it doesn't
+  // really; it actually expects it to remain valid until
+  // google::ShutdownGoogleLogging() is called.
+  google::AddLogSink(registered_sink);
+
+  // Disable regular file-based logging.
+  for (int severity = google::INFO; severity <= google::FATAL; severity++) {
+    google::SetLogDestination(severity, "");
+  }
+
+  logging_initialized = true;
+}
+
 void GetFullLogFilename(google::LogSeverity severity, string* filename) {
   stringstream ss;
   ss << FLAGS_log_dir << "/" << FLAGS_log_filename << "."
@@ -100,12 +172,19 @@ void GetFullLogFilename(google::LogSeverity severity, string* filename) {
   *filename = ss.str();
 }
 
-void ShutdownLogging() {
-  // This method may only correctly be called once (which this lock does not
-  // enforce), but this lock protects against concurrent calls with
-  // InitGoogleLoggingSafe
+void ShutdownLoggingSafe() {
   SpinLockHolder l(&logging_mutex);
+  if (!logging_initialized) return;
+
+  if (registered_sink) {
+    google::RemoveLogSink(registered_sink);
+    delete registered_sink;
+    registered_sink = NULL;
+  }
+
   google::ShutdownGoogleLogging();
+
+  logging_initialized = false;
 }
 
 void LogCommandLineFlags() {

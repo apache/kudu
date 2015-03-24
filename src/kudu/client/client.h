@@ -15,6 +15,7 @@
 #include "kudu/gutil/gtest.h"
 #include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/logging_callback.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
@@ -39,6 +40,21 @@ class RemoteTablet;
 class RemoteTabletServer;
 class WriteRpc;
 } // namespace internal
+
+// Installs a callback for internal client logging. It is invoked for a
+// log event of any severity, across any KuduClient instance.
+//
+// Only the first invocation has any effect; subsequent invocations are
+// a no-op.
+void KUDU_EXPORT InstallLoggingCallback(const LoggingCallback& cb);
+
+// Removes a callback installed via InstallLoggingCallback().
+//
+// Only the first invocation has any effect; subsequent invocations are
+// a no-op.
+//
+// Should be called before unloading the client library.
+void KUDU_EXPORT UninstallLoggingCallback();
 
 // Creates a new KuduClient with the desired options.
 //
