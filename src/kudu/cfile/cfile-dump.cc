@@ -26,6 +26,7 @@ using std::endl;
 void DumpFile(const string& root_path, const string& block_id_str) {
   BlockId block_id(block_id_str);
   FsManager fs_manager(Env::Default(), root_path);
+  CHECK_OK(fs_manager.Open());
   gscoped_ptr<fs::ReadableBlock> block;
   CHECK_OK(fs_manager.OpenBlock(block_id, &block));
   gscoped_ptr<CFileReader> reader;
