@@ -205,6 +205,9 @@ class ExternalMiniCluster {
   // given timeout.
   Status WaitForTabletServerCount(int count, const MonoDelta& timeout);
 
+  // Runs gtest assertions that no servers have crashed.
+  void AssertNoCrashes();
+
   // Wait until all tablets on the given tablet server are in 'RUNNING'
   // state.
   Status WaitForTabletsRunning(ExternalTabletServer* ts, const MonoDelta& timeout);

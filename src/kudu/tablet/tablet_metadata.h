@@ -71,6 +71,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                              const TabletDataState& initial_tablet_data_state,
                              scoped_refptr<TabletMetadata>* metadata);
 
+  static void CollectBlockIdPBs(const TabletSuperBlockPB& superblock,
+                                std::vector<BlockIdPB>* block_ids);
+
   const std::string& tablet_id() const {
     DCHECK_NE(state_, kNotLoadedYet);
     return tablet_id_;
@@ -146,6 +149,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Blocks are removed from this set after they are successfully deleted
   // in a call to DeleteOrphanedBlocks().
   void AddOrphanedBlocks(const std::vector<BlockId>& block_ids);
+
+  // Delete all of the rowsets in this tablet, as well as the metadata.
+  // Returns only once all data and metadata has been removed.
+  Status DeleteTablet();
 
   // Create a new RowSetMetadata for this tablet.
   // Does not add the new rowset to the list of rowsets. Use one of the Update()

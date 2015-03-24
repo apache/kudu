@@ -97,7 +97,6 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
 }
 
 TabletPeer::~TabletPeer() {
-  UnregisterMaintenanceOps();
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, SHUTDOWN);
 }
@@ -169,7 +168,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 }
 
 Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
-
+  lock_guard<simple_spinlock> l(&state_change_lock_);
   TRACE("Starting consensus");
 
   VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer starting";
@@ -208,7 +207,13 @@ TabletStatePB TabletPeer::Shutdown() {
     state_ = QUIESCING;
   }
 
+  lock_guard<simple_spinlock> l(&state_change_lock_);
+  // Even though Tablet::Shutdown() also unregisters its ops, we have to do it here
+  // to ensure that any currently running operation finishes before we proceed with
+  // the rest of the shutdown sequence. In particular, a maintenance operation could
+  // indirectly end up calling into the log, which we are about to shut down.
   if (tablet_) tablet_->UnregisterMaintenanceOps();
+  UnregisterMaintenanceOps();
 
   if (consensus_) consensus_->Shutdown();
 
@@ -234,6 +239,11 @@ TabletStatePB TabletPeer::Shutdown() {
     boost::lock_guard<simple_spinlock> lock(lock_);
     state_ = SHUTDOWN;
   }
+
+  if (tablet_) {
+    tablet_->Shutdown();
+  }
+
   return prev_state;
 }
 
@@ -417,8 +427,9 @@ Status TabletPeer::GetGCableDataSize(int64_t* retention_size) const {
 Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    CHECK(state_ == RUNNING || state_ == BOOTSTRAPPING)
-      << "Bad state: " << TabletStatePB_Name(state_);
+    if (state_ != RUNNING && state_ != BOOTSTRAPPING) {
+      return Status::IllegalState(TabletStatePB_Name(state_));
+    }
   }
 
   consensus::ReplicateMsg* replicate_msg = round->replicate_msg();
@@ -493,6 +504,16 @@ void TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transactio
 }
 
 void TabletPeer::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
+  // Taking state_change_lock_ ensures that we don't shut down concurrently with
+  // this last start-up task.
+  lock_guard<simple_spinlock> l(&state_change_lock_);
+
+  if (state() != RUNNING) {
+    LOG(WARNING) << "Not registering maintenance operations for " << tablet_
+                 << ": tablet not in RUNNING state";
+    return;
+  }
+
   DCHECK(maintenance_ops_.empty());
 
   gscoped_ptr<MaintenanceOp> mrs_flush_op(new FlushMRSOp(this));
@@ -511,6 +532,7 @@ void TabletPeer::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
 }
 
 void TabletPeer::UnregisterMaintenanceOps() {
+  DCHECK(state_change_lock_.is_locked());
   BOOST_FOREACH(MaintenanceOp* op, maintenance_ops_) {
     op->Unregister();
   }

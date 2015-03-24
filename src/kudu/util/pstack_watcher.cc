@@ -64,7 +64,7 @@ void PstackWatcher::Run() {
   cond_.TimedWait(timeout_);
   if (!running_) return;
 
-  WARN_NOT_OK(DumpStacks(), "Unable to print pstack from watcher");
+  WARN_NOT_OK(DumpStacks(DUMP_FULL), "Unable to print pstack from watcher");
   running_ = false;
   cond_.Broadcast();
 }
@@ -90,15 +90,15 @@ Status PstackWatcher::HasProgram(const char* progname) {
                                      WEXITSTATUS(wait_status)));
 }
 
-Status PstackWatcher::DumpStacks() {
-  return DumpStacks(getpid());
+Status PstackWatcher::DumpStacks(int flags) {
+  return DumpPidStacks(getpid(), flags);
 }
 
-Status PstackWatcher::DumpStacks(pid_t pid) {
+Status PstackWatcher::DumpPidStacks(pid_t pid, int flags) {
 
   // Prefer GDB if available; it gives us line numbers and thread names.
   if (HasProgram("gdb").ok()) {
-    return RunGdbStackDump(pid);
+    return RunGdbStackDump(pid, flags);
   }
 
   // Otherwise, try to use pstack or gstack.
@@ -115,7 +115,7 @@ Status PstackWatcher::DumpStacks(pid_t pid) {
   return RunPstack(progname, pid);
 }
 
-Status PstackWatcher::RunGdbStackDump(pid_t pid) {
+Status PstackWatcher::RunGdbStackDump(pid_t pid, int flags) {
   // Command: gdb -quiet -batch -nx -ex cmd1 -ex cmd2 /proc/$PID/exe $PID
   string prog("gdb");
   vector<string> argv;
@@ -129,8 +129,10 @@ Status PstackWatcher::RunGdbStackDump(pid_t pid) {
   argv.push_back("info threads");
   argv.push_back("-ex");
   argv.push_back("thread apply all bt");
-  argv.push_back("-ex");
-  argv.push_back("thread apply all bt full");
+  if (flags & DUMP_FULL) {
+    argv.push_back("-ex");
+    argv.push_back("thread apply all bt full");
+  }
   argv.push_back(Substitute("/proc/$0/exe", pid));
   argv.push_back(Substitute("$0", pid));
   return RunStackDump(prog, argv);
@@ -151,14 +153,14 @@ Status PstackWatcher::RunStackDump(const string& prog, const vector<string>& arg
     return Status::IOError("Unable to flush stdout", ErrnoToString(errno), errno);
   }
   Subprocess pstack_proc(prog, argv);
-  RETURN_NOT_OK_PREPEND(pstack_proc.Start(), "DumpStacks proc.Start() failed");
+  RETURN_NOT_OK_PREPEND(pstack_proc.Start(), "RunStackDump proc.Start() failed");
   if (::close(pstack_proc.ReleaseChildStdinFd()) == -1) {
     return Status::IOError("Unable to close child stdin", ErrnoToString(errno), errno);
   }
   int ret;
-  RETURN_NOT_OK_PREPEND(pstack_proc.Wait(&ret), "DumpStacks proc.Wait() failed");
+  RETURN_NOT_OK_PREPEND(pstack_proc.Wait(&ret), "RunStackDump proc.Wait() failed");
   if (ret == -1) {
-    return Status::RuntimeError("DumpStacks proc.Wait() error", ErrnoToString(errno), errno);
+    return Status::RuntimeError("RunStackDump proc.Wait() error", ErrnoToString(errno), errno);
   }
   printf("************************* END STACKS ***************************\n");
   if (fflush(stdout) == EOF) {

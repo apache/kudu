@@ -25,6 +25,8 @@ class Thread;
 // to verify that replicas do not diverge.
 class TestWorkload {
  public:
+  static const char* const kDefaultTableName;
+
   explicit TestWorkload(ExternalMiniCluster* cluster);
   ~TestWorkload();
 
@@ -44,8 +46,18 @@ class TestWorkload {
     write_timeout_millis_ = t;
   }
 
+  // Set whether to fail if we see a TimedOut() error inserting a row.
+  // By default, this triggers a CHECK failure.
   void set_timeout_allowed(bool allowed) {
     timeout_allowed_ = allowed;
+  }
+
+  // Set whether to fail if we see a NotFound() error inserting a row.
+  // This sort of error is triggered if the table is deleted while the workload
+  // is running.
+  // By default, this triggers a CHECK failure.
+  void set_not_found_allowed(bool allowed) {
+    not_found_allowed_ = allowed;
   }
 
   void set_num_replicas(int r) {
@@ -93,6 +105,7 @@ class TestWorkload {
   int write_batch_size_;
   int write_timeout_millis_;
   bool timeout_allowed_;
+  bool not_found_allowed_;
 
   int num_replicas_;
   std::string table_name_;

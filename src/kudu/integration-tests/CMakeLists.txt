@@ -37,6 +37,7 @@ ADD_KUDU_TEST(raft_consensus-itest RUN_SERIAL true)
 ADD_KUDU_TEST(ts_tablet_manager-itest)
 ADD_KUDU_TEST(ts_recovery-itest)
 ADD_KUDU_TEST(create-table-stress-test)
+ADD_KUDU_TEST(delete_table-test)
 ADD_KUDU_TEST(external_mini_cluster-test RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(linked_list-test RESOURCE_LOCK "master-rpc-ports")
 

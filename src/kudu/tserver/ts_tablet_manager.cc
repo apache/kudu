@@ -346,9 +346,16 @@ Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_pee
     return Status::ServiceUnavailable("Tablet Peer not in RUNNING state",
                                       tablet::TabletStatePB_Name(prev_state));
   }
-  boost::lock_guard<rw_spinlock> lock(lock_);
-  CHECK_EQ(1, tablet_map_.erase(tablet_peer->tablet()->tablet_id()));
-  // TODO: Trash the data
+
+  {
+    boost::lock_guard<rw_spinlock> lock(lock_);
+    CHECK_EQ(1, tablet_map_.erase(tablet_peer->tablet()->tablet_id()));
+  }
+
+  WARN_NOT_OK(tablet_peer->tablet()->DeleteOnDiskData(),
+              Substitute("Unable to delete on-disk data from tablet $0",
+                         tablet_peer->tablet_id()));
+
   return Status::OK();
 }
 

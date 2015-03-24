@@ -33,7 +33,7 @@ using client::KuduTable;
 using client::KuduTableCreator;
 using std::tr1::shared_ptr;
 
-static const char* kDefaultTableName = "test-workload";
+const char* const TestWorkload::kDefaultTableName = "test-workload";
 
 TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
   : cluster_(cluster),
@@ -41,6 +41,7 @@ TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
     write_batch_size_(50),
     write_timeout_millis_(20000),
     timeout_allowed_(false),
+    not_found_allowed_(false),
     num_replicas_(3),
     table_name_(kDefaultTableName),
     start_latch_(0),
@@ -109,6 +110,9 @@ void TestWorkload::WriteThread() {
           continue;
         }
 
+        if (not_found_allowed_ && e->status().IsNotFound()) {
+          continue;
+        }
         // We don't handle write idempotency yet. (i.e making sure that when a leader fails
         // writes to it that were eventually committed by the new leader but un-ackd to the
         // client are not retried), so some errors are expected.

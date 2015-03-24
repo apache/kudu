@@ -93,6 +93,12 @@ class Tablet {
   // This transitions from kBootstrapping to kOpen state.
   void MarkFinishedBootstrapping();
 
+  void Shutdown();
+
+  // Delete all on-disk data and metadata for this tablet. Should be used only
+  // after the tablet has been shut down.
+  Status DeleteOnDiskData();
+
   // Decode the Write (insert/mutate) operations from within a user's
   // request.
   Status DecodeWriteOperations(const Schema* client_schema,
@@ -483,8 +489,6 @@ class Tablet {
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
   std::tr1::shared_ptr<MemTracker> dms_mem_tracker_;
-  shared_ptr<MemRowSet> memrowset_;
-  shared_ptr<RowSetTree> rowsets_;
 
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<TabletMetrics> metrics_;
@@ -514,7 +518,8 @@ class Tablet {
   enum State {
     kInitialized,
     kBootstrapping,
-    kOpen
+    kOpen,
+    kShutdown
   };
   State state_;
 

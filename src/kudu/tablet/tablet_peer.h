@@ -251,9 +251,17 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   gscoped_ptr<TabletStatusListener> status_listener_;
   simple_spinlock prepare_replicate_lock_;
 
-  // lock protecting internal (usually rare) state changes as well as access to
-  // smart pointers to data structures such as tablet_ and consensus_.
+  // Lock protecting state_ as well as smart pointers to collaborating
+  // classes such as tablet_ and consensus_.
   mutable simple_spinlock lock_;
+
+  // Lock taken during Init/Shutdown which ensures that only a single thread
+  // attempts to perform major lifecycle operations (Init/Shutdown) at once.
+  // This must be acquired before acquiring lock_ if they are acquired together.
+  // We don't just use lock_ since the lifecycle operations may take a while
+  // and we'd like other threads to be able to quickly poll the state_ variable
+  // during them in order to reject RPCs, etc.
+  mutable simple_spinlock state_change_lock_;
 
   // IMPORTANT: correct execution of PrepareTask assumes that 'prepare_pool_'
   // is single-threaded, moving to a multi-tablet setup where multiple TabletPeers

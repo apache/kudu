@@ -1309,16 +1309,23 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                             "Report from an orphaned tablet");
     return Status::OK();
   }
+  VLOG(3) << "tablet report: " << report.ShortDebugString();
 
   // TODO: we don't actually need to do the COW here until we see we're going
   // to change the state. Can we change CowedObject to lazily do the copy?
   TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
   TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::WRITE);
 
-  if (tablet_lock.data().is_deleted()) {
+  // If the TS is reporting a tablet which has been deleted, or a tablet from
+  // a table which has been deleted, send it an RPC to delete it.
+  // NOTE: when a table is deleted, we don't currently iterate over all of the
+  // tablets and mark them as deleted. Hence, we have to check the table state,
+  // not just the tablet state.
+  if (tablet_lock.data().is_deleted() ||
+      table_lock.data().is_deleted()) {
     report_updates->set_state_msg(tablet_lock.data().pb.state_msg());
     const string msg = tablet_lock.data().pb.state_msg();
-    LOG(INFO) << "Got report from replaced tablet " << tablet->ToString()
+    LOG(INFO) << "Got report from deleted tablet " << tablet->ToString()
               << " (" << msg << "): Sending delete request for this tablet";
     // TODO: Cancel tablet creation, instead of deleting, in cases where
     // that might be possible (tablet creation timeout & replacement).
@@ -1359,8 +1366,6 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
 
 
-  table_lock.Unlock();
-
   if (report.has_error()) {
     Status s = StatusFromPB(report.error());
     DCHECK(!s.ok());
@@ -1368,10 +1373,6 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     LOG(WARNING) << "Tablet " << tablet->ToString() << " has failed on TS "
                  << ts_desc->permanent_uuid() << ": " << s.ToString();
     return Status::OK();
-  }
-
-  if (report.has_schema_version() && !tablet_needs_alter) {
-    HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
   }
 
   // The report will not have a committed_consensus_state if it is in the middle of
@@ -1430,6 +1431,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     }
   }
 
+  table_lock.Unlock();
   // We update the tablets each time that someone reports it.
   // This shouldn't be very frequent and should only happen when something in fact changed.
   Status s = sys_catalog_->UpdateTablets(boost::assign::list_of(tablet.get()));
@@ -1445,7 +1447,10 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   // request needs to know who the most recent leader is.
   if (tablet_needs_alter) {
     SendAlterTabletRequest(tablet);
+  } else if (report.has_schema_version()) {
+    HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
   }
+
   return Status::OK();
 }
 
@@ -2042,6 +2047,8 @@ void CatalogManager::SendDeleteTabletRequestsForTable(const scoped_refptr<TableI
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
     std::vector<TabletReplica> locations;
     tablet->GetLocations(&locations);
+    LOG(INFO) << "Sending DeleteTablet for " << locations.size()
+              << " replicas of tablet " << tablet->tablet_id();
     BOOST_FOREACH(const TabletReplica& replica, locations) {
       SendDeleteTabletRequest(tablet->tablet_id(), table, replica.ts_desc,
                               "Table being deleted");

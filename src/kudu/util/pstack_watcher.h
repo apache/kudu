@@ -19,12 +19,19 @@ namespace kudu {
 class PstackWatcher {
  public:
 
+  enum Flags {
+    NO_FLAGS = 0,
+
+    // Run 'thread apply all bt full', which is very verbose output
+    DUMP_FULL = 1
+  };
+
   // Static method to collect and write stack dump output to stdout of the current
   // process.
-  static Status DumpStacks();
+  static Status DumpStacks(int flags = NO_FLAGS);
 
   // Like the above but for any process, not just the current one.
-  static Status DumpStacks(pid_t pid);
+  static Status DumpPidStacks(pid_t pid, int flags = NO_FLAGS);
 
   // Instantiate a watcher that writes a pstack to stdout after the given
   // timeout expires.
@@ -49,7 +56,7 @@ class PstackWatcher {
   static Status HasProgram(const char* progname);
 
   // Get a stack dump using GDB directly.
-  static Status RunGdbStackDump(pid_t pid);
+  static Status RunGdbStackDump(pid_t pid, int flags);
 
   // Get a stack dump using the pstack or gstack program.
   static Status RunPstack(const std::string& progname, pid_t pid);

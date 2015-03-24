@@ -4,16 +4,20 @@
 #include <boost/assign/list_of.hpp>
 #include <boost/bind.hpp>
 #include <boost/thread/thread.hpp>
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 #include <tr1/memory>
 
 #include "kudu/client/client.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/master-test-util.h"
+#include "kudu/tserver/mini_tablet_server.h"
+#include "kudu/tserver/tablet_server.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -94,7 +98,7 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
             .Create());
 }
 
-TEST_F(CreateTableStressTest, CreateBigTable) {
+TEST_F(CreateTableStressTest, CreateAndDeleteBigTable) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "Skipping slow test";
     return;
@@ -110,6 +114,21 @@ TEST_F(CreateTableStressTest, CreateBigTable) {
   std::cout << "Response:\n" << resp.DebugString();
   std::cout << "CatalogManager state:\n";
   cluster_->mini_master()->master()->catalog_manager()->DumpState(&std::cerr);
+
+  LOG(INFO) << "Deleting table...";
+  ASSERT_OK(client_->DeleteTable(table_name));
+
+  // The actual removal of the tablets is asynchronous, so we loop for a bit
+  // waiting for them to get removed.
+  LOG(INFO) << "Waiting for tablets to be removed";
+  vector<string> tablet_ids;
+  for (int i = 0; i < 1000; i++) {
+    tablet_ids.clear();
+    ASSERT_OK(cluster_->mini_tablet_server(0)->server()->fs_manager()->ListTabletIds(&tablet_ids));
+    if (tablet_ids.empty()) break;
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  ASSERT_TRUE(tablet_ids.empty()) << "Tablets remained: " << tablet_ids;
 }
 
 TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {

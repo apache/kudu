@@ -46,6 +46,12 @@ enum TabletDataState {
   // Fresh empty tablets and successfully copied tablets are set to the
   // TABLET_DATA_READY state.
   TABLET_DATA_READY = 1;
+
+  // This tablet is in the process of being deleted.
+  // The tablet server should "roll forward" the deletion during boot,
+  // rather than trying to load the tablet.
+  // TODO: we also need to incorporate "tombstoning" a tablet.
+  TABLET_DATA_DELETED = 2;
 }
 
 // The super-block keeps track of the tablet data blocks.

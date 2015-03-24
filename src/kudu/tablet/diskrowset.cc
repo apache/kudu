@@ -379,6 +379,9 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
   if (cur_redo_writer_.get() != NULL &&
       cur_redo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
     cur_drs_metadata_->CommitRedoDeltaDataBlock(0, cur_redo_ds_block_id_);
+  } else {
+    // TODO: KUDU-678: the block will get orphaned here, since we're not putting
+    // it in the metadata, nor deleting it.
   }
 
   written_size_ += cur_writer_->written_size();

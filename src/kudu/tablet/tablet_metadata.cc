@@ -92,6 +92,66 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
   }
 }
 
+void TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& superblock,
+                                       std::vector<BlockIdPB>* block_ids) {
+  BOOST_FOREACH(const RowSetDataPB& rowset, superblock.rowsets()) {
+    BOOST_FOREACH(const ColumnDataPB& column, rowset.columns()) {
+      block_ids->push_back(column.block());
+    }
+    BOOST_FOREACH(const DeltaDataPB& redo, rowset.redo_deltas()) {
+      block_ids->push_back(redo.block());
+    }
+    BOOST_FOREACH(const DeltaDataPB& undo, rowset.undo_deltas()) {
+      block_ids->push_back(undo.block());
+    }
+    if (rowset.has_bloom_block()) {
+      block_ids->push_back(rowset.bloom_block());
+    }
+    if (rowset.has_adhoc_index_block()) {
+      block_ids->push_back(rowset.adhoc_index_block());
+    }
+  }
+}
+
+Status TabletMetadata::DeleteTablet() {
+  // First add all of our blocks to the orphan list
+  // and clear our rowsets. This serves to erase all the data.
+  //
+  // We also set the state in our persisted metadata to indicate that
+  // we have been deleted.
+  // TODO: explain in what cases we can actually remove the metadata vs
+  // need a tombstone
+  {
+    boost::lock_guard<LockType> l(data_lock_);
+    BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rsmd, rowsets_) {
+      AddOrphanedBlocksUnlocked(rsmd->GetAllBlocks());
+    }
+    rowsets_.clear();
+    tablet_data_state_ = TABLET_DATA_DELETED;
+  }
+
+  // Flushing should now also delete all the data.
+  RETURN_NOT_OK(Flush());
+
+  // If we've deleted all of the data successfully, we can go ahead
+  // and delete the actual superblock.
+  // TODO: in the case of deleting a replica where the tablet still
+  // exists on other machines, we may need to keep the tombstone around.
+  // Otherwise a leader from an old term could come back to life and re-create
+  // this tablet, causing an "amnesia" situation.
+  {
+    boost::lock_guard<LockType> l(data_lock_);
+    if (orphaned_blocks_.empty()) {
+      // We successfully deleted all data. We can remove the metadata now too.
+      string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
+      RETURN_NOT_OK_PREPEND(fs_manager_->env()->DeleteFile(path),
+                            "Unable to delete tablet superblock");
+    }
+  }
+
+  return Status::OK();
+}
+
 TabletMetadata::TabletMetadata(FsManager *fs_manager,
                                const string& tablet_id,
                                const string& table_name,

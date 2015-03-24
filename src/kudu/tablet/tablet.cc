@@ -124,7 +124,6 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
         -1, Substitute("tablet-$0", tablet_id()), parent_mem_tracker)),
     dms_mem_tracker_(MemTracker::CreateTracker(
         -1, kDMSMemTrackerId, mem_tracker_)),
-    rowsets_(new RowSetTree()),
     next_mrs_id_(0),
     clock_(clock),
     mvcc_(clock),
@@ -149,10 +148,7 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
 }
 
 Tablet::~Tablet() {
-  // We need to clear the maintenance ops manually here, so that the operation
-  // callbacks can't trigger while we're in the process of tearing down the rest
-  // of the tablet fields.
-  UnregisterMaintenanceOps();
+  Shutdown();
 }
 
 Status Tablet::Open() {
@@ -193,6 +189,25 @@ Status Tablet::Open() {
 void Tablet::MarkFinishedBootstrapping() {
   CHECK_EQ(state_, kBootstrapping);
   state_ = kOpen;
+}
+
+void Tablet::Shutdown() {
+  UnregisterMaintenanceOps();
+
+  boost::lock_guard<rw_spinlock> lock(component_lock_);
+  components_ = NULL;
+  state_ = kShutdown;
+
+  // In the case of deleting a tablet, we still keep the metadata around after
+  // ShutDown(), and need to flush the metadata to indicate that the tablet is deleted.
+  // During that flush, we don't want metadata to call back into the Tablet, so we
+  // have to unregister the pre-flush callback.
+  metadata_->SetPreFlushCallback(Bind(DoNothingStatusClosure));
+}
+
+Status Tablet::DeleteOnDiskData() {
+  RETURN_NOT_OK(metadata_->DeleteTablet());
+  return Status::OK();
 }
 
 Status Tablet::GetMappedReadProjection(const Schema& projection,

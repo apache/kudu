@@ -300,6 +300,14 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
   }
 }
 
+void ExternalMiniCluster::AssertNoCrashes() {
+  vector<ExternalDaemon*> daemons = this->daemons();
+  BOOST_FOREACH(ExternalDaemon* d, daemons) {
+    if (d->IsShutdown()) continue;
+    EXPECT_TRUE(d->IsProcessAlive()) << "At least one process crashed";
+  }
+}
+
 Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
                                                   const MonoDelta& timeout) {
   TabletServerServiceProxy proxy(messenger_, ts->bound_rpc_addr());
