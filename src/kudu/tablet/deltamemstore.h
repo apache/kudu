@@ -89,7 +89,7 @@ class DeltaMemStore : public DeltaStore,
 
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const OVERRIDE;
 
-  virtual uint64_t EstimateSize() const {
+  virtual uint64_t EstimateSize() const OVERRIDE {
     return memory_footprint();
   }
 

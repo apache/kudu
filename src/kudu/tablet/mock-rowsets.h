@@ -132,7 +132,7 @@ class MockDiskRowSet : public MockRowSet {
     return size_;
   }
 
-  virtual std::string ToString() const {
+  virtual std::string ToString() const OVERRIDE {
     return strings::Substitute("mock[$0, $1]",
                                Slice(first_key_).ToDebugString(),
                                Slice(last_key_).ToDebugString());

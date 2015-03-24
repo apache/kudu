@@ -219,7 +219,7 @@ class ScanResultCopier : public ScanResultCollector {
     SetLastRow(row_block, &encoded_last_row_);
   }
 
-  virtual int BlocksProcessed() const { return blocks_processed_; }
+  virtual int BlocksProcessed() const OVERRIDE { return blocks_processed_; }
 
   // Returns number of bytes buffered to return.
   virtual int64_t BytesRead() const OVERRIDE {
@@ -298,7 +298,7 @@ class ScanResultChecksummer : public ScanResultCollector {
     SetLastRow(row_block, &encoded_last_row_);
   }
 
-  virtual int BlocksProcessed() const { return blocks_processed_; }
+  virtual int BlocksProcessed() const OVERRIDE { return blocks_processed_; }
 
   // Returns number of bytes scanned.
   virtual int64_t BytesRead() const OVERRIDE { return bytes_read_; }
