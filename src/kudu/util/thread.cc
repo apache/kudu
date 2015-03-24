@@ -159,17 +159,19 @@ void ThreadMgr::SetThreadName(const string& name, int64 tid) {
   }
 }
 
-Status ThreadMgr::StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web) {
-  MetricContext ctx(DCHECK_NOTNULL(metric), "threading");
+Status ThreadMgr::StartInstrumentation(MetricRegistry* registry, WebCallbackRegistry* web) {
+  MetricContext ctx(DCHECK_NOTNULL(registry), "threading");
   MutexLock l(lock_);
   metrics_enabled_ = true;
 
   // TODO: These metrics should be expressed as counters but their lifecycles
   // are tough to define because ThreadMgr is a singleton.
-  METRIC_total_threads.InstantiateFunctionGauge(ctx,
-      Bind(&ThreadMgr::ReadNumTotalThreads, Unretained(this)));
-  METRIC_current_num_threads.InstantiateFunctionGauge(ctx,
-      Bind(&ThreadMgr::ReadNumCurrentThreads, Unretained(this)));
+  registry->NeverRetire(
+    METRIC_total_threads.InstantiateFunctionGauge(ctx,
+        Bind(&ThreadMgr::ReadNumTotalThreads, Unretained(this))));
+  registry->NeverRetire(
+    METRIC_current_num_threads.InstantiateFunctionGauge(ctx,
+        Bind(&ThreadMgr::ReadNumCurrentThreads, Unretained(this))));
 
   WebCallbackRegistry::PathHandlerCallback thread_callback =
       bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);

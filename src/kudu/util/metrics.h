@@ -244,7 +244,14 @@ class Metric : public RefCountedThreadSafe<Metric> {
   virtual ~Metric();
 
  private:
+  friend class MetricRegistry;
   friend class RefCountedThreadSafe<Metric>;
+
+  // The time at which we should retire this metric if it is still un-referenced outside
+  // of the metrics subsystem. If this metric is not due for retirement, this member is
+  // uninitialized.
+  MonoTime retire_time_;
+
   DISALLOW_COPY_AND_ASSIGN(Metric);
 };
 
@@ -270,6 +277,18 @@ class MetricRegistry {
   Status WriteAsJson(JsonWriter* writer,
                      const std::vector<std::string>& requested_metrics,
                      const std::vector<std::string>& requested_detail_metrics) const;
+
+  // Scan the metrics map for metrics needing retirement, removing them as necessary.
+  //
+  // Metrics are retired when they are no longer referenced outside of the metrics system
+  // itself. Additionally, we only retire a metric that has been in this state for
+  // at least FLAGS_metrics_retirement_age_ms milliseconds.
+  void RetireOldMetrics();
+
+  // Mark that the given metric should never be retired until the metric
+  // registry itself destructs. This is useful for system metrics such as
+  // tcmalloc, etc, which should live as long as the process itself.
+  void NeverRetire(const scoped_refptr<Metric>& metric);
 
   scoped_refptr<Counter> FindOrCreateCounter(const std::string& name,
                                              const CounterPrototype& proto);
@@ -317,6 +336,10 @@ class MetricRegistry {
                                                        const Callback<T()>& function);
 
   UnorderedMetricMap metrics_;
+
+  // The set of metrics which should never be retired.
+  std::vector<scoped_refptr<Metric> > never_retire_metrics_;
+
   mutable simple_spinlock lock_;
   DISALLOW_COPY_AND_ASSIGN(MetricRegistry);
 };
@@ -623,7 +646,7 @@ class FunctionGauge : public Gauge {
   // After detaching, the metric will return 'value' in perpetuity.
   void AutoDetach(FunctionGaugeDetacher* detacher, T value = T()) {
     detacher->OnDestructor(Bind(&FunctionGauge<T>::DetachToConstant,
-                                Unretained(this), value));
+                                this, value));
   }
 
   // Automatically detach this gauge when the given 'detacher' destructs.
@@ -637,7 +660,7 @@ class FunctionGauge : public Gauge {
   // accessed by the gauge function implementation.
   void AutoDetachToLastValue(FunctionGaugeDetacher* detacher) {
     detacher->OnDestructor(Bind(&FunctionGauge<T>::DetachToCurrentValue,
-                                Unretained(this)));
+                                this));
   }
 
  private:

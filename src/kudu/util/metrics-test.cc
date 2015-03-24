@@ -16,6 +16,8 @@ using boost::assign::list_of;
 using std::string;
 using std::vector;
 
+DECLARE_int32(metrics_retirement_age_ms);
+
 namespace kudu {
 
 class MetricsTest : public KuduTest {
@@ -173,6 +175,49 @@ TEST_F(MetricsTest, JsonPrintTest) {
   // class overloads both operator[int] and operator[char*] and 0 == NULL.
   ASSERT_EQ(string("reqs_pending"), string(d["metrics"][0u]["name"].GetString()));
   ASSERT_EQ(1L, d["metrics"][0u]["value"].GetInt64());
+}
+
+// Test that metrics are retired when they are no longer referenced.
+TEST_F(MetricsTest, RetirementTest) {
+  FLAGS_metrics_retirement_age_ms = 100;
+
+  const string kMetricName = "foo";
+  MetricRegistry registry;
+  scoped_refptr<Counter> counter = CHECK_NOTNULL(
+    registry.FindOrCreateCounter(kMetricName, METRIC_reqs_pending).get());
+  ASSERT_EQ(1, registry.UnsafeMetricsMapForTests().size());
+
+  // Since we hold a reference to the counter, it should not get retired.
+  registry.RetireOldMetrics();
+  ASSERT_EQ(1, registry.UnsafeMetricsMapForTests().size());
+
+  // When we de-ref it, it should not get immediately retired, either, because
+  // we keep retirable metrics around for some amount of time. We try retiring
+  // a number of times to hit all the cases.
+  counter = NULL;
+  for (int i = 0; i < 3; i++) {
+    registry.RetireOldMetrics();
+    ASSERT_EQ(1, registry.UnsafeMetricsMapForTests().size());
+  }
+
+  // If we wait for longer than the retirement time, and call retire again, we'll
+  // actually retire it.
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_metrics_retirement_age_ms * 1.5));
+  registry.RetireOldMetrics();
+  ASSERT_EQ(0, registry.UnsafeMetricsMapForTests().size());
+}
+
+// Test that we can mark a metric to never be retired.
+TEST_F(MetricsTest, NeverRetireTest) {
+  MetricRegistry registry;
+  MetricContext context(&registry, "test");
+  registry.NeverRetire(METRIC_test_hist.Instantiate(context));
+  FLAGS_metrics_retirement_age_ms = 0;
+
+  for (int i = 0; i < 3; i++) {
+    registry.RetireOldMetrics();
+    ASSERT_EQ(1, registry.UnsafeMetricsMapForTests().size());
+  }
 }
 
 } // namespace kudu

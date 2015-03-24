@@ -6,6 +6,7 @@
 #include <set>
 
 #include <boost/foreach.hpp>
+#include <gflags/gflags.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/casts.h"
@@ -17,6 +18,10 @@
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
+
+DEFINE_int32(metrics_retirement_age_ms, 120 * 1000,
+             "The minimum number of milliseconds a metric will be kept for after it is "
+             "no longer active. (Advanced option)");
 
 namespace kudu {
 
@@ -285,7 +290,67 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
   writer->EndArray();
 
   writer->EndObject();
+
+  // Rather than having a thread poll metrics periodically to retire old ones,
+  // we'll just retire them here. The only downside is that, if no one is polling
+  // metrics, we may end up leaving them around indefinitely; however, metrics are
+  // small, and one might consider it a feature: if monitoring stops polling for
+  // metrics, we should keep them around until the next poll.
+  metrics.clear(); // necessary to deref metrics we just dumped before doing retirement scan.
+  const_cast<MetricRegistry*>(this)->RetireOldMetrics();
   return Status::OK();
+}
+
+void MetricRegistry::RetireOldMetrics() {
+  MonoTime now(MonoTime::Now(MonoTime::FINE));
+
+  lock_guard<simple_spinlock> l(&lock_);
+  for (UnorderedMetricMap::iterator it = metrics_.begin();
+       it != metrics_.end();) {
+    const scoped_refptr<Metric>& metric = it->second;
+
+    if (PREDICT_TRUE(!metric->HasOneRef())) {
+      // The metric is still in use. Note that, in the case of "NeverRetire()", the metric
+      // will have a ref-count of 2 because it is reffed by the 'never_retire_metrics_'
+      // collection.
+
+      // Ensure that it is not marked for later retirement (this could happen in the case
+      // that a metric is un-reffed and then re-reffed later by looking it up from the
+      // registry).
+      metric->retire_time_ = MonoTime();
+      ++it;
+      continue;
+    }
+
+    if (!metric->retire_time_.Initialized()) {
+      VLOG(3) << "Metric " << it->first << " has become un-referenced. Will retire after "
+              << "the retention interval";
+      // This is the first time we've seen this metric as retirable.
+      metric->retire_time_ = now;
+      metric->retire_time_.AddDelta(MonoDelta::FromMilliseconds(
+                                      FLAGS_metrics_retirement_age_ms));
+      ++it;
+      continue;
+    }
+
+    // If we've already seen this metric in a previous scan, check if it's
+    // time to retire it yet.
+    if (now.ComesBefore(metric->retire_time_)) {
+      VLOG(3) << "Metric " << it->first << " is un-referenced, but still within "
+              << "the retention interval";
+      ++it;
+      continue;
+    }
+
+
+    VLOG(2) << "Retiring metric " << it->first;
+    metrics_.erase(it++);
+  }
+}
+
+void MetricRegistry::NeverRetire(const scoped_refptr<Metric>& metric) {
+  lock_guard<simple_spinlock> l(&lock_);
+  never_retire_metrics_.push_back(metric);
 }
 
 //

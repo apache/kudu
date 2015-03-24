@@ -33,6 +33,7 @@ DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
              " tablet server insert latency micro-benchmark");
 
 DECLARE_int32(tablet_server_scan_batch_size_rows);
+DECLARE_int32(metrics_retirement_age_ms);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
 METRIC_DECLARE_counter(rows_inserted);
@@ -76,6 +77,28 @@ TEST_F(TabletServerTest, TestWebPages) {
                               &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), "<th>key</th>");
   ASSERT_STR_CONTAINS(buf.ToString(), "<td>string NULLABLE</td>");
+
+  // Test fetching metrics.
+  // Fetching metrics has the side effect of retiring metrics, but not in a single pass.
+  // So, we check a couple of times in a loop -- thus, if we had a bug where one of these
+  // metrics was accidentally un-referenced too early, we'd cause it to get retired.
+  // If the metrics survive several passes of fetching, then we are pretty sure they will
+  // stick around properly for the whole lifetime of the server.
+  FLAGS_metrics_retirement_age_ms = 0;
+  for (int i = 0; i < 3; i++) {
+    SCOPED_TRACE(i);
+    ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/jsonmetricz", addr, kTabletId),
+                                &buf));
+
+    // Check for the existence of some particular metrics for which we've had early-retirement
+    // bugs in the past.
+    ASSERT_STR_CONTAINS(buf.ToString(), "clock.clock_timestamp");
+    ASSERT_STR_CONTAINS(buf.ToString(), "kudu.tabletserver.tserver.scanners.active_scanners");
+    ASSERT_STR_CONTAINS(buf.ToString(), "threading.total_threads");
+#ifdef TCMALLOC_ENABLED
+    ASSERT_STR_CONTAINS(buf.ToString(), "tcmalloc.tcmalloc_max_total_thread_cache_bytes");
+#endif
+  }
 }
 
 TEST_F(TabletServerTest, TestInsert) {
