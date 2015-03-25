@@ -29,6 +29,7 @@ class KuduSession;
 class KuduTable;
 class KuduTableAlterer;
 class KuduTableCreator;
+class KuduTabletServer;
 class KuduWriteOperation;
 
 namespace internal {
@@ -152,14 +153,18 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   Status GetTableSchema(const std::string& table_name,
                         KuduSchema* schema);
 
-  Status ListTabletServers(std::vector<std::string> * tablet_servers);
+  Status ListTabletServers(std::vector<KuduTabletServer*>* tablet_servers);
 
-  Status ListTables(const std::string& filter,
-                    std::vector<std::string> * tables);
+  // List only those tables whose names pass a substring match on 'filter'.
+  //
+  // 'tables' is appended to only on success.
+  Status ListTables(std::vector<std::string>* tables,
+                    const std::string& filter = "");
 
-  Status ListTables(std::vector<std::string> * tables);
-
-  Status TableExists(const std::string& table_name, bool * exists);
+  // Check if the table given by 'table_name' exists.
+  //
+  // 'exists' is set only on success.
+  Status TableExists(const std::string& table_name, bool* exists);
 
   // Open the table with the given name. If the table has not been opened before
   // in this client, this will do an RPC to ensure that the table exists and
@@ -827,6 +832,31 @@ class KUDU_EXPORT KuduScanner {
   gscoped_ptr<Data> data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduScanner);
+};
+
+// In-memory representation of a remote tablet server.
+class KUDU_EXPORT KuduTabletServer {
+ public:
+  ~KuduTabletServer();
+
+  // Returns the UUID of this tablet server. Is globally unique and
+  // guaranteed not to change for the lifetime of the tablet server.
+  const std::string& uuid() const;
+
+  // Returns the hostname of the first RPC address that this tablet server
+  // is listening on.
+  const std::string& hostname() const;
+
+ private:
+  class KUDU_NO_EXPORT Data;
+
+  friend class KuduClient;
+
+  KuduTabletServer();
+
+  gscoped_ptr<Data> data_;
+
+  DISALLOW_COPY_AND_ASSIGN(KuduTabletServer);
 };
 
 } // namespace client

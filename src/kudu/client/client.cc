@@ -22,6 +22,7 @@
 #include "kudu/client/table-internal.h"
 #include "kudu/client/table_alterer-internal.h"
 #include "kudu/client/table_creator-internal.h"
+#include "kudu/client/tablet_server-internal.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
@@ -42,9 +43,14 @@ using kudu::master::AlterTableResponsePB;
 using kudu::master::CreateTableRequestPB;
 using kudu::master::CreateTableResponsePB;
 using kudu::master::DeleteTableRequestPB;
-using kudu::master::GetTableSchemaRequestPB;
 using kudu::master::DeleteTableResponsePB;
+using kudu::master::GetTableSchemaRequestPB;
 using kudu::master::GetTableSchemaResponsePB;
+using kudu::master::ListTabletServersRequestPB;
+using kudu::master::ListTabletServersResponsePB;
+using kudu::master::ListTabletServersResponsePB_Entry;
+using kudu::master::ListTablesRequestPB;
+using kudu::master::ListTablesResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
 using kudu::rpc::Messenger;
@@ -192,28 +198,67 @@ Status KuduClient::GetTableSchema(const string& table_name,
                                schema);
 }
 
-Status KuduClient::ListTabletServers(std::vector<std::string> * tablet_servers) {
+Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) {
+  ListTabletServersRequestPB req;
+  ListTabletServersResponsePB resp;
+
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(default_admin_operation_timeout());
-  return data_->ListTabletServers(this, deadline, tablet_servers);
+  Status s =
+      data_->SyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
+          data_->default_admin_operation_timeout_,
+          deadline,
+          this,
+          req,
+          &resp,
+          NULL,
+          &MasterServiceProxy::ListTabletServers);
+  RETURN_NOT_OK(s);
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  for (int i = 0; i < resp.servers_size(); i++) {
+    const ListTabletServersResponsePB_Entry& e = resp.servers(i);
+    KuduTabletServer* ts = new KuduTabletServer();
+    ts->data_.reset(new KuduTabletServer::Data(e.instance_id().permanent_uuid(),
+                                               e.registration().rpc_addresses(0).host()));
+    tablet_servers->push_back(ts);
+  }
+  return Status::OK();
 }
 
-Status KuduClient::ListTables(const std::string& filter,
-                                 std::vector<std::string> * tables) {
+Status KuduClient::ListTables(vector<string>* tables,
+                              const string& filter) {
+  ListTablesRequestPB req;
+  ListTablesResponsePB resp;
+
+  if (!filter.empty()) {
+    req.set_name_filter(filter);
+  }
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(default_admin_operation_timeout());
-  return data_->ListTables(this, deadline, filter, tables);
+  Status s =
+      data_->SyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB>(
+          data_->default_admin_operation_timeout_,
+          deadline,
+          this,
+          req,
+          &resp,
+          NULL,
+          &MasterServiceProxy::ListTables);
+  RETURN_NOT_OK(s);
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  for (int i = 0; i < resp.tables_size(); i++) {
+    tables->push_back(resp.tables(i).name());
+  }
+  return Status::OK();
 }
 
-Status KuduClient::ListTables(std::vector<std::string> * tables) {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(default_admin_operation_timeout());
-  return data_->ListTables(this, deadline, std::string(), tables);
-}
-
-Status KuduClient::TableExists(const std::string& table_name, bool * exists) {
+Status KuduClient::TableExists(const string& table_name, bool* exists) {
   std::vector<std::string> tables;
-  RETURN_NOT_OK(ListTables(table_name, &tables));
+  RETURN_NOT_OK(ListTables(&tables, table_name));
   BOOST_FOREACH(const string& table, tables) {
     if (table == table_name) {
       *exists = true;
@@ -895,6 +940,20 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
     // No more data anywhere.
     return Status::OK();
   }
+}
+
+KuduTabletServer::KuduTabletServer() {
+}
+
+KuduTabletServer::~KuduTabletServer() {
+}
+
+const string& KuduTabletServer::uuid() const {
+  return data_->uuid_;
+}
+
+const string& KuduTabletServer::hostname() const {
+  return data_->hostname_;
 }
 
 } // namespace client

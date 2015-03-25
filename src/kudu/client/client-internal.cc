@@ -40,10 +40,10 @@ using master::IsAlterTableDoneRequestPB;
 using master::IsAlterTableDoneResponsePB;
 using master::IsCreateTableDoneRequestPB;
 using master::IsCreateTableDoneResponsePB;
-using master::ListTabletServersRequestPB;
-using master::ListTabletServersResponsePB;
 using master::ListTablesRequestPB;
 using master::ListTablesResponsePB;
+using master::ListTabletServersRequestPB;
+using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
 using master::MasterErrorPB;
 using metadata::QuorumPeerPB;
@@ -173,6 +173,32 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     return s;
   }
 }
+
+// Explicit specialization for callers outside this compilation unit.
+template
+Status KuduClient::Data::SyncLeaderMasterRpc(
+    const MonoDelta& rpc_timeout,
+    const MonoTime& deadline,
+    KuduClient* client,
+    const ListTablesRequestPB& req,
+    ListTablesResponsePB* resp,
+    int* num_attempts,
+    const boost::function<Status(MasterServiceProxy*,
+                                 const ListTablesRequestPB&,
+                                 ListTablesResponsePB*,
+                                 RpcController*)>& func);
+template
+Status KuduClient::Data::SyncLeaderMasterRpc(
+    const MonoDelta& rpc_timeout,
+    const MonoTime& deadline,
+    KuduClient* client,
+    const ListTabletServersRequestPB& req,
+    ListTabletServersResponsePB* resp,
+    int* num_attempts,
+    const boost::function<Status(MasterServiceProxy*,
+                                 const ListTabletServersRequestPB&,
+                                 ListTabletServersResponsePB*,
+                                 RpcController*)>& func);
 
 KuduClient::Data::Data() {
 }
@@ -396,64 +422,6 @@ Status KuduClient::Data::WaitForAlterTableToFinish(KuduClient* client,
                    boost::bind(&KuduClient::Data::IsAlterTableInProgress,
                                this,
                                client, alter_name, _1, _2));
-}
-
-Status KuduClient::Data::ListTabletServers(KuduClient* client,
-                                           const MonoTime& deadline,
-                                           std::vector<std::string> * tablet_servers) {
-  ListTabletServersRequestPB req;
-  ListTabletServersResponsePB resp;
-  RpcController rpc;
-
-  rpc.set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
-  Status s =
-      SyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
-          default_admin_operation_timeout_,
-          deadline,
-          client,
-          req,
-          &resp,
-          NULL,
-          &MasterServiceProxy::ListTabletServers);
-  RETURN_NOT_OK(s);
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-  for (int i = 0; i < resp.servers_size(); i++) {
-    tablet_servers->push_back(resp.servers(i).registration().rpc_addresses(0).host());
-  }
-  return Status::OK();
-}
-
-Status KuduClient::Data::ListTables(KuduClient * client,
-                                    const MonoTime& deadline,
-                                    const std::string& filter,
-                                    std::vector<std::string> * tables) {
-  ListTablesRequestPB req;
-  ListTablesResponsePB resp;
-  RpcController rpc;
-
-  if (!filter.empty()) {
-    req.set_name_filter(filter);
-  }
-  rpc.set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
-  Status s =
-      SyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB>(
-          default_admin_operation_timeout_,
-          deadline,
-          client,
-          req,
-          &resp,
-          NULL,
-          &MasterServiceProxy::ListTables);
-  RETURN_NOT_OK(s);
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status());
-  }
-  for (int i = 0; i < resp.tables_size(); i++) {
-    tables->push_back(resp.tables(i).name());
-  }
-  return Status::OK();
 }
 
 Status KuduClient::Data::InitLocalHostNames() {

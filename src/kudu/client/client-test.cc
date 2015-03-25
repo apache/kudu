@@ -434,19 +434,25 @@ const uint32_t ClientTest::kNoBound = kuint32max;
 
 TEST_F(ClientTest, TestListTables) {
   vector<string> tables;
-  ASSERT_TRUE(client_->ListTables(&tables).ok());
+  ASSERT_OK(client_->ListTables(&tables));
   std::sort(tables.begin(), tables.end());
   ASSERT_EQ(string(kTableName), tables[0]);
   ASSERT_EQ(string(kTable2Name), tables[1]);
   tables.clear();
-  ASSERT_TRUE(client_->ListTables("testtb2", &tables).ok());
+  ASSERT_OK(client_->ListTables(&tables, "testtb2"));
   ASSERT_EQ(1, tables.size());
   ASSERT_EQ(string(kTable2Name), tables[0]);
 }
 
 TEST_F(ClientTest, TestListTabletServers) {
-  vector<string> tss;
-  ASSERT_TRUE(client_->ListTabletServers(&tss).ok());
+  vector<KuduTabletServer*> tss;
+  ElementDeleter deleter(&tss);
+  ASSERT_OK(client_->ListTabletServers(&tss));
+  ASSERT_EQ(1, tss.size());
+  ASSERT_EQ(cluster_->mini_tablet_server(0)->server()->instance_pb().permanent_uuid(),
+            tss[0]->uuid());
+  ASSERT_EQ(cluster_->mini_tablet_server(0)->server()->first_rpc_address().host(),
+            tss[0]->hostname());
 }
 
 TEST_F(ClientTest, TestBadTable) {

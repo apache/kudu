@@ -81,15 +81,6 @@ class KuduClient::Data {
                         const MonoTime& deadline,
                         KuduSchema* schema);
 
-  Status ListTabletServers(KuduClient* client,
-                           const MonoTime& deadline,
-                           std::vector<std::string> * tablet_servers);
-
-  Status ListTables(KuduClient * client,
-                    const MonoTime& deadline,
-                    const std::string& filter,
-                    std::vector<std::string> * tables);
-
   Status InitLocalHostNames();
 
   bool IsLocalHostPort(const HostPort& hp) const;

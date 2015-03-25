@@ -18,6 +18,7 @@ set(CLIENT_SRCS
   table-internal.cc
   table_alterer-internal.cc
   table_creator-internal.cc
+  tablet_server-internal.cc
   write_op.cc
 )
 
