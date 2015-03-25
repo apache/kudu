@@ -169,13 +169,14 @@ if [ ! -d $LIBUNWIND_DIR ]; then
   fetch_and_expand libunwind-${LIBUNWIND_VERSION}.tar.gz
 fi
 
-LLVM_PATCHLEVEL=1
+LLVM_PATCHLEVEL=2
 delete_if_wrong_patchlevel $LLVM_DIR $LLVM_PATCHLEVEL
 if [ ! -d $LLVM_DIR ]; then
   fetch_and_expand llvm-${LLVM_VERSION}.src.tar.gz
 
   pushd $LLVM_DIR
   patch -p1 < $TP_DIR/patches/llvm-stop-including-msan_interface.patch
+  patch -p1 < $TP_DIR/patches/llvm-fix-jit-debugging.patch
   touch patchlevel-$LLVM_PATCHLEVEL
   popd
   echo
