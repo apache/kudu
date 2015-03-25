@@ -56,6 +56,17 @@ void KUDU_EXPORT InstallLoggingCallback(const LoggingCallback& cb);
 // Should be called before unloading the client library.
 void KUDU_EXPORT UninstallLoggingCallback();
 
+// Set the logging verbosity of the client library. By default, this is 0. Logs become
+// progressively more verbose as the level is increased. Empirically, the highest
+// verbosity level used in Kudu is 6, which includes very fine-grained tracing
+// information. Most useful logging is enabled at level 1 or 2, with the higher levels
+// used only in rare circumstances.
+//
+// Logs are emitted to stderr, or to the configured log callback at SEVERITY_INFO.
+//
+// This may be called safely at any point during usage of the library.
+void KUDU_EXPORT SetVerboseLogLevel(int level);
+
 // Creates a new KuduClient with the desired options.
 //
 // Note that KuduClients are shared amongst multiple threads and, as such,

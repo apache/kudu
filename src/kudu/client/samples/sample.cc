@@ -196,10 +196,16 @@ int main(int argc, char* argv[]) {
 
   const string kTableName = "test_table";
 
+  // Enable verbose debugging for the client library.
+  kudu::client::SetVerboseLogLevel(2);
+
   // Create and connect a client.
   shared_ptr<KuduClient> client;
   KUDU_CHECK_OK(CreateClient("127.0.0.1", &client));
   LOG(INFO) << "Created a client connection";
+
+  // Disable the verbose logging.
+  kudu::client::SetVerboseLogLevel(0);
 
   // Create a schema.
   KuduSchema schema(CreateSchema());

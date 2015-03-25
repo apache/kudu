@@ -79,6 +79,10 @@ void UninstallLoggingCallback() {
   ShutdownLoggingSafe();
 }
 
+void SetVerboseLogLevel(int level) {
+  FLAGS_v = level;
+}
+
 KuduClientBuilder::KuduClientBuilder() {
   data_.reset(new KuduClientBuilder::Data());
 }
