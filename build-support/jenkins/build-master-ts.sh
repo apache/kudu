@@ -34,3 +34,4 @@ make -j$NUM_PROCS kudu-tablet_server 2>&1 | tee -a build.log
 make -j$NUM_PROCS kudu-ts-cli 2>&1 | tee -a build.log
 make -j$NUM_PROCS log-dump 2>&1 | tee -a build.log
 make -j$NUM_PROCS kudu-fs_dump 2>&1 | tee -a build.log
+make -j$NUM_PROCS kudu-ksck 2>&1 | tee -a build.log
