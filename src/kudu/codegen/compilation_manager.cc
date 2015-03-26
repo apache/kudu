@@ -123,14 +123,23 @@ void CompilationManager::Shutdown() {
 
 Status CompilationManager::StartInstrumentation(MetricRegistry* metric_registry) {
   MetricContext ctx(DCHECK_NOTNULL(metric_registry), "CompilationManager");
+
+  // Even though these function as counters, we use gauges instead, because
+  // this is a singleton that is shared across multiple TS instances in a
+  // minicluster setup. If we were to use counters, then we could not properly
+  // register the same metric in multiple registries. Using a gauge which loads
+  // an atomic int is a suitable workaround: each TS's registry ends up with a
+  // unique gauge which reads the value of the singleton's integer.
   Callback<int64_t(void)> hits = Bind(&AtomicInt<int64_t>::Load,
                                       Unretained(&hit_counter_),
                                       kMemOrderNoBarrier);
   Callback<int64_t(void)> queries = Bind(&AtomicInt<int64_t>::Load,
                                          Unretained(&query_counter_),
                                          kMemOrderNoBarrier);
-  METRIC_code_cache_hits.InstantiateFunctionGauge(ctx, hits);
-  METRIC_code_cache_queries.InstantiateFunctionGauge(ctx, queries);
+  metric_registry->NeverRetire(
+    METRIC_code_cache_hits.InstantiateFunctionGauge(ctx, hits));
+  metric_registry->NeverRetire(
+    METRIC_code_cache_queries.InstantiateFunctionGauge(ctx, queries));
   return Status::OK();
 }
 

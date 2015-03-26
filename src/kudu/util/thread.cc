@@ -164,8 +164,8 @@ Status ThreadMgr::StartInstrumentation(MetricRegistry* registry, WebCallbackRegi
   MutexLock l(lock_);
   metrics_enabled_ = true;
 
-  // TODO: These metrics should be expressed as counters but their lifecycles
-  // are tough to define because ThreadMgr is a singleton.
+  // Use function gauges here so that we can register a unique copy of these metrics in
+  // multiple tservers, even though the ThreadMgr is itself a singleton.
   registry->NeverRetire(
     METRIC_total_threads.InstantiateFunctionGauge(ctx,
         Bind(&ThreadMgr::ReadNumTotalThreads, Unretained(this))));

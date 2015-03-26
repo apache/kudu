@@ -95,6 +95,7 @@ TEST_F(TabletServerTest, TestWebPages) {
     ASSERT_STR_CONTAINS(buf.ToString(), "clock.clock_timestamp");
     ASSERT_STR_CONTAINS(buf.ToString(), "kudu.tabletserver.tserver.scanners.active_scanners");
     ASSERT_STR_CONTAINS(buf.ToString(), "threading.total_threads");
+    ASSERT_STR_CONTAINS(buf.ToString(), "CompilationManager.code_cache_queries");
 #ifdef TCMALLOC_ENABLED
     ASSERT_STR_CONTAINS(buf.ToString(), "tcmalloc.tcmalloc_max_total_thread_cache_bytes");
 #endif
