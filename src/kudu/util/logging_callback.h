@@ -21,10 +21,11 @@ enum KuduLogSeverity {
 //
 // 'msg' is NOT terminated with an endline.
 typedef Callback<void(KuduLogSeverity severity,
-                      const std::string& filename,
+                      const char* filename,
                       int line_number,
                       const struct ::tm* time,
-                      const std::string& msg)> LoggingCallback;
+                      const char* message,
+                      size_t message_len)> LoggingCallback;
 
 } // namespace kudu
 

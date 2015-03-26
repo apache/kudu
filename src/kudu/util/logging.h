@@ -117,11 +117,25 @@ namespace kudu {
 void InitGoogleLoggingSafe(const char* arg);
 
 // Like InitGoogleLoggingSafe() but stripped down: no signal handlers are
-// installed, regular logging is disabled, and 'cb' will be invoked for
-// every log event (of any severity).
+// installed, regular logging is disabled, and log events of any severity
+// will be written to stderr.
 //
 // These properties make it attractive for us in libraries.
-void InitGoogleLoggingSafeBasic(const char* arg, const LoggingCallback& cb);
+void InitGoogleLoggingSafeBasic(const char* arg);
+
+// Demotes stderr logging to ERROR or higher and registers 'cb' as the
+// recipient for all log events.
+//
+// Subsequent calls to RegisterLoggingCallback no-op (until the callback
+// is unregistered with UnregisterLoggingCallback()).
+void RegisterLoggingCallback(const LoggingCallback& cb);
+
+// Unregisters a callback previously registered with
+// RegisterLoggingCallback() and promotes stderr logging back to all
+// severities.
+//
+// If no callback is registered, this is a no-op.
+void UnregisterLoggingCallback();
 
 // Returns the full pathname of the symlink to the most recent log
 // file corresponding to this severity

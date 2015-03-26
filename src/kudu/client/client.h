@@ -47,6 +47,9 @@ class WriteRpc;
 //
 // Only the first invocation has any effect; subsequent invocations are
 // a no-op.
+//
+// Before a callback is registered, all internal client log events are
+// logged to stderr.
 void KUDU_EXPORT InstallLoggingCallback(const LoggingCallback& cb);
 
 // Removes a callback installed via InstallLoggingCallback().

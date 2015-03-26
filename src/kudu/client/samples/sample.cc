@@ -176,10 +176,11 @@ static Status ScanRows(scoped_refptr<KuduTable>& table) {
 }
 
 static void LogCb(kudu::KuduLogSeverity severity,
-                  const string& filename,
+                  const char* filename,
                   int line_number,
                   const struct ::tm* time,
-                  const string& msg) {
+                  const char* message,
+                  size_t message_len) {
   LOG(INFO) << "Received log message from Kudu client library";
   LOG(INFO) << " Severity: " << severity;
   LOG(INFO) << " Filename: " << filename;
@@ -188,7 +189,7 @@ static void LogCb(kudu::KuduLogSeverity severity,
   // Example: Tue Mar 24 11:46:43 2015.
   CHECK(strftime(time_buf, sizeof(time_buf), "%a %b %d %T %Y", time));
   LOG(INFO) << " Time: " << time_buf;
-  LOG(INFO) << " Message: " << msg;
+  LOG(INFO) << " Message: " << string(message, message_len);
 }
 
 int main(int argc, char* argv[]) {

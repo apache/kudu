@@ -41,8 +41,6 @@ using namespace boost::uuids; // NOLINT(*)
 using base::SpinLock;
 using base::SpinLockHolder;
 
-SpinLock logging_mutex;
-
 namespace kudu {
 
 namespace {
@@ -78,7 +76,7 @@ class SimpleSink : public google::LogSink {
         LOG(FATAL) << "Unknown glog severity: " << severity;
     }
     string msg(message, message_len);
-    cb_.Run(kudu_severity, string(full_filename), line, tm_time, string(message, message_len));
+    cb_.Run(kudu_severity, full_filename, line, tm_time, message, message_len);
   }
 
  private:
@@ -86,15 +84,36 @@ class SimpleSink : public google::LogSink {
   LoggingCallback cb_;
 };
 
+SpinLock logging_mutex(base::LINKER_INITIALIZED);
+
 // There can only be a single instance of a SimpleSink.
 //
 // Protected by 'logging_mutex'.
 SimpleSink* registered_sink = NULL;
 
+// Records the logging severity after the first call to
+// InitGoogleLoggingSafe{Basic}. Calls to UnregisterLoggingCallback()
+// will restore stderr logging back to this severity level.
+//
+// Protected by 'logging_mutex'.
+int initial_stderr_severity;
+
+void UnregisterLoggingCallbackUnlocked() {
+  CHECK(logging_mutex.IsHeld());
+  CHECK(registered_sink);
+
+  // Restore logging to stderr, then remove our sink. This ordering ensures
+  // that no log messages are missed.
+  google::SetStderrLogging(initial_stderr_severity);
+  google::RemoveLogSink(registered_sink);
+  delete registered_sink;
+  registered_sink = NULL;
+}
+
 } // anonymous namespace
 
 void InitGoogleLoggingSafe(const char* arg) {
-  SpinLockHolder logging_lock(&logging_mutex);
+  SpinLockHolder l(&logging_mutex);
   if (logging_initialized) return;
 
   google::InstallFailureSignalHandler();
@@ -140,29 +159,66 @@ void InitGoogleLoggingSafe(const char* arg) {
     FLAGS_log_filename = google::ProgramInvocationShortName();
   }
 
+  // File logging: on.
+  // Stderr logging threshold: FLAGS_stderrthreshold.
+  // Sink logging: off.
+  initial_stderr_severity = FLAGS_stderrthreshold;
   logging_initialized = true;
 }
 
-void InitGoogleLoggingSafeBasic(const char* arg, const LoggingCallback& cb) {
-  SpinLockHolder logging_lock(&logging_mutex);
+void InitGoogleLoggingSafeBasic(const char* arg) {
+  SpinLockHolder l(&logging_mutex);
   if (logging_initialized) return;
 
   google::InitGoogleLogging(arg);
 
-  DCHECK(!registered_sink);
-  registered_sink = new SimpleSink(cb);
+  // This also disables file-based logging.
+  google::LogToStderr();
+
+  // File logging: off.
+  // Stderr logging threshold: INFO.
+  // Sink logging: off.
+  initial_stderr_severity = google::INFO;
+  logging_initialized = true;
+}
+
+void RegisterLoggingCallback(const LoggingCallback& cb) {
+  SpinLockHolder l(&logging_mutex);
+  CHECK(logging_initialized);
+
+  if (registered_sink) {
+    LOG(WARNING) << "Cannot register logging callback: one already registered";
+    return;
+  }
 
   // AddLogSink() claims to take ownership of the sink, but it doesn't
   // really; it actually expects it to remain valid until
   // google::ShutdownGoogleLogging() is called.
+  registered_sink = new SimpleSink(cb);
   google::AddLogSink(registered_sink);
 
-  // Disable regular file-based logging.
-  for (int severity = google::INFO; severity <= google::FATAL; severity++) {
-    google::SetLogDestination(severity, "");
+  // Even when stderr logging is ostensibly off, it's still emitting
+  // ERROR-level stuff. This is the default.
+  google::SetStderrLogging(google::ERROR);
+
+  // File logging: yes, if InitGoogleLoggingSafe() was called earlier.
+  // Stderr logging threshold: ERROR.
+  // Sink logging: on.
+}
+
+void UnregisterLoggingCallback() {
+  SpinLockHolder l(&logging_mutex);
+  CHECK(logging_initialized);
+
+  if (!registered_sink) {
+    LOG(WARNING) << "Cannot unregister logging callback: none registered";
+    return;
   }
 
-  logging_initialized = true;
+  UnregisterLoggingCallbackUnlocked();
+  // File logging: yes, if InitGoogleLoggingSafe() was called earlier.
+  // Stderr logging threshold: initial_stderr_severity.
+  // Sink logging: off.
 }
 
 void GetFullLogFilename(google::LogSeverity severity, string* filename) {
@@ -177,9 +233,7 @@ void ShutdownLoggingSafe() {
   if (!logging_initialized) return;
 
   if (registered_sink) {
-    google::RemoveLogSink(registered_sink);
-    delete registered_sink;
-    registered_sink = NULL;
+    UnregisterLoggingCallbackUnlocked();
   }
 
   google::ShutdownGoogleLogging();

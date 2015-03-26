@@ -73,20 +73,32 @@ MAKE_ENUM_LIMITS(kudu::client::KuduScanner::OrderMode,
 namespace kudu {
 namespace client {
 
-static const int kHtTimestampBitsToShift = 12;
-
 using internal::Batcher;
 using internal::ErrorCollector;
 using internal::MetaCache;
 
+static const int kHtTimestampBitsToShift = 12;
 static const char* kProgName = "kudu_client";
 
+// We need to reroute all logging to stderr when the client library is
+// loaded. GoogleOnceInit() can do that, but there are multiple entry
+// points into the client code, and it'd need to be called in each one.
+// So instead, let's use a constructor function.
+//
+// Should this be restricted to just the exported client build? Probably
+// not, as any application using the library probably wants stderr logging
+// more than file logging.
+__attribute__((constructor))
+static void InitializeBasicLogging() {
+  InitGoogleLoggingSafeBasic(kProgName);
+}
+
 void InstallLoggingCallback(const LoggingCallback& cb) {
-  InitGoogleLoggingSafeBasic(kProgName, cb);
+  RegisterLoggingCallback(cb);
 }
 
 void UninstallLoggingCallback() {
-  ShutdownLoggingSafe();
+  UnregisterLoggingCallback();
 }
 
 void SetVerboseLogLevel(int level) {
