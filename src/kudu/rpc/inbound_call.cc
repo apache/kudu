@@ -152,7 +152,7 @@ Status InboundCall::AddRpcSidecar(gscoped_ptr<RpcSidecar> car, int* idx) {
 }
 
 string InboundCall::ToString() const {
-  return Substitute("Call %s from %s (request call id %d)",
+  return Substitute("Call $0 from $1 (request call id $2)",
                       remote_method_.ToString(),
                       conn_->remote().ToString(),
                       header_.call_id());
