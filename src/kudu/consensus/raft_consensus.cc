@@ -822,7 +822,6 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   //        This will be done in a follow up patch.
   TRACE("Updating replica for $0 ops", request->ops_size());
 
-  OpId last_enqueued_prepare;
   // The deduplicated request.
   LeaderRequest deduped_req;
 
@@ -879,13 +878,12 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       }
     }
 
-    last_enqueued_prepare.CopyFrom(state_->GetLastReceivedOpIdUnlocked());
-
+    OpId last_from_leader;
     // 2 - Enqueue the writes.
     // Now that we've triggered the prepares enqueue the operations to be written
     // to the WAL.
     if (PREDICT_TRUE(deduped_req.messages.size() > 0)) {
-      last_enqueued_prepare = deduped_req.messages.back()->get()->id();
+      last_from_leader = deduped_req.messages.back()->get()->id();
 
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
@@ -893,6 +891,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // Since we've prepared, we need to be able to append (or we risk trying to apply
       // later something that wasn't logged). We crash if we can't.
       CHECK_OK(queue_->AppendOperations(deduped_req.messages, sync_status_cb));
+    } else {
+      last_from_leader = *deduped_req.preceding_opid;
     }
 
     // 3 - Mark transactions as committed
@@ -900,12 +900,16 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // Choose the last operation to be applied. This will either be 'committed_index', if
     // no prepare enqueuing failed, or the minimum between 'committed_index' and the id of
     // the last successfully enqueued prepare, if some prepare failed to enqueue.
-    OpId apply_up_to = request->committed_index();
-    if (last_enqueued_prepare.index() < apply_up_to.index()) {
-      apply_up_to = last_enqueued_prepare;
+    OpId apply_up_to;
+    if (last_from_leader.index() < request->committed_index().index()) {
+      // we should never apply anything later than what we received in this request
+      apply_up_to = last_from_leader;
+
       VLOG_WITH_PREFIX(2) << "Received commit index "
-          << request->committed_index().ShortDebugString() << " from the leader but only"
-          << " marked up to " << last_enqueued_prepare.ShortDebugString() << " as committed.";
+          << request->committed_index() << " from the leader but only"
+          << " marked up to " << apply_up_to << " as committed.";
+    } else {
+      apply_up_to = request->committed_index();
     }
 
     VLOG_WITH_PREFIX(1) << "Marking committed up to " << apply_up_to.ShortDebugString();
@@ -918,12 +922,20 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // are durable) so that, if we receive another, possible duplicate, message
     // that exercises this path we don't handle these messages twice.
     //
-    // If all prepares were successful we just set the last received to the last
-    // message in the batch. If any prepare failed we set last received to the
-    // last successful prepare (we're sure we didn't prepare or apply anything after
-    // that).
-    TRACE(Substitute("Updating last received op as $0", last_enqueued_prepare.ShortDebugString()));
-    state_->UpdateLastReceivedOpIdUnlocked(last_enqueued_prepare);
+    // If any messages failed to be started locally, then we already have removed them
+    // from 'deduped_req' at this point. So, we can simply update our last-received
+    // watermark to the last message that remains in 'deduped_req'.
+    //
+    // It's possible that the leader didn't send us any new data -- it might be a completely
+    // duplicate request. In that case, we don't need to update LastReceived at all.
+    if (!deduped_req.messages.empty()) {
+      OpId last_appended = deduped_req.messages.back()->get()->id();
+      TRACE(Substitute("Updating last received op as $0", last_appended.ShortDebugString()));
+      state_->UpdateLastReceivedOpIdUnlocked(last_appended);
+    } else {
+      DCHECK_GE(state_->GetLastReceivedOpIdUnlocked().index(),
+                deduped_req.preceding_opid->index());
+    }
 
     // Fill the response with the current state. We will not mutate anymore state until
     // we actually reply to the leader, we'll just wait for the messages to be durable.

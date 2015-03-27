@@ -918,7 +918,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   resp.Clear();
   req.clear_ops();
   // Send ops 3.5 and 2.6, then commit up to index 6, the replica
-  // should fail.
+  // should fail because of the out-of-order terms.
   req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
   AddOp(MakeOpId(3, 5), &req);
   AddOp(MakeOpId(2, 6), &req);
@@ -928,6 +928,29 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   ASSERT_EQ(resp.error().status().message(),
             "New operation's term is not >= than the previous op's term."
             " Current: 2.6. Previous: 3.5");
+
+  // Regression test for KUDU-639: if we send a valid request, but the
+  // current commit index is higher than the data we're sending, we shouldn't
+  // commit anything higher than the last op sent by the leader.
+  //
+  // To test, we re-send operation 2.3, with the correct preceding ID 2.2,
+  // but we set the committed index to 2.4. This should only commit
+  // 2.2 and 2.3.
+  resp.Clear();
+  req.clear_ops();
+  req.mutable_preceding_id()->CopyFrom(MakeOpId(2, 2));
+  AddOp(MakeOpId(2, 3), &req);
+  req.mutable_committed_index()->CopyFrom(MakeOpId(2, 4));
+  rpc.Reset();
+  ASSERT_OK(c_proxy->UpdateConsensus(req, &resp, &rpc));
+  ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  // Verify only 2.2 and 2.3 are committed.
+  {
+    vector<string> results;
+    WaitForRowCount(replica_ts->tserver_proxy.get(), 2, &results);
+    ASSERT_STR_CONTAINS(results[0], "term: 2 index: 2");
+    ASSERT_STR_CONTAINS(results[1], "term: 2 index: 3");
+  }
 
   resp.Clear();
   req.clear_ops();
@@ -972,6 +995,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   // Send an empty request from the newest term which should commit
   // the earlier ops.
   {
+    req.mutable_preceding_id()->CopyFrom(MakeOpId(leader_term, 6));
     req.mutable_committed_index()->CopyFrom(MakeOpId(leader_term, 6));
     req.clear_ops();
     rpc.Reset();
