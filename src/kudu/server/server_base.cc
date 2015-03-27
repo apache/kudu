@@ -13,6 +13,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/default-path-handlers.h"
+#include "kudu/server/generic_service.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/server/rpc_server.h"
@@ -177,6 +178,9 @@ Status ServerBase::RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
 
 Status ServerBase::Start() {
   GenerateInstanceID();
+
+  RETURN_NOT_OK(RegisterService(make_gscoped_ptr<rpc::ServiceIf>(
+                                  new GenericServiceImpl(this))));
 
   RETURN_NOT_OK(rpc_server_->Start());
 

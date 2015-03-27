@@ -46,7 +46,7 @@ ADD_KUDU_TEST(logical_clock-test)
 # server_base_proto
 #########################################
 
-PROTOBUF_GENERATE_CPP(SERVER_BASE_PROTO_SRCS SERVER_BASE_PROTO_HDRS
+KRPC_GENERATE(SERVER_BASE_PROTO_SRCS SERVER_BASE_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES server_base.proto)
@@ -62,6 +62,7 @@ target_link_libraries(server_base_proto
 #########################################
 
 set(SERVER_PROCESS_SRCS
+  generic_service.cc
   global-flags.cc
   default-path-handlers.cc
   pprof-path-handlers.cc

@@ -6,6 +6,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/server/hybrid_clock.h"
+#include "kudu/server/server_base.proxy.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
 
@@ -58,6 +59,51 @@ TEST_F(TabletServerTest, TestPingServer) {
   PingResponsePB resp;
   RpcController controller;
   ASSERT_OK(proxy_->Ping(req, &resp, &controller));
+}
+
+TEST_F(TabletServerTest, TestSetFlags) {
+  server::GenericServiceProxy proxy(
+      client_messenger_, mini_server_->bound_rpc_addr());
+
+  server::SetFlagRequestPB req;
+  server::SetFlagResponsePB resp;
+
+  // Set an invalid flag.
+  {
+    RpcController controller;
+    req.set_flag("foo");
+    req.set_value("bar");
+    ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    EXPECT_EQ(server::SetFlagResponsePB::NO_SUCH_FLAG, resp.result());
+    EXPECT_TRUE(resp.msg().empty());
+  }
+
+  // Set a valid flag to a valid value.
+  {
+    int32_t old_val = FLAGS_metrics_retirement_age_ms;
+    RpcController controller;
+    req.set_flag("metrics_retirement_age_ms");
+    req.set_value("12345");
+    ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    EXPECT_EQ(server::SetFlagResponsePB::SUCCESS, resp.result());
+    EXPECT_EQ(resp.msg(), "metrics_retirement_age_ms set to 12345\n");
+    EXPECT_EQ(Substitute("$0", old_val), resp.old_value());
+    EXPECT_EQ(12345, FLAGS_metrics_retirement_age_ms);
+  }
+
+  // Set a valid flag to an invalid value.
+  {
+    RpcController controller;
+    req.set_flag("metrics_retirement_age_ms");
+    req.set_value("foo");
+    ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    EXPECT_EQ(server::SetFlagResponsePB::BAD_VALUE, resp.result());
+    EXPECT_EQ(resp.msg(), "Unable to set flag: bad value");
+    EXPECT_EQ(12345, FLAGS_metrics_retirement_age_ms);
+  }
 }
 
 TEST_F(TabletServerTest, TestWebPages) {

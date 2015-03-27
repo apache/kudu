@@ -15,3 +15,40 @@ message ServerStatusPB {
   repeated HostPortPB bound_rpc_addresses = 2;
   repeated HostPortPB bound_http_addresses = 3;
 }
+
+// Attempt to set a command line flag.
+// Note that many command line flags do not take effect if changed
+// at runtime.
+//
+// TODO: We plan to add tags indicating which flags can be modified at
+// runtime. For now, this is an advanced option.
+message SetFlagRequestPB {
+  required string flag = 1;
+  required string value = 2;
+}
+
+message SetFlagResponsePB {
+  enum Code {
+    SUCCESS = 1;
+    NO_SUCH_FLAG = 2;
+    BAD_VALUE = 3;
+  }
+
+  required Code result = 1;
+
+  // A string describing the new value that the option has been set to.
+  // This passes through the return value of SetCommandLineOption() from
+  // gflags, which doesn't specify anything about the format of this message.
+  //
+  // Using 'result' above is more reliable.
+  optional string msg = 2;
+
+  // If the flag exists, the prior value of the flag. This is set even in the
+  // case of BAD_VALUE.
+  optional string old_value = 3;
+}
+
+service GenericService {
+  rpc SetFlag(SetFlagRequestPB)
+    returns (SetFlagResponsePB);
+}
