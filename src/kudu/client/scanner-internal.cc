@@ -152,13 +152,17 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
     scan->clear_encoded_stop_key();
   }
 
-
   scan->set_tablet_id(remote_->tablet_id());
   RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns()));
 
   for (;;) {
+    // Recalculate the deadlines.
+    MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
+    rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
+    MonoTime actual_deadline = MonoTime::Earliest(rpc_deadline, deadline);
+
     controller_.Reset();
-    controller_.set_deadline(deadline);
+    controller_.set_deadline(actual_deadline);
     RemoteTabletServer *ts;
     RETURN_NOT_OK(table_->client()->data_->GetTabletServer(
         table_->client(),
@@ -172,6 +176,10 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
     Status s = proxy_->Scan(next_req_, &last_response_, &controller_);
     if (s.ok()) {
       break;
+    } else if (s.IsTimedOut() && actual_deadline.Equals(deadline)) {
+      // The overall deadline came sooner than the would-be RPC deadline,
+      // so don't treat the TS as failed.
+      return s;
     }
 
     // On error, mark any replicas hosted by this TS as failed, then try

@@ -199,6 +199,10 @@ std::string MonoTime::ToString() const {
   return StringPrintf("%.3fs", ToSeconds());
 }
 
+bool MonoTime::Equals(const MonoTime& other) const {
+  return nanos_ == other.nanos_;
+}
+
 MonoTime::MonoTime(const struct timespec &ts) {
   // Monotonic time resets when the machine reboots.  The 64-bit limitation
   // means that we can't represent times larger than 292 years, which should be

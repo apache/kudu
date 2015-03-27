@@ -1016,9 +1016,27 @@ TEST_F(ClientTest, TestCloseScanner) {
 }
 
 TEST_F(ClientTest, TestScanTimeout) {
-  KuduScanner scanner(client_table_.get());
-  ASSERT_STATUS_OK(scanner.SetTimeoutMillis(0));
-  ASSERT_TRUE(scanner.Open().IsTimedOut());
+  // Warm the cache so that the subsequent timeout occurs within the scan,
+  // not the lookup.
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1));
+
+  // The "overall operation" timed out; no replicas failed.
+  {
+    KuduScanner scanner(client_table_.get());
+    ASSERT_OK(scanner.SetTimeoutMillis(0));
+    ASSERT_TRUE(scanner.Open().IsTimedOut());
+    ASSERT_TRUE(scanner.data_->remote_);
+    ASSERT_EQ(0, scanner.data_->remote_->GetNumFailedReplicas());
+  }
+
+  // Every RPC timed out; all replicas failed.
+  {
+    client_->data_->default_rpc_timeout_ = MonoDelta::FromSeconds(0);
+    KuduScanner scanner(client_table_.get());
+    ASSERT_TRUE(scanner.Open().IsServiceUnavailable());
+    ASSERT_TRUE(scanner.data_->remote_);
+    ASSERT_EQ(1, scanner.data_->remote_->GetNumFailedReplicas());
+  }
 }
 
 // Simplest case of inserting through the client API: a single row

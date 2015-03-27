@@ -219,6 +219,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
   FRIEND_TEST(ClientTest, TestReplicatedTabletWritesWithLeaderElection);
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);
+  FRIEND_TEST(ClientTest, TestScanTimeout);
   FRIEND_TEST(ClientTest, TestWriteWithDeadMaster);
   FRIEND_TEST(MasterFailoverTest, DISABLED_TestPauseAfterCreateTableIssued);
 
@@ -815,9 +816,10 @@ class KUDU_EXPORT KuduScanner {
  private:
   class KUDU_NO_EXPORT Data;
 
-  FRIEND_TEST(ClientTest, TestScanNoBlockCaching);
   FRIEND_TEST(ClientTest, TestScanCloseProxy);
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);
+  FRIEND_TEST(ClientTest, TestScanNoBlockCaching);
+  FRIEND_TEST(ClientTest, TestScanTimeout);
 
   gscoped_ptr<Data> data_;
 

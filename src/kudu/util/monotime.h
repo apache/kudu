@@ -95,6 +95,7 @@ class MonoTime {
   void AddDelta(const MonoDelta &delta);
   bool ComesBefore(const MonoTime &rhs) const;
   std::string ToString() const;
+  bool Equals(const MonoTime& other) const;
 
  private:
   friend class MonoDelta;
