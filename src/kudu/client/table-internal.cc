@@ -18,6 +18,7 @@ namespace kudu {
 
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
+using rpc::RpcController;
 using std::string;
 using std::tr1::shared_ptr;
 
@@ -40,56 +41,70 @@ Status KuduTable::Data::Open() {
   GetTableLocationsResponsePB resp;
 
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(client_->data_->default_select_master_timeout_);
+  deadline.AddDelta(client_->default_admin_operation_timeout());
+
   req.mutable_table()->set_table_name(name_);
   Status s;
   // TODO: replace this with Async RPC-retrier based RPC in the next revision,
   // adding exponential backoff and allowing this to be used safely in a
   // a reactor thread.
   while (true) {
-    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
-      // TODO: See KUDU-572, regarding better design and/or documentation for
-      // timeouts and failure detection.
-      int64_t timeout_millis =
-          client_->data_->default_select_master_timeout_.ToMilliseconds();
-      LOG(ERROR) << "Timed out waiting for non-empty GetTableLocations reply from a leader Master "
-          "after " << timeout_millis << " ms.";
-      return Status::TimedOut(strings::Substitute("Timed out waiting for non-empty "
-                                                  "GetTableLocations reply from a leader master "
-                                                  "after $0 ms.", timeout_millis));
+    RpcController rpc;
+
+    // Have we already exceeded our deadline?
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    if (deadline.ComesBefore(now)) {
+      const char* msg = "Timed out waiting for non-empty GetTableLocations "
+          "reply from a leader Master";
+      LOG(ERROR) << msg;
+      return Status::TimedOut(msg);
     }
-    rpc::RpcController rpc;
-    rpc.set_timeout(client_->default_admin_operation_timeout());
+
+    // See KuduClient::Data::SyncLeaderMasterRpc().
+    MonoTime rpc_deadline = now;
+    rpc_deadline.AddDelta(client_->default_rpc_timeout());
+    rpc.set_deadline(MonoTime::Earliest(rpc_deadline, deadline));
+
     s = client_->data_->master_proxy_->GetTableLocations(req, &resp, &rpc);
     if (!s.ok()) {
+      // Various conditions cause us to look for the leader master again.
+      // It's ok if that eventually fails; we'll retry over and over until
+      // the deadline is reached.
+
       if (s.IsNetworkError()) {
         LOG(WARNING) << "Network error talking to the leader master ("
                      << client_->data_->leader_master_hostport().ToString() << "): "
-                     << s.ToString() << ". Determining the leader master again and retrying.";
-        s = client_->data_->SetMasterServerProxy(client_.get());
-        if (s.ok()) {
+                     << s.ToString();
+        if (client_->data_->master_server_addrs_.size() > 1) {
+          LOG(INFO) << "Determining the leader master again and retrying.";
+          WARN_NOT_OK(client_->data_->SetMasterServerProxy(client_.get(), deadline),
+                      "Failed to determine new Master");
           continue;
         }
       }
-      // TODO: See KUDU-572 for more discussion on timeout handling.
-      if (s.IsTimedOut()) {
+
+      if (s.IsTimedOut()
+          && MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
         LOG(WARNING) << "Timed out talking to the leader master ("
                      << client_->data_->leader_master_hostport().ToString() << "): "
-                     << s.ToString() << ". Determining the leader master again and retrying.";
-        s = client_->data_->SetMasterServerProxy(client_.get());
-        if (s.ok()) {
+                     << s.ToString();
+        if (client_->data_->master_server_addrs_.size() > 1) {
+          LOG(INFO) << "Determining the leader master again and retrying.";
+          WARN_NOT_OK(client_->data_->SetMasterServerProxy(client_.get(), deadline),
+                      "Failed to determine new Master");
           continue;
         }
       }
     }
     if (s.ok() && resp.has_error()) {
-      if (resp.error().code()  == master::MasterErrorPB::NOT_THE_LEADER ||
+      if (resp.error().code() == master::MasterErrorPB::NOT_THE_LEADER ||
           resp.error().code() == master::MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
         LOG(WARNING) << "Master " << client_->data_->leader_master_hostport().ToString()
-                     << " is no longer the leader master. Determining the leader master again"
-            " and retrying.";
-        s = client_->data_->SetMasterServerProxy(client_.get());
-        if (s.ok()) {
+                     << " is no longer the leader master.";
+        if (client_->data_->master_server_addrs_.size() > 1) {
+          LOG(INFO) << "Determining the leader master again and retrying.";
+          WARN_NOT_OK(client_->data_->SetMasterServerProxy(client_.get(), deadline),
+                      "Failed to determine new Master");
           continue;
         }
       }

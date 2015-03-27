@@ -122,8 +122,8 @@ KuduClientBuilder& KuduClientBuilder::default_admin_operation_timeout(const Mono
   return *this;
 }
 
-KuduClientBuilder& KuduClientBuilder::default_select_master_timeout(const MonoDelta& timeout) {
-  data_->default_select_master_timeout_ = timeout;
+KuduClientBuilder& KuduClientBuilder::default_rpc_timeout(const MonoDelta& timeout) {
+  data_->default_rpc_timeout_ = timeout;
   return *this;
 }
 
@@ -135,15 +135,18 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   RETURN_NOT_OK(builder.Build(&c->data_->messenger_));
 
   c->data_->master_server_addrs_ = data_->master_server_addrs_;
-  c->data_->default_select_master_timeout_ = data_->default_select_master_timeout_;
+  c->data_->default_admin_operation_timeout_ = data_->default_admin_operation_timeout_;
+  c->data_->default_rpc_timeout_ = data_->default_rpc_timeout_;
 
-  RETURN_NOT_OK_PREPEND(c->data_->SetMasterServerProxy(c.get()),
+  // Let's allow for plenty of time for discovering the master the first
+  // time around.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(c->default_admin_operation_timeout());
+  RETURN_NOT_OK_PREPEND(c->data_->SetMasterServerProxy(c.get(), deadline),
                         "Could not locate the leader master");
 
   c->data_->meta_cache_.reset(new MetaCache(c.get()));
   c->data_->dns_resolver_.reset(new DnsResolver());
-
-  c->data_->default_admin_operation_timeout_ = data_->default_admin_operation_timeout_;
 
   // Init local host names used for locality decisions.
   RETURN_NOT_OK_PREPEND(c->data_->InitLocalHostNames(),
@@ -170,10 +173,7 @@ Status KuduClient::IsCreateTableInProgress(const string& table_name,
 
 Status KuduClient::DeleteTable(const string& table_name) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-
-  // TODO: Add client rpc timeout and add per operation timeouts
-  // for this and other operations.
-  deadline.AddDelta(default_select_master_timeout());
+  deadline.AddDelta(default_admin_operation_timeout());
   return data_->DeleteTable(this, table_name, deadline);
 }
 
@@ -206,7 +206,6 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
   deadline.AddDelta(default_admin_operation_timeout());
   Status s =
       data_->SyncLeaderMasterRpc<ListTabletServersRequestPB, ListTabletServersResponsePB>(
-          data_->default_admin_operation_timeout_,
           deadline,
           this,
           req,
@@ -239,7 +238,6 @@ Status KuduClient::ListTables(vector<string>* tables,
   deadline.AddDelta(default_admin_operation_timeout());
   Status s =
       data_->SyncLeaderMasterRpc<ListTablesRequestPB, ListTablesResponsePB>(
-          data_->default_admin_operation_timeout_,
           deadline,
           this,
           req,
@@ -289,23 +287,16 @@ shared_ptr<KuduSession> KuduClient::NewSession() {
   return ret;
 }
 
-const std::vector<std::string>& KuduClient::master_server_addrs() const {
-  return data_->master_server_addrs_;
+bool KuduClient::IsMultiMaster() const {
+  return data_->master_server_addrs_.size() > 1;
 }
 
-void KuduClient::SetSelectMasterTimeoutMillis(int millis) {
-  data_->default_select_master_timeout_ = MonoDelta::FromMilliseconds(millis);
-}
-
-void KuduClient::SetAdminOperationTimeoutMillis(int millis) {
-  data_->default_admin_operation_timeout_ = MonoDelta::FromMilliseconds(millis);
-}
 const MonoDelta& KuduClient::default_admin_operation_timeout() const {
   return data_->default_admin_operation_timeout_;
 }
 
-const MonoDelta& KuduClient::default_select_master_timeout() const {
-  return data_->default_select_master_timeout_;
+const MonoDelta& KuduClient::default_rpc_timeout() const {
+  return data_->default_rpc_timeout_;
 }
 
 ////////////////////////////////////////////////////////////
@@ -369,11 +360,11 @@ Status KuduTableCreator::Create() {
     req.add_pre_split_keys(key);
   }
 
-  // If no custom timeout is specified, keep re-trying forever.
-  MonoTime deadline;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   if (data_->timeout_.Initialized()) {
-    deadline = MonoTime::Now(MonoTime::FINE);
     deadline.AddDelta(data_->timeout_);
+  } else {
+    deadline.AddDelta(data_->client_->default_admin_operation_timeout());
   }
 
   RETURN_NOT_OK_PREPEND(data_->client_->data_->CreateTable(data_->client_,

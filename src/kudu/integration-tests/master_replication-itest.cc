@@ -17,8 +17,6 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_leader_failure_detection);
-DECLARE_int32(leader_heartbeat_interval_ms);
-DECLARE_int32(heartbeat_interval_ms);
 
 namespace kudu {
 namespace master {
@@ -159,7 +157,7 @@ TEST_F(MasterReplicationTest, TestTimeoutWhenAllMastersAreDown) {
   shared_ptr<KuduClient> client;
   KuduClientBuilder builder;
   builder.master_server_addrs(master_addrs);
-  builder.default_select_master_timeout(MonoDelta::FromMilliseconds(100));
+  builder.default_rpc_timeout(MonoDelta::FromMilliseconds(100));
   Status s = builder.Build(&client);
   EXPECT_TRUE(!s.ok());
   EXPECT_TRUE(s.IsTimedOut());
@@ -190,6 +188,7 @@ TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
   shared_ptr<KuduClient> client;
   KuduClientBuilder builder;
   builder.master_server_addrs(master_addrs);
+  builder.default_admin_operation_timeout(MonoDelta::FromSeconds(15));
   EXPECT_OK(builder.Build(&client));
 
   ASSERT_STATUS_OK(ThreadJoiner(start_thread.get()).Join());

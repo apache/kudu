@@ -104,6 +104,8 @@ GetLeaderMasterRpc::GetLeaderMasterRpc(const StatusCallback& user_cb,
       leader_master_(DCHECK_NOTNULL(leader_master)),
       pending_responses_(0),
       completed_(false) {
+  DCHECK(deadline.Initialized());
+
   // Using resize instead of reserve to explicitly initialized the
   // values.
   responses_.resize(addrs_.size());

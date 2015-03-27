@@ -91,10 +91,10 @@ class KUDU_EXPORT KuduClientBuilder {
   // If not provided, defaults to 5s.
   KuduClientBuilder& default_admin_operation_timeout(const MonoDelta& timeout);
 
-  // The default timeout for determining the leader master. Optional.
+  // The default timeout for individual RPCs. Optional.
   //
-  // If not provided, defaults to 15s.
-  KuduClientBuilder& default_select_master_timeout(const MonoDelta& timeout);
+  // If not provided, defaults to 2s.
+  KuduClientBuilder& default_rpc_timeout(const MonoDelta& timeout);
 
   // Creates the client.
   //
@@ -193,22 +193,10 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
     FIRST_REPLICA
   };
 
-  const std::vector<std::string>& master_server_addrs() const;
-
-  // Set the timeout for selecting a leader master.
-  void SetSelectMasterTimeoutMillis(int millis);
-
-  // Set the timeout for any operations that involve talking to the
-  // master.
-  void SetAdminOperationTimeoutMillis(int millis);
+  bool IsMultiMaster() const;
 
   const MonoDelta& default_admin_operation_timeout() const;
-
-  // TODO Introduce a separate client rpc timeout and use
-  // default_admin_operation_timeout and operation specific timeouts
-  // (e.g., an init timeout that covers initial name resolution and
-  // master selection).
-  const MonoDelta& default_select_master_timeout() const;
+  const MonoDelta& default_rpc_timeout() const;
 
  private:
   class KUDU_NO_EXPORT Data;
@@ -226,10 +214,12 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   friend class internal::RemoteTabletServer;
   friend class internal::WriteRpc;
 
-  FRIEND_TEST(ClientTest, TestScanFaultTolerance);
+  FRIEND_TEST(ClientTest, TestMasterDown);
+  FRIEND_TEST(ClientTest, TestMasterLookupPermits);
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
   FRIEND_TEST(ClientTest, TestReplicatedTabletWritesWithLeaderElection);
-  FRIEND_TEST(ClientTest, TestMasterLookupPermits);
+  FRIEND_TEST(ClientTest, TestScanFaultTolerance);
+  FRIEND_TEST(ClientTest, TestWriteWithDeadMaster);
   FRIEND_TEST(MasterFailoverTest, DISABLED_TestPauseAfterCreateTableIssued);
 
   KuduClient();

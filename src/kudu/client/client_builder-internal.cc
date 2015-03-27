@@ -8,8 +8,8 @@ namespace kudu {
 namespace client {
 
 KuduClientBuilder::Data::Data()
-  : default_admin_operation_timeout_(MonoDelta::FromMilliseconds(5 * 1000)),
-    default_select_master_timeout_(MonoDelta::FromMilliseconds(15* 1000)) {
+  : default_admin_operation_timeout_(MonoDelta::FromSeconds(5)),
+    default_rpc_timeout_(MonoDelta::FromSeconds(2)) {
 }
 
 KuduClientBuilder::Data::~Data() {

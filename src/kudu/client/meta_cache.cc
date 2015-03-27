@@ -350,9 +350,6 @@ class LookupRpc : public Rpc {
 
   // Whether this lookup has acquired a master lookup permit.
   bool has_permit_;
-
-  // Time when this RPC was created.
-  const MonoTime create_time_;
 };
 
 LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
@@ -368,8 +365,8 @@ LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
     table_(table),
     key_(key),
     remote_tablet_(remote_tablet),
-    has_permit_(false),
-    create_time_(MonoTime::Now(MonoTime::FINE)) {
+    has_permit_(false) {
+  DCHECK(deadline.Initialized());
 }
 
 LookupRpc::~LookupRpc() {
@@ -418,6 +415,12 @@ void LookupRpc::SendRpc() {
   // The end key is left unset intentionally so that we'll prefetch some
   // additional tablets.
 
+  // See KuduClient::Data::SyncLeaderMasterRpc().
+  MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
+  rpc_deadline.AddDelta(meta_cache_->client_->default_rpc_timeout());
+  retrier().controller().set_deadline(
+      MonoTime::Earliest(rpc_deadline, retrier().deadline()));
+
   master_proxy()->GetTableLocationsAsync(req_, &resp_, &retrier().controller(),
                                          boost::bind(&LookupRpc::SendRpcCb, this, Status::OK()));
 }
@@ -431,6 +434,7 @@ string LookupRpc::ToString() const {
 void LookupRpc::ResetMasterLeaderAndRetry() {
   table_->client()->data_->SetMasterServerProxyAsync(
       table_->client(),
+      retrier().deadline(),
       Bind(&LookupRpc::NewLeaderMasterDeterminedCb,
            Unretained(this)));
 }
@@ -459,19 +463,19 @@ void LookupRpc::SendRpcCb(const Status& status) {
   if (new_status.ok() && resp_.has_error()) {
     if (resp_.error().code() == master::MasterErrorPB::NOT_THE_LEADER ||
         resp_.error().code() == master::MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
-      LOG(WARNING) << "Leader Master has changed, re-trying...";
-      ResetMasterLeaderAndRetry();
-      ignore_result(delete_me.release());
-      return;
+      if (meta_cache_->client_->IsMultiMaster()) {
+        LOG(WARNING) << "Leader Master has changed, re-trying...";
+        ResetMasterLeaderAndRetry();
+        ignore_result(delete_me.release());
+        return;
+      }
     }
     new_status = StatusFromPB(resp_.error().status());
   }
 
-  if (new_status.IsTimedOut()) {
-    // TODO: See KUDU-572, regarding better design and/or
-    // documentation for timeouts and failure detection.
-    if (MonoTime::Now(MonoTime::FINE).GetDeltaSince(create_time_).LessThan(
-            table_->client()->data_->default_select_master_timeout_)) {
+  if (new_status.IsTimedOut() &&
+      MonoTime::Now(MonoTime::FINE).ComesBefore(retrier().deadline())) {
+    if (meta_cache_->client_->IsMultiMaster()) {
       LOG(WARNING) << "Leader Master timed out, re-trying...";
       ResetMasterLeaderAndRetry();
       ignore_result(delete_me.release());
@@ -480,11 +484,13 @@ void LookupRpc::SendRpcCb(const Status& status) {
   }
 
   if (new_status.IsNetworkError()) {
-    LOG(WARNING) << "Encountered a network error from the Master: " << new_status.ToString()
-                 << ", retrying...";
-    ResetMasterLeaderAndRetry();
-    ignore_result(delete_me.release());
-    return;
+    if (meta_cache_->client_->IsMultiMaster()) {
+      LOG(WARNING) << "Encountered a network error from the Master: " << new_status.ToString()
+                     << ", retrying...";
+      ResetMasterLeaderAndRetry();
+      ignore_result(delete_me.release());
+      return;
+    }
   }
 
   // Prefer response failures over no tablets found.

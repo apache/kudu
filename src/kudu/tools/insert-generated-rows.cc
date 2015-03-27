@@ -64,7 +64,6 @@ static int WriteRandomDataToTable(int argc, char** argv) {
   shared_ptr<KuduClient> client;
   CHECK_OK(KuduClientBuilder()
            .master_server_addrs(addrs)
-           .default_select_master_timeout(MonoDelta::FromSeconds(5))
            .Build(&client));
 
   LOG(INFO) << "Opening table...";

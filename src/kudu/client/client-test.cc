@@ -100,7 +100,6 @@ class ClientTest : public KuduTest {
 
     // Connect to the cluster.
     ASSERT_STATUS_OK(KuduClientBuilder()
-                     .default_select_master_timeout(MonoDelta::FromSeconds(5))
                      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                      .Build(&client_));
 
@@ -462,15 +461,14 @@ TEST_F(ClientTest, TestBadTable) {
   ASSERT_STR_CONTAINS(s.ToString(), "Not found: The table does not exist");
 }
 
-// Test that, if the master is down, we re-try finding a new master,
-// and then exit after a timeout.
+// Test that, if the master is down, we experience a network error talking
+// to it (no "find the new leader master" since there's only one master).
 TEST_F(ClientTest, TestMasterDown) {
   cluster_->mini_master()->Shutdown();
   scoped_refptr<KuduTable> t;
-  client_->SetAdminOperationTimeoutMillis(1000);
-  client_->SetSelectMasterTimeoutMillis(1000);
+  client_->data_->default_admin_operation_timeout_ = MonoDelta::FromSeconds(1);
   Status s = client_->OpenTable("other-tablet", &t);
-  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_TRUE(s.IsNetworkError());
 }
 
 TEST_F(ClientTest, TestScan) {
@@ -1228,7 +1226,15 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   session->GetPendingErrors(&errors, &overflow);
   ASSERT_FALSE(overflow);
   ASSERT_EQ(1, errors.size());
-  ASSERT_TRUE(errors[0]->status().IsTimedOut());
+  switch (which) {
+    case DEAD_MASTER:
+      // Only one master, so no retry for finding the new leader master.
+      ASSERT_TRUE(errors[0]->status().IsNetworkError());
+      break;
+    case DEAD_TSERVER:
+      ASSERT_TRUE(errors[0]->status().IsTimedOut());
+      break;
+  }
 
   ASSERT_EQ(errors[0]->failed_op().ToString(),
             "INSERT uint32 key=1, uint32 int_val=1, string string_val=x");
@@ -1236,8 +1242,7 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
 
 // Test error handling cases where the master is down (tablet resolution fails)
 TEST_F(ClientTest, TestWriteWithDeadMaster) {
-  client_->SetAdminOperationTimeoutMillis(1000);
-  client_->SetSelectMasterTimeoutMillis(1000);
+  client_->data_->default_admin_operation_timeout_ = MonoDelta::FromSeconds(1);
   DoTestWriteWithDeadServer(DEAD_MASTER);
 }
 

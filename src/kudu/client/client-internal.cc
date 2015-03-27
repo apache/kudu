@@ -67,8 +67,10 @@ static Status RetryFunc(const MonoTime& deadline,
                         const string& retry_msg,
                         const string& timeout_msg,
                         const boost::function<Status(const MonoTime&, bool*)>& func) {
+  DCHECK(deadline.Initialized());
+
   MonoTime now = MonoTime::Now(MonoTime::FINE);
-  if (deadline.Initialized() && !now.ComesBefore(deadline)) {
+  if (deadline.ComesBefore(now)) {
     return Status::TimedOut(timeout_msg);
   }
 
@@ -107,7 +109,6 @@ static Status RetryFunc(const MonoTime& deadline,
 
 template<class ReqClass, class RespClass>
 Status KuduClient::Data::SyncLeaderMasterRpc(
-    const MonoDelta& rpc_timeout,
     const MonoTime& deadline,
     KuduClient* client,
     const ReqClass& req,
@@ -117,56 +118,62 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
                                  const ReqClass&,
                                  RespClass*,
                                  RpcController*)>& func) {
+  DCHECK(deadline.Initialized());
+
   while (true) {
     RpcController rpc;
 
-    // Set the per-rpc deadline
-    MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
-    rpc_deadline.AddDelta(rpc_timeout);
-
-    // If a global (per entire operation) deadline is set:
-    // 1) Check whether or not we've exceed the deadline.
-    // 2) Set per-RPC deadline to min(now + rpc_timeout, deadline).
-    if (deadline.Initialized()) {
-      MonoTime now = MonoTime::Now(MonoTime::FINE);
-      if (deadline.ComesBefore(now)) {
-        return Status::TimedOut("timed out waiting for a reply from a leader master");
-      }
-      rpc_deadline = MonoTime::Earliest(rpc_deadline, deadline);
+    // Have we already exceeded our deadline?
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    if (deadline.ComesBefore(now)) {
+      return Status::TimedOut("timed out waiting for a reply from a leader master");
     }
 
-    rpc.set_deadline(rpc_deadline);
+    // The RPC's deadline is intentionally earlier than the overall
+    // deadline so that we reserve some time with which to find a new
+    // leader master and retry before the overall deadline expires.
+    //
+    // TODO: KUDU-683 tracks cleanup for this.
+    MonoTime rpc_deadline = now;
+    rpc_deadline.AddDelta(client->default_rpc_timeout());
+    rpc.set_deadline(MonoTime::Earliest(rpc_deadline, deadline));
 
     if (num_attempts != NULL) {
       ++*num_attempts;
     }
-
     Status s = func(master_proxy_.get(), req, resp, &rpc);
-    if (!s.ok()) {
-      if (s.IsNetworkError() || s.IsTimedOut()) {
-        LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
-                     << ") to leader Master (" << leader_master_hostport().ToString()
-                     << "): " << s.ToString();
-        if (master_server_addrs_.size() > 1) {
-          LOG(INFO) << "Determining the new leader Master and retrying...";
-          s = SetMasterServerProxy(client);
-          if (s.ok()) {
-            continue;
-          }
-          LOG(WARNING) << "Unable to determine the new leader Master: " << s.ToString();
-        }
+    if (s.IsNetworkError()) {
+      LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
+                   << ") to leader Master (" << leader_master_hostport().ToString()
+                   << "): " << s.ToString();
+      if (master_server_addrs_.size() > 1) {
+        LOG(INFO) << "Determining the new leader Master and retrying...";
+        WARN_NOT_OK(SetMasterServerProxy(client, deadline),
+                    "Unable to determine the new leader Master");
+        continue;
       }
     }
+
+    if (s.IsTimedOut() && MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+      LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
+                   << ") to leader Master (" << leader_master_hostport().ToString()
+                   << "): " << s.ToString();
+      if (master_server_addrs_.size() > 1) {
+        LOG(INFO) << "Determining the new leader Master and retrying...";
+        WARN_NOT_OK(SetMasterServerProxy(client, deadline),
+                    "Unable to determine the new leader Master");
+        continue;
+      }
+    }
+
     if (s.ok() && resp->has_error()) {
       if (resp->error().code() == MasterErrorPB::NOT_THE_LEADER ||
           resp->error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
         if (master_server_addrs_.size() > 1) {
           LOG(INFO) << "Determining the new leader Master and retrying...";
-          s = SetMasterServerProxy(client);
-          if (s.ok()) {
-            continue;
-          }
-          LOG(WARNING) << "Unable to determine the new leader Master: " << s.ToString();
+          WARN_NOT_OK(SetMasterServerProxy(client, deadline),
+                      "Unable to determine the new leader Master");
+          continue;
         }
       }
     }
@@ -177,7 +184,6 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
 // Explicit specialization for callers outside this compilation unit.
 template
 Status KuduClient::Data::SyncLeaderMasterRpc(
-    const MonoDelta& rpc_timeout,
     const MonoTime& deadline,
     KuduClient* client,
     const ListTablesRequestPB& req,
@@ -189,7 +195,6 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
                                  RpcController*)>& func);
 template
 Status KuduClient::Data::SyncLeaderMasterRpc(
-    const MonoDelta& rpc_timeout,
     const MonoTime& deadline,
     KuduClient* client,
     const ListTabletServersRequestPB& req,
@@ -252,7 +257,6 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
     Status s =
         SyncLeaderMasterRpc<CreateTableRequestPB,
                             CreateTableResponsePB>(
-                                default_admin_operation_timeout_,
                                 deadline,
                                 client,
                                 req,
@@ -307,7 +311,6 @@ Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
   // the default timeout for all admin operations.
   Status s =
       SyncLeaderMasterRpc<IsCreateTableDoneRequestPB, IsCreateTableDoneResponsePB>(
-          default_admin_operation_timeout_,
           deadline,
           client,
           req,
@@ -345,7 +348,7 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
 
   req.mutable_table()->set_table_name(table_name);
   Status s = SyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>(
-      default_admin_operation_timeout_, deadline, client, req, &resp,
+      deadline, client, req, &resp,
       &attempts, &MasterServiceProxy::DeleteTable);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
@@ -366,7 +369,6 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
   AlterTableResponsePB resp;
   Status s =
       SyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB>(
-          default_admin_operation_timeout_,
           deadline,
           client,
           alter_steps,
@@ -391,13 +393,10 @@ Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
                                                 bool *alter_in_progress) {
   IsAlterTableDoneRequestPB req;
   IsAlterTableDoneResponsePB resp;
-  RpcController rpc;
 
   req.mutable_table()->set_table_name(table_name);
-  rpc.set_timeout(deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE)));
   Status s =
       SyncLeaderMasterRpc<IsAlterTableDoneRequestPB, IsAlterTableDoneResponsePB>(
-          default_admin_operation_timeout_,
           deadline,
           client,
           req,
@@ -518,7 +517,6 @@ class GetTableSchemaRpc : public Rpc {
   StatusCallback user_cb_;
   const string table_name_;
   KuduSchema* out_schema_;
-  const MonoTime create_time_;
   GetTableSchemaResponsePB resp_;
 };
 
@@ -532,8 +530,7 @@ GetTableSchemaRpc::GetTableSchemaRpc(KuduClient* client,
       client_(client),
       user_cb_(user_cb),
       table_name_(table_name),
-      out_schema_(out_schema),
-      create_time_(MonoTime::Now(MonoTime::FINE)) {
+      out_schema_(out_schema) {
   DCHECK(client);
   DCHECK(out_schema);
 }
@@ -542,6 +539,12 @@ GetTableSchemaRpc::~GetTableSchemaRpc() {
 }
 
 void GetTableSchemaRpc::SendRpc() {
+  // See KuduClient::Data::SyncLeaderMasterRpc().
+  MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
+  rpc_deadline.AddDelta(client_->default_rpc_timeout());
+  retrier().controller().set_deadline(
+      MonoTime::Earliest(rpc_deadline, retrier().deadline()));
+
   GetTableSchemaRequestPB req;
   req.mutable_table()->set_table_name(table_name_);
   client_->data_->master_proxy()->GetTableSchemaAsync(
@@ -557,6 +560,7 @@ string GetTableSchemaRpc::ToString() const {
 void GetTableSchemaRpc::ResetLeaderMasterAndRetry() {
   client_->data_->SetMasterServerProxyAsync(
       client_,
+      retrier().deadline(),
       Bind(&GetTableSchemaRpc::NewLeaderMasterDeterminedCb,
            Unretained(this)));
 }
@@ -580,30 +584,36 @@ void GetTableSchemaRpc::SendRpcCb(const Status& status) {
   if (new_status.ok() && resp_.has_error()) {
     if (resp_.error().code() == MasterErrorPB::NOT_THE_LEADER ||
         resp_.error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
-      LOG(WARNING) << "Leader Master has changed ("
-                   << client_->data_->leader_master_hostport().ToString()
-                   << " is no longer the leader), re-trying...";
-      ResetLeaderMasterAndRetry();
-      return;
+      if (client_->IsMultiMaster()) {
+        LOG(WARNING) << "Leader Master has changed ("
+                     << client_->data_->leader_master_hostport().ToString()
+                     << " is no longer the leader), re-trying...";
+        ResetLeaderMasterAndRetry();
+        return;
+      }
     }
     new_status = StatusFromPB(resp_.error().status());
   }
 
-  if (new_status.IsTimedOut()) {
-    if (MonoTime::Now(MonoTime::FINE).GetDeltaSince(create_time_).LessThan(
-            client_->data_->default_select_master_timeout_)) {
-      LOG(WARNING) << "Leader Master (" << client_->data_->leader_master_hostport().ToString()
+  if (new_status.IsTimedOut() &&
+      MonoTime::Now(MonoTime::FINE).ComesBefore(retrier().deadline())) {
+    if (client_->IsMultiMaster()) {
+      LOG(WARNING) << "Leader Master ("
+                   << client_->data_->leader_master_hostport().ToString()
                    << ") timed out, re-trying...";
       ResetLeaderMasterAndRetry();
       return;
     }
   }
+
   if (new_status.IsNetworkError()) {
-    LOG(WARNING) << "Encountered a network error from the Master("
-                 << client_->data_->leader_master_hostport().ToString() << "): "
-                 << new_status.ToString() << ", retrying...";
-    ResetLeaderMasterAndRetry();
-    return;
+    if (client_->IsMultiMaster()) {
+      LOG(WARNING) << "Encountered a network error from the Master("
+                   << client_->data_->leader_master_hostport().ToString() << "): "
+                   << new_status.ToString() << ", retrying...";
+      ResetLeaderMasterAndRetry();
+      return;
+    }
   }
 
   if (new_status.ok()) {
@@ -657,15 +667,18 @@ void KuduClient::Data::LeaderMasterDetermined(const StatusCallback& user_cb,
   cb_copy.Run(new_status);
 }
 
-Status KuduClient::Data::SetMasterServerProxy(KuduClient* client) {
+Status KuduClient::Data::SetMasterServerProxy(KuduClient* client,
+                                              const MonoTime& deadline) {
   Synchronizer sync;
-  SetMasterServerProxyAsync(client, sync.AsStatusCallback());
+  SetMasterServerProxyAsync(client, deadline, sync.AsStatusCallback());
   return sync.Wait();
 }
 
-void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client, const StatusCallback& cb) {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(default_select_master_timeout_);
+void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
+                                                 const MonoTime& deadline,
+                                                 const StatusCallback& cb) {
+  DCHECK(deadline.Initialized());
+
   vector<Sockaddr> master_sockaddrs;
   BOOST_FOREACH(const string& master_server_addr, master_server_addrs_) {
     vector<Sockaddr> addrs;
@@ -688,6 +701,13 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client, const Statu
     master_sockaddrs.push_back(addrs[0]);
   }
 
+  // Finding a new master involves a fan-out RPC to each master. A single
+  // RPC timeout's worth of time should be sufficient, though we'll use
+  // the provided deadline if it's sooner.
+  MonoTime leader_master_deadline = MonoTime::Now(MonoTime::FINE);
+  leader_master_deadline.AddDelta(client->default_rpc_timeout());
+  MonoTime actual_deadline = MonoTime::Earliest(deadline, leader_master_deadline);
+
   // This ensures that no more than one GetLeaderMasterRpc is in
   // flight.  The reason for this is that we need to keep hold of a
   // reference to an in-flight RPC ('leader_master_rpc_') in order not
@@ -707,7 +727,7 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client, const Statu
       Bind(&KuduClient::Data::LeaderMasterDetermined,
            Unretained(this), cb),
       master_sockaddrs,
-      deadline,
+      actual_deadline,
       messenger_,
       &leader_master_hostport_));
   leader_master_rpc_->SendRpc();

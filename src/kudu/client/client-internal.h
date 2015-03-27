@@ -106,12 +106,13 @@ class KuduClient::Data {
   // Asynchronously sets 'master_proxy_' to the leader master by
   // cycling through servers listed in 'master_server_addrs_' until
   // one responds with a quorum configuration that contains the leader
-  // master or 'default_select_master_timeout_' expires.
+  // master or 'deadline' expires.
   //
   // Invokes 'cb' with the appropriate status when finished.
   //
   // Works with both a distributed and non-distributed configuration.
   void SetMasterServerProxyAsync(KuduClient* client,
+                                 const MonoTime& deadline,
                                  const StatusCallback& cb);
 
   // Synchronous version of SetMasterServerProxyAsync method above.
@@ -121,7 +122,8 @@ class KuduClient::Data {
   //
   // TODO (KUDU-492): Get rid of this method and re-factor the client
   // to lazily initialize 'master_proxy_'.
-  Status SetMasterServerProxy(KuduClient* client);
+  Status SetMasterServerProxy(KuduClient* client,
+                              const MonoTime& deadline);
 
   master::MasterServiceProxy* master_proxy() const {
     return master_proxy_.get();
@@ -144,7 +146,6 @@ class KuduClient::Data {
   // retried forever.
   template<class ReqClass, class RespClass>
   Status SyncLeaderMasterRpc(
-      const MonoDelta& rpc_timeout,
       const MonoTime& deadline,
       KuduClient* client,
       const ReqClass& req,
@@ -165,7 +166,7 @@ class KuduClient::Data {
   // Options the client was built with.
   std::vector<std::string> master_server_addrs_;
   MonoDelta default_admin_operation_timeout_;
-  MonoDelta default_select_master_timeout_;
+  MonoDelta default_rpc_timeout_;
 
   // The host port of the leader master. This is set in
   // LeaderMasterDetermined, which is invoked as a callback by

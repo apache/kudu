@@ -80,8 +80,6 @@ class MasterFailoverTest : public KuduTest {
     cluster_.reset(new ExternalMiniCluster(opts_));
     ASSERT_STATUS_OK(cluster_->Start());
     KuduClientBuilder builder;
-    builder.default_admin_operation_timeout(MonoDelta::FromSeconds(5));
-    builder.default_select_master_timeout(MonoDelta::FromSeconds(60));
     ASSERT_STATUS_OK(cluster_->CreateClient(builder, &client_));
   }
 

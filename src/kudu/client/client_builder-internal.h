@@ -19,7 +19,7 @@ class KuduClientBuilder::Data {
 
   std::vector<std::string> master_server_addrs_;
   MonoDelta default_admin_operation_timeout_;
-  MonoDelta default_select_master_timeout_;
+  MonoDelta default_rpc_timeout_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

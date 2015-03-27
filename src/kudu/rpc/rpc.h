@@ -20,9 +20,6 @@ class Rpc;
 // Provides utilities for retrying failed RPCs.
 //
 // All RPCs should use HandleResponse() to retry certain generic errors.
-//
-// An RPC may wish to Retry() directly if it encounters non-fatal errors
-// that are specific to it.
 class RpcRetrier {
  public:
   RpcRetrier(const MonoTime& deadline,

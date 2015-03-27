@@ -116,7 +116,7 @@ class GetLeaderMasterRpc : public rpc::Rpc,
   // See also: GetMasterRegistrationRpc above.
   std::vector<ServerEntryPB> responses_;
 
-  // Numbeer of pending responses.
+  // Number of pending responses.
   int pending_responses_;
 
   // If true, then we've already executed the user callback and the
