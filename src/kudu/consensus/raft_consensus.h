@@ -139,6 +139,8 @@ class RaftConsensus : public Consensus,
     // The positional index of the first message selected to be appended, in the
     // original leader's request message sequence.
     int64_t first_message_idx;
+
+    std::string OpsRangeString() const;
   };
 
   std::string LogPrefixUnlocked();

@@ -541,6 +541,21 @@ Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg
   return state_->AddPendingOperation(round_ptr);
 }
 
+std::string RaftConsensus::LeaderRequest::OpsRangeString() const {
+  std::string ret;
+  ret.reserve(100);
+  ret.push_back('[');
+  if (!messages.empty()) {
+    const OpId& first_op = (*messages.begin())->get()->id();
+    const OpId& last_op = (*messages.rbegin())->get()->id();
+    strings::SubstituteAndAppend(&ret, "$0.$1-$2.$3",
+                                 first_op.term(), first_op.index(),
+                                 last_op.term(), last_op.index());
+  }
+  ret.push_back(']');
+  return ret;
+}
+
 void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req,
                                                      LeaderRequest* deduplicated_req) {
   const OpId& last_committed = state_->GetCommittedOpIdUnlocked();
@@ -558,8 +573,7 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req
     ReplicateMsg* leader_msg = rpc_req->mutable_ops(i);
 
     if (leader_msg->id().index() <= last_committed.index()) {
-      VLOG_WITH_PREFIX(2) << "Skipping op id " << leader_msg->id().ShortDebugString()
-          << " (already committed)";
+      VLOG_WITH_PREFIX(2) << "Skipping op id " << leader_msg->id() << " (already committed)";
       deduplicated_req->preceding_opid = &leader_msg->id();
       continue;
     }
@@ -573,8 +587,7 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req
       // If the OpIds match, i.e. if they have the same term and id, then this is just
       // duplicate, we skip...
       if (OpIdEquals(round->replicate_msg()->id(), leader_msg->id())) {
-        VLOG_WITH_PREFIX(2) << "Skipping op id " << leader_msg->id().ShortDebugString()
-            << " (already replicated)";
+        VLOG_WITH_PREFIX(2) << "Skipping op id " << leader_msg->id() << " (already replicated)";
         deduplicated_req->preceding_opid = &leader_msg->id();
         continue;
       }
@@ -589,6 +602,14 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req
     }
     deduplicated_req->messages.push_back(make_scoped_refptr_replicate(leader_msg));
   }
+
+  if (deduplicated_req->messages.size() != rpc_req->ops_size()) {
+    LOG_WITH_PREFIX(INFO) << "Deduplicated request from leader. Original: "
+                          << rpc_req->preceding_id() << "->" << OpsRangeString(*rpc_req)
+                          << "   Dedup: " << *deduplicated_req->preceding_opid << "->"
+                          << deduplicated_req->OpsRangeString();
+  }
+
 }
 
 Status RaftConsensus::HandleLeaderRequestTermUnlocked(const ConsensusRequestPB* request,
@@ -625,10 +646,13 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
     return Status::OK();
   }
 
-  string error_msg = Substitute("Log matching property violated."
-      " Preceding OpId in replica: $0. Preceding OpId from leader: $1.",
-      state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
-      req.preceding_opid->ShortDebugString());
+  string error_msg = Substitute(
+    "Log matching property violated."
+    " Preceding OpId in replica: $0. Preceding OpId from leader: $1. ($2 mismatch)",
+    state_->GetLastReceivedOpIdUnlocked().ShortDebugString(),
+    req.preceding_opid->ShortDebugString(),
+    term_mismatch ? "term" : "index");
+
 
   FillConsensusResponseError(response,
                              ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH,

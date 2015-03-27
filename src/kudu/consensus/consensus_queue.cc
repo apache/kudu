@@ -227,12 +227,24 @@ Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
   // If we could get the index we wanted, but the terms were different or if
   // we couldn't get the index we wanter at all, try the fallback index.
   if ((s.ok() && op.term() != new_preceding.term()) || s.IsNotFound()) {
+    if (s.ok()) {
+      LOG_WITH_PREFIX(INFO) << "Tried to read ops starting at " << op << " from cache, "
+                            << "but found op " << new_preceding << " (term mismatch). "
+                            << "Falling back to index " << fallback_index;
+    } else {
+      LOG_WITH_PREFIX(INFO) << "Tried to read ops starting at " << op << " from cache, "
+                            << "but could not find that index in the log. "
+                            << "Falling back to index " << fallback_index;
+    }
     messages->clear();
     new_preceding.Clear();
     s = log_cache_.ReadOps(fallback_index,
                            max_batch_size,
                            messages,
                            &new_preceding);
+    if (s.ok()) {
+      LOG_WITH_PREFIX(INFO) << "Successfully fell back and found op " << new_preceding;
+    }
   }
 
   if (s.ok()) {
