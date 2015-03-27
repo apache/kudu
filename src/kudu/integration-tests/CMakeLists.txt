@@ -3,13 +3,16 @@
 
 set(INTEGRATION_TESTS_SRCS
   mini_cluster.cc
+  cluster_verifier.cc
   external_mini_cluster.cc
+  test_workload.cc
 )
 
 add_library(integration-tests ${INTEGRATION_TESTS_SRCS})
 target_link_libraries(integration-tests
   tserver
   master
+  ksck
   kudu_client
   kudu_client_test_util
   kudu_fs

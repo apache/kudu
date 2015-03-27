@@ -16,6 +16,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/server/metadata.pb.h"
 #include "kudu/util/stopwatch.h"
@@ -214,64 +215,9 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   }
 
   void AssertAllReplicasAgree(int expected_result_count) {
-
-    int counter = 0;
-    while (true) {
-      SleepFor(MonoDelta::FromMilliseconds(10 * counter));
-      vector<string> leader_results;
-      vector<string> replica_results;
-
-      TServerDetails* leader;
-      CHECK_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
-
-      vector<TServerDetails*> followers;
-      GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
-
-      ScanReplica(leader->tserver_proxy.get(), &leader_results);
-
-      if (expected_result_count != -1 && leader_results.size() != expected_result_count) {
-        if (counter >= kMaxRetries) {
-          FAIL() << "LEADER result size " << leader_results.size()
-              << " did not match the expected count " << expected_result_count;
-        }
-        counter++;
-        continue;
-      }
-
-      TServerDetails* last_replica;
-      bool all_replicas_matched = true;
-      BOOST_FOREACH(TServerDetails* replica, followers) {
-        ScanReplica(replica->tserver_proxy.get(), &replica_results);
-        last_replica = replica;
-        SCOPED_TRACE(DumpToString(leader, leader_results,
-                                  replica, replica_results));
-
-        if (leader_results.size() != replica_results.size()) {
-          all_replicas_matched = false;
-          break;
-        }
-
-        // when the result sizes match the rows must match
-        // TODO handle the case where we have compactions/flushes
-        // (needs post-scan sorting or FT scans)
-        ASSERT_EQ(leader_results.size(), replica_results.size());
-        for (int i = 0; i < leader_results.size(); i++) {
-          ASSERT_EQ(leader_results[i], replica_results[i]);
-        }
-        replica_results.clear();
-      }
-
-      if (all_replicas_matched) {
-        break;
-      } else {
-        if (counter >= kMaxRetries) {
-          SCOPED_TRACE(DumpToString(leader, leader_results,
-                                    last_replica, replica_results));
-          FAIL() << "LEADER results did not match one of the replicas.";
-        }
-        counter++;
-      }
-    }
+    ClusterVerifier v(cluster_.get());
+    v.CheckCluster();
+    v.CheckRowCount(kTableId, expected_result_count);
   }
 
   void InsertTestRowsRemoteThread(uint64_t first_row,
@@ -600,7 +546,9 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
                              FLAGS_client_num_batches_per_thread,
                              vector<CountDownLatch*>());
 
-  // Make sure the two remaining replicas agree.
+  // Restart the original replica and make sure they all agree.
+  ASSERT_OK(leader->external_ts->Restart());
+
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters * 2);
 }
 
@@ -731,7 +679,7 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
   TServerDetails* leader;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
-  unordered_set<string> killed_leader_uuids;
+  unordered_set<TServerDetails*> killed_leaders;
 
   const int kNumLeadersToKill = FLAGS_num_replicas / 2;
   const int kFinalNumReplicas = FLAGS_num_replicas / 2 + 1;
@@ -749,16 +697,19 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
     // propagated to all replicas. We kill the leader anyway.
     if (leaders_killed < kNumLeadersToKill) {
       LOG(INFO) << "Killing current leader " << leader->instance_id.permanent_uuid() << "...";
-      ASSERT_OK(KillServerWithUUID(leader->instance_id.permanent_uuid()));
-      InsertOrDie(&killed_leader_uuids, leader->instance_id.permanent_uuid());
+      leader->external_ts->Shutdown();
+      InsertOrDie(&killed_leaders, leader);
 
       LOG(INFO) << "Waiting for new guy to be elected leader.";
       ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
     }
   }
 
+  // Restart every node that was killed, and wait for the nodes to converge
+  BOOST_FOREACH(TServerDetails* killed_node, killed_leaders) {
+    ASSERT_OK(killed_node->external_ts->Restart());
+  }
   // Verify the data on the remaining replicas.
-  PruneFromReplicas(killed_leader_uuids);
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * kFinalNumReplicas);
 }
 
