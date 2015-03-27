@@ -16,9 +16,10 @@
 #ifndef UTIL_URL_CODING_H
 #define UTIL_URL_CODING_H
 
+#include <stdint.h>
+
 #include <string>
 #include <vector>
-#include <boost/cstdint.hpp>
 
 namespace kudu {
 
