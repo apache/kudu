@@ -996,12 +996,9 @@ class TraceLog::ThreadLocalEventBuffer {
   void Flush(int64_t tid);
 
  private:
-  void CheckThisIsCurrentBuffer() const {
-#ifndef NDEBUG
-    PerThreadInfo* thr_info = DCHECK_NOTNULL(TraceLog::thread_local_info_);
-    ThreadLocalEventBuffer* buf = ANNOTATE_UNPROTECTED_READ(thr_info->event_buffer_);
-    DCHECK(buf == this);
-#endif
+  // Check that the current thread is the one that constructed this trace buffer.
+  void CheckIsOwnerThread() const {
+    DCHECK_EQ(kudu::Thread::PlatformThreadId(), owner_tid_);
   }
 
   // Since TraceLog is a leaky singleton, trace_log_ will always be valid
@@ -1013,6 +1010,10 @@ class TraceLog::ThreadLocalEventBuffer {
   MicrosecondsInt64 overhead_;
   int generation_;
 
+  // The TID of the thread that constructed this event buffer. Only this thread
+  // may add trace events.
+  int64_t owner_tid_;
+
   DISALLOW_COPY_AND_ASSIGN(ThreadLocalEventBuffer);
 };
 
@@ -1020,7 +1021,8 @@ TraceLog::ThreadLocalEventBuffer::ThreadLocalEventBuffer(TraceLog* trace_log)
     : trace_log_(trace_log),
       chunk_index_(0),
       event_count_(0),
-      generation_(trace_log->generation()) {
+      generation_(trace_log->generation()),
+      owner_tid_(kudu::Thread::PlatformThreadId()) {
 }
 
 TraceLog::ThreadLocalEventBuffer::~ThreadLocalEventBuffer() {
@@ -1028,7 +1030,7 @@ TraceLog::ThreadLocalEventBuffer::~ThreadLocalEventBuffer() {
 
 TraceEvent* TraceLog::ThreadLocalEventBuffer::AddTraceEvent(
     TraceEventHandle* handle) {
-  CheckThisIsCurrentBuffer();
+  CheckIsOwnerThread();
 
   if (chunk_ && chunk_->IsFull()) {
     SpinLockHolder lock(&trace_log_->lock_);
@@ -1057,7 +1059,7 @@ void TraceLog::ThreadLocalEventBuffer::ReportOverhead(
   if (!g_category_group_enabled[g_category_trace_event_overhead])
     return;
 
-  CheckThisIsCurrentBuffer();
+  CheckIsOwnerThread();
 
   event_count_++;
   MicrosecondsInt64 thread_now = GetThreadCpuTimeMicros();

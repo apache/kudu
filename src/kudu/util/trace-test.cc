@@ -204,9 +204,16 @@ TEST_F(TraceTest, TestWideSpan) {
 }
 
 // Generate trace events continuously until 'latch' fires.
-void GenerateTracesUntilLatch(CountDownLatch* latch) {
+// Increment *num_events_generated for each event generated.
+void GenerateTracesUntilLatch(AtomicInt<int64_t>* num_events_generated,
+                              CountDownLatch* latch) {
   while (latch->count()) {
-    TRACE_EVENT0("test", "GenerateTracesUntilLatch");
+    {
+      // This goes in its own scope so that the event is fully generated (with
+      // both its START and END times) before we do the counter increment below.
+      TRACE_EVENT0("test", "GenerateTracesUntilLatch");
+    }
+    num_events_generated->Increment();
   }
 }
 
@@ -217,18 +224,31 @@ TEST_F(TraceTest, TestStartAndStopCollection) {
   TraceLog* tl = TraceLog::GetInstance();
 
   CountDownLatch latch(1);
+  AtomicInt<int64_t> num_events_generated(0);
   scoped_refptr<Thread> t;
-  CHECK_OK(Thread::Create("test", "gen-traces", &GenerateTracesUntilLatch, &latch, &t));
+  CHECK_OK(Thread::Create("test", "gen-traces", &GenerateTracesUntilLatch,
+                          &num_events_generated, &latch, &t));
 
   const int num_flushes = AllowSlowTests() ? 50 : 3;
   for (int i = 0; i < num_flushes; i++) {
     tl->SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
                    TraceLog::RECORDING_MODE,
                    TraceLog::RECORD_CONTINUOUSLY);
+
+    const int64_t num_events_before = num_events_generated.Load();
     SleepFor(MonoDelta::FromMilliseconds(10));
+    const int64_t num_events_after = num_events_generated.Load();
     tl->SetDisabled();
+
     string trace_json = TraceResultBuffer::FlushTraceLogToString();
-    ASSERT_GT(ParseAndReturnEventCount(trace_json), 0);
+    // We might under-count the number of events, since we only measure the sleep,
+    // and tracing is enabled before and disabled after we start counting.
+    // We might also over-count by at most 1, because we could enable tracing
+    // right in between creating a trace event and incrementing the counter.
+    // But, we should never over-count by more than 1.
+    int expected_events_lowerbound = num_events_after - num_events_before - 1;
+    int captured_events = ParseAndReturnEventCount(trace_json);
+    ASSERT_GE(captured_events, expected_events_lowerbound);
   }
 
   latch.CountDown();
