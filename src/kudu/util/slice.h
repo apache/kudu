@@ -22,6 +22,7 @@
 #include <string.h>
 #include <string>
 
+#include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/logging.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/stringpiece.h"
@@ -31,7 +32,7 @@ namespace kudu {
 
 class Status;
 
-class Slice {
+class KUDU_EXPORT Slice {
  public:
   // Create an empty slice.
   Slice() : data_(reinterpret_cast<const uint8_t *>("")),
