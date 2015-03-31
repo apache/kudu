@@ -15,6 +15,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/env_util.h"
@@ -23,6 +24,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -34,6 +36,17 @@ DEFINE_int32(log_min_segments_to_retain, 2,
 
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
              "Maximum size of the group commit queue in bytes");
+
+DEFINE_bool(log_inject_latency, false,
+            "If true, injects artificial latency in log sync operations. "
+            "Advanced option. Use at your own risk -- has a negative effect "
+            "on performance for obvious reasons!");
+DEFINE_int32(log_inject_latency_ms_mean, 100,
+             "The number of milliseconds of latency to inject, on average. "
+             "Only takes effect if --log_inject_latency is true");
+DEFINE_int32(log_inject_latency_ms_stddev, 100,
+             "The standard deviation of latency to inject in the log. "
+             "Only takes effect if --log_inject_latency is true");
 
 static const char kSegmentPlaceholderFileTemplate[] = ".tmp.newsegmentXXXXXX";
 
@@ -527,6 +540,17 @@ FsManager* Log::GetFsManager() {
 
 Status Log::Sync() {
   SCOPED_LATENCY_METRIC(metrics_, sync_latency);
+
+  if (PREDICT_FALSE(FLAGS_log_inject_latency)) {
+    Random r(GetCurrentTimeMicros());
+    int sleep_ms = r.Normal(FLAGS_log_inject_latency_ms_mean,
+                            FLAGS_log_inject_latency_ms_stddev);
+    if (sleep_ms > 0) {
+      LOG(INFO) << "T " << tablet_id_ << ": Injecting "
+                << sleep_ms << "ms of latency in Log::Sync()";
+      SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
+    }
+  }
 
   if (force_sync_all_) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Fsync log took a long time") {
