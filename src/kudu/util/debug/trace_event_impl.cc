@@ -29,9 +29,7 @@
 #include "kudu/gutil/dynamic_annotations.h"
 
 #include "kudu/gutil/walltime.h"
-#ifdef ENABLE_SYNTHETIC_DELAY
 #include "kudu/util/debug/trace_event_synthetic_delay.h"
-#endif
 #include "kudu/util/thread.h"
 
 DEFINE_string(trace_to_console, "",
@@ -1205,13 +1203,12 @@ void TraceLog::UpdateCategoryGroupEnabledFlags() {
 }
 
 void TraceLog::UpdateSyntheticDelaysFromCategoryFilter() {
-  #ifdef ENABLE_SYNTHETIC_DELAY
   ResetTraceEventSyntheticDelays();
   const CategoryFilter::StringList& delays =
       category_filter_.GetSyntheticDelayValues();
   CategoryFilter::StringList::const_iterator ci;
   for (ci = delays.begin(); ci != delays.end(); ++ci) {
-    std::list<string> tokens = strings::Split(*ci, ';');
+    std::list<string> tokens = strings::Split(*ci, ";");
     if (tokens.empty()) continue;
 
     TraceEventSyntheticDelay* delay =
@@ -1223,7 +1220,7 @@ void TraceLog::UpdateSyntheticDelaysFromCategoryFilter() {
       char* duration_end;
       double target_duration = strtod(token.c_str(), &duration_end);
       if (duration_end != token.c_str()) {
-        delay->SetTargetDuration(target_duration * 1e6);
+        delay->SetTargetDuration(MonoDelta::FromSeconds(target_duration));
       } else if (token == "static") {
         delay->SetMode(TraceEventSyntheticDelay::STATIC);
       } else if (token == "oneshot") {
@@ -1233,7 +1230,6 @@ void TraceLog::UpdateSyntheticDelaysFromCategoryFilter() {
       }
     }
   }
-  #endif
 }
 
 const unsigned char* TraceLog::GetCategoryGroupEnabledInternal(

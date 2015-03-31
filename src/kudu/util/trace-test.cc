@@ -9,6 +9,7 @@
 
 #include "kudu/util/trace.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/debug/trace_event_synthetic_delay.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -281,4 +282,162 @@ TEST_F(TraceTest, TestChromeSampling) {
   ASSERT_GT(ParseAndReturnEventCount(trace_json), 0);
 }
 
+////////////////////////////////////////////////////////////
+// Tests for synthetic delay
+// (from chromium-base/debug/trace_event_synthetic_delay_unittest.cc)
+////////////////////////////////////////////////////////////
+
+namespace {
+
+const int kTargetDurationMs = 100;
+// Allow some leeway in timings to make it possible to run these tests with a
+// wall clock time source too.
+const int kShortDurationMs = 10;
+
+}  // namespace
+
+namespace debug {
+
+class TraceEventSyntheticDelayTest : public KuduTest,
+                                     public TraceEventSyntheticDelayClock {
+ public:
+  TraceEventSyntheticDelayTest() {
+    now_ = MonoTime::Min();
+  }
+
+  virtual ~TraceEventSyntheticDelayTest() {
+    ResetTraceEventSyntheticDelays();
+  }
+
+  // TraceEventSyntheticDelayClock implementation.
+  virtual MonoTime Now() OVERRIDE {
+    AdvanceTime(MonoDelta::FromMilliseconds(kShortDurationMs / 10));
+    return now_;
+  }
+
+  TraceEventSyntheticDelay* ConfigureDelay(const char* name) {
+    TraceEventSyntheticDelay* delay = TraceEventSyntheticDelay::Lookup(name);
+    delay->SetClock(this);
+    delay->SetTargetDuration(
+      MonoDelta::FromMilliseconds(kTargetDurationMs));
+    return delay;
+  }
+
+  void AdvanceTime(MonoDelta delta) { now_.AddDelta(delta); }
+
+  int TestFunction() {
+    MonoTime start = Now();
+    { TRACE_EVENT_SYNTHETIC_DELAY("test.Delay"); }
+    MonoTime end = Now();
+    return end.GetDeltaSince(start).ToMilliseconds();
+  }
+
+  int AsyncTestFunctionBegin() {
+    MonoTime start = Now();
+    { TRACE_EVENT_SYNTHETIC_DELAY_BEGIN("test.AsyncDelay"); }
+    MonoTime end = Now();
+    return end.GetDeltaSince(start).ToMilliseconds();
+  }
+
+  int AsyncTestFunctionEnd() {
+    MonoTime start = Now();
+    { TRACE_EVENT_SYNTHETIC_DELAY_END("test.AsyncDelay"); }
+    MonoTime end = Now();
+    return end.GetDeltaSince(start).ToMilliseconds();
+  }
+
+ private:
+  MonoTime now_;
+
+  DISALLOW_COPY_AND_ASSIGN(TraceEventSyntheticDelayTest);
+};
+
+TEST_F(TraceEventSyntheticDelayTest, StaticDelay) {
+  TraceEventSyntheticDelay* delay = ConfigureDelay("test.Delay");
+  delay->SetMode(TraceEventSyntheticDelay::STATIC);
+  EXPECT_GE(TestFunction(), kTargetDurationMs);
+}
+
+TEST_F(TraceEventSyntheticDelayTest, OneShotDelay) {
+  TraceEventSyntheticDelay* delay = ConfigureDelay("test.Delay");
+  delay->SetMode(TraceEventSyntheticDelay::ONE_SHOT);
+  EXPECT_GE(TestFunction(), kTargetDurationMs);
+  EXPECT_LT(TestFunction(), kShortDurationMs);
+
+  delay->SetTargetDuration(
+      MonoDelta::FromMilliseconds(kTargetDurationMs));
+  EXPECT_GE(TestFunction(), kTargetDurationMs);
+}
+
+TEST_F(TraceEventSyntheticDelayTest, AlternatingDelay) {
+  TraceEventSyntheticDelay* delay = ConfigureDelay("test.Delay");
+  delay->SetMode(TraceEventSyntheticDelay::ALTERNATING);
+  EXPECT_GE(TestFunction(), kTargetDurationMs);
+  EXPECT_LT(TestFunction(), kShortDurationMs);
+  EXPECT_GE(TestFunction(), kTargetDurationMs);
+  EXPECT_LT(TestFunction(), kShortDurationMs);
+}
+
+TEST_F(TraceEventSyntheticDelayTest, AsyncDelay) {
+  ConfigureDelay("test.AsyncDelay");
+  EXPECT_LT(AsyncTestFunctionBegin(), kShortDurationMs);
+  EXPECT_GE(AsyncTestFunctionEnd(), kTargetDurationMs / 2);
+}
+
+TEST_F(TraceEventSyntheticDelayTest, AsyncDelayExceeded) {
+  ConfigureDelay("test.AsyncDelay");
+  EXPECT_LT(AsyncTestFunctionBegin(), kShortDurationMs);
+  AdvanceTime(MonoDelta::FromMilliseconds(kTargetDurationMs));
+  EXPECT_LT(AsyncTestFunctionEnd(), kShortDurationMs);
+}
+
+TEST_F(TraceEventSyntheticDelayTest, AsyncDelayNoActivation) {
+  ConfigureDelay("test.AsyncDelay");
+  EXPECT_LT(AsyncTestFunctionEnd(), kShortDurationMs);
+}
+
+TEST_F(TraceEventSyntheticDelayTest, AsyncDelayNested) {
+  ConfigureDelay("test.AsyncDelay");
+  EXPECT_LT(AsyncTestFunctionBegin(), kShortDurationMs);
+  EXPECT_LT(AsyncTestFunctionBegin(), kShortDurationMs);
+  EXPECT_LT(AsyncTestFunctionEnd(), kShortDurationMs);
+  EXPECT_GE(AsyncTestFunctionEnd(), kTargetDurationMs / 2);
+}
+
+TEST_F(TraceEventSyntheticDelayTest, AsyncDelayUnbalanced) {
+  ConfigureDelay("test.AsyncDelay");
+  EXPECT_LT(AsyncTestFunctionBegin(), kShortDurationMs);
+  EXPECT_GE(AsyncTestFunctionEnd(), kTargetDurationMs / 2);
+  EXPECT_LT(AsyncTestFunctionEnd(), kShortDurationMs);
+
+  EXPECT_LT(AsyncTestFunctionBegin(), kShortDurationMs);
+  EXPECT_GE(AsyncTestFunctionEnd(), kTargetDurationMs / 2);
+}
+
+TEST_F(TraceEventSyntheticDelayTest, ResetDelays) {
+  ConfigureDelay("test.Delay");
+  ResetTraceEventSyntheticDelays();
+  EXPECT_LT(TestFunction(), kShortDurationMs);
+}
+
+TEST_F(TraceEventSyntheticDelayTest, BeginParallel) {
+  TraceEventSyntheticDelay* delay = ConfigureDelay("test.AsyncDelay");
+  MonoTime end_times[2];
+  MonoTime start_time = Now();
+
+  delay->BeginParallel(&end_times[0]);
+  EXPECT_FALSE(!end_times[0].Initialized());
+
+  delay->BeginParallel(&end_times[1]);
+  EXPECT_FALSE(!end_times[1].Initialized());
+
+  delay->EndParallel(end_times[0]);
+  EXPECT_GE(Now().GetDeltaSince(start_time).ToMilliseconds(), kTargetDurationMs);
+
+  start_time = Now();
+  delay->EndParallel(end_times[1]);
+  EXPECT_LT(Now().GetDeltaSince(start_time).ToMilliseconds(), kShortDurationMs);
+}
+
+} // namespace debug
 } // namespace kudu

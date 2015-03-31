@@ -43,6 +43,7 @@ add_library(kudu_util
   debug-util.cc
   debug/trace_event_impl.cc
   debug/trace_event_impl_constants.cc
+  debug/trace_event_synthetic_delay.cc
   env.cc env_posix.cc env_util.cc
   errno.cc
   faststring.cc

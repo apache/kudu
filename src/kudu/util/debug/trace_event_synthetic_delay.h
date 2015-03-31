@@ -33,11 +33,12 @@
 #define KUDU_UTIL_DEBUG_TRACE_EVENT_SYNTHETIC_DELAY_H_
 
 #include "kudu/gutil/atomicops.h"
-#include "util/debug/trace_event.h"
+#include "kudu/util/debug/trace_event.h"
+#include "kudu/util/monotime.h"
 
 // Apply a named delay in the current scope.
 #define TRACE_EVENT_SYNTHETIC_DELAY(name)                                     \
-  static base::subtle::AtomicWord INTERNAL_TRACE_EVENT_UID(impl_ptr) = 0;     \
+  static AtomicWord INTERNAL_TRACE_EVENT_UID(impl_ptr) = 0;                   \
   trace_event_internal::ScopedSyntheticDelay INTERNAL_TRACE_EVENT_UID(delay)( \
       name, &INTERNAL_TRACE_EVENT_UID(impl_ptr));
 
@@ -46,7 +47,7 @@
 // balanced. Only the first call records the timing start point.
 #define TRACE_EVENT_SYNTHETIC_DELAY_BEGIN(name)                          \
   do {                                                                   \
-    static base::subtle::AtomicWord impl_ptr = 0;                        \
+    static AtomicWord impl_ptr = 0;                                      \
     trace_event_internal::GetOrCreateDelay(name, &impl_ptr)->Begin();    \
   } while (false)
 
@@ -55,12 +56,9 @@
 // same delay.
 #define TRACE_EVENT_SYNTHETIC_DELAY_END(name)                         \
   do {                                                                \
-    static base::subtle::AtomicWord impl_ptr = 0;                     \
+    static AtomicWord impl_ptr = 0;                                   \
     trace_event_internal::GetOrCreateDelay(name, &impl_ptr)->End();   \
   } while (false)
-
-template <typename Type>
-struct DefaultSingletonTraits;
 
 namespace kudu {
 namespace debug {
@@ -70,7 +68,7 @@ class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelayClock {
  public:
   TraceEventSyntheticDelayClock();
   virtual ~TraceEventSyntheticDelayClock();
-  virtual MicrosecondsInt64 Now() = 0;
+  virtual MonoTime Now() = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TraceEventSyntheticDelayClock);
@@ -88,7 +86,7 @@ class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelay {
   // Returns an existing named delay instance or creates a new one with |name|.
   static TraceEventSyntheticDelay* Lookup(const std::string& name);
 
-  void SetTargetDuration(TimeDelta target_duration);
+  void SetTargetDuration(const MonoDelta& target_duration);
   void SetMode(Mode mode);
   void SetClock(TraceEventSyntheticDelayClock* clock);
 
@@ -105,11 +103,11 @@ class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelay {
   // active simultaneously and will complete independently. The computed end
   // time for the delay is stored in |out_end_time|, which should later be
   // passed to EndParallel().
-  void BeginParallel(base::TimeTicks* out_end_time);
+  void BeginParallel(MonoTime* out_end_time);
 
   // End a previously started parallel delay. |end_time| is the delay end point
   // computed by BeginParallel().
-  void EndParallel(base::TimeTicks end_time);
+  void EndParallel(const MonoTime& end_time);
 
  private:
   TraceEventSyntheticDelay();
@@ -118,16 +116,16 @@ class TRACE_EVENT_API_CLASS_EXPORT TraceEventSyntheticDelay {
 
   void Initialize(const std::string& name,
                   TraceEventSyntheticDelayClock* clock);
-  base::TimeTicks CalculateEndTimeLocked(base::TimeTicks start_time);
-  void ApplyDelay(base::TimeTicks end_time);
+  MonoTime CalculateEndTimeLocked(const MonoTime& start_time);
+  void ApplyDelay(const MonoTime& end_time);
 
-  Lock lock_;
+  Mutex lock_;
   Mode mode_;
   std::string name_;
   int begin_count_;
   int trigger_count_;
-  base::TimeTicks end_time_;
-  base::TimeDelta target_duration_;
+  MonoTime end_time_;
+  MonoDelta target_duration_;
   TraceEventSyntheticDelayClock* clock_;
 
   DISALLOW_COPY_AND_ASSIGN(TraceEventSyntheticDelay);
@@ -145,19 +143,19 @@ namespace trace_event_internal {
 class TRACE_EVENT_API_CLASS_EXPORT ScopedSyntheticDelay {
  public:
   explicit ScopedSyntheticDelay(const char* name,
-                                base::subtle::AtomicWord* impl_ptr);
+                                AtomicWord* impl_ptr);
   ~ScopedSyntheticDelay();
 
  private:
   kudu::debug::TraceEventSyntheticDelay* delay_impl_;
-  base::TimeTicks end_time_;
+  kudu::MonoTime end_time_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedSyntheticDelay);
 };
 
 // Helper for registering delays. Do not use directly.
 TRACE_EVENT_API_CLASS_EXPORT kudu::debug::TraceEventSyntheticDelay*
-    GetOrCreateDelay(const char* name, base::subtle::AtomicWord* impl_ptr);
+    GetOrCreateDelay(const char* name, AtomicWord* impl_ptr);
 
 }  // namespace trace_event_internal
 
