@@ -16,6 +16,10 @@
 using kudu::debug::TraceLog;
 using kudu::debug::TraceResultBuffer;
 using kudu::debug::CategoryFilter;
+using rapidjson::Document;
+using rapidjson::Value;
+using std::string;
+using std::vector;
 
 namespace kudu {
 
@@ -93,19 +97,19 @@ static void GenerateTraceEvents(int thread_id,
   }
 }
 
-void VerifyValidJson(const std::string& json) {
-  rapidjson::Document d;
+void VerifyValidJson(const string& json) {
+  Document d;
   d.Parse<0>(json.c_str());
   ASSERT_TRUE(d.IsObject());
 }
 
 // Parse the dumped trace data and return the number of events
 // found within, including only those with the "test" category.
-int ParseAndReturnEventCount(const std::string& trace_json) {
-  rapidjson::Document d;
+int ParseAndReturnEventCount(const string& trace_json) {
+  Document d;
   d.Parse<0>(trace_json.c_str());
   CHECK(d.IsObject()) << "bad json: " << trace_json;
-  const rapidjson::Value& events_json = d["traceEvents"];
+  const Value& events_json = d["traceEvents"];
   CHECK(events_json.IsArray()) << "bad json: " << trace_json;
 
   // Count how many of our events were seen. We have to filter out
@@ -280,6 +284,315 @@ TEST_F(TraceTest, TestChromeSampling) {
   tl->SetDisabled();
   string trace_json = TraceResultBuffer::FlushTraceLogToString();
   ASSERT_GT(ParseAndReturnEventCount(trace_json), 0);
+}
+
+class TraceEventCallbackTest : public KuduTest {
+ public:
+  virtual void SetUp() OVERRIDE {
+    KuduTest::SetUp();
+    ASSERT_EQ(NULL, s_instance);
+    s_instance = this;
+  }
+  virtual void TearDown() OVERRIDE {
+    TraceLog::GetInstance()->SetDisabled();
+
+    // Flush the buffer so that one test doesn't end up leaving any
+    // extra results for the next test.
+    TraceResultBuffer::FlushTraceLogToString();
+
+    ASSERT_TRUE(!!s_instance);
+    s_instance = NULL;
+    KuduTest::TearDown();
+
+  }
+
+ protected:
+  void EndTraceAndFlush() {
+    TraceLog::GetInstance()->SetDisabled();
+    string trace_json = TraceResultBuffer::FlushTraceLogToString();
+    trace_doc_.Parse<0>(trace_json.c_str());
+    LOG(INFO) << trace_json;
+    ASSERT_TRUE(trace_doc_.IsObject());
+    trace_parsed_ = trace_doc_["traceEvents"];
+    ASSERT_TRUE(trace_parsed_.IsArray());
+  }
+
+  void DropTracedMetadataRecords() {
+    // NB: rapidjson has move-semantics, like auto_ptr.
+    Value old_trace_parsed;
+    old_trace_parsed = trace_parsed_;
+    trace_parsed_.SetArray();
+    size_t old_trace_parsed_size = old_trace_parsed.Size();
+
+    for (size_t i = 0; i < old_trace_parsed_size; i++) {
+      Value value;
+      value = old_trace_parsed[i];
+      if (value.GetType() != rapidjson::kObjectType) {
+        trace_parsed_.PushBack(value, trace_doc_.GetAllocator());
+        continue;
+      }
+      string tmp;
+      if (value.HasMember("ph") && strcmp(value["ph"].GetString(), "M") == 0) {
+        continue;
+      }
+
+      trace_parsed_.PushBack(value, trace_doc_.GetAllocator());
+    }
+  }
+
+  // Search through the given array for any dictionary which has a key
+  // or value which has 'string_to_match' as a substring.
+  // Returns the matching dictionary, or NULL.
+  static const Value* FindTraceEntry(
+    const Value& trace_parsed,
+    const char* string_to_match) {
+    // Scan all items
+    size_t trace_parsed_count = trace_parsed.Size();
+    for (size_t i = 0; i < trace_parsed_count; i++) {
+      const Value& value = trace_parsed[i];
+      if (value.GetType() != rapidjson::kObjectType) {
+        continue;
+      }
+
+      for (Value::ConstMemberIterator it = value.MemberBegin();
+           it != value.MemberEnd();
+           ++it) {
+        if (it->name.IsString() && strstr(it->name.GetString(), string_to_match) != NULL) {
+          return &value;
+        }
+        if (it->value.IsString() && strstr(it->value.GetString(), string_to_match) != NULL) {
+          return &value;
+        }
+      }
+    }
+    return NULL;
+  }
+
+  // For TraceEventCallbackAndRecordingX tests.
+  void VerifyCallbackAndRecordedEvents(size_t expected_callback_count,
+                                       size_t expected_recorded_count) {
+    // Callback events.
+    EXPECT_EQ(expected_callback_count, collected_events_names_.size());
+    for (size_t i = 0; i < collected_events_names_.size(); ++i) {
+      EXPECT_EQ("callback", collected_events_categories_[i]);
+      EXPECT_EQ("yes", collected_events_names_[i]);
+    }
+
+    // Recorded events.
+    EXPECT_EQ(expected_recorded_count, trace_parsed_.Size());
+    EXPECT_TRUE(FindTraceEntry(trace_parsed_, "recording"));
+    EXPECT_FALSE(FindTraceEntry(trace_parsed_, "callback"));
+    EXPECT_TRUE(FindTraceEntry(trace_parsed_, "yes"));
+    EXPECT_FALSE(FindTraceEntry(trace_parsed_, "no"));
+  }
+
+  void VerifyCollectedEvent(size_t i,
+                            unsigned phase,
+                            const string& category,
+                            const string& name) {
+    EXPECT_EQ(phase, collected_events_phases_[i]);
+    EXPECT_EQ(category, collected_events_categories_[i]);
+    EXPECT_EQ(name, collected_events_names_[i]);
+  }
+
+  Document trace_doc_;
+  Value trace_parsed_;
+
+  vector<string> collected_events_categories_;
+  vector<string> collected_events_names_;
+  vector<unsigned char> collected_events_phases_;
+  vector<MicrosecondsInt64> collected_events_timestamps_;
+
+  static TraceEventCallbackTest* s_instance;
+  static void Callback(MicrosecondsInt64 timestamp,
+                       char phase,
+                       const unsigned char* category_group_enabled,
+                       const char* name,
+                       uint64_t id,
+                       int num_args,
+                       const char* const arg_names[],
+                       const unsigned char arg_types[],
+                       const uint64_t arg_values[],
+                       unsigned char flags) {
+    s_instance->collected_events_phases_.push_back(phase);
+    s_instance->collected_events_categories_.push_back(
+        TraceLog::GetCategoryGroupName(category_group_enabled));
+    s_instance->collected_events_names_.push_back(name);
+    s_instance->collected_events_timestamps_.push_back(timestamp);
+  }
+};
+
+TraceEventCallbackTest* TraceEventCallbackTest::s_instance;
+
+TEST_F(TraceEventCallbackTest, TraceEventCallback) {
+  TRACE_EVENT_INSTANT0("all", "before enable", TRACE_EVENT_SCOPE_THREAD);
+  TraceLog::GetInstance()->SetEventCallbackEnabled(
+      CategoryFilter("*"), Callback);
+  TRACE_EVENT_INSTANT0("all", "event1", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("all", "event2", TRACE_EVENT_SCOPE_GLOBAL);
+  {
+    TRACE_EVENT0("all", "duration");
+    TRACE_EVENT_INSTANT0("all", "event3", TRACE_EVENT_SCOPE_GLOBAL);
+  }
+  TraceLog::GetInstance()->SetEventCallbackDisabled();
+  TRACE_EVENT_INSTANT0("all", "after callback removed",
+                       TRACE_EVENT_SCOPE_GLOBAL);
+  ASSERT_EQ(5u, collected_events_names_.size());
+  EXPECT_EQ("event1", collected_events_names_[0]);
+  EXPECT_EQ(TRACE_EVENT_PHASE_INSTANT, collected_events_phases_[0]);
+  EXPECT_EQ("event2", collected_events_names_[1]);
+  EXPECT_EQ(TRACE_EVENT_PHASE_INSTANT, collected_events_phases_[1]);
+  EXPECT_EQ("duration", collected_events_names_[2]);
+  EXPECT_EQ(TRACE_EVENT_PHASE_BEGIN, collected_events_phases_[2]);
+  EXPECT_EQ("event3", collected_events_names_[3]);
+  EXPECT_EQ(TRACE_EVENT_PHASE_INSTANT, collected_events_phases_[3]);
+  EXPECT_EQ("duration", collected_events_names_[4]);
+  EXPECT_EQ(TRACE_EVENT_PHASE_END, collected_events_phases_[4]);
+  for (size_t i = 1; i < collected_events_timestamps_.size(); i++) {
+    EXPECT_LE(collected_events_timestamps_[i - 1],
+              collected_events_timestamps_[i]);
+  }
+}
+
+TEST_F(TraceEventCallbackTest, TraceEventCallbackWhileFull) {
+  TraceLog::GetInstance()->SetEnabled(
+      CategoryFilter("*"),
+      TraceLog::RECORDING_MODE,
+      TraceLog::RECORD_UNTIL_FULL);
+  do {
+    TRACE_EVENT_INSTANT0("all", "badger badger", TRACE_EVENT_SCOPE_GLOBAL);
+  } while (!TraceLog::GetInstance()->BufferIsFull());
+  TraceLog::GetInstance()->SetEventCallbackEnabled(CategoryFilter("*"),
+                                                   Callback);
+  TRACE_EVENT_INSTANT0("all", "a snake", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEventCallbackDisabled();
+  ASSERT_EQ(1u, collected_events_names_.size());
+  EXPECT_EQ("a snake", collected_events_names_[0]);
+}
+
+// 1: Enable callback, enable recording, disable callback, disable recording.
+TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecording1) {
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEventCallbackEnabled(CategoryFilter("callback"),
+                                                   Callback);
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEnabled(
+      CategoryFilter("recording"),
+      TraceLog::RECORDING_MODE,
+      TraceLog::RECORD_UNTIL_FULL);
+  TRACE_EVENT_INSTANT0("recording", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEventCallbackDisabled();
+  TRACE_EVENT_INSTANT0("recording", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  EndTraceAndFlush();
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+
+  DropTracedMetadataRecords();
+  ASSERT_NO_FATAL_FAILURE();
+  VerifyCallbackAndRecordedEvents(2, 2);
+}
+
+// 2: Enable callback, enable recording, disable recording, disable callback.
+TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecording2) {
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEventCallbackEnabled(CategoryFilter("callback"),
+                                                   Callback);
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEnabled(
+      CategoryFilter("recording"),
+      TraceLog::RECORDING_MODE,
+      TraceLog::RECORD_UNTIL_FULL);
+  TRACE_EVENT_INSTANT0("recording", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  EndTraceAndFlush();
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEventCallbackDisabled();
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+
+  DropTracedMetadataRecords();
+  VerifyCallbackAndRecordedEvents(3, 1);
+}
+
+// 3: Enable recording, enable callback, disable callback, disable recording.
+TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecording3) {
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEnabled(
+      CategoryFilter("recording"),
+      TraceLog::RECORDING_MODE,
+      TraceLog::RECORD_UNTIL_FULL);
+  TRACE_EVENT_INSTANT0("recording", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEventCallbackEnabled(CategoryFilter("callback"),
+                                                   Callback);
+  TRACE_EVENT_INSTANT0("recording", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEventCallbackDisabled();
+  TRACE_EVENT_INSTANT0("recording", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  EndTraceAndFlush();
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+
+  DropTracedMetadataRecords();
+  VerifyCallbackAndRecordedEvents(1, 3);
+}
+
+// 4: Enable recording, enable callback, disable recording, disable callback.
+TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecording4) {
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEnabled(
+      CategoryFilter("recording"),
+      TraceLog::RECORDING_MODE,
+      TraceLog::RECORD_UNTIL_FULL);
+  TRACE_EVENT_INSTANT0("recording", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEventCallbackEnabled(CategoryFilter("callback"),
+                                                   Callback);
+  TRACE_EVENT_INSTANT0("recording", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  EndTraceAndFlush();
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "yes", TRACE_EVENT_SCOPE_GLOBAL);
+  TraceLog::GetInstance()->SetEventCallbackDisabled();
+  TRACE_EVENT_INSTANT0("recording", "no", TRACE_EVENT_SCOPE_GLOBAL);
+  TRACE_EVENT_INSTANT0("callback", "no", TRACE_EVENT_SCOPE_GLOBAL);
+
+  DropTracedMetadataRecords();
+  VerifyCallbackAndRecordedEvents(2, 2);
+}
+
+TEST_F(TraceEventCallbackTest, TraceEventCallbackAndRecordingDuration) {
+  TraceLog::GetInstance()->SetEventCallbackEnabled(CategoryFilter("*"),
+                                                   Callback);
+  {
+    TRACE_EVENT0("callback", "duration1");
+    TraceLog::GetInstance()->SetEnabled(
+        CategoryFilter("*"),
+        TraceLog::RECORDING_MODE,
+        TraceLog::RECORD_UNTIL_FULL);
+    TRACE_EVENT0("callback", "duration2");
+    EndTraceAndFlush();
+    TRACE_EVENT0("callback", "duration3");
+  }
+  TraceLog::GetInstance()->SetEventCallbackDisabled();
+
+  ASSERT_EQ(6u, collected_events_names_.size());
+  VerifyCollectedEvent(0, TRACE_EVENT_PHASE_BEGIN, "callback", "duration1");
+  VerifyCollectedEvent(1, TRACE_EVENT_PHASE_BEGIN, "callback", "duration2");
+  VerifyCollectedEvent(2, TRACE_EVENT_PHASE_BEGIN, "callback", "duration3");
+  VerifyCollectedEvent(3, TRACE_EVENT_PHASE_END, "callback", "duration3");
+  VerifyCollectedEvent(4, TRACE_EVENT_PHASE_END, "callback", "duration2");
+  VerifyCollectedEvent(5, TRACE_EVENT_PHASE_END, "callback", "duration1");
 }
 
 ////////////////////////////////////////////////////////////

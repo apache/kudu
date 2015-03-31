@@ -89,7 +89,7 @@ class BASE_EXPORT TraceEvent {
  public:
   union TraceValue {
     bool as_bool;
-    unsigned long long as_uint;
+    uint64_t as_uint;
     long long as_int;
     double as_double;
     const void* as_pointer;
@@ -110,11 +110,11 @@ class BASE_EXPORT TraceEvent {
       char phase,
       const unsigned char* category_group_enabled,
       const char* name,
-      unsigned long long id,
+      uint64_t id,
       int num_args,
       const char** arg_names,
       const unsigned char* arg_types,
-      const unsigned long long* arg_values,
+      const uint64_t* arg_values,
       const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
       unsigned char flags);
 
@@ -136,7 +136,7 @@ class BASE_EXPORT TraceEvent {
   int thread_id() const { return thread_id_; }
   MicrosecondsInt64 duration() const { return duration_; }
   MicrosecondsInt64 thread_duration() const { return thread_duration_; }
-  unsigned long long id() const { return id_; }
+  uint64_t id() const { return id_; }
   unsigned char flags() const { return flags_; }
 
   // Exposed for unittesting:
@@ -162,7 +162,7 @@ class BASE_EXPORT TraceEvent {
   MicrosecondsInt64 duration_;
   MicrosecondsInt64 thread_duration_;
   // id_ can be used to store phase-specific data.
-  unsigned long long id_;
+  uint64_t id_;
   TraceValue arg_values_[kTraceMaxNumArgs];
   const char* arg_names_[kTraceMaxNumArgs];
   scoped_refptr<ConvertableToTraceFormat> convertable_values_[kTraceMaxNumArgs];
@@ -445,11 +445,11 @@ class BASE_EXPORT TraceLog {
                                 char phase,
                                 const unsigned char* category_group_enabled,
                                 const char* name,
-                                unsigned long long id,
+                                uint64_t id,
                                 int num_args,
                                 const char* const arg_names[],
                                 const unsigned char arg_types[],
-                                const unsigned long long arg_values[],
+                                const uint64_t arg_values[],
                                 unsigned char flags);
 
   // Enable tracing for EventCallback.
@@ -485,24 +485,24 @@ class BASE_EXPORT TraceLog {
       char phase,
       const unsigned char* category_group_enabled,
       const char* name,
-      unsigned long long id,
+      uint64_t id,
       int num_args,
       const char** arg_names,
       const unsigned char* arg_types,
-      const unsigned long long* arg_values,
+      const uint64_t* arg_values,
       const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
       unsigned char flags);
   TraceEventHandle AddTraceEventWithThreadIdAndTimestamp(
       char phase,
       const unsigned char* category_group_enabled,
       const char* name,
-      unsigned long long id,
+      uint64_t id,
       int thread_id,
       const MicrosecondsInt64& timestamp,
       int num_args,
       const char** arg_names,
       const unsigned char* arg_types,
-      const unsigned long long* arg_values,
+      const uint64_t* arg_values,
       const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
       unsigned char flags);
   static void AddTraceEventEtw(char phase,
@@ -660,7 +660,7 @@ class BASE_EXPORT TraceLog {
   std::tr1::unordered_map<std::string, int> thread_colors_;
 
   // XORed with TraceID to make it unlikely to collide with other processes.
-  unsigned long long process_id_hash_;
+  uint64_t process_id_hash_;
 
   int process_id_;
 

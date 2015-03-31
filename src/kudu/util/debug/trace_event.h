@@ -785,11 +785,11 @@
 //                    char phase,
 //                    const unsigned char* category_group_enabled,
 //                    const char* name,
-//                    unsigned long long id,
+//                    uint64_t id,
 //                    int num_args,
 //                    const char** arg_names,
 //                    const unsigned char* arg_types,
-//                    const unsigned long long* arg_values,
+//                    const uint64_t* arg_values,
 //                    unsigned char flags)
 #define TRACE_EVENT_API_ADD_TRACE_EVENT \
     kudu::debug::TraceLog::GetInstance()->AddTraceEvent
@@ -799,13 +799,13 @@
 //                    char phase,
 //                    const unsigned char* category_group_enabled,
 //                    const char* name,
-//                    unsigned long long id,
+//                    uint64_t id,
 //                    int thread_id,
 //                    const MicrosecondsInt64& timestamp,
 //                    int num_args,
 //                    const char** arg_names,
 //                    const unsigned char* arg_types,
-//                    const unsigned long long* arg_values,
+//                    const uint64_t* arg_values,
 //                    unsigned char flags)
 #define TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP \
     kudu::debug::TraceLog::GetInstance()->AddTraceEventWithThreadIdAndTimestamp
@@ -992,7 +992,7 @@ namespace trace_event_internal {
 // Specify these values when the corresponding argument of AddTraceEvent is not
 // used.
 const int kZeroNumArgs = 0;
-const unsigned long long kNoEventId = 0;
+const uint64_t kNoEventId = 0;
 
 // TraceID encapsulates an ID that can either be an integer or pointer. Pointers
 // are by default mangled with the Process ID so that they are unlikely to
@@ -1002,52 +1002,50 @@ class TraceID {
   class DontMangle {
    public:
     explicit DontMangle(const void* id)
-        : data_(static_cast<unsigned long long>(
+        : data_(static_cast<uint64_t>(
               reinterpret_cast<unsigned long>(id))) {}
-    explicit DontMangle(unsigned long long id) : data_(id) {}
-    explicit DontMangle(unsigned long id) : data_(id) {}
+    explicit DontMangle(uint64_t id) : data_(id) {}
     explicit DontMangle(unsigned int id) : data_(id) {}
     explicit DontMangle(unsigned short id) : data_(id) {}
     explicit DontMangle(unsigned char id) : data_(id) {}
     explicit DontMangle(long long id)
-        : data_(static_cast<unsigned long long>(id)) {}
+        : data_(static_cast<uint64_t>(id)) {}
     explicit DontMangle(long id)
-        : data_(static_cast<unsigned long long>(id)) {}
+        : data_(static_cast<uint64_t>(id)) {}
     explicit DontMangle(int id)
-        : data_(static_cast<unsigned long long>(id)) {}
+        : data_(static_cast<uint64_t>(id)) {}
     explicit DontMangle(short id)
-        : data_(static_cast<unsigned long long>(id)) {}
+        : data_(static_cast<uint64_t>(id)) {}
     explicit DontMangle(signed char id)
-        : data_(static_cast<unsigned long long>(id)) {}
-    unsigned long long data() const { return data_; }
+        : data_(static_cast<uint64_t>(id)) {}
+    uint64_t data() const { return data_; }
    private:
-    unsigned long long data_;
+    uint64_t data_;
   };
 
   class ForceMangle {
    public:
-    explicit ForceMangle(unsigned long long id) : data_(id) {}
-    explicit ForceMangle(unsigned long id) : data_(id) {}
+    explicit ForceMangle(uint64_t id) : data_(id) {}
     explicit ForceMangle(unsigned int id) : data_(id) {}
     explicit ForceMangle(unsigned short id) : data_(id) {}
     explicit ForceMangle(unsigned char id) : data_(id) {}
     explicit ForceMangle(long long id)
-        : data_(static_cast<unsigned long long>(id)) {}
+        : data_(static_cast<uint64_t>(id)) {}
     explicit ForceMangle(long id)
-        : data_(static_cast<unsigned long long>(id)) {}
+        : data_(static_cast<uint64_t>(id)) {}
     explicit ForceMangle(int id)
-        : data_(static_cast<unsigned long long>(id)) {}
+        : data_(static_cast<uint64_t>(id)) {}
     explicit ForceMangle(short id)
-        : data_(static_cast<unsigned long long>(id)) {}
+        : data_(static_cast<uint64_t>(id)) {}
     explicit ForceMangle(signed char id)
-        : data_(static_cast<unsigned long long>(id)) {}
-    unsigned long long data() const { return data_; }
+        : data_(static_cast<uint64_t>(id)) {}
+    uint64_t data() const { return data_; }
    private:
-    unsigned long long data_;
+    uint64_t data_;
   };
 
   TraceID(const void* id, unsigned char* flags)
-      : data_(static_cast<unsigned long long>(
+      : data_(static_cast<uint64_t>(
               reinterpret_cast<unsigned long>(id))) {
     *flags |= TRACE_EVENT_FLAG_MANGLE_ID;
   }
@@ -1056,9 +1054,7 @@ class TraceID {
   }
   TraceID(DontMangle id, unsigned char* flags) : data_(id.data()) {
   }
-  TraceID(unsigned long long id, unsigned char* flags)
-      : data_(id) { (void)flags; }
-  TraceID(unsigned long id, unsigned char* flags)
+  TraceID(uint64_t id, unsigned char* flags)
       : data_(id) { (void)flags; }
   TraceID(unsigned int id, unsigned char* flags)
       : data_(id) { (void)flags; }
@@ -1067,26 +1063,26 @@ class TraceID {
   TraceID(unsigned char id, unsigned char* flags)
       : data_(id) { (void)flags; }
   TraceID(long long id, unsigned char* flags)
-      : data_(static_cast<unsigned long long>(id)) { (void)flags; }
+      : data_(static_cast<uint64_t>(id)) { (void)flags; }
   TraceID(long id, unsigned char* flags)
-      : data_(static_cast<unsigned long long>(id)) { (void)flags; }
+      : data_(static_cast<uint64_t>(id)) { (void)flags; }
   TraceID(int id, unsigned char* flags)
-      : data_(static_cast<unsigned long long>(id)) { (void)flags; }
+      : data_(static_cast<uint64_t>(id)) { (void)flags; }
   TraceID(short id, unsigned char* flags)
-      : data_(static_cast<unsigned long long>(id)) { (void)flags; }
+      : data_(static_cast<uint64_t>(id)) { (void)flags; }
   TraceID(signed char id, unsigned char* flags)
-      : data_(static_cast<unsigned long long>(id)) { (void)flags; }
+      : data_(static_cast<uint64_t>(id)) { (void)flags; }
 
-  unsigned long long data() const { return data_; }
+  uint64_t data() const { return data_; }
 
  private:
-  unsigned long long data_;
+  uint64_t data_;
 };
 
-// Simple union to store various types as unsigned long long.
+// Simple union to store various types as uint64_t.
 union TraceValueUnion {
   bool as_bool;
-  unsigned long long as_uint;
+  uint64_t as_uint;
   long long as_int;
   double as_double;
   const void* as_pointer;
@@ -1112,7 +1108,7 @@ class TraceStringWithCopy {
     static inline void SetTraceValue( \
         actual_type arg, \
         unsigned char* type, \
-        unsigned long long* value) { \
+        uint64_t* value) { \
       TraceValueUnion type_value; \
       type_value.union_member = arg_expression; \
       *type = value_type_id; \
@@ -1124,13 +1120,12 @@ class TraceStringWithCopy {
     static inline void SetTraceValue( \
         actual_type arg, \
         unsigned char* type, \
-        unsigned long long* value) { \
+        uint64_t* value) { \
       *type = value_type_id; \
-      *value = static_cast<unsigned long long>(arg); \
+      *value = static_cast<uint64_t>(arg); \
     }
 
-INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned long long, TRACE_VALUE_TYPE_UINT)
-INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned long, TRACE_VALUE_TYPE_UINT)
+INTERNAL_DECLARE_SET_TRACE_VALUE_INT(uint64_t, TRACE_VALUE_TYPE_UINT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned int, TRACE_VALUE_TYPE_UINT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned short, TRACE_VALUE_TYPE_UINT)
 INTERNAL_DECLARE_SET_TRACE_VALUE_INT(unsigned char, TRACE_VALUE_TYPE_UINT)
@@ -1155,7 +1150,7 @@ INTERNAL_DECLARE_SET_TRACE_VALUE(const TraceStringWithCopy&, arg.str(),
 // std::string version of SetTraceValue so that trace arguments can be strings.
 static inline void SetTraceValue(const std::string& arg,
                                  unsigned char* type,
-                                 unsigned long long* value) {
+                                 uint64_t* value) {
   TraceValueUnion type_value;
   type_value.as_string = arg.c_str();
   *type = TRACE_VALUE_TYPE_COPY_STRING;
@@ -1173,7 +1168,7 @@ AddTraceEventWithThreadIdAndTimestamp(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int thread_id,
     const MicrosecondsInt64& timestamp,
     unsigned char flags,
@@ -1192,7 +1187,7 @@ AddTraceEventWithThreadIdAndTimestamp(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int thread_id,
     const MicrosecondsInt64& timestamp,
     unsigned char flags,
@@ -1204,7 +1199,7 @@ AddTraceEventWithThreadIdAndTimestamp(
   const char* arg_names[2] = { arg1_name, arg2_name };
 
   unsigned char arg_types[2];
-  unsigned long long arg_values[2];
+  uint64_t arg_values[2];
   SetTraceValue(arg1_val, &arg_types[0], &arg_values[0]);
   arg_types[1] = TRACE_VALUE_TYPE_CONVERTABLE;
 
@@ -1222,7 +1217,7 @@ AddTraceEventWithThreadIdAndTimestamp(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int thread_id,
     const MicrosecondsInt64& timestamp,
     unsigned char flags,
@@ -1234,7 +1229,7 @@ AddTraceEventWithThreadIdAndTimestamp(
   const char* arg_names[2] = { arg1_name, arg2_name };
 
   unsigned char arg_types[2];
-  unsigned long long arg_values[2];
+  uint64_t arg_values[2];
   arg_types[0] = TRACE_VALUE_TYPE_CONVERTABLE;
   arg_values[0] = 0;
   SetTraceValue(arg2_val, &arg_types[1], &arg_values[1]);
@@ -1252,7 +1247,7 @@ AddTraceEventWithThreadIdAndTimestamp(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int thread_id,
     const MicrosecondsInt64& timestamp,
     unsigned char flags,
@@ -1277,7 +1272,7 @@ AddTraceEventWithThreadIdAndTimestamp(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int thread_id,
     const MicrosecondsInt64& timestamp,
     unsigned char flags) {
@@ -1290,7 +1285,7 @@ static inline kudu::debug::TraceEventHandle AddTraceEvent(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     unsigned char flags) {
   int thread_id = static_cast<int>(kudu::Thread::PlatformThreadId());
   MicrosecondsInt64 now = GetMonoTimeMicros();
@@ -1304,7 +1299,7 @@ AddTraceEventWithThreadIdAndTimestamp(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int thread_id,
     const MicrosecondsInt64& timestamp,
     unsigned char flags,
@@ -1312,7 +1307,7 @@ AddTraceEventWithThreadIdAndTimestamp(
     const ARG1_TYPE& arg1_val) {
   const int num_args = 1;
   unsigned char arg_types[1];
-  unsigned long long arg_values[1];
+  uint64_t arg_values[1];
   SetTraceValue(arg1_val, &arg_types[0], &arg_values[0]);
   return TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
       phase, category_group_enabled, name, id, thread_id, timestamp,
@@ -1324,7 +1319,7 @@ static inline kudu::debug::TraceEventHandle AddTraceEvent(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     unsigned char flags,
     const char* arg1_name,
     const ARG1_TYPE& arg1_val) {
@@ -1341,7 +1336,7 @@ AddTraceEventWithThreadIdAndTimestamp(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int thread_id,
     const MicrosecondsInt64& timestamp,
     unsigned char flags,
@@ -1352,7 +1347,7 @@ AddTraceEventWithThreadIdAndTimestamp(
   const int num_args = 2;
   const char* arg_names[2] = { arg1_name, arg2_name };
   unsigned char arg_types[2];
-  unsigned long long arg_values[2];
+  uint64_t arg_values[2];
   SetTraceValue(arg1_val, &arg_types[0], &arg_values[0]);
   SetTraceValue(arg2_val, &arg_types[1], &arg_values[1]);
   return TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
@@ -1365,7 +1360,7 @@ static inline kudu::debug::TraceEventHandle AddTraceEvent(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     unsigned char flags,
     const char* arg1_name,
     const ARG1_TYPE& arg1_val,

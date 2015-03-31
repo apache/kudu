@@ -370,7 +370,7 @@ void InitializeMetadataEvent(TraceEvent* trace_event,
 
   int num_args = 1;
   unsigned char arg_type;
-  unsigned long long arg_value;
+  uint64_t arg_value;
   ::trace_event_internal::SetTraceValue(value, &arg_type, &arg_value);
   trace_event->Initialize(thread_id,
                           MicrosecondsInt64(0), MicrosecondsInt64(0), TRACE_EVENT_PHASE_METADATA,
@@ -545,11 +545,11 @@ void TraceEvent::Initialize(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int num_args,
     const char** arg_names,
     const unsigned char* arg_types,
-    const unsigned long long* arg_values,
+    const uint64_t* arg_values,
     const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
     unsigned char flags) {
   timestamp_ = timestamp;
@@ -1699,11 +1699,11 @@ TraceEventHandle TraceLog::AddTraceEvent(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int num_args,
     const char** arg_names,
     const unsigned char* arg_types,
-    const unsigned long long* arg_values,
+    const uint64_t* arg_values,
     const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
     unsigned char flags) {
   int thread_id = static_cast<int>(kudu::Thread::PlatformThreadId());
@@ -1765,13 +1765,13 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
     char phase,
     const unsigned char* category_group_enabled,
     const char* name,
-    unsigned long long id,
+    uint64_t id,
     int thread_id,
     const MicrosecondsInt64& timestamp,
     int num_args,
     const char** arg_names,
     const unsigned char* arg_types,
-    const unsigned long long* arg_values,
+    const uint64_t* arg_values,
     const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
     unsigned char flags) {
   TraceEventHandle handle = { 0, 0, 0 };
@@ -2166,9 +2166,9 @@ void TraceLog::SetProcessID(int process_id) {
   process_id_ = process_id;
   // Create a FNV hash from the process ID for XORing.
   // See http://isthe.com/chongo/tech/comp/fnv/ for algorithm details.
-  unsigned long long offset_basis = 14695981039346656037ull;
-  unsigned long long fnv_prime = 1099511628211ull;
-  unsigned long long pid = static_cast<unsigned long long>(process_id_);
+  uint64_t offset_basis = 14695981039346656037ull;
+  uint64_t fnv_prime = 1099511628211ull;
+  uint64_t pid = static_cast<uint64_t>(process_id_);
   process_id_hash_ = (offset_basis ^ pid) * fnv_prime;
 }
 
