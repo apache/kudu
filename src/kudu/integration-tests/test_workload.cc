@@ -53,7 +53,20 @@ void TestWorkload::WriteThread() {
   Random r(Env::Default()->gettid());
 
   scoped_refptr<KuduTable> table;
-  CHECK_OK(client_->OpenTable(kTableName, &table));
+  // Loop trying to open up the table. In some tests we set up very
+  // low RPC timeouts to test those behaviors, so this might fail and
+  // need retrying.
+  while (should_run_.Load()) {
+    Status s = client_->OpenTable(kTableName, &table);
+    if (s.ok()) {
+      break;
+    }
+    if (timeout_allowed_ && s.IsTimedOut()) {
+      SleepFor(MonoDelta::FromMilliseconds(50));
+      continue;
+    }
+    CHECK_OK(s);
+  }
 
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(write_timeout_millis_);
@@ -129,9 +142,7 @@ KuduSchema GetClientSchema(const Schema& server_schema) {
 
 
 void TestWorkload::Setup() {
-  CHECK_OK(KuduClientBuilder()
-           .add_master_server_addr(cluster_->master()->bound_rpc_addr().ToString())
-           .Build(&client_));
+  CHECK_OK(cluster_->CreateClient(client_builder_, &client_));
 
   KuduSchema client_schema(GetClientSchema(GetSimpleTestSchema()));
   CHECK_OK(client_->NewTableCreator()

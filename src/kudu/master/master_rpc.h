@@ -12,7 +12,9 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/rpc.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+
 
 namespace kudu {
 
@@ -74,18 +76,17 @@ class GetMasterRegistrationRpc : public rpc::Rpc {
 class GetLeaderMasterRpc : public rpc::Rpc,
                            public RefCountedThreadSafe<GetLeaderMasterRpc> {
  public:
-
+  typedef Callback<void(const Status&, const HostPort&)> LeaderCallback;
   // The host and port of the leader master server is stored in
   // 'leader_master', which must remain valid for the lifetime of this
   // object.
   //
   // Calls 'user_cb' when the leader is found, or if no leader can be
   // found until 'deadline' passes.
-  GetLeaderMasterRpc(const StatusCallback& user_cb,
+  GetLeaderMasterRpc(const LeaderCallback& user_cb,
                      const std::vector<Sockaddr>& addrs,
                      const MonoTime& deadline,
-                     const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-                     HostPort* leader_master);
+                     const std::tr1::shared_ptr<rpc::Messenger>& messenger);
 
   virtual void SendRpc() OVERRIDE;
 
@@ -106,10 +107,10 @@ class GetLeaderMasterRpc : public rpc::Rpc,
                                          const ServerEntryPB& resp,
                                          const Status& status);
 
-  StatusCallback user_cb_;
+  LeaderCallback user_cb_;
   std::vector<Sockaddr> addrs_;
 
-  HostPort* leader_master_;
+  HostPort leader_master_;
 
   // The received responses.
   //

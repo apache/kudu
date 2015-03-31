@@ -65,7 +65,7 @@ Status KuduTable::Data::Open() {
     rpc_deadline.AddDelta(client_->default_rpc_timeout());
     rpc.set_deadline(MonoTime::Earliest(rpc_deadline, deadline));
 
-    s = client_->data_->master_proxy_->GetTableLocations(req, &resp, &rpc);
+    s = client_->data_->master_proxy()->GetTableLocations(req, &resp, &rpc);
     if (!s.ok()) {
       // Various conditions cause us to look for the leader master again.
       // It's ok if that eventually fails; we'll retry over and over until

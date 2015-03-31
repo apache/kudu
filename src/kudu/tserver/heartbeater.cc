@@ -160,6 +160,18 @@ Heartbeater::Thread::Thread(const TabletServerOptions& opts, TabletServer* serve
   CHECK(!master_addrs_.empty());
 }
 
+namespace {
+void LeaderMasterCallback(HostPort* dst_hostport,
+                          Synchronizer* sync,
+                          const Status& status,
+                          const HostPort& result) {
+  if (status.ok()) {
+    *dst_hostport = result;
+  }
+  sync->StatusCB(status);
+}
+} // anonymous namespace
+
 Status Heartbeater::Thread::FindLeaderMaster(const MonoTime& deadline,
                                              HostPort* leader_hostport) {
   Status s = Status::OK();
@@ -188,11 +200,13 @@ Status Heartbeater::Thread::FindLeaderMaster(const MonoTime& deadline,
     return Status::NotFound("unable to resolve any of the master addresses!");
   }
   Synchronizer sync;
-  scoped_refptr<GetLeaderMasterRpc> rpc(new GetLeaderMasterRpc(sync.AsStatusCallback(),
-                                                               master_sock_addrs,
-                                                               deadline,
-                                                               server_->messenger(),
-                                                               leader_hostport));
+  scoped_refptr<GetLeaderMasterRpc> rpc(new GetLeaderMasterRpc(
+                                          Bind(&LeaderMasterCallback,
+                                               leader_hostport,
+                                               &sync),
+                                          master_sock_addrs,
+                                          deadline,
+                                          server_->messenger()));
   rpc->SendRpc();
   return sync.Wait();
 }

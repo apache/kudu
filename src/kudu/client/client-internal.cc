@@ -648,23 +648,29 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
   return sync.Wait();
 }
 
-void KuduClient::Data::LeaderMasterDetermined(const StatusCallback& user_cb,
-                                              const Status& status) {
+void KuduClient::Data::LeaderMasterDetermined(const Status& status,
+                                              const HostPort& host_port) {
+  Sockaddr leader_sock_addr;
   Status new_status = status;
-  // Make a defensive copy of 'user_cb', as it may be deallocated
-  // after 'leader_master_rpc_' is reset.
-  StatusCallback cb_copy(user_cb);
   if (new_status.ok()) {
-    Sockaddr leader_sock_addr;
-    new_status = SockaddrFromHostPort(leader_master_hostport_, &leader_sock_addr);
+    new_status = SockaddrFromHostPort(host_port, &leader_sock_addr);
+  }
+
+  vector<StatusCallback> cbs;
+  {
+    lock_guard<simple_spinlock> l(&leader_master_lock_);
+    cbs.swap(leader_master_callbacks_);
+    leader_master_rpc_.reset();
+
     if (new_status.ok()) {
+      leader_master_hostport_ = host_port;
       master_proxy_.reset(new MasterServiceProxy(messenger_, leader_sock_addr));
     }
   }
-  // See the comment in SetMasterServerProxyAsync below.
-  leader_master_rpc_.reset();
-  leader_master_sem_.unlock();
-  cb_copy.Run(new_status);
+
+  BOOST_FOREACH(const StatusCallback& cb, cbs) {
+    cb.Run(new_status);
+  }
 }
 
 Status KuduClient::Data::SetMasterServerProxy(KuduClient* client,
@@ -709,33 +715,35 @@ void KuduClient::Data::SetMasterServerProxyAsync(KuduClient* client,
   MonoTime actual_deadline = MonoTime::Earliest(deadline, leader_master_deadline);
 
   // This ensures that no more than one GetLeaderMasterRpc is in
-  // flight.  The reason for this is that we need to keep hold of a
-  // reference to an in-flight RPC ('leader_master_rpc_') in order not
-  // to free it before the RPC completes.
-  //
-  // The other approach would be to keep a container of references to
-  // GetLeaderMasterRpc and the HostPort, but this would have an issue
-  // with maintaining an index (or another form of a key) into that
-  // container in order to find the right GetLeaderMasterRpc reference
-  // and HostPort instance in order to destroy them.
-  //
-  // (We can't pass 'leader_master_rpc_' to the callback as a
-  // scoped_refptr can't be passed into a kudu::StatusCallback using a
-  // Bind).
-  leader_master_sem_.lock();
-  leader_master_rpc_.reset(new GetLeaderMasterRpc(
-      Bind(&KuduClient::Data::LeaderMasterDetermined,
-           Unretained(this), cb),
-      master_sockaddrs,
-      actual_deadline,
-      messenger_,
-      &leader_master_hostport_));
-  leader_master_rpc_->SendRpc();
+  // flight at a time -- there isn't much sense in requesting this information
+  // in parallel, since the requests should end up with the same result.
+  // Instead, we simply piggy-back onto the existing request by adding our own
+  // callback to leader_master_callbacks_.
+  unique_lock<simple_spinlock> l(&leader_master_lock_);
+  leader_master_callbacks_.push_back(cb);
+  if (!leader_master_rpc_) {
+    // No one is sending a request yet - we need to be the one to do it.
+    leader_master_rpc_.reset(new GetLeaderMasterRpc(
+                               Bind(&KuduClient::Data::LeaderMasterDetermined,
+                                    Unretained(this)),
+                               master_sockaddrs,
+                               actual_deadline,
+                               messenger_));
+    l.unlock();
+    leader_master_rpc_->SendRpc();
+  }
+
+
 }
 
 HostPort KuduClient::Data::leader_master_hostport() const {
-  shared_lock<rw_semaphore> l(&leader_master_sem_);
+  lock_guard<simple_spinlock> l(&leader_master_lock_);
   return leader_master_hostport_;
+}
+
+shared_ptr<master::MasterServiceProxy> KuduClient::Data::master_proxy() const {
+  lock_guard<simple_spinlock> l(&leader_master_lock_);
+  return master_proxy_;
 }
 
 } // namespace client

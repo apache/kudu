@@ -312,7 +312,7 @@ class LookupRpc : public Rpc {
  private:
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
-  MasterServiceProxy* master_proxy() const {
+  std::tr1::shared_ptr<MasterServiceProxy> master_proxy() const {
     return table_->client()->data_->master_proxy();
   }
 

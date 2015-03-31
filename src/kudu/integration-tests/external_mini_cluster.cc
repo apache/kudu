@@ -288,6 +288,18 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
   }
 }
 
+namespace {
+void LeaderMasterCallback(HostPort* dst_hostport,
+                          Synchronizer* sync,
+                          const Status& status,
+                          const HostPort& result) {
+  if (status.ok()) {
+    *dst_hostport = result;
+  }
+  sync->StatusCB(status);
+}
+} // anonymous namespace
+
 Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   scoped_refptr<GetLeaderMasterRpc> rpc;
   Synchronizer sync;
@@ -299,11 +311,12 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   BOOST_FOREACH(const scoped_refptr<ExternalMaster>& master, masters_) {
     addrs.push_back(master->bound_rpc_addr());
   }
-  rpc.reset(new GetLeaderMasterRpc(sync.AsStatusCallback(),
+  rpc.reset(new GetLeaderMasterRpc(Bind(&LeaderMasterCallback,
+                                        &leader_master_hp,
+                                        &sync),
                                    addrs,
                                    deadline,
-                                   messenger_,
-                                   &leader_master_hp));
+                                   messenger_));
   rpc->SendRpc();
   RETURN_NOT_OK(sync.Wait());
   bool found = false;

@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
-#include "kudu/util/rw_semaphore.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/net/net_util.h"
 
 namespace kudu {
@@ -100,8 +100,8 @@ class KuduClient::Data {
   // GetLeaderMasterRpc::SendRpcCb() upon successful completion.
   //
   // See also: SetMasterServerProxyAsync.
-  void LeaderMasterDetermined(const StatusCallback& user_cb,
-                              const Status& status);
+  void LeaderMasterDetermined(const Status& status,
+                              const HostPort& host_port);
 
   // Asynchronously sets 'master_proxy_' to the leader master by
   // cycling through servers listed in 'master_server_addrs_' until
@@ -125,9 +125,7 @@ class KuduClient::Data {
   Status SetMasterServerProxy(KuduClient* client,
                               const MonoTime& deadline);
 
-  master::MasterServiceProxy* master_proxy() const {
-    return master_proxy_.get();
-  }
+  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy() const;
 
   HostPort leader_master_hostport() const;
 
@@ -180,12 +178,14 @@ class KuduClient::Data {
   // is asynchronous, we need to hold a reference in this class
   // itself, as to avoid a "use-after-free" scenario.
   scoped_refptr<master::GetLeaderMasterRpc> leader_master_rpc_;
+  std::vector<StatusCallback> leader_master_callbacks_;
 
-  // Protects 'leader_master_rpc_', 'leader_master_hostport_'.
+  // Protects 'leader_master_rpc_', 'leader_master_hostport_',
+  // and master_proxy_
   //
   // See: KuduClient::Data::SetMasterServerProxyAsync for a more
   // in-depth explanation of why this is needed and how it works.
-  mutable rw_semaphore leader_master_sem_;
+  mutable simple_spinlock leader_master_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

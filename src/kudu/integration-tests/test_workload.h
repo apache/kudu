@@ -5,10 +5,12 @@
 
 #include <vector>
 
+#include "kudu/client/client.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/monotime.h"
 
 namespace kudu {
 
@@ -31,6 +33,10 @@ class TestWorkload {
 
   void set_write_batch_size(int s) {
     write_batch_size_ = s;
+  }
+
+  void set_client_default_rpc_timeout_millis(int t) {
+    client_builder_.default_rpc_timeout(MonoDelta::FromMilliseconds(t));
   }
 
   void set_write_timeout_millis(int t) {
@@ -61,6 +67,7 @@ class TestWorkload {
   void WriteThread();
 
   ExternalMiniCluster* cluster_;
+  client::KuduClientBuilder client_builder_;
   std::tr1::shared_ptr<client::KuduClient> client_;
 
   int num_write_threads_;

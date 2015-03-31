@@ -93,15 +93,13 @@ void GetMasterRegistrationRpc::SendRpcCb(const Status& status) {
 // GetLeaderMasterRpc
 ////////////////////////////////////////////////////////////
 
-GetLeaderMasterRpc::GetLeaderMasterRpc(const StatusCallback& user_cb,
+GetLeaderMasterRpc::GetLeaderMasterRpc(const LeaderCallback& user_cb,
                                        const vector<Sockaddr>& addrs,
                                        const MonoTime& deadline,
-                                       const shared_ptr<Messenger>& messenger,
-                                       HostPort* leader_master)
+                                       const shared_ptr<Messenger>& messenger)
     : Rpc(deadline, messenger),
       user_cb_(user_cb),
       addrs_(addrs),
-      leader_master_(DCHECK_NOTNULL(leader_master)),
       pending_responses_(0),
       completed_(false) {
   DCHECK(deadline.Initialized());
@@ -156,7 +154,7 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
     }
     completed_ = true;
   }
-  user_cb_.Run(status);
+  user_cb_.Run(status, leader_master_);
 }
 
 void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const Sockaddr& node_addr,
@@ -188,7 +186,7 @@ void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const Sockaddr& node_
         new_status = Status::NotFound("no leader found: " + ToString());
       } else {
         // We've found a leader.
-        *leader_master_ = HostPort(node_addr);
+        leader_master_ = HostPort(node_addr);
       }
     }
     --pending_responses_;
