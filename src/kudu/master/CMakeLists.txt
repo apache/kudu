@@ -12,6 +12,7 @@ target_link_libraries(master_proto
   tablet_proto
   wire_protocol_proto
   protobuf
+  krpc
   rpc_header_proto)
 
 set(MASTER_SRCS
