@@ -281,9 +281,5 @@ if [ -n "$F_ALL" -o -n "$F_TRACE_VIEWER" ]; then
   cp -a $TRACE_VIEWER_DIR/* $TP_DIR/../www/
 fi
 
-# Remove any old thirdparty deps which hung around from previous versions
-rm -f $PREFIX/lib/libsasl*
-rm -Rf $PREFIX/lib/sasl2
-
 echo "---------------------"
 echo "Thirdparty dependencies built and installed into $PREFIX successfully"

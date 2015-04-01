@@ -1,6 +1,5 @@
 cmake-*
 crcutil-*
-cyrus-sasl-*
 gflags-*
 glog-*
 gmock-*
