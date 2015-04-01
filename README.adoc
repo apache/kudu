@@ -16,7 +16,6 @@ The following dependencies are necessary to build kudu:
 - cmake 2.8.7
 - curl
 - gcc and g++ 4.4 or higher
-- libcurl
 - liboauth-dev
 - libssl-dev (Ubuntu) or openssl-devel (CentOS)
 - libsasl2-dev (Ubuntu) or cyrus-sasl-devel (CentOS)

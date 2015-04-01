@@ -3,7 +3,7 @@
 
 find_library(LIBOAUTH_LIBRARY NAMES oauth)
 if(NOT LIBOAUTH_LIBRARY)
-  message(WARNING "libcurl or liboauth not found on system. Skipping twitter demo")
+  message(WARNING "liboauth not found on system. Skipping twitter demo")
 else()
 
   add_library(twitter_demo

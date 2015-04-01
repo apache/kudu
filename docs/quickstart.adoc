@@ -43,7 +43,7 @@ Centos, Ubuntu, or Debian.
 [source,bash]
 .RHEL / Centos:
 ----
-$ sudo yum install boost-thread boost-devel cmake libcurl-devel \
+$ sudo yum install boost-thread boost-devel cmake \
 liboauth liboauth-devel libgsasl libgsasl-devel libssl-devel \
 llvm-devel clang
 ----
@@ -118,7 +118,7 @@ Centos, and can be used as the basis for an automated deployment scenario.
 #!/bin/bash
 # Run as root
 useradd -m kudu
-yum -y install boost-thread boost-devel cmake libcurl-devel liboauth \
+yum -y install boost-thread boost-devel cmake liboauth \
 liboauth-devel libgsasl libgsasl-devel libssl-devel llvm-devel clang
 su - kudu
 wget http://llvm.org/releases/3.3/clang+llvm-3.3-x86_64-fedora18.tar.bz2
