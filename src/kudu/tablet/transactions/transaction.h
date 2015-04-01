@@ -76,10 +76,6 @@ class Transaction {
   // side-effects.
   virtual Status Prepare() = 0;
 
-  // If supported, aborts the prepare phase, and subsequently the transaction.
-  // Not supported by default.
-  virtual bool AbortPrepare() { return false; }
-
   // Actually starts a transaction, assigning a timestamp to the transaction.
   // LEADER replicas execute this in or right after Prepare(), while FOLLOWER/LEARNER
   // replicas execute this right before the Apply() phase as the transaction's
@@ -92,10 +88,6 @@ class Transaction {
   // this phase depend on the transaction type, but usually this is the
   // method where data-structures are changed.
   virtual Status Apply(gscoped_ptr<consensus::CommitMsg>* commit_msg) = 0;
-
-  // If supported, aborts the apply phase, and subsequently the transaction.
-  // Not supported by default.
-  virtual bool AbortApply() { return false; }
 
   // Executed after Apply() but before the commit is submitted to consensus.
   // Some transactions use this to perform pre-commit actions (e.g. write
