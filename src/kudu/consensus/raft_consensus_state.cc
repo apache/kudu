@@ -475,10 +475,11 @@ Status ReplicaState::UpdateMajorityReplicatedUnlocked(const OpId& majority_repli
   }
 
   committed_index->CopyFrom(last_committed_index_);
-  LOG_WITH_PREFIX(WARNING) << "Can't advance the committed index across term boundaries yet."
-          << " Last committed operation was: " << last_committed_index_.ShortDebugString()
-          << " New majority replicated is: " << majority_replicated.ShortDebugString()
-          << ". Current term is: " << GetCurrentTermUnlocked();
+  LOG_WITH_PREFIX(WARNING) << "Can't advance the committed index across term boundaries"
+          << " until operations from the current term are replicated."
+          << " Last committed operation was: " << last_committed_index_.ShortDebugString() << ","
+          << " New majority replicated is: " << majority_replicated.ShortDebugString() << ","
+          << " Current term is: " << GetCurrentTermUnlocked();
 
   return Status::OK();
 }
