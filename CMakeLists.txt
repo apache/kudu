@@ -38,9 +38,6 @@ endif()
 #  - -D__STDC_FORMAT_MACROS: for PRI* print format macros
 set(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread -D__STDC_FORMAT_MACROS")
 
-# Allow linking of static libs into dynamic libs
-add_definitions(-fPIC)
-
 # We can safely use gtest.
 add_definitions(-DKUDU_HEADERS_USE_GTEST=1)
 
@@ -174,6 +171,11 @@ if(KUDU_EXPORTED_CLIENT)
 else()
   # Make all symbols visible, even ones explicitly annotated with KUDU_NO_EXPORT.
   add_definitions("-DKUDU_STATIC_DEFINE")
+endif()
+
+# Position independent code is only necessary when producing shared objects.
+if("${KUDU_EXPORTED_CLIENT}" OR "${KUDU_LINK}" STREQUAL "d")
+  add_definitions(-fPIC)
 endif()
 
 # Clang does not support using ASAN and TSAN simultaneously.
