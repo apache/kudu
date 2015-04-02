@@ -597,13 +597,13 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   mutable simple_spinlock state_lock_;
   State state_;
 
-  // Used by ElectedAsLeaderCb above to load in-memory state whenever
-  // this node is elected as a leader.
+  // Used to defer work from reactor threads onto a thread where
+  // blocking behavior is permissible.
   //
   // NOTE: Presently, this thread pool must contain only a single
   // thread (to correctly serialize invocations of ElectedAsLeaderCb
   // upon closely timed consecutive elections).
-  gscoped_ptr<ThreadPool> leader_initialization_pool_;
+  gscoped_ptr<ThreadPool> worker_pool_;
 
   // Set when the tables and tablets are loaded successfully. This is
   // especially relevant in the case of a standalone local master

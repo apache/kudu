@@ -345,7 +345,7 @@ CatalogManager::CatalogManager(Master *master)
     leader_ready_(false) {
   CHECK_OK(ThreadPoolBuilder("leader-initialization")
            .set_max_threads(1)
-           .Build(&leader_initialization_pool_));
+           .Build(&worker_pool_));
 }
 
 CatalogManager::~CatalogManager() {
@@ -390,7 +390,7 @@ Status CatalogManager::Init(bool is_first_run) {
 Status CatalogManager::ElectedAsLeaderCb() {
   boost::lock_guard<simple_spinlock> l(state_lock_);
   leader_ready_ = false;
-  return leader_initialization_pool_->SubmitClosure(
+  return worker_pool_->SubmitClosure(
       Bind(&CatalogManager::VisitTablesAndTabletsTask, Unretained(this)));
 }
 
@@ -1387,9 +1387,11 @@ const NodeInstancePB& CatalogManager::NodeInstance() const {
 class AsyncTabletRequestTask : public MonitoredTask {
  public:
   AsyncTabletRequestTask(Master *master,
+                         ThreadPool* callback_pool,
                          const string& permanent_uuid,
                          const scoped_refptr<TableInfo>& table)
     : master_(master),
+      callback_pool_(callback_pool),
       permanent_uuid_(permanent_uuid),
       table_(table),
       start_ts_(MonoTime::Now(MonoTime::FINE)),
@@ -1461,12 +1463,21 @@ class AsyncTabletRequestTask : public MonitoredTask {
 
   // Callback meant to be invoked from asynchronous RPC service proxy calls.
   void RpcCallback() {
+    // Defer the actual work of the callback off of the reactor thread.
+    // This is necessary because our callbacks often do synchronous writes to
+    // the catalog table, and we can't do synchronous IO on the reactor.
+    CHECK_OK(callback_pool_->SubmitClosure(
+                 Bind(&AsyncTabletRequestTask::DoRpcCallback,
+                      Unretained(this))));
+  }
+
+  // Handle the actual work of the RPC callback. This is run on the master's worker
+  // pool, rather than a reactor thread, so it may do blocking IO operations.
+  void DoRpcCallback() {
     if (!rpc_.status().ok()) {
       LOG(WARNING) << "TS " << permanent_uuid_ << ": " << type_name() << " RPC failed for tablet "
                    << tablet_id() << ": " << rpc_.status().ToString();
     } else if (state() != kStateAborted) {
-      // TODO(KUDU-679): we should defer this work to a thread-pool, since it can do IO.
-      ThreadRestrictions::ScopedAllowWait allow_wait;
       HandleResponse(attempt_); // Modifies state_.
     }
 
@@ -1500,6 +1511,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
   }
 
   Master * const master_;
+  ThreadPool* const callback_pool_;
   const string permanent_uuid_;
   const scoped_refptr<TableInfo> table_;
 
@@ -1562,9 +1574,10 @@ class AsyncTabletRequestTask : public MonitoredTask {
 class AsyncCreateTablet : public AsyncTabletRequestTask {
  public:
   AsyncCreateTablet(Master *master,
+                    ThreadPool *callback_pool,
                     const string& permanent_uuid,
                     const scoped_refptr<TabletInfo>& tablet)
-    : AsyncTabletRequestTask(master, permanent_uuid, tablet->table()),
+    : AsyncTabletRequestTask(master, callback_pool, permanent_uuid, tablet->table()),
       tablet_(tablet) {
     deadline_ = start_ts_;
     deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_assignment_timeout_ms));
@@ -1625,11 +1638,12 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
 class AsyncDeleteTablet : public AsyncTabletRequestTask {
  public:
   AsyncDeleteTablet(Master *master,
+                    ThreadPool* callback_pool,
                     const string& permanent_uuid,
                     const scoped_refptr<TableInfo>& table,
                     const std::string& tablet_id,
                     const string& reason)
-    : AsyncTabletRequestTask(master, permanent_uuid, table),
+    : AsyncTabletRequestTask(master, callback_pool, permanent_uuid, table),
       tablet_id_(tablet_id),
       reason_(reason) {
     }
@@ -1698,9 +1712,10 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
 class AsyncAlterTable : public AsyncTabletRequestTask {
  public:
   AsyncAlterTable(Master *master,
+                  ThreadPool* callback_pool,
                   const string& permanent_uuid,
                   const scoped_refptr<TabletInfo>& tablet)
-    : AsyncTabletRequestTask(master, permanent_uuid, tablet->table()),
+    : AsyncTabletRequestTask(master, callback_pool, permanent_uuid, tablet->table()),
       tablet_(tablet) {
   }
 
@@ -1786,7 +1801,8 @@ void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tab
 
 void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet,
                                             TSDescriptor* ts_desc) {
-  AsyncAlterTable *call = new AsyncAlterTable(master_, ts_desc->permanent_uuid(), tablet);
+  AsyncAlterTable *call = new AsyncAlterTable(master_, worker_pool_.get(),
+                                              ts_desc->permanent_uuid(), tablet);
   tablet->table()->AddTask(call);
   WARN_NOT_OK(call->Run(), "Failed to send alter table request");
 }
@@ -1809,7 +1825,8 @@ void CatalogManager::SendDeleteTabletRequest(const std::string& tablet_id,
                                              const scoped_refptr<TableInfo>& table,
                                              TSDescriptor* ts_desc,
                                              const string& reason) {
-  AsyncDeleteTablet *call = new AsyncDeleteTablet(master_, ts_desc->permanent_uuid(),
+  AsyncDeleteTablet *call = new AsyncDeleteTablet(master_, worker_pool_.get(),
+                                                  ts_desc->permanent_uuid(),
                                                   table, tablet_id, reason);
   if (table != NULL) {
     table->AddTask(call);
@@ -2139,7 +2156,8 @@ void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets
     const metadata::QuorumPB& quorum = tablet->metadata().dirty().pb.quorum();
     tablet->set_last_update_ts(MonoTime::Now(MonoTime::FINE));
     BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
-      AsyncCreateTablet *task = new AsyncCreateTablet(master_, peer.permanent_uuid(), tablet);
+      AsyncCreateTablet *task = new AsyncCreateTablet(master_, worker_pool_.get(),
+                                                      peer.permanent_uuid(), tablet);
       tablet->table()->AddTask(task);
       WARN_NOT_OK(task->Run(), "Failed to send new tablet request");
     }

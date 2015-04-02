@@ -214,8 +214,7 @@ TEST_F(MasterFailoverTest, TestDeleteTableSync) {
 //
 // TODO: Add an equivalent async test. Add a test for adding and/or
 // renaming a column in a table.
-// TODO: Disabled due to extreme flakiness (KUDU-614)
-TEST_F(MasterFailoverTest, DISABLED_TestRenameTableSync) {
+TEST_F(MasterFailoverTest, TestRenameTableSync) {
   if (!AllowSlowTests()) {
     LOG(INFO) << "This test can only be run in slow mode.";
     return;
