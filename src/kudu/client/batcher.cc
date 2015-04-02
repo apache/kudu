@@ -463,15 +463,13 @@ void Batcher::Abort() {
 }
 
 Batcher::~Batcher() {
-  CHECK(state_ == kFlushed || state_ == kAborted) << "Bad state: " << state_;
-
   if (PREDICT_FALSE(!ops_.empty())) {
     BOOST_FOREACH(InFlightOp* op, ops_) {
       LOG(ERROR) << "Orphaned op: " << op->ToString();
     }
     LOG(FATAL) << "ops_ not empty";
   }
-  CHECK(ops_.empty());
+  CHECK(state_ == kFlushed || state_ == kAborted) << "Bad state: " << state_;
 }
 
 void Batcher::SetTimeoutMillis(int millis) {
@@ -636,6 +634,11 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
     MarkInFlightOpFailedUnlocked(op, s);
     l.unlock();
     CheckForFinishedFlush();
+
+    // Even if we failed our lookup, it's possible that other requests were still
+    // pending waiting for our pending lookup to complete. So, we have to let them
+    // proceed.
+    FlushBuffersIfReady();
     return;
   }
 
