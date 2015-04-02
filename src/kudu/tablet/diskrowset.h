@@ -322,9 +322,10 @@ class DiskRowSet : public RowSet {
 
   size_t CountDeltaStores() const;
 
-  double DeltaStoresCompactionPerfImprovementScore() const OVERRIDE;
+  double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const OVERRIDE;
 
-  Status MajorCompactDeltaStores(const ColumnIndexes& col_indexes);
+  // Major compacts all the delta files for all the columns.
+  Status MajorCompactDeltaStores();
 
   Status AlterSchema(const Schema& schema) OVERRIDE;
 
@@ -368,6 +369,9 @@ class DiskRowSet : public RowSet {
   Status NewMajorDeltaCompaction(
       const ColumnIndexes& col_indexes,
       gscoped_ptr<MajorDeltaCompaction>* out) const;
+
+  // Major compacts all the delta files for the specified columns.
+  Status MajorCompactDeltaStoresWithColumns(const ColumnIndexes& col_indexes);
 
   shared_ptr<RowSetMetadata> rowset_metadata_;
 

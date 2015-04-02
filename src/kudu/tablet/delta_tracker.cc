@@ -114,7 +114,7 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t en
     ignore_result(down_cast<DeltaFileReader*>(delta_store.get()));
     shared_ptr<DeltaFileReader> dfr = std::tr1::static_pointer_cast<DeltaFileReader>(delta_store);
 
-    LOG(INFO) << "Preparing to compact delta file: " << dfr->ToString();
+    LOG(INFO) << "Preparing to minor compact delta file: " << dfr->ToString();
 
     inputs.push_back(delta_store);
     target_stores->push_back(delta_store);
@@ -181,9 +181,6 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& to_remove,
 }
 
 Status DeltaTracker::Compact() {
-  if (CountRedoDeltaStores() <= 1) {
-    return Status::OK();
-  }
   return CompactStores(0, -1);
 }
 
@@ -192,6 +189,9 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   //
   // TODO(perf): this could be more fine grained
   boost::lock_guard<boost::mutex> l(compact_flush_lock_);
+  if (CountRedoDeltaStores() <= 1) {
+    return Status::OK();
+  }
 
   if (end_idx == -1) {
     end_idx = redo_delta_stores_.size() - 1;
@@ -521,6 +521,28 @@ uint64_t DeltaTracker::EstimateOnDiskSize() const {
     size += ds->EstimateSize();
   }
   return size;
+}
+
+void DeltaTracker::GetColumnsIdxWithUpdates(ColumnIndexes* columns) const {
+  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+
+  set<size_t> column_idx_with_updates;
+  BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
+    // We won't force open files just to read their stats.
+    if (!ds->Initted()) {
+      continue;
+    }
+
+    for (int i = 0; i < ds->delta_stats().num_columns(); i++) {
+      // TODO this will break as soon as we start altering columns since those are indexes.
+      if (ds->delta_stats().update_count(i) > 0) {
+        column_idx_with_updates.insert(i);
+      }
+    }
+  }
+  if (!column_idx_with_updates.empty()) {
+    columns->assign(column_idx_with_updates.begin(), column_idx_with_updates.end());
+  }
 }
 
 const Schema& DeltaTracker::schema() const {

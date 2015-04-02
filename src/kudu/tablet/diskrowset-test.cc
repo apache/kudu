@@ -21,9 +21,10 @@
 #include "kudu/util/test_macros.h"
 
 DEFINE_double(update_fraction, 0.1f, "fraction of rows to update");
+DECLARE_bool(cfile_lazy_open);
 DECLARE_int32(cfile_default_block_size);
-DECLARE_int32(tablet_delta_store_minor_compact_soft_min);
-DECLARE_int32(tablet_delta_store_minor_compact_hard_min);
+DECLARE_double(tablet_delta_store_major_compact_min_ratio);
+DECLARE_int32(tablet_delta_store_minor_compact_max);
 
 namespace kudu {
 namespace tablet {
@@ -442,31 +443,48 @@ TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {
   ASSERT_TRUE(is_sorted(results.begin(), results.end()));
 }
 
+void BetweenZeroAndOne(double to_check) {
+  ASSERT_LT(0, to_check);
+  ASSERT_GT(1, to_check);
+}
+
 TEST_F(TestRowSet, TestCompactStores) {
-  // With these settings, the perf improvement will be 0 until we have two files, at which point
+  // With this setting, we want major compactions to basically always have a score.
+  FLAGS_tablet_delta_store_major_compact_min_ratio = 0.0001;
+  // With this setting, the perf improvement will be 0 until we have two files, at which point
   // it will be the expected ratio, then with three files we get the maximum improvement.
-  FLAGS_tablet_delta_store_minor_compact_soft_min = 2;
-  FLAGS_tablet_delta_store_minor_compact_hard_min = 3;
+  FLAGS_tablet_delta_store_minor_compact_max = 3;
+  // Turning this off so that we can call DeltaStoresCompactionPerfImprovementScore without having
+  // to open the files after creating them.
+  FLAGS_cfile_lazy_open = false;
+
 
   WriteTestRowSet();
   shared_ptr<DiskRowSet> rs;
   ASSERT_OK(OpenTestRowSet(&rs));
-  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore());
+  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));
+  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MAJOR_DELTA_COMPACTION));
 
-  // Generate 3 deltafiles
+  // Write a first delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
   ASSERT_OK(rs->FlushDeltas());
-  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore());
+  // One file isn't enough for minor compactions, but a major compaction can run.
+  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));
+  BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MAJOR_DELTA_COMPACTION));
 
+  // Write a second delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
   ASSERT_OK(rs->FlushDeltas());
-  double perf_improvement = rs->DeltaStoresCompactionPerfImprovementScore();
-  ASSERT_LT(0, perf_improvement);
-  ASSERT_GT(1, perf_improvement);
+  // Two files is enough for all delta compactions.
+  BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));
+  BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MAJOR_DELTA_COMPACTION));
 
+  // Write a third delta file.
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
   ASSERT_OK(rs->FlushDeltas());
-  ASSERT_EQ(1, rs->DeltaStoresCompactionPerfImprovementScore());
+  // We're hitting the max for minor compactions but not for major compactions.
+  ASSERT_EQ(1, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));
+  BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MAJOR_DELTA_COMPACTION));
 
   // Compact the deltafiles
   DeltaTracker *dt = rs->delta_tracker();
@@ -477,7 +495,9 @@ TEST_F(TestRowSet, TestCompactStores) {
   num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores after compaction: " << num_stores;
   ASSERT_EQ(1,  num_stores);
-  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore());
+  // Back to one store, can't minor compact.
+  ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));
+  BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MAJOR_DELTA_COMPACTION));
 
   // Verify that the resulting deltafile is valid
   vector<shared_ptr<DeltaStore> > compacted_stores;

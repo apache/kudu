@@ -35,6 +35,9 @@ class DeltaStore {
   // include additional I/O.
   virtual Status Init() = 0;
 
+  // Whether this delta store was initialized or not.
+  virtual bool Initted() = 0;
+
   // Create a DeltaIterator for the given projection.
   //
   // The projection corresponds to whatever scan is currently ongoing.
@@ -59,6 +62,11 @@ class DeltaStore {
   virtual const Schema& schema() const = 0;
 
   virtual std::string ToString() const = 0;
+
+  // TODO remove this once we don't need to have delta_stats for both DMS and DFR. Currently
+  // DeltaTracker#GetColumnsIdxWithUpdates() needs to filter out DMS from the redo list but it
+  // can't without RTTI.
+  virtual const DeltaStats& delta_stats() const = 0;
 
   virtual ~DeltaStore() {}
 };

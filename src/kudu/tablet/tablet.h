@@ -258,11 +258,19 @@ class Tablet {
 
   // Finds the RowSet which has the most separate delta files and
   // issues a minor delta compaction.
-  Status MinorCompactWorstDeltas();
+  Status CompactWorstDeltas(RowSet::DeltaCompactionType type);
 
   // Get the highest performance improvement that would come from compacting the delta stores
-  // of one of the rowsets. Can be 0, in which case the rowset isn't set.
-  double GetPerfImprovementForBestDeltaMinorCompact(shared_ptr<RowSet>* rs) const;
+  // of one of the rowsets. If the returned performance improvement is 0, or if 'rs' is NULL,
+  // then 'rs' isn't set. Callers who already own compact_select_lock_
+  // can call GetPerfImprovementForBestDeltaCompactUnlocked().
+  double GetPerfImprovementForBestDeltaCompact(RowSet::DeltaCompactionType type,
+                                               shared_ptr<RowSet>* rs) const;
+
+  // Same as GetPerfImprovementForBestDeltaCompact(), but doesn't take a lock on
+  // compact_select_lock_.
+  double GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompactionType type,
+                                                       shared_ptr<RowSet>* rs) const;
 
   // Return the current number of rowsets in the tablet.
   size_t num_rowsets() const;

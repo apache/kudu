@@ -26,13 +26,12 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
-DEFINE_int32(tablet_delta_store_minor_compact_soft_min, 3,
-             "How many delta stores are required before considering compacting them "
+DEFINE_int32(tablet_delta_store_minor_compact_max, 1000,
+             "How many delta stores are required before forcing a minor delta compaction "
              "(Advanced option)");
-
-DEFINE_int32(tablet_delta_store_minor_compact_hard_min, 100,
-             "How many delta stores are required before forcing a compaction "
-             "(Advanced option)");
+DEFINE_double(tablet_delta_store_major_compact_min_ratio, 0.1f,
+             "Minimum ratio of sizeof(deltas) to sizeof(base data) before a major compaction "
+             "can run (Advanced option)");
 
 namespace kudu {
 namespace tablet {
@@ -458,22 +457,18 @@ Status DiskRowSet::MinorCompactDeltaStores() {
   return delta_tracker_->Compact();
 }
 
-Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
-  TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStores");
-  // TODO: make this more fine-grained if possible. Will make sense
-  // to re-touch this area once integrated with maintenance ops
-  // scheduling.
-  shared_ptr<boost::mutex::scoped_try_lock> input_rs_lock(
-    new boost::mutex::scoped_try_lock(compact_flush_lock_));
-  if (!input_rs_lock->owns_lock()) {
-    return Status::ServiceUnavailable("DRS cannot be major-delta-compacted: RS already busy");
+Status DiskRowSet::MajorCompactDeltaStores() {
+  ColumnIndexes col_indexes;
+  delta_tracker_->GetColumnsIdxWithUpdates(&col_indexes);
+  if (col_indexes.empty()) {
+    return Status::OK();
   }
+  return MajorCompactDeltaStoresWithColumns(col_indexes);
+}
 
-  shared_ptr<boost::mutex::scoped_try_lock> input_dt_lock(
-    new boost::mutex::scoped_try_lock(*delta_tracker()->compact_flush_lock()));
-  if (!input_dt_lock->owns_lock()) {
-    return Status::ServiceUnavailable("DRS cannot be major-delta-compacted: DT already busy");
-  }
+Status DiskRowSet::MajorCompactDeltaStoresWithColumns(const ColumnIndexes& col_indexes) {
+  TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStores");
+  boost::lock_guard<boost::mutex> l(*delta_tracker()->compact_flush_lock());
 
   // TODO: do we need to lock schema or anything here?
   gscoped_ptr<MajorDeltaCompaction> compaction;
@@ -641,21 +636,46 @@ size_t DiskRowSet::CountDeltaStores() const {
   return delta_tracker_->CountRedoDeltaStores();
 }
 
-// In this implementation, the returned improvement score is 1 if we have too many delta stores,
-// 0 if we don't have enough, or it will be the result of sizeof(deltas)/sizeof(base data).
-// This heuristic makes it so that we don't try to compact a big base data file with tiny delta
-// files, unless we have nothing better to do.
-double DiskRowSet::DeltaStoresCompactionPerfImprovementScore() const {
+
+
+// In this implementation, the returned improvement score is 0 if there aren't any redo files to
+// compact or if the base data is empty. After this, with a max score of 1:
+//  - Major compactions: the score will be the result of sizeof(deltas)/sizeof(base data), unless
+//                       it is smaller than tablet_delta_store_major_compact_min_ratio or if the
+//                       delta files are only composed of deletes, in which case the score is
+//                       brought down to zero.
+//  - Minor compactions: the score will be zero if there's only 1 redo file, else it will be the
+//                       result of redo_files_count/tablet_delta_store_minor_compact_max. The
+//                       latter is meant to be high since minor compactions don't give us much, so
+//                       we only consider it a gain if it gets rid of many tiny files.
+double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const {
   CHECK(open_);
   double perf_improv = 0;
-  uint64_t base_data_size = EstimateBaseDataDiskSize();
   size_t store_count = CountDeltaStores();
-  if (store_count >= FLAGS_tablet_delta_store_minor_compact_hard_min) {
-    perf_improv = 1;
-  } else if (base_data_size > 0 && store_count >= FLAGS_tablet_delta_store_minor_compact_soft_min) {
-    perf_improv = static_cast<double>(EstimateDeltaDiskSize()) / base_data_size;
+  uint64_t base_data_size = EstimateBaseDataDiskSize();
+
+  if (store_count == 0) {
+    return perf_improv;
   }
-  return perf_improv;
+
+  if (type == RowSet::MAJOR_DELTA_COMPACTION) {
+    ColumnIndexes cols_with_updates;
+    delta_tracker_->GetColumnsIdxWithUpdates(&cols_with_updates);
+    // If we have files but no updates, we don't want to major compact.
+    if (!cols_with_updates.empty()) {
+      double ratio = static_cast<double>(EstimateDeltaDiskSize()) / base_data_size;
+      if (ratio >= FLAGS_tablet_delta_store_major_compact_min_ratio) {
+        perf_improv = ratio;
+      }
+    }
+  } else if (type == RowSet::MINOR_DELTA_COMPACTION) {
+    if (store_count > 1) {
+      perf_improv = static_cast<double>(store_count) / FLAGS_tablet_delta_store_minor_compact_max;
+    }
+  } else {
+    LOG(FATAL) << "Unknown delta compaction type " << type;
+  }
+  return std::min(1.0, perf_improv);
 }
 
 Status DiskRowSet::AlterSchema(const Schema& schema) {

@@ -329,5 +329,19 @@ TEST_F(TestMajorDeltaCompaction, TestReinserts) {
   ASSERT_NO_FATAL_FAILURE(VerifyDataWithMvccAndExpectedState(second_batch_inserts, old_state));
 }
 
+// Verify that we won't schedule a major compaction when files are just composed of deletes.
+TEST_F(TestMajorDeltaCompaction, TestJustDeletes) {
+  const int kNumRows = 100;
+
+  ASSERT_NO_FATAL_FAILURE(WriteTestTablet(kNumRows));
+  ASSERT_OK(tablet()->Flush());
+  ASSERT_NO_FATAL_FAILURE(DeleteRows(kNumRows));
+  ASSERT_OK(tablet()->FlushBiggestDMS());
+
+  shared_ptr<RowSet> rs;
+  ASSERT_EQ(0,
+            tablet()->GetPerfImprovementForBestDeltaCompact(RowSet::MAJOR_DELTA_COMPACTION, &rs));
+}
+
 } // namespace tablet
 } // namespace kudu

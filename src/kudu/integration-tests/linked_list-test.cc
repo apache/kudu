@@ -89,6 +89,8 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
       // instead of selecting all of the rowsets in a single compaction of the whole
       // tablet.
       ts_flags.push_back("--tablet_compaction_budget_mb=4");
+      // Set the major delta compaction ratio low enough that we trigger a lot of them.
+      ts_flags.push_back("--tablet_delta_store_major_compact_min_ratio=0.001");
     }
     if (FLAGS_stress_wal_gc) {
       // Set the size of the WAL segments low so that some can be GC'd.

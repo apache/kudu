@@ -37,6 +37,11 @@ struct ProbeStats;
 
 class RowSet {
  public:
+  enum DeltaCompactionType {
+    MAJOR_DELTA_COMPACTION,
+    MINOR_DELTA_COMPACTION
+  };
+
   // Check if a given row key is present in this rowset.
   // Sets *present and returns Status::OK, unless an error
   // occurs.
@@ -120,9 +125,9 @@ class RowSet {
   // Get the minimum log index corresponding to unflushed data in this row set.
   virtual int64_t MinUnflushedLogIndex() const = 0;
 
-  // Get the performance improvement that running a minor delta compaction would give.
+  // Get the performance improvement that running a minor or major delta compaction would give.
   // The returned score ranges between 0 and 1 inclusively.
-  virtual double DeltaStoresCompactionPerfImprovementScore() const = 0;
+  virtual double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const = 0;
 
   // Flush the DMS if there's one
   virtual Status FlushDeltas() = 0;
@@ -293,7 +298,9 @@ class DuplicatingRowSet : public RowSet {
 
   bool DeltaMemStoreEmpty() const OVERRIDE { return true; }
 
-  double DeltaStoresCompactionPerfImprovementScore() const OVERRIDE { return 0; }
+  double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const OVERRIDE {
+    return 0;
+  }
 
   int64_t MinUnflushedLogIndex() const OVERRIDE { return -1; }
 

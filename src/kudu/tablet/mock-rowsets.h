@@ -94,7 +94,8 @@ class MockRowSet : public RowSet {
     return -1;
   }
 
-  virtual double DeltaStoresCompactionPerfImprovementScore() const OVERRIDE {
+  virtual double DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type)
+      const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return 0;
   }

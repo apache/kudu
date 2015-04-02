@@ -507,9 +507,11 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
   components_ = new TabletComponents(components_->memrowset, new_tree);
 }
 
-Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
+Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& col_indexes,
                                       shared_ptr<RowSet> input_rs) {
-  return down_cast<DiskRowSet*>(input_rs.get())->MajorCompactDeltaStores(column_indexes);
+  Status s = down_cast<DiskRowSet*>(input_rs.get())
+      ->MajorCompactDeltaStoresWithColumns(col_indexes);
+  return s;
 }
 
 Status Tablet::Flush() {
@@ -782,8 +784,8 @@ class MinorDeltaCompactionOp : public MaintenanceOp {
   }
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
-    shared_ptr<RowSet> rs;
-    double perf_improv = tablet_->GetPerfImprovementForBestDeltaMinorCompact(&rs);
+    double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
+        RowSet::MINOR_DELTA_COMPACTION, NULL);
     stats->perf_improvement = perf_improv;
     stats->runnable = perf_improv > 0;
   }
@@ -793,7 +795,7 @@ class MinorDeltaCompactionOp : public MaintenanceOp {
   }
 
   virtual void Perform() OVERRIDE {
-    WARN_NOT_OK(tablet_->MinorCompactWorstDeltas(),
+    WARN_NOT_OK(tablet_->CompactWorstDeltas(RowSet::MINOR_DELTA_COMPACTION),
                 Substitute("Minor delta compaction failed on $0", tablet_->tablet_id()));
   }
 
@@ -803,6 +805,44 @@ class MinorDeltaCompactionOp : public MaintenanceOp {
 
   virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() OVERRIDE {
     return tablet_->metrics()->delta_minor_compact_rs_running;
+  }
+
+ private:
+  Tablet * const tablet_;
+};
+
+// MaintenanceOp to run major compaction on delta stores.
+//
+// It functions just like MinorDeltaCompactionOp does, except it runs major compactions.
+class MajorDeltaCompactionOp : public MaintenanceOp {
+ public:
+  explicit MajorDeltaCompactionOp(Tablet* tablet)
+    : MaintenanceOp(Substitute("MajorDeltaCompactionOp($0)", tablet->tablet_id())),
+      tablet_(tablet) {
+  }
+
+  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
+    double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
+        RowSet::MAJOR_DELTA_COMPACTION, NULL);
+    stats->perf_improvement = perf_improv;
+    stats->runnable = perf_improv > 0;
+  }
+
+  virtual bool Prepare() OVERRIDE {
+    return true;
+  }
+
+  virtual void Perform() OVERRIDE {
+    WARN_NOT_OK(tablet_->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION),
+                Substitute("Major delta compaction failed on $0", tablet_->tablet_id()));
+  }
+
+  virtual scoped_refptr<Histogram> DurationHistogram() OVERRIDE {
+    return tablet_->metrics()->delta_major_compact_rs_duration;
+  }
+
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() OVERRIDE {
+    return tablet_->metrics()->delta_major_compact_rs_running;
   }
 
  private:
@@ -907,9 +947,13 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   maint_mgr->RegisterOp(rs_compact_op.get());
   maintenance_ops_.push_back(rs_compact_op.release());
 
-  gscoped_ptr<MaintenanceOp> delta_compact_op(new MinorDeltaCompactionOp(this));
-  maint_mgr->RegisterOp(delta_compact_op.get());
-  maintenance_ops_.push_back(delta_compact_op.release());
+  gscoped_ptr<MaintenanceOp> minor_delta_compact_op(new MinorDeltaCompactionOp(this));
+  maint_mgr->RegisterOp(minor_delta_compact_op.get());
+  maintenance_ops_.push_back(minor_delta_compact_op.release());
+
+  gscoped_ptr<MaintenanceOp> major_delta_compact_op(new MajorDeltaCompactionOp(this));
+  maint_mgr->RegisterOp(major_delta_compact_op.get());
+  maintenance_ops_.push_back(major_delta_compact_op.release());
 }
 
 void Tablet::UnregisterMaintenanceOps() {
@@ -1416,31 +1460,63 @@ Status Tablet::FlushBiggestDMS() {
   return max_size > 0 ? biggest_drs->FlushDeltas() : Status::OK();
 }
 
-Status Tablet::MinorCompactWorstDeltas() {
+Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
   shared_ptr<RowSet> rs;
-  double perf_improv = GetPerfImprovementForBestDeltaMinorCompact(&rs);
+  // We're required to grab the rowset's compact_flush_lock under the compact_select_lock_.
+  shared_ptr<boost::mutex::scoped_try_lock> lock;
+  double perf_improv;
+  {
+    // We only want to keep the selection lock during the time we look at rowsets to compact.
+    // The returned rowset is guaranteed to be available to lock since locking must be done
+    // under this lock.
+    boost::lock_guard<boost::mutex> compact_lock(compact_select_lock_);
+    perf_improv = GetPerfImprovementForBestDeltaCompactUnlocked(type, &rs);
+    if (rs) {
+      lock.reset(new boost::mutex::scoped_try_lock(*rs->compact_flush_lock()));
+      CHECK(lock->owns_lock());
+    } else {
+      return Status::OK();
+    }
+  }
 
-  if (rs) {
-    DCHECK(perf_improv != 0);
+  // We just released compact_select_lock_ so other compactions can select and run, but the
+  // rowset is ours.
+  DCHECK(perf_improv != 0);
+  if (type == RowSet::MINOR_DELTA_COMPACTION) {
     RETURN_NOT_OK_PREPEND(rs->MinorCompactDeltaStores(),
                           "Failed minor delta compaction on " + rs->ToString());
+  } else if (type == RowSet::MAJOR_DELTA_COMPACTION) {
+    RETURN_NOT_OK_PREPEND(down_cast<DiskRowSet*>(rs.get())->MajorCompactDeltaStores(),
+                          "Failed major delta compaction on " + rs->ToString());
   }
   return Status::OK();
 }
 
-double Tablet::GetPerfImprovementForBestDeltaMinorCompact(shared_ptr<RowSet>* rs) const {
+double Tablet::GetPerfImprovementForBestDeltaCompact(RowSet::DeltaCompactionType type,
+                                                             shared_ptr<RowSet>* rs) const {
+  boost::lock_guard<boost::mutex> compact_lock(compact_select_lock_);
+  return GetPerfImprovementForBestDeltaCompactUnlocked(type, rs);
+}
+
+double Tablet::GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompactionType type,
+                                                             shared_ptr<RowSet>* rs) const {
+  boost::mutex::scoped_try_lock cs_lock(compact_select_lock_);
+  DCHECK(!cs_lock.owns_lock());
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
   double worst_delta_perf = 0;
   shared_ptr<RowSet> worst_rs;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
-    double perf_improv = rowset->DeltaStoresCompactionPerfImprovementScore();
+    if (!rowset->IsAvailableForCompaction()) {
+      continue;
+    }
+    double perf_improv = rowset->DeltaStoresCompactionPerfImprovementScore(type);
     if (perf_improv > worst_delta_perf) {
       worst_rs = rowset;
       worst_delta_perf = perf_improv;
     }
   }
-  if (worst_delta_perf > 0) {
+  if (rs && worst_delta_perf > 0) {
     *rs = worst_rs;
   }
   return worst_delta_perf;
@@ -1457,6 +1533,7 @@ void Tablet::PrintRSLayout(ostream* o) {
     boost::shared_lock<rw_spinlock> lock(component_lock_);
     rowsets_copy = components_->rowsets;
   }
+  boost::lock_guard<boost::mutex> compact_lock(compact_select_lock_);
   // Run the compaction policy in order to get its log and highlight those
   // rowsets which would be compacted next.
   vector<string> log;

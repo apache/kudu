@@ -54,7 +54,8 @@ DeltaMemStore::DeltaMemStore(int64_t id,
     arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
                                              allocator_)),
     tree_(arena_),
-    anchorer_(log_anchor_registry, Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)) {
+    anchorer_(log_anchor_registry, Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)),
+    delta_stats_(0) {
   CHECK(schema.has_column_ids());
 }
 

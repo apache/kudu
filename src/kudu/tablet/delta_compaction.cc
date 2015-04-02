@@ -240,6 +240,11 @@ Status MajorDeltaCompaction::Compact() {
   RETURN_NOT_OK(base_schema_.CreatePartialSchema(column_indexes_,
                                                  &old_to_new_,
                                                  &partial_schema_));
+
+  BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, included_stores_) {
+    LOG(INFO) << "Preparing to major compact delta file: " << ds->ToString();
+  }
+
   // We defer on calling OpenNewDeltaBlock since we might not need to flush.
   RETURN_NOT_OK(OpenBaseDataWriter());
   RETURN_NOT_OK(FlushRowSetAndDeltas());

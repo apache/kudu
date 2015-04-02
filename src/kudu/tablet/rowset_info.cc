@@ -191,12 +191,22 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
   unordered_map<RowSet*, RowSetInfo*> active;
   double total_width = 0.0f;
 
+  // We need to filter out the rowsets that aren't available before we process the endpoints,
+  // else there's a race since we see endpoints twice and a delta compaction might finish in
+  // between.
+  RowSetVector available_rowsets;
+  BOOST_FOREACH(const shared_ptr<RowSet> rs, tree.all_rowsets()) {
+    if (rs->IsAvailableForCompaction()) {
+      available_rowsets.push_back(rs);
+    }
+  }
+
+  RowSetTree available_rs_tree;
+  available_rs_tree.Reset(available_rowsets);
   BOOST_FOREACH(const RowSetTree::RSEndpoint& rse,
-                tree.key_endpoints()) {
+                available_rs_tree.key_endpoints()) {
     RowSet* rs = rse.rowset_;
     const Slice& next = rse.slice_;
-    if (!rs->IsAvailableForCompaction()) continue;
-
     double interval_width = WidthByDataSize(prev, next, active);
 
     // Increment active rowsets in min_key by the interval_width.

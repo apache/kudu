@@ -114,7 +114,11 @@ class DeltaFileReader : public DeltaStore,
                            std::tr1::shared_ptr<DeltaFileReader>* reader_out,
                            DeltaType delta_type);
 
-  Status Init() OVERRIDE;
+  virtual Status Init() OVERRIDE;
+
+  virtual bool Initted() OVERRIDE {
+    return init_once_.initted();
+  }
 
   // See DeltaStore::NewDeltaIterator(...)
   Status NewDeltaIterator(const Schema *projection,
@@ -133,7 +137,7 @@ class DeltaFileReader : public DeltaStore,
 
   const BlockId& block_id() const { return block_id_; }
 
-  const DeltaStats& delta_stats() const {
+  virtual const DeltaStats& delta_stats() const {
     DCHECK(init_once_.initted());
     return *delta_stats_;
   }

@@ -165,6 +165,10 @@ class DeltaTracker {
 
   uint64_t EstimateOnDiskSize() const;
 
+  // Retrieves the list of column indexes that currently have updates. 'columns' will receive the
+  // indexes in order.
+  void GetColumnsIdxWithUpdates(ColumnIndexes* columns) const;
+
   const Schema& schema() const;
 
   boost::mutex* compact_flush_lock() {

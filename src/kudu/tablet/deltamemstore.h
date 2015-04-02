@@ -30,6 +30,7 @@ class RowChangeList;
 namespace tablet {
 
 class DeltaFileWriter;
+class DeltaStats;
 class DMSIterator;
 class Mutation;
 
@@ -49,6 +50,10 @@ class DeltaMemStore : public DeltaStore,
                 MemTracker* parent_tracker = NULL);
 
   virtual Status Init() OVERRIDE;
+
+  virtual bool Initted() OVERRIDE {
+    return true;
+  }
 
   // Update the given row in the database.
   // Copies the data, as well as any referenced values into this DMS's local
@@ -119,6 +124,11 @@ class DeltaMemStore : public DeltaStore,
     return anchorer_.minimum_log_index();
   }
 
+  // The returned stats will always be empty, and the number of columns unset.
+  virtual const DeltaStats& delta_stats() const OVERRIDE {
+    return delta_stats_;
+  }
+
  private:
   friend class DMSIterator;
 
@@ -139,6 +149,8 @@ class DeltaMemStore : public DeltaStore,
   DMSTree tree_;
 
   log::MinLogIndexAnchorer anchorer_;
+
+  const DeltaStats delta_stats_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
 };
