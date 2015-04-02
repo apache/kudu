@@ -71,5 +71,13 @@ bool IsPrivilegedPort(uint16_t port);
 // Return the local machine's hostname.
 Status GetHostname(std::string* hostname);
 
+// Try to run 'lsof' to determine which process is preventing binding to
+// the given 'addr'. If pids can be determined, outputs full 'ps' and 'pstree'
+// output for that process.
+//
+// Output is issued to the log at WARNING level, or appended to 'log' if it
+// is non-NULL (mostly useful for testing).
+void TryRunLsof(const Sockaddr& addr, std::vector<std::string>* log = NULL);
+
 } // namespace kudu
 #endif

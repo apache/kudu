@@ -176,6 +176,9 @@ Status Webserver::Start() {
   if (context_ == NULL) {
     stringstream error_msg;
     error_msg << "Webserver: Could not start on address " << http_address_;
+    Sockaddr addr;
+    addr.set_port(opts_.port);
+    TryRunLsof(addr);
     return Status::NetworkError(error_msg.str());
   }
 

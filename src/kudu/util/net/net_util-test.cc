@@ -5,11 +5,13 @@
 
 #include <boost/foreach.hpp>
 #include <algorithm>
+#include <string>
 #include <vector>
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/net/socket.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
@@ -70,4 +72,22 @@ TEST_F(NetUtilTest, TestResolveAddresses) {
 
   ASSERT_OK(hp.ResolveAddresses(NULL));
 }
+
+TEST_F(NetUtilTest, TestLsof) {
+  Socket s;
+  ASSERT_OK(s.Init(0));
+
+  Sockaddr addr; // wildcard
+  ASSERT_OK(s.BindAndListen(addr, 1));
+
+  ASSERT_OK(s.GetSocketAddress(&addr));
+  ASSERT_NE(addr.port(), 0);
+  vector<string> lsof_lines;
+  TryRunLsof(addr, &lsof_lines);
+  SCOPED_TRACE(JoinStrings(lsof_lines, "\n"));
+
+  ASSERT_GE(lsof_lines.size(), 3);
+  ASSERT_STR_CONTAINS(lsof_lines[2], "net_util-test");
+}
+
 } // namespace kudu

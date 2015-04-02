@@ -21,6 +21,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 
 DEFINE_string(local_ip_for_outbound_sockets, "",
@@ -205,7 +206,12 @@ Status Socket::BindAndListen(const Sockaddr &sockaddr,
                                 ErrnoToString(err), Slice(), err);
   }
 
-  RETURN_NOT_OK(Bind(sockaddr));
+  Status s = Bind(sockaddr);
+  if (s.IsNetworkError() && s.posix_code() == EADDRINUSE && sockaddr.port() != 0) {
+    TryRunLsof(sockaddr);
+  }
+  RETURN_NOT_OK(s);
+
   if (listen(fd_, listenQueueSize)) {
     err = errno;
     return Status::NetworkError(

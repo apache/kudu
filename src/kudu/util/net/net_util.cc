@@ -7,6 +7,7 @@
 #include <netdb.h>
 
 #include <algorithm>
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <tr1/unordered_set>
 #include <utility>
@@ -23,6 +24,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/subprocess.h"
 
 using std::tr1::unordered_set;
 using std::vector;
@@ -164,6 +166,69 @@ Status GetHostname(string* hostname) {
   }
   *hostname = name;
   return Status::OK();
+}
+
+void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
+  // Little inline bash script prints the full ancestry of any pid listening
+  // on the same port as 'addr'. We could use 'pstree -s', but that option
+  // doesn't exist on el6.
+  string cmd = strings::Substitute(
+      "export PATH=$$PATH:/usr/sbin ; "
+      "lsof -n -i 'TCP:$0' -sTCP:LISTEN ; "
+      "for pid in $$(lsof -F p -n -i 'TCP:$0' -sTCP:LISTEN | cut -f 2 -dp) ; do"
+      "  while [ $$pid -gt 1 ] ; do"
+      "    ps h -fp $$pid ;"
+      "    stat=($$(</proc/$$pid/stat)) ;"
+      "    pid=$${stat[3]} ;"
+      "  done ; "
+      "done",
+      addr.port());
+
+  LOG_STRING(WARNING, log) << "Failed to bind to " << addr.ToString() << ". "
+                           << "Trying to use lsof to find any processes listening "
+                           << "on the same port:";
+  LOG_STRING(INFO, log) << "$ " << cmd;
+  Subprocess p("/bin/bash",
+               boost::assign::list_of<string>("bash")("-c")(cmd));
+  p.ShareParentStdout(false);
+  Status s = p.Start();
+  if (!s.ok()) {
+    LOG_STRING(WARNING, log) << "Unable to fork bash: " << s.ToString();
+    return;
+  }
+
+  close(p.ReleaseChildStdinFd());
+
+  faststring results;
+  char buf[1024];
+  while (true) {
+    ssize_t n = read(p.from_child_stdout_fd(), buf, arraysize(buf));
+    if (n == 0) {
+      // EOF
+      break;
+    }
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      LOG_STRING(WARNING, log) << "IO error reading from bash: " <<
+        ErrnoToString(errno);
+      close(p.ReleaseChildStdoutFd());
+      break;
+    }
+
+    results.append(buf, n);
+  }
+
+  int rc;
+  s = p.Wait(&rc);
+  if (!s.ok()) {
+    LOG_STRING(WARNING, log) << "Unable to wait for lsof: " << s.ToString();
+    return;
+  }
+  if (rc != 0) {
+    LOG_STRING(WARNING, log) << "lsof failed";
+  }
+
+  LOG_STRING(WARNING, log) << results.ToString();
 }
 
 } // namespace kudu
