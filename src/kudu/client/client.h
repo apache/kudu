@@ -88,12 +88,12 @@ class KUDU_EXPORT KuduClientBuilder {
   // The default timeout used for administrative operations (e.g. CreateTable,
   // AlterTable, ...). Optional.
   //
-  // If not provided, defaults to 5s.
+  // If not provided, defaults to 10s.
   KuduClientBuilder& default_admin_operation_timeout(const MonoDelta& timeout);
 
   // The default timeout for individual RPCs. Optional.
   //
-  // If not provided, defaults to 2s.
+  // If not provided, defaults to 5s.
   KuduClientBuilder& default_rpc_timeout(const MonoDelta& timeout);
 
   // Creates the client.

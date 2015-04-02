@@ -75,7 +75,7 @@ Status KuduTable::Data::Open() {
         LOG(WARNING) << "Network error talking to the leader master ("
                      << client_->data_->leader_master_hostport().ToString() << "): "
                      << s.ToString();
-        if (client_->data_->master_server_addrs_.size() > 1) {
+        if (client_->IsMultiMaster()) {
           LOG(INFO) << "Determining the leader master again and retrying.";
           WARN_NOT_OK(client_->data_->SetMasterServerProxy(client_.get(), deadline),
                       "Failed to determine new Master");
@@ -88,7 +88,7 @@ Status KuduTable::Data::Open() {
         LOG(WARNING) << "Timed out talking to the leader master ("
                      << client_->data_->leader_master_hostport().ToString() << "): "
                      << s.ToString();
-        if (client_->data_->master_server_addrs_.size() > 1) {
+        if (client_->IsMultiMaster()) {
           LOG(INFO) << "Determining the leader master again and retrying.";
           WARN_NOT_OK(client_->data_->SetMasterServerProxy(client_.get(), deadline),
                       "Failed to determine new Master");
@@ -101,7 +101,7 @@ Status KuduTable::Data::Open() {
           resp.error().code() == master::MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
         LOG(WARNING) << "Master " << client_->data_->leader_master_hostport().ToString()
                      << " is no longer the leader master.";
-        if (client_->data_->master_server_addrs_.size() > 1) {
+        if (client_->IsMultiMaster()) {
           LOG(INFO) << "Determining the leader master again and retrying.";
           WARN_NOT_OK(client_->data_->SetMasterServerProxy(client_.get(), deadline),
                       "Failed to determine new Master");

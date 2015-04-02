@@ -146,7 +146,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
       LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
                    << ") to leader Master (" << leader_master_hostport().ToString()
                    << "): " << s.ToString();
-      if (master_server_addrs_.size() > 1) {
+      if (client->IsMultiMaster()) {
         LOG(INFO) << "Determining the new leader Master and retrying...";
         WARN_NOT_OK(SetMasterServerProxy(client, deadline),
                     "Unable to determine the new leader Master");
@@ -158,7 +158,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
       LOG(WARNING) << "Unable to send the request (" << req.ShortDebugString()
                    << ") to leader Master (" << leader_master_hostport().ToString()
                    << "): " << s.ToString();
-      if (master_server_addrs_.size() > 1) {
+      if (client->IsMultiMaster()) {
         LOG(INFO) << "Determining the new leader Master and retrying...";
         WARN_NOT_OK(SetMasterServerProxy(client, deadline),
                     "Unable to determine the new leader Master");
@@ -169,7 +169,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     if (s.ok() && resp->has_error()) {
       if (resp->error().code() == MasterErrorPB::NOT_THE_LEADER ||
           resp->error().code() == MasterErrorPB::CATALOG_MANAGER_NOT_INITIALIZED) {
-        if (master_server_addrs_.size() > 1) {
+        if (client->IsMultiMaster()) {
           LOG(INFO) << "Determining the new leader Master and retrying...";
           WARN_NOT_OK(SetMasterServerProxy(client, deadline),
                       "Unable to determine the new leader Master");
