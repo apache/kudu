@@ -51,7 +51,7 @@ static void RunWithManyThreads(boost::function<void()>* f, int num_threads) {
     threads.push_back(new_thread);
   }
   for (int i = 0; i < num_threads; i++) {
-    ASSERT_STATUS_OK(ThreadJoiner(threads[i].get()).Join());
+    ASSERT_OK(ThreadJoiner(threads[i].get()).Join());
   }
 }
 

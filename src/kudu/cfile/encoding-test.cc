@@ -46,7 +46,7 @@ class TestEncoding : public ::testing::Test {
     ColumnBlock cb(GetTypeInfo(type), NULL, ret, 1, &arena_);
     ColumnDataView cdv(&cb);
     size_t n = 1;
-    ASSERT_STATUS_OK(decoder->CopyNextValues(&n, &cdv));
+    ASSERT_OK(decoder->CopyNextValues(&n, &cdv));
     ASSERT_EQ(1, n);
   }
 
@@ -88,13 +88,13 @@ class TestEncoding : public ::testing::Test {
     const uint kCount = 10;
     Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
     DecoderType sbd(s);
-    ASSERT_STATUS_OK(sbd.ParseHeader());
+    ASSERT_OK(sbd.ParseHeader());
 
     // Seeking to just after a key should return the
     // next key ('hello 4x' falls between 'hello 4' and 'hello 5')
     Slice q = "hello 4x";
     bool exact;
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     ASSERT_FALSE(exact);
 
     Slice ret;
@@ -106,7 +106,7 @@ class TestEncoding : public ::testing::Test {
 
     // Seeking to an exact key should return that key
     q = "hello 4";
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     ASSERT_EQ(4u, sbd.GetCurrentIndex());
     ASSERT_TRUE(exact);
     CopyOne<STRING>(&sbd, &ret);
@@ -114,7 +114,7 @@ class TestEncoding : public ::testing::Test {
 
     // Seeking to before the first key should return first key
     q = "hello";
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     ASSERT_EQ(0, sbd.GetCurrentIndex());
     ASSERT_FALSE(exact);
     CopyOne<STRING>(&sbd, &ret);
@@ -126,7 +126,7 @@ class TestEncoding : public ::testing::Test {
 
     // Seeking to the last key should succeed
     q = "hello 9";
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     ASSERT_EQ(9u, sbd.GetCurrentIndex());
     ASSERT_TRUE(exact);
     CopyOne<STRING>(&sbd, &ret);
@@ -142,13 +142,13 @@ class TestEncoding : public ::testing::Test {
     // Insert 'hello 000' through 'hello 999'
     Slice s = CreateStringBlock(&sbb, kCount, "hello %03d");
     StringPrefixBlockDecoder sbd(s);
-    ASSERT_STATUS_OK(sbd.ParseHeader());
+    ASSERT_OK(sbd.ParseHeader());
 
     // Seeking to just after a key should return the
     // next key ('hello 444x' falls between 'hello 444' and 'hello 445')
     Slice q = "hello 444x";
     bool exact;
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     ASSERT_FALSE(exact);
 
     Slice ret;
@@ -160,7 +160,7 @@ class TestEncoding : public ::testing::Test {
 
     // Seeking to an exact key should return that key
     q = "hello 004";
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     EXPECT_TRUE(exact);
     EXPECT_EQ(4u, sbd.GetCurrentIndex());
     CopyOne<STRING>(&sbd, &ret);
@@ -168,7 +168,7 @@ class TestEncoding : public ::testing::Test {
 
     // Seeking to before the first key should return first key
     q = "hello";
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     EXPECT_FALSE(exact);
     EXPECT_EQ(0, sbd.GetCurrentIndex());
     CopyOne<STRING>(&sbd, &ret);
@@ -180,7 +180,7 @@ class TestEncoding : public ::testing::Test {
 
     // Seeking to the last key should succeed
     q = "hello 999";
-    ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+    ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
     EXPECT_TRUE(exact);
     EXPECT_EQ(999u, sbd.GetCurrentIndex());
     CopyOne<STRING>(&sbd, &ret);
@@ -194,7 +194,7 @@ class TestEncoding : public ::testing::Test {
       int len = snprintf(target, sizeof(target), "hello %03d", ord);
       q = Slice(target, len);
 
-      ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+      ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
       EXPECT_TRUE(exact);
       EXPECT_EQ(ord, sbd.GetCurrentIndex());
       CopyOne<STRING>(&sbd, &ret);
@@ -203,7 +203,7 @@ class TestEncoding : public ::testing::Test {
       // Seek before this key
       len = snprintf(before_target, sizeof(target), "hello %03d.before", ord-1);
       q = Slice(before_target, len);
-      ASSERT_STATUS_OK(sbd.SeekAtOrAfterValue(&q, &exact));
+      ASSERT_OK(sbd.SeekAtOrAfterValue(&q, &exact));
       EXPECT_FALSE(exact);
       EXPECT_EQ(ord, sbd.GetCurrentIndex());
       CopyOne<STRING>(&sbd, &ret);
@@ -224,7 +224,7 @@ class TestEncoding : public ::testing::Test {
     ASSERT_GT(s.size(), kCount * 2u);
 
     DecoderType sbd(s);
-    ASSERT_STATUS_OK(sbd.ParseHeader());
+    ASSERT_OK(sbd.ParseHeader());
     ASSERT_EQ(kCount, sbd.Count());
     ASSERT_EQ(12345u, sbd.GetFirstRowId());
     ASSERT_TRUE(sbd.HasNext());
@@ -252,7 +252,7 @@ class TestEncoding : public ::testing::Test {
     ColumnDataView cdv(&cb);
     sbd.SeekToPositionInBlock(0);
     size_t n = kCount + 10;
-    ASSERT_STATUS_OK(sbd.CopyNextValues(&n, &cdv));
+    ASSERT_OK(sbd.CopyNextValues(&n, &cdv));
     ASSERT_EQ(kCount, n);
     ASSERT_FALSE(sbd.HasNext());
 
@@ -279,7 +279,7 @@ class TestEncoding : public ::testing::Test {
 
     Slice s = ibb->Finish(0);
     BlockDecoderType ibd(s);
-    ASSERT_STATUS_OK(ibd.ParseHeader());
+    ASSERT_OK(ibd.ParseHeader());
 
     // Benchmark seeking
     LOG_TIMING(INFO, strings::Substitute("Seeking in $0 block", TypeTraits<IntType>::name())) {
@@ -293,7 +293,7 @@ class TestEncoding : public ::testing::Test {
             ASSERT_EQ(kBase + num_ints * 2 - 1, target);
             continue;
           }
-          ASSERT_STATUS_OK_FAST(s);
+          ASSERT_OK_FAST(s);
 
           CppType got;
           CopyOne<IntType>(&ibd, &got);
@@ -337,7 +337,7 @@ class TestEncoding : public ::testing::Test {
     LOG(INFO) << "Encoded size for 0 items: " << s.size();
 
     BlockDecoderType bd(s);
-    ASSERT_STATUS_OK(bd.ParseHeader());
+    ASSERT_OK(bd.ParseHeader());
     ASSERT_EQ(0, bd.Count());
     ASSERT_FALSE(bd.HasNext());
   }
@@ -358,7 +358,7 @@ class TestEncoding : public ::testing::Test {
     LOG(INFO)<< "Encoded size for 10k elems: " << s.size();
 
     PlainBlockDecoder<Type> pbd(s);
-    ASSERT_STATUS_OK(pbd.ParseHeader());
+    ASSERT_OK(pbd.ParseHeader());
     ASSERT_EQ(kOrdinalPosBase, pbd.GetFirstRowId());
     ASSERT_EQ(0, pbd.GetCurrentIndex());
 
@@ -373,7 +373,7 @@ class TestEncoding : public ::testing::Test {
 
       size_t to_decode = (random() % 30) + 1;
       size_t n = to_decode > view.nrows() ? view.nrows() : to_decode;
-      ASSERT_STATUS_OK_FAST(pbd.CopyNextValues(&n, &view));
+      ASSERT_OK_FAST(pbd.CopyNextValues(&n, &view));
       ASSERT_GE(to_decode, n);
       view.Advance(n);
       dec_count += n;
@@ -452,7 +452,7 @@ class TestEncoding : public ::testing::Test {
     Slice s = ibb->Finish(kOrdinalPosBase);
 
     DecoderType ibd(s);
-    ASSERT_STATUS_OK(ibd.ParseHeader());
+    ASSERT_OK(ibd.ParseHeader());
 
     ASSERT_EQ(kOrdinalPosBase, ibd.GetFirstRowId());
 
@@ -472,7 +472,7 @@ class TestEncoding : public ::testing::Test {
       size_t n = to_decode;
       ColumnDataView dst_data(&dst_block, dec_count);
       DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
-      ASSERT_STATUS_OK_FAST(ibd.CopyNextValues(&n, &dst_data));
+      ASSERT_OK_FAST(ibd.CopyNextValues(&n, &dst_data));
       ASSERT_GE(to_decode, n);
       dec_count += n;
     }
@@ -529,7 +529,7 @@ class TestEncoding : public ::testing::Test {
     Slice s = bb.Finish(kOrdinalPosBase);
 
     DecoderType bd(s);
-    ASSERT_STATUS_OK(bd.ParseHeader());
+    ASSERT_OK(bd.ParseHeader());
 
     ASSERT_EQ(kOrdinalPosBase, bd.GetFirstRowId());
 
@@ -550,7 +550,7 @@ class TestEncoding : public ::testing::Test {
       size_t n = to_decode;
       ColumnDataView dst_data(&dst_block, dec_count);
       DCHECK_EQ((unsigned char *)(&decoded[dec_count]), dst_data.data());
-      ASSERT_STATUS_OK_FAST(bd.CopyNextValues(&n, &dst_data));
+      ASSERT_OK_FAST(bd.CopyNextValues(&n, &dst_data));
       ASSERT_GE(to_decode, n);
       dec_count += n;
     }

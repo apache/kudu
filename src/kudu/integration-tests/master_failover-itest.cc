@@ -78,9 +78,9 @@ class MasterFailoverTest : public KuduTest {
       cluster_.reset();
     }
     cluster_.reset(new ExternalMiniCluster(opts_));
-    ASSERT_STATUS_OK(cluster_->Start());
+    ASSERT_OK(cluster_->Start());
     KuduClientBuilder builder;
-    ASSERT_STATUS_OK(cluster_->CreateClient(builder, &client_));
+    ASSERT_OK(cluster_->CreateClient(builder, &client_));
   }
 
   Status CreateTable(const std::string& table_name, CreateTableMode mode) {

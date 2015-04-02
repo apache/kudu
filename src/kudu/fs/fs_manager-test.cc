@@ -22,8 +22,8 @@ class FsManagerTestBase : public KuduTest {
 
     // Initialize File-System Layout
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
-    ASSERT_STATUS_OK(fs_manager_->CreateInitialFileSystemLayout());
-    ASSERT_STATUS_OK(fs_manager_->Open());
+    ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
+    ASSERT_OK(fs_manager_->Open());
   }
 
   void TestReadWriteDataFile(const Slice& data) {
@@ -32,15 +32,15 @@ class FsManagerTestBase : public KuduTest {
 
     // Test Write
     gscoped_ptr<fs::WritableBlock> writer;
-    ASSERT_STATUS_OK(fs_manager()->CreateNewBlock(&writer));
-    ASSERT_STATUS_OK(writer->Append(data));
-    ASSERT_STATUS_OK(writer->Close());
+    ASSERT_OK(fs_manager()->CreateNewBlock(&writer));
+    ASSERT_OK(writer->Append(data));
+    ASSERT_OK(writer->Close());
 
     // Test Read
     Slice result;
     gscoped_ptr<fs::ReadableBlock> reader;
-    ASSERT_STATUS_OK(fs_manager()->OpenBlock(writer->id(), &reader));
-    ASSERT_STATUS_OK(reader->Read(0, data.size(), &result, buffer));
+    ASSERT_OK(fs_manager()->OpenBlock(writer->id(), &reader));
+    ASSERT_OK(reader->Read(0, data.size(), &result, buffer));
     ASSERT_EQ(data.size(), result.size());
     ASSERT_EQ(0, result.compare(data));
   }

@@ -57,7 +57,7 @@ TEST_F(TestRpc, TestAcceptorPoolStartStop) {
   for (int i = 0; i < n_iters; i++) {
     shared_ptr<Messenger> messenger(CreateMessenger("TestAcceptorPoolStartStop"));
     shared_ptr<AcceptorPool> pool;
-    ASSERT_STATUS_OK(messenger->AddAcceptorPool(Sockaddr(), 2, &pool));
+    ASSERT_OK(messenger->AddAcceptorPool(Sockaddr(), 2, &pool));
     messenger->Shutdown();
   }
 }
@@ -67,7 +67,7 @@ TEST_F(TestRpc, TestConnHeaderValidation) {
   const int conn_hdr_len = kMagicNumberLength + kHeaderFlagsLength;
   uint8_t buf[conn_hdr_len];
   serialization::SerializeConnHeader(buf);
-  ASSERT_STATUS_OK(serialization::ValidateConnHeader(Slice(buf, conn_hdr_len)));
+  ASSERT_OK(serialization::ValidateConnHeader(Slice(buf, conn_hdr_len)));
 }
 
 // Test making successful RPC calls.
@@ -82,7 +82,7 @@ TEST_F(TestRpc, TestCall) {
   Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
   for (int i = 0; i < 10; i++) {
-    ASSERT_STATUS_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+    ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
   }
 }
 
@@ -171,7 +171,7 @@ TEST_F(TestRpc, TestHighFDs) {
   StartTestServer(&server_addr);
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
   Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
-  ASSERT_STATUS_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+  ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
 }
 
 // Test that connections are kept alive between calls.
@@ -190,16 +190,16 @@ TEST_F(TestRpc, TestConnectionKeepalive) {
   shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
   Proxy p(client_messenger, server_addr, GenericCalculatorService::static_service_name());
 
-  ASSERT_STATUS_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
+  ASSERT_OK(DoTestSyncCall(p, GenericCalculatorService::kAddMethodName));
 
   SleepFor(MonoDelta::FromMilliseconds(5));
 
   ReactorMetrics metrics;
-  ASSERT_STATUS_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
   ASSERT_EQ(1, metrics.num_server_connections_) << "Server should have 1 server connection";
   ASSERT_EQ(0, metrics.num_client_connections_) << "Server should have 0 client connections";
 
-  ASSERT_STATUS_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
   ASSERT_EQ(0, metrics.num_server_connections_) << "Client should have 0 server connections";
   ASSERT_EQ(1, metrics.num_client_connections_) << "Client should have 1 client connections";
 
@@ -207,11 +207,11 @@ TEST_F(TestRpc, TestConnectionKeepalive) {
 
   // After sleeping, the keepalive timer should have closed both sides of
   // the connection.
-  ASSERT_STATUS_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_OK(server_messenger_->reactors_[0]->GetMetrics(&metrics));
   ASSERT_EQ(0, metrics.num_server_connections_) << "Server should have 0 server connections";
   ASSERT_EQ(0, metrics.num_client_connections_) << "Server should have 0 client connections";
 
-  ASSERT_STATUS_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
+  ASSERT_OK(client_messenger->reactors_[0]->GetMetrics(&metrics));
   ASSERT_EQ(0, metrics.num_server_connections_) << "Client should have 0 server connections";
   ASSERT_EQ(0, metrics.num_client_connections_) << "Client should have 0 client connections";
 }
@@ -237,7 +237,7 @@ TEST_F(TestRpc, TestCallLongerThanKeepalive) {
   req.set_sleep_micros(100 * 1000);
   req.set_deferred(true);
   SleepResponsePB resp;
-  ASSERT_STATUS_OK(p.SyncRequest(GenericCalculatorService::kSleepMethodName,
+  ASSERT_OK(p.SyncRequest(GenericCalculatorService::kSleepMethodName,
                                  req, &resp, &controller));
 }
 
@@ -296,11 +296,11 @@ TEST_F(TestRpc, TestNegotiationTimeout) {
   // Set up a simple socket server which accepts a connection.
   Sockaddr server_addr;
   Socket listen_sock;
-  ASSERT_STATUS_OK(StartFakeServer(&listen_sock, &server_addr));
+  ASSERT_OK(StartFakeServer(&listen_sock, &server_addr));
 
   // Create another thread to accept the connection on the fake server.
   scoped_refptr<Thread> acceptor_thread;
-  ASSERT_STATUS_OK(Thread::Create("test", "acceptor",
+  ASSERT_OK(Thread::Create("test", "acceptor",
                                   AcceptAndReadForever, &listen_sock,
                                   &acceptor_thread));
 
@@ -319,7 +319,7 @@ TEST_F(TestRpc, TestServerShutsDown) {
   // Set up a simple socket server which accepts a connection.
   Sockaddr server_addr;
   Socket listen_sock;
-  ASSERT_STATUS_OK(StartFakeServer(&listen_sock, &server_addr));
+  ASSERT_OK(StartFakeServer(&listen_sock, &server_addr));
 
   // Set up client.
   LOG(INFO) << "Connecting to " << server_addr.ToString();
@@ -349,7 +349,7 @@ TEST_F(TestRpc, TestServerShutsDown) {
   // Accept the TCP connection.
   Socket server_sock;
   Sockaddr remote;
-  ASSERT_STATUS_OK(listen_sock.Accept(&server_sock, &remote, 0));
+  ASSERT_OK(listen_sock.Accept(&server_sock, &remote, 0));
 
   // The call is still in progress at this point.
   BOOST_FOREACH(const RpcController &controller, controllers) {
@@ -357,8 +357,8 @@ TEST_F(TestRpc, TestServerShutsDown) {
   }
 
   // Shut down the socket.
-  ASSERT_STATUS_OK(listen_sock.Close());
-  ASSERT_STATUS_OK(server_sock.Close());
+  ASSERT_OK(listen_sock.Close());
+  ASSERT_OK(server_sock.Close());
 
   // Wait for the call to be marked finished.
   latch.Wait();
@@ -409,7 +409,7 @@ TEST_F(TestRpc, TestRpcHandlerLatencyMetric) {
   req.set_sleep_micros(sleep_micros);
   req.set_deferred(true);
   SleepResponsePB resp;
-  ASSERT_STATUS_OK(p.SyncRequest("Sleep", req, &resp, &controller));
+  ASSERT_OK(p.SyncRequest("Sleep", req, &resp, &controller));
 
   const unordered_map<string, scoped_refptr<Metric> > metric_map =
       server_messenger_->metric_context()->metrics()->UnsafeMetricsMapForTests();

@@ -50,13 +50,13 @@ class BloomFileTestBase : public KuduTest {
       // get a good mix of hits and misses while still staying within
       // the real key range.
       key_buf = BigEndian::FromHost64(i << kKeyShift);
-      ASSERT_STATUS_OK_FAST(bfw->AppendKeys(&key_slice, 1));
+      ASSERT_OK_FAST(bfw->AppendKeys(&key_slice, 1));
     }
   }
 
   void WriteTestBloomFile() {
     gscoped_ptr<WritableBlock> sink;
-    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
     block_id_ = sink->id();
 
     // Set sizing based on flags
@@ -69,9 +69,9 @@ class BloomFileTestBase : public KuduTest {
 
     BloomFileWriter bfw(sink.Pass(), sizing);
 
-    ASSERT_STATUS_OK(bfw.Start());
+    ASSERT_OK(bfw.Start());
     AppendBlooms(&bfw);
-    ASSERT_STATUS_OK(bfw.Finish());
+    ASSERT_OK(bfw.Finish());
   }
 
   Status OpenBloomFile() {

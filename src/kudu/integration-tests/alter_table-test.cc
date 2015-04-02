@@ -75,8 +75,8 @@ class AlterTableTest : public KuduTest {
     KuduTest::SetUp();
 
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
-    ASSERT_STATUS_OK(cluster_->Start());
-    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
+    ASSERT_OK(cluster_->Start());
+    ASSERT_OK(cluster_->WaitForTabletServerCount(1));
 
     CHECK_OK(KuduClientBuilder()
              .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())
@@ -119,8 +119,8 @@ class AlterTableTest : public KuduTest {
   void RestartTabletServer() {
     ShutdownTS();
 
-    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->Start());
-    ASSERT_STATUS_OK(cluster_->mini_tablet_server(0)->WaitStarted());
+    ASSERT_OK(cluster_->mini_tablet_server(0)->Start());
+    ASSERT_OK(cluster_->mini_tablet_server(0)->WaitStarted());
     tablet_peer_ = LookupTabletPeer();
   }
 
@@ -216,7 +216,7 @@ const char *AlterTableTest::kTableName = "fake-table";
 // TODO: create and verify multiple tablets when the client will support that.
 TEST_F(AlterTableTest, TestTabletReports) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
-  ASSERT_STATUS_OK(AddNewU32Column(kTableName, "new-u32", 0));
+  ASSERT_OK(AddNewU32Column(kTableName, "new-u32", 0));
   ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
@@ -275,14 +275,14 @@ TEST_F(AlterTableTest, TestAlterOnTSRestart) {
   // Verify that the Schema is the old one
   KuduSchema schema;
   bool alter_in_progress = false;
-  ASSERT_STATUS_OK(client_->GetTableSchema(kTableName, &schema));
+  ASSERT_OK(client_->GetTableSchema(kTableName, &schema));
   ASSERT_TRUE(schema_.Equals(schema));
-  ASSERT_STATUS_OK(client_->IsAlterTableInProgress(kTableName, &alter_in_progress))
+  ASSERT_OK(client_->IsAlterTableInProgress(kTableName, &alter_in_progress))
   ASSERT_TRUE(alter_in_progress);
 
   // Restart the TS and wait for the new schema
   RestartTabletServer();
-  ASSERT_STATUS_OK(WaitAlterTableCompletion(kTableName, 50));
+  ASSERT_OK(WaitAlterTableCompletion(kTableName, 50));
   ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
@@ -324,15 +324,15 @@ TEST_F(AlterTableTest, TestRestartTSDuringAlter) {
   }
 
   // Wait for the new schema
-  ASSERT_STATUS_OK(WaitAlterTableCompletion(kTableName, 50));
+  ASSERT_OK(WaitAlterTableCompletion(kTableName, 50));
   ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
 TEST_F(AlterTableTest, TestGetSchemaAfterAlterTable) {
-  ASSERT_STATUS_OK(AddNewU32Column(kTableName, "new-u32", 10));
+  ASSERT_OK(AddNewU32Column(kTableName, "new-u32", 10));
 
   KuduSchema s;
-  ASSERT_STATUS_OK(client_->GetTableSchema(kTableName, &s));
+  ASSERT_OK(client_->GetTableSchema(kTableName, &s));
 }
 
 void AlterTableTest::InsertRows(int start_row, int num_rows) {
@@ -429,12 +429,12 @@ TEST_F(AlterTableTest, DISABLED_TestDropAndAddNewColumn) {
   VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
 
   LOG(INFO) << "Dropping and adding back c1";
-  ASSERT_STATUS_OK(client_->NewTableAlterer()
+  ASSERT_OK(client_->NewTableAlterer()
                    ->table_name(kTableName)
                    .drop_column("c1")
                    .Alter());
 
-  ASSERT_STATUS_OK(AddNewU32Column(kTableName, "c1", 0xdeadbeef));
+  ASSERT_OK(AddNewU32Column(kTableName, "c1", 0xdeadbeef));
 
   LOG(INFO) << "Verifying that the new default shows up";
   VerifyRows(0, kNumRows, C1_IS_DEADBEEF);
@@ -450,7 +450,7 @@ TEST_F(AlterTableTest, DISABLED_TestBootstrapAfterColumnRemoved) {
   VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
 
   LOG(INFO) << "Dropping c1";
-  ASSERT_STATUS_OK(client_->NewTableAlterer()
+  ASSERT_OK(client_->NewTableAlterer()
                    ->table_name(kTableName)
                    .drop_column("c1")
                    .Alter());
@@ -589,7 +589,7 @@ TEST_F(AlterTableTest, DISABLED_TestAlterUnderWriteLoad) {
       SleepFor(MonoDelta::FromSeconds(3));
     }
 
-    ASSERT_STATUS_OK(AddNewU32Column(kTableName,
+    ASSERT_OK(AddNewU32Column(kTableName,
                                      strings::Substitute("c$0", i),
                                      i));
   }

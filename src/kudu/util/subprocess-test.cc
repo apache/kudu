@@ -22,7 +22,7 @@ TEST_F(SubprocessTest, TestSimplePipe) {
   argv.push_back("A-Z");
   Subprocess p("/usr/bin/tr", argv);
   p.ShareParentStdout(false);
-  ASSERT_STATUS_OK(p.Start());
+  ASSERT_OK(p.Start());
 
   FILE* out = fdopen(p.ReleaseChildStdinFd(), "w");
   PCHECK(out);
@@ -39,7 +39,7 @@ TEST_F(SubprocessTest, TestSimplePipe) {
   ASSERT_STREQ("HELLO WORLD\n", &buf[0]);
 
   int wait_status = 0;
-  ASSERT_STATUS_OK(p.Wait(&wait_status));
+  ASSERT_OK(p.Wait(&wait_status));
   ASSERT_TRUE(WIFEXITED(wait_status));
   ASSERT_EQ(0, WEXITSTATUS(wait_status));
 }
@@ -50,7 +50,7 @@ TEST_F(SubprocessTest, TestErrPipe) {
   argv.push_back("/dev/stderr");
   Subprocess p("/usr/bin/tee", argv);
   p.ShareParentStderr(false);
-  ASSERT_STATUS_OK(p.Start());
+  ASSERT_OK(p.Start());
 
   FILE* out = fdopen(p.ReleaseChildStdinFd(), "w");
   PCHECK(out);
@@ -66,7 +66,7 @@ TEST_F(SubprocessTest, TestErrPipe) {
   ASSERT_STREQ("Hello, World\n", &buf[0]);
 
   int wait_status = 0;
-  ASSERT_STATUS_OK(p.Wait(&wait_status));
+  ASSERT_OK(p.Wait(&wait_status));
   ASSERT_TRUE(WIFEXITED(wait_status));
   ASSERT_EQ(0, WEXITSTATUS(wait_status));
 }
@@ -75,12 +75,12 @@ TEST_F(SubprocessTest, TestKill) {
   vector<string> argv;
   argv.push_back("cat");
   Subprocess p("/bin/cat", argv);
-  ASSERT_STATUS_OK(p.Start());
+  ASSERT_OK(p.Start());
 
-  ASSERT_STATUS_OK(p.Kill(SIGKILL));
+  ASSERT_OK(p.Kill(SIGKILL));
 
   int wait_status = 0;
-  ASSERT_STATUS_OK(p.Wait(&wait_status));
+  ASSERT_OK(p.Wait(&wait_status));
   ASSERT_EQ(SIGKILL, WTERMSIG(wait_status));
 }
 

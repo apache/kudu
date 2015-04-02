@@ -43,7 +43,7 @@ class TestCFileSet : public KuduRowSetTest {
     DiskRowSetWriter rsw(rowset_meta_.get(),
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
-    ASSERT_STATUS_OK(rsw.Open());
+    ASSERT_OK(rsw.Open());
 
     RowBuilder rb(schema_);
     for (int i = 0; i < nrows; i++) {
@@ -51,9 +51,9 @@ class TestCFileSet : public KuduRowSetTest {
       rb.AddUint32(i * 2);
       rb.AddUint32(i * 10);
       rb.AddUint32(i * 100);
-      ASSERT_STATUS_OK_FAST(WriteRow(rb.data(), &rsw));
+      ASSERT_OK_FAST(WriteRow(rb.data(), &rsw));
     }
-    ASSERT_STATUS_OK(rsw.Finish());
+    ASSERT_OK(rsw.Finish());
   }
 
   // Issue a range scan between 'lower' and 'upper', and verify that all result
@@ -72,13 +72,13 @@ class TestCFileSet : public KuduRowSetTest {
       lower != kNoBound ? &lower : NULL,
       upper != kNoBound ? &upper : NULL);
     spec.AddPredicate(pred1);
-    ASSERT_STATUS_OK(iter->Init(&spec));
+    ASSERT_OK(iter->Init(&spec));
 
     // Check that the range was respected on all the results.
     Arena arena(1024, 1024);
     RowBlock block(schema_, 100, &arena);
     while (iter->HasNext()) {
-      ASSERT_STATUS_OK_FAST(iter->NextBlock(&block));
+      ASSERT_OK_FAST(iter->NextBlock(&block));
       for (size_t i = 0; i < block.nrows(); i++) {
         if (block.selection_vector()->IsRowSelected(i)) {
           RowBlockRow row = block.row(i);
@@ -105,10 +105,10 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
-  ASSERT_STATUS_OK(fileset->Open());
+  ASSERT_OK(fileset->Open());
 
   gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_));
-  ASSERT_STATUS_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(NULL));
 
   Arena arena(4096, 1024*1024);
   RowBlock block(schema_, 100, &arena);
@@ -117,7 +117,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
     arena.Reset();
 
     size_t n = block.nrows();
-    ASSERT_STATUS_OK_FAST(iter->PrepareBatch(&n));
+    ASSERT_OK_FAST(iter->PrepareBatch(&n));
     block.Resize(n);
 
     // Cycle between:
@@ -129,7 +129,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
     int cycle = (row_idx / kCycleInterval) % 3;
     if (cycle == 0 || cycle == 2) {
       ColumnBlock col(block.column_block(0));
-      ASSERT_STATUS_OK_FAST(iter->MaterializeColumn(0, &col));
+      ASSERT_OK_FAST(iter->MaterializeColumn(0, &col));
 
       // Verify
       for (int i = 0; i < n; i++) {
@@ -143,7 +143,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
     }
     if (cycle == 1 || cycle == 2) {
       ColumnBlock col(block.column_block(1));
-      ASSERT_STATUS_OK_FAST(iter->MaterializeColumn(1, &col));
+      ASSERT_OK_FAST(iter->MaterializeColumn(1, &col));
 
       // Verify
       for (int i = 0; i < n; i++) {
@@ -155,7 +155,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
       }
     }
 
-    ASSERT_STATUS_OK_FAST(iter->FinishBatch());
+    ASSERT_OK_FAST(iter->FinishBatch());
     row_idx += n;
   }
 
@@ -184,22 +184,22 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
-  ASSERT_STATUS_OK(fileset->Open());
+  ASSERT_OK(fileset->Open());
 
   vector<size_t> sparse_cols;
   sparse_cols.push_back(0);
   sparse_cols.push_back(2);
 
   Schema new_schema;
-  ASSERT_STATUS_OK(schema_.CreatePartialSchema(sparse_cols, NULL, &new_schema));
+  ASSERT_OK(schema_.CreatePartialSchema(sparse_cols, NULL, &new_schema));
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
 
-  ASSERT_STATUS_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(NULL));
 
   // Read all the results.
   vector<string> results;
-  ASSERT_STATUS_OK(IterateToStringList(iter.get(), &results));
+  ASSERT_OK(IterateToStringList(iter.get(), &results));
 
   VLOG(1) << "Results of iterating over sparse partial schema: ";
   BOOST_FOREACH(const string &str, results) {
@@ -221,7 +221,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
-  ASSERT_STATUS_OK(fileset->Open());
+  ASSERT_OK(fileset->Open());
 
   // Create iterator.
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&schema_));
@@ -236,7 +236,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
   ColumnRangePredicate pred1(schema_.column(0), &lower, &upper);
   spec.AddPredicate(pred1);
   encoder.EncodeRangePredicates(&spec, true);
-  ASSERT_STATUS_OK(iter->Init(&spec));
+  ASSERT_OK(iter->Init(&spec));
 
   // Check that the bounds got pushed as index bounds.
   // Since the key column is the rowidx * 2, we need to divide the integer bounds
@@ -247,7 +247,7 @@ TEST_F(TestCFileSet, TestRangeScan) {
 
   // Read all the results.
   vector<string> results;
-  ASSERT_STATUS_OK(IterateToStringList(iter.get(), &results));
+  ASSERT_OK(IterateToStringList(iter.get(), &results));
 
   // Ensure that we got the expected rows.
   BOOST_FOREACH(const string &str, results) {
@@ -273,7 +273,7 @@ TEST_F(TestCFileSet, TestRangePredicates2) {
   WriteTestRowSet(kNumRows);
 
   shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
-  ASSERT_STATUS_OK(fileset->Open());
+  ASSERT_OK(fileset->Open());
 
   // Range scan where rows match on both ends
   DoTestRangeScan(fileset, 2000, 2010);

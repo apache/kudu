@@ -131,9 +131,9 @@ class BootstrapTest : public LogTestBase {
     // see the bootstrapped operation. This is likely due to KUDU-138 -- perhaps
     // we aren't properly setting up the clock after bootstrap.
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
-    ASSERT_STATUS_OK(tablet->NewRowIterator(schema_, snap, Tablet::UNORDERED, &iter));
-    ASSERT_STATUS_OK(iter->Init(NULL));
-    ASSERT_STATUS_OK(IterateToStringList(iter.get(), results));
+    ASSERT_OK(tablet->NewRowIterator(schema_, snap, Tablet::UNORDERED, &iter));
+    ASSERT_OK(iter->Init(NULL));
+    ASSERT_OK(IterateToStringList(iter.get(), results));
     BOOST_FOREACH(const string& result, *results) {
       VLOG(1) << result;
     }
@@ -147,13 +147,13 @@ TEST_F(BootstrapTest, TestBootstrap) {
   BuildLog();
 
   AppendReplicateBatch(MakeOpId(1, current_index_));
-  ASSERT_STATUS_OK(RollLog());
+  ASSERT_OK(RollLog());
 
   AppendCommit(MakeOpId(1, current_index_));
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
-  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
 
   vector<string> results;
   IterateTabletRows(tablet.get(), &results);
@@ -192,7 +192,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
 
   // Step 1) Write a REPLICATE to the log, and roll it.
   AppendReplicateBatch(opid);
-  ASSERT_STATUS_OK(RollLog());
+  ASSERT_OK(RollLog());
 
   // Step 2) Write the corresponding COMMIT in the second segment.
   AppendCommit(opid);
@@ -202,11 +202,11 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
 
   // Step 3) Apply the operations in the log to the tablet and flush
   // the tablet to disk.
-  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
-  ASSERT_STATUS_OK(tablet->Flush());
+  ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  ASSERT_OK(tablet->Flush());
 
   // Create a new log segment.
-  ASSERT_STATUS_OK(RollLog());
+  ASSERT_OK(RollLog());
 
   // Step 4) Create an orphanned commit by first adding a commit to
   // the newly rolled logfile, and then by removing the previous
@@ -218,7 +218,7 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
 
   // Note: when GLOG_v=1, the test logs should include 'Ignoring
   // orphan commit: op_type: WRITE_OP...' line.
-  ASSERT_STATUS_OK(BootstrapTestTablet(2, 1, &tablet, &boot_info));
+  ASSERT_OK(BootstrapTestTablet(2, 1, &tablet, &boot_info));
 
   // Confirm that the legitimate data (from Step 3) is still there.
   vector<string> results;
@@ -242,7 +242,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
   OpId opid = MakeOpId(1, current_index_);
 
   AppendReplicateBatch(opid);
-  ASSERT_STATUS_OK(RollLog());
+  ASSERT_OK(RollLog());
 
   AppendCommit(opid);
 
@@ -259,7 +259,7 @@ TEST_F(BootstrapTest, TestNonOrphansAfterOrphanCommit) {
 
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
-  ASSERT_STATUS_OK(BootstrapTestTablet(1, 0, &tablet, &boot_info));
+  ASSERT_OK(BootstrapTestTablet(1, 0, &tablet, &boot_info));
 
   // Confirm that the legitimate data is there.
   vector<string> results;
@@ -288,7 +288,7 @@ TEST_F(BootstrapTest, TestOrphanedReplicate) {
   // Bootstrap the tablet. It shouldn't replay anything.
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;
-  ASSERT_STATUS_OK(BootstrapTestTablet(0, 0, &tablet, &boot_info));
+  ASSERT_OK(BootstrapTestTablet(0, 0, &tablet, &boot_info));
 
   // Table should be empty because we didn't replay the REPLICATE
   vector<string> results;
@@ -334,14 +334,14 @@ TEST_F(BootstrapTest, TestOperationOverwriting) {
   AppendReplicateBatch(MakeOpId(4, 2));
   AppendReplicateBatch(MakeOpId(4, 3));
 
-  ASSERT_STATUS_OK(RollLog());
+  ASSERT_OK(RollLog());
   // And overwrite with 3.2
   AppendReplicateBatch(MakeOpId(3, 2), true);
 
   // When bootstrapping we should apply ops 1.1 and get 3.2 as pending.
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;
-  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
 
   ASSERT_EQ(boot_info.orphaned_replicates.size(), 1);
   ASSERT_OPID_EQ(boot_info.orphaned_replicates[0]->id(), MakeOpId(3, 2));
@@ -364,7 +364,7 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
       new consensus::ReplicateMsg());
   replicate->get()->set_op_type(consensus::WRITE_OP);
   tserver::WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
-  ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
+  ASSERT_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
   batch_request->set_tablet_id(log::kTestTablet);
 
   // This appends Insert(1) with op 10.10
@@ -408,7 +408,7 @@ TEST_F(BootstrapTest, TestOutOfOrderCommits) {
 
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;
-  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
 
   // Confirm that both operations were applied.
   vector<string> results;
@@ -428,7 +428,7 @@ TEST_F(BootstrapTest, TestMissingCommitMessage) {
       new consensus::ReplicateMsg());
   replicate->get()->set_op_type(consensus::WRITE_OP);
   tserver::WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
-  ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
+  ASSERT_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
   batch_request->set_tablet_id(log::kTestTablet);
 
   // This appends Insert(1) with op 10.10
@@ -462,7 +462,7 @@ TEST_F(BootstrapTest, TestMissingCommitMessage) {
 
   ConsensusBootstrapInfo boot_info;
   shared_ptr<Tablet> tablet;
-  ASSERT_STATUS_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
   ASSERT_EQ(boot_info.orphaned_replicates.size(), 2);
   ASSERT_OPID_EQ(boot_info.last_committed_id, mutate_opid);
 

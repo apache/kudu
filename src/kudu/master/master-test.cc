@@ -46,12 +46,12 @@ class MasterTest : public KuduTest {
 
     // Start master
     mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master"), 0));
-    ASSERT_STATUS_OK(mini_master_->Start());
+    ASSERT_OK(mini_master_->Start());
     master_ = mini_master_->master();
 
     // Create a client proxy to it.
     MessengerBuilder bld("Client");
-    ASSERT_STATUS_OK(bld.Build(&client_messenger_));
+    ASSERT_OK(bld.Build(&client_messenger_));
     proxy_.reset(new MasterServiceProxy(client_messenger_, mini_master_->bound_rpc_addr()));
   }
 
@@ -77,7 +77,7 @@ TEST_F(MasterTest, TestPingServer) {
   PingRequestPB req;
   PingResponsePB resp;
   RpcController controller;
-  ASSERT_STATUS_OK(proxy_->Ping(req, &resp, &controller));
+  ASSERT_OK(proxy_->Ping(req, &resp, &controller));
 }
 
 static void MakeHostPortPB(const string& host, uint32_t port, HostPortPB* pb) {
@@ -106,7 +106,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     TSHeartbeatRequestPB req;
     TSHeartbeatResponsePB resp;
     req.mutable_common()->CopyFrom(common);
-    ASSERT_STATUS_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
     ASSERT_TRUE(resp.needs_reregister());
     ASSERT_TRUE(resp.needs_full_tablet_report());
@@ -131,7 +131,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     RpcController rpc;
     req.mutable_common()->CopyFrom(common);
     req.mutable_registration()->CopyFrom(fake_reg);
-    ASSERT_STATUS_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
     ASSERT_FALSE(resp.needs_reregister());
     ASSERT_TRUE(resp.needs_full_tablet_report());
@@ -144,7 +144,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   descs[0]->GetRegistration(&reg);
   ASSERT_EQ(fake_reg.DebugString(), reg.DebugString()) << "Master got different registration";
 
-  ASSERT_STATUS_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
+  ASSERT_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
   ASSERT_EQ(ts_desc, descs[0]);
 
   // Now send a tablet report
@@ -156,7 +156,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     TabletReportPB* tr = req.mutable_tablet_report();
     tr->set_is_incremental(false);
     tr->set_sequence_number(0);
-    ASSERT_STATUS_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
 
     ASSERT_FALSE(resp.needs_reregister());
     ASSERT_FALSE(resp.needs_full_tablet_report());
@@ -166,7 +166,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should still only have one TS registered";
 
-  ASSERT_STATUS_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
+  ASSERT_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
   ASSERT_EQ(ts_desc, descs[0]);
 
   // Ensure that the ListTabletServers shows the faked server.
@@ -174,7 +174,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
     ListTabletServersRequestPB req;
     ListTabletServersResponsePB resp;
     RpcController rpc;
-    ASSERT_STATUS_OK(proxy_->ListTabletServers(req, &resp, &rpc));
+    ASSERT_OK(proxy_->ListTabletServers(req, &resp, &rpc));
     LOG(INFO) << resp.DebugString();
     ASSERT_EQ(1, resp.servers_size());
     ASSERT_EQ("my-ts-uuid", resp.servers(0).instance_id().permanent_uuid());
@@ -190,19 +190,19 @@ void MasterTest::CreateTable(const string& table_name,
   RpcController controller;
 
   req.set_name(table_name);
-  ASSERT_STATUS_OK(SchemaToPB(schema, req.mutable_schema()));
+  ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
   req.add_pre_split_keys("k1");
   req.add_pre_split_keys("k2");
 
-  ASSERT_STATUS_OK(proxy_->CreateTable(req, &resp, &controller));
+  ASSERT_OK(proxy_->CreateTable(req, &resp, &controller));
   if (resp.has_error()) {
-    ASSERT_STATUS_OK(StatusFromPB(resp.error().status()));
+    ASSERT_OK(StatusFromPB(resp.error().status()));
   }
 }
 
 void MasterTest::DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp) {
   RpcController controller;
-  ASSERT_STATUS_OK(proxy_->ListTables(req, resp, &controller));
+  ASSERT_OK(proxy_->ListTables(req, resp, &controller));
   SCOPED_TRACE(resp->DebugString());
   ASSERT_FALSE(resp->has_error());
 }
@@ -235,7 +235,7 @@ TEST_F(MasterTest, TestCatalog) {
     DeleteTableResponsePB resp;
     RpcController controller;
     req.mutable_table()->set_table_name(kTableName);
-    ASSERT_STATUS_OK(proxy_->DeleteTable(req, &resp, &controller));
+    ASSERT_OK(proxy_->DeleteTable(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error());
   }
@@ -248,7 +248,7 @@ TEST_F(MasterTest, TestCatalog) {
   ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, kTableSchema));
 
   // Restart the master, verify the table still shows up.
-  ASSERT_STATUS_OK(mini_master_->Restart());
+  ASSERT_OK(mini_master_->Restart());
 
   ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
   ASSERT_EQ(1, tables.tables_size());

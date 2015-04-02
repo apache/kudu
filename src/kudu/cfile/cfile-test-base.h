@@ -219,7 +219,7 @@ class CFileTestBase : public KuduTest {
                      uint32_t flags,
                      BlockId* block_id) {
     gscoped_ptr<WritableBlock> sink;
-    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
     *block_id = sink->id();
     WriterOptions opts;
     opts.write_posidx = true;
@@ -236,7 +236,7 @@ class CFileTestBase : public KuduTest {
     CFileWriter w(opts, DataGeneratorType::kDataType,
                   DataGeneratorType::has_nulls(), sink.Pass());
 
-    ASSERT_STATUS_OK(w.Start());
+    ASSERT_OK(w.Start());
 
     // Append given number of values to the test tree
     const size_t kBufferSize = 8192;
@@ -248,16 +248,16 @@ class CFileTestBase : public KuduTest {
       DCHECK_EQ(towrite, data_generator->block_entries());
 
       if (DataGeneratorType::has_nulls()) {
-        ASSERT_STATUS_OK_FAST(w.AppendNullableEntries(data_generator->null_bitmap(),
+        ASSERT_OK_FAST(w.AppendNullableEntries(data_generator->null_bitmap(),
                                                       data_generator->values(),
                                                       towrite));
       } else {
-        ASSERT_STATUS_OK_FAST(w.AppendEntries(data_generator->values(), towrite));
+        ASSERT_OK_FAST(w.AppendEntries(data_generator->values(), towrite));
       }
       i += towrite;
     }
 
-    ASSERT_STATUS_OK(w.Finish());
+    ASSERT_OK(w.Finish());
   }
 
   gscoped_ptr<FsManager> fs_manager_;
@@ -295,7 +295,7 @@ static void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count
   uint64_t sum = 0;
   while (iter->HasNext()) {
     size_t n = cb.nrows();
-    ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
+    ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
     sum += FastSum(cb, n);
     count += n;
     cb.arena()->Reset();
@@ -308,13 +308,13 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
   Status s;
 
   gscoped_ptr<fs::ReadableBlock> source;
-  ASSERT_STATUS_OK(fs_manager->OpenBlock(block_id, &source));
+  ASSERT_OK(fs_manager->OpenBlock(block_id, &source));
   gscoped_ptr<CFileReader> reader;
-  ASSERT_STATUS_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
+  ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
-  ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
+  ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
+  ASSERT_OK(iter->SeekToOrdinal(0));
 
   Arena arena(8192, 8*1024*1024);
   int count = 0;
@@ -335,7 +335,7 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
       uint64_t sum_lens = 0;
       while (iter->HasNext()) {
         size_t n = cb.nrows();
-        ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
+        ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
         for (int i = 0; i < n; i++) {
           sum_lens += cb[i].size();
         }

@@ -86,7 +86,7 @@ TEST(TestSchema, TestReset) {
   Schema schema;
   ASSERT_FALSE(schema.initialized());
 
-  ASSERT_STATUS_OK(schema.Reset(boost::assign::list_of
+  ASSERT_OK(schema.Reset(boost::assign::list_of
                                 (ColumnSchema("col3", UINT32))
                                 (ColumnSchema("col2", STRING)),
                                 1));
@@ -112,7 +112,7 @@ TEST(TestSchema, TestProjectSubset) {
                  0);
 
   RowProjector row_projector(&schema1, &schema2);
-  ASSERT_STATUS_OK(row_projector.Init());
+  ASSERT_OK(row_projector.Init());
 
   // Verify the mapping
   ASSERT_EQ(2, row_projector.base_cols_mapping().size());
@@ -171,7 +171,7 @@ TEST(TestSchema, TestProjectMissingColumn) {
     "does not exist in the projection, and it does not have a default value or a nullable type");
 
   // Verify Default nullable column with no default value
-  ASSERT_STATUS_OK(row_projector.Reset(&schema1, &schema3));
+  ASSERT_OK(row_projector.Reset(&schema1, &schema3));
 
   ASSERT_EQ(1, row_projector.base_cols_mapping().size());
   ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
@@ -182,7 +182,7 @@ TEST(TestSchema, TestProjectMissingColumn) {
   ASSERT_EQ(row_projector.projection_defaults()[0], 1);      // non_present schema3
 
   // Verify Default non nullable column with default value
-  ASSERT_STATUS_OK(row_projector.Reset(&schema1, &schema4));
+  ASSERT_OK(row_projector.Reset(&schema1, &schema4));
 
   ASSERT_EQ(1, row_projector.base_cols_mapping().size());
   ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
@@ -198,17 +198,17 @@ TEST(TestSchema, TestProjectMissingColumn) {
 // and a new column added ('non_present')
 TEST(TestSchema, TestProjectRename) {
   SchemaBuilder builder;
-  ASSERT_STATUS_OK(builder.AddKeyColumn("key", STRING));
-  ASSERT_STATUS_OK(builder.AddColumn("val", UINT32));
+  ASSERT_OK(builder.AddKeyColumn("key", STRING));
+  ASSERT_OK(builder.AddColumn("val", UINT32));
   Schema schema1 = builder.Build();
 
   builder.Reset(schema1);
-  ASSERT_STATUS_OK(builder.AddNullableColumn("non_present", UINT32));
-  ASSERT_STATUS_OK(builder.RenameColumn("val", "val_renamed"));
+  ASSERT_OK(builder.AddNullableColumn("non_present", UINT32));
+  ASSERT_OK(builder.RenameColumn("val", "val_renamed"));
   Schema schema2 = builder.Build();
 
   RowProjector row_projector(&schema1, &schema2);
-  ASSERT_STATUS_OK(row_projector.Init());
+  ASSERT_OK(row_projector.Init());
 
   ASSERT_EQ(2, row_projector.base_cols_mapping().size());
   ASSERT_EQ(0, row_projector.adapter_cols_mapping().size());
@@ -241,7 +241,7 @@ TEST(TestSchema, TestRowOperations) {
   rb.AddUint32(3);
   rb.AddInt32(-3);
   ContiguousRow row_a(&schema);
-  ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_a));
+  ASSERT_OK(CopyRowToArena(rb.data(), schema, &arena, &row_a));
 
   rb.Reset();
   rb.AddString(string("row_b_1"));
@@ -249,7 +249,7 @@ TEST(TestSchema, TestRowOperations) {
   rb.AddUint32(3);
   rb.AddInt32(-3);
   ContiguousRow row_b(&schema);
-  ASSERT_STATUS_OK(CopyRowToArena(rb.data(), schema, &arena, &row_b));
+  ASSERT_OK(CopyRowToArena(rb.data(), schema, &arena, &row_b));
 
   ASSERT_GT(schema.Compare(row_b, row_a), 0);
   ASSERT_LT(schema.Compare(row_a, row_b), 0);
@@ -355,7 +355,7 @@ TEST(TestSchema, TestCreatePartialSchema) {
     partial_cols.push_back(1);
     partial_cols.push_back(3);
 
-    ASSERT_STATUS_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
+    ASSERT_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
     ASSERT_EQ("Schema [\n"
               "\tcol1[string NOT NULL],\n"
               "\tcol2[string NOT NULL],\n"
@@ -374,7 +374,7 @@ TEST(TestSchema, TestCreatePartialSchema) {
     partial_cols.push_back(2);
      partial_cols.push_back(3);
      partial_cols.push_back(4);
-     ASSERT_STATUS_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
+     ASSERT_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
      ASSERT_EQ("Schema [\n"
                "\tcol3[string NOT NULL],\n"
                "\tcol4[string NOT NULL],\n"

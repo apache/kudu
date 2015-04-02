@@ -64,7 +64,7 @@ class MultiThreadedRpcTest : public RpcTestBase {
 };
 
 static void AssertShutdown(kudu::Thread* thread, const Status* status) {
-  ASSERT_STATUS_OK(ThreadJoiner(thread).warn_every_ms(500).Join());
+  ASSERT_OK(ThreadJoiner(thread).warn_every_ms(500).Join());
   string msg = status->ToString();
   ASSERT_TRUE(msg.find("Service unavailable") != string::npos ||
               msg.find("Network error") != string::npos)
@@ -82,7 +82,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
   scoped_refptr<kudu::Thread> threads[kNumThreads];
   Status statuses[kNumThreads];
   for (int i = 0; i < kNumThreads; i++) {
-    ASSERT_STATUS_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
+    ASSERT_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
       &MultiThreadedRpcTest::HammerServer, this, server_addr,
       GenericCalculatorService::kAddMethodName, &statuses[i], &threads[i]));
   }
@@ -90,7 +90,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownDuringService) {
   SleepFor(MonoDelta::FromMilliseconds(50));
 
   // Shut down server.
-  ASSERT_STATUS_OK(server_messenger_->UnregisterService(service_name_));
+  ASSERT_OK(server_messenger_->UnregisterService(service_name_));
   service_pool_->Shutdown();
   server_messenger_->Shutdown();
 
@@ -110,7 +110,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
 
   scoped_refptr<kudu::Thread> thread;
   Status status;
-  ASSERT_STATUS_OK(kudu::Thread::Create("test", "test",
+  ASSERT_OK(kudu::Thread::Create("test", "test",
       &MultiThreadedRpcTest::HammerServerWithMessenger, this, server_addr,
       GenericCalculatorService::kAddMethodName, &status, client_messenger, &thread));
 
@@ -122,7 +122,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
   client_messenger->Shutdown();
   client_messenger.reset();
 
-  ASSERT_STATUS_OK(ThreadJoiner(thread.get()).warn_every_ms(500).Join());
+  ASSERT_OK(ThreadJoiner(thread.get()).warn_every_ms(500).Join());
   ASSERT_TRUE(status.IsAborted() ||
               status.IsServiceUnavailable());
   string msg = status.ToString();
@@ -170,7 +170,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   CHECK_OK(bld.Build(&server_messenger_));
 
   shared_ptr<AcceptorPool> pool;
-  ASSERT_STATUS_OK(server_messenger_->AddAcceptorPool(Sockaddr(), kMaxConcurrency, &pool));
+  ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), kMaxConcurrency, &pool));
   Sockaddr server_addr = pool->bind_address();
 
   gscoped_ptr<ServiceIf> service(new GenericCalculatorService());
@@ -178,14 +178,14 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   service_pool_ = new BogusServicePool(service.Pass(),
                                       *server_messenger_->metric_context(),
                                       kMaxConcurrency);
-  ASSERT_STATUS_OK(service_pool_->Init(n_worker_threads_));
+  ASSERT_OK(service_pool_->Init(n_worker_threads_));
   server_messenger_->RegisterService(service_name_, service_pool_);
 
   scoped_refptr<kudu::Thread> threads[3];
   Status status[3];
   CountDownLatch latch(1);
   for (int i = 0; i < 3; i++) {
-    ASSERT_STATUS_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
+    ASSERT_OK(kudu::Thread::Create("test", strings::Substitute("t$0", i),
       &MultiThreadedRpcTest::SingleCall, this, server_addr,
       GenericCalculatorService::kAddMethodName, &status[i], &latch, &threads[i]));
   }
@@ -195,12 +195,12 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   latch.Wait();
 
   // The rest would time out after 10 sec, but we help them along.
-  ASSERT_STATUS_OK(server_messenger_->UnregisterService(service_name_));
+  ASSERT_OK(server_messenger_->UnregisterService(service_name_));
   service_pool_->Shutdown();
   server_messenger_->Shutdown();
 
   for (int i = 0; i < 3; i++) {
-    ASSERT_STATUS_OK(ThreadJoiner(threads[i].get()).warn_every_ms(500).Join());
+    ASSERT_OK(ThreadJoiner(threads[i].get()).warn_every_ms(500).Join());
   }
 
   // Verify that one error was due to backpressure.
@@ -261,12 +261,12 @@ TEST_F(MultiThreadedRpcTest, TestShutdownWithIncomingConnections) {
   }
 
   // Shutdown while there are still new connections appearing.
-  ASSERT_STATUS_OK(server_messenger_->UnregisterService(service_name_));
+  ASSERT_OK(server_messenger_->UnregisterService(service_name_));
   service_pool_->Shutdown();
   server_messenger_->Shutdown();
 
   BOOST_FOREACH(scoped_refptr<kudu::Thread>& t, threads) {
-    ASSERT_STATUS_OK(ThreadJoiner(t.get()).warn_every_ms(500).Join());
+    ASSERT_OK(ThreadJoiner(t.get()).warn_every_ms(500).Join());
   }
 }
 

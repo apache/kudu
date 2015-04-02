@@ -31,7 +31,7 @@ static void TestCompressionCodec(CompressionType compression) {
   memset(ibuffer, 'Z', kInputSize);
 
   // Get the specified compression codec
-  ASSERT_STATUS_OK(GetCompressionCodec(compression, &codec));
+  ASSERT_OK(GetCompressionCodec(compression, &codec));
 
   // Allocate the compression buffer
   size_t max_compressed = codec->MaxCompressedLength(kInputSize);
@@ -39,8 +39,8 @@ static void TestCompressionCodec(CompressionType compression) {
   gscoped_array<uint8_t> cbuffer(new uint8_t[max_compressed]);
 
   // Compress and uncompress
-  ASSERT_STATUS_OK(codec->Compress(Slice(ibuffer, kInputSize), cbuffer.get(), &compressed));
-  ASSERT_STATUS_OK(codec->Uncompress(Slice(cbuffer.get(), compressed), ubuffer, kInputSize));
+  ASSERT_OK(codec->Compress(Slice(ibuffer, kInputSize), cbuffer.get(), &compressed));
+  ASSERT_OK(codec->Uncompress(Slice(cbuffer.get(), compressed), ubuffer, kInputSize));
   ASSERT_EQ(0, memcmp(ibuffer, ubuffer, kInputSize));
 
   // Compress slices and uncompress
@@ -48,8 +48,8 @@ static void TestCompressionCodec(CompressionType compression) {
   v.push_back(Slice(ibuffer, 1));
   for (int i = 1; i <= kInputSize; i += 7)
     v.push_back(Slice(ibuffer + i, 7));
-  ASSERT_STATUS_OK(codec->Compress(Slice(ibuffer, kInputSize), cbuffer.get(), &compressed));
-  ASSERT_STATUS_OK(codec->Uncompress(Slice(cbuffer.get(), compressed), ubuffer, kInputSize));
+  ASSERT_OK(codec->Compress(Slice(ibuffer, kInputSize), cbuffer.get(), &compressed));
+  ASSERT_OK(codec->Uncompress(Slice(cbuffer.get(), compressed), ubuffer, kInputSize));
   ASSERT_EQ(0, memcmp(ibuffer, ubuffer, kInputSize));
 }
 
@@ -81,7 +81,7 @@ class TestCompression : public CFileTestBase {
 
 TEST_F(TestCompression, TestNoCompressionCodec) {
   shared_ptr<CompressionCodec> codec;
-  ASSERT_STATUS_OK(GetCompressionCodec(NO_COMPRESSION, &codec));
+  ASSERT_OK(GetCompressionCodec(NO_COMPRESSION, &codec));
   ASSERT_EQ(NULL, codec.get());
 }
 

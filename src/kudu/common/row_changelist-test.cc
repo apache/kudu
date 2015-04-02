@@ -57,22 +57,22 @@ TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
             RowChangeList(Slice(buf)).ToString(schema_));
 
   RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
-  ASSERT_STATUS_OK(decoder.Init());
+  ASSERT_OK(decoder.Init());
   size_t id;
   const void *val;
 
   ASSERT_TRUE(decoder.HasNext());
-  ASSERT_STATUS_OK(decoder.DecodeNext(&id, &val));
+  ASSERT_OK(decoder.DecodeNext(&id, &val));
   ASSERT_EQ(c0_id, id);
   ASSERT_TRUE(update1 == *reinterpret_cast<const Slice *>(val));
 
   ASSERT_TRUE(decoder.HasNext());
-  ASSERT_STATUS_OK(decoder.DecodeNext(&id, &val));
+  ASSERT_OK(decoder.DecodeNext(&id, &val));
   ASSERT_EQ(c1_id, id);
   ASSERT_TRUE(update2 == *reinterpret_cast<const Slice *>(val));
 
   ASSERT_TRUE(decoder.HasNext());
-  ASSERT_STATUS_OK(decoder.DecodeNext(&id, &val));
+  ASSERT_OK(decoder.DecodeNext(&id, &val));
   ASSERT_EQ(c2_id, id);
 
   ASSERT_FALSE(decoder.HasNext());
@@ -91,7 +91,7 @@ TEST_F(TestRowChangeList, TestDeletes) {
   EXPECT_EQ(string("DELETE"), RowChangeList(Slice(buf)).ToString(schema_));
 
   RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
-  ASSERT_STATUS_OK(decoder.Init());
+  ASSERT_OK(decoder.Init());
   ASSERT_TRUE(decoder.is_delete());
 }
 
@@ -113,7 +113,7 @@ TEST_F(TestRowChangeList, TestReinserts) {
             RowChangeList(Slice(buf)).ToString(schema_));
 
   RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
-  ASSERT_STATUS_OK(decoder.Init());
+  ASSERT_OK(decoder.Init());
   ASSERT_TRUE(decoder.is_reinsert());
   ASSERT_EQ(decoder.reinserted_row_slice(), rb.data());
 }

@@ -51,8 +51,8 @@ class MasterReplicationTest : public KuduTest {
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     cluster_.reset(new MiniCluster(env_.get(), opts_));
-    ASSERT_STATUS_OK(cluster_->Start());
-    ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
+    ASSERT_OK(cluster_->Start());
+    ASSERT_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -133,16 +133,16 @@ TEST_F(MasterReplicationTest, TestSysTablesReplication) {
   shared_ptr<KuduClient> client;
 
   // Create the first table.
-  ASSERT_STATUS_OK(CreateClient(&client));
-  ASSERT_STATUS_OK(CreateTable(client, kTableId1));
+  ASSERT_OK(CreateClient(&client));
+  ASSERT_OK(CreateTable(client, kTableId1));
 
   // TODO: once fault tolerant DDL is in, remove the line below.
-  ASSERT_STATUS_OK(CreateClient(&client));
+  ASSERT_OK(CreateClient(&client));
 
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
+  ASSERT_OK(cluster_->WaitForTabletServerCount(kNumTabletServerReplicas));
 
   // Repeat the same for the second table.
-  ASSERT_STATUS_OK(CreateTable(client, kTableId2));
+  ASSERT_OK(CreateTable(client, kTableId2));
   ASSERT_NO_FATAL_FAILURE(VerifyTableExists(kTableId2));
 }
 
@@ -177,7 +177,7 @@ TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
   cluster_->Shutdown();
   // ... start the cluster after a delay.
   scoped_refptr<kudu::Thread> start_thread;
-  ASSERT_STATUS_OK(Thread::Create("TestCycleThroughAllMasters", "start_thread",
+  ASSERT_OK(Thread::Create("TestCycleThroughAllMasters", "start_thread",
                                   &MasterReplicationTest::StartClusterDelayed,
                                   this,
                                   100 * 1000, // start after 100 millis.
@@ -191,7 +191,7 @@ TEST_F(MasterReplicationTest, TestCycleThroughAllMasters) {
   builder.default_admin_operation_timeout(MonoDelta::FromSeconds(15));
   EXPECT_OK(builder.Build(&client));
 
-  ASSERT_STATUS_OK(ThreadJoiner(start_thread.get()).Join());
+  ASSERT_OK(ThreadJoiner(start_thread.get()).Join());
 }
 
 } // namespace master

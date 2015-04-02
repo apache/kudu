@@ -92,7 +92,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
   void CreateClient(shared_ptr<KuduClient>* client) {
     // Connect to the cluster.
-    ASSERT_STATUS_OK(KuduClientBuilder()
+    ASSERT_OK(KuduClientBuilder()
                      .add_master_server_addr(cluster_->master()->bound_rpc_addr().ToString())
                      .Build(client));
   }
@@ -111,7 +111,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
              // this once that ticket is addressed.
              .timeout(MonoDelta::FromSeconds(20))
              .Create());
-    ASSERT_STATUS_OK(client_->OpenTable(kTableId, &table_));
+    ASSERT_OK(client_->OpenTable(kTableId, &table_));
   }
 
   KuduSchema GetClientSchema(const Schema& server_schema) const {
@@ -141,13 +141,13 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
     NewScanRequestPB* scan = req.mutable_new_scan_request();
     scan->set_tablet_id(tablet_id_);
-    ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
+    ASSERT_OK(SchemaToColumnPBs(schema_, scan->mutable_projected_columns()));
 
     // Send the call
     {
       req.set_batch_size_bytes(0);
       SCOPED_TRACE(req.DebugString());
-      ASSERT_STATUS_OK(replica_proxy->Scan(req, &resp, &rpc));
+      ASSERT_OK(replica_proxy->Scan(req, &resp, &rpc));
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
     }
@@ -428,9 +428,9 @@ TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
   rpc::MessengerBuilder builder("test builder");
   builder.set_num_reactors(1);
   shared_ptr<rpc::Messenger> messenger;
-  ASSERT_STATUS_OK(builder.Build(&messenger));
+  ASSERT_OK(builder.Build(&messenger));
 
-  ASSERT_STATUS_OK(consensus::SetPermanentUuidForRemotePeer(messenger, &peer));
+  ASSERT_OK(consensus::SetPermanentUuidForRemotePeer(messenger, &peer));
   ASSERT_EQ(expected_uuid, peer.permanent_uuid());
 }
 
@@ -456,7 +456,7 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
 
   WriteRequestPB req;
   req.set_tablet_id(tablet_id_);
-  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+  ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   RowOperationsPB* data = req.mutable_row_operations();
   data->set_rows("some gibberish!");
@@ -468,7 +468,7 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
   TServerDetails* leader = NULL;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
-  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
+  ASSERT_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
   ASSERT_TRUE(resp.has_error());
 
   // Add a proper row so that we can verify that all of the replicas continue
@@ -481,7 +481,7 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
   controller.Reset();
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
 
-  ASSERT_STATUS_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
+  ASSERT_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
   SCOPED_TRACE(resp.ShortDebugString());
   ASSERT_FALSE(resp.has_error());
 
@@ -538,7 +538,7 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   WriteResponsePB resp;
   RpcController rpc;
   req.set_tablet_id(tablet_id_);
-  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+  ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
                  "hello world via RPC", req.mutable_row_operations());
 
@@ -546,7 +546,7 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   vector<TServerDetails*> followers;
   GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
 
-  ASSERT_STATUS_OK(followers[0]->tserver_proxy->Write(req, &resp, &rpc));
+  ASSERT_OK(followers[0]->tserver_proxy->Write(req, &resp, &rpc));
   SCOPED_TRACE(resp.DebugString());
   ASSERT_TRUE(resp.has_error());
   Status s = StatusFromPB(resp.error().status());
@@ -620,7 +620,7 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
 
   WriteRequestPB req;
   req.set_tablet_id(tablet_id_);
-  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+  ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
   RowOperationsPB* data = req.mutable_row_operations();
 
   WriteResponsePB resp;
@@ -777,7 +777,7 @@ void RaftConsensusITest::StubbornlyWriteSameRowThread(int replica_idx, const Ato
   WriteResponsePB resp;
   RpcController rpc;
   req.set_tablet_id(tablet_id_);
-  ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+  ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
   AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
                  "hello world", req.mutable_row_operations());
   while (!finish->Load()) {

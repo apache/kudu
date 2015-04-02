@@ -24,10 +24,10 @@ class WebserverTest : public KuduTest {
     KuduTest::SetUp();
 
     AddDefaultPathHandlers(server_.get());
-    ASSERT_STATUS_OK(server_->Start());
+    ASSERT_OK(server_->Start());
 
     vector<Sockaddr> addrs;
-    ASSERT_STATUS_OK(server_->GetBoundAddresses(&addrs));
+    ASSERT_OK(server_->GetBoundAddresses(&addrs));
     ASSERT_EQ(addrs.size(), 1);
     addr_ = addrs[0];
   }
@@ -40,7 +40,7 @@ class WebserverTest : public KuduTest {
 TEST_F(WebserverTest, TestIndexPage) {
   EasyCurl c;
   faststring buf;
-  ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/", addr_.ToString()),
+  ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/", addr_.ToString()),
                               &buf));
   // Should have expected title.
   ASSERT_STR_CONTAINS(buf.ToString(), "Cloudera Kudu");
@@ -54,7 +54,7 @@ TEST_F(WebserverTest, TestDefaultPaths) {
   faststring buf;
 
   // Test memz
-  ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/memz?raw=1", addr_.ToString()),
+  ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/memz?raw=1", addr_.ToString()),
                               &buf));
 #ifdef TCMALLOC_ENABLED
   ASSERT_STR_CONTAINS(buf.ToString(), "Bytes in use by application");
@@ -63,7 +63,7 @@ TEST_F(WebserverTest, TestDefaultPaths) {
 #endif
 
   // Test varz -- check for one of the built-in gflags flags.
-  ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/varz?raw=1", addr_.ToString()),
+  ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/varz?raw=1", addr_.ToString()),
                               &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), "--v=");
 }

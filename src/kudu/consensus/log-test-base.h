@@ -149,7 +149,7 @@ class LogTestBase : public KuduTest {
     // Test that we actually have the expected number of files in the fs.
     // We should have n segments plus '.' and '..'
     vector<string> files;
-    ASSERT_STATUS_OK(env_->GetChildren(
+    ASSERT_OK(env_->GetChildren(
                        JoinPathSegments(fs_manager_->GetWalsRootDir(),
                                         kTestTablet),
                        &files));
@@ -182,7 +182,7 @@ class LogTestBase : public KuduTest {
     replicate->get()->mutable_id()->CopyFrom(opid);
     replicate->get()->set_timestamp(clock_->Now().ToUint64());
     WriteRequestPB* batch_request = replicate->get()->mutable_write_request();
-    ASSERT_STATUS_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
+    ASSERT_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
     AddTestRowToPB(RowOperationsPB::INSERT, schema_,
                    opid.index(),
                    0,
@@ -202,13 +202,13 @@ class LogTestBase : public KuduTest {
                             bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
-      ASSERT_STATUS_OK(log_->AsyncAppendReplicates(boost::assign::list_of(replicate),
+      ASSERT_OK(log_->AsyncAppendReplicates(boost::assign::list_of(replicate),
                                                    s.AsStatusCallback()));
-      ASSERT_STATUS_OK(s.Wait());
+      ASSERT_OK(s.Wait());
     } else {
       // AsyncAppendReplicates does not free the ReplicateMsg on completion, so we
       // need to pass it through to our callback.
-      ASSERT_STATUS_OK(log_->AsyncAppendReplicates(boost::assign::list_of(replicate),
+      ASSERT_OK(log_->AsyncAppendReplicates(boost::assign::list_of(replicate),
                                                    Bind(&LogTestBase::CheckReplicateResult,
                                                         replicate)));
     }
@@ -255,10 +255,10 @@ class LogTestBase : public KuduTest {
   void AppendCommit(gscoped_ptr<CommitMsg> commit, bool sync = APPEND_SYNC) {
     if (sync) {
       Synchronizer s;
-      ASSERT_STATUS_OK(log_->AsyncAppendCommit(commit.Pass(), s.AsStatusCallback()));
-      ASSERT_STATUS_OK(s.Wait());
+      ASSERT_OK(log_->AsyncAppendCommit(commit.Pass(), s.AsStatusCallback()));
+      ASSERT_OK(s.Wait());
     } else {
-      ASSERT_STATUS_OK(log_->AsyncAppendCommit(commit.Pass(),
+      ASSERT_OK(log_->AsyncAppendCommit(commit.Pass(),
                                                Bind(&LogTestBase::CheckCommitResult)));
     }
   }

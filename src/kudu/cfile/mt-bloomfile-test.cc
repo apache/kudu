@@ -19,7 +19,7 @@ class MTBloomFileTest : public BloomFileTestBase {
 #ifdef NDEBUG
 TEST_F(MTBloomFileTest, Benchmark) {
   ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile());
-  ASSERT_STATUS_OK(OpenBloomFile());
+  ASSERT_OK(OpenBloomFile());
 
   vector<scoped_refptr<kudu::Thread> > threads;
 

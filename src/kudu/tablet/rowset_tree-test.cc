@@ -48,7 +48,7 @@ TEST_F(TestRowSetTree, TestTree) {
   vec.push_back(shared_ptr<RowSet>(new MockMemRowSet()));
 
   RowSetTree tree;
-  ASSERT_STATUS_OK(tree.Reset(vec));
+  ASSERT_OK(tree.Reset(vec));
 
   // "2" overlaps 0-5 and the MemRowSet.
   vector<RowSet *> out;
@@ -100,7 +100,7 @@ TEST_F(TestRowSetTree, TestPerformance) {
   RowSetVector vec = GenerateRandomRowSets(kNumRowSets);
 
   RowSetTree tree;
-  ASSERT_STATUS_OK(tree.Reset(vec));
+  ASSERT_OK(tree.Reset(vec));
 
   LOG_TIMING(INFO, StringPrintf("Querying rowset %d times", kNumQueries)) {
     vector<RowSet *> out;

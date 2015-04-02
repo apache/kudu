@@ -113,7 +113,7 @@ class TestEnv : public KuduTest {
   void ReadAndVerifyTestData(RandomAccessFile* raf, size_t offset, size_t n) {
     gscoped_ptr<uint8_t[]> scratch(new uint8_t[n]);
     Slice s;
-    ASSERT_STATUS_OK(env_util::ReadFully(raf, offset, n, &s,
+    ASSERT_OK(env_util::ReadFully(raf, offset, n, &s,
                                          scratch.get()));
     ASSERT_EQ(n, s.size());
     ASSERT_NO_FATAL_FAILURE(VerifyTestData(s, offset));
@@ -123,11 +123,11 @@ class TestEnv : public KuduTest {
                         bool fast, bool pre_allocate, const WritableFileOptions& opts) {
     const string kTestPath = GetTestPath("test_env_appendvec_read_append");
     shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(opts, env_.get(), kTestPath, &file));
+    ASSERT_OK(env_util::OpenFileForWrite(opts, env_.get(), kTestPath, &file));
 
     if (pre_allocate) {
-      ASSERT_STATUS_OK(file->PreAllocate(num_slices * slice_size * iterations));
-      ASSERT_STATUS_OK(file->Sync());
+      ASSERT_OK(file->PreAllocate(num_slices * slice_size * iterations));
+      ASSERT_OK(file->Sync());
     }
 
     gscoped_ptr<faststring[]> data;
@@ -138,7 +138,7 @@ class TestEnv : public KuduTest {
     shared_ptr<RandomAccessFile> raf;
 
     if (!fast) {
-      ASSERT_STATUS_OK(env_util::OpenFileForRandom(env_.get(), kTestPath, &raf));
+      ASSERT_OK(env_util::OpenFileForRandom(env_.get(), kTestPath, &raf));
     }
 
     srand(123);
@@ -149,10 +149,10 @@ class TestEnv : public KuduTest {
     LOG_TIMING(INFO, test_descr)  {
       for (int i = 0; i < iterations; i++) {
         if (fast || random() % 2) {
-          ASSERT_STATUS_OK(file->AppendVector(input[i]));
+          ASSERT_OK(file->AppendVector(input[i]));
         } else {
           BOOST_FOREACH(const Slice& slice, input[i]) {
-            ASSERT_STATUS_OK(file->Append(slice));
+            ASSERT_OK(file->Append(slice));
           }
         }
         if (!fast) {
@@ -165,10 +165,10 @@ class TestEnv : public KuduTest {
     }
 
     // Verify the entire file
-    ASSERT_STATUS_OK(file->Close());
+    ASSERT_OK(file->Close());
 
     if (fast) {
-      ASSERT_STATUS_OK(env_util::OpenFileForRandom(env_.get(), kTestPath, &raf));
+      ASSERT_OK(env_util::OpenFileForRandom(env_.get(), kTestPath, &raf));
     }
     for (int i = 0; i < iterations; i++) {
       ASSERT_NO_FATAL_FAILURE(ReadAndVerifyTestData(raf.get(), num_slices * slice_size * i,
@@ -182,31 +182,31 @@ class TestEnv : public KuduTest {
 
     string test_path = GetTestPath("test_env_wf");
     shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
+    ASSERT_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
 
     // pre-allocate 1 MB
-    ASSERT_STATUS_OK(file->PreAllocate(kOneMb));
-    ASSERT_STATUS_OK(file->Sync());
+    ASSERT_OK(file->PreAllocate(kOneMb));
+    ASSERT_OK(file->Sync());
 
     // the writable file size should report 0
     ASSERT_EQ(file->Size(), 0);
     // but the real size of the file on disk should report 1MB
     uint64_t size;
-    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_OK(env_->GetFileSize(test_path, &size));
     ASSERT_EQ(size, kOneMb);
 
     // write 1 MB
     uint8_t scratch[kOneMb];
     Slice slice(scratch, kOneMb);
-    ASSERT_STATUS_OK(file->Append(slice));
-    ASSERT_STATUS_OK(file->Sync());
+    ASSERT_OK(file->Append(slice));
+    ASSERT_OK(file->Sync());
 
     // the writable file size should now report 1 MB
     ASSERT_EQ(file->Size(), kOneMb);
-    ASSERT_STATUS_OK(file->Close());
+    ASSERT_OK(file->Close());
     // and the real size for the file on disk should match ony the
     // written size
-    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_OK(env_->GetFileSize(test_path, &size));
     ASSERT_EQ(kOneMb, size);
   }
 
@@ -216,54 +216,54 @@ class TestEnv : public KuduTest {
 
     string test_path = GetTestPath("test_env_wf");
     shared_ptr<WritableFile> file;
-    ASSERT_STATUS_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
+    ASSERT_OK(env_util::OpenFileForWrite(opts, env_.get(), test_path, &file));
 
     // pre-allocate 64 MB
-    ASSERT_STATUS_OK(file->PreAllocate(64 * kOneMb));
-    ASSERT_STATUS_OK(file->Sync());
+    ASSERT_OK(file->PreAllocate(64 * kOneMb));
+    ASSERT_OK(file->Sync());
 
     // the writable file size should report 0
     ASSERT_EQ(file->Size(), 0);
     // but the real size of the file on disk should report 64 MBs
     uint64_t size;
-    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_OK(env_->GetFileSize(test_path, &size));
     ASSERT_EQ(size, 64 * kOneMb);
 
     // write 1 MB
     uint8_t scratch[kOneMb];
     Slice slice(scratch, kOneMb);
-    ASSERT_STATUS_OK(file->Append(slice));
-    ASSERT_STATUS_OK(file->Sync());
+    ASSERT_OK(file->Append(slice));
+    ASSERT_OK(file->Sync());
 
     // the writable file size should now report 1 MB
     ASSERT_EQ(kOneMb, file->Size());
-    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_OK(env_->GetFileSize(test_path, &size));
     ASSERT_EQ(64 * kOneMb, size);
 
     // pre-allocate 64 additional MBs
-    ASSERT_STATUS_OK(file->PreAllocate(64 * kOneMb));
-    ASSERT_STATUS_OK(file->Sync());
+    ASSERT_OK(file->PreAllocate(64 * kOneMb));
+    ASSERT_OK(file->Sync());
 
     // the writable file size should now report 1 MB
     ASSERT_EQ(kOneMb, file->Size());
     // while the real file size should report 128 MB's
-    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_OK(env_->GetFileSize(test_path, &size));
     ASSERT_EQ(128 * kOneMb, size);
 
     // write another MB
-    ASSERT_STATUS_OK(file->Append(slice));
-    ASSERT_STATUS_OK(file->Sync());
+    ASSERT_OK(file->Append(slice));
+    ASSERT_OK(file->Sync());
 
     // the writable file size should now report 2 MB
     ASSERT_EQ(file->Size(), 2 * kOneMb);
     // while the real file size should reamin at 128 MBs
-    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_OK(env_->GetFileSize(test_path, &size));
     ASSERT_EQ(128 * kOneMb, size);
 
     // close the file (which ftruncates it to the real size)
-    ASSERT_STATUS_OK(file->Close());
+    ASSERT_OK(file->Close());
     // and the real size for the file on disk should match only the written size
-    ASSERT_STATUS_OK(env_->GetFileSize(test_path, &size));
+    ASSERT_OK(env_->GetFileSize(test_path, &size));
     ASSERT_EQ(2* kOneMb, size);
   }
 
@@ -362,26 +362,26 @@ TEST_F(TestEnv, TestHolePunch) {
   }
   string test_path = GetTestPath("test_env_wf");
   gscoped_ptr<RWFile> file;
-  ASSERT_STATUS_OK(env_->NewRWFile(test_path, &file));
+  ASSERT_OK(env_->NewRWFile(test_path, &file));
 
   // Write 1 MB. The size and size-on-disk both agree.
   uint8_t scratch[kOneMb];
   Slice slice(scratch, kOneMb);
-  ASSERT_STATUS_OK(file->Write(0, slice));
-  ASSERT_STATUS_OK(file->Sync());
+  ASSERT_OK(file->Write(0, slice));
+  ASSERT_OK(file->Sync());
   uint64_t sz;
   ASSERT_OK(file->Size(&sz));
   ASSERT_EQ(kOneMb, sz);
   uint64_t size_on_disk;
-  ASSERT_STATUS_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
+  ASSERT_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
   ASSERT_EQ(kOneMb, size_on_disk);
 
   // Punch some data out at byte marker 4096. Now the two sizes diverge.
   uint64_t punch_amount = 4096 * 4;
-  ASSERT_STATUS_OK(file->PunchHole(4096, punch_amount));
+  ASSERT_OK(file->PunchHole(4096, punch_amount));
   ASSERT_OK(file->Size(&sz));
   ASSERT_EQ(kOneMb, sz);
-  ASSERT_STATUS_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
+  ASSERT_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
   ASSERT_EQ(kOneMb - punch_amount, size_on_disk);
 }
 
@@ -419,14 +419,14 @@ class ShortReadRandomAccessFile : public RandomAccessFile {
 // Write 'size' bytes of data to a file, with a simple pattern stored in it.
 static void WriteTestFile(Env* env, const string& path, size_t size) {
   shared_ptr<WritableFile> wf;
-  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env, path, &wf));
+  ASSERT_OK(env_util::OpenFileForWrite(env, path, &wf));
   faststring data;
   data.resize(size);
   for (int i = 0; i < data.size(); i++) {
     data[i] = (i * 31) & 0xff;
   }
-  ASSERT_STATUS_OK(wf->Append(Slice(data)));
-  ASSERT_STATUS_OK(wf->Close());
+  ASSERT_OK(wf->Append(Slice(data)));
+  ASSERT_OK(wf->Close());
 }
 
 
@@ -442,7 +442,7 @@ TEST_F(TestEnv, TestReadFully) {
 
   // Reopen for read
   shared_ptr<RandomAccessFile> raf;
-  ASSERT_STATUS_OK(env_util::OpenFileForRandom(mem.get(), kTestPath, &raf));
+  ASSERT_OK(env_util::OpenFileForRandom(mem.get(), kTestPath, &raf));
 
   ShortReadRandomAccessFile sr_raf(raf);
 
@@ -451,7 +451,7 @@ TEST_F(TestEnv, TestReadFully) {
   gscoped_ptr<uint8_t[]> scratch(new uint8_t[kReadLength]);
 
   // Verify that ReadFully reads the whole requested data.
-  ASSERT_STATUS_OK(env_util::ReadFully(&sr_raf, 0, kReadLength, &s, scratch.get()));
+  ASSERT_OK(env_util::ReadFully(&sr_raf, 0, kReadLength, &s, scratch.get()));
   ASSERT_EQ(s.data(), scratch.get()) << "Should have returned a contiguous copy";
   ASSERT_EQ(kReadLength, s.size());
 
@@ -475,7 +475,7 @@ TEST_F(TestEnv, TestAppendVector) {
 
 TEST_F(TestEnv, TestGetExecutablePath) {
   string p;
-  ASSERT_STATUS_OK(Env::Default()->GetExecutablePath(&p));
+  ASSERT_OK(Env::Default()->GetExecutablePath(&p));
   ASSERT_TRUE(HasSuffixString(p, "env-test")) << p;
 }
 

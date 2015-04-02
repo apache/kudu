@@ -87,12 +87,12 @@ class TestCompaction : public KuduRowSetTest {
       RowProjector projector(&row_builder_.schema(), &mrs->schema());
       uint8_t rowbuf[ContiguousRowHelper::row_size(mrs->schema())];
       ContiguousRow dst_row(&mrs->schema(), rowbuf);
-      ASSERT_STATUS_OK_FAST(projector.Init());
-      ASSERT_STATUS_OK_FAST(projector.ProjectRowForWrite(row_builder_.row(),
+      ASSERT_OK_FAST(projector.Init());
+      ASSERT_OK_FAST(projector.ProjectRowForWrite(row_builder_.row(),
                             &dst_row, static_cast<Arena*>(NULL)));
-      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.timestamp(), ConstContiguousRow(dst_row), op_id_));
+      ASSERT_OK_FAST(mrs->Insert(tx.timestamp(), ConstContiguousRow(dst_row), op_id_));
     } else {
-      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.timestamp(), row_builder_.row(), op_id_));
+      ASSERT_OK_FAST(mrs->Insert(tx.timestamp(), row_builder_.row(), op_id_));
     }
   }
 
@@ -127,7 +127,7 @@ class TestCompaction : public KuduRowSetTest {
       RowSetKeyProbe probe(rb.row());
       ProbeStats stats;
       OperationResultPB result;
-      ASSERT_STATUS_OK(rowset->MutateRow(tx.timestamp(),
+      ASSERT_OK(rowset->MutateRow(tx.timestamp(),
                                          probe,
                                          RowChangeList(update_buf),
                                          op_id_,
@@ -154,7 +154,7 @@ class TestCompaction : public KuduRowSetTest {
       RowSetKeyProbe probe(rb.row());
       ProbeStats stats;
       OperationResultPB result;
-      ASSERT_STATUS_OK(rowset->MutateRow(tx.timestamp(),
+      ASSERT_OK(rowset->MutateRow(tx.timestamp(),
                                          probe,
                                          RowChangeList(update_buf),
                                          op_id_,
@@ -166,7 +166,7 @@ class TestCompaction : public KuduRowSetTest {
   // Iterate over the given compaction input, stringifying and dumping each
   // yielded row to *out
   void IterateInput(CompactionInput *input, vector<string> *out) {
-    ASSERT_STATUS_OK(DebugDumpCompactionInput(input, out));
+    ASSERT_OK(DebugDumpCompactionInput(input, out));
   }
 
   // Flush the given CompactionInput 'input' to disk with the given snapshot.
@@ -180,9 +180,9 @@ class TestCompaction : public KuduRowSetTest {
     RollingDiskRowSetWriter rsw(tablet()->metadata(), projection,
                                 BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f),
                                 roll_threshold);
-    ASSERT_STATUS_OK(rsw.Open());
-    ASSERT_STATUS_OK(FlushCompactionInput(input, snap, &rsw));
-    ASSERT_STATUS_OK(rsw.Finish());
+    ASSERT_OK(rsw.Open());
+    ASSERT_OK(FlushCompactionInput(input, snap, &rsw));
+    ASSERT_OK(rsw.Finish());
 
     vector<shared_ptr<RowSetMetadata> > metas;
     rsw.GetWrittenRowSetMetadata(&metas);
@@ -194,7 +194,7 @@ class TestCompaction : public KuduRowSetTest {
       // Re-open the outputs
       BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
         shared_ptr<DiskRowSet> rs;
-        ASSERT_STATUS_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &rs));
+        ASSERT_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &rs));
         result_rowsets->push_back(rs);
       }
     }
@@ -288,7 +288,7 @@ class TestCompaction : public KuduRowSetTest {
     // Verify the resulting compaction output has the right number
     // of rows.
     rowid_t count = 0;
-    ASSERT_STATUS_OK(result_rs->CountRows(&count));
+    ASSERT_OK(result_rs->CountRows(&count));
     ASSERT_EQ(1000 * schemas.size(), count);
   }
 
@@ -333,7 +333,7 @@ class TestCompaction : public KuduRowSetTest {
 
       FsManager fs_manager(env_.get(), FLAGS_merge_benchmark_input_dir);
       scoped_refptr<TabletMetadata> input_meta;
-      ASSERT_STATUS_OK(TabletMetadata::Load(&fs_manager, master_block, &input_meta));
+      ASSERT_OK(TabletMetadata::Load(&fs_manager, master_block, &input_meta));
 
       BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta->rowsets()) {
         shared_ptr<DiskRowSet> rs;
@@ -353,9 +353,9 @@ class TestCompaction : public KuduRowSetTest {
       RollingDiskRowSetWriter rdrsw(tablet()->metadata(), schema_,
                                     BloomFilterSizing::BySizeAndFPRate(32 * 1024, 0.01f),
                                     1024 * 1024); // 1 MB
-      ASSERT_STATUS_OK(rdrsw.Open());
-      ASSERT_STATUS_OK(FlushCompactionInput(compact_input.get(), merge_snap, &rdrsw));
-      ASSERT_STATUS_OK(rdrsw.Finish());
+      ASSERT_OK(rdrsw.Open());
+      ASSERT_OK(FlushCompactionInput(compact_input.get(), merge_snap, &rdrsw));
+      ASSERT_OK(rdrsw.Finish());
     }
   }
 
@@ -463,7 +463,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
   UpdateRows(rs.get(), 10, 0, 1);
   UpdateRows(rs.get(), 10, 0, 2);
   // Flush DMS, update some more.
-  ASSERT_STATUS_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas());
   UpdateRows(rs.get(), 10, 0, 3);
   UpdateRows(rs.get(), 10, 0, 4);
 
@@ -578,7 +578,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   string dummy_name = "";
 
-  ASSERT_STATUS_OK(ReupdateMissedDeltas(dummy_name,
+  ASSERT_OK(ReupdateMissedDeltas(dummy_name,
                                         input.get(),
                                         snap,
                                         snap2,
@@ -634,7 +634,7 @@ TEST_F(TestCompaction, TestKUDU102) {
   string dummy_name = "";
 
   // This would fail without KUDU-102
-  ASSERT_STATUS_OK(ReupdateMissedDeltas(dummy_name,
+  ASSERT_OK(ReupdateMissedDeltas(dummy_name,
                                         input.get(),
                                         snap,
                                         snap2,

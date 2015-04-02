@@ -104,11 +104,11 @@ class MultiThreadedLogTest : public LogTestBase {
         CreateBatchFromAllocatedOperations(batch_replicates,
                                            &entry_batch_pb);
 
-        ASSERT_STATUS_OK(log_->Reserve(REPLICATE, entry_batch_pb.Pass(), &entry_batch));
+        ASSERT_OK(log_->Reserve(REPLICATE, entry_batch_pb.Pass(), &entry_batch));
       } // lock_guard scope
       CustomLatchCallback* cb = new CustomLatchCallback(&latch, &errors);
       entry_batch->SetReplicates(batch_replicates);
-      ASSERT_STATUS_OK(log_->AsyncAppend(entry_batch, cb->AsStatusCallback()));
+      ASSERT_OK(log_->AsyncAppend(entry_batch, cb->AsStatusCallback()));
     }
     LOG_TIMING(INFO, strings::Substitute("thread $0 waiting to append and sync $1 batches",
                                         thread_id, FLAGS_num_batches_per_thread)) {
@@ -128,7 +128,7 @@ class MultiThreadedLogTest : public LogTestBase {
       threads_.push_back(new_thread);
     }
     BOOST_FOREACH(scoped_refptr<kudu::Thread>& thread, threads_) {
-      ASSERT_STATUS_OK(ThreadJoiner(thread.get()).Join());
+      ASSERT_OK(ThreadJoiner(thread.get()).Join());
     }
   }
  private:
@@ -145,13 +145,13 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
                                       FLAGS_num_batches_per_thread, FLAGS_num_writer_threads)) {
     ASSERT_NO_FATAL_FAILURE(Run());
   }
-  ASSERT_STATUS_OK(log_->Close());
+  ASSERT_OK(log_->Close());
 
   SegmentSequence segments;
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
 
   BOOST_FOREACH(const SegmentSequence::value_type& entry, segments) {
-    ASSERT_STATUS_OK(entry->ReadEntries(&entries_));
+    ASSERT_OK(entry->ReadEntries(&entries_));
   }
   vector<uint32_t> ids;
   EntriesToIdList(&ids);

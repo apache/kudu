@@ -67,8 +67,8 @@ void CreateTabletForTesting(MiniMaster* mini_master,
     CreateTableResponsePB resp;
 
     req.set_name(table_name);
-    ASSERT_STATUS_OK(SchemaToPB(schema, req.mutable_schema()));
-    ASSERT_STATUS_OK(mini_master->master()->catalog_manager()->CreateTable(&req, &resp, NULL));
+    ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
+    ASSERT_OK(mini_master->master()->catalog_manager()->CreateTable(&req, &resp, NULL));
   }
 
   int wait_time = 1000;
@@ -78,7 +78,7 @@ void CreateTabletForTesting(MiniMaster* mini_master,
     IsCreateTableDoneResponsePB resp;
 
     req.mutable_table()->set_table_name(table_name);
-    ASSERT_STATUS_OK(mini_master->master()->catalog_manager()->IsCreateTableDone(&req, &resp));
+    ASSERT_OK(mini_master->master()->catalog_manager()->IsCreateTableDone(&req, &resp));
     if (resp.done()) {
       is_table_created = true;
       break;
@@ -92,7 +92,7 @@ void CreateTabletForTesting(MiniMaster* mini_master,
   ASSERT_TRUE(is_table_created);
 
   GetTableLocationsResponsePB resp;
-  ASSERT_STATUS_OK(WaitForRunningTabletCount(mini_master, table_name, 1, &resp));
+  ASSERT_OK(WaitForRunningTabletCount(mini_master, table_name, 1, &resp));
   *tablet_id = resp.tablet_locations(0).tablet_id();
   LOG(INFO) << "Got tablet " << *tablet_id << " for table " << table_name;
 }

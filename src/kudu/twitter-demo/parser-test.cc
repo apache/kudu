@@ -47,7 +47,7 @@ static void EnsureFileParses(const char* file, TwitterEventType expected_type) {
     if (json.empty()) continue;
     SCOPED_TRACE(json);
     SCOPED_TRACE(line_number);
-    ASSERT_STATUS_OK(p.Parse(json, &event));
+    ASSERT_OK(p.Parse(json, &event));
     ASSERT_EQ(expected_type, event.type);
     line_number++;
   }

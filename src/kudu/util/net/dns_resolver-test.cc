@@ -30,7 +30,7 @@ TEST_F(DnsResolverTest, TestResolution) {
     HostPort hp("localhost", 12345);
     resolver_.ResolveAddresses(hp, &addrs, s.AsStatusCallback());
   }
-  ASSERT_STATUS_OK(s.Wait());
+  ASSERT_OK(s.Wait());
   ASSERT_TRUE(!addrs.empty());
   BOOST_FOREACH(const Sockaddr& addr, addrs) {
     LOG(INFO) << "Address: " << addr.ToString();

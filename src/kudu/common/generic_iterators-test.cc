@@ -106,7 +106,7 @@ TEST(TestMergeIterator, TestMergeEmpty) {
   to_merge.push_back(iter);
 
   MergeIterator merger(kIntSchema, to_merge);
-  ASSERT_STATUS_OK(merger.Init(NULL));
+  ASSERT_OK(merger.Init(NULL));
   ASSERT_FALSE(merger.HasNext());
 }
 
@@ -162,7 +162,7 @@ void TestMerge(const TestIntRangePredicate &predicate) {
   for (int trial = 0; trial < FLAGS_num_iters; trial++) {
     LOG_TIMING(INFO, "Iterate merged lists") {
       MergeIterator merger(kIntSchema, to_merge);
-      ASSERT_STATUS_OK(merger.Init(&spec));
+      ASSERT_OK(merger.Init(&spec));
 
       RowBlock dst(kIntSchema, 100, NULL);
       size_t total_idx = 0;
@@ -212,7 +212,7 @@ TEST(TestMaterializingIterator, TestMaterializingPredicatePushdown) {
 
   shared_ptr<VectorIterator> colwise(new VectorIterator(ints));
   MaterializingIterator materializing(colwise);
-  ASSERT_STATUS_OK(materializing.Init(&spec));
+  ASSERT_OK(materializing.Init(&spec));
   ASSERT_EQ(0, spec.predicates().size())
     << "Iterator should have pushed down predicate";
 
@@ -250,7 +250,7 @@ TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation) {
 
   // Wrap it in another iterator to do the evaluation
   shared_ptr<RowwiseIterator> outer_iter(materializing);
-  ASSERT_STATUS_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
+  ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
 
   ASSERT_NE(reinterpret_cast<uintptr_t>(outer_iter.get()),
             reinterpret_cast<uintptr_t>(materializing))
@@ -286,7 +286,7 @@ TEST(TestPredicateEvaluatingIterator, TestDontWrapWhenNoPredicates) {
   shared_ptr<VectorIterator> colwise(new VectorIterator(ints));
   shared_ptr<RowwiseIterator> materializing(new MaterializingIterator(colwise));
   shared_ptr<RowwiseIterator> outer_iter(materializing);
-  ASSERT_STATUS_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
+  ASSERT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&outer_iter, &spec));
   ASSERT_EQ(outer_iter, materializing) << "InitAndMaybeWrap should not have wrapped iter";
 }
 

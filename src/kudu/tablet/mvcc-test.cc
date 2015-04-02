@@ -146,7 +146,7 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
 
 TEST_F(MvccTest, TestOutOfOrderTxns) {
   scoped_refptr<Clock> hybrid_clock(new HybridClock());
-  ASSERT_STATUS_OK(hybrid_clock->Init());
+  ASSERT_OK(hybrid_clock->Init());
   MvccManager mgr(hybrid_clock);
 
   // Start a normal non-commit-wait txn.
@@ -173,7 +173,7 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
   EXPECT_FALSE(s2.IsCommitted(normal_txn_2));
 
   // Commit the commit-wait one once it is time.
-  ASSERT_STATUS_OK(hybrid_clock->WaitUntilAfter(cw_txn));
+  ASSERT_OK(hybrid_clock->WaitUntilAfter(cw_txn));
   mgr.CommitTransaction(cw_txn);
 
   // A new snapshot at this point should still think that normal_txn_2 is uncommitted
@@ -188,10 +188,10 @@ TEST_F(MvccTest, TestOfflineTransactions) {
   MvccManager mgr(clock_.get());
 
   // set the clock to some time in the "future"
-  ASSERT_STATUS_OK(clock_->Update(Timestamp(100)));
+  ASSERT_OK(clock_->Update(Timestamp(100)));
 
   // now start a transaction in the "past"
-  ASSERT_STATUS_OK(mgr.StartTransactionAtTimestamp(Timestamp(50)));
+  ASSERT_OK(mgr.StartTransactionAtTimestamp(Timestamp(50)));
 
   ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(Timestamp::kInitialTimestamp), 0);
 

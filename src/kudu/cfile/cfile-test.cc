@@ -35,33 +35,33 @@ class TestCFile : public CFileTestBase {
     WriteTestFile(&generator, encoding, NO_COMPRESSION, 10000, SMALL_BLOCKSIZE, &block_id);
 
     gscoped_ptr<ReadableBlock> block;
-    ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &block));
+    ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_STATUS_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
+    ASSERT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
 
     BlockPointer ptr;
 
     gscoped_ptr<CFileIterator> iter;
-    ASSERT_STATUS_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
+    ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
-    ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
+    ASSERT_OK(iter->SeekToOrdinal(5000));
     ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
 
     // Seek to last key exactly, should succeed
-    ASSERT_STATUS_OK(iter->SeekToOrdinal(9999));
+    ASSERT_OK(iter->SeekToOrdinal(9999));
     ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
 
     // Seek to after last key. Should result in not found.
     ASSERT_TRUE(iter->SeekToOrdinal(10000).IsNotFound());
 
     // Seek to start of file
-    ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
+    ASSERT_OK(iter->SeekToOrdinal(0));
     ASSERT_EQ(0u, iter->GetCurrentOrdinal());
 
     // Fetch all data.
     ScopedColumnBlock<DataGeneratorType::kDataType> out(10000);
     size_t n = 10000;
-    ASSERT_STATUS_OK(iter->CopyNextValues(&n, &out));
+    ASSERT_OK(iter->CopyNextValues(&n, &out));
     ASSERT_EQ(10000, n);
 
     DataGeneratorType data_generator_pre;
@@ -81,7 +81,7 @@ class TestCFile : public CFileTestBase {
     unsigned int seed = time(NULL);
     LOG(INFO) << "Using random seed: " << seed;
     srand(seed);
-    ASSERT_STATUS_OK(iter->SeekToOrdinal(0));
+    ASSERT_OK(iter->SeekToOrdinal(0));
     size_t fetched = 0;
     while (fetched < 10000) {
       ColumnBlock advancing_block(out.type_info(), NULL,
@@ -90,7 +90,7 @@ class TestCFile : public CFileTestBase {
       ASSERT_TRUE(iter->HasNext());
       size_t batch_size = random() % 5 + 1;
       size_t n = batch_size;
-      ASSERT_STATUS_OK(iter->CopyNextValues(&n, &advancing_block));
+      ASSERT_OK(iter->CopyNextValues(&n, &advancing_block));
       ASSERT_LE(n, batch_size);
       fetched += n;
     }
@@ -116,13 +116,13 @@ class TestCFile : public CFileTestBase {
   void TimeSeekAndReadFileWithNulls(DataGeneratorType* generator,
                                     const BlockId& block_id, size_t num_entries) {
     gscoped_ptr<ReadableBlock> block;
-    ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &block));
+    ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_STATUS_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
+    ASSERT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
     ASSERT_EQ(DataGeneratorType::kDataType, reader->data_type());
 
     gscoped_ptr<CFileIterator> iter;
-    ASSERT_STATUS_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
+    ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
     Arena arena(8192, 8*1024*1024);
     ScopedColumnBlock<DataGeneratorType::kDataType> cb(10);
@@ -133,7 +133,7 @@ class TestCFile : public CFileTestBase {
       // or just try each entry as starting point if you're running SlowTests
       int target = AllowSlowTests() ? loop : (random() % (num_entries - 1));
       SCOPED_TRACE(target);
-      ASSERT_STATUS_OK(iter->SeekToOrdinal(target));
+      ASSERT_OK(iter->SeekToOrdinal(target));
       ASSERT_TRUE(iter->HasNext());
 
       // Read and verify several ColumnBlocks from this point in the file.
@@ -141,7 +141,7 @@ class TestCFile : public CFileTestBase {
       for (int block = 0; block < 3 && iter->HasNext(); block++) {
         SCOPED_TRACE(block);
         size_t n = cb.nrows();
-        ASSERT_STATUS_OK_FAST(iter->CopyNextValues(&n, &cb));
+        ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
         ASSERT_EQ(n, std::min(num_entries - read_offset, cb.nrows()));
 
         // Verify that the block data is correct.
@@ -178,7 +178,7 @@ class TestCFile : public CFileTestBase {
   void TestReadWriteRawBlocks(CompressionType compression, int num_entries) {
     // Test Write
     gscoped_ptr<WritableBlock> sink;
-    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
     BlockId id = sink->id();
     WriterOptions opts;
     opts.write_posidx = true;
@@ -186,26 +186,26 @@ class TestCFile : public CFileTestBase {
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, compression);
     CFileWriter w(opts, STRING, false, sink.Pass());
-    ASSERT_STATUS_OK(w.Start());
+    ASSERT_OK(w.Start());
     for (uint32_t i = 0; i < num_entries; i++) {
       vector<Slice> slices;
       slices.push_back(Slice("Head"));
       slices.push_back(Slice("Body"));
       slices.push_back(Slice("Tail"));
       slices.push_back(Slice(reinterpret_cast<uint8_t *>(&i), 4));
-      ASSERT_STATUS_OK(w.AppendRawBlock(slices, i, NULL, "raw-data"));
+      ASSERT_OK(w.AppendRawBlock(slices, i, NULL, "raw-data"));
     }
-    ASSERT_STATUS_OK(w.Finish());
+    ASSERT_OK(w.Finish());
 
     // Test Read
     gscoped_ptr<ReadableBlock> source;
-    ASSERT_STATUS_OK(fs_manager_->OpenBlock(id, &source));
+    ASSERT_OK(fs_manager_->OpenBlock(id, &source));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_STATUS_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
+    ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
 
     gscoped_ptr<IndexTreeIterator> iter;
     iter.reset(IndexTreeIterator::Create(reader.get(), UINT32, reader->posidx_root()));
-    ASSERT_STATUS_OK(iter->SeekToFirst());
+    ASSERT_OK(iter->SeekToFirst());
 
     uint8_t data[16];
     Slice expected_data(data, 16);
@@ -215,7 +215,7 @@ class TestCFile : public CFileTestBase {
     do {
       BlockHandle dblk_data;
       BlockPointer blk_ptr = iter->GetCurrentBlockPointer();
-      ASSERT_STATUS_OK(reader->ReadBlock(blk_ptr, CFileReader::CACHE_BLOCK, &dblk_data));
+      ASSERT_OK(reader->ReadBlock(blk_ptr, CFileReader::CACHE_BLOCK, &dblk_data));
 
       memcpy(data + 12, &count, 4);
       ASSERT_EQ(expected_data, dblk_data.data());
@@ -233,7 +233,7 @@ void CopyOne(CFileIterator *it,
              Arena *arena) {
   ColumnBlock cb(GetTypeInfo(type), NULL, ret, 1, arena);
   size_t n = 1;
-  ASSERT_STATUS_OK(it->CopyNextValues(&n, &cb));
+  ASSERT_OK(it->CopyNextValues(&n, &cb));
   ASSERT_EQ(1, n);
 }
 
@@ -324,22 +324,22 @@ TEST_F(TestCFile, TestReadWriteStrings) {
                 SMALL_BLOCKSIZE | WRITE_VALIDX, &block_id);
 
   gscoped_ptr<ReadableBlock> block;
-  ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &block));
+  ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
   gscoped_ptr<CFileReader> reader;
-  ASSERT_STATUS_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
+  ASSERT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
 
   rowid_t reader_nrows;
-  ASSERT_STATUS_OK(reader->CountRows(&reader_nrows));
+  ASSERT_OK(reader->CountRows(&reader_nrows));
   ASSERT_EQ(nrows, reader_nrows);
 
   BlockPointer ptr;
 
   gscoped_ptr<CFileIterator> iter;
-  ASSERT_STATUS_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
+  ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
 
   Arena arena(1024, 1024*1024);
 
-  ASSERT_STATUS_OK(iter->SeekToOrdinal(5000));
+  ASSERT_OK(iter->SeekToOrdinal(5000));
   ASSERT_EQ(5000u, iter->GetCurrentOrdinal());
   Slice s;
 
@@ -347,7 +347,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   ASSERT_EQ(string("hello 5000"), s.ToString());
 
   // Seek to last key exactly, should succeed
-  ASSERT_STATUS_OK(iter->SeekToOrdinal(9999));
+  ASSERT_OK(iter->SeekToOrdinal(9999));
   ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
 
   // Seek to after last key. Should result in not found.
@@ -362,7 +362,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   bool exact;
   s = "hello 5000.5";
   EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
+  ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
   ASSERT_FALSE(exact);
   ASSERT_EQ(5001u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
@@ -370,7 +370,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
 
   s = "hello 9000";
   EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
+  ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
   ASSERT_TRUE(exact);
   ASSERT_EQ(9000u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
@@ -384,7 +384,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   // before first entry
   s = "hello";
   EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
+  ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
   ASSERT_FALSE(exact);
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
@@ -393,24 +393,24 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   // to last entry
   s = "hello 9999";
   EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_STATUS_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
+  ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
   ASSERT_TRUE(exact);
   ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 9999"), s.ToString());
 
   // Seek to start of file
-  ASSERT_STATUS_OK(iter->SeekToFirst());
+  ASSERT_OK(iter->SeekToFirst());
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 0000"), s.ToString());
 
   // Reseek to start and fetch all data.
-  ASSERT_STATUS_OK(iter->SeekToFirst());
+  ASSERT_OK(iter->SeekToFirst());
 
   ScopedColumnBlock<STRING> cb(10000);
   size_t n = 10000;
-  ASSERT_STATUS_OK(iter->CopyNextValues(&n, &cb));
+  ASSERT_OK(iter->CopyNextValues(&n, &cb));
   ASSERT_EQ(10000, n);
 }
 
@@ -421,28 +421,28 @@ TEST_F(TestCFile, TestMetadata) {
   // Write the file.
   {
     gscoped_ptr<WritableBlock> sink;
-    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+    ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
     block_id = sink->id();
     WriterOptions opts;
     opts.storage_attributes = ColumnStorageAttributes(GROUP_VARINT);
     CFileWriter w(opts, UINT32, false, sink.Pass());
 
     w.AddMetadataPair("key_in_header", "header value");
-    ASSERT_STATUS_OK(w.Start());
+    ASSERT_OK(w.Start());
 
     uint32_t val = 1;
-    ASSERT_STATUS_OK(w.AppendEntries(&val, 1));
+    ASSERT_OK(w.AppendEntries(&val, 1));
 
     w.AddMetadataPair("key_in_footer", "footer value");
-    ASSERT_STATUS_OK(w.Finish());
+    ASSERT_OK(w.Finish());
   }
 
   // Read the file and ensure metadata is present.
   {
     gscoped_ptr<ReadableBlock> source;
-    ASSERT_STATUS_OK(fs_manager_->OpenBlock(block_id, &source));
+    ASSERT_OK(fs_manager_->OpenBlock(block_id, &source));
     gscoped_ptr<CFileReader> reader;
-    ASSERT_STATUS_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
+    ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
     string val;
     ASSERT_TRUE(reader->GetMetadataEntry("key_in_header", &val));
     ASSERT_EQ(val, "header value");
@@ -461,7 +461,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   uint32_t int_value = 15;
   DefaultColumnValueIterator iter(UINT32, &int_value);
   ColumnBlock int_col(GetTypeInfo(UINT32), NULL, data, kNumItems, NULL);
-  ASSERT_STATUS_OK(iter.Scan(&int_col));
+  ASSERT_OK(iter.Scan(&int_col));
   for (size_t i = 0; i < int_col.nrows(); ++i) {
     ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t *>(int_col.cell_ptr(i)));
   }
@@ -470,7 +470,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   int_value = 321;
   DefaultColumnValueIterator nullable_iter(UINT32, &int_value);
   ColumnBlock nullable_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, NULL);
-  ASSERT_STATUS_OK(nullable_iter.Scan(&nullable_col));
+  ASSERT_OK(nullable_iter.Scan(&nullable_col));
   for (size_t i = 0; i < nullable_col.nrows(); ++i) {
     ASSERT_FALSE(nullable_col.is_null(i));
     ASSERT_EQ(int_value, *reinterpret_cast<const uint32_t *>(nullable_col.cell_ptr(i)));
@@ -479,7 +479,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   // Test NULL Default Value
   DefaultColumnValueIterator null_iter(UINT32,  NULL);
   ColumnBlock null_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, NULL);
-  ASSERT_STATUS_OK(null_iter.Scan(&null_col));
+  ASSERT_OK(null_iter.Scan(&null_col));
   for (size_t i = 0; i < null_col.nrows(); ++i) {
     ASSERT_TRUE(null_col.is_null(i));
   }
@@ -490,7 +490,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   Arena arena(32*1024, 256*1024);
   DefaultColumnValueIterator str_iter(STRING, &str_value);
   ColumnBlock str_col(GetTypeInfo(STRING), NULL, str_data, kNumItems, &arena);
-  ASSERT_STATUS_OK(str_iter.Scan(&str_col));
+  ASSERT_OK(str_iter.Scan(&str_col));
   for (size_t i = 0; i < str_col.nrows(); ++i) {
     ASSERT_EQ(str_value, *reinterpret_cast<const Slice *>(str_col.cell_ptr(i)));
   }
@@ -523,14 +523,14 @@ TEST_F(TestCFile, TestNullPlainStrings) {
 
 TEST_F(TestCFile, TestReleaseBlock) {
   gscoped_ptr<WritableBlock> sink;
-  ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&sink));
+  ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
   ASSERT_EQ(WritableBlock::CLEAN, sink->state());
   BlockId id = sink->id();
   WriterOptions opts;
   CFileWriter w(opts, STRING, false, sink.Pass());
-  ASSERT_STATUS_OK(w.Start());
+  ASSERT_OK(w.Start());
   fs::ScopedWritableBlockCloser closer;
-  ASSERT_STATUS_OK(w.FinishAndReleaseBlock(&closer));
+  ASSERT_OK(w.FinishAndReleaseBlock(&closer));
   if (FLAGS_cfile_do_on_finish == "flush") {
     ASSERT_EQ(1, closer.blocks().size());
     ASSERT_EQ(WritableBlock::FLUSHING, closer.blocks()[0]->state());
@@ -543,7 +543,7 @@ TEST_F(TestCFile, TestReleaseBlock) {
     LOG(FATAL) << "Unknown value for cfile_do_on_finish: "
                << FLAGS_cfile_do_on_finish;
   }
-  ASSERT_STATUS_OK(closer.CloseBlocks());
+  ASSERT_OK(closer.CloseBlocks());
   ASSERT_EQ(0, closer.blocks().size());
 }
 

@@ -96,10 +96,10 @@ class ClientTest : public KuduTest {
 
     // Start minicluster and wait for tablet servers to connect to master.
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
-    ASSERT_STATUS_OK(cluster_->Start());
+    ASSERT_OK(cluster_->Start());
 
     // Connect to the cluster.
-    ASSERT_STATUS_OK(KuduClientBuilder()
+    ASSERT_OK(KuduClientBuilder()
                      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                      .Build(&client_));
 
@@ -156,11 +156,11 @@ class ClientTest : public KuduTest {
   // Inserts 'num_rows' test rows using 'client'
   void InsertTestRows(KuduClient* client, KuduTable* table, int num_rows, int first_row = 0) {
     shared_ptr<KuduSession> session = client->NewSession();
-    ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(5000);
     for (int i = first_row; i < num_rows + first_row; i++) {
       gscoped_ptr<KuduInsert> insert(BuildTestRow(table, i));
-      ASSERT_STATUS_OK(session->Apply(insert.Pass()));
+      ASSERT_OK(session->Apply(insert.Pass()));
     }
     FlushSessionOrDie(session);
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
@@ -173,11 +173,11 @@ class ClientTest : public KuduTest {
 
   void UpdateTestRows(KuduTable* table, int lo, int hi) {
     shared_ptr<KuduSession> session = client_->NewSession();
-    ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(5000);
     for (int i = lo; i < hi; i++) {
       gscoped_ptr<KuduUpdate> update(UpdateTestRow(table, i));
-      ASSERT_STATUS_OK(session->Apply(update.Pass()));
+      ASSERT_OK(session->Apply(update.Pass()));
     }
     FlushSessionOrDie(session);
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
@@ -185,11 +185,11 @@ class ClientTest : public KuduTest {
 
   void DeleteTestRows(KuduTable* table, int lo, int hi) {
     shared_ptr<KuduSession> session = client_->NewSession();
-    ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(5000);
     for (int i = lo; i < hi; i++) {
       gscoped_ptr<KuduDelete> del(DeleteTestRow(table, i));
-      ASSERT_STATUS_OK(session->Apply(del.Pass()))
+      ASSERT_OK(session->Apply(del.Pass()))
     }
     FlushSessionOrDie(session);
     ASSERT_NO_FATAL_FAILURE(CheckNoRpcOverflow());
@@ -224,19 +224,19 @@ class ClientTest : public KuduTest {
   void DoTestScanWithoutPredicates() {
     KuduSchema projection = schema_.CreateKeyProjection();
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetProjection(&projection));
+    ASSERT_OK(scanner.SetProjection(&projection));
     LOG_TIMING(INFO, "Scanning with no predicates") {
-      ASSERT_STATUS_OK(scanner.Open());
+      ASSERT_OK(scanner.Open());
 
       ASSERT_TRUE(scanner.HasMoreRows());
       vector<KuduRowResult> rows;
       uint64_t sum = 0;
       while (scanner.HasMoreRows()) {
-        ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+        ASSERT_OK(scanner.NextBatch(&rows));
 
         BOOST_FOREACH(const KuduRowResult& row, rows) {
           uint32_t value;
-          ASSERT_STATUS_OK(row.GetUInt32(0, &value));
+          ASSERT_OK(row.GetUInt32(0, &value));
           sum += value;
         }
         rows.clear();
@@ -254,19 +254,19 @@ class ClientTest : public KuduTest {
     Slice lower("hello 2");
     Slice upper("hello 3");
     KuduColumnRangePredicate pred(schema_.Column(2), &lower, &upper);
-    ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
+    ASSERT_OK(scanner.AddConjunctPredicate(pred));
 
     LOG_TIMING(INFO, "Scanning with string predicate") {
-      ASSERT_STATUS_OK(scanner.Open());
+      ASSERT_OK(scanner.Open());
 
       ASSERT_TRUE(scanner.HasMoreRows());
       vector<KuduRowResult> rows;
       while (scanner.HasMoreRows()) {
-        ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+        ASSERT_OK(scanner.NextBatch(&rows));
 
         BOOST_FOREACH(const KuduRowResult& row, rows) {
           Slice s;
-          ASSERT_STATUS_OK(row.GetString(2, &s));
+          ASSERT_OK(row.GetString(2, &s));
           if (!s.starts_with("hello 2") && !s.starts_with("hello 3")) {
             FAIL() << row.ToString();
           }
@@ -281,19 +281,19 @@ class ClientTest : public KuduTest {
     uint32_t lower = 5;
     uint32_t upper = 10;
     KuduColumnRangePredicate pred(schema_.Column(0), &lower, &upper);
-    ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
+    ASSERT_OK(scanner.AddConjunctPredicate(pred));
 
     LOG_TIMING(INFO, "Scanning with key predicate") {
-      ASSERT_STATUS_OK(scanner.Open());
+      ASSERT_OK(scanner.Open());
 
       ASSERT_TRUE(scanner.HasMoreRows());
       vector<KuduRowResult> rows;
       while (scanner.HasMoreRows()) {
-        ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+        ASSERT_OK(scanner.NextBatch(&rows));
 
         BOOST_FOREACH(const KuduRowResult& row, rows) {
           uint32_t k;
-          ASSERT_STATUS_OK(row.GetUInt32(0, &k));
+          ASSERT_OK(row.GetUInt32(0, &k));
           if (k < 5 || k > 10) {
             FAIL() << row.ToString();
           }
@@ -368,15 +368,15 @@ class ClientTest : public KuduTest {
   void ScanTableToStrings(KuduTable* table, vector<string>* row_strings) {
     row_strings->clear();
     KuduScanner scanner(table);
-    ASSERT_STATUS_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
+    ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
     ScanToStrings(&scanner, row_strings);
   }
 
   void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
-    ASSERT_STATUS_OK(scanner->Open());
+    ASSERT_OK(scanner->Open());
     vector<KuduRowResult> rows;
     while (scanner->HasMoreRows()) {
-      ASSERT_STATUS_OK(scanner->NextBatch(&rows));
+      ASSERT_OK(scanner->NextBatch(&rows));
       BOOST_FOREACH(const KuduRowResult& row, rows) {
         row_strings->push_back(row.ToString());
       }
@@ -394,12 +394,12 @@ class ClientTest : public KuduTest {
     bool added_replicas = false;
     // Add more tablet servers to satisfy all replicas, if necessary.
     while (cluster_->num_tablet_servers() < num_replicas) {
-      ASSERT_STATUS_OK(cluster_->AddTabletServer());
+      ASSERT_OK(cluster_->AddTabletServer());
       added_replicas = true;
     }
 
     if (added_replicas) {
-      ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(num_replicas));
+      ASSERT_OK(cluster_->WaitForTabletServerCount(num_replicas));
     }
 
     ASSERT_OK(client_->NewTableCreator()->table_name(table_name)
@@ -408,7 +408,7 @@ class ClientTest : public KuduTest {
               .split_keys(split_keys)
               .Create());
 
-    ASSERT_STATUS_OK(client_->OpenTable(table_name, table));
+    ASSERT_OK(client_->OpenTable(table_name, table));
   }
 
   void DoApplyWithoutFlushTest(int sleep_micros);
@@ -515,13 +515,13 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
                                          half_the_rows, half_the_rows));
 
   KuduScanner scanner(client_table_.get());
-  ASSERT_STATUS_OK(scanner.Open());
+  ASSERT_OK(scanner.Open());
   vector<KuduRowResult> rows;
   uint64_t sum = 0;
 
   // Do a "normal", READ_LATEST scan
   while (scanner.HasMoreRows()) {
-    ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+    ASSERT_OK(scanner.NextBatch(&rows));
     sum += rows.size();
     rows.clear();
   }
@@ -530,14 +530,14 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
 
   // Now close the scanner and perform a scan at 'ts'
   scanner.Close();
-  ASSERT_STATUS_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
-  ASSERT_STATUS_OK(scanner.SetSnapshotMicros(ts));
-  ASSERT_STATUS_OK(scanner.Open());
+  ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+  ASSERT_OK(scanner.SetSnapshotMicros(ts));
+  ASSERT_OK(scanner.Open());
 
   sum = 0;
 
   while (scanner.HasMoreRows()) {
-    ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+    ASSERT_OK(scanner.NextBatch(&rows));
     sum += rows.size();
     rows.clear();
   }
@@ -558,30 +558,30 @@ TEST_F(ClientTest, TestScanMultiTablet) {
     key.reset(key_builder.BuildEncodedKey());
     keys.push_back(key->ToString());
   }
-  ASSERT_STATUS_OK(client_->NewTableCreator()
+  ASSERT_OK(client_->NewTableCreator()
                    ->table_name("TestScanMultiTablet")
                    .schema(&schema_)
                    .split_keys(keys)
                    .Create());
 
   scoped_refptr<KuduTable> table;
-  ASSERT_STATUS_OK(client_->OpenTable("TestScanMultiTablet", &table));
+  ASSERT_OK(client_->OpenTable("TestScanMultiTablet", &table));
 
   // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...47 into each
   // tablet, except the first which is empty.
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(5000);
   for (int i = 1; i < 5; i++) {
     gscoped_ptr<KuduInsert> insert;
     insert = BuildTestRow(table.get(), 2 + (i * 10));
-    ASSERT_STATUS_OK(session->Apply(insert.Pass()));
+    ASSERT_OK(session->Apply(insert.Pass()));
     insert = BuildTestRow(table.get(), 3 + (i * 10));
-    ASSERT_STATUS_OK(session->Apply(insert.Pass()));
+    ASSERT_OK(session->Apply(insert.Pass()));
     insert = BuildTestRow(table.get(), 5 + (i * 10));
-    ASSERT_STATUS_OK(session->Apply(insert.Pass()));
+    ASSERT_OK(session->Apply(insert.Pass()));
     insert = BuildTestRow(table.get(), 7 + (i * 10));
-    ASSERT_STATUS_OK(session->Apply(insert.Pass()));
+    ASSERT_OK(session->Apply(insert.Pass()));
   }
   FlushSessionOrDie(session);
 
@@ -601,9 +601,9 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   for (int i = 1; i < 5; ++i) {
     gscoped_ptr<KuduUpdate> update;
     update = UpdateTestRow(table.get(), 2 + i * 10);
-    ASSERT_STATUS_OK(session->Apply(update.Pass()));
+    ASSERT_OK(session->Apply(update.Pass()));
     update = UpdateTestRow(table.get(), 5 + i * 10);
-    ASSERT_STATUS_OK(session->Apply(update.Pass()));
+    ASSERT_OK(session->Apply(update.Pass()));
   }
   FlushSessionOrDie(session);
 
@@ -623,9 +623,9 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   for (int i = 1; i < 5; ++i) {
     gscoped_ptr<KuduDelete> del;
     del = DeleteTestRow(table.get(), 5 + i*10);
-    ASSERT_STATUS_OK(session->Apply(del.Pass()));
+    ASSERT_OK(session->Apply(del.Pass()));
     del = DeleteTestRow(table.get(), 7 + i*10);
-    ASSERT_STATUS_OK(session->Apply(del.Pass()));
+    ASSERT_OK(session->Apply(del.Pass()));
   }
   FlushSessionOrDie(session);
 
@@ -645,9 +645,9 @@ TEST_F(ClientTest, TestScanMultiTablet) {
   for (int i = 1; i < 5; ++i) {
     gscoped_ptr<KuduDelete> del;
     del = DeleteTestRow(table.get(), 2 + i*10);
-    ASSERT_STATUS_OK(session->Apply(del.Pass()));
+    ASSERT_OK(session->Apply(del.Pass()));
     del = DeleteTestRow(table.get(), 3 + i*10);
-    ASSERT_STATUS_OK(session->Apply(del.Pass()));
+    ASSERT_OK(session->Apply(del.Pass()));
   }
   FlushSessionOrDie(session);
 
@@ -667,15 +667,15 @@ TEST_F(ClientTest, TestScanMultiTablet) {
 TEST_F(ClientTest, TestScanEmptyTable) {
   KuduScanner scanner(client_table_.get());
   KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
-  ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
-  ASSERT_STATUS_OK(scanner.Open());
+  ASSERT_OK(scanner.SetProjection(&empty_projection));
+  ASSERT_OK(scanner.Open());
 
   // There are two tablets in the table, both empty. Until we scan to
   // the last tablet, HasMoreRows will return true (because it doesn't
   // know whether there's data in subsequent tablets).
   ASSERT_TRUE(scanner.HasMoreRows());
   vector<KuduRowResult> rows;
-  ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+  ASSERT_OK(scanner.NextBatch(&rows));
   ASSERT_TRUE(rows.empty());
   ASSERT_FALSE(scanner.HasMoreRows());
 }
@@ -688,15 +688,15 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
                                          FLAGS_test_scan_num_rows));
   KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
   KuduScanner scanner(client_table_.get());
-  ASSERT_STATUS_OK(scanner.SetProjection(&empty_projection));
+  ASSERT_OK(scanner.SetProjection(&empty_projection));
   LOG_TIMING(INFO, "Scanning with no projected columns") {
-    ASSERT_STATUS_OK(scanner.Open());
+    ASSERT_OK(scanner.Open());
 
     ASSERT_TRUE(scanner.HasMoreRows());
     vector<KuduRowResult> rows;
     uint64_t count = 0;
     while (scanner.HasMoreRows()) {
-      ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+      ASSERT_OK(scanner.NextBatch(&rows));
       count += rows.size();
       rows.clear();
     }
@@ -713,25 +713,25 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
   KuduScanner scanner(client_table_.get());
   KuduSchema no_key_projection(boost::assign::list_of
                                (schema_.Column(1)), 0);
-  ASSERT_STATUS_OK(scanner.SetProjection(&no_key_projection));
+  ASSERT_OK(scanner.SetProjection(&no_key_projection));
   uint32_t lower = 5;
   uint32_t upper = 10;
   KuduColumnRangePredicate pred(schema_.Column(0), &lower, &upper);
-  ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
+  ASSERT_OK(scanner.AddConjunctPredicate(pred));
 
   size_t nrows = 0;
   uint32_t curr_key = lower;
   LOG_TIMING(INFO, "Scanning with predicate columns not projected") {
-    ASSERT_STATUS_OK(scanner.Open());
+    ASSERT_OK(scanner.Open());
 
     ASSERT_TRUE(scanner.HasMoreRows());
     vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {
-      ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+      ASSERT_OK(scanner.NextBatch(&rows));
 
       BOOST_FOREACH(const KuduRowResult& row, rows) {
         uint32_t val;
-        ASSERT_STATUS_OK(row.GetUInt32(0, &val));
+        ASSERT_OK(row.GetUInt32(0, &val));
         ASSERT_EQ(curr_key * 2, val);
         nrows++;
         curr_key++;
@@ -753,24 +753,24 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   uint32_t lower = 10;
   uint32_t upper = 20;
   KuduColumnRangePredicate pred(schema_.Column(1), &lower, &upper);
-  ASSERT_STATUS_OK(scanner.AddConjunctPredicate(pred));
+  ASSERT_OK(scanner.AddConjunctPredicate(pred));
 
   size_t nrows = 0;
   uint32_t curr_key = lower;
 
-  ASSERT_STATUS_OK(scanner.SetProjection(&key_projection));
+  ASSERT_OK(scanner.SetProjection(&key_projection));
 
   LOG_TIMING(INFO, "Scanning with predicate columns not projected") {
-    ASSERT_STATUS_OK(scanner.Open());
+    ASSERT_OK(scanner.Open());
 
     ASSERT_TRUE(scanner.HasMoreRows());
     vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {
-      ASSERT_STATUS_OK(scanner.NextBatch(&rows));
+      ASSERT_OK(scanner.NextBatch(&rows));
 
       BOOST_FOREACH(const KuduRowResult& row, rows) {
         uint32_t val;
-        ASSERT_STATUS_OK(row.GetUInt32(0, &val));
+        ASSERT_OK(row.GetUInt32(0, &val));
         ASSERT_EQ(curr_key / 2, val);
         nrows++;
         curr_key += 2;
@@ -985,7 +985,7 @@ TEST_F(ClientTest, TestCloseScanner) {
   {
     SCOPED_TRACE("Implicit close");
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.Open());
+    ASSERT_OK(scanner.Open());
     ASSERT_EQ(0, manager->CountActiveScanners());
     scanner.Close();
     AssertScannersDisappear(manager);
@@ -995,8 +995,8 @@ TEST_F(ClientTest, TestCloseScanner) {
   {
     SCOPED_TRACE("Explicit close");
     KuduScanner scanner(client_table_.get());
-    ASSERT_STATUS_OK(scanner.SetBatchSizeBytes(0)); // won't return data on open
-    ASSERT_STATUS_OK(scanner.Open());
+    ASSERT_OK(scanner.SetBatchSizeBytes(0)); // won't return data on open
+    ASSERT_OK(scanner.Open());
     ASSERT_EQ(1, manager->CountActiveScanners());
     scanner.Close();
     AssertScannersDisappear(manager);
@@ -1006,8 +1006,8 @@ TEST_F(ClientTest, TestCloseScanner) {
     SCOPED_TRACE("Close when out of scope");
     {
       KuduScanner scanner(client_table_.get());
-      ASSERT_STATUS_OK(scanner.SetBatchSizeBytes(0));
-      ASSERT_STATUS_OK(scanner.Open());
+      ASSERT_OK(scanner.SetBatchSizeBytes(0));
+      ASSERT_OK(scanner.Open());
       ASSERT_EQ(1, manager->CountActiveScanners());
     }
     // Above scanner went out of scope, so the destructor should close asynchronously.
@@ -1045,12 +1045,12 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_FALSE(session->HasPendingOperations());
 
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   gscoped_ptr<KuduInsert> insert = client_table_->NewInsert();
   // Try inserting without specifying a key: should fail.
-  ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("int_val", 54321));
-  ASSERT_STATUS_OK(insert->mutable_row()->SetStringCopy("string_val", "hello world"));
+  ASSERT_OK(insert->mutable_row()->SetUInt32("int_val", 54321));
+  ASSERT_OK(insert->mutable_row()->SetStringCopy("string_val", "hello world"));
 
   KuduInsert* ptr = insert.get();
   Status s = session->Apply(insert.Pass());
@@ -1070,8 +1070,8 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   insert.reset(ptr);
 
   // Retry
-  ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("key", 12345));
-  ASSERT_STATUS_OK(session->Apply(insert.Pass()));
+  ASSERT_OK(insert->mutable_row()->SetUInt32("key", 12345));
+  ASSERT_OK(session->Apply(insert.Pass()));
   ASSERT_TRUE(insert == NULL) << "Successful insert should take ownership";
   ASSERT_TRUE(session->HasPendingOperations()) << "Should be pending until we Flush";
 
@@ -1112,18 +1112,18 @@ static Status ApplyDeleteToSession(KuduSession* session,
 // to the Session. This should still call the callback.
 TEST_F(ClientTest, TestAsyncFlushResponseAfterSessionDropped) {
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
   Synchronizer s;
   session->FlushAsync(s.AsStatusCallback());
   session.reset();
-  ASSERT_STATUS_OK(s.Wait());
+  ASSERT_OK(s.Wait());
 
   // Try again, this time with an error response (trying to re-insert the same row).
   s.Reset();
   session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
   ASSERT_EQ(1, session->CountBufferedOperations());
   session->FlushAsync(s.AsStatusCallback());
   ASSERT_EQ(0, session->CountBufferedOperations());
@@ -1135,7 +1135,7 @@ TEST_F(ClientTest, TestAsyncFlushResponseAfterSessionDropped) {
 // contains multiple rows spread across multiple tablets.
 TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   const int kNumBatches = 5;
   const int kRowsPerBatch = 10;
@@ -1144,7 +1144,7 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
 
   for (int batch_num = 0; batch_num < kNumBatches; batch_num++) {
     for (int i = 0; i < kRowsPerBatch; i++) {
-      ASSERT_STATUS_OK(ApplyInsertToSession(
+      ASSERT_OK(ApplyInsertToSession(
                          session.get(),
                          (row_key % 2 == 0) ? client_table_ : client_table2_,
                          row_key, row_key * 10, "hello world"));
@@ -1173,16 +1173,16 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
 // fails.
 TEST_F(ClientTest, TestBatchWithPartialError) {
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   // Insert a row with key "1"
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
   FlushSessionOrDie(session);
 
   // Now make a batch that has key "1" (which will fail) along with
   // key "2" which will succeed. Flushing should return an error.
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "Attempted dup"));
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, "Should succeed"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "Attempted dup"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, "Should succeed"));
   Status s = session->Flush();
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
@@ -1213,14 +1213,14 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
 // Test flushing an empty batch (should be a no-op).
 TEST_F(ClientTest, TestEmptyBatch) {
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   FlushSessionOrDie(session);
 }
 
 void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(1000);
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   // Shut down the server.
   switch (which) {
@@ -1233,7 +1233,7 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   }
 
   // Try a write.
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "x"));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "x"));
   Status s = session->Flush();
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
   ASSERT_EQ(1, session->CountPendingErrors());
@@ -1271,8 +1271,8 @@ TEST_F(ClientTest, TestWriteWithDeadTabletServer) {
 
 void ClientTest::DoApplyWithoutFlushTest(int sleep_micros) {
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "x"));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "x"));
   SleepFor(MonoDelta::FromMicroseconds(sleep_micros));
   session.reset(); // should not crash!
 
@@ -1303,11 +1303,11 @@ TEST_F(ClientTest, TestApplyToSessionWithoutFlushing_OpsBuffered) {
 // Test that update updates and delete deletes with expected use
 TEST_F(ClientTest, TestMutationsWork) {
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
   FlushSessionOrDie(session);
 
-  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
+  ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   FlushSessionOrDie(session);
   vector<string> rows;
   ScanTableToStrings(client_table_.get(), &rows);
@@ -1316,7 +1316,7 @@ TEST_F(ClientTest, TestMutationsWork) {
             "uint32 non_null_with_default=12345)", rows[0]);
   rows.clear();
 
-  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
@@ -1325,16 +1325,16 @@ TEST_F(ClientTest, TestMutationsWork) {
 TEST_F(ClientTest, TestMutateDeletedRow) {
   vector<string> rows;
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "original row"));
   FlushSessionOrDie(session);
-  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
   // Attempt update deleted row
-  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
+  ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   Status s = session->Flush();
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
@@ -1352,7 +1352,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   ASSERT_EQ(0, rows.size());
 
   // Attempt delete deleted row
-  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   s = session->Flush();
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
@@ -1372,10 +1372,10 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
 TEST_F(ClientTest, TestMutateNonexistentRow) {
   vector<string> rows;
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   // Attempt update nonexistent row
-  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
+  ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   Status s = session->Flush();
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
@@ -1393,7 +1393,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ASSERT_EQ(0, rows.size());
 
   // Attempt delete nonexistent row
-  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   s = session->Flush();
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
@@ -1412,13 +1412,13 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
 
 TEST_F(ClientTest, TestWriteWithBadColumn) {
   scoped_refptr<KuduTable> table;
-  ASSERT_STATUS_OK(client_->OpenTable(kTableName, &table));
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
 
   // Try to do a write with the bad schema.
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   gscoped_ptr<KuduInsert> insert = table->NewInsert();
-  ASSERT_STATUS_OK(insert->mutable_row()->SetUInt32("key", 12345));
+  ASSERT_OK(insert->mutable_row()->SetUInt32("key", 12345));
   Status s = insert->mutable_row()->SetUInt32("bad_col", 12345);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "No such column: bad_col");
@@ -1428,19 +1428,19 @@ TEST_F(ClientTest, TestWriteWithBadColumn) {
 // phase of the write fail, which will result in an error on the RPC response.
 TEST_F(ClientTest, TestWriteWithBadSchema) {
   scoped_refptr<KuduTable> table;
-  ASSERT_STATUS_OK(client_->OpenTable(kTableName, &table));
+  ASSERT_OK(client_->OpenTable(kTableName, &table));
 
   // Remove the 'int_val' column.
   // Now the schema on the client is "old"
-  ASSERT_STATUS_OK(client_->NewTableAlterer()
+  ASSERT_OK(client_->NewTableAlterer()
                    ->table_name(kTableName)
                    .drop_column("int_val")
                    .Alter());
 
   // Try to do a write with the bad schema.
   shared_ptr<KuduSession> session = client_->NewSession();
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_,
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_,
                                         12345, 12345, "x"));
   Status s = session->Flush();
   ASSERT_FALSE(s.ok());
@@ -1526,7 +1526,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
       tablet_id, &tablet_peer));
 
   {
-    ASSERT_STATUS_OK(client_->NewTableAlterer()
+    ASSERT_OK(client_->NewTableAlterer()
                      ->table_name(kTableName)
                      .drop_column("int_val")
                      .add_nullable_column("new_col", KuduColumnSchema::UINT32)
@@ -1549,7 +1549,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   }
 
   {
-    ASSERT_STATUS_OK(client_->NewTableAlterer()
+    ASSERT_OK(client_->NewTableAlterer()
                      ->table_name(kTableName)
                      .add_nullable_column("new_string_val", KuduColumnSchema::STRING,
                                           KuduColumnStorageAttributes(
@@ -1560,7 +1560,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
 
   {
     const char *kRenamedTableName = "RenamedTable";
-    ASSERT_STATUS_OK(client_->NewTableAlterer()
+    ASSERT_OK(client_->NewTableAlterer()
                      ->table_name(kTableName)
                      .rename_table(kRenamedTableName)
                      .Alter());
@@ -1578,7 +1578,7 @@ TEST_F(ClientTest, TestDeleteTable) {
 
   // Remove the table
   // NOTE that it returns when the operation is completed on the master side
-  ASSERT_STATUS_OK(client_->DeleteTable(kTableName));
+  ASSERT_OK(client_->DeleteTable(kTableName));
   CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
   ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
 
@@ -1604,7 +1604,7 @@ TEST_F(ClientTest, TestGetTableSchema) {
   KuduSchema schema;
 
   // Verify the schema for the current table
-  ASSERT_STATUS_OK(client_->GetTableSchema(kTableName, &schema));
+  ASSERT_OK(client_->GetTableSchema(kTableName, &schema));
   ASSERT_TRUE(schema_.Equals(schema));
 
   // Verify that a get schema request for a missing table throws not found
@@ -1631,7 +1631,7 @@ TEST_F(ClientTest, TestStaleLocations) {
 
   // Restart the TS and Wait for the tablets to be reported to the master.
   cluster_->mini_tablet_server(0)->Start();
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
+  ASSERT_OK(cluster_->WaitForTabletServerCount(1));
   ASSERT_TRUE(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
                   tablet_id, &locs_pb));
 
@@ -1701,7 +1701,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
                                                  MonoTime::Max(),
                                                  &rt, sync.AsStatusCallback());
-  ASSERT_STATUS_OK(sync.Wait());
+  ASSERT_OK(sync.Wait());
   internal::RemoteTabletServer *rts = rt->LeaderTServer();
 
   // Kill the leader of the first tablet.
@@ -1768,9 +1768,9 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
                                                  MonoTime::Max(),
                                                  &rt, sync.AsStatusCallback());
-  ASSERT_STATUS_OK(sync.Wait());
+  ASSERT_OK(sync.Wait());
   internal::RemoteTabletServer *rts;
-  ASSERT_STATUS_OK(client_->data_->GetTabletServer(client_.get(),
+  ASSERT_OK(client_->data_->GetTabletServer(client_.get(),
                                                    rt->tablet_id(),
                                                    KuduClient::LEADER_ONLY,
                                                    &rts));
@@ -1851,14 +1851,14 @@ void CheckCorrectness(KuduScanner* scanner, int expected[], int nrows) {
   }
 
   while (scanner->HasMoreRows()) {
-    ASSERT_STATUS_OK(scanner->NextBatch(&rows));
+    ASSERT_OK(scanner->NextBatch(&rows));
     BOOST_FOREACH(const KuduRowResult& r, rows) {
       uint32_t key;
       uint32_t val;
       Slice strval;
-      ASSERT_STATUS_OK(r.GetUInt32(0, &key));
-      ASSERT_STATUS_OK(r.GetUInt32(1, &val));
-      ASSERT_STATUS_OK(r.GetString(2, &strval));
+      ASSERT_OK(r.GetUInt32(0, &key));
+      ASSERT_OK(r.GetUInt32(1, &val));
+      ASSERT_OK(r.GetString(2, &strval));
       ASSERT_NE(expected[key], -1) << "Deleted key found in table in table " << key;
       ASSERT_EQ(expected[key], val) << "Incorrect int value for key " <<  key;
       ASSERT_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
@@ -1876,14 +1876,14 @@ void CheckCorrectness(KuduScanner* scanner, int expected[], int nrows) {
 TEST_F(ClientTest, TestRandomWriteOperation) {
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(5000);
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   int row[FLAGS_test_scan_num_rows]; // -1 indicates empty
   int nrows;
   KuduScanner scanner(client_table_.get());
 
   // First half-fill
   for (int i = 0; i < FLAGS_test_scan_num_rows/2; ++i) {
-    ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, i, i, ""));
+    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, i, i, ""));
     row[i] = i;
   }
   for (int i = FLAGS_test_scan_num_rows/2; i < FLAGS_test_scan_num_rows; ++i) {
@@ -1916,7 +1916,7 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
       change = (change + 1) % FLAGS_test_scan_num_rows;
     changed.insert(change);
     if (row[change] == -1) {
-      ASSERT_STATUS_OK(ApplyInsertToSession(session.get(),
+      ASSERT_OK(ApplyInsertToSession(session.get(),
                                             client_table_,
                                             change,
                                             change,
@@ -1928,13 +1928,13 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
       // Update or delete otherwise
       int update = rand() & 1;
       if (update) {
-        ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(),
+        ASSERT_OK(ApplyUpdateToSession(session.get(),
                                               client_table_,
                                               change,
                                               ++row[change]));
         VLOG(1) << "Update " << change;
       } else {
-        ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(),
+        ASSERT_OK(ApplyDeleteToSession(session.get(),
                                               client_table_,
                                               change));
         row[change] = -1;
@@ -1954,12 +1954,12 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
 TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(5000);
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
   // Test insert/update
   LOG(INFO) << "Testing insert/update in same batch, key " << 1 << ".";
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
-  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
+  ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 2));
   FlushSessionOrDie(session);
   vector<string> rows;
   ScanTableToStrings(client_table_.get(), &rows);
@@ -1971,7 +1971,7 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
 
   LOG(INFO) << "Testing insert/delete in same batch, key " << 2 << ".";
   // Test insert/delete
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, ""));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, ""));
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
@@ -1981,15 +1981,15 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
 
   // Test update/delete
   LOG(INFO) << "Testing update/delete in same batch, key " << 1 << ".";
-  ASSERT_STATUS_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 1));
-  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_OK(ApplyUpdateToSession(session.get(), client_table_, 1, 1));
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
   // Test delete/insert (insert a row first)
   LOG(INFO) << "Inserting row for delete/insert test, key " << 1 << ".";
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, ""));
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
@@ -1997,8 +1997,8 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
             "uint32 non_null_with_default=12345)", rows[0]);
   rows.clear();
   LOG(INFO) << "Testing delete/insert in same batch, key " << 1 << ".";
-  ASSERT_STATUS_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
-  ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, 1, 2, ""));
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 2, ""));
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
@@ -2105,19 +2105,19 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
   // Make reverse client who will make batches that update rows
   // in reverse order. Separate client used so rpc calls come in at same time.
   shared_ptr<KuduClient> rev_client;
-  ASSERT_STATUS_OK(KuduClientBuilder()
+  ASSERT_OK(KuduClientBuilder()
                    .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                    .Build(&rev_client));
   scoped_refptr<KuduTable> rev_table;
-  ASSERT_STATUS_OK(client_->OpenTable(kTableName, &rev_table));
+  ASSERT_OK(client_->OpenTable(kTableName, &rev_table));
 
   // Load up some rows
   const int kNumRows = 3000; // Increase to reduce deadlock false-negative.
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(5000);
-  ASSERT_STATUS_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   for (int i = 0; i < kNumRows; ++i)
-    ASSERT_STATUS_OK(ApplyInsertToSession(session.get(), client_table_, i, i,  ""));
+    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, i, i,  ""));
   FlushSessionOrDie(session);
 
   // Check both clients see rows

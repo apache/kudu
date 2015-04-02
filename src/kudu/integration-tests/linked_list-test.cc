@@ -97,13 +97,13 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
 
     CreateCluster("linked-list-cluster", ts_flags, common_flags);
     ResetClientAndTester();
-    ASSERT_STATUS_OK(tester_->CreateLinkedListTable());
+    ASSERT_OK(tester_->CreateLinkedListTable());
     WaitForTSAndQuorum();
   }
 
   void ResetClientAndTester() {
     KuduClientBuilder builder;
-    ASSERT_STATUS_OK(cluster_->CreateClient(builder, &client_));
+    ASSERT_OK(cluster_->CreateClient(builder, &client_));
     tester_.reset(new LinkedListTester(client_, kTableId,
                                        FLAGS_num_chains,
                                        FLAGS_num_tablets,
@@ -152,7 +152,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   bool can_kill_ts = FLAGS_num_tablet_servers > 1 && FLAGS_num_replicas > 2;
 
   int64_t written = 0;
-  ASSERT_STATUS_OK(tester_->LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run),
+  ASSERT_OK(tester_->LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run),
                                            FLAGS_num_snapshots,
                                            &written));
 
@@ -272,7 +272,7 @@ TEST_F(LinkedListTest, TestLoadWhileOneServerDownAndVerify) {
   cluster_->tablet_server(0)->Shutdown();
 
   int64_t written = 0;
-  ASSERT_STATUS_OK(tester_->LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run),
+  ASSERT_OK(tester_->LoadLinkedList(MonoDelta::FromSeconds(FLAGS_seconds_to_run),
                                            FLAGS_num_snapshots,
                                            &written));
 

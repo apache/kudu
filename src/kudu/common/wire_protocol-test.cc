@@ -48,7 +48,7 @@ TEST_F(WireProtocolTest, TestOKStatus) {
   EXPECT_FALSE(pb.has_posix_code());
 
   Status s2 = StatusFromPB(pb);
-  ASSERT_STATUS_OK(s2);
+  ASSERT_OK(s2);
 }
 
 TEST_F(WireProtocolTest, TestBadStatus) {
@@ -84,7 +84,7 @@ TEST_F(WireProtocolTest, TestBadStatusWithPosixCode) {
 TEST_F(WireProtocolTest, TestSchemaRoundTrip) {
   google::protobuf::RepeatedPtrField<ColumnSchemaPB> pbs;
 
-  ASSERT_STATUS_OK(SchemaToColumnPBs(schema_, &pbs));
+  ASSERT_OK(SchemaToColumnPBs(schema_, &pbs));
   ASSERT_EQ(3, pbs.size());
 
   // Column 0.
@@ -107,7 +107,7 @@ TEST_F(WireProtocolTest, TestSchemaRoundTrip) {
 
   // Convert back to a Schema object and verify they're identical.
   Schema schema2;
-  ASSERT_STATUS_OK(ColumnPBsToSchema(pbs, &schema2));
+  ASSERT_OK(ColumnPBsToSchema(pbs, &schema2));
   EXPECT_EQ(schema_.ToString(), schema2.ToString());
   EXPECT_EQ(schema_.num_key_columns(), schema2.num_key_columns());
 }
@@ -187,7 +187,7 @@ TEST_F(WireProtocolTest, TestColumnarRowBlockToPB) {
   // as the one we put in.
   vector<const uint8_t*> row_ptrs;
   Slice direct_sidecar = direct;
-  ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(schema_, pb, indirect,
+  ASSERT_OK(ExtractRowsFromRowBlockPB(schema_, pb, indirect,
                                              &direct_sidecar, &row_ptrs));
   ASSERT_EQ(block.nrows(), row_ptrs.size());
   for (int i = 0; i < block.nrows(); ++i) {

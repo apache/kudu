@@ -55,10 +55,10 @@ class TestDeltaFile : public ::testing::Test {
 
   void WriteTestFile(int min_timestamp = 0, int max_timestamp = 0) {
     gscoped_ptr<WritableBlock> block;
-    ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&block));
+    ASSERT_OK(fs_manager_->CreateNewBlock(&block));
     test_block_ = block->id();
     DeltaFileWriter dfw(schema_, block.Pass());
-    ASSERT_STATUS_OK(dfw.Start());
+    ASSERT_OK(dfw.Start());
 
     // Update even numbered rows.
     faststring buf;
@@ -72,12 +72,12 @@ class TestDeltaFile : public ::testing::Test {
         update.AddColumnUpdate(schema_.column_id(0), &new_val);
         DeltaKey key(i, Timestamp(timestamp));
         RowChangeList rcl(buf);
-        ASSERT_STATUS_OK_FAST(dfw.AppendDelta<REDO>(key, rcl));
-        ASSERT_STATUS_OK_FAST(stats.UpdateStats(key.timestamp(), schema_, rcl));
+        ASSERT_OK_FAST(dfw.AppendDelta<REDO>(key, rcl));
+        ASSERT_OK_FAST(stats.UpdateStats(key.timestamp(), schema_, rcl));
       }
     }
-    ASSERT_STATUS_OK(dfw.WriteDeltaStats(stats));
-    ASSERT_STATUS_OK(dfw.Finish());
+    ASSERT_OK(dfw.WriteDeltaStats(stats));
+    ASSERT_OK(dfw.Finish());
   }
 
 
@@ -118,7 +118,7 @@ class TestDeltaFile : public ::testing::Test {
 
   void VerifyTestFile() {
     shared_ptr<DeltaFileReader> reader;
-    ASSERT_STATUS_OK(OpenDeltaFileReader(test_block_, &reader));
+    ASSERT_OK(OpenDeltaFileReader(test_block_, &reader));
     ASSERT_EQ(((FLAGS_last_row_to_update - FLAGS_first_row_to_update) / 2) + 1,
               reader->delta_stats().update_count(0));
     ASSERT_EQ(0, reader->delta_stats().delete_count());
@@ -127,24 +127,24 @@ class TestDeltaFile : public ::testing::Test {
     if (s.IsNotFound()) {
       FAIL() << "Iterator fell outside of the range of an include-all snapshot";
     }
-    ASSERT_STATUS_OK(s);
-    ASSERT_STATUS_OK(it->Init(NULL));
+    ASSERT_OK(s);
+    ASSERT_OK(it->Init(NULL));
 
     RowBlock block(schema_, 100, &arena_);
 
     // Iterate through the faked table, starting with batches that
     // come before all of the updates, and extending a bit further
     // past the updates, to ensure that nothing breaks on the boundaries.
-    ASSERT_STATUS_OK(it->SeekToOrdinal(0));
+    ASSERT_OK(it->SeekToOrdinal(0));
 
     int start_row = 0;
     while (start_row < FLAGS_last_row_to_update + 10000) {
       block.ZeroMemory();
       arena_.Reset();
 
-      ASSERT_STATUS_OK_FAST(it->PrepareBatch(block.nrows()));
+      ASSERT_OK_FAST(it->PrepareBatch(block.nrows()));
       ColumnBlock dst_col = block.column_block(0);
-      ASSERT_STATUS_OK_FAST(it->ApplyUpdates(0, &dst_col));
+      ASSERT_OK_FAST(it->ApplyUpdates(0, &dst_col));
 
       for (int i = 0; i < block.nrows(); i++) {
         uint32_t row = start_row + i;
@@ -183,9 +183,9 @@ TEST_F(TestDeltaFile, TestDumpDeltaFileIterator) {
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of an include-all snapshot";
   }
-  ASSERT_STATUS_OK(s);
+  ASSERT_OK(s);
   vector<string> it_contents;
-  ASSERT_STATUS_OK(DebugDumpDeltaIterator(REDO,
+  ASSERT_OK(DebugDumpDeltaIterator(REDO,
                                           it.get(),
                                           schema_,
                                           ITERATE_OVER_ALL_ROWS,
@@ -204,26 +204,26 @@ TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
   if (s.IsNotFound()) {
     FAIL() << "Iterator fell outside of the range of an include-all snapshot";
   }
-  ASSERT_STATUS_OK(s);
+  ASSERT_OK(s);
 
   gscoped_ptr<WritableBlock> block;
-  ASSERT_STATUS_OK(fs_manager_->CreateNewBlock(&block));
+  ASSERT_OK(fs_manager_->CreateNewBlock(&block));
   BlockId block_id(block->id());
   DeltaFileWriter dfw(schema_, block.Pass());
-  ASSERT_STATUS_OK(dfw.Start());
-  ASSERT_STATUS_OK(WriteDeltaIteratorToFile<REDO>(it.get(),
+  ASSERT_OK(dfw.Start());
+  ASSERT_OK(WriteDeltaIteratorToFile<REDO>(it.get(),
                                                   schema_,
                                                   ITERATE_OVER_ALL_ROWS,
                                                   &dfw));
-  ASSERT_STATUS_OK(dfw.Finish());
+  ASSERT_OK(dfw.Finish());
 
 
   // If delta stats are incorrect, then a Status::NotFound would be
   // returned.
 
-  ASSERT_STATUS_OK(OpenDeltaFileIterator(block_id, &it));
+  ASSERT_OK(OpenDeltaFileIterator(block_id, &it));
   vector<string> it_contents;
-  ASSERT_STATUS_OK(DebugDumpDeltaIterator(REDO,
+  ASSERT_OK(DebugDumpDeltaIterator(REDO,
                                           it.get(),
                                           schema_,
                                           ITERATE_OVER_ALL_ROWS,
@@ -257,10 +257,10 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
     if (s.IsNotFound()) {
       FAIL() << "Iterator fell outside of the range of an include-all snapshot";
     }
-    ASSERT_STATUS_OK(s);
+    ASSERT_OK(s);
 
-    ASSERT_STATUS_OK(it->Init(NULL));
-    ASSERT_STATUS_OK(it->SeekToOrdinal(0));
+    ASSERT_OK(it->Init(NULL));
+    ASSERT_OK(it->SeekToOrdinal(0));
 
     vector<Mutation *> mutations;
     mutations.resize(100);
@@ -270,8 +270,8 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
       std::fill(mutations.begin(), mutations.end(), reinterpret_cast<Mutation *>(NULL));
 
       arena_.Reset();
-      ASSERT_STATUS_OK_FAST(it->PrepareBatch(mutations.size()));
-      ASSERT_STATUS_OK(it->CollectMutations(&mutations, &arena_));
+      ASSERT_OK_FAST(it->PrepareBatch(mutations.size()));
+      ASSERT_OK(it->CollectMutations(&mutations, &arena_));
 
       for (int i = 0; i < mutations.size(); i++) {
         Mutation *mut_head = mutations[i];
@@ -291,7 +291,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   WriteTestFile(10, 20);
   shared_ptr<DeltaFileReader> reader;
-  ASSERT_STATUS_OK(OpenDeltaFileReader(test_block_, &reader));
+  ASSERT_OK(OpenDeltaFileReader(test_block_, &reader));
 
   gscoped_ptr<DeltaIterator> iter;
 
@@ -306,14 +306,14 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   // should include
   raw_iter = NULL;
   MvccSnapshot snap2(Timestamp(15));
-  ASSERT_STATUS_OK(reader->NewDeltaIterator(&schema_, snap2, &raw_iter));
+  ASSERT_OK(reader->NewDeltaIterator(&schema_, snap2, &raw_iter));
   ASSERT_TRUE(raw_iter != NULL);
   iter.reset(raw_iter);
 
   // should include
   raw_iter = NULL;
   MvccSnapshot snap3(Timestamp(21));
-  ASSERT_STATUS_OK(reader->NewDeltaIterator(&schema_, snap3, &raw_iter));
+  ASSERT_OK(reader->NewDeltaIterator(&schema_, snap3, &raw_iter));
   ASSERT_TRUE(raw_iter != NULL);
   iter.reset(raw_iter);
 }

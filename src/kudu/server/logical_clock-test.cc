@@ -60,7 +60,7 @@ TEST_F(LogicalClockTest, TestIsAfter) {
   // handles "IsAfter" properly even when it's running in
   // "logical" mode.
   Timestamp now_increased = Timestamp(1000);
-  ASSERT_STATUS_OK(clock_->Update(now_increased));
+  ASSERT_OK(clock_->Update(now_increased));
   Timestamp ts2 = clock_->Now();
 
   ASSERT_TRUE(clock_->IsAfter(ts1));

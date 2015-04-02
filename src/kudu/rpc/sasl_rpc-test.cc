@@ -28,16 +28,16 @@ class TestSaslRpc : public RpcTestBase {
  public:
   virtual void SetUp() OVERRIDE {
     RpcTestBase::SetUp();
-    ASSERT_STATUS_OK(SaslInit(kSaslAppName));
+    ASSERT_OK(SaslInit(kSaslAppName));
   }
 };
 
 // Test basic initialization of the objects.
 TEST_F(TestSaslRpc, TestBasicInit) {
   SaslServer server(kSaslAppName, -1);
-  ASSERT_STATUS_OK(server.Init(kSaslAppName));
+  ASSERT_OK(server.Init(kSaslAppName));
   SaslClient client(kSaslAppName, -1);
-  ASSERT_STATUS_OK(client.Init(kSaslAppName));
+  ASSERT_OK(client.Init(kSaslAppName));
 }
 
 // A "Callable" that takes a Socket* param, for use with starting a thread.
@@ -56,14 +56,14 @@ static void RunAcceptingDelegator(Socket* acceptor, socket_callable_t server_run
 static void RunNegotiationTest(socket_callable_t server_runner, socket_callable_t client_runner) {
   Socket server_sock;
   CHECK_OK(server_sock.Init(0));
-  ASSERT_STATUS_OK(server_sock.BindAndListen(Sockaddr(), 1));
+  ASSERT_OK(server_sock.BindAndListen(Sockaddr(), 1));
   Sockaddr server_bind_addr;
-  ASSERT_STATUS_OK(server_sock.GetSocketAddress(&server_bind_addr));
+  ASSERT_OK(server_sock.GetSocketAddress(&server_bind_addr));
   boost::thread server(RunAcceptingDelegator, &server_sock, server_runner);
 
   Socket client_sock;
   CHECK_OK(client_sock.Init(0));
-  ASSERT_STATUS_OK(client_sock.Connect(server_bind_addr));
+  ASSERT_OK(client_sock.Connect(server_bind_addr));
   boost::thread client(client_runner, &client_sock);
 
   LOG(INFO) << "Waiting for test threads to terminate...";

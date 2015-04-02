@@ -68,11 +68,11 @@ class TabletPeerTest : public KuduTabletTest {
   virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
 
-    ASSERT_STATUS_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
-    ASSERT_STATUS_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
+    ASSERT_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
+    ASSERT_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
 
     rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
-    ASSERT_STATUS_OK(builder.Build(&messenger_));
+    ASSERT_OK(builder.Build(&messenger_));
 
     metric_ctx_.reset(new MetricContext(&metric_registry_, CURRENT_TEST_NAME()));
 
@@ -102,11 +102,11 @@ class TabletPeerTest : public KuduTabletTest {
                                         consensus::kMinimumTerm, &cmeta));
 
     scoped_refptr<Log> log;
-    ASSERT_STATUS_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
+    ASSERT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                                *tablet()->schema(),
                                metric_ctx_.get(), &log));
 
-    ASSERT_STATUS_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log, *metric_ctx_));
+    ASSERT_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log, *metric_ctx_));
   }
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {
@@ -278,7 +278,7 @@ class DelayedApplyTransaction : public WriteTransaction {
 // Ensure that Log::GC() doesn't delete logs when the MRS has an anchor.
 TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   ConsensusBootstrapInfo info;
-  ASSERT_STATUS_OK(StartPeer(info));
+  ASSERT_OK(StartPeer(info));
 
   Log* log = tablet_peer_->log_.get();
   int32_t num_gced;
@@ -286,11 +286,11 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   AssertNoLogAnchors();
 
   log::SegmentSequence segments;
-  ASSERT_STATUS_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
 
   ASSERT_EQ(1, segments.size());
-  ASSERT_STATUS_OK(ExecuteInsertsAndRollLogs(3));
-  ASSERT_STATUS_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_OK(ExecuteInsertsAndRollLogs(3));
+  ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(4, segments.size());
 
   AssertLogAnchorEarlierThanLogLatest();
@@ -299,7 +299,7 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   // Ensure nothing gets deleted.
   int64_t min_log_index = -1;
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_STATUS_OK(log->GC(min_log_index, &num_gced));
+  ASSERT_OK(log->GC(min_log_index, &num_gced));
   ASSERT_EQ(0, num_gced) << "earliest needed: " << min_log_index;
 
   // Flush MRS as needed to ensure that we don't have OpId anchors in the MRS.
@@ -310,16 +310,16 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
   // The last is anchored due to the commit in the last segment being the last
   // OpId in the log.
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_STATUS_OK(log->GC(min_log_index, &num_gced));
+  ASSERT_OK(log->GC(min_log_index, &num_gced));
   ASSERT_EQ(2, num_gced) << "earliest needed: " << min_log_index;
-  ASSERT_STATUS_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
+  ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
 }
 
 // Ensure that Log::GC() doesn't delete logs when the DMS has an anchor.
 TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   ConsensusBootstrapInfo info;
-  ASSERT_STATUS_OK(StartPeer(info));
+  ASSERT_OK(StartPeer(info));
 
   Log* log = tablet_peer_->log_.get();
   int32_t num_gced;
@@ -330,15 +330,15 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
 
   ASSERT_EQ(1, segments.size());
-  ASSERT_STATUS_OK(ExecuteInsertsAndRollLogs(2));
+  ASSERT_OK(ExecuteInsertsAndRollLogs(2));
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(3, segments.size());
 
   // Flush MRS & GC log so the next mutation goes into a DMS.
-  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
   int64_t min_log_index = -1;
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_STATUS_OK(log->GC(min_log_index, &num_gced));
+  ASSERT_OK(log->GC(min_log_index, &num_gced));
   // We will only GC 1, and have 1 left because the earliest needed OpId falls
   // back to the latest OpId written to the Log if no anchors are set.
   ASSERT_EQ(1, num_gced);
@@ -360,22 +360,22 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // last operation in the log different.
 
   // Execute a mutation.
-  ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(2));
+  ASSERT_OK(ExecuteDeletesAndRollLogs(2));
   AssertLogAnchorEarlierThanLogLatest();
   ASSERT_GT(tablet_peer_->log_anchor_registry()->GetAnchorCountForTests(), 0);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(4, segments.size());
 
   // Execute another couple inserts, but Flush it so it doesn't anchor.
-  ASSERT_STATUS_OK(ExecuteInsertsAndRollLogs(2));
-  ASSERT_STATUS_OK(tablet_peer_->tablet()->Flush());
+  ASSERT_OK(ExecuteInsertsAndRollLogs(2));
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(6, segments.size());
 
   // Ensure the delta and last insert remain in the logs, anchored by the delta.
   // Note that this will allow GC of the 2nd insert done above.
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_STATUS_OK(log->GC(min_log_index, &num_gced));
+  ASSERT_OK(log->GC(min_log_index, &num_gced));
   ASSERT_EQ(1, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
@@ -391,7 +391,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   // that segment, not the previous, because it's not the first OpId in the
   // segment.
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_STATUS_OK(log->GC(min_log_index, &num_gced));
+  ASSERT_OK(log->GC(min_log_index, &num_gced));
   ASSERT_EQ(3, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
@@ -400,7 +400,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
 // Ensure that Log::GC() doesn't compact logs with OpIds of active transactions.
 TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   ConsensusBootstrapInfo info;
-  ASSERT_STATUS_OK(StartPeer(info));
+  ASSERT_OK(StartPeer(info));
 
   Log* log = tablet_peer_->log_.get();
   int32_t num_gced;
@@ -411,7 +411,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
 
   ASSERT_EQ(1, segments.size());
-  ASSERT_STATUS_OK(ExecuteInsertsAndRollLogs(4));
+  ASSERT_OK(ExecuteInsertsAndRollLogs(4));
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
 
@@ -433,7 +433,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   {
     gscoped_ptr<WriteRequestPB> req(new WriteRequestPB());
     // Long-running mutation.
-    ASSERT_STATUS_OK(GenerateSequentialDeleteRequest(req.get()));
+    ASSERT_OK(GenerateSequentialDeleteRequest(req.get()));
     WriteTransactionState* tx_state =
       new WriteTransactionState(tablet_peer_.get(), req.get(), resp.get());
 
@@ -447,13 +447,13 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
     scoped_refptr<TransactionDriver> driver;
     tablet_peer_->NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver);
 
-    ASSERT_STATUS_OK(driver->ExecuteAsync());
+    ASSERT_OK(driver->ExecuteAsync());
     apply_started.Wait();
     ASSERT_TRUE(driver->GetOpId().IsInitialized())
       << "By the time a transaction is applied, it should have an Opid";
     // The apply will hang until we CountDown() the continue latch.
     // Now, roll the log. Below, we execute a few more insertions with rolling.
-    ASSERT_STATUS_OK(log->AllocateSegmentAndRollOver());
+    ASSERT_OK(log->AllocateSegmentAndRollOver());
   }
 
   ASSERT_EQ(1, tablet_peer_->txn_tracker_.GetNumPendingForTests());
@@ -463,14 +463,14 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   // GC the first four segments created by the inserts.
   int64_t min_log_index = -1;
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_STATUS_OK(log->GC(min_log_index, &num_gced));
+  ASSERT_OK(log->GC(min_log_index, &num_gced));
   ASSERT_EQ(4, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());
 
   // We use mutations here, since an MRS Flush() quiesces the tablet, and we
   // want to ensure the only thing "anchoring" is the TransactionTracker.
-  ASSERT_STATUS_OK(ExecuteDeletesAndRollLogs(3));
+  ASSERT_OK(ExecuteDeletesAndRollLogs(3));
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
   ASSERT_EQ(1, tablet_peer_->log_anchor_registry()->GetAnchorCountForTests());
@@ -482,7 +482,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
 
   // Try to GC(), nothing should be deleted due to the in-flight transaction.
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_STATUS_OK(log->GC(min_log_index, &num_gced));
+  ASSERT_OK(log->GC(min_log_index, &num_gced));
   ASSERT_EQ(0, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(5, segments.size());
@@ -499,7 +499,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
 
   // All should be deleted except the two last segments.
   tablet_peer_->GetEarliestNeededLogIndex(&min_log_index);
-  ASSERT_STATUS_OK(log->GC(min_log_index, &num_gced));
+  ASSERT_OK(log->GC(min_log_index, &num_gced));
   ASSERT_EQ(3, num_gced);
   ASSERT_OK(log->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_EQ(2, segments.size());

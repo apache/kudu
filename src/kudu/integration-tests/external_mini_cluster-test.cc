@@ -36,7 +36,7 @@ TEST_F(EMCTest, TestBasicOperation) {
   opts.master_rpc_ports = master_quorum_ports_;
 
   ExternalMiniCluster cluster(opts);
-  ASSERT_STATUS_OK(cluster.Start());
+  ASSERT_OK(cluster.Start());
 
   // Verify that the masters have bound their RPC and HTTP ports.
   for (int i = 0; i < opts.num_masters; i++) {

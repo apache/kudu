@@ -25,7 +25,7 @@ class HybridClockTest : public KuduTest {
     // might be quite unsynchronized.
     FLAGS_max_clock_sync_error_usec = 5000000;
 
-    ASSERT_STATUS_OK(clock_->Init());
+    ASSERT_OK(clock_->Init());
   }
 
  protected:
@@ -57,7 +57,7 @@ TEST_F(HybridClockTest, TestUpdate_LogicalValueIncreasesByAmount) {
   Timestamp now_increased = HybridClock::TimestampFromMicrosecondsAndLogicalValue(now_micros,
                                                                                   logical);
 
-  ASSERT_STATUS_OK(clock_->Update(now_increased));
+  ASSERT_OK(clock_->Update(now_increased));
 
   Timestamp now2 = clock_->Now();
   ASSERT_EQ(logical + 1, HybridClock::GetLogicalValue(now2));
@@ -85,7 +85,7 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase1) {
 
   Status s = clock_->WaitUntilAfter(past_ts_changed);
 
-  ASSERT_STATUS_OK(s);
+  ASSERT_OK(s);
 
   MonoTime after = MonoTime::Now(MonoTime::FINE);
   MonoDelta delta = after.GetDeltaSince(before);
@@ -112,7 +112,7 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase2) {
   Timestamp current_ts;
   uint64_t current_max_error;
   clock_->NowWithError(&current_ts, &current_max_error);
-  ASSERT_STATUS_OK(clock_->WaitUntilAfter(wait_until));
+  ASSERT_OK(clock_->WaitUntilAfter(wait_until));
 
   MonoTime after = MonoTime::Now(MonoTime::FINE);
   MonoDelta delta = after.GetDeltaSince(before);
@@ -136,7 +136,7 @@ TEST_F(HybridClockTest, TestIsAfter) {
   // "logical" mode.
   Timestamp now_increased = HybridClock::TimestampFromMicroseconds(
     HybridClock::GetPhysicalValueMicros(ts1) + 1 * 1000 * 1000);
-  ASSERT_STATUS_OK(clock_->Update(now_increased));
+  ASSERT_OK(clock_->Update(now_increased));
   Timestamp ts2 = clock_->Now();
 
   ASSERT_TRUE(clock_->IsAfter(ts1));

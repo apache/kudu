@@ -84,8 +84,8 @@ class KuduTabletTest : public KuduTest {
     req.set_schema_version(tablet()->metadata()->schema_version() + 1);
 
     AlterSchemaTransactionState tx_state(&req);
-    ASSERT_STATUS_OK(tablet()->CreatePreparedAlterSchema(&tx_state, &schema));
-    ASSERT_STATUS_OK(tablet()->AlterSchema(&tx_state));
+    ASSERT_OK(tablet()->CreatePreparedAlterSchema(&tx_state, &schema));
+    ASSERT_OK(tablet()->AlterSchema(&tx_state));
     tx_state.Finish();
   }
 
@@ -112,7 +112,7 @@ class KuduRowSetTest : public KuduTabletTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
-    ASSERT_STATUS_OK(tablet()->metadata()->CreateRowSet(&rowset_meta_,
+    ASSERT_OK(tablet()->metadata()->CreateRowSet(&rowset_meta_,
                                                        SchemaBuilder(schema_).Build()));
   }
 
@@ -153,13 +153,13 @@ static inline void CollectRowsForSnapshots(Tablet* tablet,
   BOOST_FOREACH(const MvccSnapshot& snapshot, snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet->NewRowIterator(schema,
+    ASSERT_OK(tablet->NewRowIterator(schema,
                                             snapshot,
                                             Tablet::UNORDERED,
                                             &iter));
-    ASSERT_STATUS_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(NULL));
     vector<string>* collector = new vector<string>();
-    ASSERT_STATUS_OK(IterateToStringList(iter.get(), collector));
+    ASSERT_OK(IterateToStringList(iter.get(), collector));
     for (int i = 0; i < collector->size(); i++) {
       DVLOG(1) << "Got from MRS: " << (*collector)[i];
     }
@@ -178,13 +178,13 @@ static inline void VerifySnapshotsHaveSameResult(Tablet* tablet,
   BOOST_FOREACH(const MvccSnapshot& snapshot, snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet->NewRowIterator(schema,
+    ASSERT_OK(tablet->NewRowIterator(schema,
                                             snapshot,
                                             Tablet::UNORDERED,
                                             &iter));
-    ASSERT_STATUS_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(NULL));
     vector<string> collector;
-    ASSERT_STATUS_OK(IterateToStringList(iter.get(), &collector));
+    ASSERT_OK(IterateToStringList(iter.get(), &collector));
     ASSERT_EQ(collector.size(), expected_rows[idx]->size());
 
     for (int i = 0; i < expected_rows[idx]->size(); i++) {

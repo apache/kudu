@@ -16,7 +16,7 @@ class BloomFileTest : public BloomFileTestBase {
       Slice s(reinterpret_cast<char *>(&i_byteswapped), sizeof(i));
 
       bool present = false;
-      ASSERT_STATUS_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), &present));
+      ASSERT_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), &present));
       ASSERT_TRUE(present);
     }
 
@@ -27,7 +27,7 @@ class BloomFileTest : public BloomFileTestBase {
       Slice s(reinterpret_cast<char *>(&key), sizeof(key));
 
       bool present = false;
-      ASSERT_STATUS_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), &present));
+      ASSERT_OK_FAST(bfr_->CheckKeyPresent(BloomKeyProbe(s), &present));
       if (present) {
         positive_count++;
       }
@@ -43,14 +43,14 @@ class BloomFileTest : public BloomFileTestBase {
 
 TEST_F(BloomFileTest, TestWriteAndRead) {
   ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile());
-  ASSERT_STATUS_OK(OpenBloomFile());
+  ASSERT_OK(OpenBloomFile());
   VerifyBloomFile();
 }
 
 #ifdef NDEBUG
 TEST_F(BloomFileTest, Benchmark) {
   ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile());
-  ASSERT_STATUS_OK(OpenBloomFile());
+  ASSERT_OK(OpenBloomFile());
 
   uint64_t count_present = ReadBenchmark();
 

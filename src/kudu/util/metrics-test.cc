@@ -164,7 +164,7 @@ TEST_F(MetricsTest, JsonPrintTest) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out);
-  ASSERT_STATUS_OK(metrics.WriteAsJson(&writer,
+  ASSERT_OK(metrics.WriteAsJson(&writer,
                                        list_of("*"),
                                        vector<string>()));
 

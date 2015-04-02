@@ -372,7 +372,7 @@ class RpcTestBase : public KuduTest {
   void DoStartTestServer(Sockaddr *server_addr) {
     server_messenger_ = CreateMessenger("TestServer", n_server_reactor_threads_);
     shared_ptr<AcceptorPool> pool;
-    ASSERT_STATUS_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2, &pool));
+    ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2, &pool));
     *server_addr = pool->bind_address();
 
     gscoped_ptr<ServiceIf> service(new ServiceClass(metric_ctx_));
@@ -380,7 +380,7 @@ class RpcTestBase : public KuduTest {
     const MetricContext& metric_ctx = *server_messenger_->metric_context();
     service_pool_ = new ServicePool(service.Pass(), metric_ctx, 50);
     server_messenger_->RegisterService(service_name_, service_pool_);
-    ASSERT_STATUS_OK(service_pool_->Init(n_worker_threads_));
+    ASSERT_OK(service_pool_->Init(n_worker_threads_));
   }
 
  protected:

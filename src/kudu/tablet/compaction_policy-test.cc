@@ -24,7 +24,7 @@ TEST(TestCompactionPolicy, TestBudgetedSelection) {
   vec.push_back(shared_ptr<RowSet>(new MockDiskRowSet("A", "b")));
 
   RowSetTree tree;
-  ASSERT_STATUS_OK(tree.Reset(vec));
+  ASSERT_OK(tree.Reset(vec));
 
   const int kBudgetMb = 1000; // enough to select all
   BudgetedCompactionPolicy policy(kBudgetMb);

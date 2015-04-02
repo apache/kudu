@@ -52,7 +52,7 @@ class RegistrationTest : public KuduTest {
     KuduTest::SetUp();
 
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
-    ASSERT_STATUS_OK(cluster_->Start());
+    ASSERT_OK(cluster_->Start());
   }
 
   virtual void TearDown() OVERRIDE {
@@ -63,7 +63,7 @@ class RegistrationTest : public KuduTest {
     EasyCurl c;
     faststring buf;
     string addr = cluster_->mini_master()->bound_http_addr().ToString();
-    ASSERT_STATUS_OK(c.FetchURL(strings::Substitute("http://$0/tablet-servers", addr),
+    ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/tablet-servers", addr),
                                 &buf));
 
     // Should include the TS UUID
@@ -80,7 +80,7 @@ class RegistrationTest : public KuduTest {
 TEST_F(RegistrationTest, TestTSRegisters) {
   // Wait for the TS to register.
   vector<shared_ptr<TSDescriptor> > descs;
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1, &descs));
+  ASSERT_OK(cluster_->WaitForTabletServerCount(1, &descs));
   ASSERT_EQ(1, descs.size());
 
   // Verify that the registration is sane.
@@ -96,9 +96,9 @@ TEST_F(RegistrationTest, TestTSRegisters) {
 
   // Restart the master, so it loses the descriptor, and ensure that the
   // hearbeater thread handles re-registering.
-  ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
+  ASSERT_OK(cluster_->mini_master()->Restart());
 
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
+  ASSERT_OK(cluster_->WaitForTabletServerCount(1));
 
   // TODO: when the instance ID / sequence number stuff is implemented,
   // restart the TS and ensure that it re-registers with the newer sequence
@@ -107,9 +107,9 @@ TEST_F(RegistrationTest, TestTSRegisters) {
 
 // Test starting multiple tablet servers and ensuring they both register with the master.
 TEST_F(RegistrationTest, TestMultipleTS) {
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
-  ASSERT_STATUS_OK(cluster_->AddTabletServer());
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(2));
+  ASSERT_OK(cluster_->WaitForTabletServerCount(1));
+  ASSERT_OK(cluster_->AddTabletServer());
+  ASSERT_OK(cluster_->WaitForTabletServerCount(2));
 }
 
 // TODO: this doesn't belong under "RegistrationTest" - rename this file
@@ -119,7 +119,7 @@ TEST_F(RegistrationTest, TestTabletReports) {
   string tablet_id_1;
   string tablet_id_2;
 
-  ASSERT_STATUS_OK(cluster_->WaitForTabletServerCount(1));
+  ASSERT_OK(cluster_->WaitForTabletServerCount(1));
 
   MiniTabletServer* ts = cluster_->mini_tablet_server(0);
   string ts_root = cluster_->GetTabletServerFsRoot(0);
@@ -128,22 +128,22 @@ TEST_F(RegistrationTest, TestTabletReports) {
   CreateTabletForTesting(cluster_->mini_master(), "fake-table", schema_, &tablet_id_1);
 
   TabletLocationsPB locs;
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
+  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
   ASSERT_EQ(1, locs.replicas_size());
   LOG(INFO) << "Tablet successfully reported on " << locs.replicas(0).ts_info().permanent_uuid();
 
   // Add another tablet, make sure it is reported via incremental.
   CreateTabletForTesting(cluster_->mini_master(), "fake-table2", schema_, &tablet_id_2);
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
+  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
 
   // Shut down the whole system, bring it back up, and make sure the tablets
   // are reported.
   ts->Shutdown();
-  ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
-  ASSERT_STATUS_OK(ts->Start());
+  ASSERT_OK(cluster_->mini_master()->Restart());
+  ASSERT_OK(ts->Start());
 
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
+  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
+  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
 
   // Restart the TS after clearing its master blocks. On restart, it will send
   // a full tablet report, without any of the tablets. This causes the
@@ -151,11 +151,11 @@ TEST_F(RegistrationTest, TestTabletReports) {
   string master_block_dir = ts->server()->fs_manager()->GetMasterBlockDir();
   LOG(INFO) << "Shutting down TS, clearing data, and restarting it";
   ts->Shutdown();
-  ASSERT_STATUS_OK(env_->DeleteRecursively(master_block_dir));
-  ASSERT_STATUS_OK(env_->CreateDir(master_block_dir));
-  ASSERT_STATUS_OK(ts->Start());
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_1, 0, &locs));
-  ASSERT_STATUS_OK(cluster_->WaitForReplicaCount(tablet_id_2, 0, &locs));
+  ASSERT_OK(env_->DeleteRecursively(master_block_dir));
+  ASSERT_OK(env_->CreateDir(master_block_dir));
+  ASSERT_OK(ts->Start());
+  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_1, 0, &locs));
+  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_2, 0, &locs));
 }
 
 } // namespace kudu

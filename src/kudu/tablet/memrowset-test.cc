@@ -53,18 +53,18 @@ class TestMemRowSet : public ::testing::Test {
   void CheckValue(const shared_ptr<MemRowSet> &mrs, string key,
                   const string &expected_row) {
     gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
-    ASSERT_STATUS_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(NULL));
 
     Slice keystr_slice(key);
     Slice key_slice(reinterpret_cast<const char *>(&keystr_slice), sizeof(Slice));
 
     bool exact;
-    ASSERT_STATUS_OK(iter->SeekAtOrAfter(key_slice, &exact));
+    ASSERT_OK(iter->SeekAtOrAfter(key_slice, &exact));
     ASSERT_TRUE(exact) << "unable to seek to key " << key;
     ASSERT_TRUE(iter->HasNext());
 
     vector<string> out;
-    ASSERT_STATUS_OK(IterateToStringList(iter.get(), &out, 1));
+    ASSERT_OK(IterateToStringList(iter.get(), &out, 1));
     ASSERT_EQ(1, out.size());
     ASSERT_EQ(expected_row, out[0]) << "bad result for key " << key;
   }
@@ -167,13 +167,13 @@ class TestMemRowSet : public ::testing::Test {
 TEST_F(TestMemRowSet, TestInsertAndIterate) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
 
-  ASSERT_STATUS_OK(InsertRow(mrs.get(), "hello world", 12345));
-  ASSERT_STATUS_OK(InsertRow(mrs.get(), "goodbye world", 54321));
+  ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
+  ASSERT_OK(InsertRow(mrs.get(), "goodbye world", 54321));
 
   ASSERT_EQ(2, mrs->entry_count());
 
   gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
-  ASSERT_STATUS_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(NULL));
 
   // The first row returned from the iterator should
   // be "goodbye" because 'g' sorts before 'h'
@@ -194,9 +194,9 @@ TEST_F(TestMemRowSet, TestInsertAndIterate) {
 TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
 
   SchemaBuilder builder;
-  ASSERT_STATUS_OK(builder.AddKeyColumn("key1", STRING));
-  ASSERT_STATUS_OK(builder.AddKeyColumn("key2", INT32));
-  ASSERT_STATUS_OK(builder.AddColumn("val", UINT32));
+  ASSERT_OK(builder.AddKeyColumn("key1", STRING));
+  ASSERT_OK(builder.AddKeyColumn("key2", INT32));
+  ASSERT_OK(builder.AddColumn("val", UINT32));
   Schema compound_key_schema = builder.Build();
 
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, compound_key_schema, log_anchor_registry_.get()));
@@ -208,7 +208,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddInt32(1);
     rb.AddUint32(12345);
     Status row1 = mrs->Insert(tx.timestamp(), rb.row(), op_id_);
-    ASSERT_STATUS_OK(row1);
+    ASSERT_OK(row1);
   }
 
   {
@@ -218,7 +218,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddInt32(2);
     rb.AddUint32(54321);
     Status row2 = mrs->Insert(tx2.timestamp(), rb.row(), op_id_);
-    ASSERT_STATUS_OK(row2);
+    ASSERT_OK(row2);
   }
 
   {
@@ -228,13 +228,13 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
     rb.AddInt32(1);
     rb.AddUint32(12345);
     Status row3 = mrs->Insert(tx3.timestamp(), rb.row(), op_id_);
-    ASSERT_STATUS_OK(row3);
+    ASSERT_OK(row3);
   }
 
   ASSERT_EQ(3, mrs->entry_count());
 
   gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
-  ASSERT_STATUS_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(NULL));
 
   // The first row returned from the iterator should
   // be "goodbye" (row3) sorted on the second key
@@ -265,7 +265,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
 TEST_F(TestMemRowSet, TestInsertDuplicate) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
 
-  ASSERT_STATUS_OK(InsertRow(mrs.get(), "hello world", 12345));
+  ASSERT_OK(InsertRow(mrs.get(), "hello world", 12345));
   Status s = InsertRow(mrs.get(), "hello world", 12345);
   ASSERT_TRUE(s.IsAlreadyPresent()) << "bad status: " << s.ToString();
 }
@@ -274,14 +274,14 @@ TEST_F(TestMemRowSet, TestInsertDuplicate) {
 TEST_F(TestMemRowSet, TestUpdate) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
 
-  ASSERT_STATUS_OK(InsertRow(mrs.get(), "hello world", 1));
+  ASSERT_OK(InsertRow(mrs.get(), "hello world", 1));
 
   // Validate insertion
   CheckValue(mrs, "hello world", "(string key=hello world, uint32 val=1)");
 
   // Update a key which exists.
   OperationResultPB result;
-  ASSERT_STATUS_OK(UpdateRow(mrs.get(), "hello world", 2, &result));
+  ASSERT_OK(UpdateRow(mrs.get(), "hello world", 2, &result));
   ASSERT_EQ(1, result.mutated_stores_size());
   ASSERT_EQ(0L, result.mutated_stores(0).mrs_id());
 
@@ -300,7 +300,7 @@ TEST_F(TestMemRowSet, TestUpdate) {
 TEST_F(TestMemRowSet, TestInsertCopiesToArena) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
 
-  ASSERT_STATUS_OK(InsertRows(mrs.get(), 100));
+  ASSERT_OK(InsertRows(mrs.get(), 100));
   // Validate insertion
   char keybuf[256];
   for (uint32_t i = 0; i < 100; i++) {
@@ -317,23 +317,23 @@ TEST_F(TestMemRowSet, TestDelete) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
 
   // Insert row.
-  ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 1));
+  ASSERT_OK(InsertRow(mrs.get(), kRowKey, 1));
   MvccSnapshot snapshot_before_delete(mvcc_);
 
   // CheckRowPresent should return true
-  ASSERT_STATUS_OK(CheckRowPresent(*mrs, kRowKey, &present));
+  ASSERT_OK(CheckRowPresent(*mrs, kRowKey, &present));
   EXPECT_TRUE(present);
 
   // Delete it.
   OperationResultPB result;
-  ASSERT_STATUS_OK(DeleteRow(mrs.get(), kRowKey, &result));
+  ASSERT_OK(DeleteRow(mrs.get(), kRowKey, &result));
   ASSERT_EQ(1, result.mutated_stores_size());
   ASSERT_EQ(0L, result.mutated_stores(0).mrs_id());
 
   MvccSnapshot snapshot_after_delete(mvcc_);
 
   // CheckRowPresent should return false
-  ASSERT_STATUS_OK(CheckRowPresent(*mrs, kRowKey, &present));
+  ASSERT_OK(CheckRowPresent(*mrs, kRowKey, &present));
   EXPECT_FALSE(present);
 
   // Trying to Delete again or Update should get an error.
@@ -348,11 +348,11 @@ TEST_F(TestMemRowSet, TestDelete) {
   ASSERT_EQ(0, result.mutated_stores_size());
 
   // Re-insert a new row with the same key.
-  ASSERT_STATUS_OK(InsertRow(mrs.get(), kRowKey, 2));
+  ASSERT_OK(InsertRow(mrs.get(), kRowKey, 2));
   MvccSnapshot snapshot_after_reinsert(mvcc_);
 
   // CheckRowPresent should now return true
-  ASSERT_STATUS_OK(CheckRowPresent(*mrs, kRowKey, &present));
+  ASSERT_OK(CheckRowPresent(*mrs, kRowKey, &present));
   EXPECT_TRUE(present);
 
   // Verify the MVCC contents of the memrowset.
@@ -360,7 +360,7 @@ TEST_F(TestMemRowSet, TestDelete) {
   // at mutating the deleted row above -- each of them grabs a timestamp even
   // though it doesn't actually make any successful mutations.
   vector<string> rows;
-  ASSERT_STATUS_OK(mrs->DebugDump(&rows));
+  ASSERT_OK(mrs->DebugDump(&rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ("@1: row (string key=hello world, uint32 val=1) mutations="
             "[@2(DELETE), "
@@ -368,17 +368,17 @@ TEST_F(TestMemRowSet, TestDelete) {
             rows[0]);
 
   // Verify that iterating the rowset at the first snapshot shows the row.
-  ASSERT_STATUS_OK(DumpRowSet(*mrs, schema_, snapshot_before_delete, &rows));
+  ASSERT_OK(DumpRowSet(*mrs, schema_, snapshot_before_delete, &rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ("(string key=hello world, uint32 val=1)", rows[0]);
 
   // Verify that iterating the rowset at the snapshot where it's deleted
   // doesn't show the row.
-  ASSERT_STATUS_OK(DumpRowSet(*mrs, schema_, snapshot_after_delete, &rows));
+  ASSERT_OK(DumpRowSet(*mrs, schema_, snapshot_after_delete, &rows));
   ASSERT_EQ(0, rows.size());
 
   // Verify that iterating the rowset after it's re-inserted shows the row.
-  ASSERT_STATUS_OK(DumpRowSet(*mrs, schema_, snapshot_after_reinsert, &rows));
+  ASSERT_OK(DumpRowSet(*mrs, schema_, snapshot_after_reinsert, &rows));
   ASSERT_EQ(1, rows.size());
   EXPECT_EQ("(string key=hello world, uint32 val=2)", rows[0]);
 }
@@ -389,7 +389,7 @@ TEST_F(TestMemRowSet, TestMemRowSetInsertCountAndScan) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
 
   LOG_TIMING(INFO, "Inserting rows") {
-    ASSERT_STATUS_OK(InsertRows(mrs.get(), FLAGS_roundtrip_num_rows));
+    ASSERT_OK(InsertRows(mrs.get(), FLAGS_roundtrip_num_rows));
   }
 
   LOG_TIMING(INFO, "Counting rows") {
@@ -425,21 +425,21 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
       snprintf(keybuf, sizeof(keybuf), "tx%d", i);
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
-      ASSERT_STATUS_OK_FAST(mrs->Insert(tx.timestamp(), rb.row(), op_id_));
+      ASSERT_OK_FAST(mrs->Insert(tx.timestamp(), rb.row(), op_id_));
     }
 
     // Transaction is committed. Save the snapshot after this commit.
     snapshots.push_back(MvccSnapshot(mvcc_));
   }
   LOG(INFO) << "MemRowSet after inserts:";
-  ASSERT_STATUS_OK(mrs->DebugDump());
+  ASSERT_OK(mrs->DebugDump());
 
   ASSERT_EQ(5, snapshots.size());
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
     // Each snapshot 'i' is taken after row 'i' was committed.
     vector<string> rows;
-    ASSERT_STATUS_OK(kudu::tablet::DumpRowSet(*mrs, schema_, snapshots[i], &rows));
+    ASSERT_OK(kudu::tablet::DumpRowSet(*mrs, schema_, snapshots[i], &rows));
     ASSERT_EQ(1 + i, rows.size());
     string expected = StringPrintf("(string key=tx%d, uint32 val=%d)", i, i);
     ASSERT_EQ(expected, rows[i]);
@@ -452,7 +452,7 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
   shared_ptr<MemRowSet> mrs(new MemRowSet(0, schema_, log_anchor_registry_.get()));
 
   // Insert a row ("myrow", 0)
-  ASSERT_STATUS_OK(InsertRow(mrs.get(), "my row", 0));
+  ASSERT_OK(InsertRow(mrs.get(), "my row", 0));
 
   vector<MvccSnapshot> snapshots;
   // First snapshot is after insertion
@@ -461,7 +461,7 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
   // Update the row 5 times (setting its int column to increasing ints 1-5)
   for (uint32_t i = 1; i <= 5; i++) {
     OperationResultPB result;
-    ASSERT_STATUS_OK(UpdateRow(mrs.get(), "my row", i, &result));
+    ASSERT_OK(UpdateRow(mrs.get(), "my row", i, &result));
     ASSERT_EQ(1, result.mutated_stores_size());
     ASSERT_EQ(0L, result.mutated_stores(0).mrs_id());
 
@@ -470,14 +470,14 @@ TEST_F(TestMemRowSet, TestUpdateMVCC) {
   }
 
   LOG(INFO) << "MemRowSet after updates:";
-  ASSERT_STATUS_OK(mrs->DebugDump());
+  ASSERT_OK(mrs->DebugDump());
 
   // Validate that each snapshot returns the expected value
   ASSERT_EQ(6, snapshots.size());
   for (int i = 0; i <= 5; i++) {
     SCOPED_TRACE(i);
     vector<string> rows;
-    ASSERT_STATUS_OK(kudu::tablet::DumpRowSet(*mrs, schema_, snapshots[i], &rows));
+    ASSERT_OK(kudu::tablet::DumpRowSet(*mrs, schema_, snapshots[i], &rows));
     ASSERT_EQ(1, rows.size());
 
     string expected = StringPrintf("(string key=my row, uint32 val=%d)", i);

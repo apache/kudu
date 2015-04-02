@@ -41,7 +41,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
 
   // Now open the DiskRowSet for read
   shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_OK(OpenTestRowSet(&rs));
 
   // First iterate over all columns
   LOG_TIMING(INFO, "Iterating over all columns") {
@@ -75,7 +75,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice("h"));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present, &stats));
+    ASSERT_OK(rs->CheckRowPresent(probe, &present, &stats));
     ASSERT_FALSE(present);
   }
 
@@ -85,7 +85,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice("z"));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present, &stats));
+    ASSERT_OK(rs->CheckRowPresent(probe, &present, &stats));
     ASSERT_FALSE(present);
   }
 
@@ -96,7 +96,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice("hello 00000000000049x"));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present, &stats));
+    ASSERT_OK(rs->CheckRowPresent(probe, &present, &stats));
     ASSERT_FALSE(present);
   }
 
@@ -108,7 +108,7 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
     rb.AddString(Slice(buf));
     RowSetKeyProbe probe(rb.row());
     bool present;
-    ASSERT_STATUS_OK(rs->CheckRowPresent(probe, &present, &stats));
+    ASSERT_OK(rs->CheckRowPresent(probe, &present, &stats));
     ASSERT_TRUE(present);
   }
 }
@@ -119,7 +119,7 @@ TEST_F(TestRowSet, TestRowSetUpdate) {
 
   // Now open the DiskRowSet for read
   shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_OK(OpenTestRowSet(&rs));
 
   // Add an update to the delta tracker for a number of keys
   // which exist. These updates will change the value to
@@ -155,7 +155,7 @@ TEST_F(TestRowSet, TestRandomRead) {
   // Write 100 rows.
   WriteTestRowSet(100);
   shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_OK(OpenTestRowSet(&rs));
 
   // Read un-updated row.
   VerifyRandomRead(*rs, "hello 000000000000050",
@@ -163,7 +163,7 @@ TEST_F(TestRowSet, TestRandomRead) {
 
   // Update the row.
   OperationResultPB result;
-  ASSERT_STATUS_OK(UpdateRow(rs.get(), 50, 12345, &result));
+  ASSERT_OK(UpdateRow(rs.get(), 50, 12345, &result));
 
   // Read it again -- should see the updated value.
   VerifyRandomRead(*rs, "hello 000000000000050",
@@ -185,12 +185,12 @@ TEST_F(TestRowSet, TestDelete) {
   // Write and open a DiskRowSet with 2 rows.
   WriteTestRowSet(2);
   shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_OK(OpenTestRowSet(&rs));
   MvccSnapshot snap_before_delete(mvcc_);
 
   // Delete one of the two rows
   OperationResultPB result;
-  ASSERT_STATUS_OK(DeleteRow(rs.get(), 0, &result));
+  ASSERT_OK(DeleteRow(rs.get(), 0, &result));
   ASSERT_EQ(1, result.mutated_stores_size());
   ASSERT_EQ(0L, result.mutated_stores(0).rs_id());
   ASSERT_EQ(0L, result.mutated_stores(0).dms_id());
@@ -201,13 +201,13 @@ TEST_F(TestRowSet, TestDelete) {
 
   for (int i = 0; i < 2; i++) {
     // Reading the MVCC snapshot prior to deletion should show the row.
-    ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
+    ASSERT_OK(DumpRowSet(*rs, schema_, snap_before_delete, &rows));
     ASSERT_EQ(2, rows.size());
     EXPECT_EQ("(string key=hello 000000000000000, uint32 val=0)", rows[0]);
     EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[1]);
 
     // Reading the MVCC snapshot after the deletion should hide the row.
-    ASSERT_STATUS_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
+    ASSERT_OK(DumpRowSet(*rs, schema_, snap_after_delete, &rows));
     ASSERT_EQ(1, rows.size());
     EXPECT_EQ("(string key=hello 000000000000001, uint32 val=1)", rows[0]);
 
@@ -223,14 +223,14 @@ TEST_F(TestRowSet, TestDelete) {
 
     // CheckRowPresent should return false.
     bool present;
-    ASSERT_STATUS_OK(CheckRowPresent(*rs, 0, &present));
+    ASSERT_OK(CheckRowPresent(*rs, 0, &present));
     EXPECT_FALSE(present);
 
     if (i == 1) {
       // Flush DMS. The second pass through the loop will re-verify that the
       // externally visible state of the layer has not changed.
       // deletions now in a DeltaFile.
-      ASSERT_STATUS_OK(rs->FlushDeltas());
+      ASSERT_OK(rs->FlushDeltas());
     }
   }
 }
@@ -244,7 +244,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
   // Now open the DiskRowSet for read
   {
     shared_ptr<DiskRowSet> rs;
-    ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+    ASSERT_OK(OpenTestRowSet(&rs));
 
     // Add an update to the delta tracker for a number of keys
     // which exist. These updates will change the value to
@@ -253,7 +253,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
     ASSERT_EQ(static_cast<int>(n_rows_ * FLAGS_update_fraction),
               rs->delta_tracker_->dms_->Count());
 
-    ASSERT_STATUS_OK(rs->FlushDeltas());
+    ASSERT_OK(rs->FlushDeltas());
 
     // Check that the DiskRowSet's DMS has now been emptied.
     ASSERT_EQ(0, rs->delta_tracker_->dms_->Count());
@@ -269,7 +269,7 @@ TEST_F(TestRowSet, TestDMSFlush) {
   // persistent.
   {
     shared_ptr<DiskRowSet> rs;
-    ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+    ASSERT_OK(OpenTestRowSet(&rs));
 
     // Now read back the value column, and verify that the updates
     // are visible.
@@ -288,19 +288,19 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
     DiskRowSetWriter drsw(rowset_meta_.get(),
                    BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
-    ASSERT_STATUS_OK(drsw.Open());
+    ASSERT_OK(drsw.Open());
 
     RowBuilder rb(schema_);
     rb.AddString(key_slice);
     rb.AddUint32(1);
-    ASSERT_STATUS_OK_FAST(WriteRow(rb.data(), &drsw));
-    ASSERT_STATUS_OK(drsw.Finish());
+    ASSERT_OK_FAST(WriteRow(rb.data(), &drsw));
+    ASSERT_OK(drsw.Finish());
   }
 
 
   // Reopen the rowset.
   shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_OK(OpenTestRowSet(&rs));
 
   // Take a snapshot of the pre-update state.
   vector<MvccSnapshot> snaps;
@@ -321,7 +321,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       RowSetKeyProbe probe(rb.row());
       OperationResultPB result;
       ProbeStats stats;
-      ASSERT_STATUS_OK_FAST(rs->MutateRow(tx.timestamp(),
+      ASSERT_OK_FAST(rs->MutateRow(tx.timestamp(),
                                           probe,
                                           RowChangeList(update_buf),
                                           op_id_,
@@ -346,7 +346,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
   // Flush deltas to disk and ensure that the historical versions are still
   // accessible.
-  ASSERT_STATUS_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas());
 
   for (int i = 0; i < 5; i++) {
     SCOPED_TRACE(i);
@@ -371,7 +371,7 @@ TEST_F(TestRowSet, TestDeltaApplicationPerformance) {
   // Now open the DiskRowSet for read
   {
     shared_ptr<DiskRowSet> rs;
-    ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+    ASSERT_OK(OpenTestRowSet(&rs));
 
     BenchmarkIterationPerformance(*rs.get(),
       StringPrintf("Reading %zd rows prior to updates %d times",
@@ -383,7 +383,7 @@ TEST_F(TestRowSet, TestDeltaApplicationPerformance) {
       StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates in DMS)",
                    n_rows_, FLAGS_update_fraction * 100.0f,
                    FLAGS_n_read_passes));
-    ASSERT_STATUS_OK(rs->FlushDeltas());
+    ASSERT_OK(rs->FlushDeltas());
 
     BenchmarkIterationPerformance(*rs.get(),
       StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates on disk)",
@@ -417,19 +417,19 @@ TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {
 
   // Now open the DiskRowSet for read
   shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_OK(OpenTestRowSet(&rs));
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
-  ASSERT_STATUS_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas());
   DeltaTracker *dt = rs->delta_tracker();
   int num_stores = dt->redo_delta_stores_.size();
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
   shared_ptr<DeltaIterator> merge_iter;
-  ASSERT_STATUS_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
+  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
                                                        &compacted_stores,
                                                        &compacted_blocks, &merge_iter));
   vector<string> results;
-  ASSERT_STATUS_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
+  ASSERT_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
                                           ITERATE_OVER_ALL_ROWS,
                                           &results));
   BOOST_FOREACH(const string &str, results) {
@@ -448,22 +448,22 @@ TEST_F(TestRowSet, TestCompactStores) {
 
   WriteTestRowSet();
   shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_OK(OpenTestRowSet(&rs));
   ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore());
 
   // Generate 3 deltafiles
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
-  ASSERT_STATUS_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas());
   ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore());
 
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
-  ASSERT_STATUS_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas());
   double perf_improvement = rs->DeltaStoresCompactionPerfImprovementScore();
   ASSERT_LT(0, perf_improvement);
   ASSERT_GT(1, perf_improvement);
 
   UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
-  ASSERT_STATUS_OK(rs->FlushDeltas());
+  ASSERT_OK(rs->FlushDeltas());
   ASSERT_EQ(1, rs->DeltaStoresCompactionPerfImprovementScore());
 
   // Compact the deltafiles
@@ -471,7 +471,7 @@ TEST_F(TestRowSet, TestCompactStores) {
   int num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores before compaction: " << num_stores;
   ASSERT_EQ(num_stores, 3);
-  ASSERT_STATUS_OK(dt->CompactStores(0, num_stores - 1));
+  ASSERT_OK(dt->CompactStores(0, num_stores - 1));
   num_stores = dt->redo_delta_stores_.size();
   VLOG(1) << "Number of stores after compaction: " << num_stores;
   ASSERT_EQ(1,  num_stores);
@@ -481,11 +481,11 @@ TEST_F(TestRowSet, TestCompactStores) {
   vector<shared_ptr<DeltaStore> > compacted_stores;
   vector<BlockId> compacted_blocks;
   shared_ptr<DeltaIterator> merge_iter;
-  ASSERT_STATUS_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
+  ASSERT_OK(dt->MakeDeltaIteratorMergerUnlocked(0, num_stores - 1, &schema_,
                                                        &compacted_stores,
                                                        &compacted_blocks, &merge_iter));
   vector<string> results;
-  ASSERT_STATUS_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
+  ASSERT_OK(DebugDumpDeltaIterator(REDO, merge_iter.get(), schema_,
                                           ITERATE_OVER_ALL_ROWS,
                                           &results));
   BOOST_FOREACH(const string &str, results) {

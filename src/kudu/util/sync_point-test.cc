@@ -31,7 +31,7 @@ TEST(SyncPointTest, TestSyncPoint) {
   // setting 'var' to true, which unblocks the main thread.
   scoped_refptr<Thread> thread;
   bool var = false;
-  ASSERT_STATUS_OK(kudu::Thread::Create("test", "test",
+  ASSERT_OK(kudu::Thread::Create("test", "test",
                                         &RunThread, &var, &thread));
 
   // Blocked on RunThread to process "first".

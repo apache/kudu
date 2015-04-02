@@ -452,8 +452,8 @@ class TabletTestBase : public KuduTabletTest {
 
   void VerifyTestRows(uint64_t first_row, uint64_t expected_count) {
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet()->NewRowIterator(client_schema_, &iter));
-    ASSERT_STATUS_OK(iter->Init(NULL));
+    ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    ASSERT_OK(iter->Init(NULL));
     int batch_size = std::max(
       (size_t)1, std::min((size_t)(expected_count / 10),
                           4*1024*1024 / schema_.byte_size()));
@@ -472,7 +472,7 @@ class TabletTestBase : public KuduTabletTest {
     seen_rows.resize(expected_count);
 
     while (iter->HasNext()) {
-      ASSERT_STATUS_OK_FAST(iter->NextBlock(&block));
+      ASSERT_OK_FAST(iter->NextBlock(&block));
 
       RowBlockRow rb_row = block.row(0);
       if (VLOG_IS_ON(2)) {

@@ -63,7 +63,7 @@ TEST_F(TestMultiThreadedRowSet, TestMTUpdate) {
 
   // Re-open the rowset
   shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_OK(OpenTestRowSet(&rs));
 
   // Spawn a bunch of threads, each of which will do updates.
   boost::ptr_vector<boost::thread> threads;
@@ -83,7 +83,7 @@ TEST_F(TestMultiThreadedRowSet, TestMTUpdateAndFlush) {
 
   // Re-open the rowset
   shared_ptr<DiskRowSet> rs;
-  ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+  ASSERT_OK(OpenTestRowSet(&rs));
 
   // Spawn a bunch of threads, each of which will do updates.
   boost::ptr_vector<boost::thread> threads;

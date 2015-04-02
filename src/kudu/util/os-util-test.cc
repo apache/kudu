@@ -26,7 +26,7 @@ void RunTest(const string& name, int user_ticks, int kernel_ticks, int io_wait) 
                                    name, user_ticks, kernel_ticks, io_wait);
   ThreadStats stats;
   string extracted_name;
-  ASSERT_STATUS_OK(ParseStat(buf, &extracted_name, &stats));
+  ASSERT_OK(ParseStat(buf, &extracted_name, &stats));
   ASSERT_EQ(name, extracted_name);
   ASSERT_EQ(user_ticks * (1e9 / sysconf(_SC_CLK_TCK)), stats.user_ns);
   ASSERT_EQ(kernel_ticks * (1e9 / sysconf(_SC_CLK_TCK)), stats.kernel_ns);

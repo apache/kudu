@@ -36,13 +36,13 @@ class NetUtilTest : public KuduTest {
 
 TEST_F(NetUtilTest, TestParseAddresses) {
   string ret;
-  ASSERT_STATUS_OK(DoParseBindAddresses("0.0.0.0:12345", &ret));
+  ASSERT_OK(DoParseBindAddresses("0.0.0.0:12345", &ret));
   ASSERT_EQ("0.0.0.0:12345", ret);
 
-  ASSERT_STATUS_OK(DoParseBindAddresses("0.0.0.0", &ret));
+  ASSERT_OK(DoParseBindAddresses("0.0.0.0", &ret));
   ASSERT_EQ("0.0.0.0:7150", ret);
 
-  ASSERT_STATUS_OK(DoParseBindAddresses("0.0.0.0:12345, 0.0.0.0:12346", &ret));
+  ASSERT_OK(DoParseBindAddresses("0.0.0.0:12345, 0.0.0.0:12346", &ret));
   ASSERT_EQ("0.0.0.0:12345,0.0.0.0:12346", ret);
 
   // Test some invalid addresses.
@@ -59,7 +59,7 @@ TEST_F(NetUtilTest, TestParseAddresses) {
 TEST_F(NetUtilTest, TestResolveAddresses) {
   HostPort hp("localhost", 12345);
   vector<Sockaddr> addrs;
-  ASSERT_STATUS_OK(hp.ResolveAddresses(&addrs));
+  ASSERT_OK(hp.ResolveAddresses(&addrs));
   ASSERT_TRUE(!addrs.empty());
   BOOST_FOREACH(const Sockaddr& addr, addrs) {
     LOG(INFO) << "Address: " << addr.ToString();
@@ -68,6 +68,6 @@ TEST_F(NetUtilTest, TestResolveAddresses) {
     EXPECT_TRUE(addr.IsAnyLocalAddress());
   }
 
-  ASSERT_STATUS_OK(hp.ResolveAddresses(NULL));
+  ASSERT_OK(hp.ResolveAddresses(NULL));
 }
 } // namespace kudu

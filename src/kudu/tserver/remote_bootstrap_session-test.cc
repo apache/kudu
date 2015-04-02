@@ -109,7 +109,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
     consensus::ConsensusBootstrapInfo boot_info;
     CHECK_OK(tablet_peer_->Start(boot_info));
 
-    ASSERT_STATUS_OK(tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(2)));
+    ASSERT_OK(tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(2)));
   }
 
 
@@ -202,7 +202,7 @@ TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
 
   {
     TabletSuperBlockPB tablet_superblock;
-    ASSERT_STATUS_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
+    ASSERT_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
     int size = tablet_superblock.ByteSize();
     tablet_buf.resize(size);
     uint8_t* tablet_dst = tablet_buf.data();
@@ -218,7 +218,7 @@ TEST_F(RemoteBootstrapTest, TestSuperBlocksEqual) {
 // chunk and the total file sizes match.
 TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
   TabletSuperBlockPB tablet_superblock;
-  ASSERT_STATUS_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
+  ASSERT_OK(tablet()->metadata()->ToSuperBlock(&tablet_superblock));
   for (int i = 0; i < tablet_superblock.rowsets_size(); i++) {
     const RowSetDataPB& rowset = tablet_superblock.rowsets(i);
     for (int j = 0; j < rowset.columns_size(); j++) {
@@ -230,21 +230,21 @@ TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
       gscoped_ptr<SequentialFile> file;
       FetchBlockToFile(block_id, &path, &file);
       uint64_t session_block_size = 0;
-      ASSERT_STATUS_OK(Env::Default()->GetFileSize(path, &session_block_size));
+      ASSERT_OK(Env::Default()->GetFileSize(path, &session_block_size));
       faststring buf;
       buf.reserve(session_block_size);
       Slice data;
-      ASSERT_STATUS_OK(file->Read(session_block_size, &data, buf.data()));
+      ASSERT_OK(file->Read(session_block_size, &data, buf.data()));
       uint32_t session_crc = crc::Crc32c(data.data(), data.size());
       LOG(INFO) << "session block file has size of " << session_block_size
                 << " and CRC32C of " << session_crc << ": " << path;
 
       gscoped_ptr<ReadableBlock> tablet_block;
-      ASSERT_STATUS_OK(fs_manager()->OpenBlock(block_id, &tablet_block));
+      ASSERT_OK(fs_manager()->OpenBlock(block_id, &tablet_block));
       uint64_t tablet_block_size = 0;
-      ASSERT_STATUS_OK(tablet_block->Size(&tablet_block_size));
+      ASSERT_OK(tablet_block->Size(&tablet_block_size));
       buf.reserve(tablet_block_size);
-      ASSERT_STATUS_OK(tablet_block->Read(0, tablet_block_size, &data, buf.data()));
+      ASSERT_OK(tablet_block->Read(0, tablet_block_size, &data, buf.data()));
       uint32_t tablet_crc = crc::Crc32c(data.data(), data.size());
       LOG(INFO) << "tablet  block file has size of " << tablet_block_size
                 << " and CRC32C of " << tablet_crc

@@ -97,7 +97,7 @@ Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uin
 TEST_F(TestPBUtil, TestWritableFileOutputStream) {
   gscoped_ptr<Env> env(NewMemEnv(Env::Default()));
   shared_ptr<WritableFile> file;
-  ASSERT_STATUS_OK(env_util::OpenFileForWrite(env.get(), "/test", &file));
+  ASSERT_OK(env_util::OpenFileForWrite(env.get(), "/test", &file));
 
   WritableFileOutputStream stream(file.get(), 4096);
 

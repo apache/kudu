@@ -89,12 +89,12 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
 
   // Add an int column with default
   uint32_t default_c2 = 10;
-  ASSERT_STATUS_OK(builder.AddColumn("c2", UINT32, false, &default_c2, &default_c2));
+  ASSERT_OK(builder.AddColumn("c2", UINT32, false, &default_c2, &default_c2));
   schemas.push_back(builder.Build());
 
   // add a string column with default
   Slice default_c3("Hello World");
-  ASSERT_STATUS_OK(builder.AddColumn("c3", STRING, false, &default_c3, &default_c3));
+  ASSERT_OK(builder.AddColumn("c3", STRING, false, &default_c3, &default_c3));
   schemas.push_back(builder.Build());
 
   vector<shared_ptr<DeltaStore> > inputs;
@@ -107,7 +107,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
     // Write the Deltas
     BlockId block_id;
     gscoped_ptr<DeltaFileWriter> dfw;
-    ASSERT_STATUS_OK(GetDeltaFileWriter(schema, &dfw, &block_id));
+    ASSERT_OK(GetDeltaFileWriter(schema, &dfw, &block_id));
 
     // Generate N updates with the new schema, some of them are on existing
     // rows others are on new rows (see kNumUpdates and kNumMultipleUpdates).
@@ -151,16 +151,16 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       // others will be on new rows. (N is tunable by changing kNumMultipleUpdates)
       DeltaKey key((i < kNumMultipleUpdates) ? i : row_id, Timestamp(curr_timestamp));
       RowChangeList row_changes = update.as_changelist();
-      ASSERT_STATUS_OK(dfw->AppendDelta<REDO>(key, row_changes));
-      ASSERT_STATUS_OK(stats.UpdateStats(key.timestamp(), schema, row_changes));
+      ASSERT_OK(dfw->AppendDelta<REDO>(key, row_changes));
+      ASSERT_OK(stats.UpdateStats(key.timestamp(), schema, row_changes));
       curr_timestamp++;
       row_id++;
     }
 
-    ASSERT_STATUS_OK(dfw->WriteDeltaStats(stats));
-    ASSERT_STATUS_OK(dfw->Finish());
+    ASSERT_OK(dfw->WriteDeltaStats(stats));
+    ASSERT_OK(dfw->Finish());
     shared_ptr<DeltaFileReader> dfr;
-    ASSERT_STATUS_OK(GetDeltaFileReader(block_id, &dfr));
+    ASSERT_OK(GetDeltaFileReader(block_id, &dfr));
     inputs.push_back(dfr);
     deltafile_idx++;
   }
@@ -173,21 +173,21 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
                                                                    snap));
   gscoped_ptr<DeltaFileWriter> dfw;
   BlockId block_id;
-  ASSERT_STATUS_OK(GetDeltaFileWriter(merge_schema, &dfw, &block_id));
-  ASSERT_STATUS_OK(WriteDeltaIteratorToFile<REDO>(merge_iter.get(),
+  ASSERT_OK(GetDeltaFileWriter(merge_schema, &dfw, &block_id));
+  ASSERT_OK(WriteDeltaIteratorToFile<REDO>(merge_iter.get(),
                                                   merge_schema,
                                                   ITERATE_OVER_ALL_ROWS,
                                                   dfw.get()));
-  ASSERT_STATUS_OK(dfw->Finish());
+  ASSERT_OK(dfw->Finish());
 
   shared_ptr<DeltaFileReader> dfr;
-  ASSERT_STATUS_OK(GetDeltaFileReader(block_id, &dfr));
+  ASSERT_OK(GetDeltaFileReader(block_id, &dfr));
   DeltaIterator* raw_iter;
-  ASSERT_STATUS_OK(dfr->NewDeltaIterator(&merge_schema, snap, &raw_iter));
+  ASSERT_OK(dfr->NewDeltaIterator(&merge_schema, snap, &raw_iter));
   gscoped_ptr<DeltaIterator> scoped_iter(raw_iter);
 
   vector<string> results;
-  ASSERT_STATUS_OK(DebugDumpDeltaIterator(REDO, scoped_iter.get(), merge_schema,
+  ASSERT_OK(DebugDumpDeltaIterator(REDO, scoped_iter.get(), merge_schema,
                                           ITERATE_OVER_ALL_ROWS, &results));
   BOOST_FOREACH(const string &str, results) {
     VLOG(1) << str;

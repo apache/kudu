@@ -94,9 +94,9 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     iter.reset(rs->NewRowIterator(&rs->schema(),
                MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
     uint32_t expected = NoBarrier_Load(&update_counter_);
-    ASSERT_STATUS_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(NULL));
     while (iter->HasNext()) {
-      ASSERT_STATUS_OK_FAST(iter->NextBlock(&dst));
+      ASSERT_OK_FAST(iter->NextBlock(&dst));
       size_t n = dst.nrows();
       ASSERT_GT(n, 0);
       for (size_t j = 0; j < n; j++) {
@@ -135,16 +135,16 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
 
   void JoinThreads() {
     for (int i = 0; i < update_threads_.size(); i++) {
-      ASSERT_STATUS_OK(ThreadJoiner(update_threads_[i].get()).Join());
+      ASSERT_OK(ThreadJoiner(update_threads_[i].get()).Join());
     }
     for (int i = 0; i < flush_threads_.size(); i++) {
-      ASSERT_STATUS_OK(ThreadJoiner(flush_threads_[i].get()).Join());
+      ASSERT_OK(ThreadJoiner(flush_threads_[i].get()).Join());
     }
     for (int i = 0; i < compaction_threads_.size(); i++) {
-      ASSERT_STATUS_OK(ThreadJoiner(compaction_threads_[i].get()).Join());
+      ASSERT_OK(ThreadJoiner(compaction_threads_[i].get()).Join());
     }
     for (int i = 0; i < alter_schema_threads_.size(); i++) {
-      ASSERT_STATUS_OK(ThreadJoiner(alter_schema_threads_[i].get()).Join());
+      ASSERT_OK(ThreadJoiner(alter_schema_threads_[i].get()).Join());
     }
   }
 
@@ -155,14 +155,14 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
   void UpdateRowSet(DiskRowSet *rs, uint32_t value) {
     for (uint32_t idx = 0; idx < n_rows_ && ShouldRun(); idx++) {
       OperationResultPB result;
-      ASSERT_STATUS_OK_FAST(UpdateRow(rs, idx, value, &result));
+      ASSERT_OK_FAST(UpdateRow(rs, idx, value, &result));
     }
   }
 
   void TestUpdateAndVerify() {
     WriteTestRowSetWithZeros();
     shared_ptr<DiskRowSet> rs;
-    ASSERT_STATUS_OK(OpenTestRowSet(&rs));
+    ASSERT_OK(OpenTestRowSet(&rs));
 
     StartThreads(rs.get());
     SleepFor(MonoDelta::FromSeconds(FLAGS_num_seconds_per_thread));

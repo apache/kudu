@@ -66,9 +66,9 @@ class CreateTableStressTest : public KuduTest {
 
     KuduTest::SetUp();
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
-    ASSERT_STATUS_OK(cluster_->Start());
+    ASSERT_OK(cluster_->Start());
 
-    ASSERT_STATUS_OK(KuduClientBuilder()
+    ASSERT_OK(KuduClientBuilder()
                      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())
                      .Build(&client_));
   }
@@ -93,7 +93,7 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
     keys.push_back(StringPrintf("k_%05d", i));
   }
 
-  ASSERT_STATUS_OK(client_->NewTableCreator()
+  ASSERT_OK(client_->NewTableCreator()
                    ->table_name(table_name)
                    .schema(&schema_)
                    .split_keys(keys)
@@ -109,7 +109,7 @@ TEST_F(CreateTableStressTest, CreateBigTable) {
   string table_name = "test_table";
   ASSERT_NO_FATAL_FAILURE(CreateBigTable(table_name, FLAGS_num_test_tablets));
   master::GetTableLocationsResponsePB resp;
-  ASSERT_STATUS_OK(WaitForRunningTabletCount(cluster_->mini_master(), table_name,
+  ASSERT_OK(WaitForRunningTabletCount(cluster_->mini_master(), table_name,
                                              FLAGS_num_test_tablets, &resp));
   LOG(INFO) << "Created table successfully!";
   // Use std::cout instead of log, since these responses are large and log
@@ -131,7 +131,7 @@ TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
   for (int i = 0; i < 3; i++) {
     SleepFor(MonoDelta::FromMicroseconds(500));
     LOG(INFO) << "Restarting master...";
-    ASSERT_STATUS_OK(cluster_->mini_master()->Restart());
+    ASSERT_OK(cluster_->mini_master()->Restart());
     LOG(INFO) << "Master restarted.";
   }
 

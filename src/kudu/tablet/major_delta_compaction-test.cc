@@ -79,7 +79,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
       CHECK_OK(ins_row.SetString(col++, row.val2));
       CHECK_OK(ins_row.SetUInt32(col++, row.val3));
       CHECK_OK(ins_row.SetString(col++, row.val4));
-      ASSERT_STATUS_OK_FAST(writer.Insert(ins_row));
+      ASSERT_OK_FAST(writer.Insert(ins_row));
       expected_state_.push_back(row);
     }
   }

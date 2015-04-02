@@ -38,12 +38,12 @@ class SysCatalogTest : public KuduTest {
 
     // Start master
     mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master"), 0));
-    ASSERT_STATUS_OK(mini_master_->Start());
+    ASSERT_OK(mini_master_->Start());
     master_ = mini_master_->master();
 
     // Create a client proxy to it.
     MessengerBuilder bld("Client");
-    ASSERT_STATUS_OK(bld.Build(&client_messenger_));
+    ASSERT_OK(bld.Build(&client_messenger_));
     proxy_.reset(new MasterServiceProxy(client_messenger_, mini_master_->bound_rpc_addr()));
   }
 
@@ -100,7 +100,7 @@ static bool MetadatasEqual(C* ti_a, C* ti_b) {
 // visit)
 TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
   TableLoader loader;
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(0, loader.tables.size());
 
   // Create new table.
@@ -111,15 +111,15 @@ TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
     l.mutable_data()->pb.set_version(0);
     l.mutable_data()->pb.set_num_replicas(1);
     l.mutable_data()->pb.set_state(SysTablesEntryPB::kTableStatePreparing);
-    ASSERT_STATUS_OK(SchemaToPB(Schema(), l.mutable_data()->pb.mutable_schema()));
+    ASSERT_OK(SchemaToPB(Schema(), l.mutable_data()->pb.mutable_schema()));
     // Add the table
-    ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->AddTable(table.get()));
+    ASSERT_OK(master_->catalog_manager()->sys_catalog()->AddTable(table.get()));
     l.Commit();
   }
 
   // Verify it showed up.
   loader.Reset();
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(1, loader.tables.size());
   ASSERT_TRUE(MetadatasEqual(table.get(), loader.tables[0]));
 
@@ -128,19 +128,19 @@ TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
     TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
     l.mutable_data()->pb.set_version(1);
     l.mutable_data()->pb.set_state(SysTablesEntryPB::kTableStateRemoved);
-    ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->UpdateTable(table.get()));
+    ASSERT_OK(master_->catalog_manager()->sys_catalog()->UpdateTable(table.get()));
     l.Commit();
   }
 
   loader.Reset();
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(1, loader.tables.size());
   ASSERT_TRUE(MetadatasEqual(table.get(), loader.tables[0]));
 
   // Delete the table
   loader.Reset();
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->DeleteTable(table.get()));
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->DeleteTable(table.get()));
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTables(&loader));
   ASSERT_EQ(0, loader.tables.size());
 }
 
@@ -236,7 +236,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
   SysCatalogTable* sys_catalog = master_->catalog_manager()->sys_catalog();
 
   TabletLoader loader;
-  ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTablets(&loader));
+  ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTablets(&loader));
   ASSERT_EQ(0, loader.tablets.size());
 
   // Add tablet1 and tablet2
@@ -248,11 +248,11 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
     loader.Reset();
     TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
     TabletMetadataLock l2(tablet2.get(), TabletMetadataLock::WRITE);
-    ASSERT_STATUS_OK(sys_catalog->AddTablets(tablets));
+    ASSERT_OK(sys_catalog->AddTablets(tablets));
     l1.Commit();
     l2.Commit();
 
-    ASSERT_STATUS_OK(sys_catalog->VisitTablets(&loader));
+    ASSERT_OK(sys_catalog->VisitTablets(&loader));
     ASSERT_EQ(2, loader.tablets.size());
     ASSERT_TRUE(MetadatasEqual(tablet1.get(), loader.tablets[0]));
     ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[1]));
@@ -265,11 +265,11 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
 
     TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
     l1.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStateRunning);
-    ASSERT_STATUS_OK(sys_catalog->UpdateTablets(tablets));
+    ASSERT_OK(sys_catalog->UpdateTablets(tablets));
     l1.Commit();
 
     loader.Reset();
-    ASSERT_STATUS_OK(sys_catalog->VisitTablets(&loader));
+    ASSERT_OK(sys_catalog->VisitTablets(&loader));
     ASSERT_EQ(2, loader.tablets.size());
     ASSERT_TRUE(MetadatasEqual(tablet1.get(), loader.tablets[0]));
     ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[1]));
@@ -291,13 +291,13 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
     l2.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStateRunning);
 
     loader.Reset();
-    ASSERT_STATUS_OK(sys_catalog->AddAndUpdateTablets(to_add, to_update));
+    ASSERT_OK(sys_catalog->AddAndUpdateTablets(to_add, to_update));
 
     l1.Commit();
     l2.Commit();
     l3.Commit();
 
-    ASSERT_STATUS_OK(sys_catalog->VisitTablets(&loader));
+    ASSERT_OK(sys_catalog->VisitTablets(&loader));
     ASSERT_EQ(3, loader.tablets.size());
     ASSERT_TRUE(MetadatasEqual(tablet1.get(), loader.tablets[0]));
     ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[1]));
@@ -311,8 +311,8 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
     tablets.push_back(tablet3.get());
 
     loader.Reset();
-    ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->DeleteTablets(tablets));
-    ASSERT_STATUS_OK(master_->catalog_manager()->sys_catalog()->VisitTablets(&loader));
+    ASSERT_OK(master_->catalog_manager()->sys_catalog()->DeleteTablets(tablets));
+    ASSERT_OK(master_->catalog_manager()->sys_catalog()->VisitTablets(&loader));
     ASSERT_EQ(1, loader.tablets.size());
     ASSERT_TRUE(MetadatasEqual(tablet2.get(), loader.tablets[0]));
   }

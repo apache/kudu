@@ -51,7 +51,7 @@ class TsTabletManagerTest : public KuduTest {
 
     mini_server_.reset(
         new MiniTabletServer(GetTestPath("TsTabletManagerTest-fsroot"), 0));
-    ASSERT_STATUS_OK(mini_server_->Start());
+    ASSERT_OK(mini_server_->Start());
     mini_server_->FailHeartbeats();
 
     quorum_ = mini_server_->CreateLocalQuorum();
@@ -106,13 +106,13 @@ TEST_F(TsTabletManagerTest, TestPersistBlocks) {
   TabletMasterBlockPB mb_a, mb_b;
   CreateTestMasterBlock(kTabletA, &mb_a);
   CreateTestMasterBlock(kTabletB, &mb_b);
-  ASSERT_STATUS_OK(tablet_manager_->PersistMasterBlock(mb_a));
-  ASSERT_STATUS_OK(tablet_manager_->PersistMasterBlock(mb_b));
+  ASSERT_OK(tablet_manager_->PersistMasterBlock(mb_a));
+  ASSERT_OK(tablet_manager_->PersistMasterBlock(mb_b));
 
   // Read them back and make sure they match what we persisted.
   TabletMasterBlockPB read_a, read_b;
-  ASSERT_STATUS_OK(tablet_manager_->LoadMasterBlock(kTabletA, &read_a));
-  ASSERT_STATUS_OK(tablet_manager_->LoadMasterBlock(kTabletB, &read_b));
+  ASSERT_OK(tablet_manager_->LoadMasterBlock(kTabletA, &read_a));
+  ASSERT_OK(tablet_manager_->LoadMasterBlock(kTabletB, &read_b));
   ASSERT_EQ(mb_a.ShortDebugString(), read_a.ShortDebugString());
   ASSERT_EQ(mb_b.ShortDebugString(), read_b.ShortDebugString());
 }
@@ -120,7 +120,7 @@ TEST_F(TsTabletManagerTest, TestPersistBlocks) {
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
   // Create a new tablet.
   scoped_refptr<TabletPeer> peer;
-  ASSERT_STATUS_OK(CreateNewTablet(kTabletId, "", "",schema_, &peer));
+  ASSERT_OK(CreateNewTablet(kTabletId, "", "",schema_, &peer));
   ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
   peer.reset();
 
@@ -130,8 +130,8 @@ TEST_F(TsTabletManagerTest, TestCreateTablet) {
   LOG(INFO) << "Restarting tablet manager";
   mini_server_.reset(
       new MiniTabletServer(GetTestPath("TsTabletManagerTest-fsroot"), 0));
-  ASSERT_STATUS_OK(mini_server_->Start());
-  ASSERT_STATUS_OK(mini_server_->WaitStarted());
+  ASSERT_OK(mini_server_->Start());
+  ASSERT_OK(mini_server_->WaitStarted());
   tablet_manager_ = mini_server_->server()->tablet_manager();
 
   // Ensure that the tablet got re-loaded and re-opened off disk.
@@ -181,7 +181,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
-  ASSERT_STATUS_OK(CreateNewTablet("tablet-1", "", "", schema_, NULL));
+  ASSERT_OK(CreateNewTablet("tablet-1", "", "", schema_, NULL));
   int updated_tablets = 0;
   while (updated_tablets != 1) {
     tablet_manager_->GenerateIncrementalTabletReport(&report);
@@ -209,7 +209,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
-  ASSERT_STATUS_OK(CreateNewTablet("tablet-2", "", "", schema_, NULL));
+  ASSERT_OK(CreateNewTablet("tablet-2", "", "", schema_, NULL));
   updated_tablets = 0;
 
   // In this report we might get one or two tablets. We'll definitely

@@ -127,7 +127,7 @@ class TabletServerTestBase : public KuduTest {
 
     WriteRequestPB req;
     req.set_tablet_id(kTabletId);
-    ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+    ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
     WriteResponsePB resp;
     rpc::RpcController controller;
@@ -136,7 +136,7 @@ class TabletServerTestBase : public KuduTest {
 
     AddTestRowToPB(RowOperationsPB::UPDATE, schema_, row_idx, new_val, new_string_val,
                    req.mutable_row_operations());
-    ASSERT_STATUS_OK(proxy_->Write(req, &resp, &controller));
+    ASSERT_OK(proxy_->Write(req, &resp, &controller));
 
     SCOPED_TRACE(resp.DebugString());
     ASSERT_FALSE(resp.has_error())<< resp.ShortDebugString();
@@ -199,7 +199,7 @@ class TabletServerTestBase : public KuduTest {
 
     RowOperationsPB* data = req.mutable_row_operations();
 
-    ASSERT_STATUS_OK(SchemaToPB(schema_, req.mutable_schema()));
+    ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
     uint64_t inserted_since_last_report = 0;
     for (int i = 0; i < num_batches; ++i) {
@@ -296,7 +296,7 @@ class TabletServerTestBase : public KuduTest {
       rpc.Reset();
       req.set_batch_size_bytes(10000);
       SCOPED_TRACE(req.DebugString());
-      ASSERT_STATUS_OK(DCHECK_NOTNULL(proxy)->Scan(req, &resp, &rpc));
+      ASSERT_OK(DCHECK_NOTNULL(proxy)->Scan(req, &resp, &rpc));
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
 
@@ -316,7 +316,7 @@ class TabletServerTestBase : public KuduTest {
                                &indirect));
     }
     vector<const uint8_t*> rows;
-    ASSERT_STATUS_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
+    ASSERT_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
                                                indirect, &direct, &rows));
     VLOG(1) << "Round trip got " << rows.size() << " rows";
     BOOST_FOREACH(const uint8_t* row_ptr, rows) {
@@ -361,8 +361,8 @@ class TabletServerTestBase : public KuduTest {
   // Verifies that a set of expected rows (key, value) is present in the tablet.
   void VerifyRows(const Schema& schema, const vector<KeyValue>& expected) {
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet_peer_->tablet()->NewRowIterator(schema, &iter));
-    ASSERT_STATUS_OK(iter->Init(NULL));
+    ASSERT_OK(tablet_peer_->tablet()->NewRowIterator(schema, &iter));
+    ASSERT_OK(iter->Init(NULL));
 
     int batch_size = std::max(
         (size_t)1, std::min((size_t)(expected.size() / 10),
@@ -373,7 +373,7 @@ class TabletServerTestBase : public KuduTest {
 
     int count = 0;
     while (iter->HasNext()) {
-      ASSERT_STATUS_OK_FAST(iter->NextBlock(&block));
+      ASSERT_OK_FAST(iter->NextBlock(&block));
       RowBlockRow rb_row = block.row(0);
       for (int i = 0; i < block.nrows(); i++) {
         if (block.selection_vector()->IsRowSelected(i)) {
@@ -399,13 +399,13 @@ class TabletServerTestBase : public KuduTest {
 
     NewScanRequestPB* scan = req.mutable_new_scan_request();
     scan->set_tablet_id(kTabletId);
-    ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+    ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
     req.set_call_seq_id(0);
 
     // Send the call
     {
       SCOPED_TRACE(req.DebugString());
-      ASSERT_STATUS_OK(proxy_->Scan(req, &resp, &rpc));
+      ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
       SCOPED_TRACE(resp.DebugString());
       ASSERT_TRUE(resp.has_error());
       ASSERT_EQ(expected_code, resp.error().code());
@@ -422,14 +422,14 @@ class TabletServerTestBase : public KuduTest {
     const Schema& projection = schema_;
     NewScanRequestPB* scan = req.mutable_new_scan_request();
     scan->set_tablet_id(kTabletId);
-    ASSERT_STATUS_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+    ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
     req.set_call_seq_id(0);
     req.set_batch_size_bytes(0); // so it won't return data right away
 
     // Send the call
     {
       SCOPED_TRACE(req.DebugString());
-      ASSERT_STATUS_OK(proxy_->Scan(req, resp, &rpc));
+      ASSERT_OK(proxy_->Scan(req, resp, &rpc));
       SCOPED_TRACE(resp->DebugString());
       ASSERT_FALSE(resp->has_error());
       ASSERT_TRUE(resp->has_more_results());

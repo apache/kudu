@@ -482,23 +482,23 @@ TEST_F(RowOperationsTest, TestProjectUpdates) {
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
   // Specify the key and no columns to update
-  ASSERT_STATUS_OK(client_row.SetUInt32("key", 12345));
+  ASSERT_OK(client_row.SetUInt32("key", 12345));
   EXPECT_EQ("error: Invalid argument: No fields updated, key is: (uint32 key=12345)",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
 
   // Specify the key and update one column.
-  ASSERT_STATUS_OK(client_row.SetUInt32("int_val", 12345));
+  ASSERT_OK(client_row.SetUInt32("int_val", 12345));
   EXPECT_EQ("MUTATE (uint32 key=12345) SET int_val=12345",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
   // Specify the key and update both columns
-  ASSERT_STATUS_OK(client_row.SetString("string_val", "foo"));
+  ASSERT_OK(client_row.SetString("string_val", "foo"));
   EXPECT_EQ("MUTATE (uint32 key=12345) SET int_val=12345, string_val=foo",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
   // Update the nullable column to null.
-  ASSERT_STATUS_OK(client_row.SetNull("string_val"));
+  ASSERT_OK(client_row.SetNull("string_val"));
   EXPECT_EQ("MUTATE (uint32 key=12345) SET int_val=12345, string_val=NULL",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 }
@@ -519,8 +519,8 @@ TEST_F(RowOperationsTest, TestProjectUpdatesReorderedColumns) {
   server_schema = SchemaBuilder(server_schema).Build();
 
   KuduPartialRow client_row(&client_schema);
-  ASSERT_STATUS_OK(client_row.SetUInt32("key", 12345));
-  ASSERT_STATUS_OK(client_row.SetUInt32("int_val", 54321));
+  ASSERT_OK(client_row.SetUInt32("key", 12345));
+  ASSERT_OK(client_row.SetUInt32("int_val", 54321));
   EXPECT_EQ("MUTATE (uint32 key=12345) SET int_val=54321",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 }
@@ -540,8 +540,8 @@ TEST_F(RowOperationsTest, DISABLED_TestProjectUpdatesSubsetOfColumns) {
   server_schema = SchemaBuilder(server_schema).Build();
 
   KuduPartialRow client_row(&client_schema);
-  ASSERT_STATUS_OK(client_row.SetUInt32("key", 12345));
-  ASSERT_STATUS_OK(client_row.SetString("string_val", "foo"));
+  ASSERT_OK(client_row.SetUInt32("key", 12345));
+  ASSERT_OK(client_row.SetString("string_val", "foo"));
   EXPECT_EQ("MUTATE (uint32 key=12345) SET string_val=foo",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 }
@@ -558,8 +558,8 @@ TEST_F(RowOperationsTest, TestClientMismatchedType) {
   server_schema = SchemaBuilder(server_schema).Build();
 
   KuduPartialRow client_row(&client_schema);
-  ASSERT_STATUS_OK(client_row.SetUInt32("key", 12345));
-  ASSERT_STATUS_OK(client_row.SetUInt8("int_val", 1));
+  ASSERT_OK(client_row.SetUInt32("key", 12345));
+  ASSERT_OK(client_row.SetUInt8("int_val", 1));
   EXPECT_EQ("error: Invalid argument: The column 'int_val' must have type "
             "uint32 NOT NULL found uint8 NOT NULL",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
@@ -579,17 +579,17 @@ TEST_F(RowOperationsTest, TestProjectDeletes) {
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Only half the key set
-  ASSERT_STATUS_OK(client_row.SetUInt32("key", 12345));
+  ASSERT_OK(client_row.SetUInt32("key", 12345));
   EXPECT_EQ("error: Invalid argument: No value provided for key column: key_2[uint32 NOT NULL]",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Whole key set (correct)
-  ASSERT_STATUS_OK(client_row.SetUInt32("key_2", 54321));
+  ASSERT_OK(client_row.SetUInt32("key_2", 54321));
   EXPECT_EQ("MUTATE (uint32 key=12345, uint32 key_2=54321) DELETE",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Extra column set (incorrect)
-  ASSERT_STATUS_OK(client_row.SetString("string_val", "hello"));
+  ASSERT_OK(client_row.SetString("string_val", "hello"));
   EXPECT_EQ("error: Invalid argument: DELETE should not have a value for column: "
             "string_val[string NULLABLE]",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));

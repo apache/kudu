@@ -95,7 +95,7 @@ TEST_F(TSStressTest, TestMTInserts) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out);
-  ASSERT_STATUS_OK(histogram_->WriteAsJson("ts-insert-latency", &writer, NORMAL));
+  ASSERT_OK(histogram_->WriteAsJson("ts-insert-latency", &writer, NORMAL));
 
   LOG(INFO) << out.str();
 }

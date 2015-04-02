@@ -57,7 +57,7 @@ class FailureDetectorTest : public KuduTest {
 // that node everything is ok and that once we stop doing so the failure detection function
 // gets called.
 TEST_F(FailureDetectorTest, TestDetectsFailure) {
-  ASSERT_STATUS_OK(monitor_->Start());
+  ASSERT_OK(monitor_->Start());
 
   scoped_refptr<FailureDetector> detector(new TimedFailureDetector(
       MonoDelta::FromMilliseconds(kExpectedHeartbeatPeriodMillis * kMaxMissedHeartbeats)));

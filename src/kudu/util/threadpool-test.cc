@@ -28,7 +28,7 @@ static Status BuildMinMaxTestPool(int min_threads, int max_threads, gscoped_ptr<
 
 TEST(TestThreadPool, TestNoTaskOpenClose) {
   gscoped_ptr<ThreadPool> thread_pool;
-  ASSERT_STATUS_OK(BuildMinMaxTestPool(4, 4, &thread_pool));
+  ASSERT_OK(BuildMinMaxTestPool(4, 4, &thread_pool));
   thread_pool->Shutdown();
 }
 
@@ -56,16 +56,16 @@ class SimpleTask : public Runnable {
 
 TEST(TestThreadPool, TestSimpleTasks) {
   gscoped_ptr<ThreadPool> thread_pool;
-  ASSERT_STATUS_OK(BuildMinMaxTestPool(4, 4, &thread_pool));
+  ASSERT_OK(BuildMinMaxTestPool(4, 4, &thread_pool));
 
   Atomic32 counter(0);
   std::tr1::shared_ptr<Runnable> task(new SimpleTask(15, &counter));
 
-  ASSERT_STATUS_OK(thread_pool->SubmitFunc(boost::bind(&SimpleTaskMethod, 10, &counter)));
-  ASSERT_STATUS_OK(thread_pool->Submit(task));
-  ASSERT_STATUS_OK(thread_pool->SubmitFunc(boost::bind(&SimpleTaskMethod, 20, &counter)));
-  ASSERT_STATUS_OK(thread_pool->Submit(task));
-  ASSERT_STATUS_OK(thread_pool->SubmitClosure(Bind(&SimpleTaskMethod, 123, &counter)));
+  ASSERT_OK(thread_pool->SubmitFunc(boost::bind(&SimpleTaskMethod, 10, &counter)));
+  ASSERT_OK(thread_pool->Submit(task));
+  ASSERT_OK(thread_pool->SubmitFunc(boost::bind(&SimpleTaskMethod, 20, &counter)));
+  ASSERT_OK(thread_pool->Submit(task));
+  ASSERT_OK(thread_pool->SubmitClosure(Bind(&SimpleTaskMethod, 123, &counter)));
   thread_pool->Wait();
   ASSERT_EQ(10 + 15 + 20 + 15 + 123, base::subtle::NoBarrier_Load(&counter));
   thread_pool->Shutdown();
@@ -79,12 +79,12 @@ static void IssueTraceStatement() {
 // submitted to the threadpool.
 TEST(TestThreadPool, TestTracePropagation) {
   gscoped_ptr<ThreadPool> thread_pool;
-  ASSERT_STATUS_OK(BuildMinMaxTestPool(1, 1, &thread_pool));
+  ASSERT_OK(BuildMinMaxTestPool(1, 1, &thread_pool));
 
   scoped_refptr<Trace> t(new Trace);
   {
     ADOPT_TRACE(t.get());
-    ASSERT_STATUS_OK(thread_pool->SubmitFunc(&IssueTraceStatement));
+    ASSERT_OK(thread_pool->SubmitFunc(&IssueTraceStatement));
   }
   thread_pool->Wait();
   ASSERT_STR_CONTAINS(t->DumpToString(true), "hello from task");
@@ -92,7 +92,7 @@ TEST(TestThreadPool, TestTracePropagation) {
 
 TEST(TestThreadPool, TestSubmitAfterShutdown) {
   gscoped_ptr<ThreadPool> thread_pool;
-  ASSERT_STATUS_OK(BuildMinMaxTestPool(1, 1, &thread_pool));
+  ASSERT_OK(BuildMinMaxTestPool(1, 1, &thread_pool));
   thread_pool->Shutdown();
   Status s = thread_pool->SubmitFunc(&IssueTraceStatement);
   ASSERT_EQ("Service unavailable: The pool has been shut down.",
@@ -116,23 +116,23 @@ class SlowTask : public Runnable {
 TEST(TestThreadPool, TestThreadPoolWithNoMinimum) {
   MonoDelta idle_timeout = MonoDelta::FromMilliseconds(1);
   gscoped_ptr<ThreadPool> thread_pool;
-  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+  ASSERT_OK(ThreadPoolBuilder("test")
       .set_min_threads(0).set_max_threads(3)
       .set_idle_timeout(idle_timeout).Build(&thread_pool));
   // There are no threads to start with.
   ASSERT_TRUE(thread_pool->num_threads_ == 0);
   // We get up to 3 threads when submitting work.
   CountDownLatch latch(1);
-  ASSERT_STATUS_OK(thread_pool->Submit(
+  ASSERT_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
-  ASSERT_STATUS_OK(thread_pool->Submit(
+  ASSERT_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
   ASSERT_EQ(2, thread_pool->num_threads_);
-  ASSERT_STATUS_OK(thread_pool->Submit(
+  ASSERT_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
   ASSERT_EQ(3, thread_pool->num_threads_);
   // The 4th piece of work gets queued.
-  ASSERT_STATUS_OK(thread_pool->Submit(
+  ASSERT_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
   ASSERT_EQ(3, thread_pool->num_threads_);
   // Finish all work
@@ -149,13 +149,13 @@ TEST(TestThreadPool, TestRace) {
   alarm(10);
   MonoDelta idle_timeout = MonoDelta::FromMicroseconds(1);
   gscoped_ptr<ThreadPool> thread_pool;
-  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+  ASSERT_OK(ThreadPoolBuilder("test")
       .set_min_threads(0).set_max_threads(1)
       .set_idle_timeout(idle_timeout).Build(&thread_pool));
 
   for (int i = 0; i < 500; i++) {
     CountDownLatch l(1);
-    ASSERT_STATUS_OK(thread_pool->SubmitFunc(boost::bind(&CountDownLatch::CountDown, &l)));
+    ASSERT_OK(thread_pool->SubmitFunc(boost::bind(&CountDownLatch::CountDown, &l)));
     l.Wait();
     // Sleeping a different amount in each iteration makes it more likely to hit
     // the bug.
@@ -166,27 +166,27 @@ TEST(TestThreadPool, TestRace) {
 TEST(TestThreadPool, TestVariableSizeThreadPool) {
   MonoDelta idle_timeout = MonoDelta::FromMilliseconds(1);
   gscoped_ptr<ThreadPool> thread_pool;
-  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+  ASSERT_OK(ThreadPoolBuilder("test")
       .set_min_threads(1).set_max_threads(4)
       .set_idle_timeout(idle_timeout).Build(&thread_pool));
   // There is 1 thread to start with.
   ASSERT_EQ(1, thread_pool->num_threads_);
   // We get up to 4 threads when submitting work.
   CountDownLatch latch(1);
-  ASSERT_STATUS_OK(thread_pool->Submit(
+  ASSERT_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
   ASSERT_EQ(1, thread_pool->num_threads_);
-  ASSERT_STATUS_OK(thread_pool->Submit(
+  ASSERT_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
   ASSERT_EQ(2, thread_pool->num_threads_);
-  ASSERT_STATUS_OK(thread_pool->Submit(
+  ASSERT_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
   ASSERT_EQ(3, thread_pool->num_threads_);
-  ASSERT_STATUS_OK(thread_pool->Submit(
+  ASSERT_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
   ASSERT_EQ(4, thread_pool->num_threads_);
   // The 5th piece of work gets queued.
-  ASSERT_STATUS_OK(thread_pool->Submit(
+  ASSERT_OK(thread_pool->Submit(
         shared_ptr<Runnable>(new SlowTask(&latch))));
   ASSERT_EQ(4, thread_pool->num_threads_);
   // Finish all work
@@ -199,12 +199,12 @@ TEST(TestThreadPool, TestVariableSizeThreadPool) {
 
 TEST(TestThreadPool, TestMaxQueueSize) {
   gscoped_ptr<ThreadPool> thread_pool;
-  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+  ASSERT_OK(ThreadPoolBuilder("test")
       .set_min_threads(1).set_max_threads(1)
       .set_max_queue_size(1).Build(&thread_pool));
 
   CountDownLatch latch(1);
-  ASSERT_STATUS_OK(thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch))));
+  ASSERT_OK(thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch))));
   Status s = thread_pool->Submit(shared_ptr<Runnable>(new SlowTask(&latch)));
   // We race against the worker thread to re-enqueue.
   // If we get there first, we fail on the 2nd Submit().
@@ -222,12 +222,12 @@ TEST(TestThreadPool, TestMaxQueueSize) {
 // a value on the current thread.
 TEST(TestThreadPool, TestPromises) {
   gscoped_ptr<ThreadPool> thread_pool;
-  ASSERT_STATUS_OK(ThreadPoolBuilder("test")
+  ASSERT_OK(ThreadPoolBuilder("test")
       .set_min_threads(1).set_max_threads(1)
       .set_max_queue_size(1).Build(&thread_pool));
 
   Promise<int> my_promise;
-  ASSERT_STATUS_OK(thread_pool->SubmitClosure(
+  ASSERT_OK(thread_pool->SubmitClosure(
                      Bind(&Promise<int>::Set, Unretained(&my_promise), 5)));
   ASSERT_EQ(5, my_promise.Get());
   thread_pool->Shutdown();

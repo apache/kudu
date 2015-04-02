@@ -33,7 +33,7 @@ TEST(TestPstackWatcher, TestWait) {
 }
 
 TEST(TestPstackWatcher, TestDumpStacks) {
-  ASSERT_STATUS_OK(PstackWatcher::DumpStacks());
+  ASSERT_OK(PstackWatcher::DumpStacks());
 }
 
 static shared_ptr<FILE> RedirectStdout(string *temp_path) {

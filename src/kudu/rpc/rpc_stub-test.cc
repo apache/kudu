@@ -47,7 +47,7 @@ TEST_F(RpcStubTest, TestSimpleCall) {
   req.set_x(10);
   req.set_y(20);
   AddResponsePB resp;
-  ASSERT_STATUS_OK(p.Add(req, &resp, &controller));
+  ASSERT_OK(p.Add(req, &resp, &controller));
   ASSERT_EQ(30, resp.result());
 }
 
@@ -84,7 +84,7 @@ TEST_F(RpcStubTest, TestBigCallData) {
   latch.Wait();
 
   BOOST_FOREACH(RpcController &c, controllers) {
-    ASSERT_STATUS_OK(c.status());
+    ASSERT_OK(c.status());
   }
 }
 
@@ -96,7 +96,7 @@ TEST_F(RpcStubTest, TestRespondDeferred) {
   req.set_sleep_micros(1000);
   req.set_deferred(true);
   SleepResponsePB resp;
-  ASSERT_STATUS_OK(p.Sleep(req, &resp, &controller));
+  ASSERT_OK(p.Sleep(req, &resp, &controller));
 }
 
 // Test that the default user credentials are propagated to the server.
@@ -104,12 +104,12 @@ TEST_F(RpcStubTest, TestDefaultCredentialsPropagated) {
   CalculatorServiceProxy p(client_messenger_, server_addr_);
 
   string expected;
-  ASSERT_STATUS_OK(GetLoggedInUser(&expected));
+  ASSERT_OK(GetLoggedInUser(&expected));
 
   RpcController controller;
   WhoAmIRequestPB req;
   WhoAmIResponsePB resp;
-  ASSERT_STATUS_OK(p.WhoAmI(req, &resp, &controller));
+  ASSERT_OK(p.WhoAmI(req, &resp, &controller));
   ASSERT_EQ(expected, resp.credentials().real_user());
   ASSERT_FALSE(resp.credentials().has_effective_user());
 }
@@ -126,7 +126,7 @@ TEST_F(RpcStubTest, TestCustomCredentialsPropagated) {
   RpcController controller;
   WhoAmIRequestPB req;
   WhoAmIResponsePB resp;
-  ASSERT_STATUS_OK(p.WhoAmI(req, &resp, &controller));
+  ASSERT_OK(p.WhoAmI(req, &resp, &controller));
   ASSERT_EQ(kFakeUserName, resp.credentials().real_user());
   ASSERT_FALSE(resp.credentials().has_effective_user());
 }
@@ -138,7 +138,7 @@ TEST_F(RpcStubTest, TestRemoteAddress) {
   RpcController controller;
   WhoAmIRequestPB req;
   WhoAmIResponsePB resp;
-  ASSERT_STATUS_OK(p.WhoAmI(req, &resp, &controller));
+  ASSERT_OK(p.WhoAmI(req, &resp, &controller));
   ASSERT_STR_CONTAINS(resp.address(), "127.0.0.1:");
 }
 
@@ -326,7 +326,7 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
   DumpRunningRpcsResponsePB dump_resp;
   dump_req.set_include_traces(true);
 
-  ASSERT_STATUS_OK(client_messenger_->DumpRunningRpcs(dump_req, &dump_resp));
+  ASSERT_OK(client_messenger_->DumpRunningRpcs(dump_req, &dump_resp));
   LOG(INFO) << "client messenger: " << dump_resp.DebugString();
   ASSERT_EQ(1, dump_resp.outbound_connections_size());
   ASSERT_EQ(1, dump_resp.outbound_connections(0).calls_in_flight_size());
@@ -339,7 +339,7 @@ TEST_F(RpcStubTest, TestDumpCallsInFlight) {
   // asynchronously off of the main thread (ie the server may not be handling it yet)
   for (int i = 0; i < 100; i++) {
     dump_resp.Clear();
-    ASSERT_STATUS_OK(server_messenger_->DumpRunningRpcs(dump_req, &dump_resp));
+    ASSERT_OK(server_messenger_->DumpRunningRpcs(dump_req, &dump_resp));
     if (dump_resp.inbound_connections_size() > 0 &&
         dump_resp.inbound_connections(0).calls_in_flight_size() > 0) {
       break;

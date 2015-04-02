@@ -193,7 +193,7 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   CheckLastLogEntry(first.term(), first.index());
   CheckLastRemoteEntry(remote_peer1_proxy, first.term(), first.index());
 
-  ASSERT_STATUS_OK(remote_peer2_proxy->Respond(TestPeerProxy::kUpdate));
+  ASSERT_OK(remote_peer2_proxy->Respond(TestPeerProxy::kUpdate));
   // Wait until all peers have replicated the message, otherwise
   // when we add the next one remote_peer2 might find the next message
   // in the queue and will replicate it, which is not what we want.

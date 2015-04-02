@@ -61,9 +61,9 @@ class ResettableHeartbeaterTest : public KuduTest {
 TEST_F(ResettableHeartbeaterTest, TestRegularHeartbeats) {
   const int64_t kHeartbeatPeriodMillis = 100; // Heartbeat every 100ms.
   CreateHeartbeater(kHeartbeatPeriodMillis, CURRENT_TEST_NAME());
-  ASSERT_STATUS_OK(heartbeater_->Start());
+  ASSERT_OK(heartbeater_->Start());
   WaitForCountDown();
-  ASSERT_STATUS_OK(heartbeater_->Stop());
+  ASSERT_OK(heartbeater_->Stop());
 }
 
 // Tests that if we Reset() the heartbeater in a period smaller than
@@ -76,7 +76,7 @@ TEST_F(ResettableHeartbeaterTest, TestResetHeartbeats) {
   const int64_t kResetPeriodMillis = kHeartbeatPeriodMillis / kNumResetSlicesPerPeriod;
 
   CreateHeartbeater(kHeartbeatPeriodMillis, CURRENT_TEST_NAME());
-  ASSERT_STATUS_OK(heartbeater_->Start());
+  ASSERT_OK(heartbeater_->Start());
   // Call Reset() in a loop for 2 heartbeat periods' worth of time, with sleeps
   // in-between as defined above.
   for (int i = 0; i < kNumResetSlicesPerPeriod * 2; i++) {
@@ -85,7 +85,7 @@ TEST_F(ResettableHeartbeaterTest, TestResetHeartbeats) {
     SleepFor(MonoDelta::FromMilliseconds(kResetPeriodMillis));
   }
   WaitForCountDown();
-  ASSERT_STATUS_OK(heartbeater_->Stop());
+  ASSERT_OK(heartbeater_->Stop());
 }
 
 }  // namespace kudu

@@ -35,7 +35,7 @@ class RpcLineItemDAOTest : public KuduTest {
 
     // Start minicluster
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
-    ASSERT_STATUS_OK(cluster_->Start());
+    ASSERT_OK(cluster_->Start());
 
     const char *kTableName = "tpch1";
 
@@ -122,7 +122,7 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
     dao_->GetNext(&rows);
     BOOST_FOREACH(const KuduRowResult& row, rows) {
       uint32_t l_quantity;
-      ASSERT_STATUS_OK(row.GetUInt32(tpch::kQuantityColIdx, &l_quantity));
+      ASSERT_OK(row.GetUInt32(tpch::kQuantityColIdx, &l_quantity));
       ASSERT_EQ(12345, l_quantity);
     }
     rows.clear();

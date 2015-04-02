@@ -24,8 +24,8 @@ TEST_F(ThreadTest, TestJoinAndWarn) {
   }
 
   scoped_refptr<Thread> holder;
-  ASSERT_STATUS_OK(Thread::Create("test", "sleeper thread", usleep, 1000*1000, &holder));
-  ASSERT_STATUS_OK(ThreadJoiner(holder.get())
+  ASSERT_OK(Thread::Create("test", "sleeper thread", usleep, 1000*1000, &holder));
+  ASSERT_OK(ThreadJoiner(holder.get())
                    .warn_after_ms(10)
                    .warn_every_ms(100)
                    .Join());
@@ -38,7 +38,7 @@ TEST_F(ThreadTest, TestFailedJoin) {
   }
 
   scoped_refptr<Thread> holder;
-  ASSERT_STATUS_OK(Thread::Create("test", "sleeper thread", usleep, 1000*1000, &holder));
+  ASSERT_OK(Thread::Create("test", "sleeper thread", usleep, 1000*1000, &holder));
   Status s = ThreadJoiner(holder.get())
     .give_up_after_ms(50)
     .Join();
@@ -54,17 +54,17 @@ static void TryJoinOnSelf() {
 // Try to join on the thread that is currently running.
 TEST_F(ThreadTest, TestJoinOnSelf) {
   scoped_refptr<Thread> holder;
-  ASSERT_STATUS_OK(Thread::Create("test", "test", TryJoinOnSelf, &holder));
+  ASSERT_OK(Thread::Create("test", "test", TryJoinOnSelf, &holder));
   holder->Join();
   // Actual assertion is done by the thread spawned above.
 }
 
 TEST_F(ThreadTest, TestDoubleJoinIsNoOp) {
   scoped_refptr<Thread> holder;
-  ASSERT_STATUS_OK(Thread::Create("test", "sleeper thread", usleep, 0, &holder));
+  ASSERT_OK(Thread::Create("test", "sleeper thread", usleep, 0, &holder));
   ThreadJoiner joiner(holder.get());
-  ASSERT_STATUS_OK(joiner.Join());
-  ASSERT_STATUS_OK(joiner.Join());
+  ASSERT_OK(joiner.Join());
+  ASSERT_OK(joiner.Join());
 }
 
 
@@ -84,7 +84,7 @@ void CallAtExitThread(string* s) {
 TEST_F(ThreadTest, TestCallOnExit) {
   scoped_refptr<Thread> holder;
   string s;
-  ASSERT_STATUS_OK(Thread::Create("test", "TestCallOnExit", CallAtExitThread, &s, &holder));
+  ASSERT_OK(Thread::Create("test", "TestCallOnExit", CallAtExitThread, &s, &holder));
   holder->Join();
   ASSERT_EQ("hello 1, hello 2", s);
 }

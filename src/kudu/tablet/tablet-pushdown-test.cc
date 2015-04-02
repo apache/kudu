@@ -55,15 +55,15 @@ class TabletPushdownTest : public KuduTabletTest,
       CHECK_OK(row.SetUInt32(0, i));
       CHECK_OK(row.SetUInt32(1, i * 10));
       CHECK_OK(row.SetStringCopy(2, StringPrintf("%08ld", i)));
-      ASSERT_STATUS_OK_FAST(writer.Insert(row));
+      ASSERT_OK_FAST(writer.Insert(row));
 
       if (i == 205 && GetParam() == SPLIT_MEMORY_DISK) {
-        ASSERT_STATUS_OK(tablet()->Flush());
+        ASSERT_OK(tablet()->Flush());
       }
     }
 
     if (GetParam() == ALL_ON_DISK) {
-      ASSERT_STATUS_OK(tablet()->Flush());
+      ASSERT_OK(tablet()->Flush());
     }
   }
 
@@ -72,13 +72,13 @@ class TabletPushdownTest : public KuduTabletTest,
   // expected rows are returned.
   void TestScanYieldsExpectedResults(ScanSpec spec) {
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet()->NewRowIterator(client_schema_, &iter));
-    ASSERT_STATUS_OK(iter->Init(&spec));
+    ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
+    ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 
     vector<string> results;
     LOG_TIMING(INFO, "Filtering by int value") {
-      ASSERT_STATUS_OK(IterateToStringList(iter.get(), &results));
+      ASSERT_OK(IterateToStringList(iter.get(), &results));
     }
     std::sort(results.begin(), results.end());
     BOOST_FOREACH(const string &str, results) {
@@ -136,12 +136,12 @@ class TabletPushdownTest : public KuduTabletTest,
   void TestCountOnlyScanYieldsExpectedResults(ScanSpec spec) {
     Schema empty_schema(std::vector<ColumnSchema>(), 0);
     gscoped_ptr<RowwiseIterator> iter;
-    ASSERT_STATUS_OK(tablet()->NewRowIterator(empty_schema, &iter));
-    ASSERT_STATUS_OK(iter->Init(&spec));
+    ASSERT_OK(tablet()->NewRowIterator(empty_schema, &iter));
+    ASSERT_OK(iter->Init(&spec));
     ASSERT_TRUE(spec.predicates().empty()) << "Should have accepted all predicates";
 
     vector<string> results;
-    ASSERT_STATUS_OK(IterateToStringList(iter.get(), &results));
+    ASSERT_OK(IterateToStringList(iter.get(), &results));
     ASSERT_EQ(11, results.size());
     BOOST_FOREACH(const string& result, results) {
       ASSERT_EQ("()", result);
