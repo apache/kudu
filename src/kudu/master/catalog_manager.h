@@ -435,7 +435,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // based on the split-keys field in the request.
   // Leaves the tablets "write locked" with the new info in the
   // "dirty" state field.
-  void CreateTablets(const CreateTableRequestPB* req,
+  void CreateTablets(const std::vector<std::string>& split_keys,
                      TableInfo *table,
                      std::vector<TabletInfo*> *tablets);
 

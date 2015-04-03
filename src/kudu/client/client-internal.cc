@@ -284,7 +284,7 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
           return s;
         }
       }
-      s = StatusFromPB(resp.error().status());
+      return StatusFromPB(resp.error().status());
     }
     if (!s.ok()) {
       // If the error is not a leadership issue or a timeout, warn and

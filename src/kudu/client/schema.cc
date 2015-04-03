@@ -199,5 +199,9 @@ size_t KuduSchema::num_columns() const {
   return schema_->num_columns();
 }
 
+size_t KuduSchema::num_key_columns() const {
+  return schema_->num_key_columns();
+}
+
 } // namespace client
 } // namespace kudu

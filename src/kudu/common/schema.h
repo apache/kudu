@@ -329,7 +329,6 @@ class Schema {
   }
 
   // Return the length of the key prefix in this schema.
-  // TODO: this is currently always 1
   size_t num_key_columns() const {
     return num_key_columns_;
   }

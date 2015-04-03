@@ -121,6 +121,7 @@ class KUDU_EXPORT KuduSchema {
   KuduColumnSchema Column(size_t idx) const;
   KuduSchema CreateKeyProjection() const;
   size_t num_columns() const;
+  size_t num_key_columns() const;
 
  private:
   friend class KuduEncodedKeyBuilder;

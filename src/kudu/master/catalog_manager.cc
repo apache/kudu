@@ -564,6 +564,26 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     SetupError(resp->mutable_error(), MasterErrorPB::TOO_MANY_TABLETS, s);
     return s;
   }
+  // check there is no empty keys
+  for (int i = 0; i < req->pre_split_keys_size(); i++) {
+    if (req->pre_split_keys(i).empty()) {
+      Status s = Status::InvalidArgument("Empty split key");
+      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+      return s;
+    }
+  }
+  // Sort the pre-split keys from the request
+  // check there is no duplicate keys
+  vector<string> split_keys(req->pre_split_keys_size());
+  std::copy(req->pre_split_keys().begin(), req->pre_split_keys().end(), split_keys.begin());
+  std::sort(split_keys.begin(), split_keys.end());
+  for (int i = 1; i < split_keys.size(); i++) {
+    if (split_keys[i-1] == split_keys[i]) {
+      Status s = Status::InvalidArgument("Duplicate split key");
+      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+      return s;
+    }
+  }
 
   LOG(INFO) << "CreateTable from " << RequestorString(rpc)
             << ":\n" << req->DebugString();
@@ -588,7 +608,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     table_names_map_[req->name()] = table;
 
     // d. Create the TabletInfo objects in state kTabletStatePreparing.
-    CreateTablets(req, table.get(), &tablets);
+    CreateTablets(split_keys, table.get(), &tablets);
 
     // Add the table/tablets to the in-memory map for the assignment.
     resp->set_table_id(table->id());
@@ -676,17 +696,12 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   return Status::OK();
 }
 
-void CatalogManager::CreateTablets(const CreateTableRequestPB* req,
+void CatalogManager::CreateTablets(const vector<string> & split_keys,
                                    TableInfo *table,
                                    vector<TabletInfo* > *tablets) {
   const char *kTabletEmptyKey = "";
-  if (req->pre_split_keys_size() > 0) {
+  if (split_keys.size() > 0) {
     int i = 0;
-
-    // Sort the pre-split keys from the request
-    vector<string> split_keys(req->pre_split_keys_size());
-    std::copy(req->pre_split_keys().begin(), req->pre_split_keys().end(), split_keys.begin());
-    std::sort(split_keys.begin(), split_keys.end());
 
     // First region with empty start key
     tablets->push_back(CreateTabletInfo(table, kTabletEmptyKey, split_keys[0]));
