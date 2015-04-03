@@ -1,0 +1,140 @@
+// Copyright (c) 2015, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
+//
+// Flag Tags provide a way to attach arbitrary textual tags to gflags in
+// a global registry. Kudu uses the following flag tags:
+//
+// - "stable":
+//         These flags are considered user-facing APIs. Therefore, the
+//         semantics of the flag should not be changed except between major
+//         versions. Similarly, they must not be removed except between major
+//         versions.
+//
+// - "evolving":
+//         These flags are considered user-facing APIs, but are not yet
+//         locked down. For example, they may pertain to a newly introduced
+//         feature that is still being actively developed. These may be changed
+//         between minor versions, but should be suitably release-noted.
+//
+//         This is the default assumed stability level, but can be tagged
+//         if you'd like to make it explicit.
+//
+// - "experimental":
+//         These flags are considered user-facing APIs, but are related to
+//         an experimental feature, or otherwise likely to change or be
+//         removed at any point. Users should not expect any compatibility
+//         of these flags.
+//
+//         TODO: we should add a new flag like -unlock_experimental_flags
+//         which would be required if the user wants to use any of these,
+//         similar to the JVM's -XX:+UnlockExperimentalVMOptions.
+//
+// - "hidden":
+//         These flags are for internal use only (e.g. testing) and should
+//         not be included in user-facing documentation.
+//
+// - "advanced":
+//         These flags are for advanced users or debugging purposes. While
+//         they aren't likely to be actively harmful (see "unsafe" below),
+//         they're also likely to be used only rarely and should be relegated
+//         to more detailed sections of documentation.
+//
+// - "unsafe":
+//         These flags are for internal use only (e.g. testing), and changing
+//         them away from the defaults may result in arbitrarily bad things
+//         happening. These flags are automatically excluded from user-facing
+//         documentation even if they are not also marked 'hidden'.
+//
+//         TODO: we should add a flag -unlock_unsafe_flags which would be required
+//         to use any of these flags.
+//
+// - "runtime":
+//         These flags can be safely changed at runtime via an RPC to the
+//         server. Changing a flag at runtime that does not have this tag is allowed
+//         only if the user specifies a "force_unsafe_change" flag in the RPC.
+//
+// A given flag may have zero or more tags associated with it. The system does
+// not make any attempt to check integrity of the tags - for example, it allows
+// you to mark a flag as both stable and unstable, even though this makes no
+// real sense. Nevertheless, you should strive to meet the following requirements:
+//
+// - A flag should have exactly no more than one of stable/evolving/experimental
+//   indicating its stability. 'evolving' is considered the default.
+// - A flag should have no more than one of advanced/hidden indicating visibility
+//   in documentation. If neither is specified, the flag will be in the main
+//   section of the documentation.
+// - It is likely that most 'experimental' flags will also be 'advanced' or 'hidden',
+//   and that 'stable' flags are not likely to be 'hidden' or 'unsafe'.
+//
+// To add a tag to a flag, use the TAG_FLAG macro. For example:
+//
+//  DEFINE_bool(sometimes_crash, false, "This flag makes Kudu crash a lot");
+//  TAG_FLAG(sometimes_crash, unsafe);
+//  TAG_FLAG(sometimes_crash, runtime);
+//
+// To fetch the list of tags associated with a flag, use 'GetFlagTags'.
+
+#ifndef KUDU_UTIL_FLAG_TAGS_H
+#define KUDU_UTIL_FLAG_TAGS_H
+
+#include "kudu/gutil/macros.h"
+
+#include <string>
+#include <tr1/unordered_set>
+#include <vector>
+
+namespace kudu {
+
+struct FlagTags {
+  enum {
+    stable,
+    evolving,
+    experimental,
+    hidden,
+    advanced,
+    unsafe,
+    runtime
+  };
+};
+
+// Tag the flag 'flag_name' with the given tag 'tag'.
+//
+// This verifies that 'flag_name' is a valid gflag, which must be defined
+// or declared above the use of the TAG_FLAG macro.
+//
+// This also validates that 'tag' is a valid flag as defined in the FlagTags
+// enum above.
+#define TAG_FLAG(flag_name, tag) \
+  COMPILE_ASSERT(sizeof(FLAGS_##flag_name), flag_does_not_exist); \
+  COMPILE_ASSERT(sizeof(::kudu::FlagTags::tag), invalid_tag);   \
+  namespace {                                                     \
+    ::kudu::flag_tags_internal::FlagTagger t_##flag_name##_##tag( \
+        AS_STRING(flag_name), AS_STRING(tag));                    \
+  }
+
+
+// Fetch the list of flags associated with the given flag.
+//
+// If the flag is invalid or has no tags, sets 'tags' to be empty.
+void GetFlagTags(const std::string& flag_name,
+                 std::tr1::unordered_set<std::string>* tags);
+
+
+// ------------------------------------------------------------
+// Internal implementation details
+// ------------------------------------------------------------
+namespace flag_tags_internal {
+
+class FlagTagger {
+ public:
+  FlagTagger(const char* name, const char* tag);
+  ~FlagTagger();
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(FlagTagger);
+};
+
+} // namespace flag_tags_internal
+
+} // namespace kudu
+#endif /* KUDU_UTIL_FLAG_TAGS_H */

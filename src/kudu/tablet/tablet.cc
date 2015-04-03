@@ -44,6 +44,7 @@
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -54,6 +55,7 @@
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
             "Use at your own risk!");
+TAG_FLAG(tablet_do_dup_key_checks, unsafe);
 
 DEFINE_int32(tablet_compaction_budget_mb, 128,
              "Budget for a single compaction, if the 'budget' compaction "

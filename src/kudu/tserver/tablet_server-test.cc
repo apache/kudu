@@ -104,6 +104,27 @@ TEST_F(TabletServerTest, TestSetFlags) {
     EXPECT_EQ(resp.msg(), "Unable to set flag: bad value");
     EXPECT_EQ(12345, FLAGS_metrics_retirement_age_ms);
   }
+
+  // Try setting a flag which isn't runtime-modifiable
+  {
+    RpcController controller;
+    req.set_flag("tablet_do_dup_key_checks");
+    req.set_value("true");
+    ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    EXPECT_EQ(server::SetFlagResponsePB::NOT_SAFE, resp.result());
+  }
+
+  // Try again, but with the force flag.
+  {
+    RpcController controller;
+    req.set_flag("tablet_do_dup_key_checks");
+    req.set_value("true");
+    req.set_force(true);
+    ASSERT_OK(proxy.SetFlag(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    EXPECT_EQ(server::SetFlagResponsePB::SUCCESS, resp.result());
+  }
 }
 
 TEST_F(TabletServerTest, TestWebPages) {

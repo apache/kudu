@@ -25,6 +25,11 @@ message ServerStatusPB {
 message SetFlagRequestPB {
   required string flag = 1;
   required string value = 2;
+
+  // Force the change, even if the flag is not marked as safe to change
+  // at runtime. This can cause crashes or other bad behavior, so should
+  // only be used as a last resort.
+  optional bool force = 3 [default = false];
 }
 
 message SetFlagResponsePB {
@@ -32,6 +37,9 @@ message SetFlagResponsePB {
     SUCCESS = 1;
     NO_SUCH_FLAG = 2;
     BAD_VALUE = 3;
+
+    // The flag is not safe to change at runtime without the 'force' flag.
+    NOT_SAFE = 4;
   }
 
   required Code result = 1;

@@ -5,11 +5,15 @@
 
 #include <gflags/gflags.h>
 #include <string>
+#include <tr1/unordered_set>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/server_base.h"
+#include "kudu/util/flag_tags.h"
 
 using std::string;
+using std::tr1::unordered_set;
 
 namespace kudu {
 namespace server {
@@ -34,6 +38,22 @@ void GenericServiceImpl::SetFlag(const SetFlagRequestPB* req,
     rpc->RespondSuccess();
     return;
   }
+
+  // Validate that the flag is runtime-changeable.
+  unordered_set<string> tags;
+  GetFlagTags(req->flag(), &tags);
+  if (!ContainsKey(tags, "runtime")) {
+    if (req->force()) {
+      LOG(WARNING) << rpc->requestor_string() << " forcing change of "
+                   << "non-runtime-safe flag " << req->flag();
+    } else {
+      resp->set_result(SetFlagResponsePB::NOT_SAFE);
+      resp->set_msg("Flag is not safe to change at runtime");
+      rpc->RespondSuccess();
+      return;
+    }
+  }
+
   resp->set_old_value(old_val);
 
   // Try to set the new value.
