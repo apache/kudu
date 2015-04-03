@@ -179,11 +179,6 @@ else()
   add_definitions("-DKUDU_STATIC_DEFINE")
 endif()
 
-# Position independent code is only necessary when producing shared objects.
-if("${KUDU_EXPORTED_CLIENT}" OR "${KUDU_LINK}" STREQUAL "d")
-  add_definitions(-fPIC)
-endif()
-
 # Clang does not support using ASAN and TSAN simultaneously.
 if ("${KUDU_USE_ASAN}" AND "${KUDU_USE_TSAN}")
   message(SEND_ERROR "Can only enable one of ASAN or TSAN at a time")
@@ -321,6 +316,11 @@ endif()
 # act on its value.
 if ("${KUDU_LINK}" STREQUAL "d")
   set(BUILD_SHARED_LIBS ON)
+endif()
+
+# Position independent code is only necessary when producing shared objects.
+if("${KUDU_EXPORTED_CLIENT}" OR "${KUDU_LINK}" STREQUAL "d")
+  add_definitions(-fPIC)
 endif()
 
 # Code coverage
