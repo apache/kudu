@@ -46,7 +46,7 @@ DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_bool(enable_leader_failure_detection);
-
+DECLARE_int32(max_create_tablets_per_ts);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 using std::tr1::shared_ptr;
@@ -2170,6 +2170,24 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
   // Check from reverse client side.
   rev = CheckRowsEqual(rev_table, expected);
   ASSERT_EQ(rev, kNumRows);
+}
+
+TEST_F(ClientTest, TestCreateDuplicateTable) {
+  ASSERT_TRUE(client_->NewTableCreator()->table_name(kTableName)
+            .schema(&schema_)
+            .Create().IsAlreadyPresent());
+}
+
+TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
+  FLAGS_max_create_tablets_per_ts = 1;
+  vector<string> split_keys;
+  split_keys.push_back("1");
+  split_keys.push_back("2");
+  ASSERT_TRUE(client_->NewTableCreator()->table_name("foobar")
+            .schema(&schema_)
+            .split_keys(split_keys)
+            .num_replicas(3)
+            .Create().IsInvalidArgument());
 }
 
 } // namespace client

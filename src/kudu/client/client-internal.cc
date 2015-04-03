@@ -253,48 +253,32 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
   CreateTableResponsePB resp;
 
   int attempts = 0;
-  while (true) {
-    Status s =
-        SyncLeaderMasterRpc<CreateTableRequestPB,
-                            CreateTableResponsePB>(
-                                deadline,
-                                client,
-                                req,
-                                &resp,
-                                &attempts,
-                                &MasterServiceProxy::CreateTable);
-    if (s.ok() && resp.has_error()) {
-      if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT && attempts > 0) {
-        // If the table already exists and the number of attempts is >
-        // 0, then it means we may have succeeded in creating the
-        // table quorum, but client didn't receive the succesful
-        // response (e.g., due to failure before the succesful
-        // response could be sent back, or due to a I/O pause or a
-        // network blip leading to a timeout, etc...)
-        KuduSchema actual_schema;
-        RETURN_NOT_OK_PREPEND(
-            GetTableSchema(client, req.name(), deadline, &actual_schema),
-            Substitute("Unable to check the schema of table $0", req.name()));
-        if (schema.Equals(actual_schema)) {
-          break;
-        } else {
-          LOG(ERROR) << "Table " << req.name() << " already exists with a different "
-              "schema. Requested schema was: " << schema.schema_->ToString()
-                     << ", actual schema is: " << actual_schema.schema_->ToString();
-          return s;
-        }
+  Status s = SyncLeaderMasterRpc<CreateTableRequestPB, CreateTableResponsePB>(
+      deadline, client, req, &resp, &attempts, &MasterServiceProxy::CreateTable);
+  RETURN_NOT_OK(s);
+  if (resp.has_error()) {
+    if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT && attempts > 1) {
+      // If the table already exists and the number of attempts is >
+      // 1, then it means we may have succeeded in creating the
+      // table quorum, but client didn't receive the succesful
+      // response (e.g., due to failure before the succesful
+      // response could be sent back, or due to a I/O pause or a
+      // network blip leading to a timeout, etc...)
+      KuduSchema actual_schema;
+      RETURN_NOT_OK_PREPEND(
+          GetTableSchema(client, req.name(), deadline, &actual_schema),
+          Substitute("Unable to check the schema of table $0", req.name()));
+      if (schema.Equals(actual_schema)) {
+        return Status::OK();
+      } else {
+        string msg = Substitute("Table $0 already exists with a different "
+            "schema. Requested schema was: $1, actual schema is: $2",
+            req.name(), schema.schema_->ToString(), actual_schema.schema_->ToString());
+        LOG(ERROR) << msg;
+        return Status::AlreadyPresent(msg);
       }
-      return StatusFromPB(resp.error().status());
     }
-    if (!s.ok()) {
-      // If the error is not a leadership issue or a timeout, warn and
-      // re-try.  SyncLeaderMasterRpc will check if whether or not
-      // 'deadline' has passed.
-      LOG(WARNING) << "Unexpected error creating table " << req.name() << ": "
-                   << s.ToString();
-      continue;
-    }
-    break;
+    return StatusFromPB(resp.error().status());
   }
   return Status::OK();
 }
@@ -352,7 +336,7 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
       &attempts, &MasterServiceProxy::DeleteTable);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
-    if (resp.error().code() == MasterErrorPB::TABLE_NOT_FOUND && attempts > 0) {
+    if (resp.error().code() == MasterErrorPB::TABLE_NOT_FOUND && attempts > 1) {
       // A prior attempt to delete the table has succeeded, but
       // appeared as a failure to the client due to, e.g., an I/O or
       // network issue.
