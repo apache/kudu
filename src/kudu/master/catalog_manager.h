@@ -432,12 +432,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Status InitSysCatalogAsync(bool is_first_run);
 
   // Helper for creating the inital Tablets of the table
-  // based on the split-keys field in the request.
+  // based on the provided split keys.
   // Leaves the tablets "write locked" with the new info in the
   // "dirty" state field.
-  void CreateTablets(const std::vector<std::string>& split_keys,
-                     TableInfo *table,
-                     std::vector<TabletInfo*> *tablets);
+  void CreateTablets(const std::vector<std::string>& sorted_split_keys,
+                     TableInfo* table,
+                     std::vector<TabletInfo*>* tablets);
 
   // Helper for creating the initial TableInfo state
   // Leaves the table "write locked" with the new info in the

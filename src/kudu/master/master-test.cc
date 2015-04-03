@@ -24,6 +24,7 @@
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(max_clock_sync_error_usec);
 
+using boost::assign::list_of;
 using std::string;
 using std::tr1::shared_ptr;
 using kudu::rpc::Messenger;
@@ -62,9 +63,11 @@ class MasterTest : public KuduTest {
 
   void DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp);
   void DoListAllTables(ListTablesResponsePB* resp);
-  void CreateTable(const string& table_name,
-                   const Schema& schema);
-
+  Status CreateTable(const string& table_name,
+                     const Schema& schema);
+  Status CreateTable(const string& table_name,
+                     const Schema& schema,
+                     const vector<string>& split_keys);
 
   shared_ptr<Messenger> client_messenger_;
   gscoped_ptr<MiniMaster> mini_master_;
@@ -182,22 +185,33 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   }
 }
 
-// Create a table
-void MasterTest::CreateTable(const string& table_name,
-                             const Schema& schema) {
+Status MasterTest::CreateTable(const string& table_name,
+                               const Schema& schema) {
+  vector<string> split_keys;
+  split_keys.push_back("k1");
+  split_keys.push_back("k2");
+  return CreateTable(table_name, schema, split_keys);
+}
+
+Status MasterTest::CreateTable(const string& table_name,
+                               const Schema& schema,
+                               const vector<string>& split_keys) {
+
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
   RpcController controller;
 
   req.set_name(table_name);
-  ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
-  req.add_pre_split_keys("k1");
-  req.add_pre_split_keys("k2");
-
-  ASSERT_OK(proxy_->CreateTable(req, &resp, &controller));
-  if (resp.has_error()) {
-    ASSERT_OK(StatusFromPB(resp.error().status()));
+  RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
+  BOOST_FOREACH(const string& sk, split_keys) {
+    req.add_pre_split_keys(sk);
   }
+
+  RETURN_NOT_OK(proxy_->CreateTable(req, &resp, &controller));
+  if (resp.has_error()) {
+    RETURN_NOT_OK(StatusFromPB(resp.error().status()));
+  }
+  return Status::OK();
 }
 
 void MasterTest::DoListTables(const ListTablesRequestPB& req, ListTablesResponsePB* resp) {
@@ -221,7 +235,7 @@ TEST_F(MasterTest, TestCatalog) {
                             (ColumnSchema("v2", STRING)),
                             1);
 
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, kTableSchema));
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
 
   ListTablesResponsePB tables;
   ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
@@ -245,7 +259,7 @@ TEST_F(MasterTest, TestCatalog) {
   ASSERT_EQ(0, tables.tables_size());
 
   // Re-create the table
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, kTableSchema));
+  ASSERT_OK(CreateTable(kTableName, kTableSchema));
 
   // Restart the master, verify the table still shows up.
   ASSERT_OK(mini_master_->Restart());
@@ -255,7 +269,7 @@ TEST_F(MasterTest, TestCatalog) {
   ASSERT_EQ(kTableName, tables.tables(0).name());
 
   // Test listing tables with a filter.
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kOtherTableName, kTableSchema));
+  ASSERT_OK(CreateTable(kOtherTableName, kTableSchema));
 
   {
     ListTablesRequestPB req;
@@ -292,6 +306,29 @@ TEST_F(MasterTest, TestCatalog) {
     req.set_name_filter("randomname");
     DoListTables(req, &tables);
     ASSERT_EQ(0, tables.tables_size());
+  }
+}
+
+TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
+  const char *kTableName = "testtb";
+  const Schema kTableSchema(boost::assign::list_of
+                            (ColumnSchema("key", UINT32)),
+                            1);
+
+  // No duplicate split keys.
+  {
+    Status s = CreateTable(kTableName, kTableSchema,
+                           list_of("k1")("k1")("k2"));
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "Duplicate split key");
+  }
+
+  // No empty split keys.
+  {
+    Status s = CreateTable(kTableName, kTableSchema,
+                           list_of("k1")(""));
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(), "Empty split key");
   }
 }
 

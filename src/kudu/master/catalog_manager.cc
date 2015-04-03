@@ -564,22 +564,29 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     SetupError(resp->mutable_error(), MasterErrorPB::TOO_MANY_TABLETS, s);
     return s;
   }
-  // check there is no empty keys
+
+  // Check for empty split keys.
   for (int i = 0; i < req->pre_split_keys_size(); i++) {
     if (req->pre_split_keys(i).empty()) {
-      Status s = Status::InvalidArgument("Empty split key");
+      Status s = Status::InvalidArgument(
+          Substitute("Empty split key at index $0", i));
       SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
       return s;
     }
   }
-  // Sort the pre-split keys from the request
-  // check there is no duplicate keys
-  vector<string> split_keys(req->pre_split_keys_size());
-  std::copy(req->pre_split_keys().begin(), req->pre_split_keys().end(), split_keys.begin());
-  std::sort(split_keys.begin(), split_keys.end());
-  for (int i = 1; i < split_keys.size(); i++) {
-    if (split_keys[i-1] == split_keys[i]) {
-      Status s = Status::InvalidArgument("Duplicate split key");
+
+  // Check for duplicate split keys.
+  vector<string> sorted_split_keys(req->pre_split_keys_size());
+  std::copy(req->pre_split_keys().begin(),
+            req->pre_split_keys().end(), sorted_split_keys.begin());
+  std::sort(sorted_split_keys.begin(), sorted_split_keys.end());
+  for (int i = 1; i < sorted_split_keys.size(); i++) {
+    if (sorted_split_keys[i - 1] == sorted_split_keys[i]) {
+      // START_KEY or END_KEY doesn't matter here; if the key were actually
+      // empty, it'd be caught in the previous check.
+      Status s = Status::InvalidArgument(
+          Substitute("Duplicate split key: $0", schema.DebugEncodedRowKey(
+              sorted_split_keys[i], Schema::START_KEY)));
       SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
       return s;
     }
@@ -608,7 +615,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     table_names_map_[req->name()] = table;
 
     // d. Create the TabletInfo objects in state kTabletStatePreparing.
-    CreateTablets(split_keys, table.get(), &tablets);
+    CreateTablets(sorted_split_keys, table.get(), &tablets);
 
     // Add the table/tablets to the in-memory map for the assignment.
     resp->set_table_id(table->id());
@@ -696,21 +703,21 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   return Status::OK();
 }
 
-void CatalogManager::CreateTablets(const vector<string> & split_keys,
-                                   TableInfo *table,
-                                   vector<TabletInfo* > *tablets) {
+void CatalogManager::CreateTablets(const vector<string>& sorted_split_keys,
+                                   TableInfo* table,
+                                   vector<TabletInfo*>* tablets) {
   const char *kTabletEmptyKey = "";
-  if (split_keys.size() > 0) {
+  if (sorted_split_keys.size() > 0) {
     int i = 0;
 
     // First region with empty start key
-    tablets->push_back(CreateTabletInfo(table, kTabletEmptyKey, split_keys[0]));
+    tablets->push_back(CreateTabletInfo(table, kTabletEmptyKey, sorted_split_keys[0]));
     // Mid regions with non-empty start/end key
-    while (++i < split_keys.size()) {
-      tablets->push_back(CreateTabletInfo(table, split_keys[i - 1], split_keys[i]));
+    while (++i < sorted_split_keys.size()) {
+      tablets->push_back(CreateTabletInfo(table, sorted_split_keys[i - 1], sorted_split_keys[i]));
     }
     // Last region with empty end key
-    tablets->push_back(CreateTabletInfo(table, split_keys[i - 1], kTabletEmptyKey));
+    tablets->push_back(CreateTabletInfo(table, sorted_split_keys[i - 1], kTabletEmptyKey));
   } else {
     // Single region with empty start/end key
     tablets->push_back(CreateTabletInfo(table, kTabletEmptyKey, kTabletEmptyKey));
