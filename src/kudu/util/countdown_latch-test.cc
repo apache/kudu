@@ -5,6 +5,7 @@
 
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 
 namespace kudu {
@@ -37,6 +38,19 @@ TEST(TestCountDownLatch, TestLatch) {
   ASSERT_OK(pool->SubmitFunc(boost::bind(DecrementLatch, &latch, 1000)));
   latch.Wait();
   ASSERT_EQ(0, latch.count());
+}
+
+// Test that resetting to zero while there are waiters lets the waiters
+// continue.
+TEST(TestCountDownLatch, TestResetToZero) {
+  CountDownLatch cdl(100);
+  scoped_refptr<Thread> t;
+  ASSERT_OK(Thread::Create("test", "cdl-test", &CountDownLatch::Wait, &cdl, &t));
+
+  // Sleep for a bit until it's likely the other thread is waiting on the latch.
+  SleepFor(MonoDelta::FromMilliseconds(10));
+  cdl.Reset(0);
+  t->Join();
 }
 
 } // namespace kudu

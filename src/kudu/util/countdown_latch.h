@@ -84,10 +84,15 @@ class CountDownLatch {
   }
 
   // Reset the latch with the given count. This is equivalent to reconstructing
-  // the latch.
+  // the latch. If 'count' is 0, and there are currently waiters, those waiters
+  // will be triggered as if you counted down to 0.
   void Reset(uint64_t count) {
     MutexLock lock(lock_);
     count_ = count;
+    if (count_ == 0) {
+      // Awake any waiters if we reset to 0.
+      cond_.Broadcast();
+    }
   }
 
   uint64_t count() const {
