@@ -46,6 +46,9 @@ class MiniTabletServer {
 
   void Shutdown();
 
+  // Restart a tablet server on the same RPC and webserver ports.
+  Status Restart();
+
   // Add a new tablet to the test server, use the default quorum.
   //
   // Requires that the server has already been started with Start().

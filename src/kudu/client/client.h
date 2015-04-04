@@ -217,6 +217,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   friend class internal::RemoteTabletServer;
   friend class internal::WriteRpc;
 
+  FRIEND_TEST(ClientTest, TestGetTabletServerBlacklist);
   FRIEND_TEST(ClientTest, TestMasterDown);
   FRIEND_TEST(ClientTest, TestMasterLookupPermits);
   FRIEND_TEST(ClientTest, TestReplicatedMultiTabletTableFailover);
@@ -730,7 +731,8 @@ class KUDU_EXPORT KuduScanner {
   };
 
   // Default scanner timeout.
-  enum { kRpcTimeoutMillis = 5000 };
+  // This is set to 3x the default RPC timeout (see KuduClientBuilder::default_rpc_timeout()).
+  enum { kScanTimeoutMillis = 15000 };
 
   // Initialize the scanner. The given 'table' object must remain valid
   // for the lifetime of this scanner object.
@@ -785,6 +787,11 @@ class KUDU_EXPORT KuduScanner {
 
   // Appends the next batch of rows to the 'rows' vector.
   Status NextBatch(std::vector<KuduRowResult>* rows);
+
+  // Get the KuduTabletServer that is currently handling the scan.
+  // More concretely, this is the server that handled the most recent Open or NextBatch
+  // RPC made by the server.
+  Status GetCurrentServer(KuduTabletServer** server);
 
   // Set the hint for the size of the next batch in bytes.
   // If setting to 0 before calling Open(), it means that the first call
@@ -846,6 +853,7 @@ class KUDU_EXPORT KuduTabletServer {
   class KUDU_NO_EXPORT Data;
 
   friend class KuduClient;
+  friend class KuduScanner;
 
   KuduTabletServer();
 

@@ -125,16 +125,8 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   bool MarkReplicaFailed(RemoteTabletServer *ts,
                          const Status& status);
 
-  // Return the number of replicas for this tablet that have failed.
+  // Return the number of failed replicas for this tablet.
   int GetNumFailedReplicas() const;
-
-  // Return the tablet server hosting the first non-failed replica. This
-  // replica may or may not be the leader.
-  //
-  // Returns NULL if there are no tablet servers, or if they've all failed.
-  // Given that the replica list may change at any time, callers should
-  // always check the result against NULL.
-  RemoteTabletServer* FirstTServer() const;
 
   // Return the tablet server which is acting as the current LEADER for
   // this tablet, provided it hasn't failed.

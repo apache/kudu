@@ -76,6 +76,15 @@ void MiniTabletServer::Shutdown() {
   started_ = false;
 }
 
+Status MiniTabletServer::Restart() {
+  CHECK(started_);
+  opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", bound_rpc_addr().port());
+  opts_.webserver_opts.port = bound_http_addr().port();
+  Shutdown();
+  RETURN_NOT_OK(Start());
+  return Status::OK();
+}
+
 QuorumPB MiniTabletServer::CreateLocalQuorum() const {
   CHECK(started_) << "Must Start()";
   QuorumPB quorum;

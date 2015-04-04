@@ -4,6 +4,7 @@
 #define KUDU_CLIENT_CLIENT_INTERNAL_H
 
 #include <boost/function.hpp>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -35,14 +36,19 @@ class KuduClient::Data {
   Data();
   ~Data();
 
-  // Returns the ts that hosts a tablet with the given tablet ID, subject
-  // to the given selection criteria.
+  // Returns a ts that hosts a tablet with the given tablet ID, subject
+  // to liveness and the provided selection criteria and blacklist.
   //
-  // Note: failed replicas are ignored. If no appropriate replica could be
-  // found, a non-OK status is returned and 'ts' is untouched.
+  // If no appropriate replica can be found, a non-OK status is returned and 'ts' is untouched.
+  //
+  // The 'candidates' return parameter indicates tservers that are live and meet the selection
+  // criteria, but are possibly filtered by the blacklist. This is useful for implementing
+  // retry logic.
   Status GetTabletServer(KuduClient* client,
                          const std::string& tablet_id,
                          ReplicaSelection selection,
+                         const std::set<std::string>& blacklist,
+                         std::vector<internal::RemoteTabletServer*>* candidates,
                          internal::RemoteTabletServer** ts);
 
   Status CreateTable(KuduClient* client,
@@ -87,13 +93,15 @@ class KuduClient::Data {
 
   bool IsTabletServerLocal(const internal::RemoteTabletServer& rts) const;
 
-  // Returns the closest, non-failed replica to the client.
+  // Returns a non-failed replica of the specified tablet based on the provided selection criteria
+  // and tablet server blacklist.
   //
-  // Returns NULL if there are no tablet servers, or if they've all failed.
-  // Given that the replica list may change at any time, callers should
-  // always check the result against NULL.
-  internal::RemoteTabletServer* PickClosestReplica(
-      const scoped_refptr<internal::RemoteTablet>& rt) const;
+  // Returns NULL if there are no valid tablet servers.
+  internal::RemoteTabletServer* SelectTServer(
+      const scoped_refptr<internal::RemoteTablet>& rt,
+      const ReplicaSelection selection,
+      const std::set<std::string>& blacklist,
+      std::vector<internal::RemoteTabletServer*>* candidates) const;
 
   // Sets 'master_proxy_' from the address specified by
   // 'leader_master_hostport_'.  Called by

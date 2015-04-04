@@ -183,16 +183,6 @@ int RemoteTablet::GetNumFailedReplicas() const {
   return failed;
 }
 
-RemoteTabletServer* RemoteTablet::FirstTServer() const {
-  lock_guard<simple_spinlock> l(&lock_);
-  BOOST_FOREACH(const RemoteReplica& rep, replicas_) {
-    if (!rep.failed) {
-      return rep.ts;
-    }
-  }
-  return NULL;
-}
-
 RemoteTabletServer* RemoteTablet::LeaderTServer() const {
   lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
@@ -605,6 +595,7 @@ void MetaCache::LookupTabletByID(const string& tablet_id,
 
 void MetaCache::MarkTSFailed(RemoteTabletServer* ts,
                              const Status& status) {
+  LOG(INFO) << "Marking tablet server " << ts->ToString() << " as failed.";
   shared_lock<rw_spinlock> l(&lock_);
 
   Status ts_status = status.CloneAndPrepend("TS failed");

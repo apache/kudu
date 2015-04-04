@@ -25,6 +25,10 @@
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
 
+using std::set;
+using std::string;
+using std::vector;
+
 namespace kudu {
 
 using master::AlterTableRequestPB;
@@ -211,32 +215,85 @@ KuduClient::Data::Data() {
 KuduClient::Data::~Data() {
 }
 
+RemoteTabletServer* KuduClient::Data::SelectTServer(const scoped_refptr<RemoteTablet>& rt,
+                                                    const ReplicaSelection selection,
+                                                    const set<string>& blacklist,
+                                                    vector<RemoteTabletServer*>* candidates) const {
+  RemoteTabletServer* ret = NULL;
+  candidates->clear();
+  switch (selection) {
+    case LEADER_ONLY: {
+      ret = rt->LeaderTServer();
+      if (ret != NULL) {
+        candidates->push_back(ret);
+        if (ContainsKey(blacklist, ret->permanent_uuid())) {
+          ret = NULL;
+        }
+      }
+      break;
+    }
+    case CLOSEST_REPLICA:
+    case FIRST_REPLICA: {
+      rt->GetRemoteTabletServers(candidates);
+      // Filter out all the blacklisted candidates.
+      vector<RemoteTabletServer*> filtered;
+      BOOST_FOREACH(RemoteTabletServer* rts, *candidates) {
+        if (!ContainsKey(blacklist, rts->permanent_uuid())) {
+          filtered.push_back(rts);
+        } else {
+          VLOG(1) << "Excluding blacklisted tserver " << rts->permanent_uuid();
+        }
+      }
+      if (selection == FIRST_REPLICA) {
+        if (!filtered.empty()) {
+          ret = filtered[0];
+        }
+      } else if (selection == CLOSEST_REPLICA) {
+        // Choose a local replica.
+        BOOST_FOREACH(RemoteTabletServer* rts, filtered) {
+          if (IsTabletServerLocal(*rts)) {
+            ret = rts;
+            break;
+          }
+        }
+        // Fallback to a random replica if none are local.
+        if (ret == NULL && !filtered.empty()) {
+          ret = filtered[rand() % filtered.size()];
+        }
+      }
+      break;
+    }
+    default: {
+      LOG(FATAL) << "Unknown ProxySelection value " << selection;
+      break;
+    }
+  }
+
+  return ret;
+}
+
 Status KuduClient::Data::GetTabletServer(KuduClient* client,
                                          const string& tablet_id,
                                          ReplicaSelection selection,
+                                         const set<string>& blacklist,
+                                         vector<RemoteTabletServer*>* candidates,
                                          RemoteTabletServer** ts) {
   // TODO: write a proper async version of this for async client.
   scoped_refptr<RemoteTablet> remote_tablet;
   meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
 
-  RemoteTabletServer* ret = NULL;
-  switch (selection) {
-    case LEADER_ONLY:
-      ret = remote_tablet->LeaderTServer();
-      break;
-    case CLOSEST_REPLICA:
-      ret = PickClosestReplica(remote_tablet);
-      break;
-    case FIRST_REPLICA:
-      ret = remote_tablet->FirstTServer();
-      break;
-    default:
-      LOG(FATAL) << "Unknown ProxySelection value " << selection;
-  }
+  RemoteTabletServer* ret = SelectTServer(remote_tablet, selection, blacklist, candidates);
   if (PREDICT_FALSE(ret == NULL)) {
+    // Construct a blacklist string if applicable.
+    string blacklist_string = "";
+    if (!blacklist.empty()) {
+      blacklist_string = Substitute("(blacklist replicas $0)", JoinStrings(blacklist, ", "));
+    }
     return Status::ServiceUnavailable(
-        Substitute("No $0 for tablet $1",
-                   selection == LEADER_ONLY ? "LEADER" : "replicas", tablet_id));
+        Substitute("No $0 for tablet $1 $2",
+                   selection == LEADER_ONLY ? "LEADER" : "replicas",
+                   tablet_id,
+                   blacklist_string));
   }
   Synchronizer s;
   ret->RefreshProxy(client, s.AsStatusCallback(), false);
@@ -448,22 +505,6 @@ bool KuduClient::Data::IsTabletServerLocal(const RemoteTabletServer& rts) const 
     if (IsLocalHostPort(hp)) return true;
   }
   return false;
-}
-
-RemoteTabletServer* KuduClient::Data::PickClosestReplica(
-  const scoped_refptr<RemoteTablet>& rt) const {
-
-  vector<RemoteTabletServer*> candidates;
-  rt->GetRemoteTabletServers(&candidates);
-
-  BOOST_FOREACH(RemoteTabletServer* rts, candidates) {
-    if (IsTabletServerLocal(*rts)) {
-      return rts;
-    }
-  }
-
-  // No local one found. Pick a random one
-  return !candidates.empty() ? candidates[rand() % candidates.size()] : NULL;
 }
 
 namespace internal {

@@ -14,6 +14,10 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/util/hexdump.h"
+
+using std::set;
+using std::string;
 
 namespace kudu {
 
@@ -42,7 +46,7 @@ KuduScanner::Data::Data(KuduTable* table)
     projected_row_size_(CalculateProjectedRowSize(*projection_)),
     arena_(1024, 1024*1024),
     spec_encoder_(table->schema().schema_.get()),
-    timeout_(MonoDelta::FromMilliseconds(kRpcTimeoutMillis)) {
+    timeout_(MonoDelta::FromMilliseconds(kScanTimeoutMillis)) {
 }
 
 KuduScanner::Data::~Data() {
@@ -74,12 +78,77 @@ void KuduScanner::Data::CopyPredicateBound(const ColumnSchema& col,
   bound_dst->assign(reinterpret_cast<const char*>(src), size);
 }
 
-Status KuduScanner::Data::OpenTablet(const Slice& key) {
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(timeout_);
+Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
+                                       const Status& rpc_status, const Status& server_status,
+                                       const MonoTime& actual_deadline, const MonoTime& deadline,
+                                       const vector<RemoteTabletServer*>& candidates,
+                                       set<string>* blacklist) {
+  CHECK(!rpc_status.ok() || !server_status.ok());
 
-  // TODO: scanners don't really require a leader. For now, however,
-  // we always scan from the leader.
+  // Start by checking network errors.
+  if (!rpc_status.ok()) {
+    if (rpc_status.IsTimedOut() && actual_deadline.Equals(deadline)) {
+      // If we ended because of the overall deadline, we're done.
+      // We didn't wait a full RPC timeout though, so don't mark the tserver as failed.
+      LOG(INFO) << "Scan of tablet " << remote_->tablet_id() << " at "
+          << ts_->ToString() << " deadline expired.";
+      return rpc_status;
+    } else {
+      // All other types of network errors are retriable, and also indicate the tserver is failed.
+      table_->client()->data_->meta_cache_->MarkTSFailed(ts_, rpc_status);
+    }
+  }
+
+  // If we're in the middle of a batch and doing an uordered scan, then we cannot retry.
+  // Unordered scans can still be retried on a tablet boundary (i.e. an OpenTablet call).
+  if (!isNewScan && order_mode_ == KuduScanner::UNORDERED) {
+    return !rpc_status.ok() ? rpc_status : server_status;
+  }
+
+  // For retries, the correct action depends on the particular failure condition.
+  //
+  // On an RPC error, we retry at a different tablet server.
+  //
+  // If the server returned an error code, it depends:
+  //
+  //   - SCANNER_EXPIRED    : The scan can be retried at the same tablet server.
+  //
+  //   - TABLET_NOT_RUNNING : The scan can be retried at a different tablet server, subject
+  //                          to the client's specified selection criteria.
+  //
+  //   - Any other error    : Fatal. This indicates an unexpected error while processing the scan
+  //                          request.
+  if (rpc_status.ok() && !server_status.ok()) {
+    const tserver::TabletServerErrorPB& error = last_response_.error();
+    if (error.code() == tserver::TabletServerErrorPB::SCANNER_EXPIRED) {
+      VLOG(1) << "Got SCANNER_EXPIRED error code, non-fatal error.";
+    } else if (error.code() == tserver::TabletServerErrorPB::TABLET_NOT_RUNNING) {
+      VLOG(1) << "Got TABLET_NOT_RUNNING error code, temporarily blacklisting node "
+          << ts_->permanent_uuid();
+      blacklist->insert(ts_->permanent_uuid());
+      // We've blacklisted all the live candidate tservers.
+      // Do a short random sleep, clear the temp blacklist, then do another round of retries.
+      if (!candidates.empty() && candidates.size() == blacklist->size()) {
+        MonoDelta sleep_delta = MonoDelta::FromMilliseconds((random() % 5000) + 1000);
+        LOG(INFO) << "All live candidate nodes are unavailable because of transient errors."
+            << " Sleeping for " << sleep_delta.ToMilliseconds() << " ms before trying again.";
+        SleepFor(sleep_delta);
+        blacklist->clear();
+      }
+    } else {
+      // All other server errors are fatal. Usually indicates a malformed request, e.g. a bad scan
+      // specification.
+      return server_status;
+    }
+  }
+
+  return Status::OK();
+}
+
+Status KuduScanner::Data::OpenTablet(const Slice& key,
+                                     const MonoTime& deadline,
+                                     set<string>* blacklist) {
+
   Synchronizer sync;
   table_->client()->data_->meta_cache_->LookupTabletByKey(table_,
                                                           key,
@@ -105,7 +174,8 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
   }
 
   if (encoded_last_row_key_.length() > 0) {
-    VLOG(1) << "Setting NewScanRequestPB encoded_last_row_key to " << encoded_last_row_key_;
+    VLOG(1) << "Setting NewScanRequestPB encoded_last_row_key to hex value "
+        << HexDump(encoded_last_row_key_);
     scan->set_encoded_last_row_key(encoded_last_row_key_);
   }
 
@@ -164,29 +234,29 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
     controller_.Reset();
     controller_.set_deadline(actual_deadline);
     RemoteTabletServer *ts;
+    vector<RemoteTabletServer*> candidates;
+    // TODO: Add retry logic for GetTabletServer too. A leader could be mark as failed, but
+    // then come back up within the operation timeout. Refreshing liveness information involves
+    // another LookupTabletByKey.
     RETURN_NOT_OK(table_->client()->data_->GetTabletServer(
         table_->client(),
         remote_->tablet_id(),
         selection_,
+        *blacklist,
+        &candidates,
         &ts));
     CHECK(ts);
     CHECK(ts->proxy());
     ts_ = ts;
     proxy_ = ts->proxy();
-    Status s = proxy_->Scan(next_req_, &last_response_, &controller_);
-    if (s.ok()) {
+    const Status rpc_status = proxy_->Scan(next_req_, &last_response_, &controller_);
+    const Status server_status = CheckForErrors();
+    if (rpc_status.ok() && server_status.ok()) {
       break;
-    } else if (s.IsTimedOut() && actual_deadline.Equals(deadline)) {
-      // The overall deadline came sooner than the would-be RPC deadline,
-      // so don't treat the TS as failed.
-      return s;
     }
-
-    // On error, mark any replicas hosted by this TS as failed, then try
-    // another replica.
-    table_->client()->data_->meta_cache_->MarkTSFailed(ts, s);
+    RETURN_NOT_OK(CanBeRetried(true, rpc_status, server_status, actual_deadline, deadline,
+                               candidates, blacklist));
   }
-  RETURN_NOT_OK(CheckForErrors());
 
   next_req_.clear_new_scan_request();
   data_in_open_ = last_response_.has_data();
@@ -205,9 +275,10 @@ Status KuduScanner::Data::OpenTablet(const Slice& key) {
   // The last row key is also updated on each scan response.
   if (order_mode_ == ORDERED) {
     CHECK(last_response_.has_snap_timestamp());
-    CHECK(last_response_.has_encoded_last_row_key());
     snapshot_timestamp_ = last_response_.snap_timestamp();
-    encoded_last_row_key_ = last_response_.encoded_last_row_key();
+    if (last_response_.has_encoded_last_row_key()) {
+      encoded_last_row_key_ = last_response_.encoded_last_row_key();
+    }
   }
 
   return Status::OK();

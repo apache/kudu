@@ -49,7 +49,10 @@ DECLARE_bool(enable_leader_failure_detection);
 DECLARE_int32(max_create_tablets_per_ts);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
+using std::string;
+using std::set;
 using std::tr1::shared_ptr;
+using std::vector;
 
 namespace kudu {
 namespace client {
@@ -409,6 +412,49 @@ class ClientTest : public KuduTest {
               .Create());
 
     ASSERT_OK(client_->OpenTable(table_name, table));
+  }
+
+  // Kills a tablet server.
+  // Boolean flags control whether to restart the tserver, and if so, whether to wait for it to
+  // finish bootstrapping.
+  Status KillTServerImpl(const string& uuid, const bool restart, const bool wait_started) {
+    bool ts_found = false;
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+      if (ts->server()->instance_pb().permanent_uuid() == uuid) {
+        if (restart) {
+          LOG(INFO) << "Restarting TS at " << ts->bound_rpc_addr().ToString();
+          RETURN_NOT_OK(ts->Restart());
+          if (wait_started) {
+            LOG(INFO) << "Waiting for TS " << ts->bound_rpc_addr().ToString()
+                << " to finish bootstrapping";
+            RETURN_NOT_OK(ts->WaitStarted());
+          }
+        } else {
+          LOG(INFO) << "Killing TS " << uuid << " at " << ts->bound_rpc_addr().ToString();
+          ts->Shutdown();
+        }
+        ts_found = true;
+        break;
+      }
+    }
+    if (!ts_found) {
+      return Status::InvalidArgument(strings::Substitute("Could not find tablet server $1", uuid));
+    }
+
+    return Status::OK();
+  }
+
+  Status RestartTServerAndWait(const string& uuid) {
+    return KillTServerImpl(uuid, true, true);
+  }
+
+  Status RestartTServerAsync(const string& uuid) {
+    return KillTServerImpl(uuid, true, false);
+  }
+
+  Status KillTServer(const string& uuid) {
+    return KillTServerImpl(uuid, false, false);
   }
 
   void DoApplyWithoutFlushTest(int sleep_micros);
@@ -783,7 +829,7 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
 
 // Check that the tserver proxy is reset on close, even for empty tables.
 TEST_F(ClientTest, TestScanCloseProxy) {
-  const std::string kEmptyTable = "TestScanCloseProxy";
+  const string kEmptyTable = "TestScanCloseProxy";
   scoped_refptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kEmptyTable, 3, GenerateSplitKeys(), &table));
 
@@ -798,7 +844,6 @@ TEST_F(ClientTest, TestScanCloseProxy) {
   // Insert some test rows.
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(),
                                          FLAGS_test_scan_num_rows));
-
   {
     // Open and close a scanner with rows.
     KuduScanner scanner(table.get());
@@ -808,31 +853,24 @@ TEST_F(ClientTest, TestScanCloseProxy) {
   }
 }
 
-// Test that ordered snapshot scans can be resumed in the case of tablet server failure.
-TEST_F(ClientTest, TestScanFaultTolerance) {
-  // Create test table and insert test rows.
-  const std::string kScanTable = "TestScanFaultTolerance";
-  scoped_refptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, 3, GenerateSplitKeys(), &table));
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(),
-                                         FLAGS_test_scan_num_rows));
+namespace internal {
 
-  // Do an initial scan to determine the expected rows for later verification.
-  vector<std::string> expected_rows;
-  ScanTableToStrings(table.get(), &expected_rows);
-
+static void DoScanWithCallback(KuduTable* table,
+                               const vector<string>& expected_rows,
+                               const boost::function<Status(const string&)>& cb) {
   // Initialize ordered snapshot scanner.
-  KuduScanner scanner(table.get());
+  KuduScanner scanner(table);
   ASSERT_OK(scanner.SetOrderMode(KuduScanner::ORDERED));
   ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
   // Set a small batch size so it reads in multiple batches.
   ASSERT_OK(scanner.SetBatchSizeBytes(1));
 
   ASSERT_OK(scanner.Open());
-  vector<std::string> rows;
+  vector<string> rows;
 
   // Do a first scan to get us started.
   {
+    LOG(INFO) << "Setting up scanner.";
     ASSERT_TRUE(scanner.HasMoreRows());
     vector<KuduRowResult> result_rows;
     ASSERT_OK(scanner.NextBatch(&result_rows));
@@ -843,21 +881,17 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
     ASSERT_TRUE(scanner.HasMoreRows());
   }
 
-  // Kill the tablet serving the scan.
+  // Call the callback on the tserver serving the scan.
+  LOG(INFO) << "Calling callback.";
   {
-    bool ts_killed = false;
-    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      MiniTabletServer* ts = cluster_->mini_tablet_server(i);
-      if (ts->server()->instance_pb().permanent_uuid() == scanner.data_->ts_->permanent_uuid()) {
-        LOG(INFO) << "Killing TS running on " << ts->bound_rpc_addr().ToString();
-        ts->Shutdown();
-        ts_killed = true;
-        break;
-      }
-    }
-    ASSERT_TRUE(ts_killed);
+    KuduTabletServer* kts_ptr;
+    ASSERT_OK(scanner.GetCurrentServer(&kts_ptr));
+    gscoped_ptr<KuduTabletServer> kts(kts_ptr);
+    ASSERT_OK(cb(kts->uuid()));
   }
+
   // Check that we can still read the next batch.
+  LOG(INFO) << "Checking that we can still read the next batch.";
   ASSERT_TRUE(scanner.HasMoreRows());
   ASSERT_OK(scanner.SetBatchSizeBytes(1024*1024));
   while (scanner.HasMoreRows()) {
@@ -869,10 +903,123 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   }
   scanner.Close();
 
-  // Verify results from the scan with failure.
-  ASSERT_EQ(expected_rows.size(), rows.size());
+  // Verify results from the scan.
+  LOG(INFO) << "Verifying results from scan.";
   for (int i = 0; i < rows.size(); i++) {
-    ASSERT_EQ(expected_rows[i], rows[i]);
+    EXPECT_EQ(expected_rows[i], rows[i]);
+  }
+  ASSERT_EQ(expected_rows.size(), rows.size());
+}
+
+} // namespace internal
+
+// Test that ordered snapshot scans can be resumed in the case of different tablet server failures.
+TEST_F(ClientTest, TestScanFaultTolerance) {
+  // Create test table and insert test rows.
+  const string kScanTable = "TestScanFaultTolerance";
+  scoped_refptr<KuduTable> table;
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, 3, vector<string>(), &table));
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(),
+                                         FLAGS_test_scan_num_rows));
+
+  // Do an initial scan to determine the expected rows for later verification.
+  vector<string> expected_rows;
+  ScanTableToStrings(table.get(), &expected_rows);
+
+  // Test a few different recoverable server-side error conditions.
+  // Since these are recoverable, the scan will succeed when retried elsewhere.
+
+  // Restarting and waiting should result in a SCANNER_EXPIRED error.
+  LOG(INFO) << "Doing a scan while restarting a tserver and waiting for it to come up...";
+  ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
+                          boost::bind<Status>(
+                              &ClientTest_TestScanFaultTolerance_Test::RestartTServerAndWait,
+                              this, _1)));
+
+  // Restarting and not waiting means the tserver is hopefully bootstrapping, leading to
+  // a TABLET_NOT_RUNNING error.
+  LOG(INFO) << "Doing a scan while restarting a tserver...";
+  ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
+                          boost::bind<Status>(
+                              &ClientTest_TestScanFaultTolerance_Test::RestartTServerAsync,
+                              this, _1)));
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+    ASSERT_OK(ts->WaitStarted());
+  }
+
+  // Killing the tserver should lead to an RPC timeout.
+  LOG(INFO) << "Doing a scan while killing a tserver...";
+  ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
+                          boost::bind<Status>(
+                              &ClientTest_TestScanFaultTolerance_Test::KillTServer,
+                              this, _1)));
+}
+
+TEST_F(ClientTest, TestGetTabletServerBlacklist) {
+  scoped_refptr<KuduTable> table;
+  ASSERT_NO_FATAL_FAILURE(CreateTable("blacklist",
+                                      3,
+                                      GenerateSplitKeys(),
+                                      &table));
+  InsertTestRows(table.get(), 1, 0);
+  // Find the tablet.
+  Synchronizer sync;
+  scoped_refptr<internal::RemoteTablet> rt;
+  client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(), MonoTime::Max(), &rt,
+                                                sync.AsStatusCallback());
+  // Get the leader replica of the tablet.
+  ASSERT_OK(sync.Wait());
+  ASSERT_TRUE(rt.get() != NULL);
+  internal::RemoteTabletServer *rts;
+  set<string> blacklist;
+  vector<internal::RemoteTabletServer*> candidates;
+  vector<internal::RemoteTabletServer*> tservers;
+  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+                                            KuduClient::LEADER_ONLY,
+                                            blacklist, &candidates, &rts));
+  tservers.push_back(rts);
+  // Blacklist the leader, should not work.
+  blacklist.insert(rts->permanent_uuid());
+  {
+    Status s = client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+                                               KuduClient::LEADER_ONLY,
+                                               blacklist, &candidates, &rts);
+    ASSERT_TRUE(s.IsServiceUnavailable());
+  }
+  // Keep blacklisting replicas until we run out.
+  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+                                            KuduClient::CLOSEST_REPLICA,
+                                            blacklist, &candidates, &rts));
+  tservers.push_back(rts);
+  blacklist.insert(rts->permanent_uuid());
+  ASSERT_OK(client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+                                            KuduClient::FIRST_REPLICA,
+                                            blacklist, &candidates, &rts));
+  tservers.push_back(rts);
+  blacklist.insert(rts->permanent_uuid());
+
+  // Make sure none of the three modes work when all nodes are blacklisted.
+  vector<KuduClient::ReplicaSelection> selections;
+  selections.push_back(KuduClient::LEADER_ONLY);
+  selections.push_back(KuduClient::CLOSEST_REPLICA);
+  selections.push_back(KuduClient::FIRST_REPLICA);
+  BOOST_FOREACH(KuduClient::ReplicaSelection selection, selections) {
+    Status s = client_->data_->GetTabletServer(client_.get(), rt->tablet_id(), selection,
+                                               blacklist, &candidates, &rts);
+    ASSERT_TRUE(s.IsServiceUnavailable());
+  }
+
+  // Make sure none of the modes work when all nodes are dead.
+  BOOST_FOREACH(internal::RemoteTabletServer* rt, tservers) {
+    client_->data_->meta_cache_->MarkTSFailed(rt, Status::NetworkError("test"));
+  }
+  blacklist.clear();
+  BOOST_FOREACH(KuduClient::ReplicaSelection selection, selections) {
+    Status s = client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
+                                               selection,
+                                               blacklist, &candidates, &rts);
+    ASSERT_TRUE(s.IsServiceUnavailable());
   }
 }
 
@@ -1705,17 +1852,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   internal::RemoteTabletServer *rts = rt->LeaderTServer();
 
   // Kill the leader of the first tablet.
-  bool ts_killed = false;
-  for (int i = 0; i < kNumReplicas; i++) {
-    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
-    if (ts->server()->instance_pb().permanent_uuid() == rts->permanent_uuid()) {
-      LOG(INFO) << "Killing TS running on " << ts->bound_rpc_addr().ToString();
-      ts->Shutdown();
-      ts_killed = true;
-      break;
-    }
-  }
-  ASSERT_TRUE(ts_killed);
+  ASSERT_OK(KillTServer(rts->permanent_uuid()));
 
   // We wait until we fail over to the new leader(s).
   int tries = 0;
@@ -1770,24 +1907,18 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
                                                  &rt, sync.AsStatusCallback());
   ASSERT_OK(sync.Wait());
   internal::RemoteTabletServer *rts;
+  set<string> blacklist;
+  vector<internal::RemoteTabletServer*> candidates;
   ASSERT_OK(client_->data_->GetTabletServer(client_.get(),
-                                                   rt->tablet_id(),
-                                                   KuduClient::LEADER_ONLY,
-                                                   &rts));
+                                            rt->tablet_id(),
+                                            KuduClient::LEADER_ONLY,
+                                            blacklist,
+                                            &candidates,
+                                            &rts));
 
-  int killed_server = -1;
+  string killed_uuid = rts->permanent_uuid();
   // Kill the tserver that is serving the leader tablet.
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    MiniTabletServer* server = cluster_->mini_tablet_server(i);
-    if (server->server()->instance_pb().permanent_uuid() == rts->permanent_uuid()) {
-      LOG(INFO) << "Killing server at index " << i << " listening at "
-                << server->bound_rpc_addr().ToString() << " ...";
-      server->Shutdown();
-      killed_server = i;
-    }
-  }
-
-  ASSERT_NE(killed_server, -1);
+  ASSERT_OK(KillTServer(killed_uuid));
 
   // Since we waited before, hopefully all replicas will be up to date
   // and we can just promote another replica.
@@ -1798,11 +1929,16 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
 
   int new_leader_idx = -1;
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    if (i != killed_server) {
-      new_leader_idx = i;
-      break;
+    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+    if (ts->is_started()) {
+      const string& uuid = ts->server()->instance_pb().permanent_uuid();
+      if (uuid != killed_uuid) {
+        new_leader_idx = i;
+        break;
+      }
     }
   }
+  ASSERT_NE(-1, new_leader_idx);
 
   MiniTabletServer* new_leader = cluster_->mini_tablet_server(new_leader_idx);
   ASSERT_TRUE(new_leader != NULL);

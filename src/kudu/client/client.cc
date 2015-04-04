@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <boost/bind.hpp>
+#include <set>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <vector>
@@ -34,6 +35,7 @@
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/logging.h"
 
+using std::set;
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
@@ -848,8 +850,13 @@ Status KuduScanner::Open() {
 
   VLOG(1) << "Beginning scan " << ToString();
 
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(data_->timeout_);
+  set<string> blacklist;
   RETURN_NOT_OK(data_->OpenTablet(data_->spec_.lower_bound_key() != NULL
-                                  ? data_->spec_.lower_bound_key()->encoded_key() : Slice()));
+                                  ? data_->spec_.lower_bound_key()->encoded_key() : Slice(),
+                                  deadline,
+                                  &blacklist));
 
   data_->open_ = true;
   return Status::OK();
@@ -905,37 +912,50 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
     // More data is available in this tablet.
     VLOG(1) << "Continuing scan " << ToString();
 
+    MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+    MonoTime rpc_deadline = deadline;
+    deadline.AddDelta(data_->timeout_);
+    rpc_deadline.AddDelta(data_->table_->client()->default_rpc_timeout());
+    MonoTime actual_deadline = MonoTime::Earliest(deadline, rpc_deadline);
+
     data_->controller_.Reset();
-    data_->controller_.set_timeout(data_->timeout_);
+    data_->controller_.set_deadline(actual_deadline);
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
-    Status s = data_->proxy_->Scan(data_->next_req_,
-                                   &data_->last_response_,
-                                   &data_->controller_);
-    // If the RPC failed, mark this tablet server as failed.
-    // Ordered scans can be restarted at another tablet server via a fresh open.
-    // Unordered scans must return an error status up to the client.
-    if (!s.ok()) {
-      data_->table_->client()->data_->meta_cache_->MarkTSFailed(data_->ts_, s);
-      if (data_->order_mode_ == ORDERED) {
-        LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
-            << ToString() << " failed, retrying scan elsewhere.";
-        // Use the start key of the current tablet as the start key.
-        return data_->OpenTablet(data_->remote_->start_key());
+    Status rpc_status = data_->proxy_->Scan(data_->next_req_,
+                                            &data_->last_response_,
+                                            &data_->controller_);
+    const Status server_status = data_->CheckForErrors();
+
+    // Success case.
+    if (rpc_status.ok() && server_status.ok()) {
+      if (data_->last_response_.has_encoded_last_row_key()) {
+        data_->encoded_last_row_key_ = data_->last_response_.encoded_last_row_key();
       }
-      return s;
+      return data_->ExtractRows(rows);
     }
-    if (data_->last_response_.has_encoded_last_row_key()) {
-      data_->encoded_last_row_key_ = data_->last_response_.encoded_last_row_key();
-    }
-    RETURN_NOT_OK(data_->CheckForErrors());
-    return data_->ExtractRows(rows);
+
+    // Error handling.
+    LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
+        << ToString() << " failed: "
+        << (!rpc_status.ok() ? rpc_status.ToString() : server_status.ToString());
+    set<string> blacklist;
+    vector<internal::RemoteTabletServer*> candidates;
+    RETURN_NOT_OK(data_->CanBeRetried(false, rpc_status, server_status, actual_deadline, deadline,
+                                      candidates, &blacklist));
+
+    LOG(WARNING) << "Attempting to retry scan of tablet " << ToString() << " elsewhere.";
+    // Use the start key of the current tablet as the start key.
+    return data_->OpenTablet(data_->remote_->start_key(), deadline, &blacklist);
   } else if (data_->MoreTablets()) {
     // More data may be available in other tablets.
-    //
     // No need to close the current tablet; we scanned all the data so the
     // server closed it for us.
     VLOG(1) << "Scanning next tablet " << ToString();
-    RETURN_NOT_OK(data_->OpenTablet(data_->remote_->end_key()));
+    data_->encoded_last_row_key_.clear();
+    MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+    deadline.AddDelta(data_->timeout_);
+    set<string> blacklist;
+    RETURN_NOT_OK(data_->OpenTablet(data_->remote_->end_key(), deadline, &blacklist));
 
     // No rows written, the next invocation will pick them up.
     return Status::OK();
@@ -943,6 +963,21 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
     // No more data anywhere.
     return Status::OK();
   }
+}
+
+Status KuduScanner::GetCurrentServer(KuduTabletServer** server) {
+  CHECK(data_->open_);
+  internal::RemoteTabletServer* rts = data_->ts_;
+  CHECK(rts);
+  vector<HostPort> host_ports;
+  rts->GetHostPorts(&host_ports);
+  if (host_ports.empty()) {
+    return Status::IllegalState(strings::Substitute("No HostPort found for RemoteTabletServer $0",
+                                                    rts->ToString()));
+  }
+  *server = new KuduTabletServer();
+  (*server)->data_.reset(new KuduTabletServer::Data(rts->permanent_uuid(), host_ports[0].host()));
+  return Status::OK();
 }
 
 KuduTabletServer::KuduTabletServer() {

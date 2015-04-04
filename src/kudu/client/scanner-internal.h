@@ -3,6 +3,7 @@
 #ifndef KUDU_CLIENT_SCANNER_INTERNAL_H
 #define KUDU_CLIENT_SCANNER_INTERNAL_H
 
+#include <set>
 #include <string>
 #include <vector>
 
@@ -28,7 +29,25 @@ class KuduScanner::Data {
   void CopyPredicateBound(const ColumnSchema& col,
                           const void* bound_src, std::string* bound_dst);
 
-  Status OpenTablet(const Slice& key);
+  // Called when KuduScanner::NextBatch or KuduScanner::Data::OpenTablet result in an RPC or
+  // server error. Returns the error status if the call cannot be retried.
+  //
+  // The number of parameters reflects the complexity of handling retries.
+  // We must respect the overall scan 'deadline', as well as the 'blacklist' of servers
+  // experiencing transient failures. See the implementation for more details.
+  Status CanBeRetried(const bool isNewScan,
+                      const Status& rpc_status,
+                      const Status& server_status,
+                      const MonoTime& actual_deadline,
+                      const MonoTime& deadline,
+                      const std::vector<internal::RemoteTabletServer*>& candidates,
+                      std::set<std::string>* blacklist);
+
+  // Open a tablet.
+  // The deadline is the time budget for this operation.
+  // The blacklist is used to temporarily filter out nodes that are experiencing transient errors.
+  // This blacklist may be modified by the callee.
+  Status OpenTablet(const Slice& key, const MonoTime& deadline, std::set<std::string>* blacklist);
 
   // Extracts data from the last scan response and adds them to 'rows'.
   Status ExtractRows(std::vector<KuduRowResult>* rows);
@@ -72,6 +91,8 @@ class KuduScanner::Data {
   std::string encoded_last_row_key_;
 
   internal::RemoteTabletServer* ts_;
+  // The proxy can be derived from the RemoteTabletServer, but this involves retaking the
+  // meta cache lock. Keeping our own shared_ptr avoids this overhead.
   std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   // The next scan request to be sent. This is cached as a field
