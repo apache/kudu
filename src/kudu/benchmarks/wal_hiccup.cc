@@ -14,6 +14,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/hdr_histogram.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
@@ -264,8 +265,8 @@ void WalHiccupBenchmarker::RunOnce() {
 } // namespace kudu
 
 int main(int argc, char* argv[]) {
-  google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::InitGoogleLoggingSafe(argv[0]);
 
   kudu::WalHiccupBenchmarker benchmarker;
   benchmarker.Run();

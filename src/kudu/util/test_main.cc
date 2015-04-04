@@ -22,6 +22,8 @@ static void KillTestOnTimeout(sigval_t sigval);
 
 int main(int argc, char **argv) {
   google::InstallFailureSignalHandler();
+  // InitGoogleTest() must precede ParseCommandLineFlags(), as the former
+  // removes gtest-related flags from argv that would trip up the latter.
   ::testing::InitGoogleTest(&argc, argv);
   google::ParseCommandLineFlags(&argc, &argv, true);
 

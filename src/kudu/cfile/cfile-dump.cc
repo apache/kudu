@@ -10,6 +10,7 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/util/logging.h"
 
 DEFINE_bool(print_meta, true, "print the header and footer from the file");
 DEFINE_bool(iterate_rows, true, "iterate each row in the file");
@@ -54,8 +55,8 @@ void DumpFile(const string& root_path, const string& block_id_str) {
 } // namespace kudu
 
 int main(int argc, char **argv) {
-  google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::InitGoogleLoggingSafe(argv[0]);
   if (argc != 3) {
     std::cerr << "usage: " << argv[0] << " <root path> <block id>" << std::endl;
     return 1;

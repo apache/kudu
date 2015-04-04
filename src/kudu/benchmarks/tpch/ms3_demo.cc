@@ -8,6 +8,7 @@
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 
 DEFINE_string(tpch_path_to_data, "/data/3/dbgen/truncated_lineitem.tbl",
@@ -154,8 +155,8 @@ static int DemoMain(int argc, char** argv) {
 } //namespace kudu
 
 int main(int argc, char** argv) {
-  google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::InitGoogleLoggingSafe(argv[0]);
 
   return kudu::DemoMain(argc, argv);
 }

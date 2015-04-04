@@ -12,6 +12,7 @@
 
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/util/bit-stream-utils.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/stopwatch.h"
 
@@ -91,8 +92,8 @@ void BooleanRLE() {
 
 int main(int argc, char **argv) {
   FLAGS_logtostderr = 1;
-  google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::InitGoogleLoggingSafe(argv[0]);
 
   LOG_TIMING(INFO, "BooleanBitStream") {
     kudu::BooleanBitStream();

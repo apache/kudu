@@ -18,6 +18,7 @@
 #include "kudu/twitter-demo/oauth.h"
 #include "kudu/twitter-demo/insert_consumer.h"
 #include "kudu/twitter-demo/twitter_streamer.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -76,9 +77,8 @@ static int main(int argc, char** argv) {
   // Since this is meant to be run by a user, not a daemon,
   // log to stderr by default.
   FLAGS_logtostderr = 1;
-  google::InitGoogleLogging(argv[0]);
-  google::InstallFailureSignalHandler();
   google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::InitGoogleLoggingSafe(argv[0]);
 
   gscoped_ptr<TwitterConsumer> consumer;
   if (FLAGS_twitter_firehose_sink == "console") {

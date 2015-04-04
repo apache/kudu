@@ -15,6 +15,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/util/env.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 
 DEFINE_bool(print_headers, true, "print the log segment headers/footers");
@@ -188,13 +189,13 @@ void DumpSegment(const string &segment_path) {
 } // namespace kudu
 
 int main(int argc, char **argv) {
-  google::InitGoogleLogging(argv[0]);
   google::ParseCommandLineFlags(&argc, &argv, true);
   if (argc < 2 || argc > 3) {
     std::cerr << "usage: " << argv[0] << " <tserver root path> <tablet_name>"
         " | <log segment path> " << std::endl;
     return 1;
   }
+  kudu::InitGoogleLoggingSafe(argv[0]);
   if (argc == 2) {
     if (!kudu::Env::Default()->FileExists(argv[1])) {
       std::cerr << "Specified file \"" << argv[1] << "\" does not exist"
