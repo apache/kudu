@@ -157,7 +157,7 @@ class ClientTest : public KuduTest {
   void InsertTestRows(KuduClient* client, KuduTable* table, int num_rows, int first_row = 0) {
     shared_ptr<KuduSession> session = client->NewSession();
     ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    session->SetTimeoutMillis(5000);
+    session->SetTimeoutMillis(10000);
     for (int i = first_row; i < num_rows + first_row; i++) {
       gscoped_ptr<KuduInsert> insert(BuildTestRow(table, i));
       ASSERT_OK(session->Apply(insert.Pass()));
@@ -174,7 +174,7 @@ class ClientTest : public KuduTest {
   void UpdateTestRows(KuduTable* table, int lo, int hi) {
     shared_ptr<KuduSession> session = client_->NewSession();
     ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    session->SetTimeoutMillis(5000);
+    session->SetTimeoutMillis(10000);
     for (int i = lo; i < hi; i++) {
       gscoped_ptr<KuduUpdate> update(UpdateTestRow(table, i));
       ASSERT_OK(session->Apply(update.Pass()));
@@ -186,7 +186,7 @@ class ClientTest : public KuduTest {
   void DeleteTestRows(KuduTable* table, int lo, int hi) {
     shared_ptr<KuduSession> session = client_->NewSession();
     ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    session->SetTimeoutMillis(5000);
+    session->SetTimeoutMillis(10000);
     for (int i = lo; i < hi; i++) {
       gscoped_ptr<KuduDelete> del(DeleteTestRow(table, i));
       ASSERT_OK(session->Apply(del.Pass()))
