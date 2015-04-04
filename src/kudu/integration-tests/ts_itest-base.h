@@ -410,6 +410,31 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     return max_replica_index;
   }
 
+  Status KillServerWithUUID(const std::string& uuid) {
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      ExternalTabletServer* ts = cluster_->tablet_server(i);
+      if (ts->instance_id().permanent_uuid() == uuid) {
+        ts->Shutdown();
+        return Status::OK();
+      }
+    }
+    return Status::NotFound("Unable to find server with UUID", uuid);
+  }
+
+  Status RestartServerWithUUID(const std::string& uuid) {
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      ExternalTabletServer* ts = cluster_->tablet_server(i);
+      if (ts->instance_id().permanent_uuid() == uuid) {
+        ts->Shutdown();
+        RETURN_NOT_OK(CheckTabletServersAreAlive(tablet_servers_.size()-1));
+        RETURN_NOT_OK(ts->Restart());
+        RETURN_NOT_OK(CheckTabletServersAreAlive(tablet_servers_.size()));
+        return Status::OK();
+      }
+    }
+    return Status::NotFound("Unable to find server with UUID", uuid);
+  }
+
   // Since we're fault-tolerant we might mask when a tablet server is
   // dead. This returns Status::IllegalState() if fewer than 'num_tablet_servers'
   // are alive.

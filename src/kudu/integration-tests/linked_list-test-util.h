@@ -97,33 +97,56 @@ class LinkedListTester {
       int num_samples,
       int64_t *written_count);
 
-  Status VerifyLinkedListAtSnapshotRemote(uint64_t snapshot_timestamp,
-                                          int64_t expected,
-                                          int64_t* verified_count,
-                                          bool log_errors) {
-    return VerifyLinkedListRemote(snapshot_timestamp, expected, verified_count, log_errors);
+  // Variant of VerifyLinkedListRemote that verifies at the specified snapshot timestamp.
+  Status VerifyLinkedListAtSnapshotRemote(const uint64_t snapshot_timestamp,
+                                          const int64_t expected,
+                                          const bool log_errors,
+                                          const boost::function<Status(const std::string&)>& cb,
+                                          int64_t* verified_count) {
+    return VerifyLinkedListRemote(snapshot_timestamp,
+                                  expected,
+                                  log_errors,
+                                  cb,
+                                  verified_count);
   }
 
-  Status VerifyLinkedListNoSnapshotRemote(int64_t expected,
-                                          int64_t* verified_count,
-                                          bool log_errors) {
-    return VerifyLinkedListRemote(kNoSnapshot, expected, verified_count, log_errors);
+  // Variant of VerifyLinkedListRemote that verifies without specifying a snapshot timestamp.
+  Status VerifyLinkedListNoSnapshotRemote(const int64_t expected,
+                                          const bool log_errors,
+                                          int64_t* verified_count) {
+    return VerifyLinkedListRemote(kNoSnapshot,
+                                  expected,
+                                  log_errors,
+                                  boost::bind(&LinkedListTester::ReturnOk, this, _1),
+                                  verified_count);
   }
 
-  // Run the verify step on a table with RPCs.
-  Status VerifyLinkedListRemote(uint64_t snapshot_timestamp,
-                                int64_t expected,
-                                int64_t* verified_count,
-                                bool log_errors);
+  // Run the verify step on a table with RPCs. Calls the provided callback 'cb' once during
+  // verification to test scanner fault tolerance.
+  Status VerifyLinkedListRemote(const uint64_t snapshot_timestamp,
+                                const int64_t expected,
+                                const bool log_errors,
+                                const boost::function<Status(const std::string&)>& cb,
+                                int64_t* verified_count);
 
   // Run the verify step on a specific tablet.
   Status VerifyLinkedListLocal(const tablet::Tablet* tablet,
-                               int64_t expected,
+                               const int64_t expected,
                                int64_t* verified_count);
 
   // A variant of VerifyLinkedListRemote that is more robust towards ongoing
   // bootstrapping and replication.
-  Status WaitAndVerify(int seconds_to_run, int64_t expected);
+  Status WaitAndVerify(int seconds_to_run,
+                       int64_t expected) {
+    return WaitAndVerify(seconds_to_run,
+                         expected,
+                         boost::bind(&LinkedListTester::ReturnOk, this, _1));
+  }
+
+  // A variant of WaitAndVerify that also takes a callback to be run once during verification.
+  Status WaitAndVerify(int seconds_to_run,
+                       int64_t expected,
+                       const boost::function<Status(const std::string&)>& cb);
 
   // Generates a vector of keys for the table such that each tablet is
   // responsible for an equal fraction of the uint64 key space.
@@ -145,6 +168,9 @@ class LinkedListTester {
   HdrHistogram latency_histogram_;
   std::tr1::shared_ptr<client::KuduClient> client_;
   SnapsAndCounts sampled_timestamps_and_counts_;
+
+ private:
+  Status ReturnOk(const std::string& str) { return Status::OK(); }
 };
 
 // Generates the linked list pattern.
@@ -536,10 +562,10 @@ static void VerifyNoDuplicateEntries(const std::vector<uint64_t>& ints, int* err
   }
 }
 
-Status LinkedListTester::VerifyLinkedListRemote(uint64_t snapshot_timestamp,
-                                                int64_t expected,
-                                                int64_t* verified_count,
-                                                bool log_errors) {
+Status LinkedListTester::VerifyLinkedListRemote(
+    const uint64_t snapshot_timestamp, const int64_t expected, bool log_errors,
+    const boost::function<Status(const std::string&)>& cb, int64_t* verified_count) {
+
   scoped_refptr<client::KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
 
@@ -552,9 +578,11 @@ Status LinkedListTester::VerifyLinkedListRemote(uint64_t snapshot_timestamp,
 
   client::KuduScanner scanner(table.get());
   RETURN_NOT_OK_PREPEND(scanner.SetProjection(&verify_projection_), "Bad projection");
+  RETURN_NOT_OK(scanner.SetBatchSizeBytes(0)); // Force at least one NextBatch RPC.
 
   if (snapshot_timestamp != kNoSnapshot) {
     RETURN_NOT_OK(scanner.SetReadMode(client::KuduScanner::READ_AT_SNAPSHOT));
+    RETURN_NOT_OK(scanner.SetOrderMode(client::KuduScanner::ORDERED));
     RETURN_NOT_OK(scanner.SetSnapshotRaw(snapshot_timestamp));
   }
 
@@ -562,13 +590,27 @@ Status LinkedListTester::VerifyLinkedListRemote(uint64_t snapshot_timestamp,
 
   RETURN_NOT_OK_PREPEND(scanner.Open(), "Couldn't open scanner");
 
+  RETURN_NOT_OK(scanner.SetBatchSizeBytes(1024)); // More normal batch size.
+
   LinkedListVerifier verifier(num_chains_, enable_mutation_, expected,
                               GenerateSplitInts());
   verifier.StartScanTimer();
 
+  bool cb_called = false;
   std::vector<client::KuduRowResult> rows;
   while (scanner.HasMoreRows()) {
-    RETURN_NOT_OK(scanner.NextBatch(&rows));
+    // If we're doing a snapshot scan with a big enough cluster, call the callback on the scanner's
+    // tserver. Do this only once.
+    if (snapshot_timestamp != kNoSnapshot && !cb_called) {
+      client::KuduTabletServer* kts_ptr;
+      scanner.GetCurrentServer(&kts_ptr);
+      gscoped_ptr<client::KuduTabletServer> kts(kts_ptr);
+      const std::string down_ts = kts->uuid();
+      LOG(INFO) << "Calling callback on tserver " << down_ts;
+      RETURN_NOT_OK(cb(down_ts));
+      cb_called = true;
+    }
+    RETURN_NOT_OK_PREPEND(scanner.NextBatch(&rows), "Couldn't fetch next row batch");
     BOOST_FOREACH(const client::KuduRowResult& row, rows) {
       uint64_t key;
       uint64_t link;
@@ -633,12 +675,15 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
   return verifier.VerifyData(verified_count, true);
 }
 
-Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
+Status LinkedListTester::WaitAndVerify(int seconds_to_run,
+                                       int64_t expected,
+                                       const boost::function<Status(const std::string&)>& cb) {
 
   std::list<pair<int64_t, int64_t> > samples_as_list(sampled_timestamps_and_counts_.begin(),
                                                      sampled_timestamps_and_counts_.end());
 
   int64_t seen = 0;
+  bool called = false;
   Stopwatch sw;
   sw.start();
 
@@ -651,8 +696,19 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
     bool last_attempt = sw.elapsed().wall_seconds() > kBaseTimeToWaitSecs + seconds_to_run;
     s = Status::OK();
     std::list<pair<int64_t, int64_t> >::iterator iter = samples_as_list.begin();
+
     while (iter != samples_as_list.end()) {
-      s = VerifyLinkedListAtSnapshotRemote((*iter).first, (*iter).second, &seen, last_attempt);
+      // Only call the callback once, on the first verify pass, since it may be destructive.
+      if (iter == samples_as_list.begin() && !called) {
+        s = VerifyLinkedListAtSnapshotRemote((*iter).first, (*iter).second, last_attempt, cb,
+                                             &seen);
+        called = true;
+      } else {
+        s = VerifyLinkedListAtSnapshotRemote((*iter).first, (*iter).second, last_attempt,
+                                             boost::bind(&LinkedListTester::ReturnOk, this, _1),
+                                             &seen);
+      }
+
       if (s.ok() && (*iter).second != seen) {
         // If we've seen less rows than we were expecting we should fail and not retry.
         //
@@ -676,7 +732,7 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run, int64_t expected) {
       iter = samples_as_list.erase(iter);
     }
     if (s.ok()) {
-      s = VerifyLinkedListNoSnapshotRemote(expected, &seen, last_attempt);
+      s = VerifyLinkedListNoSnapshotRemote(expected, last_attempt, &seen);
     }
 
     // TODO: when we enable hybridtime consistency for the scans,

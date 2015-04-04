@@ -22,6 +22,8 @@
 
 namespace kudu {
 
+class LinkedListTester;
+
 namespace client {
 
 class KuduRowResult;
@@ -822,7 +824,6 @@ class KUDU_EXPORT KuduScanner {
 
   // Returns a string representation of this scan.
   std::string ToString() const;
-
  private:
   class KUDU_NO_EXPORT Data;
 

@@ -164,8 +164,32 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
 
   LOG(INFO) << "Successfully verified " << written << " rows before killing any servers.";
 
-  // Check in-memory state with a downed TS. Scans may try other replicas.
   if (can_kill_ts) {
+    // Restart a tserver during a scan to test scanner fault tolerance.
+    WaitForTSAndQuorum();
+    LOG(INFO) << "Will restart the tablet server during verification scan.";
+    ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written,
+                                     boost::bind(
+                                         &TabletServerIntegrationTestBase::RestartServerWithUUID,
+                                         this, _1)));
+    LOG(INFO) << "Done with tserver restart test.";
+    ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()));
+
+    // Kill a tserver during a scan to test scanner fault tolerance.
+    // Note that the previously restarted node is likely still be bootstrapping, which makes this
+    // even harder.
+    LOG(INFO) << "Will kill the tablet server during verification scan.";
+    ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written,
+                                     boost::bind(
+                                         &TabletServerIntegrationTestBase::KillServerWithUUID,
+                                         this, _1)));
+    LOG(INFO) << "Done with tserver kill test.";
+    ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()-1));
+    ASSERT_NO_FATAL_FAILURE(RestartCluster());
+    // Again wait for cluster to finish bootstrapping.
+    WaitForTSAndQuorum();
+
+    // Check in-memory state with a downed TS. Scans may try other replicas.
     string tablet = (*tablet_replicas_.begin()).first;
     TServerDetails* leader;
     EXPECT_OK(GetLeaderReplicaWithRetries(tablet, &leader));
@@ -208,6 +232,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   }
 
   ASSERT_NO_FATAL_FAILURE(RestartCluster());
+
   // Sleep a little bit, so that the tablet is probably in bootstrapping state.
   SleepFor(MonoDelta::FromMilliseconds(100));
 
