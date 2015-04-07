@@ -168,7 +168,7 @@ class RaftConsensusTest : public KuduTest {
     callback.Run(s);
   }
 
-  void SetContinuationIfEnabled(ConsensusRound* round) {
+  void SetContinuationIfEnabled(const scoped_refptr<ConsensusRound>& round) {
     if (use_continuations_) {
       TestContinuation* continuation = new TestContinuation(&statuses_, round->id());
       continuations_.push_back(continuation);
@@ -176,7 +176,7 @@ class RaftConsensusTest : public KuduTest {
     }
   }
 
-  Status StartReplicaTransaction(ConsensusRound* round) {
+  Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) {
     rounds_.push_back(round);
     SetContinuationIfEnabled(round);
     return Status::OK();
@@ -191,19 +191,18 @@ class RaftConsensusTest : public KuduTest {
             .Times(1);
   }
 
-  ConsensusRound* CreateRound(gscoped_ptr<ReplicateMsg> replicate) {
-    ConsensusRound* round = new ConsensusRound(consensus_.get(),
-                                               replicate.Pass(),
-                                               NULL);
+  scoped_refptr<ConsensusRound> CreateRound(gscoped_ptr<ReplicateMsg> replicate) {
+    scoped_refptr<ConsensusRound> round(
+        new ConsensusRound(consensus_.get(), replicate.Pass(), NULL));
     rounds_.push_back(round);
     return round;
   }
 
-  ConsensusRound* AppendNoOpRound() {
+  scoped_refptr<ConsensusRound> AppendNoOpRound() {
     gscoped_ptr<ReplicateMsg> replicate(new ReplicateMsg);
     replicate->set_op_type(NO_OP);
     replicate->set_timestamp(clock_->Now().ToUint64());
-    ConsensusRound* round = CreateRound(replicate.Pass());
+    scoped_refptr<ConsensusRound> round = CreateRound(replicate.Pass());
     CHECK_OK(consensus_->Replicate(round));
     SetContinuationIfEnabled(round);
     return round;
@@ -211,7 +210,7 @@ class RaftConsensusTest : public KuduTest {
 
   ~RaftConsensusTest() {
     // Wait for all rounds to be done.
-    STLDeleteElements(&rounds_);
+    rounds_.clear();
     STLDeleteElements(&continuations_);
   }
 
@@ -228,7 +227,7 @@ class RaftConsensusTest : public KuduTest {
   const Schema schema_;
   scoped_refptr<RaftConsensus> consensus_;
 
-  vector<ConsensusRound*> rounds_;
+  vector<scoped_refptr<ConsensusRound> > rounds_;
 
   // Mocks.
   // NOTE: both 'queue_' and 'peer_manager_' belong to 'consensus_' and may be deleted before
@@ -259,7 +258,6 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
   EXPECT_CALL(*queue_, AppendOperationsMock(_, _))
       .Times(11).WillRepeatedly(Return(Status::OK()));
 
-
   ConsensusBootstrapInfo info;
   ASSERT_OK(consensus_->Start(info));
   ASSERT_OK(consensus_->EmulateElection());
@@ -272,7 +270,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
 
   // Append 10 rounds
   for (int i = 0; i < 10; i++) {
-    ConsensusRound* round = AppendNoOpRound();
+    scoped_refptr<ConsensusRound> round = AppendNoOpRound();
     // queue reports majority replicated index in the leader's term
     // committed index should move accordingly.
     consensus_->UpdateMajorityReplicated(round->id(), &committed_index);
@@ -304,7 +302,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
   ASSERT_OPID_EQ(rounds_[0]->id(), committed_index);
 
   // Append another round in the current term (besides the original config round).
-  ConsensusRound* round = AppendNoOpRound();
+  scoped_refptr<ConsensusRound> round = AppendNoOpRound();
 
   // Now emulate an election, the same guy will be leader but the term
   // will change.
@@ -316,7 +314,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
   consensus_->UpdateMajorityReplicated(round->id(), &new_committed_index);
   ASSERT_OPID_EQ(committed_index, new_committed_index);
 
-  ConsensusRound* last_config_round = rounds_[2];
+  const scoped_refptr<ConsensusRound>& last_config_round = rounds_[2];
 
   // Now notify that the last change config was committed, this should advance the
   // commit index to the id of the last change config.
@@ -494,7 +492,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
 
   request.mutable_committed_index()->CopyFrom(MakeOpId(3, 6));
 
-  vector<ConsensusRound*> aborted_rounds_copy;
+  vector<scoped_refptr<ConsensusRound> > aborted_rounds_copy;
   aborted_rounds_copy.assign(rounds_.begin() + 5, rounds_.end());
 
   // We expect 12 continuations to have been fired.
@@ -530,7 +528,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   // have transactions we'll need to delete the rounds ourselves so that
   // we don't try to issue a commit msg for them at the end of the test.
   rounds_.erase(rounds_.begin() + 5, rounds_.begin() + 11);
-  STLDeleteElements(&aborted_rounds_copy);
+  aborted_rounds_copy.clear();
 
   request.mutable_ops()->Clear();
   request.mutable_preceding_id()->CopyFrom(MakeOpId(3, 9));

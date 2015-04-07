@@ -126,8 +126,8 @@ class TransactionState {
 
   // Sets the ConsensusRound for this transaction, if this transaction is
   // being executed through the consensus system.
-  void set_consensus_round(gscoped_ptr<consensus::ConsensusRound> consensus_round) {
-    consensus_round_.reset(consensus_round.release());
+  void set_consensus_round(const scoped_refptr<consensus::ConsensusRound>& consensus_round) {
+    consensus_round_ = consensus_round;
     op_id_ = consensus_round_->id();
   }
 
@@ -244,7 +244,7 @@ class TransactionState {
   // This OpId stores the canonical "anchor" OpId for this transaction.
   consensus::OpId op_id_;
 
-  gscoped_ptr<consensus::ConsensusRound> consensus_round_;
+  scoped_refptr<consensus::ConsensusRound> consensus_round_;
 
   // The defined consistency mode for this transaction.
   ExternalConsistencyMode external_consistency_mode_;

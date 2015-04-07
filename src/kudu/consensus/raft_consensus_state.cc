@@ -280,7 +280,8 @@ bool ReplicaState::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch
     return false;
   }
 
-  ConsensusRound* round = DCHECK_NOTNULL(GetPendingOpByIndexOrNullUnlocked(op_id.index()));
+  scoped_refptr<ConsensusRound> round = GetPendingOpByIndexOrNullUnlocked(op_id.index());
+  DCHECK(round);
 
   if (round->id().term() != op_id.term()) {
     *term_mismatch = true;
@@ -363,7 +364,7 @@ Status ReplicaState::CancelPendingTransactions() {
                                    << " pending transactions.";
     for (IndexToRoundMap::iterator iter = pending_txns_.begin();
          iter != pending_txns_.end(); iter++) {
-      ConsensusRound* round = (*iter).second;
+      const scoped_refptr<ConsensusRound>& round = (*iter).second;
       // We cancel only transactions whose applies have not yet been triggered.
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting transaction as it isn't in flight: "
                             << (*iter).second->replicate_msg()->ShortDebugString();
@@ -373,13 +374,13 @@ Status ReplicaState::CancelPendingTransactions() {
   return Status::OK();
 }
 
-Status ReplicaState::GetUncommittedPendingOperationsUnlocked(vector<ConsensusRound*>* ops) {
+void ReplicaState::GetUncommittedPendingOperationsUnlocked(
+    vector<scoped_refptr<ConsensusRound> >* ops) {
   BOOST_FOREACH(const IndexToRoundMap::value_type& entry, pending_txns_) {
     if (entry.first > last_committed_index_.index()) {
       ops->push_back(entry.second);
     }
   }
-  return Status::OK();
 }
 
 Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
@@ -408,18 +409,18 @@ Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
   next_index_ = new_preceding.index() + 1;
 
   for (; iter != pending_txns_.end();) {
-    ConsensusRound* round = (*iter).second;
+    const scoped_refptr<ConsensusRound>& round = (*iter).second;
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting uncommitted operation due to leader change: "
-        << round->replicate_msg()->id();
+                                   << round->replicate_msg()->id();
     round->NotifyReplicationFinished(Status::Aborted("Transaction aborted by new leader"));
-    // erase the entry from pendings
+    // Erase the entry from pendings.
     pending_txns_.erase(iter++);
   }
 
   return Status::OK();
 }
 
-Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
+Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& round) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(state_ != kRunning)) {
     // Special case when we're configuring and this is a config change, refuse
@@ -433,7 +434,7 @@ Status ReplicaState::AddPendingOperation(ConsensusRound* round) {
   return Status::OK();
 }
 
-ConsensusRound* ReplicaState::GetPendingOpByIndexOrNullUnlocked(uint64_t index) {
+scoped_refptr<ConsensusRound> ReplicaState::GetPendingOpByIndexOrNullUnlocked(uint64_t index) {
   DCHECK(update_lock_.is_locked());
   return FindPtrOrNull(pending_txns_, index);
 }
@@ -513,7 +514,8 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
   OpId prev_id = last_committed_index_;
 
   while (iter != end_iter) {
-    ConsensusRound* round = DCHECK_NOTNULL((*iter).second);
+    scoped_refptr<ConsensusRound> round = (*iter).second; // Make a copy.
+    DCHECK(round);
     const OpId& current_id = round->id();
 
     if (PREDICT_TRUE(!OpIdEquals(prev_id, MinimumOpId()))) {
@@ -580,7 +582,8 @@ void ReplicaState::CancelPendingOperation(const OpId& id) {
   // This is only ok if we do _not_ release the lock after calling
   // NewIdUnlocked() (which we don't in RaftConsensus::Replicate()).
   received_op_id_ = previous;
-  ignore_result(DCHECK_NOTNULL(EraseKeyReturnValuePtr(&pending_txns_, id.index())));
+  scoped_refptr<ConsensusRound> round = EraseKeyReturnValuePtr(&pending_txns_, id.index());
+  DCHECK(round);
 }
 
 string ReplicaState::LogPrefix() {

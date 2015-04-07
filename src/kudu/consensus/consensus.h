@@ -99,7 +99,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // structures required for a consensus round, such as the ReplicateMsg
   // (and later on the CommitMsg). ConsensusRound will also point to and
   // increase the reference count for the provided callbacks.
-  gscoped_ptr<ConsensusRound> NewRound(
+  scoped_refptr<ConsensusRound> NewRound(
       gscoped_ptr<ReplicateMsg> replicate_msg,
       ConsensusCommitContinuation* commit_continuation);
 
@@ -134,7 +134,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   //     commit index, which tells them to apply the operation.
   //
   // This method can only be called on the leader, i.e. role() == LEADER
-  virtual Status Replicate(ConsensusRound* round) = 0;
+  virtual Status Replicate(const scoped_refptr<ConsensusRound>& round) = 0;
 
   // Ensures that the consensus implementation is currently acting as LEADER,
   // and thus is allowed to submit operations to be prepared before they are
@@ -142,7 +142,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // implementation also stores the current term inside the round's "bound_term"
   // member. When we eventually are about to replicate the transaction, we verify
   // that the term has not changed in the meantime.
-  virtual Status CheckLeadershipAndBindTerm(ConsensusRound* round) {
+  virtual Status CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRound>& round) {
     return Status::OK();
   }
 
@@ -281,14 +281,19 @@ class ConsensusCommitContinuation {
 //   on a restart.
 class ReplicaTransactionFactory {
  public:
-  virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> context) = 0;
+  virtual Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& context) = 0;
 
   virtual ~ReplicaTransactionFactory() {}
 };
 
 // Context for a consensus round on the LEADER side, typically created as an
 // out-parameter of Consensus::Append.
-class ConsensusRound {
+// This class is ref-counted because we want to ensure it stays alive for the
+// duration of the Transaction when it is associated with a Transaction, while
+// we also want to ensure it has a proper lifecycle when a ConsensusRound is
+// pushed that is not associated with a Tablet transaction.
+class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
+
  public:
   // Ctor used for leader transactions. Leader transactions can and must specify the
   // callbacks prior to initiating the consensus round.
@@ -343,6 +348,10 @@ class ConsensusRound {
 
  private:
   friend class RaftConsensusQuorumTest;
+  friend class RefCountedThreadSafe<ConsensusRound>;
+
+  ~ConsensusRound() {}
+
   Consensus* consensus_;
   // This round's replicate message.
   ReplicateRefPtr replicate_msg_;

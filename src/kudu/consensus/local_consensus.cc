@@ -47,7 +47,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   CHECK(info.orphaned_replicates.empty())
       << "LocalConsensus does not handle orphaned operations on start.";
 
-  gscoped_ptr<ConsensusRound> round;
+  scoped_refptr<ConsensusRound> round;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
 
@@ -80,7 +80,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   }
 
   ConsensusRound* round_ptr = round.get();
-  RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round.Pass()));
+  RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round));
   Status s = Replicate(round_ptr);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to replicate initial change config transaction: " << s.ToString();
@@ -91,7 +91,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   return Status::OK();
 }
 
-Status LocalConsensus::Replicate(ConsensusRound* round) {
+Status LocalConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
   TRACE_EVENT0("consensus", "LocalConsensus::Replicate");
   DCHECK_GE(state_, kConfiguring);
 
@@ -135,7 +135,7 @@ Status LocalConsensus::Replicate(ConsensusRound* round) {
   // is triggered.
   RETURN_NOT_OK(log_->AsyncAppend(
       reserved_entry_batch,
-      Bind(&ConsensusRound::NotifyReplicationFinished, Unretained(round))));
+      Bind(&ConsensusRound::NotifyReplicationFinished, round)));
   return Status::OK();
 }
 

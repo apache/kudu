@@ -109,7 +109,7 @@ class ReplicaState {
 
   typedef unique_lock<simple_spinlock> UniqueLock;
 
-  typedef std::map<int64_t, ConsensusRound*> IndexToRoundMap;
+  typedef std::map<int64_t, scoped_refptr<ConsensusRound> > IndexToRoundMap;
 
   typedef std::set<int64_t> OutstandingCommits;
 
@@ -240,7 +240,7 @@ class ReplicaState {
   const ConsensusOptions& GetOptions() const;
 
   // Returns the operations that are not consensus committed.
-  Status GetUncommittedPendingOperationsUnlocked(std::vector<ConsensusRound*>* ops);
+  void GetUncommittedPendingOperationsUnlocked(std::vector<scoped_refptr<ConsensusRound> >* ops);
 
   // Aborts pending operations after, but not including 'index'. The OpId with 'index'
   // will become our new last received id. If there are pending operations with indexes
@@ -249,10 +249,10 @@ class ReplicaState {
 
   // Returns the the ConsensusRound with the provided index, if there is any, or NULL
   // if there isn't.
-  ConsensusRound* GetPendingOpByIndexOrNullUnlocked(uint64_t index);
+  scoped_refptr<ConsensusRound> GetPendingOpByIndexOrNullUnlocked(uint64_t index);
 
   // Add 'round' to the set of rounds waiting to be committed.
-  Status AddPendingOperation(ConsensusRound* round);
+  Status AddPendingOperation(const scoped_refptr<ConsensusRound>& round);
 
   // Marks ReplicaTransactions up to 'id' as majority replicated, meaning the
   // transaction may Apply() (immediately if Prepare() has completed or when Prepare()

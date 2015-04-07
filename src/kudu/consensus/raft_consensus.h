@@ -85,9 +85,9 @@ class RaftConsensus : public Consensus,
   // being shut down).
   void ReportFailureDetected(const std::string& name, const Status& msg);
 
-  virtual Status Replicate(ConsensusRound* round) OVERRIDE;
+  virtual Status Replicate(const scoped_refptr<ConsensusRound>& round) OVERRIDE;
 
-  virtual Status CheckLeadershipAndBindTerm(ConsensusRound* round) OVERRIDE;
+  virtual Status CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRound>& round) OVERRIDE;
 
   virtual Status Update(const ConsensusRequestPB* request,
                         ConsensusResponsePB* response) OVERRIDE;
@@ -161,7 +161,7 @@ class RaftConsensus : public Consensus,
   // The ReplicaState must be locked for quorum change before calling.
   Status BecomeReplicaUnlocked();
 
-  Status AppendNewRoundToQueueUnlocked(ConsensusRound* round);
+  Status AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round);
 
   // Updates the state in a replica by storing the received operations in the log
   // and triggering the required transactions. This method won't return until all

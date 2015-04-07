@@ -223,7 +223,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   Status AppendDummyMessage(int peer_idx,
-                            gscoped_ptr<ConsensusRound>* round) {
+                            scoped_refptr<ConsensusRound>* round) {
     gscoped_ptr<ReplicateMsg> msg(new ReplicateMsg());
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request();
@@ -352,17 +352,17 @@ class RaftConsensusQuorumTest : public KuduTest {
                                    ReplicateWaitMode wait_mode,
                                    CommitMode commit_mode,
                                    OpId* last_op_id,
-                                   vector<ConsensusRound*>* rounds,
+                                   vector<scoped_refptr<ConsensusRound> >* rounds,
                                    shared_ptr<Synchronizer>* commit_sync = NULL) {
     for (int i = 0; i < seq_size; i++) {
-      gscoped_ptr<ConsensusRound> round;
+      scoped_refptr<ConsensusRound> round;
       ASSERT_OK(AppendDummyMessage(leader_idx, &round));
       ASSERT_OK(WaitForReplicate(round.get()));
       last_op_id->CopyFrom(round->id());
       if (commit_mode == COMMIT_ONE_BY_ONE) {
         CommitDummyMessage(leader_idx, round.get(), commit_sync);
       }
-      rounds->push_back(round.release());
+      rounds->push_back(round);
     }
 
     if (wait_mode == WAIT_FOR_ALL_REPLICAS) {
@@ -559,8 +559,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
   ASSERT_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
-  vector<ConsensusRound*> rounds;
-  ElementDeleter deleter(&rounds);
+  vector<scoped_refptr<ConsensusRound> > rounds;
   shared_ptr<Synchronizer> commit_sync;
   REPLICATE_SEQUENCE_OF_MESSAGES(1,
                                  kLeaderIdx,
@@ -571,7 +570,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
                                  &commit_sync);
 
   // Commit the operation
-  ASSERT_OK(CommitDummyMessage(kLeaderIdx, rounds[0], &commit_sync));
+  ASSERT_OK(CommitDummyMessage(kLeaderIdx, rounds[0].get(), &commit_sync));
 
   // Wait for everyone to commit the operations.
 
@@ -602,8 +601,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
   ASSERT_OK(BuildAndStartQuorum(3));
 
   OpId last_op_id;
-  vector<ConsensusRound*> rounds;
-  ElementDeleter deleter(&rounds);
+  vector<scoped_refptr<ConsensusRound> > rounds;
   shared_ptr<Synchronizer> commit_sync;
 
   REPLICATE_SEQUENCE_OF_MESSAGES(seq_size,
@@ -615,8 +613,8 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
                                  &commit_sync);
 
   // Commit the operations, but wait for the replicates to finish first
-  BOOST_FOREACH(ConsensusRound* round, rounds) {
-    ASSERT_OK(CommitDummyMessage(kLeaderIdx, round, &commit_sync));
+  BOOST_FOREACH(const scoped_refptr<ConsensusRound>& round, rounds) {
+    ASSERT_OK(CommitDummyMessage(kLeaderIdx, round.get(), &commit_sync));
   }
 
   // See comment at the end of TestFollowersReplicateAndCommitMessage
@@ -637,8 +635,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
   ASSERT_OK(BuildAndStartQuorum(3));
 
   OpId last_replicate;
-  vector<ConsensusRound*> rounds;
-  ElementDeleter deleter(&rounds);
+  vector<scoped_refptr<ConsensusRound> > rounds;
   {
     // lock one of the replicas down by obtaining the state lock
     // and never letting it go.
@@ -683,7 +680,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
 
   OpId last_op_id;
 
-  gscoped_ptr<ConsensusRound> round;
+  scoped_refptr<ConsensusRound> round;
   {
     // lock two of the replicas down by obtaining the state locks
     // and never letting them go.
@@ -735,7 +732,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
 
   // Append a dummy message, with faults injected on the first attempt
   // to send the message.
-  gscoped_ptr<ConsensusRound> round;
+  scoped_refptr<ConsensusRound> round;
   GetLeaderProxyToPeer(kFollower0Idx, kLeaderIdx)->InjectCommFaultLeaderSide();
   GetLeaderProxyToPeer(kFollower1Idx, kLeaderIdx)->InjectCommFaultLeaderSide();
   ASSERT_OK(AppendDummyMessage(kLeaderIdx, &round));
@@ -754,15 +751,14 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
 
   // Append a sequence of messages, and keep injecting errors into the
   // replica proxies.
-  vector<ConsensusRound*> contexts;
-  ElementDeleter deleter(&contexts);
+  vector<scoped_refptr<ConsensusRound> > rounds;
   shared_ptr<Synchronizer> commit_sync;
   for (int i = 0; i < 100; i++) {
-    gscoped_ptr<ConsensusRound> round;
+    scoped_refptr<ConsensusRound> round;
     ASSERT_OK(AppendDummyMessage(kLeaderIdx, &round));
     ConsensusRound* round_ptr = round.get();
     last_op_id.CopyFrom(round->id());
-    contexts.push_back(round.release());
+    rounds.push_back(round);
 
     // inject comm faults
     if (i % 2 == 0) {
@@ -857,8 +853,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
 
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
-  vector<ConsensusRound*> rounds;
-  ElementDeleter deleter(&rounds);
+  vector<scoped_refptr<ConsensusRound> > rounds;
 
   // Loop twice, successively shutting down the previous leader.
   for (int current_quorum_size = kInitialQuorumSize;
@@ -921,8 +916,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
 
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
-  vector<ConsensusRound*> rounds;
-  ElementDeleter deleter(&rounds);
+  vector<scoped_refptr<ConsensusRound> > rounds;
   REPLICATE_SEQUENCE_OF_MESSAGES(10,
                                  2, // The index of the initial leader.
                                  WAIT_FOR_ALL_REPLICAS,
@@ -985,8 +979,7 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
 
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
-  vector<ConsensusRound*> rounds;
-  ElementDeleter deleter(&rounds);
+  vector<scoped_refptr<ConsensusRound> > rounds;
   REPLICATE_SEQUENCE_OF_MESSAGES(10,
                                  2, // The index of the initial leader.
                                  WAIT_FOR_ALL_REPLICAS,

@@ -400,7 +400,7 @@ Status TabletPeer::GetGCableDataSize(int64_t* retention_size) const {
   return Status::OK();
 }
 
-Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
+Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) {
   RETURN_NOT_OK(CheckRunning());
 
   consensus::ReplicateMsg* replicate_msg = round->replicate_msg();
@@ -434,7 +434,7 @@ Status TabletPeer::StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) {
 
   // TODO(todd) Look at wiring the stuff below on the driver
   TransactionState* state = transaction->state();
-  state->set_consensus_round(round.Pass());
+  state->set_consensus_round(round);
   Timestamp ts(replicate_msg->timestamp());
   state->set_timestamp(ts);
   clock_->Update(ts);

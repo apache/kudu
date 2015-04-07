@@ -329,12 +329,10 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   DCHECK(!cc_req->new_config().has_opid_index())
     << "Pending quorum: " << cc_req->new_config().ShortDebugString();
 
-  gscoped_ptr<ConsensusRound> round(
-      new ConsensusRound(this,
-                         make_scoped_refptr(new RefCountedReplicate(replicate))));
+  scoped_refptr<ConsensusRound> round(
+      new ConsensusRound(this, make_scoped_refptr(new RefCountedReplicate(replicate))));
   RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round.get()));
-  RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->StartReplicaTransaction(
-      round.Pass()));
+  RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->StartReplicaTransaction(round));
 
   return Status::OK();
 }
@@ -355,7 +353,7 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
   return Status::OK();
 }
 
-Status RaftConsensus::Replicate(ConsensusRound* round) {
+Status RaftConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
 
   RETURN_NOT_OK(ExecuteHook(PRE_REPLICATE));
 
@@ -373,14 +371,14 @@ Status RaftConsensus::Replicate(ConsensusRound* round) {
   return Status::OK();
 }
 
-Status RaftConsensus::CheckLeadershipAndBindTerm(ConsensusRound* round) {
+Status RaftConsensus::CheckLeadershipAndBindTerm(const scoped_refptr<ConsensusRound>& round) {
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForReplicate(&lock, *round->replicate_msg()));
   round->BindToTerm(state_->GetCurrentTermUnlocked());
   return Status::OK();
 }
 
-Status RaftConsensus::AppendNewRoundToQueueUnlocked(ConsensusRound* round) {
+Status RaftConsensus::AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round) {
   state_->NewIdUnlocked(round->replicate_msg()->mutable_id());
   RETURN_NOT_OK(state_->AddPendingOperation(round));
 
@@ -474,10 +472,10 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
 Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg) {
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting transaction: " << msg->get()->id().ShortDebugString();
-  gscoped_ptr<ConsensusRound> round(new ConsensusRound(this, msg));
+  scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   ConsensusRound* round_ptr = round.get();
   RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->
-      StartReplicaTransaction(round.Pass()));
+      StartReplicaTransaction(round));
   return state_->AddPendingOperation(round_ptr);
 }
 
@@ -522,8 +520,9 @@ void RaftConsensus::DeduplicateLeaderRequestUnlocked(ConsensusRequestPB* rpc_req
     if (leader_msg->id().index() <= dedup_up_to_index) {
       // If the index is uncommitted and below our match index, then it must be in the
       // pendings set.
-      ConsensusRound* round = DCHECK_NOTNULL(state_->GetPendingOpByIndexOrNullUnlocked(
-          leader_msg->id().index()));
+      scoped_refptr<ConsensusRound> round =
+          state_->GetPendingOpByIndexOrNullUnlocked(leader_msg->id().index());
+      DCHECK(round);
 
       // If the OpIds match, i.e. if they have the same term and id, then this is just
       // duplicate, we skip...

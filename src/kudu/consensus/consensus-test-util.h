@@ -539,14 +539,14 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
 // work.
 class TestDriver : public ConsensusCommitContinuation {
  public:
-  TestDriver(ThreadPool* pool, Log* log, gscoped_ptr<ConsensusRound> round)
-      : round_(round.Pass()),
+  TestDriver(ThreadPool* pool, Log* log, const scoped_refptr<ConsensusRound>& round)
+      : round_(round),
         pool_(pool),
         log_(log) {
   }
 
-  void SetRound(gscoped_ptr<ConsensusRound> round) {
-    round_.reset(round.release());
+  void SetRound(const scoped_refptr<ConsensusRound>& round) {
+    round_ = round;
   }
 
   // Does nothing but enqueue the Apply
@@ -565,10 +565,9 @@ class TestDriver : public ConsensusCommitContinuation {
     delete this;
   }
 
-  gscoped_ptr<ConsensusRound> round_;
+  scoped_refptr<ConsensusRound> round_;
 
  private:
-
   // The commit message has the exact same type of the replicate message, but
   // no content.
   void Apply() {
@@ -592,8 +591,8 @@ class TestDriver : public ConsensusCommitContinuation {
 // testing RaftConsensusState. Does not actually support running transactions.
 class MockTransactionFactory : public ReplicaTransactionFactory {
  public:
-  virtual Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) OVERRIDE {
-    return StartReplicaTransactionMock(round.release());
+  virtual Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) OVERRIDE {
+    return StartReplicaTransactionMock(round.get());
   }
   MOCK_METHOD1(StartReplicaTransactionMock, Status(ConsensusRound* round));
 };
@@ -611,8 +610,8 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
     consensus_ = consensus;
   }
 
-  Status StartReplicaTransaction(gscoped_ptr<ConsensusRound> round) OVERRIDE {
-    TestDriver* txn = new TestDriver(pool_.get(), log_, round.Pass());
+  Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) OVERRIDE {
+    TestDriver* txn = new TestDriver(pool_.get(), log_, round);
     txn->round_->SetReplicaCommitContinuation(txn);
     return Status::OK();
   }
