@@ -466,13 +466,14 @@ Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
 
   RETURN_NOT_OK(compaction->Compact());
 
-  // Update metadata.
-  // TODO: think carefully about whether to update metadata or stores first!
+  // Update and flush the metadata. This needs to happen before we make the new files visible to
+  // prevent inconsistencies after a server crash.
   RowSetMetadataUpdate update;
   RETURN_NOT_OK(compaction->CreateMetadataUpdate(&update));
   RETURN_NOT_OK(rowset_metadata_->CommitUpdate(update));
+  RETURN_NOT_OK(rowset_metadata_->Flush());
 
-  // Open the new data.
+  // Make the new base data and delta files visible.
   gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_));
   RETURN_NOT_OK(new_base->Open());
   {
@@ -480,10 +481,6 @@ Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
     RETURN_NOT_OK(compaction->UpdateDeltaTracker(delta_tracker_.get()));
     base_data_.reset(new_base.release());
   }
-
-  // Flush metadata.
-  RETURN_NOT_OK(rowset_metadata_->Flush());
-
   return Status::OK();
 }
 

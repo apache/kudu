@@ -961,7 +961,6 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   if (gced_all_input) {
     LOG(INFO) << op_name << " resulted in no output rows (all input rows "
               << "were GCed!)  Removing all input rowsets.";
-    AtomicSwapRowSets(input.rowsets(), RowSetVector());
 
     // Write out the new Tablet Metadata and remove old rowsets.
     // TODO: Consensus catch-up may want to preserve the compaction inputs.
@@ -969,6 +968,8 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
                                         RowSetMetadataVector(),
                                         mrs_being_flushed),
                           "Failed to flush new tablet metadata");
+
+    AtomicSwapRowSets(input.rowsets(), RowSetVector());
 
     return Status::OK();
   }
@@ -1106,12 +1107,13 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // ------------------------------
   // Flush was successful.
 
-  // Replace the compacted rowsets with the new on-disk rowsets.
-  AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_disk_rowsets);
-
   // Write out the new Tablet Metadata and remove old rowsets.
   RETURN_NOT_OK_PREPEND(FlushMetadata(input.rowsets(), new_drs_metas, mrs_being_flushed),
                         "Failed to flush new tablet metadata");
+
+  // Replace the compacted rowsets with the new on-disk rowsets, making them visible now that
+  // their metadata was written to disk.
+  AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_disk_rowsets);
 
   LOG(INFO) << op_name << " successful on " << drsw.written_count()
             << " rows " << "(" << drsw.written_size() << " bytes)";
