@@ -36,11 +36,17 @@ class PeerProxyFactory;
 // Methods are virtual to ease mocking.
 class PeerManager {
  public:
+  // All of the raw pointer arguments are not owned by the PeerManager
+  // and must live at least as long as the PeerManager.
+  //
+  // 'request_thread_pool' is the pool used to construct requests to send
+  // to the peers.
   PeerManager(const std::string tablet_id,
-                  const std::string local_uuid,
-                  PeerProxyFactory* peer_proxy_factory,
-                  PeerMessageQueue* queue,
-                  const scoped_refptr<log::Log>& log);
+              const std::string local_uuid,
+              PeerProxyFactory* peer_proxy_factory,
+              PeerMessageQueue* queue,
+              ThreadPool* request_thread_pool,
+              const scoped_refptr<log::Log>& log);
 
   virtual ~PeerManager();
 
@@ -61,7 +67,7 @@ class PeerManager {
   const std::string local_uuid_;
   PeerProxyFactory* peer_proxy_factory_;
   PeerMessageQueue* queue_;
-  gscoped_ptr<ThreadPool> thread_pool_;
+  ThreadPool* thread_pool_;
   scoped_refptr<log::Log> log_;
   PeersMap peers_;
   mutable simple_spinlock lock_;

@@ -23,6 +23,7 @@
 #include "kudu/util/failure_detector.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
 
@@ -86,6 +87,10 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                                                            peer_uuid,
                                                            options.tablet_id));
 
+  gscoped_ptr<ThreadPool> thread_pool;
+  CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options.tablet_id.substr(0, 6)))
+           .Build(&thread_pool));
+
   // A manager for the set of peers that actually send the operations both remotely
   // and to the local wal.
   gscoped_ptr<PeerManager> peer_manager(
@@ -93,6 +98,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                     peer_uuid,
                     rpc_factory.get(),
                     queue.get(),
+                    thread_pool.get(),
                     log));
 
   return make_scoped_refptr(new RaftConsensus(
@@ -101,6 +107,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                               rpc_factory.Pass(),
                               queue.Pass(),
                               peer_manager.Pass(),
+                              thread_pool.Pass(),
                               metric_ctx,
                               peer_uuid,
                               clock,
@@ -113,12 +120,14 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<PeerProxyFactory> proxy_factory,
                              gscoped_ptr<PeerMessageQueue> queue,
                              gscoped_ptr<PeerManager> peer_manager,
+                             gscoped_ptr<ThreadPool> thread_pool,
                              const MetricContext& metric_ctx,
                              const std::string& peer_uuid,
                              const scoped_refptr<server::Clock>& clock,
                              ReplicaTransactionFactory* txn_factory,
                              const scoped_refptr<log::Log>& log)
-    : log_(log),
+    : thread_pool_(thread_pool.Pass()),
+      log_(log),
       clock_(clock),
       peer_proxy_factory_(proxy_factory.Pass()),
       peer_manager_(peer_manager.Pass()),
@@ -1264,7 +1273,14 @@ ReplicaState* RaftConsensus::GetReplicaStateForTests() {
 }
 
 void RaftConsensus::ElectionCallback(const ElectionResult& result) {
+  // The election callback runs on a reactor thread, so we need to defer to our
+  // threadpool. If the threadpool is already shut down for some reason, it's OK --
+  // we're OK with the callback never running.
+  WARN_NOT_OK(thread_pool_->SubmitClosure(Bind(&RaftConsensus::DoElectionCallback, this, result)),
+              state_->LogPrefixThreadSafe() + "Unable to run election callback");
+}
 
+void RaftConsensus::DoElectionCallback(const ElectionResult& result) {
   // Snooze to avoid the election timer firing again as much as possible.
   {
     ReplicaState::UniqueLock lock;

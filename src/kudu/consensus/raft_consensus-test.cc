@@ -68,7 +68,7 @@ class MockQueue : public PeerMessageQueue {
 
 class MockPeerManager : public PeerManager {
  public:
-  MockPeerManager() : PeerManager("", "", NULL, NULL, NULL) {}
+  MockPeerManager() : PeerManager("", "", NULL, NULL, NULL, NULL) {}
   MOCK_METHOD1(UpdateQuorum, Status(const metadata::QuorumPB& quorum));
   MOCK_METHOD1(SignalRequest, void(bool force_if_queue_empty));
   MOCK_METHOD0(Close, void());
@@ -140,11 +140,15 @@ class RaftConsensusTest : public KuduTest {
     CHECK_OK(ConsensusMetadata::Create(fs_manager_.get(), kTestTablet, quorum_,
                                        initial_term, &cmeta));
 
+    gscoped_ptr<ThreadPool> thread_pool;
+    CHECK_OK(ThreadPoolBuilder("raft-pool") .Build(&thread_pool));
+
     consensus_.reset(new RaftConsensus(options_,
                                        cmeta.Pass(),
                                        proxy_factory.Pass(),
                                        gscoped_ptr<PeerMessageQueue>(queue_),
                                        gscoped_ptr<PeerManager>(peer_manager_),
+                                       thread_pool.Pass(),
                                        metric_context_,
                                        Substitute("peer-$0", num_peers - 1),
                                        clock_,

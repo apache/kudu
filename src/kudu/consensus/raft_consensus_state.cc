@@ -105,6 +105,7 @@ Status ReplicaState::StartUnlocked(const OpId& last_id_in_wal) {
 }
 
 Status ReplicaState::LockForStart(UniqueLock* lock) const {
+  ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   CHECK_EQ(state_, kInitialized) << "Illegal state for Start()."
       << " Replica is not in kInitialized state";
@@ -113,12 +114,14 @@ Status ReplicaState::LockForStart(UniqueLock* lock) const {
 }
 
 Status ReplicaState::LockForRead(UniqueLock* lock) const {
+  ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   lock->swap(&l);
   return Status::OK();
 }
 
 Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg) const {
+  ThreadRestrictions::AssertWaitAllowed();
   DCHECK(!msg.has_id()) << "Should not have an ID yet: " << msg.ShortDebugString();
   UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
@@ -148,6 +151,7 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg)
 }
 
 Status ReplicaState::LockForCommit(UniqueLock* lock) const {
+  ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning && state_ != kShuttingDown)) {
     return Status::IllegalState("Replica not in running state");
@@ -158,6 +162,7 @@ Status ReplicaState::LockForCommit(UniqueLock* lock) const {
 
 Status ReplicaState::LockForMajorityReplicatedIndexUpdate(
     UniqueLock* lock) const {
+  ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
 
   if (PREDICT_FALSE(state_ != kRunning)) {
@@ -173,6 +178,7 @@ Status ReplicaState::LockForMajorityReplicatedIndexUpdate(
 }
 
 Status ReplicaState::LockForConfigChange(UniqueLock* lock) const {
+  ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   // Can only change the config on running replicas.
   if (PREDICT_FALSE(state_ != kRunning)) {
@@ -184,6 +190,7 @@ Status ReplicaState::LockForConfigChange(UniqueLock* lock) const {
 }
 
 Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
+  ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
@@ -198,6 +205,7 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
 }
 
 Status ReplicaState::LockForShutdown(UniqueLock* lock) {
+  ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   if (state_ != kShuttingDown && state_ != kShutDown) {
     state_ = kShuttingDown;
@@ -350,6 +358,7 @@ int ReplicaState::GetNumPendingTxnsUnlocked() const {
 
 Status ReplicaState::CancelPendingTransactions() {
   {
+    ThreadRestrictions::AssertWaitAllowed();
     UniqueLock lock(&update_lock_);
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
@@ -587,8 +596,14 @@ string ReplicaState::LogPrefixUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return Substitute("T $0 P $1 [$2]: ",
                     options_.tablet_id,
-                    GetPeerUuid(),
+                    peer_uuid_,
                     QuorumPeerPB::Role_Name(active_quorum_state_->role));
+}
+
+string ReplicaState::LogPrefixThreadSafe() const {
+  return Substitute("T $0 P $1: ",
+                    options_.tablet_id,
+                    peer_uuid_);
 }
 
 ReplicaState::State ReplicaState::state() const {
@@ -597,6 +612,7 @@ ReplicaState::State ReplicaState::state() const {
 }
 
 string ReplicaState::ToString() const {
+  ThreadRestrictions::AssertWaitAllowed();
   ReplicaState::UniqueLock lock(&update_lock_);
   return ToStringUnlocked();
 }

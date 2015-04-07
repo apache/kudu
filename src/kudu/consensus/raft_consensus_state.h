@@ -311,6 +311,11 @@ class ReplicaState {
   std::string LogPrefix();
   std::string LogPrefixUnlocked() const;
 
+  // A variant of LogPrefix which does not take the lock. This is a slightly
+  // less thorough prefix which only includes immutable (and thus thread-safe)
+  // information, but does not require the lock.
+  std::string LogPrefixThreadSafe() const;
+
   // Checks that 'current' correctly follows 'previous'. Specifically it checks
   // that the term is the same or higher and that the index is sequential.
   static Status CheckOpInSequence(const OpId& previous, const OpId& current);

@@ -141,12 +141,17 @@ class RaftConsensusQuorumTest : public KuduTest {
                                                                peer_uuid,
                                                                kTestTablet));
 
+      gscoped_ptr<ThreadPool> thread_pool;
+      CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options_.tablet_id.substr(0, 6)))
+               .Build(&thread_pool));
+
       gscoped_ptr<PeerManager> peer_manager(
           new PeerManager(options_.tablet_id,
-                              quorum_.peers(i).permanent_uuid(),
-                              proxy_factory,
-                              queue.get(),
-                              logs_[i]));
+                          quorum_.peers(i).permanent_uuid(),
+                          proxy_factory,
+                          queue.get(),
+                          thread_pool.get(),
+                          logs_[i]));
 
       scoped_refptr<RaftConsensus> peer(
           new RaftConsensus(options_,
@@ -154,6 +159,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                             gscoped_ptr<PeerProxyFactory>(proxy_factory).Pass(),
                             queue.Pass(),
                             peer_manager.Pass(),
+                            thread_pool.Pass(),
                             metrics,
                             quorum_.peers(i).permanent_uuid(),
                             clock_,

@@ -21,15 +21,14 @@ PeerManager::PeerManager(const std::string tablet_id,
                          const std::string local_uuid,
                          PeerProxyFactory* peer_proxy_factory,
                          PeerMessageQueue* queue,
+                         ThreadPool* request_thread_pool,
                          const scoped_refptr<log::Log>& log)
     : tablet_id_(tablet_id),
       local_uuid_(local_uuid),
       peer_proxy_factory_(peer_proxy_factory),
       queue_(queue),
+      thread_pool_(request_thread_pool),
       log_(log) {
-
-  CHECK_OK(ThreadPoolBuilder(Substitute("$0-peers", tablet_id.substr(0, 6)))
-           .Build(&thread_pool_));
 }
 
 PeerManager::~PeerManager() {
@@ -63,7 +62,7 @@ Status PeerManager::UpdateQuorum(const metadata::QuorumPB& quorum) {
                                       tablet_id_,
                                       local_uuid_,
                                       queue_,
-                                      thread_pool_.get(),
+                                      thread_pool_,
                                       peer_proxy.Pass(),
                                       &remote_peer));
     InsertOrDie(&peers_, peer_pb.permanent_uuid(), remote_peer.release());

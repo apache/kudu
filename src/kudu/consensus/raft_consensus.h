@@ -62,6 +62,7 @@ class RaftConsensus : public Consensus,
                 gscoped_ptr<PeerProxyFactory> peer_proxy_factory,
                 gscoped_ptr<PeerMessageQueue> queue,
                 gscoped_ptr<PeerManager> peer_manager,
+                gscoped_ptr<ThreadPool> thread_pool,
                 const MetricContext& metric_ctx,
                 const std::string& peer_uuid,
                 const scoped_refptr<server::Clock>& clock,
@@ -269,8 +270,10 @@ class RaftConsensus : public Consensus,
   void UpdateMajorityReplicatedUnlocked(const OpId& majority_replicated,
                                         OpId* committed_index);
 
-  // Callback for leader election driver.
+  // Callback for leader election driver. ElectionCallback is run on the
+  // reactor thread, so it simply defers its work to DoElectionCallback.
   void ElectionCallback(const ElectionResult& result);
+  void DoElectionCallback(const ElectionResult& result);
 
   // Start tracking the leader for failures. This typically occurs at startup
   // and when the local peer steps down as leader.
@@ -307,6 +310,10 @@ class RaftConsensus : public Consensus,
 
   // Handle when the term has advanced beyond the current term.
   Status HandleTermAdvanceUnlocked(ConsensusTerm new_term);
+
+  // Threadpool for constructing requests to peers, handling RPC callbacks,
+  // etc.
+  gscoped_ptr<ThreadPool> thread_pool_;
 
   scoped_refptr<log::Log> log_;
   scoped_refptr<server::Clock> clock_;
