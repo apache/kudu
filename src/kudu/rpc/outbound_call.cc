@@ -6,8 +6,10 @@
 #include <string>
 #include <vector>
 #include <boost/functional/hash.hpp>
+#include <gflags/gflags.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/outbound_call.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/rpc_controller.h"
@@ -21,6 +23,16 @@ namespace rpc {
 using strings::Substitute;
 using google::protobuf::Message;
 using google::protobuf::io::CodedOutputStream;
+
+static const double kMicrosPerSecond = 1000000.0;
+
+// 100M cycles should be about 50ms on a 2Ghz box. This should be high
+// enough that involuntary context switches don't trigger it, but low enough
+// that any serious blocking behavior on the reactor would.
+DEFINE_int64(rpc_callback_max_cycles, 100 * 1000 * 1000,
+             "The maximum number of cycles for which an RPC callback "
+             "should be allowed to run without emitting a warning."
+             " (Advanced debugging option)");
 
 ///
 /// OutboundCall
@@ -140,10 +152,20 @@ void OutboundCall::set_state_unlocked(State new_state) {
 }
 
 void OutboundCall::CallCallback() {
+  int64_t start_cycles = CycleClock::Now();
   callback_();
   // Clear the callback, since it may be holding onto reference counts
   // via bound parameters.
   callback_ = NULL;
+  int64_t end_cycles = CycleClock::Now();
+  int64_t wait_cycles = end_cycles - start_cycles;
+  if (PREDICT_FALSE(wait_cycles > FLAGS_rpc_callback_max_cycles)) {
+    double micros = static_cast<double>(wait_cycles) / base::CyclesPerSecond()
+      * kMicrosPerSecond;
+
+    LOG(WARNING) << "RPC callback for " << ToString() << " blocked reactor thread for "
+                 << micros << "us";
+  }
 }
 
 void OutboundCall::SetResponse(gscoped_ptr<CallResponse> resp) {
