@@ -157,6 +157,7 @@ ADD_KUDU_TEST(cache-test)
 ADD_KUDU_TEST(callback_bind-test)
 ADD_KUDU_TEST(countdown_latch-test)
 ADD_KUDU_TEST(crc-test RUN_SERIAL true) # has a benchmark
+ADD_KUDU_TEST(debug-util-test)
 ADD_KUDU_TEST(env-test LABELS no_tsan)
 ADD_KUDU_TEST(failure_detector-test)
 ADD_KUDU_TEST(group_varint-test)

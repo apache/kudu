@@ -3,9 +3,31 @@
 #ifndef KUDU_UTIL_DEBUG_UTIL_H
 #define KUDU_UTIL_DEBUG_UTIL_H
 
+#include <sys/types.h>
+
 #include <string>
+#include <vector>
+
+#include "kudu/util/status.h"
 
 namespace kudu {
+
+// Return a list of all of the thread IDs currently running in this process.
+// Not async-safe.
+Status ListThreads(std::vector<pid_t>* tids);
+
+// Return the stack trace of the given thread, stringified and symbolized.
+//
+// Note that the symbolization happens on the calling thread, not the target
+// thread, so this is relatively low-impact on the target.
+//
+// This is safe to use against the current thread, the main thread, or any other
+// thread. It requires that the target thread has not blocked POSIX signals. If
+// it has, an error message will be returned.
+//
+// This function is thread-safe but coarsely synchronized: only one "dumper" thread
+// may be active at a time.
+std::string DumpThreadStack(pid_t tid);
 
 // Return the current stack trace, stringified.
 std::string GetStackTrace();
@@ -45,10 +67,17 @@ class StackTrace {
     num_frames_ = 0;
   }
 
-  // Collect and store the current stack trace.
-  // This function is not async-safe (i.e do not call from signal handler
-  // contexts).
-  void Collect();
+  // Collect and store the current stack trace. Skips the top 'skip_frames' frames
+  // from the stack. For example, a value of '1' will skip the 'Collect()' function
+  // call itself.
+  //
+  // This function is technically not async-safe. However, according to
+  // http://lists.nongnu.org/archive/html/libunwind-devel/2011-08/msg00054.html it is "largely
+  // async safe" and it would only deadlock in the case that you call it while a dynamic library
+  // load is in progress. We assume that dynamic library loads would almost always be completed
+  // very early in the application lifecycle, so for now, this is considered "async safe" until
+  // it proves to be a problem.
+  void Collect(int skip_frames = 1);
 
   // Stringify the trace into the given buffer.
   // The resulting output is hex addresses suitable for passing into 'addr2line'
@@ -56,7 +85,12 @@ class StackTrace {
   void StringifyToHex(char* buf, size_t size) const;
 
   // Same as above, but returning a std::string.
+  // This is not async-safe.
   std::string ToHexString() const;
+
+  // Return a string with a symbolized backtrace.
+  // This is not async-safe.
+  std::string Symbolize() const;
 
  private:
   enum {

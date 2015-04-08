@@ -299,6 +299,9 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
 }
 
 static void InitThreading() {
+  // Warm up the stack trace library. This avoids a race in libunwind initialization
+  // by making sure we initialize it before we start any other threads.
+  ignore_result(GetStackTraceHex());
   thread_manager.reset(new ThreadMgr());
 }
 
@@ -431,7 +434,7 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
 
 void* Thread::SuperviseThread(void* arg) {
   Thread* t = static_cast<Thread*>(arg);
-  int64_t system_tid = PlatformThreadId();
+  int64_t system_tid = syscall(SYS_gettid);
   if (system_tid == -1) {
     string error_msg = ErrnoToString(errno);
     KLOG_EVERY_N(INFO, 100) << "Could not determine thread ID: " << error_msg;

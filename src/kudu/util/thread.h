@@ -181,6 +181,7 @@ class Thread : public RefCountedThreadSafe<Thread> {
   const std::string& category() const { return category_; }
 
   // The current thread of execution, or NULL if the current thread isn't a kudu::Thread.
+  // This call is signal-safe.
   static Thread* current_thread() { return tls_; }
 
   // Return a unique identifier assigned by the platform for this thread. Note that
