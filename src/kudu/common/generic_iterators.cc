@@ -133,9 +133,7 @@ MergeIterator::MergeIterator(
   : schema_(schema),
     initted_(false) {
   CHECK_GT(iters.size(), 0);
-  BOOST_FOREACH(const shared_ptr<RowwiseIterator> &iter, iters) {
-    iters_.push_back(shared_ptr<MergeIterState>(new MergeIterState(iter)));
-  }
+  orig_iters_.assign(iters.begin(), iters.end());
 }
 
 Status MergeIterator::Init(ScanSpec *spec) {
@@ -164,14 +162,18 @@ Status MergeIterator::Init(ScanSpec *spec) {
 }
 
 bool MergeIterator::HasNext() const {
-   return !iters_.empty();
+  CHECK(initted_);
+  return !iters_.empty();
 }
 
 Status MergeIterator::InitSubIterators(ScanSpec *spec) {
-  BOOST_FOREACH(shared_ptr<MergeIterState> &state, iters_) {
+  // Initialize all the sub iterators.
+  BOOST_FOREACH(shared_ptr<RowwiseIterator> &iter, orig_iters_) {
     ScanSpec *spec_copy = spec != NULL ? scan_spec_copies_.Construct(*spec) : NULL;
-    RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&state->iter_, spec_copy));
+    RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, spec_copy));
+    iters_.push_back(shared_ptr<MergeIterState>(new MergeIterState(iter)));
   }
+
   // Since we handle predicates in all the wrapped iterators, we can clear
   // them here.
   if (spec != NULL) {
@@ -250,8 +252,8 @@ string MergeIterator::ToString() const {
   string s;
   s.append("Merge(");
   bool first = true;
-  BOOST_FOREACH(const shared_ptr<MergeIterState> &iter, iters_) {
-    s.append(iter->iter_->ToString());
+  BOOST_FOREACH(const shared_ptr<RowwiseIterator> &iter, orig_iters_) {
+    s.append(iter->ToString());
     if (!first) {
       s.append(", ");
     }
@@ -261,7 +263,13 @@ string MergeIterator::ToString() const {
   return s;
 }
 
+const Schema& MergeIterator::schema() const {
+  CHECK(initted_);
+  return schema_;
+}
+
 void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
+  CHECK(initted_);
   vector<vector<IteratorStats> > stats_by_iter;
   BOOST_FOREACH(const shared_ptr<MergeIterState>& iter_state, iters_) {
     vector<IteratorStats> stats_for_iter;
@@ -328,6 +336,7 @@ Status UnionIterator::InitSubIterators(ScanSpec *spec) {
 }
 
 bool UnionIterator::HasNext() const {
+  CHECK(initted_);
   BOOST_FOREACH(const shared_ptr<RowwiseIterator> &iter, iters_) {
     if (iter->HasNext()) return true;
   }
@@ -336,6 +345,7 @@ bool UnionIterator::HasNext() const {
 }
 
 Status UnionIterator::NextBlock(RowBlock* dst) {
+  CHECK(initted_);
   PrepareBatch();
   RETURN_NOT_OK(MaterializeBlock(dst));
   FinishBatch();
@@ -379,6 +389,7 @@ string UnionIterator::ToString() const {
 }
 
 void UnionIterator::GetIteratorStats(std::vector<IteratorStats>* stats) const {
+  CHECK(initted_);
   vector<vector<IteratorStats> > stats_by_iter;
   BOOST_FOREACH(const shared_ptr<RowwiseIterator>& iter, all_iters_) {
     vector<IteratorStats> stats_for_iter;

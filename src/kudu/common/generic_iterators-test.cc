@@ -150,7 +150,9 @@ void TestMerge(const TestIntRangePredicate &predicate) {
     shared_ptr<RowwiseIterator> iter(
       new MaterializingIterator(
         shared_ptr<ColumnwiseIterator>(new VectorIterator(ints))));
-    to_merge.push_back(iter);
+    vector<shared_ptr<RowwiseIterator> > to_union;
+    to_union.push_back(iter);
+    to_merge.push_back(shared_ptr<RowwiseIterator>(new UnionIterator(to_union)));
   }
 
   VLOG(1) << "Predicate expects " << all_ints.size() << " results";

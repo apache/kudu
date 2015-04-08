@@ -41,7 +41,7 @@ class MergeIterator : public RowwiseIterator {
 
   virtual string ToString() const OVERRIDE;
 
-  virtual const Schema &schema() const OVERRIDE { return schema_; }
+  virtual const Schema& schema() const OVERRIDE;
 
   virtual void GetIteratorStats(std::vector<IteratorStats>* stats) const OVERRIDE;
 
@@ -56,6 +56,9 @@ class MergeIterator : public RowwiseIterator {
 
   bool initted_;
 
+  // Holds the subiterators until Init is called.
+  // This is required because we can't create a MergeIterState of an uninitialized iterator.
+  deque<shared_ptr<RowwiseIterator> > orig_iters_;
   vector<shared_ptr<MergeIterState> > iters_;
 
   // When the underlying iterators are initialized, each needs its own
@@ -88,6 +91,7 @@ class UnionIterator : public RowwiseIterator {
   string ToString() const OVERRIDE;
 
   const Schema &schema() const OVERRIDE {
+    CHECK(initted_);
     CHECK(schema_.get() != NULL) << "Bad schema in " << ToString();
     return *CHECK_NOTNULL(schema_.get());
   }
