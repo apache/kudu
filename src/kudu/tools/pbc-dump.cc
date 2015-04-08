@@ -4,11 +4,11 @@
 #include <iostream>
 #include <string>
 
-#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
@@ -36,7 +36,7 @@ Status DumpPBContainerFile(const string& filename) {
 } // namespace kudu
 
 int main(int argc, char **argv) {
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::ParseCommandLineFlags(&argc, &argv, true);
   kudu::InitGoogleLoggingSafe(argv[0]);
   if (argc != 2) {
     cerr << "usage: " << argv[0] << " <protobuf container filename>" << endl;

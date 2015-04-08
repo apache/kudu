@@ -48,6 +48,7 @@ add_library(kudu_util
   errno.cc
   faststring.cc
   failure_detector.cc
+  flags.cc
   flag_tags.cc
   group_varint.cc
   pstack_watcher.cc

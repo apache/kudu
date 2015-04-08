@@ -20,6 +20,7 @@
 #include "kudu/twitter-demo/twitter-schema.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 
 using std::string;
@@ -69,7 +70,7 @@ Status GetDemoSchema(const string& table_name, KuduSchema* schema) {
 }
 
 static int CreateDemoTable(int argc, char** argv) {
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 2) {
     PrintUsage(argv);
     return 1;

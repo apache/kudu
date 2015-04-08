@@ -18,6 +18,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/data_gen_util.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
@@ -46,7 +47,7 @@ void PrintUsage(char** argv) {
 }
 
 static int WriteRandomDataToTable(int argc, char** argv) {
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 2) {
     PrintUsage(argv);
     return 1;

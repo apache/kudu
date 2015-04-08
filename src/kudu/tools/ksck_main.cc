@@ -12,6 +12,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tools/ksck_remote.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 
 #define PUSH_PREPEND_NOT_OK(s, statuses, msg) do { \
@@ -95,7 +96,7 @@ static void RunKsck(vector<string>* error_messages) {
 
 int main(int argc, char** argv) {
   google::SetUsageMessage(kudu::tools::GetKsckUsage(argv[0]));
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::ParseCommandLineFlags(&argc, &argv, true);
   FLAGS_logtostderr = true;
   kudu::InitGoogleLoggingSafe(argv[0]);
 

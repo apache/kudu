@@ -17,6 +17,7 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/env.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -136,7 +137,7 @@ Status TsAdminClient::ListTablets(vector<StatusAndSchemaPB>* tablets) {
 
 static int TsCliMain(int argc, char** argv) {
   FLAGS_logtostderr = 1;
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  ParseCommandLineFlags(&argc, &argv, true);
   InitGoogleLoggingSafe(argv[0]);
   const string addr = FLAGS_tserver_address;
 

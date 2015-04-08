@@ -1,7 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
 
@@ -15,6 +14,7 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/thread.h"
 
@@ -26,7 +26,7 @@ namespace kudu {
 namespace tserver {
 
 static int TabletServerMain(int argc, char** argv) {
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;
     return 1;

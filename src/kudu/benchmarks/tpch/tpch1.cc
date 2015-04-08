@@ -59,6 +59,7 @@
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
@@ -233,7 +234,7 @@ void Tpch1(RpcLineItemDAO *dao) {
 } // namespace kudu
 
 int main(int argc, char **argv) {
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::ParseCommandLineFlags(&argc, &argv, true);
   kudu::InitGoogleLoggingSafe(argv[0]);
   const char * const kTableName = "tpch1";
 

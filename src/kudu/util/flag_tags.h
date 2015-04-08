@@ -112,13 +112,11 @@ struct FlagTags {
         AS_STRING(flag_name), AS_STRING(tag));                    \
   }
 
-
 // Fetch the list of flags associated with the given flag.
 //
 // If the flag is invalid or has no tags, sets 'tags' to be empty.
 void GetFlagTags(const std::string& flag_name,
                  std::tr1::unordered_set<std::string>* tags);
-
 
 // ------------------------------------------------------------
 // Internal implementation details

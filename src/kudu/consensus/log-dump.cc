@@ -15,6 +15,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 
@@ -189,7 +190,7 @@ void DumpSegment(const string &segment_path) {
 } // namespace kudu
 
 int main(int argc, char **argv) {
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::ParseCommandLineFlags(&argc, &argv, true);
   if (argc < 2 || argc > 3) {
     std::cerr << "usage: " << argv[0] << " <tserver root path> <tablet_name>"
         " | <log segment path> " << std::endl;

@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "kudu/util/pstack_watcher.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(test_timeout_after, 0,
@@ -25,7 +26,7 @@ int main(int argc, char **argv) {
   // InitGoogleTest() must precede ParseCommandLineFlags(), as the former
   // removes gtest-related flags from argv that would trip up the latter.
   ::testing::InitGoogleTest(&argc, argv);
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  kudu::ParseCommandLineFlags(&argc, &argv, true);
 
   // Create the test-timeout timer.
   timer_t timerid;

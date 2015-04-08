@@ -18,6 +18,7 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 
 DEFINE_string(wal_dir, "/tmp/demo-tablets",
@@ -118,7 +119,7 @@ static int FsDumpToolMain(int argc, char** argv) {
   std::stringstream usage_str;
   PrintUsageToStream(argv[0], &usage_str);
   google::SetUsageMessage(usage_str.str());
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  ParseCommandLineFlags(&argc, &argv, true);
   InitGoogleLoggingSafe(argv[0]);
 
   if (FLAGS_wal_dir.empty() || FLAGS_data_dirs.empty()) {

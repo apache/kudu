@@ -1,12 +1,12 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
 
 #include "kudu/master/master.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 
 using kudu::master::Master;
@@ -15,7 +15,7 @@ namespace kudu {
 namespace master {
 
 static int MasterMain(int argc, char** argv) {
-  google::ParseCommandLineFlags(&argc, &argv, true);
+  ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;
     return 1;
