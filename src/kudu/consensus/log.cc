@@ -154,6 +154,7 @@ void Log::AppendThread::RunThread() {
       }
     } else {
       VLOG(2) << "Synchronized " << entry_batches.size() << " entry batches";
+      SCOPED_WATCH_STACK(100);
       BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
         if (PREDICT_TRUE(!entry_batch->failed_to_append()
                          && !entry_batch->callback().is_null())) {
@@ -457,7 +458,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
 
   LOG_SLOW_EXECUTION(WARNING, 50, "Append to log took a long time") {
     SCOPED_LATENCY_METRIC(metrics_, append_latency);
-    SCOPED_WATCH_KERNEL_STACK();
+    SCOPED_WATCH_STACK(500);
 
     RETURN_NOT_OK(active_segment_->WriteEntryBatch(entry_batch_data));
 

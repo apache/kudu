@@ -16,6 +16,7 @@
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/util/kernel_stack_watchdog.h"
 
 namespace kudu {
 namespace rpc {
@@ -153,10 +154,15 @@ void OutboundCall::set_state_unlocked(State new_state) {
 
 void OutboundCall::CallCallback() {
   int64_t start_cycles = CycleClock::Now();
-  callback_();
-  // Clear the callback, since it may be holding onto reference counts
-  // via bound parameters.
-  callback_ = NULL;
+  {
+    SCOPED_WATCH_STACK(100);
+    callback_();
+    // Clear the callback, since it may be holding onto reference counts
+    // via bound parameters. We do this inside the timer because it's possible
+    // the user has naughty destructors that block, and we want to account for that
+    // time here if they happen to run on this thread.
+    callback_ = NULL;
+  }
   int64_t end_cycles = CycleClock::Now();
   int64_t wait_cycles = end_cycles - start_cycles;
   if (PREDICT_FALSE(wait_cycles > FLAGS_rpc_callback_max_cycles)) {
