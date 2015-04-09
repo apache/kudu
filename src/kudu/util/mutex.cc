@@ -7,13 +7,15 @@
 
 #include <glog/logging.h>
 
+#include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
 
 namespace kudu {
 
 Mutex::Mutex()
 #ifndef NDEBUG
-  : owning_tid_(0)
+  : owning_tid_(0),
+    stack_trace_(new StackTrace())
 #endif
 {
 #ifndef NDEBUG
@@ -40,8 +42,10 @@ Mutex::~Mutex() {
 
 bool Mutex::TryAcquire() {
   int rv = pthread_mutex_trylock(&native_handle_);
-  DCHECK(rv == 0 || rv == EBUSY) << ". " << strerror(rv);
 #ifndef NDEBUG
+  DCHECK(rv == 0 || rv == EBUSY) << ". " << strerror(rv)
+      << ". Owner tid: " << owning_tid_ << "; Self tid: " << Env::Default()->gettid()
+      << "; Owner stack: " << std::endl << stack_trace_->Symbolize();;
   if (rv == 0) {
     CheckUnheldAndMark();
   }
@@ -51,8 +55,10 @@ bool Mutex::TryAcquire() {
 
 void Mutex::Acquire() {
   int rv = pthread_mutex_lock(&native_handle_);
-  DCHECK_EQ(0, rv) << ". " << strerror(rv);
 #ifndef NDEBUG
+  DCHECK_EQ(0, rv) << ". " << strerror(rv)
+      << ". Owner tid: " << owning_tid_ << "; Self tid: " << Env::Default()->gettid()
+      << "; Owner stack: " << std::endl << stack_trace_->Symbolize();;
   CheckUnheldAndMark();
 #endif
 }
@@ -73,11 +79,13 @@ void Mutex::AssertAcquired() const {
 void Mutex::CheckHeldAndUnmark() {
   AssertAcquired();
   owning_tid_ = 0;
+  stack_trace_->Reset();
 }
 
 void Mutex::CheckUnheldAndMark() {
   DCHECK_EQ(0, owning_tid_);
   owning_tid_ = Env::Default()->gettid();
+  stack_trace_->Collect();
 }
 
 #endif
