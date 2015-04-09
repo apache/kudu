@@ -265,7 +265,7 @@ string StackTrace::Symbolize() const {
             reinterpret_cast<char *>(pc) - 1, tmp, sizeof(tmp))) {
       symbol = tmp;
     }
-    StringAppendF(&ret, "@ %*p  %s\n", kPrintfPointerFieldWidth, pc, symbol);
+    StringAppendF(&ret, "    @ %*p  %s\n", kPrintfPointerFieldWidth, pc, symbol);
   }
   return ret;
 }
