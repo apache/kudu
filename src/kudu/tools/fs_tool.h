@@ -99,7 +99,7 @@ class FsTool {
   // Dumps column blocks, all types of delta blocks for a given
   // rowset.
   Status DumpRowSet(const std::string& tablet_id,
-                    size_t rowset_idx,
+                    int64_t rowset_id,
                     const DumpOptions& opts,
                     int indent);
 

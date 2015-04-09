@@ -400,7 +400,7 @@ Status FsTool::DumpTabletData(const std::string& tablet_id) {
 }
 
 Status FsTool::DumpRowSet(const string& tablet_id,
-                          size_t rowset_idx,
+                          int64_t rowset_id,
                           const DumpOptions& opts,
                           int indent) {
   DCHECK(initialized_);
@@ -411,13 +411,14 @@ Status FsTool::DumpRowSet(const string& tablet_id,
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
 
-  if (rowset_idx >= meta->rowsets().size()) {
-    return Status::InvalidArgument(
-        Substitute("index '$0' out of bounds for tablet '$1', number of rowsets=$2",
-                   rowset_idx, tablet_id, meta->rowsets().size()));
+  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rs_meta, meta->rowsets())  {
+    if (rs_meta->id() == rowset_id) {
+      return DumpRowSetInternal(meta->schema(), rs_meta, opts, indent);
+    }
   }
 
-  return DumpRowSetInternal(meta->schema(), meta->rowsets()[rowset_idx], opts, indent);
+  return Status::InvalidArgument(
+      Substitute("Could not find rowset $0 in tablet id $1", rowset_id, tablet_id));
 }
 
 Status FsTool::DumpRowSetInternal(const Schema& schema,
