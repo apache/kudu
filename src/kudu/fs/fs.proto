@@ -61,13 +61,17 @@ message BlockRecordPB {
   // Whether this is a CREATE or a DELETE.
   required BlockRecordType op_type = 2;
 
+  // The time at which this block record was created, expressed in terms of
+  // microseconds since the epoch.
+  required uint64 timestamp_us = 3;
+
   // The offset of the block in the container data file.
   //
   // Required for CREATE.
-  optional int64 offset = 3;
+  optional int64 offset = 4;
 
   // The length of the block in the container data file.
   //
   // Required for CREATE.
-  optional int64 length = 4;
+  optional int64 length = 5;
 }

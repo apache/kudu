@@ -12,6 +12,7 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/alignment.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
@@ -858,6 +859,7 @@ Status LogWritableBlock::AppendMetadata() {
   BlockRecordPB record;
   id().CopyToPB(record.mutable_block_id());
   record.set_op_type(CREATE);
+  record.set_timestamp_us(GetCurrentTimeMicros());
   record.set_offset(block_offset_);
   record.set_length(block_length_);
   return container_->AppendMetadata(record);
@@ -1129,6 +1131,7 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
   BlockRecordPB record;
   block_id.CopyToPB(record.mutable_block_id());
   record.set_op_type(DELETE);
+  record.set_timestamp_us(GetCurrentTimeMicros());
   RETURN_NOT_OK(lb->container()->AppendMetadata(record));
   RETURN_NOT_OK(lb->container()->SyncMetadata());
 
