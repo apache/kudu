@@ -129,19 +129,9 @@ void LoadLineItems(const string &path, RpcLineItemDAO *dao) {
   dao->FinishWriting();
 }
 
-void OpenTpch1Scanner(RpcLineItemDAO* dao, KuduSchema* query_schema) {
-  query_schema->CopyFrom(tpch::CreateTpch1QuerySchema());
-  Slice date("1998-09-02");
-  vector<KuduColumnRangePredicate> preds;
-  KuduColumnRangePredicate pred1(query_schema->Column(0), NULL, &date);
-  preds.push_back(pred1);
-  dao->OpenScanner(*query_schema, preds);
-}
-
 void WarmupScanCache(RpcLineItemDAO* dao) {
   // Warms up cache for the tpch1 query.
-  KuduSchema schema;
-  OpenTpch1Scanner(dao, &schema);
+  dao->OpenTpch1Scanner();
   codegen::CompilationManager::GetSingleton()->Wait();
 }
 
@@ -149,8 +139,7 @@ void Tpch1(RpcLineItemDAO *dao) {
   typedef unordered_map<SliceMapKey, Result*, hash> slice_map;
   typedef unordered_map<SliceMapKey, slice_map*, hash> slice_map_map;
 
-  KuduSchema schema;
-  OpenTpch1Scanner(dao, &schema);
+  dao->OpenTpch1Scanner();
 
   int matching_rows = 0;
   slice_map_map results;

@@ -29,9 +29,12 @@ class RpcLineItemDAO {
   void MutateLine(boost::function<void(KuduPartialRow*)> f);
   void Init();
   void FinishWriting();
-  // Deletes previous scanner if one is open.
-  void OpenScanner(const client::KuduSchema &query_schema,
+  // Deletes previous scanner if one is open. 'query_schema' is copied internally and can safely
+  // be discarded after this call.
+  void OpenScanner(const client::KuduSchema& query_schema,
                    const std::vector<client::KuduColumnRangePredicate>& preds);
+  // Calls OpenScanner with the tpch1 query parameters.
+  void OpenTpch1Scanner();
   bool HasMore();
   void GetNext(std::vector<client::KuduRowResult> *rows);
   bool IsTableEmpty();
@@ -45,6 +48,9 @@ class RpcLineItemDAO {
   std::tr1::shared_ptr<client::KuduClient> client_;
   std::tr1::shared_ptr<client::KuduSession> session_;
   scoped_refptr<client::KuduTable> client_table_;
+  // Keeps a copy of the KuduSchema provided by OpenScanner() to ensure the schema's
+  // liveness while scanning.
+  gscoped_ptr<client::KuduSchema> current_scanner_projection_;
   gscoped_ptr<client::KuduScanner> current_scanner_;
   // Keeps track of all the orders batched for writing
   std::set<std::pair<uint32_t, uint32_t> > orders_in_request_;

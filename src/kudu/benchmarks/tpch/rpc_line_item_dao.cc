@@ -154,12 +154,23 @@ void RpcLineItemDAO::FinishWriting() {
 void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
                                  const vector<KuduColumnRangePredicate>& preds) {
   KuduScanner *scanner = new KuduScanner(client_table_.get());
+
   current_scanner_.reset(scanner);
-  CHECK_OK(current_scanner_->SetProjection(&query_schema));
+  current_scanner_projection_.reset(new KuduSchema(query_schema));
+  CHECK_OK(current_scanner_->SetProjection(current_scanner_projection_.get()));
   BOOST_FOREACH(const KuduColumnRangePredicate& pred, preds) {
     CHECK_OK(current_scanner_->AddConjunctPredicate(pred));
   }
   CHECK_OK(current_scanner_->Open());
+}
+
+void RpcLineItemDAO::OpenTpch1Scanner() {
+  KuduSchema schema(tpch::CreateTpch1QuerySchema());
+  Slice date("1998-09-02");
+  vector<KuduColumnRangePredicate> preds;
+  KuduColumnRangePredicate pred1(schema.Column(0), NULL, &date);
+  preds.push_back(pred1);
+  OpenScanner(schema, preds);
 }
 
 bool RpcLineItemDAO::HasMore() {
