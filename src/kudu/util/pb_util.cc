@@ -479,7 +479,7 @@ Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
   return Status::OK();
 }
 
-Status ReadablePBContainerFile::Dump(ostream* os) {
+Status ReadablePBContainerFile::Dump(ostream* os, bool oneline) {
   // Use the embedded protobuf information from the container file to
   // create the appropriate kind of protobuf Message.
   //
@@ -516,10 +516,14 @@ Status ReadablePBContainerFile::Dump(ostream* os) {
   for (s = ReadNextPB(msg.get());
       s.ok();
       s = ReadNextPB(msg.get())) {
-    *os << "Message " << count << endl;
-    *os << "-------" << endl;
-    *os << msg->DebugString() << endl;
-    count++;
+    if (oneline) {
+      *os << count++ << "\t" << msg->ShortDebugString() << endl;
+    } else {
+      *os << "Message " << count << endl;
+      *os << "-------" << endl;
+      *os << msg->DebugString() << endl;
+      count++;
+    }
   }
   return s.IsEndOfFile() ? s.OK() : s;
 }

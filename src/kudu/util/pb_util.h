@@ -224,7 +224,9 @@ class ReadablePBContainerFile {
 
   // Dumps any unread protobuf messages in the container to 'os'. Each
   // message's DebugString() method is invoked to produce its textual form.
-  Status Dump(std::ostream* os);
+  //
+  // If 'oneline' is true, prints each message on a single line.
+  Status Dump(std::ostream* os, bool oneline);
 
   // Closes the container.
   Status Close();

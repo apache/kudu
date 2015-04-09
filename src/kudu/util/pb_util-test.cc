@@ -54,6 +54,8 @@ class TestPBUtil : public KuduTest {
   // XORs the data in the specified range of the file at the given path.
   Status BitFlipFileByteRange(const string& path, uint64_t offset, uint64_t length);
 
+  void DumpPBCToString(const string& path, bool oneline_output, string* ret);
+
   // Output file name for most unit tests.
   string path_;
 };
@@ -328,6 +330,18 @@ TEST_F(TestPBUtil, TestPopulateDescriptorSet) {
   }
 }
 
+void TestPBUtil::DumpPBCToString(const string& path, bool oneline_output,
+                                 string* ret) {
+  gscoped_ptr<RandomAccessFile> reader;
+  ASSERT_OK(env_->NewRandomAccessFile(path, &reader));
+  ReadablePBContainerFile pb_reader(reader.Pass());
+  ASSERT_OK(pb_reader.Init());
+  ostringstream oss;
+  ASSERT_OK(pb_reader.Dump(&oss, oneline_output));
+  ASSERT_OK(pb_reader.Close());
+  *ret = oss.str();
+}
+
 TEST_F(TestPBUtil, TestDumpPBContainer) {
   const char* kExpectedOutput=
       "Message 0\n"
@@ -356,6 +370,10 @@ TEST_F(TestPBUtil, TestDumpPBContainer) {
       "  }\n"
       "}\n\n";
 
+  const char* kExpectedOutputShort =
+    "0\trecord_one { name: \"foo\" value: 0 } record_two { record { name: \"foo\" value: 0 } }\n"
+    "1\trecord_one { name: \"foo\" value: 1 } record_two { record { name: \"foo\" value: 2 } }\n";
+
   ProtoContainerTest3PB pb;
   pb.mutable_record_one()->set_name("foo");
   pb.mutable_record_two()->mutable_record()->set_name("foo");
@@ -372,14 +390,12 @@ TEST_F(TestPBUtil, TestDumpPBContainer) {
   }
   ASSERT_OK(pb_writer.Close());
 
-  gscoped_ptr<RandomAccessFile> reader;
-  ASSERT_OK(env_->NewRandomAccessFile(path_, &reader));
-  ReadablePBContainerFile pb_reader(reader.Pass());
-  ASSERT_OK(pb_reader.Init());
-  ostringstream oss;
-  ASSERT_OK(pb_reader.Dump(&oss));
-  ASSERT_STREQ(kExpectedOutput, oss.str().c_str());
-  ASSERT_OK(pb_reader.Close());
+  string output;
+  DumpPBCToString(path_, false, &output);
+  ASSERT_STREQ(kExpectedOutput, output.c_str());
+
+  DumpPBCToString(path_, true, &output);
+  ASSERT_STREQ(kExpectedOutputShort, output.c_str());
 }
 
 } // namespace pb_util
