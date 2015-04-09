@@ -252,6 +252,11 @@ Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
             << " Table id: " << meta->table_id() << std::endl;
   std::cout << Indent(indent) << "Schema (version=" << meta->schema_version() << "): "
             << schema.ToString() << std::endl;
+
+  tablet::TabletSuperBlockPB pb;
+  RETURN_NOT_OK_PREPEND(meta->ToSuperBlock(&pb), "Could not get superblock");
+  std::cout << "Superblock:\n" << pb.DebugString() << std::endl;
+
   return Status::OK();
 }
 
