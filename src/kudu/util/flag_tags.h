@@ -53,6 +53,20 @@
 //         server. Changing a flag at runtime that does not have this tag is allowed
 //         only if the user specifies a "force_unsafe_change" flag in the RPC.
 //
+//         NOTE: because gflags are simple global variables, it's important to
+//         think very carefully before tagging a flag with 'runtime'. In particular,
+//         if a string-type flag is marked 'runtime', you should never access it
+//         using the raw 'FLAGS_foo_bar' name. Instead, you must use the
+//         google::GetCommandLineFlagInfo(...) API to make a copy of the flag value
+//         under a lock. Otherwise, the 'std::string' instance could be mutated
+//         underneath the reader causing a crash.
+//
+//         For primitive-type flags, we assume that reading a variable is atomic.
+//         That is to say that a reader will either see the old value or the new
+//         one, but not some invalid value. However, for the runtime change to
+//         have any effect, you must be sure to use the FLAGS_foo_bar variable directly
+//         rather than initializing some instance variable during program startup.
+//
 // A given flag may have zero or more tags associated with it. The system does
 // not make any attempt to check integrity of the tags - for example, it allows
 // you to mark a flag as both stable and unstable, even though this makes no
