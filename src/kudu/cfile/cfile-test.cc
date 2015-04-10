@@ -13,6 +13,7 @@
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/fs/fs-test-util.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/test_macros.h"
@@ -23,6 +24,7 @@ DECLARE_string(cfile_do_on_finish);
 namespace kudu {
 namespace cfile {
 
+using fs::CountingReadableBlock;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 
@@ -547,6 +549,44 @@ TEST_F(TestCFile, TestReleaseBlock) {
   ASSERT_EQ(0, closer.blocks().size());
 }
 
+TEST_F(TestCFile, TestLazyInit) {
+  // Create a small test file.
+  BlockId block_id;
+  {
+    const int nrows = 1000;
+    StringDataGenerator<false> generator("hello %04d");
+    WriteTestFile(&generator, PREFIX_ENCODING, NO_COMPRESSION, nrows,
+                  SMALL_BLOCKSIZE | WRITE_VALIDX, &block_id);
+  }
+
+  // Open it using a "counting" readable block.
+  gscoped_ptr<ReadableBlock> block;
+  ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
+  size_t bytes_read = 0;
+  gscoped_ptr<ReadableBlock> count_block(
+      new CountingReadableBlock(block.Pass(), &bytes_read));
+
+  // Lazily opening the cfile should not trigger any reads.
+  gscoped_ptr<CFileReader> reader;
+  ASSERT_OK(CFileReader::OpenNoInit(
+      count_block.Pass(), ReaderOptions(), &reader));
+  ASSERT_EQ(0, bytes_read);
+
+  // But initializing it should (only the first time).
+  ASSERT_OK(reader->Init());
+  ASSERT_GT(bytes_read, 0);
+  size_t bytes_read_after_init = bytes_read;
+  ASSERT_OK(reader->Init());
+  ASSERT_EQ(bytes_read_after_init, bytes_read);
+
+  // And let's test non-lazy open for good measure; it should yield the
+  // same number of bytes read.
+  ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
+  bytes_read = 0;
+  count_block.reset(new CountingReadableBlock(block.Pass(), &bytes_read));
+  ASSERT_OK(CFileReader::Open(count_block.Pass(), ReaderOptions(), &reader));
+  ASSERT_EQ(bytes_read_after_init, bytes_read);
+}
 
 } // namespace cfile
 } // namespace kudu

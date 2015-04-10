@@ -40,6 +40,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/stopwatch.h"
 
 DEFINE_bool(skip_remove_old_recovery_dir, false,
             "Skip removing WAL recovery dir after startup. (useful for debugging)");
@@ -453,7 +454,9 @@ Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
                                         metric_registry_,
                                         log_anchor_registry_));
   // doing nothing for now except opening a tablet locally.
-  RETURN_NOT_OK(tablet->Open());
+  LOG_TIMING(INFO, Substitute("opening tablet $0", tablet->tablet_id())) {
+    RETURN_NOT_OK(tablet->Open());
+  }
   // set 'fetched' to true if there were any local blocks present
   *fetched = tablet->num_rowsets() != 0;
   tablet_.reset(tablet.release());

@@ -41,7 +41,7 @@ static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata,
 
   // TODO: somehow pass reader options in schema
   ReaderOptions opts;
-  return CFileReader::Open(block.Pass(), opts, new_reader);
+  return CFileReader::OpenNoInit(block.Pass(), opts, new_reader);
 }
 
 ////////////////////////////////////////////////////////////
@@ -59,10 +59,8 @@ CFileSet::~CFileSet() {
 Status CFileSet::Open() {
   RETURN_NOT_OK(OpenBloomReader());
 
-  if (schema().num_key_columns() > 1) {
-    RETURN_NOT_OK(OpenAdHocIndexReader());
-  }
-
+  // Lazily open the column data cfiles. Each one will be fully opened
+  // later, when the first iterator seeks for the first time.
   readers_.resize(schema().num_columns());
   for (int i = 0; i < schema().num_columns(); i++) {
     if (readers_[i] != NULL) {
@@ -76,6 +74,14 @@ Status CFileSet::Open() {
     VLOG(1) << "Successfully opened cfile for column "
             << schema().column(i).ToString()
             << " in " << rowset_metadata_->ToString();
+  }
+
+  // However, the key reader should always be fully opened, so that we
+  // can figure out where in the rowset tree we belong.
+  if (schema().num_key_columns() > 1) {
+    RETURN_NOT_OK(OpenAdHocIndexReader());
+  } else {
+    RETURN_NOT_OK(key_index_reader()->Init());
   }
 
   // Determine the upper and lower key bounds for this CFileSet.
@@ -107,7 +113,7 @@ Status CFileSet::OpenBloomReader() {
   gscoped_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &block));
 
-  Status s = BloomFileReader::Open(block.Pass(), &bloom_reader_);
+  Status s = BloomFileReader::OpenNoInit(block.Pass(), &bloom_reader_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open bloom file in " << rowset_metadata_->ToString() << ": "
                  << s.ToString();
@@ -177,6 +183,11 @@ uint64_t CFileSet::EstimateOnDiskSize() const {
 Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx,
                          ProbeStats* stats) const {
   if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
+    // Fully open the BloomFileReader if it was lazily opened earlier.
+    //
+    // If it's already initialized, this is a no-op.
+    RETURN_NOT_OK(bloom_reader_->Init());
+
     stats->blooms_consulted++;
     bool present;
     Status s = bloom_reader_->CheckKeyPresent(probe.bloom_probe(), &present);

@@ -23,6 +23,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/object_pool.h"
+#include "kudu/util/once.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/status.h"
 #include "kudu/common/iterator_stats.h"
@@ -40,11 +41,27 @@ class CFileIterator;
 
 class CFileReader {
  public:
-  // Open a cfile for reading using a previously opened block.
+  // Fully open a cfile using a previously opened block.
+  //
+  // After this call, the reader is safe for use.
   static Status Open(gscoped_ptr<fs::ReadableBlock> block,
                      const ReaderOptions& options,
-                     gscoped_ptr<CFileReader> *reader);
+                     gscoped_ptr<CFileReader>* reader);
 
+  // Lazily open a cfile using a previously opened block. A lazy open does
+  // not incur additional I/O, nor does it validate the contents of the
+  // cfile.
+  //
+  // Init() must be called before using most methods. Exceptions include
+  // NewIterator() and file_size().
+  static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> block,
+                           const ReaderOptions& options,
+                           gscoped_ptr<CFileReader>* reader);
+
+  // Fully opens a previously lazily opened cfile, parsing and validating
+  // its contents.
+  //
+  // May be called multiple times; subsequent calls will no-op.
   Status Init();
 
   enum CacheControl {
@@ -52,9 +69,9 @@ class CFileReader {
     DONT_CACHE_BLOCK
   };
 
-  Status NewIterator(CFileIterator **iter, CacheControl cache_control) const;
+  Status NewIterator(CFileIterator **iter, CacheControl cache_control);
   Status NewIterator(gscoped_ptr<CFileIterator> *iter,
-                     CacheControl cache_control) const {
+                     CacheControl cache_control) {
     CFileIterator *iter_ptr;
     RETURN_NOT_OK(NewIterator(&iter_ptr, cache_control));
     (*iter).reset(iter_ptr);
@@ -78,8 +95,8 @@ class CFileReader {
   // in a hot path.
   bool GetMetadataEntry(const string &key, string *val);
 
+  // Can be called before Init().
   uint64_t file_size() const {
-    DCHECK_EQ(state_, kInitialized);
     return file_size_;
   }
 
@@ -88,12 +105,12 @@ class CFileReader {
   }
 
   const TypeInfo *type_info() const {
-    DCHECK_EQ(state_, kInitialized);
+    DCHECK(init_once_.initted());
     return type_info_;
   }
 
   const TypeEncodingInfo *type_encoding_info() const {
-    DCHECK_EQ(state_, kInitialized);
+    DCHECK(init_once_.initted());
     return type_encoding_info_;
   }
 
@@ -102,12 +119,12 @@ class CFileReader {
   }
 
   const CFileHeaderPB &header() const {
-    DCHECK_EQ(state_, kInitialized);
+    DCHECK(init_once_.initted());
     return *DCHECK_NOTNULL(header_.get());
   }
 
   const CFileFooterPB &footer() const {
-    DCHECK_EQ(state_, kInitialized);
+    DCHECK(init_once_.initted());
     return *DCHECK_NOTNULL(footer_.get());
   }
 
@@ -138,10 +155,12 @@ class CFileReader {
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileReader);
 
-  friend class CFileIterator;
-
   CFileReader(const ReaderOptions &options,
+              const uint64_t file_size,
               gscoped_ptr<fs::ReadableBlock> block);
+
+  // Callback used in 'init_once_' to initialize this cfile.
+  Status InitOnce();
 
   Status ReadMagicAndLength(uint64_t offset, uint32_t *len);
   Status ReadAndParseHeader();
@@ -152,13 +171,7 @@ class CFileReader {
 #endif
   const ReaderOptions options_;
   const gscoped_ptr<fs::ReadableBlock> block_;
-  uint64_t file_size_; // effectively const, but set in Init()
-
-  enum State {
-    kUninitialized,
-    kInitialized
-  };
-  State state_;
+  const uint64_t file_size_;
 
   gscoped_ptr<CFileHeaderPB> header_;
   gscoped_ptr<CFileFooterPB> footer_;
@@ -172,6 +185,7 @@ class CFileReader {
   BlockCache *cache_;
   BlockCache::FileId cache_id_;
 
+  KuduOnceDynamic init_once_;
 };
 
 // Column Iterator interface used by the CFileSet.
@@ -265,7 +279,7 @@ class DefaultColumnValueIterator : public ColumnIterator {
 
 class CFileIterator : public ColumnIterator {
  public:
-  CFileIterator(const CFileReader *reader,
+  CFileIterator(CFileReader* reader,
                 CFileReader::CacheControl cache_control);
 
   // Seek to the first entry in the file. This works for both
@@ -394,10 +408,11 @@ class CFileIterator : public ColumnIterator {
   // it onto the end of the prepared_blocks_ deque.
   Status QueueCurrentDataBlock(const IndexTreeIterator &idx_iter);
 
-  // Clear any seek-related state.
-  void Unseek();
+  // Fully initialize the underlying cfile reader if needed, and clear any
+  // seek-related state.
+  Status PrepareForNewSeek();
 
-  const CFileReader *reader_;
+  CFileReader* reader_;
 
   gscoped_ptr<IndexTreeIterator> posidx_iter_;
   gscoped_ptr<IndexTreeIterator> validx_iter_;

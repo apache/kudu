@@ -21,10 +21,15 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/object_pool.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
+
+DEFINE_bool(cfile_lazy_open, true,
+            "Allow lazily opening of cfiles");
+TAG_FLAG(cfile_lazy_open, hidden);
 
 using kudu::fs::ReadableBlock;
 using strings::Substitute;
@@ -57,10 +62,11 @@ static Status ParseMagicAndLength(const Slice &data,
 }
 
 CFileReader::CFileReader(const ReaderOptions &options,
+                         const uint64_t file_size,
                          gscoped_ptr<ReadableBlock> block) :
   options_(options),
   block_(block.Pass()),
-  state_(kUninitialized),
+  file_size_(file_size),
   cache_(BlockCache::GetSingleton()),
   cache_id_(cache_->GenerateFileId()) {
 }
@@ -68,12 +74,29 @@ CFileReader::CFileReader(const ReaderOptions &options,
 Status CFileReader::Open(gscoped_ptr<ReadableBlock> block,
                          const ReaderOptions& options,
                          gscoped_ptr<CFileReader> *reader) {
-  gscoped_ptr<CFileReader> reader_local(new CFileReader(options, block.Pass()));
+  gscoped_ptr<CFileReader> reader_local;
+  RETURN_NOT_OK(OpenNoInit(block.Pass(), options, &reader_local));
   RETURN_NOT_OK(reader_local->Init());
+
   reader->reset(reader_local.release());
   return Status::OK();
 }
 
+Status CFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
+                               const ReaderOptions& options,
+                               gscoped_ptr<CFileReader> *reader) {
+  uint64_t block_size;
+  RETURN_NOT_OK(block->Size(&block_size));
+  gscoped_ptr<CFileReader> reader_local(new CFileReader(options,
+                                                        block_size,
+                                                        block.Pass()));
+  if (!FLAGS_cfile_lazy_open) {
+    RETURN_NOT_OK(reader_local->Init());
+  }
+
+  reader->reset(reader_local.release());
+  return Status::OK();
+}
 
 Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
   TRACE_EVENT1("io", "CFileReader::ReadMagicAndLength",
@@ -87,11 +110,9 @@ Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
   return ParseMagicAndLength(slice, len);
 }
 
-Status CFileReader::Init() {
-  CHECK(state_ == kUninitialized) <<
-    "should be uninitialized before Init()";
+Status CFileReader::InitOnce() {
+  VLOG(1) << "Initializing CFile with ID " << block_->id().ToString();
 
-  RETURN_NOT_OK(block_->Size(&file_size_));
   RETURN_NOT_OK(ReadAndParseHeader());
 
   RETURN_NOT_OK(ReadAndParseFooter());
@@ -103,20 +124,22 @@ Status CFileReader::Init() {
                                       &type_encoding_info_));
 
   key_encoder_ = &GetKeyEncoder(footer_->data_type());
-  VLOG(1) << "Initialized CFile reader. "
+  VLOG(2) << "Initialized CFile reader. "
           << "Header: " << header_->DebugString()
           << " Footer: " << footer_->DebugString()
           << " Type: " << type_info_->name();
 
-  state_ = kInitialized;
-
   return Status::OK();
+}
+
+Status CFileReader::Init() {
+  return init_once_.Init(&CFileReader::InitOnce, this);
 }
 
 Status CFileReader::ReadAndParseHeader() {
   TRACE_EVENT1("io", "CFileReader::ReadAndParseHeader",
                "cfile", ToString());
-  CHECK(state_ == kUninitialized) << "bad state: " << state_;
+  DCHECK(!init_once_.initted());
 
   // First read and parse the "pre-header", which lets us know
   // that it is indeed a CFile and tells us the length of the
@@ -135,7 +158,7 @@ Status CFileReader::ReadAndParseHeader() {
     return Status::Corruption("Invalid cfile pb header");
   }
 
-  VLOG(1) << "Read header: " << header_->DebugString();
+  VLOG(2) << "Read header: " << header_->DebugString();
 
   return Status::OK();
 }
@@ -144,7 +167,7 @@ Status CFileReader::ReadAndParseHeader() {
 Status CFileReader::ReadAndParseFooter() {
   TRACE_EVENT1("io", "CFileReader::ReadAndParseFooter",
                "cfile", ToString());
-  CHECK(state_ == kUninitialized) << "bad state: " << state_;
+  DCHECK(!init_once_.initted());
   CHECK_GT(file_size_, kMagicAndLengthSize) <<
     "file too short: " << file_size_;
 
@@ -172,14 +195,14 @@ Status CFileReader::ReadAndParseFooter() {
     block_uncompressor_.reset(new CompressedBlockDecoder(compression_codec, kBlockSizeLimit));
   }
 
-  VLOG(1) << "Read footer: " << footer_->DebugString();
+  VLOG(2) << "Read footer: " << footer_->DebugString();
 
   return Status::OK();
 }
 
 Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_control,
                               BlockHandle *ret) const {
-  CHECK(state_ == kInitialized) << "bad state: " << state_;
+  DCHECK(init_once_.initted());
   CHECK(ptr.offset() > 0 &&
         ptr.offset() + ptr.size() < file_size_) <<
     "bad offset " << ptr.ToString() << " in file of size "
@@ -263,7 +286,7 @@ bool CFileReader::GetMetadataEntry(const string &key, string *val) {
   return false;
 }
 
-Status CFileReader::NewIterator(CFileIterator **iter, CacheControl cache_control) const {
+Status CFileReader::NewIterator(CFileIterator **iter, CacheControl cache_control) {
   *iter = new CFileIterator(this, cache_control);
   return Status::OK();
 }
@@ -314,7 +337,7 @@ Status DefaultColumnValueIterator::FinishBatch() {
 ////////////////////////////////////////////////////////////
 // Iterator
 ////////////////////////////////////////////////////////////
-CFileIterator::CFileIterator(const CFileReader *reader,
+CFileIterator::CFileIterator(CFileReader* reader,
                              CFileReader::CacheControl cache_control)
   : reader_(reader),
     seeked_(NULL),
@@ -325,7 +348,7 @@ CFileIterator::CFileIterator(const CFileReader *reader,
 }
 
 Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
-  Unseek();
+  RETURN_NOT_OK(PrepareForNewSeek());
   if (PREDICT_FALSE(posidx_iter_ == NULL)) {
     return Status::NotSupported("no positional index in file");
   }
@@ -391,7 +414,7 @@ void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, uint32_t idx_in_blo
 }
 
 Status CFileIterator::SeekToFirst() {
-  Unseek();
+  RETURN_NOT_OK(PrepareForNewSeek());
   IndexTreeIterator *idx_iter;
   if (PREDICT_TRUE(posidx_iter_ != NULL)) {
     RETURN_NOT_OK(posidx_iter_->SeekToFirst());
@@ -420,7 +443,7 @@ Status CFileIterator::SeekToFirst() {
 
 Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
                                     bool *exact_match) {
-  Unseek();
+  RETURN_NOT_OK(PrepareForNewSeek());
   DCHECK_EQ(reader_->is_nullable(), false);
 
   if (PREDICT_FALSE(validx_iter_ == NULL)) {
@@ -459,7 +482,12 @@ Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
   return Status::OK();
 }
 
-void CFileIterator::Unseek() {
+Status CFileIterator::PrepareForNewSeek() {
+  // Fully open the CFileReader if it was lazily opened earlier.
+  //
+  // If it's already initialized, this is a no-op.
+  RETURN_NOT_OK(reader_->Init());
+
   // Create the index tree iterators if we haven't already done so.
   if (!posidx_iter_ && reader_->footer().has_posidx_info()) {
     BlockPointer bp(reader_->footer().posidx_info().root_block());
@@ -476,6 +504,8 @@ void CFileIterator::Unseek() {
     prepared_block_pool_.Destroy(pb);
   }
   prepared_blocks_.clear();
+
+  return Status::OK();
 }
 
 rowid_t CFileIterator::GetCurrentOrdinal() const {

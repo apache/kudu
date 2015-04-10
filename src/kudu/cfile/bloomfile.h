@@ -12,6 +12,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/util/bloom_filter.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/once.h"
 #include "kudu/util/pthread_spinlock.h"
 #include "kudu/util/status.h"
 
@@ -55,8 +56,26 @@ class BloomFileWriter {
 // shared!
 class BloomFileReader {
  public:
+
+  // Fully open a bloom file using a previously opened block.
+  //
+  // After this call, the bloom reader is safe for use.
   static Status Open(gscoped_ptr<fs::ReadableBlock> block,
                      gscoped_ptr<BloomFileReader> *reader);
+
+  // Lazily opens a bloom file using a previously opened block. A lazy open
+  // does not incur additional I/O, nor does it validate the contents of
+  // the bloom file.
+  //
+  // Init() must be called before using CheckKeyPresent().
+  static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> block,
+                           gscoped_ptr<BloomFileReader> *reader);
+
+  // Fully opens a previously lazily opened bloom file, parsing and
+  // validating its contents.
+  //
+  // May be called multiple times; subsequent calls will no-op.
+  Status Init();
 
   // Check if the given key may be present in the file.
   //
@@ -72,7 +91,6 @@ class BloomFileReader {
   //
   // 'reader' should already have had CFileReader::Init() called.
   explicit BloomFileReader(CFileReader *reader);
-  Status Init();
 
   // Parse the header present in the given block.
   //
@@ -83,6 +101,9 @@ class BloomFileReader {
                           BloomBlockHeaderPB *hdr,
                           Slice *bloom_data) const;
 
+  // Callback used in 'init_once_' to initialize this bloom file.
+  Status InitOnce();
+
   gscoped_ptr<CFileReader> reader_;
 
   // TODO: temporary workaround for the fact that
@@ -92,6 +113,8 @@ class BloomFileReader {
   // lame hack.
   boost::ptr_vector<cfile::IndexTreeIterator> index_iters_;
   std::vector<PThreadSpinLock> iter_locks_;
+
+  KuduOnceDynamic init_once_;
 };
 
 } // namespace cfile

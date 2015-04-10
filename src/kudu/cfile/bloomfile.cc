@@ -16,6 +16,8 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/pthread_spinlock.h"
 
+DECLARE_bool(cfile_lazy_open);
+
 namespace kudu {
 namespace cfile {
 
@@ -121,11 +123,22 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 
 Status BloomFileReader::Open(gscoped_ptr<ReadableBlock> block,
                              gscoped_ptr<BloomFileReader> *reader) {
-  gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &cf_reader));
-
-  gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(cf_reader.release()));
+  gscoped_ptr<BloomFileReader> bf_reader;
+  RETURN_NOT_OK(OpenNoInit(block.Pass(), &bf_reader));
   RETURN_NOT_OK(bf_reader->Init());
+
+  reader->reset(bf_reader.release());
+  return Status::OK();
+}
+
+Status BloomFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
+                                   gscoped_ptr<BloomFileReader> *reader) {
+  gscoped_ptr<CFileReader> cf_reader;
+  RETURN_NOT_OK(CFileReader::OpenNoInit(block.Pass(), ReaderOptions(), &cf_reader));
+  gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(cf_reader.release()));
+  if (!FLAGS_cfile_lazy_open) {
+    RETURN_NOT_OK(bf_reader->Init());
+  }
 
   reader->reset(bf_reader.release());
   return Status::OK();
@@ -136,7 +149,15 @@ BloomFileReader::BloomFileReader(CFileReader *reader)
 }
 
 Status BloomFileReader::Init() {
-  // The CFileReader is already initialized at this point.
+  return init_once_.Init(&BloomFileReader::InitOnce, this);
+}
+
+Status BloomFileReader::InitOnce() {
+  // Fully open the CFileReader if it was lazily opened earlier.
+  //
+  // If it's already initialized, this is a no-op.
+  RETURN_NOT_OK(reader_->Init());
+
   if (reader_->is_compressed()) {
     return Status::Corruption("bloom file is compressed (compression not supported)",
                               reader_->ToString());
@@ -192,6 +213,8 @@ Status BloomFileReader::ParseBlockHeader(const Slice &block,
 
 Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
                                         bool *maybe_present) {
+  DCHECK(init_once_.initted());
+
   int cpu = sched_getcpu();
   CHECK_LT(cpu, iter_locks_.size());
 

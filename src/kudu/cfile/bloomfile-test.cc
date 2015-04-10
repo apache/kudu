@@ -2,9 +2,12 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include "kudu/cfile/bloomfile-test-base.h"
+#include "kudu/fs/fs-test-util.h"
 
 namespace kudu {
 namespace cfile {
+
+using fs::CountingReadableBlock;
 
 class BloomFileTest : public BloomFileTestBase {
 
@@ -67,6 +70,37 @@ TEST_F(BloomFileTest, Benchmark) {
   }
 }
 #endif
+
+TEST_F(BloomFileTest, TestLazyInit) {
+  ASSERT_NO_FATAL_FAILURE(WriteTestBloomFile());
+
+  // Open the bloom file using a "counting" readable block.
+  gscoped_ptr<ReadableBlock> block;
+  ASSERT_OK(fs_manager_->OpenBlock(block_id_, &block));
+  size_t bytes_read = 0;
+  gscoped_ptr<ReadableBlock> count_block(
+      new CountingReadableBlock(block.Pass(), &bytes_read));
+
+  // Lazily opening the bloom file should not trigger any reads.
+  gscoped_ptr<BloomFileReader> reader;
+  ASSERT_OK(BloomFileReader::OpenNoInit(count_block.Pass(), &reader));
+  ASSERT_EQ(0, bytes_read);
+
+  // But initializing it should (only the first time).
+  ASSERT_OK(reader->Init());
+  ASSERT_GT(bytes_read, 0);
+  size_t bytes_read_after_init = bytes_read;
+  ASSERT_OK(reader->Init());
+  ASSERT_EQ(bytes_read_after_init, bytes_read);
+
+  // And let's test non-lazy open for good measure; it should yield the
+  // same number of bytes read.
+  ASSERT_OK(fs_manager_->OpenBlock(block_id_, &block));
+  bytes_read = 0;
+  count_block.reset(new CountingReadableBlock(block.Pass(), &bytes_read));
+  ASSERT_OK(BloomFileReader::Open(count_block.Pass(), &reader));
+  ASSERT_EQ(bytes_read_after_init, bytes_read);
+}
 
 } // namespace cfile
 } // namespace kudu
