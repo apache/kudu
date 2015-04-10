@@ -1771,13 +1771,13 @@ TEST_F(ClientTest, TestStaleLocations) {
 
   // On Master restart and no tablet report we expect the locations to be stale
   cluster_->mini_tablet_server(0)->Shutdown();
-  cluster_->mini_master()->Restart();
+  ASSERT_OK(cluster_->mini_master()->Restart());
   ASSERT_TRUE(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
                   tablet_id, &locs_pb));
   ASSERT_TRUE(locs_pb.stale());
 
   // Restart the TS and Wait for the tablets to be reported to the master.
-  cluster_->mini_tablet_server(0)->Start();
+  ASSERT_OK(cluster_->mini_tablet_server(0)->Start());
   ASSERT_OK(cluster_->WaitForTabletServerCount(1));
   ASSERT_TRUE(cluster_->mini_master()->master()->catalog_manager()->GetTabletLocations(
                   tablet_id, &locs_pb));
