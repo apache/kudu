@@ -225,6 +225,8 @@ Status RaftConsensus::EmulateElection() {
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Emulating election...";
+
   QuorumPB new_quorum = state_->GetActiveQuorumUnlocked();
   new_quorum.set_leader_uuid(state_->GetPeerUuid());
   new_quorum.clear_opid_index();

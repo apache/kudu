@@ -51,7 +51,6 @@ class LocalConsensus : public Consensus {
   virtual QuorumPeerPB::Role role() const OVERRIDE;
 
   virtual std::string peer_uuid() const OVERRIDE {
-    boost::lock_guard<simple_spinlock> lock(lock_);
     return peer_uuid_;
   }
 
@@ -74,24 +73,23 @@ class LocalConsensus : public Consensus {
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
  private:
+  // Log prefix. Doesn't access any variables that require locking.
+  std::string LogPrefix() const;
 
   const std::string peer_uuid_;
-  QuorumPB quorum_;
-
   const ConsensusOptions options_;
   const gscoped_ptr<ConsensusMetadata> cmeta_;
+  ReplicaTransactionFactory* const txn_factory_;
+  log::Log* const log_;
+  const scoped_refptr<server::Clock> clock_;
 
-  // Protects 'next_op_id_index_', 'state_', etc.
+  // Protects 'state_' and 'next_op_id_index_'.
   mutable simple_spinlock lock_;
 
-  // Protected by lock_
+  State state_;
   int64 next_op_id_index_;
 
-  State state_;
-  ReplicaTransactionFactory* txn_factory_;
-  log::Log* log_;
-  scoped_refptr<server::Clock> clock_;
-
+  DISALLOW_COPY_AND_ASSIGN(LocalConsensus);
 };
 
 } // namespace consensus

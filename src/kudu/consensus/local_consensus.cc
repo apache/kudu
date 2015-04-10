@@ -9,9 +9,11 @@
 
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/metadata.h"
 #include "kudu/server/clock.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/trace.h"
 
 namespace kudu {
@@ -21,6 +23,7 @@ using base::subtle::Barrier_AtomicIncrement;
 using log::Log;
 using log::LogEntryBatch;
 using std::tr1::shared_ptr;
+using strings::Substitute;
 
 LocalConsensus::LocalConsensus(const ConsensusOptions& options,
                                gscoped_ptr<ConsensusMetadata> cmeta,
@@ -31,11 +34,11 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
     : peer_uuid_(peer_uuid),
       options_(options),
       cmeta_(cmeta.Pass()),
-      next_op_id_index_(-1),
-      state_(kInitializing),
       txn_factory_(DCHECK_NOTNULL(txn_factory)),
       log_(DCHECK_NOTNULL(log)),
-      clock_(clock) {
+      clock_(clock),
+      state_(kInitializing),
+      next_op_id_index_(-1) {
   CHECK(cmeta_) << "Passed ConsensusMetadata object is NULL";
 }
 
@@ -46,6 +49,8 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
 
   CHECK(info.orphaned_replicates.empty())
       << "LocalConsensus does not handle orphaned operations on start.";
+
+  LOG_WITH_PREFIX(INFO) << "Starting LocalConsensus...";
 
   scoped_refptr<ConsensusRound> round;
   {
@@ -83,8 +88,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round));
   Status s = Replicate(round_ptr);
   if (!s.ok()) {
-    LOG(WARNING) << "Unable to replicate initial change config transaction: " << s.ToString();
-    return s;
+    LOG_WITH_PREFIX(FATAL) << "Unable to replicate initial log entry: " << s.ToString();
   }
 
   TRACE("Consensus started");
@@ -159,7 +163,7 @@ QuorumPB LocalConsensus::Quorum() const {
 }
 
 void LocalConsensus::Shutdown() {
-  VLOG(1) << "LocalConsensus Shutdown!";
+  VLOG_WITH_PREFIX(1) << "LocalConsensus Shutdown!";
 }
 
 void LocalConsensus::DumpStatusHtml(std::ostream& out) const {
@@ -167,6 +171,10 @@ void LocalConsensus::DumpStatusHtml(std::ostream& out) const {
 
   boost::lock_guard<simple_spinlock> lock(lock_);
   out << "next op: " << next_op_id_index_;
+}
+
+std::string LocalConsensus::LogPrefix() const {
+  return Substitute("T $0 P $1: ", options_.tablet_id, peer_uuid_);
 }
 
 } // end namespace consensus
