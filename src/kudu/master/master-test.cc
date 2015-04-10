@@ -14,6 +14,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master-test-util.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
@@ -49,6 +50,7 @@ class MasterTest : public KuduTest {
     mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master"), 0));
     ASSERT_OK(mini_master_->Start());
     master_ = mini_master_->master();
+    ASSERT_OK(master_->WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
 
     // Create a client proxy to it.
     MessengerBuilder bld("Client");
@@ -263,6 +265,8 @@ TEST_F(MasterTest, TestCatalog) {
 
   // Restart the master, verify the table still shows up.
   ASSERT_OK(mini_master_->Restart());
+  ASSERT_OK(mini_master_->master()->
+      WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
 
   ASSERT_NO_FATAL_FAILURE(DoListAllTables(&tables));
   ASSERT_EQ(1, tables.tables_size());
@@ -319,7 +323,7 @@ TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
   {
     Status s = CreateTable(kTableName, kTableSchema,
                            list_of("k1")("k1")("k2"));
-    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Duplicate split key");
   }
 

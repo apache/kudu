@@ -132,6 +132,8 @@ TEST_F(CreateTableStressTest, RestartMasterDuringCreation) {
     SleepFor(MonoDelta::FromMicroseconds(500));
     LOG(INFO) << "Restarting master...";
     ASSERT_OK(cluster_->mini_master()->Restart());
+    ASSERT_OK(cluster_->mini_master()->master()->
+        WaitUntilCatalogManagerIsLeaderAndReadyForTests(MonoDelta::FromSeconds(5)));
     LOG(INFO) << "Master restarted.";
   }
 

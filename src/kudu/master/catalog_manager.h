@@ -250,8 +250,6 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   // List of pending tasks (e.g. create/alter tablet requests)
   std::tr1::unordered_set<MonitoredTask*> pending_tasks_;
 
-  Promise<Status> leader_election_status_;
-
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };
 
@@ -387,11 +385,11 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   bool IsInitialized() const;
 
-  // Return true if this CatalogManager is a leader in a quorum and if
+  // Return OK if this CatalogManager is a leader in a quorum and if
   // the required leader state (metadata for tables and tablets) has
   // been successfully loaded into memory. CatalogManager must be
   // initialized before calling this method.
-  bool IsLeaderAndReady() const;
+  Status CheckIsLeaderAndReady() const;
 
   // Returns this CatalogManager's role in a quorum. CatalogManager
   // must be initialized before calling this method.
@@ -560,9 +558,16 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // ('table_names_map_', 'table_ids_map_', 'tablet_map_' below).
   void AbortTableCreation(TableInfo* table, const std::vector<TabletInfo*>& tablets);
 
+  // Conventional "T xxx P yyy: " prefix for logging.
+  std::string LogPrefix() const;
+
   // TODO: the maps are a little wasteful of RAM, since the TableInfo/TabletInfo
   // objects have a copy of the string key. But STL doesn't make it
   // easy to make a "gettable set".
+
+  // Lock protecting the various maps below.
+  typedef rw_spinlock LockType;
+  mutable LockType lock_;
 
   // Table maps: table-id -> TableInfo and table-name -> TableInfo
   typedef std::tr1::unordered_map<std::string, scoped_refptr<TableInfo> > TableInfoMap;
@@ -572,11 +577,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // Tablet maps: tablet-id -> TabletInfo
   typedef std::tr1::unordered_map<std::string, scoped_refptr<TabletInfo> > TabletInfoMap;
   TabletInfoMap tablet_map_;
-
-  // Lock protecting the various maps above and
-  // 'tables_tablets_visited_status_' below.
-  typedef rw_spinlock LockType;
-  mutable LockType lock_;
 
   Master *master_;
   Atomic32 closing_;
@@ -595,6 +595,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
     kRunning,
     kClosing
   };
+
   // Lock protecting state_, leader_ready_
   mutable simple_spinlock state_lock_;
   State state_;
@@ -606,12 +607,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // thread (to correctly serialize invocations of ElectedAsLeaderCb
   // upon closely timed consecutive elections).
   gscoped_ptr<ThreadPool> worker_pool_;
-
-  // Set when the tables and tablets are loaded successfully. This is
-  // especially relevant in the case of a standalone local master
-  // quorum, where we want to exit right away if the tables/tablets
-  // can't be loaded into memory.
-  Promise<Status> tables_tablets_visited_status_;
 
   // If we are the leader of a master quorum, Indicates whether all of
   // the required in-memory state (tables and tablets metadata) has

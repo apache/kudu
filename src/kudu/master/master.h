@@ -50,6 +50,12 @@ class Master : public server::ServerBase {
   Status StartAsync();
   Status WaitForCatalogManagerInit();
 
+  // Wait until this Master's catalog manager instance is the leader and is ready.
+  // This method is intended for use by unit tests.
+  // If 'timeout' time is exceeded, returns Status::TimedOut.
+  Status WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& timeout)
+      WARN_UNUSED_RESULT;
+
   void Shutdown();
 
   std::string ToString() const;

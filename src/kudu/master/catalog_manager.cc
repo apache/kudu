@@ -55,6 +55,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
@@ -268,12 +269,12 @@ void CatalogManagerBgTasks::Shutdown() {
 
 void CatalogManagerBgTasks::Run() {
   while (!NoBarrier_Load(&closing_)) {
-    std::vector<scoped_refptr<TabletInfo> > to_delete;
-    std::vector<scoped_refptr<TabletInfo> > to_process;
-
     if (!catalog_manager_->IsInitialized()) {
       LOG(WARNING) << "Catalog manager is not initialized!";
-    } else if (catalog_manager_->IsLeaderAndReady()) {
+    } else if (catalog_manager_->CheckIsLeaderAndReady().ok()) {
+      std::vector<scoped_refptr<TabletInfo> > to_delete;
+      std::vector<scoped_refptr<TabletInfo> > to_process;
+
       // Get list of tablets not yet running or already replaced.
       catalog_manager_->ExtractTabletsToProcess(&to_delete, &to_process);
 
@@ -374,9 +375,6 @@ Status CatalogManager::Init(bool is_first_run) {
   RETURN_NOT_OK_PREPEND(sys_catalog_->WaitUntilRunning(),
                         "Failed waiting for the catalog tablet to run");
 
-  if (sys_catalog_->tablet_peer_->consensus()->role() == QuorumPeerPB::LEADER) {
-    RETURN_NOT_OK(tables_tablets_visited_status_.Get());
-  }
   boost::lock_guard<LockType> l(lock_);
   background_tasks_.reset(new CatalogManagerBgTasks(this));
   RETURN_NOT_OK_PREPEND(background_tasks_->Init(),
@@ -399,14 +397,11 @@ Status CatalogManager::ElectedAsLeaderCb() {
 }
 
 void CatalogManager::VisitTablesAndTabletsTask() {
-  LOG(INFO) << "Loading tables and tablets metadata into memory...";
+  LOG(INFO) << "Loading table and tablet metadata into memory...";
   {
     boost::lock_guard<LockType> lock(lock_);
-    tables_tablets_visited_status_.Reset();
-    Status s = VisitTablesAndTabletsUnlocked();
-    tables_tablets_visited_status_.Set(s);
-    if (!s.ok()) {
-      LOG(FATAL) << "Visiting tables and tablets failed: " << s.ToString();
+    LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + "Loading metadata into memory") {
+      CHECK_OK(VisitTablesAndTabletsUnlocked());
     }
   }
   boost::lock_guard<simple_spinlock> l(state_lock_);
@@ -450,11 +445,21 @@ bool CatalogManager::IsInitialized() const {
   return state_ == kRunning;
 }
 
-bool CatalogManager::IsLeaderAndReady() const {
+Status CatalogManager::CheckIsLeaderAndReady() const {
   boost::lock_guard<simple_spinlock> l(state_lock_);
-  CHECK(state_ == kRunning);
-  return sys_catalog_->tablet_peer_->consensus()->role() == QuorumPeerPB::LEADER &&
-      leader_ready_;
+  if (PREDICT_FALSE(state_ != kRunning)) {
+    return Status::ServiceUnavailable(
+        Substitute("Catalog manager is shutting down. State: $0", state_));
+  }
+  QuorumPeerPB::Role role = sys_catalog_->tablet_peer_->consensus()->role();
+  if (PREDICT_FALSE(role != QuorumPeerPB::LEADER)) {
+    return Status::IllegalState(
+        Substitute("Not the leader. Role: $0", QuorumPeerPB::Role_Name(role)));
+  }
+  if (PREDICT_FALSE(!leader_ready_)) {
+    return Status::ServiceUnavailable("Leader not yet ready to serve requests");
+  }
+  return Status::OK();
 }
 
 QuorumPeerPB::Role CatalogManager::Role() const {
@@ -1213,11 +1218,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     boost::shared_lock<LockType> l(lock_);
     ignore_result(FindCopy(tablet_map_, report.tablet_id(), &tablet));
   }
-  if (!IsLeaderAndReady()) {
-    return Status::IllegalState(
-        Substitute("this master is no longer the leader, unable to handle report for tablet ",
-                   report.tablet_id()));
-  }
+  RETURN_NOT_OK_PREPEND(CheckIsLeaderAndReady(),
+      Substitute("This master is no longer the leader, unable to handle report for tablet $0",
+                 report.tablet_id()));
   if (!tablet) {
     LOG(INFO) << "Got report from unknown tablet " << report.tablet_id()
               << ": Sending delete request for this orphan tablet";
@@ -2400,6 +2403,12 @@ void CatalogManager::DumpState(std::ostream* out) const {
       *out << "  name: \"" << CHexEscape(e.first) << "\"\n";
     }
   }
+}
+
+std::string CatalogManager::LogPrefix() const {
+  return Substitute("T $0 P $1: ",
+                    sys_catalog_->tablet_peer()->tablet_id(),
+                    sys_catalog_->tablet_peer()->permanent_uuid());
 }
 
 ////////////////////////////////////////////////////////////

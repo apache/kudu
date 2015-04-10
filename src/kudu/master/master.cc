@@ -3,6 +3,7 @@
 
 #include "kudu/master/master.h"
 
+#include <algorithm>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <list>
@@ -31,6 +32,7 @@
 DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
              "Timeout for retrieving master registration over RPC.");
 
+using std::min;
 using std::tr1::shared_ptr;
 using std::vector;
 
@@ -126,6 +128,23 @@ Status Master::WaitForCatalogManagerInit() {
   CHECK_EQ(state_, kRunning);
 
   return init_status_.Get();
+}
+
+Status Master::WaitUntilCatalogManagerIsLeaderAndReadyForTests(const MonoDelta& timeout) {
+  Status s;
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  int backoff_ms = 1;
+  const int kMaxBackoffMs = 256;
+  do {
+    s = catalog_manager_->CheckIsLeaderAndReady();
+    if (s.ok()) {
+      return Status::OK();
+    }
+    SleepFor(MonoDelta::FromMilliseconds(backoff_ms));
+    backoff_ms = min(backoff_ms << 1, kMaxBackoffMs);
+  } while (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).LessThan(timeout));
+  return Status::TimedOut("Maximum time exceeded waiting for master leadership",
+                          s.ToString());
 }
 
 void Master::Shutdown() {

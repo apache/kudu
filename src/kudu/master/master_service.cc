@@ -44,10 +44,9 @@ template<class RespClass>
 bool CheckIsLeaderOrRespond(Master* master,
                             RespClass* resp,
                             rpc::RpcContext* rpc) {
-  if (PREDICT_FALSE(!master->catalog_manager()->IsLeaderAndReady())) {
-    SetupErrorAndRespond(resp->mutable_error(),
-                         Status::ServiceUnavailable("operation requested can only be executed "
-                                                    "on a leader master or a single node master"),
+  Status s = master->catalog_manager()->CheckIsLeaderAndReady();
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
                          MasterErrorPB::NOT_THE_LEADER,
                          rpc);
     return false;
@@ -109,7 +108,8 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   }
 
   resp->mutable_master_instance()->CopyFrom(server_->instance_pb());
-  if (!server_->catalog_manager()->IsLeaderAndReady()) {
+  Status s = server_->catalog_manager()->CheckIsLeaderAndReady();
+  if (!s.ok()) {
     // For the time being, ignore heartbeats sent to non-leader distributed
     // masters.
     //
@@ -118,7 +118,7 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
     // masters, or by storing heartbeat information in a replicated
     // SysTable.
     LOG(WARNING) << "Received a heartbeat, but this Master instance is not a leader or a "
-                 << "single Master.";
+                 << "single Master: " << s.ToString();
     resp->set_leader_master(false);
     rpc->RespondSuccess();
     return;
@@ -126,12 +126,11 @@ void MasterServiceImpl::TSHeartbeat(const TSHeartbeatRequestPB* req,
   resp->set_leader_master(true);
 
   shared_ptr<TSDescriptor> ts_desc;
-  Status s;
   // If the TS is registering, register in the TS manager.
   if (req->has_registration()) {
-    s = server_->ts_manager()->RegisterTS(req->common().ts_instance(),
-                                          req->registration(),
-                                          &ts_desc);
+    Status s = server_->ts_manager()->RegisterTS(req->common().ts_instance(),
+                                                 req->registration(),
+                                                 &ts_desc);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to register tablet server (" << rpc->requestor_string() << "): "
                    << s.ToString();
