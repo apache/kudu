@@ -28,9 +28,10 @@ class CompactionInput {
   // need to call snap.IsCommitted() on each mutation.
   //
   // TODO: can we make the above less messy?
-  static CompactionInput *Create(const DiskRowSet &rowset,
-                                 const Schema* projection,
-                                 const MvccSnapshot &snap);
+  static Status Create(const DiskRowSet &rowset,
+                       const Schema* projection,
+                       const MvccSnapshot &snap,
+                       gscoped_ptr<CompactionInput>* out);
 
   // Create an input which reads from the given memrowset, yielding base rows and updates
   // prior to the given snapshot.

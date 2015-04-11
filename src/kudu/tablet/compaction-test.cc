@@ -200,29 +200,32 @@ class TestCompaction : public KuduRowSetTest {
     }
   }
 
-  gscoped_ptr<CompactionInput> BuildCompactionInput(const MvccSnapshot& merge_snap,
-                                                    const vector<shared_ptr<DiskRowSet> >& rowsets,
-                                                    const Schema& projection) {
+  Status BuildCompactionInput(const MvccSnapshot& merge_snap,
+                              const vector<shared_ptr<DiskRowSet> >& rowsets,
+                              const Schema& projection,
+                              gscoped_ptr<CompactionInput>* out) {
     vector<shared_ptr<CompactionInput> > merge_inputs;
     BOOST_FOREACH(const shared_ptr<DiskRowSet> &rs, rowsets) {
-      merge_inputs.push_back(
-          shared_ptr<CompactionInput>(CompactionInput::Create(*rs, &projection, merge_snap)));
+      gscoped_ptr<CompactionInput> input;
+      RETURN_NOT_OK(CompactionInput::Create(*rs, &projection, merge_snap, &input));
+      merge_inputs.push_back(shared_ptr<CompactionInput>(input.release()));
     }
-    gscoped_ptr<CompactionInput> compact_input(CompactionInput::Merge(merge_inputs, &projection));
-    return compact_input.Pass();
+    out->reset(CompactionInput::Merge(merge_inputs, &projection));
+    return Status::OK();
   }
 
   // Compacts a set of DRSs.
   // If 'result_rowsets' is not NULL, reopens the resulting rowset(s) and appends
   // them to the vector.
-  void CompactAndReopen(const vector<shared_ptr<DiskRowSet> >& rowsets,
-                        const Schema& projection, int64_t roll_threshold,
-                        vector<shared_ptr<DiskRowSet> >* result_rowsets) {
+  Status CompactAndReopen(const vector<shared_ptr<DiskRowSet> >& rowsets,
+                          const Schema& projection, int64_t roll_threshold,
+                          vector<shared_ptr<DiskRowSet> >* result_rowsets) {
     MvccSnapshot merge_snap(mvcc_);
-    gscoped_ptr<CompactionInput> compact_input(BuildCompactionInput(merge_snap, rowsets,
-                                                                    projection));
+    gscoped_ptr<CompactionInput> compact_input;
+    RETURN_NOT_OK(BuildCompactionInput(merge_snap, rowsets, projection, &compact_input));
     DoFlushAndReopen(compact_input.get(), projection, merge_snap, roll_threshold,
                      result_rowsets);
+    return Status::OK();
   }
 
   // Same as above, but sets a high roll threshold so it only produces a single output.
@@ -347,8 +350,8 @@ class TestCompaction : public KuduRowSetTest {
     LOG_TIMING(INFO, "compacting " +
                std::string((OVERLAP_INPUTS ? "with overlap" : "without overlap"))) {
       MvccSnapshot merge_snap(mvcc_);
-      gscoped_ptr<CompactionInput> compact_input(BuildCompactionInput(merge_snap, rowsets,
-                                                                      schema_));
+      gscoped_ptr<CompactionInput> compact_input;
+      ASSERT_OK(BuildCompactionInput(merge_snap, rowsets, schema_, &compact_input));
       // Use a low target row size to increase the number of resulting rowsets.
       RollingDiskRowSetWriter rdrsw(tablet()->metadata(), schema_,
                                     BloomFilterSizing::BySizeAndFPRate(32 * 1024, 0.01f),
@@ -469,7 +472,8 @@ TEST_F(TestCompaction, TestRowSetInput) {
 
   // Check compaction input
   vector<string> out;
-  gscoped_ptr<CompactionInput> input(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_)));
+  gscoped_ptr<CompactionInput> input;
+  ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
   EXPECT_EQ("(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
@@ -536,10 +540,11 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
   // Now compact all the drs and make sure we don't get duplicated keys on the output
   CompactAndReopenNoRoll(all_rss, schema_, &result);
 
-  gscoped_ptr<CompactionInput> input(
-      CompactionInput::Create(*result,
-                              &schema_,
-                              MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
+  gscoped_ptr<CompactionInput> input;
+  ASSERT_OK(CompactionInput::Create(*result,
+                                    &schema_,
+                                    MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
+                                    &input));
   vector<string> out;
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 10);
@@ -586,7 +591,7 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // If we look at the contents of the DiskRowSet now, we should see the "re-updated" data.
   vector<string> out;
-  input.reset(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_)));
+  ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
   EXPECT_EQ("(string key=hello 00000000, uint32 val=1, uint32 nullable_val=1) "
@@ -596,7 +601,8 @@ TEST_F(TestCompaction, TestOneToOne) {
 
   // And compact (1 input to 1 output)
   MvccSnapshot snap3(mvcc_);
-  gscoped_ptr<CompactionInput> compact_input(CompactionInput::Create(*rs, &schema_, snap3));
+  gscoped_ptr<CompactionInput> compact_input;
+  ASSERT_OK(CompactionInput::Create(*rs, &schema_, snap3, &compact_input));
   DoFlushAndReopen(compact_input.get(), schema_, snap3, kLargeRollThreshold, NULL);
 }
 

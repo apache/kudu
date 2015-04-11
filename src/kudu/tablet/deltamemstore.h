@@ -48,6 +48,8 @@ class DeltaMemStore : public DeltaStore,
                 log::LogAnchorRegistry* log_anchor_registry,
                 MemTracker* parent_tracker = NULL);
 
+  virtual Status Init() OVERRIDE;
+
   // Update the given row in the database.
   // Copies the data, as well as any referenced values into this DMS's local
   // arena.

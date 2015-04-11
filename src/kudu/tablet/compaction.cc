@@ -14,6 +14,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/delta_tracker.h"
@@ -23,6 +24,7 @@
 #include "kudu/util/debug/trace_event.h"
 
 using std::tr1::unordered_set;
+using strings::Substitute;
 
 namespace kudu {
 namespace tablet {
@@ -495,31 +497,37 @@ class MergeCompactionInput : public CompactionInput {
 
 ////////////////////////////////////////////////////////////
 
-CompactionInput *CompactionInput::Create(const DiskRowSet &rowset,
-                                         const Schema* projection,
-                                         const MvccSnapshot &snap) {
+Status CompactionInput::Create(const DiskRowSet &rowset,
+                               const Schema* projection,
+                               const MvccSnapshot &snap,
+                               gscoped_ptr<CompactionInput>* out) {
   CHECK(projection->has_column_ids());
 
   // Assertion which checks for an earlier bug where the compaction snapshot
-  // chosen was too early. This resulted in UNDO files being mistakenly identified
-  // as REDO files and corruption ensued.
-  rowset.delta_tracker_->CheckSnapshotComesAfterAllUndos(snap);
+  // chosen was too early. This resulted in UNDO files being mistakenly
+  // identified as REDO files and corruption ensued. If the assertion fails,
+  // the process crashes; only unrelated I/O-related errors are returned.
+  RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->CheckSnapshotComesAfterAllUndos(snap),
+                        "Could not open UNDOs");
 
   shared_ptr<ColumnwiseIterator> base_cwise(rowset.base_data_->NewIterator(projection));
   gscoped_ptr<RowwiseIterator> base_iter(new MaterializingIterator(base_cwise));
   // Creates a DeltaIteratorMerger that will only include part of the redo deltas,
   // since 'snap' will be after the snapshot of the last flush/compaction,
   // i.e. past all undo deltas's max transaction ID.
-  shared_ptr<DeltaIterator> redo_deltas(rowset.delta_tracker_->NewDeltaIterator(projection, snap));
+  shared_ptr<DeltaIterator> redo_deltas;
+  RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(projection, snap, &redo_deltas),
+                        "Could not open REDOs");
   // Creates a DeltaIteratorMerger that will only include undo deltas, since
   // MvccSnapshot::CreateSnapshotIncludingNoTransactions() excludes all redo
   // deltas's min transaction ID.
-  shared_ptr<DeltaIterator> undo_deltas(
-      rowset.delta_tracker_->NewDeltaIterator(
-          projection,
-          MvccSnapshot::CreateSnapshotIncludingNoTransactions()));
+  shared_ptr<DeltaIterator> undo_deltas;
+  RETURN_NOT_OK_PREPEND(rowset.delta_tracker_->NewDeltaIterator(projection,
+          MvccSnapshot::CreateSnapshotIncludingNoTransactions(),
+          &undo_deltas), "Could not open UNDOs");
 
-  return new DiskRowSetCompactionInput(base_iter.Pass(), redo_deltas, undo_deltas);
+  out->reset(new DiskRowSetCompactionInput(base_iter.Pass(), redo_deltas, undo_deltas));
+  return Status::OK();
 }
 
 CompactionInput *CompactionInput::Create(const MemRowSet &memrowset,
@@ -543,8 +551,11 @@ Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap,
 
   vector<shared_ptr<CompactionInput> > inputs;
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
-    shared_ptr<CompactionInput> input(rs->NewCompactionInput(schema, snap));
-    inputs.push_back(input);
+    gscoped_ptr<CompactionInput> input;
+    RETURN_NOT_OK_PREPEND(rs->NewCompactionInput(schema, snap, &input),
+                          Substitute("Could not create compaction input for rowset $0",
+                                     rs->ToString()));
+    inputs.push_back(shared_ptr<CompactionInput>(input.release()));
   }
 
   if (inputs.size() == 1) {

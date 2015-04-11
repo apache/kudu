@@ -25,10 +25,11 @@ class DeltaIteratorMerger : public DeltaIterator {
   //
   // If only one store is input, this will automatically return an unwrapped
   // iterator for greater efficiency.
-  static std::tr1::shared_ptr<DeltaIterator> Create(
+  static Status Create(
       const std::vector<std::tr1::shared_ptr<DeltaStore> > &stores,
       const Schema* projection,
-      const MvccSnapshot &snapshot);
+      const MvccSnapshot &snapshot,
+      std::tr1::shared_ptr<DeltaIterator>* out);
 
   ////////////////////////////////////////////////////////////
   // Implementations of DeltaIterator

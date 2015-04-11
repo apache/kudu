@@ -7,6 +7,7 @@
 #include <tr1/memory>
 
 #include "kudu/common/schema.h"
+#include "kudu/fs/fs-test-util.h"
 #include "kudu/tablet/delta_store.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/delta_tracker.h"
@@ -24,6 +25,7 @@ DEFINE_int32(n_verify, 1, "number of times to verify the updates"
 namespace kudu {
 namespace tablet {
 
+using fs::CountingReadableBlock;
 using fs::ReadableBlock;
 using fs::WritableBlock;
 using std::tr1::shared_ptr;
@@ -316,6 +318,38 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   ASSERT_OK(reader->NewDeltaIterator(&schema_, snap3, &raw_iter));
   ASSERT_TRUE(raw_iter != NULL);
   iter.reset(raw_iter);
+}
+
+TEST_F(TestDeltaFile, TestLazyInit) {
+  WriteTestFile();
+
+  // Open it using a "counting" readable block.
+  gscoped_ptr<ReadableBlock> block;
+  ASSERT_OK(fs_manager_->OpenBlock(test_block_, &block));
+  size_t bytes_read = 0;
+  gscoped_ptr<ReadableBlock> count_block(
+      new CountingReadableBlock(block.Pass(), &bytes_read));
+
+  // Lazily opening the delta file should not trigger any reads.
+  shared_ptr<DeltaFileReader> reader;
+  ASSERT_OK(DeltaFileReader::OpenNoInit(
+      count_block.Pass(), test_block_, &reader, REDO));
+  ASSERT_EQ(0, bytes_read);
+
+  // But initializing it should (only the first time).
+  ASSERT_OK(reader->Init());
+  ASSERT_GT(bytes_read, 0);
+  size_t bytes_read_after_init = bytes_read;
+  ASSERT_OK(reader->Init());
+  ASSERT_EQ(bytes_read_after_init, bytes_read);
+
+  // And let's test non-lazy open for good measure; it should yield the
+  // same number of bytes read.
+  ASSERT_OK(fs_manager_->OpenBlock(test_block_, &block));
+  bytes_read = 0;
+  count_block.reset(new CountingReadableBlock(block.Pass(), &bytes_read));
+  ASSERT_OK(DeltaFileReader::Open(count_block.Pass(), test_block_, &reader, REDO));
+  ASSERT_EQ(bytes_read_after_init, bytes_read);
 }
 
 } // namespace tablet

@@ -58,7 +58,7 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
     }
 
     shared_ptr<DeltaFileReader> dfr;
-    s = DeltaFileReader::Open(block.Pass(), block_id, &dfr, type);
+    s = DeltaFileReader::OpenNoInit(block.Pass(), block_id, &dfr, type);
     if (!s.ok()) {
       LOG(ERROR) << "Failed to open " << DeltaType_Name(type)
                  << " delta file reader " << block_id.ToString() << ": "
@@ -66,8 +66,8 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
       return s;
     }
 
-    LOG(INFO) << "Successfully opened " << DeltaType_Name(type)
-              << " delta file " << block_id.ToString();
+    VLOG(1) << "Successfully opened " << DeltaType_Name(type)
+            << " delta file " << block_id.ToString();
     stores->push_back(dfr);
   }
   return Status::OK();
@@ -120,8 +120,9 @@ Status DeltaTracker::MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t en
     target_stores->push_back(delta_store);
     target_blocks->push_back(dfr->block_id());
   }
-  *out = DeltaIteratorMerger::Create(inputs, projection,
-                                     MvccSnapshot::CreateSnapshotIncludingAllTransactions());
+  RETURN_NOT_OK(DeltaIteratorMerger::Create(
+      inputs, projection,
+      MvccSnapshot::CreateSnapshotIncludingAllTransactions(), out));
   return Status::OK();
 }
 
@@ -268,7 +269,7 @@ void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const 
   deltas->push_back(dms_);
 }
 
-void DeltaTracker::CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) const {
+Status DeltaTracker::CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) const {
   std::vector<shared_ptr<DeltaStore> > undos;
   {
     boost::lock_guard<boost::shared_mutex> lock(component_lock_);
@@ -277,25 +278,34 @@ void DeltaTracker::CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) con
   BOOST_FOREACH(const shared_ptr<DeltaStore>& undo, undos) {
     DeltaFileReader* dfr = down_cast<DeltaFileReader*>(undo.get());
 
+    // Even though IsRelevantForSnapshot() is safe to call without
+    // initializing the reader, the assertion being tested by this function
+    // will probably fail without real delta stats.
+    RETURN_NOT_OK(dfr->Init());
+
     CHECK(!dfr->IsRelevantForSnapshot(snap))
       << "Invalid snapshot " << snap.ToString()
       << " does not come after undo file " << undo->ToString()
       << " with stats: " << dfr->delta_stats().ToString();
   }
+
+  return Status::OK();
 }
 
-shared_ptr<DeltaIterator> DeltaTracker::NewDeltaIterator(const Schema* schema,
-                                                         const MvccSnapshot &snap) const {
+Status DeltaTracker::NewDeltaIterator(const Schema* schema,
+                                      const MvccSnapshot& snap,
+                                      shared_ptr<DeltaIterator>* out) const {
   std::vector<shared_ptr<DeltaStore> > stores;
   CollectStores(&stores);
-  return DeltaIteratorMerger::Create(stores, schema, snap);
+  return DeltaIteratorMerger::Create(stores, schema, snap, out);
 }
 
-shared_ptr<DeltaIterator> DeltaTracker::NewDeltaFileIterator(
+Status DeltaTracker::NewDeltaFileIterator(
     const Schema* schema,
     const MvccSnapshot& snap,
     DeltaType type,
-    vector<shared_ptr<DeltaStore> >* included_stores) const {
+    vector<shared_ptr<DeltaStore> >* included_stores,
+    shared_ptr<DeltaIterator>* out) const {
   {
     boost::lock_guard<boost::shared_mutex> lock(component_lock_);
     // TODO perf: is this really needed? Will check
@@ -317,12 +327,17 @@ shared_ptr<DeltaIterator> DeltaTracker::NewDeltaFileIterator(
     ignore_result(down_cast<DeltaFileReader*>(store.get()));
   }
 
-  return DeltaIteratorMerger::Create(*included_stores, schema, snap);
+  return DeltaIteratorMerger::Create(*included_stores, schema, snap, out);
 }
 
-ColumnwiseIterator *DeltaTracker::WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
-                                               const MvccSnapshot &mvcc_snap) const {
-  return new DeltaApplier(base, NewDeltaIterator(&base->schema(), mvcc_snap));
+Status DeltaTracker::WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
+                                  const MvccSnapshot &mvcc_snap,
+                                  gscoped_ptr<ColumnwiseIterator>* out) const {
+  shared_ptr<DeltaIterator> iter;
+  RETURN_NOT_OK(NewDeltaIterator(&base->schema(), mvcc_snap, &iter));
+
+  out->reset(new DeltaApplier(base, iter));
+  return Status::OK();
 }
 
 
@@ -393,7 +408,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   // Now re-open for read
   gscoped_ptr<ReadableBlock> readable_block;
   RETURN_NOT_OK(fs->OpenBlock(block_id, &readable_block));
-  RETURN_NOT_OK(DeltaFileReader::Open(readable_block.Pass(), block_id, dfr, REDO));
+  RETURN_NOT_OK(DeltaFileReader::OpenNoInit(readable_block.Pass(), block_id, dfr, REDO));
   LOG(INFO) << "Reopened delta block for read: " << block_id.ToString();
 
   RETURN_NOT_OK(rowset_metadata_->CommitRedoDeltaDataBlock(dms->id(), block_id));

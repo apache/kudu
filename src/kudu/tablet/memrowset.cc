@@ -293,14 +293,18 @@ MemRowSet::Iterator *MemRowSet::NewIterator() const {
   return NewIterator(&schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions());
 }
 
-RowwiseIterator *MemRowSet::NewRowIterator(const Schema *projection,
-                                           const MvccSnapshot &snap) const {
-  return NewIterator(projection, snap);
+Status MemRowSet::NewRowIterator(const Schema *projection,
+                                 const MvccSnapshot &snap,
+                                 gscoped_ptr<RowwiseIterator>* out) const {
+  out->reset(NewIterator(projection, snap));
+  return Status::OK();
 }
 
-CompactionInput *MemRowSet::NewCompactionInput(const Schema* projection,
-                                               const MvccSnapshot &snap) const  {
-  return CompactionInput::Create(*this, projection, snap);
+Status MemRowSet::NewCompactionInput(const Schema* projection,
+                                     const MvccSnapshot& snap,
+                                     gscoped_ptr<CompactionInput>* out) const  {
+  out->reset(CompactionInput::Create(*this, projection, snap));
+  return Status::OK();
 }
 
 Status MemRowSet::GetBounds(Slice *min_encoded_key,

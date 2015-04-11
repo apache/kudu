@@ -168,9 +168,9 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   // Merge
   MvccSnapshot snap(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
   const Schema& merge_schema = schemas.back();
-  shared_ptr<DeltaIterator> merge_iter(DeltaIteratorMerger::Create(inputs,
-                                                                   &merge_schema,
-                                                                   snap));
+  shared_ptr<DeltaIterator> merge_iter;
+  ASSERT_OK(DeltaIteratorMerger::Create(inputs, &merge_schema,
+                                        snap, &merge_iter));
   gscoped_ptr<DeltaFileWriter> dfw;
   BlockId block_id;
   ASSERT_OK(GetDeltaFileWriter(merge_schema, &dfw, &block_id));

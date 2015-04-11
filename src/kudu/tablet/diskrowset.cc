@@ -476,8 +476,8 @@ Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
   }
 
   // TODO: do we need to lock schema or anything here?
-  gscoped_ptr<MajorDeltaCompaction> compaction(
-    NewMajorDeltaCompaction(col_indexes));
+  gscoped_ptr<MajorDeltaCompaction> compaction;
+  RETURN_NOT_OK(NewMajorDeltaCompaction(col_indexes, &compaction));
 
   RETURN_NOT_OK(compaction->Compact());
 
@@ -499,39 +499,49 @@ Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
   return Status::OK();
 }
 
-MajorDeltaCompaction* DiskRowSet::NewMajorDeltaCompaction(
-    const ColumnIndexes& col_indexes) const {
+Status DiskRowSet::NewMajorDeltaCompaction(
+    const ColumnIndexes& col_indexes,
+    gscoped_ptr<MajorDeltaCompaction>* out) const {
   CHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   vector<shared_ptr<DeltaStore> > included_stores;
-  shared_ptr<DeltaIterator> delta_iter = delta_tracker_->NewDeltaFileIterator(
+  shared_ptr<DeltaIterator> delta_iter;
+  RETURN_NOT_OK(delta_tracker_->NewDeltaFileIterator(
     &schema(),
     MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
     REDO,
-    &included_stores);
-  return new MajorDeltaCompaction(rowset_metadata_->fs_manager(),
-                                  rowset_metadata_->schema(),
-                                  base_data_.get(),
-                                  delta_iter,
-                                  included_stores,
-                                  col_indexes);
+    &included_stores,
+    &delta_iter));
+
+  out->reset(new MajorDeltaCompaction(rowset_metadata_->fs_manager(),
+                                      rowset_metadata_->schema(),
+                                      base_data_.get(),
+                                      delta_iter,
+                                      included_stores,
+                                      col_indexes));
+  return Status::OK();
 }
 
-RowwiseIterator *DiskRowSet::NewRowIterator(const Schema *projection,
-                                            const MvccSnapshot &mvcc_snap) const {
+Status DiskRowSet::NewRowIterator(const Schema *projection,
+                                  const MvccSnapshot &mvcc_snap,
+                                  gscoped_ptr<RowwiseIterator>* out) const {
   CHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   shared_ptr<CFileSet::Iterator> base_iter(base_data_->NewIterator(projection));
-  return new MaterializingIterator(
-    shared_ptr<ColumnwiseIterator>(delta_tracker_->WrapIterator(base_iter,
-                                                                mvcc_snap)));
+  gscoped_ptr<ColumnwiseIterator> col_iter;
+  RETURN_NOT_OK(delta_tracker_->WrapIterator(base_iter, mvcc_snap, &col_iter));
+
+  out->reset(new MaterializingIterator(
+      shared_ptr<ColumnwiseIterator>(col_iter.release())));
+  return Status::OK();
 }
 
-CompactionInput *DiskRowSet::NewCompactionInput(const Schema* projection,
-                                                const MvccSnapshot &snap) const  {
-  return CompactionInput::Create(*this, projection, snap);
+Status DiskRowSet::NewCompactionInput(const Schema* projection,
+                                      const MvccSnapshot &snap,
+                                      gscoped_ptr<CompactionInput>* out) const  {
+  return CompactionInput::Create(*this, projection, snap, out);
 }
 
 Status DiskRowSet::MutateRow(Timestamp timestamp,
@@ -656,8 +666,10 @@ Status DiskRowSet::AlterSchema(const Schema& schema) {
 Status DiskRowSet::DebugDump(vector<string> *lines) {
   // Using CompactionInput to dump our data is an easy way of seeing all the
   // rows and deltas.
-  gscoped_ptr<CompactionInput> input(
-    NewCompactionInput(&schema(), MvccSnapshot::CreateSnapshotIncludingAllTransactions()));
+  gscoped_ptr<CompactionInput> input;
+  RETURN_NOT_OK(NewCompactionInput(&schema(),
+                                   MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
+                                   &input));
   return DebugDumpCompactionInput(input.get(), lines);
 }
 

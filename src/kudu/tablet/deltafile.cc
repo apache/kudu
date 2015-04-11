@@ -20,6 +20,7 @@
 #include "kudu/util/hexdump.h"
 #include "kudu/util/pb_util.h"
 
+DECLARE_bool(cfile_lazy_open);
 DEFINE_int32(deltafile_block_size, 32*1024,
             "Block size for delta files. TODO: this should be configurable "
              "on a per-table basis");
@@ -195,14 +196,29 @@ Status DeltaFileReader::Open(gscoped_ptr<ReadableBlock> block,
                              const BlockId& block_id,
                              shared_ptr<DeltaFileReader>* reader_out,
                              DeltaType delta_type) {
-  gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::Open(block.Pass(), cfile::ReaderOptions(), &cf_reader));
+  shared_ptr<DeltaFileReader> df_reader;
+  RETURN_NOT_OK(DeltaFileReader::OpenNoInit(block.Pass(),
+                                            block_id, &df_reader, delta_type));
+  RETURN_NOT_OK(df_reader->Init());
 
+  *reader_out = df_reader;
+  return Status::OK();
+}
+
+Status DeltaFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
+                                   const BlockId& block_id,
+                                   shared_ptr<DeltaFileReader>* reader_out,
+                                   DeltaType delta_type) {
+  gscoped_ptr<CFileReader> cf_reader;
+  RETURN_NOT_OK(CFileReader::OpenNoInit(block.Pass(),
+                                        cfile::ReaderOptions(), &cf_reader));
   gscoped_ptr<DeltaFileReader> df_reader(new DeltaFileReader(block_id,
                                                              cf_reader.release(),
                                                              delta_type));
+  if (!FLAGS_cfile_lazy_open) {
+    RETURN_NOT_OK(df_reader->Init());
+  }
 
-  RETURN_NOT_OK(df_reader->Init());
   reader_out->reset(df_reader.release());
 
   return Status::OK();
@@ -217,7 +233,15 @@ DeltaFileReader::DeltaFileReader(const BlockId& block_id,
 }
 
 Status DeltaFileReader::Init() {
-  // CF reader already initialized
+  return init_once_.Init(&DeltaFileReader::InitOnce, this);
+}
+
+Status DeltaFileReader::InitOnce() {
+  // Fully open the CFileReader if it was lazily opened earlier.
+  //
+  // If it's already initialized, this is a no-op.
+  RETURN_NOT_OK(reader_->Init());
+
   if (!reader_->has_validx()) {
     return Status::Corruption("file does not have a value index!");
   }
@@ -259,6 +283,11 @@ Status DeltaFileReader::ReadDeltaStats() {
 }
 
 bool DeltaFileReader::IsRelevantForSnapshot(const MvccSnapshot& snap) const {
+  if (!init_once_.initted()) {
+    // If we're not initted, it means we have no delta stats and must
+    // assume that this file is relevant for every snapshot.
+    return true;
+  }
   if (delta_type_ == REDO) {
     return snap.MayHaveCommittedTransactionsAtOrAfter(delta_stats_->min_timestamp());
   }
@@ -273,16 +302,26 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
                                          const MvccSnapshot &snap,
                                          DeltaIterator** iterator) const {
   if (IsRelevantForSnapshot(snap)) {
-    if (delta_type_ == REDO) {
-      VLOG(2) << "REDO Delta " << ToString()
-              << " has min ts " << delta_stats_->min_timestamp().ToString()
-              << ": can't cull " << snap.ToString();
-    } else {
-      VLOG(2) << "UNDO Delta " << ToString()
-              << " has max ts " << delta_stats_->max_timestamp().ToString()
-              << ": can't cull " << snap.ToString();
+    if (VLOG_IS_ON(2)) {
+      if (!init_once_.initted()) {
+        VLOG(2) << (delta_type_ == REDO ? "REDO" : "UNDO") << " delta " << ToString()
+                << "has no delta stats"
+                << ": can't cull for " << snap.ToString();
+      } else if (delta_type_ == REDO) {
+        VLOG(2) << "REDO delta " << ToString()
+                << " has min ts " << delta_stats_->min_timestamp().ToString()
+                << ": can't cull for " << snap.ToString();
+      } else {
+        VLOG(2) << "UNDO delta " << ToString()
+                << " has max ts " << delta_stats_->max_timestamp().ToString()
+                << ": can't cull for " << snap.ToString();
+      }
     }
-    *iterator = new DeltaFileIterator(shared_from_this(), projection, snap, delta_type_);
+
+    // Ugly cast, but it lets the iterator fully initialize the reader
+    // during its first seek.
+    *iterator = new DeltaFileIterator(
+        const_cast<DeltaFileReader*>(this)->shared_from_this(), projection, snap, delta_type_);
     return Status::OK();
   } else {
     VLOG(2) << "Culling "
@@ -295,6 +334,10 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
 Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   MvccSnapshot snap_all(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
 
+  // If the schema is uninitialized, it'll be set up in SeekToOrdinal().
+  // All schema operations until then should be avoided (i.e. it's OK to
+  // pass the schema by pointer, but not to actually use it).
+  //
   // TODO: can use an empty schema here? also, would be nice to avoid the
   // allocations, but would probably require some refactoring.
   DeltaIterator* raw_iter;
@@ -330,13 +373,12 @@ uint64_t DeltaFileReader::EstimateSize() const {
 // DeltaFileIterator
 ////////////////////////////////////////////////////////////
 
-DeltaFileIterator::DeltaFileIterator(const shared_ptr<const DeltaFileReader>& dfr,
+DeltaFileIterator::DeltaFileIterator(const shared_ptr<DeltaFileReader>& dfr,
                                      const Schema *projection,
                                      const MvccSnapshot &snap,
                                      DeltaType delta_type) :
   dfr_(dfr),
-  cfile_reader_(dfr->cfile_reader()),
-  projector_(&dfr->schema(), projection),
+  projection_(projection),
   mvcc_snap_(snap),
   prepared_idx_(0xdeadbeef),
   prepared_count_(0),
@@ -355,7 +397,6 @@ Status DeltaFileIterator::Init(ScanSpec *spec) {
                                            CFileReader::DONT_CACHE_BLOCK;
   }
 
-  RETURN_NOT_OK(projector_.Init());
   initted_ = true;
   return Status::OK();
 }
@@ -363,10 +404,16 @@ Status DeltaFileIterator::Init(ScanSpec *spec) {
 Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
   DCHECK(initted_) << "Must call Init()";
 
-  // Create the index tree iterator if we haven't already done so.
+  // Finish the initialization of any lazily-initialized state.
+  RETURN_NOT_OK(dfr_->Init());
+  if (!projector_) {
+    projector_.reset(new DeltaProjector(&dfr_->schema(), projection_));
+    RETURN_NOT_OK(projector_->Init());
+  }
   if (!index_iter_) {
     index_iter_.reset(IndexTreeIterator::Create(
-        cfile_reader_.get(), STRING, cfile_reader_->validx_root()));
+        dfr_->cfile_reader().get(), STRING,
+        dfr_->cfile_reader()->validx_root()));
   }
 
   tmp_buf_.clear();
@@ -398,7 +445,8 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
 
   gscoped_ptr<PreparedDeltaBlock> pdb(new PreparedDeltaBlock());
   BlockPointer dblk_ptr = index_iter_->GetCurrentBlockPointer();
-  RETURN_NOT_OK(cfile_reader_->ReadBlock(dblk_ptr, cache_blocks_, &pdb->block_));
+  RETURN_NOT_OK(dfr_->cfile_reader()->ReadBlock(
+      dblk_ptr, cache_blocks_, &pdb->block_));
 
   // The data has been successfully read. Finish creating the decoder.
   pdb->prepared_block_start_idx_ = 0;
@@ -657,7 +705,7 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_LE(prepared_count_, dst->nrows());
 
   size_t projected_col;
-  if (projector_.get_base_col_from_proj_idx(col_to_apply, &projected_col)) {
+  if (projector_->get_base_col_from_proj_idx(col_to_apply, &projected_col)) {
     if (delta_type_ == REDO) {
       DVLOG(3) << "Applying REDO mutations to " << col_to_apply;
       ApplyingVisitor<REDO> visitor = {this, projected_col, dst};
@@ -667,7 +715,7 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
       ApplyingVisitor<UNDO> visitor = {this, projected_col, dst};
       return VisitMutations(&visitor);
     }
-  } else if (projector_.get_adapter_col_from_proj_idx(col_to_apply, &projected_col)) {
+  } else if (projector_->get_adapter_col_from_proj_idx(col_to_apply, &projected_col)) {
     // TODO: Handle the "different type" case (adapter_cols_mapping)
     LOG(DFATAL) << "Alter type is not implemented yet";
     return Status::NotSupported("Alter type is not implemented yet");
@@ -754,8 +802,8 @@ struct CollectingVisitor {
     DCHECK_GE(rel_idx, 0);
 
     RowChangeList changelist(deltas);
-    if (!dfi->projector_.is_identity()) {
-      RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(dfi->projector_,
+    if (!dfi->projector_->is_identity()) {
+      RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(*dfi->projector_,
                                                         changelist,
                                                         &dfi->delta_buf_));
       // The projection resulted in an empty mutation (e.g. update of a removed column)

@@ -10,11 +10,13 @@
 #include <tr1/memory>
 
 #include "kudu/common/generic_iterators.h"
-#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
 
 using std::tr1::shared_ptr;
+using strings::Substitute;
 
 namespace kudu { namespace tablet {
 
@@ -56,28 +58,34 @@ string DuplicatingRowSet::ToString() const {
   return ret;
 }
 
-RowwiseIterator *DuplicatingRowSet::NewRowIterator(const Schema *projection,
-                                                   const MvccSnapshot &snap) const {
+Status DuplicatingRowSet::NewRowIterator(const Schema *projection,
+                                         const MvccSnapshot &snap,
+                                         gscoped_ptr<RowwiseIterator>* out) const {
   // Use the original rowset.
   if (old_rowsets_.size() == 1) {
-    return old_rowsets_[0]->NewRowIterator(projection, snap);
+    return old_rowsets_[0]->NewRowIterator(projection, snap, out);
   } else {
     // Union between them
 
     vector<shared_ptr<RowwiseIterator> > iters;
     BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
-      shared_ptr<RowwiseIterator> iter(rowset->NewRowIterator(projection, snap));
-      iters.push_back(iter);
+      gscoped_ptr<RowwiseIterator> iter;
+      RETURN_NOT_OK_PREPEND(rowset->NewRowIterator(projection, snap, &iter),
+                            Substitute("Could not create iterator for rowset $0",
+                                       rowset->ToString()));
+      iters.push_back(shared_ptr<RowwiseIterator>(iter.release()));
     }
 
-    return new UnionIterator(iters);
+    out->reset(new UnionIterator(iters));
+    return Status::OK();
   }
 }
 
-CompactionInput *DuplicatingRowSet::NewCompactionInput(const Schema* projection,
-                                                       const MvccSnapshot &snap) const  {
+Status DuplicatingRowSet::NewCompactionInput(const Schema* projection,
+                                             const MvccSnapshot &snap,
+                                             gscoped_ptr<CompactionInput>* out) const  {
   LOG(FATAL) << "duplicating rowsets do not act as compaction input";
-  return NULL;
+  return Status::OK();
 }
 
 

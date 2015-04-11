@@ -289,11 +289,13 @@ class DiskRowSet : public RowSet {
   ////////////////////
   // Read functions.
   ////////////////////
-  RowwiseIterator *NewRowIterator(const Schema *projection,
-                                  const MvccSnapshot &snap) const OVERRIDE;
+  virtual Status NewRowIterator(const Schema *projection,
+                                const MvccSnapshot &snap,
+                                gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
 
-  virtual CompactionInput *NewCompactionInput(const Schema* projection,
-                                              const MvccSnapshot &snap) const OVERRIDE;
+  virtual Status NewCompactionInput(const Schema* projection,
+                                    const MvccSnapshot &snap,
+                                    gscoped_ptr<CompactionInput>* out) const OVERRIDE;
 
   // Count the number of rows in this rowset.
   Status CountRows(rowid_t *count) const OVERRIDE;
@@ -363,8 +365,9 @@ class DiskRowSet : public RowSet {
   Status Open();
 
   // Create a new major delta compaction object to compact the specified columns.
-  MajorDeltaCompaction* NewMajorDeltaCompaction(
-    const ColumnIndexes& col_indexes) const;
+  Status NewMajorDeltaCompaction(
+      const ColumnIndexes& col_indexes,
+      gscoped_ptr<MajorDeltaCompaction>* out) const;
 
   shared_ptr<RowSetMetadata> rowset_metadata_;
 

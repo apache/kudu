@@ -63,31 +63,36 @@ class DeltaTracker {
                log::LogAnchorRegistry* log_anchor_registry,
                MemTracker* parent_tracker = NULL);
 
-  ColumnwiseIterator *WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
-                                   const MvccSnapshot &mvcc_snap) const;
+  Status WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
+                      const MvccSnapshot &mvcc_snap,
+                      gscoped_ptr<ColumnwiseIterator>* out) const;
 
   // TODO: this shouldn't need to return a shared_ptr, but there is some messiness
   // where this has bled around.
   //
   // 'schema' is the schema of the rows that are being read by the client.
   // It must remain valid for the lifetime of the returned iterator.
-  shared_ptr<DeltaIterator> NewDeltaIterator(const Schema *schema,
-                                             const MvccSnapshot &snap) const;
+  Status NewDeltaIterator(const Schema* schema,
+                          const MvccSnapshot& snap,
+                          std::tr1::shared_ptr<DeltaIterator>* out) const;
 
   // Like NewDeltaIterator() but only includes file based stores, does not include
   // the DMS.
   // Returns the delta stores being merged in *included_stores.
-  shared_ptr<DeltaIterator> NewDeltaFileIterator(
+  Status NewDeltaFileIterator(
     const Schema* schema,
     const MvccSnapshot &snap,
     DeltaType type,
-    std::vector<std::tr1::shared_ptr<DeltaStore> >* included_stores) const;
+    std::vector<std::tr1::shared_ptr<DeltaStore> >* included_stores,
+    std::tr1::shared_ptr<DeltaIterator>* out) const;
 
   // CHECKs that the given snapshot includes all of the UNDO stores in this
   // delta tracker. If this is not the case, crashes the process. This is
   // used as an assertion during compaction, where we always expect the
   // compaction snapshot to be in the future relative to any UNDOs.
-  void CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) const;
+  //
+  // Returns a bad status in the event of an I/O related error.
+  Status CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) const;
 
   Status Open();
 

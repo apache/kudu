@@ -64,14 +64,16 @@ class RowSet {
   // The iterator will return rows/updates which were committed as of the time of
   // 'snap'.
   // The returned iterator is not Initted.
-  virtual RowwiseIterator *NewRowIterator(const Schema *projection,
-                                          const MvccSnapshot &snap) const = 0;
+  virtual Status NewRowIterator(const Schema *projection,
+                                const MvccSnapshot &snap,
+                                gscoped_ptr<RowwiseIterator>* out) const = 0;
 
   // Create the input to be used for a compaction.
   // The provided 'projection' is for the compaction output. Each row
   // will be projected into this Schema.
-  virtual CompactionInput *NewCompactionInput(const Schema* projection,
-                                              const MvccSnapshot &snap) const = 0;
+  virtual Status NewCompactionInput(const Schema* projection,
+                                    const MvccSnapshot &snap,
+                                    gscoped_ptr<CompactionInput>* out) const = 0;
 
   // Count the number of rows in this rowset.
   virtual Status CountRows(rowid_t *count) const = 0;
@@ -248,11 +250,13 @@ class DuplicatingRowSet : public RowSet {
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
                          ProbeStats* stats) const OVERRIDE;
 
-  virtual RowwiseIterator *NewRowIterator(const Schema *projection,
-                                          const MvccSnapshot &snap) const OVERRIDE;
+  virtual Status NewRowIterator(const Schema *projection,
+                                const MvccSnapshot &snap,
+                                gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
 
-  virtual CompactionInput *NewCompactionInput(const Schema* projection,
-                                              const MvccSnapshot &snap) const OVERRIDE;
+  virtual Status NewCompactionInput(const Schema* projection,
+                                    const MvccSnapshot &snap,
+                                    gscoped_ptr<CompactionInput>* out) const OVERRIDE;
 
   Status CountRows(rowid_t *count) const OVERRIDE;
 

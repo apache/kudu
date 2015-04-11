@@ -58,6 +58,10 @@ DeltaMemStore::DeltaMemStore(int64_t id,
   CHECK(schema.has_column_ids());
 }
 
+Status DeltaMemStore::Init() {
+  return Status::OK();
+}
+
 Status DeltaMemStore::Update(Timestamp timestamp,
                              rowid_t row_idx,
                              const RowChangeList &update,

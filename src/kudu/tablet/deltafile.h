@@ -21,6 +21,7 @@
 #include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/delta_key.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/once.h"
 
 namespace kudu {
 
@@ -95,10 +96,25 @@ class DeltaFileReader : public DeltaStore,
   static const char * const kSchemaMetaEntryName;
   static const char * const kDeltaStatsEntryName;
 
+  // Fully open a delta file using a previously opened block.
+  //
+  // After this call, the delta reader is safe for use.
   static Status Open(gscoped_ptr<fs::ReadableBlock> file,
                      const BlockId& block_id,
                      std::tr1::shared_ptr<DeltaFileReader>* reader_out,
                      DeltaType delta_type);
+
+  // Lazily opens a delta file using a previously opened block. A lazy open
+  // does not incur additional I/O, nor does it validate the contents of
+  // the delta file.
+  //
+  // Init() must be called before using the file's schema or stats.
+  static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> file,
+                           const BlockId& block_id,
+                           std::tr1::shared_ptr<DeltaFileReader>* reader_out,
+                           DeltaType delta_type);
+
+  Status Init() OVERRIDE;
 
   // See DeltaStore::NewDeltaIterator(...)
   Status NewDeltaIterator(const Schema *projection,
@@ -111,19 +127,24 @@ class DeltaFileReader : public DeltaStore,
   virtual uint64_t EstimateSize() const OVERRIDE;
 
   virtual const Schema &schema() const OVERRIDE {
+    DCHECK(init_once_.initted());
     return schema_;
   }
 
   const BlockId& block_id() const { return block_id_; }
 
-  const DeltaStats& delta_stats() const { return *delta_stats_; }
+  const DeltaStats& delta_stats() const {
+    DCHECK(init_once_.initted());
+    return *delta_stats_;
+  }
 
   virtual std::string ToString() const OVERRIDE {
     return reader_->ToString();
   }
 
   // Returns true if this delta file may include any deltas which need to be
-  // applied when scanning the given snapshot.
+  // applied when scanning the given snapshot, or if the file has not yet
+  // been fully initialized.
   bool IsRelevantForSnapshot(const MvccSnapshot& snap) const;
 
  private:
@@ -139,7 +160,8 @@ class DeltaFileReader : public DeltaStore,
                   cfile::CFileReader *cf_reader,
                   DeltaType delta_type);
 
-  Status Init();
+  // Callback used in 'init_once_' to initialize this delta file.
+  Status InitOnce();
 
   Status ReadSchema();
 
@@ -153,6 +175,8 @@ class DeltaFileReader : public DeltaStore,
 
   // The type of this delta, i.e. UNDO or REDO.
   const DeltaType delta_type_;
+
+  KuduOnceDynamic init_once_;
 };
 
 // Iterator over the deltas contained in a delta file.
@@ -224,7 +248,7 @@ class DeltaFileIterator : public DeltaIterator {
 
   // The passed 'projection' and 'dfr' must remain valid for the lifetime
   // of the iterator.
-  DeltaFileIterator(const std::tr1::shared_ptr<const DeltaFileReader>& dfr,
+  DeltaFileIterator(const std::tr1::shared_ptr<DeltaFileReader>& dfr,
                     const Schema *projection,
                     const MvccSnapshot &snap,
                     DeltaType delta_type);
@@ -249,11 +273,15 @@ class DeltaFileIterator : public DeltaIterator {
   // Log a FATAL error message about a bad delta.
   void FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas, const string &msg);
 
-  std::tr1::shared_ptr<const DeltaFileReader> dfr_;
-  shared_ptr<cfile::CFileReader> cfile_reader_;
+  std::tr1::shared_ptr<DeltaFileReader> dfr_;
+
+  // Schema used during projection.
+  const Schema* projection_;
 
   // Mapping from projected column index back to memrowset column index.
-  DeltaProjector projector_;
+  //
+  // Constructed on first seek.
+  gscoped_ptr<DeltaProjector> projector_;
 
   // The MVCC state which determines which deltas should be applied.
   const MvccSnapshot mvcc_snap_;

@@ -1222,9 +1222,9 @@ Status Tablet::CaptureConsistentIterators(
   vector<shared_ptr<RowwiseIterator> > ret;
 
   // Grab the memrowset iterator.
-  shared_ptr<RowwiseIterator> ms_iter(
-    components_->memrowset->NewRowIterator(projection, snap));
-  ret.push_back(ms_iter);
+  gscoped_ptr<RowwiseIterator> ms_iter;
+  RETURN_NOT_OK(components_->memrowset->NewRowIterator(projection, snap, &ms_iter));
+  ret.push_back(shared_ptr<RowwiseIterator>(ms_iter.release()));
 
   // We can only use this optimization if there is a single encoded predicate
   // TODO : should we even support multiple predicates on the key, given they're
@@ -1237,8 +1237,11 @@ Status Tablet::CaptureConsistentIterators(
                                                           spec->upper_bound_key()->encoded_key(),
                                                           &interval_sets);
     BOOST_FOREACH(const RowSet *rs, interval_sets) {
-      shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
-      ret.push_back(row_it);
+      gscoped_ptr<RowwiseIterator> row_it;
+      RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, &row_it),
+                            Substitute("Could not create iterator for rowset $0",
+                                       rs->ToString()));
+      ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
     }
     ret.swap(*iters);
     return Status::OK();
@@ -1247,8 +1250,11 @@ Status Tablet::CaptureConsistentIterators(
   // If there are no encoded predicates or they represent an open-ended range, then
   // fall back to grabbing all rowset iterators
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, components_->rowsets->all_rowsets()) {
-    shared_ptr<RowwiseIterator> row_it(rs->NewRowIterator(projection, snap));
-    ret.push_back(row_it);
+    gscoped_ptr<RowwiseIterator> row_it;
+    RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, &row_it),
+                          Substitute("Could not create iterator for rowset $0",
+                                     rs->ToString()));
+    ret.push_back(shared_ptr<RowwiseIterator>(row_it.release()));
   }
 
   // Swap results into the parameters.

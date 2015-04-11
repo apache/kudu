@@ -31,6 +31,10 @@ class DeltaFileWriter;
 // This is implemented by DeltaMemStore and by DeltaFileReader.
 class DeltaStore {
  public:
+  // Performs any post-construction work for the DeltaStore, which may
+  // include additional I/O.
+  virtual Status Init() = 0;
+
   // Create a DeltaIterator for the given projection.
   //
   // The projection corresponds to whatever scan is currently ongoing.

@@ -249,12 +249,14 @@ class MemRowSet : public RowSet,
                         const MvccSnapshot &snap) const;
 
   // Alias to conform to DiskRowSet interface
-  virtual RowwiseIterator *NewRowIterator(const Schema *projection,
-                                          const MvccSnapshot &snap) const OVERRIDE;
+  virtual Status NewRowIterator(const Schema* projection,
+                                const MvccSnapshot& snap,
+                                gscoped_ptr<RowwiseIterator>* out) const OVERRIDE;
 
   // Create compaction input.
-  CompactionInput *NewCompactionInput(const Schema* projection,
-                                      const MvccSnapshot &snap) const OVERRIDE;
+  virtual Status NewCompactionInput(const Schema* projection,
+                                    const MvccSnapshot& snap,
+                                    gscoped_ptr<CompactionInput>* out) const OVERRIDE;
 
   // Return the Schema for the rows in this memrowset.
   virtual const Schema &schema() const OVERRIDE {

@@ -204,7 +204,8 @@ static inline Status DumpRowSet(const RowSet &rs,
                                 const MvccSnapshot &snap,
                                 vector<string> *out,
                                 int limit = INT_MAX) {
-  gscoped_ptr<RowwiseIterator> iter(rs.NewRowIterator(&projection, snap));
+  gscoped_ptr<RowwiseIterator> iter;
+  RETURN_NOT_OK(rs.NewRowIterator(&projection, snap, &iter));
   RETURN_NOT_OK(iter->Init(NULL));
   RETURN_NOT_OK(IterateToStringList(iter.get(), out, limit));
   return Status::OK();

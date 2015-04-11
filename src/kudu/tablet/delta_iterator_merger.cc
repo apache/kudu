@@ -8,6 +8,7 @@
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/deltafile.h"
 
 namespace kudu {
@@ -16,6 +17,7 @@ namespace tablet {
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
+using strings::Substitute;
 
 DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters)
   : iters_(iters) {
@@ -109,10 +111,11 @@ string DeltaIteratorMerger::ToString() const {
 }
 
 
-shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
-  const vector<shared_ptr<DeltaStore> > &stores,
-  const Schema* projection,
-  const MvccSnapshot &snapshot) {
+Status DeltaIteratorMerger::Create(
+    const vector<shared_ptr<DeltaStore> > &stores,
+    const Schema* projection,
+    const MvccSnapshot &snapshot,
+    shared_ptr<DeltaIterator>* out) {
   vector<shared_ptr<DeltaIterator> > delta_iters;
 
   BOOST_FOREACH(const shared_ptr<DeltaStore> &store, stores) {
@@ -121,19 +124,20 @@ shared_ptr<DeltaIterator> DeltaIteratorMerger::Create(
     if (s.IsNotFound()) {
       continue;
     }
-    CHECK_OK(s);
+    RETURN_NOT_OK_PREPEND(s, Substitute("Could not create iterator for store $0",
+                                        store->ToString()));
 
-    shared_ptr<DeltaIterator> iter(raw_iter);
-    delta_iters.push_back(iter);
+    delta_iters.push_back(shared_ptr<DeltaIterator>(raw_iter));
   }
 
   if (delta_iters.size() == 1) {
     // If we only have one input to the "merge", we can just directly
     // return that iterator.
-    return delta_iters[0];
+    *out = delta_iters[0];
+  } else {
+    *out = shared_ptr<DeltaIterator>(new DeltaIteratorMerger(delta_iters));
   }
-
-  return shared_ptr<DeltaIterator>(new DeltaIteratorMerger(delta_iters));
+  return Status::OK();
 }
 
 } // namespace tablet
