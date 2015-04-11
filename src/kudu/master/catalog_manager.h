@@ -337,10 +337,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   // Look up the locations of the given tablet. The locations
   // vector is overwritten (not appended to).
-  // If the tablet is not found, return false and true otherwise.
+  // If the tablet is not found, returns Status::NotFound.
+  // If the tablet is not running, returns Status::ServiceUnavailable.
+  // Otherwise, returns Status::OK and puts the result in 'locs_pb'.
   // This only returns tablets which are in RUNNING state.
-  bool GetTabletLocations(const std::string& tablet_id,
-                          TabletLocationsPB* locs_pb);
+  Status GetTabletLocations(const std::string& tablet_id,
+                            TabletLocationsPB* locs_pb);
 
   // Handle a tablet report from the given tablet server.
   //
@@ -454,9 +456,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo.
   // Populates locs_pb and returns true on success.
-  // Returns false if tablet is not running.
-  bool BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
-                               TabletLocationsPB* locs_pb);
+  // Returns Status::ServiceUnavailable if tablet is not running.
+  Status BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
+                                 TabletLocationsPB* locs_pb);
 
   Status FindTable(const TableIdentifierPB& table_identifier,
                    scoped_refptr<TableInfo>* table_info);

@@ -196,7 +196,7 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     // (i.e that it is present in the 'tablets' system table)
     // TODO: once we have catalog data. ACL checks would also go here, probably.
     TabletLocationsPB* locs_pb = resp->add_tablet_locations();
-    if (!server_->catalog_manager()->GetTabletLocations(tablet_id, locs_pb)) {
+    if (!server_->catalog_manager()->GetTabletLocations(tablet_id, locs_pb).ok()) {
       resp->mutable_tablet_locations()->RemoveLast();
     }
   }

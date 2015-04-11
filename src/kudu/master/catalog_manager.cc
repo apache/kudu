@@ -2224,15 +2224,18 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
   }
 }
 
-bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
-                                             TabletLocationsPB* locs_pb) {
+Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
+                                               TabletLocationsPB* locs_pb) {
   consensus::QuorumPB stale_quorum;
   TSRegistrationPB reg;
 
   vector<TabletReplica> locs;
   {
     TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
-    if (!l_tablet.data().is_running()) return false;
+    if (!l_tablet.data().is_running()) {
+      return Status::ServiceUnavailable(Substitute("Tablet $0 is not running",
+                                                   tablet->tablet_id()));
+    }
 
     locs.clear();
     tablet->GetLocations(&locs);
@@ -2268,17 +2271,17 @@ bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& ta
     tsinfo_pb->add_rpc_addresses()->CopyFrom(peer.last_known_addr());
   }
 
-  return true;
+  return Status::OK();
 }
 
-bool CatalogManager::GetTabletLocations(const std::string& tablet_id,
-                                        TabletLocationsPB* locs_pb) {
+Status CatalogManager::GetTabletLocations(const std::string& tablet_id,
+                                          TabletLocationsPB* locs_pb) {
   locs_pb->mutable_replicas()->Clear();
   scoped_refptr<TabletInfo> tablet_info;
   {
     boost::shared_lock<LockType> l(lock_);
     if (!FindCopy(tablet_map_, tablet_id, &tablet_info)) {
-      return false;
+      return Status::NotFound(Substitute("Unknown tablet $0", tablet_id));
     }
   }
 
@@ -2328,7 +2331,8 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   TSRegistrationPB reg;
   vector<TabletReplica> locs;
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets_in_range) {
-    if (!BuildLocationsForTablet(tablet, resp->add_tablet_locations())) {
+    if (!BuildLocationsForTablet(tablet, resp->add_tablet_locations()).ok()) {
+      // Not running.
       resp->mutable_tablet_locations()->RemoveLast();
     }
   }
