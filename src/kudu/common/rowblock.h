@@ -55,7 +55,12 @@ class SelectionVector {
     return BitmapTest(&bitmap_[0], row);
   }
 
-  void SetRowUnselected(size_t row) const {
+  void SetRowSelected(size_t row) {
+    DCHECK_LT(row, n_rows_);
+    BitmapSet(&bitmap_[0], row);
+  }
+
+  void SetRowUnselected(size_t row) {
     DCHECK_LT(row, n_rows_);
     BitmapClear(&bitmap_[0], row);
   }
