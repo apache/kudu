@@ -589,13 +589,15 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   // Right now we persist all mutations.
   *is_garbage_collected = false;
 
-
   bool is_deleted = false;
 
   #define ERROR_LOG_CONTEXT \
-    "Row: " << dst_schema->DebugRow(*dst_row) << \
-    " Redo Mutations: " << Mutation::StringifyMutationList(*dst_schema, src_row.redo_head) << \
-    " Undo Mutations: " << Mutation::StringifyMutationList(*dst_schema, src_row.undo_head)
+    "Source Row: " << dst_schema->DebugRow(src_row.row) << \
+    " Redo Mutations: " << Mutation::StringifyMutationList(*base_schema, src_row.redo_head) << \
+    " Undo Mutations: " << Mutation::StringifyMutationList(*base_schema, src_row.undo_head) << \
+    "\nDest Row: " << dst_schema->DebugRow(*dst_row) << \
+    " Redo Mutations: " << Mutation::StringifyMutationList(*dst_schema, redo_head) << \
+    " Undo Mutations: " << Mutation::StringifyMutationList(*dst_schema, undo_head)
 
   faststring dst;
   RowChangeListEncoder undo_encoder(dst_schema, &dst);
