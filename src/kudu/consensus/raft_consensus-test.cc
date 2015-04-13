@@ -92,6 +92,9 @@ class TestContinuation : public ConsensusCommitContinuation {
   OpId opid_;
 };
 
+void DoNothing() {
+}
+
 class RaftConsensusTest : public KuduTest {
  public:
   RaftConsensusTest()
@@ -153,7 +156,8 @@ class RaftConsensusTest : public KuduTest {
                                        Substitute("peer-$0", num_peers - 1),
                                        clock_,
                                        txn_factory_.get(),
-                                       log_.get()));
+                                       log_.get(),
+                                       Bind(&DoNothing)));
   }
 
   Status AppendToLog(const vector<ReplicateRefPtr>& msgs,

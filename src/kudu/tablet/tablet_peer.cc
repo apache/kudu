@@ -63,7 +63,7 @@ using tserver::TabletServerErrorPB;
 // ============================================================================
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
                        ThreadPool* apply_pool,
-                       MarkDirtyCallback mark_dirty_clbk)
+                       const Closure& mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->tablet_id()),
     state_(BOOTSTRAPPING),
@@ -116,7 +116,8 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                                           meta_->fs_manager()->uuid(),
                                           clock_,
                                           this,
-                                          log_.get()));
+                                          log_.get(),
+                                          mark_dirty_clbk_));
     } else {
       consensus_ = RaftConsensus::Create(options,
                                          cmeta.Pass(),
@@ -126,7 +127,8 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                                          this,
                                          messenger_,
                                          log_.get(),
-                                         parent_mem_tracker);
+                                         parent_mem_tracker,
+                                         mark_dirty_clbk_);
     }
   }
 
@@ -179,7 +181,7 @@ void TabletPeer::ConsensusStateChanged(consensus::QuorumPeerPB::Role new_role) {
 
   // NOTE: This callback must be called outside the peer lock or we risk
   // a deadlock.
-  mark_dirty_clbk_(this);
+  consensus_->MarkDirty();
 }
 
 TabletStatePB TabletPeer::Shutdown() {

@@ -75,9 +75,9 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
     ReplicaTransactionFactory* txn_factory,
     const shared_ptr<rpc::Messenger>& messenger,
     const scoped_refptr<log::Log>& log,
-    const shared_ptr<MemTracker>& parent_mem_tracker) {
-  gscoped_ptr<PeerProxyFactory> rpc_factory(
-    new RpcPeerProxyFactory(messenger));
+    const shared_ptr<MemTracker>& parent_mem_tracker,
+    const Closure& mark_dirty_clbk) {
+  gscoped_ptr<PeerProxyFactory> rpc_factory(new RpcPeerProxyFactory(messenger));
 
   // The message queue that keeps track of which operations need to be replicated
   // where.
@@ -112,7 +112,8 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                               peer_uuid,
                               clock,
                               txn_factory,
-                              log));
+                              log,
+                              mark_dirty_clbk));
 }
 
 RaftConsensus::RaftConsensus(const ConsensusOptions& options,
@@ -125,7 +126,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              const std::string& peer_uuid,
                              const scoped_refptr<server::Clock>& clock,
                              ReplicaTransactionFactory* txn_factory,
-                             const scoped_refptr<log::Log>& log)
+                             const scoped_refptr<log::Log>& log,
+                             const Closure& mark_dirty_clbk)
     : thread_pool_(thread_pool.Pass()),
       log_(log),
       clock_(clock),
@@ -138,7 +140,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
       failure_detector_(new TimedFailureDetector(
           MonoDelta::FromMilliseconds(
               FLAGS_leader_heartbeat_interval_ms *
-              FLAGS_leader_failure_max_missed_heartbeat_periods))) {
+              FLAGS_leader_failure_max_missed_heartbeat_periods))),
+      mark_dirty_clbk_(mark_dirty_clbk) {
   DCHECK_NOTNULL(log_.get());
   state_.reset(new ReplicaState(options,
                                 peer_uuid,
@@ -1284,6 +1287,10 @@ Status RaftConsensus::GetLastReceivedOpId(OpId* id) {
   CHECK_OK(state_->LockForRead(&lock));
   DCHECK_NOTNULL(id)->CopyFrom(state_->GetLastReceivedOpIdUnlocked());
   return Status::OK();
+}
+
+void RaftConsensus::MarkDirty() {
+  mark_dirty_clbk_.Run();
 }
 
 Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {

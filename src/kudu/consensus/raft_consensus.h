@@ -56,7 +56,8 @@ class RaftConsensus : public Consensus,
     ReplicaTransactionFactory* txn_factory,
     const std::tr1::shared_ptr<rpc::Messenger>& messenger,
     const scoped_refptr<log::Log>& log,
-    const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker);
+    const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
+    const Closure& mark_dirty_clbk);
 
   RaftConsensus(const ConsensusOptions& options,
                 gscoped_ptr<ConsensusMetadata> cmeta,
@@ -68,7 +69,8 @@ class RaftConsensus : public Consensus,
                 const std::string& peer_uuid,
                 const scoped_refptr<server::Clock>& clock,
                 ReplicaTransactionFactory* txn_factory,
-                const scoped_refptr<log::Log>& log);
+                const scoped_refptr<log::Log>& log,
+                const Closure& mark_dirty_clbk);
 
   virtual ~RaftConsensus();
 
@@ -127,6 +129,8 @@ class RaftConsensus : public Consensus,
   virtual void NotifyTermChange(uint64_t term) OVERRIDE;
 
   virtual Status GetLastReceivedOpId(OpId* id) OVERRIDE;
+
+  virtual void MarkDirty() OVERRIDE;
 
  private:
   friend class ReplicaState;
@@ -327,6 +331,8 @@ class RaftConsensus : public Consensus,
   // Lock ordering note: If both this lock and the ReplicaState lock are to be
   // taken, this lock must be taken first.
   mutable simple_spinlock update_lock_;
+
+  const Closure mark_dirty_clbk_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };

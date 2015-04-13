@@ -38,7 +38,8 @@ class LocalConsensus : public Consensus {
                           const std::string& peer_uuid,
                           const scoped_refptr<server::Clock>& clock,
                           ReplicaTransactionFactory* txn_factory,
-                          log::Log* log);
+                          log::Log* log,
+                          const Closure& mark_dirty_clbk);
 
   virtual Status Start(const ConsensusBootstrapInfo& info) OVERRIDE;
 
@@ -72,6 +73,9 @@ class LocalConsensus : public Consensus {
 
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
+
+  virtual void MarkDirty() OVERRIDE;
+
  private:
   // Log prefix. Doesn't access any variables that require locking.
   std::string LogPrefix() const;
@@ -82,6 +86,7 @@ class LocalConsensus : public Consensus {
   ReplicaTransactionFactory* const txn_factory_;
   log::Log* const log_;
   const scoped_refptr<server::Clock> clock_;
+  const Closure mark_dirty_clbk_;
 
   // Protects 'state_' and 'next_op_id_index_'.
   mutable simple_spinlock lock_;

@@ -10,6 +10,7 @@
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/log.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/transaction_order_verifier.h"
@@ -44,10 +45,6 @@ class TabletStatusPB;
 class TabletStatusListener;
 class TransactionDriver;
 
-// A function def. for the callback that allows TabletPeer to notify
-// that something has changed internally, e.g. a consensus role change.
-typedef boost::function<void(TabletPeer*)> MarkDirtyCallback;
-
 // A peer in a tablet quorum, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
 // state machine through a consensus algorithm, which makes sure that other
@@ -60,7 +57,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
 
   TabletPeer(const scoped_refptr<TabletMetadata>& meta,
              ThreadPool* apply_pool,
-             MarkDirtyCallback mark_dirty_clbk);
+             const Closure& mark_dirty_clbk);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
@@ -286,7 +283,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
 
   // Function to mark this TabletPeer's tablet as dirty in the TSTabletManager.
-  MarkDirtyCallback mark_dirty_clbk_;
+  // This function must be called any time the cluster membership or cluster
+  // leadership changes.
+  Closure mark_dirty_clbk_;
 
   // Lock protecting updates to the configuration, stored in the tablet's
   // metadata.

@@ -187,14 +187,15 @@ Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options,
   return Status::OK();
 }
 
-void SysCatalogTable::SysCatalogStateChanged(TabletPeer* tablet_peer) {
-  QuorumPB quorum = tablet_peer->consensus()->Quorum();
+void SysCatalogTable::SysCatalogStateChanged(const std::string& tablet_id) {
+  CHECK_EQ(tablet_peer_->tablet_id(), tablet_id);
+  QuorumPB quorum = tablet_peer_->consensus()->Quorum();
   LOG_WITH_PREFIX(INFO) << " SysCatalogTable state changed. New quorum config:"
-                           << quorum.ShortDebugString();
-  QuorumPeerPB::Role new_role = tablet_peer->consensus()->role();
+                        << quorum.ShortDebugString();
+  QuorumPeerPB::Role new_role = tablet_peer_->consensus()->role();
   LOG_WITH_PREFIX(INFO) << " This master's current role is: "
-                           << QuorumPeerPB::Role_Name(new_role)
-                           << ", previous role was: " << QuorumPeerPB::Role_Name(old_role_);
+                        << QuorumPeerPB::Role_Name(new_role)
+                        << ", previous role was: " << QuorumPeerPB::Role_Name(old_role_);
   if (new_role == QuorumPeerPB::LEADER) {
     CHECK_OK(leader_cb_.Run());
   }
@@ -209,7 +210,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   tablet_peer_.reset(new TabletPeer(
       metadata,
       apply_pool_.get(),
-      boost::bind(&SysCatalogTable::SysCatalogStateChanged, this, _1)));
+      Bind(&SysCatalogTable::SysCatalogStateChanged, Unretained(this), metadata->tablet_id())));
 
   consensus::ConsensusBootstrapInfo consensus_info;
   RETURN_NOT_OK(BootstrapTablet(metadata,

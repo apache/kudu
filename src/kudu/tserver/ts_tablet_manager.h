@@ -137,7 +137,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Marks tablet with 'tablet_id' dirty.
   // Used for state changes outside of the control of TsTabletManager, such as consensus role
   // changes.
-  void MarkTabletDirty(tablet::TabletPeer* tablet_peer);
+  void MarkTabletDirty(const std::string& tablet_id);
 
   Status RunAllLogGC();
 
@@ -182,7 +182,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // account in the next report.
   //
   // NOTE: requires that the caller holds the lock.
-  void MarkDirtyUnlocked(tablet::TabletPeer* tablet_peer);
+  void MarkDirtyUnlocked(const std::string& tablet_id);
 
   TSTabletManagerStatePB state() const {
     boost::shared_lock<rw_spinlock> lock(lock_);

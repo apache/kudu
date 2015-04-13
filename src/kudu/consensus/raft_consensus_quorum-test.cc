@@ -56,6 +56,9 @@ using strings::SubstituteAndAppend;
 
 const char* kTestTablet = "TestTablet";
 
+void DoNothing() {
+}
+
 Status WaitUntilLeaderForTests(RaftConsensus* raft) {
   while (raft->GetActiveRole() != QuorumPeerPB::LEADER) {
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -170,7 +173,8 @@ class RaftConsensusQuorumTest : public KuduTest {
                             quorum_.peers(i).permanent_uuid(),
                             clock_,
                             txn_factory,
-                            logs_[i]));
+                            logs_[i],
+                            Bind(&DoNothing)));
 
       txn_factory->SetConsensus(peer.get());
       txn_factories_.push_back(txn_factory);

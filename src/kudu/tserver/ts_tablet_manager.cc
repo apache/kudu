@@ -126,7 +126,7 @@ Status TSTabletManager::Init() {
     scoped_refptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
                        apply_pool_.get(),
-                       boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
+                       Bind(&TSTabletManager::MarkTabletDirty, Unretained(this), tablet_id)));
     RegisterTablet(tablet_id, tablet_peer);
 
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
@@ -226,7 +226,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   scoped_refptr<TabletPeer> new_peer(
       new TabletPeer(meta,
                      apply_pool_.get(),
-                     boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
+                     Bind(&TSTabletManager::MarkTabletDirty, Unretained(this), tablet_id)));
   RegisterTablet(meta->tablet_id(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
@@ -334,7 +334,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     // tablet_peer state changed to RUNNING, mark the tablet dirty
     {
       boost::lock_guard<rw_spinlock> lock(lock_);
-      MarkDirtyUnlocked(tablet_peer.get());
+      MarkDirtyUnlocked(tablet_id);
     }
   }
 
@@ -443,14 +443,13 @@ void TSTabletManager::GetTabletPeers(vector<scoped_refptr<TabletPeer> >* tablet_
   AppendValuesFromMap(tablet_map_, tablet_peers);
 }
 
-void TSTabletManager::MarkTabletDirty(TabletPeer* tablet_peer) {
+void TSTabletManager::MarkTabletDirty(const std::string& tablet_id) {
   boost::lock_guard<rw_spinlock> lock(lock_);
-  MarkDirtyUnlocked(tablet_peer);
+  MarkDirtyUnlocked(tablet_id);
 }
 
-
-void TSTabletManager::MarkDirtyUnlocked(TabletPeer* tablet_peer) {
-  TabletReportState* state = FindOrNull(dirty_tablets_, tablet_peer->tablet_id());
+void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
+  TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
   if (state != NULL) {
     CHECK_GE(next_report_seq_, state->change_seq);
     state->change_seq = next_report_seq_;
@@ -458,10 +457,9 @@ void TSTabletManager::MarkDirtyUnlocked(TabletPeer* tablet_peer) {
     TabletReportState state;
     state.change_seq = next_report_seq_;
 
-    InsertOrDie(&dirty_tablets_, tablet_peer->tablet_id(), state);
+    InsertOrDie(&dirty_tablets_, tablet_id, state);
   }
-  VLOG(2) << "Will report tablet " << tablet_peer->tablet_id()
-      << " in report #" << next_report_seq_;
+  VLOG(2) << "Will report tablet " << tablet_id << " in report #" << next_report_seq_;
 }
 
 void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,

@@ -86,8 +86,9 @@ class RemoteBootstrapTest : public KuduTabletTest {
     tablet_peer_.reset(
         new TabletPeer(tablet()->metadata(),
                        apply_pool_.get(),
-                       boost::bind(&RemoteBootstrapTest::TabletPeerStateChangedCallback,
-                                   this, _1)));
+                       Bind(&RemoteBootstrapTest::TabletPeerStateChangedCallback,
+                            Unretained(this),
+                            tablet()->tablet_id())));
 
     // TODO similar to code in tablet_peer-test, consider refactor.
     QuorumPB quorum;
@@ -120,8 +121,8 @@ class RemoteBootstrapTest : public KuduTabletTest {
   }
 
 
-  void TabletPeerStateChangedCallback(TabletPeer* tablet_peer) {
-    LOG(INFO) << "Tablet peer state changed.";
+  void TabletPeerStateChangedCallback(const std::string& tablet_id) {
+    LOG(INFO) << "Tablet peer state changed on tablet " << tablet_id;
   }
 
   void PopulateTablet() {

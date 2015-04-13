@@ -81,7 +81,9 @@ class TabletPeerTest : public KuduTabletTest {
     tablet_peer_.reset(
       new TabletPeer(make_scoped_refptr(tablet()->metadata()),
                      apply_pool_.get(),
-                     boost::bind(&TabletPeerTest::TabletPeerStateChangedCallback, this, _1)));
+                     Bind(&TabletPeerTest::TabletPeerStateChangedCallback,
+                          Unretained(this),
+                          tablet()->tablet_id())));
 
     // Make TabletPeer use the same LogAnchorRegistry as the Tablet created by the harness.
     // TODO: Refactor TabletHarness to allow taking a LogAnchorRegistry, while also providing
@@ -127,8 +129,8 @@ class TabletPeerTest : public KuduTabletTest {
     return Status::OK();
   }
 
-  void TabletPeerStateChangedCallback(TabletPeer* tablet_peer) {
-    LOG(INFO) << "Tablet peer state changed.";
+  void TabletPeerStateChangedCallback(const std::string& tablet_id) {
+    LOG(INFO) << "Tablet peer state changed for tablet " << tablet_id;
   }
 
   virtual void TearDown() OVERRIDE {

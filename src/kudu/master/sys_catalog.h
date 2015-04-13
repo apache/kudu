@@ -116,7 +116,7 @@ class SysCatalogTable {
   // Returns 'Status::OK()' if the WriteTranasction completed
   Status SyncWrite(const tserver::WriteRequestPB *req, tserver::WriteResponsePB *resp);
 
-  void SysCatalogStateChanged(tablet::TabletPeer* tablet_peer);
+  void SysCatalogStateChanged(const std::string& tablet_id);
 
   Status SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata);
 
