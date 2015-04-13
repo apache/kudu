@@ -229,7 +229,6 @@ class DeltaFileIterator : public DeltaIterator {
                     const MvccSnapshot &snap,
                     DeltaType delta_type);
 
-
   // Determine the row index of the first update in the block currently
   // pointed to by index_iter_.
   Status GetFirstRowIndexInCurrentBlock(rowid_t *idx);

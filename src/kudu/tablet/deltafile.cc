@@ -555,6 +555,12 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
         continue;
       }
       RETURN_NOT_OK(visitor->Visit(key, slice, &continue_visit));
+      if (VLOG_IS_ON(3)) {
+        RowChangeList rcl(slice);
+        DVLOG(3) << "Visited delta for key: " << key.ToString() << " Mut: "
+            << rcl.ToString(dfr_->schema()) << " Continue?: "
+            << (continue_visit ? "TRUE" : "FALSE");
+      }
     }
   }
 
@@ -628,8 +634,10 @@ inline Status ApplyingVisitor<REDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
   if (IsRedoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
+    DVLOG(3) << "Applied redo delta";
     return ApplyMutation(key, deltas);
   }
+  DVLOG(3) << "Redo delta uncommitted, skipped applying.";
   return Status::OK();
 }
 
@@ -638,8 +646,10 @@ inline Status ApplyingVisitor<UNDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
   if (IsUndoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
+    DVLOG(3) << "Applied undo delta";
     return ApplyMutation(key, deltas);
   }
+  DVLOG(3) << "Undo delta committed, skipped applying.";
   return Status::OK();
 }
 
@@ -649,9 +659,11 @@ Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   size_t projected_col;
   if (projector_.get_base_col_from_proj_idx(col_to_apply, &projected_col)) {
     if (delta_type_ == REDO) {
+      DVLOG(3) << "Applying REDO mutations to " << col_to_apply;
       ApplyingVisitor<REDO> visitor = {this, projected_col, dst};
       return VisitMutations(&visitor);
     } else {
+      DVLOG(3) << "Applying UNDO mutations to " << col_to_apply;
       ApplyingVisitor<UNDO> visitor = {this, projected_col, dst};
       return VisitMutations(&visitor);
     }
@@ -678,8 +690,12 @@ struct DeletingVisitor {
     RowChangeListDecoder decoder(&dfi->dfr_->schema(), RowChangeList(deltas));
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_update()) {
+      DVLOG(3) << "Didn't delete row (update)";
+      // If this is an update the row must be selected.
+      DCHECK(sel_vec->IsRowSelected(rel_idx));
       return Status::OK();
     } else if (decoder.is_delete()) {
+      DVLOG(3) << "Row deleted";
       sel_vec->SetRowUnselected(rel_idx);
     } else {
       dfi->FatalUnexpectedDelta(key, deltas, "Expect only UPDATE or DELETE deltas on disk");
@@ -715,9 +731,11 @@ inline Status DeletingVisitor<UNDO>::Visit(const DeltaKey& key,
 Status DeltaFileIterator::ApplyDeletes(SelectionVector *sel_vec) {
   DCHECK_LE(prepared_count_, sel_vec->nrows());
   if (delta_type_ == REDO) {
+    DVLOG(3) << "Applying REDO deletes";
     DeletingVisitor<REDO> visitor = { this, sel_vec};
     return VisitMutations(&visitor);
   } else {
+    DVLOG(3) << "Applying UNDO deletes";
     DeletingVisitor<UNDO> visitor = { this, sel_vec};
     return VisitMutations(&visitor);
   }
