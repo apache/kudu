@@ -1,0 +1,86 @@
+// Copyright (c) 2015, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
+#ifndef KUDU_UTIL_ONCE_H
+#define KUDU_UTIL_ONCE_H
+
+#include "kudu/gutil/once.h"
+#include "kudu/util/atomic.h"
+#include "kudu/util/status.h"
+
+namespace kudu {
+
+class KuduOnceDynamic;
+
+namespace internal {
+
+// Cheap, single-arg "bound callback" (similar to kudu::Callback) for use
+// in KuduOnceDynamic.
+template<typename T>
+struct MemberFunc {
+  KuduOnceDynamic* once;
+  T* instance;
+  Status (T::*member_func)();
+};
+
+template<typename T>
+void InitCb(void* arg) {
+  MemberFunc<T>* mf = reinterpret_cast<MemberFunc<T>*>(arg);
+  mf->once->status_ = (mf->instance->*mf->member_func)();
+  mf->once->set_initted();
+}
+
+} // namespace internal
+
+// More versatile version of GoogleOnceDynamic, including the following:
+// 1. Can be used with single-arg, non-static member functions.
+// 2. Retains results and overall initialization state for repeated access.
+// 3. Access to initialization state is safe for concurrent use.
+class KuduOnceDynamic {
+ public:
+  KuduOnceDynamic()
+    : initted_(false) {
+  }
+
+  // If the underlying GoogleOnceDynamic has yet to be invoked, invokes the
+  // provided member function and stores its return value. Otherwise,
+  // returns the stored Status.
+  //
+  // T: the type of the member passed in.
+  template<typename T>
+  Status Init(Status (T::*member_func)(), T* instance) {
+    internal::MemberFunc<T> mf = { this, instance, member_func };
+
+    // Clang UBSAN doesn't like it when GoogleOnceDynamic handles the cast
+    // of the argument:
+    //
+    //   runtime error: call to function
+    //   kudu::cfile::BloomFileReader::InitOnceCb(kudu::cfile::BloomFileReader*)
+    //   through pointer to incorrect function type 'void (*)(void *)'
+    //
+    // So let's do the cast ourselves, to void* here and back in InitCb().
+    once_.Init(&internal::InitCb<T>, reinterpret_cast<void*>(&mf));
+    return status_;
+  }
+
+  // kMemOrderAcquire ensures that loads/stores that come after initted()
+  // aren't reordered to come before it instead. kMemOrderRelease ensures
+  // the opposite (i.e. loads/stores before set_initted() aren't reordered
+  // to come after it).
+  //
+  // Taken together, threads can safely synchronize on initted_.
+  bool initted() const { return initted_.Load(kMemOrderAcquire); }
+
+ private:
+  template<typename T>
+  friend void internal::InitCb(void* arg);
+
+  void set_initted() { initted_.Store(true, kMemOrderRelease); }
+
+  AtomicBool initted_;
+  GoogleOnceDynamic once_;
+  Status status_;
+};
+
+} // namespace kudu
+
+#endif
