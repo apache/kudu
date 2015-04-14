@@ -35,6 +35,8 @@ class DeltaKey;
 template<DeltaType Type>
 struct ApplyingVisitor;
 template<DeltaType Type>
+struct CollectingVisitor;
+template<DeltaType Type>
 struct DeletingVisitor;
 
 class DeltaFileWriter {
@@ -175,7 +177,8 @@ class DeltaFileIterator : public DeltaIterator {
   friend class DeltaFileReader;
   friend struct ApplyingVisitor<REDO>;
   friend struct ApplyingVisitor<UNDO>;
-  friend struct CollectingVisitor;
+  friend struct CollectingVisitor<REDO>;
+  friend struct CollectingVisitor<UNDO>;
   friend struct DeletingVisitor<REDO>;
   friend struct DeletingVisitor<UNDO>;
   friend struct FilterAndAppendVisitor;

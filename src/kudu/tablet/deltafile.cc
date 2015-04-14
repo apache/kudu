@@ -561,6 +561,38 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
   return Status::OK();
 }
 
+// Returns whether a REDO mutation with 'timestamp' is relevant under 'snap'.
+// If snap cannot include any mutations with a higher timestamp 'continue_visit' is
+// set to false, it's set to true otherwise.
+inline bool IsRedoRelevant(const MvccSnapshot& snap,
+                            const Timestamp& timestamp,
+                            bool* continue_visit) {
+  *continue_visit = true;
+  if (!snap.IsCommitted(timestamp)) {
+    if (!snap.MayHaveCommittedTransactionsAtOrAfter(timestamp)) {
+      *continue_visit = false;
+    }
+    return false;
+  }
+  return true;
+}
+
+// Returns whether an UNDO mutation with 'timestamp' is relevant under 'snap'.
+// If snap cannot include any mutations with a lower timestamp 'continue_visit' is
+// set to false, it's set to true otherwise.
+inline bool IsUndoRelevant(const MvccSnapshot& snap,
+                           const Timestamp& timestamp,
+                           bool* continue_visit) {
+  *continue_visit = true;
+  if (snap.IsCommitted(timestamp)) {
+    if (!snap.MayHaveUncommittedTransactionsAtOrBefore(timestamp)) {
+      *continue_visit = false;
+    }
+    return false;
+  }
+  return true;
+}
+
 template<DeltaType Type>
 struct ApplyingVisitor {
 
@@ -595,30 +627,20 @@ template<>
 inline Status ApplyingVisitor<REDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
-  *continue_visit = true;
-  if (!dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
-    // If the mutation is not committed check if there might be some
-    // further ahead if not skip visits to all mutations after this one.
-    if (!dfi->mvcc_snap_.MayHaveCommittedTransactionsAtOrAfter(key.timestamp())) {
-      *continue_visit = false;
-    }
-    return Status::OK();
+  if (IsRedoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
+    return ApplyMutation(key, deltas);
   }
-  return ApplyMutation(key, deltas);
+  return Status::OK();
 }
 
 template<>
 inline Status ApplyingVisitor<UNDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
-  *continue_visit = true;
-  if (dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
-    if (!dfi->mvcc_snap_.MayHaveUncommittedTransactionsAtOrBefore(key.timestamp())) {
-      *continue_visit = false;
-    }
-    return Status::OK();
+  if (IsUndoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
+    return ApplyMutation(key, deltas);
   }
-  return ApplyMutation(key, deltas);
+  return Status::OK();
 }
 
 Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
@@ -673,31 +695,20 @@ template<>
 inline Status DeletingVisitor<REDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas,
                                            bool* continue_visit) {
-  *continue_visit = true;
-  if (!dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
-    // If the mutation is not committed check if there might be some
-    // further ahead if not skip visits to all mutations after this one.
-    if (!dfi->mvcc_snap_.MayHaveCommittedTransactionsAtOrAfter(key.timestamp())) {
-      *continue_visit = false;
-    }
-    return Status::OK();
+  if (IsRedoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
+    return ApplyDelete(key, deltas);
   }
-  return ApplyDelete(key, deltas);
+  return Status::OK();
 }
 
 template<>
 inline Status DeletingVisitor<UNDO>::Visit(const DeltaKey& key,
                                            const Slice& deltas, bool*
                                            continue_visit) {
-  *continue_visit = true;
-  if (dfi->mvcc_snap_.IsCommitted(key.timestamp())) {
-    if (!dfi->mvcc_snap_.MayHaveUncommittedTransactionsAtOrBefore(key.timestamp())) {
-      *continue_visit = false;
-    } else {
-    }
-    return Status::OK();
+  if (IsUndoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
+    return ApplyDelete(key, deltas);
   }
-  return ApplyDelete(key, deltas);
+  return Status::OK();
 }
 
 
@@ -715,12 +726,12 @@ Status DeltaFileIterator::ApplyDeletes(SelectionVector *sel_vec) {
 // Visitor which, for each mutation, appends it into a ColumnBlock of
 // Mutation *s. See CollectMutations()
 // Each mutation is projected into the iterator schema, if required.
+template<DeltaType Type>
 struct CollectingVisitor {
-  Status Visit(const DeltaKey &key, const Slice &deltas, bool* continue_visit) {
 
-    // Collecting visitor visits all mutations.
-    *continue_visit = true;
+  Status Visit(const DeltaKey &key, const Slice &deltas, bool* continue_visit);
 
+  Status Collect(const DeltaKey &key, const Slice &deltas) {
     int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
     DCHECK_GE(rel_idx, 0);
 
@@ -745,10 +756,35 @@ struct CollectingVisitor {
   Arena *dst_arena;
 };
 
+template<>
+inline Status CollectingVisitor<REDO>::Visit(const DeltaKey& key,
+                                           const Slice& deltas,
+                                           bool* continue_visit) {
+  if (IsRedoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
+    return Collect(key, deltas);
+  }
+  return Status::OK();
+}
+
+template<>
+inline Status CollectingVisitor<UNDO>::Visit(const DeltaKey& key,
+                                           const Slice& deltas, bool*
+                                           continue_visit) {
+  if (IsUndoRelevant(dfi->mvcc_snap_, key.timestamp(), continue_visit)) {
+    return Collect(key, deltas);
+  }
+  return Status::OK();
+}
+
 Status DeltaFileIterator::CollectMutations(vector<Mutation *> *dst, Arena *dst_arena) {
   DCHECK_LE(prepared_count_, dst->size());
-  CollectingVisitor visitor = {this, dst, dst_arena};
-  return VisitMutations(&visitor);
+  if (delta_type_ == REDO) {
+    CollectingVisitor<REDO> visitor = {this, dst, dst_arena};
+    return VisitMutations(&visitor);
+  } else {
+    CollectingVisitor<UNDO> visitor = {this, dst, dst_arena};
+    return VisitMutations(&visitor);
+  }
 }
 
 bool DeltaFileIterator::HasNext() {
