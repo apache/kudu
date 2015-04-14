@@ -28,7 +28,7 @@ kudu-tablet_server)
 esac
 
 ./build/latest/$PROC_NAME -flagfile=$FLAG_FILE --webserver_doc_root=`pwd`/www \
-                          $MASTER_ADDRESS_OPT=$MASTER_ADDRESS:61000 \
+                          $MASTER_ADDRESS_OPT=$MASTER_ADDRESS \
                           $DATA_DIR_OPTION --log_dir=$LOG_DIR &> $PROC_NAME.log &
 
 PID=$!
