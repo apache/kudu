@@ -443,8 +443,10 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
 
   scoped_refptr<TransactionDriver> driver;
   NewReplicaTransactionDriver(transaction.Pass(), &driver);
-  // FIXME: Bare ptr is a hack for a ref-counted object.
-  state->consensus_round()->SetReplicaCommitContinuation(driver.get());
+
+  // Unretained is required to avoid a refcount cycle.
+  state->consensus_round()->SetConsensusReplicatedCallback(
+      Bind(&TransactionDriver::ReplicationFinished, Unretained(driver.get())));
 
   RETURN_NOT_OK(driver->ExecuteAsync());
   return Status::OK();

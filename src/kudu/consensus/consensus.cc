@@ -29,10 +29,10 @@ ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
                                gscoped_ptr<ReplicateMsg> replicate_msg,
-                               ConsensusCommitContinuation* commit_continuation)
+                               const ConsensusReplicatedCallback& replicated_cb)
     : consensus_(consensus),
       replicate_msg_(new RefCountedReplicate(replicate_msg.release())),
-      continuation_(commit_continuation),
+      replicated_cb_(replicated_cb),
       bound_term_(-1) {
 }
 
@@ -40,15 +40,13 @@ ConsensusRound::ConsensusRound(Consensus* consensus,
                                const ReplicateRefPtr& replicate_msg)
     : consensus_(consensus),
       replicate_msg_(replicate_msg),
-      continuation_(NULL),
       bound_term_(-1) {
   DCHECK_NOTNULL(replicate_msg_.get());
 }
 
 void ConsensusRound::NotifyReplicationFinished(const Status& status) {
-  if (PREDICT_TRUE(continuation_)) {
-    continuation_->ReplicationFinished(status);
-  }
+  if (PREDICT_FALSE(replicated_cb_.is_null())) return;
+  replicated_cb_.Run(status);
 }
 
 Status ConsensusRound::CheckBoundTerm(int64_t current_term) const {
@@ -64,8 +62,8 @@ Status ConsensusRound::CheckBoundTerm(int64_t current_term) const {
 
 scoped_refptr<ConsensusRound> Consensus::NewRound(
     gscoped_ptr<ReplicateMsg> replicate_msg,
-    ConsensusCommitContinuation* commit_continuation) {
-  return make_scoped_refptr(new ConsensusRound(this, replicate_msg.Pass(), commit_continuation));
+    const ConsensusReplicatedCallback& replicated_cb) {
+  return make_scoped_refptr(new ConsensusRound(this, replicate_msg.Pass(), replicated_cb));
 }
 
 void Consensus::SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks) {

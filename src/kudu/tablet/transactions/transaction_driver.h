@@ -76,8 +76,7 @@ class TransactionTracker;
 // [1] - see 'Implementation Techniques for Main Memory Database Systems', DeWitt et. al.
 //
 // This class is thread safe.
-class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
-                          public consensus::ConsensusCommitContinuation {
+class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
  public:
   // Construct TransactionDriver. TransactionDriver does not take ownership
@@ -116,7 +115,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
   // If status is anything different from OK() we don't proceed with the apply.
   //
   // see comment in the interface for an important TODO.
-  virtual void ReplicationFinished(const Status& status) OVERRIDE;
+  void ReplicationFinished(const Status& status);
 
   virtual std::string ToString() const;
 
@@ -158,7 +157,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver>,
     PREPARED
   };
 
-  ~TransactionDriver() {}
+  virtual ~TransactionDriver() {}
 
   // The task submitted to the prepare threadpool to prepare and start
   // the transaction. If PrepareAndStart() fails, calls HandleFailure.

@@ -537,7 +537,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
 // This is usually implemented by TransactionDriver but here we
 // keep the implementation to the minimally required to have consensus
 // work.
-class TestDriver : public ConsensusCommitContinuation {
+class TestDriver {
  public:
   TestDriver(ThreadPool* pool, Log* log, const scoped_refptr<ConsensusRound>& round)
       : round_(round),
@@ -550,7 +550,7 @@ class TestDriver : public ConsensusCommitContinuation {
   }
 
   // Does nothing but enqueue the Apply
-  virtual void ReplicationFinished(const Status& status) OVERRIDE {
+  void ReplicationFinished(const Status& status) {
     if (status.IsAborted()) {
       Cleanup();
       return;
@@ -612,7 +612,8 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
 
   Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) OVERRIDE {
     TestDriver* txn = new TestDriver(pool_.get(), log_, round);
-    txn->round_->SetReplicaCommitContinuation(txn);
+    txn->round_->SetConsensusReplicatedCallback(Bind(&TestDriver::ReplicationFinished,
+                                                     Unretained(txn)));
     return Status::OK();
   }
 

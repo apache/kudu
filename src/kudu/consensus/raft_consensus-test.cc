@@ -76,14 +76,14 @@ class MockPeerManager : public PeerManager {
   MOCK_METHOD0(Close, void());
 };
 
-class TestContinuation : public ConsensusCommitContinuation {
+class TestContinuation {
  public:
 
   TestContinuation(StatusesMap* map, const OpId& opid)
     : map_(map),
       opid_(opid) {}
 
-  virtual void ReplicationFinished(const Status& status) OVERRIDE {
+  void ReplicationFinished(const Status& status) {
     InsertOrDie(map_, opid_, status);
   }
 
@@ -176,7 +176,8 @@ class RaftConsensusTest : public KuduTest {
     if (use_continuations_) {
       TestContinuation* continuation = new TestContinuation(&statuses_, round->id());
       continuations_.push_back(continuation);
-      round->SetReplicaCommitContinuation(continuation);
+      round->SetConsensusReplicatedCallback(Bind(&TestContinuation::ReplicationFinished,
+                                                 Unretained(continuation)));
     }
   }
 
@@ -197,7 +198,7 @@ class RaftConsensusTest : public KuduTest {
 
   scoped_refptr<ConsensusRound> CreateRound(gscoped_ptr<ReplicateMsg> replicate) {
     scoped_refptr<ConsensusRound> round(
-        new ConsensusRound(consensus_.get(), replicate.Pass(), NULL));
+        new ConsensusRound(consensus_.get(), replicate.Pass(), Bind(&DoNothingStatusCB)));
     rounds_.push_back(round);
     return round;
   }

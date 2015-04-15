@@ -13,6 +13,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 #include "kudu/util/task_executor.h"
 
 namespace kudu {
@@ -43,6 +44,8 @@ class QuorumPeerPB;
 class ReplicaTransactionFactory;
 
 typedef uint64_t ConsensusTerm;
+
+typedef StatusCallback ConsensusReplicatedCallback;
 
 struct ConsensusOptions {
   std::string tablet_id;
@@ -101,7 +104,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // increase the reference count for the provided callbacks.
   scoped_refptr<ConsensusRound> NewRound(
       gscoped_ptr<ReplicateMsg> replicate_msg,
-      ConsensusCommitContinuation* commit_continuation);
+      const ConsensusReplicatedCallback& replicated_cb);
 
   // Called by a quorum client to replicate an entry to the state machine.
   //
@@ -128,7 +131,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   //    entry.
   //
   // 3) Leader defers to the caller by calling ConsensusRound::NotifyReplicationFinished,
-  //    which calls the ReplicaCommitContinuation.
+  //    which calls the ConsensusReplicatedCallback.
   //
   // 3a) The leader asynchronously notifies other members of the quorum of the new
   //     commit index, which tells them to apply the operation.
@@ -248,20 +251,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   DISALLOW_COPY_AND_ASSIGN(Consensus);
 };
 
-// A commit continuation for consensus peers, called when consensus deems a transaction
-// committed or aborted.
-class ConsensusCommitContinuation {
- public:
-
-  // Called by consensus to notify that the operation has been considered either replicated,
-  // if 'status' is OK(), or that it has permanently failed to replicate if 'status' is anything
-  // else. If 'status' is OK() then the operation can be applied to the state machine, otherwise
-  // the operation should be aborted.
-  virtual void ReplicationFinished(const Status& status) = 0;
-
-  virtual ~ConsensusCommitContinuation() {}
-};
-
 // Factory for replica transactions.
 // An implementation of this factory must be registered prior to consensus
 // start, and is used to create transactions when the consensus implementation receives
@@ -303,7 +292,7 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
   // callbacks prior to initiating the consensus round.
   ConsensusRound(Consensus* consensus,
                  gscoped_ptr<ReplicateMsg> replicate_msg,
-                 ConsensusCommitContinuation* commit_continuation);
+                 const ConsensusReplicatedCallback& replicated_cb);
 
   // Ctor used for follower/learner transactions. These transactions do not use the
   // replicate callback and the commit callback is set later, after the transaction
@@ -325,8 +314,13 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
     return replicate_msg_->get()->id();
   }
 
-  void SetReplicaCommitContinuation(ConsensusCommitContinuation* continuation) {
-    continuation_ = continuation;
+  // Register a callback that is called by Consensus to notify that the round
+  // is considered either replicated, if 'status' is OK(), or that it has
+  // permanently failed to replicate if 'status' is anything else. If 'status'
+  // is OK() then the operation can be applied to the state machine, otherwise
+  // the operation should be aborted.
+  void SetConsensusReplicatedCallback(const ConsensusReplicatedCallback& replicated_cb) {
+    replicated_cb_ = replicated_cb;
   }
 
   // If a continuation was set, notifies it that the round has been replicated.
@@ -362,7 +356,7 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
 
   // The continuation that will be called once the transaction is
   // deemed committed/aborted by consensus.
-  ConsensusCommitContinuation* continuation_;
+  ConsensusReplicatedCallback replicated_cb_;
 
   // The leader term that this round was submitted in. CheckBoundTerm()
   // ensures that, when it is eventually replicated, the term has not

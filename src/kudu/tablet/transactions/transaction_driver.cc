@@ -69,8 +69,10 @@ void TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
     gscoped_ptr<ReplicateMsg> replicate_msg;
     transaction_->NewReplicateMsg(&replicate_msg);
     if (consensus_) { // sometimes NULL in tests
+      // Unretained is required to avoid a refcount cycle.
       mutable_state()->set_consensus_round(
-        consensus_->NewRound(replicate_msg.Pass(), this));
+        consensus_->NewRound(replicate_msg.Pass(),
+                             Bind(&TransactionDriver::ReplicationFinished, Unretained(this))));
     }
   }
 

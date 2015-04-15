@@ -66,22 +66,6 @@ Status WaitUntilLeaderForTests(RaftConsensus* raft) {
   return Status::OK();
 }
 
-// A simple wrapper around a latch callback that can be used a consensus
-// commit continuation.
-class CommitContinuationLatchCallback : public ConsensusCommitContinuation {
- public:
-
-  virtual void ReplicationFinished(const Status& status) {
-    if (status.ok()) {
-      callback_.OnSuccess();
-    } else {
-      callback_.OnFailure(status);
-    }
-  }
-
-  LatchCallback callback_;
-};
-
 // Test suite for tests that focus on multiple peer interaction, but
 // without integrating with other components, such as transactions.
 class RaftConsensusQuorumTest : public KuduTest {
@@ -93,6 +77,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     options_.tablet_id = kTestTablet;
     FLAGS_enable_leader_failure_detection = false;
   }
+
 
   // Builds an initial quorum of 'num' elements.
   // All of the quorum members start as followers.
@@ -232,13 +217,14 @@ class RaftConsensusQuorumTest : public KuduTest {
     msg->set_op_type(NO_OP);
     msg->mutable_noop_request();
     msg->set_timestamp(clock_->Now().ToUint64());
-    // These would normally be transactions with their own lifecycle, but
-    // here we just add them to the autorelease pool.
-    CommitContinuationLatchCallback* continuation = pool_.Add(new CommitContinuationLatchCallback);
 
     scoped_refptr<RaftConsensus> peer;
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
-    *round = peer->NewRound(msg.Pass(), continuation);
+
+    // Use a latch in place of a Transaction callback.
+    gscoped_ptr<LatchCallback> cb(new LatchCallback);
+    *round = peer->NewRound(msg.Pass(), cb->AsStatusCallback());
+    InsertOrDie(&latches_, round->get(), cb.release());
     RETURN_NOT_OK_PREPEND(peer->Replicate(round->get()),
                           Substitute("Unable to replicate to peer $0", peer_idx));
     return Status::OK();
@@ -267,12 +253,11 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   Status WaitForReplicate(ConsensusRound* round) {
-    return down_cast<CommitContinuationLatchCallback*>(
-        round->continuation_)->callback_.Wait();
+    return FindOrDie(latches_, round)->Wait();
   }
+
   Status TimedWaitForReplicate(ConsensusRound* round, const MonoDelta& delta) {
-    return down_cast<CommitContinuationLatchCallback*>(
-        round->continuation_)->callback_.WaitFor(delta);
+    return FindOrDie(latches_, round)->WaitFor(delta);
   }
 
   void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, int peer_idx) {
@@ -534,6 +519,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     // get a SIGSEGV when closing the logs.
     logs_.clear();
     STLDeleteElements(&fs_managers_);
+    STLDeleteValues(&latches_);
   }
 
  protected:
@@ -549,7 +535,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   const Schema schema_;
-  AutoReleasePool pool_;
+  unordered_map<ConsensusRound*, LatchCallback*> latches_;
 };
 
 // Tests Replicate/Commit a single message through the leader.
