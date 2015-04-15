@@ -26,6 +26,7 @@
 namespace kudu {
 namespace tserver {
 
+using consensus::kInvalidOpIdIndex;
 using consensus::QuorumPB;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
@@ -84,7 +85,6 @@ class TsTabletManagerTest : public KuduTest {
   QuorumPB quorum_;
 };
 
-
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
   // Create a new tablet.
   scoped_refptr<TabletPeer> peer;
@@ -127,7 +127,7 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
           << reported_tablet.ShortDebugString();
       ASSERT_TRUE(reported_tablet.committed_consensus_state().has_quorum());
       const QuorumPB& committed_quorum = reported_tablet.committed_consensus_state().quorum();
-      ASSERT_EQ(1, committed_quorum.opid_index());
+      ASSERT_EQ(kInvalidOpIdIndex, committed_quorum.opid_index());
       ASSERT_EQ(1, committed_quorum.peers_size());
       ASSERT_TRUE(committed_quorum.peers(0).has_permanent_uuid())
           << reported_tablet.ShortDebugString();

@@ -84,7 +84,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
 
   // Wait until the tablet is in a RUNNING state or if there's a timeout.
   // TODO have a way to wait for any state?
-  Status WaitUntilConsensusRunning(const MonoDelta& delta);
+  Status WaitUntilConsensusRunning(const MonoDelta& timeout);
 
   // Submits a write to a tablet and executes it asynchronously.
   // The caller is expected to build and pass a TrasactionContext that points

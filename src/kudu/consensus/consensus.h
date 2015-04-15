@@ -90,6 +90,9 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // Starts running the consensus algorithm.
   virtual Status Start(const ConsensusBootstrapInfo& info) = 0;
 
+  // Returns true if consensus is running.
+  virtual bool IsRunning() const = 0;
+
   // Emulates a leader election by simply making this peer leader.
   virtual Status EmulateElection() = 0;
 
@@ -178,7 +181,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // in leader election.
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) = 0;
-
 
   // Returns the current quorum role of this instance.
   virtual QuorumPeerPB::Role role() const = 0;

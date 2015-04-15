@@ -332,11 +332,6 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     }
 
     tablet_peer->RegisterMaintenanceOps(server_->maintenance_manager());
-    // tablet_peer state changed to RUNNING, mark the tablet dirty
-    {
-      boost::lock_guard<rw_spinlock> lock(lock_);
-      MarkDirtyUnlocked(tablet_id);
-    }
   }
 
   int elapsed_ms = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToMilliseconds();

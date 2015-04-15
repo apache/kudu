@@ -40,6 +40,7 @@ using consensus::ConsensusBootstrapInfo;
 using consensus::CommitMsg;
 using consensus::Consensus;
 using consensus::ConsensusMetadata;
+using consensus::MakeOpId;
 using consensus::MinimumOpId;
 using consensus::OpId;
 using consensus::OpIdEquals;
@@ -52,6 +53,7 @@ using rpc::Messenger;
 using server::Clock;
 using server::LogicalClock;
 using std::tr1::shared_ptr;
+using strings::Substitute;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
@@ -118,15 +120,37 @@ class TabletPeerTest : public KuduTabletTest {
                                  shared_ptr<MemTracker>()));
   }
 
+  // Wait until consensus is running and op (0, 1) is in the local tablet
+  // peer's log.
+  Status WaitUntilLoggedFirstOp(const MonoDelta& timeout) {
+    MonoTime start(MonoTime::Now(MonoTime::FINE));
+    RETURN_NOT_OK(tablet_peer_->WaitUntilConsensusRunning(timeout));
+
+    int backoff_exp = 0;
+    const int kMaxBackoffExp = 8;
+    while (true) {
+      OpId opid;
+      Status s = tablet_peer_->log()->GetLastEntryOpId(&opid);
+      if (s.ok() && OpIdEquals(MakeOpId(0, 1), opid)) {
+        break;
+      }
+      MonoTime now(MonoTime::Now(MonoTime::FINE));
+      MonoDelta elapsed(now.GetDeltaSince(start));
+      if (elapsed.MoreThan(timeout)) {
+        return Status::TimedOut(Substitute("First op not logged after waiting for $0. Last op: $1."
+                                           " Last status: $2",
+                                           elapsed.ToString(), opid.ShortDebugString(),
+                                           s.ToString()));
+      }
+      SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
+      backoff_exp = std::min(backoff_exp + 1, kMaxBackoffExp);
+    }
+    return Status::OK();
+  }
+
   Status StartPeer(const ConsensusBootstrapInfo& info) {
     RETURN_NOT_OK(tablet_peer_->Start(info));
-
-    RETURN_NOT_OK(tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
-
-    // As we execute a change config txn on tablet peer start we need to
-    // also wait for the transaction to be cleaned up so that we don't
-    // have any explicit or implicit anchors when tests start.
-    tablet_peer_->txn_tracker_.WaitForAllToFinish();
+    RETURN_NOT_OK(WaitUntilLoggedFirstOp(MonoDelta::FromSeconds(10)));
 
     return Status::OK();
   }

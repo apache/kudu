@@ -43,6 +43,8 @@ class LocalConsensus : public Consensus {
 
   virtual Status Start(const ConsensusBootstrapInfo& info) OVERRIDE;
 
+  virtual bool IsRunning() const OVERRIDE;
+
   virtual Status EmulateElection() OVERRIDE { return Status::OK(); }
 
   virtual Status StartElection() OVERRIDE { return Status::OK(); }
@@ -67,6 +69,8 @@ class LocalConsensus : public Consensus {
 
   virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;
 
+  virtual void MarkDirty() OVERRIDE;
+
   //
   //  NOT IMPLEMENTED IN LOCAL CONSENSUS
   //
@@ -76,9 +80,12 @@ class LocalConsensus : public Consensus {
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
 
-  virtual void MarkDirty() OVERRIDE;
-
  private:
+  // The initial NO_OP ConsensusRound has finished replication.
+  // If the status is OK, write a Commit message to the local WAL based on the
+  // type of message it is, else crash (since this is LocalConsensus).
+  void NoOpReplicationFinished(ConsensusRound* round, const Status& status);
+
   // Log prefix. Doesn't access any variables that require locking.
   std::string LogPrefix() const;
 

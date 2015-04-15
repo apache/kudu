@@ -20,7 +20,9 @@ void TransactionOrderVerifier::CheckApply(int64_t op_idx,
   DFAKE_SCOPED_LOCK(fake_lock_);
 
   if (prev_idx_ != 0) {
-    CHECK_EQ(op_idx, prev_idx_ + 1) << "Should apply operations in sequential index order";
+    // We need to allow skips because certain ops (like NO_OP) don't have an
+    // Apply() phase and are not managed by Transactions.
+    CHECK_GE(op_idx, prev_idx_ + 1) << "Should apply operations in monotonic index order";
     CHECK_GE(prepare_phys_timestamp, prev_prepare_phys_timestamp_)
       << "Prepare phases should have executed in the same order as the op indexes. "
       << "op_idx=" << op_idx;

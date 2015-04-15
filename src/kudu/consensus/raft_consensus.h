@@ -77,6 +77,8 @@ class RaftConsensus : public Consensus,
 
   virtual Status Start(const ConsensusBootstrapInfo& info) OVERRIDE;
 
+  virtual bool IsRunning() const OVERRIDE;
+
   // Emulates an election by increasing the term number, marking
   // this peer as leader, marking the previous leader as follower
   // and calling ChangeConfig() with the resulting quorum.
@@ -135,6 +137,22 @@ class RaftConsensus : public Consensus,
 
   virtual void MarkDirty() OVERRIDE;
 
+ protected:
+  // Trigger that a non-Transaction ConsensusRound has finished replication.
+  // If the replication was successful, an status will be OK. Otherwise, it
+  // may be Aborted or some other error status.
+  // If the status is OK, write a Commit message to the local WAL based on the
+  // type of message it is.
+  virtual void NonTxRoundReplicationFinished(ConsensusRound* round, const Status& status);
+
+  // As a leader, append a new ConsensusRond to the queue.
+  // Only virtual and protected for mocking purposes.
+  virtual Status AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round);
+
+  // As a follower, start a consensus round not associated with a Transaction.
+  // Only virtual and protected for mocking purposes.
+  virtual Status StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg);
+
  private:
   friend class ReplicaState;
   friend class RaftConsensusQuorumTest;
@@ -156,6 +174,10 @@ class RaftConsensus : public Consensus,
 
   std::string LogPrefix();
 
+  // Set the leader UUID of the quorum and mark the tablet config dirty for
+  // reporting to the master.
+  void SetLeaderUuidUnlocked(const std::string& uuid);
+
   // Makes the peer become leader.
   // Returns OK once the change config transaction that has this peer as leader
   // has been enqueued, the transaction will complete asynchronously.
@@ -167,8 +189,6 @@ class RaftConsensus : public Consensus,
   //
   // The ReplicaState must be locked for quorum change before calling.
   Status BecomeReplicaUnlocked();
-
-  Status AppendNewRoundToQueueUnlocked(const scoped_refptr<ConsensusRound>& round);
 
   // Updates the state in a replica by storing the received operations in the log
   // and triggering the required transactions. This method won't return until all
@@ -217,6 +237,8 @@ class RaftConsensus : public Consensus,
 
   OpId GetLastOpIdFromLog();
 
+  // Begin a replica transaction. If the type of message in 'msg' is not a type
+  // that uses transactions, delegates to StartConsensusOnlyRoundUnlocked().
   Status StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg);
 
   // Return header string for RequestVote log messages. The ReplicaState lock must be held.

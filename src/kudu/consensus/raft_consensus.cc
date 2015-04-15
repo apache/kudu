@@ -9,9 +9,10 @@
 #include <iostream>
 
 #include "kudu/common/wire_protocol.h"
-#include "kudu/consensus/log.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/leader_election.h"
+#include "kudu/consensus/log.h"
 #include "kudu/consensus/peer_manager.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus_state.h"
@@ -180,8 +181,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
                                    << " pending transactions. Active quorum: "
                                    << state_->GetActiveQuorumUnlocked().ShortDebugString();
     BOOST_FOREACH(ReplicateMsg* replicate, info.orphaned_replicates) {
-      RETURN_NOT_OK(StartReplicaTransactionUnlocked(
-          make_scoped_refptr_replicate(new ReplicateMsg(*replicate))));
+      ReplicateRefPtr replicate_ptr = make_scoped_refptr_replicate(new ReplicateMsg(*replicate));
+      RETURN_NOT_OK(StartReplicaTransactionUnlocked(replicate_ptr));
     }
 
     state_->AdvanceCommittedIndexUnlocked(info.last_committed_id);
@@ -217,7 +218,18 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   }
 
   RETURN_NOT_OK(ExecuteHook(POST_START));
+
+  // Report become visible to the Master.
+  MarkDirty();
+
   return Status::OK();
+}
+
+bool RaftConsensus::IsRunning() const {
+  ReplicaState::UniqueLock lock;
+  Status s = state_->LockForRead(&lock);
+  if (PREDICT_FALSE(!s.ok())) return false;
+  return state_->state() == ReplicaState::kRunning;
 }
 
 Status RaftConsensus::EmulateElection() {
@@ -228,7 +240,7 @@ Status RaftConsensus::EmulateElection() {
 
   // Assume leadership of new term.
   RETURN_NOT_OK(state_->IncrementTermUnlocked());
-  state_->SetLeaderUuidUnlocked(state_->GetPeerUuid());
+  SetLeaderUuidUnlocked(state_->GetPeerUuid());
   return BecomeLeaderUnlocked();
 }
 
@@ -312,25 +324,21 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   // Create the peers so that we're able to replicate messages remotely and locally
   RETURN_NOT_OK(peer_manager_->UpdateQuorum(active_quorum));
 
-  // Initiate a config change transaction. This is mostly acting as the NO_OP
-  // transaction that is sent at the beginning of every term change in raft.
-  // TODO implement NO_OP, consensus only, rounds and use those instead.
+  // Initiate a NO_OP transaction that is sent at the beginning of every term
+  // change in raft.
   ReplicateMsg* replicate = new ReplicateMsg;
-  replicate->set_op_type(CHANGE_CONFIG_OP);
+  replicate->set_op_type(NO_OP);
+  replicate->mutable_noop_request(); // Define the no-op request field.
 
-  // TODO We should have config changes be COMMIT_WAIT transactions.
+  // TODO We should have no-ops (?) and config changes be COMMIT_WAIT transactions.
   replicate->set_timestamp(clock_->Now().ToUint64());
-
-  ChangeConfigRequestPB* cc_req = replicate->mutable_change_config_request();
-  cc_req->set_tablet_id(state_->GetOptions().tablet_id);
-  cc_req->mutable_old_config()->CopyFrom(state_->GetCommittedQuorumUnlocked());
-  cc_req->mutable_new_config()->CopyFrom(state_->GetCommittedQuorumUnlocked());
-  cc_req->mutable_new_config()->clear_opid_index();
 
   scoped_refptr<ConsensusRound> round(
       new ConsensusRound(this, make_scoped_refptr(new RefCountedReplicate(replicate))));
-  RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round.get()));
-  RETURN_NOT_OK(state_->GetReplicaTransactionFactoryUnlocked()->StartReplicaTransaction(round));
+  round->SetConsensusReplicatedCallback(
+      Bind(&RaftConsensus::NonTxRoundReplicationFinished,
+           Unretained(this), Unretained(round.get())));
+  RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round));
 
   return Status::OK();
 }
@@ -468,6 +476,10 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
 
 
 Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg) {
+  if (msg->get()->op_type() == NO_OP) {
+    return StartConsensusOnlyRoundUnlocked(msg);
+  }
+
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting transaction: " << msg->get()->id().ShortDebugString();
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   ConsensusRound* round_ptr = round.get();
@@ -687,7 +699,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
         << "new leader UUID: " << caller_uuid;
   }
   if (PREDICT_FALSE(!state_->HasLeaderUnlocked())) {
-    state_->SetLeaderUuidUnlocked(request->caller_uuid());
+    SetLeaderUuidUnlocked(request->caller_uuid());
   }
 
   return Status::OK();
@@ -1065,6 +1077,16 @@ OpId RaftConsensus::GetLastOpIdFromLog() {
   return id;
 }
 
+Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg) {
+  DCHECK_EQ(NO_OP, msg->get()->op_type()); // Until other types are supported.
+  VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting consensus round: "
+                               << msg->get()->id().ShortDebugString();
+  scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
+  round->SetConsensusReplicatedCallback(Bind(&RaftConsensus::NonTxRoundReplicationFinished,
+                                             Unretained(this), Unretained(round.get())));
+  return state_->AddPendingOperation(round);
+}
+
 Status RaftConsensus::AdvanceTermForTests(int64_t new_term) {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForConfigChange(&lock));
@@ -1191,6 +1213,11 @@ std::string RaftConsensus::LogPrefix() {
   return state_->LogPrefix();
 }
 
+void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
+  state_->SetLeaderUuidUnlocked(uuid);
+  MarkDirty();
+}
+
 string RaftConsensus::peer_uuid() const {
   return state_->GetPeerUuid();
 }
@@ -1302,7 +1329,7 @@ void RaftConsensus::DoElectionCallback(const ElectionResult& result) {
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Leader election won for term " << result.election_term;
 
   // Convert role to LEADER.
-  state_->SetLeaderUuidUnlocked(state_->GetPeerUuid());
+  SetLeaderUuidUnlocked(state_->GetPeerUuid());
 
   // TODO: BecomeLeaderUnlocked() can fail due to state checks during shutdown.
   // It races with the above state check.
@@ -1318,14 +1345,29 @@ Status RaftConsensus::GetLastReceivedOpId(OpId* id) {
 }
 
 void RaftConsensus::MarkDirty() {
-  mark_dirty_clbk_.Run();
+  WARN_NOT_OK(thread_pool_->SubmitClosure(mark_dirty_clbk_),
+              state_->LogPrefixThreadSafe() + "Unable to run MarkDirty callback");
+}
+
+void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round, const Status& status) {
+  CHECK_EQ(NO_OP, round->replicate_msg()->op_type());
+  if (!status.ok()) {
+    // TODO: Do something with the status on failure?
+    LOG(INFO) << state_->LogPrefixThreadSafe() << "NO_OP replication failed: " << status.ToString();
+    return;
+  }
+  VLOG(1) << state_->LogPrefixThreadSafe() << "Committing NO_OP with op id " << round->id();
+  gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
+  commit_msg->set_op_type(round->replicate_msg()->op_type());
+  *commit_msg->mutable_commited_op_id() = round->id();
+  WARN_NOT_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(&DoNothingStatusCB)),
+              "Unable to append commit message");
 }
 
 Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {
   if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
     return Status::OK();
   }
-
   if (failure_detector_->IsTracking(kTimerId)) {
     return Status::OK();
   }

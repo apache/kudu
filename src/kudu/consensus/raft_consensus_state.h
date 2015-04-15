@@ -191,7 +191,7 @@ class ReplicaState {
   const uint64_t GetCurrentTermUnlocked() const;
 
   // Accessors for the leader of the current term.
-  void SetLeaderUuidUnlocked(const std::string& uuid) const;
+  void SetLeaderUuidUnlocked(const std::string& uuid);
   const std::string& GetLeaderUuidUnlocked() const;
   bool HasLeaderUnlocked() const { return !GetLeaderUuidUnlocked().empty(); }
   void ClearLeaderUnlocked() { SetLeaderUuidUnlocked(""); }

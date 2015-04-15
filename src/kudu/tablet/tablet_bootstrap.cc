@@ -55,6 +55,8 @@ using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusRound;
+using consensus::OperationType;
+using consensus::OperationType_Name;
 using consensus::OpId;
 using consensus::OpIdEquals;
 using consensus::OpIdEqualsFunctor;
@@ -64,6 +66,7 @@ using consensus::QuorumPB;
 using consensus::ReplicateMsg;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::CHANGE_CONFIG_OP;
+using consensus::NO_OP;
 using consensus::WRITE_OP;
 using log::Log;
 using log::LogEntryPB;
@@ -148,6 +151,10 @@ class TabletBootstrap {
   // later on when then tablet is rebuilt and starts accepting writes from clients.
   Status PlaySegments(ConsensusBootstrapInfo* results);
 
+  // Append the given commit message to the log.
+  // Does not support writing a TxResult.
+  Status AppendCommitMsg(const CommitMsg& commit_msg);
+
   Status PlayWriteRequest(ReplicateMsg* replicate_msg,
                           const CommitMsg& commit_msg);
 
@@ -156,6 +163,9 @@ class TabletBootstrap {
 
   Status PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
                                  const CommitMsg& commit_msg);
+
+  Status PlayNoOpRequest(ReplicateMsg* replicate_msg,
+                         const CommitMsg& commit_msg);
 
   // Plays operations, skipping those that have already been flushed.
   Status PlayRowOperations(WriteTransactionState* tx_state,
@@ -866,43 +876,40 @@ Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commi
 
 // Never deletes 'replicate_entry' or 'commit_entry'.
 Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB* commit_entry) {
+  const char* error_fmt = "Failed to play $0 request. ReplicateMsg: { $1 }, CommitMsg: { $2 }";
+
+#define RETURN_NOT_OK_REPLAY(ReplayMethodName, replicate, commit) \
+  RETURN_NOT_OK_PREPEND(ReplayMethodName(replicate, commit), \
+                        Substitute(error_fmt, OperationType_Name(op_type), \
+                                   replicate->ShortDebugString(), commit.ShortDebugString()))
 
   ReplicateMsg* replicate = replicate_entry->mutable_replicate();
   const CommitMsg& commit = commit_entry->commit();
+  OperationType op_type = commit.op_type();
 
-  switch (commit.op_type()) {
+  switch (op_type) {
     case WRITE_OP:
-      // successful write, play it into the tablet, filtering flushed entries
-      RETURN_NOT_OK_PREPEND(PlayWriteRequest(replicate_entry->mutable_replicate(),
-                                             commit_entry->commit()),
-                            Substitute("Failed to play write request. "
-                                       "ReplicateMsg: $0 CommitMsg: $1\n",
-                                       replicate->DebugString(),
-                                       commit.DebugString()));
+      RETURN_NOT_OK_REPLAY(PlayWriteRequest, replicate, commit);
       break;
 
     case ALTER_SCHEMA_OP:
-      RETURN_NOT_OK_PREPEND(PlayAlterSchemaRequest(replicate_entry->mutable_replicate(),
-                                                   commit_entry->commit()),
-                            Substitute("Failed to play alter schema request. "
-                                "ReplicateMsg: $0 CommitMsg: $1\n",
-                                replicate->DebugString(),
-                                commit.DebugString()));
+      RETURN_NOT_OK_REPLAY(PlayAlterSchemaRequest, replicate, commit);
       break;
 
     case CHANGE_CONFIG_OP:
-      RETURN_NOT_OK_PREPEND(PlayChangeConfigRequest(replicate_entry->mutable_replicate(),
-                                                    commit_entry->commit()),
-                            Substitute("Failed to play change config. request. "
-                                       "ReplicateMsg: $0 CommitMsg: $1\n",
-                                       replicate->DebugString(),
-                                       commit.DebugString()));
+      RETURN_NOT_OK_REPLAY(PlayChangeConfigRequest, replicate, commit);
+      break;
+
+    case NO_OP:
+      RETURN_NOT_OK_REPLAY(PlayNoOpRequest, replicate, commit);
       break;
 
     default:
       return Status::IllegalState(Substitute("Unsupported commit entry type: $0",
                                              commit.op_type()));
   }
+
+#undef RETURN_NOT_OK_REPLAY
 
   // Handle safe time advancement:
   //
@@ -1068,6 +1075,14 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
   return Status::OK();
 }
 
+Status TabletBootstrap::AppendCommitMsg(const CommitMsg& commit_msg) {
+  LogEntryPB commit_entry;
+  commit_entry.set_type(log::COMMIT);
+  CommitMsg* commit = commit_entry.mutable_commit();
+  commit->CopyFrom(commit_msg);
+  return log_->Append(&commit_entry);
+}
+
 Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
                                          const CommitMsg& commit_msg) {
   DCHECK(replicate_msg->has_timestamp());
@@ -1090,7 +1105,7 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
                                     commit_msg.result()));
   }
 
-  // Append the commit msg to the log but replace the result with the new one
+  // Append the commit msg to the log but replace the result with the new one.
   LogEntryPB commit_entry;
   commit_entry.set_type(log::COMMIT);
   CommitMsg* commit = commit_entry.mutable_commit();
@@ -1117,13 +1132,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
   // apply the alter schema to the tablet
   RETURN_NOT_OK_PREPEND(tablet_->AlterSchema(&tx_state), "Failed to AlterSchema:");
 
-  LogEntryPB commit_entry;
-  commit_entry.set_type(log::COMMIT);
-  CommitMsg* commit = commit_entry.mutable_commit();
-  commit->CopyFrom(commit_msg);
-  RETURN_NOT_OK(log_->Append(&commit_entry));
-
-  return Status::OK();
+  return AppendCommitMsg(commit_msg);
 }
 
 Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
@@ -1147,13 +1156,11 @@ Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
             << "Skipping application of this config change.";
   }
 
-  LogEntryPB commit_entry;
-  commit_entry.set_type(log::COMMIT);
-  CommitMsg* commit = commit_entry.mutable_commit();
-  commit->CopyFrom(commit_msg);
-  RETURN_NOT_OK(log_->Append(&commit_entry));
+  return AppendCommitMsg(commit_msg);
+}
 
-  return Status::OK();
+Status TabletBootstrap::PlayNoOpRequest(ReplicateMsg* replicate_msg, const CommitMsg& commit_msg) {
+  return AppendCommitMsg(commit_msg);
 }
 
 Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,

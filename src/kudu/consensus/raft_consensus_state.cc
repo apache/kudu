@@ -262,7 +262,7 @@ const uint64_t ReplicaState::GetCurrentTermUnlocked() const {
   return cmeta_->current_term();
 }
 
-void ReplicaState::SetLeaderUuidUnlocked(const std::string& uuid) const {
+void ReplicaState::SetLeaderUuidUnlocked(const std::string& uuid) {
   DCHECK(update_lock_.is_locked());
   cmeta_->set_leader_uuid(uuid);
 }
@@ -384,7 +384,8 @@ Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& ro
   if (PREDICT_FALSE(state_ != kRunning)) {
     // Special case when we're configuring and this is a config change, refuse
     // everything else.
-    if (round->replicate_msg()->op_type() != CHANGE_CONFIG_OP) {
+    // TODO: Don't require a NO_OP to get to kRunning state
+    if (round->replicate_msg()->op_type() != NO_OP) {
       return Status::IllegalState("Cannot trigger prepare. Replica is not in kRunning state.");
     }
   }

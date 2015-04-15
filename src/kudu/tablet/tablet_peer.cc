@@ -237,17 +237,37 @@ Status TabletPeer::CheckRunning() const {
   return Status::OK();
 }
 
-Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& delta) {
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    if (state_ == QUIESCING || state_ == SHUTDOWN) {
-      return Status::IllegalState("The tablet is already shutting down or shutdown");
+Status TabletPeer::WaitUntilConsensusRunning(const MonoDelta& timeout) {
+  MonoTime start(MonoTime::Now(MonoTime::FINE));
+
+  int backoff_exp = 0;
+  const int kMaxBackoffExp = 8;
+  while (true) {
+    bool has_consensus = false;
+    TabletStatePB cached_state;
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      cached_state = state_;
+      if (consensus_) {
+        has_consensus = true; // consensus_ is a set-once object.
+      }
     }
-  }
-  if (!consensus_ready_latch_.WaitFor(delta)) {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    return Status::TimedOut(Substitute("The tablet is not in RUNNING state after waiting: $0",
-                                       TabletStatePB_Name(state_)));
+    if (cached_state == QUIESCING || cached_state == SHUTDOWN) {
+      return Status::IllegalState(
+          Substitute("The tablet is already shutting down or shutdown. State: $0",
+                     TabletStatePB_Name(cached_state)));
+    }
+    if (cached_state == RUNNING && has_consensus && consensus_->IsRunning()) {
+      break;
+    }
+    MonoTime now(MonoTime::Now(MonoTime::FINE));
+    MonoDelta elapsed(now.GetDeltaSince(start));
+    if (elapsed.MoreThan(timeout)) {
+      return Status::TimedOut(Substitute("Consensus is not running after waiting for $0. State; $1",
+                                         elapsed.ToString(), TabletStatePB_Name(cached_state)));
+    }
+    SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
+    backoff_exp = std::min(backoff_exp + 1, kMaxBackoffExp);
   }
   return Status::OK();
 }

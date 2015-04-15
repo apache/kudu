@@ -281,23 +281,36 @@ class RaftConsensusQuorumTest : public KuduTest {
   void WaitForCommitIfNotAlreadyPresent(const OpId& to_wait_for,
                                         int peer_idx,
                                         int leader_idx) {
+    MonoDelta timeout(MonoDelta::FromSeconds(10));
+    MonoTime start(MonoTime::Now(MonoTime::FINE));
+
     scoped_refptr<RaftConsensus> peer;
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
     ReplicaState* state = peer->GetReplicaStateForTests();
 
-    for (int i = 0; i < 1000; i++) {
+    int backoff_exp = 0;
+    const int kMaxBackoffExp = 8;
+    OpId committed_op_id;
+    while (true) {
       {
         ReplicaState::UniqueLock lock;
         CHECK_OK(state->LockForRead(&lock));
-        if (OpIdCompare(state->GetCommittedOpIdUnlocked(), to_wait_for) >= 0) {
+        committed_op_id = state->GetCommittedOpIdUnlocked();
+        if (OpIdCompare(committed_op_id, to_wait_for) >= 0) {
           return;
         }
       }
-      SleepFor(MonoDelta::FromMilliseconds(1));
+      MonoDelta elapsed = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start);
+      if (elapsed.MoreThan(timeout)) {
+        break;
+      }
+      SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
+      backoff_exp = std::min(backoff_exp + 1, kMaxBackoffExp);
     }
 
-    LOG(ERROR) << "Max timeout attempts reached while waiting for commit: "
-               << to_wait_for.ShortDebugString() << " on replica. Dumping state and quitting.";
+    LOG(ERROR) << "Max timeout reached (" << timeout.ToString() << ") while waiting for commit of "
+               << "op " << to_wait_for << " on replica. Last committed op on replica: "
+               << committed_op_id << ". Dumping state and quitting.";
     vector<string> lines;
     scoped_refptr<RaftConsensus> leader;
     CHECK_OK(peers_->GetPeerByIdx(leader_idx, &leader));
@@ -312,8 +325,8 @@ class RaftConsensusQuorumTest : public KuduTest {
     vector<LogEntryPB*> leader_ops;
     ElementDeleter leader_deleter(&leader_ops);
     GatherLogEntries(leader_idx, logs_[leader_idx], &leader_ops);
-    SCOPED_TRACE(PrintOnError(leader_ops, "leader"));
-    SCOPED_TRACE(PrintOnError(replica_ops, peer->peer_uuid()));
+    SCOPED_TRACE(PrintOnError(replica_ops, Substitute("local peer ($0)", peer->peer_uuid())));
+    SCOPED_TRACE(PrintOnError(leader_ops, Substitute("leader (peer-$0)", leader_idx)));
     FAIL() << "Replica did not commit.";
   }
 

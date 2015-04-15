@@ -58,43 +58,46 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
 
-    const QuorumPB& initial_quorum = cmeta_->committed_quorum();
-    CHECK(initial_quorum.local()) << "Local consensus must be passed a local quorum";
-    RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum, COMMITTED_QUORUM),
+    const QuorumPB& quorum = cmeta_->committed_quorum();
+    CHECK(quorum.local()) << "Local consensus must be passed a local quorum";
+    RETURN_NOT_OK_PREPEND(VerifyQuorum(quorum, COMMITTED_QUORUM),
                           "Invalid quorum found in LocalConsensus::Start()");
 
     next_op_id_index_ = info.last_id.index() + 1;
 
-    gscoped_ptr<QuorumPB> new_quorum(new QuorumPB);
-    new_quorum->CopyFrom(initial_quorum);
-    new_quorum->clear_opid_index();
-    CHECK(new_quorum->peers(0).has_permanent_uuid()) << new_quorum->ShortDebugString();
-    cmeta_->set_leader_uuid(new_quorum->peers(0).permanent_uuid());
+    CHECK(quorum.peers(0).has_permanent_uuid()) << quorum.ShortDebugString();
+    cmeta_->set_leader_uuid(quorum.peers(0).permanent_uuid());
 
+    // TODO: This NO_OP is here mostly for unit tests. We should get rid of it.
     ReplicateMsg* replicate = new ReplicateMsg;
-    replicate->set_op_type(CHANGE_CONFIG_OP);
-    ChangeConfigRequestPB* cc_req = replicate->mutable_change_config_request();
-    cc_req->set_tablet_id(options_.tablet_id);
-    cc_req->mutable_old_config()->CopyFrom(initial_quorum);
-    cc_req->mutable_new_config()->CopyFrom(*new_quorum);
+    replicate->set_op_type(NO_OP);
+    NoOpRequestPB* noop_req = replicate->mutable_noop_request();
+    noop_req->set_payload_for_tests("Starting up LocalConsensus");
 
     replicate->mutable_id()->set_term(0);
     replicate->mutable_id()->set_index(next_op_id_index_);
     replicate->set_timestamp(clock_->Now().ToUint64());
 
     round.reset(new ConsensusRound(this, make_scoped_refptr_replicate(replicate)));
+    round->SetConsensusReplicatedCallback(
+        Bind(&LocalConsensus::NoOpReplicationFinished,
+             Unretained(this), Unretained(round.get())));
     state_ = kRunning;
   }
 
-  ConsensusRound* round_ptr = round.get();
-  RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round));
-  Status s = Replicate(round_ptr);
+  Status s = Replicate(round);
   if (!s.ok()) {
     LOG_WITH_PREFIX(FATAL) << "Unable to replicate initial log entry: " << s.ToString();
   }
 
   TRACE("Consensus started");
+  MarkDirty();
   return Status::OK();
+}
+
+bool LocalConsensus::IsRunning() const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  return state_ == kRunning;
 }
 
 Status LocalConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
@@ -166,6 +169,16 @@ void LocalConsensus::MarkDirty() {
 ConsensusStatePB LocalConsensus::CommittedConsensusState() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return cmeta_->ToConsensusStatePB(ConsensusMetadata::COMMITTED);
+}
+
+void LocalConsensus::NoOpReplicationFinished(ConsensusRound* round, const Status& status) {
+  CHECK_OK(status); // Replication should never fail for LocalConsensus.
+  DCHECK_EQ(NO_OP, round->replicate_scoped_refptr()->get()->op_type());
+  gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
+  commit_msg->set_op_type(NO_OP);
+  *commit_msg->mutable_commited_op_id() = round->id();
+  WARN_NOT_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(&DoNothingStatusCB)),
+              "Unable to append commit message");
 }
 
 QuorumPB LocalConsensus::CommittedQuorum() const {
