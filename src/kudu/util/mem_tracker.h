@@ -5,6 +5,7 @@
 
 #include <boost/function.hpp>
 #include <list>
+#include <memory>
 #include <stdint.h>
 #include <string>
 #include <tr1/memory>
@@ -291,6 +292,51 @@ class MemTracker {
   bool enable_logging_;
   // If true, log the stack as well.
   bool log_stack_;
+};
+
+// An std::allocator that manipulates a MemTracker during allocation
+// and deallocation.
+template<typename T, typename Alloc = std::allocator<T> >
+class MemTrackerAllocator : public Alloc {
+ public:
+  typedef typename Alloc::pointer pointer;
+  typedef typename Alloc::const_pointer const_pointer;
+  typedef typename Alloc::size_type size_type;
+
+  explicit MemTrackerAllocator(const std::tr1::shared_ptr<MemTracker>& mem_tracker)
+      : mem_tracker_(mem_tracker) {
+  }
+
+  // This constructor is used for rebinding.
+  template <typename U>
+  explicit MemTrackerAllocator(const MemTrackerAllocator<U>& allocator)
+      : Alloc(allocator) {
+  }
+
+  ~MemTrackerAllocator() {
+  }
+
+  pointer allocate(size_type n, const_pointer hint = 0) {
+    // Ideally we'd use TryConsume() here to enforce the tracker's limit.
+    // However, that means throwing bad_alloc if the limit is exceeded, and
+    // it's not clear that the rest of Kudu can handle that.
+    mem_tracker_->Consume(n * sizeof(T));
+    return Alloc::allocate(n, hint);
+  }
+
+  void deallocate(pointer p, size_type n) {
+    Alloc::deallocate(p, n);
+    mem_tracker_->Release(n * sizeof(T));
+  }
+
+  // This allows an allocator<T> to be used for a different type.
+  template <class U>
+  struct rebind {
+    typedef MemTrackerAllocator<U, typename Alloc::template rebind<U>::other> other;
+  };
+
+ private:
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
 };
 
 } // namespace kudu

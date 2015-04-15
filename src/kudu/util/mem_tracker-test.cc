@@ -3,6 +3,8 @@
 
 #include "kudu/util/mem_tracker.h"
 
+#include <vector>
+
 #include <boost/bind.hpp>
 
 #include "kudu/util/test_util.h"
@@ -10,6 +12,7 @@
 namespace kudu {
 
 using std::tr1::shared_ptr;
+using std::vector;
 
 TEST(MemTrackerTest, SingleTrackerNoLimit) {
   shared_ptr<MemTracker> t = MemTracker::CreateTracker(-1, "t");
@@ -137,5 +140,19 @@ TEST(MemTrackerTest, GcFunctions) {
   EXPECT_EQ(t->consumption(), 10);
 }
 
+TEST(MemTrackerTest, STLContainerAllocator) {
+  shared_ptr<MemTracker> t = MemTracker::CreateTracker(-1, "t");
+
+  MemTrackerAllocator<int> alloc(t);
+  {
+    vector<int, MemTrackerAllocator<int> > v(alloc);
+    ASSERT_EQ(0, t->consumption());
+    v.reserve(5);
+    ASSERT_EQ(5 * sizeof(int), t->consumption());
+    v.reserve(10);
+    ASSERT_EQ(10 * sizeof(int), t->consumption());
+  }
+  ASSERT_EQ(0, t->consumption());
+}
 
 } // namespace kudu
