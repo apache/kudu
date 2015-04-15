@@ -139,21 +139,21 @@ void TransactionTracker::WaitForAllToFinish() {
   }
 }
 
-void TransactionTracker::StartInstrumentation(const MetricContext& metric_context) {
+void TransactionTracker::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {
   METRIC_all_transactions_inflight.InstantiateFunctionGauge(
-    metric_context, Bind(&TransactionTracker::NumAllTransactionsInFlight,
+    metric_entity, Bind(&TransactionTracker::NumAllTransactionsInFlight,
                          Unretained(this)))
     ->AutoDetach(&metric_detacher_);
   METRIC_write_transactions_inflight.InstantiateFunctionGauge(
-    metric_context, Bind(&TransactionTracker::NumWriteTransactionsInFlight,
+    metric_entity, Bind(&TransactionTracker::NumWriteTransactionsInFlight,
                          Unretained(this)))
     ->AutoDetach(&metric_detacher_);
   METRIC_alter_schema_transactions_inflight.InstantiateFunctionGauge(
-    metric_context, Bind(&TransactionTracker::NumAlterSchemaTransactionsInFlight,
+    metric_entity, Bind(&TransactionTracker::NumAlterSchemaTransactionsInFlight,
                          Unretained(this)))
     ->AutoDetach(&metric_detacher_);
   METRIC_change_config_transactions_inflight.InstantiateFunctionGauge(
-    metric_context, Bind(&TransactionTracker::NumChangeConfigTransactionsInFlight,
+    metric_entity, Bind(&TransactionTracker::NumChangeConfigTransactionsInFlight,
                          Unretained(this)))
     ->AutoDetach(&metric_detacher_);
 }

@@ -15,7 +15,7 @@ DEFINE_int64(block_cache_capacity_mb, 512, "block cache capacity in MB");
 
 namespace kudu {
 
-class MetricContext;
+class MetricEntity;
 
 namespace cfile {
 
@@ -80,9 +80,8 @@ void BlockCache::ValueDeleter(const Slice &key, void *value) {
   delete value_slice;
 }
 
-void BlockCache::StartInstrumentation(MetricRegistry* metrics) {
-  MetricContext metric_ctx(MetricContext(metrics, "blockcache"));
-  cache_->SetMetrics(metric_ctx);
+void BlockCache::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {
+  cache_->SetMetrics(metric_entity);
 }
 
 } // namespace cfile

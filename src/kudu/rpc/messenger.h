@@ -75,8 +75,8 @@ class MessengerBuilder {
   // Set the granularity with which connections are checked for keepalive.
   MessengerBuilder &set_coarse_timer_granularity(const MonoDelta &granularity);
 
-  // Set metric context for use by RPC systems.
-  MessengerBuilder &set_metric_context(const MetricContext& metric_ctx);
+  // Set metric entity for use by RPC systems.
+  MessengerBuilder &set_metric_entity(const scoped_refptr<MetricEntity>& metric_entity);
 
   Status Build(std::tr1::shared_ptr<Messenger> *msgr);
 
@@ -87,7 +87,7 @@ class MessengerBuilder {
   int num_reactors_;
   int num_negotiation_threads_;
   MonoDelta coarse_timer_granularity_;
-  gscoped_ptr<MetricContext> metric_ctx_;
+  scoped_refptr<MetricEntity> metric_entity_;
 };
 
 // A Messenger is a container for the reactor threads which run event loops
@@ -167,7 +167,7 @@ class Messenger {
     return closing_;
   }
 
-  MetricContext* metric_context() const { return metric_ctx_.get(); }
+  scoped_refptr<MetricEntity> metric_entity() const { return metric_entity_.get(); }
 
   const scoped_refptr<RpcService> rpc_service(const std::string& service_name) const;
 
@@ -205,7 +205,7 @@ class Messenger {
 
   gscoped_ptr<ThreadPool> negotiation_pool_;
 
-  gscoped_ptr<MetricContext> metric_ctx_;
+  scoped_refptr<MetricEntity> metric_entity_;
 
   // The ownership of the Messenger object is somewhat subtle. The pointer graph
   // looks like this:

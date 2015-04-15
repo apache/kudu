@@ -169,9 +169,9 @@ LogGCOp::LogGCOp(TabletPeer* tablet_peer)
     : MaintenanceOp(StringPrintf("LogGCOp(%s)", tablet_peer->tablet()->tablet_id().c_str())),
       tablet_peer_(tablet_peer),
       log_gc_duration_(METRIC_log_gc_duration.Instantiate(
-                                                     *tablet_peer->tablet()->GetMetricContext())),
-      log_gc_running_(AtomicGauge<uint32_t>::Instantiate(METRIC_log_gc_running,
-                                                     *tablet_peer->tablet()->GetMetricContext())),
+                           tablet_peer->tablet()->GetMetricEntity())),
+      log_gc_running_(METRIC_log_gc_running.Instantiate(
+                          tablet_peer->tablet()->GetMetricEntity(), 0)),
       sem_(1) {}
 
 void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {

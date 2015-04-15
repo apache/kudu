@@ -8,6 +8,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -72,7 +73,8 @@ TEST_F(FsManagerTestBase, TestMultiplePaths) {
   string wal_path = GetTestPath("a");
   vector<string> data_paths = list_of(
       GetTestPath("a"))(GetTestPath("b"))(GetTestPath("c"));
-  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(), NULL,
+  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
+                                                      scoped_refptr<MetricEntity>(),
                                                       wal_path, data_paths));
   ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
   ASSERT_OK(new_fs_manager->Open());
@@ -81,14 +83,16 @@ TEST_F(FsManagerTestBase, TestMultiplePaths) {
 TEST_F(FsManagerTestBase, TestMatchingPathsWithMismatchedSlashes) {
   string wal_path = GetTestPath("foo");
   vector<string> data_paths = list_of(wal_path + "/");
-  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(), NULL,
+  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
+                                                      scoped_refptr<MetricEntity>(),
                                                       wal_path, data_paths));
   ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
 }
 
 TEST_F(FsManagerTestBase, TestDuplicatePaths) {
   string path = GetTestPath("foo");
-  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(), NULL,
+  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
+                                                      scoped_refptr<MetricEntity>(),
                                                       path, list_of(path)(path)(path)));
   ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
   ASSERT_EQ(list_of(JoinPathSegments(path, new_fs_manager->kDataDirName)),

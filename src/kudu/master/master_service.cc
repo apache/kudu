@@ -89,7 +89,7 @@ static void SetupErrorAndRespond(MasterErrorPB* error,
 
 
 MasterServiceImpl::MasterServiceImpl(Master* server)
-  : MasterServiceIf(server->metric_context()),
+  : MasterServiceIf(server->metric_entity()),
     server_(server) {
 }
 

@@ -24,7 +24,7 @@
 namespace kudu {
 
 class FsManager;
-class MetricContext;
+class MetricEntity;
 class ThreadPool;
 
 namespace log {
@@ -76,7 +76,7 @@ class Log : public RefCountedThreadSafe<Log> {
                      FsManager *fs_manager,
                      const std::string& tablet_id,
                      const Schema& schema,
-                     MetricContext* parent_metric_context,
+                     const scoped_refptr<MetricEntity>& metric_entity,
                      scoped_refptr<Log> *log);
 
   ~Log();
@@ -238,7 +238,7 @@ class Log : public RefCountedThreadSafe<Log> {
       const std::string& log_path,
       const std::string& tablet_id,
       const Schema& schema,
-      MetricContext* parent_metric_context);
+      const scoped_refptr<MetricEntity>& metric_entity);
 
   // Initializes a new one or continues an existing log.
   Status Init();
@@ -370,7 +370,7 @@ class Log : public RefCountedThreadSafe<Log> {
   mutable boost::shared_mutex allocation_lock_;
   SegmentAllocationState allocation_state_;
 
-  gscoped_ptr<MetricContext> metric_context_;
+  scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<LogMetrics> metrics_;
 
   std::tr1::shared_ptr<LogFaultHooks> log_hooks_;

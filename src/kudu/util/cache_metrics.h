@@ -13,10 +13,10 @@ namespace kudu {
 template<class T>
 class AtomicGauge;
 class Counter;
-class MetricContext;
+class MetricEntity;
 
 struct CacheMetrics {
-  explicit CacheMetrics(const MetricContext& metric_ctx);
+  explicit CacheMetrics(const scoped_refptr<MetricEntity>& metric_entity);
 
   scoped_refptr<Counter> inserts;
   scoped_refptr<Counter> lookups;

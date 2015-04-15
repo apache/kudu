@@ -31,8 +31,8 @@ METRIC_DEFINE_histogram(entry_batches_per_group, kudu::MetricUnit::kRequests,
 namespace kudu {
 namespace log {
 
-#define MINIT(x) x(METRIC_##x.Instantiate(metric_ctx))
-LogMetrics::LogMetrics(const MetricContext& metric_ctx)
+#define MINIT(x) x(METRIC_##x.Instantiate(metric_entity))
+LogMetrics::LogMetrics(const scoped_refptr<MetricEntity>& metric_entity)
     : MINIT(bytes_logged),
       MINIT(sync_latency),
       MINIT(append_latency),

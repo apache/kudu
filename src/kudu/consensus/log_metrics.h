@@ -11,12 +11,12 @@ namespace kudu {
 
 class Counter;
 class Histogram;
-class MetricContext;
+class MetricEntity;
 
 namespace log {
 
 struct LogMetrics {
-  explicit LogMetrics(const MetricContext& metric_ctx);
+  explicit LogMetrics(const scoped_refptr<MetricEntity>& metric_entity);
 
   // Global stats
   scoped_refptr<Counter> bytes_logged;

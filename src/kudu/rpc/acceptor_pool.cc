@@ -38,7 +38,7 @@ AcceptorPool::AcceptorPool(Messenger *messenger,
    socket_(socket->Release()),
    bind_address_(bind_address),
    rpc_connections_accepted_(METRIC_rpc_connections_accepted.Instantiate(
-                               *CHECK_NOTNULL(messenger->metric_context()))),
+                                 messenger->metric_entity())),
    closing_(false) {
 }
 

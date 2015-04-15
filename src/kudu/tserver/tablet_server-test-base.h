@@ -51,6 +51,8 @@ DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_rpc_timeout_ms);
 
+METRIC_DEFINE_entity(test);
+
 namespace kudu {
 namespace tserver {
 
@@ -60,7 +62,8 @@ class TabletServerTestBase : public KuduTest {
 
   TabletServerTestBase()
     : schema_(GetSimpleTestSchema()),
-      ts_test_metric_context_(&ts_test_metric_registry_, "ts_server-test") {
+      ts_test_metric_entity_(METRIC_ENTITY_test.Instantiate(
+                                 &ts_test_metric_registry_, "ts_server-test")) {
 
     // Use the hybrid clock for TS tests
     FLAGS_use_hybrid_clock = true;
@@ -228,8 +231,8 @@ class TabletServerTestBase : public KuduTest {
 
       if (resp.has_error() || resp.per_row_errors_size() > 0) {
         LOG(FATAL) << "Failed to insert batch "
-                    << first_row_in_batch << "-" << last_row_in_batch
-                    << ": " << resp.DebugString();
+                   << first_row_in_batch << "-" << last_row_in_batch
+                   << ": " << resp.DebugString();
       }
 
       inserted_since_last_report += count / num_batches;
@@ -317,7 +320,7 @@ class TabletServerTestBase : public KuduTest {
     }
     vector<const uint8_t*> rows;
     ASSERT_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
-                                               indirect, &direct, &rows));
+                                        indirect, &direct, &rows));
     VLOG(1) << "Round trip got " << rows.size() << " rows";
     BOOST_FOREACH(const uint8_t* row_ptr, rows) {
       ConstContiguousRow row(&projection, row_ptr);
@@ -453,7 +456,7 @@ class TabletServerTestBase : public KuduTest {
   gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
 
   MetricRegistry ts_test_metric_registry_;
-  MetricContext ts_test_metric_context_;
+  scoped_refptr<MetricEntity> ts_test_metric_entity_;
 
   void* shared_region_;
 };

@@ -49,8 +49,9 @@ class CacheTest : public ::testing::Test {
     : cache_(NewLRUCache(kCacheSize, "cache_test")) {
     current_ = this;
     CHECK(MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_));
-    MetricContext metric_ctx(&metric_registry_, "test");
-    cache_->SetMetrics(metric_ctx);
+    scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
+        &metric_registry_, "test");
+    cache_->SetMetrics(entity);
   }
 
   ~CacheTest() {

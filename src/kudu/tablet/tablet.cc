@@ -72,6 +72,8 @@ DEFINE_double(tablet_bloom_target_fp_rate, 0.01f,
               "in heavy insert workloads, at the expense of more space and RAM "
               "required for bloom filters. (Advanced option)");
 
+METRIC_DEFINE_entity(tablet);
+
 METRIC_DEFINE_gauge_uint64(memrowset_size, kudu::MetricUnit::kBytes,
                            "Size of this tablet's memrowset");
 
@@ -104,7 +106,7 @@ TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
 
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                const scoped_refptr<server::Clock>& clock,
-               const MetricContext* parent_metric_context,
+               MetricRegistry* metric_registry,
                const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
   : schema_(new Schema(metadata->schema())),
     key_schema_(schema_->CreateKeyProjection()),
@@ -121,12 +123,11 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
   CHECK(schema_->has_column_ids());
   compaction_policy_.reset(CreateCompactionPolicy());
 
-  if (parent_metric_context) {
-    metric_context_.reset(new MetricContext(*parent_metric_context,
-                                            Substitute("tablet.tablet-$0", tablet_id())));
-    metrics_.reset(new TabletMetrics(*metric_context_));
+  if (metric_registry) {
+    metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry, tablet_id());
+    metrics_.reset(new TabletMetrics(metric_entity_));
     METRIC_memrowset_size.InstantiateFunctionGauge(
-      *metric_context_, Bind(&Tablet::MemRowSetSize, Unretained(this)))
+      metric_entity_, Bind(&Tablet::MemRowSetSize, Unretained(this)))
       ->AutoDetach(&metric_detacher_);
   }
 }

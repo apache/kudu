@@ -68,8 +68,8 @@ class GenericCalculatorService : public ServiceIf {
   }
 
   // To match the argument list of the generated CalculatorService.
-  explicit GenericCalculatorService(const MetricContext& ctx) {
-    // TODO: use the metrics context if needed later...
+  explicit GenericCalculatorService(const scoped_refptr<MetricEntity>& entity) {
+    // this test doesn't generate metrics, so we ignore the argument.
   }
 
   virtual void Handle(InboundCall *incoming) OVERRIDE {
@@ -149,8 +149,8 @@ class GenericCalculatorService : public ServiceIf {
 
 class CalculatorService : public CalculatorServiceIf {
  public:
-  explicit CalculatorService(const MetricContext& ctx)
-    : CalculatorServiceIf(ctx) {
+  explicit CalculatorService(const scoped_refptr<MetricEntity>& entity)
+    : CalculatorServiceIf(entity) {
   }
 
   virtual void Add(const AddRequestPB *req,
@@ -236,7 +236,7 @@ class RpcTestBase : public KuduTest {
     : n_worker_threads_(3),
       n_server_reactor_threads_(3),
       keepalive_time_ms_(1000),
-      metric_ctx_(&metric_registry_, "test.rpc_test") {
+      metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "test.rpc_test")) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -265,7 +265,7 @@ class RpcTestBase : public KuduTest {
       MonoDelta::FromMilliseconds(keepalive_time_ms_));
     bld.set_coarse_timer_granularity(MonoDelta::FromMilliseconds(
                                        std::min(keepalive_time_ms_, 100)));
-    bld.set_metric_context(metric_ctx_);
+    bld.set_metric_entity(metric_entity_);
     shared_ptr<Messenger> messenger;
     CHECK_OK(bld.Build(&messenger));
     return messenger;
@@ -375,10 +375,10 @@ class RpcTestBase : public KuduTest {
     ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2, &pool));
     *server_addr = pool->bind_address();
 
-    gscoped_ptr<ServiceIf> service(new ServiceClass(metric_ctx_));
+    gscoped_ptr<ServiceIf> service(new ServiceClass(metric_entity_));
     service_name_ = service->service_name();
-    const MetricContext& metric_ctx = *server_messenger_->metric_context();
-    service_pool_ = new ServicePool(service.Pass(), metric_ctx, 50);
+    scoped_refptr<MetricEntity> metric_entity = server_messenger_->metric_entity();
+    service_pool_ = new ServicePool(service.Pass(), metric_entity, 50);
     server_messenger_->RegisterService(service_name_, service_pool_);
     ASSERT_OK(service_pool_->Init(n_worker_threads_));
   }
@@ -392,7 +392,7 @@ class RpcTestBase : public KuduTest {
   int keepalive_time_ms_;
 
   MetricRegistry metric_registry_;
-  MetricContext metric_ctx_;
+  scoped_refptr<MetricEntity> metric_entity_;
 };
 
 

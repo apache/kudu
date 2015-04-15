@@ -12,7 +12,7 @@
 namespace kudu {
 namespace server {
 
-METRIC_DEFINE_gauge_uint64(clock_timestamp, kudu::MetricUnit::kCount,
+METRIC_DEFINE_gauge_uint64(logical_clock_timestamp, kudu::MetricUnit::kCount,
                            "Logical clock timestamp.");
 
 using base::subtle::Atomic64;
@@ -65,10 +65,9 @@ uint64_t LogicalClock::NowForMetrics() {
 }
 
 
-void LogicalClock::RegisterMetrics(MetricRegistry* registry) {
-  MetricContext ctx(registry, "clock");
-  METRIC_clock_timestamp.InstantiateFunctionGauge(
-      ctx,
+void LogicalClock::RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) {
+  METRIC_logical_clock_timestamp.InstantiateFunctionGauge(
+      metric_entity,
       Bind(&LogicalClock::NowForMetrics, Unretained(this)))
     ->AutoDetachToLastValue(&metric_detacher_);
 }

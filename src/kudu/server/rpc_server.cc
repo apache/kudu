@@ -75,10 +75,10 @@ Status RpcServer::Init(const std::tr1::shared_ptr<Messenger>& messenger) {
 
 Status RpcServer::RegisterService(gscoped_ptr<rpc::ServiceIf> service) {
   CHECK_EQ(server_state_, INITIALIZED);
-  const MetricContext& metric_ctx = *messenger_->metric_context();
+  const scoped_refptr<MetricEntity>& metric_entity = messenger_->metric_entity();
   string service_name = service->service_name();
   scoped_refptr<rpc::ServicePool> service_pool =
-    new rpc::ServicePool(service.Pass(), metric_ctx, options_.service_queue_length);
+    new rpc::ServicePool(service.Pass(), metric_entity, options_.service_queue_length);
   RETURN_NOT_OK(service_pool->Init(options_.num_service_threads));
   RETURN_NOT_OK(messenger_->RegisterService(service_name, service_pool));
   return Status::OK();

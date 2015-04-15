@@ -66,7 +66,7 @@ string Master::ToString() const {
 Status Master::Init() {
   CHECK_EQ(kStopped, state_);
 
-  cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_context().metrics());
+  cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_entity());
 
   RETURN_NOT_OK(ThreadPoolBuilder("init").set_max_threads(1).Build(&init_pool_));
 
@@ -89,7 +89,7 @@ Status Master::StartAsync() {
   RETURN_NOT_OK(maintenance_manager_->Init());
 
   gscoped_ptr<ServiceIf> impl(new MasterServiceImpl(this));
-  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_context(),
+  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_entity(),
                                                                     catalog_manager_.get()));
 
   RETURN_NOT_OK(ServerBase::RegisterService(impl.Pass()));

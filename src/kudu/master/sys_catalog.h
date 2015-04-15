@@ -169,7 +169,7 @@ class SysCatalogTable {
   Schema schema_;
   Schema key_schema_;
 
-  MetricContext metric_ctx_;
+  MetricRegistry* metric_registry_;
 
   gscoped_ptr<ThreadPool> leader_apply_pool_;
   gscoped_ptr<ThreadPool> replica_apply_pool_;

@@ -12,7 +12,7 @@ class Counter;
 template<class T>
 class AtomicGauge;
 class Histogram;
-class MetricContext;
+class MetricEntity;
 
 namespace tablet {
 
@@ -20,7 +20,7 @@ struct ProbeStats;
 
 // Container for all metrics specific to a single tablet.
 struct TabletMetrics {
-  explicit TabletMetrics(const MetricContext& metric_ctx);
+  explicit TabletMetrics(const scoped_refptr<MetricEntity>& metric_entity);
 
   void AddProbeStats(const ProbeStats& stats);
 

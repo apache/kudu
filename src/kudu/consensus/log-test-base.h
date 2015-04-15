@@ -122,7 +122,7 @@ class LogTestBase : public KuduTest {
     current_index_ = 1;
     fs_manager_.reset(new FsManager(env_.get(), test_dir_));
     metric_registry_.reset(new MetricRegistry());
-    metric_context_.reset(new MetricContext(metric_registry_.get(), "log-test-base"));
+    metric_entity_ = METRIC_ENTITY_server.Instantiate(metric_registry_.get(), "log-test-base");
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 
@@ -141,7 +141,7 @@ class LogTestBase : public KuduTest {
                        fs_manager_.get(),
                        kTestTablet,
                        schema_,
-                       metric_context_.get(),
+                       metric_entity_.get(),
                        &log_));
   }
 
@@ -317,7 +317,7 @@ class LogTestBase : public KuduTest {
   const Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<MetricRegistry> metric_registry_;
-  gscoped_ptr<MetricContext> metric_context_;
+  scoped_refptr<MetricEntity> metric_entity_;
   scoped_refptr<Log> log_;
   uint32_t current_index_;
   LogOptions options_;

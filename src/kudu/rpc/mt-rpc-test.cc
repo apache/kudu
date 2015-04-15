@@ -137,9 +137,9 @@ TEST_F(MultiThreadedRpcTest, TestShutdownClientWhileCallsPending) {
 class BogusServicePool : public ServicePool {
  public:
   BogusServicePool(gscoped_ptr<ServiceIf> service,
-                   const MetricContext& metric_ctx,
+                   const scoped_refptr<MetricEntity>& metric_entity,
                    size_t service_queue_length)
-    : ServicePool(service.Pass(), metric_ctx, service_queue_length) {
+    : ServicePool(service.Pass(), metric_entity, service_queue_length) {
   }
   virtual Status Init(int num_threads) OVERRIDE {
     // Do nothing
@@ -166,7 +166,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
 
   MessengerBuilder bld("messenger1");
   bld.set_num_reactors(kMaxConcurrency);
-  bld.set_metric_context(metric_ctx_);
+  bld.set_metric_entity(metric_entity_);
   CHECK_OK(bld.Build(&server_messenger_));
 
   shared_ptr<AcceptorPool> pool;
@@ -176,7 +176,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
   gscoped_ptr<ServiceIf> service(new GenericCalculatorService());
   service_name_ = service->service_name();
   service_pool_ = new BogusServicePool(service.Pass(),
-                                      *server_messenger_->metric_context(),
+                                      server_messenger_->metric_entity(),
                                       kMaxConcurrency);
   ASSERT_OK(service_pool_->Init(n_worker_threads_));
   server_messenger_->RegisterService(service_name_, service_pool_);
@@ -216,7 +216,7 @@ TEST_F(MultiThreadedRpcTest, TestBlowOutServiceQueue) {
 
   // Check that RPC queue overflow metric is 1
   Counter *rpcs_queue_overflow =
-    METRIC_rpcs_queue_overflow.Instantiate(*server_messenger_->metric_context()).get();
+    METRIC_rpcs_queue_overflow.Instantiate(server_messenger_->metric_entity()).get();
   ASSERT_EQ(1, rpcs_queue_overflow->value());
 }
 
@@ -255,7 +255,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownWithIncomingConnections) {
   // Sleep until the server has started to actually accept some connections from the
   // test threads.
   scoped_refptr<Counter> conns_accepted =
-    METRIC_rpc_connections_accepted.Instantiate(*server_messenger_->metric_context());
+    METRIC_rpc_connections_accepted.Instantiate(server_messenger_->metric_entity());
   while (conns_accepted->value() == 0) {
     SleepFor(MonoDelta::FromMicroseconds(100));
   }

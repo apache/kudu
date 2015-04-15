@@ -17,10 +17,10 @@ namespace kudu {
 
 namespace tserver {
 
-ScannerMetrics::ScannerMetrics(const MetricContext& metric_ctx)
+ScannerMetrics::ScannerMetrics(const scoped_refptr<MetricEntity>& metric_entity)
     : scanners_expired_since_start(
-          METRIC_scanners_expired_since_start.Instantiate(metric_ctx)),
-      scanner_duration(METRIC_scanner_duration.Instantiate(metric_ctx)) {
+          METRIC_scanners_expired_since_start.Instantiate(metric_entity)),
+      scanner_duration(METRIC_scanner_duration.Instantiate(metric_entity)) {
 }
 
 void ScannerMetrics::SubmitScannerDuration(const MonoTime& time_started) {

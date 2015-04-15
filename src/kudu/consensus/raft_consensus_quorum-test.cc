@@ -33,6 +33,8 @@
 DECLARE_int32(leader_heartbeat_interval_ms);
 DECLARE_bool(enable_leader_failure_detection);
 
+METRIC_DECLARE_entity(tablet);
+
 #define REPLICATE_SEQUENCE_OF_MESSAGES(a, b, c, d, e, f, g) \
   ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(a, b, c, d, e, f, g))
 
@@ -84,7 +86,7 @@ class RaftConsensusQuorumTest : public KuduTest {
  public:
   RaftConsensusQuorumTest()
     : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))),
-      metric_context_(&metric_registry_, "raft-test"),
+      metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "raft-test")),
       schema_(GetSimpleTestSchema()) {
     options_.tablet_id = kTestTablet;
     FLAGS_enable_leader_failure_detection = false;
@@ -134,9 +136,8 @@ class RaftConsensusQuorumTest : public KuduTest {
 
 
       string peer_uuid = Substitute("peer-$0", i);
-      MetricContext metrics(metric_context_, peer_uuid);
 
-      gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metrics,
+      gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity_,
                                                                logs_[i],
                                                                peer_uuid,
                                                                kTestTablet));
@@ -160,7 +161,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                             queue.Pass(),
                             peer_manager.Pass(),
                             thread_pool.Pass(),
-                            metrics,
+                            metric_entity_,
                             quorum_.peers(i).permanent_uuid(),
                             clock_,
                             txn_factory,
@@ -373,10 +374,10 @@ class RaftConsensusQuorumTest : public KuduTest {
     log->Close();
     gscoped_ptr<LogReader> log_reader;
     ASSERT_OK(log::LogReader::Open(fs_managers_[idx],
-                                          scoped_refptr<log::LogIndex>(),
-                                          kTestTablet,
-                                          &metric_context_,
-                                          &log_reader));
+                                   scoped_refptr<log::LogIndex>(),
+                                   kTestTablet,
+                                   metric_entity_.get(),
+                                   &log_reader));
     vector<LogEntryPB*> ret;
     ElementDeleter deleter(&ret);
     log::SegmentSequence segments;
@@ -530,7 +531,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   vector<TestTransactionFactory*> txn_factories_;
   scoped_refptr<server::Clock> clock_;
   MetricRegistry metric_registry_;
-  MetricContext metric_context_;
+  scoped_refptr<MetricEntity> metric_entity_;
   const Schema schema_;
   AutoReleasePool pool_;
 };

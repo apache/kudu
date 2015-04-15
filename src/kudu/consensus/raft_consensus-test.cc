@@ -20,6 +20,8 @@
 
 DECLARE_bool(enable_leader_failure_detection);
 
+METRIC_DECLARE_entity(tablet);
+
 namespace kudu {
 namespace consensus {
 
@@ -42,8 +44,8 @@ typedef std::map<OpId, Status, OpIdCompareFunctor> StatusesMap;
 
 class MockQueue : public PeerMessageQueue {
  public:
-  explicit MockQueue(const MetricContext& metric_ctx, log::Log* log)
-    : PeerMessageQueue(metric_ctx, log, kLocalPeerUuid, kTestTablet) {}
+  explicit MockQueue(const scoped_refptr<MetricEntity>& metric_entity, log::Log* log)
+    : PeerMessageQueue(metric_entity, log, kLocalPeerUuid, kTestTablet) {}
   MOCK_METHOD1(Init, void(const OpId& locally_replicated_index));
   MOCK_METHOD3(SetLeaderMode, void(const OpId& committed_opid,
                                    uint64_t current_term,
@@ -94,7 +96,7 @@ class RaftConsensusTest : public KuduTest {
  public:
   RaftConsensusTest()
       : clock_(server::LogicalClock::CreateStartingAt(Timestamp(0))),
-        metric_context_(&metric_registry_, "raft-test"),
+        metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "raft-consensus-test")),
         schema_(GetSimpleTestSchema()) {
     FLAGS_enable_leader_failure_detection = false;
     options_.tablet_id = kTestTablet;
@@ -115,7 +117,7 @@ class RaftConsensusTest : public KuduTest {
                        NULL,
                        &log_));
 
-    queue_ = new MockQueue(metric_context_, log_.get());
+    queue_ = new MockQueue(metric_entity_, log_.get());
     peer_manager_ = new MockPeerManager;
     txn_factory_.reset(new MockTransactionFactory);
 
@@ -149,7 +151,7 @@ class RaftConsensusTest : public KuduTest {
                                        gscoped_ptr<PeerMessageQueue>(queue_),
                                        gscoped_ptr<PeerManager>(peer_manager_),
                                        thread_pool.Pass(),
-                                       metric_context_,
+                                       metric_entity_,
                                        Substitute("peer-$0", num_peers - 1),
                                        clock_,
                                        txn_factory_.get(),
@@ -224,7 +226,7 @@ class RaftConsensusTest : public KuduTest {
   gscoped_ptr<PeerProxyFactory> proxy_factory_;
   scoped_refptr<server::Clock> clock_;
   MetricRegistry metric_registry_;
-  MetricContext metric_context_;
+  scoped_refptr<MetricEntity> metric_entity_;
   const Schema schema_;
   scoped_refptr<RaftConsensus> consensus_;
 

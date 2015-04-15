@@ -25,7 +25,7 @@
 
 namespace kudu {
 
-class MetricContext;
+class MetricEntity;
 
 Cache::~Cache() {
 }
@@ -426,8 +426,8 @@ class ShardedLRUCache : public Cache {
     return ++(last_id_);
   }
 
-  virtual void SetMetrics(const MetricContext& metric_ctx) OVERRIDE {
-    metrics_.reset(new CacheMetrics(metric_ctx));
+  virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) OVERRIDE {
+    metrics_.reset(new CacheMetrics(entity));
     BOOST_FOREACH(LRUCache* cache, shards_) {
       cache->SetMetrics(metrics_.get());
     }

@@ -5,31 +5,37 @@
 
 #include "kudu/util/metrics.h"
 
+METRIC_DEFINE_gauge_uint64(block_manager_blocks_open_reading,
+                           kudu::MetricUnit::kBlocks,
+                           "Number of data blocks currently open for reading");
+
+METRIC_DEFINE_gauge_uint64(block_manager_blocks_open_writing,
+                           kudu::MetricUnit::kBlocks,
+                           "Number of data blocks currently open for writing");
+
+METRIC_DEFINE_counter(block_manager_total_writable_blocks,
+                      kudu::MetricUnit::kBlocks,
+                      "Number of data blocks opened for writing since service start");
+
+METRIC_DEFINE_counter(block_manager_total_readable_blocks,
+                      kudu::MetricUnit::kBlocks,
+                      "Number of data blocks opened for reading since service start");
+
+METRIC_DEFINE_counter(block_manager_total_bytes_written,
+                      kudu::MetricUnit::kBytes,
+                      "Number of bytes of block data written since service start");
+
+METRIC_DEFINE_counter(block_manager_total_bytes_read,
+                      kudu::MetricUnit::kBytes,
+                      "Number of bytes of block data read since service start");
+
 namespace kudu {
 namespace fs {
 namespace internal {
 
-METRIC_DEFINE_gauge_uint64(blocks_open_reading, kudu::MetricUnit::kBlocks,
-                           "Number of data blocks currently open for reading");
-
-METRIC_DEFINE_gauge_uint64(blocks_open_writing, kudu::MetricUnit::kBlocks,
-                           "Number of data blocks currently open for writing");
-
-METRIC_DEFINE_counter(total_writable_blocks, kudu::MetricUnit::kBlocks,
-                      "Number of data blocks opened for writing since service start");
-
-METRIC_DEFINE_counter(total_readable_blocks, kudu::MetricUnit::kBlocks,
-                      "Number of data blocks opened for reading since service start");
-
-METRIC_DEFINE_counter(total_bytes_written, kudu::MetricUnit::kBytes,
-                      "Number of bytes of block data written since service start");
-
-METRIC_DEFINE_counter(total_bytes_read, kudu::MetricUnit::kBytes,
-                      "Number of bytes of block data read since service start");
-
-#define MINIT(x) x(METRIC_##x.Instantiate(metric_ctx))
-#define GINIT(x) x(AtomicGauge<uint64_t>::Instantiate(METRIC_##x, metric_ctx))
-BlockManagerMetrics::BlockManagerMetrics(const MetricContext& metric_ctx)
+#define MINIT(x) x(METRIC_block_manager_##x.Instantiate(entity))
+#define GINIT(x) x(METRIC_block_manager_##x.Instantiate(entity, 0))
+BlockManagerMetrics::BlockManagerMetrics(const scoped_refptr<MetricEntity>& entity)
   : GINIT(blocks_open_reading),
     GINIT(blocks_open_writing),
     MINIT(total_readable_blocks),

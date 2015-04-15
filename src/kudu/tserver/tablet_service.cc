@@ -334,7 +334,7 @@ static size_t GetMaxBatchSizeBytesHint(const ScanRequestPB* req) {
 }
 
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
-  : TabletServerServiceIf(server->metric_context()),
+  : TabletServerServiceIf(server->metric_entity()),
     server_(server) {
 }
 
@@ -345,7 +345,7 @@ void TabletServiceImpl::Ping(const PingRequestPB* req,
 }
 
 TabletServiceAdminImpl::TabletServiceAdminImpl(TabletServer* server)
-  : TabletServerAdminServiceIf(server->metric_context()),
+  : TabletServerAdminServiceIf(server->metric_entity()),
     server_(server) {
 }
 
@@ -557,9 +557,9 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   return;
 }
 
-ConsensusServiceImpl::ConsensusServiceImpl(const MetricContext& metric_context,
+ConsensusServiceImpl::ConsensusServiceImpl(const scoped_refptr<MetricEntity>& metric_entity,
                                            TabletPeerLookupIf* tablet_manager)
-  : ConsensusServiceIf(metric_context),
+  : ConsensusServiceIf(metric_entity),
     tablet_manager_(tablet_manager) {
 }
 

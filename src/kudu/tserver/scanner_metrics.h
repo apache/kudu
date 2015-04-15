@@ -7,7 +7,7 @@
 
 namespace kudu {
 
-class MetricContext;
+class MetricEntity;
 class Counter;
 class Histogram;
 class MonoTime;
@@ -17,7 +17,7 @@ namespace tserver {
 // Keeps track of scanner related metrics for a given ScannerManager
 // instance.
 struct ScannerMetrics {
-  explicit ScannerMetrics(const MetricContext& metric_ctx);
+  explicit ScannerMetrics(const scoped_refptr<MetricEntity>& metric_entity);
 
   // Adds the the number of microseconds that have passed since
   // 'time_started' to 'scanner_duration' histogram.

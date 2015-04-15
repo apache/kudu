@@ -27,6 +27,8 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/threadpool.h"
 
+METRIC_DECLARE_entity(tablet);
+
 namespace kudu {
 namespace tserver {
 
@@ -79,7 +81,8 @@ class RemoteBootstrapTest : public KuduTabletTest {
                        *tablet()->schema(),
                        NULL, &log));
 
-    MetricContext metric_ctx(&metric_registry_, CURRENT_TEST_NAME());
+    scoped_refptr<MetricEntity> metric_entity =
+      METRIC_ENTITY_tablet.Instantiate(&metric_registry_, CURRENT_TEST_NAME());
 
     tablet_peer_.reset(
         new TabletPeer(tablet()->metadata(),
@@ -105,7 +108,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
     mbuilder.Build(&messenger);
 
     log_anchor_registry_.reset(new LogAnchorRegistry());
-    CHECK_OK(tablet_peer_->Init(tablet(), clock(), messenger, log, metric_ctx));
+    CHECK_OK(tablet_peer_->Init(tablet(), clock(), messenger, log, metric_entity));
     consensus::ConsensusBootstrapInfo boot_info;
     CHECK_OK(tablet_peer_->Start(boot_info));
 

@@ -31,6 +31,22 @@ DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
 
 DECLARE_bool(enable_data_block_fsync);
 
+METRIC_DEFINE_gauge_uint64(log_block_manager_bytes_under_management,
+                           kudu::MetricUnit::kBytes,
+                           "Number of bytes of data blocks currently under management");
+
+METRIC_DEFINE_gauge_uint64(log_block_manager_blocks_under_management,
+                           kudu::MetricUnit::kBlocks,
+                           "Number of data blocks currently under management");
+
+METRIC_DEFINE_counter(log_block_manager_total_containers,
+                      kudu::MetricUnit::kLogBlockContainers,
+                      "Number of log block containers");
+
+METRIC_DEFINE_counter(log_block_manager_total_full_containers,
+                      kudu::MetricUnit::kLogBlockContainers,
+                      "Number of full log block containers");
+
 using std::tr1::unordered_set;
 using strings::Substitute;
 using kudu::fs::internal::LogBlock;
@@ -53,7 +69,7 @@ namespace internal {
 // Includes implementation-agnostic metrics as well as some that are
 // specific to the log block manager.
 struct LogBlockManagerMetrics {
-  explicit LogBlockManagerMetrics(const MetricContext& metric_ctx);
+  explicit LogBlockManagerMetrics(const scoped_refptr<MetricEntity>& metric_entity);
 
   // Implementation-agnostic metrics.
   BlockManagerMetrics generic_metrics;
@@ -65,22 +81,10 @@ struct LogBlockManagerMetrics {
   scoped_refptr<Counter> total_full_containers;
 };
 
-METRIC_DEFINE_gauge_uint64(bytes_under_management, kudu::MetricUnit::kBytes,
-                           "Number of bytes of data blocks currently under management");
-
-METRIC_DEFINE_gauge_uint64(blocks_under_management, kudu::MetricUnit::kBlocks,
-                           "Number of data blocks currently under management");
-
-METRIC_DEFINE_counter(total_containers, kudu::MetricUnit::kLogBlockContainers,
-                      "Number of log block containers");
-
-METRIC_DEFINE_counter(total_full_containers, kudu::MetricUnit::kLogBlockContainers,
-                      "Number of full log block containers");
-
-#define MINIT(x) x(METRIC_##x.Instantiate(metric_ctx))
-#define GINIT(x) x(AtomicGauge<uint64_t>::Instantiate(METRIC_##x, metric_ctx))
-LogBlockManagerMetrics::LogBlockManagerMetrics(const MetricContext& metric_ctx)
-  : generic_metrics(metric_ctx),
+#define MINIT(x) x(METRIC_log_block_manager_##x.Instantiate(metric_entity))
+#define GINIT(x) x(METRIC_log_block_manager_##x.Instantiate(metric_entity, 0))
+LogBlockManagerMetrics::LogBlockManagerMetrics(const scoped_refptr<MetricEntity>& metric_entity)
+  : generic_metrics(metric_entity),
     GINIT(bytes_under_management),
     GINIT(blocks_under_management),
     MINIT(total_containers),
@@ -970,15 +974,14 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
 static const char* kBlockManagerType = "log";
 
 LogBlockManager::LogBlockManager(Env* env,
-                                 MetricContext* parent_metric_context,
+                                 const scoped_refptr<MetricEntity>& metric_entity,
                                  const vector<string>& root_paths)
   : env_(env),
     root_paths_(root_paths),
     root_paths_idx_(0) {
   DCHECK_GT(root_paths.size(), 0);
-  if (parent_metric_context) {
-    metric_ctx_.reset((new MetricContext(*parent_metric_context, kMetricContextName)));
-    metrics_.reset(new internal::LogBlockManagerMetrics(*metric_ctx_.get()));
+  if (metric_entity) {
+    metrics_.reset(new internal::LogBlockManagerMetrics(metric_entity));
   }
 }
 

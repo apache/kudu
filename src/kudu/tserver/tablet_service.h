@@ -98,7 +98,7 @@ class TabletServiceAdminImpl : public TabletServerAdminServiceIf {
 
 class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
  public:
-  ConsensusServiceImpl(const MetricContext& metric_context,
+  ConsensusServiceImpl(const scoped_refptr<MetricEntity>& metric_entity,
                        TabletPeerLookupIf* tablet_manager_);
 
   virtual ~ConsensusServiceImpl();

@@ -75,7 +75,7 @@ class ThreadMgr {
 
   static void SetThreadName(const std::string& name, int64 tid);
 
-  Status StartInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web);
+  Status StartInstrumentation(const scoped_refptr<MetricEntity>& metrics, WebCallbackRegistry* web);
 
   // Registers a thread to the supplied category. The key is a pthread_t,
   // not the system TID, since pthread_t is less prone to being recycled.
@@ -159,18 +159,18 @@ void ThreadMgr::SetThreadName(const string& name, int64 tid) {
   }
 }
 
-Status ThreadMgr::StartInstrumentation(MetricRegistry* registry, WebCallbackRegistry* web) {
-  MetricContext ctx(DCHECK_NOTNULL(registry), "threading");
+Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metrics,
+                                       WebCallbackRegistry* web) {
   MutexLock l(lock_);
   metrics_enabled_ = true;
 
   // Use function gauges here so that we can register a unique copy of these metrics in
   // multiple tservers, even though the ThreadMgr is itself a singleton.
-  registry->NeverRetire(
-    METRIC_total_threads.InstantiateFunctionGauge(ctx,
+  metrics->NeverRetire(
+      METRIC_total_threads.InstantiateFunctionGauge(metrics,
         Bind(&ThreadMgr::ReadNumTotalThreads, Unretained(this))));
-  registry->NeverRetire(
-    METRIC_current_num_threads.InstantiateFunctionGauge(ctx,
+  metrics->NeverRetire(
+      METRIC_current_num_threads.InstantiateFunctionGauge(metrics,
         Bind(&ThreadMgr::ReadNumCurrentThreads, Unretained(this))));
 
   WebCallbackRegistry::PathHandlerCallback thread_callback =
@@ -305,9 +305,10 @@ static void InitThreading() {
   thread_manager.reset(new ThreadMgr());
 }
 
-Status StartThreadInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web) {
+Status StartThreadInstrumentation(const scoped_refptr<MetricEntity>& server_metrics,
+                                  WebCallbackRegistry* web) {
   GoogleOnceInit(&once, &InitThreading);
-  return thread_manager->StartInstrumentation(metric, web);
+  return thread_manager->StartInstrumentation(server_metrics, web);
 }
 
 ThreadJoiner::ThreadJoiner(Thread* thr)

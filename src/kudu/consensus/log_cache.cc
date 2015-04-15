@@ -48,7 +48,7 @@ const char kLogCacheTrackerId[] = "log_cache_parent";
 
 typedef vector<const ReplicateMsg*>::const_iterator MsgIter;
 
-LogCache::LogCache(const MetricContext& metric_ctx,
+LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
                    const scoped_refptr<log::Log>& log,
                    const std::string& local_uuid,
                    const std::string& tablet_id,
@@ -58,7 +58,7 @@ LogCache::LogCache(const MetricContext& metric_ctx,
     tablet_id_(tablet_id),
     next_sequential_op_index_(0),
     min_pinned_op_index_(0),
-    metrics_(metric_ctx) {
+    metrics_(metric_entity) {
 
 
   const uint64_t max_ops_size_bytes = FLAGS_log_cache_size_limit_mb * 1024 * 1024;
@@ -71,7 +71,7 @@ LogCache::LogCache(const MetricContext& metric_ctx,
 
   // And create a child tracker with the per-tablet limit.
   tracker_ = MemTracker::CreateTracker(max_ops_size_bytes,
-                                       Substitute("$0-$1", parent_tracker_id, metric_ctx.prefix()),
+                                       Substitute("$0-$1", parent_tracker_id, tablet_id),
                                        parent_tracker_->id());
 
   // Put a fake message at index 0, since this simplifies a lot of our
@@ -437,8 +437,8 @@ void LogCache::DumpToHtml(std::ostream& out) const {
 }
 
 #define INSTANTIATE_METRIC(x) \
-  AtomicGauge<int64_t>::Instantiate(x, metric_ctx)
-LogCache::Metrics::Metrics(const MetricContext& metric_ctx)
+  x.Instantiate(metric_entity, 0)
+LogCache::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_entity)
   : log_cache_total_num_ops(INSTANTIATE_METRIC(METRIC_log_cache_total_num_ops)),
     log_cache_size_bytes(INSTANTIATE_METRIC(METRIC_log_cache_size_bytes)) {
 }

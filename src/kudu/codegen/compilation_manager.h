@@ -15,7 +15,7 @@
 namespace kudu {
 
 class Counter;
-class MetricContext;
+class MetricEntity;
 class MetricRegistry;
 class ThreadPool;
 
@@ -69,7 +69,7 @@ class CompilationManager {
   // This method is used instead of registering a counter with a given
   // registry because the CompilationManager is a singleton and there would
   // be lifetime issues if the manager was dependent on a single registry.
-  Status StartInstrumentation(MetricRegistry* metric_registry);
+  Status StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity);
 
  private:
   friend class Singleton<CompilationManager>;

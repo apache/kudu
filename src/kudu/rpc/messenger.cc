@@ -74,8 +74,9 @@ MessengerBuilder& MessengerBuilder::set_coarse_timer_granularity(const MonoDelta
   return *this;
 }
 
-MessengerBuilder &MessengerBuilder::set_metric_context(const MetricContext& metric_ctx) {
-  metric_ctx_.reset(new MetricContext(metric_ctx, "rpc"));
+MessengerBuilder &MessengerBuilder::set_metric_entity(
+    const scoped_refptr<MetricEntity>& metric_entity) {
+  metric_entity_ = metric_entity;
   return *this;
 }
 
@@ -211,10 +212,8 @@ void Messenger::RegisterInboundSocket(Socket *new_socket, const Sockaddr &remote
 Messenger::Messenger(const MessengerBuilder &bld)
   : name_(bld.name_),
     closing_(false),
+    metric_entity_(bld.metric_entity_),
     retain_self_(this) {
-  if (bld.metric_ctx_) {
-    metric_ctx_.reset(new MetricContext(*bld.metric_ctx_));
-  }
   for (int i = 0; i < bld.num_reactors_; i++) {
     reactors_.push_back(new Reactor(retain_self_, i, bld));
   }

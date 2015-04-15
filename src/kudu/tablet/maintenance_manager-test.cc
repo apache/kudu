@@ -67,9 +67,9 @@ class TestMaintenanceOp : public MaintenanceOp {
       ram_anchored_(500),
       logs_retained_bytes_(0),
       perf_improvement_(0),
-      metric_ctx_(&metric_registry_, "test"),
-      duration_histogram_(METRIC_duration_histogram.Instantiate(metric_ctx_)),
-      running_gauge_(AtomicGauge<uint32_t>::Instantiate(METRIC_running_gauge, metric_ctx_)) { }
+      metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "test")),
+      duration_histogram_(METRIC_duration_histogram.Instantiate(metric_entity_)),
+      running_gauge_(METRIC_running_gauge.Instantiate(metric_entity_, 0)) { }
 
   virtual ~TestMaintenanceOp() {
   }
@@ -162,7 +162,7 @@ class TestMaintenanceOp : public MaintenanceOp {
   uint64_t logs_retained_bytes_;
   uint64_t perf_improvement_;
   MetricRegistry metric_registry_;
-  MetricContext metric_ctx_;
+  scoped_refptr<MetricEntity> metric_entity_;
   scoped_refptr<Histogram> duration_histogram_;
   scoped_refptr<AtomicGauge<uint32_t> > running_gauge_;
 };

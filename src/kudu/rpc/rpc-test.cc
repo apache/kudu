@@ -20,6 +20,9 @@
 using std::string;
 using std::tr1::unordered_map;
 
+METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
+METRIC_DECLARE_histogram(rpc_incoming_queue_time);
+
 namespace kudu {
 namespace rpc {
 
@@ -411,15 +414,12 @@ TEST_F(TestRpc, TestRpcHandlerLatencyMetric) {
   SleepResponsePB resp;
   ASSERT_OK(p.SyncRequest("Sleep", req, &resp, &controller));
 
-  const unordered_map<string, scoped_refptr<Metric> > metric_map =
-      server_messenger_->metric_context()->metrics()->UnsafeMetricsMapForTests();
-  vector<string> keys;
-  AppendKeysFromMap(metric_map, &keys);
-  LOG(INFO) << "Metrics: " << JoinStrings(keys, ", ");
+  const unordered_map<const MetricPrototype*, scoped_refptr<Metric> > metric_map =
+    server_messenger_->metric_entity()->UnsafeMetricsMapForTests();
 
-  scoped_refptr<Histogram> latency_histogram =
-    down_cast<Histogram *>(CHECK_NOTNULL(FindOrDie(metric_map,
-        "test.rpc_test.handler_latency_kudu_rpc_test_CalculatorService_Sleep").get()));
+  scoped_refptr<Histogram> latency_histogram = down_cast<Histogram *>(
+      FindOrDie(metric_map,
+                &METRIC_handler_latency_kudu_rpc_test_CalculatorService_Sleep).get());
 
   LOG(INFO) << "Sleep() min lat: " << latency_histogram->MinValueForTests();
   LOG(INFO) << "Sleep() mean lat: " << latency_histogram->MeanValueForTests();
@@ -432,7 +432,7 @@ TEST_F(TestRpc, TestRpcHandlerLatencyMetric) {
 
   // TODO: Implement an incoming queue latency test.
   // For now we just assert that the metric exists.
-  ASSERT_TRUE(FindOrDie(metric_map, "test.rpc_test.rpc.incoming_queue_time") != NULL);
+  ASSERT_TRUE(FindOrDie(metric_map, &METRIC_rpc_incoming_queue_time));
 }
 
 static void DestroyMessengerCallback(shared_ptr<Messenger>* messenger,

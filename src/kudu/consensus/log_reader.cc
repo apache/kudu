@@ -20,13 +20,13 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 
-METRIC_DEFINE_counter(bytes_read, kudu::MetricUnit::kBytes,
-                      "Number of bytes read since service start");
+METRIC_DEFINE_counter(log_reader_bytes_read, kudu::MetricUnit::kBytes,
+                      "Number of bytes read since tablet start");
 
-METRIC_DEFINE_counter(entries_read, kudu::MetricUnit::kCount,
-                      "Number of entries read since service start");
+METRIC_DEFINE_counter(log_reader_entries_read, kudu::MetricUnit::kCount,
+                      "Number of entries read since tablet start");
 
-METRIC_DEFINE_histogram(read_batch_latency, kudu::MetricUnit::kBytes,
+METRIC_DEFINE_histogram(log_reader_read_batch_latency, kudu::MetricUnit::kBytes,
                         "Microseconds spent reading log entry batches",
                         60000000LU, 2);
 
@@ -52,10 +52,10 @@ const int LogReader::kNoSizeLimit = -1;
 Status LogReader::Open(FsManager *fs_manager,
                        const scoped_refptr<LogIndex>& index,
                        const string& tablet_oid,
-                       MetricContext *parent_metric_context,
+                       const scoped_refptr<MetricEntity>& metric_entity,
                        gscoped_ptr<LogReader> *reader) {
   gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, index, tablet_oid,
-                                                  parent_metric_context));
+                                                  metric_entity));
 
   string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_oid);
 
@@ -66,7 +66,7 @@ Status LogReader::Open(FsManager *fs_manager,
 
 Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
                                       const string& tablet_oid,
-                                      MetricContext *parent_metric_context,
+                                      const scoped_refptr<MetricEntity>& metric_entity,
                                       gscoped_ptr<LogReader>* reader) {
   string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_oid);
 
@@ -74,7 +74,7 @@ Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
   // during writing, its contents are useless to us.
   scoped_refptr<LogIndex> index(NULL);
   gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, index, tablet_oid,
-                                                  parent_metric_context));
+                                                  metric_entity));
   RETURN_NOT_OK_PREPEND(log_reader->Init(recovery_path),
                         "Unable to initialize log reader");
   reader->reset(log_reader.release());
@@ -84,16 +84,15 @@ Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
 LogReader::LogReader(FsManager *fs_manager,
                      const scoped_refptr<LogIndex>& index,
                      const string& tablet_oid,
-                     MetricContext *parent_metric_context)
+                     const scoped_refptr<MetricEntity>& metric_entity)
   : fs_manager_(fs_manager),
     log_index_(index),
     tablet_oid_(tablet_oid),
     state_(kLogReaderInitialized) {
-  if (parent_metric_context) {
-    metric_context_.reset(new MetricContext(*parent_metric_context, "log-reader"));
-    bytes_read_ = METRIC_bytes_read.Instantiate(*metric_context_);
-    entries_read_ = METRIC_entries_read.Instantiate(*metric_context_);
-    read_batch_latency_ = METRIC_read_batch_latency.Instantiate(*metric_context_);
+  if (metric_entity) {
+    bytes_read_ = METRIC_log_reader_bytes_read.Instantiate(metric_entity);
+    entries_read_ = METRIC_log_reader_entries_read.Instantiate(metric_entity);
+    read_batch_latency_ = METRIC_log_reader_read_batch_latency.Instantiate(metric_entity);
   }
 }
 
@@ -269,7 +268,7 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
   CHECK_GT(index_entry.offset_in_segment, 0);
   uint64_t offset = index_entry.offset_in_segment;
   gscoped_ptr<ScopedLatencyMetric> scoped;
-  if (metric_context_) {
+  if (read_batch_latency_) {
     scoped.reset(new ScopedLatencyMetric(read_batch_latency_));
   }
   RETURN_NOT_OK_PREPEND(segment->ReadEntryHeaderAndBatch(&offset, tmp_buf, batch),
@@ -279,7 +278,7 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
                                    index_entry.segment_sequence_number,
                                    index_entry.offset_in_segment));
 
-  if (metric_context_) {
+  if (bytes_read_) {
     bytes_read_->IncrementBy(kEntryHeaderSize + tmp_buf->length());
     entries_read_->IncrementBy((**batch).entry_size());
   }

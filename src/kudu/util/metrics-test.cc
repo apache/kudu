@@ -20,7 +20,19 @@ DECLARE_int32(metrics_retirement_age_ms);
 
 namespace kudu {
 
+METRIC_DEFINE_entity(test_entity);
+
 class MetricsTest : public KuduTest {
+ public:
+  virtual void SetUp() {
+    KuduTest::SetUp();
+
+    entity_ = METRIC_ENTITY_test_entity.Instantiate(&registry_, "my-test");
+  }
+
+ protected:
+  MetricRegistry registry_;
+  scoped_refptr<MetricEntity> entity_;
 };
 
 METRIC_DEFINE_counter(reqs_pending, MetricUnit::kRequests,
@@ -28,8 +40,8 @@ METRIC_DEFINE_counter(reqs_pending, MetricUnit::kRequests,
 
 TEST_F(MetricsTest, SimpleCounterTest) {
   scoped_refptr<Counter> requests =
-    new Counter(METRIC_reqs_pending);
-  ASSERT_EQ("Number of requests pending", requests->description());
+    new Counter(&METRIC_reqs_pending);
+  ASSERT_EQ("Number of requests pending", requests->prototype()->description());
   ASSERT_EQ(0, requests->value());
   requests->Increment();
   ASSERT_EQ(1, requests->value());
@@ -37,36 +49,18 @@ TEST_F(MetricsTest, SimpleCounterTest) {
   ASSERT_EQ(3, requests->value());
 }
 
-METRIC_DEFINE_gauge_uint64(fake_memory_usage, MetricUnit::kBytes, "Test Gauge 1");
+METRIC_DEFINE_gauge_uint64(fake_memory_usage,
+                           MetricUnit::kBytes, "Test Gauge 1");
 
 TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
-  MetricRegistry registry;
-  MetricContext context(&registry, "test");
-
   scoped_refptr<AtomicGauge<uint64_t> > mem_usage =
-    AtomicGauge<uint64_t>::Instantiate(METRIC_fake_memory_usage,
-                                       context);
-  ASSERT_EQ(METRIC_fake_memory_usage.description(), mem_usage->description());
+    METRIC_fake_memory_usage.Instantiate(entity_, 0);
+  ASSERT_EQ(METRIC_fake_memory_usage.description(), mem_usage->prototype()->description());
   ASSERT_EQ(0, mem_usage->value());
   mem_usage->IncrementBy(7);
   ASSERT_EQ(7, mem_usage->value());
   mem_usage->set_value(5);
   ASSERT_EQ(5, mem_usage->value());
-}
-
-TEST_F(MetricsTest, HighWaterMarkTest) {
-  GaugePrototype<int64_t> proto("test", MetricUnit::kBytes, "Test HighWaterMark");
-  scoped_refptr<HighWaterMark<int64_t> > hwm =
-    new HighWaterMark<int64_t>(proto, 0);
-  hwm->IncrementBy(1);
-  ASSERT_EQ(1, hwm->current_value());
-  ASSERT_EQ(1, hwm->value());
-  hwm->IncrementBy(42);
-  ASSERT_EQ(43, hwm->current_value());
-  ASSERT_EQ(43, hwm->value());
-  hwm->DecrementBy(1);
-  ASSERT_EQ(42, hwm->current_value());
-  ASSERT_EQ(43, hwm->value());
 }
 
 METRIC_DEFINE_gauge_int64(test_func_gauge, MetricUnit::kBytes, "Test Gauge 2");
@@ -76,12 +70,10 @@ static int64_t MyFunction(int* metric_val) {
 }
 
 TEST_F(MetricsTest, SimpleFunctionGaugeTest) {
-  MetricRegistry registry;
-  MetricContext context(&registry, "test");
   int metric_val = 1000;
   scoped_refptr<FunctionGauge<int64_t> > gauge =
     METRIC_test_func_gauge.InstantiateFunctionGauge(
-      context, Bind(&MyFunction, Unretained(&metric_val)));
+      entity_, Bind(&MyFunction, Unretained(&metric_val)));
 
   ASSERT_EQ(1000, gauge->value());
   ASSERT_EQ(1001, gauge->value());
@@ -97,13 +89,10 @@ TEST_F(MetricsTest, SimpleFunctionGaugeTest) {
 }
 
 TEST_F(MetricsTest, AutoDetachToLastValue) {
-  MetricRegistry registry;
-  MetricContext context(&registry, "test");
-
   int metric_val = 1000;
   scoped_refptr<FunctionGauge<int64_t> > gauge =
     METRIC_test_func_gauge.InstantiateFunctionGauge(
-      context, Bind(&MyFunction, Unretained(&metric_val)));
+        entity_, Bind(&MyFunction, Unretained(&metric_val)));
 
   ASSERT_EQ(1000, gauge->value());
   ASSERT_EQ(1001, gauge->value());
@@ -119,13 +108,10 @@ TEST_F(MetricsTest, AutoDetachToLastValue) {
 }
 
 TEST_F(MetricsTest, AutoDetachToConstant) {
-  MetricRegistry registry;
-  MetricContext context(&registry, "test");
-
   int metric_val = 1000;
   scoped_refptr<FunctionGauge<int64_t> > gauge =
     METRIC_test_func_gauge.InstantiateFunctionGauge(
-      context, Bind(&MyFunction, Unretained(&metric_val)));
+        entity_, Bind(&MyFunction, Unretained(&metric_val)));
 
   ASSERT_EQ(1000, gauge->value());
   ASSERT_EQ(1001, gauge->value());
@@ -143,9 +129,7 @@ TEST_F(MetricsTest, AutoDetachToConstant) {
 METRIC_DEFINE_histogram(test_hist, MetricUnit::kMilliseconds, "foo", 1000000, 3);
 
 TEST_F(MetricsTest, SimpleHistogramTest) {
-  MetricRegistry registry;
-  MetricContext context(&registry, "test");
-  scoped_refptr<Histogram> hist = METRIC_test_hist.Instantiate(context);
+  scoped_refptr<Histogram> hist = METRIC_test_hist.Instantiate(entity_);
   hist->Increment(2);
   hist->IncrementBy(4, 1);
   ASSERT_EQ(2, hist->histogram_->MinValue());
@@ -156,17 +140,15 @@ TEST_F(MetricsTest, SimpleHistogramTest) {
 }
 
 TEST_F(MetricsTest, JsonPrintTest) {
-  MetricRegistry metrics;
-  scoped_refptr<Counter> bytes_seen = CHECK_NOTNULL(
-    metrics.FindOrCreateCounter("reqs_pending", METRIC_reqs_pending).get());
+  scoped_refptr<Counter> bytes_seen = METRIC_reqs_pending.Instantiate(entity_);
   bytes_seen->Increment();
 
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out);
-  ASSERT_OK(metrics.WriteAsJson(&writer,
-                                       list_of("*"),
-                                       vector<string>()));
+  ASSERT_OK(entity_->WriteAsJson(&writer,
+                                 list_of("*"),
+                                 vector<string>()));
 
   // Now parse it back out.
   rapidjson::Document d;
@@ -182,42 +164,51 @@ TEST_F(MetricsTest, RetirementTest) {
   FLAGS_metrics_retirement_age_ms = 100;
 
   const string kMetricName = "foo";
-  MetricRegistry registry;
-  scoped_refptr<Counter> counter = CHECK_NOTNULL(
-    registry.FindOrCreateCounter(kMetricName, METRIC_reqs_pending).get());
-  ASSERT_EQ(1, registry.UnsafeMetricsMapForTests().size());
+  scoped_refptr<Counter> counter = METRIC_reqs_pending.Instantiate(entity_);
+  ASSERT_EQ(1, entity_->UnsafeMetricsMapForTests().size());
 
   // Since we hold a reference to the counter, it should not get retired.
-  registry.RetireOldMetrics();
-  ASSERT_EQ(1, registry.UnsafeMetricsMapForTests().size());
+  entity_->RetireOldMetrics();
+  ASSERT_EQ(1, entity_->UnsafeMetricsMapForTests().size());
 
   // When we de-ref it, it should not get immediately retired, either, because
   // we keep retirable metrics around for some amount of time. We try retiring
   // a number of times to hit all the cases.
   counter = NULL;
   for (int i = 0; i < 3; i++) {
-    registry.RetireOldMetrics();
-    ASSERT_EQ(1, registry.UnsafeMetricsMapForTests().size());
+    entity_->RetireOldMetrics();
+    ASSERT_EQ(1, entity_->UnsafeMetricsMapForTests().size());
   }
 
   // If we wait for longer than the retirement time, and call retire again, we'll
   // actually retire it.
   SleepFor(MonoDelta::FromMilliseconds(FLAGS_metrics_retirement_age_ms * 1.5));
-  registry.RetireOldMetrics();
-  ASSERT_EQ(0, registry.UnsafeMetricsMapForTests().size());
+  entity_->RetireOldMetrics();
+  ASSERT_EQ(0, entity_->UnsafeMetricsMapForTests().size());
 }
 
 // Test that we can mark a metric to never be retired.
 TEST_F(MetricsTest, NeverRetireTest) {
-  MetricRegistry registry;
-  MetricContext context(&registry, "test");
-  registry.NeverRetire(METRIC_test_hist.Instantiate(context));
+  entity_->NeverRetire(METRIC_test_hist.Instantiate(entity_));
   FLAGS_metrics_retirement_age_ms = 0;
 
   for (int i = 0; i < 3; i++) {
-    registry.RetireOldMetrics();
-    ASSERT_EQ(1, registry.UnsafeMetricsMapForTests().size());
+    entity_->RetireOldMetrics();
+    ASSERT_EQ(1, entity_->UnsafeMetricsMapForTests().size());
   }
+}
+
+TEST_F(MetricsTest, TestInstantiatingTwice) {
+  // Test that re-instantiating the same entity ID returns the same object.
+  scoped_refptr<MetricEntity> new_entity = METRIC_ENTITY_test_entity.Instantiate(
+      &registry_, entity_->id());
+  ASSERT_EQ(new_entity.get(), entity_.get());
+}
+
+TEST_F(MetricsTest, TestInstantiatingDifferentEntities) {
+  scoped_refptr<MetricEntity> new_entity = METRIC_ENTITY_test_entity.Instantiate(
+      &registry_, "some other ID");
+  ASSERT_NE(new_entity.get(), entity_.get());
 }
 
 } // namespace kudu

@@ -54,7 +54,7 @@ static const char* const kSysCatalogTableColMetadata = "metadata";
 SysCatalogTable::SysCatalogTable(Master* master,
                                  MetricRegistry* metrics,
                                  const ElectedLeaderCallback& leader_cb)
-    : metric_ctx_(metrics, table_name()),
+    : metric_registry_(metrics),
       master_(master),
       leader_cb_(leader_cb),
       old_role_(QuorumPeerPB::FOLLOWER) {
@@ -224,7 +224,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   consensus::ConsensusBootstrapInfo consensus_info;
   RETURN_NOT_OK(BootstrapTablet(metadata,
                                 scoped_refptr<server::Clock>(master_->clock()),
-                                &metric_ctx_,
+                                metric_registry_,
                                 tablet_peer_->status_listener(),
                                 &tablet,
                                 &log,
@@ -238,7 +238,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            master_->messenger(),
                                            log,
-                                           *tablet->GetMetricContext()),
+                                           tablet->GetMetricEntity()),
                         "Failed to Init() TabletPeer");
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),

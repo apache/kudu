@@ -121,9 +121,7 @@ void CompilationManager::Shutdown() {
   GetSingleton()->pool_->Shutdown();
 }
 
-Status CompilationManager::StartInstrumentation(MetricRegistry* metric_registry) {
-  MetricContext ctx(DCHECK_NOTNULL(metric_registry), "CompilationManager");
-
+Status CompilationManager::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {
   // Even though these function as counters, we use gauges instead, because
   // this is a singleton that is shared across multiple TS instances in a
   // minicluster setup. If we were to use counters, then we could not properly
@@ -136,10 +134,10 @@ Status CompilationManager::StartInstrumentation(MetricRegistry* metric_registry)
   Callback<int64_t(void)> queries = Bind(&AtomicInt<int64_t>::Load,
                                          Unretained(&query_counter_),
                                          kMemOrderNoBarrier);
-  metric_registry->NeverRetire(
-    METRIC_code_cache_hits.InstantiateFunctionGauge(ctx, hits));
-  metric_registry->NeverRetire(
-    METRIC_code_cache_queries.InstantiateFunctionGauge(ctx, queries));
+  metric_entity->NeverRetire(
+      METRIC_code_cache_hits.InstantiateFunctionGauge(metric_entity, hits));
+  metric_entity->NeverRetire(
+      METRIC_code_cache_queries.InstantiateFunctionGauge(metric_entity, queries));
   return Status::OK();
 }
 

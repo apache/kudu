@@ -37,8 +37,8 @@ TabletServer::TabletServer(const TabletServerOptions& opts)
     initted_(false),
     fail_heartbeats_for_tests_(false),
     opts_(opts),
-    tablet_manager_(new TSTabletManager(fs_manager_.get(), this, metric_context())),
-    scanner_manager_(new ScannerManager(mutable_metric_context())),
+    tablet_manager_(new TSTabletManager(fs_manager_.get(), this, metric_registry())),
+    scanner_manager_(new ScannerManager(metric_entity())),
     path_handlers_(new TabletServerPathHandlers(this)),
     maintenance_manager_(new MaintenanceManager(MaintenanceManager::DEFAULT_OPTIONS)) {
 }
@@ -65,7 +65,7 @@ Status TabletServer::ValidateMasterAddressResolution() const {
 Status TabletServer::Init() {
   CHECK(!initted_);
 
-  cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_context().metrics());
+  cfile::BlockCache::GetSingleton()->StartInstrumentation(metric_entity());
 
   // Validate that the passed master address actually resolves.
   // We don't validate that we can connect at this point -- it should
@@ -97,10 +97,10 @@ Status TabletServer::Start() {
 
   gscoped_ptr<ServiceIf> ts_service(new TabletServiceImpl(this));
   gscoped_ptr<ServiceIf> admin_service(new TabletServiceAdminImpl(this));
-  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_context(),
+  gscoped_ptr<ServiceIf> consensus_service(new ConsensusServiceImpl(metric_entity(),
                                                                     tablet_manager_.get()));
   gscoped_ptr<ServiceIf> remote_bootstrap_service(
-      new RemoteBootstrapServiceImpl(fs_manager_.get(), tablet_manager_.get(), metric_context()));
+      new RemoteBootstrapServiceImpl(fs_manager_.get(), tablet_manager_.get(), metric_entity()));
 
   RETURN_NOT_OK(ServerBase::RegisterService(ts_service.Pass()));
   RETURN_NOT_OK(ServerBase::RegisterService(admin_service.Pass()));

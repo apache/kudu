@@ -50,7 +50,7 @@ class TransactionTracker {
 
   void WaitForAllToFinish();
 
-  void StartInstrumentation(const MetricContext& metric_context);
+  void StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity);
 
   // Increments relevant counters in 'txns_in_flight_'. Called by
   // TransactionDriver::Execute.

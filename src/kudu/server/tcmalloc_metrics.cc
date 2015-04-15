@@ -60,26 +60,26 @@ static size_t GetTCMallocPropValue(const char* prop) {
   return value;
 }
 
-void RegisterMetrics(MetricRegistry* registry) {
-  MetricContext ctx(registry, "tcmalloc");
-  registry->NeverRetire(
-    METRIC_generic_current_allocated_bytes.InstantiateFunctionGauge(
-      ctx, Bind(GetTCMallocPropValue, Unretained("generic.current_allocated_bytes"))));
-  registry->NeverRetire(
-    METRIC_generic_heap_size.InstantiateFunctionGauge(
-      ctx, Bind(GetTCMallocPropValue, Unretained("generic.heap_size"))));
-  registry->NeverRetire(
-    METRIC_tcmalloc_pageheap_free_bytes.InstantiateFunctionGauge(
-      ctx, Bind(GetTCMallocPropValue, Unretained("tcmalloc.pageheap_free_bytes"))));
-  registry->NeverRetire(
-    METRIC_tcmalloc_pageheap_unmapped_bytes.InstantiateFunctionGauge(
-      ctx, Bind(GetTCMallocPropValue, Unretained("tcmalloc.pageheap_unmapped_bytes"))));
-  registry->NeverRetire(
-    METRIC_tcmalloc_max_total_thread_cache_bytes.InstantiateFunctionGauge(
-      ctx, Bind(GetTCMallocPropValue, Unretained("tcmalloc.max_total_thread_cache_bytes"))));
-  registry->NeverRetire(
-    METRIC_tcmalloc_current_total_thread_cache_bytes.InstantiateFunctionGauge(
-      ctx, Bind(GetTCMallocPropValue, Unretained("tcmalloc.current_total_thread_cache_bytes"))));
+void RegisterMetrics(const scoped_refptr<MetricEntity>& entity) {
+  entity->NeverRetire(
+      METRIC_generic_current_allocated_bytes.InstantiateFunctionGauge(
+          entity, Bind(GetTCMallocPropValue, Unretained("generic.current_allocated_bytes"))));
+  entity->NeverRetire(
+      METRIC_generic_heap_size.InstantiateFunctionGauge(
+          entity, Bind(GetTCMallocPropValue, Unretained("generic.heap_size"))));
+  entity->NeverRetire(
+      METRIC_tcmalloc_pageheap_free_bytes.InstantiateFunctionGauge(
+          entity, Bind(GetTCMallocPropValue, Unretained("tcmalloc.pageheap_free_bytes"))));
+  entity->NeverRetire(
+      METRIC_tcmalloc_pageheap_unmapped_bytes.InstantiateFunctionGauge(
+          entity, Bind(GetTCMallocPropValue, Unretained("tcmalloc.pageheap_unmapped_bytes"))));
+  entity->NeverRetire(
+      METRIC_tcmalloc_max_total_thread_cache_bytes.InstantiateFunctionGauge(
+          entity, Bind(GetTCMallocPropValue, Unretained("tcmalloc.max_total_thread_cache_bytes"))));
+  entity->NeverRetire(
+      METRIC_tcmalloc_current_total_thread_cache_bytes.InstantiateFunctionGauge(
+          entity, Bind(GetTCMallocPropValue,
+                       Unretained("tcmalloc.current_total_thread_cache_bytes"))));
 }
 
 } // namespace tcmalloc

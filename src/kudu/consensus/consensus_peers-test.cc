@@ -19,6 +19,8 @@
 
 DECLARE_int32(max_clock_sync_error_usec);
 
+METRIC_DECLARE_entity(tablet);
+
 namespace kudu {
 namespace consensus {
 
@@ -33,7 +35,7 @@ const char* kLeaderUuid = "test-peers-leader";
 class ConsensusPeersTest : public KuduTest {
  public:
   ConsensusPeersTest()
-    : metric_context_(&metric_registry_, "peer-test"),
+    : metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "peer-test")),
       schema_(GetSimpleTestSchema()) {
     CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(1).Build(&pool_));
   }
@@ -54,7 +56,7 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_OK(clock_->Init());
 
     consensus_.reset(new TestRaftConsensusQueueIface());
-    message_queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTabletId));
+    message_queue_.reset(new PeerMessageQueue(metric_entity_, log_.get(), kLeaderUuid, kTabletId));
     message_queue_->RegisterObserver(consensus_.get());
   }
 
@@ -111,7 +113,7 @@ class ConsensusPeersTest : public KuduTest {
  protected:
   gscoped_ptr<TestRaftConsensusQueueIface> consensus_;
   MetricRegistry metric_registry_;
-  MetricContext metric_context_;
+  scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<FsManager> fs_manager_;
   scoped_refptr<Log> log_;
   gscoped_ptr<PeerMessageQueue> message_queue_;

@@ -12,6 +12,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
@@ -97,7 +98,7 @@ class BlockManagerStressTest : public KuduTest {
       paths = strings::Split(FLAGS_block_manager_paths, ",",
                              strings::SkipEmpty());
     }
-    return new T(env_.get(), NULL, paths);
+    return new T(env_.get(), scoped_refptr<MetricEntity>(), paths);
   }
 
   void RunTest(int secs) {

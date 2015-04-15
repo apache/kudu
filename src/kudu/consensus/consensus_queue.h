@@ -25,7 +25,7 @@ namespace kudu {
 template<class T>
 class AtomicGauge;
 class MemTracker;
-class MetricContext;
+class MetricEntity;
 class ThreadPool;
 
 namespace log {
@@ -96,7 +96,7 @@ class PeerMessageQueue {
     uint64_t last_seen_term_;
   };
 
-  PeerMessageQueue(const MetricContext& metric_ctx,
+  PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                    const scoped_refptr<log::Log>& log,
                    const std::string& local_uuid,
                    const std::string& tablet_id,
@@ -213,7 +213,7 @@ class PeerMessageQueue {
     // Keeps track of the number of ops. that are still in progress (IsDone() returns false).
     scoped_refptr<AtomicGauge<int64_t> > num_in_progress_ops;
 
-    explicit Metrics(const MetricContext& metric_ctx);
+    explicit Metrics(const scoped_refptr<MetricEntity>& metric_entity);
   };
 
   virtual ~PeerMessageQueue();

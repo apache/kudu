@@ -12,13 +12,13 @@ namespace kudu {
 class Counter;
 template<class T>
 class AtomicGauge;
-class MetricContext;
+class MetricEntity;
 
 namespace fs {
 namespace internal {
 
 struct BlockManagerMetrics {
-  explicit BlockManagerMetrics(const MetricContext& metric_ctx);
+  explicit BlockManagerMetrics(const scoped_refptr<MetricEntity>& metric_entity);
 
   scoped_refptr<AtomicGauge<uint64_t> > blocks_open_reading;
   scoped_refptr<AtomicGauge<uint64_t> > blocks_open_writing;

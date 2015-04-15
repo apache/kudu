@@ -59,7 +59,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // 'fs_manager' must remain valid until this object is destructed.
   TSTabletManager(FsManager* fs_manager,
                   TabletServer* server,
-                  const MetricContext& metric_ctx);
+                  MetricRegistry* metric_registry);
 
   virtual ~TSTabletManager();
 
@@ -220,7 +220,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Next tablet report seqno.
   int32_t next_report_seq_;
 
-  MetricContext metric_ctx_;
+  MetricRegistry* metric_registry_;
 
   TSTabletManagerStatePB state_;
 

@@ -91,7 +91,7 @@ class TabletBootstrap {
  public:
   TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
                   const scoped_refptr<Clock>& clock,
-                  MetricContext* metric_context,
+                  MetricRegistry* metric_registry,
                   TabletStatusListener* listener,
                   const scoped_refptr<LogAnchorRegistry>& log_anchor_registry);
 
@@ -212,7 +212,7 @@ class TabletBootstrap {
 
   scoped_refptr<TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
-  MetricContext* metric_context_;
+  MetricRegistry* metric_registry_;
   TabletStatusListener* listener_;
   gscoped_ptr<tablet::Tablet> tablet_;
   const scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
@@ -302,7 +302,7 @@ void TabletStatusListener::StatusMessage(const string& status) {
 
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<Clock>& clock,
-                       MetricContext* metric_context,
+                       MetricRegistry* metric_registry,
                        TabletStatusListener* listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,
@@ -310,7 +310,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        ConsensusBootstrapInfo* consensus_info) {
   TRACE_EVENT1("tablet", "BootstrapTablet",
                "tablet_id", meta->oid());
-  TabletBootstrap bootstrap(meta, clock, metric_context, listener, log_anchor_registry);
+  TabletBootstrap bootstrap(meta, clock, metric_registry, listener, log_anchor_registry);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
@@ -337,12 +337,12 @@ static string DebugInfo(const string& tablet_id,
 
 TabletBootstrap::TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
                                  const scoped_refptr<Clock>& clock,
-                                 MetricContext* metric_context,
+                                 MetricRegistry* metric_registry,
                                  TabletStatusListener* listener,
                                  const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
     : meta_(meta),
       clock_(clock),
-      metric_context_(metric_context),
+      metric_registry_(metric_registry),
       listener_(listener),
       log_anchor_registry_(log_anchor_registry),
       arena_(256*1024, 4*1024*1024) {
@@ -450,7 +450,7 @@ Status TabletBootstrap::FinishBootstrap(const std::string& message,
 Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
   gscoped_ptr<Tablet> tablet(new Tablet(meta_,
                                         clock_,
-                                        metric_context_,
+                                        metric_registry_,
                                         log_anchor_registry_));
   // doing nothing for now except opening a tablet locally.
   RETURN_NOT_OK(tablet->Open());
@@ -475,7 +475,7 @@ Status TabletBootstrap::FetchLogSegments(bool* needs_recovery) {
   // Open the reader.
   RETURN_NOT_OK_PREPEND(LogReader::OpenFromRecoveryDir(tablet_->metadata()->fs_manager(),
                                                        tablet_->metadata()->oid(),
-                                                       metric_context_,
+                                                       tablet_->GetMetricEntity().get(),
                                                        &log_reader_),
                         "Could not open LogReader. Reason");
   return Status::OK();
@@ -577,7 +577,7 @@ Status TabletBootstrap::OpenNewLog() {
                           tablet_->metadata()->fs_manager(),
                           tablet_->tablet_id(),
                           *tablet_->schema(),
-                          metric_context_,
+                          tablet_->GetMetricEntity(),
                           &log_));
   // Disable sync temporarily in order to speed up appends during the
   // bootstrap process.

@@ -24,6 +24,8 @@ DECLARE_int32(consensus_max_batch_size_bytes);
 DECLARE_int32(log_cache_size_limit_mb);
 DECLARE_int32(global_log_cache_size_limit_mb);
 
+METRIC_DECLARE_entity(tablet);
+
 namespace kudu {
 namespace consensus {
 
@@ -34,7 +36,7 @@ class LogCacheTest : public KuduTest {
  public:
   LogCacheTest()
     : schema_(GetSimpleTestSchema()),
-      metric_context_(&metric_registry_, "LogCacheTest") {
+      metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "LogCacheTest")) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -62,7 +64,7 @@ class LogCacheTest : public KuduTest {
 
   void CloseAndReopenCache(const OpId& preceding_id,
                            const string& mem_tracker_name) {
-    cache_.reset(new LogCache(metric_context_,
+    cache_.reset(new LogCache(metric_entity_,
                               log_.get(),
                               kPeerUuid,
                               kTestTablet,
@@ -93,7 +95,7 @@ class LogCacheTest : public KuduTest {
 
   const Schema schema_;
   MetricRegistry metric_registry_;
-  MetricContext metric_context_;
+  scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<LogCache> cache_;
   scoped_refptr<log::Log> log_;

@@ -39,9 +39,9 @@ DECLARE_int32(tablet_server_scan_batch_size_rows);
 DECLARE_int32(metrics_retirement_age_ms);
 
 // Declare these metrics prototypes for simpler unit testing of their behavior.
-METRIC_DECLARE_counter(rows_inserted);
-METRIC_DECLARE_counter(rows_updated);
-METRIC_DECLARE_counter(rows_deleted);
+METRIC_DECLARE_counter(tablet_rows_inserted);
+METRIC_DECLARE_counter(tablet_rows_updated);
+METRIC_DECLARE_counter(tablet_rows_deleted);
 
 namespace kudu {
 namespace tserver {
@@ -159,14 +159,18 @@ TEST_F(TabletServerTest, TestWebPages) {
     ASSERT_OK(c.FetchURL(strings::Substitute("http://$0/jsonmetricz", addr, kTabletId),
                                 &buf));
 
+    // Check that the tablet entry shows up.
+    ASSERT_STR_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
+    ASSERT_STR_CONTAINS(buf.ToString(), "\"id\": \"TestTablet\"");
+
     // Check for the existence of some particular metrics for which we've had early-retirement
     // bugs in the past.
-    ASSERT_STR_CONTAINS(buf.ToString(), "clock.clock_timestamp");
-    ASSERT_STR_CONTAINS(buf.ToString(), "kudu.tabletserver.tserver.scanners.active_scanners");
-    ASSERT_STR_CONTAINS(buf.ToString(), "threading.total_threads");
-    ASSERT_STR_CONTAINS(buf.ToString(), "CompilationManager.code_cache_queries");
+    ASSERT_STR_CONTAINS(buf.ToString(), "hybrid_clock_timestamp");
+    ASSERT_STR_CONTAINS(buf.ToString(), "active_scanners");
+    ASSERT_STR_CONTAINS(buf.ToString(), "total_threads");
+    ASSERT_STR_CONTAINS(buf.ToString(), "code_cache_queries");
 #ifdef TCMALLOC_ENABLED
-    ASSERT_STR_CONTAINS(buf.ToString(), "tcmalloc.tcmalloc_max_total_thread_cache_bytes");
+    ASSERT_STR_CONTAINS(buf.ToString(), "tcmalloc_max_total_thread_cache_bytes");
 #endif
   }
 
@@ -204,7 +208,7 @@ TEST_F(TabletServerTest, TestInsert) {
   scoped_refptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   scoped_refptr<Counter> rows_inserted =
-      METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContext());
+    METRIC_tablet_rows_inserted.Instantiate(tablet->tablet()->GetMetricEntity());
   ASSERT_EQ(0, rows_inserted->value());
   tablet.reset();
 
@@ -302,8 +306,7 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_ClientPropagated) {
       mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
                                                              &tablet));
   scoped_refptr<Counter> rows_inserted =
-      METRIC_rows_inserted.Instantiate(
-          *tablet->tablet()->GetMetricContext());
+      METRIC_tablet_rows_inserted.Instantiate(tablet->tablet()->GetMetricEntity());
   ASSERT_EQ(0, rows_inserted->value());
 
   // get the current time
@@ -354,8 +357,8 @@ TEST_F(TabletServerTest, TestExternalConsistencyModes_CommitWait) {
       mini_server_->server()->tablet_manager()->LookupTablet(kTabletId,
                                                              &tablet));
   scoped_refptr<Counter> rows_inserted =
-      METRIC_rows_inserted.Instantiate(
-          *tablet->tablet()->GetMetricContext());
+      METRIC_tablet_rows_inserted.Instantiate(
+          tablet->tablet()->GetMetricEntity());
   ASSERT_EQ(0, rows_inserted->value());
 
   // get current time, with and without error
@@ -416,11 +419,11 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   scoped_refptr<TabletPeer> tablet;
   ASSERT_TRUE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   scoped_refptr<Counter> rows_inserted =
-      METRIC_rows_inserted.Instantiate(*tablet->tablet()->GetMetricContext());
+      METRIC_tablet_rows_inserted.Instantiate(tablet->tablet()->GetMetricEntity());
   scoped_refptr<Counter> rows_updated =
-      METRIC_rows_updated.Instantiate(*tablet->tablet()->GetMetricContext());
+      METRIC_tablet_rows_updated.Instantiate(tablet->tablet()->GetMetricEntity());
   scoped_refptr<Counter> rows_deleted =
-      METRIC_rows_deleted.Instantiate(*tablet->tablet()->GetMetricContext());
+      METRIC_tablet_rows_deleted.Instantiate(tablet->tablet()->GetMetricEntity());
   ASSERT_EQ(0, rows_inserted->value());
   ASSERT_EQ(0, rows_updated->value());
   ASSERT_EQ(0, rows_deleted->value());
@@ -1820,13 +1823,13 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TsTabletManagerReportsNewRoles)
 }
 
 TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
-  HistogramPrototype hist_proto("insert-latency",
-                                MetricUnit::kMicroseconds,
-                                "TabletServer single threaded insert latency.",
-                                10000000,
-                                2);
+  METRIC_DEFINE_histogram(insert_latency,
+                          MetricUnit::kMicroseconds,
+                          "TabletServer single threaded insert latency.",
+                          10000000,
+                          2);
 
-  scoped_refptr<Histogram> histogram = hist_proto.Instantiate(ts_test_metric_context_);
+  scoped_refptr<Histogram> histogram = METRIC_insert_latency.Instantiate(ts_test_metric_entity_);
 
   uint64_t warmup = AllowSlowTests() ?
       FLAGS_single_threaded_insert_latency_bench_warmup_rows : 10;
@@ -1854,7 +1857,7 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out);
-  ASSERT_OK(histogram->WriteAsJson("ts-insert-latency", &writer, NORMAL));
+  ASSERT_OK(histogram->WriteAsJson(&writer, NORMAL));
 
   LOG(INFO) << "Throughput: " << throughput << " rows/sec.";
   LOG(INFO) << out.str();

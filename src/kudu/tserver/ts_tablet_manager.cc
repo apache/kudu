@@ -88,11 +88,11 @@ struct CreatesInProgressDeleter {
 
 TSTabletManager::TSTabletManager(FsManager* fs_manager,
                                  TabletServer* server,
-                                 const MetricContext& metric_ctx)
+                                 MetricRegistry* metric_registry)
   : fs_manager_(fs_manager),
     server_(server),
     next_report_seq_(0),
-    metric_ctx_(metric_ctx),
+    metric_registry_(metric_registry),
     state_(MANAGER_INITIALIZING) {
   // TODO base the number of parallel tablet bootstraps on something related
   // to the number of physical devices.
@@ -321,7 +321,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     // partially created tablet here?
     s = BootstrapTablet(meta,
                         scoped_refptr<server::Clock>(server_->clock()),
-                        &metric_ctx_,
+                        metric_registry_,
                         tablet_peer->status_listener(),
                         &tablet,
                         &log,
@@ -342,7 +342,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
                            log,
-                           *tablet->GetMetricContext());
+                           tablet->GetMetricEntity());
 
     if (!s.ok()) {
       LOG(ERROR) << "Tablet failed to init: "

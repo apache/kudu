@@ -31,16 +31,6 @@ MemTracker::TrackerMap MemTracker::id_to_mem_trackers_;
 Mutex MemTracker::static_mem_trackers_lock_;
 Atomic64 MemTracker::released_memory_since_gc_;
 
-namespace {
-
-void InitiateHighWaterMark(const string& id,
-                           const string& descr,
-                           scoped_refptr<HighWaterMark<int64_t> >* hwm) {
-  GaugePrototype<int64_t> proto(id.c_str(), MetricUnit::kBytes, descr.c_str());
-  *hwm = new HighWaterMark<int64_t>(proto, 0);
-}
-
-} // anonymous namespace
 
 // Sentinel value used for overloading MemTracker::CreateTracker with no parent_id.
 const char MemTracker::NO_PARENT[] = "!!!NO_PARENT!!!";
@@ -70,11 +60,12 @@ MemTracker::MemTracker(int64_t byte_limit, const string& id,
     : limit_(byte_limit),
       id_(id),
       descr_(Substitute("memory consumption for $0", id)),
+      consumption_(0),
       consumption_metric_(NULL),
       auto_unregister_(false),
       enable_logging_(false),
       log_stack_(false) {
-  InitiateHighWaterMark(id_, descr_, &consumption_);
+
   if (parent_id != NO_PARENT) {
     CHECK(FindTracker(parent_id, &parent_)) << " id " << id << " parent_id " << parent_id;
     parent_->AddChildTracker(this);
@@ -87,12 +78,13 @@ MemTracker::MemTracker(FunctionGauge<uint64_t>* consumption_metric,
   : limit_(byte_limit),
     id_(id),
     descr_(Substitute("memory consumption for $0", id)),
+    consumption_(0),
     consumption_metric_(consumption_metric),
     auto_unregister_(false),
     enable_logging_(false),
     log_stack_(false) {
-  InitiateHighWaterMark(id_, descr_, &consumption_);
   Init();
+  UpdateConsumption();
 }
 
 MemTracker::~MemTracker() {
@@ -158,7 +150,7 @@ void MemTracker::ListTrackers(vector<shared_ptr<MemTracker> >* trackers) {
 void MemTracker::UpdateConsumption() {
   DCHECK(consumption_metric_ != NULL);
   DCHECK(parent_.get() == NULL);
-  consumption_->set_value(consumption_metric_->value());
+  consumption_.set_value(consumption_metric_->value());
 }
 
 // TODO Use HighWaterMark for 'consumption_metric', then if
@@ -182,9 +174,9 @@ void MemTracker::Consume(int64_t bytes) {
   }
   for (std::vector<MemTracker*>::iterator tracker = all_trackers_.begin();
        tracker != all_trackers_.end(); ++tracker) {
-    (*tracker)->consumption_->IncrementBy(bytes);
+    (*tracker)->consumption_.IncrementBy(bytes);
     if ((*tracker)->consumption_metric_ == NULL) {
-      DCHECK_GE((*tracker)->consumption_->current_value(), 0);
+      DCHECK_GE((*tracker)->consumption_.current_value(), 0);
     }
   }
 }
@@ -206,14 +198,14 @@ bool MemTracker::TryConsume(int64_t bytes) {
   for (i = all_trackers_.size() - 1; i >= 0; --i) {
     MemTracker *tracker = all_trackers_[i];
     if (tracker->limit_ < 0) {
-      tracker->consumption_->IncrementBy(bytes);
+      tracker->consumption_.IncrementBy(bytes);
     } else {
-      if (!tracker->consumption_->TryIncrementBy(bytes, tracker->limit_)) {
+      if (!tracker->consumption_.TryIncrementBy(bytes, tracker->limit_)) {
         // One of the trackers failed, attempt to GC memory or expand our limit. If that
         // succeeds, TryUpdate() again. Bail if either fails.
         if (!tracker->GcMemory(tracker->limit_ - bytes) ||
             tracker->ExpandLimit(bytes)) {
-          if (!tracker->consumption_->TryIncrementBy(
+          if (!tracker->consumption_.TryIncrementBy(
                   bytes, tracker->limit_)) {
             break;
           }
@@ -238,7 +230,7 @@ bool MemTracker::TryConsume(int64_t bytes) {
   // to adjust the consumption of the query tracker to stop the resource from never
   // getting used by a subsequent TryConsume()?
   for (int j = all_trackers_.size() - 1; j > i; --j) {
-    all_trackers_[j]->consumption_->IncrementBy(-bytes);
+    all_trackers_[j]->consumption_.IncrementBy(-bytes);
   }
   return false;
 }
@@ -268,7 +260,7 @@ void MemTracker::Release(int64_t bytes) {
 
   for (std::vector<MemTracker*>::iterator tracker = all_trackers_.begin();
        tracker != all_trackers_.end(); ++tracker) {
-    (*tracker)->consumption_->IncrementBy(-bytes);
+    (*tracker)->consumption_.IncrementBy(-bytes);
     // If a UDF calls FunctionContext::TrackAllocation() but allocates less than the
     // reported amount, the subsequent call to FunctionContext::Free() may cause the
     // process mem tracker to go negative until it is synced back to the tcmalloc
@@ -276,7 +268,7 @@ void MemTracker::Release(int64_t bytes) {
     // trackers since we can enforce that the reported memory usage is internally
     // consistent.)
     if ((*tracker)->consumption_metric_ == NULL) {
-      DCHECK_GE((*tracker)->consumption_->current_value(), 0);
+      DCHECK_GE((*tracker)->consumption_.current_value(), 0);
     }
   }
 }

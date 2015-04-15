@@ -21,7 +21,7 @@
 
 namespace kudu {
 
-class MetricRegistry;
+class MetricEntity;
 class Thread;
 class WebCallbackRegistry;
 
@@ -289,8 +289,9 @@ class Thread : public RefCountedThreadSafe<Thread> {
 };
 
 // Registers /threadz with the debug webserver, and creates thread-tracking metrics under
-// the "thread-manager." prefix
-Status StartThreadInstrumentation(MetricRegistry* metric, WebCallbackRegistry* web);
+// the given entity.
+Status StartThreadInstrumentation(const scoped_refptr<MetricEntity>& server_metrics,
+                                  WebCallbackRegistry* web);
 } // namespace kudu
 
 #endif /* KUDU_UTIL_THREAD_H */

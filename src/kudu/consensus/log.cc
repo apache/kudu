@@ -211,7 +211,7 @@ Status Log::Open(const LogOptions &options,
                  FsManager *fs_manager,
                  const std::string& tablet_id,
                  const Schema& schema,
-                 MetricContext* parent_metrics_context,
+                 const scoped_refptr<MetricEntity>& metric_entity,
                  scoped_refptr<Log>* log) {
 
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(fs_manager->GetWalsRootDir()));
@@ -223,7 +223,7 @@ Status Log::Open(const LogOptions &options,
                                      tablet_wal_path,
                                      tablet_id,
                                      schema,
-                                     parent_metrics_context));
+                                     metric_entity));
   RETURN_NOT_OK(new_log->Init());
   log->swap(new_log);
   return Status::OK();
@@ -234,7 +234,7 @@ Log::Log(const LogOptions &options,
          const string& log_path,
          const string& tablet_id,
          const Schema& schema,
-         MetricContext* parent_metric_context)
+         const scoped_refptr<MetricEntity>& metric_entity)
   : options_(options),
     fs_manager_(fs_manager),
     log_dir_(log_path),
@@ -246,12 +246,11 @@ Log::Log(const LogOptions &options,
     entry_batch_queue_(FLAGS_group_commit_queue_size_bytes),
     append_thread_(new AppendThread(this)),
     force_sync_all_(options_.force_fsync_all),
-    allocation_state_(kAllocationNotStarted) {
+    allocation_state_(kAllocationNotStarted),
+    metric_entity_(metric_entity) {
   CHECK_OK(ThreadPoolBuilder("log-alloc").set_max_threads(1).Build(&allocation_pool_));
-  if (parent_metric_context) {
-    metric_context_.reset(new MetricContext(*parent_metric_context,
-                                            strings::Substitute("log.tablet-$0", tablet_id)));
-    metrics_.reset(new LogMetrics(*metric_context_));
+  if (metric_entity_) {
+    metrics_.reset(new LogMetrics(metric_entity_));
   }
 }
 
@@ -266,7 +265,7 @@ Status Log::Init() {
   RETURN_NOT_OK(LogReader::Open(fs_manager_,
                                 log_index_,
                                 tablet_id_,
-                                metric_context_.get(),
+                                metric_entity_.get(),
                                 &reader_));
 
   // The case where we are continuing an existing log.

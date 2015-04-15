@@ -34,7 +34,7 @@ class HybridClock : public Clock {
   // Updates the clock with a timestamp originating on another machine.
   virtual Status Update(const Timestamp& to_update) OVERRIDE;
 
-  virtual void RegisterMetrics(MetricRegistry* registry) OVERRIDE;
+  virtual void RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) OVERRIDE;
 
   // HybridClock supports all external consistency modes.
   virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) OVERRIDE;

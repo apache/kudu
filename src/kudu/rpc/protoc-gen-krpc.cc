@@ -321,7 +321,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       "#include \"kudu/rpc/service_if.h\"\n"
       "\n"
       "namespace kudu {\n"
-      "class MetricContext;\n"
+      "class MetricEntity;\n"
       "namespace rpc {\n"
       "class Messenger;\n"
       "class RpcContext;\n"
@@ -341,7 +341,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "\n"
         "class $service_name$If : public ::kudu::rpc::ServiceIf {\n"
         " public:\n"
-        "  explicit $service_name$If(const MetricContext& ctx);\n"
+        "  explicit $service_name$If(const scoped_refptr<MetricEntity>& entity);\n"
         "  virtual ~$service_name$If();\n"
         "  virtual void Handle(::kudu::rpc::InboundCall *call);\n"
         "  virtual std::string service_name() const;\n"
@@ -390,7 +390,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         "  static const int kMethodCount = $service_method_count$;\n"
         "\n"
         "  // Pre-initialize metrics because calling METRIC_foo.Instantiate() is expensive.\n"
-        "  void InitMetrics(const MetricContext& ctx);\n"
+        "  void InitMetrics(const scoped_refptr<MetricEntity>& ent);\n"
         "\n"
         "  ::kudu::rpc::RpcMethodMetrics metrics_[kMethodCount];\n"
         "\n"
@@ -457,8 +457,8 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       subs->PushService(service);
 
       Print(printer, *subs,
-        "$service_name$If::$service_name$If(const MetricContext& ctx) {\n"
-        "  InitMetrics(ctx);\n"
+        "$service_name$If::$service_name$If(const scoped_refptr<MetricEntity>& entity) {\n"
+        "  InitMetrics(entity);\n"
         "}\n"
         "\n"
         "$service_name$If::~$service_name$If() {\n"
@@ -503,7 +503,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       );
 
       Print(printer, *subs,
-        "void $service_name$If::InitMetrics(const MetricContext& ctx) {\n"
+        "void $service_name$If::InitMetrics(const scoped_refptr<MetricEntity>& entity) {\n"
       );
       // Expose per-RPC metrics.
       for (int method_idx = 0; method_idx < service->method_count();
@@ -513,7 +513,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
 
         Print(printer, *subs,
           "  metrics_[$metric_enum_key$].handler_latency = \n"
-          "      METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(ctx);\n"
+          "      METRIC_handler_latency_$rpc_full_name_plainchars$.Instantiate(entity);\n"
         );
 
         subs->Pop();

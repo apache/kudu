@@ -24,7 +24,7 @@
 using std::tr1::shared_ptr;
 using strings::Substitute;
 
-METRIC_DEFINE_histogram(incoming_queue_time, kudu::MetricUnit::kMicroseconds,
+METRIC_DEFINE_histogram(rpc_incoming_queue_time, kudu::MetricUnit::kMicroseconds,
     "Number of microseconds incoming RPC requests spend in the worker queue",
     60000000LU, 3);
 
@@ -40,13 +40,13 @@ namespace kudu {
 namespace rpc {
 
 ServicePool::ServicePool(gscoped_ptr<ServiceIf> service,
-                         const MetricContext& metric_ctx,
+                         const scoped_refptr<MetricEntity>& entity,
                          size_t service_queue_length)
   : service_(service.Pass()),
     service_queue_(service_queue_length),
-    incoming_queue_time_(METRIC_incoming_queue_time.Instantiate(metric_ctx)),
-    rpcs_timed_out_in_queue_(METRIC_rpcs_timed_out_in_queue.Instantiate(metric_ctx)),
-    rpcs_queue_overflow_(METRIC_rpcs_queue_overflow.Instantiate(metric_ctx)),
+    incoming_queue_time_(METRIC_rpc_incoming_queue_time.Instantiate(entity)),
+    rpcs_timed_out_in_queue_(METRIC_rpcs_timed_out_in_queue.Instantiate(entity)),
+    rpcs_queue_overflow_(METRIC_rpcs_queue_overflow.Instantiate(entity)),
     closing_(false) {
 }
 

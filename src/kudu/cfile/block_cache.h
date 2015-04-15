@@ -52,11 +52,11 @@ class BlockCache {
   void Insert(FileId file_id, uint64_t offset, const Slice &block_data,
               BlockCacheHandle *inserted);
 
-  // Pass a MetricContext to the cache to start recording metrics.
+  // Pass a metric entity to the cache to start recording metrics.
   // This should be called before the block cache starts serving blocks.
   // Not calling StartInstrumentation will simply result in no block cache-related metrics.
   // Calling StartInstrumentation multiple times will reset the metrics each time.
-  void StartInstrumentation(MetricRegistry* metrics);
+  void StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(BlockCache);

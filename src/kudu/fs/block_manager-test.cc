@@ -32,6 +32,20 @@ DEFINE_int32(num_blocks_close, 500,
 DECLARE_uint64(log_container_preallocate_bytes);
 DECLARE_uint64(log_container_max_size);
 
+// Generic block manager metrics.
+METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_reading);
+METRIC_DECLARE_gauge_uint64(block_manager_blocks_open_writing);
+METRIC_DECLARE_counter(block_manager_total_writable_blocks);
+METRIC_DECLARE_counter(block_manager_total_readable_blocks);
+METRIC_DECLARE_counter(block_manager_total_bytes_written);
+METRIC_DECLARE_counter(block_manager_total_bytes_read);
+
+// Log block manager metrics.
+METRIC_DECLARE_gauge_uint64(log_block_manager_bytes_under_management);
+METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
+METRIC_DECLARE_counter(log_block_manager_total_containers);
+METRIC_DECLARE_counter(log_block_manager_total_full_containers);
+
 namespace kudu {
 namespace fs {
 
@@ -48,9 +62,9 @@ class BlockManagerTest : public KuduTest {
   }
 
  protected:
-  BlockManager* CreateBlockManager(MetricContext* parent_metric_context,
+  BlockManager* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
                                    const vector<string>& paths) {
-    return new T(env_.get(), parent_metric_context, paths);
+    return new T(env_.get(), metric_entity, paths);
   }
 
   void RunMultipathTest(const vector<string>& paths);
@@ -129,27 +143,30 @@ void BlockManagerTest<FileBlockManager>::RunLogMetricsTest() {
   LOG(INFO) << "Test skipped; wrong block manager";
 }
 
-static void CheckLogMetrics(const MetricRegistry::UnorderedMetricMap& metrics,
+static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
                             int bytes_under_management, int blocks_under_management,
                             int total_containers, int total_full_containers) {
-    ASSERT_EQ(bytes_under_management, down_cast<AtomicGauge<uint64_t>*>(
-        FindOrDie(metrics, "test.block_manager.bytes_under_management").get())->value());
-    ASSERT_EQ(blocks_under_management, down_cast<AtomicGauge<uint64_t>*>(
-        FindOrDie(metrics, "test.block_manager.blocks_under_management").get())->value());
-    ASSERT_EQ(total_containers, down_cast<Counter*>(
-        FindOrDie(metrics, "test.block_manager.total_containers").get())->value());
-    ASSERT_EQ(total_full_containers, down_cast<Counter*>(
-        FindOrDie(metrics, "test.block_manager.total_full_containers").get())->value());
+  ASSERT_EQ(bytes_under_management, down_cast<AtomicGauge<uint64_t>*>(
+                entity->FindOrNull(METRIC_log_block_manager_bytes_under_management)
+                .get())->value());
+  ASSERT_EQ(blocks_under_management, down_cast<AtomicGauge<uint64_t>*>(
+                entity->FindOrNull(METRIC_log_block_manager_blocks_under_management)
+                .get())->value());
+  ASSERT_EQ(total_containers, down_cast<Counter*>(
+                entity->FindOrNull(METRIC_log_block_manager_total_containers)
+                .get())->value());
+  ASSERT_EQ(total_full_containers, down_cast<Counter*>(
+                entity->FindOrNull(METRIC_log_block_manager_total_full_containers)
+                .get())->value());
 }
 
 template <>
 void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
   MetricRegistry registry;
-  MetricContext context(&registry, "test");
-  this->bm_.reset(this->CreateBlockManager(&context, list_of(GetTestDataDirectory())));
+  scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
+  this->bm_.reset(this->CreateBlockManager(entity, list_of(GetTestDataDirectory())));
   ASSERT_OK(this->bm_->Open());
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
-      registry.UnsafeMetricsMapForTests(), 0, 0, 0, 0));
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 0, 0, 0));
 
   // Lower the max container size so that we can more easily test full
   // container metrics.
@@ -158,13 +175,11 @@ void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
   // One block --> one container.
   gscoped_ptr<WritableBlock> writer;
   ASSERT_OK(this->bm_->CreateBlock(&writer));
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
-      registry.UnsafeMetricsMapForTests(), 0, 0, 1, 0));
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 0, 1, 0));
 
   // And when the block is closed, it becomes "under management".
   ASSERT_OK(writer->Close());
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
-      registry.UnsafeMetricsMapForTests(), 0, 1, 1, 0));
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 1, 1, 0));
 
   // Create 10 blocks concurrently. We reuse the existing container and
   // create 9 new ones. All of them get filled.
@@ -185,28 +200,24 @@ void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
       b->Append(Slice(data, sizeof(data)));
       closer.AddBlock(b.Pass());
     }
-    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
-        registry.UnsafeMetricsMapForTests(), 0, 1, 10, 0));
+    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 1, 10, 0));
 
     // Only when the blocks are closed are the containers considered full.
     ASSERT_OK(closer.CloseBlocks());
-    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
-        registry.UnsafeMetricsMapForTests(), 10 * 1024, 11, 10, 10));
+    ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 10 * 1024, 11, 10, 10));
   }
 
   // Reopen the block manager and test the metrics. They're all based on
   // persistent information so they should be the same.
   MetricRegistry new_registry;
-  MetricContext new_context(&new_registry, "test");
-  this->bm_.reset(this->CreateBlockManager(&new_context, list_of(GetTestDataDirectory())));
+  scoped_refptr<MetricEntity> new_entity = METRIC_ENTITY_server.Instantiate(&new_registry, "test");
+  this->bm_.reset(this->CreateBlockManager(new_entity, list_of(GetTestDataDirectory())));
   ASSERT_OK(this->bm_->Open());
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
-      new_registry.UnsafeMetricsMapForTests(), 10 * 1024, 11, 10, 10));
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 10 * 1024, 11, 10, 10));
 
   // Delete a block. Its contents should no longer be under management.
   ASSERT_OK(this->bm_->DeleteBlock(saved_id));
-  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(
-      new_registry.UnsafeMetricsMapForTests(), 9 * 1024, 10, 10, 10));
+  ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 9 * 1024, 10, 10, 10));
 }
 
 template <>
@@ -509,32 +520,31 @@ TYPED_TEST(BlockManagerTest, ConcurrentCloseReadableBlockTest) {
   }
 }
 
-static void CheckMetrics(const MetricRegistry::UnorderedMetricMap& metrics,
+static void CheckMetrics(const scoped_refptr<MetricEntity>& metrics,
                          int blocks_open_reading, int blocks_open_writing,
                          int total_readable_blocks, int total_writable_blocks,
                          int total_bytes_read, int total_bytes_written) {
   ASSERT_EQ(blocks_open_reading, down_cast<AtomicGauge<uint64_t>*>(
-      FindOrDie(metrics, "test.block_manager.blocks_open_reading").get())->value());
+                metrics->FindOrNull(METRIC_block_manager_blocks_open_reading).get())->value());
   ASSERT_EQ(blocks_open_writing, down_cast<AtomicGauge<uint64_t>*>(
-      FindOrDie(metrics, "test.block_manager.blocks_open_writing").get())->value());
+                metrics->FindOrNull(METRIC_block_manager_blocks_open_writing).get())->value());
   ASSERT_EQ(total_readable_blocks, down_cast<Counter*>(
-      FindOrDie(metrics, "test.block_manager.total_readable_blocks").get())->value());
+                metrics->FindOrNull(METRIC_block_manager_total_readable_blocks).get())->value());
   ASSERT_EQ(total_writable_blocks, down_cast<Counter*>(
-      FindOrDie(metrics, "test.block_manager.total_writable_blocks").get())->value());
+                metrics->FindOrNull(METRIC_block_manager_total_writable_blocks).get())->value());
   ASSERT_EQ(total_bytes_read, down_cast<Counter*>(
-      FindOrDie(metrics, "test.block_manager.total_bytes_read").get())->value());
+                metrics->FindOrNull(METRIC_block_manager_total_bytes_read).get())->value());
   ASSERT_EQ(total_bytes_written, down_cast<Counter*>(
-      FindOrDie(metrics, "test.block_manager.total_bytes_written").get())->value());
+                metrics->FindOrNull(METRIC_block_manager_total_bytes_written).get())->value());
 }
 
 TYPED_TEST(BlockManagerTest, MetricsTest) {
   const string kTestData = "test data";
   MetricRegistry registry;
-  MetricContext context(&registry, "test");
-  this->bm_.reset(this->CreateBlockManager(&context, list_of(GetTestDataDirectory())));
+  scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
+  this->bm_.reset(this->CreateBlockManager(entity, list_of(GetTestDataDirectory())));
   ASSERT_OK(this->bm_->Open());
-  ASSERT_NO_FATAL_FAILURE(CheckMetrics(
-      registry.UnsafeMetricsMapForTests(), 0, 0, 0, 0, 0, 0));
+  ASSERT_NO_FATAL_FAILURE(CheckMetrics(entity, 0, 0, 0, 0, 0, 0));
 
   for (int i = 0; i < 3; i++) {
     gscoped_ptr<WritableBlock> writer;
@@ -543,7 +553,7 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
     // An open writer. Also reflected in total_writable_blocks.
     ASSERT_OK(this->bm_->CreateBlock(&writer));
     ASSERT_NO_FATAL_FAILURE(CheckMetrics(
-        registry.UnsafeMetricsMapForTests(), 0, 1, i, i + 1,
+        entity, 0, 1, i, i + 1,
         i * kTestData.length(), i * kTestData.length()));
 
     // Block is no longer opened for writing, but its data
@@ -551,13 +561,13 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
     ASSERT_OK(writer->Append(kTestData));
     ASSERT_OK(writer->Close());
     ASSERT_NO_FATAL_FAILURE(CheckMetrics(
-        registry.UnsafeMetricsMapForTests(), 0, 0, i, i + 1,
+        entity, 0, 0, i, i + 1,
         i * kTestData.length(), (i + 1) * kTestData.length()));
 
     // An open reader.
     ASSERT_OK(this->bm_->OpenBlock(writer->id(), &reader));
     ASSERT_NO_FATAL_FAILURE(CheckMetrics(
-        registry.UnsafeMetricsMapForTests(), 1, 0, i + 1, i + 1,
+        entity, 1, 0, i + 1, i + 1,
         i * kTestData.length(), (i + 1) * kTestData.length()));
 
     // The read is reflected in total_bytes_read.
@@ -565,13 +575,13 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
     gscoped_ptr<uint8_t[]> scratch(new uint8_t[kTestData.length()]);
     ASSERT_OK(reader->Read(0, kTestData.length(), &data, scratch.get()));
     ASSERT_NO_FATAL_FAILURE(CheckMetrics(
-        registry.UnsafeMetricsMapForTests(), 1, 0, i + 1, i + 1,
+        entity, 1, 0, i + 1, i + 1,
         (i + 1) * kTestData.length(), (i + 1) * kTestData.length()));
 
     // The reader is now gone.
     ASSERT_OK(reader->Close());
     ASSERT_NO_FATAL_FAILURE(CheckMetrics(
-        registry.UnsafeMetricsMapForTests(), 0, 0, i + 1, i + 1,
+        entity, 0, 0, i + 1, i + 1,
         (i + 1) * kTestData.length(), (i + 1) * kTestData.length()));
   }
 }

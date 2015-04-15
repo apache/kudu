@@ -8,6 +8,7 @@
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
 #include <gflags/gflags.h>
+#include <gperftools/heap-checker.h>
 #include <gtest/gtest.h>
 #include <rapidjson/prettywriter.h>
 
@@ -23,6 +24,8 @@
 DEFINE_int32(mt_metrics_test_num_threads, 4,
              "Number of threads to spawn in mt metrics tests");
 
+METRIC_DEFINE_entity(test_entity);
+
 namespace kudu {
 
 using std::tr1::shared_ptr;
@@ -30,8 +33,10 @@ using std::vector;
 
 class MultiThreadedMetricsTest : public KuduTest {
  public:
-  static void RegisterCounters(MetricRegistry* metrics,
+  static void RegisterCounters(const scoped_refptr<MetricEntity>& metric_entity,
                                const string& name_prefix, int num_counters);
+
+  MetricRegistry registry_;
 };
 
 // Call increment on a Counter a bunch of times.
@@ -59,7 +64,7 @@ METRIC_DEFINE_counter(test_counter, MetricUnit::kRequests, "Test counter");
 
 // Ensure that incrementing a counter is thread-safe.
 TEST_F(MultiThreadedMetricsTest, CounterIncrementTest) {
-  scoped_refptr<Counter> counter = new Counter(METRIC_test_counter);
+  scoped_refptr<Counter> counter = new Counter(&METRIC_test_counter);
   int num_threads = FLAGS_mt_metrics_test_num_threads;
   int num_increments = 1000;
   boost::function<void()> f =
@@ -69,24 +74,38 @@ TEST_F(MultiThreadedMetricsTest, CounterIncrementTest) {
 }
 
 // Helper function to register a bunch of counters in a loop.
-void MultiThreadedMetricsTest::RegisterCounters(MetricRegistry* metrics, const string& name_prefix,
+void MultiThreadedMetricsTest::RegisterCounters(
+    const scoped_refptr<MetricEntity>& metric_entity,
+    const string& name_prefix,
     int num_counters) {
   uint64_t tid = Env::Default()->gettid();
   for (int i = 0; i < num_counters; i++) {
+#ifdef TCMALLOC_ENABLED
+    // This loop purposefully leaks metrics prototypes, because the metrics system
+    // expects the prototypes and their names to live forever. This is the only
+    // place we dynamically generate them for the purposes of a test, so it's easier
+    // to just leak them than to figure out a way to manage lifecycle of objects that
+    // are typically static.
+    HeapLeakChecker::Disabler disabler;
+#endif
+
     string name = strings::Substitute("$0-$1-$2", name_prefix, tid, i);
-    metrics->FindOrCreateCounter(name, METRIC_test_counter)->Increment();
+    CounterPrototype* proto = new CounterPrototype(
+        MetricPrototype::CtorArgs(strdup(name.c_str()),
+                                  MetricUnit::kCount, "test counter"));
+    proto->Instantiate(metric_entity)->Increment();
   }
 }
 
 // Ensure that adding a counter to a registry is thread-safe.
 TEST_F(MultiThreadedMetricsTest, AddCounterToRegistryTest) {
-  MetricRegistry metrics;
+  scoped_refptr<MetricEntity> entity = METRIC_ENTITY_test_entity.Instantiate(&registry_, "my-test");
   int num_threads = FLAGS_mt_metrics_test_num_threads;
   int num_counters = 1000;
   boost::function<void()> f =
-      boost::bind(RegisterCounters, &metrics, "prefix", num_counters);
+      boost::bind(RegisterCounters, entity, "prefix", num_counters);
   RunWithManyThreads(&f, num_threads);
-  ASSERT_EQ(num_threads * num_counters, metrics.UnsafeMetricsMapForTests().size());
+  ASSERT_EQ(num_threads * num_counters, entity->UnsafeMetricsMapForTests().size());
 }
 
 } // namespace kudu

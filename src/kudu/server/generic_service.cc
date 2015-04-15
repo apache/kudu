@@ -19,7 +19,7 @@ namespace kudu {
 namespace server {
 
 GenericServiceImpl::GenericServiceImpl(ServerBase* server)
-  : GenericServiceIf(server->metric_context()),
+  : GenericServiceIf(server->metric_entity()),
     server_(server) {
 }
 

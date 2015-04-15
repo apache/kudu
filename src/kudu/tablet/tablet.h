@@ -30,7 +30,7 @@
 namespace kudu {
 
 class MemTracker;
-class MetricContext;
+class MetricEntity;
 class RowChangeList;
 class UnionIterator;
 
@@ -75,13 +75,13 @@ class Tablet {
 
   // Create a new tablet.
   //
-  // If 'parent_metrics_context' is non-NULL, then this tablet will store
-  // metrics in a sub-context of this context. Otherwise, no metrics are collected.
+  // If 'metric_registry' is non-NULL, then this tablet will create a 'tablet' entity
+  // within the provided registry. Otherwise, no metrics are collected.
   //
   // TODO allow passing in a server-wide parent MemTracker.
   Tablet(const scoped_refptr<TabletMetadata>& metadata,
          const scoped_refptr<server::Clock>& clock,
-         const MetricContext* parent_metric_context,
+         MetricRegistry* metric_registry,
          const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry);
 
   ~Tablet();
@@ -336,8 +336,8 @@ class Tablet {
   // May be NULL in unit tests, etc.
   TabletMetrics* metrics() { return metrics_.get(); }
 
-  // Return handle to the metric context of this tablet.
-  const MetricContext* GetMetricContext() const { return metric_context_.get(); }
+  // Return handle to the metric entity of this tablet.
+  const scoped_refptr<MetricEntity>& GetMetricEntity() const { return metric_entity_; }
 
   // Return true if 'fname' is a valid filename for a tablet.
   static bool IsTabletFileName(const std::string& fname);
@@ -481,7 +481,7 @@ class Tablet {
   shared_ptr<MemRowSet> memrowset_;
   shared_ptr<RowSetTree> rowsets_;
 
-  gscoped_ptr<MetricContext> metric_context_;
+  scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<TabletMetrics> metrics_;
   FunctionGaugeDetacher metric_detacher_;
 

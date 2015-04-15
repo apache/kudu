@@ -26,6 +26,10 @@ DEFINE_int32(metrics_retirement_age_ms, 120 * 1000,
 TAG_FLAG(metrics_retirement_age_ms, runtime);
 TAG_FLAG(metrics_retirement_age_ms, advanced);
 
+// Process/server-wide metrics should go into the 'server' entity.
+// More complex applications will define other entities.
+METRIC_DEFINE_entity(server);
+
 namespace kudu {
 
 using std::string;
@@ -101,143 +105,39 @@ const char* MetricType::Name(MetricType::Type type) {
 }
 
 //
-// MetricRegistry
+// MetricEntityPrototype
 //
 
-MetricRegistry::MetricRegistry() {
+MetricEntityPrototype::MetricEntityPrototype(const char* name)
+  : name_(name) {
 }
 
-MetricRegistry::~MetricRegistry() {
+MetricEntityPrototype::~MetricEntityPrototype() {
 }
 
-scoped_refptr<Histogram> MetricRegistry::FindHistogram(const std::string& name) const {
+scoped_refptr<MetricEntity> MetricEntityPrototype::Instantiate(
+    MetricRegistry* registry,
+    const std::string& id) const {
+  return registry->FindOrCreateEntity(this, id);
+}
+
+
+//
+// MetricEntity
+//
+
+MetricEntity::MetricEntity(const MetricEntityPrototype* prototype,
+                           const std::string& id)
+  : prototype_(prototype),
+    id_(id) {
+}
+
+MetricEntity::~MetricEntity() {
+}
+
+scoped_refptr<Metric> MetricEntity::FindOrNull(const MetricPrototype& prototype) const {
   lock_guard<simple_spinlock> l(&lock_);
-  return FindMetricUnlocked<Histogram>(name, MetricType::kHistogram);
-}
-
-
-template<typename T>
-T* MetricRegistry::FindMetricUnlocked(const std::string& name,
-                                      MetricType::Type metric_type) const {
-  scoped_refptr<Metric> metric = FindPtrOrNull(metrics_, name);
-  if (metric != NULL) {
-    CHECK_EQ(metric_type, metric->type())
-          << "Downcast expects " << MetricType::Name(metric_type)
-          << " but found " << MetricType::Name(metric->type()) << " for " << name;
-    return down_cast<T*>(metric.get());
-  }
-  return NULL;
-}
-
-scoped_refptr<Counter> MetricRegistry::FindOrCreateCounter(const std::string& name,
-                                             const CounterPrototype& proto) {
-  lock_guard<simple_spinlock> l(&lock_);
-  scoped_refptr<Counter> counter = FindMetricUnlocked<Counter>(name, MetricType::kCounter);
-  if (!counter) {
-    counter = new Counter(proto);
-    InsertOrDie(&metrics_, name, counter);
-  }
-  return counter;
-}
-
-template<typename T>
-scoped_refptr<Gauge> MetricRegistry::CreateGauge(const std::string& name,
-                                   const GaugePrototype<T>& proto,
-                                   const T& initial_value) {
-  return new AtomicGauge<T>(proto, initial_value);
-}
-
-// Specialization for StringGauge.
-template<>
-scoped_refptr<Gauge> MetricRegistry::CreateGauge(const std::string& name,
-                                   const GaugePrototype<std::string>& proto,
-                                   const std::string& initial_value) {
-  return new StringGauge(proto, initial_value);
-}
-
-template<typename T>
-scoped_refptr<FunctionGauge<T> > MetricRegistry::CreateFunctionGauge(
-    const std::string& name,
-    const GaugePrototype<T>& proto,
-    const Callback<T()>& function) {
-  return new FunctionGauge<T>(proto, function);
-}
-
-template<typename T>
-scoped_refptr<Gauge> MetricRegistry::FindOrCreateGauge(const std::string& name,
-                                         const GaugePrototype<T>& proto,
-                                         const T& initial_value) {
-  lock_guard<simple_spinlock> l(&lock_);
-  scoped_refptr<Gauge> gauge = FindMetricUnlocked<Gauge>(name, MetricType::kGauge);
-  if (!gauge) {
-    gauge = CreateGauge(name, proto, initial_value);
-    InsertOrDie(&metrics_, name, gauge);
-  }
-  return gauge;
-}
-
-// Explicit instantiation.
-#define INSTANTIATE(T)                                                \
-  template scoped_refptr<Gauge> MetricRegistry::FindOrCreateGauge<T>( \
-    const std::string&, const GaugePrototype<T>&, const T&);
-INSTANTIATE(bool);
-INSTANTIATE(int32_t);
-INSTANTIATE(uint32_t);
-INSTANTIATE(int64_t);
-INSTANTIATE(uint64_t);
-INSTANTIATE(double);
-INSTANTIATE(string);
-#undef INSTANTIATE
-
-template<typename T>
-scoped_refptr<FunctionGauge<T> > MetricRegistry::FindOrCreateFunctionGauge(
-  const std::string& name,
-  const GaugePrototype<T>& proto,
-  const Callback<T()>& function) {
-  lock_guard<simple_spinlock> l(&lock_);
-  scoped_refptr<FunctionGauge<T> > gauge = FindMetricUnlocked<FunctionGauge<T> >(
-    name, MetricType::kGauge);
-  if (!gauge) {
-    gauge = CreateFunctionGauge(name, proto, function);
-    InsertOrDie(&metrics_, name, gauge);
-  }
-  return gauge;
-}
-
-// Explicit instantiation.
-#define INSTANTIATE(T)                                \
-  template scoped_refptr<FunctionGauge<T> >           \
-    MetricRegistry::FindOrCreateFunctionGauge<T>(     \
-      const std::string&, const GaugePrototype<T>&, const Callback<T()>&)
-INSTANTIATE(bool);
-INSTANTIATE(int32_t);
-INSTANTIATE(uint32_t);
-INSTANTIATE(int64_t);
-INSTANTIATE(uint64_t);
-INSTANTIATE(double);
-INSTANTIATE(string);
-#undef INSTANTIATE
-
-scoped_refptr<Histogram> MetricRegistry::FindOrCreateHistogram(
-    const std::string& name,
-    const HistogramPrototype& proto) {
-  lock_guard<simple_spinlock> l(&lock_);
-  scoped_refptr<Histogram> histogram = FindMetricUnlocked<Histogram>(name, MetricType::kHistogram);
-  if (!histogram) {
-    histogram = new Histogram(proto);
-    InsertOrDie(&metrics_, name, histogram);
-  }
-  return histogram;
-}
-
-
-FunctionGaugeDetacher::FunctionGaugeDetacher() {
-}
-
-FunctionGaugeDetacher::~FunctionGaugeDetacher() {
-  BOOST_FOREACH(const Closure& c, callbacks_) {
-    c.Run();
-  }
+  return FindPtrOrNull(metric_map_, &prototype);
 }
 
 namespace {
@@ -257,21 +157,29 @@ bool MatchMetricInList(const string& metric_name,
 
 } // anonymous namespace
 
-Status MetricRegistry::WriteAsJson(JsonWriter* writer,
-                                   const vector<string>& requested_metrics,
-                                   const vector<string>& requested_detail_metrics) const {
+
+
+Status MetricEntity::WriteAsJson(JsonWriter* writer,
+                                 const vector<string>& requested_metrics,
+                                 const vector<string>& requested_detail_metrics) const {
+  bool select_all = MatchMetricInList(id(), requested_metrics);
+  bool detailed_all = MatchMetricInList(id(), requested_detail_metrics);
+
   // We want the keys to be in alphabetical order when printing, so we use an ordered map here.
-  typedef std::map<string, scoped_refptr<Metric> > OrderedMetricMap;
+  typedef std::map<const char*, scoped_refptr<Metric> > OrderedMetricMap;
   OrderedMetricMap metrics;
-  std::set<string> requested_detail_metrics_set;
+  std::set<Metric*> requested_detail_metrics_set;
   {
     // Snapshot the metrics in this registry (not guaranteed to be a consistent snapshot)
     lock_guard<simple_spinlock> l(&lock_);
-    BOOST_FOREACH(const UnorderedMetricMap::value_type& val, metrics_) {
-      if (MatchMetricInList(val.first, requested_metrics)) {
-        metrics.insert(val);
-        if (MatchMetricInList(val.first, requested_detail_metrics)) {
-          requested_detail_metrics_set.insert(val.first);
+    BOOST_FOREACH(const MetricMap::value_type& val, metric_map_) {
+      const MetricPrototype* prototype = val.first;
+      const scoped_refptr<Metric>& metric = val.second;
+
+      if (select_all || MatchMetricInList(prototype->name(), requested_metrics)) {
+        InsertOrDie(&metrics, prototype->name(), metric);
+        if (detailed_all || MatchMetricInList(prototype->name(), requested_detail_metrics)) {
+          InsertOrDie(&requested_detail_metrics_set, metric.get());
         }
       }
     }
@@ -279,14 +187,20 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
 
   writer->StartObject();
 
+  writer->String("type");
+  writer->String(prototype_->name());
+
+  writer->String("id");
+  writer->String(id_);
+
   writer->String("metrics");
   writer->StartArray();
   BOOST_FOREACH(OrderedMetricMap::value_type& val, metrics) {
-    if (ContainsKey(requested_detail_metrics_set, val.first)) {
-      WARN_NOT_OK(val.second->WriteAsJson(val.first, writer, DETAILED),
+    if (ContainsKey(requested_detail_metrics_set, val.second.get())) {
+      WARN_NOT_OK(val.second->WriteAsJson(writer, DETAILED),
                      strings::Substitute("Failed to write $0 as JSON", val.first));
     } else {
-      WARN_NOT_OK(val.second->WriteAsJson(val.first, writer, NORMAL),
+      WARN_NOT_OK(val.second->WriteAsJson(writer, NORMAL),
                           strings::Substitute("Failed to write $0 as JSON", val.first));
     }
   }
@@ -294,22 +208,15 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
 
   writer->EndObject();
 
-  // Rather than having a thread poll metrics periodically to retire old ones,
-  // we'll just retire them here. The only downside is that, if no one is polling
-  // metrics, we may end up leaving them around indefinitely; however, metrics are
-  // small, and one might consider it a feature: if monitoring stops polling for
-  // metrics, we should keep them around until the next poll.
-  metrics.clear(); // necessary to deref metrics we just dumped before doing retirement scan.
-  const_cast<MetricRegistry*>(this)->RetireOldMetrics();
   return Status::OK();
 }
 
-void MetricRegistry::RetireOldMetrics() {
+void MetricEntity::RetireOldMetrics() {
   MonoTime now(MonoTime::Now(MonoTime::FINE));
 
   lock_guard<simple_spinlock> l(&lock_);
-  for (UnorderedMetricMap::iterator it = metrics_.begin();
-       it != metrics_.end();) {
+  for (MetricMap::iterator it = metric_map_.begin();
+       it != metric_map_.end();) {
     const scoped_refptr<Metric>& metric = it->second;
 
     if (PREDICT_TRUE(!metric->HasOneRef())) {
@@ -347,66 +254,122 @@ void MetricRegistry::RetireOldMetrics() {
 
 
     VLOG(2) << "Retiring metric " << it->first;
-    metrics_.erase(it++);
+    metric_map_.erase(it++);
   }
 }
 
-void MetricRegistry::NeverRetire(const scoped_refptr<Metric>& metric) {
+void MetricEntity::NeverRetire(const scoped_refptr<Metric>& metric) {
   lock_guard<simple_spinlock> l(&lock_);
   never_retire_metrics_.push_back(metric);
 }
 
 //
-// MetricContext
+// MetricRegistry
 //
 
-MetricContext::MetricContext(const MetricContext& parent)
-  : metrics_(parent.metrics_),
-    prefix_(parent.prefix_) {
+MetricRegistry::MetricRegistry() {
 }
 
-MetricContext::MetricContext(MetricRegistry* metrics, const string& root_name)
-  : metrics_(metrics),
-    prefix_(root_name) {
+MetricRegistry::~MetricRegistry() {
 }
 
-MetricContext::MetricContext(const MetricContext& parent, const string& name)
-  : metrics_(parent.metrics_),
-    prefix_(parent.prefix_ + "." + name) {
+Status MetricRegistry::WriteAsJson(JsonWriter* writer,
+                                   const vector<string>& requested_metrics,
+                                   const vector<string>& requested_detail_metrics) const {
+  EntityMap entities;
+  {
+    lock_guard<simple_spinlock> l(&lock_);
+    entities = entities_;
+  }
+
+  writer->StartArray();
+  BOOST_FOREACH(const EntityMap::value_type e, entities) {
+    WARN_NOT_OK(e.second->WriteAsJson(writer, requested_metrics, requested_detail_metrics),
+                Substitute("Failed to write entity $0 as JSON", e.second->id()));
+  }
+  writer->EndArray();
+
+  // Rather than having a thread poll metrics periodically to retire old ones,
+  // we'll just retire them here. The only downside is that, if no one is polling
+  // metrics, we may end up leaving them around indefinitely; however, metrics are
+  // small, and one might consider it a feature: if monitoring stops polling for
+  // metrics, we should keep them around until the next poll.
+  entities.clear(); // necessary to deref metrics we just dumped before doing retirement scan.
+  const_cast<MetricRegistry*>(this)->RetireOldMetrics();
+  return Status::OK();
+}
+
+void MetricRegistry::RetireOldMetrics() {
+  lock_guard<simple_spinlock> l(&lock_);
+  BOOST_FOREACH(const EntityMap::value_type e, entities_) {
+    e.second->RetireOldMetrics();
+
+    // TODO: we should also remove entities once all of their metrics have been retired
+    // if they are only reffed by the registry itself.
+  }
+}
+
+//
+// FunctionGaugeDetacher
+//
+
+FunctionGaugeDetacher::FunctionGaugeDetacher() {
+}
+
+FunctionGaugeDetacher::~FunctionGaugeDetacher() {
+  BOOST_FOREACH(const Closure& c, callbacks_) {
+    c.Run();
+  }
+}
+
+scoped_refptr<MetricEntity> MetricRegistry::FindOrCreateEntity(
+    const MetricEntityPrototype* prototype,
+    const std::string& id) {
+  lock_guard<simple_spinlock> l(&lock_);
+  scoped_refptr<MetricEntity> e = FindPtrOrNull(entities_, id);
+  if (!e) {
+    e = new MetricEntity(prototype, id);
+    InsertOrDie(&entities_, id, e);
+  }
+  return e;
 }
 
 //
 // Metric
 //
-Metric::Metric() {
+Metric::Metric(const MetricPrototype* prototype)
+  : prototype_(prototype) {
 }
 
 Metric::~Metric() {
+}
+
+void Metric::WriteGenericFields(JsonWriter* writer) const {
+  writer->String("type");
+  writer->String(MetricType::Name(type()));
+
+  writer->String("name");
+  writer->String(prototype_->name());
+
+  writer->String("unit");
+  writer->String(MetricUnit::Name(prototype_->unit()));
+
+  writer->String("description");
+  writer->String(prototype_->description());
 }
 
 //
 // Gauge
 //
 
-Status Gauge::WriteAsJson(const string& name,
-                          JsonWriter* writer,
+Status Gauge::WriteAsJson(JsonWriter* writer,
                           MetricWriteGranularity granularity) const {
   writer->StartObject();
 
-  writer->String("type");
-  writer->String(MetricType::Name(type()));
-
-  writer->String("name");
-  writer->String(name);
+  WriteGenericFields(writer);
 
   writer->String("value");
   WriteValue(writer);
-
-  writer->String("unit");
-  writer->String(MetricUnit::Name(unit()));
-
-  writer->String("description");
-  writer->String(description());
 
   writer->EndObject();
   return Status::OK();
@@ -416,9 +379,9 @@ Status Gauge::WriteAsJson(const string& name,
 // StringGauge
 //
 
-StringGauge::StringGauge(const GaugePrototype<string>& proto,
+StringGauge::StringGauge(const GaugePrototype<string>* proto,
                          const string& initial_value)
-  : Gauge(proto.unit(), proto.description()),
+  : Gauge(proto),
     value_(initial_value) {
 }
 
@@ -439,20 +402,13 @@ void StringGauge::WriteValue(JsonWriter* writer) const {
 //
 // Counter
 //
-// This implementation can be optimized in several ways.
-// See: https://github.com/codahale/metrics/blob/master/metrics-core/src/main/java/com/codahale/metrics/Striped64.java
-// See: http://gee.cs.oswego.edu/dl/jsr166/dist/docs/java/util/concurrent/atomic/LongAdder.html
-// See: http://www.cs.bgu.ac.il/~hendlerd/papers/flat-combining.pdf
-// Or: use thread locals and then sum them
+// This implementation is optimized by using a striped counter. See LongAdder for details.
 
-scoped_refptr<Counter> CounterPrototype::Instantiate(const MetricContext& context) {
-  return context.metrics()->FindOrCreateCounter(
-    context.prefix() + "." + name(), *this);
+scoped_refptr<Counter> CounterPrototype::Instantiate(const scoped_refptr<MetricEntity>& entity) {
+  return entity->FindOrCreateCounter(this);
 }
 
-Counter::Counter(const CounterPrototype& proto)
-  : unit_(proto.unit()),
-    description_(proto.description()) {
+Counter::Counter(const CounterPrototype* proto) : Metric(proto) {
 }
 
 int64_t Counter::value() const {
@@ -467,25 +423,14 @@ void Counter::IncrementBy(int64_t amount) {
   value_.IncrementBy(amount);
 }
 
-Status Counter::WriteAsJson(const string& name,
-                            JsonWriter* writer,
+Status Counter::WriteAsJson(JsonWriter* writer,
                             MetricWriteGranularity granularity) const {
   writer->StartObject();
 
-  writer->String("type");
-  writer->String(MetricType::Name(type()));
-
-  writer->String("name");
-  writer->String(name);
+  WriteGenericFields(writer);
 
   writer->String("value");
   writer->Int64(value());
-
-  writer->String("unit");
-  writer->String(MetricUnit::Name(unit_));
-
-  writer->String("description");
-  writer->String(description_);
 
   writer->EndObject();
   return Status::OK();
@@ -495,36 +440,32 @@ Status Counter::WriteAsJson(const string& name,
 // HistogramPrototype
 /////////////////////////////////////////////////
 
-HistogramPrototype::HistogramPrototype(const char* name, MetricUnit::Type unit,
-                                       const char* description,
+HistogramPrototype::HistogramPrototype(const MetricPrototype::CtorArgs& args,
                                        uint64_t max_trackable_value, int num_sig_digits)
-  : name_(name),
-    unit_(unit),
-    description_(description),
+  : MetricPrototype(args),
     max_trackable_value_(max_trackable_value),
     num_sig_digits_(num_sig_digits) {
   // Better to crash at definition time that at instantiation time.
   CHECK(HdrHistogram::IsValidHighestTrackableValue(max_trackable_value))
       << Substitute("Invalid max trackable value on histogram $0: $1",
-                    name, max_trackable_value);
+                    args.name_, max_trackable_value);
   CHECK(HdrHistogram::IsValidNumSignificantDigits(num_sig_digits))
       << Substitute("Invalid number of significant digits on histogram $0: $1",
-                    name, num_sig_digits);
+                    args.name_, num_sig_digits);
 }
 
-scoped_refptr<Histogram> HistogramPrototype::Instantiate(const MetricContext& context) {
-  return context.metrics()->FindOrCreateHistogram(
-    context.prefix() + "." + name(), *this);
+scoped_refptr<Histogram> HistogramPrototype::Instantiate(
+    const scoped_refptr<MetricEntity>& entity) {
+  return entity->FindOrCreateHistogram(this);
 }
 
 /////////////////////////////////////////////////
 // Histogram
 /////////////////////////////////////////////////
 
-Histogram::Histogram(const HistogramPrototype& proto)
-  : histogram_(new HdrHistogram(proto.max_trackable_value(), proto.num_sig_digits())),
-    unit_(proto.unit()),
-    description_(proto.description()) {
+Histogram::Histogram(const HistogramPrototype* proto)
+  : Metric(proto),
+    histogram_(new HdrHistogram(proto->max_trackable_value(), proto->num_sig_digits())) {
 }
 
 void Histogram::Increment(int64_t value) {
@@ -535,13 +476,11 @@ void Histogram::IncrementBy(int64_t value, int64_t amount) {
   histogram_->IncrementBy(value, amount);
 }
 
-Status Histogram::WriteAsJson(const std::string& name,
-                              JsonWriter* writer,
+Status Histogram::WriteAsJson(JsonWriter* writer,
                               MetricWriteGranularity granularity) const {
 
   HistogramSnapshotPB snapshot;
   RETURN_NOT_OK(GetHistogramSnapshotPB(&snapshot, granularity));
-  snapshot.set_name(name);
   writer->Protobuf(snapshot);
   return Status::OK();
 }
@@ -549,8 +488,9 @@ Status Histogram::WriteAsJson(const std::string& name,
 Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
                                          MetricWriteGranularity granularity) const {
   HdrHistogram snapshot(*histogram_);
+  snapshot_pb->set_name(prototype_->name());
   snapshot_pb->set_type(MetricType::Name(type()));
-  snapshot_pb->set_unit(MetricUnit::Name(unit_));
+  snapshot_pb->set_unit(MetricUnit::Name(prototype_->unit()));
   snapshot_pb->set_max_trackable_value(snapshot.highest_trackable_value());
   snapshot_pb->set_num_significant_digits(snapshot.num_significant_digits());
   snapshot_pb->set_total_count(snapshot.TotalCount());
@@ -562,7 +502,7 @@ Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
   snapshot_pb->set_percentile_99_9(snapshot.ValueAtPercentile(99.9));
   snapshot_pb->set_percentile_99_99(snapshot.ValueAtPercentile(99.99));
   snapshot_pb->set_max(snapshot.MaxValue());
-  snapshot_pb->set_description(description_);
+  snapshot_pb->set_description(prototype_->description());
 
   if (granularity == DETAILED) {
     RecordedValuesIterator iter(&snapshot);

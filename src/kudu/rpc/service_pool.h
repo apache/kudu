@@ -21,7 +21,7 @@ namespace kudu {
 
 class Counter;
 class Histogram;
-class MetricContext;
+class MetricEntity;
 class Socket;
 
 namespace rpc {
@@ -34,7 +34,7 @@ class ServiceIf;
 class ServicePool : public RpcService {
  public:
   ServicePool(gscoped_ptr<ServiceIf> service,
-              const MetricContext& metric_ctx,
+              const scoped_refptr<MetricEntity>& metric_entity,
               size_t service_queue_length);
   virtual ~ServicePool();
 

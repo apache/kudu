@@ -501,14 +501,13 @@ bool FileBlockManager::FindRootPath(const string& root_path_uuid,
 }
 
 FileBlockManager::FileBlockManager(Env* env,
-                                   MetricContext* parent_metric_context,
+                                   const scoped_refptr<MetricEntity>& metric_entity,
                                    const vector<string>& root_paths)
   : env_(env),
     root_paths_(root_paths) {
   DCHECK_GT(root_paths.size(), 0);
-  if (parent_metric_context) {
-    metric_ctx_.reset(new MetricContext(*parent_metric_context, kMetricContextName));
-    metrics_.reset(new internal::BlockManagerMetrics(*metric_ctx_.get()));
+  if (metric_entity) {
+    metrics_.reset(new internal::BlockManagerMetrics(metric_entity));
   }
 }
 

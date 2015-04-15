@@ -28,6 +28,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 
@@ -67,17 +68,18 @@ FsManager::FsManager(Env* env, const string& root_path)
   : env_(env),
     wal_fs_root_(root_path),
     data_fs_roots_(boost::assign::list_of(root_path).convert_to_container<vector<string> >()),
-    parent_metric_context_(NULL),
+    metric_entity_(NULL),
     initted_(false) {
 }
 
-FsManager::FsManager(Env* env, MetricContext* parent_metric_context,
+FsManager::FsManager(Env* env,
+                     const scoped_refptr<MetricEntity>& metric_entity,
                      const string& wal_path,
                      const vector<string>& data_paths)
   : env_(env),
     wal_fs_root_(wal_path),
     data_fs_roots_(data_paths),
-    parent_metric_context_(parent_metric_context),
+    metric_entity_(metric_entity),
     initted_(false) {
 }
 
@@ -147,9 +149,9 @@ Status FsManager::Init() {
 
 void FsManager::InitBlockManager() {
   if (FLAGS_block_manager == "file") {
-    block_manager_.reset(new FileBlockManager(env_, parent_metric_context_, GetDataRootDirs()));
+    block_manager_.reset(new FileBlockManager(env_, metric_entity_, GetDataRootDirs()));
   } else if (FLAGS_block_manager == "log") {
-    block_manager_.reset(new LogBlockManager(env_, parent_metric_context_, GetDataRootDirs()));
+    block_manager_.reset(new LogBlockManager(env_, metric_entity_, GetDataRootDirs()));
   } else {
     LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
   }

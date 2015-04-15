@@ -18,7 +18,7 @@
 namespace kudu {
 
 class Env;
-class MetricContext;
+class MetricEntity;
 class WritableFile;
 
 namespace fs {
@@ -54,9 +54,10 @@ class FileBlockManager : public BlockManager {
 
   // Creates a new in-memory instance of a FileBlockManager.
   //
-  // If 'parent_metric_context' is NULL, no metrics are collected.
+  // If 'metric_entity' is NULL, no metrics are collected.
   // 'env' should remain alive for the lifetime of the block manager.
-  FileBlockManager(Env* env, MetricContext* parent_metric_context,
+  FileBlockManager(Env* env,
+                   const scoped_refptr<MetricEntity>& metric_entity,
                    const std::vector<std::string>& root_paths);
 
   virtual ~FileBlockManager();
@@ -119,10 +120,8 @@ class FileBlockManager : public BlockManager {
   // Points to the filesystem path to be used when creating the next block.
   PathMap::iterator next_root_path_;
 
-  // Metric context and container for the block manager.
-  //
+  // Metric container for the block manager.
   // May be null if instantiated without metrics.
-  gscoped_ptr<MetricContext> metric_ctx_;
   gscoped_ptr<internal::BlockManagerMetrics> metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(FileBlockManager);

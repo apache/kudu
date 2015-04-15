@@ -73,13 +73,12 @@ class TabletHarness {
                           "Couldn't persist test tablet master block");
     if (options_.enable_metrics) {
       metrics_registry_.reset(new MetricRegistry());
-      metrics_.reset(new MetricContext(metrics_registry_.get(), "tablet-harness"));
     }
 
     clock_ = server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
     tablet_.reset(new Tablet(metadata,
                              clock_,
-                             metrics_.get(),
+                             metrics_registry_.get(),
                              new log::LogAnchorRegistry()));
     return Status::OK();
   }
@@ -109,7 +108,6 @@ class TabletHarness {
   Options options_;
 
   gscoped_ptr<MetricRegistry> metrics_registry_;
-  gscoped_ptr<MetricContext> metrics_;
 
   scoped_refptr<server::Clock> clock_;
   Schema schema_;

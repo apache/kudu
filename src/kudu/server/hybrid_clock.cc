@@ -24,9 +24,9 @@ DEFINE_bool(use_hybrid_clock, false,
             " implementation. This is for testing purposes only, eventually"
             " the hybrid clock will become the default and only option.");
 
-METRIC_DEFINE_gauge_uint64(clock_timestamp, kudu::MetricUnit::kMicroseconds,
+METRIC_DEFINE_gauge_uint64(hybrid_clock_timestamp, kudu::MetricUnit::kMicroseconds,
                            "Hybrid clock timestamp.");
-METRIC_DEFINE_gauge_uint64(clock_error, kudu::MetricUnit::kMicroseconds,
+METRIC_DEFINE_gauge_uint64(hybrid_clock_error, kudu::MetricUnit::kMicroseconds,
                            "Server clock maximum error.");
 
 using kudu::Status;
@@ -332,14 +332,13 @@ uint64_t HybridClock::ErrorForMetrics() {
   return error;
 }
 
-void HybridClock::RegisterMetrics(MetricRegistry* registry) {
-  MetricContext ctx(registry, "clock");
-  METRIC_clock_timestamp.InstantiateFunctionGauge(
-      ctx,
+void HybridClock::RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) {
+  METRIC_hybrid_clock_timestamp.InstantiateFunctionGauge(
+      metric_entity,
       Bind(&HybridClock::NowForMetrics, Unretained(this)))
     ->AutoDetachToLastValue(&metric_detacher_);
-  METRIC_clock_error.InstantiateFunctionGauge(
-      ctx,
+  METRIC_hybrid_clock_error.InstantiateFunctionGauge(
+      metric_entity,
       Bind(&HybridClock::ErrorForMetrics, Unretained(this)))
     ->AutoDetachToLastValue(&metric_detacher_);
 }

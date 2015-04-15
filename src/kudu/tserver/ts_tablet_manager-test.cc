@@ -15,7 +15,6 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
 
 #define ASSERT_REPORT_HAS_UPDATED_TABLET(report, tablet_id) \
@@ -42,8 +41,7 @@ class TsTabletManagerTest : public KuduTest {
   TsTabletManagerTest()
     : schema_(boost::assign::list_of
              (ColumnSchema("key", UINT32)),
-             1),
-      metric_ctx_(&metric_registry_, "ts_tablet_manager_test") {
+              1) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -92,9 +90,6 @@ class TsTabletManagerTest : public KuduTest {
 
   Schema schema_;
   QuorumPB quorum_;
-  MetricRegistry metric_registry_;
-  MetricContext metric_ctx_;
-
 };
 
 // Test that master blocks can be persisted and loaded back from disk.

@@ -67,22 +67,22 @@ std::string PeerMessageQueue::TrackedPeer::ToString() const {
 }
 
 #define INSTANTIATE_METRIC(x) \
-  AtomicGauge<int64_t>::Instantiate(x, metric_ctx)
-PeerMessageQueue::Metrics::Metrics(const MetricContext& metric_ctx)
+  x.Instantiate(metric_entity, 0)
+PeerMessageQueue::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_entity)
   : num_majority_done_ops(INSTANTIATE_METRIC(METRIC_num_majority_done_ops)),
     num_in_progress_ops(INSTANTIATE_METRIC(METRIC_num_in_progress_ops)) {
 }
 #undef INSTANTIATE_METRIC
 
-PeerMessageQueue::PeerMessageQueue(const MetricContext& metric_ctx,
+PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                                    const scoped_refptr<log::Log>& log,
                                    const std::string& local_uuid,
                                    const std::string& tablet_id,
                                    const std::string& parent_tracker_id)
     : local_uuid_(local_uuid),
       tablet_id_(tablet_id),
-      log_cache_(metric_ctx, log, local_uuid, tablet_id, parent_tracker_id),
-      metrics_(metric_ctx) {
+      log_cache_(metric_entity, log, local_uuid, tablet_id, parent_tracker_id),
+      metrics_(metric_entity) {
   queue_state_.current_term = MinimumOpId().term();
   queue_state_.committed_index = MinimumOpId();
   queue_state_.all_replicated_opid = MinimumOpId();

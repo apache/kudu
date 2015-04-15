@@ -16,7 +16,7 @@
 
 namespace kudu {
 
-class MetricContext;
+class MetricRegistry;
 
 namespace log {
 class Log;
@@ -79,7 +79,7 @@ extern const char* kLogRecoveryDir;
 // for monitoring purposes.
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<server::Clock>& clock,
-                       MetricContext* metric_context,
+                       MetricRegistry* metric_registry,
                        TabletStatusListener* status_listener,
                        std::tr1::shared_ptr<Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,

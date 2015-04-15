@@ -42,7 +42,7 @@ class LogicalClock : public Clock {
 
   virtual bool IsAfter(Timestamp t) OVERRIDE;
 
-  virtual void RegisterMetrics(MetricRegistry* registry) OVERRIDE;
+  virtual void RegisterMetrics(const scoped_refptr<MetricEntity>& metric_entity) OVERRIDE;
 
   virtual std::string Stringify(Timestamp timestamp) OVERRIDE;
 

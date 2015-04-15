@@ -73,7 +73,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
     const ConsensusOptions& options,
     gscoped_ptr<ConsensusMetadata> cmeta,
     const std::string& peer_uuid,
-    const MetricContext& metric_ctx,
+    const scoped_refptr<MetricEntity>& metric_entity,
     const scoped_refptr<server::Clock>& clock,
     ReplicaTransactionFactory* txn_factory,
     const std::tr1::shared_ptr<rpc::Messenger>& messenger,
@@ -83,7 +83,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
 
   // The message queue that keeps track of which operations need to be replicated
   // where.
-  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_ctx,
+  gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity,
                                                            log,
                                                            peer_uuid,
                                                            options.tablet_id));
@@ -109,7 +109,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                               queue.Pass(),
                               peer_manager.Pass(),
                               thread_pool.Pass(),
-                              metric_ctx,
+                              metric_entity,
                               peer_uuid,
                               clock,
                               txn_factory,
@@ -122,7 +122,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              gscoped_ptr<PeerMessageQueue> queue,
                              gscoped_ptr<PeerManager> peer_manager,
                              gscoped_ptr<ThreadPool> thread_pool,
-                             const MetricContext& metric_ctx,
+                             const scoped_refptr<MetricEntity>& metric_entity,
                              const std::string& peer_uuid,
                              const scoped_refptr<server::Clock>& clock,
                              ReplicaTransactionFactory* txn_factory,

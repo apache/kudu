@@ -17,7 +17,7 @@ namespace kudu {
 
 class Env;
 class FsManager;
-class MetricContext;
+class MetricEntity;
 class MetricRegistry;
 class NodeInstancePB;
 class RpcServer;
@@ -57,9 +57,7 @@ class ServerBase {
   // This may not be called until after the server is Initted.
   const NodeInstancePB& instance_pb() const;
 
-  const MetricContext& metric_context() const;
-
-  MetricContext* mutable_metric_context() const;
+  const scoped_refptr<MetricEntity>& metric_entity() const { return metric_entity_; }
 
   MetricRegistry* metric_registry() { return metric_registry_.get(); }
 
@@ -80,7 +78,7 @@ class ServerBase {
   const std::string name_;
 
   gscoped_ptr<MetricRegistry> metric_registry_;
-  gscoped_ptr<MetricContext> metric_ctx_;
+  scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<FsManager> fs_manager_;
   gscoped_ptr<RpcServer> rpc_server_;
   gscoped_ptr<Webserver> web_server_;

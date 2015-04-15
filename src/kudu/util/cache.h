@@ -23,13 +23,14 @@
 #include <string>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {
 
 class Cache;
 struct CacheMetrics;
-class MetricContext;
+class MetricEntity;
 
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
@@ -103,8 +104,8 @@ class Cache {
   // its cache keys.
   virtual uint64_t NewId() = 0;
 
-  // Pass a metric context in order to start recoding metrics.
-  virtual void SetMetrics(const MetricContext& metric_ctx) = 0;
+  // Pass a metric entity in order to start recoding metrics.
+  virtual void SetMetrics(const scoped_refptr<MetricEntity>& metric_entity) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Cache);

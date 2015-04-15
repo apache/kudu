@@ -32,7 +32,7 @@ class RemoteBootstrapServiceImpl : public RemoteBootstrapServiceIf {
  public:
   RemoteBootstrapServiceImpl(FsManager* fs_manager,
                              TabletPeerLookupIf* tablet_peer_lookup,
-                             const MetricContext& metric_ctx);
+                             const scoped_refptr<MetricEntity>& metric_entity);
 
   virtual void BeginRemoteBootstrapSession(const BeginRemoteBootstrapSessionRequestPB* req,
                                            BeginRemoteBootstrapSessionResponsePB* resp,
@@ -79,7 +79,6 @@ class RemoteBootstrapServiceImpl : public RemoteBootstrapServiceIf {
 
   FsManager* fs_manager_;
   TabletPeerLookupIf* tablet_peer_lookup_;
-  MetricContext metric_ctx_;
 
   // Protects sessions_ and session_expirations_ maps.
   mutable simple_spinlock sessions_lock_;

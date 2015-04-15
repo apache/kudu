@@ -37,14 +37,14 @@ class LogReader {
   static Status Open(FsManager *fs_manager,
                      const scoped_refptr<LogIndex>& index,
                      const std::string& tablet_oid,
-                     MetricContext *parent_metric_context,
+                     const scoped_refptr<MetricEntity>& metric_entity,
                      gscoped_ptr<LogReader> *reader);
 
   // Opens a LogReader on a specific tablet log recovery directory, and sets
   // 'reader' to the newly created LogReader.
   static Status OpenFromRecoveryDir(FsManager *fs_manager,
                                     const std::string& tablet_oid,
-                                    MetricContext *parent_metric_context,
+                                    const scoped_refptr<MetricEntity>& metric_entity,
                                     gscoped_ptr<LogReader> *reader);
 
   // Returns the biggest prefix of segments, from the current sequence, guaranteed
@@ -156,7 +156,7 @@ class LogReader {
   LogReader(FsManager *fs_manager,
             const scoped_refptr<LogIndex>& index,
             const std::string& tablet_name,
-            MetricContext *parent_metric_context);
+            const scoped_refptr<MetricEntity>& metric_entity);
 
   // Reads the headers of all segments in 'path_'.
   Status Init(const std::string& path_);
@@ -169,7 +169,6 @@ class LogReader {
   const std::string tablet_oid_;
 
   // Metrics
-  gscoped_ptr<MetricContext> metric_context_;
   scoped_refptr<Counter> bytes_read_;
   scoped_refptr<Counter> entries_read_;
   scoped_refptr<Histogram> read_batch_latency_;

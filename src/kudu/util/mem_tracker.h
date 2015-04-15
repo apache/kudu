@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/high_water_mark.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
@@ -155,14 +156,14 @@ class MemTracker {
 
   // Returns the memory consumed in bytes.
   int64_t consumption() const {
-    return consumption_->current_value();
+    return consumption_.current_value();
   }
 
   // Note that if consumption_ is based on consumption_metric_, this
   // will be the max value we've recorded in consumption(), not
   // necessarily the highest value consumption_metric_ has ever
   // reached.
-  int64_t peak_consumption() const { return consumption_->value(); }
+  int64_t peak_consumption() const { return consumption_.max_value(); }
 
   // Retrieve the parent tracker, or NULL If one is not set.
   std::tr1::shared_ptr<MemTracker> parent() const { return parent_; }
@@ -258,7 +259,7 @@ class MemTracker {
   const std::string descr_;
   std::tr1::shared_ptr<MemTracker> parent_;
 
-  scoped_refptr<HighWaterMark<int64_t> > consumption_;
+  HighWaterMark consumption_;
 
   FunctionGauge<uint64_t>* consumption_metric_;
 

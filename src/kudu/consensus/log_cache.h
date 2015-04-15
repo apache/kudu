@@ -20,7 +20,7 @@
 
 namespace kudu {
 
-class MetricContext;
+class MetricEntity;
 class MemTracker;
 
 namespace log {
@@ -43,7 +43,7 @@ extern const char kLogCacheTrackerId[];
 // entries which are asynchronously fetched from the disk.
 class LogCache {
  public:
-  LogCache(const MetricContext& metric_ctx,
+  LogCache(const scoped_refptr<MetricEntity>& metric_entity,
            const scoped_refptr<log::Log>& log,
            const std::string& local_uuid,
            const std::string& tablet_id,
@@ -190,7 +190,7 @@ class LogCache {
   log::LogReader* log_reader_;
 
   struct Metrics {
-    explicit Metrics(const MetricContext& metric_ctx);
+    explicit Metrics(const scoped_refptr<MetricEntity>& metric_entity);
 
     // Keeps track of the total number of operations in the cache.
     scoped_refptr<AtomicGauge<int64_t> > log_cache_total_num_ops;

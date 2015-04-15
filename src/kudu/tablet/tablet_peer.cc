@@ -90,7 +90,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
                         const shared_ptr<Messenger>& messenger,
                         const scoped_refptr<Log>& log,
-                        const MetricContext& metric_ctx) {
+                        const scoped_refptr<MetricEntity>& metric_entity) {
 
   DCHECK(tablet) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log) << "A TabletPeer must be provided with a Log";
@@ -122,7 +122,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
       consensus_ = RaftConsensus::Create(options,
                                          cmeta.Pass(),
                                          meta_->fs_manager()->uuid(),
-                                         metric_ctx,
+                                         metric_entity,
                                          clock_,
                                          this,
                                          messenger_,
@@ -132,7 +132,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 
   if (tablet_->metrics() != NULL) {
     TRACE("Starting instrumentation");
-    txn_tracker_.StartInstrumentation(*tablet_->GetMetricContext());
+    txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
   }
 
   TRACE("TabletPeer::Init() finished");

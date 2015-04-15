@@ -17,6 +17,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 
 DEFINE_bool(print_headers, true, "print the log segment headers/footers");
@@ -167,7 +168,8 @@ void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
   Env *env = Env::Default();
   gscoped_ptr<LogReader> reader;
   FsManager fs_manager(env, tserver_root_path);
-  CHECK_OK(LogReader::Open(&fs_manager, scoped_refptr<LogIndex>(), tablet_oid, NULL, &reader));
+  CHECK_OK(LogReader::Open(&fs_manager, scoped_refptr<LogIndex>(), tablet_oid,
+                           scoped_refptr<MetricEntity>(), &reader));
 
   SegmentSequence segments;
   CHECK_OK(reader->GetSegmentsSnapshot(&segments));

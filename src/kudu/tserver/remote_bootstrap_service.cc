@@ -66,13 +66,13 @@ static void SetupErrorAndRespond(rpc::RpcContext* context,
                                    message, error);
 }
 
-RemoteBootstrapServiceImpl::RemoteBootstrapServiceImpl(FsManager* fs_manager,
-                                                       TabletPeerLookupIf* tablet_peer_lookup,
-                                                       const MetricContext& metric_ctx)
-  : RemoteBootstrapServiceIf(metric_ctx),
+RemoteBootstrapServiceImpl::RemoteBootstrapServiceImpl(
+    FsManager* fs_manager,
+    TabletPeerLookupIf* tablet_peer_lookup,
+    const scoped_refptr<MetricEntity>& metric_entity)
+  : RemoteBootstrapServiceIf(metric_entity),
     fs_manager_(CHECK_NOTNULL(fs_manager)),
     tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
-    metric_ctx_(metric_ctx),
     shutdown_latch_(1) {
   CHECK_OK(Thread::Create("remote-bootstrap", "rb-session-exp",
                           &RemoteBootstrapServiceImpl::EndExpiredSessions, this,

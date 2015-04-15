@@ -186,7 +186,6 @@ class BlockManager {
 
  protected:
   static const char* kInstanceMetadataFileName;
-  static const char* kMetricContextName;
 };
 
 // Closes a group of blocks.

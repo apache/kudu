@@ -23,7 +23,7 @@
 
 namespace kudu {
 
-class MetricContext;
+class MetricEntity;
 class RowwiseIterator;
 class ScanSpec;
 class Schema;
@@ -48,7 +48,7 @@ typedef std::tr1::shared_ptr<Scanner> SharedScanner;
 // removes any scanners which have not been accessed since a configurable TTL.
 class ScannerManager {
  public:
-  explicit ScannerManager(MetricContext* parent_metric_context);
+  explicit ScannerManager(const scoped_refptr<MetricEntity>& metric_entity);
   ~ScannerManager();
 
   // Starts the expired scanner removal thread.
@@ -83,9 +83,6 @@ class ScannerManager {
 
   // Periodically call RemoveExpiredScanners().
   void RunRemovalThread();
-
-  // (Optional) metrics context for this instance.
-  gscoped_ptr<MetricContext> metric_context_;
 
   // (Optional) scanner metrics for this instance.
   gscoped_ptr<ScannerMetrics> metrics_;

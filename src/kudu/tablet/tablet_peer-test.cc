@@ -31,6 +31,8 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/threadpool.h"
 
+METRIC_DECLARE_entity(tablet);
+
 namespace kudu {
 namespace tablet {
 
@@ -74,7 +76,7 @@ class TabletPeerTest : public KuduTabletTest {
     rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
     ASSERT_OK(builder.Build(&messenger_));
 
-    metric_ctx_.reset(new MetricContext(&metric_registry_, CURRENT_TEST_NAME()));
+    metric_entity_ = METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "test-tablet");
 
     // "Bootstrap" and start the TabletPeer.
     tablet_peer_.reset(
@@ -104,9 +106,9 @@ class TabletPeerTest : public KuduTabletTest {
     scoped_refptr<Log> log;
     ASSERT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                                *tablet()->schema(),
-                               metric_ctx_.get(), &log));
+                               metric_entity_.get(), &log));
 
-    ASSERT_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log, *metric_ctx_));
+    ASSERT_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log, metric_entity_));
   }
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {
@@ -243,7 +245,7 @@ class TabletPeerTest : public KuduTabletTest {
   uint32_t insert_counter_;
   uint32_t delete_counter_;
   MetricRegistry metric_registry_;
-  gscoped_ptr<MetricContext> metric_ctx_;
+  scoped_refptr<MetricEntity> metric_entity_;
   shared_ptr<Messenger> messenger_;
   scoped_refptr<TabletPeer> tablet_peer_;
   gscoped_ptr<ThreadPool> leader_apply_pool_;

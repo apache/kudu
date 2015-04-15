@@ -10,6 +10,12 @@ DEFINE_int32(num_inserter_threads, 8, "Number of inserter threads to run");
 DEFINE_int32(num_inserts_per_thread, 0, "Number of inserts from each thread");
 DECLARE_bool(enable_maintenance_manager);
 
+METRIC_DEFINE_histogram(insert_latency,
+                        kudu::MetricUnit::kMicroseconds,
+                        "TabletServer single threaded insert latency.",
+                        10000000,
+                        2);
+
 namespace kudu {
 namespace tserver {
 
@@ -31,12 +37,8 @@ class TSStressTest : public TabletServerTestBase {
   virtual void SetUp() OVERRIDE {
     TabletServerTestBase::SetUp();
     StartTabletServer();
-    HistogramPrototype hist_proto("insert-latency",
-                                  MetricUnit::kMicroseconds,
-                                  "Insert latency seen on client",
-                                  10000000,
-                                  2);
-    histogram_ = hist_proto.Instantiate(ts_test_metric_context_);
+
+    histogram_ = METRIC_insert_latency.Instantiate(ts_test_metric_entity_);
   }
 
   void StartThreads() {
@@ -95,7 +97,7 @@ TEST_F(TSStressTest, TestMTInserts) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out);
-  ASSERT_OK(histogram_->WriteAsJson("ts-insert-latency", &writer, NORMAL));
+  ASSERT_OK(histogram_->WriteAsJson(&writer, NORMAL));
 
   LOG(INFO) << out.str();
 }

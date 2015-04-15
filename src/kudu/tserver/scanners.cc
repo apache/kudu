@@ -28,16 +28,14 @@ namespace tserver {
 // The interval at which we remove expired scanners.
 static const uint64_t kRemovalThreadIntervalUs = 5000000;
 
-ScannerManager::ScannerManager(MetricContext* parent_metric_context)
+ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
   : scanner_ttl_(MonoDelta::FromMilliseconds(
                    FLAGS_tablet_server_scanner_ttl_millis)),
     shutdown_(false) {
-  if (parent_metric_context) {
-    metric_context_.reset(new MetricContext(*parent_metric_context,
-                                            "tserver.scanners"));
-    metrics_.reset(new ScannerMetrics(*metric_context_));
+  if (metric_entity) {
+    metrics_.reset(new ScannerMetrics(metric_entity));
     METRIC_active_scanners.InstantiateFunctionGauge(
-        *metric_context_, Bind(&ScannerManager::CountActiveScanners,
+        metric_entity, Bind(&ScannerManager::CountActiveScanners,
                                Unretained(this)))
       ->AutoDetach(&metric_detacher_);
   }

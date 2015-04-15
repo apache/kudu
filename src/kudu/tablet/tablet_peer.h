@@ -70,7 +70,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
               const scoped_refptr<server::Clock>& clock,
               const std::tr1::shared_ptr<rpc::Messenger>& messenger,
               const scoped_refptr<log::Log>& log,
-              const MetricContext& metric_ctx);
+              const scoped_refptr<MetricEntity>& metric_entity);
 
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers

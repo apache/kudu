@@ -45,8 +45,8 @@ ServerBase::ServerBase(const string& name,
                        const string& metric_namespace)
   : name_(name),
     metric_registry_(new MetricRegistry()),
-    metric_ctx_(new MetricContext(metric_registry_.get(), metric_namespace)),
-    fs_manager_(new FsManager(options.env, metric_ctx_.get(), options.wal_dir, options.data_dirs)),
+    metric_entity_(METRIC_ENTITY_server.Instantiate(metric_registry_.get(), metric_namespace)),
+    fs_manager_(new FsManager(options.env, metric_entity_, options.wal_dir, options.data_dirs)),
     rpc_server_(new RpcServer(options.rpc_opts)),
     web_server_(new Webserver(options.webserver_opts)),
     is_first_run_(false),
@@ -56,9 +56,9 @@ ServerBase::ServerBase(const string& name,
   } else {
     clock_ = LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
   }
-  CHECK_OK(StartThreadInstrumentation(metric_registry_.get(), web_server_.get()));
+  CHECK_OK(StartThreadInstrumentation(metric_entity_, web_server_.get()));
   CHECK_OK(codegen::CompilationManager::GetSingleton()->StartInstrumentation(
-             metric_registry_.get()));
+               metric_entity_));
 }
 
 ServerBase::~ServerBase() {
@@ -84,14 +84,6 @@ const NodeInstancePB& ServerBase::instance_pb() const {
   return *DCHECK_NOTNULL(instance_pb_.get());
 }
 
-const MetricContext& ServerBase::metric_context() const {
-  return *metric_ctx_;
-}
-
-MetricContext* ServerBase::mutable_metric_context() const {
-  return metric_ctx_.get();
-}
-
 void ServerBase::GenerateInstanceID() {
   instance_pb_.reset(new NodeInstancePB);
   instance_pb_->set_permanent_uuid(fs_manager_->uuid());
@@ -101,8 +93,8 @@ void ServerBase::GenerateInstanceID() {
 }
 
 Status ServerBase::Init() {
-  tcmalloc::RegisterMetrics(metric_registry_.get());
-  clock_->RegisterMetrics(metric_registry_.get());
+  tcmalloc::RegisterMetrics(metric_entity_);
+  clock_->RegisterMetrics(metric_entity_);
 
   InitSpinLockContentionProfiling();
 
@@ -121,7 +113,7 @@ Status ServerBase::Init() {
   rpc::MessengerBuilder builder(name_);
 
   builder.set_num_reactors(FLAGS_num_reactor_threads);
-  builder.set_metric_context(metric_context());
+  builder.set_metric_entity(metric_entity());
   RETURN_NOT_OK(builder.Build(&messenger_));
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));

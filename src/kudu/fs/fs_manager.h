@@ -12,6 +12,7 @@
 #include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/env.h"
 #include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
@@ -26,7 +27,7 @@ class Message;
 
 namespace kudu {
 
-class MetricContext;
+class MetricEntity;
 
 namespace fs {
 class BlockManager;
@@ -54,7 +55,7 @@ class FsManager {
   static const char *kWalsRecoveryDirSuffix;
 
   FsManager(Env* env, const std::string& root_path);
-  FsManager(Env* env, MetricContext* parent_metric_context,
+  FsManager(Env* env, const scoped_refptr<MetricEntity>& entity,
             const std::string& wal_path,
             const std::vector<std::string>& data_paths);
   ~FsManager();
@@ -217,7 +218,7 @@ class FsManager {
   const std::string wal_fs_root_;
   const std::vector<std::string> data_fs_roots_;
 
-  MetricContext* parent_metric_context_;
+  scoped_refptr<MetricEntity> metric_entity_;
 
   // Canonicalized forms of 'wal_fs_root_ and 'data_fs_roots_'. Constructed
   // during Init().

@@ -26,6 +26,8 @@ DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(consensus_max_batch_size_bytes);
 
+METRIC_DECLARE_entity(tablet);
+
 using std::tr1::shared_ptr;
 
 namespace kudu {
@@ -39,7 +41,7 @@ class ConsensusQueueTest : public KuduTest {
  public:
   ConsensusQueueTest()
       : schema_(GetSimpleTestSchema()),
-        metric_context_(&metric_registry_, "queue-test"),
+        metric_entity_(METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "queue-test")),
         registry_(new log::LogAnchorRegistry) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
@@ -61,7 +63,7 @@ class ConsensusQueueTest : public KuduTest {
     ASSERT_OK(clock_->Init());
 
     consensus_.reset(new TestRaftConsensusQueueIface());
-    queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTestTablet));
+    queue_.reset(new PeerMessageQueue(metric_entity_, log_.get(), kLeaderUuid, kTestTablet));
     queue_->RegisterObserver(consensus_.get());
   }
 
@@ -154,7 +156,7 @@ class ConsensusQueueTest : public KuduTest {
   const Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
   MetricRegistry metric_registry_;
-  MetricContext metric_context_;
+  scoped_refptr<MetricEntity> metric_entity_;
   scoped_refptr<log::Log> log_;
   gscoped_ptr<PeerMessageQueue> queue_;
   scoped_refptr<log::LogAnchorRegistry> registry_;
@@ -417,7 +419,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
 
   // Now reset the queue so that we can pass a new committed index,
   // the last operation in the log.
-  queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTestTablet));
+  queue_.reset(new PeerMessageQueue(metric_entity_, log_.get(), kLeaderUuid, kTestTablet));
   OpId committed_index;
   committed_index.set_term(1);
   committed_index.set_index(100);
@@ -485,7 +487,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 
   // Now reset the queue so that we can pass a new committed index,
   // op, 2.15.
-  queue_.reset(new PeerMessageQueue(metric_context_, log_.get(), kLeaderUuid, kTestTablet));
+  queue_.reset(new PeerMessageQueue(metric_entity_, log_.get(), kLeaderUuid, kTestTablet));
   OpId committed_index = MakeOpId(2, 15);
   queue_->Init(MakeOpId(2, 20));
   queue_->SetLeaderMode(committed_index, committed_index.term(), 2);
