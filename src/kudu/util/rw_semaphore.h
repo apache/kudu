@@ -11,9 +11,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/util/debug-util.h"
 
-#ifndef NDEBUG
 #include "kudu/util/thread.h"
-#endif // NDEBUG
 
 namespace kudu {
 
