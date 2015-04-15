@@ -8,10 +8,12 @@
 #include <gflags/gflags.h>
 #include <tr1/memory>
 #include <iostream>
+#include <strstream>
 
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/human_readable.h"
+#include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/tserver/tablet_server.h"
@@ -24,6 +26,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 
+using std::ostringstream;
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
@@ -39,28 +42,15 @@ using kudu::Sockaddr;
 
 const char* const kListTabletsOp = "list_tablets";
 const char* const kAreTabletsRunningOp = "are_tablets_running";
+const char* const kSetFlagOp = "set_flag";
 
 DEFINE_string(tserver_address, "localhost",
                 "Address of tablet server to run against");
-DEFINE_string(op, kListTabletsOp, "Operation to execute");
 DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
 
-namespace {
-
-// TODO once more operations are supported, print a more useful error
-// message
-bool ValidateOp(const char* flagname, const string& op) {
-  if (op == kListTabletsOp || op == kAreTabletsRunningOp) {
-    return true;
-  }
-  std::cerr << "Invalid operation " << op << ", valid operations are: "
-            << kListTabletsOp << ", " << kAreTabletsRunningOp << std::endl;
-  return false;
-}
-
-const bool op_dummy = google::RegisterFlagValidator(&FLAGS_op, &ValidateOp);
-
-} // anonymous namespace
+DEFINE_bool(force, false, "If true, allows the set_flag command to set a flag "
+            "which is not explicitly marked as runtime-settable. Such flag changes may be "
+            "simply ignored on the server, or may cause the server to crash.");
 
 namespace kudu {
 namespace tools {
@@ -81,8 +71,15 @@ class TsAdminClient {
   // given tablet server.
   Status ListTablets(std::vector<StatusAndSchemaPB>* tablets);
 
+  // Sets the gflag 'flag' to 'val' on the remote server via RPC.
+  // If 'force' is true, allows setting flags even if they're not marked as
+  // safe to change at runtime.
+  Status SetFlag(const string& flag, const string& val,
+                 bool force);
+
  private:
   std::string addr_;
+  vector<Sockaddr> addrs_;
   MonoDelta timeout_;
   bool initted_;
   gscoped_ptr<tserver::TabletServerServiceProxy> proxy_;
@@ -104,11 +101,10 @@ Status TsAdminClient::Init() {
   RETURN_NOT_OK(host_port.ParseString(addr_, tserver::TabletServer::kDefaultPort));
   MessengerBuilder builder("ts-cli");
   RETURN_NOT_OK(builder.Build(&messenger_));
-  vector<Sockaddr> addrs;
 
-  RETURN_NOT_OK(host_port.ResolveAddresses(&addrs))
+  RETURN_NOT_OK(host_port.ResolveAddresses(&addrs_))
 
-  proxy_.reset(new TabletServerServiceProxy(messenger_, addrs[0]));
+  proxy_.reset(new TabletServerServiceProxy(messenger_, addrs_[0]));
 
   initted_ = true;
 
@@ -135,18 +131,75 @@ Status TsAdminClient::ListTablets(vector<StatusAndSchemaPB>* tablets) {
   return Status::OK();
 }
 
+Status TsAdminClient::SetFlag(const string& flag, const string& val,
+                              bool force) {
+  server::SetFlagRequestPB req;
+  server::SetFlagResponsePB resp;
+  server::GenericServiceProxy proxy(messenger_, addrs_[0]);
+  RpcController rpc;
+
+  rpc.set_timeout(timeout_);
+  req.set_flag(flag);
+  req.set_value(val);
+  req.set_force(force);
+
+  RETURN_NOT_OK(proxy.SetFlag(req, &resp, &rpc));
+  switch (resp.result()) {
+    case server::SetFlagResponsePB::SUCCESS:
+      return Status::OK();
+    case server::SetFlagResponsePB::NOT_SAFE:
+      return Status::RemoteError(resp.msg() + " (use --force flag to allow anyway)");
+    default:
+      return Status::RemoteError(resp.ShortDebugString());
+  }
+}
+
+namespace {
+
+void SetUsage(const char* argv0) {
+  ostringstream str;
+
+  str << argv0 << " [-tserver_address=<addr>] <operation> <flags>\n"
+      << "<operation> must be one of:\n"
+      << "  " << kListTabletsOp << "\n"
+      << "  " << kAreTabletsRunningOp << "\n"
+      << "  " << kSetFlagOp << " [-force] <flag> <value>\n";
+  google::SetUsageMessage(str.str());
+}
+
+string GetAndValidateOp(int argc, char** argv) {
+  if (argc < 2) {
+    google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
+    exit(1);
+  }
+
+  string op = argv[1];
+  if (op == kListTabletsOp || op == kAreTabletsRunningOp || op == kSetFlagOp) {
+    return op;
+  }
+  std::cerr << "Invalid operation: " << op << std::endl;
+  google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
+  exit(1);
+}
+
+} // anonymous namespace
+
 static int TsCliMain(int argc, char** argv) {
   FLAGS_logtostderr = 1;
+  SetUsage(argv[0]);
   ParseCommandLineFlags(&argc, &argv, true);
   InitGoogleLoggingSafe(argv[0]);
   const string addr = FLAGS_tserver_address;
+
+
+  string op = GetAndValidateOp(argc, argv);
 
   TsAdminClient client(addr, FLAGS_timeout_ms);
 
   CHECK_OK_PREPEND(client.Init(), "Unable to establish connection to " + addr);
 
   // TODO add other operations here...
-  if (FLAGS_op == kListTabletsOp) {
+  if (op == kListTabletsOp) {
     vector<StatusAndSchemaPB> tablets;
     CHECK_OK_PREPEND(client.ListTablets(&tablets), "Unable to list tablets on " + addr);
     BOOST_FOREACH(const StatusAndSchemaPB& status_and_schema, tablets) {
@@ -167,7 +220,7 @@ static int TsCliMain(int argc, char** argv) {
       }
       std::cout << "Schema: " << schema.ToString() << std::endl;
     }
-  } else if (FLAGS_op == kAreTabletsRunningOp) {
+  } else if (op == kAreTabletsRunningOp) {
     vector<StatusAndSchemaPB> tablets;
     CHECK_OK_PREPEND(client.ListTablets(&tablets), "Unable to list tablets on " + addr);
     bool all_running = true;
@@ -186,8 +239,20 @@ static int TsCliMain(int argc, char** argv) {
       std::cout << "Not all tablets are running" << std::endl;
       return 1;
     }
+  } else if (op == kSetFlagOp) {
+    if (argc != 4) {
+      google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
+      exit(1);
+    }
+
+    Status s = client.SetFlag(argv[2], argv[3], FLAGS_force);
+    if (!s.ok()) {
+      std::cerr << "Unable to set flag: " << s.ToString() << std::endl;
+      return 1;
+    }
+
   } else {
-    LOG(FATAL) << "Invalid op specified: " << FLAGS_op;
+    LOG(FATAL) << "Invalid op specified: " << op;
   }
 
   return 0;

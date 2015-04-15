@@ -243,7 +243,7 @@ perform operations. The default operation is list_tablets.
 +
 [source,bash]
 ----
-$ ./build/latest/kudu-ts-cli
+$ ./build/latest/kudu-ts-cli list_tablets
 
 I0316 19:02:58.703493 29652 ts-cli.cc:114] Connected to localhost
 Tablet id: f2fe6e35f0e84ae3bf7ce45fe63fe6fb
@@ -273,7 +273,7 @@ Schema: Schema [
 [source,bash]
 ----
 $ ./build/latest/kudu-ts-cli --tserver_address=kudu.example.com \
--op=are_tablets_running
+are_tablets_running
 
 I0316 18:52:05.561096 29638 ts-cli.cc:114] Connected to kudu.example.com
 All tablets are running
