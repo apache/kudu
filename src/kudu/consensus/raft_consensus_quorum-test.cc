@@ -93,8 +93,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   // Builds an initial quorum of 'num' elements.
-  // Since we don't have leader election yet, the initial roles are pre-assigned.
-  // The last peer (index 'num - 1') always starts out as CANDIDATE.
+  // All of the quorum members start as followers.
   void BuildInitialQuorumPB(int num) {
     BuildQuorumPBForTests(&quorum_, num);
     quorum_.set_opid_index(kInvalidOpIdIndex);
@@ -193,6 +192,12 @@ class RaftConsensusQuorumTest : public KuduTest {
   Status BuildAndStartQuorum(int num) {
     RETURN_NOT_OK(BuildQuorum(num));
     RETURN_NOT_OK(StartPeers());
+
+    // Automatically elect the last node in the list.
+    const int kLeaderIdx = num - 1;
+    scoped_refptr<RaftConsensus> leader;
+    RETURN_NOT_OK(peers_->GetPeerByIdx(kLeaderIdx, &leader));
+    RETURN_NOT_OK(leader->EmulateElection());
     return Status::OK();
   }
 
@@ -786,6 +791,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   const int kLeaderIdx = 2;
 
   ASSERT_OK(BuildQuorum(3));
+
   scoped_refptr<RaftConsensus> follower0;
   CHECK_OK(peers_->GetPeerByIdx(kFollower0Idx, &follower0));
   scoped_refptr<RaftConsensus> follower1;
@@ -802,6 +808,10 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   follower1->SetFaultHooks(counter_hook_rpl1);
 
   ASSERT_OK(StartPeers());
+
+  scoped_refptr<RaftConsensus> leader;
+  CHECK_OK(peers_->GetPeerByIdx(kLeaderIdx, &leader));
+  ASSERT_OK(leader->EmulateElection());
 
   // Wait for the config round to get committed and count the number
   // of update calls, calls after that will be heartbeats.

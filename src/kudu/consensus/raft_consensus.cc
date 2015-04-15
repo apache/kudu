@@ -150,18 +150,6 @@ RaftConsensus::~RaftConsensus() {
   Shutdown();
 }
 
-Status RaftConsensus::VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const QuorumPB& quorum,
-                                                                        QuorumPBType type) {
-  // Sanity checks.
-  if (state_->IsQuorumChangePendingUnlocked()) {
-    return Status::IllegalState(Substitute("Attempting to become leader "
-        "during a pending quorum change. Pending quorum: $0, Persisted quorum: "
-        "$1", state_->GetPendingQuorumUnlocked().ShortDebugString(),
-        quorum.ShortDebugString()));
-  }
-  return VerifyQuorum(quorum, type);
-}
-
 Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(ExecuteHook(PRE_START));
 
@@ -182,21 +170,14 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForStart(&lock));
 
-    if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
-      // Clean up quorum state from previous runs, so everyone is a follower.
-      // We do this here so that the logging seems sane while reloading the
-      // set of pending transactions.
-      SetAllQuorumVotersToFollower(state_->GetCommittedQuorumUnlocked(), &initial_quorum);
-      initial_quorum.clear_opid_index();
-      state_->SetPendingQuorumUnlocked(initial_quorum);
-      RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum, UNCOMMITTED_QUORUM),
-                            "Invalid quorum state on RaftConsensus::Start()");
-    } else {
-      initial_quorum.CopyFrom(state_->GetCommittedQuorumUnlocked());
-      RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(initial_quorum,
-                                                                              COMMITTED_QUORUM),
-                            "Invalid quorum state on RaftConsensus::Start()");
-    }
+    // Clean up quorum state from previous runs, so everyone is a follower.
+    // We do this here so that the logging seems sane while reloading the
+    // set of pending transactions.
+    SetAllQuorumVotersToFollower(state_->GetCommittedQuorumUnlocked(), &initial_quorum);
+    initial_quorum.clear_opid_index();
+    state_->SetPendingQuorumUnlocked(initial_quorum);
+    RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum, UNCOMMITTED_QUORUM),
+                          "Invalid quorum state on RaftConsensus::Start()");
 
     RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id),
                           "Unable to start RAFT ReplicaState");
@@ -238,17 +219,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     // Now assume "follower" duties.
     RETURN_NOT_OK(BecomeReplicaUnlocked());
   } else {
-    // If we're marked as candidate emulate a leader election.
-    // Temporary while we don't have the real thing.
-    QuorumPeerPB::Role my_role = GetRoleInQuorum(state_->GetPeerUuid(), initial_quorum);
-    switch (my_role) {
-      case QuorumPeerPB::CANDIDATE:
-      case QuorumPeerPB::LEADER:
-        RETURN_NOT_OK(EmulateElection());
-        break;
-      default:
-        RETURN_NOT_OK(ChangeConfig());
-    }
+    RETURN_NOT_OK(ChangeConfig());
   }
 
   RETURN_NOT_OK(ExecuteHook(POST_START));
@@ -270,9 +241,7 @@ Status RaftConsensus::EmulateElection() {
     new_quorum.clear_opid_index();
     // Increment the term.
     RETURN_NOT_OK(state_->IncrementTermUnlocked());
-    RETURN_NOT_OK_PREPEND(VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(new_quorum,
-                                                                            UNCOMMITTED_QUORUM),
-                          "Invalid state on RaftConsensus::EmulateElection()");
+    RETURN_NOT_OK(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM));
     RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
     return ChangeConfigUnlocked();
   }

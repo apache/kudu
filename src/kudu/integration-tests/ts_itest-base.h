@@ -3,12 +3,15 @@
 #ifndef KUDU_INTEGRATION_TESTS_ITEST_UTIL_H_
 #define KUDU_INTEGRATION_TESTS_ITEST_UTIL_H_
 
+#include <algorithm>
 #include <boost/foreach.hpp>
+#include <glog/stl_logging.h>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
@@ -57,7 +60,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
     ExternalTabletServer* external_ts;
 
-    string ToString() {
+    string ToString() const {
       return Substitute("TabletServer: $0, Rpc address: $1",
                         instance_id.permanent_uuid(),
                         registration.rpc_addresses(0).ShortDebugString());
@@ -388,6 +391,95 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     }
 
     return Status::OK();
+  }
+
+  // Wait until all of the servers have converged on the same log index.
+  // The converged index must be at least equal to 'minimum_index'.
+  //
+  // Requires that all servers are running. Returns Status::TimedOut if the
+  // indexes do not converge within the given timeout.
+  Status WaitForServersToAgree(const MonoDelta& timeout,
+                               const TabletServerMap& tablet_servers,
+                               const string& tablet_id,
+                               int64_t minimum_index) {
+    MonoTime now = MonoTime::Now(MonoTime::COARSE);
+    MonoTime deadline = now;
+    deadline.AddDelta(timeout);
+
+    for (int i = 1; now.ComesBefore(deadline); i++) {
+      vector<TServerDetails*> servers;
+      AppendValuesFromMap(tablet_servers, &servers);
+      vector<consensus::OpId> ids;
+      Status s = GetLastOpIdForEachReplica(tablet_id, servers, &ids);
+      if (s.ok()) {
+        bool any_behind = false;
+        bool any_disagree = false;
+        int64_t cur_index = consensus::kInvalidOpIdIndex;
+        BOOST_FOREACH(const OpId& id, ids) {
+          if (cur_index == consensus::kInvalidOpIdIndex) {
+            cur_index = id.index();
+          }
+          if (id.index() != cur_index) {
+            any_disagree = true;
+            break;
+          }
+          if (id.index() < minimum_index) {
+            any_behind = true;
+            break;
+          }
+        }
+        if (!any_behind && !any_disagree) {
+          return Status::OK();
+        }
+      } else {
+        LOG(WARNING) << "Got error getting last opid for each replica: " << s.ToString();
+      }
+
+      LOG(INFO) << "Not converged past " << minimum_index << " yet: " << ids;
+      SleepFor(MonoDelta::FromMilliseconds(std::min(i * 100, 1000)));
+
+      now = MonoTime::Now(MonoTime::COARSE);
+    }
+    return Status::TimedOut(Substitute("Index $0 not available on all replicas after $1. ",
+                                       minimum_index, timeout.ToString()));
+  }
+
+  // Wait until all specified replicas have logged the given index.
+  Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
+                                    const string& tablet_id,
+                                    const vector<TServerDetails*>& replicas,
+                                    const MonoDelta& timeout) {
+    MonoTime start = MonoTime::Now(MonoTime::FINE);
+    MonoDelta passed = MonoDelta::FromMilliseconds(0);
+    while (true) {
+      vector<OpId> op_ids;
+      Status s = GetLastOpIdForEachReplica(tablet_id, replicas, &op_ids);
+      if (s.ok()) {
+        bool any_behind = false;
+        BOOST_FOREACH(const OpId& op_id, op_ids) {
+          if (op_id.index() < log_index) {
+            any_behind = true;
+            break;
+          }
+        }
+        if (!any_behind) return Status::OK();
+      } else {
+        LOG(WARNING) << "Got error getting last opid for each replica: " << s.ToString();
+      }
+      passed = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start);
+      if (passed.MoreThan(timeout)) {
+        break;
+      }
+      SleepFor(MonoDelta::FromMilliseconds(50));
+    }
+    string replicas_str;
+    BOOST_FOREACH(const TServerDetails* replica, replicas) {
+      if (!replicas_str.empty()) replicas_str += ", ";
+      replicas_str += "{ " + replica->ToString() + " }";
+    }
+    return Status::TimedOut(Substitute("Index $0 not available on all replicas after $1. "
+                                       "Replicas: [ $2 ]",
+                                       log_index, passed.ToString()));
   }
 
   // Return the index within 'replicas' for the replica which is farthest ahead.

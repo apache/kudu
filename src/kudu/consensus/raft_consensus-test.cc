@@ -31,6 +31,7 @@ using metadata::QuorumPB;
 using std::string;
 using ::testing::_;
 using ::testing::AnyNumber;
+using ::testing::AtLeast;
 using ::testing::InSequence;
 using ::testing::Return;
 using ::testing::Eq;
@@ -129,11 +130,9 @@ class RaftConsensusTest : public KuduTest {
     use_continuations_ = false;
   }
 
-  void SetUpConsensus(QuorumPeerPB::Role initial_role = QuorumPeerPB::LEADER,
-                      int64_t initial_term = consensus::kMinimumTerm,
+  void SetUpConsensus(int64_t initial_term = consensus::kMinimumTerm,
                       int num_peers = 1) {
     BuildQuorumPBForTests(&quorum_, num_peers);
-    quorum_.mutable_peers(num_peers - 1)->set_role(initial_role);
     quorum_.set_opid_index(kInvalidOpIdIndex);
 
     gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(NULL));
@@ -188,7 +187,7 @@ class RaftConsensusTest : public KuduTest {
     EXPECT_CALL(*peer_manager_, SignalRequest(_))
         .Times(AnyNumber());
     EXPECT_CALL(*peer_manager_, Close())
-        .Times(1);
+        .Times(AtLeast(1));
     EXPECT_CALL(*queue_, Close())
             .Times(1);
   }
@@ -264,6 +263,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
 
   ConsensusBootstrapInfo info;
   ASSERT_OK(consensus_->Start(info));
+  ASSERT_OK(consensus_->EmulateElection());
 
   // Commit the first config round, created on Start();
   OpId committed_index;
@@ -298,6 +298,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
 
   ConsensusBootstrapInfo info;
   ASSERT_OK(consensus_->Start(info));
+  ASSERT_OK(consensus_->EmulateElection());
 
   OpId committed_index;
   consensus_->UpdateMajorityReplicated(rounds_[0]->id(), &committed_index);
@@ -329,8 +330,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
 // - It tests that when a follower gets promoted to leader it does the right thing
 //   with the pending operations.
 TEST_F(RaftConsensusTest, TestPendingTransactions) {
-  // Start as follower, we'll promote the peer later.
-  SetUpConsensus(QuorumPeerPB::FOLLOWER, 10);
+  SetUpConsensus(10);
 
   // Emulate a stateful system by having a bunch of operations in flight when consensus starts.
   // Specifically we emulate we're on term 10, with 5 operations before the last known
@@ -392,7 +392,7 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
       .Times(AnyNumber());
   // In the end peer manager and the queue get closed.
   EXPECT_CALL(*peer_manager_, Close())
-      .Times(1);
+      .Times(AtLeast(1));
   EXPECT_CALL(*queue_, Close())
       .Times(1);
 
@@ -423,11 +423,11 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
 TEST_F(RaftConsensusTest, TestAbortOperations) {
   use_continuations_ = true;
 
-  SetUpConsensus(QuorumPeerPB::LEADER, 1, 2);
+  SetUpConsensus(1, 2);
   EXPECT_CALL(*peer_manager_, SignalRequest(_))
       .Times(AnyNumber());
   EXPECT_CALL(*peer_manager_, Close())
-      .Times(2);
+      .Times(AtLeast(1));
   EXPECT_CALL(*queue_, Close())
       .Times(1);
   EXPECT_CALL(*queue_, Init(_))
@@ -449,6 +449,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
 
   ConsensusBootstrapInfo info;
   ASSERT_OK(consensus_->Start(info));
+  ASSERT_OK(consensus_->EmulateElection());
 
   // Append 10 rounds: 2.2 - 2.11
   for (int i = 0; i < 10; i++) {
@@ -480,7 +481,8 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   cc_req->set_tablet_id(kTestTablet);
 
   // Build a change config request with the roles reversed.
-  BuildQuorumPBForTests(cc_req->mutable_new_config(), 2, 1);
+  BuildQuorumPBForTests(cc_req->mutable_new_config(), 2);
+  cc_req->mutable_new_config()->mutable_peers(1)->set_role(QuorumPeerPB::LEADER);
 
   // Overwrite another 4 of the original rounds for a total of 5 overwrites.
   for (int i = 7; i < 10; i++) {
@@ -553,7 +555,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
 }
 
 TEST_F(RaftConsensusTest, TestReceivedIdIsInittedBeforeStart) {
-  SetUpConsensus(QuorumPeerPB::FOLLOWER);
+  SetUpConsensus();
   OpId opid;
   ASSERT_OK(consensus_->GetLastReceivedOpId(&opid));
   ASSERT_TRUE(opid.IsInitialized());

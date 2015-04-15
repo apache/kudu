@@ -5,6 +5,9 @@
 
 #include <string>
 
+// ASSERT_NO_FATAL_FAILURE is just too long to type.
+#define NO_FATALS ASSERT_NO_FATAL_FAILURE
+
 #define ASSERT_OK(status) do { \
     Status _s = status; \
     if (_s.ok()) { \

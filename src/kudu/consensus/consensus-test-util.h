@@ -78,11 +78,8 @@ static inline void AppendReplicateMessagesToQueue(
   }
 }
 
-// Builds a quorum of 'num' elements.
-// The default behavior is to create a quorum of 'num' elements where the last element
-// has a CANDIDATE role. However, if 'leader_idx' is different from -1 then that peer
-// is assigned a LEADER role and the remaining ones the follower role.
-void BuildQuorumPBForTests(QuorumPB* quorum, int num, int leader_idx = -1) {
+// Builds a quorum of 'num' members.
+void BuildQuorumPBForTests(QuorumPB* quorum, int num) {
   quorum->Clear();
   quorum->set_local(false);
   for (int i = 0; i < num; i++) {
@@ -91,14 +88,6 @@ void BuildQuorumPBForTests(QuorumPB* quorum, int num, int leader_idx = -1) {
     HostPortPB* hp = peer_pb->mutable_last_known_addr();
     hp->set_host(Substitute("peer-$0.fake-domain-for-tests", i));
     hp->set_port(0);
-    if (i == leader_idx) {
-      peer_pb->set_role(QuorumPeerPB::LEADER);
-      continue;
-    }
-    if (i == num - 1 && leader_idx == -1) {
-      peer_pb->set_role(QuorumPeerPB::CANDIDATE);
-      continue;
-    }
     peer_pb->set_role(QuorumPeerPB::FOLLOWER);
   }
 }

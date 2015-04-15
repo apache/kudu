@@ -14,6 +14,7 @@
 #include "kudu/client/write_op.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/schema.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
@@ -31,16 +32,20 @@ DEFINE_int64(client_num_batches_per_thread, 5,
 DECLARE_int32(consensus_rpc_timeout_ms);
 
 #define ASSERT_ALL_REPLICAS_AGREE(count) \
-  ASSERT_NO_FATAL_FAILURE(AssertAllReplicasAgree(count))
+  NO_FATALS(AssertAllReplicasAgree(count))
 
 namespace kudu {
 namespace tserver {
 
 using boost::assign::list_of;
+using consensus::ConsensusServiceProxy;
 using consensus::ConsensusResponsePB;
 using consensus::ConsensusRequestPB;
 using consensus::MakeOpId;
+using consensus::RunLeaderElectionRequestPB;
 using consensus::ReplicateMsg;
+using consensus::RunLeaderElectionRequestPB;
+using consensus::RunLeaderElectionResponsePB;
 using client::FromInternalCompressionType;
 using client::FromInternalDataType;
 using client::FromInternalEncodingType;
@@ -141,6 +146,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     ScanRequestPB req;
     ScanResponsePB resp;
     RpcController rpc;
+    rpc.set_timeout(MonoDelta::FromSeconds(10)); // Squelch warnings.
 
     NewScanRequestPB* scan = req.mutable_new_scan_request();
     scan->set_tablet_id(tablet_id_);
@@ -152,17 +158,19 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
       SCOPED_TRACE(req.DebugString());
       ASSERT_OK(replica_proxy->Scan(req, &resp, &rpc));
       SCOPED_TRACE(resp.DebugString());
-      ASSERT_FALSE(resp.has_error());
+      if (resp.has_error()) {
+        ASSERT_OK(StatusFromPB(resp.error().status()));
+      }
     }
 
     if (!resp.has_more_results())
       return;
 
     // Drain all the rows from the scanner.
-    ASSERT_NO_FATAL_FAILURE(DrainScannerToStrings(resp.scanner_id(),
-                                                  schema_,
-                                                  results,
-                                                  replica_proxy));
+    NO_FATALS(DrainScannerToStrings(resp.scanner_id(),
+                                    schema_,
+                                    results,
+                                    replica_proxy));
 
     std::sort(results->begin(), results->end());
   }
@@ -173,16 +181,25 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   void WaitForRowCount(TabletServerServiceProxy* replica_proxy,
                        int expected_count,
                        vector<string>* results) {
-    MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
+    LOG(INFO) << "Waiting for row count " << expected_count << "...";
+    MonoTime start = MonoTime::Now(MonoTime::FINE);
+    MonoTime deadline = MonoTime::Now(MonoTime::FINE);
     deadline.AddDelta(MonoDelta::FromSeconds(10));
-    while (MonoTime::Now(MonoTime::COARSE).ComesBefore(deadline)) {
+    while (true) {
       results->clear();
-      ScanReplica(replica_proxy, results);
+      NO_FATALS(ScanReplica(replica_proxy, results));
       if (results->size() == expected_count) {
         return;
       }
+      SleepFor(MonoDelta::FromMilliseconds(10));
+      if (!MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+        break;
+      }
     }
+    MonoTime end = MonoTime::Now(MonoTime::FINE);
+    LOG(WARNING) << "Didn't reach row count " << expected_count;
     FAIL() << "Did not reach expected row count " << expected_count
+           << " after " << end.GetDeltaSince(start).ToString()
            << ": rows: " << *results;
   }
 
@@ -354,6 +371,9 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     }
   }
 
+  // Start an election on the specified tserver
+  Status StartElection(const TServerDetails* replica, const string& tablet_id);
+
  protected:
   shared_ptr<KuduClient> client_;
   scoped_refptr<KuduTable> table_;
@@ -361,6 +381,21 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   CountDownLatch inserters_;
   string tablet_id_;
 };
+
+Status RaftConsensusITest::StartElection(const TServerDetails* replica, const string& tablet_id) {
+  RunLeaderElectionRequestPB req;
+  req.set_tablet_id(tablet_id);
+  RunLeaderElectionResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromSeconds(10));
+  RETURN_NOT_OK(replica->consensus_proxy->RunLeaderElection(req, &resp, &rpc));
+  Status s;
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status())
+      .CloneAndPrepend(Substitute("Code $0", TabletServerErrorPB::Code_Name(resp.error().code())));
+  }
+  return Status::OK();
+}
 
 // Test that we can retrieve the permanent uuid of a server running
 // consensus service via RPC.
@@ -534,14 +569,7 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
   CHECK_NE(leader->instance_id.permanent_uuid(), replica->instance_id.permanent_uuid());
 
   // Make the new replica leader.
-  consensus::RunLeaderElectionRequestPB request;
-  request.set_tablet_id(tablet_id_);
-
-  consensus::RunLeaderElectionResponsePB response;
-  RpcController controller;
-
-  ASSERT_OK(replica->consensus_proxy->RunLeaderElection(request, &response, &controller));
-  ASSERT_FALSE(response.has_error()) << "Got an error back: " << response.DebugString();
+  ASSERT_OK(StartElection(replica, tablet_id_));
 
   // Insert a bunch more rows.
   InsertTestRowsRemoteThread(FLAGS_client_inserts_per_thread * num_iters,
@@ -825,19 +853,22 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
 
   // Kill all the servers but one.
   TServerDetails *replica_ts;
-  {
-    vector<TServerDetails*> tservers;
-    AppendValuesFromMap(tablet_servers_, &tservers);
-    CHECK_EQ(3, tservers.size());
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(3, tservers.size());
 
-    replica_ts = tservers[0];
-    tservers[1]->external_ts->Shutdown();
-    tservers[2]->external_ts->Shutdown();
-  }
+  // Elect server 2 as leader and wait for log index 1 to propagate to all servers.
+  ASSERT_OK(StartElection(tservers[2], tablet_id_));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+
+  replica_ts = tservers[0];
+  tservers[1]->external_ts->Shutdown();
+  tservers[2]->external_ts->Shutdown();
+
 
   LOG(INFO) << "================================== Cluster setup complete.";
 
-  consensus::ConsensusServiceProxy* c_proxy = CHECK_NOTNULL(replica_ts->consensus_proxy.get());
+  ConsensusServiceProxy* c_proxy = CHECK_NOTNULL(replica_ts->consensus_proxy.get());
 
   ConsensusRequestPB req;
   ConsensusResponsePB resp;
@@ -865,7 +896,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   // We shouldn't read anything yet, because the ops should be pending.
   {
     vector<string> results;
-    ScanReplica(replica_ts->tserver_proxy.get(), &results);
+    NO_FATALS(ScanReplica(replica_ts->tserver_proxy.get(), &results));
     ASSERT_EQ(0, results.size()) << results;
   }
 
@@ -913,7 +944,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   // Verify only 2.2 and 2.3 are committed.
   {
     vector<string> results;
-    WaitForRowCount(replica_ts->tserver_proxy.get(), 2, &results);
+    NO_FATALS(WaitForRowCount(replica_ts->tserver_proxy.get(), 2, &results));
     ASSERT_STR_CONTAINS(results[0], "term: 2 index: 2");
     ASSERT_STR_CONTAINS(results[1], "term: 2 index: 3");
   }
@@ -932,7 +963,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   // Verify they are committed.
   {
     vector<string> results;
-    WaitForRowCount(replica_ts->tserver_proxy.get(), 3, &results);
+    NO_FATALS(WaitForRowCount(replica_ts->tserver_proxy.get(), 3, &results));
     ASSERT_STR_CONTAINS(results[0], "term: 2 index: 2");
     ASSERT_STR_CONTAINS(results[1], "term: 2 index: 3");
     ASSERT_STR_CONTAINS(results[2], "term: 2 index: 4");
@@ -972,7 +1003,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   // Verify the new rows are committed.
   {
     vector<string> results;
-    WaitForRowCount(replica_ts->tserver_proxy.get(), 5, &results);
+    NO_FATALS(WaitForRowCount(replica_ts->tserver_proxy.get(), 5, &results));
     SCOPED_TRACE(results);
     ASSERT_STR_CONTAINS(results[3], Substitute("term: $0 index: 5", leader_term));
     ASSERT_STR_CONTAINS(results[4], Substitute("term: $0 index: 6", leader_term));

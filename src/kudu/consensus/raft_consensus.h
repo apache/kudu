@@ -148,10 +148,6 @@ class RaftConsensus : public Consensus,
 
   std::string LogPrefix();
 
-  // Verifies that 'quorum' is well formed and that no config change is in-flight.
-  Status VerifyQuorumAndCheckThatNoChangeIsPendingUnlocked(const metadata::QuorumPB& quorum,
-                                                           QuorumPBType type);
-
   // Same as below but acquires the lock through LockForChangeConfig first.
   Status ChangeConfig();
 

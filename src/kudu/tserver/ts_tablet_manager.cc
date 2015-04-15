@@ -175,9 +175,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   // matches up with our local info.
   if (quorum.local()) {
     CHECK_EQ(1, quorum.peers_size());
-    CHECK_EQ(server_->instance_pb().permanent_uuid(),
-             quorum.peers(0).permanent_uuid());
-    CHECK_EQ(QuorumPeerPB::CANDIDATE, quorum.peers(0).role());
+    CHECK_EQ(server_->instance_pb().permanent_uuid(), quorum.peers(0).permanent_uuid());
   }
 
   // Set the initial opid_index for a QuorumPB to -1.

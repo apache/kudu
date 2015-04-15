@@ -2219,18 +2219,6 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
       peer->mutable_last_known_addr()->CopyFrom(addr);
     }
   }
-
-  // TODO: Select the leader
-  // Super hack for clusters where ts_descs.size() is a multiple of nreplicas, gives
-  // us perfect distribution for the demo.
-  QuorumPeerPB *leader = quorum->mutable_peers((index / ts_descs.size()) % nreplicas);
-  // The master hints the node it wants as leader by making it start as a candidate.
-  // This makes the quorum skip leader election (the initial candidate has implicit votes)
-  // but the candidate still needs to successfully complete a config change to effectively
-  // become leader.
-  // TODO reconsider this when we have leader election. Todd suggests that we might
-  // want to run leader election all the time.
-  leader->set_role(QuorumPeerPB::CANDIDATE);
 }
 
 bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,

@@ -120,14 +120,6 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
     ResetClientAndTester();
   }
 
-  // Wait until all of the servers have converged on the same log index.
-  // The converged index must be at least equal to 'minimum_index'.
-  //
-  // Requires that all servers are running. FAIL()s the test if the indexes
-  // do not converge within the given timeout.
-  void WaitForServersToAgree(const MonoDelta& timeout,
-                             int64_t minimum_index);
-
  protected:
   void AddExtraFlags(const string& flags_str, vector<string>* flags) {
     if (flags_str.empty()) {
@@ -249,34 +241,6 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   tester_->DumpInsertHistogram(true);
 }
 
-void LinkedListTest::WaitForServersToAgree(const MonoDelta& timeout,
-                                           int64_t minimum_index) {
-  MonoTime now = MonoTime::Now(MonoTime::COARSE);
-  MonoTime deadline = now;
-  deadline.AddDelta(timeout);
-
-  for (int i = 1; now.ComesBefore(deadline); i++) {
-    string tablet_id = tablet_replicas_.begin()->first;
-    vector<TServerDetails*> servers;
-    AppendValuesFromMap(tablet_servers_, &servers);
-    vector<consensus::OpId> ids;
-    ASSERT_OK(GetLastOpIdForEachReplica(tablet_id, servers, &ids));
-
-    if (ids[0].index() == ids[1].index() &&
-        ids[1].index() == ids[2].index()) {
-      ASSERT_GE(ids[0].index(), minimum_index)
-        << "Log indexes converged, but did not reach expected minimum value";
-      return;
-    } else {
-      LOG(INFO) << "Not converged yet: " << ids;
-      SleepFor(MonoDelta::FromMilliseconds(std::min(i * 100, 1000)));
-    }
-
-    now = MonoTime::Now(MonoTime::COARSE);
-  }
-  FAIL() << "Servers never converged";
-}
-
 // This test loads the linked list while one of the servers is down.
 // Once the loading is complete, the server is started back up and
 // we wait for it to catch up. Then we shut down the other two servers
@@ -311,8 +275,11 @@ TEST_F(LinkedListTest, TestLoadWhileOneServerDownAndVerify) {
   // inserted for. This prevents flakiness in TSAN builds in particular.
   const int kBaseTimeToWaitSecs = 5;
   const int kWaitTime = FLAGS_seconds_to_run + kBaseTimeToWaitSecs;
+  string tablet_id = tablet_replicas_.begin()->first;
   ASSERT_NO_FATAL_FAILURE(WaitForServersToAgree(
                             MonoDelta::FromSeconds(kWaitTime),
+                            tablet_servers_,
+                            tablet_id,
                             written / FLAGS_num_chains));
 
   cluster_->tablet_server(1)->Shutdown();
