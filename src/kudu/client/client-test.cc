@@ -82,7 +82,6 @@ class ClientTest : public KuduTest {
                                 &kNonNullDefault)),
               1) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
-    FLAGS_enable_leader_failure_detection = true; // Allow failover.
   }
 
   virtual void SetUp() OVERRIDE {

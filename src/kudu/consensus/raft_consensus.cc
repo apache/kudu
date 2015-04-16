@@ -51,8 +51,7 @@ DEFINE_int32(leader_failure_exp_backoff_max_delta_ms, 20 * 1000,
              "regular timeout. When leader election fails the interval in between retries "
              "increases exponentially, up to this value.");
 
-// TODO enable this by default once consensus is ready.
-DEFINE_bool(enable_leader_failure_detection, false,
+DEFINE_bool(enable_leader_failure_detection, true,
             "Whether to enable failure detection of tablet leaders. If enabled, attempts will be "
             "made to fail over to a follower when the leader is detected to have failed.");
 

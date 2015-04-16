@@ -44,8 +44,6 @@ class MasterReplicationTest : public KuduTest {
 
     opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
     opts_.num_tablet_servers = kNumTabletServerReplicas;
-
-    FLAGS_enable_leader_failure_detection = true;
   }
 
   virtual void SetUp() OVERRIDE {
