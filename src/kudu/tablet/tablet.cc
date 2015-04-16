@@ -938,6 +938,9 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
         const RowSetsInCompaction &input, int64_t mrs_being_flushed) {
   const char *op_name =
         (mrs_being_flushed == TabletMetadata::kNoMrsFlushed) ? "Compaction" : "Flush";
+  TRACE_EVENT2("tablet", "Tablet::DoCompactionOrFlush",
+               "tablet_id", tablet_id(),
+               "op", op_name);
 
   MvccSnapshot flush_snap(mvcc_);
   LOG(INFO) << op_name << ": entering phase 1 (flushing snapshot). Phase 1 snapshot: "
@@ -990,15 +993,18 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
 
   if (metrics_.get()) metrics_->bytes_flushed->IncrementBy(drsw.written_size());
   CHECK(!new_drs_metas.empty());
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, new_drs_metas) {
-    shared_ptr<DiskRowSet> new_rowset;
-    Status s = DiskRowSet::Open(meta, log_anchor_registry_.get(), &new_rowset, mem_tracker_);
-    if (!s.ok()) {
-      LOG(WARNING) << "Unable to open snapshot " << op_name << " results "
-                   << meta->ToString() << ": " << s.ToString();
-      return s;
+  {
+    TRACE_EVENT0("tablet", "Opening compaction results");
+    BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, new_drs_metas) {
+      shared_ptr<DiskRowSet> new_rowset;
+      Status s = DiskRowSet::Open(meta, log_anchor_registry_.get(), &new_rowset, mem_tracker_);
+      if (!s.ok()) {
+        LOG(WARNING) << "Unable to open snapshot " << op_name << " results "
+                     << meta->ToString() << ": " << s.ToString();
+        return s;
+      }
+      new_disk_rowsets.push_back(new_rowset);
     }
-    new_disk_rowsets.push_back(new_rowset);
   }
 
   // Setup for Phase 2: Start duplicating any new updates into the new on-disk
@@ -1039,6 +1045,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   MvccSnapshot non_duplicated_txns_snap;
   vector<Timestamp> in_flight_during_swap;
   {
+    TRACE_EVENT0("tablet", "Swapping DuplicatingRowSet");
     // Taking component_lock_ in write mode ensures that no new transactions
     // can start (or snapshot components_) during this block.
     boost::lock_guard<rw_spinlock> lock(component_lock_);

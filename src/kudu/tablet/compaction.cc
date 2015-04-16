@@ -20,6 +20,7 @@
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/transactions/write_transaction.h"
+#include "kudu/util/debug/trace_event.h"
 
 using std::tr1::unordered_set;
 
@@ -818,6 +819,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
                             const MvccSnapshot &snap_to_exclude,
                             const MvccSnapshot &snap_to_include,
                             const RowSetVector &output_rowsets) {
+  TRACE_EVENT0("tablet", "ReupdateMissedDeltas");
   RETURN_NOT_OK(input->Init());
 
   VLOG(1) << "Re-updating missed deltas between snapshot " <<
@@ -959,10 +961,14 @@ Status ReupdateMissedDeltas(const string &tablet_name,
   // TODO: there should be a more elegant way of preventing metadata flush at this point
   // using pinning, or perhaps a builder interface for new rowset metadata objects.
   // See KUDU-204.
-  BOOST_FOREACH(DeltaTracker* tracker, updated_trackers) {
-    VLOG(1) << "Flushing DeltaTracker updated with missed deltas...";
-    RETURN_NOT_OK_PREPEND(tracker->Flush(DeltaTracker::NO_FLUSH_METADATA),
-                          "Could not flush delta tracker after missed delta update");
+
+  {
+    TRACE_EVENT0("tablet", "Flushing missed deltas");
+    BOOST_FOREACH(DeltaTracker* tracker, updated_trackers) {
+      VLOG(1) << "Flushing DeltaTracker updated with missed deltas...";
+      RETURN_NOT_OK_PREPEND(tracker->Flush(DeltaTracker::NO_FLUSH_METADATA),
+                            "Could not flush delta tracker after missed delta update");
+    }
   }
 
   return Status::OK();

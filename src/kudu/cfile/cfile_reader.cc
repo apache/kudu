@@ -20,6 +20,7 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/object_pool.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/slice.h"
@@ -75,6 +76,8 @@ Status CFileReader::Open(gscoped_ptr<ReadableBlock> block,
 
 
 Status CFileReader::ReadMagicAndLength(uint64_t offset, uint32_t *len) {
+  TRACE_EVENT1("io", "CFileReader::ReadMagicAndLength",
+               "cfile", ToString());
   uint8_t scratch[kMagicAndLengthSize];
   Slice slice;
 
@@ -111,6 +114,8 @@ Status CFileReader::Init() {
 }
 
 Status CFileReader::ReadAndParseHeader() {
+  TRACE_EVENT1("io", "CFileReader::ReadAndParseHeader",
+               "cfile", ToString());
   CHECK(state_ == kUninitialized) << "bad state: " << state_;
 
   // First read and parse the "pre-header", which lets us know
@@ -137,6 +142,8 @@ Status CFileReader::ReadAndParseHeader() {
 
 
 Status CFileReader::ReadAndParseFooter() {
+  TRACE_EVENT1("io", "CFileReader::ReadAndParseFooter",
+               "cfile", ToString());
   CHECK(state_ == kUninitialized) << "bad state: " << state_;
   CHECK_GT(file_size_, kMagicAndLengthSize) <<
     "file too short: " << file_size_;
@@ -187,6 +194,11 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   }
 
   // Cache miss: need to read ourselves.
+  // We issue trace events only in the cache miss case since we expect the
+  // tracing overhead to be small compared to the IO (even if it's a memcpy
+  // from the Linux cache).
+  TRACE_EVENT1("io", "CFileReader::ReadBlock(cache miss)",
+               "cfile", ToString());
   gscoped_array<uint8_t> scratch(new uint8_t[ptr.size()]);
   Slice block;
   RETURN_NOT_OK(block_->Read(ptr.offset(), ptr.size(),

@@ -22,6 +22,7 @@
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/multi_column_writer.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
@@ -55,6 +56,8 @@ DiskRowSetWriter::DiskRowSetWriter(RowSetMetadata *rowset_metadata,
 {}
 
 Status DiskRowSetWriter::Open() {
+  TRACE_EVENT0("tablet", "DiskRowSetWriter::Open");
+
   FsManager* fs = rowset_metadata_->fs_manager();
   col_writer_.reset(new MultiColumnWriter(fs, &schema()));
   RETURN_NOT_OK(col_writer_->Open());
@@ -71,6 +74,7 @@ Status DiskRowSetWriter::Open() {
 }
 
 Status DiskRowSetWriter::InitBloomFileWriter() {
+  TRACE_EVENT0("tablet", "DiskRowSetWriter::InitBloomFileWriter");
   gscoped_ptr<WritableBlock> block;
   FsManager* fs = rowset_metadata_->fs_manager();
   RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
@@ -83,6 +87,7 @@ Status DiskRowSetWriter::InitBloomFileWriter() {
 }
 
 Status DiskRowSetWriter::InitAdHocIndexWriter() {
+  TRACE_EVENT0("tablet", "DiskRowSetWriter::InitAdHocIndexWriter");
   gscoped_ptr<WritableBlock> block;
   FsManager* fs = rowset_metadata_->fs_manager();
   RETURN_NOT_OK_PREPEND(fs->CreateNewBlock(&block),
@@ -165,12 +170,14 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
 }
 
 Status DiskRowSetWriter::Finish() {
+  TRACE_EVENT0("tablet", "DiskRowSetWriter::Finish");
   ScopedWritableBlockCloser closer;
   RETURN_NOT_OK(FinishAndReleaseBlocks(&closer));
   return closer.CloseBlocks();
 }
 
 Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* closer) {
+  TRACE_EVENT0("tablet", "DiskRowSetWriter::FinishAndReleaseBlocks");
   CHECK(!finished_);
 
   // Save the last encoded (max) key
@@ -247,6 +254,7 @@ RollingDiskRowSetWriter::RollingDiskRowSetWriter(TabletMetadata* tablet_metadata
 }
 
 Status RollingDiskRowSetWriter::Open() {
+  TRACE_EVENT0("tablet", "RollingDiskRowSetWriter::Open");
   CHECK_EQ(state_, kInitialized);
 
   RETURN_NOT_OK(RollWriter());
@@ -255,6 +263,7 @@ Status RollingDiskRowSetWriter::Open() {
 }
 
 Status RollingDiskRowSetWriter::RollWriter() {
+  TRACE_EVENT0("tablet", "RollingDiskRowSetWriter::RollWriter");
   // Close current writer if it is open
   RETURN_NOT_OK(FinishCurrentWriter());
 
@@ -337,6 +346,7 @@ Status RollingDiskRowSetWriter::AppendDeltas(rowid_t row_idx_in_block,
 }
 
 Status RollingDiskRowSetWriter::FinishCurrentWriter() {
+  TRACE_EVENT0("tablet", "RollingDiskRowSetWriter::FinishCurrentWriter");
   if (!cur_writer_) {
     return Status::OK();
   }
@@ -377,6 +387,7 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
 }
 
 Status RollingDiskRowSetWriter::Finish() {
+  TRACE_EVENT0("tablet", "RollingDiskRowSetWriter::Finish");
   DCHECK_EQ(state_, kStarted);
 
   RETURN_NOT_OK(FinishCurrentWriter());
@@ -420,6 +431,7 @@ DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
 }
 
 Status DiskRowSet::Open() {
+  TRACE_EVENT0("tablet", "DiskRowSet::Open");
   gscoped_ptr<CFileSet> new_base(new CFileSet(rowset_metadata_));
   RETURN_NOT_OK(new_base->Open());
   base_data_.reset(new_base.release());
@@ -437,14 +449,17 @@ Status DiskRowSet::Open() {
 }
 
 Status DiskRowSet::FlushDeltas() {
+  TRACE_EVENT0("tablet", "DiskRowSet::FlushDeltas");
   return delta_tracker_->Flush(DeltaTracker::FLUSH_METADATA);
 }
 
 Status DiskRowSet::MinorCompactDeltaStores() {
+  TRACE_EVENT0("tablet", "DiskRowSet::MinorCompactDeltaStores");
   return delta_tracker_->Compact();
 }
 
 Status DiskRowSet::MajorCompactDeltaStores(const ColumnIndexes& col_indexes) {
+  TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStores");
   // TODO: make this more fine-grained if possible. Will make sense
   // to re-touch this area once integrated with maintenance ops
   // scheduling.
@@ -634,6 +649,7 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore() const {
 }
 
 Status DiskRowSet::AlterSchema(const Schema& schema) {
+  TRACE_EVENT0("tablet", "DiskRowSet::AlterSchema");
   return delta_tracker_->AlterSchema(schema);
 }
 

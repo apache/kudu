@@ -15,6 +15,7 @@
 #include "kudu/common/key_encoder.h"
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/util/coding.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/hexdump.h"
 
@@ -115,6 +116,7 @@ CFileWriter::~CFileWriter() {
 }
 
 Status CFileWriter::Start() {
+  TRACE_EVENT0("cfile", "CFileWriter::Start");
   CHECK(state_ == kWriterInitialized) <<
     "bad state for Start(): " << state_;
 
@@ -159,12 +161,14 @@ Status CFileWriter::Start() {
 }
 
 Status CFileWriter::Finish() {
+  TRACE_EVENT0("cfile", "CFileWriter::Finish");
   ScopedWritableBlockCloser closer;
   RETURN_NOT_OK(FinishAndReleaseBlock(&closer));
   return closer.CloseBlocks();
 }
 
 Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
+  TRACE_EVENT0("cfile", "CFileWriter::FinishAndReleaseBlock");
   CHECK(state_ == kWriterWriting) <<
     "Bad state for Finish(): " << state_;
 
