@@ -198,7 +198,10 @@ void TpchRealWorld::LoadLineItemsThread() {
   while (importer.HasNextLine() && !stop_threads_.Load()) {
     dao->WriteLine(boost::bind(&LineItemTsvImporter::GetNextLine,
                                &importer, _1));
-    rows_inserted_.Increment();
+    int64_t current_count = rows_inserted_.Increment();
+    if (current_count % 250000 == 0) {
+      LOG(INFO) << "Inserted " << current_count << " rows";
+    }
   }
   dao->FinishWriting();
 }
