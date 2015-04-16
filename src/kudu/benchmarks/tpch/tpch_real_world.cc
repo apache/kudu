@@ -55,6 +55,8 @@ DEFINE_bool(tpch_use_mini_cluster, true,
             "Create a mini cluster for the work to be performed against");
 DEFINE_int32(tpch_max_batch_size, 1000,
              "Maximum number of inserts to batch at once");
+DEFINE_int32(tpch_test_client_timeout_msec, 10000,
+             "Timeout that will be used for all operations and RPCs");
 DEFINE_int32(tpch_test_runtime_sec, 0,
              "How long this test should run for excluding startup time (note that it will also "
              "stop if dbgen finished generating all its data)");
@@ -180,8 +182,10 @@ Status TpchRealWorld::StartDbgen() {
 }
 
 gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
-  gscoped_ptr<RpcLineItemDAO> dao(new RpcLineItemDAO(master_addresses_, FLAGS_tpch_table_name,
-                                                     FLAGS_tpch_max_batch_size));
+  gscoped_ptr<RpcLineItemDAO> dao(new RpcLineItemDAO(master_addresses_,
+                                                     FLAGS_tpch_table_name,
+                                                     FLAGS_tpch_max_batch_size,
+                                                     FLAGS_tpch_test_client_timeout_msec));
   dao->Init();
   return dao.Pass();
 }

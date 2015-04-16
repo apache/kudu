@@ -85,6 +85,7 @@ void RpcLineItemDAO::Init() {
 
   CHECK_OK(KuduClientBuilder()
            .add_master_server_addr(master_address_)
+           .default_rpc_timeout(timeout_)
            .Build(&client_));
   Status s = client_->OpenTable(table_name_, &client_table_);
   if (s.IsNotFound()) {
