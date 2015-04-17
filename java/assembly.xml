@@ -1,0 +1,14 @@
+<!-- Copyright (c) 2013 Cloudera, Inc. All rights reserved. -->
+<assembly>
+    <id>assemble</id>
+    <formats>
+        <format>jar</format>
+    </formats>
+    <includeBaseDirectory>false</includeBaseDirectory>
+    <fileSets>
+      <fileSet>
+        <directory>${project.basedir}/src</directory>
+        <outputDirectory>/</outputDirectory>
+        </fileSet>
+     </fileSets>
+</assembly>
