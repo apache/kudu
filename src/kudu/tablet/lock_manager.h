@@ -29,8 +29,7 @@ class LockManager {
 
   enum LockStatus {
     LOCK_ACQUIRED = 0,
-    LOCK_ALREADY_ACQUIRED = 1,
-    LOCK_BUSY = 2,
+    LOCK_BUSY = 1,
   };
 
   enum LockMode {

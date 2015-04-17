@@ -14,6 +14,7 @@
 #include <string.h>         // for memcpy
 #include <limits.h>         // for enumeration casts and tests
 
+#include "kudu/gutil/logging.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/template_util.h"
 #include "kudu/gutil/type_traits.h"
@@ -361,14 +362,12 @@ inline bool tight_enum_test_cast(int e_val, Enum* e_var) {
   }
 }
 
-// The plain casts require logging, and we get header recursion if
-// it is done directly.  So, we do it indirectly.
-// The following function is defined in logging.cc.
-
 namespace base {
 namespace internal {
 
-void WarnEnumCastError(int value_of_int);
+inline void WarnEnumCastError(int value_of_int) {
+  LOG(DFATAL) << "Bad enum value " << value_of_int;
+}
 
 }  // namespace internal
 }  // namespace base

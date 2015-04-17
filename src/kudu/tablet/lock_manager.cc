@@ -30,7 +30,8 @@ class TransactionState;
 class LockEntry {
  public:
   explicit LockEntry(const Slice& key)
-  : sem(1) {
+  : sem(1),
+    recursion_(0) {
     key_hash_ = util_hash::CityHash64(reinterpret_cast<const char *>(key.data()), key.size());
     key_ = key;
     refs_ = 1;
@@ -46,6 +47,7 @@ class LockEntry {
 
   // Mutex used by the LockManager
   Semaphore sem;
+  int recursion_;
 
  private:
   friend class LockTable;
@@ -331,8 +333,8 @@ LockManager::LockStatus LockManager::Lock(const Slice& key,
       // TODO: this is likely to be problematic even today: if you issue two
       // UPDATEs for the same row in the same transaction, we can get:
       // "deltamemstore.cc:74] Check failed: !mutation.exists() Already have an entry ..."
-      LOG(WARNING) << "Double-lock for key " << key.ToDebugString();
-      return LOCK_ALREADY_ACQUIRED;
+      (*entry)->recursion_++;
+      return LOCK_ACQUIRED;
     }
 
     // If we couldn't immediately acquire the lock, do a timed lock so we can
@@ -373,7 +375,11 @@ LockManager::LockStatus LockManager::TryLock(const Slice& key,
 void LockManager::Release(LockEntry *lock, LockStatus ls) {
   DCHECK_NOTNULL(lock)->holder_ = NULL;
   if (ls == LOCK_ACQUIRED) {
-    lock->sem.Release();
+    if (lock->recursion_ > 0) {
+      lock->recursion_--;
+    } else {
+      lock->sem.Release();
+    }
   }
   locks_->ReleaseLockEntry(lock);
 }

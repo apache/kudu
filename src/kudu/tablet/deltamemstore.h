@@ -20,6 +20,7 @@
 #include "kudu/tablet/delta_tracker.h"
 #include "kudu/tablet/delta_stats.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/memory/arena.h"
 
 namespace kudu {
@@ -151,6 +152,14 @@ class DeltaMemStore : public DeltaStore,
   log::MinLogIndexAnchorer anchorer_;
 
   const DeltaStats delta_stats_;
+
+  // It's possible for multiple mutations to apply to the same row
+  // in the same timestamp (e.g. if a batch contains multiple updates for that
+  // row). In that case, we need to append a sequence number to the delta key
+  // in the underlying tree, so that the later operations will sort after
+  // the earlier ones. This atomic integer serves to provide such a sequence
+  // number, and is only used in the case that such a collision occurs.
+  AtomicInt<Atomic32> disambiguator_sequence_number_;
 
   DISALLOW_COPY_AND_ASSIGN(DeltaMemStore);
 };

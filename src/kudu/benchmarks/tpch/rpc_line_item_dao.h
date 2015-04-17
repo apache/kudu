@@ -42,10 +42,6 @@ class RpcLineItemDAO {
   bool IsTableEmpty();
 
  private:
-  // Sending the same key more than once in the same batch crashes the server
-  // This method is used to know if it's safe to add the row in that regard
-  bool ShouldAddKey(const KuduPartialRow& row);
-
   void FlushIfBufferFull();
 
   simple_spinlock lock_;
@@ -56,8 +52,6 @@ class RpcLineItemDAO {
   // liveness while scanning.
   gscoped_ptr<client::KuduSchema> current_scanner_projection_;
   gscoped_ptr<client::KuduScanner> current_scanner_;
-  // Keeps track of all the orders batched for writing
-  std::set<std::pair<uint32_t, uint32_t> > orders_in_request_;
   const std::string master_address_;
   const std::string table_name_;
   const MonoDelta timeout_;

@@ -55,7 +55,8 @@ DeltaMemStore::DeltaMemStore(int64_t id,
                                              allocator_)),
     tree_(arena_),
     anchorer_(log_anchor_registry, Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)),
-    delta_stats_(0) {
+    delta_stats_(0),
+    disambiguator_sequence_number_(0) {
   CHECK(schema.has_column_ids());
 }
 
@@ -69,20 +70,26 @@ Status DeltaMemStore::Update(Timestamp timestamp,
                              const consensus::OpId& op_id) {
   DeltaKey key(row_idx, timestamp);
 
-  // TODO: this allocation isn't great. Make faststring
-  // allocate its initial buffer on the stack?
-  faststring delta_buf;
   faststring buf;
 
   key.EncodeTo(&buf);
-  Slice key_slice(buf);
 
+  Slice key_slice(buf);
   btree::PreparedMutation<DMSTreeTraits> mutation(key_slice);
   mutation.Prepare(&tree_);
-  CHECK(!mutation.exists())
-    << "Already have an entry for rowid " << row_idx << " at timestamp "
-    << timestamp;
-  if (!mutation.Insert(update.slice())) {
+  if (PREDICT_FALSE(mutation.exists())) {
+    // We already have a delta for this row at the same timestamp.
+    // Try again with a disambiguating sequence number appended to the key.
+    int seq = disambiguator_sequence_number_.Increment();
+    PutMemcmpableVarint64(&buf, seq);
+    key_slice = Slice(buf);
+    mutation.Reset(key_slice);
+    mutation.Prepare(&tree_);
+    CHECK(!mutation.exists())
+      << "Appended a sequence number but still hit a duplicate "
+      << "for rowid " << row_idx << " at timestamp " << timestamp;
+  }
+  if (PREDICT_FALSE(!mutation.Insert(update.slice()))) {
     return Status::IOError("Unable to insert into tree");
   }
 
@@ -102,9 +109,6 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
     iter->GetCurrentEntry(&key_slice, &val);
     DeltaKey key;
     RETURN_NOT_OK(key.DecodeFrom(&key_slice));
-    DCHECK_EQ(0, key_slice.size()) <<
-      "After decoding delta key, should be empty";
-
     RowChangeList rcl(val);
     RETURN_NOT_OK_PREPEND(dfw->AppendDelta<REDO>(key, rcl), "Failed to append delta");
     stats->UpdateStats(key.timestamp(), schema_, rcl);
@@ -144,7 +148,6 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
     Slice key_slice, v;
     iter->GetCurrentEntry(&key_slice, &v);
     RETURN_NOT_OK(key.DecodeFrom(&key_slice));
-    DCHECK_EQ(0, key_slice.size()) << "Key should not have leftover data";
     DCHECK_GE(key.row_idx(), row_idx);
     if (key.row_idx() != row_idx) break;
 
@@ -234,7 +237,6 @@ Status DMSIterator::PrepareBatch(size_t nrows) {
     iter_->GetCurrentEntry(&key_slice, &val);
     DeltaKey key;
     RETURN_NOT_OK(key.DecodeFrom(&key_slice));
-    DCHECK_EQ(0, key_slice.size()) << "Key should not have leftover data";
     DCHECK_GE(key.row_idx(), start_row);
     if (key.row_idx() > stop_row) break;
 

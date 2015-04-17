@@ -321,21 +321,24 @@ class MergeCompactionInput : public CompactionInput {
           continue;
         }
         // If we found two duplicated rows, we want the row with the highest
-        // mutation timestamp and will discard the rest as they must be ghosts
-        // (in debug mode CompareMutations() makes sure this is true) and we
-        // don't have REINSERT encoding.
+        // live version. If they're equal, that can only be because they're both
+        // dead, in which case it doesn't matter.
+        // TODO: this is going to change with historical REINSERT handling.
         if (PREDICT_FALSE(row_comp == 0)) {
-          int mutation_comp = CompareMutations(state->next(), smallest);
-          DCHECK_NE(mutation_comp, 0);
+          int mutation_comp = CompareLatestLiveVersion(state->next(), smallest);
           if (mutation_comp > 0) {
-            // If the previous smallest row has a highest mutation that is lower
-            // than this one discard it.
+            // If the previous smallest row has a highest version that is lower
+            // than this one, discard it.
             states_[smallest_idx]->pop_front();
             smallest_idx = i;
             smallest = state->next();
             continue;
           } else {
-            // .. otherwise pop the current one
+            // .. otherwise pop the other one.
+            //
+            // NOTE: If they're equal, then currently that means that both versions are
+            // ghosts. Once we handle REINSERTS, we'll have to figure out which one "comes
+            // first" and deal with this properly. For now, we can just pick arbitrarily.
             states_[i]->pop_front();
             continue;
           }
@@ -449,43 +452,45 @@ class MergeCompactionInput : public CompactionInput {
   }
 
   // Compare the mutations of two duplicated rows.
-  static int CompareMutations(const CompactionInputRow& left, const CompactionInputRow& right) {
+  // Returns -1 if latest_version(left) < latest_version(right)
+  static int CompareLatestLiveVersion(const CompactionInputRow& left,
+                                      const CompactionInputRow& right) {
+    if (left.redo_head == NULL) {
+      // left must still be alive
+      DCHECK(right.redo_head != NULL);
+      return 1;
+    }
+    if (right.redo_head == NULL) {
+      DCHECK(left.redo_head != NULL);
+      return -1;
+    }
+
     // Duplicated rows have disjoint histories, we don't need to get the latest
     // mutation, the first one should be enough for the sake of determining the most recent
     // row, but in debug mode do get the latest to make sure one of the rows is a ghost.
-    const Mutation* left_latest = left.redo_head != NULL ? left.redo_head : left.undo_head;
-    const Mutation* right_latest = right.redo_head != NULL ? right.redo_head : right.undo_head;
+    const Mutation* left_latest = left.redo_head;
+    const Mutation* right_latest = right.redo_head;
     int ret = left_latest->timestamp().CompareTo(right_latest->timestamp());
 #ifndef NDEBUG
-    int debug_ret = DebugCompareMutations(left, right);
-    CHECK_EQ(ret, debug_ret);
+    AdvanceToLastInList(&left_latest);
+    AdvanceToLastInList(&right_latest);
+    int debug_ret = left_latest->timestamp().CompareTo(right_latest->timestamp());
+    if (debug_ret != 0) {
+      // If in fact both rows were deleted at the same time, this is OK -- we could
+      // have a case like TestRandomAccess.TestFuzz3, in which a single batch
+      // DELETED from the DRS, INSERTed into MRS, and DELETED from MRS. In that case,
+      // the timestamp of the last REDO will be the same and we can pick whichever
+      // we like.
+      CHECK_EQ(ret, debug_ret);
+    }
 #endif
     return ret;
   }
 
-  static int DebugCompareMutations(const CompactionInputRow& left,
-                                   const CompactionInputRow& right) {
-    const Mutation* left_latest = GetLatestMutation(left);
-    const Mutation* right_latest = GetLatestMutation(right);
-    DCHECK(left_latest);
-    DCHECK(right_latest);
-    DCHECK(left_latest->changelist().is_delete() || right_latest->changelist().is_delete())
-        << "One of the duplicated rows must be a ghost.";
-    return left_latest->timestamp().CompareTo(right_latest->timestamp());
-  }
-
-
-  static const Mutation* GetLatestMutation(const CompactionInputRow& row) {
-    const Mutation* latest = NULL;
-    if (row.redo_head != NULL) {
-      latest = row.redo_head;
-      while (latest->next() != NULL) {
-        latest = latest->next();
-      }
-    } else {
-      latest = row.undo_head;
+  static void AdvanceToLastInList(const Mutation** m) {
+    while ((*m)->next() != NULL) {
+      *m = (*m)->next();
     }
-    return latest;
   }
 
   const Schema* schema_;

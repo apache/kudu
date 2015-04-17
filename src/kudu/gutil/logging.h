@@ -76,6 +76,14 @@
 #define FATAL 2
 #endif
 
+#ifndef DFATAL
+#ifdef NDEBUG
+#define DFATAL WARNING
+#else
+#define DFATAL FATAL
+#endif // NDEBUG
+#endif // DFATAL
+
 #ifndef LOG
 #define LOG(level) kudu::internal_logging::CerrLog(level)
 #endif

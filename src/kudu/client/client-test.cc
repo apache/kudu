@@ -2027,12 +2027,6 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
   nrows = FLAGS_test_scan_num_rows/2;
 
   // Randomized testing
-  // TODO: Currently, multiple mutations of the same row are not supported
-  // in the same batch. Once KUDU-352 is resolved, then the changed set
-  // should be removed (if per-row per-batch ordering is preserved).
-  // If batches remain with no ordering guarantee, then only this comment
-  // should be removed.
-  unordered_set<int> changed;
   LOG(INFO) << "Randomized mutations testing.";
   SeedRandom();
   for (int i = 0; i <= 1000; ++i) {
@@ -2042,14 +2036,10 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
       FlushSessionOrDie(session);
       ASSERT_NO_FATAL_FAILURE(CheckCorrectness(&scanner, row, nrows));
       LOG(INFO) << "...complete";
-      changed.clear();
     }
 
     int change = rand() % FLAGS_test_scan_num_rows;
     // Insert if empty
-    while (changed.find(change) != changed.end())
-      change = (change + 1) % FLAGS_test_scan_num_rows;
-    changed.insert(change);
     if (row[change] == -1) {
       ASSERT_OK(ApplyInsertToSession(session.get(),
                                             client_table_,
@@ -2085,8 +2075,7 @@ TEST_F(ClientTest, TestRandomWriteOperation) {
 }
 
 // Test whether a batch can handle several mutations in a batch
-// Disabled. See KUDU-352
-TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
+TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(5000);
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
@@ -2107,6 +2096,7 @@ TEST_F(ClientTest, DISABLED_TestSeveralRowMutatesPerBatch) {
   LOG(INFO) << "Testing insert/delete in same batch, key " << 2 << ".";
   // Test insert/delete
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 2, 1, ""));
+  ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 2));
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());

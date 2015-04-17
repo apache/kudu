@@ -106,7 +106,6 @@ void RpcLineItemDAO::Init() {
 void RpcLineItemDAO::WriteLine(boost::function<void(KuduPartialRow*)> f) {
   gscoped_ptr<KuduInsert> insert = client_table_->NewInsert();
   f(insert->mutable_row());
-  if (!ShouldAddKey(insert->row())) return;
   CHECK_OK(session_->Apply(insert.Pass()));
   ++batch_size_;
   FlushIfBufferFull();
@@ -116,7 +115,6 @@ void RpcLineItemDAO::FlushIfBufferFull() {
   if (batch_size_ < batch_max_) return;
 
   batch_size_ = 0;
-  orders_in_request_.clear();
 
   FlushCallback* cb = new FlushCallback(session_, &semaphore_);
   // The callback object will free 'cb' after it is invoked.
@@ -126,20 +124,11 @@ void RpcLineItemDAO::FlushIfBufferFull() {
 void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
   gscoped_ptr<KuduUpdate> update = client_table_->NewUpdate();
   f(update->mutable_row());
-  if (!ShouldAddKey(update->row())) return;
   CHECK_OK(session_->Apply(update.Pass()));
   ++batch_size_;
   FlushIfBufferFull();
 }
 
-bool RpcLineItemDAO::ShouldAddKey(const KuduPartialRow &row) {
-  int64_t l_orderkey;
-  CHECK_OK(row.GetInt64(tpch::kOrderKeyColIdx, &l_orderkey));
-  uint32_t l_linenumber;
-  CHECK_OK(row.GetUInt32(tpch::kLineNumberColIdx, &l_linenumber));
-  std::pair<int64_t, uint32_t> composite_k(l_orderkey, l_linenumber);
-  return InsertIfNotPresent(&orders_in_request_, composite_k);
-}
 void RpcLineItemDAO::FinishWriting() {
   semaphore_.Acquire();
   CHECK_OK(session_->Flush());

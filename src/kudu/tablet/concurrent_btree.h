@@ -807,10 +807,12 @@ class PreparedMutation {
   {}
 
   ~PreparedMutation() {
-    if (leaf_ != NULL && needs_unlock_) {
-      leaf_->Unlock();
-      needs_unlock_ = false;
-    }
+    UnPrepare();
+  }
+
+  void Reset(const Slice& key) {
+    UnPrepare();
+    key_ = key;
   }
 
   // Prepare a mutation against the given tree.
@@ -888,6 +890,14 @@ class PreparedMutation {
     // set leaf_ back to NULL without unlocking it,
     // since the caller will unlock it.
     needs_unlock_ = false;
+  }
+
+  void UnPrepare() {
+    if (leaf_ != NULL && needs_unlock_) {
+      leaf_->Unlock();
+      needs_unlock_ = false;
+    }
+    tree_ = NULL;
   }
 
   Slice key_;
