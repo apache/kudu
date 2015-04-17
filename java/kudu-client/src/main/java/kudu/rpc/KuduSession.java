@@ -219,10 +219,9 @@ public class KuduSession implements SessionConfiguration {
       if (!operationsInLookup.isEmpty()) {
         lookupsDone = new Deferred<Void>();
         return lookupsDone.addCallbackDeferring(new OperationsInLookupDoneCB());
-      } else {
-        return flushAllBatches();
       }
     }
+    return flushAllBatches();
   }
 
   class OperationsInLookupDoneCB implements
@@ -374,45 +373,57 @@ public class KuduSession implements SessionConfiguration {
    */
   private Deferred<OperationResponse> addToBuffer(Slice tablet, Operation operation) {
     boolean scheduleFlush = false;
+    boolean batchIsFull = false;
+    Batch batch;
 
-    // Fat lock but none of the operations will block
+    // First check if we need to flush the current batch.
     synchronized (this) {
-      Batch batch = operations.get(tablet);
+      batch = operations.get(tablet);
+      if (batch != null && batch.ops.size() + 1 > mutationBufferSpace) {
+        if (flushMode == FlushMode.MANUAL_FLUSH) {
+          throw new NonRecoverableException("MANUAL_FLUSH is enabled but the buffer is too big");
+        }
+        if (operationsInFlight.containsKey(tablet)) {
+          // There's is already another batch in flight for this tablet.
+          // We cannot continue here, we have to send this back to the client.
+          // This is our high watermark.
+          throw new PleaseThrottleException("The RPC cannot be buffered because the current " +
+              "buffer is full and the previous buffer hasn't been flushed yet", null,
+              operation, operationsInFlight.get(tablet));
+        }
+        batchIsFull = true;
+      }
+    }
 
-      // doing + 1 to see if the current insert would push us over the limit
-      // TODO obviously wrong, not same size thing
-      if (batch != null) {
-        if (batch.ops.size() + 1 > mutationBufferSpace) {
-          if (flushMode == FlushMode.MANUAL_FLUSH) {
-            throw new NonRecoverableException("MANUAL_FLUSH is enabled but the buffer is too big");
-          }
-          flushTablet(tablet, batch);
-          if (operations.containsKey(tablet)) {
-            // This means we didn't flush because there was another batch in flight.
-            // We cannot continue here, we have to send this back to the client.
-            // This is our high watermark.
-            throw new PleaseThrottleException("The RPC cannot be buffered because the current " +
-                "buffer is full and the previous buffer hasn't been flushed yet", null,
-                operation, operationsInFlight.get(tablet));
-          }
-          // Below will take care of creating the new batch and adding the operation.
-          batch = null;
-        } else if (operationsInFlight.containsKey(tablet) &&
-            batch.ops.size() + 1 > mutationBufferLowWatermark) {
-          // This is our low watermark, we throw PleaseThrottleException before hitting the high
-          // mark. As we get fuller past the watermark it becomes likelier to trigger it.
-          int randomWatermark = batch.ops.size() + 1 + randomizer.nextInt(mutationBufferSpace -
-              mutationBufferLowWatermark);
-          if (randomWatermark > mutationBufferSpace) {
-            throw new PleaseThrottleException("The previous buffer hasn't been flushed and the " +
-                "current one is over the low watermark, please retry later", null, operation,
-                operationsInFlight.get(tablet));
-          }
+    // We're doing this out of the synchronized block because flushTablet can take some time
+    // encoding all the data.
+    if (batchIsFull) {
+      flushTablet(tablet, batch);
+    }
+
+    Deferred<Void> lookupsDoneCopy = null;
+    synchronized (this) {
+      // We need to get the batch again since we went out of the synchronized block. We can get a
+      // new one, the same one, or null.
+      batch = operations.get(tablet);
+
+      // doing + 1 to see if the current insert would push us over the limit.
+      // TODO obviously wrong, not same size thing.
+      if (batch != null && operationsInFlight.containsKey(tablet) &&
+          batch.ops.size() + 1 > mutationBufferLowWatermark) {
+        // This is our low watermark, we throw PleaseThrottleException before hitting the high
+        // mark. As we get fuller past the watermark it becomes likelier to trigger it.
+        int randomWatermark = batch.ops.size() + 1 + randomizer.nextInt(mutationBufferSpace -
+            mutationBufferLowWatermark);
+        if (randomWatermark > mutationBufferSpace) {
+          throw new PleaseThrottleException("The previous buffer hasn't been flushed and the " +
+              "current one is over the low watermark, please retry later", null, operation,
+              operationsInFlight.get(tablet));
         }
       }
       if (batch == null) {
         // We found a tablet that needs batching, this is the only place where
-        // we schedule a flush
+        // we schedule a flush.
         batch = new Batch(operation.getTable());
         batch.setExternalConsistencyMode(this.consistencyMode);
         Batch oldBatch = operations.put(tablet, batch);
@@ -424,20 +435,25 @@ public class KuduSession implements SessionConfiguration {
       if (!operationsInLookup.isEmpty()) {
         operationsInLookup.remove(operation);
         if (lookupsDone != null && operationsInLookup.isEmpty()) {
-          lookupsDone.callback(null);
+          lookupsDoneCopy = lookupsDone;
           lookupsDone = null;
         }
       }
       if (flushMode == FlushMode.AUTO_FLUSH_BACKGROUND && scheduleFlush) {
         // Accumulated a first insert but we're not in manual mode,
-        // schedule the flush
+        // schedule the flush.
         LOG.trace("Scheduling a flush");
         scheduleNextPeriodicFlush(tablet, batch);
       }
     }
 
+    // We do this outside of the synchronized block because we might end up calling flushTablet.
+    if (lookupsDoneCopy != null) {
+      lookupsDoneCopy.callback(null);
+    }
+
     // Get here if we accumulated an insert, regardless of if it scheduled
-    // a flush
+    // a flush.
     return operation.getDeferred();
   }
 
@@ -499,10 +515,14 @@ public class KuduSession implements SessionConfiguration {
    *
    * Also, if there's already a Batch in flight for the given tablet,
    * the flush will be delayed and the returned Deferred will be chained to it.
+   *
+   * This method should not be called within a synchronized block because we can spend a lot of
+   * time encoding the batch.
    */
   private Deferred<OperationResponse> flushTablet(Slice tablet, Batch expectedBatch) {
     assert (expectedBatch != null);
-
+    assert (!Thread.holdsLock(this));
+    Batch batch;
     synchronized (this) {
       // Check this first, no need to wait after anyone if the batch we were supposed to flush
       // was already flushed.
@@ -518,7 +538,7 @@ public class KuduSession implements SessionConfiguration {
             new FlushRetryCallback(tablet, operations.get(tablet)));
       }
 
-      Batch batch = operations.remove(tablet);
+      batch = operations.remove(tablet);
       if (batch == null) {
         LOG.trace("Had to flush a tablet but there was nothing to flush: " +
             Bytes.getString(tablet));
@@ -532,8 +552,8 @@ public class KuduSession implements SessionConfiguration {
         batch.deadlineTracker.reset();
         batch.setTimeoutMillis(currentTimeout);
       }
-      return client.sendRpcToTablet(batch);
     }
+    return client.sendRpcToTablet(batch);
   }
 
 
@@ -551,11 +571,9 @@ public class KuduSession implements SessionConfiguration {
 
     @Override
     public Deferred<OperationResponse> call(OperationResponse o) throws Exception {
-      synchronized (KuduSession.this) {
-        LOG.trace("Previous batch in flight is done, flushing this tablet again: " +
-            Bytes.getString(tablet));
-        return flushTablet(tablet, expectedBatch);
-      }
+      LOG.trace("Previous batch in flight is done, flushing this tablet again: " +
+          Bytes.getString(tablet));
+      return flushTablet(tablet, expectedBatch);
     }
   }
 
