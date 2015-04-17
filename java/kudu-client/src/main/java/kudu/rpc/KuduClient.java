@@ -219,7 +219,7 @@ public class KuduClient {
    * @param masterQuorum Comma-separated list of "host:port" pairs of the masters
    */
   public KuduClient(final String masterQuorum) {
-    this(NetUtil.parseStrings(masterQuorum, 0));
+    this(NetUtil.parseStrings(masterQuorum, 7051));
   }
 
   public KuduClient(final List<HostAndPort> masterAddresses) {
