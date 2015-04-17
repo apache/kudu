@@ -8,6 +8,7 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/random.h"
@@ -110,7 +111,7 @@ int SeedRandom() {
   // Initialize random seed
   if (FLAGS_test_random_seed == 0) {
     // Not specified by user
-    seed = time(NULL);
+    seed = static_cast<int>(GetCurrentTimeMicros());
   } else {
     seed = FLAGS_test_random_seed;
   }
