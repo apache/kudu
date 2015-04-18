@@ -37,11 +37,12 @@ else()
 
   # Tests
   ADD_KUDU_TEST(oauth-test)
-  target_link_libraries(oauth-test
-    twitter_demo)
-
   ADD_KUDU_TEST(parser-test)
-  target_link_libraries(parser-test
-    twitter_demo)
+  if(NOT "${NO_TESTS}")
+    target_link_libraries(oauth-test
+      twitter_demo)
+    target_link_libraries(parser-test
+      twitter_demo)
+  endif()
 
 endif() # library checks

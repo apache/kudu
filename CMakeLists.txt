@@ -378,6 +378,9 @@ include_directories(src)
 #
 # Arguments after the test name will be passed to set_tests_properties().
 function(ADD_KUDU_TEST REL_TEST_NAME)
+  if(NO_TESTS)
+    return()
+  endif()
   get_filename_component(TEST_NAME ${REL_TEST_NAME} NAME_WE)
 
   if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/${REL_TEST_NAME}.cc)

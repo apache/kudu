@@ -98,7 +98,7 @@ above, remove the aforementioned flag and rebuild LLVM using itself.
 ----
 # Add <root of kudu tree>/thirdparty/installed/bin to your $PATH
 # before other parts of $PATH that may contain cmake, such as /usr/bin
-# For exmple: "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH"
+# For example: "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH"
 # if using bash
 $ cmake .
 $ make -j8  # or whatever level of parallelism your machine can handle
@@ -107,6 +107,14 @@ $ make -j8  # or whatever level of parallelism your machine can handle
 The build artifacts, including the test binaries, will be stored in
 _build/latest/_, which itself is a symlink to a build-type specific
 directory such as _build/debug_ or _build/release_.
+
+To omit the Kudu unit tests during the build, add -DNO_TESTS=1 to the
+invocation of cmake. For example:
+
+[source,bash]
+----
+$ cmake -DNO_TESTS=1 .
+----
 
 == Running unit/functional tests
 
