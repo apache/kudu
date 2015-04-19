@@ -36,6 +36,8 @@ class RpcLineItemDAO {
   // Calls OpenScanner with the tpch1 query parameters.
   void OpenTpch1Scanner();
   bool HasMore();
+
+  // Return the next batch of rows into '*rows'. Any existing data is cleared.
   void GetNext(std::vector<client::KuduRowResult> *rows);
   bool IsTableEmpty();
 

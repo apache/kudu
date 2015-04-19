@@ -89,7 +89,6 @@ class RpcLineItemDAOTest : public KuduTest {
     while (dao_->HasMore()) {
       dao_->GetNext(&rows);
       count += rows.size();
-      rows.clear();
     }
     return count;
   }
@@ -125,7 +124,6 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
       ASSERT_OK(row.GetUInt32(tpch::kQuantityColIdx, &l_quantity));
       ASSERT_EQ(12345, l_quantity);
     }
-    rows.clear();
   }
 }
 

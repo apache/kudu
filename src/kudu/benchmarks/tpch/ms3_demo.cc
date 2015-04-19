@@ -87,8 +87,10 @@ static void UpdateThread(Demo *demo) {
     preds.push_back(pred);
     dao->OpenScanner(query_schema, preds);
     vector<client::KuduRowResult> rows;
+    vector<client::KuduRowResult> batch;
     while (dao->HasMore()) {
-      dao->GetNext(&rows);
+      dao->GetNext(&batch);
+      rows.insert(rows.end(), batch.begin(), batch.end());
     }
     if (rows.empty()) continue;
     client::KuduRowResult& last_row(rows.back());

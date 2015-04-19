@@ -184,6 +184,7 @@ bool RpcLineItemDAO::HasMore() {
 
 
 void RpcLineItemDAO::GetNext(vector<KuduRowResult> *rows) {
+  rows->clear();
   CHECK_OK(current_scanner_->NextBatch(rows));
 }
 

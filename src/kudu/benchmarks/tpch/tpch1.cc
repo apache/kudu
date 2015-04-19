@@ -187,7 +187,6 @@ void Tpch1(RpcLineItemDAO *dao) {
       r->l_tax += l_tax;
       r->count++;
     }
-    rows.clear();
   }
   LOG(INFO) << "Result: ";
   for (slice_map_map::iterator ii = results.begin();
