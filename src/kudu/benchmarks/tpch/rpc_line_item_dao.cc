@@ -109,14 +109,22 @@ void RpcLineItemDAO::WriteLine(boost::function<void(KuduPartialRow*)> f) {
   if (!ShouldAddKey(insert->row())) return;
   CHECK_OK(session_->Apply(insert.Pass()));
   ++batch_size_;
-  if (batch_size_ == batch_max_) {
-    batch_size_ = 0;
-    orders_in_request_.clear();
-    CountingCallback* cb = new CountingCallback(session_, &semaphore_);
+  FlushIfBufferFull();
+}
 
-    // The callback object will free 'cb' after it is invoked.
-    session_->FlushAsync(cb->AsStatusCallback());
-  }
+void RpcLineItemDAO::FlushIfBufferFull() {
+  if (batch_size_ < batch_max_) return;
+
+  batch_size_ = 0;
+  orders_in_request_.clear();
+
+  // Don't allow more than one batch outstanding at a time.
+  // The client supports it just fine, but we risk overloading the server.
+  WaitForOutstandingBatches();
+
+  CountingCallback* cb = new CountingCallback(session_, &semaphore_);
+  // The callback object will free 'cb' after it is invoked.
+  session_->FlushAsync(cb->AsStatusCallback());
 }
 
 void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
@@ -125,14 +133,7 @@ void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
   if (!ShouldAddKey(update->row())) return;
   CHECK_OK(session_->Apply(update.Pass()));
   ++batch_size_;
-  if (batch_size_ == batch_max_) {
-    batch_size_ = 0;
-    orders_in_request_.clear();
-    CountingCallback* cb = new CountingCallback(session_, &semaphore_);
-
-    // The callback object will free 'cb' after it is invoked.
-    session_->FlushAsync(cb->AsStatusCallback());
-  }
+  FlushIfBufferFull();
 }
 
 bool RpcLineItemDAO::ShouldAddKey(const KuduPartialRow &row) {
@@ -144,12 +145,16 @@ bool RpcLineItemDAO::ShouldAddKey(const KuduPartialRow &row) {
   return InsertIfNotPresent(&orders_in_request_, composite_k);
 }
 
-void RpcLineItemDAO::FinishWriting() {
-  CHECK_OK(session_->Flush());
+void RpcLineItemDAO::WaitForOutstandingBatches() {
   while (base::subtle::NoBarrier_Load(&semaphore_)) {
     // 1/100th of timeout
     SleepFor(MonoDelta::FromNanoseconds(timeout_.ToNanoseconds() / 100));
   }
+}
+
+void RpcLineItemDAO::FinishWriting() {
+  CHECK_OK(session_->Flush());
+  WaitForOutstandingBatches();
 }
 
 void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,

@@ -46,6 +46,9 @@ class RpcLineItemDAO {
   // This method is used to know if it's safe to add the row in that regard
   bool ShouldAddKey(const KuduPartialRow& row);
 
+  void FlushIfBufferFull();
+  void WaitForOutstandingBatches();
+
   simple_spinlock lock_;
   std::tr1::shared_ptr<client::KuduClient> client_;
   std::tr1::shared_ptr<client::KuduSession> session_;
