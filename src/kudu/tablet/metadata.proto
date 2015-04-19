@@ -49,14 +49,11 @@ enum TabletBootstrapStatePB {
 // and optionally a block containing the bloom filter
 // and a block containing the compound-keys.
 message TabletSuperBlockPB {
-  // SuperBlock sequence number.
-  // This is incremented every time the superblock is successfully written,
-  // in order to easily alternate between block_a and block_b.
-  required uint64 sequence = 1;
+  // Table ID of the table this tablet is part of.
+  required bytes table_id = 1;
 
   // Tablet Id
-  // TODO: rename to tablet_id
-  required string oid = 2;
+  required bytes tablet_id = 2;
 
   // The latest durable MemRowSet id
   required int64 last_durable_mrs_id = 3;
@@ -109,15 +106,4 @@ enum TabletStatePB {
 
   // The Tablet has been stopped.
   SHUTDOWN = 4;
-}
-
-// The master-block contains the two block-ids required to load the
-// tablet super-block. The master-block is immutable and written to the
-// "bootstrap table", on tablet creation, and it is used by the master
-// to load all the tablets in the system at startup.
-message TabletMasterBlockPB {
-  required bytes table_id = 1;
-  required bytes tablet_id = 2;
-  required bytes block_a = 3;
-  required bytes block_b = 4;
 }

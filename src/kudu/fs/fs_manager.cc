@@ -24,11 +24,13 @@
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/strtoint.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 
@@ -58,11 +60,13 @@ namespace kudu {
 const char *FsManager::kWalDirName = "wals";
 const char *FsManager::kWalFileNamePrefix = "wal";
 const char *FsManager::kWalsRecoveryDirSuffix = ".recovery";
-const char *FsManager::kMasterBlockDirName = "master-blocks";
+const char *FsManager::kTabletMetadataDirName = "tablet-meta";
 const char *FsManager::kDataDirName = "data";
 const char *FsManager::kCorruptedSuffix = ".corrupted";
 const char *FsManager::kInstanceMetadataFileName = "instance";
 const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
+
+static const char* const kTmpSuffix = ".tmp";
 
 FsManager::FsManager(Env* env, const string& root_path)
   : env_(env),
@@ -204,9 +208,9 @@ Status FsManager::CreateInitialFileSystemLayout() {
   RETURN_NOT_OK_PREPEND(env_->CreateDir(GetWalsRootDir()),
                         "Unable to create WAL directory");
 
-  // Initialize master block dir.
-  RETURN_NOT_OK_PREPEND(env_->CreateDir(GetMasterBlockDir()),
-                        "Unable to create master block directory");
+  // Initialize tablet metadata directory.
+  RETURN_NOT_OK_PREPEND(env_->CreateDir(GetTabletMetadataDir()),
+                        "Unable to create tablet metadata directory");
 
   // Initialize consensus metadata dir.
   RETURN_NOT_OK_PREPEND(env_->CreateDir(GetConsensusMetadataDir()),
@@ -218,7 +222,8 @@ Status FsManager::CreateInitialFileSystemLayout() {
 }
 
 void FsManager::CreateInstanceMetadata(InstanceMetadataPB* metadata) {
-  metadata->set_uuid(oid_generator_.Next());
+  ObjectIdGenerator oid_generator;
+  metadata->set_uuid(oid_generator.Next());
 
   string time_str;
   StringAppendStrftime(&time_str, "%Y-%m-%d %H:%M:%S", time(NULL), false);
@@ -257,23 +262,47 @@ vector<string> FsManager::GetDataRootDirs() const {
   return data_paths;
 }
 
-string FsManager::GetBlockPath(const BlockId& block_id) const {
-  CHECK(!block_id.IsNull());
-  string path = GetDataRootDir();
-  path = JoinPathSegments(path, block_id.hash0());
-  path = JoinPathSegments(path, block_id.hash1());
-  path = JoinPathSegments(path, block_id.hash2());
-  path = JoinPathSegments(path, block_id.ToString());
-  return path;
-}
-
-string FsManager::GetMasterBlockDir() const {
+string FsManager::GetTabletMetadataDir() const {
   DCHECK(initted_);
-  return JoinPathSegments(canonicalized_metadata_fs_root_, kMasterBlockDirName);
+  return JoinPathSegments(canonicalized_metadata_fs_root_, kTabletMetadataDirName);
 }
 
-string FsManager::GetMasterBlockPath(const string& tablet_id) const {
-  return JoinPathSegments(GetMasterBlockDir(), tablet_id);
+string FsManager::GetTabletMetadataPath(const string& tablet_id) const {
+  return JoinPathSegments(GetTabletMetadataDir(), tablet_id);
+}
+
+namespace {
+// Return true if 'fname' is a valid tablet ID.
+bool IsValidTabletId(const std::string& fname) {
+  if (HasSuffixString(fname, kTmpSuffix)) {
+    LOG(WARNING) << "Ignoring tmp file in tablet metadata dir: " << fname;
+    return false;
+  }
+
+  if (HasPrefixString(fname, ".")) {
+    // Hidden file or ./..
+    VLOG(1) << "Ignoring hidden file in tablet metadata dir: " << fname;
+    return false;
+  }
+
+  return true;
+}
+} // anonymous namespace
+
+Status FsManager::ListTabletIds(vector<string>* tablet_ids) {
+  string dir = GetTabletMetadataDir();
+  vector<string> children;
+  RETURN_NOT_OK_PREPEND(ListDir(dir, &children),
+                        Substitute("Couldn't list tablets in metadata directory $0", dir));
+
+  vector<string> tablets;
+  BOOST_FOREACH(const string& child, children) {
+    if (!IsValidTabletId(child)) {
+      continue;
+    }
+    tablet_ids->push_back(child);
+  }
+  return Status::OK();
 }
 
 string FsManager::GetInstanceMetadataPath(const string& root) const {
@@ -337,10 +366,6 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
 //  Data read/write interfaces
 // ==========================================================================
 
-BlockId FsManager::GenerateBlockId() {
-  return BlockId(oid_generator_.Next());
-}
-
 Status FsManager::CreateNewBlock(gscoped_ptr<WritableBlock>* block) {
   return block_manager_->CreateBlock(block);
 }
@@ -356,75 +381,6 @@ Status FsManager::DeleteBlock(const BlockId& block_id) {
 bool FsManager::BlockExists(const BlockId& block_id) const {
   gscoped_ptr<ReadableBlock> block;
   return block_manager_->OpenBlock(block_id, &block).ok();
-}
-
-Status FsManager::CreateBlockDir(const BlockId& block_id) {
-  CHECK(!block_id.IsNull());
-
-  string root_dir = GetDataRootDir();
-  bool root_created = false;
-  RETURN_NOT_OK(CreateDirIfMissing(root_dir, &root_created));
-
-  string path0 = JoinPathSegments(root_dir, block_id.hash0());
-  bool path0_created = false;
-  RETURN_NOT_OK(CreateDirIfMissing(path0, &path0_created));
-
-  string path1 = JoinPathSegments(path0, block_id.hash1());
-  bool path1_created = false;
-  RETURN_NOT_OK(CreateDirIfMissing(path1, &path1_created));
-
-  string path2 = JoinPathSegments(path1, block_id.hash2());
-  bool path2_created = false;
-  RETURN_NOT_OK(CreateDirIfMissing(path2, &path2_created));
-
-  // No need to fsync path2 at this point, it should be fsync()ed when files are
-  // written into it.
-  if (FLAGS_enable_data_block_fsync) {
-    if (path2_created) RETURN_NOT_OK(env_->SyncDir(path1));
-    if (path1_created) RETURN_NOT_OK(env_->SyncDir(path0));
-    if (path0_created) RETURN_NOT_OK(env_->SyncDir(root_dir));
-    if (root_created) RETURN_NOT_OK(env_->SyncDir(DirName(root_dir))); // Parent of root_dir.
-  }
-
-  return Status::OK();
-}
-
-// ==========================================================================
-//  Metadata read/write interfaces
-// ==========================================================================
-//
-// TODO: Route through BlockManager, but that means potentially supporting block renaming.
-
-Status FsManager::WriteMetadataBlock(const BlockId& block_id, const Message& msg) {
-  RETURN_NOT_OK(CreateBlockDir(block_id));
-  VLOG(1) << "Writing Metadata Block: " << block_id.ToString();
-
-  // Write the new metadata file
-  shared_ptr<WritableFile> wfile;
-  string path = GetBlockPath(block_id);
-  return pb_util::WritePBContainerToPath(env_, path, msg,
-      FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
-}
-
-Status FsManager::ReadMetadataBlock(const BlockId& block_id, Message* msg) {
-  VLOG(1) << "Reading Metadata Block " << block_id.ToString();
-
-  string path = GetBlockPath(block_id);
-  Status s = pb_util::ReadPBContainerFromPath(env_, path, msg);
-  if (s.IsNotFound()) {
-    return s;
-  }
-  if (!s.ok()) {
-    // TODO: Is this failed due to an I/O Problem or because the file is corrupted?
-    //       if is an I/O problem we shouldn't try another one.
-    //       Add a (length, checksum) block at the end of the PB.
-    LOG(WARNING) << "Unable to read '" << block_id.ToString() << "' metadata block"
-                 << " (" << s.ToString() << "): marking as corrupted";
-    WARN_NOT_OK(env_->RenameFile(path, path + kCorruptedSuffix),
-                "Unable to rename aside corrupted file " + path);
-    return s.CloneAndPrepend("Unable to read '" + block_id.ToString() + "' metadata block");
-  }
-  return Status::OK();
 }
 
 std::ostream& operator<<(std::ostream& o, const BlockId& block_id) {

@@ -33,14 +33,20 @@ const int64 kNoDurableMemStore = -1;
 // ============================================================================
 
 Status TabletMetadata::CreateNew(FsManager* fs_manager,
-                                 const TabletMasterBlockPB& master_block,
+                                 const string& tablet_id,
                                  const string& table_name,
                                  const Schema& schema,
                                  const string& start_key, const string& end_key,
                                  const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                                  scoped_refptr<TabletMetadata>* metadata) {
+
+  // Verify that no existing tablet exists with the same ID.
+  if (fs_manager->env()->FileExists(fs_manager->GetTabletMetadataPath(tablet_id))) {
+    return Status::AlreadyPresent("Tablet already exists", tablet_id);
+  }
+
   scoped_refptr<TabletMetadata> ret(new TabletMetadata(fs_manager,
-                                                       master_block,
+                                                       tablet_id,
                                                        table_name,
                                                        schema,
                                                        start_key,
@@ -48,28 +54,26 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        initial_remote_bootstrap_state));
   RETURN_NOT_OK(ret->Flush());
   metadata->swap(ret);
-  // TODO: should we verify that neither of the blocks referenced in the master block
-  // exist?
   return Status::OK();
 }
 
 Status TabletMetadata::Load(FsManager* fs_manager,
-                            const TabletMasterBlockPB& master_block,
+                            const string& tablet_id,
                             scoped_refptr<TabletMetadata>* metadata) {
-  scoped_refptr<TabletMetadata> ret(new TabletMetadata(fs_manager, master_block));
+  scoped_refptr<TabletMetadata> ret(new TabletMetadata(fs_manager, tablet_id));
   RETURN_NOT_OK(ret->LoadFromDisk());
   metadata->swap(ret);
   return Status::OK();
 }
 
 Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
-                                    const TabletMasterBlockPB& master_block,
+                                    const string& tablet_id,
                                     const string& table_name,
                                     const Schema& schema,
                                     const string& start_key, const string& end_key,
                                     const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                                     scoped_refptr<TabletMetadata>* metadata) {
-  Status s = Load(fs_manager, master_block, metadata);
+  Status s = Load(fs_manager, tablet_id, metadata);
   if (s.ok()) {
     if (!(*metadata)->schema().Equals(schema)) {
       return Status::Corruption(Substitute("Schema on disk ($0) does not "
@@ -78,7 +82,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
     }
     return Status::OK();
   } else if (s.IsNotFound()) {
-    return CreateNew(fs_manager, master_block, table_name, schema,
+    return CreateNew(fs_manager, tablet_id, table_name, schema,
                      start_key, end_key, initial_remote_bootstrap_state,
                      metadata);
   } else {
@@ -86,43 +90,17 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
   }
 }
 
-Status TabletMetadata::OpenMasterBlock(Env* env,
-                                       const string& master_block_path,
-                                       const string& expected_tablet_id,
-                                       TabletMasterBlockPB* master_block) {
-  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env, master_block_path,
-                                                 master_block));
-  if (expected_tablet_id != master_block->tablet_id()) {
-    LOG_AND_RETURN(ERROR, Status::Corruption(
-        strings::Substitute("Corrupt master block $0: PB has wrong tablet ID",
-                            master_block_path),
-        master_block->ShortDebugString()));
-  }
-  return Status::OK();
-}
-
-Status TabletMetadata::PersistMasterBlock(FsManager* fs_manager,
-                                          const TabletMasterBlockPB& pb) {
-  TRACE_EVENT1("tablet", "TabletMetadata::PersistMasterBlock",
-               "tablet_id", pb.tablet_id());
-  string path = fs_manager->GetMasterBlockPath(pb.tablet_id());
-  return pb_util::WritePBContainerToPath(fs_manager->env(), path, pb,
-      FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
-}
-
-
 TabletMetadata::TabletMetadata(FsManager *fs_manager,
-                               const TabletMasterBlockPB& master_block,
+                               const string& tablet_id,
                                const string& table_name,
                                const Schema& schema,
                                const string& start_key,
                                const string& end_key,
                                const TabletBootstrapStatePB& remote_bootstrap_state)
   : state_(kNotWrittenYet),
+    tablet_id_(tablet_id),
     start_key_(start_key), end_key_(end_key),
     fs_manager_(fs_manager),
-    master_block_(master_block),
-    sblk_sequence_(0),
     next_rowset_idx_(0),
     last_durable_mrs_id_(kNoDurableMemStore),
     schema_(schema),
@@ -139,10 +117,10 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
 TabletMetadata::~TabletMetadata() {
 }
 
-TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block)
+TabletMetadata::TabletMetadata(FsManager *fs_manager, const string& tablet_id)
   : state_(kNotLoadedYet),
+    tablet_id_(tablet_id),
     fs_manager_(fs_manager),
-    master_block_(master_block),
     next_rowset_idx_(0),
     num_flush_pins_(0),
     needs_flush_(false),
@@ -151,12 +129,15 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB&
 
 Status TabletMetadata::LoadFromDisk() {
   TRACE_EVENT1("tablet", "TabletMetadata::LoadFromDisk",
-               "tablet_id", oid());
+               "tablet_id", tablet_id_);
 
   CHECK_EQ(state_, kNotLoadedYet);
+
   TabletSuperBlockPB superblock;
-  RETURN_NOT_OK(ReadSuperBlock(&superblock));
-  VLOG(1) << "Loaded tablet superblock " << superblock.DebugString();
+  string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
+  RETURN_NOT_OK_PREPEND(pb_util::ReadPBContainerFromPath(
+                            fs_manager_->env(), path, &superblock),
+                        Substitute("Could not load tablet metadata from $0", path));
 
   RETURN_NOT_OK_PREPEND(LoadFromSuperBlock(superblock),
                         "Failed to load data from superblock protobuf");
@@ -169,15 +150,15 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     boost::lock_guard<LockType> l(data_lock_);
 
     // Verify that the tablet id matches with the one in the protobuf
-    if (superblock.oid() != master_block_.tablet_id()) {
-      return Status::Corruption("Expected id=" + master_block_.tablet_id() +
-                                " found " + superblock.oid(),
+    if (superblock.tablet_id() != tablet_id_) {
+      return Status::Corruption("Expected id=" + tablet_id_ +
+                                " found " + superblock.tablet_id(),
                                 superblock.DebugString());
     }
 
-    sblk_sequence_ = superblock.sequence() + 1;
     start_key_ = superblock.start_key();
     end_key_ = superblock.end_key();
+    table_id_ = superblock.table_id();
     last_durable_mrs_id_ = superblock.last_durable_mrs_id();
 
     table_name_ = superblock.table_name();
@@ -210,51 +191,6 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
   DeleteOrphanedBlocks();
 
   return Status::OK();
-}
-
-Status TabletMetadata::ReadSuperBlock(TabletSuperBlockPB *pb) {
-  CHECK_EQ(state_, kNotLoadedYet);
-  TabletSuperBlockPB pb2;
-  Status sa, sb;
-
-  // Try to read the block_a if exists
-  sa = fs_manager_->ReadMetadataBlock(BlockId(master_block_.block_a()), pb);
-
-  // Try to read the block_b if exists
-  sb = fs_manager_->ReadMetadataBlock(BlockId(master_block_.block_b()), &pb2);
-
-  // Both super-blocks are valid, pick the latest
-  if (sa.ok() && sb.ok()) {
-    if (pb->sequence() < pb2.sequence()) {
-      *pb = pb2;
-    }
-    return Status::OK();
-  }
-
-  // block-a is valid, block-b is not (may not exists or be corrupted)
-  if (sa.ok() && !sb.ok()) {
-    return Status::OK();
-  }
-
-  // block-b is valid, block-a is not (may not exists or be corrupted)
-  if (!sa.ok() && sb.ok()) {
-    *pb = pb2;
-    return Status::OK();
-  }
-
-  // No super-block found
-  if (sa.IsNotFound() && sb.IsNotFound()) {
-    return Status::NotFound("Tablet '" + master_block_.tablet_id() + "' SuperBlock not found",
-                            master_block_.DebugString());
-  }
-
-  // Both super-blocks are corrupted
-  if (sa.IsCorruption() && sb.IsCorruption()) {
-    return Status::NotFound("Tablet '" + master_block_.tablet_id() + "' SuperBlocks are corrupted",
-                            master_block_.DebugString());
-  }
-
-  return sa;
 }
 
 Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
@@ -326,7 +262,7 @@ Status TabletMetadata::UnPinFlush() {
 
 Status TabletMetadata::Flush() {
   TRACE_EVENT1("tablet", "TabletMetadata::Flush",
-               "tablet_id", oid());
+               "tablet_id", tablet_id_);
 
   MutexLock l_flush(flush_lock_);
 
@@ -394,17 +330,11 @@ Status TabletMetadata::ReplaceSuperBlock(const TabletSuperBlockPB &pb) {
 
 Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
   flush_lock_.AssertAcquired();
-  // Write out and replace one of the two superblocks.
-  //
-  // When writing out the first superblock, it's OK to retain the second
-  // (stale) one. While opening the tablet, the superblock with the latest
-  // sequence number will be loaded and the other one will be ignored.
-  BlockId a_blk(master_block_.block_a());
-  BlockId b_blk(master_block_.block_b());
-  TRACE("Writing metadata block");
-  RETURN_NOT_OK(fs_manager_->WriteMetadataBlock(
-      sblk_sequence_ & 1 ? a_blk : b_blk, pb));
-  sblk_sequence_++;
+
+  string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
+  RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
+                            fs_manager_->env(), path, pb, pb_util::SYNC),
+                        Substitute("Failed to write tablet metadata $0", tablet_id_));
 
   // Now that the superblock is written, try to delete the orphaned blocks.
   //
@@ -426,8 +356,8 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   DCHECK(data_lock_.is_locked());
   // Convert to protobuf
   TabletSuperBlockPB pb;
-  pb.set_sequence(sblk_sequence_);
-  pb.set_oid(oid());
+  pb.set_table_id(table_id_);
+  pb.set_tablet_id(tablet_id_);
   pb.set_start_key(start_key_);
   pb.set_end_key(end_key_);
   pb.set_last_durable_mrs_id(last_durable_mrs_id_);

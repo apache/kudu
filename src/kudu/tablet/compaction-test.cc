@@ -327,16 +327,10 @@ class TestCompaction : public KuduRowSetTest {
         rowsets.push_back(rs);
       }
     } else {
-      // This test will load a tablet with id "KuduCompactionBenchTablet" that have
-      // a 0000000 or 1111111 super-block id, in the specified root-dir.
-      TabletMasterBlockPB master_block;
-      master_block.set_tablet_id("KuduCompactionBenchTablet");
-      master_block.set_block_a("00000000000000000000000000000000");
-      master_block.set_block_b("11111111111111111111111111111111");
-
+      string tablet_id = "KuduCompactionBenchTablet";
       FsManager fs_manager(env_.get(), FLAGS_merge_benchmark_input_dir);
       scoped_refptr<TabletMetadata> input_meta;
-      ASSERT_OK(TabletMetadata::Load(&fs_manager, master_block, &input_meta));
+      ASSERT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &input_meta));
 
       BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta->rowsets()) {
         shared_ptr<DiskRowSet> rs;
@@ -364,7 +358,7 @@ class TestCompaction : public KuduRowSetTest {
 
   Status GetDataDiskSpace(uint64_t* bytes_used) {
     *bytes_used = 0;
-    return env_->Walk(fs_manager()->GetDataRootDir(),
+    return env_->Walk(fs_manager()->GetDataRootDirs().at(0),
                       Env::PRE_ORDER, Bind(&TestCompaction::GetDataDiskSpaceCb,
                                            Unretained(this), bytes_used));
   }

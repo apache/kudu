@@ -28,7 +28,6 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/tablet/compaction_policy.h"
 #include "kudu/tablet/delta_compaction.h"
@@ -92,8 +91,6 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
 using base::subtle::Barrier_AtomicIncrement;
-
-static const char* const kTmpSuffix = ".tmp";
 
 static CompactionPolicy *CreateCompactionPolicy() {
   return new BudgetedCompactionPolicy(FLAGS_tablet_compaction_budget_mb);
@@ -926,21 +923,6 @@ void Tablet::GetRowSetsForTests(RowSetVector* out) {
   }
 }
 
-bool Tablet::IsTabletFileName(const std::string& fname) {
-  if (HasSuffixString(fname, kTmpSuffix)) {
-    LOG(WARNING) << "Ignoring tmp file in master block dir: " << fname;
-    return false;
-  }
-
-  if (HasPrefixString(fname, ".")) {
-    // Hidden file or ./..
-    VLOG(1) << "Ignoring hidden file in master block dir: " << fname;
-    return false;
-  }
-
-  return true;
-}
-
 void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
   DCHECK(maintenance_ops_.empty());
 
@@ -1151,7 +1133,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // in the DuplicatingRowSets. This will perform a flush of the updated DeltaTrackers
   // in the end so that the data that is reported in the log as belonging to the input
   // rowsets is flushed.
-  RETURN_NOT_OK_PREPEND(ReupdateMissedDeltas(metadata_->oid(),
+  RETURN_NOT_OK_PREPEND(ReupdateMissedDeltas(metadata_->tablet_id(),
                                              merge.get(),
                                              flush_snap,
                                              non_duplicated_txns_snap,

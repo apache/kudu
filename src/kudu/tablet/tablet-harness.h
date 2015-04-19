@@ -44,12 +44,6 @@ class TabletHarness {
   }
 
   Status Create(bool first_time) {
-    TabletMasterBlockPB master_block;
-    master_block.set_table_id("KuduTableTestId");
-    master_block.set_tablet_id(options_.tablet_id);
-    master_block.set_block_a("00000000000000000000000000000000");
-    master_block.set_block_b("11111111111111111111111111111111");
-
     // Build a schema with IDs
     Schema server_schema = SchemaBuilder(schema_).Build();
 
@@ -62,15 +56,12 @@ class TabletHarness {
 
     scoped_refptr<TabletMetadata> metadata;
     RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
-                                                         master_block,
+                                                         options_.tablet_id,
                                                          "KuduTableTest",
                                                          server_schema,
                                                          "", "",
                                                          REMOTE_BOOTSTRAP_DONE,
                                                          &metadata));
-    RETURN_NOT_OK_PREPEND(TabletMetadata::PersistMasterBlock(
-                            fs_manager_.get(), master_block),
-                          "Couldn't persist test tablet master block");
     if (options_.enable_metrics) {
       metrics_registry_.reset(new MetricRegistry());
     }

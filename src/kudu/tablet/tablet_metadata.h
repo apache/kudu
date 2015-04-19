@@ -38,39 +38,25 @@ extern const int64 kNoDurableMemStore;
 // on disk.
 //
 // At startup, the TSTabletManager will load a TabletMetadata for each
-// master block found in the master block directory, and then instantiate
+// super block found in the tablets/ directory, and then instantiate
 // tablets from this data.
 class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
  public:
-  // Create metadata for a new tablet. This assumes that the given master block
+  // Create metadata for a new tablet. This assumes that the given superblock
   // has not been written before, and writes out the initial superblock with
   // the provided parameters.
-  //
-  // TODO: should this actually just generate a new unique master block, rather
-  // than take as a parameter?
   static Status CreateNew(FsManager* fs_manager,
-                          const TabletMasterBlockPB& master_block,
+                          const std::string& tablet_id,
                           const std::string& table_name,
                           const Schema& schema,
                           const std::string& start_key, const std::string& end_key,
                           const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                           scoped_refptr<TabletMetadata>* metadata);
 
-  // Load existing metadata from disk given a master block.
+  // Load existing metadata from disk.
   static Status Load(FsManager* fs_manager,
-                     const TabletMasterBlockPB& master_block,
+                     const std::string& tablet_id,
                      scoped_refptr<TabletMetadata>* metadata);
-
-  // Load a tablet's master block from the file system.
-  static Status OpenMasterBlock(Env* env,
-                                const std::string& master_block_path,
-                                const std::string& expected_tablet_id,
-                                TabletMasterBlockPB* master_block);
-
-  // Write the given master block onto the file system.
-  static Status PersistMasterBlock(FsManager* fs,
-                                   const TabletMasterBlockPB& pb);
-
 
   // Try to load an existing tablet. If it does not exist, create it.
   // If it already existed, verifies that the schema of the tablet matches the
@@ -78,16 +64,16 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   //
   // This is mostly useful for tests which instantiate tablets directly.
   static Status LoadOrCreate(FsManager* fs_manager,
-                             const TabletMasterBlockPB& master_block,
+                             const std::string& tablet_id,
                              const std::string& table_name,
                              const Schema& schema,
                              const std::string& start_key, const std::string& end_key,
                              const TabletBootstrapStatePB& initial_remote_bootstrap_state,
                              scoped_refptr<TabletMetadata>* metadata);
 
-  const std::string& oid() const {
+  const std::string& tablet_id() const {
     DCHECK_NE(state_, kNotLoadedYet);
-    return master_block_.tablet_id();
+    return tablet_id_;
   }
   const std::string& start_key() const {
     DCHECK_NE(state_, kNotLoadedYet);
@@ -100,7 +86,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   const std::string& table_id() const {
     DCHECK_NE(state_, kNotLoadedYet);
-    return master_block_.table_id();
+    return table_id_;
   }
 
   const std::string& table_name() const;
@@ -184,14 +170,12 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Compile time assert that no one deletes TabletMetadata objects.
   ~TabletMetadata();
 
-  // TODO: get rid of this many-arg constructor in favor of a Load() and
-  // New() factory functions -- it's sort of weird that when you're loading
-  // from a master block, you're expected to pass in schema/start_key/end_key,
-  // which are themselves already stored in the superblock as well.
-
   // Constructor for creating a new tablet.
+  //
+  // TODO: get rid of this many-arg constructor in favor of just passing in a
+  // SuperBlock, which already contains all of these fields.
   TabletMetadata(FsManager *fs_manager,
-                 const TabletMasterBlockPB& master_block,
+                 const std::string& tablet_id,
                  const std::string& table_name,
                  const Schema& schema,
                  const std::string& start_key,
@@ -199,7 +183,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                  const TabletBootstrapStatePB& remote_bootstrap_state);
 
   // Constructor for loading an existing tablet.
-  TabletMetadata(FsManager *fs_manager, const TabletMasterBlockPB& master_block);
+  TabletMetadata(FsManager *fs_manager, const std::string& tablet_id);
 
   Status LoadFromDisk();
 
@@ -245,14 +229,13 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // If taken together with 'data_lock_', must be acquired first.
   mutable Mutex flush_lock_;
 
+  const std::string tablet_id_;
+  std::string table_id_;
   std::string start_key_;
   std::string end_key_;
 
   FsManager *fs_manager_;
   RowSetMetadataVector rowsets_;
-
-  TabletMasterBlockPB master_block_;
-  uint64_t sblk_sequence_;
 
   base::subtle::Atomic64 next_rowset_idx_;
 

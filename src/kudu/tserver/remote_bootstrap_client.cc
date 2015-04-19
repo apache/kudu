@@ -46,7 +46,6 @@ using strings::Substitute;
 using tablet::ColumnDataPB;
 using tablet::DeltaDataPB;
 using tablet::RowSetDataPB;
-using tablet::TabletMasterBlockPB;
 using tablet::TabletMetadata;
 using tablet::TabletStatusListener;
 using tablet::TabletSuperBlockPB;
@@ -68,7 +67,7 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
   DCHECK(meta != NULL);
 
   CHECK_EQ(tablet::REMOTE_BOOTSTRAP_COPYING, meta->remote_bootstrap_state());
-  const string& tablet_id = meta->oid();
+  const string& tablet_id = meta->tablet_id();
 
   // Download all the files (serially, for now, but in parallel in the future).
   RETURN_NOT_OK(BeginRemoteBootstrapSession(tablet_id, quorum, status_listener));

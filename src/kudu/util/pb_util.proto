@@ -19,6 +19,6 @@ message ContainerSupHeaderPB {
   required google.protobuf.FileDescriptorSet protos = 1;
 
   // The PB message type expected in each data entry in this container. Must
-  // be fully qualified (i.e. kudu.tablet.TabletMasterBlockPB).
+  // be fully qualified (i.e. kudu.tablet.TabletSuperBlockPB).
   required string pb_type = 2;
 }

@@ -50,10 +50,6 @@ class BlockId {
  private:
   friend class fs::internal::FileBlockLocation;
 
-  // TODO: only the FileBlockManager should care about hashing. Need to
-  // handle metadata blocks differently.
-  friend class FsManager;
-
   friend struct BlockIdHash;
   friend struct BlockIdCompare;
 

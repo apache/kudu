@@ -36,7 +36,6 @@ class QuorumPB;
 } // namespace metadata
 
 namespace tablet {
-class TabletMasterBlockPB;
 class TabletMetadata;
 class TabletPeer;
 class TabletStatusPB;
@@ -63,7 +62,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   virtual ~TSTabletManager();
 
-  // Load all master blocks from disk, and open their respective tablets.
+  // Load all tablet metadata blocks from disk, and open their respective tablets.
   // Upon return of this method all existing tablets are registered, but
   // the bootstrap is performed asynchronously.
   Status Init();
@@ -154,13 +153,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   };
   typedef std::tr1::unordered_map<std::string, TabletReportState> DirtyMap;
 
-  // Write the given master block onto the file system.
-  Status PersistMasterBlock(const tablet::TabletMasterBlockPB& pb);
-
-  // Load the given tablet's master block from the file system.
-  Status LoadMasterBlock(const std::string& tablet_id, tablet::TabletMasterBlockPB* block);
-
-  // Open a tablet meta from the local file system by loading its master block.
+  // Open a tablet meta from the local file system by loading its superblock.
   Status OpenTabletMeta(const std::string& tablet_id,
                         scoped_refptr<tablet::TabletMetadata>* metadata);
 

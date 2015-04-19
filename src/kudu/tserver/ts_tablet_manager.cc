@@ -22,7 +22,6 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/server/metadata.pb.h"
-#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -57,7 +56,6 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::Tablet;
-using tablet::TabletMasterBlockPB;
 using tablet::TabletMetadata;
 using tablet::TabletPeer;
 using tablet::TabletStatusListener;
@@ -116,31 +114,21 @@ TSTabletManager::~TSTabletManager() {
 Status TSTabletManager::Init() {
   CHECK_EQ(state(), MANAGER_INITIALIZING);
 
-  vector<string> children;
-  RETURN_NOT_OK_PREPEND(fs_manager_->ListDir(fs_manager_->GetMasterBlockDir(), &children),
-                        "Couldn't list master blocks");
-
-  vector<string> tablets;
-
-  // Search for tablets in the master block dir
-  BOOST_FOREACH(const string& child, children) {
-    if (!Tablet::IsTabletFileName(child)) {
-      continue;
-    }
-    tablets.push_back(child);
-  }
+  // Search for tablets in the metadata dir.
+  vector<string> tablet_ids;
+  RETURN_NOT_OK(fs_manager_->ListTabletIds(&tablet_ids));
 
   // Register the tablets and trigger the asynchronous bootstrap
-  BOOST_FOREACH(const string& tablet, tablets) {
+  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
     scoped_refptr<TabletMetadata> meta;
-    RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet, &meta),
-                          "Failed to open tablet metadata for tablet: " + tablet);
+    RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet_id, &meta),
+                          "Failed to open tablet metadata for tablet: " + tablet_id);
     scoped_refptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
                        leader_apply_pool_.get(),
                        replica_apply_pool_.get(),
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
-    RegisterTablet(meta->oid(), tablet_peer);
+    RegisterTablet(tablet_id, tablet_peer);
 
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                                 this,
@@ -216,18 +204,12 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   CreatesInProgressDeleter deleter(&creates_in_progress_, &lock_, tablet_id);
 
-  // Create a new master block
-  TabletMasterBlockPB master_block;
-  master_block.set_table_id(table_id);
-  master_block.set_tablet_id(tablet_id);
-  master_block.set_block_a(fs_manager_->GenerateBlockId().ToString());
-  master_block.set_block_b(fs_manager_->GenerateBlockId().ToString());
-
-  TRACE("Creating new master block...");
+  // Create the metadata.
+  TRACE("Creating new metadata...");
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK_PREPEND(
     TabletMetadata::CreateNew(fs_manager_,
-                              master_block,
+                              tablet_id,
                               table_name,
                               schema,
                               start_key,
@@ -236,9 +218,6 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               &meta),
     "Couldn't create tablet metadata");
 
-  TRACE("Persisting new master block...");
-  RETURN_NOT_OK_PREPEND(PersistMasterBlock(master_block),
-                        "Couldn't persist master block for new tablet");
 
   // We must persist the consensus metadata to disk before starting a new
   // tablet's TabletPeer and Consensus implementation.
@@ -252,7 +231,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                      leader_apply_pool_.get(),
                      replica_apply_pool_.get(),
                      boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
-  RegisterTablet(meta->oid(), new_peer);
+  RegisterTablet(meta->tablet_id(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                               this,
@@ -281,26 +260,19 @@ Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_pee
 
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
                                        scoped_refptr<TabletMetadata>* metadata) {
-  LOG(INFO) << "Loading master block " << tablet_id;
-  TRACE("Loading master block");
-
-  TabletMasterBlockPB master_block;
-  RETURN_NOT_OK(LoadMasterBlock(tablet_id, &master_block));
-  VLOG(1) << "Loaded master block: " << master_block.ShortDebugString();
-
-
+  LOG(INFO) << "Loading tablet " << tablet_id;
   TRACE("Loading metadata...");
   scoped_refptr<TabletMetadata> meta;
-  RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs_manager_, master_block, &meta),
-                        strings::Substitute("Failed to load tablet metadata. Master block: $0",
-                                            master_block.ShortDebugString()));
+  RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs_manager_, tablet_id, &meta),
+                        strings::Substitute("Failed to load tablet metadata for tablet id $0",
+                                            tablet_id));
   TRACE("Metadata loaded");
   metadata->swap(meta);
   return Status::OK();
 }
 
 void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
-  string tablet_id = meta->oid();
+  string tablet_id = meta->tablet_id();
   TRACE_EVENT1("tserver", "TSTabletManager::OpenTablet",
                "tablet_id", tablet_id);
 
@@ -428,15 +400,6 @@ void TSTabletManager::Shutdown() {
 
     state_ = MANAGER_SHUTDOWN;
   }
-}
-
-Status TSTabletManager::PersistMasterBlock(const TabletMasterBlockPB& pb) {
-  return TabletMetadata::PersistMasterBlock(fs_manager_, pb);
-}
-
-Status TSTabletManager::LoadMasterBlock(const string& tablet_id, TabletMasterBlockPB* block) {
-  string path = fs_manager_->GetMasterBlockPath(tablet_id);
-  return TabletMetadata::OpenMasterBlock(fs_manager_->env(), path, tablet_id, block);
 }
 
 void TSTabletManager::RegisterTablet(const std::string& tablet_id,

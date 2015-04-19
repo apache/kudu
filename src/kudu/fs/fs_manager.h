@@ -14,7 +14,6 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/env.h"
-#include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 
 DECLARE_bool(enable_data_block_fsync);
@@ -94,25 +93,9 @@ class FsManager {
   bool BlockExists(const BlockId& block_id) const;
 
   // ==========================================================================
-  //  Metadata read/write interfaces
-  // ==========================================================================
-
-  Status WriteMetadataBlock(const BlockId& block_id,
-                            const google::protobuf::Message& msg);
-  Status ReadMetadataBlock(const BlockId& block_id,
-                           google::protobuf::Message *msg);
-
-  // ==========================================================================
   //  on-disk path
   // ==========================================================================
-  std::string GetDataRootDir() const {
-    DCHECK(initted_);
-    return JoinPathSegments(canonicalized_metadata_fs_root_, kDataDirName);
-  }
-
   std::vector<std::string> GetDataRootDirs() const;
-
-  std::string GetBlockPath(const BlockId& block_id) const;
 
   std::string GetWalsRootDir() const {
     DCHECK(initted_);
@@ -128,11 +111,14 @@ class FsManager {
   std::string GetWalSegmentFileName(const std::string& tablet_id,
                                     uint64_t sequence_number) const;
 
-  // Return the directory where tablet master blocks should be stored.
-  std::string GetMasterBlockDir() const;
+  // Return the directory where tablet superblocks should be stored.
+  std::string GetTabletMetadataDir() const;
 
-  // Return the path for a specific tablet's master block.
-  std::string GetMasterBlockPath(const std::string& tablet_id) const;
+  // Return the path for a specific tablet's superblock.
+  std::string GetTabletMetadataPath(const std::string& tablet_id) const;
+
+  // List the tablet IDs in the metadata directory.
+  Status ListTabletIds(std::vector<std::string>* tablet_ids);
 
   // Return the path where InstanceMetadataPB is stored.
   std::string GetInstanceMetadataPath(const std::string& root) const;
@@ -147,9 +133,6 @@ class FsManager {
   std::string GetConsensusMetadataPath(const std::string& tablet_id) const {
     return JoinPathSegments(GetConsensusMetadataDir(), tablet_id);
   }
-
-  // Generate a new block ID.
-  BlockId GenerateBlockId();
 
   Env *env() { return env_; }
 
@@ -183,9 +166,6 @@ class FsManager {
   // Does not actually perform any on-disk operations.
   void InitBlockManager();
 
-  // Creates the parent directory hierarchy to contain the given block id.
-  Status CreateBlockDir(const BlockId& block_id);
-
   // Create a new InstanceMetadataPB.
   void CreateInstanceMetadata(InstanceMetadataPB* metadata);
 
@@ -203,7 +183,7 @@ class FsManager {
                           const std::vector<std::string>& objects);
 
   static const char *kDataDirName;
-  static const char *kMasterBlockDirName;
+  static const char *kTabletMetadataDirName;
   static const char *kWalDirName;
   static const char *kCorruptedSuffix;
   static const char *kInstanceMetadataFileName;
@@ -229,8 +209,6 @@ class FsManager {
   std::string canonicalized_metadata_fs_root_;
   std::set<std::string> canonicalized_data_fs_roots_;
   std::set<std::string> canonicalized_all_fs_roots_;
-
-  ObjectIdGenerator oid_generator_;
 
   gscoped_ptr<InstanceMetadataPB> metadata_;
 

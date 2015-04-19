@@ -36,7 +36,6 @@ using kudu::metadata::QuorumPB;
 using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::LatchTransactionCompletionCallback;
 using kudu::tablet::Tablet;
-using kudu::tablet::TabletMasterBlockPB;
 using kudu::tablet::TabletPeer;
 using kudu::tserver::WriteRequestPB;
 using kudu::tserver::WriteResponsePB;
@@ -74,12 +73,9 @@ void SysCatalogTable::Shutdown() {
 }
 
 Status SysCatalogTable::Load(FsManager *fs_manager) {
-  tablet::TabletMasterBlockPB master_block;
-  SetupTabletMasterBlock(&master_block);
-
   // Load Metadata Information from disk
   scoped_refptr<tablet::TabletMetadata> metadata;
-  RETURN_NOT_OK(tablet::TabletMetadata::Load(fs_manager, master_block, &metadata));
+  RETURN_NOT_OK(tablet::TabletMetadata::Load(fs_manager, kSysCatalogTabletId, &metadata));
 
   // Verify that the schema is the current one
   if (!metadata->schema().Equals(BuildTableSchema())) {
@@ -97,7 +93,7 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
   if (master_->opts().IsDistributed()) {
     LOG(INFO) << "Configuring the quorum for distributed operation...";
 
-    string tablet_id = metadata->oid();
+    string tablet_id = metadata->tablet_id();
     gscoped_ptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(fs_manager, tablet_id, &cmeta),
                           "Unable to load consensus metadata for tablet " + tablet_id);
@@ -113,18 +109,15 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
 }
 
 Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
-  TabletMasterBlockPB master_block;
-  SetupTabletMasterBlock(&master_block);
-
   // Create the new Metadata
   scoped_refptr<tablet::TabletMetadata> metadata;
   RETURN_NOT_OK(tablet::TabletMetadata::CreateNew(fs_manager,
-                                                    master_block,
-                                                    table_name(),
-                                                    BuildTableSchema(),
-                                                    "", "",
-                                                    tablet::REMOTE_BOOTSTRAP_DONE,
-                                                    &metadata));
+                                                  kSysCatalogTabletId,
+                                                  table_name(),
+                                                  BuildTableSchema(),
+                                                  "", "",
+                                                  tablet::REMOTE_BOOTSTRAP_DONE,
+                                                  &metadata));
 
   QuorumPB quorum;
   if (master_->opts().IsDistributed()) {
@@ -138,7 +131,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
     peer->set_role(QuorumPeerPB::LEADER);
   }
 
-  string tablet_id = metadata->oid();
+  string tablet_id = metadata->tablet_id();
   gscoped_ptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager, tablet_id, quorum,
                                                   consensus::kMinimumTerm, &cmeta),
@@ -322,12 +315,6 @@ Schema SysCatalogTable::BuildTableSchema() {
   CHECK_OK(builder.AddKeyColumn(kSysCatalogTableColId, STRING));
   CHECK_OK(builder.AddColumn(kSysCatalogTableColMetadata, STRING));
   return builder.Build();
-}
-
-void SysCatalogTable::SetupTabletMasterBlock(tablet::TabletMasterBlockPB* master_block) {
-  master_block->set_tablet_id(kSysCatalogTabletId);
-  master_block->set_block_a("00000000000000000000000000000000");
-  master_block->set_block_b("11111111111111111111111111111111");
 }
 
 // ==================================================================

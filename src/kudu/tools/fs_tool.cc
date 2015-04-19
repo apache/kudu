@@ -51,7 +51,6 @@ using tablet::DeltaType;
 using tablet::MvccSnapshot;
 using tablet::Tablet;
 using tablet::CFileSet;
-using tablet::TabletMasterBlockPB;
 using tablet::TabletMetadata;
 using tablet::RowSetMetadata;
 
@@ -148,35 +147,16 @@ Status FsTool::ListLogSegmentsForTablet(const string& tablet_id) {
   return Status::OK();
 }
 
-Status FsTool::GetTabletsInMasterBlockDir(vector<string>* tablets) {
-  string master_block_dir = fs_manager_->GetMasterBlockDir();
-  if (!fs_manager_->Exists(master_block_dir)) {
-    return Status::NotFound(Substitute("no master block dir (expected path: '$0')",
-                                       master_block_dir));
-  }
-  std::cout << "Tablets in master block directory " << master_block_dir << ":" << std::endl;
-  vector<string> children;
-  RETURN_NOT_OK_PREPEND(fs_manager_->ListDir(master_block_dir, &children),
-                        "Couldn't list tablet master blocks");
-  BOOST_FOREACH(const string& child, children) {
-    if (!Tablet::IsTabletFileName(child)) {
-      continue;
-    }
-    tablets->push_back(child);
-  }
-  return Status::OK();
-}
 
 Status FsTool::ListAllTablets() {
   DCHECK(initialized_);
 
   vector<string> tablets;
-  RETURN_NOT_OK(GetTabletsInMasterBlockDir(&tablets));
+  RETURN_NOT_OK(fs_manager_->ListTabletIds(&tablets));
   BOOST_FOREACH(const string& tablet, tablets) {
     if (detail_level_ >= HEADERS_ONLY) {
       std::cout << "Tablet: " << tablet << std::endl;
-      string path = JoinPathSegments(fs_manager_->GetMasterBlockDir(), tablet);
-      RETURN_NOT_OK(PrintTabletMetaInternal(path, tablet, 2));
+      RETURN_NOT_OK(PrintTabletMeta(tablet, 2));
     } else {
       std::cout << "\t" << tablet << std::endl;
     }
@@ -230,16 +210,8 @@ Status FsTool::PrintLogSegmentHeader(const string& path,
 }
 
 Status FsTool::PrintTabletMeta(const string& tablet_id, int indent) {
-  string master_block_path;
-  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
-  return PrintTabletMetaInternal(master_block_path, tablet_id, indent);
-}
-
-Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
-                                       const string& tablet_id,
-                                       int indent) {
   scoped_refptr<TabletMetadata> meta;
-  RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
+  RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), tablet_id, &meta));
 
   const Schema& schema = meta->schema();
 
@@ -260,43 +232,11 @@ Status FsTool::PrintTabletMetaInternal(const string& master_block_path,
   return Status::OK();
 }
 
-Status FsTool::LoadTabletMetadata(const string& master_block_path,
-                                  const string& tablet_id,
-                                  scoped_refptr<tablet::TabletMetadata>* meta) {
-  TabletMasterBlockPB master_block_pb;
-  Status s = TabletMetadata::OpenMasterBlock(fs_manager_->env(),
-                                             master_block_path,
-                                             tablet_id,
-                                             &master_block_pb);
-  if (s.IsCorruption()) {
-    LOG(ERROR) << "Master block at " << master_block_path << " is corrupt: " << s.ToString();
-    return Status::OK();
-  }
-  RETURN_NOT_OK_PREPEND(
-      s, Substitute("Unexpected error reading master block for tablet '$0' from '$1'",
-                    tablet_id,
-                    master_block_path));
-  VLOG(1) << "Loaded master block: " << master_block_pb.ShortDebugString();
-  RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), master_block_pb, meta));
-  return Status::OK();
-}
-
-Status FsTool::GetMasterBlockPath(const string& tablet_id,
-                                  string* master_block_path) {
-  string path = fs_manager_->GetMasterBlockPath(tablet_id);
-  if (!fs_manager_->Exists(path)) {
-    return Status::NotFound(Substitute("master block for tablet '$0' not found "
-        "(expected path: '$1')", tablet_id, path));
-  }
-
-  *master_block_path = path;
-  return Status::OK();
-}
 Status FsTool::ListBlocksForAllTablets() {
   DCHECK(initialized_);
 
   vector<string> tablets;
-  RETURN_NOT_OK(GetTabletsInMasterBlockDir(&tablets));
+  RETURN_NOT_OK(fs_manager_->ListTabletIds(&tablets));
   BOOST_FOREACH(string tablet, tablets) {
     RETURN_NOT_OK(ListBlocksForTablet(tablet));
   }
@@ -306,13 +246,8 @@ Status FsTool::ListBlocksForAllTablets() {
 Status FsTool::ListBlocksForTablet(const string& tablet_id) {
   DCHECK(initialized_);
 
-  string master_block_path;
-  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
-
-  std::cout << "Master block for tablet " << tablet_id << ": " << master_block_path << std::endl;
-
   scoped_refptr<TabletMetadata> meta;
-  RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
+  RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), tablet_id, &meta));
 
   if (meta->rowsets().empty()) {
     std::cout << "No rowsets found on disk for tablet " << tablet_id << std::endl;
@@ -362,11 +297,9 @@ Status FsTool::DumpTabletBlocks(const std::string& tablet_id,
                                 const DumpOptions& opts,
                                 int indent) {
   DCHECK(initialized_);
-  string master_block_path;
-  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
 
   scoped_refptr<TabletMetadata> meta;
-  RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
+  RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), tablet_id, &meta));
 
   if (meta->rowsets().empty()) {
     std::cout << Indent(indent) << "No rowsets found on disk for tablet "
@@ -387,11 +320,9 @@ Status FsTool::DumpTabletBlocks(const std::string& tablet_id,
 
 Status FsTool::DumpTabletData(const std::string& tablet_id) {
   DCHECK(initialized_);
-  string master_block_path;
-  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
 
   scoped_refptr<TabletMetadata> meta;
-  RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
+  RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), tablet_id, &meta));
 
   scoped_refptr<log::LogAnchorRegistry> reg(new log::LogAnchorRegistry());
   Tablet t(meta, scoped_refptr<server::Clock>(NULL), NULL, reg.get());
@@ -410,11 +341,8 @@ Status FsTool::DumpRowSet(const string& tablet_id,
                           int indent) {
   DCHECK(initialized_);
 
-  string master_block_path;
-  RETURN_NOT_OK(GetMasterBlockPath(tablet_id, &master_block_path));
-
   scoped_refptr<TabletMetadata> meta;
-  RETURN_NOT_OK(LoadTabletMetadata(master_block_path, tablet_id, &meta));
+  RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), tablet_id, &meta));
 
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rs_meta, meta->rowsets())  {
     if (rs_meta->id() == rowset_id) {

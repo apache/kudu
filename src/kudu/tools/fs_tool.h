@@ -81,8 +81,7 @@ class FsTool {
   Status ListBlocksForAllTablets();
 
   // Prints the tablet metadata for a tablet 'tablet_id'.
-  Status PrintTabletMeta(const std::string& tablet_id,
-                         int indent);
+  Status PrintTabletMeta(const std::string& tablet_id, int indent);
 
   // Dumps the blocks that make up a tablet, rowset by rowset. This ends up
   // outputting on a column-by-column basis, as close as possible to the raw
@@ -115,19 +114,10 @@ class FsTool {
   Status ListBlocksInRowSet(const Schema& schema,
                             const tablet::RowSetMetadata& rs_meta);
 
-  Status LoadTabletMetadata(const std::string& master_block_path,
-                            const std::string& tablet_id,
-                            scoped_refptr<tablet::TabletMetadata> *meta);
-
-  Status GetTabletsInMasterBlockDir(std::vector<std::string>* tablets);
-
   Status DumpRowSetInternal(const Schema& schema,
                             const std::tr1::shared_ptr<tablet::RowSetMetadata>& rs_meta,
                             const DumpOptions& opts,
                             int indent);
-
-  Status GetMasterBlockPath(const std::string& tablet_id,
-                            std::string* master_block_path);
 
   Status DumpCFileBlockInternal(const BlockId& block_id,
                                 const DumpOptions& opts,
@@ -140,10 +130,6 @@ class FsTool {
                                      const DumpOptions& opts,
                                      int indent,
                                      bool metadata_only);
-
-  Status PrintTabletMetaInternal(const std::string& master_block_path,
-                                 const std::string& tablet_id,
-                                 int indent);
 
   Status OpenBlockAsFile(const BlockId& block_id,
                          uint64_t* file_size,

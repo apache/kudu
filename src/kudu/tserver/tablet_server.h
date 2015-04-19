@@ -10,7 +10,6 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/server/webserver_options.h"
 #include "kudu/server/server_base.h"
 #include "kudu/tserver/tablet_server_options.h"

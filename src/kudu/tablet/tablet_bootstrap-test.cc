@@ -48,15 +48,11 @@ class BootstrapTest : public LogTestBase {
 
   void SetUp() OVERRIDE {
     LogTestBase::SetUp();
-    master_block_.set_table_id(log::kTestTable);
-    master_block_.set_tablet_id(log::kTestTablet);
-    master_block_.set_block_a(fs_manager_->GenerateBlockId().ToString());
-    master_block_.set_block_b(fs_manager_->GenerateBlockId().ToString());
   }
 
   Status LoadTestTabletMetadata(int mrs_id, int delta_id, scoped_refptr<TabletMetadata>* meta) {
     RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
-                                               master_block_,
+                                               log::kTestTablet,
                                                log::kTestTable,
                                                // We need a schema with ids for
                                                // TabletMetadata::LoadOrCreate()
@@ -114,8 +110,8 @@ class BootstrapTest : public LogTestBase {
     quorum.set_opid_index(consensus::kInvalidOpIdIndex);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
-    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->oid(), quorum,
-                                                    kMinimumTerm, &cmeta),
+    RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->tablet_id(),
+                                                    quorum, kMinimumTerm, &cmeta),
                           "Unable to create consensus metadata");
 
     RETURN_NOT_OK_PREPEND(RunBootstrapOnTestTablet(meta, tablet, boot_info),
@@ -138,8 +134,6 @@ class BootstrapTest : public LogTestBase {
       VLOG(1) << result;
     }
   }
-
-  TabletMasterBlockPB master_block_;
 };
 
 // Tests a normal bootstrap scenario

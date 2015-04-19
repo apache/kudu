@@ -113,10 +113,6 @@ class SysCatalogTable {
   // NOTE: This is the "server-side" schema, so it must have the column IDs.
   Schema BuildTableSchema();
 
-  // Setup the 'master_block' with the IDs of the super-blocks for
-  // the tablet of SysCatalog.
-  void SetupTabletMasterBlock(tablet::TabletMasterBlockPB *master_block);
-
   // Returns 'Status::OK()' if the WriteTranasction completed
   Status SyncWrite(const tserver::WriteRequestPB *req, tserver::WriteResponsePB *resp);
 

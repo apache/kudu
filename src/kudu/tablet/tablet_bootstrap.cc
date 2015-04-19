@@ -273,7 +273,7 @@ TabletStatusListener::TabletStatusListener(const scoped_refptr<TabletMetadata>& 
 }
 
 const string TabletStatusListener::tablet_id() const {
-  return meta_->oid();
+  return meta_->tablet_id();
 }
 
 const string TabletStatusListener::table_name() const {
@@ -310,7 +310,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
                        ConsensusBootstrapInfo* consensus_info) {
   TRACE_EVENT1("tablet", "BootstrapTablet",
-               "tablet_id", meta->oid());
+               "tablet_id", meta->tablet_id());
   TabletBootstrap bootstrap(meta, clock, metric_registry, listener, log_anchor_registry);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
@@ -352,7 +352,7 @@ TabletBootstrap::TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
 Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   scoped_refptr<Log>* rebuilt_log,
                                   ConsensusBootstrapInfo* consensus_info) {
-  string tablet_id = meta_->oid();
+  string tablet_id = meta_->tablet_id();
 
   // Replay requires a valid Consensus metadata file to exist in order to
   // compare the committed quorum seqno with the log entries and also to persist
@@ -477,7 +477,7 @@ Status TabletBootstrap::FetchLogSegments(bool* needs_recovery) {
   VLOG(1) << "Existing Log segments found, opening log reader.";
   // Open the reader.
   RETURN_NOT_OK_PREPEND(LogReader::OpenFromRecoveryDir(tablet_->metadata()->fs_manager(),
-                                                       tablet_->metadata()->oid(),
+                                                       tablet_->metadata()->tablet_id(),
                                                        tablet_->GetMetricEntity().get(),
                                                        &log_reader_),
                         "Could not open LogReader. Reason");
@@ -489,7 +489,7 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
   *needs_recovery = false;
 
   FsManager* fs_manager = tablet_->metadata()->fs_manager();
-  string tablet_id = tablet_->metadata()->oid();
+  string tablet_id = tablet_->metadata()->tablet_id();
   string log_dir = fs_manager->GetTabletWalDir(tablet_id);
 
   string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_id);
@@ -551,7 +551,7 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
 
 Status TabletBootstrap::RemoveRecoveryDir() {
   FsManager* fs_manager = tablet_->metadata()->fs_manager();
-  string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_->metadata()->oid());
+  string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_->metadata()->tablet_id());
 
   DCHECK(fs_manager->Exists(recovery_path))
       << "Tablet WAL recovery dir " << recovery_path << " does not exist.";

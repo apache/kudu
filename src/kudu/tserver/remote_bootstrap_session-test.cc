@@ -249,9 +249,9 @@ TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
       buf.reserve(tablet_block_size);
       ASSERT_OK(tablet_block->Read(0, tablet_block_size, &data, buf.data()));
       uint32_t tablet_crc = crc::Crc32c(data.data(), data.size());
-      LOG(INFO) << "tablet  block file has size of " << tablet_block_size
+      LOG(INFO) << "tablet block file has size of " << tablet_block_size
                 << " and CRC32C of " << tablet_crc
-                << ": " << fs_manager()->GetBlockPath(block_id);
+                << ": " << block_id;
 
       // Compare the blocks.
       ASSERT_EQ(tablet_block_size, session_block_size);

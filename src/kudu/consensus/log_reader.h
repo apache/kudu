@@ -15,6 +15,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/spinlock.h"
+#include "kudu/util/locks.h"
 
 namespace kudu {
 namespace log {

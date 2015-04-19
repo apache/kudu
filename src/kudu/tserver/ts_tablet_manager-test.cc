@@ -29,7 +29,6 @@ namespace tserver {
 using master::TabletReportPB;
 using master::ReportedTabletPB;
 using metadata::QuorumPB;
-using tablet::TabletMasterBlockPB;
 using tablet::TabletPeer;
 using std::tr1::shared_ptr;
 
@@ -77,13 +76,6 @@ class TsTabletManagerTest : public KuduTest {
   }
 
  protected:
-  void CreateTestMasterBlock(const string& tid, TabletMasterBlockPB* pb) {
-    pb->set_table_id("table");
-    pb->set_tablet_id(tid);
-    pb->set_block_a("block-a");
-    pb->set_block_b("block-b");
-  }
-
   gscoped_ptr<MiniTabletServer> mini_server_;
   FsManager* fs_manager_;
   TSTabletManager* tablet_manager_;
@@ -92,25 +84,6 @@ class TsTabletManagerTest : public KuduTest {
   QuorumPB quorum_;
 };
 
-// Test that master blocks can be persisted and loaded back from disk.
-TEST_F(TsTabletManagerTest, TestPersistBlocks) {
-  const string kTabletA = "tablet-a";
-  const string kTabletB = "tablet-b";
-
-  // Persist two master blocks.
-  TabletMasterBlockPB mb_a, mb_b;
-  CreateTestMasterBlock(kTabletA, &mb_a);
-  CreateTestMasterBlock(kTabletB, &mb_b);
-  ASSERT_OK(tablet_manager_->PersistMasterBlock(mb_a));
-  ASSERT_OK(tablet_manager_->PersistMasterBlock(mb_b));
-
-  // Read them back and make sure they match what we persisted.
-  TabletMasterBlockPB read_a, read_b;
-  ASSERT_OK(tablet_manager_->LoadMasterBlock(kTabletA, &read_a));
-  ASSERT_OK(tablet_manager_->LoadMasterBlock(kTabletB, &read_b));
-  ASSERT_EQ(mb_a.ShortDebugString(), read_a.ShortDebugString());
-  ASSERT_EQ(mb_b.ShortDebugString(), read_b.ShortDebugString());
-}
 
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
   // Create a new tablet.

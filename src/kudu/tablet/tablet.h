@@ -338,7 +338,7 @@ class Tablet {
   // This method is not thread safe.
   void UnregisterMaintenanceOps();
 
-  const std::string& tablet_id() const { return metadata_->oid(); }
+  const std::string& tablet_id() const { return metadata_->tablet_id(); }
 
   // Return the metrics for this tablet.
   // May be NULL in unit tests, etc.
@@ -346,9 +346,6 @@ class Tablet {
 
   // Return handle to the metric entity of this tablet.
   const scoped_refptr<MetricEntity>& GetMetricEntity() const { return metric_entity_; }
-
-  // Return true if 'fname' is a valid filename for a tablet.
-  static bool IsTabletFileName(const std::string& fname);
 
  private:
   friend class Iterator;

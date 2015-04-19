@@ -66,7 +66,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
                        ThreadPool* replica_apply_pool,
                        MarkDirtyCallback mark_dirty_clbk)
   : meta_(meta),
-    tablet_id_(meta->oid()),
+    tablet_id_(meta->tablet_id()),
     state_(BOOTSTRAPPING),
     status_listener_(new TabletStatusListener(meta)),
     leader_apply_pool_(leader_apply_pool),
@@ -104,7 +104,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     log_ = log;
 
     ConsensusOptions options;
-    options.tablet_id = meta_->oid();
+    options.tablet_id = meta_->tablet_id();
 
     TRACE("Creating consensus instance");
 
@@ -500,12 +500,12 @@ void TabletPeer::UnregisterMaintenanceOps() {
 }
 
 Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {
-  VLOG(1) << "T " << tablet_->metadata()->oid()
+  VLOG(1) << "T " << tablet_->metadata()->tablet_id()
       <<  ": Waiting for in-flight transactions to commit.";
   LOG_SLOW_EXECUTION(WARNING, 200, "Committing in-flights took a long time.") {
     tablet_->mvcc_manager()->WaitForAllInFlightToCommit();
   }
-  VLOG(1) << "T " << tablet_->metadata()->oid()
+  VLOG(1) << "T " << tablet_->metadata()->tablet_id()
       << ": Waiting for the log queue to be flushed.";
   LOG_SLOW_EXECUTION(WARNING, 200, "Flushing the Log queue took a long time.") {
     RETURN_NOT_OK(log_->WaitUntilAllFlushed());
