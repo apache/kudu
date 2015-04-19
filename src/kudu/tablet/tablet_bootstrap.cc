@@ -79,11 +79,15 @@ using strings::Substitute;
 
 struct ReplayState;
 
-// Bootstraps an existing tablet, fetching the initial state from other replicas
-// or locally and rebuilding soft state by playing log segments. A bootstrapped tablet
-// can then be added to an existing quorum as a LEARNER, which will bring its
-// state up to date with the rest of the quorum, or it can start serving the data
-// itself, after it has been appointed LEADER of that particular quorum.
+// Bootstraps an existing tablet by opening the metadata from disk, and rebuilding soft
+// state by playing log segments. A bootstrapped tablet can then be added to an existing
+// quorum as a LEARNER, which will bring its state up to date with the rest of the quorum,
+// or it can start serving the data itself, after it has been appointed LEADER of that
+// particular quorum.
+//
+// NOTE: this does not handle pulling data from other replicas in the cluster. That
+// is handled by the 'RemoteBootstrap' classes, which copy blocks and metadata locally
+// before invoking this local bootstrap functionality.
 //
 // TODO Because the table that is being rebuilt is never flushed/compacted, consensus
 // is only set on the tablet after bootstrap, when we get to flushes/compactions though
@@ -106,12 +110,11 @@ class TabletBootstrap {
 
  private:
 
-  // Fetches the latest blocks for a tablet and Open()s that tablet.
-  //
-  // TODO get blocks from other replicas
-  Status FetchBlocksAndOpenTablet(bool* fetched);
+  // Opens the tablet.
+  // Sets '*has_blocks' to true if there was any data on disk for this tablet.
+  Status OpenTablet(bool* has_blocks);
 
-  // Fetches the latest log segments for the Tablet that will allow to rebuild
+  // Opens the latest log segments for the Tablet that will allow to rebuild
   // the tablet's soft state. If there are existing log segments in the tablet's
   // log directly they are moved to a "log-recovery" directory which is deleted
   // when the replay process is completed (as they have been duplicated in the
@@ -120,9 +123,7 @@ class TabletBootstrap {
   // If a "log-recovery" directory is already present, we will continue to replay
   // from the "log-recovery" directory. Tablet metadata is updated once replay
   // has finished from the "log-recovery" directory.
-  //
-  // TODO get log segments from other replicas.
-  Status FetchLogSegments(bool* needs_recovery);
+  Status OpenLogReader(bool* needs_recovery);
 
   // Opens a new log in the tablet's log directory.
   // The directory is expected to be clean.
@@ -380,18 +381,15 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     VLOG(1) << "Tablet Metadata: " << super_block.DebugString();
   }
 
-  // TODO these are done serially for now, but there is no reason why fetching
-  // the tablet's blocks and log segments cannot be done in parallel, particularly
-  // in a dist. setting.
-  bool fetched_blocks;
-  RETURN_NOT_OK(FetchBlocksAndOpenTablet(&fetched_blocks));
+  bool has_blocks;
+  RETURN_NOT_OK(OpenTablet(&has_blocks));
 
   bool needs_recovery;
-  RETURN_NOT_OK(FetchLogSegments(&needs_recovery));
+  RETURN_NOT_OK(OpenLogReader(&needs_recovery));
 
   // This is a new tablet just return OK()
-  if (!fetched_blocks && !needs_recovery) {
-    LOG(INFO) << "No previous blocks or log segments found for tablet: " << tablet_id
+  if (!has_blocks && !needs_recovery) {
+    LOG(INFO) << "No blocks or log segments found for tablet: " << tablet_id
         << " creating new one.";
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
     RETURN_NOT_OK(FinishBootstrap("No bootstrap required, opened a new log",
@@ -403,12 +401,12 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   }
 
 
-  // If there were blocks there must be segments to replay
+  // If there were blocks there must be segments to replay.
   // TODO this actually may not be a requirement if the tablet was Flush()ed
   // before shutdown *and* the Log was GC()'d but because we aren't doing Log
   // GC on shutdown there should be some segments available even if there is
   // no soft state to rebuild.
-  if (fetched_blocks && !needs_recovery) {
+  if (has_blocks && !needs_recovery) {
     return Status::IllegalState(Substitute("Tablet: $0 had rowsets but no log "
                                            "segments could be found.",
                                            tablet_id));
@@ -448,7 +446,7 @@ Status TabletBootstrap::FinishBootstrap(const std::string& message,
   return Status::OK();
 }
 
-Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
+Status TabletBootstrap::OpenTablet(bool* has_blocks) {
   gscoped_ptr<Tablet> tablet(new Tablet(meta_,
                                         clock_,
                                         metric_registry_,
@@ -457,13 +455,12 @@ Status TabletBootstrap::FetchBlocksAndOpenTablet(bool* fetched) {
   LOG_TIMING(INFO, Substitute("opening tablet $0", tablet->tablet_id())) {
     RETURN_NOT_OK(tablet->Open());
   }
-  // set 'fetched' to true if there were any local blocks present
-  *fetched = tablet->num_rowsets() != 0;
+  *has_blocks = tablet->num_rowsets() != 0;
   tablet_.reset(tablet.release());
   return Status::OK();
 }
 
-Status TabletBootstrap::FetchLogSegments(bool* needs_recovery) {
+Status TabletBootstrap::OpenLogReader(bool* needs_recovery) {
   RETURN_NOT_OK(PrepareRecoveryDir(needs_recovery));
 
   // TODO in a dist setting we want to get segments from other nodes

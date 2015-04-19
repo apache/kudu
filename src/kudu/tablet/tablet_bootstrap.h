@@ -74,9 +74,9 @@ extern const char* kLogRecoveryDir;
 // Bootstraps a tablet, initializing it with the provided metadata. If the tablet
 // has blocks and log segments, this method rebuilds the soft state by replaying
 // the Log.
-// TODO add functionality to fetch blocks and log segments from other TabletServers.
-// TODO make this async and allow the caller to check on the status of recovery
-// for monitoring purposes.
+//
+// This is a synchronous method, but is typically called within a thread pool by
+// TSTabletManager.
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<server::Clock>& clock,
                        MetricRegistry* metric_registry,
