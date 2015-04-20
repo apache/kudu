@@ -99,7 +99,7 @@ class LogCache {
   int64_t BytesUsed() const;
 
   int64_t num_cached_ops() const {
-    return metrics_.log_cache_total_num_ops->value();
+    return metrics_.log_cache_num_ops->value();
   }
 
   // Dump the current contents of the cache to the log.
@@ -193,10 +193,10 @@ class LogCache {
     explicit Metrics(const scoped_refptr<MetricEntity>& metric_entity);
 
     // Keeps track of the total number of operations in the cache.
-    scoped_refptr<AtomicGauge<int64_t> > log_cache_total_num_ops;
+    scoped_refptr<AtomicGauge<int64_t> > log_cache_num_ops;
 
     // Keeps track of the memory consumed by the cache, in bytes.
-    scoped_refptr<AtomicGauge<int64_t> > log_cache_size_bytes;
+    scoped_refptr<AtomicGauge<int64_t> > log_cache_size;
   };
   Metrics metrics_;
 

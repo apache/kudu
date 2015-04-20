@@ -32,18 +32,22 @@ DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
 DECLARE_bool(enable_data_block_fsync);
 
 METRIC_DEFINE_gauge_uint64(log_block_manager_bytes_under_management,
+                           "Bytes Under Management",
                            kudu::MetricUnit::kBytes,
                            "Number of bytes of data blocks currently under management");
 
 METRIC_DEFINE_gauge_uint64(log_block_manager_blocks_under_management,
+                           "Blocks Under Management",
                            kudu::MetricUnit::kBlocks,
                            "Number of data blocks currently under management");
 
-METRIC_DEFINE_counter(log_block_manager_total_containers,
+METRIC_DEFINE_counter(log_block_manager_containers,
+                      "Number of Block Containers",
                       kudu::MetricUnit::kLogBlockContainers,
                       "Number of log block containers");
 
-METRIC_DEFINE_counter(log_block_manager_total_full_containers,
+METRIC_DEFINE_counter(log_block_manager_full_containers,
+                      "Number of Full Block Counters",
                       kudu::MetricUnit::kLogBlockContainers,
                       "Number of full log block containers");
 
@@ -77,8 +81,8 @@ struct LogBlockManagerMetrics {
   scoped_refptr<AtomicGauge<uint64_t> > bytes_under_management;
   scoped_refptr<AtomicGauge<uint64_t> > blocks_under_management;
 
-  scoped_refptr<Counter> total_containers;
-  scoped_refptr<Counter> total_full_containers;
+  scoped_refptr<Counter> containers;
+  scoped_refptr<Counter> full_containers;
 };
 
 #define MINIT(x) x(METRIC_log_block_manager_##x.Instantiate(metric_entity))
@@ -87,8 +91,8 @@ LogBlockManagerMetrics::LogBlockManagerMetrics(const scoped_refptr<MetricEntity>
   : generic_metrics(metric_entity),
     GINIT(bytes_under_management),
     GINIT(blocks_under_management),
-    MINIT(total_containers),
-    MINIT(total_full_containers) {
+    MINIT(containers),
+    MINIT(full_containers) {
 }
 #undef GINIT
 #undef MINIT
@@ -477,7 +481,7 @@ Status LogBlockContainer::FinishBlock(const Status& s, WritableBlock* block) {
                                      total_bytes_written(), block->BytesAppended()));
   UpdateBytesWritten(block->BytesAppended());
   if (full() && block_manager()->metrics()) {
-    block_manager()->metrics()->total_full_containers->Increment();
+    block_manager()->metrics()->full_containers->Increment();
   }
   return Status::OK();
 }
@@ -1163,9 +1167,9 @@ void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {
   DCHECK(lock_.is_locked());
   all_containers_.push_back(container);
   if (metrics()) {
-    metrics()->total_containers->Increment();
+    metrics()->containers->Increment();
     if (container->full()) {
-      metrics()->total_full_containers->Increment();
+      metrics()->full_containers->Increment();
     }
   }
 }

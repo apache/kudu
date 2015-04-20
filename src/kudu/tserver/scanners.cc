@@ -19,7 +19,9 @@ DEFINE_int32(tablet_server_scanner_ttl_millis, 60000,
              "Number of milliseconds of inactivity allowed for a scanner"
              "before it may be expired");
 
-METRIC_DEFINE_gauge_uint64(active_scanners, kudu::MetricUnit::kScanners,
+METRIC_DEFINE_gauge_uint64(active_scanners,
+                           "Active Scanners",
+                           kudu::MetricUnit::kScanners,
                            "Number of scanners that are currently active");
 
 namespace kudu {
@@ -129,7 +131,7 @@ void ScannerManager::RemoveExpiredScanners() {
                 << scanner_ttl_.ToMicroseconds() << " us).";
       it = scanners_by_id_.erase(it);
       if (metrics_) {
-        metrics_->scanners_expired_since_start->Increment();
+        metrics_->scanners_expired->Increment();
       }
     } else {
       ++it;

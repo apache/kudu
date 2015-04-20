@@ -7,92 +7,138 @@
 #include "kudu/util/trace.h"
 
 // Tablet-specific metrics.
-METRIC_DEFINE_counter(tablet_rows_inserted, kudu::MetricUnit::kRows,
+METRIC_DEFINE_counter(rows_inserted, "Rows Inserted",
+    kudu::MetricUnit::kRows,
     "Number of rows inserted into this tablet since service start");
-METRIC_DEFINE_counter(tablet_rows_updated, kudu::MetricUnit::kRows,
+METRIC_DEFINE_counter(rows_updated, "Rows Updated",
+    kudu::MetricUnit::kRows,
     "Number of row update operations performed on this tablet since service start");
-METRIC_DEFINE_counter(tablet_rows_deleted, kudu::MetricUnit::kRows,
+METRIC_DEFINE_counter(rows_deleted, "Rows Deleted",
+    kudu::MetricUnit::kRows,
     "Number of row delete operations performed on this tablet since service start");
-METRIC_DEFINE_counter(tablet_insertions_failed_dup_key, kudu::MetricUnit::kRows,
+METRIC_DEFINE_counter(insertions_failed_dup_key, "Duplicate Key Inserts",
+                      kudu::MetricUnit::kRows,
                       "Number of inserts which failed because the key already existed");
-METRIC_DEFINE_counter(tablet_scans_started, kudu::MetricUnit::kRequests,
+METRIC_DEFINE_counter(scans_started, "Scans Started",
+                      kudu::MetricUnit::kScanners,
                       "Number of scanners which have been started on this tablet");
 
-METRIC_DEFINE_counter(tablet_blooms_consulted, kudu::MetricUnit::kProbes,
+METRIC_DEFINE_counter(bloom_lookups, "Bloom Filter Lookups",
+                      kudu::MetricUnit::kProbes,
                       "Number of times a bloom filter was consulted");
-METRIC_DEFINE_counter(tablet_keys_consulted, kudu::MetricUnit::kProbes,
+METRIC_DEFINE_counter(key_file_lookups, "Key File Lookups",
+                      kudu::MetricUnit::kProbes,
                       "Number of times a key cfile was consulted");
-METRIC_DEFINE_counter(tablet_deltas_consulted, kudu::MetricUnit::kProbes,
+METRIC_DEFINE_counter(delta_file_lookups, "Delta File Lookups",
+                      kudu::MetricUnit::kProbes,
                       "Number of times a delta file was consulted");
-METRIC_DEFINE_counter(tablet_mrs_consulted, kudu::MetricUnit::kProbes,
+METRIC_DEFINE_counter(mrs_lookups, "MemRowSet Lookups",
+                      kudu::MetricUnit::kProbes,
                       "Number of times a MemRowSet was consulted.");
-METRIC_DEFINE_counter(tablet_bytes_flushed, kudu::MetricUnit::kBytes,
-    "Number of bytes that have been flushed to disk by this tablet.");
+METRIC_DEFINE_counter(bytes_flushed, "Bytes Flushed",
+                      kudu::MetricUnit::kBytes,
+                      "Amount of data that has been flushed to disk by this tablet.");
 
-METRIC_DEFINE_histogram(tablet_blooms_consulted_per_op, kudu::MetricUnit::kProbes,
-                        "Number of times a bloom filter was consulted", 20, 2);
+METRIC_DEFINE_histogram(bloom_lookups_per_op, "Bloom Lookups per Operation",
+                        kudu::MetricUnit::kProbes,
+                        "Tracks the number of bloom filter lookups performed by each "
+                        "operation. A single operation may perform several bloom filter "
+                        "lookups if the tablet is not fully compacted. High frequency of "
+                        "high values may indicate that compaction is falling behind.",
+                        20, 2);
 
-METRIC_DEFINE_histogram(tablet_keys_consulted_per_op, kudu::MetricUnit::kProbes,
-                        "Number of times a key cfile was consulted", 20, 2);
+METRIC_DEFINE_histogram(key_file_lookups_per_op, "Key Lookups per Operation",
+                        kudu::MetricUnit::kProbes,
+                        "Tracks the number of key file lookups performed by each "
+                        "operation. A single operation may perform several key file "
+                        "lookups if the tablet is not fully compacted and if bloom filters "
+                        "are not effectively culling lookups.", 20, 2);
 
-METRIC_DEFINE_histogram(tablet_deltas_consulted_per_op, kudu::MetricUnit::kProbes,
-                        "Number of times a delta file was consulted", 20, 2);
+METRIC_DEFINE_histogram(delta_file_lookups_per_op, "Delta File Lookups per Operation",
+                        kudu::MetricUnit::kProbes,
+                        "Tracks the number of delta file lookups performed by each "
+                        "operation. A single operation may perform several delta file "
+                        "lookups if the tablet is not fully compacted. High frequency of "
+                        "high values may indicate that compaction is falling behind.", 20, 2);
 
-METRIC_DEFINE_histogram(tablet_write_op_duration_no_consistency,
+METRIC_DEFINE_histogram(write_op_duration_no_consistency,
+  "Write Op Duration with No Consistency",
   kudu::MetricUnit::kMicroseconds,
-  "Duration of Writes to this tablet with external consistency set to NO_CONSISTENCY.",
+  "Duration of writes to this tablet with external consistency set to NO_CONSISTENCY.",
   60000000LU, 2);
 
-METRIC_DEFINE_histogram(tablet_write_op_duration_client_propagated_consistency,
+METRIC_DEFINE_histogram(write_op_duration_client_propagated_consistency,
+  "Write Op Duration with Propagated Consistency",
   kudu::MetricUnit::kMicroseconds,
-  "Duration of Writes to this tablet with external consistency set to CLIENT_PROPAGATED.",
+  "Duration of writes to this tablet with external consistency set to CLIENT_PROPAGATED.",
   60000000LU, 2);
 
-METRIC_DEFINE_histogram(tablet_write_op_duration_commit_wait_consistency,
+METRIC_DEFINE_histogram(write_op_duration_commit_wait_consistency,
+  "Write Op Duration with Commit-Wait Consistency",
   kudu::MetricUnit::kMicroseconds,
-  "Duration of Writes to this tablet with external consistency set to COMMIT_WAIT.",
+  "Duration of writes to this tablet with external consistency set to COMMIT_WAIT.",
   60000000LU, 2);
 
-METRIC_DEFINE_histogram(tablet_commit_wait_duration,
+METRIC_DEFINE_histogram(commit_wait_duration,
+  "Commit-Wait Duration",
   kudu::MetricUnit::kMicroseconds,
-  "Microseconds spent waiting for COMMIT_WAIT external consistency writes for this tablet.",
+  "Time spent waiting for COMMIT_WAIT external consistency writes for this tablet.",
   60000000LU, 2);
 
-METRIC_DEFINE_histogram(tablet_snapshot_scan_inflight_wait_duration,
+METRIC_DEFINE_histogram(snapshot_read_inflight_wait_duration,
+  "Time Waiting For Snapshot Reads",
   kudu::MetricUnit::kMicroseconds,
-  "Microseconds spent waiting for in-flight writes to complete for READ_AT_SNAPSHOT scans.",
+  "Time spent waiting for in-flight writes to complete for READ_AT_SNAPSHOT scans.",
   60000000LU, 2);
 
-METRIC_DEFINE_gauge_uint32(tablet_flush_dms_running, kudu::MetricUnit::kMaintenanceOperations,
-  "Number of delta MRS flushes currently running.");
+METRIC_DEFINE_gauge_uint32(flush_dms_running,
+  "DeltaMemStore Flushes Running",
+  kudu::MetricUnit::kMaintenanceOperations,
+  "Number of delta memstore flushes currently running.");
 
-METRIC_DEFINE_gauge_uint32(tablet_flush_mrs_running, kudu::MetricUnit::kMaintenanceOperations,
-  "Number of MRS flushes currently running.");
+METRIC_DEFINE_gauge_uint32(flush_mrs_running,
+  "MemRowSet Flushes Running",
+  kudu::MetricUnit::kMaintenanceOperations,
+  "Number of MemRowSet flushes currently running.");
 
-METRIC_DEFINE_gauge_uint32(tablet_compact_rs_running, kudu::MetricUnit::kMaintenanceOperations,
-  "Number of RS compactions currently running.");
+METRIC_DEFINE_gauge_uint32(compact_rs_running,
+  "RowSet Compactions Running",
+  kudu::MetricUnit::kMaintenanceOperations,
+  "Number of RowSet compactions currently running.");
 
-METRIC_DEFINE_gauge_uint32(tablet_delta_minor_compact_rs_running,
+METRIC_DEFINE_gauge_uint32(delta_minor_compact_rs_running,
+  "Minor Delta Compactions Running",
   kudu::MetricUnit::kMaintenanceOperations,
   "Number of delta minor compactions currently running.");
 
-METRIC_DEFINE_gauge_uint32(tablet_delta_major_compact_rs_running,
+METRIC_DEFINE_gauge_uint32(delta_major_compact_rs_running,
+  "Major Delta Compactions Running",
   kudu::MetricUnit::kMaintenanceOperations,
   "Number of delta major compactions currently running.");
 
-METRIC_DEFINE_histogram(tablet_flush_dms_duration, kudu::MetricUnit::kSeconds,
-  "Seconds spent flushing delta MRS.", 60000000LU, 2);
+METRIC_DEFINE_histogram(flush_dms_duration,
+  "DeltaMemStore Flush Duration",
+  kudu::MetricUnit::kMilliseconds,
+  "Time spent flushing DeltaMemStores.", 60000LU, 1);
 
-METRIC_DEFINE_histogram(tablet_flush_mrs_duration, kudu::MetricUnit::kSeconds,
-  "Seconds spent flushing MRS.", 60000000LU, 2);
+METRIC_DEFINE_histogram(flush_mrs_duration,
+  "MemRowSet Flush Duration",
+  kudu::MetricUnit::kMilliseconds,
+  "Time spent flushing MemRowSets.", 60000LU, 1);
 
-METRIC_DEFINE_histogram(tablet_compact_rs_duration, kudu::MetricUnit::kSeconds,
-  "Seconds spent compacting RS.", 60000000LU, 2);
+METRIC_DEFINE_histogram(compact_rs_duration,
+  "RowSet Compaction Duration",
+  kudu::MetricUnit::kMilliseconds,
+  "Time spent compacting RowSets.", 60000LU, 1);
 
-METRIC_DEFINE_histogram(tablet_delta_minor_compact_rs_duration, kudu::MetricUnit::kSeconds,
-  "Seconds spent minor delta compacting.", 60000000LU, 2);
+METRIC_DEFINE_histogram(delta_minor_compact_rs_duration,
+  "Minor Delta Compaction Duration",
+  kudu::MetricUnit::kMilliseconds,
+  "Time spent minor delta compacting.", 60000LU, 1);
 
-METRIC_DEFINE_histogram(tablet_delta_major_compact_rs_duration, kudu::MetricUnit::kSeconds,
+METRIC_DEFINE_histogram(delta_major_compact_rs_duration,
+  "Major Delta Compaction Duration",
+  kudu::MetricUnit::kSeconds,
   "Seconds spent major delta compacting.", 60000000LU, 2);
 
 using strings::Substitute;
@@ -100,24 +146,24 @@ using strings::Substitute;
 namespace kudu {
 namespace tablet {
 
-#define MINIT(x) x(METRIC_tablet_##x.Instantiate(entity))
-#define GINIT(x) x(METRIC_tablet_##x.Instantiate(entity, 0))
+#define MINIT(x) x(METRIC_##x.Instantiate(entity))
+#define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
 TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
   : MINIT(rows_inserted),
     MINIT(rows_updated),
     MINIT(rows_deleted),
     MINIT(insertions_failed_dup_key),
     MINIT(scans_started),
-    MINIT(blooms_consulted),
-    MINIT(keys_consulted),
-    MINIT(deltas_consulted),
-    MINIT(mrs_consulted),
+    MINIT(bloom_lookups),
+    MINIT(key_file_lookups),
+    MINIT(delta_file_lookups),
+    MINIT(mrs_lookups),
     MINIT(bytes_flushed),
-    MINIT(blooms_consulted_per_op),
-    MINIT(keys_consulted_per_op),
-    MINIT(deltas_consulted_per_op),
+    MINIT(bloom_lookups_per_op),
+    MINIT(key_file_lookups_per_op),
+    MINIT(delta_file_lookups_per_op),
     MINIT(commit_wait_duration),
-    MINIT(snapshot_scan_inflight_wait_duration),
+    MINIT(snapshot_read_inflight_wait_duration),
     MINIT(write_op_duration_no_consistency),
     MINIT(write_op_duration_client_propagated_consistency),
     MINIT(write_op_duration_commit_wait_consistency),
@@ -136,17 +182,17 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
 #undef GINIT
 
 void TabletMetrics::AddProbeStats(const ProbeStats& stats) {
-  blooms_consulted->IncrementBy(stats.blooms_consulted);
-  keys_consulted->IncrementBy(stats.keys_consulted);
-  deltas_consulted->IncrementBy(stats.deltas_consulted);
-  mrs_consulted->IncrementBy(stats.mrs_consulted);
+  bloom_lookups->IncrementBy(stats.blooms_consulted);
+  key_file_lookups->IncrementBy(stats.keys_consulted);
+  delta_file_lookups->IncrementBy(stats.deltas_consulted);
+  mrs_lookups->IncrementBy(stats.mrs_consulted);
 
-  blooms_consulted_per_op->Increment(stats.blooms_consulted);
-  keys_consulted_per_op->Increment(stats.keys_consulted);
-  deltas_consulted_per_op->Increment(stats.deltas_consulted);
+  bloom_lookups_per_op->Increment(stats.blooms_consulted);
+  key_file_lookups_per_op->Increment(stats.keys_consulted);
+  delta_file_lookups_per_op->Increment(stats.deltas_consulted);
 
-  TRACE("ProbeStats: blooms_consulted=$0,keys_consulted=$1,"
-        "deltas_consulted=$2,mrs_consulted=$3",
+  TRACE("ProbeStats: bloom_lookups=$0,key_file_lookups=$1,"
+        "delta_file_lookups=$2,mrs_lookups=$3",
         stats.blooms_consulted, stats.keys_consulted,
         stats.deltas_consulted, stats.mrs_consulted);
 }

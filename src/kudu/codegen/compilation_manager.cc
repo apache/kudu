@@ -29,9 +29,11 @@
 DEFINE_bool(time_codegen, false, "Whether to print time that each code "
             "generation request took.");
 
-METRIC_DEFINE_gauge_int64(code_cache_hits, kudu::MetricUnit::kCacheHits,
+METRIC_DEFINE_gauge_int64(code_cache_hits, "Codegen Cache Hits",
+                          kudu::MetricUnit::kCacheHits,
                           "Number of codegen cache hits since start");
-METRIC_DEFINE_gauge_int64(code_cache_queries, kudu::MetricUnit::kCacheQueries,
+METRIC_DEFINE_gauge_int64(code_cache_queries, "Codegen Cache Queries",
+                          kudu::MetricUnit::kCacheQueries,
                           "Number of codegen cache queries (hits + misses) "
                           "since start");
 namespace kudu {

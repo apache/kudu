@@ -106,7 +106,7 @@
 //
 // 3) At the top of your .cc file where you want to emit a metric, define the metric prototype:
 //
-//   METRIC_DEFINE_counter(ping_requests, kudu::MetricUnit::kRequests,
+//   METRIC_DEFINE_counter(ping_requests, "Ping Requests", kudu::MetricUnit::kRequests,
 //       "Number of Ping() RPC requests this server has handled since tablet start");
 //
 // 4) In your class where you want to emit metrics, define the metric instance itself:
@@ -169,6 +169,7 @@
 //             {
 //                 "type": "counter",
 //                 "name": "log_reader_bytes_read",
+//                 "label": "Log Reader Bytes Read",
 //                 "unit": "bytes",
 //                 "description": "Number of bytes read since tablet start",
 //                 "value": 0
@@ -209,35 +210,35 @@
 
 // Convenience macros to define metric prototypes.
 // See the documentation at the top of this file for example usage.
-#define METRIC_DEFINE_counter(name, unit, desc)                  \
+#define METRIC_DEFINE_counter(name, label, unit, desc)           \
   ::kudu::CounterPrototype METRIC_##name(                        \
-      ::kudu::MetricPrototype::CtorArgs(#name, unit, desc))
+      ::kudu::MetricPrototype::CtorArgs(#name, label, unit, desc))
 
-#define METRIC_DEFINE_gauge_string(name, unit, desc)             \
+#define METRIC_DEFINE_gauge_string(name, label, unit, desc)      \
   ::kudu::GaugePrototype<std::string> METRIC_##name(             \
-      ::kudu::MetricPrototype::CtorArgs(#name, unit, desc))
+      ::kudu::MetricPrototype::CtorArgs(#name, label, unit, desc))
 #define METRIC_DEFINE_gauge_bool(entity, name, unit, desc)       \
   ::kudu::GaugePrototype<bool> METRIC_##name(                    \
-      ::kudu::MetricPrototype::CtorArgs(#name, unit, desc))
-#define METRIC_DEFINE_gauge_int32(name, unit, desc)              \
+      ::kudu::MetricPrototype::CtorArgs(#name, label, unit, desc))
+#define METRIC_DEFINE_gauge_int32(name, label, unit, desc)       \
   ::kudu::GaugePrototype<int32_t> METRIC_##name(                 \
-      ::kudu::MetricPrototype::CtorArgs(#name, unit, desc))
-#define METRIC_DEFINE_gauge_uint32(name, unit, desc)             \
+      ::kudu::MetricPrototype::CtorArgs(#name, label, unit, desc))
+#define METRIC_DEFINE_gauge_uint32(name, label, unit, desc)      \
   ::kudu::GaugePrototype<uint32_t> METRIC_##name(                \
-      ::kudu::MetricPrototype::CtorArgs(#name, unit, desc))
-#define METRIC_DEFINE_gauge_int64(name, unit, desc)              \
+      ::kudu::MetricPrototype::CtorArgs(#name, label, unit, desc))
+#define METRIC_DEFINE_gauge_int64(name, label, unit, desc)       \
   ::kudu::GaugePrototype<int64_t> METRIC_##name(                 \
-      ::kudu::MetricPrototype::CtorArgs(#name, unit, desc))
-#define METRIC_DEFINE_gauge_uint64(name, unit, desc)             \
+      ::kudu::MetricPrototype::CtorArgs(#name, label, unit, desc))
+#define METRIC_DEFINE_gauge_uint64(name, label, unit, desc)      \
   ::kudu::GaugePrototype<uint64_t> METRIC_##name(                \
-      ::kudu::MetricPrototype::CtorArgs(#name, unit, desc))
-#define METRIC_DEFINE_gauge_double(name, unit, desc)             \
+      ::kudu::MetricPrototype::CtorArgs(#name, label, unit, desc))
+#define METRIC_DEFINE_gauge_double(name, label, unit, desc)      \
   ::kudu::GaugePrototype<double> METRIC_##name(                  \
-      ::kudu::MetricPrototype::CtorArgs(#name, unit, desc))
+      ::kudu::MetricPrototype::CtorArgs(#name, label, unit, desc))
 
-#define METRIC_DEFINE_histogram(name, unit, desc, max_val, num_sig_digits) \
+#define METRIC_DEFINE_histogram(name, label, unit, desc, max_val, num_sig_digits) \
   ::kudu::HistogramPrototype METRIC_##name(                                       \
-    ::kudu::MetricPrototype::CtorArgs(#name, unit, desc), \
+      ::kudu::MetricPrototype::CtorArgs(#name, label, unit, desc),      \
     max_val, num_sig_digits)
 
 // The following macros act as forward declarations for entity types and metric prototypes.
@@ -302,11 +303,12 @@ struct MetricUnit {
   enum Type {
     kCacheHits,
     kCacheQueries,
-    kCount,
     kBytes,
     kRequests,
+    kEntries,
     kRows,
     kConnections,
+    kOperations,
     kProbes,
     kNanoseconds,
     kMicroseconds,
@@ -314,6 +316,7 @@ struct MetricUnit {
     kSeconds,
     kThreads,
     kTransactions,
+    kUnits,
     kScanners,
     kMaintenanceOperations,
     kBlocks,
@@ -492,25 +495,30 @@ class MetricPrototype {
   // This makes constructor chaining a little less tedious.
   struct CtorArgs {
     CtorArgs(const char* name,
+             const char* label,
              MetricUnit::Type unit,
              const char* description)
       : name_(name),
+        label_(label),
         unit_(unit),
         description_(description) {
     }
 
     const char* const name_;
+    const char* const label_;
     const MetricUnit::Type unit_;
     const char* const description_;
   };
 
   const char* name() const { return name_; }
+  const char* label() const { return label_; }
   MetricUnit::Type unit() const { return unit_; }
   const char* description() const { return description_; }
 
  protected:
   explicit MetricPrototype(const CtorArgs& args)
     : name_(args.name_),
+      label_(args.label_),
       unit_(args.unit_),
       description_(args.description_) {
   }
@@ -518,6 +526,7 @@ class MetricPrototype {
   }
 
   const char* const name_;
+  const char* const label_;
   const MetricUnit::Type unit_;
   const char* const description_;
 
@@ -629,7 +638,7 @@ class AtomicGauge : public Gauge {
 //
 // Example usage:
 //
-// METRIC_define_gauge_int64(my_metric, MetricUnit::kCount, "My metric docs");
+// METRIC_define_gauge_int64(my_metric, MetricUnit::kOperations, "My metric docs");
 // class MyClassWithMetrics {
 //  public:
 //   MyClassWithMetrics(const scoped_refptr<MetricEntity>& entity) {

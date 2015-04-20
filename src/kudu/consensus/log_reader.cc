@@ -20,13 +20,16 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 
-METRIC_DEFINE_counter(log_reader_bytes_read, kudu::MetricUnit::kBytes,
-                      "Number of bytes read since tablet start");
+METRIC_DEFINE_counter(log_reader_bytes_read, "Bytes Read From Log",
+                      kudu::MetricUnit::kBytes,
+                      "Data read from the WAL since tablet start");
 
-METRIC_DEFINE_counter(log_reader_entries_read, kudu::MetricUnit::kCount,
-                      "Number of entries read since tablet start");
+METRIC_DEFINE_counter(log_reader_entries_read, "Entries Read From Log",
+                      kudu::MetricUnit::kEntries,
+                      "Number of entries read from the WAL since tablet start");
 
-METRIC_DEFINE_histogram(log_reader_read_batch_latency, kudu::MetricUnit::kBytes,
+METRIC_DEFINE_histogram(log_reader_read_batch_latency, "Log Read Latency",
+                        kudu::MetricUnit::kBytes,
                         "Microseconds spent reading log entry batches",
                         60000000LU, 2);
 

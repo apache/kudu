@@ -12,7 +12,9 @@
 namespace kudu {
 namespace server {
 
-METRIC_DEFINE_gauge_uint64(logical_clock_timestamp, kudu::MetricUnit::kCount,
+METRIC_DEFINE_gauge_uint64(logical_clock_timestamp,
+                           "Logical Clock Timestamp",
+                           kudu::MetricUnit::kUnits,
                            "Logical clock timestamp.");
 
 using base::subtle::Atomic64;

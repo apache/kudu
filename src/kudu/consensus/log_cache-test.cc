@@ -20,7 +20,7 @@ DECLARE_int32(max_clock_sync_error_usec);
 
 using std::tr1::shared_ptr;
 
-DECLARE_int32(consensus_max_batch_size_bytes);
+DECLARE_int32(consensus_max_batch_size);
 DECLARE_int32(log_cache_size_limit_mb);
 DECLARE_int32(global_log_cache_size_limit_mb);
 
@@ -104,11 +104,11 @@ class LogCacheTest : public KuduTest {
 
 
 TEST_F(LogCacheTest, TestAppendAndGetMessages) {
-  ASSERT_EQ(0, cache_->metrics_.log_cache_total_num_ops->value());
-  ASSERT_EQ(0, cache_->metrics_.log_cache_size_bytes->value());
+  ASSERT_EQ(0, cache_->metrics_.log_cache_num_ops->value());
+  ASSERT_EQ(0, cache_->metrics_.log_cache_size->value());
   ASSERT_OK(AppendReplicateMessagesToCache(1, 100));
-  ASSERT_EQ(100, cache_->metrics_.log_cache_total_num_ops->value());
-  ASSERT_GE(cache_->metrics_.log_cache_size_bytes->value(), 500);
+  ASSERT_EQ(100, cache_->metrics_.log_cache_num_ops->value());
+  ASSERT_GE(cache_->metrics_.log_cache_size->value(), 500);
   log_->WaitUntilAllFlushed();
 
   vector<ReplicateRefPtr> messages;
@@ -132,7 +132,7 @@ TEST_F(LogCacheTest, TestAppendAndGetMessages) {
 
   // Evict some and verify that the eviction took effect.
   cache_->EvictThroughOp(50);
-  ASSERT_EQ(50, cache_->metrics_.log_cache_total_num_ops->value());
+  ASSERT_EQ(50, cache_->metrics_.log_cache_num_ops->value());
 
   // Can still read data that was evicted, since it got written through.
   messages.clear();

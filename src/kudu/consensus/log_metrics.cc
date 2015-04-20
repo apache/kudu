@@ -5,33 +5,38 @@
 
 #include "kudu/util/metrics.h"
 
-METRIC_DEFINE_counter(bytes_logged, kudu::MetricUnit::kBytes,
+METRIC_DEFINE_counter(log_bytes_logged, "Bytes Written to WAL", kudu::MetricUnit::kBytes,
                       "Number of bytes logged since service start");
 
-METRIC_DEFINE_histogram(sync_latency, kudu::MetricUnit::kMicroseconds,
+METRIC_DEFINE_histogram(log_sync_latency, "Log Sync Latency",
+                        kudu::MetricUnit::kMicroseconds,
                         "Microseconds spent on synchronizing the log segment file",
                         60000000LU, 2);
 
-METRIC_DEFINE_histogram(append_latency, kudu::MetricUnit::kMicroseconds,
+METRIC_DEFINE_histogram(log_append_latency, "Log Append Latency",
+                        kudu::MetricUnit::kMicroseconds,
                         "Microseconds spent on appending to the log segment file",
                         60000000LU, 2);
 
-METRIC_DEFINE_histogram(group_commit_latency, kudu::MetricUnit::kMicroseconds,
+METRIC_DEFINE_histogram(log_group_commit_latency, "Log Group Commit Latency",
+                        kudu::MetricUnit::kMicroseconds,
                         "Microseconds spent on committing an entire group",
                         60000000LU, 2);
 
-METRIC_DEFINE_histogram(roll_latency, kudu::MetricUnit::kMicroseconds,
+METRIC_DEFINE_histogram(log_roll_latency, "Log Roll Latency",
+                        kudu::MetricUnit::kMicroseconds,
                         "Microseconds spent on rolling over to a new log segment file",
                         60000000LU, 2);
 
-METRIC_DEFINE_histogram(entry_batches_per_group, kudu::MetricUnit::kRequests,
+METRIC_DEFINE_histogram(log_entry_batches_per_group, "Log Group Commit Batch Size",
+                        kudu::MetricUnit::kRequests,
                         "Number of log entry batches in a group commit group",
                         1024, 2);
 
 namespace kudu {
 namespace log {
 
-#define MINIT(x) x(METRIC_##x.Instantiate(metric_entity))
+#define MINIT(x) x(METRIC_log_##x.Instantiate(metric_entity))
 LogMetrics::LogMetrics(const scoped_refptr<MetricEntity>& metric_entity)
     : MINIT(bytes_logged),
       MINIT(sync_latency),

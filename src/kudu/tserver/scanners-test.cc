@@ -57,7 +57,7 @@ TEST(ScannerTest, TestExpire) {
   s2->UpdateAccessTime();
   mgr.RemoveExpiredScanners();
   ASSERT_EQ(1, mgr.CountActiveScanners());
-  ASSERT_EQ(1, mgr.metrics_->scanners_expired_since_start->value());
+  ASSERT_EQ(1, mgr.metrics_->scanners_expired->value());
   vector<SharedScanner> active_scanners;
   mgr.ListScanners(&active_scanners);
   ASSERT_EQ(s2->id(), active_scanners[0]->id());

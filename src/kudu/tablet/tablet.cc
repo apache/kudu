@@ -74,7 +74,8 @@ DEFINE_double(tablet_bloom_target_fp_rate, 0.01f,
 
 METRIC_DEFINE_entity(tablet);
 
-METRIC_DEFINE_gauge_uint64(memrowset_size, kudu::MetricUnit::kBytes,
+METRIC_DEFINE_gauge_uint64(memrowset_size, "MemRowSet Memory Usage",
+                           kudu::MetricUnit::kBytes,
                            "Size of this tablet's memrowset");
 
 namespace kudu {

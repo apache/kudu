@@ -42,9 +42,9 @@ namespace kudu {
 
 class ThreadMgr;
 
-METRIC_DEFINE_gauge_uint64(total_threads, MetricUnit::kThreads,
-                           "All time total number of threads");
-METRIC_DEFINE_gauge_uint64(current_num_threads, MetricUnit::kThreads,
+METRIC_DEFINE_gauge_uint64(threads_started, "Threads Started", MetricUnit::kThreads,
+                           "Total number of threads started on this server");
+METRIC_DEFINE_gauge_uint64(threads_running, "Threads Running", MetricUnit::kThreads,
                            "Current number of running threads");
 __thread Thread* Thread::tls_ = NULL;
 
@@ -64,8 +64,8 @@ class ThreadMgr {
  public:
   ThreadMgr()
       : metrics_enabled_(false),
-        total_threads_metric_(0),
-        current_num_threads_metric_(0) {
+        threads_started_metric_(0),
+        threads_running_metric_(0) {
   }
 
   ~ThreadMgr() {
@@ -126,12 +126,12 @@ class ThreadMgr {
 
   // Counters to track all-time total number of threads, and the
   // current number of running threads.
-  uint64_t total_threads_metric_;
-  uint64_t current_num_threads_metric_;
+  uint64_t threads_started_metric_;
+  uint64_t threads_running_metric_;
 
   // Metric callbacks.
-  uint64_t ReadNumTotalThreads();
-  uint64_t ReadNumCurrentThreads();
+  uint64_t ReadThreadsStarted();
+  uint64_t ReadThreadsRunning();
 
   // Webpage callback; prints all threads by category
   void ThreadPathHandler(const WebCallbackRegistry::WebRequest& args, stringstream* output);
@@ -167,11 +167,11 @@ Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metric
   // Use function gauges here so that we can register a unique copy of these metrics in
   // multiple tservers, even though the ThreadMgr is itself a singleton.
   metrics->NeverRetire(
-      METRIC_total_threads.InstantiateFunctionGauge(metrics,
-        Bind(&ThreadMgr::ReadNumTotalThreads, Unretained(this))));
+      METRIC_threads_started.InstantiateFunctionGauge(metrics,
+        Bind(&ThreadMgr::ReadThreadsStarted, Unretained(this))));
   metrics->NeverRetire(
-      METRIC_current_num_threads.InstantiateFunctionGauge(metrics,
-        Bind(&ThreadMgr::ReadNumCurrentThreads, Unretained(this))));
+      METRIC_threads_running.InstantiateFunctionGauge(metrics,
+        Bind(&ThreadMgr::ReadThreadsRunning, Unretained(this))));
 
   WebCallbackRegistry::PathHandlerCallback thread_callback =
       bind<void>(mem_fn(&ThreadMgr::ThreadPathHandler), this, _1, _2);
@@ -179,14 +179,14 @@ Status ThreadMgr::StartInstrumentation(const scoped_refptr<MetricEntity>& metric
   return Status::OK();
 }
 
-uint64_t ThreadMgr::ReadNumTotalThreads() {
+uint64_t ThreadMgr::ReadThreadsStarted() {
   MutexLock l(lock_);
-  return total_threads_metric_;
+  return threads_started_metric_;
 }
 
-uint64_t ThreadMgr::ReadNumCurrentThreads() {
+uint64_t ThreadMgr::ReadThreadsRunning() {
   MutexLock l(lock_);
-  return current_num_threads_metric_;
+  return threads_running_metric_;
 }
 
 void ThreadMgr::AddThread(const pthread_t& pthread_id, const string& name,
@@ -209,8 +209,8 @@ void ThreadMgr::AddThread(const pthread_t& pthread_id, const string& name,
     MutexLock l(lock_);
     thread_categories_[category][pthread_id] = ThreadDescriptor(category, name, tid);
     if (metrics_enabled_) {
-      current_num_threads_metric_++;
-      total_threads_metric_++;
+      threads_running_metric_++;
+      threads_started_metric_++;
     }
   }
   ANNOTATE_IGNORE_SYNC_END();
@@ -226,7 +226,7 @@ void ThreadMgr::RemoveThread(const pthread_t& pthread_id, const string& category
     DCHECK(category_it != thread_categories_.end());
     category_it->second.erase(pthread_id);
     if (metrics_enabled_) {
-      current_num_threads_metric_--;
+      threads_running_metric_--;
     }
   }
   ANNOTATE_IGNORE_SYNC_END();
@@ -285,7 +285,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
   } else {
     (*output) << "<h2>Thread Groups</h2>";
     if (metrics_enabled_) {
-      (*output) << "<h4>" << current_num_threads_metric_ << " thread(s) running";
+      (*output) << "<h4>" << threads_running_metric_ << " thread(s) running";
     }
     (*output) << "<a href='/threadz?group=all'><h3>All Threads</h3>";
 

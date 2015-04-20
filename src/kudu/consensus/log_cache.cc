@@ -39,10 +39,12 @@ using strings::Substitute;
 namespace kudu {
 namespace consensus {
 
-METRIC_DEFINE_gauge_int64(log_cache_total_num_ops, MetricUnit::kCount,
-                          "Total number of cached operations in the leader queue.");
-METRIC_DEFINE_gauge_int64(log_cache_size_bytes, MetricUnit::kBytes,
-                          "Number of operations in the log cache ack'd by all peers.");
+METRIC_DEFINE_gauge_int64(log_cache_num_ops, "Log Cache Operation Count",
+                          MetricUnit::kOperations,
+                          "Number of operations in the log cache.");
+METRIC_DEFINE_gauge_int64(log_cache_size, "Log Cache Memory Usage",
+                          MetricUnit::kBytes,
+                          "Amount of memory in use for caching the local log.");
 
 const char kLogCacheTrackerId[] = "log_cache_parent";
 
@@ -171,8 +173,8 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
     return log_status;
   }
 
-  metrics_.log_cache_size_bytes->IncrementBy(mem_required);
-  metrics_.log_cache_total_num_ops->IncrementBy(msgs.size());
+  metrics_.log_cache_size->IncrementBy(mem_required);
+  metrics_.log_cache_num_ops->IncrementBy(msgs.size());
 
   next_sequential_op_index_ = msgs.back()->get()->id().index() + 1;
 
@@ -357,8 +359,8 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
 
 void LogCache::AccountForMessageRemovalUnlocked(const ReplicateRefPtr& msg) {
   tracker_->Release(msg->get()->SpaceUsed());
-  metrics_.log_cache_size_bytes->DecrementBy(msg->get()->SpaceUsed());
-  metrics_.log_cache_total_num_ops->Decrement();
+  metrics_.log_cache_size->DecrementBy(msg->get()->SpaceUsed());
+  metrics_.log_cache_num_ops->Decrement();
 }
 
 int64_t LogCache::BytesUsed() const {
@@ -372,8 +374,8 @@ string LogCache::StatsString() const {
 
 string LogCache::StatsStringUnlocked() const {
   return Substitute("LogCacheStats(num_ops=$0, bytes=$1)",
-                    metrics_.log_cache_total_num_ops->value(),
-                    metrics_.log_cache_size_bytes->value());
+                    metrics_.log_cache_num_ops->value(),
+                    metrics_.log_cache_size->value());
 }
 
 std::string LogCache::ToString() const {
@@ -439,8 +441,8 @@ void LogCache::DumpToHtml(std::ostream& out) const {
 #define INSTANTIATE_METRIC(x) \
   x.Instantiate(metric_entity, 0)
 LogCache::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_entity)
-  : log_cache_total_num_ops(INSTANTIATE_METRIC(METRIC_log_cache_total_num_ops)),
-    log_cache_size_bytes(INSTANTIATE_METRIC(METRIC_log_cache_size_bytes)) {
+  : log_cache_num_ops(INSTANTIATE_METRIC(METRIC_log_cache_num_ops)),
+    log_cache_size(INSTANTIATE_METRIC(METRIC_log_cache_size)) {
 }
 #undef INSTANTIATE_METRIC
 

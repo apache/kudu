@@ -43,8 +43,8 @@ METRIC_DECLARE_counter(block_manager_total_bytes_read);
 // Log block manager metrics.
 METRIC_DECLARE_gauge_uint64(log_block_manager_bytes_under_management);
 METRIC_DECLARE_gauge_uint64(log_block_manager_blocks_under_management);
-METRIC_DECLARE_counter(log_block_manager_total_containers);
-METRIC_DECLARE_counter(log_block_manager_total_full_containers);
+METRIC_DECLARE_counter(log_block_manager_containers);
+METRIC_DECLARE_counter(log_block_manager_full_containers);
 
 namespace kudu {
 namespace fs {
@@ -145,18 +145,18 @@ void BlockManagerTest<FileBlockManager>::RunLogMetricsTest() {
 
 static void CheckLogMetrics(const scoped_refptr<MetricEntity>& entity,
                             int bytes_under_management, int blocks_under_management,
-                            int total_containers, int total_full_containers) {
+                            int containers, int full_containers) {
   ASSERT_EQ(bytes_under_management, down_cast<AtomicGauge<uint64_t>*>(
                 entity->FindOrNull(METRIC_log_block_manager_bytes_under_management)
                 .get())->value());
   ASSERT_EQ(blocks_under_management, down_cast<AtomicGauge<uint64_t>*>(
                 entity->FindOrNull(METRIC_log_block_manager_blocks_under_management)
                 .get())->value());
-  ASSERT_EQ(total_containers, down_cast<Counter*>(
-                entity->FindOrNull(METRIC_log_block_manager_total_containers)
+  ASSERT_EQ(containers, down_cast<Counter*>(
+                entity->FindOrNull(METRIC_log_block_manager_containers)
                 .get())->value());
-  ASSERT_EQ(total_full_containers, down_cast<Counter*>(
-                entity->FindOrNull(METRIC_log_block_manager_total_full_containers)
+  ASSERT_EQ(full_containers, down_cast<Counter*>(
+                entity->FindOrNull(METRIC_log_block_manager_full_containers)
                 .get())->value());
 }
 

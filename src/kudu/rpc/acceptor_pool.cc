@@ -26,7 +26,9 @@ using google::protobuf::Message;
 using std::tr1::shared_ptr;
 using std::string;
 
-METRIC_DEFINE_counter(rpc_connections_accepted, kudu::MetricUnit::kConnections,
+METRIC_DEFINE_counter(rpc_connections_accepted,
+                      "RPC Connections Accepted",
+                      kudu::MetricUnit::kConnections,
                       "Number of incoming TCP connections made to the RPC server");
 
 namespace kudu {

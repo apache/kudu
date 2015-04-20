@@ -1304,7 +1304,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   MonoTime before = MonoTime::Now(MonoTime::FINE);
   tablet_peer->tablet()->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(tmp_snap_timestamp, &snap);
   uint64_t duration_usec = MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
-  tablet_peer->tablet()->metrics()->snapshot_scan_inflight_wait_duration->Increment(duration_usec);
+  tablet_peer->tablet()->metrics()->snapshot_read_inflight_wait_duration->Increment(duration_usec);
   TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);
 
   tablet::Tablet::OrderMode order;

@@ -18,9 +18,14 @@ using std::vector;
 using strings::Substitute;
 using kudu::tablet::MaintenanceManagerStatusPB;
 
-METRIC_DEFINE_gauge_uint32(running_gauge, kudu::MetricUnit::kMaintenanceOperations, "");
+METRIC_DEFINE_gauge_uint32(maintenance_ops_running,
+                           "Number of Maintenance Operations Running",
+                           kudu::MetricUnit::kMaintenanceOperations,
+                           "The number of background maintenance operations currently running.");
 
-METRIC_DEFINE_histogram(duration_histogram, kudu::MetricUnit::kSeconds, "", 60000000LU, 2);
+METRIC_DEFINE_histogram(maintenance_op_duration,
+                        "Maintenance Operation Duration",
+                        kudu::MetricUnit::kSeconds, "", 60000000LU, 2);
 
 namespace kudu {
 
@@ -68,8 +73,8 @@ class TestMaintenanceOp : public MaintenanceOp {
       logs_retained_bytes_(0),
       perf_improvement_(0),
       metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "test")),
-      duration_histogram_(METRIC_duration_histogram.Instantiate(metric_entity_)),
-      running_gauge_(METRIC_running_gauge.Instantiate(metric_entity_, 0)) { }
+      maintenance_op_duration_(METRIC_maintenance_op_duration.Instantiate(metric_entity_)),
+      maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)) { }
 
   virtual ~TestMaintenanceOp() {
   }
@@ -147,11 +152,11 @@ class TestMaintenanceOp : public MaintenanceOp {
   }
 
   virtual scoped_refptr<Histogram> DurationHistogram() OVERRIDE {
-    return duration_histogram_;
+    return maintenance_op_duration_;
   }
 
   virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() OVERRIDE {
-    return running_gauge_;
+    return maintenance_ops_running_;
   }
 
  private:
@@ -163,8 +168,8 @@ class TestMaintenanceOp : public MaintenanceOp {
   uint64_t perf_improvement_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
-  scoped_refptr<Histogram> duration_histogram_;
-  scoped_refptr<AtomicGauge<uint32_t> > running_gauge_;
+  scoped_refptr<Histogram> maintenance_op_duration_;
+  scoped_refptr<AtomicGauge<uint32_t> > maintenance_ops_running_;
 };
 
 // Create an op and wait for it to start running.  Unregister it while it is

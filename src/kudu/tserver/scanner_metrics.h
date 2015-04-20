@@ -25,7 +25,7 @@ struct ScannerMetrics {
 
   // Keeps track of the total number of scanners that have been
   // expired since the start of service.
-  scoped_refptr<Counter> scanners_expired_since_start;
+  scoped_refptr<Counter> scanners_expired;
 
   // Keeps track of the duration of scanners.
   scoped_refptr<Histogram> scanner_duration;

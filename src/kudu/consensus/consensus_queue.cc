@@ -45,17 +45,14 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using strings::Substitute;
 
-METRIC_DEFINE_gauge_int64(num_majority_done_ops, MetricUnit::kCount,
+METRIC_DEFINE_gauge_int64(majority_done_ops, "Leader Operations Acked by Majority",
+                          MetricUnit::kOperations,
                           "Number of operations in the leader queue ack'd by a majority but "
                           "not all peers.");
-METRIC_DEFINE_gauge_int64(num_in_progress_ops, MetricUnit::kCount,
+METRIC_DEFINE_gauge_int64(in_progress_ops, "Leader Operations in Progress",
+                          MetricUnit::kOperations,
                           "Number of operations in the leader queue ack'd by a minority of "
                           "peers.");
-
-// TODO expose and register metics via the MemTracker itself, so that
-// we don't have to do the accounting in two places.
-METRIC_DEFINE_gauge_int64(queue_size_bytes, MetricUnit::kBytes,
-                          "Size of the leader queue, in bytes.");
 
 const char kConsensusQueueParentTrackerId[] = "consensus_queue_parent";
 
@@ -69,8 +66,8 @@ std::string PeerMessageQueue::TrackedPeer::ToString() const {
 #define INSTANTIATE_METRIC(x) \
   x.Instantiate(metric_entity, 0)
 PeerMessageQueue::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_entity)
-  : num_majority_done_ops(INSTANTIATE_METRIC(METRIC_num_majority_done_ops)),
-    num_in_progress_ops(INSTANTIATE_METRIC(METRIC_num_in_progress_ops)) {
+  : num_majority_done_ops(INSTANTIATE_METRIC(METRIC_majority_done_ops)),
+    num_in_progress_ops(INSTANTIATE_METRIC(METRIC_in_progress_ops)) {
 }
 #undef INSTANTIATE_METRIC
 

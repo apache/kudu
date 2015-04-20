@@ -24,9 +24,13 @@ DEFINE_bool(use_hybrid_clock, false,
             " implementation. This is for testing purposes only, eventually"
             " the hybrid clock will become the default and only option.");
 
-METRIC_DEFINE_gauge_uint64(hybrid_clock_timestamp, kudu::MetricUnit::kMicroseconds,
+METRIC_DEFINE_gauge_uint64(hybrid_clock_timestamp,
+                           "Hybrid Clock Timestamp",
+                           kudu::MetricUnit::kMicroseconds,
                            "Hybrid clock timestamp.");
-METRIC_DEFINE_gauge_uint64(hybrid_clock_error, kudu::MetricUnit::kMicroseconds,
+METRIC_DEFINE_gauge_uint64(hybrid_clock_error,
+                           "Hybrid Clock Error",
+                           kudu::MetricUnit::kMicroseconds,
                            "Server clock maximum error.");
 
 using kudu::Status;

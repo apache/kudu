@@ -47,16 +47,18 @@ const char* MetricUnit::Name(Type unit) {
       return "hits";
     case kCacheQueries:
       return "queries";
-    case kCount:
-      return "units";
     case kBytes:
       return "bytes";
     case kRequests:
       return "requests";
+    case kEntries:
+      return "entries";
     case kRows:
       return "rows";
     case kConnections:
       return "connections";
+    case kOperations:
+      return "operations";
     case kProbes:
       return "probes";
     case kNanoseconds:
@@ -71,6 +73,8 @@ const char* MetricUnit::Name(Type unit) {
       return "threads";
     case kTransactions:
       return "transactions";
+    case kUnits:
+      return "units";
     case kScanners:
       return "scanners";
     case kMaintenanceOperations:
@@ -350,6 +354,9 @@ void Metric::WriteGenericFields(JsonWriter* writer) const {
 
   writer->String("name");
   writer->String(prototype_->name());
+
+  writer->String("label");
+  writer->String(prototype_->label());
 
   writer->String("unit");
   writer->String(MetricUnit::Name(prototype_->unit()));

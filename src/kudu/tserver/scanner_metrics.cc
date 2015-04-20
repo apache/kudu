@@ -5,12 +5,15 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 
-METRIC_DEFINE_counter(scanners_expired_since_start,
+METRIC_DEFINE_counter(scanners_expired,
+                      "Scanners Expired",
                       kudu::MetricUnit::kScanners,
                       "Number of scanners that have expired since service start");
 
-METRIC_DEFINE_histogram(scanner_duration, kudu::MetricUnit::kMicroseconds,
-                        "Scanner duration in microseconds",
+METRIC_DEFINE_histogram(scanner_duration,
+                        "Scanner Duration",
+                        kudu::MetricUnit::kMicroseconds,
+                        "Histogram of the duration of active scanners on this tablet.",
                         60000000LU, 2);
 
 namespace kudu {
@@ -18,8 +21,8 @@ namespace kudu {
 namespace tserver {
 
 ScannerMetrics::ScannerMetrics(const scoped_refptr<MetricEntity>& metric_entity)
-    : scanners_expired_since_start(
-          METRIC_scanners_expired_since_start.Instantiate(metric_entity)),
+    : scanners_expired(
+          METRIC_scanners_expired.Instantiate(metric_entity)),
       scanner_duration(METRIC_scanner_duration.Instantiate(metric_entity)) {
 }
 

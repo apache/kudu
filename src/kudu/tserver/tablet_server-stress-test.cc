@@ -11,6 +11,7 @@ DEFINE_int32(num_inserts_per_thread, 0, "Number of inserts from each thread");
 DECLARE_bool(enable_maintenance_manager);
 
 METRIC_DEFINE_histogram(insert_latency,
+                        "Insert Latency",
                         kudu::MetricUnit::kMicroseconds,
                         "TabletServer single threaded insert latency.",
                         10000000,

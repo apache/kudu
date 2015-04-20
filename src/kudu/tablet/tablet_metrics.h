@@ -32,18 +32,18 @@ struct TabletMetrics {
   scoped_refptr<Counter> scans_started;
 
   // Probe stats
-  scoped_refptr<Counter> blooms_consulted;
-  scoped_refptr<Counter> keys_consulted;
-  scoped_refptr<Counter> deltas_consulted;
-  scoped_refptr<Counter> mrs_consulted;
+  scoped_refptr<Counter> bloom_lookups;
+  scoped_refptr<Counter> key_file_lookups;
+  scoped_refptr<Counter> delta_file_lookups;
+  scoped_refptr<Counter> mrs_lookups;
   scoped_refptr<Counter> bytes_flushed;
 
-  scoped_refptr<Histogram> blooms_consulted_per_op;
-  scoped_refptr<Histogram> keys_consulted_per_op;
-  scoped_refptr<Histogram> deltas_consulted_per_op;
+  scoped_refptr<Histogram> bloom_lookups_per_op;
+  scoped_refptr<Histogram> key_file_lookups_per_op;
+  scoped_refptr<Histogram> delta_file_lookups_per_op;
 
   scoped_refptr<Histogram> commit_wait_duration;
-  scoped_refptr<Histogram> snapshot_scan_inflight_wait_duration;
+  scoped_refptr<Histogram> snapshot_read_inflight_wait_duration;
   scoped_refptr<Histogram> write_op_duration_no_consistency;
   scoped_refptr<Histogram> write_op_duration_client_propagated_consistency;
   scoped_refptr<Histogram> write_op_duration_commit_wait_consistency;
