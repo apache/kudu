@@ -152,19 +152,14 @@ void LogCommandLineFlags();
 // versions and should not obtain a lock (if one is required to obtain the prefix).
 // There must be a LogPrefixUnlocked()/LogPrefixLocked() method available in the current
 // scope in order to use these macros.
-#define LOG_WITH_PREFIX(severity) LOG(severity) << LogPrefixUnlocked()
-#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+#define LOG_WITH_PREFIX_UNLOCKED(severity) LOG(severity) << LogPrefixUnlocked()
+#define VLOG_WITH_PREFIX_UNLOCKED(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
   << LogPrefixUnlocked()
 
 // Same as the above, but obtain the lock.
-#define LOG_WITH_PREFIX_LK(severity) LOG(severity) << LogPrefix()
-#define VLOG_WITH_PREFIX_LK(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
+#define LOG_WITH_PREFIX(severity) LOG(severity) << LogPrefix()
+#define VLOG_WITH_PREFIX(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
   << LogPrefix()
-
-// Same as above, but thread-safe.
-#define LOG_WITH_PREFIX_SAFE(severity) LOG(severity) << LogPrefixThreadSafe()
-#define VLOG_WITH_PREFIX_SAFE(verboselevel) LOG_IF(INFO, VLOG_IS_ON(verboselevel)) \
-  << LogPrefixThreadSafe()
 
 } // namespace kudu
 

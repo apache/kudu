@@ -363,12 +363,13 @@ Status ReplicaState::CancelPendingTransactions() {
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
-    LOG_WITH_PREFIX(INFO) << "Trying to abort " << pending_txns_.size() << " pending transactions.";
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Trying to abort " << pending_txns_.size()
+                                   << " pending transactions.";
     for (IndexToRoundMap::iterator iter = pending_txns_.begin();
          iter != pending_txns_.end(); iter++) {
       ConsensusRound* round = (*iter).second;
       // We cancel only transactions whose applies have not yet been triggered.
-      LOG_WITH_PREFIX(INFO) << "Aborting transaction as it isn't in flight: "
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting transaction as it isn't in flight: "
                             << (*iter).second->replicate_msg()->ShortDebugString();
       round->NotifyReplicationFinished(Status::Aborted("Transaction aborted"));
     }
@@ -387,7 +388,7 @@ Status ReplicaState::GetUncommittedPendingOperationsUnlocked(vector<ConsensusRou
 
 Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
   DCHECK(update_lock_.is_locked());
-  LOG_WITH_PREFIX(INFO) << "Aborting all transactions after (but not including): "
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting all transactions after (but not including): "
       << new_preceding_idx << ". Current State: " << ToStringUnlocked();
 
   DCHECK_GE(new_preceding_idx, 0);
@@ -412,7 +413,7 @@ Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
 
   for (; iter != pending_txns_.end();) {
     ConsensusRound* round = (*iter).second;
-    LOG_WITH_PREFIX(INFO) << "Aborting uncommitted operation due to leader change: "
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Aborting uncommitted operation due to leader change: "
         << round->replicate_msg()->id();
     round->NotifyReplicationFinished(Status::Aborted("Transaction aborted by new leader"));
     // erase the entry from pendings
@@ -468,14 +469,14 @@ Status ReplicaState::UpdateMajorityReplicatedUnlocked(const OpId& majority_repli
     OpId previous = last_committed_index_;
     RETURN_NOT_OK(AdvanceCommittedIndexUnlocked(majority_replicated));
     committed_index->CopyFrom(last_committed_index_);
-    LOG_WITH_PREFIX(INFO) << "Advanced the committed_index across terms."
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Advanced the committed_index across terms."
         << " Last committed operation was: " << previous.ShortDebugString()
         << " New committed index is: " << last_committed_index_.ShortDebugString();
     return Status::OK();
   }
 
   committed_index->CopyFrom(last_committed_index_);
-  LOG_WITH_PREFIX(WARNING) << "Can't advance the committed index across term boundaries"
+  LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Can't advance the committed index across term boundaries"
           << " until operations from the current term are replicated."
           << " Last committed operation was: " << last_committed_index_.ShortDebugString() << ","
           << " New majority replicated is: " << majority_replicated.ShortDebugString() << ","
@@ -490,7 +491,7 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
   // up in the RPC queue at the same time, and then might get interleaved out
   // of order.
   if (last_committed_index_.index() >= committed_index.index()) {
-    VLOG_WITH_PREFIX(1)
+    VLOG_WITH_PREFIX_UNLOCKED(1)
       << "Already marked ops through " << last_committed_index_ << " as committed. "
       << "Now trying to mark " << committed_index << " which would be a no-op.";
     return Status::OK();
@@ -498,7 +499,7 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
 
   if (pending_txns_.empty()) {
     last_committed_index_.CopyFrom(committed_index);
-    VLOG_WITH_PREFIX(1) << "No transactions to mark as committed up to: "
+    VLOG_WITH_PREFIX_UNLOCKED(1) << "No transactions to mark as committed up to: "
         << committed_index.ShortDebugString();
     return Status::OK();
   }
@@ -509,7 +510,7 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
   IndexToRoundMap::iterator end_iter = pending_txns_.upper_bound(committed_index.index());
   CHECK(iter != pending_txns_.end());
 
-  VLOG_WITH_PREFIX(1) << "Last triggered apply was: "
+  VLOG_WITH_PREFIX_UNLOCKED(1) << "Last triggered apply was: "
       <<  last_committed_index_.ShortDebugString()
       << " Starting to apply from log index: " << (*iter).first;
 

@@ -130,7 +130,7 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   if (!tracker_->TryConsume(mem_required)) {
     int spare = tracker_->SpareCapacity();
     int need_to_free = mem_required - spare;
-    VLOG_WITH_PREFIX(1) << "Memory limit would be exceeded trying to append "
+    VLOG_WITH_PREFIX_UNLOCKED(1) << "Memory limit would be exceeded trying to append "
                         << HumanReadableNumBytes::ToString(mem_required)
                         << " to log cache (available="
                         << HumanReadableNumBytes::ToString(spare)
@@ -166,7 +166,7 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
                callback));
   l.lock();
   if (!log_status.ok()) {
-    LOG_WITH_PREFIX(WARNING) << "Couldn't append to log: " << log_status.ToString();
+    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Couldn't append to log: " << log_status.ToString();
     tracker_->Release(mem_required);
     return log_status;
   }
@@ -186,7 +186,7 @@ void LogCache::LogCallback(int64_t last_idx_in_batch,
   if (log_status.ok()) {
     lock_guard<simple_spinlock> l(&lock_);
     if (min_pinned_op_index_ <= last_idx_in_batch) {
-      VLOG_WITH_PREFIX(1) << "Updating pinned index to " << (last_idx_in_batch + 1);
+      VLOG_WITH_PREFIX_UNLOCKED(1) << "Updating pinned index to " << (last_idx_in_batch + 1);
       min_pinned_op_index_ = last_idx_in_batch + 1;
     }
 
@@ -269,7 +269,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
           next_index, up_to, remaining_space, &raw_replicate_ptrs),
         Substitute("Failed to read ops $0..$1", next_index, up_to));
       l.lock();
-      LOG_WITH_PREFIX(INFO) << "Successfully read " << raw_replicate_ptrs.size() << " ops "
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Successfully read " << raw_replicate_ptrs.size() << " ops "
                             << "from disk.";
 
       BOOST_FOREACH(ReplicateMsg* msg, raw_replicate_ptrs) {
@@ -315,7 +315,7 @@ void LogCache::EvictThroughOp(int64_t index) {
 
 void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evict) {
   DCHECK(lock_.is_locked());
-  VLOG_WITH_PREFIX(2) << "Evicting log cache index <= "
+  VLOG_WITH_PREFIX_UNLOCKED(2) << "Evicting log cache index <= "
                       << stop_after_index
                       << " or " << HumanReadableNumBytes::ToString(bytes_to_evict)
                       << ": before state: " << ToStringUnlocked();
@@ -324,7 +324,7 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
   for (MessageCache::iterator iter = cache_.begin();
        iter != cache_.end();) {
     const ReplicateRefPtr& msg = (*iter).second;
-    VLOG_WITH_PREFIX(1) << "considering for eviction: " << msg->get()->id();
+    VLOG_WITH_PREFIX_UNLOCKED(1) << "considering for eviction: " << msg->get()->id();
     int64_t msg_index = msg->get()->id().index();
     if (msg_index == 0) {
       // Always keep our special '0' op.
@@ -337,13 +337,13 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
     }
 
     if (!msg->HasOneRef()) {
-      VLOG_WITH_PREFIX(2) << "Evicting cache: cannot remove " << msg->get()->id()
+      VLOG_WITH_PREFIX_UNLOCKED(2) << "Evicting cache: cannot remove " << msg->get()->id()
                           << " because it is in-use by a peer.";
       ++iter;
       continue;
     }
 
-    VLOG_WITH_PREFIX(1) << "Evicting cache. Removing: " << msg->get()->id();
+    VLOG_WITH_PREFIX_UNLOCKED(1) << "Evicting cache. Removing: " << msg->get()->id();
     AccountForMessageRemovalUnlocked(msg);
     bytes_evicted += msg->get()->SpaceUsed();
     cache_.erase(iter++);
@@ -352,7 +352,7 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
       break;
     }
   }
-  VLOG_WITH_PREFIX(1) << "Evicting log cache: after state: " << ToStringUnlocked();
+  VLOG_WITH_PREFIX_UNLOCKED(1) << "Evicting log cache: after state: " << ToStringUnlocked();
 }
 
 void LogCache::AccountForMessageRemovalUnlocked(const ReplicateRefPtr& msg) {
@@ -397,7 +397,7 @@ void LogCache::DumpToLog() const {
   vector<string> strings;
   DumpToStrings(&strings);
   BOOST_FOREACH(const string& s, strings) {
-    LOG_WITH_PREFIX(INFO) << s;
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << s;
   }
 }
 

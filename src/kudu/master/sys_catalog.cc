@@ -198,10 +198,10 @@ Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options,
 
 void SysCatalogTable::SysCatalogStateChanged(TabletPeer* tablet_peer) {
   QuorumPB quorum = tablet_peer->consensus()->Quorum();
-  LOG_WITH_PREFIX_LK(INFO) << " SysCatalogTable state changed. New quorum config:"
+  LOG_WITH_PREFIX(INFO) << " SysCatalogTable state changed. New quorum config:"
                            << quorum.ShortDebugString();
   QuorumPeerPB::Role new_role = tablet_peer->consensus()->role();
-  LOG_WITH_PREFIX_LK(INFO) << " This master's current role is: "
+  LOG_WITH_PREFIX(INFO) << " This master's current role is: "
                            << QuorumPeerPB::Role_Name(new_role)
                            << ", previous role was: " << QuorumPeerPB::Role_Name(old_role_);
   if (new_role == QuorumPeerPB::LEADER) {
@@ -265,11 +265,11 @@ Status SysCatalogTable::WaitUntilRunning() {
     Status status = tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(1));
     seconds_waited++;
     if (status.ok()) {
-      LOG_WITH_PREFIX_LK(INFO) << "configured and running, proceeding with master startup.";
+      LOG_WITH_PREFIX(INFO) << "configured and running, proceeding with master startup.";
       break;
     }
     if (status.IsTimedOut()) {
-      LOG_WITH_PREFIX_LK(INFO) <<  "not online yet (have been trying for "
+      LOG_WITH_PREFIX(INFO) <<  "not online yet (have been trying for "
                                << seconds_waited << " seconds)";
       continue;
     }

@@ -187,7 +187,7 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
 
   // Returns a string to be prefixed to all log entries.
   // This method accesses const members and is thread safe.
-  std::string LogPrefixThreadSafe() const;
+  std::string LogPrefix() const;
 
   // Helper to reference the term we are running the election for.
   ConsensusTerm election_term() const { return request_.candidate_term(); }

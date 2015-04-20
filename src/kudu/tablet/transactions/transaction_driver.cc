@@ -111,7 +111,7 @@ string TransactionDriver::ToStringUnlocked() const {
 
 
 Status TransactionDriver::ExecuteAsync() {
-  VLOG_WITH_PREFIX_LK(4) << "ExecuteAsync()";
+  VLOG_WITH_PREFIX(4) << "ExecuteAsync()";
   TRACE_EVENT_FLOW_BEGIN0("txn", "ExecuteAsync", this);
   ADOPT_TRACE(trace());
 
@@ -145,7 +145,7 @@ void TransactionDriver::PrepareAndStartTask() {
 
 Status TransactionDriver::PrepareAndStart() {
   TRACE_EVENT1("txn", "PrepareAndStart", "txn", this);
-  VLOG_WITH_PREFIX_LK(4) << "PrepareAndStart()";
+  VLOG_WITH_PREFIX(4) << "PrepareAndStart()";
   // Actually prepare and start the transaction.
   prepare_physical_timestamp_ = GetMonoTimeMicros();
   RETURN_NOT_OK(transaction_->Prepare());
@@ -173,7 +173,7 @@ Status TransactionDriver::PrepareAndStart() {
       transaction_->state()->consensus_round()->replicate_msg()->set_timestamp(
           transaction_->state()->timestamp().ToUint64());
 
-      VLOG_WITH_PREFIX_LK(4) << "Triggering consensus repl";
+      VLOG_WITH_PREFIX(4) << "Triggering consensus repl";
       // Trigger the consensus replication.
 
       {
@@ -212,7 +212,7 @@ Status TransactionDriver::PrepareAndStart() {
 }
 
 void TransactionDriver::HandleFailure(const Status& s) {
-  VLOG_WITH_PREFIX_LK(2) << "Failed transaction: " << s.ToString();
+  VLOG_WITH_PREFIX(2) << "Failed transaction: " << s.ToString();
   CHECK(!s.ok());
   TRACE("HandleFailure($0)", s.ToString());
 
@@ -229,7 +229,7 @@ void TransactionDriver::HandleFailure(const Status& s) {
     case NOT_REPLICATING:
     case REPLICATION_FAILED:
     {
-      VLOG_WITH_PREFIX_LK(1) << "Transaction " << ToString() << " failed prior to "
+      VLOG_WITH_PREFIX(1) << "Transaction " << ToString() << " failed prior to "
           "replication success: " << s.ToString();
       transaction_->Finish(Transaction::ABORTED);
       mutable_state()->completion_callback()->set_error(transaction_status_);
@@ -241,7 +241,7 @@ void TransactionDriver::HandleFailure(const Status& s) {
     case REPLICATING:
     case REPLICATED:
     {
-      LOG_WITH_PREFIX_LK(FATAL) << "Cannot cancel transactions that have already replicated"
+      LOG_WITH_PREFIX(FATAL) << "Cannot cancel transactions that have already replicated"
           << ": " << transaction_status_.ToString()
           << " transaction:" << ToString();
     }

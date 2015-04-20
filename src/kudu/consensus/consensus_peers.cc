@@ -124,7 +124,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   Status s = queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_,
                                     &replicate_msg_refs_);
   if (PREDICT_FALSE(!s.ok())) {
-    LOG_WITH_PREFIX(INFO) << "Could not obtain request from queue for peer: "
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Could not obtain request from queue for peer: "
         << peer_pb_.permanent_uuid() << ". Status: " << s.ToString();
     sem_.Release();
     return;
@@ -148,7 +148,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 
   state_ = kPeerWaitingForResponse;
 
-  VLOG_WITH_PREFIX(2) << "Sending to peer " << peer_pb().permanent_uuid() << ": "
+  VLOG_WITH_PREFIX_UNLOCKED(2) << "Sending to peer " << peer_pb().permanent_uuid() << ": "
       << request_.ShortDebugString();
   controller_.Reset();
 
@@ -175,7 +175,7 @@ void Peer::ProcessResponse() {
   failed_attempts_ = 0;
 
   DCHECK(response_.status().IsInitialized()) << "Error: " << response_.InitializationErrorString();
-  VLOG_WITH_PREFIX(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
+  VLOG_WITH_PREFIX_UNLOCKED(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
       << response_.ShortDebugString();
 
   const OpId* last_sent = request_.ops_size() > 0 ? &request_.ops(request_.ops_size() - 1).id() :
@@ -195,7 +195,7 @@ void Peer::ProcessResponse() {
 
 void Peer::ProcessResponseError(const Status& status) {
   failed_attempts_++;
-  LOG_WITH_PREFIX(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
+  LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Couldn't send request to peer " << peer_pb_.permanent_uuid()
       << " for tablet " << tablet_id_
       << " Status: " << status.ToString() << ". Retrying in the next heartbeat period."
       << " Already tried " << failed_attempts_ << " times.";
@@ -217,7 +217,7 @@ void Peer::Close() {
   DCHECK(state_ == kPeerIdle || state_ == kPeerStarted) << "Unexpected state: " << state_;
   state_ = kPeerClosed;
 
-  LOG_WITH_PREFIX(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();
   queue_->UntrackPeer(peer_pb_.permanent_uuid());
   // We don't own the ops (the queue does).
   request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);

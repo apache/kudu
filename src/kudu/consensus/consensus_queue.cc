@@ -113,7 +113,7 @@ void PeerMessageQueue::SetLeaderMode(const OpId& committed_index,
   queue_state_.majority_size_ = majority_size;
   queue_state_.mode = LEADER;
 
-  LOG_WITH_PREFIX(INFO) << " queue going to LEADER mode. State: "
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << " queue going to LEADER mode. State: "
       << queue_state_.ToString();
 }
 
@@ -121,7 +121,7 @@ void PeerMessageQueue::SetNonLeaderMode() {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   queue_state_.mode = NON_LEADER;
   queue_state_.majority_size_ = 1;
-  LOG_WITH_PREFIX(INFO) << " queue going to NON_LEADER mode. State: "
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << " queue going to NON_LEADER mode. State: "
       << queue_state_.ToString();
 }
 
@@ -228,11 +228,11 @@ Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
   // we couldn't get the index we wanter at all, try the fallback index.
   if ((s.ok() && op.term() != new_preceding.term()) || s.IsNotFound()) {
     if (s.ok()) {
-      LOG_WITH_PREFIX(INFO) << "Tried to read ops starting at " << op << " from cache, "
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Tried to read ops starting at " << op << " from cache, "
                             << "but found op " << new_preceding << " (term mismatch). "
                             << "Falling back to index " << fallback_index;
     } else {
-      LOG_WITH_PREFIX(INFO) << "Tried to read ops starting at " << op << " from cache, "
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Tried to read ops starting at " << op << " from cache, "
                             << "but could not find that index in the log. "
                             << "Falling back to index " << fallback_index;
     }
@@ -243,7 +243,7 @@ Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
                            messages,
                            &new_preceding);
     if (s.ok()) {
-      LOG_WITH_PREFIX(INFO) << "Successfully fell back and found op " << new_preceding;
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Successfully fell back and found op " << new_preceding;
     }
   }
 
@@ -302,7 +302,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
 
     if (PREDICT_FALSE(!s.ok())) {
       CHECK(messages.empty());
-      LOG_WITH_PREFIX(DFATAL) << "Error while reading the log: " << s.ToString();
+      LOG_WITH_PREFIX_UNLOCKED(DFATAL) << "Error while reading the log: " << s.ToString();
     }
 
     // We use AddAllocated rather than copy, because we pin the log cache at the
@@ -321,12 +321,12 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
 
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     if (request->ops_size() > 0) {
-      VLOG_WITH_PREFIX(2) << "Sending request with operations to Peer: " << uuid
+      VLOG_WITH_PREFIX_UNLOCKED(2) << "Sending request with operations to Peer: " << uuid
           << ". Size: " << request->ops_size()
           << ". From: " << request->ops(0).id().ShortDebugString() << ". To: "
           << request->ops(request->ops_size() - 1).id().ShortDebugString();
     } else {
-      VLOG_WITH_PREFIX(2) << "Sending status only request to Peer: " << uuid
+      VLOG_WITH_PREFIX_UNLOCKED(2) << "Sending status only request to Peer: " << uuid
           << ": " << request->DebugString();
     }
   }
@@ -341,7 +341,7 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              int num_peers_required) {
 
   if (VLOG_IS_ON(2)) {
-    VLOG_WITH_PREFIX(2) << "Updating " << type << " watermark: " << " peer changed from "
+    VLOG_WITH_PREFIX_UNLOCKED(2) << "Updating " << type << " watermark: " << " peer changed from "
         << replicated_before << " to " << replicated_after << ". Current value: "
         << watermark->ShortDebugString();
   }
@@ -371,16 +371,16 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   OpId old_watermark = *watermark;
   watermark->CopyFrom(new_watermark);
 
-  VLOG_WITH_PREFIX(1) << "Updated " << type << " watermark "
+  VLOG_WITH_PREFIX_UNLOCKED(1) << "Updated " << type << " watermark "
       << "from " << old_watermark << " to " << new_watermark;
   if (VLOG_IS_ON(3)) {
-    VLOG_WITH_PREFIX(3) << "Peers: ";
+    VLOG_WITH_PREFIX_UNLOCKED(3) << "Peers: ";
     BOOST_FOREACH(const PeersMap::value_type& peer, peers_map_) {
-      VLOG_WITH_PREFIX(3) << "Peer: " << peer.second->ToString();
+      VLOG_WITH_PREFIX_UNLOCKED(3) << "Peer: " << peer.second->ToString();
     }
-    VLOG_WITH_PREFIX(3) << "Sorted watermarks:";
+    VLOG_WITH_PREFIX_UNLOCKED(3) << "Sorted watermarks:";
     BOOST_FOREACH(const OpId* watermark, watermarks) {
-      VLOG_WITH_PREFIX(3) << "Watermark: " << watermark->ShortDebugString();
+      VLOG_WITH_PREFIX_UNLOCKED(3) << "Watermark: " << watermark->ShortDebugString();
     }
   }
 }
@@ -400,8 +400,8 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
 
     TrackedPeer* peer = FindPtrOrNull(peers_map_, response.responder_uuid());
     if (PREDICT_FALSE(peer == NULL)) {
-      LOG_WITH_PREFIX(WARNING) << "Queue is closed or peer was untracked, disregarding peer "
-          "response. Response: " << response.ShortDebugString();
+      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Queue is closed or peer was untracked, disregarding "
+          "peer response. Response: " << response.ShortDebugString();
       *more_pending = false;
       return;
     }
@@ -434,16 +434,17 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
           DCHECK(status.has_last_received());
           if (previous.is_new) {
             // That's currently how we can detect that we able to connect to a peer.
-            LOG_WITH_PREFIX(INFO) << "Connected to new peer: " << peer->ToString();
+            LOG_WITH_PREFIX_UNLOCKED(INFO) << "Connected to new peer: " << peer->ToString();
           } else {
-            LOG_WITH_PREFIX(INFO) << "Got LMP mismatch error from peer: " << peer->ToString();
+            LOG_WITH_PREFIX_UNLOCKED(INFO) << "Got LMP mismatch error from peer: "
+                                           << peer->ToString();
           }
           *more_pending = true;
           return;
         }
         case ConsensusErrorPB::INVALID_TERM: {
           CHECK(response.has_responder_term());
-          LOG_WITH_PREFIX(INFO) << "Peer responded invalid term: " << peer->ToString();
+          LOG_WITH_PREFIX_UNLOCKED(INFO) << "Peer responded invalid term: " << peer->ToString();
           NotifyObserversOfTermChange(response.responder_term());
           *peer = previous;
 
@@ -451,7 +452,7 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
           return;
         }
         default: {
-          LOG_WITH_PREFIX(FATAL) << "Unexpected consensus error. Response: "
+          LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Unexpected consensus error. Response: "
               << response.ShortDebugString();
         }
       }
@@ -472,7 +473,7 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
     }
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG_WITH_PREFIX(2) << "Received Response from Peer: " << peer->ToString()
+      VLOG_WITH_PREFIX_UNLOCKED(2) << "Received Response from Peer: " << peer->ToString()
           << ". Response: " << response.ShortDebugString();
     }
 
