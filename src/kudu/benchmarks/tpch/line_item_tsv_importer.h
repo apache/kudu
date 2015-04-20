@@ -49,7 +49,7 @@ class LineItemTsvImporter {
     // because callers expect to retrieve lines repeatedly before flushing
     // the accumulated rows in a batch.
     int i = 0;
-    int order_number = ConvertToIntAndPopulate(columns_[i++], row, tpch::kOrderKeyColIdx);
+    int order_number = ConvertToInt64AndPopulate(columns_[i++], row, tpch::kOrderKeyColIdx);
     ConvertToIntAndPopulate(columns_[i++], row, tpch::kPartKeyColIdx);
     ConvertToIntAndPopulate(columns_[i++], row, tpch::kSuppKeyColIdx);
     ConvertToIntAndPopulate(columns_[i++], row, tpch::kLineNumberColIdx);
@@ -71,6 +71,20 @@ class LineItemTsvImporter {
     return order_number;
   }
 
+ private:
+  int ConvertToInt64AndPopulate(const StringPiece &chars, KuduPartialRow* row,
+                                int col_idx) {
+    // TODO: extra copy here, since we don't have a way to parse StringPiece
+    // into ints.
+    chars.CopyToString(&tmp_);
+    int64_t number;
+    bool ok_parse = safe_strto64(tmp_.c_str(), &number);
+    CHECK(ok_parse) << "Bad integer in column " << col_idx
+                    << ": '" << tmp_ << "'";
+    CHECK_OK(row->SetInt64(col_idx, number));
+    return number;
+  }
+
   int ConvertToIntAndPopulate(const StringPiece &chars, KuduPartialRow* row,
                               int col_idx) {
     // TODO: extra copy here, since we don't have a way to parse StringPiece
@@ -78,7 +92,8 @@ class LineItemTsvImporter {
     chars.CopyToString(&tmp_);
     int number;
     bool ok_parse = SimpleAtoi(tmp_.c_str(), &number);
-    CHECK(ok_parse);
+    CHECK(ok_parse) << "Bad integer in column " << col_idx
+                    << ": '" << tmp_ << "'";
     CHECK_OK(row->SetUInt32(col_idx, number));
     return number;
   }
@@ -93,12 +108,11 @@ class LineItemTsvImporter {
     const char *cstr = tmp_.c_str();
     double number = strtod(cstr, &error);
     CHECK(errno == 0 &&  // overflow/underflow happened
-        error != cstr);
+          error != cstr) << "Bad double in column " << col_idx
+                         << ": '" << tmp_ << "': errno=" << errno;
     int new_num = number * 100;
     CHECK_OK(row->SetUInt32(col_idx, new_num));
   }
-
- private:
   std::ifstream in_;
   vector<StringPiece> columns_;
   string line_, tmp_;

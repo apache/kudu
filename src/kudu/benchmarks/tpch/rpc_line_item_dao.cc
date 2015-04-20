@@ -133,11 +133,11 @@ void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
 }
 
 bool RpcLineItemDAO::ShouldAddKey(const KuduPartialRow &row) {
-  uint32_t l_ordernumber;
-  CHECK_OK(row.GetUInt32(tpch::kOrderKeyColIdx, &l_ordernumber));
+  int64_t l_orderkey;
+  CHECK_OK(row.GetInt64(tpch::kOrderKeyColIdx, &l_orderkey));
   uint32_t l_linenumber;
   CHECK_OK(row.GetUInt32(tpch::kLineNumberColIdx, &l_linenumber));
-  std::pair<uint32_t, uint32_t> composite_k(l_ordernumber, l_linenumber);
+  std::pair<int64_t, uint32_t> composite_k(l_orderkey, l_linenumber);
   return InsertIfNotPresent(&orders_in_request_, composite_k);
 }
 void RpcLineItemDAO::FinishWriting() {

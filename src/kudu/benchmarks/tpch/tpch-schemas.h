@@ -31,6 +31,8 @@ static const char* const kCommentColName = "l_comment";
 static const client::KuduColumnStorageAttributes kPlainEncoding =
     client::KuduColumnStorageAttributes(client::KuduColumnStorageAttributes::PLAIN_ENCODING);
 
+static const client::KuduColumnSchema::DataType kInt64 =
+    client::KuduColumnSchema::INT64;
 static const client::KuduColumnSchema::DataType kUint32 =
     client::KuduColumnSchema::UINT32;
 static const client::KuduColumnSchema::DataType kString =
@@ -57,7 +59,7 @@ enum {
 
 inline client::KuduSchema CreateLineItemSchema() {
   return client::KuduSchema(boost::assign::list_of
-                (client::KuduColumnSchema(kOrderKeyColName, kUint32))
+                (client::KuduColumnSchema(kOrderKeyColName, kInt64))
                 (client::KuduColumnSchema(kLineNumberColName, kUint32))
                 (client::KuduColumnSchema(kPartKeyColName, kUint32))
                 (client::KuduColumnSchema(kSuppKeyColName, kUint32))
@@ -101,7 +103,7 @@ inline client::KuduSchema CreateTpch1QuerySchema() {
 
 inline client::KuduSchema CreateMS3DemoQuerySchema() {
   return client::KuduSchema(boost::assign::list_of
-                (client::KuduColumnSchema(kOrderKeyColName, kUint32))
+                (client::KuduColumnSchema(kOrderKeyColName, kInt64))
                 (client::KuduColumnSchema(kLineNumberColName, kUint32))
                 (client::KuduColumnSchema(kQuantityColName, kUint32))
                 , 0);

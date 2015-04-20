@@ -56,7 +56,7 @@ class RpcLineItemDAOTest : public KuduTest {
   KuduSchema schema_;
 
   static void BuildTestRow(int order, int line, KuduPartialRow* row) {
-    CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
+    CHECK_OK(row->SetInt64(tpch::kOrderKeyColIdx, order));
     CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
     CHECK_OK(row->SetUInt32(tpch::kPartKeyColIdx, 12345));
     CHECK_OK(row->SetUInt32(tpch::kSuppKeyColIdx, 12345));
@@ -75,7 +75,7 @@ class RpcLineItemDAOTest : public KuduTest {
   }
 
   static void UpdateTestRow(int key, int line_number, int quantity, KuduPartialRow* row) {
-    CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, key));
+    CHECK_OK(row->SetInt64(tpch::kOrderKeyColIdx, key));
     CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line_number));
     CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, quantity));
   }

@@ -60,8 +60,8 @@ class Demo {
 };
 
 
-static void UpdateRow(int order, int line, int quantity, KuduPartialRow* row) {
-  CHECK_OK(row->SetUInt32(tpch::kOrderKeyColIdx, order));
+static void UpdateRow(int64_t order, int line, int quantity, KuduPartialRow* row) {
+  CHECK_OK(row->SetInt64(tpch::kOrderKeyColIdx, order));
   CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
   CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, quantity));
 }
@@ -96,18 +96,18 @@ static void UpdateThread(Demo *demo) {
     client::KuduRowResult& last_row(rows.back());
 
     // 3. The last row has the highest line, we update it
-    uint32_t l_ordernumber;
+    int64_t l_orderkey;
     uint32_t l_linenumber;
     uint32_t l_quantity;
-    CHECK_OK(last_row.GetUInt32(0, &l_ordernumber));
+    CHECK_OK(last_row.GetInt64(0, &l_orderkey));
     CHECK_OK(last_row.GetUInt32(1, &l_linenumber));
     CHECK_OK(last_row.GetUInt32(2, &l_quantity));
     uint32_t new_l_quantity = l_quantity + 1;
 
     // 4. Do the update
-    VLOG(1) << "updating " << l_ordernumber << " " << l_linenumber << " "
+    VLOG(1) << "updating " << l_orderkey << " " << l_linenumber << " "
             << l_quantity << " " << new_l_quantity;
-    dao->MutateLine(boost::bind(UpdateRow, l_ordernumber,
+    dao->MutateLine(boost::bind(UpdateRow, l_orderkey,
                                 l_linenumber, new_l_quantity, _1));
   }
 }
