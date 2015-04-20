@@ -38,45 +38,45 @@ using std::vector;
 
 namespace {
 
-class CountingCallback : public RefCountedThreadSafe<CountingCallback> {
-  public:
-    CountingCallback(shared_ptr<KuduSession> session, Atomic32 *ctr)
-      : session_(session),
-        ctr_(ctr) {
-      base::subtle::NoBarrier_AtomicIncrement(ctr_, 1);
-    }
+class FlushCallback : public RefCountedThreadSafe<FlushCallback> {
+ public:
+  FlushCallback(shared_ptr<KuduSession> session, Semaphore *sem)
+    : session_(session),
+      sem_(sem) {
+    sem_->Acquire();
+  }
 
-    void StatusCB(const Status& s) {
-      BatchFinished();
-      CHECK_OK(s);
-      base::subtle::NoBarrier_AtomicIncrement(ctr_, -1);
-    }
+  void StatusCB(const Status& s) {
+    BatchFinished();
+    CHECK_OK(s);
+    sem_->Release();
+  }
 
-    StatusCallback AsStatusCallback() {
-      return Bind(&CountingCallback::StatusCB, this);
-    }
+  StatusCallback AsStatusCallback() {
+    return Bind(&FlushCallback::StatusCB, this);
+  }
 
-  private:
-    void BatchFinished() {
-      int nerrs = session_->CountPendingErrors();
-      if (nerrs) {
-        LOG(WARNING) << nerrs << " errors occured during last batch.";
-        vector<KuduError*> errors;
-        ElementDeleter d(&errors);
-        bool overflow;
-        session_->GetPendingErrors(&errors, &overflow);
-        if (overflow) {
-          LOG(WARNING) << "Error overflow occured";
-        }
-        BOOST_FOREACH(KuduError* error, errors) {
-          LOG(WARNING) << "FAILED: " << error->failed_op().ToString();
-        }
+ private:
+  void BatchFinished() {
+    int nerrs = session_->CountPendingErrors();
+    if (nerrs) {
+      LOG(WARNING) << nerrs << " errors occured during last batch.";
+      vector<KuduError*> errors;
+      ElementDeleter d(&errors);
+      bool overflow;
+      session_->GetPendingErrors(&errors, &overflow);
+      if (overflow) {
+        LOG(WARNING) << "Error overflow occured";
+      }
+      BOOST_FOREACH(KuduError* error, errors) {
+        LOG(WARNING) << "FAILED: " << error->failed_op().ToString();
       }
     }
+  }
 
-    shared_ptr<KuduSession> session_;
-    Atomic32 *ctr_;
-  };
+  shared_ptr<KuduSession> session_;
+  Semaphore *sem_;
+};
 
 } // anonymous namespace
 
@@ -118,11 +118,7 @@ void RpcLineItemDAO::FlushIfBufferFull() {
   batch_size_ = 0;
   orders_in_request_.clear();
 
-  // Don't allow more than one batch outstanding at a time.
-  // The client supports it just fine, but we risk overloading the server.
-  WaitForOutstandingBatches();
-
-  CountingCallback* cb = new CountingCallback(session_, &semaphore_);
+  FlushCallback* cb = new FlushCallback(session_, &semaphore_);
   // The callback object will free 'cb' after it is invoked.
   session_->FlushAsync(cb->AsStatusCallback());
 }
@@ -144,17 +140,10 @@ bool RpcLineItemDAO::ShouldAddKey(const KuduPartialRow &row) {
   std::pair<uint32_t, uint32_t> composite_k(l_ordernumber, l_linenumber);
   return InsertIfNotPresent(&orders_in_request_, composite_k);
 }
-
-void RpcLineItemDAO::WaitForOutstandingBatches() {
-  while (base::subtle::NoBarrier_Load(&semaphore_)) {
-    // 1/100th of timeout
-    SleepFor(MonoDelta::FromNanoseconds(timeout_.ToNanoseconds() / 100));
-  }
-}
-
 void RpcLineItemDAO::FinishWriting() {
+  semaphore_.Acquire();
   CHECK_OK(session_->Flush());
-  WaitForOutstandingBatches();
+  semaphore_.Release();
 }
 
 void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
@@ -208,8 +197,10 @@ RpcLineItemDAO::RpcLineItemDAO(const string& master_address,
                                const int batch_size,
                                const int mstimeout)
   : master_address_(master_address), table_name_(table_name),
-    timeout_(MonoDelta::FromMilliseconds(mstimeout)), batch_max_(batch_size), batch_size_(0) {
-  base::subtle::NoBarrier_Store(&semaphore_, 0);
+    timeout_(MonoDelta::FromMilliseconds(mstimeout)),
+    batch_max_(batch_size),
+    batch_size_(0),
+    semaphore_(1) {
 }
 
 } // namespace kudu

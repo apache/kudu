@@ -13,10 +13,10 @@
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/semaphore.h"
 
 namespace kudu {
 
@@ -47,7 +47,6 @@ class RpcLineItemDAO {
   bool ShouldAddKey(const KuduPartialRow& row);
 
   void FlushIfBufferFull();
-  void WaitForOutstandingBatches();
 
   simple_spinlock lock_;
   std::tr1::shared_ptr<client::KuduClient> client_;
@@ -64,7 +63,9 @@ class RpcLineItemDAO {
   const MonoDelta timeout_;
   const int batch_max_;
   int batch_size_;
-  Atomic32 semaphore_;
+
+  // Semaphore which restricts us to one batch at a time.
+  Semaphore semaphore_;
 };
 
 } //namespace kudu
