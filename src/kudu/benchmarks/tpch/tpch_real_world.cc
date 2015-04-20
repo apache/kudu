@@ -53,6 +53,8 @@
 
 DEFINE_bool(tpch_use_mini_cluster, true,
             "Create a mini cluster for the work to be performed against");
+DEFINE_bool(tpch_run_queries, true,
+            "Query dbgen data as it is inserted");
 DEFINE_int32(tpch_max_batch_size, 1000,
              "Maximum number of inserts to batch at once");
 DEFINE_int32(tpch_test_client_timeout_msec, 10000,
@@ -263,11 +265,13 @@ Status TpchRealWorld::Run() {
   LOG(INFO) << "Waiting for dbgen to start...";
   RETURN_NOT_OK(WaitForRowCount(10000));
 
-  scoped_refptr<kudu::Thread> tpch1_thread;
-  RETURN_NOT_OK(kudu::Thread::Create("test", "tpch1-runner",
-                                     &TpchRealWorld::RunQueriesThread, this,
-                                     &tpch1_thread));
-  threads.push_back(tpch1_thread);
+  if (FLAGS_tpch_run_queries) {
+    scoped_refptr<kudu::Thread> tpch1_thread;
+    RETURN_NOT_OK(kudu::Thread::Create("test", "tpch1-runner",
+                                       &TpchRealWorld::RunQueriesThread, this,
+                                       &tpch1_thread));
+    threads.push_back(tpch1_thread);
+  }
 
   // We'll wait until dbgen finishes or after tpch_test_runtime_sec, whichever comes first.
   int runtime_ms = FLAGS_tpch_test_runtime_sec * 1000;
