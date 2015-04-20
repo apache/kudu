@@ -76,12 +76,12 @@ public class TestImportCsv extends BaseKuduTest {
 
   private void writeCsvFile(File data) throws IOException {
     FileOutputStream fos = new FileOutputStream(data);
-    fos.write("1\t2\t3\tsome string\n".getBytes());
-    fos.write("2\t4\t5\tsome more\n".getBytes());
-    fos.write("3\twait this is not an int\t7\tbad row\n".getBytes());
+    fos.write("1\t2\t3\tsome string\ttrue\n".getBytes());
+    fos.write("2\t4\t5\tsome more\tfalse\n".getBytes());
+    fos.write("3\twait this is not an int\t7\tbad row\ttrue\n".getBytes());
     // Test that we can handle floating points, treating them as ints. This is a valid line:
-    fos.write("4\t0.10\t8\twe have a double but that's fine\n".getBytes());
-    fos.write("5\t9\t10\ttrailing separator isn't bad mkay?\t\n".getBytes());
+    fos.write("4\t0.10\t8\twe have a double but that's fine\ttrue\n".getBytes());
+    fos.write("5\t9\t10\ttrailing separator isn't bad mkay?\ttrue\t\n".getBytes());
     fos.close();
   }
 }

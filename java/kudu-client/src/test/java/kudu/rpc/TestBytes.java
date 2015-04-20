@@ -14,6 +14,12 @@ public class TestBytes {
   public void test() {
     byte[] bytes = new byte[8];
 
+    // Boolean
+    Bytes.setUnsignedByte(bytes, (short) 1);
+    assert(Bytes.getBoolean(bytes));
+    Bytes.setUnsignedByte(bytes, (short) 0);
+    assert(!Bytes.getBoolean(bytes));
+
     // BYTES
     short smallUbyte = 120;
     Bytes.setUnsignedByte(bytes, smallUbyte);

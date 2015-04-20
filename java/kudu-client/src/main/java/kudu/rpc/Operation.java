@@ -137,6 +137,19 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   }
 
   /**
+   * Add a boolean for the specified column.
+   * @param columnName Name of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addBoolean(String columnName, boolean val) {
+    ColumnSchema col = this.schema.getColumn(columnName);
+    checkColumn(col, Type.BOOL);
+    rowAlloc[getPositionInRowAllocAndSetBitSet(col)] = (byte) (val ? 1 : 0);
+  }
+
+  /**
    * Add a byte for the specified column.
    * @param columnName Name of the column
    * @param val value to add
@@ -325,6 +338,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     return new Pair<OperationResponse, Object>(response, builder.getError());
   }
 
+  @Override
   public byte[] key() {
     int seenStrings = 0;
     KeyEncoder keyEncoder = new KeyEncoder(this.schema);

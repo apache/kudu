@@ -160,6 +160,22 @@ public class RowResult {
   }
 
   /**
+   * Get the specified column's boolean
+   * @param columnIndex Column index in the schema
+   * @return A boolean
+   * @throws IllegalArgumentException if the column is null
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public boolean getBoolean(int columnIndex) {
+    checkValidColumn(columnIndex);
+    checkNull(columnIndex);
+    byte b = Bytes.getByte(this.rowData.getRawArray(),
+                         this.rowData.getRawOffset()
+                         + getCurrentRowDataOffsetForColumn(columnIndex));
+    return b == 1;
+  }
+
+  /**
    * Get the specified column's byte
    * @param columnIndex Column index in the schema
    * @return A byte

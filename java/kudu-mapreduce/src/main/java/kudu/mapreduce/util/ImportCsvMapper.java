@@ -103,6 +103,9 @@ public class ImportCsvMapper extends Mapper<LongWritable, Text, NullWritable, Op
           colValue = StringUtils.replace(colValue, ".", "");
         }
         switch (col.getType()) {
+          case BOOL:
+            insert.addBoolean(colName, Boolean.parseBoolean(colValue));
+            break;
           case INT8:
             insert.addByte(colName, Byte.parseByte(colValue));
             break;

@@ -47,6 +47,7 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
     insert.addInt(schema.getColumn(1).getName(), 2);
     insert.addInt(schema.getColumn(2).getName(), 3);
     insert.addString(schema.getColumn(3).getName(), "a string");
+    insert.addBoolean(schema.getColumn(4).getName(), true);
 
     RecordWriter<NullWritable, Operation> rw = output.getRecordWriter(null);
     rw.write(NullWritable.get(), insert);

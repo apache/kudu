@@ -120,6 +120,16 @@ public class KeyBuilder {
   }
 
   /**
+   * Add a new key component
+   * @param val component to add
+   * @throws IllegalArgumentException all the key components were already added
+   */
+  public KeyBuilder addBoolean(boolean val) {
+    addByte((byte) (val ? 1 : 0));
+    return this;
+  }
+
+  /**
    * Private method that keeps track of the current columns and actually adds the bytes to the
    * encoder.
    * @param bytes Key component to add

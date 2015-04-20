@@ -68,6 +68,8 @@ public class ProtobufHelper {
 
   private static byte[] objectToWireFormat(ColumnSchema col, Object value) {
     switch (col.getType()) {
+      case BOOL:
+        return Bytes.fromBoolean((Boolean) value);
       case INT8:
         return new byte[] { ((Byte)value).byteValue() };
       case UINT8:
@@ -95,6 +97,8 @@ public class ProtobufHelper {
   private static Object byteStringToObject(Type type, ByteString value) {
     byte[] buf = ZeroCopyLiteralByteString.zeroCopyGetBytes(value);
     switch (type) {
+      case BOOL:
+        return Bytes.getBoolean(buf);
       case INT8:
         return Bytes.getByte(buf);
       case UINT8:

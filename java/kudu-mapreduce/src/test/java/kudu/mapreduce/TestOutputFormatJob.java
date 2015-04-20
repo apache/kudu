@@ -96,6 +96,7 @@ public class TestOutputFormatJob extends BaseKuduTest {
       insert.addInt(table.getSchema().getColumn(1).getName(), 1);
       insert.addInt(table.getSchema().getColumn(2).getName(), 2);
       insert.addString(table.getSchema().getColumn(3).getName(), value.toString());
+      insert.addBoolean(table.getSchema().getColumn(4).getName(), true);
       context.write(NullWritable.get(), insert);
     }
 

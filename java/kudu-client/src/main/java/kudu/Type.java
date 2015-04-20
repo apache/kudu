@@ -21,7 +21,9 @@ public enum Type {
   INT32 (DataType.INT32, "int32"),
   UINT64 (DataType.UINT64, "uint64"),
   INT64 (DataType.INT64, "int64"),
-  STRING (DataType.STRING, "string");
+  STRING (DataType.STRING, "string"),
+  BOOL (DataType.BOOL, "bool");
+
 
   private final DataType dataType;
   private final String name;
@@ -76,6 +78,8 @@ public enum Type {
 
     if (type == DataType.STRING) {
       return 8 + 8; // offset then string length
+    } else if (type == DataType.BOOL) {
+      return 1;
     } else if (type == DataType.UINT8 || type == DataType.INT8) {
       return 1;
     } else if (type == DataType.UINT16 || type == DataType.INT16) {
@@ -98,6 +102,7 @@ public enum Type {
   public static Type getTypeForDataType(DataType type) {
     switch (type) {
       case STRING: return STRING;
+      case BOOL: return BOOL;
       case INT8: return INT8;
       case UINT8: return UINT8;
       case INT16: return INT16;

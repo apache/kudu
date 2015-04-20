@@ -37,6 +37,7 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     insert.addInt(schema.getColumn(1).getName(), 2);
     insert.addInt(schema.getColumn(2).getName(), 3);
     insert.addString(schema.getColumn(3).getName(), "a string");
+    insert.addBoolean(schema.getColumn(4).getName(), true);
     KuduSession session = client.newSession();
     session.apply(insert).join(DEFAULT_SLEEP);
     session.close().join(DEFAULT_SLEEP);
@@ -47,9 +48,10 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
         schema.getColumn(0).getName() + "," +
         schema.getColumn(1).getName() + "," +
         schema.getColumn(2).getName() + "," +
-        schema.getColumn(3).getName());
+        schema.getColumn(3).getName() + "," +
+        schema.getColumn(4).getName());
     assertTrue(reader.nextKeyValue());
-    assertEquals(4, reader.getCurrentValue().getColumnProjection().getColumnCount());
+    assertEquals(5, reader.getCurrentValue().getColumnProjection().getColumnCount());
     assertFalse(reader.nextKeyValue());
 
     // Test getting two columns back

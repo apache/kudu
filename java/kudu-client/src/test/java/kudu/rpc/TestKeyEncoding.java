@@ -15,6 +15,24 @@ import java.util.List;
 public class TestKeyEncoding {
 
   @Test
+  public void testBoolKey() {
+    List<ColumnSchema> cols1 = new ArrayList<ColumnSchema>();
+    cols1.add(new ColumnSchema("key", Type.BOOL, true));
+    Schema schema = new Schema(cols1);
+    KuduTable table = new KuduTable(null, "one", schema);
+    Insert oneKeyInsert = new Insert(table);
+    oneKeyInsert.addBoolean("key", true);
+    assertTrue(Bytes.pretty(oneKeyInsert.key()) + " isn't foo",
+            Bytes.equals(new byte[] {1}, oneKeyInsert.key()));
+
+    oneKeyInsert = new Insert(table);
+    oneKeyInsert.addBoolean("key", false);
+    assertTrue(Bytes.pretty(oneKeyInsert.key()) + " isn't foo",
+            Bytes.equals(new byte[] {0}, oneKeyInsert.key()));
+
+  }
+
+  @Test
   public void test() {
     List<ColumnSchema> cols1 = new ArrayList<ColumnSchema>();
     cols1.add(new ColumnSchema("key", Type.STRING, true));

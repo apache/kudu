@@ -327,6 +327,7 @@ public class TestKuduSession extends BaseKuduTest {
     insert.addInt(schema.getColumn(1).getName(), 2);
     insert.addInt(schema.getColumn(2).getName(), 3);
     insert.setNull(schema.getColumn(3).getName());
+    insert.addBoolean(schema.getColumn(4).getName(), false);
     return insert;
   }
 

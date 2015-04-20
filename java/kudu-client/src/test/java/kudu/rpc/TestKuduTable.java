@@ -57,9 +57,13 @@ public class TestKuduTable extends BaseKuduTest {
     int defaultInt = 30;
     String defaultString = "data";
     for (ColumnSchema columnSchema : schema.getColumns()) {
+
       Object defaultValue;
+
       if (columnSchema.getType() == Type.INT32) {
         defaultValue = defaultInt;
+      } else if (columnSchema.getType() == Type.BOOL) {
+        defaultValue = true;
       } else {
         defaultValue = defaultString;
       }
@@ -71,7 +75,9 @@ public class TestKuduTable extends BaseKuduTest {
     KuduTable kuduTable = openTable(tableWithDefault);
     assertEquals(new Integer(defaultInt), kuduTable.getSchema().getColumn(0).getDefaultValue());
     assertEquals(defaultString,
-        kuduTable.getSchema().getColumn(columns.size() - 1).getDefaultValue());
+        kuduTable.getSchema().getColumn(columns.size() - 2).getDefaultValue());
+    assertEquals(new Boolean(true),
+            kuduTable.getSchema().getColumn(columns.size() - 1).getDefaultValue());
 
     // Test splitting and reading those splits
     KuduTable kuduTableWithoutDefaults = createTableWithSplitsAndTest(0);

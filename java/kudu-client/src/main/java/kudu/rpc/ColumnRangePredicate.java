@@ -41,6 +41,15 @@ public class ColumnRangePredicate {
   }
 
   /**
+   * Set a boolean for the lower bound
+   * @param lowerBound value for the lower bound
+   */
+  public void setLowerBound(boolean lowerBound) {
+    checkColumn(Type.BOOL);
+    setLowerBound(Bytes.fromBoolean(lowerBound));
+  }
+
+  /**
    * Set a byte for the lower bound
    * @param lowerBound value for the lower bound
    */
@@ -119,6 +128,15 @@ public class ColumnRangePredicate {
   public void setUnsignedLowerBound(BigInteger lowerBound) {
     checkColumn(Type.UINT64);
     setLowerBound(Bytes.fromUnsignedLong(lowerBound));
+  }
+
+  /**
+   * Set a boolean for the upper bound
+   * @param upperBound value for the upper bound
+   */
+  public void setUpperBound(boolean upperBound) {
+    checkColumn(Type.BOOL);
+    setUpperBound(Bytes.fromBoolean(upperBound));
   }
 
   /**

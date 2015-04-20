@@ -7,10 +7,12 @@ import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+
 import kudu.ColumnSchema;
 import kudu.Schema;
 import kudu.master.Master;
 import kudu.util.NetUtil;
+
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.slf4j.Logger;
@@ -29,6 +31,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static kudu.Type.INT32;
 import static kudu.Type.STRING;
+import static kudu.Type.BOOL;
 import static org.junit.Assert.fail;
 
 public class BaseKuduTest {
@@ -331,6 +334,7 @@ public class BaseKuduTest {
         insert.addInt(basicSchema.getColumn(1).getName(), 1);
         insert.addInt(basicSchema.getColumn(2).getName(), 2);
         insert.addString(basicSchema.getColumn(3).getName(), "a string");
+        insert.addBoolean(basicSchema.getColumn(4).getName(), true);
         session.apply(insert).join(DEFAULT_SLEEP);
       }
     }
@@ -344,6 +348,7 @@ public class BaseKuduTest {
     columns.add(new ColumnSchema("column1_i", INT32));
     columns.add(new ColumnSchema("column2_i", INT32));
     columns.add(new ColumnSchema("column3_s", STRING, false, true, null));
+    columns.add(new ColumnSchema("column4_b", BOOL));
     return new Schema(columns);
   }
 
@@ -353,6 +358,7 @@ public class BaseKuduTest {
     insert.addInt(basicSchema.getColumn(1).getName(), 2);
     insert.addInt(basicSchema.getColumn(2).getName(), 3);
     insert.addString(basicSchema.getColumn(3).getName(), "a string");
+    insert.addBoolean(basicSchema.getColumn(4).getName(), true);
     return insert;
   }
 

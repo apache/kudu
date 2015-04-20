@@ -67,6 +67,17 @@ public final class Bytes {
   // ------------------------------ //
 
   /**
+   * Reads a boolean from the beginning of the given array.
+   * @param b The array to read from.
+   * @return A byte
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static boolean getBoolean(final byte[] b) {
+    byte v = getByte(b, 0);
+    return v == 1;
+  }
+
+  /**
    * Reads a byte from the beginning of the given array.
    * @param b The array to read from.
    * @return A byte
@@ -402,6 +413,12 @@ public final class Bytes {
     }
     throw new IllegalArgumentException("Not a 32 bit varint: " + result
         + " (5th byte: " + b + ")");
+  }
+
+  public static byte[] fromBoolean(final boolean n) {
+     final byte[] b = new byte[1];
+     b[0] = (byte) (n ? 1 : 0);
+     return b;
   }
 
   /**
@@ -976,11 +993,13 @@ public final class Bytes {
     }
 
     /** Returns an iterator that goes through all the entries in this map.  */
+    @Override
     public Iterator<Map.Entry<byte[], V>> iterator() {
       return super.entrySet().iterator();
     }
 
     /** {@code byte[]} friendly implementation.  */
+    @Override
     public String toString() {
       final int size = size();
       if (size == 0) {
