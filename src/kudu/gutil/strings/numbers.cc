@@ -494,7 +494,7 @@ bool ParseLeadingBoolValue(const char *str, bool deflt) {
 
 string FpToString(Fprint fp) {
   char buf[17];
-  snprintf(buf, sizeof(buf), "%016llx", fp);
+  snprintf(buf, sizeof(buf), "%016"PRIx64, fp);
   return string(buf);
 }
 

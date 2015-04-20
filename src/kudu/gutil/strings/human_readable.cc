@@ -163,7 +163,7 @@ string HumanReadableNumBytes::ToStringWithoutRounding(int64 num_bytes) {
 
     num_units = next_units;
   }
-  return StringPrintf("%s%lld%c", neg_str, num_units, units[unit_type]);
+  return StringPrintf("%s%"PRId64"%c", neg_str, num_units, units[unit_type]);
 }
 
 string HumanReadableInt::ToString(int64 value) {

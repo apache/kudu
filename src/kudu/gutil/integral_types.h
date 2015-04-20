@@ -10,6 +10,8 @@
 #ifndef BASE_INTEGRAL_TYPES_H_
 #define BASE_INTEGRAL_TYPES_H_
 
+#include <inttypes.h>
+
 // These typedefs are also defined in base/google.swig. In the
 // SWIG environment, we use those definitions and avoid duplicate
 // definitions here with an ifdef. The definitions should be the
@@ -18,14 +20,14 @@
 // Standard typedefs
 // All Google2 code is compiled with -funsigned-char to make "char"
 // unsigned.  Google2 code therefore doesn't need a "uchar" type.
-typedef signed char         schar;
-typedef signed char         int8;
-typedef short               int16;
-typedef int                 int32;
+typedef int8_t              schar;
+typedef int8_t              int8;
+typedef int16_t             int16;
+typedef int32_t             int32;
 #ifdef _MSC_VER
 typedef __int64             int64;
 #else
-typedef long long           int64;
+typedef int64_t             int64;
 #endif /* _MSC_VER */
 
 // NOTE: unsigned types are DANGEROUS in loops and other arithmetical
@@ -34,13 +36,13 @@ typedef long long           int64;
 // use 'unsigned' to express "this value should always be positive";
 // use assertions for this.
 
-typedef unsigned char      uint8;
-typedef unsigned short     uint16;
-typedef unsigned int       uint32;
+typedef uint8_t        uint8;
+typedef uint16_t       uint16;
+typedef uint32_t       uint32;
 #ifdef _MSC_VER
 typedef unsigned __int64   uint64;
 #else
-typedef unsigned long long uint64;
+typedef uint64_t uint64;
 #endif /* _MSC_VER */
 
 // A type to represent a Unicode code-point value. As of Unicode 4.0,
@@ -80,8 +82,11 @@ typedef unsigned long      uword_t;
 
 #define GG_LONGLONG(x) x##LL
 #define GG_ULONGLONG(x) x##ULL
-#define GG_LL_FORMAT "ll"  // As in "%lld". Note that "q" is poor form also.
-#define GG_LL_FORMAT_W L"ll"
+
+// Use the following macros for printf formatters in preference to
+// "%lld" or "%q". The "_W" variant is for wide strings.
+#define GG_LL_FORMAT __PRI64_PREFIX
+#define GG_LL_FORMAT_W L""__PRI64_PREFIX
 
 #endif  // _MSC_VER
 

@@ -393,22 +393,6 @@ inline string SimpleItoa(uint64 i) {
   return string(buf, FastUInt64ToBufferLeft(i, buf));
 }
 
-inline string SimpleItoa(long i) {  // NOLINT long is OK here
-  if (sizeof(i) == 64 / 8) {
-    return SimpleItoa(static_cast<int64>(i));
-  } else if (sizeof(i) == 32 / 8) {
-    return SimpleItoa(static_cast<int32>(i));
-  }
-}
-
-inline string SimpleItoa(unsigned long i) {  // NOLINT long is OK here
-  if (sizeof(i) == 64 / 8) {
-    return SimpleItoa(static_cast<uint64>(i));
-  } else if (sizeof(i) == 32 / 8) {
-    return SimpleItoa(static_cast<uint32>(i));
-  }
-}
-
 // SimpleAtoi converts a string to an integer.
 // Uses safe_strto?() for actual parsing, so strict checking is
 // applied, which is to say, the string must be a base-10 integer, optionally
@@ -484,15 +468,6 @@ string SimpleItoaWithCommas(int32 i);
 string SimpleItoaWithCommas(uint32 i);
 string SimpleItoaWithCommas(int64 i);
 string SimpleItoaWithCommas(uint64 i);
-#ifdef _LP64
-inline string SimpleItoaWithCommas(size_t i) {
-  return SimpleItoaWithCommas(static_cast<uint64>(i));
-}
-
-inline string SimpleItoaWithCommas(ptrdiff_t i) {
-  return SimpleItoaWithCommas(static_cast<int64>(i));
-}
-#endif
 
 // ----------------------------------------------------------------------
 // ItoaKMGT()
@@ -589,12 +564,12 @@ inline string IntToString(int i) {
 
 // DEPRECATED(wadetregaskis).  Just call StringPrintf.
 inline string Int64ToString(int64 i64) {
-  return StringPrintf("%7" GG_LL_FORMAT "d", i64);
+  return StringPrintf("%7" PRId64, i64);
 }
 
 // DEPRECATED(wadetregaskis).  Just call StringPrintf.
 inline string UInt64ToString(uint64 ui64) {
-  return StringPrintf("%7" GG_LL_FORMAT "u", ui64);
+  return StringPrintf("%7" PRIu64, ui64);
 }
 
 #endif  // STRINGS_NUMBERS_H_

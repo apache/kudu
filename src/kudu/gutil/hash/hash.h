@@ -114,14 +114,6 @@ struct hash {
 };
 #endif  // defined(_MSC_VER)
 
-template<> struct hash<int64> {
-  size_t operator()(int64 x) const { return static_cast<size_t>(x); }
-};
-
-template<> struct hash<uint64> {
-  size_t operator()(uint64 x) const { return static_cast<size_t>(x); }
-};
-
 #endif  // !defined(_STLP_LONG_LONG) && !(defined(_MSC_VER) && _MSC_VER >= 1600)
 
 template<> struct hash<bool> {

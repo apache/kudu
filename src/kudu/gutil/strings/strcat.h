@@ -51,18 +51,6 @@ struct AlphaNum {
   AlphaNum(uint64 u64)  // NOLINT(runtime/explicit)
       : piece(digits, FastUInt64ToBufferLeft(u64, digits) - &digits[0]) {}
 
-#ifdef _LP64
-  AlphaNum(long x)  // NOLINT(runtime/explicit)
-    : piece(digits, FastInt64ToBufferLeft(x, digits) - &digits[0]) {}
-  AlphaNum(unsigned long x)  // NOLINT(runtime/explicit)
-    : piece(digits, FastUInt64ToBufferLeft(x, digits) - &digits[0]) {}
-#else
-  AlphaNum(long x)  // NOLINT(runtime/explicit)
-    : piece(digits, FastInt32ToBufferLeft(x, digits) - &digits[0]) {}
-  AlphaNum(unsigned long x)  // NOLINT(runtime/explicit)
-    : piece(digits, FastUInt32ToBufferLeft(x, digits) - &digits[0]) {}
-#endif
-
   AlphaNum(float f)  // NOLINT(runtime/explicit)
     : piece(digits, strlen(FloatToBuffer(f, digits))) {}
   AlphaNum(double f)  // NOLINT(runtime/explicit)
