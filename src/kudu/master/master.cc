@@ -34,7 +34,7 @@ DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
 using std::tr1::shared_ptr;
 using std::vector;
 
-using kudu::metadata::QuorumPeerPB;
+using kudu::consensus::QuorumPeerPB;
 using kudu::rpc::ServiceIf;
 using kudu::tserver::ConsensusServiceImpl;
 using strings::Substitute;

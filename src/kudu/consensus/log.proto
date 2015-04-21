@@ -4,7 +4,7 @@ package kudu.log;
 
 import "kudu/common/common.proto";
 import "kudu/consensus/consensus.proto";
-import "kudu/server/metadata.proto";
+import "kudu/consensus/metadata.proto";
 
 // ===========================================================================
 //  Log Entries - Log specific messages + single node messages

@@ -1,5 +1,6 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
+#include "kudu/consensus/consensus_queue.h"
 
 #include <algorithm>
 #include <boost/assign/list_of.hpp>
@@ -11,14 +12,12 @@
 #include <tr1/memory>
 #include <utility>
 
-#include "kudu/consensus/consensus_queue.h"
-
-#include "kudu/consensus/raft_consensus.h"
+#include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
-#include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
@@ -40,7 +39,6 @@ namespace consensus {
 
 using log::AsyncLogReader;
 using log::Log;
-using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using strings::Substitute;

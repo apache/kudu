@@ -39,11 +39,11 @@ struct QuorumState {
   // Build an immutable QuorumState object, given a quorum and the UUID of the
   // current node. The object does not retain a reference to either quorum or
   // self_uuid.
-  static gscoped_ptr<QuorumState> Build(const metadata::QuorumPB& quorum,
+  static gscoped_ptr<QuorumState> Build(const QuorumPB& quorum,
                                         const std::string& self_uuid);
 
   // The acting role of the current replica in the quorum.
-  const metadata::QuorumPeerPB::Role role;
+  const QuorumPeerPB::Role role;
 
   // The UUID of the leader. This may be the same as the local peer, and
   // changes over time (but not for the lifetime of this object).
@@ -59,7 +59,7 @@ struct QuorumState {
 
  private:
   // Private constructor called by static Build method.
-  QuorumState(metadata::QuorumPeerPB::Role role,
+  QuorumState(QuorumPeerPB::Role role,
               const std::string& leader_uuid,
               const std::tr1::unordered_set<std::string>& voting_peers,
               int majority_size);
@@ -193,22 +193,22 @@ class ReplicaState {
   // This is only currently used by the Leader, in order to set up the quorum
   // state used to initialize the consensus queues and commit tracking before
   // the ChangeConfigTransaction is started and subsequently committed.
-  Status SetPendingQuorumUnlocked(const metadata::QuorumPB& new_quorum);
+  Status SetPendingQuorumUnlocked(const QuorumPB& new_quorum);
 
   // Return the pending quorum, or crash if one is not set.
-  const metadata::QuorumPB& GetPendingQuorumUnlocked() const;
+  const QuorumPB& GetPendingQuorumUnlocked() const;
 
   // Changes the config for this replica. Checks that the role change
   // is legal. Also checks that if the pending quorum is set, the persistent
   // quorum matches it, and resets the pending quorum to null.
-  Status SetCommittedQuorumUnlocked(const metadata::QuorumPB& new_quorum);
+  Status SetCommittedQuorumUnlocked(const QuorumPB& new_quorum);
 
   // Return the persisted quorum.
-  const metadata::QuorumPB& GetCommittedQuorumUnlocked() const;
+  const QuorumPB& GetCommittedQuorumUnlocked() const;
 
   // Return the "active" quorum - if there is a pending quorum return it;
   // otherwise return the committed quorum.
-  const metadata::QuorumPB& GetActiveQuorumUnlocked() const;
+  const QuorumPB& GetActiveQuorumUnlocked() const;
 
   // Increments this peer's term and sets 'has voted' to no for the current
   // term.
@@ -326,7 +326,7 @@ class ReplicaState {
 
  private:
   // Helper method to update the active quorum state for peers, etc.
-  void ResetActiveQuorumStateUnlocked(const metadata::QuorumPB& quorum);
+  void ResetActiveQuorumStateUnlocked(const QuorumPB& quorum);
 
   mutable simple_spinlock update_lock_;
 
@@ -341,7 +341,7 @@ class ReplicaState {
   gscoped_ptr<QuorumState> active_quorum_state_;
 
   // Quorum used by the peers when there is a pending config change operation.
-  gscoped_ptr<metadata::QuorumPB> pending_quorum_;
+  gscoped_ptr<QuorumPB> pending_quorum_;
 
   // Consensus metadata persistence object.
   gscoped_ptr<ConsensusMetadata> cmeta_;

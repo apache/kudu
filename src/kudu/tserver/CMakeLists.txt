@@ -31,7 +31,7 @@ PROTOBUF_GENERATE_CPP(TSERVER_PROTO_SRCS TSERVER_PROTO_HDRS
 add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS})
 target_link_libraries(tserver_proto
   kudu_common_proto
-  metadata_proto
+  consensus_metadata_proto
   tablet_proto
   wire_protocol_proto)
 

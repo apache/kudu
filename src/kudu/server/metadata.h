@@ -7,6 +7,6 @@
 // easier after a refactor. We should clean this up and change
 // include sites.
 
-#include "kudu/server/metadata.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 
 #endif

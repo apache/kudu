@@ -94,13 +94,13 @@ class RaftConsensus : public Consensus,
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
 
-  virtual metadata::QuorumPeerPB::Role role() const OVERRIDE;
+  virtual QuorumPeerPB::Role role() const OVERRIDE;
 
   virtual std::string peer_uuid() const OVERRIDE;
 
   virtual std::string tablet_id() const OVERRIDE;
 
-  virtual metadata::QuorumPB Quorum() const OVERRIDE;
+  virtual QuorumPB Quorum() const OVERRIDE;
 
   virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;
 
@@ -110,7 +110,7 @@ class RaftConsensus : public Consensus,
   virtual Status AdvanceTermForTests(int64_t new_term);
 
   // Return the active (as opposed to committed) role.
-  metadata::QuorumPeerPB::Role GetActiveRole() const;
+  QuorumPeerPB::Role GetActiveRole() const;
 
   // Returns the replica state for tests. This should never be used outside of
   // tests, in particular calling the LockFor* methods on the returned object
@@ -212,7 +212,7 @@ class RaftConsensus : public Consensus,
   // this actually waits for the commit round to reach a majority of peers, so that we know
   // we can proceed. If this returns Status::OK(), a majority of peers have accepted the new
   // configuration. The peer cannot perform any additional operations until this succeeds.
-  Status PushConfigurationToPeersUnlocked(const metadata::QuorumPB& new_config);
+  Status PushConfigurationToPeersUnlocked(const QuorumPB& new_config);
 
   OpId GetLastOpIdFromLog();
 

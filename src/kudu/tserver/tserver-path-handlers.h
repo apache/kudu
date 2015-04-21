@@ -14,9 +14,9 @@ namespace kudu {
 class Schema;
 struct IteratorStats;
 
-namespace metadata {
+namespace consensus {
 class QuorumPB;
-}
+} // namespace consensus
 
 namespace tserver {
 
@@ -52,7 +52,7 @@ class TabletServerPathHandlers {
                             std::stringstream* output);
   void HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
                                     std::stringstream* output);
-  std::string QuorumPBToHtml(const metadata::QuorumPB& quorum) const;
+  std::string QuorumPBToHtml(const consensus::QuorumPB& quorum) const;
   std::string ScannerToHtml(const Scanner& scanner) const;
   std::string IteratorStatsToHtml(const std::vector<IteratorStats>& stats) const;
   std::string GetDashboardLine(const std::string& link,

@@ -18,8 +18,6 @@
 namespace kudu {
 namespace consensus {
 
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using std::string;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
@@ -55,7 +53,7 @@ gscoped_ptr<QuorumState> QuorumState::Build(const QuorumPB& quorum, const string
   return state.Pass();
 }
 
-QuorumState::QuorumState(metadata::QuorumPeerPB::Role role,
+QuorumState::QuorumState(QuorumPeerPB::Role role,
                          const std::string& leader_uuid,
                          const std::tr1::unordered_set<std::string>& voting_peers,
                          int majority_size)
@@ -232,20 +230,20 @@ bool ReplicaState::IsQuorumChangePendingUnlocked() const {
 }
 
 // TODO check that the role change is legal.
-Status ReplicaState::SetPendingQuorumUnlocked(const metadata::QuorumPB& new_quorum) {
+Status ReplicaState::SetPendingQuorumUnlocked(const QuorumPB& new_quorum) {
   DCHECK(update_lock_.is_locked());
-  pending_quorum_.reset(new metadata::QuorumPB(new_quorum));
+  pending_quorum_.reset(new QuorumPB(new_quorum));
   ResetActiveQuorumStateUnlocked(new_quorum);
   return Status::OK();
 }
 
-const metadata::QuorumPB& ReplicaState::GetPendingQuorumUnlocked() const {
+const QuorumPB& ReplicaState::GetPendingQuorumUnlocked() const {
   DCHECK(update_lock_.is_locked());
   CHECK(IsQuorumChangePendingUnlocked()) << "No pending quorum";
   return *pending_quorum_;
 }
 
-Status ReplicaState::SetCommittedQuorumUnlocked(const metadata::QuorumPB& new_quorum) {
+Status ReplicaState::SetCommittedQuorumUnlocked(const QuorumPB& new_quorum) {
   DCHECK(update_lock_.is_locked());
   DCHECK(new_quorum.IsInitialized());
 
@@ -258,12 +256,12 @@ Status ReplicaState::SetCommittedQuorumUnlocked(const metadata::QuorumPB& new_qu
   return Status::OK();
 }
 
-const metadata::QuorumPB& ReplicaState::GetCommittedQuorumUnlocked() const {
+const QuorumPB& ReplicaState::GetCommittedQuorumUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return cmeta_->pb().committed_quorum();
 }
 
-const metadata::QuorumPB& ReplicaState::GetActiveQuorumUnlocked() const {
+const QuorumPB& ReplicaState::GetActiveQuorumUnlocked() const {
   DCHECK(update_lock_.is_locked());
   if (IsQuorumChangePendingUnlocked()) {
     return GetPendingQuorumUnlocked();
@@ -635,7 +633,7 @@ string ReplicaState::ToStringUnlocked() const {
   return ret;
 }
 
-void ReplicaState::ResetActiveQuorumStateUnlocked(const metadata::QuorumPB& quorum) {
+void ReplicaState::ResetActiveQuorumStateUnlocked(const QuorumPB& quorum) {
   DCHECK(update_lock_.is_locked());
   active_quorum_state_ = QuorumState::Build(quorum, peer_uuid_).Pass();
 }

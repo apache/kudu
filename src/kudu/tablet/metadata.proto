@@ -3,8 +3,8 @@
 package kudu.tablet;
 
 import "kudu/common/common.proto";
+import "kudu/consensus/metadata.proto";
 import "kudu/fs/fs.proto";
-import "kudu/server/metadata.proto";
 
 // ============================================================================
 //  Tablet Metadata

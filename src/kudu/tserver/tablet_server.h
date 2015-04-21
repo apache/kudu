@@ -7,6 +7,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"

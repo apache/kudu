@@ -15,9 +15,9 @@ namespace kudu {
 
 class FsManager;
 
-namespace metadata {
+namespace consensus {
 class QuorumPB;
-}
+} // namespace consensus
 
 namespace tserver {
 
@@ -61,11 +61,11 @@ class MiniTabletServer {
   Status AddTestTablet(const std::string& table_id,
                        const std::string& tablet_id,
                        const Schema& schema,
-                       const metadata::QuorumPB& quorum);
+                       const consensus::QuorumPB& quorum);
 
   // Create a QuorumPB which should be used to create a local-only
   // tablet on the given tablet server.
-  metadata::QuorumPB CreateLocalQuorum() const;
+  consensus::QuorumPB CreateLocalQuorum() const;
 
   const Sockaddr bound_rpc_addr() const;
   const Sockaddr bound_http_addr() const;

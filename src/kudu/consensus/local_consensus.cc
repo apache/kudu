@@ -20,8 +20,6 @@ namespace consensus {
 using base::subtle::Barrier_AtomicIncrement;
 using log::Log;
 using log::LogEntryBatch;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 
 LocalConsensus::LocalConsensus(const ConsensusOptions& options,
@@ -96,7 +94,7 @@ Status LocalConsensus::Replicate(ConsensusRound* round) {
   TRACE_EVENT0("consensus", "LocalConsensus::Replicate");
   DCHECK_GE(state_, kConfiguring);
 
-  consensus::ReplicateMsg* msg = round->replicate_msg();
+  ReplicateMsg* msg = round->replicate_msg();
 
   OpId* cur_op_id = DCHECK_NOTNULL(msg)->mutable_id();
   cur_op_id->set_term(0);
@@ -140,7 +138,7 @@ Status LocalConsensus::Replicate(ConsensusRound* round) {
   return Status::OK();
 }
 
-metadata::QuorumPeerPB::Role LocalConsensus::role() const {
+QuorumPeerPB::Role LocalConsensus::role() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return cmeta_->pb().committed_quorum().peers().begin()->role();
 }
@@ -155,7 +153,7 @@ Status LocalConsensus::RequestVote(const VoteRequestPB* request,
   return Status::NotSupported("LocalConsensus does not support RequestVote() calls.");
 }
 
-metadata::QuorumPB LocalConsensus::Quorum() const {
+QuorumPB LocalConsensus::Quorum() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return cmeta_->pb().committed_quorum();
 }

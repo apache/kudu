@@ -16,10 +16,10 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_peers.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/ts_itest-base.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -38,14 +38,15 @@ namespace kudu {
 namespace tserver {
 
 using boost::assign::list_of;
-using consensus::ConsensusServiceProxy;
 using consensus::ConsensusResponsePB;
 using consensus::ConsensusRequestPB;
+using consensus::ConsensusServiceProxy;
 using consensus::MakeOpId;
-using consensus::RunLeaderElectionRequestPB;
+using consensus::QuorumPB;
+using consensus::QuorumPeerPB;
 using consensus::ReplicateMsg;
-using consensus::RunLeaderElectionRequestPB;
 using consensus::RunLeaderElectionResponsePB;
+using consensus::RunLeaderElectionRequestPB;
 using client::FromInternalCompressionType;
 using client::FromInternalDataType;
 using client::FromInternalEncodingType;
@@ -60,8 +61,6 @@ using client::KuduTable;
 using master::TableIdentifierPB;
 using master::TabletLocationsPB;
 using master::TSInfoPB;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using rpc::RpcController;
 using std::vector;
 using std::tr1::shared_ptr;

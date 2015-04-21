@@ -31,6 +31,7 @@ using std::vector;
 
 namespace kudu {
 
+using consensus::QuorumPeerPB;
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
 using master::CreateTableRequestPB;
@@ -50,8 +51,6 @@ using master::ListTabletServersRequestPB;
 using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
 using master::MasterErrorPB;
-using metadata::QuorumPeerPB;
-
 using rpc::Rpc;
 using rpc::RpcController;
 using strings::Substitute;

@@ -3,8 +3,8 @@
 package kudu.rpc;
 
 import com.google.protobuf.Message;
+import static kudu.consensus.Metadata.*;
 import static kudu.master.Master.*;
-import static kudu.metadata.Metadata.*;
 
 import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;

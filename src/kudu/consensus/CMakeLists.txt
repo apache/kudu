@@ -1,6 +1,21 @@
 # Copyright (c) 2012, Cloudera, inc.
 # Confidential Cloudera Information: Covered by NDA.
 
+#########################################
+# consensus_metadata_proto
+#########################################
+
+PROTOBUF_GENERATE_CPP(METADATA_PROTO_SRCS METADATA_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES metadata.proto)
+
+add_library(consensus_metadata_proto ${METADATA_PROTO_SRCS} ${METADATA_PROTO_HDRS})
+target_link_libraries(consensus_metadata_proto
+  kudu_common_proto
+  fs_proto
+  protobuf)
+
 KRPC_GENERATE(CONSENSUS_KRPC_SRCS CONSENSUS_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
@@ -17,7 +32,7 @@ target_link_libraries(consensus_proto
   protobuf
   kudu_common_proto
   cfile_proto
-  metadata_proto
+  consensus_metadata_proto
   krpc
   wire_protocol_proto
   tablet_proto)
@@ -48,7 +63,7 @@ target_link_libraries(log
   kudu_fs
   consensus_proto
   log_proto
-  metadata_proto)
+  consensus_metadata_proto)
 
 set(CONSENSUS_SRCS
   consensus.cc

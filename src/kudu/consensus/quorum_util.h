@@ -6,7 +6,7 @@
 
 #include <string>
 
-#include "kudu/server/metadata.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 
 namespace kudu {
 class Status;
@@ -19,7 +19,7 @@ enum QuorumPBType {
 };
 
 // Returns true if the passed role is LEADER, CANDIDATE, or FOLLOWER.
-bool IsVotingRole(const metadata::QuorumPeerPB::Role role);
+bool IsVotingRole(const QuorumPeerPB::Role role);
 
 // Copies 'old_quorum' to 'new_quorum' but gives the peer with 'peer_uuid'
 // the role in 'role'. Additionally, demotes all of the other peers to FOLLOWER
@@ -27,24 +27,24 @@ bool IsVotingRole(const metadata::QuorumPeerPB::Role role);
 // Returns Status::IllegalState() if the specified peer cannot be found or if
 // the specified peer appears in the quorum more than once.
 Status GivePeerRoleInQuorum(const std::string& peer_uuid,
-                            metadata::QuorumPeerPB::Role role,
-                            const metadata::QuorumPB& old_quorum,
-                            metadata::QuorumPB* new_quorum);
+                            QuorumPeerPB::Role role,
+                            const QuorumPB& old_quorum,
+                            QuorumPB* new_quorum);
 
 // Makes all voting peers (anyone with a LEADER, CANDIDATE, or FOLLOWER role)
 // a follower in 'new_quorum'.
-void SetAllQuorumVotersToFollower(const metadata::QuorumPB& old_quorum,
-                                  metadata::QuorumPB* new_quorum);
+void SetAllQuorumVotersToFollower(const QuorumPB& old_quorum,
+                                  QuorumPB* new_quorum);
 
 // Helper to return the role of a peer within a quorum, or NON_PARTICIPANT is the peer does
 // not participate in the quorum.
-metadata::QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
-                                             const metadata::QuorumPB& quorum);
+QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
+                                   const QuorumPB& quorum);
 
 // Verifies that the provided quorum is well formed.
 // If type == COMMITTED_QUORUM, we enforce that opid_index is set.
 // If type == UNCOMMITTED_QUORUM, we enforce that opid_index is NOT set.
-Status VerifyQuorum(const metadata::QuorumPB& quorum, QuorumPBType type);
+Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type);
 
 }  // namespace consensus
 }  // namespace kudu

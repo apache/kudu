@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
 #include "kudu/rpc/response_callback.h"
 #include "kudu/rpc/rpc_controller.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/resettable_heartbeater.h"
@@ -103,7 +103,7 @@ class Peer {
   // status-only requests.
   Status SignalRequest(bool force_if_queue_empty = false);
 
-  const metadata::QuorumPeerPB& peer_pb() const { return peer_pb_; }
+  const QuorumPeerPB& peer_pb() const { return peer_pb_; }
 
   // Returns the PeerProxy if this is a remote peer or NULL if it
   // isn't. Used for tests to fiddle with the proxy and emulate remote
@@ -120,7 +120,7 @@ class Peer {
   //
   // Requests to this peer (which may end up doing IO to read non-cached
   // log entries) are assembled on 'thread_pool'.
-  static Status NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
+  static Status NewRemotePeer(const QuorumPeerPB& peer_pb,
                               const std::string& tablet_id,
                               const std::string& leader_uuid,
                               PeerMessageQueue* queue,
@@ -129,7 +129,7 @@ class Peer {
                               gscoped_ptr<Peer>* peer);
 
  private:
-  Peer(const metadata::QuorumPeerPB& peer,
+  Peer(const QuorumPeerPB& peer,
        const std::string& tablet_id,
        const std::string& leader_uuid,
        gscoped_ptr<PeerProxy> proxy,
@@ -151,7 +151,7 @@ class Peer {
   const std::string tablet_id_;
   const std::string leader_uuid_;
 
-  metadata::QuorumPeerPB peer_pb_;
+  QuorumPeerPB peer_pb_;
 
   gscoped_ptr<PeerProxy> proxy_;
 
@@ -225,7 +225,7 @@ class PeerProxy {
 class PeerProxyFactory {
  public:
 
-  virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
+  virtual Status NewProxy(const QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) = 0;
 
   virtual ~PeerProxyFactory() {}
@@ -258,7 +258,7 @@ class RpcPeerProxyFactory : public PeerProxyFactory {
  public:
   explicit RpcPeerProxyFactory(const std::tr1::shared_ptr<rpc::Messenger>& messenger);
 
-  virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
+  virtual Status NewProxy(const QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE;
 
   virtual ~RpcPeerProxyFactory();
@@ -270,7 +270,7 @@ class RpcPeerProxyFactory : public PeerProxyFactory {
 // specified in 'remote_peer' and set the 'permanent_uuid' field based
 // on the response.
 Status SetPermanentUuidForRemotePeer(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-                                     metadata::QuorumPeerPB* remote_peer);
+                                     QuorumPeerPB* remote_peer);
 
 }  // namespace consensus
 }  // namespace kudu

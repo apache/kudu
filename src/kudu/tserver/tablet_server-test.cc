@@ -14,8 +14,8 @@
 
 using std::string;
 using std::tr1::shared_ptr;
-using kudu::metadata::QuorumPB;
-using kudu::metadata::QuorumPeerPB;
+using kudu::consensus::QuorumPB;
+using kudu::consensus::QuorumPeerPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -1776,7 +1776,7 @@ namespace {
 
 // Return a random valid value for QuorumPeerPB::Role.
 QuorumPeerPB::Role RandomRole() {
-  const google::protobuf::EnumDescriptor* desc = metadata::QuorumPeerPB_Role_descriptor();
+  const google::protobuf::EnumDescriptor* desc = QuorumPeerPB::Role_descriptor();
   int idx = rand() % desc->value_count();
   return static_cast<QuorumPeerPB::Role>(desc->value(idx)->number());
 }

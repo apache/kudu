@@ -104,7 +104,7 @@ class BootstrapTest : public LogTestBase {
     RETURN_NOT_OK_PREPEND(LoadTestTabletMetadata(mrs_id, delta_id, &meta),
                           "Unable to load test tablet metadata");
 
-    metadata::QuorumPB quorum;
+    consensus::QuorumPB quorum;
     quorum.set_local(true);
     quorum.add_peers()->set_permanent_uuid(meta->fs_manager()->uuid());
     quorum.set_opid_index(consensus::kInvalidOpIdIndex);

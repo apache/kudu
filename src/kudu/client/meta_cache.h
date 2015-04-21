@@ -11,9 +11,9 @@
 #include <tr1/unordered_map>
 #include <vector>
 
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
@@ -92,7 +92,7 @@ class RemoteTabletServer {
 
 struct RemoteReplica {
   RemoteTabletServer* ts;
-  metadata::QuorumPeerPB::Role role;
+  consensus::QuorumPeerPB::Role role;
   bool failed;
 };
 

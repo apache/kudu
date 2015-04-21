@@ -1,6 +1,5 @@
 // Copyright (c) 2014, Cloudera Inc.
 // Confidential Cloudera Information: Covered by NDA.
-
 #include "kudu/consensus/quorum_util.h"
 
 #include <boost/foreach.hpp>
@@ -8,18 +7,15 @@
 #include <string>
 
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
 namespace consensus {
 
 using std::string;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using strings::Substitute;
 
-bool IsVotingRole(const metadata::QuorumPeerPB::Role role) {
+bool IsVotingRole(const QuorumPeerPB::Role role) {
   switch (role) {
     case QuorumPeerPB::LEADER:
     case QuorumPeerPB::CANDIDATE:
@@ -32,7 +28,7 @@ bool IsVotingRole(const metadata::QuorumPeerPB::Role role) {
 }
 
 Status GivePeerRoleInQuorum(const string& peer_uuid,
-                            metadata::QuorumPeerPB::Role new_role,
+                            QuorumPeerPB::Role new_role,
                             const QuorumPB& old_quorum,
                             QuorumPB* new_quorum) {
   new_quorum->CopyFrom(old_quorum);
@@ -67,8 +63,8 @@ Status GivePeerRoleInQuorum(const string& peer_uuid,
   return Status::OK();
 }
 
-void SetAllQuorumVotersToFollower(const metadata::QuorumPB& old_quorum,
-                                  metadata::QuorumPB* new_quorum) {
+void SetAllQuorumVotersToFollower(const QuorumPB& old_quorum,
+                                  QuorumPB* new_quorum) {
   new_quorum->CopyFrom(old_quorum);
   new_quorum->clear_peers();
   BOOST_FOREACH(const QuorumPeerPB& old_peer, old_quorum.peers()) {
@@ -80,17 +76,17 @@ void SetAllQuorumVotersToFollower(const metadata::QuorumPB& old_quorum,
   }
 }
 
-metadata::QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
-                                             const metadata::QuorumPB& quorum) {
-  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, quorum.peers()) {
+QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
+                                   const QuorumPB& quorum) {
+  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
     if (peer.permanent_uuid() == permanent_uuid) {
       return peer.role();
     }
   }
-  return metadata::QuorumPeerPB::NON_PARTICIPANT;
+  return QuorumPeerPB::NON_PARTICIPANT;
 }
 
-Status VerifyQuorum(const metadata::QuorumPB& quorum, QuorumPBType type) {
+Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type) {
   std::set<string> uuids;
   bool found_leader = false;
   if (quorum.peers_size() == 0) {
@@ -138,7 +134,7 @@ Status VerifyQuorum(const metadata::QuorumPB& quorum, QuorumPBType type) {
     return Status::OK();
   }
 
-  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, quorum.peers()) {
+  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
     if (!peer.has_permanent_uuid() || peer.permanent_uuid() == "") {
       return Status::IllegalState(Substitute("One peer didn't have an uuid or had the empty"
           " string. Quorum: $0", quorum.ShortDebugString()));
@@ -160,8 +156,8 @@ Status VerifyQuorum(const metadata::QuorumPB& quorum, QuorumPBType type) {
           Substitute("Peer: $0 has no role. Quorum: $1", peer.permanent_uuid(),
                      quorum.ShortDebugString()));
     }
-    if (peer.role() == metadata::QuorumPeerPB::LEADER
-        || peer.role() == metadata::QuorumPeerPB::CANDIDATE) {
+    if (peer.role() == QuorumPeerPB::LEADER
+        || peer.role() == QuorumPeerPB::CANDIDATE) {
       if (!found_leader) {
         found_leader = true;
         continue;
@@ -170,7 +166,7 @@ Status VerifyQuorum(const metadata::QuorumPB& quorum, QuorumPBType type) {
           Substitute("Found two peers with LEADER/CANDIDATE role. Quorum: $0",
                      quorum.ShortDebugString()));
     }
-    if (peer.role() == metadata::QuorumPeerPB::LEARNER) {
+    if (peer.role() == QuorumPeerPB::LEARNER) {
       return Status::IllegalState(
           Substitute(
               "Peer: $0 has LEARNER role but this isn't supported yet. Quorum: $1",

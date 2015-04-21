@@ -18,8 +18,6 @@ namespace kudu {
 namespace consensus {
 
 using boost::assign::list_of;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using std::vector;
 
 // TODO: Share a test harness with ConsensusMetadataTest?

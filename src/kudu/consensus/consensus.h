@@ -17,10 +17,6 @@
 
 namespace kudu {
 
-namespace server {
-class Clock;
-}
-
 namespace log {
 class Log;
 }
@@ -29,9 +25,8 @@ namespace master {
 class SysCatalogTable;
 }
 
-namespace metadata {
-class QuorumPB;
-class QuorumPeerPB;
+namespace server {
+class Clock;
 }
 
 namespace tablet {
@@ -41,10 +36,11 @@ class TabletPeer;
 
 namespace consensus {
 
-// forward declarations
-class ConsensusRound;
-class ReplicaTransactionFactory;
 class ConsensusCommitContinuation;
+class ConsensusRound;
+class QuorumPB;
+class QuorumPeerPB;
+class ReplicaTransactionFactory;
 
 typedef uint64_t ConsensusTerm;
 
@@ -59,15 +55,15 @@ struct ConsensusBootstrapInfo {
   ~ConsensusBootstrapInfo();
 
   // The id of the last operation in the log
-  consensus::OpId last_id;
+  OpId last_id;
 
   // The id of the last committed operation in the log.
-  consensus::OpId last_committed_id;
+  OpId last_committed_id;
 
   // REPLICATE messages which were in the log with no accompanying
   // COMMIT. These need to be passed along to consensus init in order
   // to potentially commit them.
-  std::vector<consensus::ReplicateMsg*> orphaned_replicates;
+  std::vector<ReplicateMsg*> orphaned_replicates;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ConsensusBootstrapInfo);
@@ -184,7 +180,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
 
   // Returns the current quorum role of this instance.
-  virtual metadata::QuorumPeerPB::Role role() const = 0;
+  virtual QuorumPeerPB::Role role() const = 0;
 
   // Returns the uuid of this peer.
   virtual std::string peer_uuid() const = 0;
@@ -194,7 +190,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
   // Returns the current configuration of the quorum.
   // NOTE: Returns a copy, thus should not be used in a tight loop.
-  virtual metadata::QuorumPB Quorum() const = 0;
+  virtual QuorumPB Quorum() const = 0;
 
   virtual void DumpStatusHtml(std::ostream& out) const = 0;
 

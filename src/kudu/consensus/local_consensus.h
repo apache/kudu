@@ -48,7 +48,7 @@ class LocalConsensus : public Consensus {
 
   virtual Status Replicate(ConsensusRound* context) OVERRIDE;
 
-  virtual metadata::QuorumPeerPB::Role role() const OVERRIDE;
+  virtual QuorumPeerPB::Role role() const OVERRIDE;
 
   virtual std::string peer_uuid() const OVERRIDE {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -59,7 +59,7 @@ class LocalConsensus : public Consensus {
     return options_.tablet_id;
   }
 
-  virtual metadata::QuorumPB Quorum() const OVERRIDE;
+  virtual QuorumPB Quorum() const OVERRIDE;
 
   virtual void Shutdown() OVERRIDE;
 
@@ -76,7 +76,7 @@ class LocalConsensus : public Consensus {
  private:
 
   const std::string peer_uuid_;
-  metadata::QuorumPB quorum_;
+  QuorumPB quorum_;
 
   const ConsensusOptions options_;
   const gscoped_ptr<ConsensusMetadata> cmeta_;

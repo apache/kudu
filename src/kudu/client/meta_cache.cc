@@ -29,13 +29,13 @@ using strings::Substitute;
 
 namespace kudu {
 
+using consensus::QuorumPeerPB;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::MasterServiceProxy;
 using master::TabletLocationsPB;
 using master::TabletLocationsPB_ReplicaPB;
 using master::TSInfoPB;
-using metadata::QuorumPeerPB;
 using rpc::Messenger;
 using rpc::Rpc;
 using tserver::TabletServerServiceProxy;

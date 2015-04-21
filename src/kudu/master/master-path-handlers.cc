@@ -25,10 +25,10 @@
 
 namespace kudu {
 
+using consensus::QuorumPeerPB;
 using std::vector;
 using std::string;
 using strings::Substitute;
-using metadata::QuorumPeerPB;
 
 namespace master {
 

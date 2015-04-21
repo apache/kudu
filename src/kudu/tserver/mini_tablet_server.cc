@@ -29,10 +29,10 @@
 using kudu::consensus::Consensus;
 using kudu::consensus::ConsensusOptions;
 using kudu::consensus::OpId;
+using kudu::consensus::QuorumPeerPB;
+using kudu::consensus::QuorumPB;
 using kudu::log::Log;
 using kudu::log::LogOptions;
-using kudu::metadata::QuorumPeerPB;
-using kudu::metadata::QuorumPB;
 using strings::Substitute;
 
 namespace kudu {

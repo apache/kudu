@@ -20,10 +20,10 @@ class BlockId;
 class BlockIdPB;
 class FsManager;
 
-namespace metadata {
+namespace consensus {
 class QuorumPB;
 class QuorumPeerPB;
-} // namespace metadata
+} // namespace consensus
 
 namespace rpc {
 class ErrorStatusPB;
@@ -61,7 +61,7 @@ class RemoteBootstrapClient {
   // Runs a "full" remote bootstrap, copying the physical layout of a tablet
   // from the leader of the specified quorum.
   Status RunRemoteBootstrap(tablet::TabletMetadata* meta,
-                            const metadata::QuorumPB& quorum,
+                            const consensus::QuorumPB& quorum,
                             tablet::TabletStatusListener* status_listener);
 
  private:
@@ -78,8 +78,8 @@ class RemoteBootstrapClient {
   };
 
   // Return the leader of the quorum, or Status::NotFound() on error.
-  static Status ExtractLeaderFromQuorum(const metadata::QuorumPB& quorum,
-                                        metadata::QuorumPeerPB* leader);
+  static Status ExtractLeaderFromQuorum(const consensus::QuorumPB& quorum,
+                                        consensus::QuorumPeerPB* leader);
 
   // Extract the embedded Status message from the given ErrorStatusPB.
   // The given ErrorStatusPB must extend RemoteBootstrapErrorPB.
@@ -97,7 +97,7 @@ class RemoteBootstrapClient {
   //
   // 'status_listener' may be passed as NULL.
   Status BeginRemoteBootstrapSession(const std::string& tablet_id,
-                                     const metadata::QuorumPB& quorum,
+                                     const consensus::QuorumPB& quorum,
                                      tablet::TabletStatusListener* status_listener);
 
   // End the remote bootstrap session.

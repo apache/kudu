@@ -59,8 +59,6 @@ namespace kudu {
 namespace consensus {
 
 using log::LogEntryBatch;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
@@ -77,7 +75,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
     ReplicaTransactionFactory* txn_factory,
     const std::tr1::shared_ptr<rpc::Messenger>& messenger,
     const scoped_refptr<log::Log>& log) {
-  gscoped_ptr<consensus::PeerProxyFactory> rpc_factory(
+  gscoped_ptr<PeerProxyFactory> rpc_factory(
     new RpcPeerProxyFactory(messenger));
 
   // The message queue that keeps track of which operations need to be replicated
@@ -1074,7 +1072,7 @@ void RaftConsensus::Shutdown() {
   CHECK_OK(ExecuteHook(POST_SHUTDOWN));
 }
 
-metadata::QuorumPeerPB::Role RaftConsensus::GetActiveRole() const {
+QuorumPeerPB::Role RaftConsensus::GetActiveRole() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
   const QuorumState& state = state_->GetActiveQuorumStateUnlocked();

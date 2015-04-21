@@ -12,6 +12,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -20,7 +21,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/tserver/remote_bootstrap_session.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/metrics.h"
@@ -33,12 +33,12 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
+using consensus::QuorumPB;
+using consensus::QuorumPeerPB;
 using fs::ReadableBlock;
 using log::Log;
 using log::LogOptions;
 using log::LogAnchorRegistry;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
 using strings::Substitute;

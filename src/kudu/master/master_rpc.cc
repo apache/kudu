@@ -21,7 +21,7 @@ using std::tr1::shared_ptr;
 using std::string;
 using std::vector;
 
-using kudu::metadata::QuorumPeerPB;
+using kudu::consensus::QuorumPeerPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::Rpc;
 

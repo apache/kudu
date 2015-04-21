@@ -4,7 +4,7 @@ package kudu.master;
 
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
-import "kudu/server/metadata.proto";
+import "kudu/consensus/metadata.proto";
 import "kudu/tablet/metadata.proto";
 
 ////////////////////////////////////////////////////////////
@@ -86,7 +86,7 @@ message SysTabletsEntryPB {
 
   // the last quorum configuration, reported to the master.
   // when the tablet is in "preparing" state (not assigned yet) the quorum is not set.
-  optional metadata.QuorumPB quorum = 3;
+  optional consensus.QuorumPB quorum = 3;
 
   // Debug state for the tablet
   required State state = 4;
@@ -153,11 +153,11 @@ message TSRegistrationPB {
 message ReportedTabletPB {
   required bytes tablet_id = 1;
   required tablet.TabletStatePB state = 2;
-  required metadata.QuorumPeerPB.Role role = 3;
+  required consensus.QuorumPeerPB.Role role = 3;
 
   // The quorum serving the tablet.
   // This is only set if role == LEADER.
-  optional metadata.QuorumPB quorum = 4;
+  optional consensus.QuorumPB quorum = 4;
 
   optional AppStatusPB error = 5;
   optional uint32 schema_version = 6;
@@ -246,7 +246,7 @@ message TSHeartbeatResponsePB {
 message TabletLocationsPB {
   message ReplicaPB {
     required TSInfoPB ts_info = 1;
-    required metadata.QuorumPeerPB.Role role = 2;
+    required consensus.QuorumPeerPB.Role role = 2;
   }
 
   required bytes tablet_id = 1;
@@ -473,7 +473,7 @@ message GetMasterRegistrationResponsePB {
   optional ServerRegistrationPB registration = 2;
 
   // This server's role in the quorum.
-  optional metadata.QuorumPeerPB.Role role = 3;
+  optional consensus.QuorumPeerPB.Role role = 3;
 
   // Set if there an error retrieving the registration information.
   optional MasterErrorPB error = 4;

@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/fs/fs_manager.h"
@@ -13,7 +14,6 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_peer.h"
@@ -35,9 +35,9 @@ namespace kudu {
 namespace tserver {
 
 using consensus::OpId;
+using consensus::QuorumPB;
+using consensus::QuorumPeerPB;
 using fs::WritableBlock;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using rpc::Messenger;
 using std::string;
 using std::tr1::shared_ptr;
@@ -87,8 +87,8 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::ExtractLeaderFromQuorum(const metadata::QuorumPB& quorum,
-                                                      metadata::QuorumPeerPB* leader) {
+Status RemoteBootstrapClient::ExtractLeaderFromQuorum(const consensus::QuorumPB& quorum,
+                                                      consensus::QuorumPeerPB* leader) {
   BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
     if (peer.role() == QuorumPeerPB::LEADER) {
       leader->CopyFrom(peer);
@@ -128,7 +128,7 @@ void RemoteBootstrapClient::UpdateStatusMessage(const string& message) {
 }
 
 Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tablet_id,
-                                                          const metadata::QuorumPB& quorum,
+                                                          const consensus::QuorumPB& quorum,
                                                           TabletStatusListener* status_listener) {
   CHECK_EQ(kNoSession, state_);
 

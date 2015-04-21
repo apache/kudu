@@ -6,10 +6,9 @@
 #include <stdint.h>
 #include <string>
 
-#include "kudu/consensus/consensus.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -29,7 +28,7 @@ class ConsensusMetadata {
   // Encoded PB is flushed to disk before returning.
   static Status Create(FsManager* fs_manager,
                        const std::string& tablet_id,
-                       metadata::QuorumPB& quorum,
+                       QuorumPB& quorum,
                        uint64_t current_term,
                        gscoped_ptr<ConsensusMetadata>* cmeta);
 

@@ -7,12 +7,12 @@
 #include <limits>
 
 #include "kudu/consensus/log.h"
-#include "kudu/consensus/log_util.h"
-#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/log_anchor_registry.h"
+#include "kudu/consensus/log_util.h"
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/transfer.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/tserver/remote_bootstrap.pb.h"
 #include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
@@ -31,10 +31,10 @@ DECLARE_uint64(remote_bootstrap_timeout_poll_period_ms);
 namespace kudu {
 namespace tserver {
 
-using env_util::ReadFully;
 using consensus::MaximumOpId;
 using consensus::MinimumOpId;
 using consensus::OpIdEquals;
+using env_util::ReadFully;
 using log::ReadableLogSegment;
 using rpc::ErrorStatusPB;
 using rpc::RpcController;

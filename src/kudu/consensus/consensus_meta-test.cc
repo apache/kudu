@@ -4,10 +4,10 @@
 
 #include <gtest/gtest.h>
 
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
@@ -17,7 +17,6 @@
 namespace kudu {
 namespace consensus {
 
-using metadata::QuorumPB;
 using std::string;
 
 const char* kTabletId = "test-consensus-metadata";

@@ -30,10 +30,10 @@
 #include "kudu/util/threadpool.h"
 
 using kudu::consensus::ConsensusMetadata;
+using kudu::consensus::QuorumPB;
+using kudu::consensus::QuorumPeerPB;
 using kudu::log::Log;
 using kudu::log::LogAnchorRegistry;
-using kudu::metadata::QuorumPB;
-using kudu::metadata::QuorumPeerPB;
 using kudu::tablet::LatchTransactionCompletionCallback;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;

@@ -27,7 +27,6 @@ namespace consensus {
 
 using log::Log;
 using log::LogOptions;
-using metadata::QuorumPB;
 using std::string;
 using ::testing::_;
 using ::testing::AnyNumber;
@@ -72,7 +71,7 @@ class MockQueue : public PeerMessageQueue {
 class MockPeerManager : public PeerManager {
  public:
   MockPeerManager() : PeerManager("", "", NULL, NULL, NULL, NULL) {}
-  MOCK_METHOD1(UpdateQuorum, Status(const metadata::QuorumPB& quorum));
+  MOCK_METHOD1(UpdateQuorum, Status(const consensus::QuorumPB& quorum));
   MOCK_METHOD1(SignalRequest, void(bool force_if_queue_empty));
   MOCK_METHOD0(Close, void());
 };

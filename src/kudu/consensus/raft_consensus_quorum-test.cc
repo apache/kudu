@@ -49,8 +49,6 @@ using log::Log;
 using log::LogEntryPB;
 using log::LogOptions;
 using log::LogReader;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using rpc::RpcContext;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
@@ -131,7 +129,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       gscoped_ptr<ConsensusMetadata> cmeta;
       CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, quorum_,
-                                         consensus::kMinimumTerm, &cmeta));
+                                         kMinimumTerm, &cmeta));
 
 
       string peer_uuid = Substitute("peer-$0", i);
@@ -454,7 +452,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   void VerifyNoCommitsBeforeReplicates(const vector<LogEntryPB*>& entries) {
-    unordered_set<consensus::OpId,
+    unordered_set<OpId,
                   OpIdHashFunctor,
                   OpIdEqualsFunctor> replication_ops;
 

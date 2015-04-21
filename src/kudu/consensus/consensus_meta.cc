@@ -2,18 +2,16 @@
 // Confidential Cloudera Information: Covered by NDA.
 #include "kudu/consensus/consensus_meta.h"
 
-#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/util/pb_util.h"
 
 namespace kudu {
 namespace consensus {
 
-using metadata::QuorumPB;
 using std::string;
 using strings::Substitute;
 

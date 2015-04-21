@@ -26,14 +26,14 @@ namespace kudu {
 class FsManager;
 class Schema;
 
+namespace consensus {
+class QuorumPB;
+} // namespace consensus
+
 namespace master {
 class ReportedTabletPB;
 class TabletReportPB;
 } // namespace master
-
-namespace metadata {
-class QuorumPB;
-} // namespace metadata
 
 namespace tablet {
 class TabletMetadata;
@@ -89,7 +89,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                          const std::string& end_key,
                          const std::string& table_name,
                          const Schema& schema,
-                         metadata::QuorumPB quorum,
+                         consensus::QuorumPB quorum,
                          scoped_refptr<tablet::TabletPeer>* tablet_peer);
 
   // Delete the specified tablet.

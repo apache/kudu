@@ -39,8 +39,6 @@ namespace kudu {
 namespace consensus {
 
 using log::Log;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using strings::Substitute;
 
 static gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int term,
@@ -242,7 +240,7 @@ class MockedPeerProxy : public TestPeerProxy {
 class NoOpTestPeerProxy : public TestPeerProxy {
  public:
 
-  explicit NoOpTestPeerProxy(ThreadPool* pool, const metadata::QuorumPeerPB& peer_pb)
+  explicit NoOpTestPeerProxy(ThreadPool* pool, const consensus::QuorumPeerPB& peer_pb)
     : TestPeerProxy(pool), peer_pb_(peer_pb) {
     last_received_.CopyFrom(MinimumOpId());
   }
@@ -293,7 +291,7 @@ class NoOpTestPeerProxy : public TestPeerProxy {
   }
 
  private:
-  const metadata::QuorumPeerPB peer_pb_;
+  const consensus::QuorumPeerPB peer_pb_;
   ConsensusStatusPB last_status_; // Protected by lock_.
   OpId last_received_;            // Protected by lock_.
 };
@@ -304,7 +302,7 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
     CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
   }
 
-  virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
+  virtual Status NewProxy(const consensus::QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
     proxy->reset(new NoOpTestPeerProxy(pool_.get(), peer_pb));
     return Status::OK();
@@ -514,7 +512,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
     CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
   }
 
-  virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
+  virtual Status NewProxy(const consensus::QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
     LocalTestPeerProxy* new_proxy = new LocalTestPeerProxy(peer_pb.permanent_uuid(),
                                                            pool_.get(),

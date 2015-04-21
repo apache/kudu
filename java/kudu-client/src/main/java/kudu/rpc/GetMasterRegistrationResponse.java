@@ -3,8 +3,8 @@
 package kudu.rpc;
 
 import kudu.WireProtocol;
+import kudu.consensus.Metadata;
 import kudu.master.Master;
-import kudu.metadata.Metadata;
 
 /**
  * Response for {@link GetMasterRegistrationRequest}.

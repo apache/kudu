@@ -140,7 +140,7 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   // Set up a new leader election driver.
   //
   // The 'vote_counter' must be initialized with the candidate's own yes vote.
-  LeaderElection(const metadata::QuorumPB& quorum,
+  LeaderElection(const QuorumPB& quorum,
                  PeerProxyFactory* proxy_factory,
                  const VoteRequestPB& request,
                  gscoped_ptr<VoteCounter> vote_counter,

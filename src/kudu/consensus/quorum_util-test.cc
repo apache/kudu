@@ -14,8 +14,6 @@
 namespace kudu {
 namespace consensus {
 
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using std::vector;
 
 class QuorumUtilTest : public KuduTest {

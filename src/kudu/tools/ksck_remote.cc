@@ -280,8 +280,8 @@ Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
     shared_ptr<KsckTablet> tablet(new KsckTablet(locations.tablet_id()));
     vector<shared_ptr<KsckTabletReplica> > replicas;
     BOOST_FOREACH(const master::TabletLocationsPB_ReplicaPB& replica, locations.replicas()) {
-      bool is_leader = replica.role() == metadata::QuorumPeerPB::LEADER;
-      bool is_follower = replica.role() == metadata::QuorumPeerPB::FOLLOWER;
+      bool is_leader = replica.role() == consensus::QuorumPeerPB::LEADER;
+      bool is_follower = replica.role() == consensus::QuorumPeerPB::FOLLOWER;
       replicas.push_back(shared_ptr<KsckTabletReplica>(
           new KsckTabletReplica(replica.ts_info().permanent_uuid(), is_leader, is_follower)));
     }

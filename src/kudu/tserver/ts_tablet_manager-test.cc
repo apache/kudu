@@ -9,9 +9,9 @@
 #include <tr1/memory>
 
 #include "kudu/common/schema.h"
-#include "kudu/master/master.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/fs_manager.h"
-#include "kudu/server/metadata.pb.h"
+#include "kudu/master/master.pb.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
@@ -26,11 +26,11 @@
 namespace kudu {
 namespace tserver {
 
-using master::TabletReportPB;
+using consensus::QuorumPB;
 using master::ReportedTabletPB;
-using metadata::QuorumPB;
-using tablet::TabletPeer;
+using master::TabletReportPB;
 using std::tr1::shared_ptr;
+using tablet::TabletPeer;
 
 static const char* const kTabletId = "my-tablet-id";
 
@@ -124,7 +124,7 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
       ASSERT_EQ(1, reported_tablet.quorum().opid_index());
       ASSERT_EQ(1, reported_tablet.quorum().peers_size());
       ASSERT_EQ(reported_tablet.quorum().peers(0).role(),
-                metadata::QuorumPeerPB::LEADER);
+                consensus::QuorumPeerPB::LEADER);
     }
   }
   ASSERT_TRUE(found_tablet);

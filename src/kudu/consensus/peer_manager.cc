@@ -14,7 +14,6 @@ namespace kudu {
 namespace consensus {
 
 using log::Log;
-using metadata::QuorumPeerPB;
 using strings::Substitute;
 
 PeerManager::PeerManager(const std::string tablet_id,
@@ -35,7 +34,7 @@ PeerManager::~PeerManager() {
   Close();
 }
 
-Status PeerManager::UpdateQuorum(const metadata::QuorumPB& quorum) {
+Status PeerManager::UpdateQuorum(const QuorumPB& quorum) {
   unordered_set<string> new_peers;
 
   VLOG(1) << "Updating peers from new quorum: " << quorum.ShortDebugString();

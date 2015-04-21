@@ -41,11 +41,11 @@ class ChangeConfigTransactionState : public TransactionState {
   const consensus::ChangeConfigRequestPB* request() const { return request_; }
   consensus::ChangeConfigResponsePB* response() OVERRIDE { return response_; }
 
-  Status set_old_quorum(metadata::QuorumPB quorum) WARN_UNUSED_RESULT;
+  Status set_old_quorum(consensus::QuorumPB quorum) WARN_UNUSED_RESULT;
 
   // Returns the quorum that was configured before this transaction
   // took place. Only available after the prepare phase.
-  const metadata::QuorumPB old_quorum() { return old_quorum_; }
+  const consensus::QuorumPB old_quorum() { return old_quorum_; }
 
   void acquire_config_sem(Semaphore* sem) {
     TRACE("Acquiring the config sem.");
@@ -70,7 +70,7 @@ class ChangeConfigTransactionState : public TransactionState {
  private:
   DISALLOW_COPY_AND_ASSIGN(ChangeConfigTransactionState);
 
-  metadata::QuorumPB old_quorum_;
+  consensus::QuorumPB old_quorum_;
   const consensus::ChangeConfigRequestPB *request_;
   consensus::ChangeConfigResponsePB *response_;
   boost::unique_lock<Semaphore> config_lock_;

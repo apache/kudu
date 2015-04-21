@@ -39,11 +39,11 @@ DEFINE_int32(max_consecutive_failed_heartbeats, 3,
 
 using google::protobuf::RepeatedPtrField;
 using kudu::HostPortPB;
+using kudu::consensus::QuorumPeerPB;
 using kudu::master::GetLeaderMasterRpc;
 using kudu::master::ListMastersResponsePB;
 using kudu::master::Master;
 using kudu::master::MasterServiceProxy;
-using kudu::metadata::QuorumPeerPB;
 using kudu::rpc::RpcController;
 using std::tr1::shared_ptr;
 using strings::Substitute;

@@ -9,13 +9,13 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/webui_util.h"
-#include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -25,9 +25,9 @@
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/url-coding.h"
 
+using kudu::consensus::QuorumPB;
+using kudu::consensus::QuorumPeerPB;
 using kudu::consensus::TransactionStatusPB;
-using kudu::metadata::QuorumPB;
-using kudu::metadata::QuorumPeerPB;
 using kudu::MaintenanceManager;
 using kudu::tablet::MaintenanceManagerStatusPB;
 using kudu::tablet::MaintenanceManagerStatusPB_CompletedOpPB;

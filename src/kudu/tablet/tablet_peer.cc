@@ -47,13 +47,13 @@ using consensus::ConsensusOptions;
 using consensus::ConsensusRound;
 using consensus::LocalConsensus;
 using consensus::OpId;
+using consensus::QuorumPB;
+using consensus::QuorumPeerPB;
 using consensus::RaftConsensus;
 using consensus::CHANGE_CONFIG_OP;
 using consensus::WRITE_OP;
 using log::Log;
 using log::LogAnchorRegistry;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using rpc::Messenger;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
@@ -164,12 +164,12 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   return Status::OK();
 }
 
-const metadata::QuorumPB TabletPeer::Quorum() const {
+const consensus::QuorumPB TabletPeer::Quorum() const {
   CHECK(consensus_) << "consensus is null";
   return consensus_->Quorum();
 }
 
-void TabletPeer::ConsensusStateChanged(metadata::QuorumPeerPB::Role new_role) {
+void TabletPeer::ConsensusStateChanged(consensus::QuorumPeerPB::Role new_role) {
   // We count down the running latch on the role change cuz this signals
   // when consensus is ready and other places are relying on that.
   // TODO remove this latch and make people simply retry.

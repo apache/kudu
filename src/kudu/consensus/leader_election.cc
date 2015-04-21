@@ -7,6 +7,7 @@
 #include <boost/foreach.hpp>
 
 #include "kudu/consensus/consensus_peers.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
@@ -14,7 +15,6 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/rpc/rpc_controller.cc"
 #include "kudu/util/logging.h"
@@ -24,7 +24,6 @@
 namespace kudu {
 namespace consensus {
 
-using metadata::QuorumPeerPB;
 using std::string;
 using std::tr1::unordered_map;
 using strings::Substitute;
@@ -138,7 +137,7 @@ ElectionResult::ElectionResult(ConsensusTerm election_term, ElectionVote decisio
 // LeaderElection
 ///////////////////////////////////////////////////
 
-LeaderElection::LeaderElection(const metadata::QuorumPB& quorum,
+LeaderElection::LeaderElection(const QuorumPB& quorum,
                                PeerProxyFactory* proxy_factory,
                                const VoteRequestPB& request,
                                gscoped_ptr<VoteCounter> vote_counter,
@@ -148,7 +147,7 @@ LeaderElection::LeaderElection(const metadata::QuorumPB& quorum,
     vote_counter_(vote_counter.Pass()),
     decision_callback_(decision_callback) {
 
-  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, quorum.peers()) {
+  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
     if (request.candidate_uuid() == peer.permanent_uuid()) continue;
     follower_uuids_.push_back(peer.permanent_uuid());
     gscoped_ptr<PeerProxy> proxy;

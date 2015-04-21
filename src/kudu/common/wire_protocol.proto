@@ -9,7 +9,7 @@
 package kudu;
 
 import "kudu/common/common.proto";
-import "kudu/server/metadata.proto";
+import "kudu/consensus/metadata.proto";
 
 // Error status returned by any RPC method.
 // Every RPC method which could generate an application-level error
@@ -83,7 +83,7 @@ message ServerEntryPB {
 
   // If an error has occured earlier in the RPC call, the role
   // may be not be set.
-  optional metadata.QuorumPeerPB.Role role = 4;
+  optional consensus.QuorumPeerPB.Role role = 4;
 }
 
 message ColumnBlockPB {

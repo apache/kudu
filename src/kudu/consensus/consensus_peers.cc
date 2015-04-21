@@ -9,9 +9,8 @@
 #include <utility>
 #include <vector>
 
-#include "kudu/consensus/consensus_peers.h"
-
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log.h"
@@ -36,13 +35,12 @@ namespace consensus {
 
 using log::Log;
 using log::LogEntryBatch;
-using metadata::QuorumPeerPB;
 using std::tr1::shared_ptr;
 using rpc::Messenger;
 using rpc::RpcController;
 using strings::Substitute;
 
-Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
+Status Peer::NewRemotePeer(const QuorumPeerPB& peer_pb,
                            const string& tablet_id,
                            const string& leader_uuid,
                            PeerMessageQueue* queue,
@@ -61,7 +59,7 @@ Status Peer::NewRemotePeer(const metadata::QuorumPeerPB& peer_pb,
   return Status::OK();
 }
 
-Peer::Peer(const metadata::QuorumPeerPB& peer_pb,
+Peer::Peer(const QuorumPeerPB& peer_pb,
            const string& tablet_id,
            const string& leader_uuid,
            gscoped_ptr<PeerProxy> proxy,

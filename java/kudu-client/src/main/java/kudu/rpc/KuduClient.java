@@ -39,7 +39,7 @@ import kudu.Schema;
 import kudu.master.Master;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import kudu.metadata.Metadata;
+import kudu.consensus.Metadata;
 import kudu.util.AsyncUtil;
 import kudu.util.NetUtil;
 import kudu.util.Slice;

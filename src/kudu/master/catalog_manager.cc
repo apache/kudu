@@ -86,7 +86,7 @@ namespace master {
 using base::subtle::NoBarrier_Load;
 using base::subtle::NoBarrier_CompareAndSwap;
 using cfile::TypeEncodingInfo;
-using metadata::QuorumPeerPB;
+using consensus::QuorumPeerPB;
 using rpc::RpcContext;
 using std::string;
 using std::vector;
@@ -1349,7 +1349,7 @@ void CatalogManager::ResetTabletReplicasFromReportedQuorum(TSDescriptor* ts_desc
           << " to that committed in log index " << report.quorum().opid_index();
   tablet_lock->mutable_data()->pb.mutable_quorum()->CopyFrom(report.quorum());
   vector<TabletReplica> replicas;
-  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, report.quorum().peers()) {
+  BOOST_FOREACH(const consensus::QuorumPeerPB& peer, report.quorum().peers()) {
     std::tr1::shared_ptr<TSDescriptor> ts_desc;
     Status status = master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc);
     if (status.IsNotFound()) {
@@ -2166,7 +2166,7 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
   }
 
   // Select the set of replicas
-  metadata::QuorumPB *quorum = tablet->mutable_metadata()->mutable_dirty()->pb.mutable_quorum();
+  consensus::QuorumPB *quorum = tablet->mutable_metadata()->mutable_dirty()->pb.mutable_quorum();
   if (nreplicas == 1 && FLAGS_catalog_manager_allow_local_consensus) {
     quorum->set_local(true);
   } else {
@@ -2179,7 +2179,7 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
 
 void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets) {
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
-    const metadata::QuorumPB& quorum = tablet->metadata().dirty().pb.quorum();
+    const consensus::QuorumPB& quorum = tablet->metadata().dirty().pb.quorum();
     tablet->set_last_update_ts(MonoTime::Now(MonoTime::FINE));
     BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
       AsyncCreateTablet *task = new AsyncCreateTablet(master_, worker_pool_.get(),
@@ -2192,7 +2192,7 @@ void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets
 
 void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
                                     int nreplicas,
-                                    metadata::QuorumPB *quorum) {
+                                    consensus::QuorumPB *quorum) {
   // TODO: Select N Replicas
   // at the moment we have to scan all the tablets to build a map TS -> tablets
   // to know how many tablets a TS has... so, let's do a dumb assignment for now.
@@ -2223,7 +2223,7 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
 
 bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& tablet,
                                              TabletLocationsPB* locs_pb) {
-  metadata::QuorumPB stale_quorum;
+  consensus::QuorumPB stale_quorum;
   TSRegistrationPB reg;
 
   vector<TabletReplica> locs;
@@ -2255,7 +2255,7 @@ bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& ta
     tsinfo_pb->mutable_rpc_addresses()->Swap(reg.mutable_rpc_addresses());
   }
 
-  BOOST_FOREACH(const metadata::QuorumPeerPB& peer, stale_quorum.peers()) {
+  BOOST_FOREACH(const consensus::QuorumPeerPB& peer, stale_quorum.peers()) {
     TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
     replica_pb->set_role(peer.role());
 

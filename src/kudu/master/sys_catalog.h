@@ -130,7 +130,7 @@ class SysCatalogTable {
   //
   // TODO: Revisit this whole thing when integrating leader election.
   Status SetupDistributedQuorum(const MasterOptions& options,
-                                metadata::QuorumPB* committed_quorum);
+                                consensus::QuorumPB* committed_quorum);
 
   const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {
     return tablet_peer_;
@@ -175,7 +175,7 @@ class SysCatalogTable {
   Master* master_;
 
   ElectedLeaderCallback leader_cb_;
-  metadata::QuorumPeerPB::Role old_role_;
+  consensus::QuorumPeerPB::Role old_role_;
 };
 
 } // namespace master

@@ -22,12 +22,12 @@ using consensus::ReplicateMsg;
 using consensus::CommitMsg;
 using consensus::CHANGE_CONFIG_OP;
 using consensus::DriverType;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
+using consensus::QuorumPB;
+using consensus::QuorumPeerPB;
 using strings::Substitute;
 using tserver::TabletServerErrorPB;
 
-Status ChangeConfigTransactionState::set_old_quorum(metadata::QuorumPB quorum) {
+Status ChangeConfigTransactionState::set_old_quorum(consensus::QuorumPB quorum) {
   RETURN_NOT_OK(consensus::VerifyQuorum(quorum, consensus::COMMITTED_QUORUM));
   old_quorum_.CopyFrom(quorum);
   return Status::OK();

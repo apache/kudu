@@ -11,7 +11,7 @@ import com.google.common.collect.ImmutableList;
 import kudu.master.Master.TabletLocationsPB;
 import kudu.master.Master.TabletLocationsPB.ReplicaPB;
 import kudu.Common.HostPortPB;
-import kudu.metadata.Metadata.QuorumPeerPB.Role;
+import kudu.consensus.Metadata.QuorumPeerPB.Role;
 
 /**
  * Information about the locations of tablets in a Kudu table.

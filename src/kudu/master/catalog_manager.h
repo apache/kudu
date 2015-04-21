@@ -67,7 +67,7 @@ struct PersistentTabletInfo {
 struct TabletReplica {
   TSDescriptor* ts_desc;
   tablet::TabletStatePB state;
-  metadata::QuorumPeerPB::Role role;
+  consensus::QuorumPeerPB::Role role;
 };
 
 // The information about a single tablet which exists in the cluster,
@@ -393,7 +393,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   // Returns this CatalogManager's role in a quorum. CatalogManager
   // must be initialized before calling this method.
-  metadata::QuorumPeerPB::Role Role() const;
+  consensus::QuorumPeerPB::Role Role() const;
 
  private:
   friend class TableLoader;
@@ -506,7 +506,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // This method is called by "SelectReplicasForTablet".
   void SelectReplicas(const TSDescriptorVector& ts_descs,
                       int nreplicas,
-                      metadata::QuorumPB *quorum);
+                      consensus::QuorumPB *quorum);
 
   void HandleAssignPreparingTablet(TabletInfo* tablet,
                                    DeferredAssignmentActions* deferred);

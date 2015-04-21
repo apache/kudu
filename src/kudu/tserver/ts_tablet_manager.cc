@@ -15,13 +15,14 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/log.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.pb.h"
-#include "kudu/server/metadata.pb.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_bootstrap.h"
@@ -46,11 +47,11 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
+using consensus::QuorumPB;
+using consensus::QuorumPeerPB;
 using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
-using metadata::QuorumPB;
-using metadata::QuorumPeerPB;
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;

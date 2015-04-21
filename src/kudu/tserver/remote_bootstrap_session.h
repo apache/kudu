@@ -10,6 +10,7 @@
 
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/log_util.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -17,7 +18,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/tserver/remote_bootstrap.pb.h"
-#include "kudu/server/metadata.pb.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"

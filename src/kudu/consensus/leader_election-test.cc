@@ -10,7 +10,7 @@
 
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/consensus-test-util.h"
-#include "kudu/server/metadata.pb.h"
+#include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -20,7 +20,6 @@
 namespace kudu {
 namespace consensus {
 
-using metadata::QuorumPeerPB;
 using std::string;
 using std::tr1::unordered_map;
 using std::vector;
@@ -52,7 +51,7 @@ class FromMapPeerProxyFactory : public PeerProxyFactory {
       : proxy_map_(proxy_map) {
   }
 
-  virtual Status NewProxy(const metadata::QuorumPeerPB& peer_pb,
+  virtual Status NewProxy(const QuorumPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) {
     PeerProxy* proxy_ptr = FindPtrOrNull(*proxy_map_, peer_pb.permanent_uuid());
     if (!proxy) return Status::NotFound("No proxy for peer.");

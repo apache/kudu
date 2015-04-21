@@ -52,7 +52,7 @@ PROTOBUF_GENERATE_CPP(TABLET_PROTO_SRCS TABLET_PROTO_HDRS
 add_library(tablet_proto ${TABLET_PROTO_SRCS} ${TABLET_PROTO_HDRS})
 target_link_libraries(tablet_proto
   fs_proto
-  metadata_proto
+  consensus_metadata_proto
   kudu_common)
 
 add_library(tablet ${TABLET_SRCS})

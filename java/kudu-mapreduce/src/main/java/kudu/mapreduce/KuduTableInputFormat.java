@@ -23,6 +23,7 @@ import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
+import kudu.consensus.Metadata;
 import kudu.rpc.Bytes;
 import kudu.rpc.DeadlineTracker;
 import kudu.rpc.KuduClient;

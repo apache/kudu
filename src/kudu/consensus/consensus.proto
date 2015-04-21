@@ -4,7 +4,7 @@ package kudu.consensus;
 
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
-import "kudu/server/metadata.proto";
+import "kudu/consensus/metadata.proto";
 import "kudu/tablet/tablet.proto";
 import "kudu/tserver/tserver_admin.proto";
 import "kudu/tserver/tserver.proto";
@@ -34,7 +34,7 @@ message ConsensusErrorPB {
     // The replica does not recognize the caller's request as coming from a
     // member of the quorum.
     NOT_IN_QUORUM = 5;
-    
+
     // The responder's last entry didn't match the caller's preceding entry.
     PRECEDING_ENTRY_DIDNT_MATCH = 6;
   }
@@ -62,37 +62,6 @@ message OpId {
   required int64 index = 2;
 }
 
-// This PB is used to serialize all of the persistent state needed for
-// Consensus that is not in the WAL, such as leader election and
-// communication on startup.
-message ConsensusMetadataPB {
-  // Last-committed quorum membership.
-  required kudu.metadata.QuorumPB committed_quorum = 1;
-
-  // Latest term this server has seen.
-  // When a quorum is first created, initialized to 0.
-  //
-  // Whenever a new election is started, the candidate increments this by one
-  // and requests votes from peers.
-  //
-  // If any RPC or RPC response is received from another node containing a term higher
-  // than this one, the server should step down to FOLLOWER and set its current_term to
-  // match the caller's term.
-  //
-  // If a follower receives an UpdateConsensus RPC with a term lower than this
-  // term, then that implies that the RPC is coming from a former LEADER who has
-  // not realized yet that its term is over. In that case, we will reject the
-  // UpdateConsensus() call with ConsensusErrorPB::INVALID_TERM.
-  //
-  // If a follower receives a RequestConsensusVote() RPC with an earlier term,
-  // the vote is denied.
-  required uint64 current_term = 2;
-
-  // Permanent UUID of the candidate voted for in 'current_term', or not present
-  // if no vote was made in the current term.
-  optional string voted_for = 3;
-}
-
 // ===========================================================================
 //  External Consensus Messages
 // ===========================================================================
@@ -118,10 +87,10 @@ message ChangeConfigRequestPB {
   required bytes tablet_id = 1;
 
   // The old config seqno to perform CAS style quorum config changes.
-  optional kudu.metadata.QuorumPB old_config = 2;
+  optional QuorumPB old_config = 2;
 
   // The new configuration to set the quorum to.
-  required kudu.metadata.QuorumPB new_config = 3;
+  required QuorumPB new_config = 3;
 }
 
 // The configuration change response. If any immediate error occurred
@@ -351,7 +320,7 @@ message GetCommittedQuorumRequestPB {
 }
 
 message GetCommittedQuorumResponsePB {
-  optional kudu.metadata.QuorumPB quorum = 1;
+  optional QuorumPB quorum = 1;
     // A generic error message (such as tablet not found).
   optional tserver.TabletServerErrorPB error = 2;
 }

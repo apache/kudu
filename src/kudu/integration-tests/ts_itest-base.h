@@ -34,10 +34,10 @@ namespace kudu {
 namespace tserver {
 
 using consensus::OpId;
+using consensus::QuorumPeerPB;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::TabletLocationsPB;
-using metadata::QuorumPeerPB;
 using rpc::RpcController;
 using std::vector;
 using std::string;

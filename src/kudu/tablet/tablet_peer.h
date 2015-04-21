@@ -142,7 +142,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   }
 
   // Returns the current quorum configuration.
-  const metadata::QuorumPB Quorum() const;
+  const consensus::QuorumPB Quorum() const;
 
   // If any peers in the quorum lack permanent uuids, get them via an
   // RPC call and update.
@@ -153,7 +153,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Currently this is called to activate the TsTabletManager callback that allows to
   // mark the tablet report as dirty, so that the master will eventually become
   // aware that the consensus role has changed for this peer.
-  void ConsensusStateChanged(metadata::QuorumPeerPB::Role new_role);
+  void ConsensusStateChanged(consensus::QuorumPeerPB::Role new_role);
 
   TabletStatusListener* status_listener() const {
     return status_listener_.get();
@@ -245,7 +245,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // After bootstrap is complete and consensus is setup this initiates the transactions
   // that were not complete on bootstrap.
   // Not implemented yet. See .cc file.
-  Status StartPendingTransactions(metadata::QuorumPeerPB::Role my_role,
+  Status StartPendingTransactions(consensus::QuorumPeerPB::Role my_role,
                                   const consensus::ConsensusBootstrapInfo& bootstrap_info);
 
   scoped_refptr<TabletMetadata> meta_;
