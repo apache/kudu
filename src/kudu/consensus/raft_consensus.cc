@@ -195,12 +195,10 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
     queue_->Init(state_->GetLastReceivedOpIdUnlocked());
   }
 
-  if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
-    // Leader election path.
+  {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Initializing failure detector for fast election at startup";
     RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
 
     // If this is the first term expire the FD immediately so that we have a fast first
@@ -213,13 +211,15 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
       // election to get a higher likelihood of enough servers being available
       // when the first one attempts an election to avoid multiple election
       // cycles on startup, while keeping that "waiting period" random.
+      if (PREDICT_TRUE(FLAGS_enable_leader_failure_detection)) {
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << "Consensus starting up: Expiring failure detector timer "
+                                          "to make a prompt election more likely";
+      }
       RETURN_NOT_OK(ExpireFailureDetectorUnlocked());
     }
 
     // Now assume "follower" duties.
     RETURN_NOT_OK(BecomeReplicaUnlocked());
-  } else {
-    RETURN_NOT_OK(ChangeConfig());
   }
 
   RETURN_NOT_OK(ExecuteHook(POST_START));
@@ -227,24 +227,21 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
 }
 
 Status RaftConsensus::EmulateElection() {
+  ReplicaState::UniqueLock lock;
+  RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
   QuorumPB new_quorum;
-  {
-    ReplicaState::UniqueLock lock;
-    RETURN_NOT_OK(state_->LockForConfigChange(&lock));
+  RETURN_NOT_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
+                                      QuorumPeerPB::LEADER,
+                                      state_->GetCommittedQuorumUnlocked(),
+                                      &new_quorum));
+  new_quorum.clear_opid_index();
 
-    QuorumPB new_quorum;
-    RETURN_NOT_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
-                                       QuorumPeerPB::LEADER,
-                                       state_->GetCommittedQuorumUnlocked(),
-                                       &new_quorum));
-    new_quorum.clear_opid_index();
-    // Increment the term.
-    RETURN_NOT_OK(state_->IncrementTermUnlocked());
-    RETURN_NOT_OK(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM));
-    RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
-    return ChangeConfigUnlocked();
-  }
+  // Assume leadership of new term.
+  RETURN_NOT_OK(state_->IncrementTermUnlocked());
+  RETURN_NOT_OK(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM));
+  RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
+  return BecomeLeaderUnlocked();
 }
 
 Status RaftConsensus::StartElection() {
@@ -314,30 +311,6 @@ void RaftConsensus::ReportFailureDetected(const std::string& name, const Status&
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX(WARNING) << "Failed to trigger leader election: " << s.ToString();
   }
-}
-
-Status RaftConsensus::ChangeConfig() {
-  ReplicaState::UniqueLock lock;
-  RETURN_NOT_OK(state_->LockForConfigChange(&lock));
-  RETURN_NOT_OK(ChangeConfigUnlocked());
-  return Status::OK();
-}
-
-Status RaftConsensus::ChangeConfigUnlocked() {
-  switch (state_->GetActiveQuorumStateUnlocked().role) {
-    case QuorumPeerPB::LEADER:
-      RETURN_NOT_OK(BecomeLeaderUnlocked());
-      break;
-    case QuorumPeerPB::LEARNER:
-    case QuorumPeerPB::FOLLOWER:
-      RETURN_NOT_OK(BecomeReplicaUnlocked());
-      break;
-    default:
-      LOG(FATAL) << "Unexpected role: "
-          << QuorumPeerPB::Role_Name(state_->GetActiveQuorumStateUnlocked().role);
-  }
-
-  return Status::OK();
 }
 
 Status RaftConsensus::BecomeLeaderUnlocked() {
@@ -1333,6 +1306,10 @@ Status RaftConsensus::GetLastReceivedOpId(OpId* id) {
 }
 
 Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {
+  if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
+    return Status::OK();
+  }
+
   if (failure_detector_->IsTracking(kTimerId)) {
     return Status::OK();
   }
@@ -1343,6 +1320,10 @@ Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {
 }
 
 Status RaftConsensus::EnsureFailureDetectorDisabledUnlocked() {
+  if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
+    return Status::OK();
+  }
+
   if (!failure_detector_->IsTracking(kTimerId)) {
     return Status::OK();
   }
@@ -1365,6 +1346,7 @@ Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_
   if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
     return Status::OK();
   }
+
   MonoTime time = MonoTime::Now(MonoTime::FINE);
   time.AddDelta(additional_delta);
   if (additional_delta.ToNanoseconds() > 0) {

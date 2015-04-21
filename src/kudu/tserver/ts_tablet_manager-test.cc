@@ -178,29 +178,33 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
 
   // Create a second tablet, and ensure the incremental report shows it.
   ASSERT_OK(CreateNewTablet("tablet-2", "", "", schema_, NULL));
-  updated_tablets = 0;
 
-  // In this report we might get one or two tablets. We'll definitely
-  // have a report from tablet-2, which we just created, but since
+  // Wait up to 10 seconds to get a tablet report from tablet-2.
   // TabletPeer does not mark tablets dirty until after it commits the
-  // initial configuration change, there is a window for tablet-1 to
+  // initial configuration change, so there is also a window for tablet-1 to
   // have been marked dirty since the last report.
-  while (updated_tablets == 0) {
+  MonoDelta timeout(MonoDelta::FromSeconds(10));
+  MonoTime start(MonoTime::Now(MonoTime::FINE));
+  report.Clear();
+  while (true) {
+    bool found_tablet_2 = false;
     tablet_manager_->GenerateIncrementalTabletReport(&report);
-    updated_tablets = report.updated_tablets().size();
-    ASSERT_TRUE(report.is_incremental());
-    ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report);
+    ASSERT_TRUE(report.is_incremental()) << report.ShortDebugString();
+    ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report) << report.ShortDebugString();
+    BOOST_FOREACH(const ReportedTabletPB& reported_tablet, report.updated_tablets()) {
+      if (reported_tablet.tablet_id() == "tablet-2") {
+        found_tablet_2  = true;
+        break;
+      }
+    }
+    if (found_tablet_2) break;
+    MonoDelta elapsed(MonoTime::Now(MonoTime::FINE).GetDeltaSince(start));
+    ASSERT_TRUE(elapsed.LessThan(timeout)) << "Waited too long for tablet-2 to be marked dirty: "
+                                           << elapsed.ToString() << ". "
+                                           << "Latest report: " << report.ShortDebugString();
+    SleepFor(MonoDelta::FromMilliseconds(10));
   }
 
-  bool found_tablet_2 = false;
-  BOOST_FOREACH(const ::kudu::master::ReportedTabletPB& reported_tablet,
-                report.updated_tablets()) {
-    if (reported_tablet.tablet_id() == "tablet-2") {
-      found_tablet_2  = true;
-      break;
-    }
-  }
-  ASSERT_TRUE(found_tablet_2);
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Asking for a full tablet report should re-report both tablets

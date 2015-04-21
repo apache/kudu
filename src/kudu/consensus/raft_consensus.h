@@ -149,13 +149,6 @@ class RaftConsensus : public Consensus,
 
   std::string LogPrefix();
 
-  // Same as below but acquires the lock through LockForChangeConfig first.
-  Status ChangeConfig();
-
-  // Changes this peer's configuration. Calls BecomeLeader(),
-  // BecomeFollower() if appropriate.
-  Status ChangeConfigUnlocked();
-
   // Makes the peer become leader.
   // Returns OK once the change config transaction that has this peer as leader
   // has been enqueued, the transaction will complete asynchronously.
