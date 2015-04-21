@@ -35,6 +35,7 @@
 #include "kudu/benchmarks/tpch/line_item_tsv_importer.h"
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
+#include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
@@ -278,6 +279,8 @@ Status TpchRealWorld::Run() {
   ThreadJoiner tj(dbgen_thread.get());
   if (runtime_ms > 0) {
     tj.give_up_after_ms(runtime_ms).warn_after_ms(runtime_ms);
+  } else {
+    tj.warn_after_ms(MathLimits<int>::kMax);
   }
   Status s = tj.Join();
 
