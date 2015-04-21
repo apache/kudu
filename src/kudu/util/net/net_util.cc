@@ -33,6 +33,7 @@
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/net_util.h"
@@ -94,6 +95,8 @@ Status HostPort::ParseString(const string& str, uint16_t default_port) {
 }
 
 Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
+  TRACE_EVENT1("net", "HostPort::ResolveAddresses",
+               "host", host_);
   struct addrinfo hints;
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
@@ -178,6 +181,7 @@ Status ParseAddressList(const std::string& addr_list,
 }
 
 Status GetHostname(string* hostname) {
+  TRACE_EVENT0("net", "GetHostname");
   char name[HOST_NAME_MAX];
   int ret = gethostname(name, HOST_NAME_MAX);
   if (ret != 0) {
@@ -190,6 +194,7 @@ Status GetHostname(string* hostname) {
 }
 
 Status GetFQDN(string* hostname) {
+  TRACE_EVENT0("net", "GetFQDN");
   // Start with the non-qualified hostname
   RETURN_NOT_OK(GetHostname(hostname));
 
@@ -199,9 +204,13 @@ Status GetFQDN(string* hostname) {
   hints.ai_flags = AI_CANONNAME;
 
   struct addrinfo* result;
-  int rc = getaddrinfo(hostname->c_str(), nullptr, &hints, &result);
-  if (rc != 0) {
-    return Status::NetworkError("Unable to lookup FQDN", ErrnoToString(errno), errno);
+  LOG_SLOW_EXECUTION(WARNING, 200,
+                     Substitute("looking up canonical hostname for localhost $0", hostname)) {
+    TRACE_EVENT0("net", "getaddrinfo");
+    int rc = getaddrinfo(hostname->c_str(), nullptr, &hints, &result);
+    if (rc != 0) {
+      return Status::NetworkError("Unable to lookup FQDN", ErrnoToString(errno), errno);
+    }
   }
 
   *hostname = result->ai_canonname;

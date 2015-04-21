@@ -33,6 +33,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
@@ -303,6 +304,7 @@ Status Socket::Bind(const Sockaddr& bind_addr) {
 }
 
 Status Socket::Accept(Socket *new_conn, Sockaddr *remote, int flags) {
+  TRACE_EVENT0("net", "Socket::Accept");
   struct sockaddr_in addr;
   socklen_t olen = sizeof(addr);
   DCHECK_GE(fd_, 0);
@@ -330,6 +332,8 @@ Status Socket::Accept(Socket *new_conn, Sockaddr *remote, int flags) {
 #endif // defined(__linux__)
 
   *remote = addr;
+  TRACE_EVENT_INSTANT1("net", "Accepted", TRACE_EVENT_SCOPE_THREAD,
+                       "remote", remote->ToString());
   return Status::OK();
 }
 
@@ -345,6 +349,8 @@ Status Socket::BindForOutgoingConnection() {
 }
 
 Status Socket::Connect(const Sockaddr &remote) {
+  TRACE_EVENT1("net", "Socket::Connect",
+               "remote", remote.ToString());
   if (PREDICT_FALSE(!FLAGS_local_ip_for_outbound_sockets.empty())) {
     RETURN_NOT_OK(BindForOutgoingConnection());
   }
