@@ -131,7 +131,7 @@ class RaftConsensusTest : public KuduTest {
 
   void SetUpConsensus(int64_t initial_term = consensus::kMinimumTerm,
                       int num_peers = 1) {
-    BuildQuorumPBForTests(&quorum_, num_peers);
+    BuildQuorumPBForTests(num_peers, &quorum_);
     quorum_.set_opid_index(kInvalidOpIdIndex);
 
     gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(NULL));
@@ -480,8 +480,9 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   cc_req->set_tablet_id(kTestTablet);
 
   // Build a change config request with the roles reversed.
-  BuildQuorumPBForTests(cc_req->mutable_new_config(), 2);
-  cc_req->mutable_new_config()->mutable_peers(1)->set_role(QuorumPeerPB::LEADER);
+  BuildQuorumPBForTests(2, cc_req->mutable_new_config());
+  string uuid1 = cc_req->new_config().peers(1).permanent_uuid();
+  cc_req->mutable_new_config()->set_leader_uuid(uuid1);
 
   // Overwrite another 4 of the original rounds for a total of 5 overwrites.
   for (int i = 7; i < 10; i++) {

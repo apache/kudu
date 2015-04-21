@@ -123,8 +123,12 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
       ASSERT_TRUE(reported_tablet.has_quorum());
       ASSERT_EQ(1, reported_tablet.quorum().opid_index());
       ASSERT_EQ(1, reported_tablet.quorum().peers_size());
-      ASSERT_EQ(reported_tablet.quorum().peers(0).role(),
-                consensus::QuorumPeerPB::LEADER);
+      ASSERT_TRUE(reported_tablet.quorum().has_leader_uuid()) << reported_tablet.ShortDebugString();
+      ASSERT_TRUE(reported_tablet.quorum().peers(0).has_permanent_uuid())
+          << reported_tablet.ShortDebugString();
+      ASSERT_EQ(reported_tablet.quorum().peers(0).permanent_uuid(),
+                reported_tablet.quorum().leader_uuid())
+          << reported_tablet.ShortDebugString();
     }
   }
   ASSERT_TRUE(found_tablet);

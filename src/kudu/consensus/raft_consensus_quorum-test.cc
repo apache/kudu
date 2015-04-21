@@ -94,7 +94,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   // Builds an initial quorum of 'num' elements.
   // All of the quorum members start as followers.
   void BuildInitialQuorumPB(int num) {
-    BuildQuorumPBForTests(&quorum_, num);
+    BuildQuorumPBForTests(num, &quorum_);
     quorum_.set_opid_index(kInvalidOpIdIndex);
     peers_.reset(new TestPeerMapManager(quorum_));
   }

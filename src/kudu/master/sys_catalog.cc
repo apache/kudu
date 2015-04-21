@@ -128,7 +128,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
     quorum.set_opid_index(consensus::kInvalidOpIdIndex);
     QuorumPeerPB* peer = quorum.add_peers();
     peer->set_permanent_uuid(fs_manager->uuid());
-    peer->set_role(QuorumPeerPB::LEADER);
+    peer->set_member_type(QuorumPeerPB::VOTER);
   }
 
   string tablet_id = metadata->tablet_id();
@@ -154,7 +154,7 @@ Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options,
     HostPortPB peer_host_port_pb;
     RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
     peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
-    peer.set_role(QuorumPeerPB::FOLLOWER);
+    peer.set_member_type(QuorumPeerPB::VOTER);
     new_quorum.add_peers()->CopyFrom(peer);
   }
 

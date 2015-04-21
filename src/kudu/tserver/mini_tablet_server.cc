@@ -91,7 +91,7 @@ QuorumPB MiniTabletServer::CreateLocalQuorum() const {
   quorum.set_local(true);
   QuorumPeerPB* peer = quorum.add_peers();
   peer->set_permanent_uuid(server_->instance_pb().permanent_uuid());
-  peer->set_role(QuorumPeerPB::FOLLOWER);
+  peer->set_member_type(QuorumPeerPB::VOTER);
   peer->mutable_last_known_addr()->set_host(bound_rpc_addr().host());
   peer->mutable_last_known_addr()->set_port(bound_rpc_addr().port());
   return quorum;

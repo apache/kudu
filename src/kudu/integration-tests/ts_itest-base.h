@@ -215,8 +215,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       VLOG(1) << "Error getting quorum from replica: " << replica->instance_id.permanent_uuid();
       return Status::NotFound("Error connecting to replica");
     }
-    if (consensus::GetRoleInQuorum(replica->instance_id.permanent_uuid(),
-                                   resp.quorum()) == QuorumPeerPB::LEADER) {
+    if (consensus::IsQuorumLeader(replica->instance_id.permanent_uuid(), resp.quorum())) {
       return Status::OK();
     }
     VLOG(1) << "Replica not leader of quorum: " << replica->instance_id.permanent_uuid();

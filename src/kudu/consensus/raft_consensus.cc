@@ -165,19 +165,14 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(failure_monitor_.MonitorFailureDetector(state_->GetOptions().tablet_id,
                                                         failure_detector_));
 
-  QuorumPB initial_quorum;
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForStart(&lock));
 
-    // Clean up quorum state from previous runs, so everyone is a follower.
-    // We do this here so that the logging seems sane while reloading the
-    // set of pending transactions.
-    SetAllQuorumVotersToFollower(state_->GetCommittedQuorumUnlocked(), &initial_quorum);
+    QuorumPB initial_quorum = state_->GetActiveQuorumUnlocked();
+    initial_quorum.clear_leader_uuid();
     initial_quorum.clear_opid_index();
-    state_->SetPendingQuorumUnlocked(initial_quorum);
-    RETURN_NOT_OK_PREPEND(VerifyQuorum(initial_quorum, UNCOMMITTED_QUORUM),
-                          "Invalid quorum state on RaftConsensus::Start()");
+    RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(initial_quorum));
 
     RETURN_NOT_OK_PREPEND(state_->StartUnlocked(info.last_id),
                           "Unable to start RAFT ReplicaState");
@@ -230,16 +225,12 @@ Status RaftConsensus::EmulateElection() {
   ReplicaState::UniqueLock lock;
   RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
-  QuorumPB new_quorum;
-  RETURN_NOT_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
-                                      QuorumPeerPB::LEADER,
-                                      state_->GetCommittedQuorumUnlocked(),
-                                      &new_quorum));
+  QuorumPB new_quorum = state_->GetActiveQuorumUnlocked();
+  new_quorum.set_leader_uuid(state_->GetPeerUuid());
   new_quorum.clear_opid_index();
 
   // Assume leadership of new term.
   RETURN_NOT_OK(state_->IncrementTermUnlocked());
-  RETURN_NOT_OK(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM));
   RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
   return BecomeLeaderUnlocked();
 }
@@ -962,10 +953,8 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
 
   response->set_responder_uuid(state_->GetPeerUuid());
 
-  QuorumPeerPB::Role role = GetRoleInQuorum(request->candidate_uuid(),
-                                            state_->GetCommittedQuorumUnlocked());
   // Candidate is not a member of the quorum.
-  if (role == QuorumPeerPB::NON_PARTICIPANT) {
+  if (!IsQuorumMember(request->candidate_uuid(), state_->GetActiveQuorumUnlocked())) {
     return RequestVoteRespondNotInQuorum(request, response);
   }
 
@@ -1278,13 +1267,9 @@ void RaftConsensus::DoElectionCallback(const ElectionResult& result) {
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Leader election won for term " << result.election_term;
 
   // Convert role to LEADER.
-  QuorumPB new_quorum;
-  CHECK_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
-                                QuorumPeerPB::LEADER,
-                                state_->GetActiveQuorumUnlocked(),
-                                &new_quorum));
+  QuorumPB new_quorum = state_->GetActiveQuorumUnlocked();
+  new_quorum.set_leader_uuid(state_->GetPeerUuid());
   new_quorum.clear_opid_index();
-  CHECK_OK(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM));
   CHECK_OK(state_->SetPendingQuorumUnlocked(new_quorum));
 
   // TODO: BecomeLeaderUnlocked() can fail due to state checks during shutdown.
@@ -1373,15 +1358,11 @@ Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term) {
     RETURN_NOT_OK(BecomeReplicaUnlocked());
   }
 
-  // Demote leader in quorum.
-  if (!state.leader_uuid.empty()) {
-    QuorumPB quorum;
-    RETURN_NOT_OK(GivePeerRoleInQuorum(state.leader_uuid,
-                                       QuorumPeerPB::FOLLOWER,
-                                       state_->GetCommittedQuorumUnlocked(),
-                                       &quorum));
-    state_->SetPendingQuorumUnlocked(quorum);
-  }
+  // Clear leader from quorum.
+  QuorumPB quorum = state_->GetActiveQuorumUnlocked();
+  quorum.clear_leader_uuid();
+  quorum.clear_opid_index();
+  RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(quorum));
 
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Advancing to term " << new_term;
   RETURN_NOT_OK(state_->SetCurrentTermUnlocked(new_term));

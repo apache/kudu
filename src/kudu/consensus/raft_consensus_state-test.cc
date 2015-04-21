@@ -101,7 +101,7 @@ TEST_F(RaftConsensusStateTest, TestQuorumState) {
   BOOST_FOREACH(const string& uuid, uuids) {
     QuorumPeerPB* peer = quorum.add_peers();
     peer->set_permanent_uuid(uuid);
-    peer->set_role(QuorumPeerPB::FOLLOWER);
+    peer->set_member_type(QuorumPeerPB::VOTER);
   }
 
   // No leader.
@@ -112,17 +112,17 @@ TEST_F(RaftConsensusStateTest, TestQuorumState) {
   ASSERT_EQ(3, state->majority_size);
 
   // Self leader.
-  quorum.mutable_peers(0)->set_role(QuorumPeerPB::LEADER);
+  quorum.set_leader_uuid("a");
   state = QuorumState::Build(quorum, "a");
   ASSERT_EQ(QuorumPeerPB::LEADER, state->role);
   ASSERT_EQ("a", state->leader_uuid);
   ASSERT_EQ(5, state->voting_peers.size());
   ASSERT_EQ(3, state->majority_size);
 
-  // Add another FOLLOWER. Quorum size of 6, majority of 4.
+  // Add another VOTER. Quorum size of 6, majority of 4.
   QuorumPeerPB* new_peer = quorum.add_peers();
   new_peer->set_permanent_uuid("f");
-  new_peer->set_role(QuorumPeerPB::FOLLOWER);
+  new_peer->set_member_type(QuorumPeerPB::VOTER);
   state = QuorumState::Build(quorum, "a");
   ASSERT_EQ(6, state->voting_peers.size());
   ASSERT_EQ(4, state->majority_size);
@@ -130,7 +130,7 @@ TEST_F(RaftConsensusStateTest, TestQuorumState) {
   // Add a LEARNER. Nothing should have changed from above.
   new_peer = quorum.add_peers();
   new_peer->set_permanent_uuid("g");
-  new_peer->set_role(QuorumPeerPB::LEARNER);
+  new_peer->set_member_type(QuorumPeerPB::NON_VOTER);
   state = QuorumState::Build(quorum, "a");
   ASSERT_EQ(6, state->voting_peers.size());
   ASSERT_EQ(4, state->majority_size);

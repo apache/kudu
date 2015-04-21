@@ -61,7 +61,8 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
     gscoped_ptr<QuorumPB> new_quorum(new QuorumPB);
     new_quorum->CopyFrom(initial_quorum);
     new_quorum->clear_opid_index();
-    new_quorum->mutable_peers(0)->set_role(QuorumPeerPB::LEADER);
+    CHECK(new_quorum->peers(0).has_permanent_uuid()) << new_quorum->ShortDebugString();
+    new_quorum->set_leader_uuid(new_quorum->peers(0).permanent_uuid());
 
     ReplicateMsg* replicate = new ReplicateMsg;
     replicate->set_op_type(CHANGE_CONFIG_OP);
@@ -139,8 +140,7 @@ Status LocalConsensus::Replicate(ConsensusRound* round) {
 }
 
 QuorumPeerPB::Role LocalConsensus::role() const {
-  boost::lock_guard<simple_spinlock> lock(lock_);
-  return cmeta_->pb().committed_quorum().peers().begin()->role();
+  return QuorumPeerPB::LEADER;
 }
 
 Status LocalConsensus::Update(const ConsensusRequestPB* request,

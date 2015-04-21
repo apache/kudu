@@ -193,7 +193,7 @@ class ReplicaState {
   // This is only currently used by the Leader, in order to set up the quorum
   // state used to initialize the consensus queues and commit tracking before
   // the ChangeConfigTransaction is started and subsequently committed.
-  Status SetPendingQuorumUnlocked(const QuorumPB& new_quorum);
+  Status SetPendingQuorumUnlocked(const QuorumPB& new_quorum) WARN_UNUSED_RESULT;
 
   // Return the pending quorum, or crash if one is not set.
   const QuorumPB& GetPendingQuorumUnlocked() const;

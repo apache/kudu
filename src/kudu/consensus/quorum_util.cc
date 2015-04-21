@@ -6,6 +6,7 @@
 #include <set>
 #include <string>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
@@ -15,70 +16,42 @@ namespace consensus {
 using std::string;
 using strings::Substitute;
 
-bool IsVotingRole(const QuorumPeerPB::Role role) {
-  switch (role) {
-    case QuorumPeerPB::LEADER:
-    case QuorumPeerPB::FOLLOWER:
-      // Above 3 cases should all fall through.
+bool IsQuorumMember(const std::string& uuid, const QuorumPB& quorum) {
+  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+    if (peer.permanent_uuid() == uuid) {
       return true;
-    default:
-      return false;
+    }
   }
+  return false;
 }
 
-Status GivePeerRoleInQuorum(const string& peer_uuid,
-                            QuorumPeerPB::Role new_role,
-                            const QuorumPB& old_quorum,
-                            QuorumPB* new_quorum) {
-  new_quorum->CopyFrom(old_quorum);
-  new_quorum->clear_peers();
-  bool found_peer = false;
-  BOOST_FOREACH(const QuorumPeerPB& old_peer, old_quorum.peers()) {
-    QuorumPeerPB* new_peer = new_quorum->add_peers();
-    new_peer->CopyFrom(old_peer);
-
-    // Assume new role for local peer.
-    if (new_peer->permanent_uuid() == peer_uuid) {
-      if (PREDICT_FALSE(found_peer)) {
-        return Status::IllegalState(
-            Substitute("Peer $0 found in quorum multiple times: $1",
-                       peer_uuid, old_quorum.ShortDebugString()));
-      }
-      found_peer = true;
-      new_peer->set_role(new_role);
-      continue;
-    }
-
-    // Demote leader to follower.
-    if (new_peer->role() == QuorumPeerPB::LEADER) {
-      new_peer->set_role(QuorumPeerPB::FOLLOWER);
+bool IsQuorumVoter(const std::string& uuid, const QuorumPB& quorum) {
+  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+    if (peer.permanent_uuid() == uuid) {
+      return peer.member_type() == QuorumPeerPB::VOTER;
     }
   }
-  if (!found_peer) {
-    return Status::IllegalState(Substitute("Cannot find peer $0 in quorum: $1",
-                                           peer_uuid, old_quorum.ShortDebugString()));
-  }
-  return Status::OK();
+  return false;
 }
 
-void SetAllQuorumVotersToFollower(const QuorumPB& old_quorum,
-                                  QuorumPB* new_quorum) {
-  new_quorum->CopyFrom(old_quorum);
-  new_quorum->clear_peers();
-  BOOST_FOREACH(const QuorumPeerPB& old_peer, old_quorum.peers()) {
-    QuorumPeerPB* new_peer = new_quorum->add_peers();
-    new_peer->CopyFrom(old_peer);
-    if (IsVotingRole(new_peer->role())) {
-      new_peer->set_role(QuorumPeerPB::FOLLOWER);
-    }
-  }
+bool IsQuorumLeader(const std::string& uuid, const QuorumPB& quorum) {
+  if (!quorum.has_leader_uuid()) return false;
+  return quorum.leader_uuid() == uuid;
 }
 
 QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
                                    const QuorumPB& quorum) {
+  if (quorum.has_leader_uuid() && quorum.leader_uuid() == permanent_uuid) {
+    return QuorumPeerPB::LEADER;
+  }
   BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
     if (peer.permanent_uuid() == permanent_uuid) {
-      return peer.role();
+      switch (peer.member_type()) {
+        case QuorumPeerPB::VOTER:
+          return QuorumPeerPB::FOLLOWER;
+        default:
+          return QuorumPeerPB::LEARNER;
+      }
     }
   }
   return QuorumPeerPB::NON_PARTICIPANT;
@@ -86,7 +59,6 @@ QuorumPeerPB::Role GetRoleInQuorum(const std::string& permanent_uuid,
 
 Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type) {
   std::set<string> uuids;
-  bool found_leader = false;
   if (quorum.peers_size() == 0) {
     return Status::IllegalState(
         Substitute("Quorum must have at least one peer. Quorum: $0",
@@ -132,14 +104,16 @@ Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type) {
     return Status::OK();
   }
 
+  bool has_leader = quorum.has_leader_uuid() && !quorum.leader_uuid().empty();
+  bool leader_in_quorum = false;
   BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
     if (!peer.has_permanent_uuid() || peer.permanent_uuid() == "") {
       return Status::IllegalState(Substitute("One peer didn't have an uuid or had the empty"
           " string. Quorum: $0", quorum.ShortDebugString()));
     }
-    if (uuids.count(peer.permanent_uuid()) == 1) {
+    if (ContainsKey(uuids, peer.permanent_uuid())) {
       return Status::IllegalState(
-          Substitute("Found two peers with uuid: $0. Quorum: $1",
+          Substitute("Found multiple peers with uuid: $0. Quorum: $1",
                      peer.permanent_uuid(), quorum.ShortDebugString()));
     }
     uuids.insert(peer.permanent_uuid());
@@ -149,27 +123,37 @@ Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type) {
           Substitute("Peer: $0 has no address. Quorum: $1",
                      peer.permanent_uuid(), quorum.ShortDebugString()));
     }
-    if (!peer.has_role()) {
+    if (!peer.has_member_type()) {
       return Status::IllegalState(
-          Substitute("Peer: $0 has no role. Quorum: $1", peer.permanent_uuid(),
+          Substitute("Peer: $0 has no member type set. Quorum: $1", peer.permanent_uuid(),
                      quorum.ShortDebugString()));
     }
-    if (peer.role() == QuorumPeerPB::LEADER) {
-      if (!found_leader) {
-        found_leader = true;
-        continue;
-      }
-      return Status::IllegalState(
-          Substitute("Found two peers with LEADER role. Quorum: $0",
-                     quorum.ShortDebugString()));
-    }
-    if (peer.role() == QuorumPeerPB::LEARNER) {
+    if (peer.member_type() == QuorumPeerPB::NON_VOTER) {
       return Status::IllegalState(
           Substitute(
-              "Peer: $0 has LEARNER role but this isn't supported yet. Quorum: $1",
+              "Peer: $0 is a NON_VOTER, but this isn't supported yet. Quorum: $1",
               peer.permanent_uuid(), quorum.ShortDebugString()));
     }
+    if (has_leader && peer.permanent_uuid() == quorum.leader_uuid()) {
+      if (peer.member_type() == QuorumPeerPB::VOTER) {
+        leader_in_quorum = true;
+      } else {
+        return Status::IllegalState(
+            Substitute(
+                "Peer: $0 is listed as LEADER and NON_VOTER! Quorum: $1",
+                peer.permanent_uuid(), quorum.ShortDebugString()));
+      }
+    }
   }
+
+  // Ensure the leader, if set, is a voter in the quorum.
+  if (has_leader && !leader_in_quorum) {
+        return Status::IllegalState(
+            Substitute(
+                "Leader with UUID $0 is missing from the quorum! Quorum: $1",
+                quorum.leader_uuid(), quorum.ShortDebugString()));
+  }
+
   return Status::OK();
 }
 

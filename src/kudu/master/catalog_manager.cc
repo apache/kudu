@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
@@ -86,6 +87,7 @@ namespace master {
 using base::subtle::NoBarrier_Load;
 using base::subtle::NoBarrier_CompareAndSwap;
 using cfile::TypeEncodingInfo;
+using consensus::GetRoleInQuorum;
 using consensus::QuorumPeerPB;
 using rpc::RpcContext;
 using std::string;
@@ -1360,7 +1362,8 @@ void CatalogManager::ResetTabletReplicasFromReportedQuorum(TSDescriptor* ts_desc
     CHECK_OK(status);
     TabletReplica replica;
     replica.state = report.state();
-    replica.role = peer.role();
+    CHECK(peer.has_permanent_uuid()) << "Missing UUID: " << peer.ShortDebugString();
+    replica.role = GetRoleInQuorum(peer.permanent_uuid(), report.quorum());
     replica.ts_desc = ts_desc.get();
     replicas.push_back(replica);
   }
@@ -2211,7 +2214,7 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
     ts->GetRegistration(&reg);
 
     QuorumPeerPB *peer = quorum->add_peers();
-    peer->set_role(QuorumPeerPB::FOLLOWER);
+    peer->set_member_type(QuorumPeerPB::VOTER);
     peer->set_permanent_uuid(ts->permanent_uuid());
 
     // TODO: This is temporary, we will use only UUIDs
@@ -2257,7 +2260,8 @@ bool CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& ta
 
   BOOST_FOREACH(const consensus::QuorumPeerPB& peer, stale_quorum.peers()) {
     TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
-    replica_pb->set_role(peer.role());
+    CHECK(peer.has_permanent_uuid()) << "Missing UUID: " << peer.ShortDebugString();
+    replica_pb->set_role(GetRoleInQuorum(peer.permanent_uuid(), stale_quorum));
 
     TSInfoPB* tsinfo_pb = replica_pb->mutable_ts_info();
     tsinfo_pb->set_permanent_uuid(peer.permanent_uuid());

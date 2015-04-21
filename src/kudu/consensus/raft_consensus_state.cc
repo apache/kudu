@@ -37,13 +37,20 @@ gscoped_ptr<QuorumState> QuorumState::Build(const QuorumPB& quorum, const string
   string leader_uuid;
   BOOST_FOREACH(const QuorumPeerPB& peer_pb, quorum.peers()) {
     if (peer_pb.permanent_uuid() == self_uuid) {
-      role = peer_pb.role();
+      if (peer_pb.member_type() == QuorumPeerPB::VOTER) {
+        role = QuorumPeerPB::FOLLOWER;
+      } else {
+        role = QuorumPeerPB::LEARNER;
+      }
     }
-    if (IsVotingRole(peer_pb.role())) {
+    if (peer_pb.member_type() == QuorumPeerPB::VOTER) {
       voting_peers.insert(peer_pb.permanent_uuid());
     }
-    if (peer_pb.role() == QuorumPeerPB::LEADER) {
-      leader_uuid = peer_pb.permanent_uuid();
+    if (quorum.has_leader_uuid()) {
+      leader_uuid = quorum.leader_uuid();
+      if (leader_uuid == self_uuid) {
+        role = QuorumPeerPB::LEADER;
+      }
     }
   }
 
@@ -221,6 +228,8 @@ bool ReplicaState::IsQuorumChangePendingUnlocked() const {
 // TODO check that the role change is legal.
 Status ReplicaState::SetPendingQuorumUnlocked(const QuorumPB& new_quorum) {
   DCHECK(update_lock_.is_locked());
+  RETURN_NOT_OK_PREPEND(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM),
+                        "Invalid quorum to set as pending");
   pending_quorum_.reset(new QuorumPB(new_quorum));
   ResetActiveQuorumStateUnlocked(new_quorum);
   return Status::OK();

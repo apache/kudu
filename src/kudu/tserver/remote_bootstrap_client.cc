@@ -90,7 +90,8 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
 Status RemoteBootstrapClient::ExtractLeaderFromQuorum(const consensus::QuorumPB& quorum,
                                                       consensus::QuorumPeerPB* leader) {
   BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
-    if (peer.role() == QuorumPeerPB::LEADER) {
+    if (!quorum.has_leader_uuid()) break;
+    if (peer.permanent_uuid() == quorum.leader_uuid()) {
       leader->CopyFrom(peer);
       return Status::OK();
     }

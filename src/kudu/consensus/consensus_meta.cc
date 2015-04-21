@@ -56,9 +56,17 @@ Status ConsensusMetadata::Flush() {
                           "Unable to fsync consensus parent dir " + parent_dir);
   }
 
+  ConsensusMetadataPB pb_to_write = pb_;
+  // Ensure the leader UUID is unset. We never persist the leader on disk, because:
+  // 1. It's not needed for correctness or guaranteed to be synced, and
+  // 2. We don't want tests or features trying to depend on that behavior.
+  // TODO: Consider not storing the leader in ConsensusMeta at all.
+  // Currently we are persisting a copy w/ cleared leader field.
+  pb_to_write.mutable_committed_quorum()->clear_leader_uuid();
+
   string meta_file_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
-      fs_manager_->env(), meta_file_path, pb_,
+      fs_manager_->env(), meta_file_path, pb_to_write,
       // We use FLAGS_log_force_fsync_all here because the consensus metadata is
       // essentially an extension of the primary durability mechanism of the
       // consensus subsystem: the WAL. Using the same flag ensures that the WAL
