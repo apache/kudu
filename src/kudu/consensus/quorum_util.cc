@@ -18,7 +18,6 @@ using strings::Substitute;
 bool IsVotingRole(const QuorumPeerPB::Role role) {
   switch (role) {
     case QuorumPeerPB::LEADER:
-    case QuorumPeerPB::CANDIDATE:
     case QuorumPeerPB::FOLLOWER:
       // Above 3 cases should all fall through.
       return true;
@@ -50,9 +49,8 @@ Status GivePeerRoleInQuorum(const string& peer_uuid,
       continue;
     }
 
-    // Demote any other leaders/candidates to followers.
-    if (new_peer->role() == QuorumPeerPB::LEADER ||
-        new_peer->role() == QuorumPeerPB::CANDIDATE) {
+    // Demote leader to follower.
+    if (new_peer->role() == QuorumPeerPB::LEADER) {
       new_peer->set_role(QuorumPeerPB::FOLLOWER);
     }
   }
@@ -156,14 +154,13 @@ Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type) {
           Substitute("Peer: $0 has no role. Quorum: $1", peer.permanent_uuid(),
                      quorum.ShortDebugString()));
     }
-    if (peer.role() == QuorumPeerPB::LEADER
-        || peer.role() == QuorumPeerPB::CANDIDATE) {
+    if (peer.role() == QuorumPeerPB::LEADER) {
       if (!found_leader) {
         found_leader = true;
         continue;
       }
       return Status::IllegalState(
-          Substitute("Found two peers with LEADER/CANDIDATE role. Quorum: $0",
+          Substitute("Found two peers with LEADER role. Quorum: $0",
                      quorum.ShortDebugString()));
     }
     if (peer.role() == QuorumPeerPB::LEARNER) {

@@ -18,12 +18,11 @@ enum QuorumPBType {
   COMMITTED_QUORUM,
 };
 
-// Returns true if the passed role is LEADER, CANDIDATE, or FOLLOWER.
+// Returns true if the passed role is LEADER, or FOLLOWER.
 bool IsVotingRole(const QuorumPeerPB::Role role);
 
 // Copies 'old_quorum' to 'new_quorum' but gives the peer with 'peer_uuid'
-// the role in 'role'. Additionally, demotes all of the other peers to FOLLOWER
-// if they currently have a LEADER or CANDIDATE role.
+// the role in 'role'. Additionally, demotes any LEADER to a FOLLOWER role.
 // Returns Status::IllegalState() if the specified peer cannot be found or if
 // the specified peer appears in the quorum more than once.
 Status GivePeerRoleInQuorum(const std::string& peer_uuid,
@@ -31,7 +30,7 @@ Status GivePeerRoleInQuorum(const std::string& peer_uuid,
                             const QuorumPB& old_quorum,
                             QuorumPB* new_quorum);
 
-// Makes all voting peers (anyone with a LEADER, CANDIDATE, or FOLLOWER role)
+// Makes all voting peers (anyone with a LEADER or FOLLOWER role)
 // a follower in 'new_quorum'.
 void SetAllQuorumVotersToFollower(const QuorumPB& old_quorum,
                                   QuorumPB* new_quorum);

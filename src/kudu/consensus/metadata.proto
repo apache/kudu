@@ -15,9 +15,6 @@ message QuorumPeerPB {
     // Indicates this node is a follower in the quorum, i.e. that it participates
     // in majorities and accepts Consensus::Update() calls.
     FOLLOWER = 0;
-    // Indicates this node is a leader candidate in the quorum, i.e. that it
-    // that it behaves as FOLLOWER and can be elected LEADER.
-    CANDIDATE = 1;
     // Indicates this node is the current leader of the quorum, i.e. that it
     // participates in majorities and accepts Consensus::Append() calls.
     LEADER = 2;

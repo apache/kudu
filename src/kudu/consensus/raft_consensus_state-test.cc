@@ -119,14 +119,6 @@ TEST_F(RaftConsensusStateTest, TestQuorumState) {
   ASSERT_EQ(5, state->voting_peers.size());
   ASSERT_EQ(3, state->majority_size);
 
-  // Self candidate.
-  quorum.mutable_peers(0)->set_role(QuorumPeerPB::CANDIDATE);
-  state = QuorumState::Build(quorum, "a");
-  ASSERT_EQ(QuorumPeerPB::CANDIDATE, state->role);
-  ASSERT_EQ("", state->leader_uuid);
-  ASSERT_EQ(5, state->voting_peers.size());
-  ASSERT_EQ(3, state->majority_size);
-
   // Add another FOLLOWER. Quorum size of 6, majority of 4.
   QuorumPeerPB* new_peer = quorum.add_peers();
   new_peer->set_permanent_uuid("f");

@@ -129,16 +129,6 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg)
     case QuorumPeerPB::LEADER:
       lock->swap(&l);
       return Status::OK();
-    case QuorumPeerPB::CANDIDATE:
-      if (msg.op_type() != CHANGE_CONFIG_OP) {
-        return Status::IllegalState("Only a change config round can be pushed while CANDIDATE.");
-      }
-      // TODO support true config change. Right now we only allow
-      // replicate calls while CANDIDATE if our term is 0, meaning
-      // we're the first CANDIDATE/LEADER of the quorum.
-      CHECK_EQ(GetCurrentTermUnlocked(), 0);
-      lock->swap(&l);
-      return Status::OK();
     default:
       return Status::IllegalState(Substitute("Replica $0 is not leader of this quorum. Role: $1. "
                                              "Quorum: $2",
@@ -167,9 +157,8 @@ Status ReplicaState::LockForMajorityReplicatedIndexUpdate(
     return Status::IllegalState("Replica not in running state");
   }
 
-  if (PREDICT_FALSE(active_quorum_state_->role != QuorumPeerPB::CANDIDATE &&
-                    active_quorum_state_->role != QuorumPeerPB::LEADER)) {
-    return Status::IllegalState("Replica not LEADER or CANDIDATE");
+  if (PREDICT_FALSE(active_quorum_state_->role != QuorumPeerPB::LEADER)) {
+    return Status::IllegalState("Replica not LEADER");
   }
   lock->swap(&l);
   return Status::OK();

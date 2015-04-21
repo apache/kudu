@@ -92,7 +92,7 @@ class TabletPeerTest : public KuduTabletTest {
 
     QuorumPeerPB quorum_peer;
     quorum_peer.set_permanent_uuid(tablet()->metadata()->fs_manager()->uuid());
-    quorum_peer.set_role(QuorumPeerPB::CANDIDATE);
+    quorum_peer.set_role(QuorumPeerPB::FOLLOWER);
     QuorumPB quorum;
     quorum.set_local(true);
     quorum.add_peers()->CopyFrom(quorum_peer);

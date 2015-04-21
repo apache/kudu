@@ -166,9 +166,6 @@ LEARNER - Passive participants in the quorum, whose votes do not count
 towards majority or replication count. New nodes joining the quorum
 will have this role until they catch up and can be promoted to FOLLOWER.
 
-CANDIDATE - A peer who has put itself up for leader and is waiting election
-results.
-
 NON_PARTICIPANT - A peer that does not participate in a particular
 quorum. Mostly used to mark prior participants that stopped being so
 on a configuration change.

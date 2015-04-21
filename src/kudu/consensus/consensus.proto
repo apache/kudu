@@ -172,7 +172,7 @@ message ConsensusStatusPB {
   optional ConsensusErrorPB error = 3;
 }
 
-// A request from a CANDIDATE peer that wishes to become leader of
+// A request from a candidate peer that wishes to become leader of
 // the quorum serving tablet with 'tablet_id'.
 // See RAFT sec. 5.2.
 message VoteRequestPB {
@@ -187,7 +187,7 @@ message VoteRequestPB {
   // own term to match, and if it is the current leader it will step down.
   required uint64 candidate_term = 3;
 
-  // The CANDIDATE node status so that the voter node can
+  // The candidate node status so that the voter node can
   // decide whether to vote for it as LEADER.
   //
   // In particular, this includes the last OpId persisted in the candidate's

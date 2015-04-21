@@ -253,17 +253,8 @@ Status RaftConsensus::StartElection() {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
-    QuorumPB new_quorum;
-    RETURN_NOT_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
-                                       QuorumPeerPB::CANDIDATE,
-                                       state_->GetCommittedQuorumUnlocked(),
-                                       &new_quorum));
-    new_quorum.clear_opid_index();
     // Increment the term.
     RETURN_NOT_OK(state_->IncrementTermUnlocked());
-    RETURN_NOT_OK(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM));
-
-    RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
 
     // Snooze to avoid the election timer firing again as much as possible.
     // We do not disable the election timer while running an election.
@@ -271,13 +262,14 @@ Status RaftConsensus::StartElection() {
     RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked()));
 
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Starting election with quorum: "
-                                   << new_quorum.ShortDebugString();
+                                   << state_->GetActiveQuorumUnlocked().ShortDebugString();
 
     // Initialize the VoteCounter.
     QuorumState quorum_state = state_->GetActiveQuorumStateUnlocked();
     gscoped_ptr<VoteCounter> counter(new VoteCounter(quorum_state.voting_peers.size(),
                                                      quorum_state.majority_size));
     // Vote for ourselves.
+    // TODO: Consider using a separate Mutex for voting, which must sync to disk.
     RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(state_->GetPeerUuid()));
     bool duplicate;
     RETURN_NOT_OK(counter->RegisterVote(state_->GetPeerUuid(), VOTE_GRANTED, &duplicate));
@@ -322,15 +314,13 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   // Disable FD while we are leader.
   RETURN_NOT_OK(EnsureFailureDetectorDisabledUnlocked());
 
-  CHECK(state_->IsQuorumChangePendingUnlocked());
-
   queue_->RegisterObserver(this);
   queue_->SetLeaderMode(state_->GetCommittedOpIdUnlocked(),
                         state_->GetCurrentTermUnlocked(),
                         state_->GetActiveQuorumStateUnlocked().majority_size);
 
   // Create the peers so that we're able to replicate messages remotely and locally
-  RETURN_NOT_OK(peer_manager_->UpdateQuorum(state_->GetPendingQuorumUnlocked()));
+  RETURN_NOT_OK(peer_manager_->UpdateQuorum(state_->GetActiveQuorumUnlocked()));
 
   // Initiate a config change transaction. This is mostly acting as the NO_OP
   // transaction that is sent at the beginning of every term change in raft.
@@ -344,7 +334,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   ChangeConfigRequestPB* cc_req = replicate->mutable_change_config_request();
   cc_req->set_tablet_id(state_->GetOptions().tablet_id);
   cc_req->mutable_old_config()->CopyFrom(state_->GetCommittedQuorumUnlocked());
-  cc_req->mutable_new_config()->CopyFrom(state_->GetPendingQuorumUnlocked());
+  cc_req->mutable_new_config()->CopyFrom(state_->GetActiveQuorumUnlocked());
   DCHECK(!cc_req->new_config().has_opid_index())
     << "Pending quorum: " << cc_req->new_config().ShortDebugString();
 
@@ -454,7 +444,7 @@ void RaftConsensus::UpdateMajorityReplicatedUnlocked(const OpId& majority_replic
   }
 
   QuorumPeerPB::Role role = state_->GetActiveQuorumStateUnlocked().role;
-  if (role == QuorumPeerPB::LEADER || role == QuorumPeerPB::CANDIDATE) {
+  if (role == QuorumPeerPB::LEADER) {
     // TODO Enable the below to make the leader pro-actively send the commit
     // index to followers. Right now we're keeping this disabled as it causes
     // certain errors to be more probable.
@@ -1271,30 +1261,35 @@ void RaftConsensus::DoElectionCallback(const ElectionResult& result) {
     return;
   }
 
-  if (result.election_term != state_->GetCurrentTermUnlocked()
-      || state_->GetActiveQuorumStateUnlocked().role != QuorumPeerPB::CANDIDATE) {
+  if (result.election_term != state_->GetCurrentTermUnlocked()) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Leader election decision for defunct term "
                                    << result.election_term << ": "
                                    << (result.decision == VOTE_GRANTED ? "won" : "lost");
     return;
   }
 
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Leader election won for term " << result.election_term;
+  if (state_->GetActiveQuorumStateUnlocked().role == QuorumPeerPB::LEADER) {
+    LOG_WITH_PREFIX_UNLOCKED(DFATAL) << "Leader election callback while already leader! "
+                          "Result: Term " << result.election_term << ": "
+                          << (result.decision == VOTE_GRANTED ? "won" : "lost");
+    return;
+  }
 
-  // Sanity check.
-  QuorumState quorum_state = state_->GetActiveQuorumStateUnlocked();
-  CHECK_EQ(QuorumPeerPB::CANDIDATE, quorum_state.role);
-  CHECK(state_->IsQuorumChangePendingUnlocked());
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Leader election won for term " << result.election_term;
 
   // Convert role to LEADER.
   QuorumPB new_quorum;
   CHECK_OK(GivePeerRoleInQuorum(state_->GetPeerUuid(),
                                 QuorumPeerPB::LEADER,
-                                state_->GetPendingQuorumUnlocked(),
+                                state_->GetActiveQuorumUnlocked(),
                                 &new_quorum));
+  new_quorum.clear_opid_index();
   CHECK_OK(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM));
   CHECK_OK(state_->SetPendingQuorumUnlocked(new_quorum));
 
+  // TODO: BecomeLeaderUnlocked() can fail due to state checks during shutdown.
+  // It races with the above state check.
+  // This could be a problem during tablet deletion.
   CHECK_OK(BecomeLeaderUnlocked());
 }
 
