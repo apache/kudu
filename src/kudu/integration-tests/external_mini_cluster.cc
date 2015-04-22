@@ -383,6 +383,9 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Then all the flags coming from the minicluster framework.
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
 
+  // Ensure that we only bind to local host in tests.
+  argv.push_back("--webserver_interface=localhost");
+
   // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
   // options struct). These come at the end so they can override things like
   // web port or RPC bind address if necessary.
@@ -400,9 +403,6 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Ensure that logging goes to the test output and doesn't get buffered.
   argv.push_back("--logtostderr");
   argv.push_back("--logbuflevel=-1");
-
-  // Ensure that we only bind to local host in tests.
-  argv.push_back("--webserver_interface=localhost");
 
   gscoped_ptr<Subprocess> p(new Subprocess(exe_, argv));
   p->ShareParentStdout(false);
