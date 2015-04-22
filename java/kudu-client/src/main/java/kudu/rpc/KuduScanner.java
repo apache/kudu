@@ -109,7 +109,7 @@ public final class KuduScanner {
    * Maximum number of bytes to fetch at a time.
    * @see #setMaxNumBytes
    */
-  private int max_num_bytes = 1024*1024;
+  private int maxNumBytes = 1024*1024;
 
   /**
    * The tabletSlice currently being scanned.
@@ -219,17 +219,17 @@ public final class KuduScanner {
    * <p>
    * Kudu may actually return more than this many bytes because it will not
    * truncate a rowResult in the middle.
-   * @param max_num_bytes A strictly positive number of bytes.
+   * @param maxNumBytes A strictly positive number of bytes.
    * @throws IllegalStateException if scanning already started.
-   * @throws IllegalArgumentException if {@code max_num_bytes <= 0}
+   * @throws IllegalArgumentException if {@code maxNumBytes <= 0}
    */
-  public void setMaxNumBytes(final int max_num_bytes) {
-    if (max_num_bytes <= 0) {
+  public void setMaxNumBytes(final int maxNumBytes) {
+    if (maxNumBytes <= 0) {
       throw new IllegalArgumentException("Need a strictly positive number of"
-          + " bytes, got " + max_num_bytes);
+          + " bytes, got " + maxNumBytes);
     }
     checkScanningNotStarted();
-    this.max_num_bytes = max_num_bytes;
+    this.maxNumBytes = maxNumBytes;
   }
 
   /**
@@ -237,7 +237,7 @@ public final class KuduScanner {
    * @see #setMaxNumBytes
    */
   public long getMaxNumBytes() {
-    return max_num_bytes;
+    return maxNumBytes;
   }
 
   /**
@@ -699,12 +699,12 @@ public final class KuduScanner {
             newBuilder.addAllRangePredicates(columnRangePredicates.predicates);
           }
           builder.setNewScanRequest(newBuilder.build())
-                 .setBatchSizeBytes(max_num_bytes);
+                 .setBatchSizeBytes(maxNumBytes);
           break;
         case NEXT:
           builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
                  .setCallSeqId(sequenceId)
-                 .setBatchSizeBytes(max_num_bytes);
+                 .setBatchSizeBytes(maxNumBytes);
           break;
         case CLOSING:
           builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
