@@ -55,7 +55,8 @@ class RaftConsensus : public Consensus,
     const scoped_refptr<server::Clock>& clock,
     ReplicaTransactionFactory* txn_factory,
     const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-    const scoped_refptr<log::Log>& log);
+    const scoped_refptr<log::Log>& log,
+    const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker);
 
   RaftConsensus(const ConsensusOptions& options,
                 gscoped_ptr<ConsensusMetadata> cmeta,

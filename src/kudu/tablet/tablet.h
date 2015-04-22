@@ -77,10 +77,9 @@ class Tablet {
   //
   // If 'metric_registry' is non-NULL, then this tablet will create a 'tablet' entity
   // within the provided registry. Otherwise, no metrics are collected.
-  //
-  // TODO allow passing in a server-wide parent MemTracker.
   Tablet(const scoped_refptr<TabletMetadata>& metadata,
          const scoped_refptr<server::Clock>& clock,
+         const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
          MetricRegistry* metric_registry,
          const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry);
 

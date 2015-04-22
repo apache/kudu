@@ -48,7 +48,7 @@ class DeltaMemStore : public DeltaStore,
  public:
   DeltaMemStore(int64_t id, int64_t rs_id, const Schema &schema,
                 log::LogAnchorRegistry* log_anchor_registry,
-                MemTracker* parent_tracker = NULL);
+                const std::tr1::shared_ptr<MemTracker>& parent_tracker = shared_ptr<MemTracker>());
 
   virtual Status Init() OVERRIDE;
 

@@ -12,6 +12,7 @@
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/util/env.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
@@ -69,6 +70,7 @@ class TabletHarness {
     clock_ = server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
     tablet_.reset(new Tablet(metadata,
                              clock_,
+                             shared_ptr<MemTracker>(),
                              metrics_registry_.get(),
                              new log::LogAnchorRegistry()));
     return Status::OK();

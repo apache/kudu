@@ -34,7 +34,7 @@ DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
                            const Schema &schema,
                            rowid_t num_rows,
                            log::LogAnchorRegistry* log_anchor_registry,
-                           MemTracker* parent_tracker) :
+                           const shared_ptr<MemTracker>& parent_tracker) :
   rowset_metadata_(rowset_metadata),
   schema_(schema),
   num_rows_(num_rows),

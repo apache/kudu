@@ -100,7 +100,8 @@ class PeerMessageQueue {
                    const scoped_refptr<log::Log>& log,
                    const std::string& local_uuid,
                    const std::string& tablet_id,
-                   const std::string& parent_tracker_id = kConsensusQueueParentTrackerId);
+                   const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker =
+                       std::tr1::shared_ptr<MemTracker>());
 
   // Initialize the queue.
   virtual void Init(const OpId& last_locally_replicated);

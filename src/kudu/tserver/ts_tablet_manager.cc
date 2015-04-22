@@ -292,6 +292,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
     // partially created tablet here?
     s = BootstrapTablet(meta,
                         scoped_refptr<server::Clock>(server_->clock()),
+                        server_->mem_tracker(),
                         metric_registry_,
                         tablet_peer->status_listener(),
                         &tablet,
@@ -313,7 +314,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
                            log,
-                           tablet->GetMetricEntity());
+                           tablet->GetMetricEntity(),
+                           server_->mem_tracker());
 
     if (!s.ok()) {
       LOG(ERROR) << "Tablet failed to init: "

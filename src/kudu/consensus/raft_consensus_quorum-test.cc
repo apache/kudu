@@ -26,6 +26,7 @@
 #include "kudu/server/metadata.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/util/auto_release_pool.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -134,10 +135,13 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       string peer_uuid = Substitute("peer-$0", i);
 
+      shared_ptr<MemTracker> parent_mem_tracker =
+          MemTracker::CreateTracker(-1, peer_uuid);
       gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity_,
                                                                logs_[i],
                                                                peer_uuid,
-                                                               kTestTablet));
+                                                               kTestTablet,
+                                                               parent_mem_tracker));
 
       gscoped_ptr<ThreadPool> thread_pool;
       CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options_.tablet_id.substr(0, 6)))

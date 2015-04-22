@@ -17,6 +17,7 @@ namespace kudu {
 
 class Env;
 class FsManager;
+class MemTracker;
 class MetricEntity;
 class MetricRegistry;
 class NodeInstancePB;
@@ -57,6 +58,8 @@ class ServerBase {
   // This may not be called until after the server is Initted.
   const NodeInstancePB& instance_pb() const;
 
+  const std::tr1::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
+
   const scoped_refptr<MetricEntity>& metric_entity() const { return metric_entity_; }
 
   MetricRegistry* metric_registry() { return metric_registry_.get(); }
@@ -77,6 +80,7 @@ class ServerBase {
 
   const std::string name_;
 
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
   gscoped_ptr<MetricRegistry> metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<FsManager> fs_manager_;

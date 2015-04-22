@@ -8,6 +8,7 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/singleton.h"
 #include "kudu/util/cache.h"
 
 namespace kudu {
@@ -27,7 +28,6 @@ class BlockCache {
   static BlockCache *GetSingleton();
 
   explicit BlockCache(size_t capacity);
-  BlockCache();
 
   // Return a unique ID suitable for use as part of a cache key.
   FileId GenerateFileId();
@@ -59,6 +59,9 @@ class BlockCache {
   void StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity);
 
  private:
+  friend class Singleton<BlockCache>;
+  BlockCache();
+
   DISALLOW_COPY_AND_ASSIGN(BlockCache);
 
   static void ValueDeleter(const Slice &key, void *value);

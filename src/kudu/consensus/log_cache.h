@@ -32,9 +32,6 @@ namespace consensus {
 
 class ReplicateMsg;
 
-// The id for the server-wide log cache MemTracker.
-extern const char kLogCacheTrackerId[];
-
 // Write-through cache for the log.
 //
 // This stores a set of log messages by their index. New operations
@@ -47,7 +44,7 @@ class LogCache {
            const scoped_refptr<log::Log>& log,
            const std::string& local_uuid,
            const std::string& tablet_id,
-           const std::string& parent_tracker_id = kLogCacheTrackerId);
+           const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker);
   ~LogCache();
 
   // Initialize the cache.
@@ -116,6 +113,7 @@ class LogCache {
 
  private:
   FRIEND_TEST(LogCacheTest, TestAppendAndGetMessages);
+  FRIEND_TEST(LogCacheTest, TestGlobalMemoryLimit);
   FRIEND_TEST(LogCacheTest, TestReplaceMessages);
   friend class LogCacheTest;
 
@@ -184,10 +182,6 @@ class LogCache {
 
   // A MemTracker for this instance.
   std::tr1::shared_ptr<MemTracker> tracker_;
-
-  // The log reader used to fill the cache when a caller requests older
-  // entries.
-  log::LogReader* log_reader_;
 
   struct Metrics {
     explicit Metrics(const scoped_refptr<MetricEntity>& metric_entity);

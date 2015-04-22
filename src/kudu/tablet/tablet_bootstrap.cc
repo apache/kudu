@@ -96,6 +96,7 @@ class TabletBootstrap {
  public:
   TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
                   const scoped_refptr<Clock>& clock,
+                  const shared_ptr<MemTracker>& mem_tracker,
                   MetricRegistry* metric_registry,
                   TabletStatusListener* listener,
                   const scoped_refptr<LogAnchorRegistry>& log_anchor_registry);
@@ -214,6 +215,7 @@ class TabletBootstrap {
 
   scoped_refptr<TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
+  shared_ptr<MemTracker> mem_tracker_;
   MetricRegistry* metric_registry_;
   TabletStatusListener* listener_;
   gscoped_ptr<tablet::Tablet> tablet_;
@@ -304,6 +306,7 @@ void TabletStatusListener::StatusMessage(const string& status) {
 
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<Clock>& clock,
+                       const shared_ptr<MemTracker>& mem_tracker,
                        MetricRegistry* metric_registry,
                        TabletStatusListener* listener,
                        std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
@@ -312,7 +315,8 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        ConsensusBootstrapInfo* consensus_info) {
   TRACE_EVENT1("tablet", "BootstrapTablet",
                "tablet_id", meta->tablet_id());
-  TabletBootstrap bootstrap(meta, clock, metric_registry, listener, log_anchor_registry);
+  TabletBootstrap bootstrap(meta, clock, mem_tracker,
+                            metric_registry, listener, log_anchor_registry);
   RETURN_NOT_OK(bootstrap.Bootstrap(rebuilt_tablet, rebuilt_log, consensus_info));
   // This is necessary since OpenNewLog() initially disables sync.
   RETURN_NOT_OK((*rebuilt_log)->ReEnableSyncIfRequired());
@@ -339,11 +343,13 @@ static string DebugInfo(const string& tablet_id,
 
 TabletBootstrap::TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
                                  const scoped_refptr<Clock>& clock,
+                                 const shared_ptr<MemTracker>& mem_tracker,
                                  MetricRegistry* metric_registry,
                                  TabletStatusListener* listener,
                                  const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
     : meta_(meta),
       clock_(clock),
+      mem_tracker_(mem_tracker),
       metric_registry_(metric_registry),
       listener_(listener),
       log_anchor_registry_(log_anchor_registry),
@@ -449,6 +455,7 @@ Status TabletBootstrap::FinishBootstrap(const std::string& message,
 Status TabletBootstrap::OpenTablet(bool* has_blocks) {
   gscoped_ptr<Tablet> tablet(new Tablet(meta_,
                                         clock_,
+                                        mem_tracker_,
                                         metric_registry_,
                                         log_anchor_registry_));
   // doing nothing for now except opening a tablet locally.

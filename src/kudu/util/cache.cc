@@ -387,8 +387,12 @@ class ShardedLRUCache : public Cache {
  public:
   explicit ShardedLRUCache(size_t capacity, const string& id)
       : last_id_(0) {
+    // A cache is often a singleton, so:
+    // 1. We reuse its MemTracker if one already exists, and
+    // 2. It is directly parented to the root MemTracker.
+    mem_tracker_ = MemTracker::FindOrCreateTracker(
+        -1, strings::Substitute("$0-sharded_lru_cache", id));
 
-    mem_tracker_ = MemTracker::CreateTracker(-1, strings::Substitute("$0-sharded_lru_cache", id));
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
     for (int s = 0; s < kNumShards; s++) {
       gscoped_ptr<LRUCache> shard(new LRUCache(mem_tracker_.get()));

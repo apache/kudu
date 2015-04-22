@@ -11,6 +11,7 @@
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/generic_service.h"
@@ -23,12 +24,14 @@
 #include "kudu/server/server_base_options.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/tracing-path-handlers.h"
-#include "kudu/util/thread.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/spinlock_profiling.h"
+#include "kudu/util/thread.h"
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
              " (Advanced option).");
@@ -40,10 +43,27 @@ using std::vector;
 namespace kudu {
 namespace server {
 
+namespace {
+
+// Disambiguates between servers when in a minicluster.
+AtomicInt<int32_t> mem_tracker_id_counter(-1);
+
+shared_ptr<MemTracker> CreateMemTrackerForServer() {
+  int32_t id = mem_tracker_id_counter.Increment();
+  string id_str = "server";
+  if (id != 0) {
+    StrAppend(&id_str, " ", id);
+  }
+  return shared_ptr<MemTracker>(MemTracker::CreateTracker(-1, id_str));
+}
+
+} // anonymous namespace
+
 ServerBase::ServerBase(const string& name,
                        const ServerBaseOptions& options,
                        const string& metric_namespace)
   : name_(name),
+    mem_tracker_(CreateMemTrackerForServer()),
     metric_registry_(new MetricRegistry()),
     metric_entity_(METRIC_ENTITY_server.Instantiate(metric_registry_.get(), metric_namespace)),
     fs_manager_(new FsManager(options.env, metric_entity_, options.wal_dir, options.data_dirs)),

@@ -64,13 +64,13 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
              MarkDirtyCallback mark_dirty_clbk);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
-  // Consensus. 'local_peer' indicates whether this should serve the tablet
-  // locally or if it collaborates with other replicas through consensus.
+  // Consensus.
   Status Init(const std::tr1::shared_ptr<tablet::Tablet>& tablet,
               const scoped_refptr<server::Clock>& clock,
               const std::tr1::shared_ptr<rpc::Messenger>& messenger,
               const scoped_refptr<log::Log>& log,
-              const scoped_refptr<MetricEntity>& metric_entity);
+              const scoped_refptr<MetricEntity>& metric_entity,
+              const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker);
 
   // Starts the TabletPeer, making it available for Write()s. If this
   // TabletPeer is part of a quorum this will connect it to other peers

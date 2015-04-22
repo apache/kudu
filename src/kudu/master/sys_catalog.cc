@@ -217,6 +217,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   consensus::ConsensusBootstrapInfo consensus_info;
   RETURN_NOT_OK(BootstrapTablet(metadata,
                                 scoped_refptr<server::Clock>(master_->clock()),
+                                master_->mem_tracker(),
                                 metric_registry_,
                                 tablet_peer_->status_listener(),
                                 &tablet,
@@ -231,7 +232,8 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
                                            scoped_refptr<server::Clock>(master_->clock()),
                                            master_->messenger(),
                                            log,
-                                           tablet->GetMetricEntity()),
+                                           tablet->GetMetricEntity(),
+                                           master_->mem_tracker()),
                         "Failed to Init() TabletPeer");
 
   RETURN_NOT_OK_PREPEND(tablet_peer_->Start(consensus_info),

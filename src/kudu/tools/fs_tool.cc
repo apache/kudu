@@ -3,31 +3,33 @@
 
 #include "kudu/tools/fs_tool.h"
 
-#include <boost/foreach.hpp>
-#include <boost/function.hpp>
-#include <glog/logging.h>
-#include <gflags/gflags.h>
-#include <tr1/memory>
 #include <algorithm>
+#include <tr1/memory>
 #include <iostream>
 #include <vector>
 
-#include "kudu/fs/fs_manager.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/util.h"
-#include "kudu/gutil/strings/human_readable.h"
-#include "kudu/util/status.h"
-#include "kudu/util/env.h"
-#include "kudu/util/memory/arena.h"
-#include "kudu/util/logging.h"
+#include <boost/foreach.hpp>
+#include <boost/function.hpp>
+#include <gflags/gflags.h>
+#include <glog/logging.h>
+
+#include "kudu/cfile/cfile_reader.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/log_reader.h"
-#include "kudu/cfile/cfile_reader.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/gutil/strings/human_readable.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/cfile_set.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/util/env.h"
+#include "kudu/util/logging.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/memory/arena.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace tools {
@@ -325,7 +327,7 @@ Status FsTool::DumpTabletData(const std::string& tablet_id) {
   RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), tablet_id, &meta));
 
   scoped_refptr<log::LogAnchorRegistry> reg(new log::LogAnchorRegistry());
-  Tablet t(meta, scoped_refptr<server::Clock>(NULL), NULL, reg.get());
+  Tablet t(meta, scoped_refptr<server::Clock>(NULL), shared_ptr<MemTracker>(), NULL, reg.get());
   RETURN_NOT_OK_PREPEND(t.Open(), "Couldn't open tablet");
   vector<string> lines;
   RETURN_NOT_OK_PREPEND(t.DebugDump(&lines), "Couldn't dump tablet");

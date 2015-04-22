@@ -61,7 +61,7 @@ class DeltaTracker {
                const Schema &schema,
                rowid_t num_rows,
                log::LogAnchorRegistry* log_anchor_registry,
-               MemTracker* parent_tracker = NULL);
+               const shared_ptr<MemTracker>& parent_tracker);
 
   Status WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
                       const MvccSnapshot &mvcc_snap,
@@ -236,7 +236,7 @@ class DeltaTracker {
 
   log::LogAnchorRegistry* log_anchor_registry_;
 
-  MemTracker* parent_tracker_;
+  shared_ptr<MemTracker> parent_tracker_;
 
   // The current DeltaMemStore into which updates should be written.
   shared_ptr<DeltaMemStore> dms_;

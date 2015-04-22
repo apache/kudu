@@ -104,14 +104,15 @@ TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
 
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                const scoped_refptr<server::Clock>& clock,
+               const shared_ptr<MemTracker>& parent_mem_tracker,
                MetricRegistry* metric_registry,
                const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
   : schema_(new Schema(metadata->schema())),
     key_schema_(schema_->CreateKeyProjection()),
     metadata_(metadata),
     log_anchor_registry_(log_anchor_registry),
-    mem_tracker_(MemTracker::CreateTracker(-1,
-                                           Substitute("tablet-$0", tablet_id()))),
+    mem_tracker_(MemTracker::CreateTracker(
+        -1, Substitute("tablet-$0", tablet_id()), parent_mem_tracker)),
     rowsets_(new RowSetTree()),
     next_mrs_id_(0),
     clock_(clock),

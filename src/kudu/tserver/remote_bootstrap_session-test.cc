@@ -108,7 +108,12 @@ class RemoteBootstrapTest : public KuduTabletTest {
     mbuilder.Build(&messenger);
 
     log_anchor_registry_.reset(new LogAnchorRegistry());
-    CHECK_OK(tablet_peer_->Init(tablet(), clock(), messenger, log, metric_entity));
+    CHECK_OK(tablet_peer_->Init(tablet(),
+                                clock(),
+                                messenger,
+                                log,
+                                metric_entity,
+                                shared_ptr<MemTracker>()));
     consensus::ConsensusBootstrapInfo boot_info;
     CHECK_OK(tablet_peer_->Start(boot_info));
 

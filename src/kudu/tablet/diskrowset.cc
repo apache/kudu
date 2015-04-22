@@ -439,7 +439,7 @@ Status DiskRowSet::Open() {
   RETURN_NOT_OK(base_data_->CountRows(&num_rows));
   delta_tracker_.reset(new DeltaTracker(rowset_metadata_, schema(), num_rows,
                                         log_anchor_registry_,
-                                        parent_tracker_.get()));
+                                        parent_tracker_));
   RETURN_NOT_OK(delta_tracker_->Open());
 
   open_ = true;

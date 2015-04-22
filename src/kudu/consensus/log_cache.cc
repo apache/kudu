@@ -27,7 +27,7 @@
 DEFINE_int32(log_cache_size_limit_mb, 128,
              "The total per-tablet size of consensus entries which may be kept in memory. "
              "The log cache attempts to keep all entries which have not yet been replicated "
-             "to all followers in memory, but if the total size of thsoe entries exceeeds "
+             "to all followers in memory, but if the total size of those entries exceeds "
              "this limit within an individual tablet, the oldest will be evicted.");
 
 DEFINE_int32(global_log_cache_size_limit_mb, 1024,
@@ -46,15 +46,15 @@ METRIC_DEFINE_gauge_int64(log_cache_size, "Log Cache Memory Usage",
                           MetricUnit::kBytes,
                           "Amount of memory in use for caching the local log.");
 
-const char kLogCacheTrackerId[] = "log_cache_parent";
+static const char kConsensusQueueParentTrackerId[] = "consensus_queue_parent";
 
 typedef vector<const ReplicateMsg*>::const_iterator MsgIter;
 
 LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
                    const scoped_refptr<log::Log>& log,
-                   const std::string& local_uuid,
-                   const std::string& tablet_id,
-                   const std::string& parent_tracker_id)
+                   const string& local_uuid,
+                   const string& tablet_id,
+                   const shared_ptr<MemTracker>& parent_mem_tracker)
   : log_(log),
     local_uuid_(local_uuid),
     tablet_id_(tablet_id),
@@ -66,15 +66,18 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
   const uint64_t max_ops_size_bytes = FLAGS_log_cache_size_limit_mb * 1024 * 1024;
   const uint64_t global_max_ops_size_bytes = FLAGS_global_log_cache_size_limit_mb * 1024 * 1024;
 
-  // If no tracker is registered for kConsensusQueueMemTrackerId,
-  // create one using the global limit.
+  // Set up (or reuse) a tracker with the global limit.
+  //
+  // Note: by using the server-wide tracker as the parent, this tracker isn't
+  // global in a minicluster environment. That's acceptable.
   parent_tracker_ = MemTracker::FindOrCreateTracker(global_max_ops_size_bytes,
-                                                    parent_tracker_id);
+                                                    kConsensusQueueParentTrackerId,
+                                                    parent_mem_tracker);
 
   // And create a child tracker with the per-tablet limit.
   tracker_ = MemTracker::CreateTracker(max_ops_size_bytes,
-                                       Substitute("$0-$1", parent_tracker_id, tablet_id),
-                                       parent_tracker_->id());
+                                       tablet_id,
+                                       parent_tracker_);
 
   // Put a fake message at index 0, since this simplifies a lot of our
   // code paths elsewhere.
@@ -84,6 +87,7 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
 }
 
 LogCache::~LogCache() {
+  tracker_->Release(tracker_->consumption());
   cache_.clear();
 }
 

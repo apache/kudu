@@ -69,12 +69,13 @@ static const char* const kTimerId = "election-timer";
 scoped_refptr<RaftConsensus> RaftConsensus::Create(
     const ConsensusOptions& options,
     gscoped_ptr<ConsensusMetadata> cmeta,
-    const std::string& peer_uuid,
+    const string& peer_uuid,
     const scoped_refptr<MetricEntity>& metric_entity,
     const scoped_refptr<server::Clock>& clock,
     ReplicaTransactionFactory* txn_factory,
-    const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-    const scoped_refptr<log::Log>& log) {
+    const shared_ptr<rpc::Messenger>& messenger,
+    const scoped_refptr<log::Log>& log,
+    const shared_ptr<MemTracker>& parent_mem_tracker) {
   gscoped_ptr<PeerProxyFactory> rpc_factory(
     new RpcPeerProxyFactory(messenger));
 
@@ -83,7 +84,8 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
   gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity,
                                                            log,
                                                            peer_uuid,
-                                                           options.tablet_id));
+                                                           options.tablet_id,
+                                                           parent_mem_tracker));
 
   gscoped_ptr<ThreadPool> thread_pool;
   CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options.tablet_id.substr(0, 6)))

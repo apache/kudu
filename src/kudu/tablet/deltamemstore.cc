@@ -29,14 +29,10 @@ static const int kMaxArenaBufferSize = 5*1024*1024;
 
 namespace {
 
-shared_ptr<MemTracker> CreateMemTrackerForDMS(int64_t id,
-                                              MemTracker* parent_tracker) {
-  string mem_tracker_id = Substitute("DeltaMemStore-$0", id);
-  if (parent_tracker != NULL) {
-    mem_tracker_id = Substitute("$0-$1", parent_tracker->id(), mem_tracker_id);
-    return MemTracker::CreateTracker(-1, mem_tracker_id, parent_tracker->id());
-  }
-  return MemTracker::CreateTracker(-1, mem_tracker_id);
+shared_ptr<MemTracker> CreateMemTrackerForDMS(
+    int64_t rs_id, int64_t id, const shared_ptr<MemTracker>& parent_tracker) {
+  string mem_tracker_id = Substitute("DeltaMemStore-$0-$1", rs_id, id);
+  return MemTracker::CreateTracker(-1, mem_tracker_id, parent_tracker);
 }
 
 } // anonymous namespace
@@ -45,11 +41,11 @@ DeltaMemStore::DeltaMemStore(int64_t id,
                              int64_t rs_id,
                              const Schema &schema,
                              LogAnchorRegistry* log_anchor_registry,
-                             MemTracker* parent_tracker)
+                             const shared_ptr<MemTracker>& parent_tracker)
   : id_(id),
     rs_id_(rs_id),
     schema_(schema),
-    mem_tracker_(CreateMemTrackerForDMS(id, parent_tracker)),
+    mem_tracker_(CreateMemTrackerForDMS(rs_id, id, parent_tracker)),
     allocator_(new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker_)),
     arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
                                              allocator_)),

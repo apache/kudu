@@ -677,7 +677,7 @@ TEST_F(TestCompaction, TestMergeMRS) {
   shared_ptr<MemRowSet> mrs_a(new MemRowSet(0, schema_, log_anchor_registry_.get()));
   InsertRows(mrs_a.get(), 10, 0);
 
-  shared_ptr<MemRowSet> mrs_b(new MemRowSet(0, schema_, log_anchor_registry_.get()));
+  shared_ptr<MemRowSet> mrs_b(new MemRowSet(1, schema_, log_anchor_registry_.get()));
   InsertRows(mrs_b.get(), 10, 1);
 
   MvccSnapshot snap(mvcc_);

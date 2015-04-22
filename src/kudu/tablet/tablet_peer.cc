@@ -90,7 +90,8 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                         const scoped_refptr<server::Clock>& clock,
                         const shared_ptr<Messenger>& messenger,
                         const scoped_refptr<Log>& log,
-                        const scoped_refptr<MetricEntity>& metric_entity) {
+                        const scoped_refptr<MetricEntity>& metric_entity,
+                        const shared_ptr<MemTracker>& parent_mem_tracker) {
 
   DCHECK(tablet) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log) << "A TabletPeer must be provided with a Log";
@@ -126,7 +127,8 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                                          clock_,
                                          this,
                                          messenger_,
-                                         log_.get());
+                                         log_.get(),
+                                         parent_mem_tracker);
     }
   }
 

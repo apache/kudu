@@ -52,8 +52,6 @@ METRIC_DEFINE_gauge_int64(in_progress_ops, "Leader Operations in Progress",
                           "Number of operations in the leader queue ack'd by a minority of "
                           "peers.");
 
-const char kConsensusQueueParentTrackerId[] = "consensus_queue_parent";
-
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
   return Substitute("Peer: $0, New: $1, Last received: $2, Last sent $3, "
       "Last known committed idx: $4 Last exchange result: $5", uuid, is_new,
@@ -71,12 +69,12 @@ PeerMessageQueue::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_ent
 
 PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                                    const scoped_refptr<log::Log>& log,
-                                   const std::string& local_uuid,
-                                   const std::string& tablet_id,
-                                   const std::string& parent_tracker_id)
+                                   const string& local_uuid,
+                                   const string& tablet_id,
+                                   const shared_ptr<MemTracker>& parent_mem_tracker)
     : local_uuid_(local_uuid),
       tablet_id_(tablet_id),
-      log_cache_(metric_entity, log, local_uuid, tablet_id, parent_tracker_id),
+      log_cache_(metric_entity, log, local_uuid, tablet_id, parent_mem_tracker),
       metrics_(metric_entity) {
   queue_state_.current_term = MinimumOpId().term();
   queue_state_.committed_index = MinimumOpId();

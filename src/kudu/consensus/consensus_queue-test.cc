@@ -16,7 +16,6 @@
 #include "kudu/consensus/log-test-base.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/server/hybrid_clock.h"
-#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -63,8 +62,18 @@ class ConsensusQueueTest : public KuduTest {
     ASSERT_OK(clock_->Init());
 
     consensus_.reset(new TestRaftConsensusQueueIface());
-    queue_.reset(new PeerMessageQueue(metric_entity_, log_.get(), kLeaderUuid, kTestTablet));
+    CloseAndReopenQueue();
     queue_->RegisterObserver(consensus_.get());
+  }
+
+  void CloseAndReopenQueue() {
+    // Blow away the memtrackers before creating the new queue.
+    queue_.reset();
+
+    queue_.reset(new PeerMessageQueue(metric_entity_,
+                                      log_.get(),
+                                      kLeaderUuid,
+                                      kTestTablet));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -419,7 +428,8 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
 
   // Now reset the queue so that we can pass a new committed index,
   // the last operation in the log.
-  queue_.reset(new PeerMessageQueue(metric_entity_, log_.get(), kLeaderUuid, kTestTablet));
+  CloseAndReopenQueue();
+
   OpId committed_index;
   committed_index.set_term(1);
   committed_index.set_index(100);
@@ -487,7 +497,8 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
 
   // Now reset the queue so that we can pass a new committed index,
   // op, 2.15.
-  queue_.reset(new PeerMessageQueue(metric_entity_, log_.get(), kLeaderUuid, kTestTablet));
+  CloseAndReopenQueue();
+
   OpId committed_index = MakeOpId(2, 15);
   queue_->Init(MakeOpId(2, 20));
   queue_->SetLeaderMode(committed_index, committed_index.term(), 2);

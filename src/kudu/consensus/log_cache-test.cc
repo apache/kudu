@@ -20,7 +20,6 @@ DECLARE_int32(max_clock_sync_error_usec);
 
 using std::tr1::shared_ptr;
 
-DECLARE_int32(consensus_max_batch_size);
 DECLARE_int32(log_cache_size_limit_mb);
 DECLARE_int32(global_log_cache_size_limit_mb);
 
@@ -51,7 +50,7 @@ class LogCacheTest : public KuduTest {
                             NULL,
                             &log_));
 
-    CloseAndReopenCache(MinimumOpId(), "TestMemTracker");
+    CloseAndReopenCache(MinimumOpId());
 
     FLAGS_max_clock_sync_error_usec = 10000000;
     clock_.reset(new server::HybridClock());
@@ -62,13 +61,15 @@ class LogCacheTest : public KuduTest {
     log_->WaitUntilAllFlushed();
   }
 
-  void CloseAndReopenCache(const OpId& preceding_id,
-                           const string& mem_tracker_name) {
+  void CloseAndReopenCache(const OpId& preceding_id) {
+    // Blow away the memtrackers before creating the new cache.
+    cache_.reset();
+
     cache_.reset(new LogCache(metric_entity_,
                               log_.get(),
                               kPeerUuid,
                               kTestTablet,
-                              mem_tracker_name));
+                              shared_ptr<MemTracker>()));
     cache_->Init(preceding_id);
   }
 
@@ -208,8 +209,7 @@ TEST_F(LogCacheTest, TestCacheEdgeCases) {
 
 TEST_F(LogCacheTest, TestMemoryLimit) {
   FLAGS_log_cache_size_limit_mb = 1;
-
-  CloseAndReopenCache(MinimumOpId(), "TestMemoryLimit");
+  CloseAndReopenCache(MinimumOpId());
 
   const int kPayloadSize = 400 * 1024;
   // Limit should not be violated.
@@ -254,19 +254,11 @@ TEST_F(LogCacheTest, TestMemoryLimit) {
 }
 
 TEST_F(LogCacheTest, TestGlobalMemoryLimit) {
-  FLAGS_log_cache_size_limit_mb = 4;
-
-  const string kParentTrackerId = "TestGlobalMemoryLimit";
-  shared_ptr<MemTracker> parent_tracker = MemTracker::CreateTracker(
-    FLAGS_log_cache_size_limit_mb * 1024 * 1024,
-    kParentTrackerId);
-
-  ASSERT_TRUE(parent_tracker.get() != NULL);
+  FLAGS_global_log_cache_size_limit_mb = 4;
+  CloseAndReopenCache(MinimumOpId());
 
   // Exceed the global hard limit.
-  parent_tracker->Consume(3 * 1024 * 1024);
-
-  CloseAndReopenCache(MinimumOpId(), kParentTrackerId);
+  cache_->parent_tracker_->Consume(3 * 1024 * 1024);
 
   const int kPayloadSize = 768 * 1024;
 
@@ -276,6 +268,8 @@ TEST_F(LogCacheTest, TestGlobalMemoryLimit) {
 
   ASSERT_EQ(1, cache_->num_cached_ops());
   ASSERT_LE(cache_->BytesUsed(), 1024 * 1024);
+
+  cache_->parent_tracker_->Release(3 * 1024 * 1024);
 }
 
 // Test that the log cache properly replaces messages when an index

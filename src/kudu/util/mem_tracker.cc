@@ -4,10 +4,14 @@
 #include "kudu/util/mem_tracker.h"
 
 #include <algorithm>
+#include <boost/foreach.hpp>
+#include <deque>
 #include <gperftools/malloc_extension.h>
 #include <limits>
+#include <list>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/once.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -20,6 +24,8 @@ namespace kudu {
 // NOTE: this class has been adapted from Impala, so the code style varies
 // somewhat from kudu.
 
+using std::deque;
+using std::list;
 using std::string;
 using std::stringstream;
 using std::tr1::shared_ptr;
@@ -27,123 +33,146 @@ using std::vector;
 
 using strings::Substitute;
 
-MemTracker::TrackerMap MemTracker::id_to_mem_trackers_;
-Mutex MemTracker::static_mem_trackers_lock_;
-Atomic64 MemTracker::released_memory_since_gc_;
+// The ancestor for all trackers. Every tracker is visible from the root down.
+static shared_ptr<MemTracker> root_tracker;
+static GoogleOnceType root_tracker_once = GOOGLE_ONCE_INIT;
 
+// Total amount of memory from calls to Release() since the last GC. If this
+// is greater than GC_RELEASE_SIZE, this will trigger a tcmalloc gc.
+static Atomic64 released_memory_since_gc;
 
-// Sentinel value used for overloading MemTracker::CreateTracker with no parent_id.
-const char MemTracker::NO_PARENT[] = "!!!NO_PARENT!!!";
+void MemTracker::CreateRootTracker() {
+  // TODO: The byte limit should be configurable via gflag.
+  root_tracker.reset(new MemTracker(NULL, -1, "root",
+                                    shared_ptr<MemTracker>()));
+  root_tracker->Init();
+}
 
 shared_ptr<MemTracker> MemTracker::CreateTracker(int64_t byte_limit,
                                                  const string& id,
-                                                 const string& parent_id) {
-  shared_ptr<MemTracker> tracker(new MemTracker(byte_limit,
-                                                id,
-                                                parent_id));
-  AddToTrackerMap(id, tracker);
+                                                 const shared_ptr<MemTracker>& parent) {
+  shared_ptr<MemTracker> real_parent = parent ? parent : GetRootTracker();
+  MutexLock l(real_parent->child_trackers_lock_);
+  return CreateTrackerUnlocked(byte_limit, id, real_parent);
+}
+
+shared_ptr<MemTracker> MemTracker::CreateTrackerUnlocked(int64_t byte_limit,
+                                                         const string& id,
+                                                         const shared_ptr<MemTracker>& parent) {
+  DCHECK(parent);
+  shared_ptr<MemTracker> tracker(new MemTracker(NULL, byte_limit, id, parent));
+  parent->AddChildTrackerUnlocked(tracker.get());
+  tracker->Init();
+
   return tracker;
 }
 
 shared_ptr<MemTracker> MemTracker::CreateTracker(FunctionGauge<uint64_t>* consumption_metric,
                                                  int64_t byte_limit,
-                                                 const std::string& id) {
-  shared_ptr<MemTracker> tracker(new MemTracker(consumption_metric,
-                                                byte_limit,
-                                                id));
-  AddToTrackerMap(id, tracker);
+                                                 const string& id) {
+  shared_ptr<MemTracker> parent(GetRootTracker());
+  shared_ptr<MemTracker> tracker(
+      new MemTracker(consumption_metric, byte_limit, id, parent));
+  MutexLock l(parent->child_trackers_lock_);
+  parent->AddChildTrackerUnlocked(tracker.get());
+  tracker->Init();
+
   return tracker;
 }
 
-MemTracker::MemTracker(int64_t byte_limit, const string& id,
-                       const string& parent_id)
+MemTracker::MemTracker(FunctionGauge<uint64_t>* consumption_metric,
+                       int64_t byte_limit,
+                       const string& id,
+                       const shared_ptr<MemTracker>& parent)
     : limit_(byte_limit),
       id_(id),
       descr_(Substitute("memory consumption for $0", id)),
+      parent_(parent),
       consumption_(0),
-      consumption_metric_(NULL),
-      auto_unregister_(false),
+      consumption_metric_(consumption_metric),
       enable_logging_(false),
       log_stack_(false) {
-
-  if (parent_id != NO_PARENT) {
-    CHECK(FindTracker(parent_id, &parent_)) << " id " << id << " parent_id " << parent_id;
-    parent_->AddChildTracker(this);
+  VLOG(1) << "Creating tracker " << ToString();
+  if (consumption_metric_) {
+    UpdateConsumption();
   }
-  Init();
-}
-
-MemTracker::MemTracker(FunctionGauge<uint64_t>* consumption_metric,
-                       int64_t byte_limit, const string& id)
-  : limit_(byte_limit),
-    id_(id),
-    descr_(Substitute("memory consumption for $0", id)),
-    consumption_(0),
-    consumption_metric_(consumption_metric),
-    auto_unregister_(false),
-    enable_logging_(false),
-    log_stack_(false) {
-  Init();
-  UpdateConsumption();
 }
 
 MemTracker::~MemTracker() {
-  MutexLock l(static_mem_trackers_lock_);
-  if (auto_unregister_) {
-    UnregisterFromParent();
+  VLOG(1) << "Destroying tracker " << ToString();
+  if (parent_) {
+    DCHECK(consumption() == 0) << "Memory tracker " << ToString()
+        << " has unreleased consumption " << consumption();
+    parent_->Release(consumption());
+    {
+      MutexLock l(parent_->child_trackers_lock_);
+      parent_->child_trackers_.erase(child_tracker_it_);
+      child_tracker_it_ = parent_->child_trackers_.end();
+    }
   }
-  TrackerMap::iterator it = id_to_mem_trackers_.find(id_);
-  if (it != id_to_mem_trackers_.end()) {
-    id_to_mem_trackers_.erase(it);
+}
+
+string MemTracker::ToString() const {
+  string s;
+  const MemTracker* tracker = this;
+  while (tracker) {
+    if (s != "") {
+      s += "->";
+    }
+    s += tracker->id();
+    tracker = tracker->parent_.get();
   }
+  return s;
 }
 
-void MemTracker::UnregisterFromParent() {
-  DCHECK(parent_.get());
-  MutexLock l(parent_->child_trackers_lock_);
-  parent_->child_trackers_.erase(child_tracker_it_);
-  child_tracker_it_ = parent_->child_trackers_.end();
+bool MemTracker::FindTracker(const string& id,
+                             shared_ptr<MemTracker>* tracker,
+                             const shared_ptr<MemTracker>& parent) {
+  shared_ptr<MemTracker> real_parent = parent ? parent : GetRootTracker();
+  MutexLock l(real_parent->child_trackers_lock_);
+  return FindTrackerUnlocked(id, tracker, real_parent);
 }
 
-void MemTracker::AddToTrackerMap(const string& id, const shared_ptr<MemTracker>& tracker) {
-  MutexLock l(static_mem_trackers_lock_);
-  id_to_mem_trackers_[id] = tracker;
-}
-
-bool MemTracker::FindTracker(const string& id) {
-  MutexLock l(static_mem_trackers_lock_);
-  return ContainsKey(id_to_mem_trackers_, id);
-}
-
-bool MemTracker::FindTracker(const string& id, shared_ptr<MemTracker>* tracker) {
-  MutexLock l(static_mem_trackers_lock_);
-  TrackerMap::iterator it = id_to_mem_trackers_.find(id);
-  if (it != id_to_mem_trackers_.end()) {
-    *tracker = it->second.lock();
-    return true;
+bool MemTracker::FindTrackerUnlocked(const string& id,
+                                     shared_ptr<MemTracker>* tracker,
+                                     const shared_ptr<MemTracker>& parent) {
+  DCHECK(parent != NULL);
+  parent->child_trackers_lock_.AssertAcquired();
+  BOOST_FOREACH(MemTracker* child, parent->child_trackers_) {
+    if (child->id() == id) {
+      *tracker = child->shared_from_this();
+      return true;
+    }
   }
   return false;
 }
 
 shared_ptr<MemTracker> MemTracker::FindOrCreateTracker(int64_t byte_limit,
-                                                       const std::string& id,
-                                                       const std::string& parent_id) {
-  MutexLock l(static_mem_trackers_lock_);
-  TrackerMap::iterator it = id_to_mem_trackers_.find(id);
-  if (it != id_to_mem_trackers_.end()) {
-    return it->second.lock();
+                                                       const string& id,
+                                                       const shared_ptr<MemTracker>& parent) {
+  shared_ptr<MemTracker> real_parent = parent ? parent : GetRootTracker();
+  MutexLock l(real_parent->child_trackers_lock_);
+  shared_ptr<MemTracker> found;
+  if (FindTrackerUnlocked(id, &found, real_parent)) {
+    return found;
   }
-  shared_ptr<MemTracker> ret(new MemTracker(byte_limit, id, parent_id));
-  id_to_mem_trackers_[id] = ret;
-  return ret;
+  return CreateTrackerUnlocked(byte_limit, id, real_parent);
 }
 
 void MemTracker::ListTrackers(vector<shared_ptr<MemTracker> >* trackers) {
-  MutexLock l(static_mem_trackers_lock_);
-  for (TrackerMap::iterator it = id_to_mem_trackers_.begin();
-       it != id_to_mem_trackers_.end();
-       ++it) {
-    trackers->push_back(it->second.lock());
+  deque<shared_ptr<MemTracker> > to_process;
+  to_process.push_front(GetRootTracker());
+  while (!to_process.empty()) {
+    shared_ptr<MemTracker> t = to_process.back();
+    to_process.pop_back();
+
+    trackers->push_back(t);
+    {
+      MutexLock l(t->child_trackers_lock_);
+      BOOST_FOREACH(MemTracker* child, t->child_trackers_) {
+        to_process.push_back(child->shared_from_this());
+      }
+    }
   }
 }
 
@@ -172,7 +201,7 @@ void MemTracker::Consume(int64_t bytes) {
   if (PREDICT_FALSE(enable_logging_)) {
     LogUpdate(true, bytes);
   }
-  for (std::vector<MemTracker*>::iterator tracker = all_trackers_.begin();
+  for (vector<MemTracker*>::iterator tracker = all_trackers_.begin();
        tracker != all_trackers_.end(); ++tracker) {
     (*tracker)->consumption_.IncrementBy(bytes);
     if ((*tracker)->consumption_metric_ == NULL) {
@@ -241,7 +270,7 @@ void MemTracker::Release(int64_t bytes) {
     return;
   }
 
-  if (PREDICT_FALSE(base::subtle::Barrier_AtomicIncrement(&released_memory_since_gc_, bytes) >
+  if (PREDICT_FALSE(base::subtle::Barrier_AtomicIncrement(&released_memory_since_gc, bytes) >
                     GC_RELEASE_SIZE)) {
     GcTcmalloc();
   }
@@ -258,7 +287,7 @@ void MemTracker::Release(int64_t bytes) {
     LogUpdate(false, bytes);
   }
 
-  for (std::vector<MemTracker*>::iterator tracker = all_trackers_.begin();
+  for (vector<MemTracker*>::iterator tracker = all_trackers_.begin();
        tracker != all_trackers_.end(); ++tracker) {
     (*tracker)->consumption_.IncrementBy(-bytes);
     // If a UDF calls FunctionContext::TrackAllocation() but allocates less than the
@@ -274,7 +303,7 @@ void MemTracker::Release(int64_t bytes) {
 }
 
 bool MemTracker::AnyLimitExceeded() {
-  for (std::vector<MemTracker*>::iterator tracker = limit_trackers_.begin();
+  for (vector<MemTracker*>::iterator tracker = limit_trackers_.begin();
        tracker != limit_trackers_.end(); ++tracker) {
     if ((*tracker)->LimitExceeded()) {
       return true;
@@ -292,7 +321,7 @@ bool MemTracker::LimitExceeded() {
 
 int64_t MemTracker::SpareCapacity() const {
   int64_t result = std::numeric_limits<int64_t>::max();
-  for (std::vector<MemTracker*>::const_iterator tracker = limit_trackers_.begin();
+  for (vector<MemTracker*>::const_iterator tracker = limit_trackers_.begin();
        tracker != limit_trackers_.end(); ++tracker) {
     int64_t mem_left = (*tracker)->limit() - (*tracker)->consumption();
     result = std::min(result, mem_left);
@@ -332,14 +361,14 @@ bool MemTracker::GcMemory(int64_t max_consumption) {
 
 void MemTracker::GcTcmalloc() {
 #ifdef TCMALLOC_ENABLED
-  released_memory_since_gc_ = 0;
+  released_memory_since_gc = 0;
   MallocExtension::instance()->ReleaseFreeMemory();
 #else
   // Nothing to do if not using tcmalloc.
 #endif
 }
 
-std::string MemTracker::LogUsage(const std::string& prefix) const {
+string MemTracker::LogUsage(const string& prefix) const {
   stringstream ss;
   ss << prefix << id_ << ":";
   if (CheckLimitExceeded()) {
@@ -361,12 +390,6 @@ std::string MemTracker::LogUsage(const std::string& prefix) const {
 }
 
 void MemTracker::Init() {
-  // populate ancestor_trackers_
-  shared_ptr<MemTracker> ancestor = parent_;
-  while (ancestor.get()) {
-    ancestor_trackers_.push_back(ancestor);
-    ancestor = ancestor->parent_;
-  }
   // populate all_trackers_ and limit_trackers_
   MemTracker* tracker = this;
   while (tracker) {
@@ -378,8 +401,14 @@ void MemTracker::Init() {
   DCHECK_EQ(all_trackers_[0], this);
 }
 
-void MemTracker::AddChildTracker(MemTracker* tracker) {
-  MutexLock l(child_trackers_lock_);
+void MemTracker::AddChildTrackerUnlocked(MemTracker* tracker) {
+  child_trackers_lock_.AssertAcquired();
+#ifndef NDEBUG
+  shared_ptr<MemTracker> found;
+  CHECK(!FindTrackerUnlocked(tracker->id(), &found, shared_from_this()))
+    << Substitute("Duplicate memory tracker (id $0) on parent $1",
+                  tracker->id(), ToString());
+#endif
   tracker->child_tracker_it_ = child_trackers_.insert(child_trackers_.end(), tracker);
 }
 
@@ -393,14 +422,18 @@ void MemTracker::LogUpdate(bool is_consume, int64_t bytes) const {
   LOG(ERROR) << ss.str();
 }
 
-std::string MemTracker::LogUsage(const std::string& prefix,
-                                 const std::list<MemTracker*>& trackers) {
+string MemTracker::LogUsage(const string& prefix,
+                            const list<MemTracker*>& trackers) {
   vector<string> usage_strings;
-  for (std::list<MemTracker*>::const_iterator it = trackers.begin();
-       it != trackers.end(); ++it) {
-    usage_strings.push_back((*it)->LogUsage(prefix));
+  BOOST_FOREACH(const MemTracker* child, trackers) {
+    usage_strings.push_back(child->LogUsage(prefix));
   }
   return JoinStrings(usage_strings, "\n");
+}
+
+shared_ptr<MemTracker> MemTracker::GetRootTracker() {
+  GoogleOnceInit(&root_tracker_once, &MemTracker::CreateRootTracker);
+  return root_tracker;
 }
 
 } // namespace kudu

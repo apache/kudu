@@ -81,11 +81,11 @@ class BootstrapTest : public LogTestBase {
                                   ConsensusBootstrapInfo* boot_info) {
     gscoped_ptr<TabletStatusListener> listener(new TabletStatusListener(meta));
     scoped_refptr<LogAnchorRegistry> log_anchor_registry(new LogAnchorRegistry());
-
     // Now attempt to recover the log
     RETURN_NOT_OK(BootstrapTablet(
         meta,
         scoped_refptr<Clock>(LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)),
+        shared_ptr<MemTracker>(),
         NULL,
         listener.get(),
         tablet,
@@ -191,36 +191,42 @@ TEST_F(BootstrapTest, TestOrphanCommit) {
   // Step 2) Write the corresponding COMMIT in the second segment.
   AppendCommit(opid);
 
-  shared_ptr<Tablet> tablet;
-  ConsensusBootstrapInfo boot_info;
+  {
+    shared_ptr<Tablet> tablet;
+    ConsensusBootstrapInfo boot_info;
 
-  // Step 3) Apply the operations in the log to the tablet and flush
-  // the tablet to disk.
-  ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
-  ASSERT_OK(tablet->Flush());
+    // Step 3) Apply the operations in the log to the tablet and flush
+    // the tablet to disk.
+    ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+    ASSERT_OK(tablet->Flush());
 
-  // Create a new log segment.
-  ASSERT_OK(RollLog());
+    // Create a new log segment.
+    ASSERT_OK(RollLog());
 
-  // Step 4) Create an orphanned commit by first adding a commit to
-  // the newly rolled logfile, and then by removing the previous
-  // commits.
-  AppendCommit(opid);
-  log::SegmentSequence segments;
-  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
-  fs_manager_->env()->DeleteFile(segments[0]->path());
+    // Step 4) Create an orphanned commit by first adding a commit to
+    // the newly rolled logfile, and then by removing the previous
+    // commits.
+    AppendCommit(opid);
+    log::SegmentSequence segments;
+    ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+    fs_manager_->env()->DeleteFile(segments[0]->path());
+  }
+  {
+    shared_ptr<Tablet> tablet;
+    ConsensusBootstrapInfo boot_info;
 
-  // Note: when GLOG_v=1, the test logs should include 'Ignoring
-  // orphan commit: op_type: WRITE_OP...' line.
-  ASSERT_OK(BootstrapTestTablet(2, 1, &tablet, &boot_info));
+    // Note: when GLOG_v=1, the test logs should include 'Ignoring
+    // orphan commit: op_type: WRITE_OP...' line.
+    ASSERT_OK(BootstrapTestTablet(2, 1, &tablet, &boot_info));
 
-  // Confirm that the legitimate data (from Step 3) is still there.
-  vector<string> results;
-  IterateTabletRows(tablet.get(), &results);
-  ASSERT_EQ(1, results.size());
-  ASSERT_EQ("(uint32 key=1, uint32 int_val=0, string string_val=this is a test insert)",
-            results[0]);
-  ASSERT_EQ(2, tablet->metadata()->last_durable_mrs_id());
+    // Confirm that the legitimate data (from Step 3) is still there.
+    vector<string> results;
+    IterateTabletRows(tablet.get(), &results);
+    ASSERT_EQ(1, results.size());
+    ASSERT_EQ("(uint32 key=1, uint32 int_val=0, string string_val=this is a test insert)",
+              results[0]);
+    ASSERT_EQ(2, tablet->metadata()->last_durable_mrs_id());
+  }
 }
 
 // Tests this scenario:

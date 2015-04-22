@@ -108,7 +108,12 @@ class TabletPeerTest : public KuduTabletTest {
                                *tablet()->schema(),
                                metric_entity_.get(), &log));
 
-    ASSERT_OK(tablet_peer_->Init(tablet(), clock(), messenger_, log, metric_entity_));
+    ASSERT_OK(tablet_peer_->Init(tablet(),
+                                 clock(),
+                                 messenger_,
+                                 log,
+                                 metric_entity_,
+                                 shared_ptr<MemTracker>()));
   }
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {

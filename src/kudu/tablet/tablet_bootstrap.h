@@ -79,6 +79,7 @@ extern const char* kLogRecoveryDir;
 // TSTabletManager.
 Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const scoped_refptr<server::Clock>& clock,
+                       const std::tr1::shared_ptr<MemTracker>& mem_tracker,
                        MetricRegistry* metric_registry,
                        TabletStatusListener* status_listener,
                        std::tr1::shared_ptr<Tablet>* rebuilt_tablet,

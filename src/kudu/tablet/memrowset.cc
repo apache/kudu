@@ -59,14 +59,10 @@ bool MRSRow::IsGhost() const {
 
 namespace {
 
-shared_ptr<MemTracker> CreateMemTrackerForMemRowSet(int64_t id,
-                                                    MemTracker* parent_tracker) {
+shared_ptr<MemTracker> CreateMemTrackerForMemRowSet(
+    int64_t id, const shared_ptr<MemTracker>& parent_tracker) {
   string mem_tracker_id = Substitute("MemRowSet-$0", id);
-  if (parent_tracker != NULL) {
-    mem_tracker_id = Substitute("$0-$1", parent_tracker->id(), mem_tracker_id);
-    return MemTracker::CreateTracker(-1, mem_tracker_id, parent_tracker->id());
-  }
-  return MemTracker::CreateTracker(-1, mem_tracker_id);
+  return MemTracker::CreateTracker(-1, mem_tracker_id, parent_tracker);
 }
 
 } // anonymous namespace
@@ -78,7 +74,7 @@ MemRowSet::MemRowSet(int64_t id,
   : id_(id),
     schema_(schema),
     parent_tracker_(parent_tracker),
-    mem_tracker_(CreateMemTrackerForMemRowSet(id, parent_tracker.get())),
+    mem_tracker_(CreateMemTrackerForMemRowSet(id, parent_tracker)),
     allocator_(new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker_)),
     arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
                                              allocator_)),

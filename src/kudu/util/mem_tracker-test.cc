@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <boost/bind.hpp>
+#include <boost/foreach.hpp>
 
 #include "kudu/util/test_util.h"
 
@@ -28,6 +29,8 @@ TEST(MemTrackerTest, SingleTrackerNoLimit) {
   t->Release(15);
   EXPECT_EQ(t->consumption(), 5);
   EXPECT_FALSE(t->LimitExceeded());
+  t->Release(5);
+  EXPECT_EQ(t->consumption(), 0);
 }
 
 TEST(MemTrackerTest, SingleTrackerWithLimit) {
@@ -42,12 +45,13 @@ TEST(MemTrackerTest, SingleTrackerWithLimit) {
   t->Release(15);
   EXPECT_EQ(t->consumption(), 5);
   EXPECT_FALSE(t->LimitExceeded());
+  t->Release(5);
 }
 
 TEST(MemTrackerTest, TrackerHierarchy) {
   shared_ptr<MemTracker> p = MemTracker::CreateTracker(100, "p");
-  shared_ptr<MemTracker> c1 = MemTracker::CreateTracker(80, "c1", p->id());
-  shared_ptr<MemTracker> c2 = MemTracker::CreateTracker(50, "c2", p->id());
+  shared_ptr<MemTracker> c1 = MemTracker::CreateTracker(80, "c1", p);
+  shared_ptr<MemTracker> c2 = MemTracker::CreateTracker(50, "c2", p);
 
   // everything below limits
   c1->Consume(60);
@@ -83,6 +87,8 @@ TEST(MemTrackerTest, TrackerHierarchy) {
   EXPECT_TRUE(c2->AnyLimitExceeded());
   EXPECT_EQ(p->consumption(), 100);
   EXPECT_FALSE(p->LimitExceeded());
+  c1->Release(40);
+  c2->Release(60);
 }
 
 class GcFunctionHelper {
@@ -142,6 +148,7 @@ TEST(MemTrackerTest, GcFunctions) {
   EXPECT_EQ(t->consumption(), 11);
   EXPECT_FALSE(t->LimitExceeded());
   EXPECT_EQ(t->consumption(), 10);
+  t->Release(10);
 }
 
 TEST(MemTrackerTest, STLContainerAllocator) {
@@ -172,6 +179,36 @@ TEST(MemTrackerTest, STLContainerAllocator) {
     ASSERT_GT(t->consumption(), 0);
   }
   ASSERT_EQ(0, t->consumption());
+}
+
+TEST(MemTrackerTest, FindFunctionsTakeOwnership) {
+  // In each test, ToString() would crash if the MemTracker is destroyed when
+  // 'm' goes out of scope.
+
+  shared_ptr<MemTracker> ref;
+  {
+    shared_ptr<MemTracker> m = MemTracker::CreateTracker(-1, "test");
+    ASSERT_TRUE(MemTracker::FindTracker(m->id(), &ref));
+  }
+  LOG(INFO) << ref->ToString();
+  ref.reset();
+
+  {
+    shared_ptr<MemTracker> m = MemTracker::CreateTracker(-1, "test");
+    ref = MemTracker::FindOrCreateTracker(-1, m->id());
+  }
+  LOG(INFO) << ref->ToString();
+  ref.reset();
+
+  vector<shared_ptr<MemTracker> > refs;
+  {
+    shared_ptr<MemTracker> m = MemTracker::CreateTracker(-1, "test");
+    MemTracker::ListTrackers(&refs);
+  }
+  BOOST_FOREACH(const shared_ptr<MemTracker>& r, refs) {
+    LOG(INFO) << r->ToString();
+  }
+  refs.clear();
 }
 
 } // namespace kudu
