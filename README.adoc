@@ -20,6 +20,7 @@ The following dependencies are necessary to build kudu:
 - libssl-dev (Ubuntu) or openssl-devel (CentOS)
 - libsasl2-dev (Ubuntu) or cyrus-sasl-devel (CentOS)
 - libtool
+- patch
 - python 2.6 or later
 - ntp
 - unzip
