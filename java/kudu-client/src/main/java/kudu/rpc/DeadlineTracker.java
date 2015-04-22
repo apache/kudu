@@ -5,7 +5,9 @@ package kudu.rpc;
 import com.google.common.base.Stopwatch;
 
 /**
- * This is a wrapper class around Stopwatch so that we can also track a deadline.
+ * This is a wrapper class around {@link com.google.common.base.Stopwatch} used to track a relative
+ * deadline in the future.
+ * <p/>
  * The watch starts as soon as this object is created with a deadline of 0,
  * meaning that there's no deadline.
  * The deadline has been reached once the stopwatch's elapsed time is equal or greater than the
@@ -13,6 +15,7 @@ import com.google.common.base.Stopwatch;
  */
 public class DeadlineTracker {
   private final Stopwatch stopwatch;
+  /** relative deadline in milliseconds **/
   private long deadline = 0;
 
   /**
@@ -23,7 +26,7 @@ public class DeadlineTracker {
   }
 
   /**
-   * Creates a new tracker, using the specified stopwatch, and starts is right now.
+   * Creates a new tracker, using the specified stopwatch, and starts it right now.
    * The stopwatch is reset if it was already running.
    * @param stopwatch Specific Stopwatch to use
    */
@@ -48,9 +51,14 @@ public class DeadlineTracker {
 
   /**
    * Get the number of milliseconds before the deadline is reached.
-   * Special semantic: this method is used to pass down the remaning deadline to the RPCs,
-   * for which a deadline of 0 means no deadline and it also won't accept a negative deadline.
-   * Thus, if deadline - stopwatch.elapsedMillis(), then 1 will be returned.
+   * <p/>
+   * This method is used to pass down the remaining deadline to the RPCs, so has special semantics.
+   * A deadline of 0 is used to indicate an infinite deadline, and negative deadlines are invalid.
+   * Thus, if the deadline has passed (i.e. <tt>deadline - stopwatch.elapsedMillis() <= 0</tt>),
+   * the returned value is floored at <tt>1</tt>.
+   * <p/>
+   * Callers who care about this behavior should first check {@link #timedOut()}.
+   *
    * @return the remaining millis before the deadline is reached, or 1 if the remaining time is
    * lesser or equal to 0, or Long.MAX_VALUE if no deadline was specified (in which case it
    * should never be called).
@@ -101,7 +109,7 @@ public class DeadlineTracker {
   }
 
   /**
-   * Get the deadline
+   * Get the deadline (in milliseconds).
    * @return the current deadline
    */
   public long getDeadline() {
