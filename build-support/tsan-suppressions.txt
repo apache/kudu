@@ -62,6 +62,9 @@ race:kudu::master::CatalogManagerBgTasks::Shutdown
 # KUDU-189: unsynchronized access to 'state_' in DeferredCallback
 race:kudu::master::AsyncTabletRequestTask::DeferredCallback
 
+# KUDU-574: raft_consensus_quorum-test race on LocalTestPeerProxy destruction
+race:kudu::consensus::LocalTestPeerProxy::~LocalTestPeerProxy
+
 # KUDU-569: unsynchronized access to 'state_', 'acceptor_pools_', in
 # GetBoundAddresses()
 race:kudu::Webserver::GetBoundAddresses
