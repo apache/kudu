@@ -29,7 +29,7 @@ each host.
 * Three or more virtual or physical hosts
 ** on the same local network
 ** running a supported OS
-** root access
+** `sudo` access, if you need to install any prerequisite libraries
 _ Access to the internet
 
 NOTE: Unless otherwise specified, these instructions are the same for RHEL,
@@ -43,24 +43,15 @@ Centos, Ubuntu, or Debian.
 [source,bash]
 .RHEL / Centos:
 ----
-$ sudo yum install boost-thread boost-devel cmake \
-liboauth liboauth-devel libgsasl libgsasl-devel libssl-devel \
-llvm-devel clang
+$ sudo yum install boost-thread boost-devel liboauth liboauth-devel \
+libgsasl libgsasl-devel libssl-devel llvm-devel clang
 ----
 +
 [source,bash]
 .Ubuntu / Debian:
 ----
 $ sudo apt-get install git autoconf automake libboost-thread-dev \
-cmake curl gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
-----
-
-. Create an unprivileged Kudu user and change to the new user.
-+
-[source,bash]
-----
-$ sudo useradd -m kudu
-$ su - kudu
+curl gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
 ----
 
 . *RHEL 6.4 / Centos 6.4*: Obtain LLVM 3.3 or newer. No RHEL 6.4 RPM is
@@ -93,34 +84,27 @@ $ cd kudu
 $ thirdparty/build-if-necessary.sh
 ----
 
-. Build Kudu.
+. Build Kudu, using the utilities installed in the previous step.
 +
 [source,bash]
 ----
-cmake . -DCMAKE_BUILD_TYPE=release
+thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
 make -j4
 ----
 
-. Optional: Run unit tests.
-+
-[source,bash]
-----
-ctest -j4
-----
 
 .RHEL / Centos Build Script
 ====
-This script provides an overview of the procedure to build Kudu on RHEL or
-Centos, and can be used as the basis for an automated deployment scenario.
+This script provides an overview of the procedure to build Kudu on a
+newly-installed RHEL or Centos host, and can be used as the basis for an
+automated deployment scenario.
 
 [source,bash]
 ----
 #!/bin/bash
-# Run as root
-useradd -m kudu
-yum -y install boost-thread boost-devel cmake liboauth \
-liboauth-devel libgsasl libgsasl-devel libssl-devel llvm-devel clang
-su - kudu
+
+sudo yum -y install boost-thread boost-devel liboauth liboauth-devel \
+libgsasl libgsasl-devel libssl-devel llvm-devel clang
 wget http://llvm.org/releases/3.3/clang+llvm-3.3-x86_64-fedora18.tar.bz2
 tar xjvf clang+llvm-3.3-x86_64-fedora18.tar.bz2
 export CC=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang
@@ -128,9 +112,8 @@ export CXX=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang++
 git clone http://github.sf.cloudera.com/CDH/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
-cmake .
+thirdparty/installed/bin/cmake .
 make -j4
-make test
 ----
 ====
 
@@ -142,17 +125,14 @@ Centos, and can be used as the basis for an automated deployment scenario.
 [source,bash]
 ----
 #!/bin/bash
-# Run as root
-useradd -m kudu
-apt-get -y install git autoconf automake libboost-thread-dev cmake curl \
+
+apt-get -y install git autoconf automake libboost-thread-dev curl \
 gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
-su - kudu
 git clone http://github.sf.cloudera.com/CDH/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
-cmake .
+thirdparty/installed/bin/cmake .
 make -j4
-make test
 ----
 ====
 
@@ -211,8 +191,8 @@ still have a quorum if one fails.
   scenario where half the tablet servers are on either side of the partition
   and neither side has the majority.
 
-You can start a tablet server in the foreground for testing or in the
-background as a daemon.
+You can start a tablet server in the foreground (as in the first example), or in the
+background as a daemon (as in the second example).
 
 [source,bash]
 ----
@@ -228,12 +208,12 @@ $ KUDU_HOME=$(pwd) ./build/latest/kudu-tablet_server --logtostderr \
 [[qs_twitter_firehose]]
 == Load Data From the Twitter Firehose
 
-Kudu ships with an example application, `ingest_firehose`, which creates a
-table called `demo- table` and populates it with data from the Twitter firehose
-into a Kudu table. The following example runs `ingest_firehose` in the
-foreground. After you run it, if you are running the masters or tablet servers
-in the foreground, you can watch their logs to see the activity triggered by
-the data ingestion. You can also access the logs using the Web UI.
+Kudu ships with an example application, `ingest_firehose`, which creates a table
+called `twitter` and populates it with data from the Twitter firehose. The
+following example runs `ingest_firehose` in the foreground. After you run it, if
+you are running the masters or tablet servers in the foreground, you can watch
+their logs to see the activity triggered by the data ingestion. You can also
+access the logs using the Web UI.
 
 [source,bash]
 ----
