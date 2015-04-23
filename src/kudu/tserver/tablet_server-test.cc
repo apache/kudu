@@ -1858,7 +1858,7 @@ TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
-  ASSERT_OK(histogram->WriteAsJson(&writer, NORMAL));
+  ASSERT_OK(histogram->WriteAsJson(&writer, MetricJsonOptions()));
 
   LOG(INFO) << "Throughput: " << throughput << " rows/sec.";
   LOG(INFO) << out.str();

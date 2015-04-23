@@ -335,9 +335,22 @@ class MetricType {
   static const char* const kHistogramType;
 };
 
-enum MetricWriteGranularity {
-  NORMAL,
-  DETAILED
+struct MetricJsonOptions {
+  MetricJsonOptions() :
+    include_raw_histograms(false),
+    include_schema_info(false) {
+  }
+
+  // Include the raw histogram values and counts in the JSON output.
+  // This allows consumers to do cross-server aggregation or window
+  // data over time.
+  // Default: false
+  bool include_raw_histograms;
+
+  // Include the metrics "schema" information (i.e description, label,
+  // unit, etc).
+  // Default: false
+  bool include_schema_info;
 };
 
 class MetricEntityPrototype {
@@ -380,7 +393,7 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   // See MetricRegistry::WriteAsJson()
   Status WriteAsJson(JsonWriter* writer,
                      const std::vector<std::string>& requested_metrics,
-                     const std::vector<std::string>& requested_detail_metrics) const;
+                     const MetricJsonOptions& opts) const;
 
   const MetricMap& UnsafeMetricsMapForTests() const { return metric_map_; }
 
@@ -420,7 +433,7 @@ class Metric : public RefCountedThreadSafe<Metric> {
  public:
   // All metrics must be able to render themselves as JSON.
   virtual Status WriteAsJson(JsonWriter* writer,
-                             MetricWriteGranularity granularity) const = 0;
+                             const MetricJsonOptions& opts) const = 0;
   virtual MetricType::Type type() const = 0;
 
   const MetricPrototype* prototype() const { return prototype_; }
@@ -430,7 +443,8 @@ class Metric : public RefCountedThreadSafe<Metric> {
   virtual ~Metric();
 
   // Writes the JSON fields common to all metric types (eg name/type/unit).
-  void WriteGenericFields(JsonWriter* writer) const;
+  void WriteGenericFields(JsonWriter* writer,
+                          const MetricJsonOptions& opts) const;
 
   const MetricPrototype* const prototype_;
 
@@ -462,18 +476,14 @@ class MetricRegistry {
   // 'requested_metrics' is a set of substrings to match metric names against,
   // where '*' matches all metrics.
   //
-  // 'requested_detail_metrics' specifies which of the metrics should include
-  // full detail (eg raw histogram counts). A metric must be matched by
-  // _both_ 'requested_metrics' and 'requested_detail_metrics' to be included
-  // with detail.
-  // NOTE: Including all the counts and values can easily make the generated
-  // json very large. Use with caution.
-  //
-  // The string matching in both cases can either match an entity ID or a metric name.
+  // The string matching can either match an entity ID or a metric name.
   // If it matches an entity ID, then all metrics for that entity will be printed.
+  //
+  // See the MetricJsonOptions struct definition above for options changing the
+  // output of this function.
   Status WriteAsJson(JsonWriter* writer,
                      const std::vector<std::string>& requested_metrics,
-                     const std::vector<std::string>& requested_detail_metrics) const;
+                     const MetricJsonOptions& opts) const;
 
   // For each registered entity, retires orphaned metrics.
   // See MetricEntity::RetireOldMetrics().
@@ -569,7 +579,7 @@ class Gauge : public Metric {
   virtual ~Gauge() {}
   virtual MetricType::Type type() const OVERRIDE { return MetricType::kGauge; }
   virtual Status WriteAsJson(JsonWriter* w,
-                             MetricWriteGranularity granularity) const OVERRIDE;
+                             const MetricJsonOptions& opts) const OVERRIDE;
  protected:
   virtual void WriteValue(JsonWriter* writer) const = 0;
  private:
@@ -775,7 +785,7 @@ class Counter : public Metric {
   void IncrementBy(int64_t amount);
   virtual MetricType::Type type() const OVERRIDE { return MetricType::kCounter; }
   virtual Status WriteAsJson(JsonWriter* w,
-                             MetricWriteGranularity granularity) const OVERRIDE;
+                             const MetricJsonOptions& opts) const OVERRIDE;
 
  private:
   FRIEND_TEST(MetricsTest, SimpleCounterTest);
@@ -815,11 +825,11 @@ class Histogram : public Metric {
 
   virtual MetricType::Type type() const OVERRIDE { return MetricType::kHistogram; }
   virtual Status WriteAsJson(JsonWriter* w,
-                             MetricWriteGranularity granularity) const OVERRIDE;
+                             const MetricJsonOptions& opts) const OVERRIDE;
 
   // Returns a snapshot of this histogram including the bucketed values and counts.
   Status GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot,
-                                MetricWriteGranularity granularity) const;
+                                const MetricJsonOptions& opts) const;
 
   uint64_t CountInBucketForValueForTests(uint64_t value) const;
   uint64_t TotalCountForTests() const;

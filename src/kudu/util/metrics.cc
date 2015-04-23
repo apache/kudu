@@ -162,17 +162,14 @@ bool MatchMetricInList(const string& metric_name,
 } // anonymous namespace
 
 
-
 Status MetricEntity::WriteAsJson(JsonWriter* writer,
                                  const vector<string>& requested_metrics,
-                                 const vector<string>& requested_detail_metrics) const {
+                                 const MetricJsonOptions& opts) const {
   bool select_all = MatchMetricInList(id(), requested_metrics);
-  bool detailed_all = MatchMetricInList(id(), requested_detail_metrics);
 
   // We want the keys to be in alphabetical order when printing, so we use an ordered map here.
   typedef std::map<const char*, scoped_refptr<Metric> > OrderedMetricMap;
   OrderedMetricMap metrics;
-  std::set<Metric*> requested_detail_metrics_set;
   {
     // Snapshot the metrics in this registry (not guaranteed to be a consistent snapshot)
     lock_guard<simple_spinlock> l(&lock_);
@@ -182,9 +179,6 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
 
       if (select_all || MatchMetricInList(prototype->name(), requested_metrics)) {
         InsertOrDie(&metrics, prototype->name(), metric);
-        if (detailed_all || MatchMetricInList(prototype->name(), requested_detail_metrics)) {
-          InsertOrDie(&requested_detail_metrics_set, metric.get());
-        }
       }
     }
   }
@@ -200,13 +194,9 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
   writer->String("metrics");
   writer->StartArray();
   BOOST_FOREACH(OrderedMetricMap::value_type& val, metrics) {
-    if (ContainsKey(requested_detail_metrics_set, val.second.get())) {
-      WARN_NOT_OK(val.second->WriteAsJson(writer, DETAILED),
-                     strings::Substitute("Failed to write $0 as JSON", val.first));
-    } else {
-      WARN_NOT_OK(val.second->WriteAsJson(writer, NORMAL),
-                          strings::Substitute("Failed to write $0 as JSON", val.first));
-    }
+    WARN_NOT_OK(val.second->WriteAsJson(writer, opts),
+                strings::Substitute("Failed to write $0 as JSON", val.first));
+
   }
   writer->EndArray();
 
@@ -279,7 +269,7 @@ MetricRegistry::~MetricRegistry() {
 
 Status MetricRegistry::WriteAsJson(JsonWriter* writer,
                                    const vector<string>& requested_metrics,
-                                   const vector<string>& requested_detail_metrics) const {
+                                   const MetricJsonOptions& opts) const {
   EntityMap entities;
   {
     lock_guard<simple_spinlock> l(&lock_);
@@ -288,7 +278,7 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
 
   writer->StartArray();
   BOOST_FOREACH(const EntityMap::value_type e, entities) {
-    WARN_NOT_OK(e.second->WriteAsJson(writer, requested_metrics, requested_detail_metrics),
+    WARN_NOT_OK(e.second->WriteAsJson(writer, requested_metrics, opts),
                 Substitute("Failed to write entity $0 as JSON", e.second->id()));
   }
   writer->EndArray();
@@ -348,21 +338,24 @@ Metric::Metric(const MetricPrototype* prototype)
 Metric::~Metric() {
 }
 
-void Metric::WriteGenericFields(JsonWriter* writer) const {
-  writer->String("type");
-  writer->String(MetricType::Name(type()));
-
+void Metric::WriteGenericFields(JsonWriter* writer,
+                                const MetricJsonOptions& opts) const {
   writer->String("name");
   writer->String(prototype_->name());
 
-  writer->String("label");
-  writer->String(prototype_->label());
+  if (opts.include_schema_info) {
+    writer->String("label");
+    writer->String(prototype_->label());
 
-  writer->String("unit");
-  writer->String(MetricUnit::Name(prototype_->unit()));
+    writer->String("type");
+    writer->String(MetricType::Name(type()));
 
-  writer->String("description");
-  writer->String(prototype_->description());
+    writer->String("unit");
+    writer->String(MetricUnit::Name(prototype_->unit()));
+
+    writer->String("description");
+    writer->String(prototype_->description());
+  }
 }
 
 //
@@ -370,10 +363,10 @@ void Metric::WriteGenericFields(JsonWriter* writer) const {
 //
 
 Status Gauge::WriteAsJson(JsonWriter* writer,
-                          MetricWriteGranularity granularity) const {
+                          const MetricJsonOptions& opts) const {
   writer->StartObject();
 
-  WriteGenericFields(writer);
+  WriteGenericFields(writer, opts);
 
   writer->String("value");
   WriteValue(writer);
@@ -431,10 +424,10 @@ void Counter::IncrementBy(int64_t amount) {
 }
 
 Status Counter::WriteAsJson(JsonWriter* writer,
-                            MetricWriteGranularity granularity) const {
+                            const MetricJsonOptions& opts) const {
   writer->StartObject();
 
-  WriteGenericFields(writer);
+  WriteGenericFields(writer, opts);
 
   writer->String("value");
   writer->Int64(value());
@@ -484,22 +477,25 @@ void Histogram::IncrementBy(int64_t value, int64_t amount) {
 }
 
 Status Histogram::WriteAsJson(JsonWriter* writer,
-                              MetricWriteGranularity granularity) const {
+                              const MetricJsonOptions& opts) const {
 
   HistogramSnapshotPB snapshot;
-  RETURN_NOT_OK(GetHistogramSnapshotPB(&snapshot, granularity));
+  RETURN_NOT_OK(GetHistogramSnapshotPB(&snapshot, opts));
   writer->Protobuf(snapshot);
   return Status::OK();
 }
 
 Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
-                                         MetricWriteGranularity granularity) const {
+                                         const MetricJsonOptions& opts) const {
   HdrHistogram snapshot(*histogram_);
   snapshot_pb->set_name(prototype_->name());
-  snapshot_pb->set_type(MetricType::Name(type()));
-  snapshot_pb->set_unit(MetricUnit::Name(prototype_->unit()));
-  snapshot_pb->set_max_trackable_value(snapshot.highest_trackable_value());
-  snapshot_pb->set_num_significant_digits(snapshot.num_significant_digits());
+  if (opts.include_schema_info) {
+    snapshot_pb->set_type(MetricType::Name(type()));
+    snapshot_pb->set_unit(MetricUnit::Name(prototype_->unit()));
+    snapshot_pb->set_description(prototype_->description());
+    snapshot_pb->set_max_trackable_value(snapshot.highest_trackable_value());
+    snapshot_pb->set_num_significant_digits(snapshot.num_significant_digits());
+  }
   snapshot_pb->set_total_count(snapshot.TotalCount());
   snapshot_pb->set_min(snapshot.MinValue());
   snapshot_pb->set_mean(snapshot.MeanValue());
@@ -509,9 +505,8 @@ Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
   snapshot_pb->set_percentile_99_9(snapshot.ValueAtPercentile(99.9));
   snapshot_pb->set_percentile_99_99(snapshot.ValueAtPercentile(99.99));
   snapshot_pb->set_max(snapshot.MaxValue());
-  snapshot_pb->set_description(prototype_->description());
 
-  if (granularity == DETAILED) {
+  if (opts.include_raw_histograms) {
     RecordedValuesIterator iter(&snapshot);
     while (iter.HasNext()) {
       HistogramIterationValue value;

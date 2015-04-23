@@ -903,13 +903,13 @@ TYPED_TEST(TestTablet, TestMetricsInit) {
   std::stringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
   ASSERT_OK(registry->WriteAsJson(&writer,
-                   boost::assign::list_of("*"),
-                   vector<string>()));
+                                  boost::assign::list_of("*"),
+                                  MetricJsonOptions()));
   // Open tablet, should still work
   this->harness()->Open();
   ASSERT_OK(registry->WriteAsJson(&writer,
-                   boost::assign::list_of("*"),
-                   vector<string>()));
+                                  boost::assign::list_of("*"),
+                                  MetricJsonOptions()));
 }
 
 // Test that we find the correct log segment size for different indexes.

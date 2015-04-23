@@ -172,11 +172,26 @@ void AddDefaultPathHandlers(Webserver* webserver) {
 
 static void WriteMetricsAsJson(const MetricRegistry* const metrics,
                                const Webserver::WebRequest& req, std::stringstream* output) {
-  JsonWriter writer(output, JsonWriter::PRETTY);
   const string* requested_metrics_param = FindOrNull(req.parsed_args, "metrics");
-  const string* requested_detail_metrics_param = FindOrNull(req.parsed_args, "detailed_metrics");
   vector<string> requested_metrics;
-  vector<string> requested_detail_metrics;
+  MetricJsonOptions opts;
+
+  {
+    string arg = FindWithDefault(req.parsed_args, "include_raw_histograms", "false");
+    opts.include_raw_histograms = ParseLeadingBoolValue(arg.c_str(), false);
+  }
+  {
+    string arg = FindWithDefault(req.parsed_args, "include_schema", "false");
+    opts.include_schema_info = ParseLeadingBoolValue(arg.c_str(), false);
+  }
+  JsonWriter::Mode json_mode;
+  {
+    string arg = FindWithDefault(req.parsed_args, "compact", "false");
+    json_mode = ParseLeadingBoolValue(arg.c_str(), false) ?
+      JsonWriter::COMPACT : JsonWriter::PRETTY;
+  }
+
+  JsonWriter writer(output, json_mode);
 
   if (requested_metrics_param != NULL) {
     SplitStringUsing(*requested_metrics_param, ",", &requested_metrics);
@@ -185,11 +200,7 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
     requested_metrics.push_back("*");
   }
 
-  if (requested_detail_metrics_param != NULL) {
-    SplitStringUsing(*requested_detail_metrics_param, ",", &requested_detail_metrics);
-  }
-
-  WARN_NOT_OK(metrics->WriteAsJson(&writer, requested_metrics, requested_detail_metrics),
+  WARN_NOT_OK(metrics->WriteAsJson(&writer, requested_metrics, opts),
               "Couldn't write JSON metrics over HTTP");
 }
 

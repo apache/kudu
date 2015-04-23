@@ -98,7 +98,7 @@ TEST_F(TSStressTest, TestMTInserts) {
   // Generate the JSON.
   std::stringstream out;
   JsonWriter writer(&out, JsonWriter::PRETTY);
-  ASSERT_OK(histogram_->WriteAsJson(&writer, NORMAL));
+  ASSERT_OK(histogram_->WriteAsJson(&writer, MetricJsonOptions()));
 
   LOG(INFO) << out.str();
 }
