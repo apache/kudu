@@ -144,6 +144,10 @@ bool KuduColumnSchema::is_nullable() const {
   return col_->is_nullable();
 }
 
+bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
+  return this == &other || col_->Equals(*other.col_, true);
+}
+
 KuduSchema::KuduSchema() {}
 
 KuduSchema::KuduSchema(const vector<KuduColumnSchema>& columns, int key_columns) {

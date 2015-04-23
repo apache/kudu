@@ -92,6 +92,8 @@ class KUDU_EXPORT KuduColumnSchema {
 
   void CopyFrom(const KuduColumnSchema& other);
 
+  bool Equals(const KuduColumnSchema& other) const;
+
   // Getters to expose column schema information.
   const std::string& name() const;
   DataType type() const;
