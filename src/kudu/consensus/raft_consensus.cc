@@ -1323,7 +1323,7 @@ void RaftConsensus::DoElectionCallback(const ElectionResult& result) {
   ReplicaState::UniqueLock lock;
   Status s = state_->LockForConfigChange(&lock);
   if (PREDICT_FALSE(!s.ok())) {
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Received election callback for term "
+    LOG_WITH_PREFIX(INFO) << "Received election callback for term "
                           << result.election_term << " while not running: "
                           << s.ToString();
     return;
@@ -1332,8 +1332,8 @@ void RaftConsensus::DoElectionCallback(const ElectionResult& result) {
   if (result.election_term != state_->GetCurrentTermUnlocked()
       || state_->GetActiveQuorumStateUnlocked().role != QuorumPeerPB::CANDIDATE) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Leader election decision for defunct term "
-                          << result.election_term << ": "
-                          << (result.decision == VOTE_GRANTED ? "won" : "lost");
+                                   << result.election_term << ": "
+                                   << (result.decision == VOTE_GRANTED ? "won" : "lost");
     return;
   }
 
