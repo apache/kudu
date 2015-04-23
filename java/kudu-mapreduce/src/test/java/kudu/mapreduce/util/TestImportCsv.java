@@ -70,8 +70,8 @@ public class TestImportCsv extends BaseKuduTest {
 
     assertEquals(1, job.getCounters().findCounter(ImportCsv.Counters.BAD_LINES).getValue());
 
-    KuduScanner scanner = client.newScanner(openTable(TABLE_NAME), basicSchema);
-    assertEquals(4, countRowsInScan(scanner));
+    assertEquals(4, countRowsInScan(
+        client.newScannerBuilder(openTable(TABLE_NAME), basicSchema).build()));
   }
 
   private void writeCsvFile(File data) throws IOException {

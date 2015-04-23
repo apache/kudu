@@ -26,6 +26,10 @@ class ColumnRangePredicates {
   }
 
   void addColumnRangePredicate(ColumnRangePredicate predicate) {
+    if (predicate.getLowerBound() == null && predicate.getUpperBound() == null) {
+      throw new IllegalArgumentException("When adding a predicate, at least one bound must be " +
+          "specified");
+    }
     ColumnSchema column = predicate.getColumn();
     int index = this.schema.getColumnIndex(column);
     if (column.isKey()) {

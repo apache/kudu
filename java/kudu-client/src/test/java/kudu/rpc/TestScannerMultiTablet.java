@@ -73,7 +73,7 @@ public class TestScannerMultiTablet extends BaseKuduTest {
   }
 
   private KuduScanner getScanner(String lowerBound, String upperBound) {
-    KuduScanner scanner = client.newScanner(table, schema);
+    KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, schema);
     ColumnRangePredicate pred = new ColumnRangePredicate(schema.getColumn(0));
     if (lowerBound != null) {
       pred.setLowerBound(lowerBound);
@@ -82,9 +82,9 @@ public class TestScannerMultiTablet extends BaseKuduTest {
       pred.setUpperBound(upperBound);
     }
     if (lowerBound != null || upperBound != null) {
-      scanner.addColumnRangePredicate(pred);
+      builder.addColumnRangePredicate(pred);
     }
-    return scanner;
+    return builder.build();
   }
 
   private static Schema getSchema() {

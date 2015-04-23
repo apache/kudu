@@ -290,7 +290,12 @@ public class BaseKuduTest {
     tableNames.add(tableName);
   }
 
-  protected static int countRowsInScan(KuduScanner scanner) throws Exception{
+  /**
+   * Counts the rows from the {@code scanner} until exhaustion. It doesn't require the scanner to
+   * be new, so it can be used to finish scanning a previously-started scan.
+   */
+  protected static int countRowsInScan(KuduScanner scanner)
+      throws Exception {
     final AtomicInteger counter = new AtomicInteger();
 
     Callback<Object, KuduScanner.RowResultIterator> cb = new Callback<Object, KuduScanner.RowResultIterator>() {

@@ -91,7 +91,7 @@ public class RpcBenchmark {
 
         counter.set(0);
 
-        KuduScanner scanner = client.newScanner(table);
+        KuduScanner scanner = client.newScannerBuilder(table);
         scanner.setPrefetching(i % 2 == 0);
         scanner.setSchema(schema);
         //scanner.setLimit(10);

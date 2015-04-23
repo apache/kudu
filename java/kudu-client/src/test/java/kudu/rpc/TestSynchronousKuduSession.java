@@ -28,7 +28,7 @@ public class TestSynchronousKuduSession extends BaseKuduTest {
     for (int i = 0; i < 10; i++) {
       session.apply(createInsert(i));
     }
-    assertEquals(10, countRowsInScan(client.newScanner(table, basicSchema)));
+    assertEquals(10, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
 
     try {
       session.apply(createInsert(0));
@@ -43,7 +43,7 @@ public class TestSynchronousKuduSession extends BaseKuduTest {
       session.apply(createInsert(i));
     }
     session.flush();
-    assertEquals(20, countRowsInScan(client.newScanner(table, basicSchema)));
+    assertEquals(20, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
   }
 
   private Insert createInsert(int key) {

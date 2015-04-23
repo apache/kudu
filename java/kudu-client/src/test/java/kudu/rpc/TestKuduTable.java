@@ -145,7 +145,7 @@ public class TestKuduTable extends BaseKuduTest {
     KuduTable table = openTable(tableName);
     // calling getTabletsLocation won't wait on the table to be assigned so we trigger the wait
     // by scanning
-    countRowsInScan(client.newScanner(table, schema));
+    countRowsInScan(client.newScannerBuilder(table, schema).build());
 
     List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
     assertEquals(splitsCount + 1, tablets.size());

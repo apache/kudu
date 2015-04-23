@@ -75,6 +75,7 @@ import java.util.concurrent.*;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static kudu.rpc.ExternalConsistencyMode.CLIENT_PROPAGATED;
 import static kudu.rpc.KuduScanner.ReadMode.READ_AT_SNAPSHOT;
+import static kudu.rpc.KuduScanner.ReadMode.READ_LATEST;
 
 /**
  * A fully asynchronous, thread-safe, modern Kudu client.
@@ -435,42 +436,15 @@ public class KuduClient {
   }
 
   /**
-   * Creates a new {@link KuduScanner} for a particular table.
-   * @param table The name of the table you intend to scan.
+   * Creates a new {@link KuduScanner.KuduScannerBuilder} for a particular table.
+   * @param table the name of the table you intend to scan.
    * The string is assumed to use the platform's default charset.
-   * The scanner will be created with ReadMode.READ_LATEST
-   * @return A new scanner for this table.
-   * @see src/kudu/common/common.proto for info on ReadModes
+   * @return a new scanner builder for this table.
    */
-  public KuduScanner newScanner(final KuduTable table, Schema schema) {
+  public KuduScanner.KuduScannerBuilder newScannerBuilder(final KuduTable table, Schema schema) {
     checkIsClosed();
-    return new KuduScanner(this, table, schema);
+    return new KuduScanner.KuduScannerBuilder(this, table, schema);
   }
-
-  /**
-   * Like the above but creates a snapshot scanner. Snapshot scanners
-   * are required for externally consistent reads. In this overload the server
-   * will assign the snapshot timestamp.
-   *
-   * @see src/kudu/common/common.proto for info on ReadModes and snapshot scanners
-   */
-  public KuduScanner newSnapshotScanner(final KuduTable table, Schema schema) {
-    checkIsClosed();
-    return new KuduScanner(this, table, schema, READ_AT_SNAPSHOT);
-  }
-
-  /**
-   * Like the above, also creates a Snapshot scanner, but allows to specify
-   * the snapshot timestamp.
-   *
-   * @see src/kudu/common/common.proto for info on ReadModes and snapshot scanners
-   */
-  public KuduScanner newSnapshotScanner(final KuduTable table,
-    Schema schema, long timestamp, TimeUnit timeUnit) {
-    checkIsClosed();
-    return new KuduScanner(this, table, schema, READ_AT_SNAPSHOT);
-  }
-
 
   /**
    * Package-private access point for {@link KuduScanner}s to open themselves.

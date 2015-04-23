@@ -36,39 +36,35 @@ import kudu.Schema;
 import kudu.WireProtocol;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import kudu.util.HybridTimeUtil;
 import kudu.util.Pair;
 import kudu.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 
 import java.util.Iterator;
-import java.util.concurrent.TimeUnit;
 
 import static kudu.rpc.KuduClient.*;
 import static kudu.tserver.Tserver.*;
 
 /**
- * Creates a scanner to read data sequentially from Kudu.
+ * Creates a scanner to read data from Kudu.
  * <p>
  * This class is <strong>not synchronized</strong> as it's expected to be
- * used from a single thread at a time.  It's rarely (if ever?) useful to
- * scan concurrently from a shared scanner using multiple threads.  If you
+ * used from a single thread at a time. It's rarely (if ever?) useful to
+ * scan concurrently from a shared scanner using multiple threads. If you
  * want to optimize large table scans using extra parallelism, create a few
- * scanners and give each of them a partition of the table to scan.  Or use
+ * scanners and give each of them a partition of the table to scan. Or use
  * MapReduce.
  * <p>
- * Unlike HBase's traditional client, there's no method in this class to
- * explicitly open the scanner.  It will open itself automatically when you
- * start scanning by calling {@link #nextRows()}.  Also, the scanner will
- * automatically call {@link #close} when it reaches the end key.  If, however,
- * you would like to stop scanning <i>before reaching the end key</i>, you
- * <b>must</b> call {@link #close} before disposing of the scanner.  Note that
- * it's always safe to call {@link #close} on a scanner.
+ * There's no method in this class to explicitly open the scanner. It will open
+ * itself automatically when you start scanning by calling {@link #nextRows()}.
+ * Also, the scanner will automatically call {@link #close} when it reaches the
+ * end key. If, however, you would like to stop scanning <i>before reaching the
+ * end key</i>, you <b>must</b> call {@link #close} before disposing of the scanner.
+ * Note that it's always safe to call {@link #close} on a scanner.
  * <p>
- * A {@code Scanner} is not re-usable.  Should you want to scan the same rows
+ * A {@code KuduScanner} is not re-usable. Should you want to scan the same rows
  * or the same table again, you must create a new one.
  *
  * <h1>A note on passing {@code byte} arrays in argument</h1>
@@ -99,17 +95,59 @@ public final class KuduScanner {
     }
   }
 
+  //////////////////////////
+  // Initial configurations.
+  //////////////////////////
+
   private final KuduClient client;
   private final KuduTable table;
   private final Schema schema;
   private final ColumnRangePredicates columnRangePredicates;
-  private Deferred<RowResultIterator> prefetcherDeferred;
 
   /**
    * Maximum number of bytes to fetch at a time.
-   * @see #setMaxNumBytes
    */
-  private int maxNumBytes = 1024*1024;
+  private final int maxNumBytes;
+
+  /**
+   * The maximum number of rows to scan.
+   */
+  private final long limit;
+
+  /**
+   * Set by {@link KuduScannerBuilder#encodedStartKey(byte[])} when an encoded key is available or
+   * in {@link#getOpenRequest()} if the key was specified with column predicates. If it's not set
+   * by the user, it will default to EMPTY_ARRAY.
+   * It is then reset to the new start key of each tablet we open a scanner on as the scan moves
+   * from one tablet to the next.
+   */
+  private byte[] startKey;
+
+  /**
+   * Set by {@link KuduScannerBuilder#encodedEndKey(byte[])} when an encoded key is available or in
+   * {@link #getOpenRequest()} if the key was specified with column predicates. If it's not set
+   * by the user, it will default to EMPTY_ARRAY.
+   * It's never modified after that.
+   */
+  private byte[] endKey;
+
+  private final boolean prefetching;
+
+  private final boolean cacheBlocks;
+
+  private final DeadlineTracker deadlineTracker;
+
+  private final ReadMode readMode;
+
+  private final long htTimestamp;
+
+  /////////////////////
+  // Runtime variables.
+  /////////////////////
+
+  private boolean closed = false;
+
+  private boolean hasMore = true;
 
   /**
    * The tabletSlice currently being scanned.
@@ -135,106 +173,67 @@ public final class KuduScanner {
    */
   private int sequenceId;
 
-  /**
-   * The maximum number of rows to scan.
-   */
-  private long limit = Long.MAX_VALUE;
-
-  /**
-   * Set by {@link #setEncodedStartKey(byte[])} when an encoded key is available or in {@link
-   * #getOpenRequest()} if the key was specified with column predicates. If it's not set by the
-   * user, it will default to EMPTY_ARRAY.
-   * It is then reset to the new start key of each tablet we open a scanner on as we go forward.
-   */
-  private byte[] startKey = null;
-
-  /**
-   * Set by {@link #setEncodedEndKey(byte[])} when an encoded key is available or in {@link
-   * #getOpenRequest()} if the key was specified with column predicates. If it's not set by the
-   * user, it will default to EMPTY_ARRAY.
-   * It's never modified after that.
-   */
-  private byte[] endKey = null;
-
-  private boolean closed = false;
-
-  private boolean hasMore = true;
-
-  private boolean prefetching = false;
-
-  private boolean cacheBlocks = true;
+  private Deferred<RowResultIterator> prefetcherDeferred;
 
   private boolean inFirstTablet = true;
 
-  private final DeadlineTracker deadlineTracker;
-
-  private ReadMode readMode;
-
-  private long timestamp = NO_TIMESTAMP;
-
-  /**
-   * Creates a KuduScanner but doesn't start the scanner yet
-   * @param client connection to the cluster
-   * @param table which table to scan
-   * @param schema the schema to use
-   */
-  KuduScanner(final KuduClient client, final KuduTable table, Schema schema) {
-    this.client = client;
-    this.table = table;
-    this.schema = schema;
-    // Passing the table's full schema as you can add predicates on columns you aren't reading
-    this.columnRangePredicates = new ColumnRangePredicates(table.getSchema());
-    this.deadlineTracker = new DeadlineTracker();
-    this.readMode = ReadMode.READ_LATEST;
-  }
-
-  /**
-   * Like the above but allows to set the ReadMode.
-   */
-  KuduScanner(final KuduClient client, final KuduTable table, Schema schema, ReadMode readMode) {
-    this.client = client;
-    this.table = table;
-    this.schema = schema;
-    this.columnRangePredicates = new ColumnRangePredicates(schema);
-    this.deadlineTracker = new DeadlineTracker();
-    this.readMode = readMode;
-  }
-
-  /**
-   * Like the above but allows to set the ReadMode and a snapshot timestamp.
-   */
-  KuduScanner(final KuduClient client, final KuduTable table, Schema schema,
-    ReadMode readMode, long timestamp, TimeUnit timeUnit) {
-    this.client = client;
-    this.table = table;
-    this.schema = schema;
-    this.columnRangePredicates = new ColumnRangePredicates(schema);
-    this.deadlineTracker = new DeadlineTracker();
-    this.readMode = readMode;
-    this.timestamp = HybridTimeUtil.clockTimestampToHTTimestamp(timestamp, timeUnit);
-  }
-
-  /**
-   * Sets the maximum number of bytes returned at once by the scanner.
-   * <p>
-   * Kudu may actually return more than this many bytes because it will not
-   * truncate a rowResult in the middle.
-   * @param maxNumBytes A strictly positive number of bytes.
-   * @throws IllegalStateException if scanning already started.
-   * @throws IllegalArgumentException if {@code maxNumBytes <= 0}
-   */
-  public void setMaxNumBytes(final int maxNumBytes) {
-    if (maxNumBytes <= 0) {
-      throw new IllegalArgumentException("Need a strictly positive number of"
-          + " bytes, got " + maxNumBytes);
+  private KuduScanner(KuduClient client, KuduTable table, Schema schema,
+                      ReadMode readMode, DeadlineTracker deadlineTracker,
+                      ColumnRangePredicates columnRangePredicates, long limit, boolean cacheBlocks,
+                      boolean prefetching, byte[] startKey, byte[] endKey,
+                      long htTimestamp, int maxNumBytes) {
+    Preconditions.checkArgument(maxNumBytes > 0, "Need a strictly positive number of bytes, " +
+        "got %s", maxNumBytes);
+    Preconditions.checkArgument(limit > 0, "Need a strictly positive number for the limit, " +
+        "got %s", limit);
+    if (htTimestamp != NO_TIMESTAMP) {
+      Preconditions.checkArgument(readMode == ReadMode.READ_AT_SNAPSHOT, "When specifying a " +
+          "HybridClock timestamp, the read mode needs to be set to READ_AT_SNAPSHOT");
     }
-    checkScanningNotStarted();
+
+    this.client = client;
+    this.table = table;
+    this.schema = schema;
+    this.readMode = readMode;
+    this.deadlineTracker = deadlineTracker;
+    this.columnRangePredicates = columnRangePredicates;
+    this.limit = limit;
+    this.cacheBlocks = cacheBlocks;
+    this.prefetching = prefetching;
+    this.startKey = startKey;
+    this.endKey = endKey;
+    this.htTimestamp = htTimestamp;
     this.maxNumBytes = maxNumBytes;
   }
 
   /**
+   * Returns the maximum number of rows that this scanner was configured to return.
+   * @return a long representing the maximum number of rows that can be returned
+   */
+  public long getLimit() {
+    return limit;
+  }
+
+  /**
+   * Tells if the last rpc returned that there might be more rows to scan
+   * @return true if there might be more data to scan, else false
+   */
+  public boolean hasMoreRows() {
+    return this.hasMore;
+  }
+
+  /**
+   * Returns if this scanner was configured to cache data blocks or not.
+   * @return true if this scanner will cache blocks, else else.
+   */
+  public boolean getCacheBlocks() {
+    return this.cacheBlocks;
+  }
+
+  /**
    * Returns the maximum number of bytes returned at once by the scanner.
-   * @see #setMaxNumBytes
+   * @return a long representing the maximum number of bytes that a scanner can receive at once
+   * from a tablet server
    */
   public long getMaxNumBytes() {
     return maxNumBytes;
@@ -243,22 +242,13 @@ public final class KuduScanner {
   /**
    * Returns the ReadMode for this scanner.
    * @return the configured read mode for this scanner
-   * @see src/kudu/common/common.proto for information on ReadModes
    */
   public ReadMode getReadMode() {
     return this.readMode;
   }
 
-  /**
-   * Allow to set a previously encoded HT timestamp as a snapshot timestamp, for tests.
-   */
-  @VisibleForTesting
-  public void setSnapshotTimestamp(long htTimestamp) {
-    this.timestamp = htTimestamp;
-  }
-
-  protected long getSnapshotTimestamp() {
-    return this.timestamp;
+  long getSnapshotTimestamp() {
+    return this.htTimestamp;
   }
 
   /**
@@ -426,98 +416,6 @@ public final class KuduScanner {
     buf.append(", ").append(deadlineTracker);
     buf.append(')');
     return buf.toString();
-  }
-
-  /**
-   *
-   * @return
-   */
-  public long getLimit() {
-    return limit;
-  }
-
-  /**
-   *
-   * @param limit
-   */
-  public void setLimit(long limit) {
-    this.limit = limit;
-  }
-
-  /**
-   * Tells if the last rpc returned that there might be more rows to scan
-   * @return true if there might be more data to scan, else false
-   */
-  public boolean hasMoreRows() {
-    return this.hasMore;
-  }
-
-  public void setPrefetching(boolean prefetching) {
-    this.prefetching = prefetching;
-  }
-
-  /**
-   * Add a predicate for a column
-   * Very important constraint: row key predicates must be added in order.
-   * @param predicate predicate for a column to add
-   * @throws IllegalArgumentException If no bounds were specified
-   */
-  public void addColumnRangePredicate(ColumnRangePredicate predicate) {
-    if (predicate.getLowerBound() == null && predicate.getUpperBound() == null) {
-      throw new IllegalArgumentException("When adding a predicate, at least one bound must be " +
-          "specified");
-    }
-    columnRangePredicates.addColumnRangePredicate(predicate);
-  }
-
-  /**
-   * This method bypasses the need to add column predicates to set the start row key in its
-   * encoded format. If you don't what that means then don't use this.
-   * @param encodedStartKey Encoded start key
-   * @throws java.lang.IllegalStateException if the scanner already started scanning
-   */
-  public void setEncodedStartKey(byte[] encodedStartKey) {
-    checkScanningNotStarted();
-    this.startKey = encodedStartKey;
-  }
-
-  /**
-   * This method bypasses the need to add column predicates to set the end row key in its encoded
-   * format. If you don't what that means then don't use this.
-   * @param encodedEndKey Encoded end key
-   * @throws java.lang.IllegalStateException if the scanner already started scanning
-   */
-  public void setEncodedEndKey(byte[] encodedEndKey) {
-    checkScanningNotStarted();
-    this.endKey = encodedEndKey;
-  }
-
-  /**
-   * Set how long this scanner can run for before it expires. The deadline check is triggered
-   * only when more rows must be fetched from a server
-   * @param deadline time in milliseconds that this scanner can run for
-   */
-  public void setDeadlineMillis(long deadline) {
-    this.deadlineTracker.setDeadline(deadline);
-  }
-
-  /**
-   * Set the block caching policy for this scanner. If true, scanned data blocks will be cached
-   * in memory and made available for future scans. Default is true.
-   * @param cacheBlocks A boolean that indicates if data blocks should be cached or not.
-   * @throws java.lang.IllegalStateException if the scanner already started scanning
-   */
-  public void setCacheBlocks(boolean cacheBlocks) {
-    checkScanningNotStarted();
-    this.cacheBlocks = cacheBlocks;
-  }
-
-  /**
-   * Returns if this scanner was configured to cache data blocks or not.
-   * @return True if this scanner will cache blocks, else else.
-   */
-  public boolean getCacheBlocks() {
-    return this.cacheBlocks;
   }
 
   // ---------------------- //
@@ -828,7 +726,7 @@ public final class KuduScanner {
 
     @Override
     public void remove() {
-      throw new NotImplementedException();
+      throw new UnsupportedOperationException();
     }
 
     /**
@@ -848,6 +746,159 @@ public final class KuduScanner {
     @Override
     public Iterator<RowResult> iterator() {
       return this;
+    }
+  }
+
+  /**
+   * A Builder class to build {@link kudu.rpc.KuduScanner}. Use {@link KuduClient#newScannerBuilder}
+   * in order to get a builder instance.
+   */
+  public static class KuduScannerBuilder {
+    private final KuduClient nestedClient;
+    private final KuduTable nestedTable;
+    private final Schema nestedSchema;
+    private final DeadlineTracker nestedDeadlineTracker;
+    private final ColumnRangePredicates nestedColumnRangePredicates;
+
+    private ReadMode nestedReadMode = ReadMode.READ_LATEST;
+    private int nestedMaxNumBytes = 1024*1024;
+    private long nestedLimit = Long.MAX_VALUE;
+    private boolean nestedPrefetching = false;
+    private boolean nestedCacheBlocks = true;
+    private long nestedHtTimestamp = NO_TIMESTAMP;
+    private byte[] nestedStartKey = null;
+    private byte[] nestedEndKey = null;
+
+    KuduScannerBuilder(KuduClient client, KuduTable table, Schema schema) {
+      this.nestedClient = client;
+      this.nestedTable = table;
+      this.nestedSchema = schema;
+      this.nestedDeadlineTracker = new DeadlineTracker();
+      this.nestedColumnRangePredicates = new ColumnRangePredicates(table.getSchema());
+    }
+
+    /**
+     * Sets the read mode, the default is to read the latest values.
+     * @param readMode a read mode for the scanner
+     * @return this instance
+     */
+    public KuduScannerBuilder readMode(ReadMode readMode) {
+      this.nestedReadMode = readMode;
+      return this;
+    }
+
+    /**
+     * Adds a predicate for a column.
+     * Very important constraint: row key predicates must be added in order.
+     * @param predicate predicate for a column to add
+     * @return this instance
+     */
+    public KuduScannerBuilder addColumnRangePredicate(ColumnRangePredicate predicate) {
+      nestedColumnRangePredicates.addColumnRangePredicate(predicate);
+      return this;
+    }
+
+    /**
+     * Sets the maximum number of bytes returned at once by the scanner. The default is 1MB.
+     * <p>
+     * Kudu may actually return more than this many bytes because it will not
+     * truncate a rowResult in the middle.
+     * @param maxNumBytes a strictly positive number of bytes
+     * @return this instance
+     */
+    public KuduScannerBuilder maxNumBytes(int maxNumBytes) {
+      this.nestedMaxNumBytes = maxNumBytes;
+      return this;
+    }
+
+    /**
+     * Sets a limit on the number of rows that will be returned by the scanner. There's no limit
+     * by default.
+     * @param limit a positive long
+     * @return this instance
+     */
+    public KuduScannerBuilder limit(long limit) {
+      this.nestedLimit = limit;
+      return this;
+    }
+
+    /**
+     * Enables prefetching of rows for the scanner, disabled by default.
+     * @param prefetching a boolean that indicates if the scanner should prefetch rows
+     * @return this instance
+     */
+    public KuduScannerBuilder prefetching(boolean prefetching) {
+      this.nestedPrefetching = prefetching;
+      return this;
+    }
+
+    /**
+     * Sets the block caching policy for the scanner. If true, scanned data blocks will be cached
+     * in memory and made available for future scans. Enabled by default.
+     * @param cacheBlocks a boolean that indicates if data blocks should be cached or not
+     * @return this instance
+     */
+    public KuduScannerBuilder cacheBlocks(boolean cacheBlocks) {
+      this.nestedCacheBlocks = cacheBlocks;
+      return this;
+    }
+
+    /**
+     * Sets a previously encoded HT timestamp as a snapshot timestamp, for tests. None is used by
+     * default.
+     * @param htTimestamp a long representing a HybridClock-encoded timestamp
+     * @return this instance
+     * @throws IllegalArgumentException if the timestamp is less than 0
+     */
+    @VisibleForTesting
+    public KuduScannerBuilder snapshotTimestamp(long htTimestamp) {
+      this.nestedHtTimestamp = htTimestamp;
+      return this;
+    }
+
+    /**
+     * Sets how long the scanner can run for before it expires. The deadline check is triggered
+     * only when more rows must be fetched from a server. There's no timeout by default.
+     * @param deadlineMillis a long representing time in milliseconds that the scanner can run for
+     * @return this instance
+     */
+    public KuduScannerBuilder deadlineMillis(long deadlineMillis) {
+      this.nestedDeadlineTracker.setDeadline(deadlineMillis);
+      return this;
+    }
+
+    /**
+     * Sets the start key in its encoded format, bypassing the need to add column predicates. By
+     * default, none is set.
+     * If you don't what that means then don't use this.
+     * @param encodedStartKey bytes containing an encoded start key
+     * @return this instance
+     */
+    public KuduScannerBuilder encodedStartKey(byte[] encodedStartKey) {
+      this.nestedStartKey = encodedStartKey;
+      return this;
+    }
+
+    /**
+     * Sets the end key in its encoded format, bypassing the need to add column predicates. By
+     * default, none is set.
+     * If you don't what that means then don't use this.
+     * @param encodedEndKey bytes containing an encoded end key
+     * @return this instance
+     */
+    public KuduScannerBuilder encodedEndKey(byte[] encodedEndKey) {
+      this.nestedEndKey = encodedEndKey;
+      return this;
+    }
+
+    /**
+     * Builds a {@link KuduScanner} using the passed configurations.
+     * @return a new {@link KuduScanner}
+     */
+    public KuduScanner build() {
+      return new KuduScanner(nestedClient, nestedTable, nestedSchema, nestedReadMode,
+          nestedDeadlineTracker, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
+          nestedPrefetching, nestedStartKey, nestedEndKey, nestedHtTimestamp, nestedMaxNumBytes);
     }
   }
 }

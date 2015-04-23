@@ -1039,7 +1039,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       KuduClient client = cmdLineParser.getClient();
 
       KuduTable table = client.openTable(getTableName(getConf())).join(timeout);
-      KuduScanner scanner = client.newScanner(table, table.getSchema());
+      KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, table.getSchema());
 
 
       if (cmd.hasOption("s") || cmd.hasOption("e") ) {
@@ -1050,7 +1050,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         if (cmd.hasOption("e")) {
           crpOne.setUpperBound(Long.parseLong(cmd.getOptionValue("e")));
         }
-        scanner.addColumnRangePredicate(crpOne);
+        builder.addColumnRangePredicate(crpOne);
       }
 
       final int limit = cmd.hasOption("l") ? Integer.parseInt(cmd.getOptionValue("l")) : 100;
@@ -1076,6 +1076,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         }
       };
 
+      KuduScanner scanner = builder.build();
       while (scanner.hasMoreRows() && count.get() < limit) {
         Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
         data.addCallback(cb);
@@ -1255,12 +1256,12 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
        * Finds the next node in the linked list.
        */
       private RowResult nextNode(long prevKeyOne, long prevKeyTwo) throws IOException {
-        KuduScanner scanner = client.newScanner(table, scanSchema);
+        KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, scanSchema);
 
-        configureScannerForRandomRead(scanner, table, prevKeyOne, prevKeyTwo);
+        configureScannerForRandomRead(builder, table, prevKeyOne, prevKeyTwo);
 
         try {
-          return getOneRowResult(scanner, timeout);
+          return getOneRowResult(builder.deadlineMillis(timeout).build(), timeout);
         } catch (Exception e) {
           // Goes right out and fails the job.
           throw new IOException("Couldn't read the following row: " +
@@ -1332,7 +1333,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       job.setJarByClass(getClass());
 
       KuduTableMapReduceUtil.initTableInputFormat(job, getHeadsTable(getConf()),
-          COLUMN_KEY_ONE + "," +  COLUMN_KEY_TWO,
+          COLUMN_KEY_ONE + "," + COLUMN_KEY_TWO,
           true);
       job.setMapperClass(UpdaterMapper.class);
       job.setMapOutputKeyClass(BytesWritable.class);
@@ -1502,24 +1503,26 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     private RowResult nextNode(long keyOne, long keyTwo) throws Exception {
-      KuduScanner scanner = client.newScanner(table, table.getSchema());
-      configureScannerForRandomRead(scanner, table, keyOne, keyTwo);
+      KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, table.getSchema());
+      configureScannerForRandomRead(builder, table, keyOne, keyTwo);
 
-      return getOneRowResult(scanner, timeout);
+      return getOneRowResult(builder.deadlineMillis(timeout).build(), timeout);
     }
   }
 
-  private static void configureScannerForRandomRead(KuduScanner scanner, KuduTable table,
-                                                    long keyOne, long keyTwo) {
+  private static void configureScannerForRandomRead(KuduScanner.KuduScannerBuilder builder,
+                                                    KuduTable table,
+                                                    long keyOne,
+                                                    long keyTwo) {
     ColumnRangePredicate crpOne = new ColumnRangePredicate(table.getSchema().getColumn(0));
     crpOne.setLowerBound(keyOne);
     crpOne.setUpperBound(keyOne);
-    scanner.addColumnRangePredicate(crpOne);
+    builder.addColumnRangePredicate(crpOne);
 
     ColumnRangePredicate crpTwo = new ColumnRangePredicate(table.getSchema().getColumn(1));
     crpTwo.setLowerBound(keyTwo);
     crpTwo.setUpperBound(keyTwo);
-    scanner.addColumnRangePredicate(crpTwo);
+    builder.addColumnRangePredicate(crpTwo);
   }
 
   private static String getTableName(Configuration conf) {
@@ -1553,9 +1556,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     return new StringBuilder().append(key1).append(",").append(key2).toString();
   }
 
-  private static RowResult getOneRowResult(KuduScanner scanner, long timeout) throws Exception {
-    scanner.setDeadlineMillis(timeout);
-
+  private static RowResult getOneRowResult(KuduScanner scanner,
+                                           long timeout) throws Exception {
     KuduScanner.RowResultIterator rowResults;
     rowResults = scanner.nextRows().join(timeout);
     if (rowResults.getNumRows() == 0) {

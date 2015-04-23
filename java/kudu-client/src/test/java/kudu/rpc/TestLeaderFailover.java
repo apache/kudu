@@ -54,7 +54,7 @@ public class TestLeaderFailover extends BaseKuduTest {
       }
     }
 
-    KuduScanner scanner = client.newScanner(table, getBasicSchema());
+    KuduScanner scanner = client.newScannerBuilder(table, getBasicSchema()).build();
     assertEquals(6, countRowsInScan(scanner));
   }
 }

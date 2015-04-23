@@ -23,7 +23,6 @@ import com.stumbleupon.async.Deferred;
 import kudu.ColumnSchema;
 import kudu.Common;
 import kudu.Schema;
-import kudu.metadata.Metadata;
 import kudu.rpc.Bytes;
 import kudu.rpc.DeadlineTracker;
 import kudu.rpc.KuduClient;
@@ -377,10 +376,11 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
         throw new IllegalArgumentException("TableSplit is the only accepted input split");
       }
       split = (TableSplit) inputSplit;
-      scanner = client.newScanner(table, querySchema);
-      scanner.setEncodedStartKey(split.getStartKey());
-      scanner.setEncodedEndKey(split.getEndKey());
-      scanner.setCacheBlocks(cacheBlocks);
+      scanner = client.newScannerBuilder(table, querySchema)
+          .encodedStartKey(split.getStartKey())
+          .encodedEndKey(split.getEndKey())
+          .cacheBlocks(false)
+          .build();
 
       // Calling this now to set iterator.
       tryRefreshIterator();

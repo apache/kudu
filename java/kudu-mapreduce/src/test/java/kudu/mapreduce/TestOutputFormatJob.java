@@ -76,8 +76,8 @@ public class TestOutputFormatJob extends BaseKuduTest {
 
     // Make sure the data's there
     KuduTable table = openTable(TABLE_NAME);
-    KuduScanner scanner = client.newScanner(table, getBasicSchema());
-    assertEquals(2, countRowsInScan(scanner));
+    KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, getBasicSchema());
+    assertEquals(2, countRowsInScan(builder.build()));
   }
 
   /**

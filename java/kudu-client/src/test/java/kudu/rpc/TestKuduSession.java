@@ -418,11 +418,13 @@ public class TestKuduSession extends BaseKuduTest {
   }
 
   private static KuduScanner getScanner(int start, int end, Schema querySchema) {
-    KuduScanner scanner = client.newScanner(table, querySchema);
+
     ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumn(0));
     predicate.setLowerBound(start);
     predicate.setUpperBound(end);
-    scanner.addColumnRangePredicate(predicate);
+    KuduScanner scanner = client.newScannerBuilder(table, querySchema)
+        .addColumnRangePredicate(predicate)
+        .build();
     return scanner;
   }
 }

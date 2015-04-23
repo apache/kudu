@@ -116,8 +116,7 @@ public class TestHybridTime extends BaseKuduTest {
     }
 
     // Scan all rows with READ_LATEST (the default) we should get 6 rows back
-    KuduScanner scanner = client.newScanner(table, schema);
-    assertEquals(6, countRowsInScan(scanner));
+    assertEquals(6, countRowsInScan(client.newScannerBuilder(table, schema).build()));
 
     // Now scan at multiple instances with READ_AT_SNAPSHOT we should get different
     // counts depending on the scan timestamp.
@@ -134,8 +133,9 @@ public class TestHybridTime extends BaseKuduTest {
   }
 
   private int scanAtSnapshot(long time) throws Exception {
-    KuduScanner scanner = client.newSnapshotScanner(table, schema);
-    scanner.setSnapshotTimestamp(time);
-    return countRowsInScan(scanner);
+    KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, schema)
+        .snapshotTimestamp(time)
+        .readMode(KuduScanner.ReadMode.READ_AT_SNAPSHOT);
+    return countRowsInScan(builder.build());
   }
 }
