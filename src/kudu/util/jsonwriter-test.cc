@@ -15,7 +15,7 @@ class TestJsonWriter : public KuduTest {};
 
 TEST_F(TestJsonWriter, TestPBEmpty) {
   TestAllTypes pb;
-  ASSERT_EQ("{}", JsonWriter::ToJson(pb));
+  ASSERT_EQ("{}", JsonWriter::ToJson(pb, JsonWriter::PRETTY));
 }
 
 TEST_F(TestJsonWriter, TestPBAllFieldTypes) {
@@ -51,7 +51,25 @@ TEST_F(TestJsonWriter, TestPBAllFieldTypes) {
             "    \"optional_bool\": true,\n"
             "    \"optional_string\": \"hello world\",\n"
             "    \"optional_nested_enum\": \"FOO\"\n"
-            "}", JsonWriter::ToJson(pb));
+            "}", JsonWriter::ToJson(pb, JsonWriter::PRETTY));
+  ASSERT_EQ("{"
+            "\"optional_int32\":1,"
+            "\"optional_int64\":2,"
+            "\"optional_uint32\":3,"
+            "\"optional_uint64\":4,"
+            "\"optional_sint32\":5,"
+            "\"optional_sint64\":6,"
+            "\"optional_fixed32\":7,"
+            "\"optional_fixed64\":8,"
+            "\"optional_sfixed32\":9,"
+            "\"optional_sfixed64\":10,"
+            "\"optional_float\":11,"
+            "\"optional_double\":12,"
+            "\"optional_bool\":true,"
+            "\"optional_string\":\"hello world\","
+            "\"optional_nested_enum\":\"FOO\""
+            "}", JsonWriter::ToJson(pb, JsonWriter::COMPACT));
+
 }
 
 TEST_F(TestJsonWriter, TestPBRepeatedPrimitives) {
@@ -66,7 +84,9 @@ TEST_F(TestJsonWriter, TestPBRepeatedPrimitives) {
             "        2,\n"
             "        3\n"
             "    ]\n"
-            "}", JsonWriter::ToJson(pb));
+            "}", JsonWriter::ToJson(pb, JsonWriter::PRETTY));
+  ASSERT_EQ("{\"repeated_int32\":[0,1,2,3]}",
+            JsonWriter::ToJson(pb, JsonWriter::COMPACT));
 }
 
 TEST_F(TestJsonWriter, TestPBNestedMessage) {
@@ -82,7 +102,11 @@ TEST_F(TestJsonWriter, TestPBNestedMessage) {
             "            \"int_field\": 12345\n"
             "        }\n"
             "    ]\n"
-            "}", JsonWriter::ToJson(pb));
+            "}", JsonWriter::ToJson(pb, JsonWriter::PRETTY));
+  ASSERT_EQ("{\"optional_nested_message\":{\"int_field\":54321},"
+            "\"repeated_nested_message\":"
+            "[{\"int_field\":12345}]}",
+            JsonWriter::ToJson(pb, JsonWriter::COMPACT));
 }
 
 } // namespace kudu

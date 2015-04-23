@@ -901,7 +901,7 @@ TYPED_TEST(TestTablet, TestMetricsInit) {
   this->CreateTestTablet();
   MetricRegistry* registry = this->harness()->metrics_registry();
   std::stringstream out;
-  JsonWriter writer(&out);
+  JsonWriter writer(&out, JsonWriter::PRETTY);
   ASSERT_OK(registry->WriteAsJson(&writer,
                    boost::assign::list_of("*"),
                    vector<string>()));

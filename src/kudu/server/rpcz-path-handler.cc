@@ -33,7 +33,7 @@ void RpczPathHandler(const std::tr1::shared_ptr<Messenger>& messenger,
 
   messenger->DumpRunningRpcs(dump_req, &dump_resp);
 
-  JsonWriter writer(output);
+  JsonWriter writer(output, JsonWriter::PRETTY);
   writer.Protobuf(dump_resp);
 }
 

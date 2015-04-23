@@ -172,7 +172,7 @@ void AddDefaultPathHandlers(Webserver* webserver) {
 
 static void WriteMetricsAsJson(const MetricRegistry* const metrics,
                                const Webserver::WebRequest& req, std::stringstream* output) {
-  JsonWriter writer(output);
+  JsonWriter writer(output, JsonWriter::PRETTY);
   const string* requested_metrics_param = FindOrNull(req.parsed_args, "metrics");
   const string* requested_detail_metrics_param = FindOrNull(req.parsed_args, "detailed_metrics");
   vector<string> requested_metrics;

@@ -19,7 +19,7 @@ class FieldDescriptor;
 
 namespace kudu {
 
-class JsonWriterImpl;
+class JsonWriterIf;
 
 // Acts as a pimpl for rapidjson so that not all metrics users must bring in the
 // rapidjson library, which is template-based and therefore hard to forward-declare.
@@ -31,7 +31,14 @@ class JsonWriterImpl;
 // uses std::stringstream for output buffering.
 class JsonWriter {
  public:
-  explicit JsonWriter(std::stringstream* out);
+  enum Mode {
+    // Pretty-print the JSON, with nice indentation, newlines, etc.
+    PRETTY,
+    // Print the JSON as compactly as possible.
+    COMPACT
+  };
+
+  JsonWriter(std::stringstream* out, Mode mode);
   ~JsonWriter();
 
   void Null();
@@ -56,7 +63,8 @@ class JsonWriter {
   void EndArray();
 
   // Convert the given protobuf to JSON format.
-  static std::string ToJson(const google::protobuf::Message& pb);
+  static std::string ToJson(const google::protobuf::Message& pb,
+                            Mode mode);
 
  private:
   void ProtobufField(const google::protobuf::Message& pb,
@@ -65,7 +73,7 @@ class JsonWriter {
                              const google::protobuf::FieldDescriptor* field,
                              int index);
 
-  gscoped_ptr<JsonWriterImpl> impl_;
+  gscoped_ptr<JsonWriterIf> impl_;
   DISALLOW_COPY_AND_ASSIGN(JsonWriter);
 };
 

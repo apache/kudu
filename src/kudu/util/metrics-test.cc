@@ -146,7 +146,7 @@ TEST_F(MetricsTest, JsonPrintTest) {
 
   // Generate the JSON.
   std::stringstream out;
-  JsonWriter writer(&out);
+  JsonWriter writer(&out, JsonWriter::PRETTY);
   ASSERT_OK(entity_->WriteAsJson(&writer,
                                  list_of("*"),
                                  vector<string>()));

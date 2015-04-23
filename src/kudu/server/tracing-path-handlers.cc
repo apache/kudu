@@ -126,7 +126,7 @@ Status CaptureMonitoring(stringstream* out) {
 void GetCategories(stringstream* out) {
   vector<string> groups;
   kudu::debug::TraceLog::GetInstance()->GetKnownCategoryGroups(&groups);
-  JsonWriter j(out);
+  JsonWriter j(out, JsonWriter::COMPACT);
   j.StartArray();
   BOOST_FOREACH(const string& g, groups) {
     j.String(g);
@@ -141,7 +141,7 @@ void GetMonitoringStatus(stringstream* out) {
   int options = static_cast<int>(tl->trace_options());
 
   stringstream json_out;
-  JsonWriter j(&json_out);
+  JsonWriter j(&json_out, JsonWriter::COMPACT);
   j.StartObject();
 
   j.String("isMonitoring");
