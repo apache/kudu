@@ -8,13 +8,13 @@
 #include <boost/foreach.hpp>
 #include <boost/function.hpp>
 #include <gflags/gflags.h>
-#include <gperftools/heap-checker.h>
 #include <gtest/gtest.h>
 #include <rapidjson/prettywriter.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/debug/leakcheck_disabler.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -28,6 +28,7 @@ METRIC_DEFINE_entity(test_entity);
 
 namespace kudu {
 
+using debug::ScopedLeakCheckDisabler;
 using std::tr1::shared_ptr;
 using std::vector;
 
@@ -80,14 +81,12 @@ void MultiThreadedMetricsTest::RegisterCounters(
     int num_counters) {
   uint64_t tid = Env::Default()->gettid();
   for (int i = 0; i < num_counters; i++) {
-#ifdef TCMALLOC_ENABLED
     // This loop purposefully leaks metrics prototypes, because the metrics system
     // expects the prototypes and their names to live forever. This is the only
     // place we dynamically generate them for the purposes of a test, so it's easier
     // to just leak them than to figure out a way to manage lifecycle of objects that
     // are typically static.
-    HeapLeakChecker::Disabler disabler;
-#endif
+    ScopedLeakCheckDisabler disabler;
 
     string name = strings::Substitute("$0-$1-$2", name_prefix, tid, i);
     CounterPrototype* proto = new CounterPrototype(

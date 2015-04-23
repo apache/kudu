@@ -3,20 +3,20 @@
 #include "kudu/util/crc.h"
 
 #include <crcutil/interface.h>
-#include <gperftools/heap-checker.h>
 
 #include "kudu/gutil/once.h"
+#include "kudu/util/debug/leakcheck_disabler.h"
 
 namespace kudu {
 namespace crc {
+
+using debug::ScopedLeakCheckDisabler;
 
 static GoogleOnceType crc32c_once = GOOGLE_ONCE_INIT;
 static Crc* crc32c_instance = NULL;
 
 static void InitCrc32cInstance() {
-#ifdef TCMALLOC_ENABLED
-  HeapLeakChecker::Disabler disabler; // CRC instance is never freed.
-#endif // TCMALLOC_ENABLED
+  ScopedLeakCheckDisabler disabler; // CRC instance is never freed.
   // TODO: Is initial = 0 and roll window = 4 appropriate for all cases?
   crc32c_instance = crcutil_interface::CRC::CreateCrc32c(true, 0, 4, NULL);
 }

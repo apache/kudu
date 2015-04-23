@@ -83,6 +83,11 @@ TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.t
 TSAN_OPTIONS="$TSAN_OPTIONS history_size=7"
 export TSAN_OPTIONS
 
+# Enable leak detection even under LLVM 3.4, where it was disabled by default.
+# This flag only takes effect when running an ASAN build.
+ASAN_OPTIONS="$ASAN_OPTIONS detect_leaks=1"
+export ASAN_OPTIONS
+
 # Set a 15-minute timeout for tests run via 'make test'.
 # This keeps our jenkins builds from hanging in the case that there's
 # a deadlock or anything.
