@@ -16,6 +16,7 @@
  */
 package kudu.mapreduce;
 
+import com.google.common.base.Joiner;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import com.stumbleupon.async.DeferredGroupException;
@@ -844,10 +845,12 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       job.setNumReduceTasks(numReducers);
       job.setJarByClass(getClass());
 
-      KuduTableMapReduceUtil.initTableInputFormat(job, getTableName(getConf()),
-          COLUMN_KEY_ONE + "," + COLUMN_KEY_TWO + "," +
-          COLUMN_PREV_ONE + "," + COLUMN_PREV_TWO,
-          true);
+      Joiner columnsToQuery = Joiner.on(",");
+
+      new KuduTableMapReduceUtil.TableInputFormatConfiguratorWithCommandLineParser(
+          job, getTableName(getConf()),
+          columnsToQuery.join(COLUMN_KEY_ONE, COLUMN_KEY_TWO, COLUMN_PREV_ONE, COLUMN_PREV_TWO))
+          .configure();
       job.setMapperClass(VerifyMapper.class);
       job.setMapOutputKeyClass(BytesWritable.class);
       job.setMapOutputValueClass(BytesWritable.class);
@@ -1332,9 +1335,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       job.setNumReduceTasks(0);
       job.setJarByClass(getClass());
 
-      KuduTableMapReduceUtil.initTableInputFormat(job, getHeadsTable(getConf()),
-          COLUMN_KEY_ONE + "," + COLUMN_KEY_TWO,
-          true);
+      Joiner columnsToQuery = Joiner.on(",");
+
+      new KuduTableMapReduceUtil.TableInputFormatConfiguratorWithCommandLineParser(
+          job, getHeadsTable(getConf()),
+          columnsToQuery.join(COLUMN_KEY_ONE, COLUMN_KEY_TWO))
+          .configure();
+
       job.setMapperClass(UpdaterMapper.class);
       job.setMapOutputKeyClass(BytesWritable.class);
       job.setMapOutputValueClass(BytesWritable.class);

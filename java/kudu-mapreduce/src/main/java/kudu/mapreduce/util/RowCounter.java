@@ -63,7 +63,11 @@ public class RowCounter extends Configured implements Tool {
     job.setMapperClass(mapperClass);
     job.setNumReduceTasks(0);
     job.setOutputFormatClass(NullOutputFormat.class);
-    KuduTableMapReduceUtil.initTableInputFormat(job, tableName, columnProjection, true);
+    new KuduTableMapReduceUtil.TableInputFormatConfiguratorWithCommandLineParser(
+        job,
+        tableName,
+        columnProjection)
+        .configure();
     return job;
   }
 

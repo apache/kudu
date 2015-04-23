@@ -67,7 +67,10 @@ public class ImportCsv extends Configured implements Tool {
     job.setInputFormatClass(TextInputFormat.class);
     job.setMapperClass(mapperClass);
     job.setNumReduceTasks(0);
-    KuduTableMapReduceUtil.initTableOutputFormat(job, tableName, true);
+    new KuduTableMapReduceUtil.TableOutputFormatConfiguratorWithCommandLineParser(
+        job,
+        tableName)
+        .configure();
     return job;
   }
 

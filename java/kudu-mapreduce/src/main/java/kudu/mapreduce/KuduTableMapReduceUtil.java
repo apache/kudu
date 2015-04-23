@@ -16,7 +16,6 @@
  */
 package kudu.mapreduce;
 
-import com.google.common.net.HostAndPort;
 import kudu.rpc.KuduClient;
 import kudu.rpc.KuduTable;
 import kudu.rpc.Operation;
@@ -43,7 +42,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 /**
- * Utility class to setup MR jobs that use Kudu as an input and/or output
+ * Utility class to setup MR jobs that use Kudu as an input and/or output.
  */
 public class KuduTableMapReduceUtil {
   // Mostly lifted from HBase's TableMapReduceUtil
@@ -55,99 +54,250 @@ public class KuduTableMapReduceUtil {
    */
   private KuduTableMapReduceUtil() { }
 
+
   /**
-   * Sets up the required configurations and classes to write to Kudu. The generic options to
-   * connect to the cluster are used, see {@link CommandLineParser}.
-   * @param job a job to configure
-   * @param table a string that contains the name of the table to write to
-   * @param addDependencies whether the job should add the Kudu dependencies to the distributed
-   *                        cache
-   * @throws IOException If addDependencies is enabled and a problem is encountered reading
-   * files on the filesystem
+   * Base class for MR I/O formats, contains the common configurations.
    */
-  public static void initTableOutputFormat(Job job, String table,
-                                           boolean addDependencies) throws IOException {
-    CommandLineParser parser = new CommandLineParser(job.getConfiguration());
-    initTableOutputFormat(job, parser.getMasterQuorum(), table, parser.getOperationTimeoutMs(),
-        addDependencies);
+  private static abstract class AbstractMapReduceConfigurator<S> {
+    protected final Job job;
+    protected final String table;
+
+    protected boolean addDependencies = true;
+
+    /**
+     * Constructor for the required fields to configure.
+     * @param job a job to configure
+     * @param table a string that contains the name of the table to read from
+     */
+    private AbstractMapReduceConfigurator(Job job, String table) {
+      this.job = job;
+      this.table = table;
+    }
+
+    /**
+     * Sets whether this job should add Kudu's dependencies to the distributed cache. Turned on
+     * by default.
+     * @param addDependencies a boolean that says if we should add the dependencies
+     * @return this instance
+     */
+    @SuppressWarnings("unchecked")
+    public S addDependencies(boolean addDependencies) {
+      this.addDependencies = addDependencies;
+      return (S) this;
+    }
+
+    /**
+     * Configures the job using the passed parameters.
+     * @throws IOException If addDependencies is enabled and a problem is encountered reading
+     * files on the filesystem
+     */
+    public abstract void configure() throws IOException;
   }
 
   /**
-   * Sets up the required configurations and classes to write to Kudu.
-   * @param job a job to configure
-   * @param masterQuorum a string containing the masters' "hostname:port" pairs separated by
-   *                     commas
-   * @param table a string that contains the name of the table to write to
-   * @param operationTimeoutMs a long that represents the timeout for operations to complete
-   * @param addDependencies whether the job should add the Kudu dependencies to the distributed
-   *                        cache
-   * @throws IOException If addDependencies is enabled and a problem is encountered reading
-   * files on the filesystem
+   * Builder-like class that sets up the required configurations and classes to write to Kudu.
+   * <p>
+   * Use either child classes when configuring the table output format.
    */
-  public static void initTableOutputFormat(Job job, String masterQuorum,
-                                           String table, long operationTimeoutMs,
-                                           boolean addDependencies) throws IOException {
-    job.setOutputFormatClass(KuduTableOutputFormat.class);
-    job.setOutputKeyClass(NullWritable.class);
-    job.setOutputValueClass(Operation.class);
+  private static abstract class AbstractTableOutputFormatConfigurator
+      <S extends AbstractTableOutputFormatConfigurator<? super S>>
+      extends AbstractMapReduceConfigurator<S> {
 
-    Configuration conf = job.getConfiguration();
-    conf.set(KuduTableOutputFormat.MASTER_QUORUM_KEY, masterQuorum);
-    conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, table);
-    conf.setLong(KuduTableOutputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
-    if (addDependencies) {
-      addDependencyJars(job);
+    protected String masterQuorum;
+    protected long operationTimeoutMs = 10 * 1000;
+
+    /**
+     * {@inheritDoc}
+     */
+    private AbstractTableOutputFormatConfigurator(Job job, String table) {
+      super(job, table);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    public void configure() throws IOException {
+      job.setOutputFormatClass(KuduTableOutputFormat.class);
+      job.setOutputKeyClass(NullWritable.class);
+      job.setOutputValueClass(Operation.class);
+
+      Configuration conf = job.getConfiguration();
+      conf.set(KuduTableOutputFormat.MASTER_QUORUM_KEY, masterQuorum);
+      conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, table);
+      conf.setLong(KuduTableOutputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
+      if (addDependencies) {
+        addDependencyJars(job);
+      }
     }
   }
 
   /**
-   * Sets up the required configurations and classes to read from Kudu. The generic options to
-   * connect to the cluster are used, see {#CommandLineParser}. Block caching is disabled.
-   * @param job a job to configure
-   * @param table a string that contains the name of the table to read from
-   * @param columnProjection a string containing a comma-separated list of columns to read.
-   *                         It can be null in which case we read empty rows
-   * @param addDependencies whether the job should add the Kudu dependencies to the distributed
-   *                        cache
-   * @throws IOException If addDependencies is enabled and a problem is encountered reading
-   * files on the filesystem
+   * Builder-like class that sets up the required configurations and classes to read from Kudu.
+   * By default, block caching is disabled.
+   * <p>
+   * Use either child classes when configuring the table input format.
    */
-  public static void initTableInputFormat(Job job, String table, String columnProjection,
-                                          boolean addDependencies) throws IOException {
-    CommandLineParser parser = new CommandLineParser(job.getConfiguration());
-    initTableInputFormat(job, parser.getMasterQuorum(), table, parser.getOperationTimeoutMs(),
-        columnProjection, false, addDependencies);
+  private static abstract class AbstractTableInputFormatConfigurator
+      <S extends AbstractTableInputFormatConfigurator<? super S>>
+      extends AbstractMapReduceConfigurator<S> {
+
+    protected String masterQuorum;
+    protected long operationTimeoutMs = 10 * 1000;
+    protected final String columnProjection;
+    protected boolean cacheBlocks;
+
+    /**
+     * Constructor for the required fields to configure.
+     * @param job a job to configure
+     * @param table a string that contains the name of the table to read from
+     * @param columnProjection a string containing a comma-separated list of columns to read.
+     *                         It can be null in which case we read empty rows
+     */
+    private AbstractTableInputFormatConfigurator(Job job, String table, String columnProjection) {
+      super(job, table);
+      this.columnProjection = columnProjection;
+    }
+
+    /**
+     * Sets the block caching configuration for the scanners. Turned off by default.
+     * @param cacheBlocks whether the job should use scanners that cache blocks.
+     * @return this instance
+     */
+    public S cacheBlocks(boolean cacheBlocks) {
+      this.cacheBlocks = cacheBlocks;
+      return (S) this;
+    }
+
+    /**
+     * Configures the job with all the passed parameters.
+     * @throws IOException If addDependencies is enabled and a problem is encountered reading
+     * files on the filesystem
+     */
+    public void configure() throws IOException {
+      job.setInputFormatClass(KuduTableInputFormat.class);
+
+      Configuration conf = job.getConfiguration();
+
+      conf.set(KuduTableInputFormat.MASTER_QUORUM_KEY, masterQuorum);
+      conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, table);
+      conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
+      conf.setBoolean(KuduTableInputFormat.SCAN_CACHE_BLOCKS, cacheBlocks);
+      if (columnProjection != null) {
+        conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);
+      }
+      if (addDependencies) {
+        addDependencyJars(job);
+      }
+    }
+  }
+
+
+  /**
+   * Table output format configurator to use to specify the parameters directly.
+   */
+  public static class TableOutputFormatConfigurator
+      extends AbstractTableOutputFormatConfigurator<TableOutputFormatConfigurator> {
+
+    /**
+     * Constructor for the required fields to configure.
+     * @param job a job to configure
+     * @param table a string that contains the name of the table to read from
+     * @param masterQuorum a comma-separated list of masters' hosts and ports
+     */
+    public TableOutputFormatConfigurator(Job job, String table, String masterQuorum) {
+      super(job, table);
+      this.masterQuorum = masterQuorum;
+    }
+
+    /**
+     * Sets the timeout for all the operations. The default is 10 seconds.
+     * @param operationTimeoutMs a long that represents the timeout for operations to complete,
+     *                           must be a positive value or 0
+     * @return this instance
+     * @throws IllegalArgumentException if the operation timeout is lower than 0
+     */
+    public TableOutputFormatConfigurator operationTimeoutMs(long operationTimeoutMs) {
+      if (operationTimeoutMs < 0) {
+        throw new IllegalArgumentException("The operation timeout must be => 0, " +
+            "passed value is: " + operationTimeoutMs);
+      }
+      this.operationTimeoutMs = operationTimeoutMs;
+      return this;
+    }
   }
 
   /**
-   * Sets up the required configurations and classes to read from Kudu.
-   * @param job a job to configure
-   * @param masterQuorum a comma-separated list of masters' hosts and ports
-   * @param table a string that contains the name of the table to read from
-   * @param operationTimeoutMs a long that represents the timeout for operations to complete
-   * @param columnProjection a string containing a comma-separated list of columns to read.
-   *                         It can be null in which case we read empty rows
-   * @param cacheBlocks whether the job should use scanners that cache blocks.
-   * @param addDependencies whether the job should add the Kudu dependencies to the distributed
-   *                        cache
-   * @throws IOException If addDependencies is enabled and a problem is encountered reading
-   * files on the filesystem
+   * Table output format that uses a {@link kudu.mapreduce.CommandLineParser} in order to set the
+   * master quorum and the operation timeout.
    */
-  public static void initTableInputFormat(Job job, String masterQuorum, String table,
-                                          long operationTimeoutMs, String columnProjection,
-                                          boolean cacheBlocks, boolean addDependencies) throws IOException {
-    job.setInputFormatClass(KuduTableInputFormat.class);
+  public static class TableOutputFormatConfiguratorWithCommandLineParser extends
+      AbstractTableOutputFormatConfigurator<TableOutputFormatConfiguratorWithCommandLineParser> {
 
-    Configuration conf = job.getConfiguration();
-    conf.set(KuduTableInputFormat.MASTER_QUORUM_KEY, masterQuorum);
-    conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, table);
-    conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
-    conf.setBoolean(KuduTableInputFormat.SCAN_CACHE_BLOCKS, cacheBlocks);
-    if (columnProjection != null) {
-      conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);
+    /**
+     * {@inheritDoc}
+     */
+    public TableOutputFormatConfiguratorWithCommandLineParser(Job job, String table) {
+      super(job, table);
+      CommandLineParser parser = new CommandLineParser(job.getConfiguration());
+      this.masterQuorum = parser.getMasterQuorum();
+      this.operationTimeoutMs = parser.getOperationTimeoutMs();
     }
-    if (addDependencies) {
-      addDependencyJars(job);
+  }
+
+  /**
+   * Table input format configurator to use to specify the parameters directly.
+   */
+  public static class TableInputFormatConfigurator
+      extends AbstractTableInputFormatConfigurator<TableInputFormatConfigurator> {
+
+    /**
+     * Constructor for the required fields to configure.
+     * @param job a job to configure
+     * @param table a string that contains the name of the table to read from
+     * @param columnProjection a string containing a comma-separated list of columns to read.
+     *                         It can be null in which case we read empty rows
+     * @param masterQuorum a comma-separated list of masters' hosts and ports
+     */
+    public TableInputFormatConfigurator(Job job, String table, String columnProjection,
+                                        String masterQuorum) {
+      super(job, table, columnProjection);
+      this.masterQuorum = masterQuorum;
+    }
+
+    /**
+     * Sets the timeout for all the operations. The default is 10 seconds.
+     * @param operationTimeoutMs a long that represents the timeout for operations to complete,
+     *                           must be a positive value or 0
+     * @return this instance
+     * @throws IllegalArgumentException if the operation timeout is lower than 0
+     */
+    public TableInputFormatConfigurator operationTimeoutMs(long operationTimeoutMs) {
+      if (operationTimeoutMs < 0) {
+        throw new IllegalArgumentException("The operation timeout must be => 0, " +
+            "passed value is: " + operationTimeoutMs);
+      }
+      this.operationTimeoutMs = operationTimeoutMs;
+      return this;
+    }
+  }
+
+  /**
+   * Table input format that uses a {@link kudu.mapreduce.CommandLineParser} in order to set the
+   * master quorum and the operation timeout.
+   */
+  public static class TableInputFormatConfiguratorWithCommandLineParser extends
+      AbstractTableInputFormatConfigurator<TableInputFormatConfiguratorWithCommandLineParser> {
+
+    /**
+     * {@inheritDoc}
+     */
+    public TableInputFormatConfiguratorWithCommandLineParser(Job job,
+                                                             String table,
+                                                             String columnProjection) {
+      super(job, table, columnProjection);
+      CommandLineParser parser = new CommandLineParser(job.getConfiguration());
+      this.masterQuorum = parser.getMasterQuorum();
+      this.operationTimeoutMs = parser.getOperationTimeoutMs();
     }
   }
 
