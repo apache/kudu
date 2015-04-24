@@ -24,9 +24,15 @@ The following dependencies are necessary to build kudu:
 - python 2.6 or later
 - ntp
 - unzip
+- pkg-config
 
 Earlier versions of each of these may work, but have not recently
 been tested.
+
+Using Debian based distributions you can use the following command to install
+all the required packages:
+sudo apt-get install autoconf automake cmake curl gcc liboauth-dev libssl-dev\
+libsasl2-dev libtool patch python ntp unzip libboost-all-dev pkg-config
 
 === Download and build thirdparty dependencies
 
