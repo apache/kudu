@@ -102,7 +102,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
   shared_ptr<KuduSession> CreateSession() {
     shared_ptr<KuduSession> session = client_->NewSession();
     session->SetTimeoutMillis(5000);
-    session->SetFlushMode(KuduSession::MANUAL_FLUSH);
+    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     return session;
   }
 
