@@ -18,6 +18,7 @@
 namespace kudu {
 
 class Env;
+class MemTracker;
 class MetricEntity;
 class WritableFile;
 
@@ -58,6 +59,7 @@ class FileBlockManager : public BlockManager {
   // 'env' should remain alive for the lifetime of the block manager.
   FileBlockManager(Env* env,
                    const scoped_refptr<MetricEntity>& metric_entity,
+                   const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
                    const std::vector<std::string>& root_paths);
 
   virtual ~FileBlockManager();
@@ -123,6 +125,10 @@ class FileBlockManager : public BlockManager {
   // Metric container for the block manager.
   // May be null if instantiated without metrics.
   gscoped_ptr<internal::BlockManagerMetrics> metrics_;
+
+  // Tracks memory consumption of any allocations numerous enough to be
+  // interesting (e.g. ReadableBlocks).
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(FileBlockManager);
 };

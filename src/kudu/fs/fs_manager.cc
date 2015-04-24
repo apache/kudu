@@ -78,12 +78,14 @@ FsManager::FsManager(Env* env, const string& root_path)
 
 FsManager::FsManager(Env* env,
                      const scoped_refptr<MetricEntity>& metric_entity,
+                     const shared_ptr<MemTracker>& parent_mem_tracker,
                      const string& wal_path,
                      const vector<string>& data_paths)
   : env_(env),
     wal_fs_root_(wal_path),
     data_fs_roots_(data_paths),
     metric_entity_(metric_entity),
+    parent_mem_tracker_(parent_mem_tracker),
     initted_(false) {
 }
 
@@ -147,15 +149,25 @@ Status FsManager::Init() {
     VLOG(1) << "Data roots: " << canonicalized_data_fs_roots_;
     VLOG(1) << "All roots: " << canonicalized_all_fs_roots_;
   }
+
+  // With the data roots canonicalized, we can initialize the block manager.
+  InitBlockManager();
+
   initted_ = true;
   return Status::OK();
 }
 
 void FsManager::InitBlockManager() {
   if (FLAGS_block_manager == "file") {
-    block_manager_.reset(new FileBlockManager(env_, metric_entity_, GetDataRootDirs()));
+    block_manager_.reset(new FileBlockManager(env_,
+                                              metric_entity_,
+                                              parent_mem_tracker_,
+                                              GetDataRootDirs()));
   } else if (FLAGS_block_manager == "log") {
-    block_manager_.reset(new LogBlockManager(env_, metric_entity_, GetDataRootDirs()));
+    block_manager_.reset(new LogBlockManager(env_,
+                                             metric_entity_,
+                                             parent_mem_tracker_,
+                                             GetDataRootDirs()));
   } else {
     LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
   }
@@ -176,7 +188,6 @@ Status FsManager::Open() {
     }
   }
 
-  InitBlockManager();
   RETURN_NOT_OK(block_manager_->Open());
   LOG(INFO) << "Opened local filesystem: " << JoinStrings(canonicalized_all_fs_roots_, ",")
             << std::endl << metadata_->DebugString();
@@ -216,7 +227,6 @@ Status FsManager::CreateInitialFileSystemLayout() {
   RETURN_NOT_OK_PREPEND(env_->CreateDir(GetConsensusMetadataDir()),
                         "Unable to create consensus metadata directory");
 
-  InitBlockManager();
   RETURN_NOT_OK_PREPEND(block_manager_->Create(), "Unable to create block manager");
   return Status::OK();
 }
@@ -252,8 +262,6 @@ const string& FsManager::uuid() const {
 }
 
 vector<string> FsManager::GetDataRootDirs() const {
-  DCHECK(initted_);
-
   // Add the data subdirectory to each data root.
   std::vector<std::string> data_paths;
   BOOST_FOREACH(const string& data_fs_root, canonicalized_data_fs_roots_) {

@@ -152,6 +152,13 @@ class FileState {
 
   const string& filename() const { return filename_; }
 
+  int64_t memory_usage() const {
+    return sizeof(this)                           // FileState and all embedded objects.
+        + (blocks_.capacity() * sizeof(uint8_t*)) // Pointer array in blocks_.
+        + (blocks_.capacity() * kBlockSize)       // Blocks pointed to by blocks_.
+        + filename_.capacity();                   // Memory (approximate) pointed to by filename_.
+  }
+
  private:
   // Private since only Unref() should be used to delete it.
   ~FileState() {
@@ -240,6 +247,10 @@ class RandomAccessFileImpl : public RandomAccessFile {
 
   virtual const string& filename() const OVERRIDE {
     return file_->filename();
+  }
+
+  virtual int64_t memory_usage() const OVERRIDE {
+    return sizeof(this) + file_->memory_usage();
   }
 
  private:

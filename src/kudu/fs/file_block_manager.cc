@@ -16,6 +16,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
@@ -396,6 +397,16 @@ class FileReadableBlock : public ReadableBlock {
                       Slice* result, uint8_t* scratch) const OVERRIDE;
 
  private:
+  // Returns the LogBlock's memory usage.
+  int64_t memory_usage() const {
+    DCHECK(reader_);
+
+    return sizeof(this)            // FileReadableBlock and embedded objects.
+        + block_id_.memory_usage() // Memory usage of the BlockId.
+        - sizeof(block_id_)        // Duplicated in sizeof(this) and BlockId memory_usage().
+        + reader_->memory_usage(); // Memory usage of the RandomAccessFile.
+  }
+
   // Back pointer to the owning block manager.
   const FileBlockManager* block_manager_;
 
@@ -423,6 +434,8 @@ FileReadableBlock::FileReadableBlock(const FileBlockManager* block_manager,
     block_manager_->metrics_->blocks_open_reading->Increment();
     block_manager_->metrics_->total_readable_blocks->Increment();
   }
+
+  block_manager_->mem_tracker_->Consume(memory_usage());
 }
 
 FileReadableBlock::~FileReadableBlock() {
@@ -432,6 +445,12 @@ FileReadableBlock::~FileReadableBlock() {
 
 Status FileReadableBlock::Close() {
   if (closed_.CompareAndSet(false, true)) {
+    // Technically, we should release this memory in the destructor. But we
+    // need a live reader_ to do a proper accounting (without resorting to
+    // storing the value locally), so let's just release now knowing that
+    // a closed block is a soon-to-be destructed block.
+    block_manager_->mem_tracker_->Release(memory_usage());
+
     reader_.reset();
     if (block_manager_->metrics_) {
       block_manager_->metrics_->blocks_open_reading->Decrement();
@@ -502,9 +521,13 @@ bool FileBlockManager::FindRootPath(const string& root_path_uuid,
 
 FileBlockManager::FileBlockManager(Env* env,
                                    const scoped_refptr<MetricEntity>& metric_entity,
+                                   const shared_ptr<MemTracker>& parent_mem_tracker,
                                    const vector<string>& root_paths)
   : env_(env),
-    root_paths_(root_paths) {
+    root_paths_(root_paths),
+    mem_tracker_(MemTracker::CreateTracker(-1,
+                                           "file_block_manager",
+                                           parent_mem_tracker)) {
   DCHECK_GT(root_paths.size(), 0);
   if (metric_entity) {
     metrics_.reset(new internal::BlockManagerMetrics(metric_entity));

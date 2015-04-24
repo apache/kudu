@@ -14,6 +14,7 @@
 #include "kudu/util/test_util.h"
 
 using boost::assign::list_of;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 
@@ -23,9 +24,23 @@ class FsManagerTestBase : public KuduTest {
     KuduTest::SetUp();
 
     // Initialize File-System Layout
-    fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    ReinitFsManager();
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
+  }
+
+  void ReinitFsManager() {
+    ReinitFsManager(test_dir_, list_of(test_dir_));
+  }
+
+  void ReinitFsManager(const string& wal_path, const vector<string>& data_paths) {
+    // Blow away the old memtrackers first.
+    fs_manager_.reset();
+    fs_manager_.reset(new FsManager(env_.get(),
+                                    scoped_refptr<MetricEntity>(),
+                                    shared_ptr<MemTracker>(),
+                                    wal_path,
+                                    data_paths));
   }
 
   void TestReadWriteDataFile(const Slice& data) {
@@ -65,8 +80,8 @@ TEST_F(FsManagerTestBase, TestBaseOperations) {
 TEST_F(FsManagerTestBase, TestIllegalPaths) {
   vector<string> illegal = list_of("")("asdf")("/foo\n\t");
   BOOST_FOREACH(const string& path, illegal) {
-    gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(), path));
-    ASSERT_TRUE(new_fs_manager->CreateInitialFileSystemLayout().IsIOError());
+    ReinitFsManager(path, list_of(path));
+    ASSERT_TRUE(fs_manager()->CreateInitialFileSystemLayout().IsIOError());
   }
 }
 
@@ -74,30 +89,24 @@ TEST_F(FsManagerTestBase, TestMultiplePaths) {
   string wal_path = GetTestPath("a");
   vector<string> data_paths = list_of(
       GetTestPath("a"))(GetTestPath("b"))(GetTestPath("c"));
-  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
-                                                      scoped_refptr<MetricEntity>(),
-                                                      wal_path, data_paths));
-  ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
-  ASSERT_OK(new_fs_manager->Open());
+  ReinitFsManager(wal_path, data_paths);
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_OK(fs_manager()->Open());
 }
 
 TEST_F(FsManagerTestBase, TestMatchingPathsWithMismatchedSlashes) {
   string wal_path = GetTestPath("foo");
   vector<string> data_paths = list_of(wal_path + "/");
-  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
-                                                      scoped_refptr<MetricEntity>(),
-                                                      wal_path, data_paths));
-  ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
+  ReinitFsManager(wal_path, data_paths);
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
 }
 
 TEST_F(FsManagerTestBase, TestDuplicatePaths) {
   string path = GetTestPath("foo");
-  gscoped_ptr<FsManager> new_fs_manager(new FsManager(env_.get(),
-                                                      scoped_refptr<MetricEntity>(),
-                                                      path, list_of(path)(path)(path)));
-  ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
-  ASSERT_EQ(list_of(JoinPathSegments(path, new_fs_manager->kDataDirName)),
-            new_fs_manager->GetDataRootDirs());
+  ReinitFsManager(path, list_of(path)(path)(path));
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_EQ(list_of(JoinPathSegments(path, fs_manager()->kDataDirName)),
+            fs_manager()->GetDataRootDirs());
 }
 
 TEST_F(FsManagerTestBase, TestListTablets) {

@@ -41,6 +41,12 @@ class BlockId {
     return id_ != other.id_;
   }
 
+  // Returns the approximate memory usage of the BlockId, the notable exclusion
+  // being the reference count structure of the ID's std::string (if any).
+  int64_t memory_usage() const {
+    return sizeof(this) + id_.capacity();
+  }
+
   // Join the given block IDs with ','. Useful for debug printouts.
   static std::string JoinStrings(const std::vector<BlockId>& blocks);
 
@@ -52,6 +58,7 @@ class BlockId {
 
   friend struct BlockIdHash;
   friend struct BlockIdCompare;
+  friend struct BlockIdEqual;
 
   // Used for on-disk partition
   std::string hash0() const;
@@ -75,6 +82,12 @@ struct BlockIdHash {
 struct BlockIdCompare {
   bool operator()(const BlockId& first, const BlockId& second) const {
     return first.id_ < second.id_;
+  }
+};
+
+struct BlockIdEqual {
+  bool operator()(const BlockId& first, const BlockId& second) const {
+    return first.id_ == second.id_;
   }
 };
 

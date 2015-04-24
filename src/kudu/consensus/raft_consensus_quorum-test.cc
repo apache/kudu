@@ -102,14 +102,20 @@ class RaftConsensusQuorumTest : public KuduTest {
   Status BuildFsManagersAndLogs() {
     // Build the fsmanagers and logs
     for (int i = 0; i < quorum_.peers_size(); i++) {
-      LogOptions options;
+      shared_ptr<MemTracker> parent_mem_tracker =
+          MemTracker::CreateTracker(-1, Substitute("peer-$0", i));
+      parent_mem_trackers_.push_back(parent_mem_tracker);
       string test_path = GetTestPath(Substitute("peer-$0-root", i));
-      FsManager* fs_manager = new FsManager(env_.get(), test_path);
+      FsManager* fs_manager = new FsManager(env_.get(),
+                                            scoped_refptr<MetricEntity>(),
+                                            parent_mem_tracker,
+                                            test_path,
+                                            boost::assign::list_of(test_path));
       fs_managers_.push_back(fs_manager);
       RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
 
       scoped_refptr<Log> log;
-      RETURN_NOT_OK(Log::Open(options,
+      RETURN_NOT_OK(Log::Open(LogOptions(),
                               fs_manager,
                               kTestTablet,
                               schema_,
@@ -135,13 +141,11 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       string peer_uuid = Substitute("peer-$0", i);
 
-      shared_ptr<MemTracker> parent_mem_tracker =
-          MemTracker::CreateTracker(-1, peer_uuid);
       gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity_,
                                                                logs_[i],
                                                                peer_uuid,
                                                                kTestTablet,
-                                                               parent_mem_tracker));
+                                                               parent_mem_trackers_[i]));
 
       gscoped_ptr<ThreadPool> thread_pool;
       CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options_.tablet_id.substr(0, 6)))
@@ -532,6 +536,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   ConsensusOptions options_;
   QuorumPB quorum_;
   OpId initial_id_;
+  vector<shared_ptr<MemTracker> > parent_mem_trackers_;
   vector<FsManager*> fs_managers_;
   vector<scoped_refptr<Log> > logs_;
   gscoped_ptr<TestPeerMapManager> peers_;

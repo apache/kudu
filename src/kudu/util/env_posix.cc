@@ -212,6 +212,10 @@ class PosixRandomAccessFile: public RandomAccessFile {
   }
 
   virtual const string& filename() const OVERRIDE { return filename_; }
+
+  virtual int64_t memory_usage() const OVERRIDE {
+    return sizeof(this) + filename_.capacity();
+  }
 };
 
 // mmap() based random-access
@@ -248,6 +252,10 @@ class PosixMmapReadableFile: public RandomAccessFile {
   }
 
   virtual const string& filename() const OVERRIDE { return filename_; }
+
+  virtual int64_t memory_usage() const OVERRIDE {
+    return sizeof(this) + filename_.capacity();
+  }
 };
 
 // We preallocate up to an extra megabyte and use memcpy to append new

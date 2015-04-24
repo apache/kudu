@@ -7,6 +7,7 @@
 #include <iosfwd>
 #include <set>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -26,6 +27,7 @@ class Message;
 
 namespace kudu {
 
+class MemTracker;
 class MetricEntity;
 
 namespace fs {
@@ -54,7 +56,9 @@ class FsManager {
   static const char *kWalsRecoveryDirSuffix;
 
   FsManager(Env* env, const std::string& root_path);
-  FsManager(Env* env, const scoped_refptr<MetricEntity>& entity,
+  FsManager(Env* env,
+            const scoped_refptr<MetricEntity>& entity,
+            const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
             const std::string& wal_path,
             const std::vector<std::string>& data_paths);
   ~FsManager();
@@ -199,6 +203,8 @@ class FsManager {
   const std::vector<std::string> data_fs_roots_;
 
   scoped_refptr<MetricEntity> metric_entity_;
+
+  std::tr1::shared_ptr<MemTracker> parent_mem_tracker_;
 
   // Canonicalized forms of 'wal_fs_root_ and 'data_fs_roots_'. Constructed
   // during Init().

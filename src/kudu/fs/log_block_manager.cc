@@ -51,6 +51,7 @@ METRIC_DEFINE_counter(log_block_manager_full_containers,
                       kudu::MetricUnit::kLogBlockContainers,
                       "Number of full log block containers");
 
+using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
 using kudu::fs::internal::LogBlock;
@@ -190,6 +191,10 @@ class LogBlockContainer {
   // Ensure that 'length' bytes are preallocated in this container,
   // beginning from the position where the last written block ended.
   Status Preallocate(size_t length);
+
+  // Manipulates the block manager's memory tracker on behalf of blocks.
+  void ConsumeMemory(int64_t bytes);
+  void ReleaseMemory(int64_t bytes);
 
   // Simple accessors.
   std::string dir() const { return DirName(path_); }
@@ -559,6 +564,14 @@ Status LogBlockContainer::Preallocate(size_t length) {
   return data_file_->PreAllocate(total_bytes_written(), length);
 }
 
+void LogBlockContainer::ConsumeMemory(int64_t bytes) {
+  block_manager()->mem_tracker_->Consume(bytes);
+}
+
+void LogBlockContainer::ReleaseMemory(int64_t bytes) {
+  block_manager()->mem_tracker_->Release(bytes);
+}
+
 void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
   DCHECK_GE(more_bytes, 0);
 
@@ -607,6 +620,13 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
   void Delete();
 
  private:
+  // Returns the LogBlock's memory usage.
+  int64_t memory_usage() const {
+    return sizeof(this)            // LogReadableBlock and embedded objects.
+        + block_id_.memory_usage() // Memory usage of the BlockId.
+        - sizeof(block_id_);       // Duplicated in sizeof(this) and BlockId memory_usage().
+  }
+
   // The owning container. Must outlive the LogBlock.
   LogBlockContainer* container_;
 
@@ -635,6 +655,8 @@ LogBlock::LogBlock(LogBlockContainer* container,
     deleted_(false) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
+
+  container_->ConsumeMemory(memory_usage());
 }
 
 LogBlock::~LogBlock() {
@@ -646,6 +668,7 @@ LogBlock::~LogBlock() {
     WARN_NOT_OK(container_->DeleteBlock(offset_, length_),
                 Substitute("Could not delete block $0", block_id_.ToString()));
   }
+  container_->ReleaseMemory(memory_usage());
 }
 
 void LogBlock::Delete() {
@@ -919,11 +942,13 @@ LogReadableBlock::LogReadableBlock(LogBlockContainer* container,
     container_->metrics()->generic_metrics.blocks_open_reading->Increment();
     container_->metrics()->generic_metrics.total_readable_blocks->Increment();
   }
+  container_->ConsumeMemory(sizeof(this));
 }
 
 LogReadableBlock::~LogReadableBlock() {
   WARN_NOT_OK(Close(), Substitute("Failed to close block $0",
                                   id().ToString()));
+  container_->ReleaseMemory(sizeof(this));
 }
 
 Status LogReadableBlock::Close() {
@@ -979,8 +1004,14 @@ static const char* kBlockManagerType = "log";
 
 LogBlockManager::LogBlockManager(Env* env,
                                  const scoped_refptr<MetricEntity>& metric_entity,
+                                 const shared_ptr<MemTracker>& parent_mem_tracker,
                                  const vector<string>& root_paths)
-  : env_(env),
+  : mem_tracker_(MemTracker::CreateTracker(-1,
+                                           "log_block_manager",
+                                           parent_mem_tracker)),
+    // TODO: C++11 provides a single-arg constructor
+    blocks_by_block_id_(10, BlockIdHash(), BlockIdEqual(), BlockAllocator(mem_tracker_)),
+    env_(env),
     root_paths_(root_paths),
     root_paths_idx_(0) {
   DCHECK_GT(root_paths.size(), 0);
@@ -990,6 +1021,10 @@ LogBlockManager::LogBlockManager(Env* env,
 }
 
 LogBlockManager::~LogBlockManager() {
+  // A LogBlock's destructor depends on its container, so all LogBlocks must be
+  // destroyed before their containers.
+  blocks_by_block_id_.clear();
+
   STLDeleteElements(&all_containers_);
   STLDeleteValues(&instances_by_root_path_);
 }

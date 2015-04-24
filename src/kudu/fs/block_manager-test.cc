@@ -1,6 +1,8 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <tr1/memory>
+
 #include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 
@@ -10,6 +12,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -20,6 +23,7 @@
 
 using boost::assign::list_of;
 using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -53,7 +57,9 @@ template <typename T>
 class BlockManagerTest : public KuduTest {
  public:
   BlockManagerTest() :
-    bm_(CreateBlockManager(NULL, list_of(GetTestDataDirectory()))) {
+    bm_(CreateBlockManager(scoped_refptr<MetricEntity>(),
+                           shared_ptr<MemTracker>(),
+                           list_of(GetTestDataDirectory()))) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -63,8 +69,22 @@ class BlockManagerTest : public KuduTest {
 
  protected:
   BlockManager* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
+                                   const shared_ptr<MemTracker>& parent_mem_tracker,
                                    const vector<string>& paths) {
-    return new T(env_.get(), metric_entity, paths);
+    return new T(env_.get(), metric_entity, parent_mem_tracker, paths);
+  }
+
+  void ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
+                          const shared_ptr<MemTracker>& parent_mem_tracker,
+                          const vector<string>& paths,
+                          bool create) {
+    // Blow away old memtrackers first.
+    bm_.reset();
+    bm_.reset(CreateBlockManager(metric_entity, parent_mem_tracker, paths));
+    if (create) {
+      ASSERT_OK(bm_->Create());
+    }
+    ASSERT_OK(bm_->Open());
   }
 
   void RunMultipathTest(const vector<string>& paths);
@@ -164,8 +184,10 @@ template <>
 void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
   MetricRegistry registry;
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
-  this->bm_.reset(this->CreateBlockManager(entity, list_of(GetTestDataDirectory())));
-  ASSERT_OK(this->bm_->Open());
+  this->ReopenBlockManager(entity,
+                           shared_ptr<MemTracker>(),
+                           list_of(GetTestDataDirectory()),
+                           false);
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 0, 0, 0));
 
   // Lower the max container size so that we can more easily test full
@@ -211,8 +233,10 @@ void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
   // persistent information so they should be the same.
   MetricRegistry new_registry;
   scoped_refptr<MetricEntity> new_entity = METRIC_ENTITY_server.Instantiate(&new_registry, "test");
-  this->bm_.reset(this->CreateBlockManager(new_entity, list_of(GetTestDataDirectory())));
-  ASSERT_OK(this->bm_->Open());
+  ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(new_entity,
+                                                   shared_ptr<MemTracker>(),
+                                                   list_of(GetTestDataDirectory()),
+                                                   false));
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 10 * 1024, 11, 10, 10));
 
   // Delete a block. Its contents should no longer be under management.
@@ -236,8 +260,10 @@ void BlockManagerTest<LogBlockManager>::RunLogContainerPreallocationTest() {
   // Now reopen the block manager and create another block. More
   // preallocation, but it should be from the end of the previous block,
   // not from the end of the file.
-  this->bm_.reset(this->CreateBlockManager(NULL, list_of(GetTestDataDirectory())));
-  ASSERT_OK(this->bm_->Open());
+  ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                                   shared_ptr<MemTracker>(),
+                                                   list_of(GetTestDataDirectory()),
+                                                   false));
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Close());
 
@@ -460,7 +486,10 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   // The existing block manager is left open, which proxies for the process
   // having crashed without cleanly shutting down the block manager. The
   // on-disk metadata should still be clean.
-  gscoped_ptr<BlockManager> new_bm(this->CreateBlockManager(NULL, list_of(GetTestDataDirectory())));
+  gscoped_ptr<BlockManager> new_bm(this->CreateBlockManager(
+      scoped_refptr<MetricEntity>(),
+      MemTracker::CreateTracker(-1, "other tracker"),
+      list_of(GetTestDataDirectory())));
   ASSERT_OK(new_bm->Open());
 
   // Test that the state of all three blocks is properly reflected.
@@ -488,9 +517,11 @@ TYPED_TEST(BlockManagerTest, MultiPathTest) {
   for (int i = 0; i < 3; i++) {
     paths.push_back(this->GetTestPath(Substitute("path$0", i)));
   }
-  this->bm_.reset(this->CreateBlockManager(NULL, paths));
-  ASSERT_OK(this->bm_->Create());
-  ASSERT_OK(this->bm_->Open());
+  ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(
+      scoped_refptr<MetricEntity>(),
+      shared_ptr<MemTracker>(),
+      paths,
+      true));
 
   ASSERT_NO_FATAL_FAILURE(this->RunMultipathTest(paths));
 }
@@ -542,8 +573,10 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
   const string kTestData = "test data";
   MetricRegistry registry;
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
-  this->bm_.reset(this->CreateBlockManager(entity, list_of(GetTestDataDirectory())));
-  ASSERT_OK(this->bm_->Open());
+  ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(entity,
+                                                   shared_ptr<MemTracker>(),
+                                                   list_of(GetTestDataDirectory()),
+                                                   false));
   ASSERT_NO_FATAL_FAILURE(CheckMetrics(entity, 0, 0, 0, 0, 0, 0));
 
   for (int i = 0; i < 3; i++) {
@@ -592,6 +625,31 @@ TYPED_TEST(BlockManagerTest, LogMetricsTest) {
 
 TYPED_TEST(BlockManagerTest, LogContainerPreallocationTest) {
   ASSERT_NO_FATAL_FAILURE(this->RunLogContainerPreallocationTest());
+}
+
+TYPED_TEST(BlockManagerTest, MemTrackerTest) {
+  shared_ptr<MemTracker> tracker = MemTracker::CreateTracker(-1, "test tracker");
+  ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                                   tracker,
+                                                   list_of(GetTestDataDirectory()),
+                                                   false));
+
+  // We can't really assert much about the initial consumption, because some
+  // block managers may have already allocated memory.
+  int64_t initial_mem = tracker->consumption();
+  ASSERT_GE(initial_mem, 0);
+
+  // Likewise, some block managers allocate more memory for a persisted block,
+  // while others do not.
+  gscoped_ptr<WritableBlock> writer;
+  ASSERT_OK(this->bm_->CreateBlock(&writer));
+  ASSERT_OK(writer->Close());
+  ASSERT_GE(tracker->consumption(), initial_mem);
+
+  // But all block managers allocate memory for a ReadableBlock.
+  gscoped_ptr<ReadableBlock> reader;
+  ASSERT_OK(this->bm_->OpenBlock(writer->id(), &reader));
+  ASSERT_GT(tracker->consumption(), initial_mem);
 }
 
 } // namespace fs

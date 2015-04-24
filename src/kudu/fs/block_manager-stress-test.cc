@@ -4,6 +4,7 @@
 #include <boost/foreach.hpp>
 #include <cmath>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/fs/file_block_manager.h"
@@ -32,6 +33,7 @@ DEFINE_string(block_manager_paths, "", "Comma-separated list of paths to "
               "test path");
 
 using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -98,7 +100,10 @@ class BlockManagerStressTest : public KuduTest {
       paths = strings::Split(FLAGS_block_manager_paths, ",",
                              strings::SkipEmpty());
     }
-    return new T(env_.get(), scoped_refptr<MetricEntity>(), paths);
+    return new T(env_.get(),
+                 scoped_refptr<MetricEntity>(),
+                 shared_ptr<MemTracker>(),
+                 paths);
   }
 
   void RunTest(int secs) {
@@ -368,6 +373,8 @@ TYPED_TEST(BlockManagerStressTest, StressTest) {
   LOG(INFO) << "Running on fresh block manager";
   this->RunTest(FLAGS_test_duration_secs / 2);
   LOG(INFO) << "Running on populated block manager";
+  // Blow away old memtrackers before creating new block manager.
+  this->bm_.reset();
   this->bm_.reset(this->CreateBlockManager());
   ASSERT_OK(this->bm_->Open());
   this->RunTest(FLAGS_test_duration_secs / 2);

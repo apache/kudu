@@ -412,6 +412,10 @@ class ShortReadRandomAccessFile : public RandomAccessFile {
 
   virtual const string& filename() const OVERRIDE { return wrapped_->filename(); }
 
+  virtual int64_t memory_usage() const OVERRIDE {
+    return sizeof(this) + wrapped_->memory_usage();
+  }
+
  private:
   const shared_ptr<RandomAccessFile> wrapped_;
 };

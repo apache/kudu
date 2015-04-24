@@ -5,9 +5,11 @@
 #define KUDU_FS_LOG_BLOCK_MANAGER_H
 
 #include <deque>
+#include <tr1/memory>
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/fs/block_id.h"
@@ -16,6 +18,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/atomic.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/oid_generator.h"
 
 namespace kudu {
@@ -133,6 +136,7 @@ class LogBlockManager : public BlockManager {
  public:
   LogBlockManager(Env* env,
                   const scoped_refptr<MetricEntity>& metric_entity,
+                  const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
                   const std::vector<std::string>& root_paths);
 
   virtual ~LogBlockManager();
@@ -201,14 +205,24 @@ class LogBlockManager : public BlockManager {
 
   const internal::LogBlockManagerMetrics* metrics() const { return metrics_.get(); }
 
+  // Tracks memory consumption of any allocations numerous enough to be
+  // interesting (e.g. ReadableBlocks).
+  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+
   // Protects the block map, container structures, and 'dirty_dirs'.
   simple_spinlock lock_;
 
   // Maps block IDs to blocks that are now readable, either because they
   // already existed on disk when the block manager was opened, or because
   // they're WritableBlocks that were closed.
-  typedef std::tr1::unordered_map<BlockId, scoped_refptr<internal::LogBlock>,
-      BlockIdHash> BlockMap;
+  typedef MemTrackerAllocator<
+      std::pair<const BlockId, scoped_refptr<internal::LogBlock> > > BlockAllocator;
+  typedef std::tr1::unordered_map<
+      const BlockId,
+      scoped_refptr<internal::LogBlock>,
+      BlockIdHash,
+      BlockIdEqual,
+      BlockAllocator> BlockMap;
   BlockMap blocks_by_block_id_;
 
   // Contains block IDs for WritableBlocks that are still open for writing.
