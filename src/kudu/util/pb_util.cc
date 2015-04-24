@@ -22,7 +22,9 @@
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/descriptor_database.h>
 #include <google/protobuf/dynamic_message.h>
+#include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream.h>
+#include <google/protobuf/io/zero_copy_stream_impl_lite.h>
 #include <google/protobuf/message_lite.h>
 #include <google/protobuf/message.h>
 
@@ -50,6 +52,8 @@ using google::protobuf::FieldDescriptor;
 using google::protobuf::FileDescriptor;
 using google::protobuf::FileDescriptorProto;
 using google::protobuf::FileDescriptorSet;
+using google::protobuf::io::ArrayInputStream;
+using google::protobuf::io::CodedInputStream;
 using google::protobuf::Message;
 using google::protobuf::MessageLite;
 using google::protobuf::Reflection;
@@ -473,7 +477,15 @@ Status ReadablePBContainerFile::ReadNextPB(Message* msg) {
   // 1. pb_type_ is not available when reading the supplemental header,
   // 2. ParseFromArray() should fail if the data cannot be parsed into the
   //    provided message type.
-  if (PREDICT_FALSE(!msg->ParseFromArray(body.data(), body.size()))) {
+
+  // To permit parsing of very large PB messages, we must use parse through a
+  // CodedInputStream and bump the byte limit. The SetTotalBytesLimit() docs
+  // say that 512MB is the shortest theoretical message length that may produce
+  // integer overflow warnings, so that's what we'll use.
+  ArrayInputStream ais(body.data(), body.size());
+  CodedInputStream cis(&ais);
+  cis.SetTotalBytesLimit(512 * 1024 * 1024, -1);
+  if (PREDICT_FALSE(!msg->ParseFromCodedStream(&cis))) {
     return Status::IOError("Unable to parse PB from path", reader_->filename());
   }
 
