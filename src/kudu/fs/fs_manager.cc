@@ -38,7 +38,7 @@ DEFINE_bool(enable_data_block_fsync, true,
             "Whether to enable fsync() of data blocks, metadata, and their parent directories. "
             "Disabling this flag may cause data loss in the event of a system crash.");
 
-DEFINE_string(block_manager, "file", "Which block manager to use for storage. "
+DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
               "Valid options are 'file' and 'log'.");
 
 using google::protobuf::Message;
