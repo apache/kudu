@@ -311,7 +311,8 @@ class MemTrackerAllocator : public Alloc {
   // This constructor is used for rebinding.
   template <typename U>
   explicit MemTrackerAllocator(const MemTrackerAllocator<U>& allocator)
-      : Alloc(allocator) {
+      : Alloc(allocator),
+        mem_tracker_(allocator.mem_tracker()) {
   }
 
   ~MemTrackerAllocator() {
@@ -335,6 +336,8 @@ class MemTrackerAllocator : public Alloc {
   struct rebind {
     typedef MemTrackerAllocator<U, typename Alloc::template rebind<U>::other> other;
   };
+
+  const std::tr1::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
 
  private:
   std::tr1::shared_ptr<MemTracker> mem_tracker_;

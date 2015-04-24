@@ -3,6 +3,7 @@
 
 #include "kudu/util/mem_tracker.h"
 
+#include <tr1/unordered_map>
 #include <vector>
 
 #include <boost/bind.hpp>
@@ -11,7 +12,10 @@
 
 namespace kudu {
 
+using std::equal_to;
+using std::tr1::hash;
 using std::tr1::shared_ptr;
+using std::tr1::unordered_map;
 using std::vector;
 
 TEST(MemTrackerTest, SingleTrackerNoLimit) {
@@ -142,8 +146,9 @@ TEST(MemTrackerTest, GcFunctions) {
 
 TEST(MemTrackerTest, STLContainerAllocator) {
   shared_ptr<MemTracker> t = MemTracker::CreateTracker(-1, "t");
-
   MemTrackerAllocator<int> alloc(t);
+
+  // Simple test: use the allocator in a vector.
   {
     vector<int, MemTrackerAllocator<int> > v(alloc);
     ASSERT_EQ(0, t->consumption());
@@ -151,6 +156,20 @@ TEST(MemTrackerTest, STLContainerAllocator) {
     ASSERT_EQ(5 * sizeof(int), t->consumption());
     v.reserve(10);
     ASSERT_EQ(10 * sizeof(int), t->consumption());
+  }
+  ASSERT_EQ(0, t->consumption());
+
+  // Complex test: use it in an unordered_map, where it must be rebound in
+  // order to allocate the map's buckets.
+  {
+    unordered_map<int, int, equal_to<int>, hash<int>, MemTrackerAllocator<int> > um(
+        10,
+        equal_to<int>(),
+        hash<int>(),
+        alloc);
+
+    // Don't care about the value (it depends on map internals).
+    ASSERT_GT(t->consumption(), 0);
   }
   ASSERT_EQ(0, t->consumption());
 }
