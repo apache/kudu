@@ -152,7 +152,7 @@ TEST_F(RowOperationsTest, FuzzTest) {
 void AddFuzzedColumn(SchemaBuilder* builder,
                      const string& name,
                      DataType default_type) {
-  DataType rand_types[] = {UINT32, UINT64, STRING};
+  DataType rand_types[] = {UINT32, UINT64, DOUBLE, STRING};
   DataType t = default_type;
   if (random() % 3 == 0) {
     t = rand_types[random() % arraysize(rand_types)];
@@ -235,6 +235,9 @@ TEST_F(RowOperationsTest, SchemaFuzz) {
           break;
         case UINT64:
           CHECK_OK(row.SetUInt64(i, 12345678));
+          break;
+        case DOUBLE:
+          CHECK_OK(row.SetDouble(i, 1234.5678));
           break;
         case STRING:
           CHECK_OK(row.SetStringCopy(i, "hello"));

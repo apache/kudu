@@ -42,6 +42,12 @@ void WriteValueToColumn(const client::KuduSchema& schema,
     case client::KuduColumnSchema::INT64:
       CHECK_OK(row->SetInt64(col_idx, value));
       break;
+    case client::KuduColumnSchema::FLOAT:
+      CHECK_OK(row->SetFloat(col_idx, value / 123.0));
+      break;
+    case client::KuduColumnSchema::DOUBLE:
+      CHECK_OK(row->SetDouble(col_idx, value / 123.0));
+      break;
     case client::KuduColumnSchema::STRING:
       CHECK_OK(row->SetStringCopy(col_idx, FastHex64ToBuffer(value, buf)));
       break;

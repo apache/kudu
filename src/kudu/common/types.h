@@ -180,6 +180,34 @@ struct DataTypeTraits<INT64> {
 };
 
 template<>
+struct DataTypeTraits<FLOAT> {
+  typedef float cpp_type;
+  static const char *name() {
+    return "float";
+  }
+  static void AppendDebugStringForValue(const void *val, string *str) {
+    str->append(SimpleFtoa(*reinterpret_cast<const float *>(val)));
+  }
+  static int Compare(const void *lhs, const void *rhs) {
+    return GenericCompare<FLOAT>(lhs, rhs);
+  }
+};
+
+template<>
+struct DataTypeTraits<DOUBLE> {
+  typedef double cpp_type;
+  static const char *name() {
+    return "double";
+  }
+  static void AppendDebugStringForValue(const void *val, string *str) {
+    str->append(SimpleDtoa(*reinterpret_cast<const double *>(val)));
+  }
+  static int Compare(const void *lhs, const void *rhs) {
+    return GenericCompare<DOUBLE>(lhs, rhs);
+  }
+};
+
+template<>
 struct DataTypeTraits<STRING> {
   typedef Slice cpp_type;
   static const char *name() {
@@ -211,7 +239,6 @@ struct DataTypeTraits<BOOL> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<BOOL>(lhs, rhs);
   }
-
 };
 
 // Instantiate this template to get static access to the type traits.
@@ -255,31 +282,37 @@ class Variant {
     type_ = type;
     switch (type_) {
       case BOOL:
-        vint_.b1 = *static_cast<const bool *>(value);
+        numeric_.b1 = *static_cast<const bool *>(value);
         break;
       case INT8:
-        vint_.i8 = *static_cast<const int8_t *>(value);
+        numeric_.i8 = *static_cast<const int8_t *>(value);
         break;
       case UINT8:
-        vint_.u8 = *static_cast<const uint8_t *>(value);
+        numeric_.u8 = *static_cast<const uint8_t *>(value);
         break;
       case INT16:
-        vint_.i16 = *static_cast<const int16_t *>(value);
+        numeric_.i16 = *static_cast<const int16_t *>(value);
         break;
       case UINT16:
-        vint_.u16 = *static_cast<const uint16_t *>(value);
+        numeric_.u16 = *static_cast<const uint16_t *>(value);
         break;
       case INT32:
-        vint_.i32 = *static_cast<const int32_t *>(value);
+        numeric_.i32 = *static_cast<const int32_t *>(value);
         break;
       case UINT32:
-        vint_.u32 = *static_cast<const uint32_t *>(value);
+        numeric_.u32 = *static_cast<const uint32_t *>(value);
         break;
       case INT64:
-        vint_.i64 = *static_cast<const int64_t *>(value);
+        numeric_.i64 = *static_cast<const int64_t *>(value);
         break;
       case UINT64:
-        vint_.u64 = *static_cast<const uint64_t *>(value);
+        numeric_.u64 = *static_cast<const uint64_t *>(value);
+        break;
+      case FLOAT:
+        numeric_.float_val = *static_cast<const float *>(value);
+        break;
+      case DOUBLE:
+        numeric_.double_val = *static_cast<const double *>(value);
         break;
       case STRING:
         {
@@ -324,15 +357,17 @@ class Variant {
   //    static_cast<const Slice *>(variant.value())
   const void *value() const {
     switch (type_) {
-      case BOOL:      return &(vint_.b1);
-      case INT8:      return &(vint_.i8);
-      case UINT8:     return &(vint_.u8);
-      case INT16:     return &(vint_.i16);
-      case UINT16:    return &(vint_.u16);
-      case INT32:     return &(vint_.i32);
-      case UINT32:    return &(vint_.u32);
-      case INT64:     return &(vint_.i64);
-      case UINT64:    return &(vint_.u64);
+      case BOOL:      return &(numeric_.b1);
+      case INT8:      return &(numeric_.i8);
+      case UINT8:     return &(numeric_.u8);
+      case INT16:     return &(numeric_.i16);
+      case UINT16:    return &(numeric_.u16);
+      case INT32:     return &(numeric_.i32);
+      case UINT32:    return &(numeric_.u32);
+      case INT64:     return &(numeric_.i64);
+      case UINT64:    return &(numeric_.u64);
+      case FLOAT:     return (&numeric_.float_val);
+      case DOUBLE:     return (&numeric_.double_val);
       case STRING:    return &vstr_;
     }
     CHECK(false) << "not reached!";
@@ -355,7 +390,7 @@ class Variant {
     }
   }
 
-  union IntValue {
+  union NumericValue {
     bool     b1;
     int8_t   i8;
     uint8_t  u8;
@@ -365,10 +400,12 @@ class Variant {
     uint32_t u32;
     int64_t  i64;
     uint64_t u64;
+    float    float_val;
+    double   double_val;
   };
 
   DataType type_;
-  IntValue vint_;
+  NumericValue numeric_;
   Slice vstr_;
 };
 

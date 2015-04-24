@@ -167,7 +167,10 @@ class CFileWriter {
   CompressionType compression_;
   const TypeInfo* typeinfo_;
   const TypeEncodingInfo* type_encoding_info_;
-  const KeyEncoder& key_encoder_;
+
+  // The key-encoder. Only set if the writer is writing an embedded
+  // value index.
+  const KeyEncoder* key_encoder_;
 
   // a temporary buffer for encoding
   faststring tmp_buf_;

@@ -79,7 +79,7 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     is_nullable_(is_nullable),
     datatype_(type),
     typeinfo_(GetTypeInfo(type)),
-    key_encoder_(GetKeyEncoder(type)),
+    key_encoder_(NULL),
     state_(kWriterInitialized) {
   EncodingType encoding = options_.storage_attributes.encoding();
   Status s = TypeEncodingInfo::Get(type, encoding, &type_encoding_info_);
@@ -107,6 +107,7 @@ CFileWriter::CFileWriter(const WriterOptions &options,
   }
 
   if (options.write_validx) {
+    key_encoder_ = &GetKeyEncoder(type);
     validx_builder_.reset(new IndexTreeBuilder(&options_,
                                                this));
   }
@@ -383,7 +384,7 @@ Status CFileWriter::AppendRawBlock(const vector<Slice> &data_slices,
     VLOG(1) << "Appending validx entry\n" <<
       kudu::HexDump(Slice(reinterpret_cast<const uint8_t *>(validx_key),
                           typeinfo_->size()));
-    key_encoder_.ResetAndEncode(validx_key, &tmp_buf_);
+    key_encoder_->ResetAndEncode(validx_key, &tmp_buf_);
     s = validx_builder_->Append(Slice(tmp_buf_), ptr);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to append to value index: " << s.ToString();

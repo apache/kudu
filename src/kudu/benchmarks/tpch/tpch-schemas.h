@@ -37,6 +37,8 @@ static const client::KuduColumnSchema::DataType kUint32 =
     client::KuduColumnSchema::UINT32;
 static const client::KuduColumnSchema::DataType kString =
     client::KuduColumnSchema::STRING;
+static const client::KuduColumnSchema::DataType kDouble =
+    client::KuduColumnSchema::DOUBLE;
 
 enum {
   kOrderKeyColIdx = 0,
@@ -64,9 +66,9 @@ inline client::KuduSchema CreateLineItemSchema() {
                 (client::KuduColumnSchema(kPartKeyColName, kUint32))
                 (client::KuduColumnSchema(kSuppKeyColName, kUint32))
                 (client::KuduColumnSchema(kQuantityColName, kUint32)) // decimal??
-                (client::KuduColumnSchema(kExtendedPriceColName, kUint32)) // storing * 100
-                (client::KuduColumnSchema(kDiscountColName, kUint32)) // storing * 100
-                (client::KuduColumnSchema(kTaxColName, kUint32)) // storing * 100
+                (client::KuduColumnSchema(kExtendedPriceColName, kDouble))
+                (client::KuduColumnSchema(kDiscountColName, kDouble))
+                (client::KuduColumnSchema(kTaxColName, kDouble))
                 (client::KuduColumnSchema(kReturnFlagColName, kString,
                                           false, NULL, kPlainEncoding))
                 (client::KuduColumnSchema(kLineStatusColName, kString,
@@ -95,9 +97,9 @@ inline client::KuduSchema CreateTpch1QuerySchema() {
                 (client::KuduColumnSchema(kLineStatusColName, kString,
                                           false, NULL, kPlainEncoding))
                 (client::KuduColumnSchema(kQuantityColName, kUint32))
-                (client::KuduColumnSchema(kExtendedPriceColName, kUint32))
-                (client::KuduColumnSchema(kDiscountColName, kUint32))
-                (client::KuduColumnSchema(kTaxColName, kUint32))
+                (client::KuduColumnSchema(kExtendedPriceColName, kDouble))
+                (client::KuduColumnSchema(kDiscountColName, kDouble))
+                (client::KuduColumnSchema(kTaxColName, kDouble))
                 , 0);
 }
 

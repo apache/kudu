@@ -78,6 +78,8 @@ class KUDU_EXPORT KuduColumnSchema {
     INT64 = 7,
     STRING = 8,
     BOOL = 9,
+    FLOAT = 10,
+    DOUBLE = 11
   };
 
   KuduColumnSchema(const std::string &name,

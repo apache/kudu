@@ -76,6 +76,12 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
       case INT64:
         *output << "BIGINT";
         break;
+      case FLOAT:
+        *output << "FLOAT";
+        break;
+      case DOUBLE:
+        *output << "DOUBLE";
+        break;
       default:
         *output << "[unsupported type " << col.type_info()->name() << "!]";
         break;

@@ -51,6 +51,8 @@ class TypeInfoResolver {
     AddMapping<INT64>();
     AddMapping<STRING>();
     AddMapping<BOOL>();
+    AddMapping<FLOAT>();
+    AddMapping<DOUBLE>();
   }
 
   template<DataType type> void AddMapping() {

@@ -45,6 +45,9 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetUInt32(const Slice& col_name, uint32_t val) WARN_UNUSED_RESULT;
   Status SetUInt64(const Slice& col_name, uint64_t val) WARN_UNUSED_RESULT;
 
+  Status SetFloat(const Slice& col_name, float val) WARN_UNUSED_RESULT;
+  Status SetDouble(const Slice& col_name, double val) WARN_UNUSED_RESULT;
+
   // Same as above setters, but with numeric column indexes.
   // These are faster since they avoid a hashmap lookup, so should
   // be preferred in performance-sensitive code (eg bulk loaders).
@@ -59,6 +62,9 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetUInt16(int col_idx, uint16_t val) WARN_UNUSED_RESULT;
   Status SetUInt32(int col_idx, uint32_t val) WARN_UNUSED_RESULT;
   Status SetUInt64(int col_idx, uint64_t val) WARN_UNUSED_RESULT;
+
+  Status SetFloat(int col_idx, float val) WARN_UNUSED_RESULT;
+  Status SetDouble(int col_idx, double val) WARN_UNUSED_RESULT;
 
   // Sets the string but does not copy the value. The string
   // must remain valid until the call to AppendToPB().
@@ -105,6 +111,9 @@ class KUDU_EXPORT KuduPartialRow {
   Status GetUInt32(const Slice& col_name, uint32_t* val) const WARN_UNUSED_RESULT;
   Status GetUInt64(const Slice& col_name, uint64_t* val) const WARN_UNUSED_RESULT;
 
+  Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
+  Status GetDouble(const Slice& col_name, double* val) const WARN_UNUSED_RESULT;
+
   // Same as above getters, but with numeric column indexes.
   // These are faster since they avoid a hashmap lookup, so should
   // be preferred in performance-sensitive code.
@@ -119,6 +128,9 @@ class KUDU_EXPORT KuduPartialRow {
   Status GetUInt16(int col_idx, uint16_t* val) const WARN_UNUSED_RESULT;
   Status GetUInt32(int col_idx, uint32_t* val) const WARN_UNUSED_RESULT;
   Status GetUInt64(int col_idx, uint64_t* val) const WARN_UNUSED_RESULT;
+
+  Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
+  Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
 
   // Gets the string but does not copy the value. Callers should
   // copy the resulting Slice if necessary.

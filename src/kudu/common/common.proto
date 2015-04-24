@@ -14,10 +14,6 @@ package kudu;
 // If you add a new type keep in mind to add it to the end
 // or update AddMapping() functions like the one in key_encoder.cc
 // that have a vector that maps the protobuf tag with the index.
-//
-// TODO: once KeyEncoder is implemented for BOOL, change its
-// enum value to 0 (if enum value for BOOL is 0, existing unit tests
-// test the KeyEncoder for BOOL, which is not yet implemented).
 enum DataType {
   UINT8 = 0;
   INT8 = 1;
@@ -29,6 +25,8 @@ enum DataType {
   INT64 = 7;
   STRING = 8;
   BOOL = 9;
+  FLOAT = 10;
+  DOUBLE = 11;
 }
 
 enum EncodingType {

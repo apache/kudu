@@ -161,6 +161,19 @@ class Int32DataGenerator : public DataGenerator<INT32, HAS_NULLS> {
   }
 };
 
+// Floating-point data generator.
+// This works for both floats and doubles.
+template<DataType DATA_TYPE, bool HAS_NULLS>
+class FPDataGenerator : public DataGenerator<DATA_TYPE, HAS_NULLS> {
+ public:
+  typedef typename DataTypeTraits<DATA_TYPE>::cpp_type cpp_type;
+
+  FPDataGenerator() {}
+  cpp_type BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+    return static_cast<cpp_type>(value) * 1.0001;
+  }
+};
+
 template<bool HAS_NULLS>
 class StringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
  public:
@@ -268,9 +281,9 @@ class CFileTestBase : public KuduTest {
 // GCC's auto-vectorization doesn't work here, because there isn't
 // enough guarantees on alignment and it can't seem to decode the
 // constant stride.
-template<class Indexable>
-uint64_t FastSum(const Indexable &data, size_t n) {
-  uint64_t sums[4] = {0, 0, 0, 0};
+template<class Indexable, typename SumType>
+SumType FastSum(const Indexable &data, size_t n) {
+  SumType sums[4] = {0, 0, 0, 0};
   int rem = n;
   int i = 0;
   while (rem >= 4) {
@@ -288,15 +301,15 @@ uint64_t FastSum(const Indexable &data, size_t n) {
   return sums[0] + sums[1] + sums[2] + sums[3];
 }
 
-template<DataType Type>
+template<DataType Type, typename SumType>
 static void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count) {
   ScopedColumnBlock<Type> cb(8192);
 
-  uint64_t sum = 0;
+  SumType sum = 0;
   while (iter->HasNext()) {
     size_t n = cb.nrows();
     ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
-    sum += FastSum(cb, n);
+    sum += FastSum<ScopedColumnBlock<Type>, SumType>(cb, n);
     count += n;
     cb.arena()->Reset();
   }
@@ -321,12 +334,22 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
   switch (reader->data_type()) {
     case UINT32:
     {
-      TimeReadFileForDataType<UINT32>(iter, count);
+      TimeReadFileForDataType<UINT32, uint64_t>(iter, count);
       break;
     }
     case INT32:
     {
-      TimeReadFileForDataType<INT32>(iter, count);
+      TimeReadFileForDataType<INT32, int64_t>(iter, count);
+      break;
+    }
+    case FLOAT:
+    {
+      TimeReadFileForDataType<FLOAT, float>(iter, count);
+      break;
+    }
+    case DOUBLE:
+    {
+      TimeReadFileForDataType<DOUBLE, double>(iter, count);
       break;
     }
     case STRING:

@@ -307,6 +307,13 @@ TEST_F(TestCFile, TestFixedSizeReadWriteInt32) {
   TestReadWriteFixedSizeTypes<Int32DataGenerator<false> >(PLAIN_ENCODING);
 }
 
+TEST_F(TestCFile, TestFixedSizeReadWriteFloat) {
+  TestReadWriteFixedSizeTypes<FPDataGenerator<FLOAT, false> >(PLAIN_ENCODING);
+}
+TEST_F(TestCFile, TestFixedSizeReadWriteDouble) {
+  TestReadWriteFixedSizeTypes<FPDataGenerator<DOUBLE, false> >(PLAIN_ENCODING);
+}
+
 void EncodeStringKey(const Schema &schema, const Slice& key,
                      gscoped_ptr<EncodedKey> *encoded_key) {
   EncodedKeyBuilder kb(&schema);
@@ -509,6 +516,11 @@ TEST_F(TestCFile, TestNullInts) {
   UInt32DataGenerator<true> generator;
   TestNullTypes(&generator, GROUP_VARINT, NO_COMPRESSION);
   TestNullTypes(&generator, GROUP_VARINT, LZ4);
+}
+
+TEST_F(TestCFile, TestNullFloats) {
+  FPDataGenerator<FLOAT, true> generator;
+  TestNullTypes(&generator, PLAIN_ENCODING, NO_COMPRESSION);
 }
 
 TEST_F(TestCFile, TestNullPrefixStrings) {

@@ -54,9 +54,9 @@ class LineItemTsvImporter {
     ConvertToIntAndPopulate(columns_[i++], row, tpch::kSuppKeyColIdx);
     ConvertToIntAndPopulate(columns_[i++], row, tpch::kLineNumberColIdx);
     ConvertToIntAndPopulate(columns_[i++], row, tpch::kQuantityColIdx);
-    ConvertDoubleToIntAndPopulate(columns_[i++], row, tpch::kExtendedPriceColIdx);
-    ConvertDoubleToIntAndPopulate(columns_[i++], row, tpch::kDiscountColIdx);
-    ConvertDoubleToIntAndPopulate(columns_[i++], row, tpch::kTaxColIdx);
+    ConvertToDoubleAndPopulate(columns_[i++], row, tpch::kExtendedPriceColIdx);
+    ConvertToDoubleAndPopulate(columns_[i++], row, tpch::kDiscountColIdx);
+    ConvertToDoubleAndPopulate(columns_[i++], row, tpch::kTaxColIdx);
     CHECK_OK(row->SetStringCopy(tpch::kReturnFlagColIdx, columns_[i++]));
     CHECK_OK(row->SetStringCopy(tpch::kLineStatusColIdx, columns_[i++]));
     CHECK_OK(row->SetStringCopy(tpch::kShipDateColIdx, columns_[i++]));
@@ -98,8 +98,8 @@ class LineItemTsvImporter {
     return number;
   }
 
-  void ConvertDoubleToIntAndPopulate(const StringPiece &chars, KuduPartialRow* row,
-                                     int col_idx) {
+  void ConvertToDoubleAndPopulate(const StringPiece &chars, KuduPartialRow* row,
+                                  int col_idx) {
     // TODO: extra copy here, since we don't have a way to parse StringPiece
     // into ints.
     chars.CopyToString(&tmp_);
@@ -110,8 +110,7 @@ class LineItemTsvImporter {
     CHECK(errno == 0 &&  // overflow/underflow happened
           error != cstr) << "Bad double in column " << col_idx
                          << ": '" << tmp_ << "': errno=" << errno;
-    int new_num = number * 100;
-    CHECK_OK(row->SetUInt32(col_idx, new_num));
+    CHECK_OK(row->SetDouble(col_idx, number));
   }
   std::ifstream in_;
   vector<StringPiece> columns_;

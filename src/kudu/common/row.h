@@ -661,6 +661,18 @@ class RowBuilder {
     Advance();
   }
 
+  void AddFloat(float val) {
+    CheckNextType(FLOAT);
+    *reinterpret_cast<float *>(&buf_[byte_idx_]) = val;
+    Advance();
+  }
+
+  void AddDouble(double val) {
+    CheckNextType(DOUBLE);
+    *reinterpret_cast<double *>(&buf_[byte_idx_]) = val;
+    Advance();
+  }
+
   void AddNull() {
     CHECK(schema_.column(col_idx_).is_nullable());
     BitmapSet(buf_ + schema_.byte_size(), col_idx_);

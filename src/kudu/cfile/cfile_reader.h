@@ -180,7 +180,6 @@ class CFileReader {
 
   const TypeInfo *type_info_;
   const TypeEncodingInfo *type_encoding_info_;
-  const KeyEncoder *key_encoder_;
 
   BlockCache *cache_;
   BlockCache::FileId cache_id_;

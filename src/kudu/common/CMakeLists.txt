@@ -33,7 +33,6 @@ add_library(kudu_common
   scan_predicate.cc
   predicate_encoder.cc
   encoded_key.cc
-  row_util.cc
   scan_spec.cc
   schema.cc
   timestamp.cc

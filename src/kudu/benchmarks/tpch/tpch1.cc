@@ -16,17 +16,17 @@
 // ====
 // ---- QUERY : TPCH-Q1
 // # Q1 - Pricing Summary Report Query
-// # Modifications: Remove ORDER BY, added ROUND() calls
+// # Modifications: Remove ORDER BY
 // select
 //   l_returnflag,
 //   l_linestatus,
-//   round(sum(l_quantity), 1),
-//   round(sum(l_extendedprice), 1),
-//   round(sum(l_extendedprice * (1 - l_discount)), 1),
-//   round(sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)), 1),
-//   round(avg(l_quantity), 1),
-//   round(avg(l_extendedprice), 1),
-//   round(avg(l_discount), 1), count(1)
+//   (sum(l_quantity), 1),
+//   (sum(l_extendedprice), 1),
+//   (sum(l_extendedprice * (1 - l_discount)), 1),
+//   (sum(l_extendedprice * (1 - l_discount) * (1 + l_tax)), 1),
+//   (avg(l_quantity), 1),
+//   (avg(l_extendedprice), 1),
+//   (avg(l_discount), 1), count(1)
 // from
 //   lineitem
 // where
@@ -37,10 +37,10 @@
 // ---- TYPES
 // string, string, double, double, double, double, double, double, double, bigint
 // ---- RESULTS
-// 'A','F',37734107,56586554400.7,53758257134.9,55909065222.8,25.5,38273.1,0,1478493
-// 'N','F',991417,1487504710.4,1413082168.1,1469649223.2,25.5,38284.5,0.1,38854
-// 'N','O',74476040,111701729697.7,106118230307.6,110367043872.5,25.5,38249.1,0,2920374
-// 'R','F',37719753,56568041380.9,53741292684.6,55889619119.8,25.5,38250.9,0.1,1478870
+// 'A','F',37734107,56586554400.73,53758257134.9,55909065222.8,25.5,38273.1,0,1478493
+// 'N','F',991417,1487504710.38,1413082168.1,1469649223.2,25.5,38284.5,0.1,38854
+// 'N','O',74476040,111701729697.74,106118230307.6,110367043872.5,25.5,38249.1,0,2920374
+// 'R','F',37719753,56568041380.90,53741292684.6,55889619119.8,25.5,38250.9,0.1,1478870
 // ====
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
@@ -76,6 +76,8 @@ DEFINE_string(master_address, "localhost",
               "Address of master for the cluster to operate on");
 DEFINE_int32(tpch_max_batch_size, 1000,
              "Maximum number of inserts/updates to batch at once");
+DEFINE_string(table_name, "lineitem",
+              "The table name to write/read");
 
 namespace kudu {
 
@@ -88,9 +90,9 @@ using std::tr1::unordered_map;
 
 struct Result {
   uint32_t l_quantity;
-  uint32_t l_extendedprice;
-  uint32_t l_discount;
-  uint32_t l_tax;
+  double l_extendedprice;
+  double l_discount;
+  double l_tax;
   int count;
   Result()
     : l_quantity(0), l_extendedprice(0), l_discount(0), l_tax(0), count(0) {
@@ -156,12 +158,12 @@ void Tpch1(RpcLineItemDAO *dao) {
       CHECK_OK(row.GetString(2, &l_linestatus.slice));
       uint32_t l_quantity;
       CHECK_OK(row.GetUInt32(3, &l_quantity));
-      uint32_t l_extendedprice;
-      CHECK_OK(row.GetUInt32(4, &l_extendedprice));
-      uint32_t l_discount;
-      CHECK_OK(row.GetUInt32(5, &l_discount));
-      uint32_t l_tax;
-      CHECK_OK(row.GetUInt32(6, &l_tax));
+      double l_extendedprice;
+      CHECK_OK(row.GetDouble(4, &l_extendedprice));
+      double l_discount;
+      CHECK_OK(row.GetDouble(5, &l_discount));
+      double l_tax;
+      CHECK_OK(row.GetDouble(6, &l_tax));
 
       slice_map *linestatus_map;
       slice_map_map::iterator it = results.find(l_returnflag);
@@ -197,18 +199,18 @@ void Tpch1(RpcLineItemDAO *dao) {
       const SliceMapKey linestatus = jj->first;
       Result *r = jj->second;
       double avg_q = static_cast<double>(r->l_quantity) / r->count;
-      double avg_ext_p = r->l_extendedprice / r->count / 100.0;
-      double avg_discount = r->l_discount / r->count / 100.0;
+      double avg_ext_p = r->l_extendedprice / r->count;
+      double avg_discount = r->l_discount / r->count;
       LOG(INFO) << returnflag.slice.ToString() << ", " <<
                    linestatus.slice.ToString() << ", " <<
                    r->l_quantity << ", " <<
-                   (r->l_extendedprice / 100.0) << ", " <<
+                   StringPrintf("%.2f", r->l_extendedprice) << ", " <<
                    // TODO those two are missing at the moment, might want to chagne Result
                    // sum(l_extendedprice * (1 - l_discount))
                    // sum(l_extendedprice * (1 - l_discount) * (1 + l_tax))
-                   avg_q << ", " <<
-                   avg_ext_p << ", " <<
-                   avg_discount << ", " <<
+                   StringPrintf("%.2f", avg_q) << ", " <<
+                   StringPrintf("%.2f", avg_ext_p) << ", " <<
+                   StringPrintf("%.2f", avg_discount) << ", " <<
                    r->count;
       delete r;
       delete linestatus.slice.data();
@@ -224,7 +226,6 @@ void Tpch1(RpcLineItemDAO *dao) {
 int main(int argc, char **argv) {
   kudu::ParseCommandLineFlags(&argc, &argv, true);
   kudu::InitGoogleLoggingSafe(argv[0]);
-  const char * const kTableName = "tpch1";
 
   gscoped_ptr<kudu::Env> env;
   gscoped_ptr<kudu::MiniCluster> cluster;
@@ -242,7 +243,7 @@ int main(int argc, char **argv) {
     master_address = FLAGS_master_address;
   }
 
-  gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(master_address, kTableName,
+  gscoped_ptr<kudu::RpcLineItemDAO> dao(new kudu::RpcLineItemDAO(master_address, FLAGS_table_name,
                                                                  FLAGS_tpch_max_batch_size));
   dao->Init();
 

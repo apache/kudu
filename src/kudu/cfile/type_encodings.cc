@@ -89,6 +89,8 @@ class TypeEncodingResolver {
     AddMapping<INT32, RLE>();
     AddMapping<UINT64, PLAIN_ENCODING>();
     AddMapping<INT64, PLAIN_ENCODING>();
+    AddMapping<FLOAT, PLAIN_ENCODING>();
+    AddMapping<DOUBLE, PLAIN_ENCODING>();
     AddMapping<STRING, PLAIN_ENCODING>();
     AddMapping<STRING, PREFIX_ENCODING>();
     AddMapping<BOOL, RLE>();

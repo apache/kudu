@@ -13,7 +13,6 @@
 #include <vector>
 
 #include "kudu/client/client.h"
-#include "kudu/common/row_util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -85,7 +84,7 @@ static int WriteRandomDataToTable(int argc, char** argv) {
     KuduPartialRow* row = insert->mutable_row();
     GenerateDataForRow(schema, record_id, &random, row);
 
-    LOG(INFO) << "Inserting record: " << DebugPartialRowToString(*row);
+    LOG(INFO) << "Inserting record: " << row->ToString();
     CHECK_OK(session->Apply(insert.Pass()));
     Status s = session->Flush();
     if (PREDICT_FALSE(!s.ok())) {

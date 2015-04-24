@@ -123,7 +123,6 @@ Status CFileReader::InitOnce() {
                                       footer_->encoding(),
                                       &type_encoding_info_));
 
-  key_encoder_ = &GetKeyEncoder(footer_->data_type());
   VLOG(2) << "Initialized CFile reader. "
           << "Header: " << header_->DebugString()
           << " Footer: " << footer_->DebugString()

@@ -61,9 +61,9 @@ class RpcLineItemDAOTest : public KuduTest {
     CHECK_OK(row->SetUInt32(tpch::kPartKeyColIdx, 12345));
     CHECK_OK(row->SetUInt32(tpch::kSuppKeyColIdx, 12345));
     CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, 12345));
-    CHECK_OK(row->SetUInt32(tpch::kExtendedPriceColIdx, 12345));
-    CHECK_OK(row->SetUInt32(tpch::kDiscountColIdx, 12345));
-    CHECK_OK(row->SetUInt32(tpch::kTaxColIdx, 12345));
+    CHECK_OK(row->SetDouble(tpch::kExtendedPriceColIdx, 123.45));
+    CHECK_OK(row->SetDouble(tpch::kDiscountColIdx, 123.45));
+    CHECK_OK(row->SetDouble(tpch::kTaxColIdx, 123.45));
     CHECK_OK(row->SetStringCopy(tpch::kReturnFlagColIdx, StringPrintf("hello %d", line)));
     CHECK_OK(row->SetStringCopy(tpch::kLineStatusColIdx, StringPrintf("hello %d", line)));
     CHECK_OK(row->SetStringCopy(tpch::kShipDateColIdx, Slice("2013-11-13")));

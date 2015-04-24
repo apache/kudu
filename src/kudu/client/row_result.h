@@ -39,6 +39,9 @@ class KUDU_EXPORT KuduRowResult {
   Status GetUInt32(const Slice& col_name, uint32_t* val) const WARN_UNUSED_RESULT;
   Status GetUInt64(const Slice& col_name, uint64_t* val) const WARN_UNUSED_RESULT;
 
+  Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
+  Status GetDouble(const Slice& col_name, double* val) const WARN_UNUSED_RESULT;
+
   // Same as above getters, but with numeric column indexes.
   // These are faster since they avoid a hashmap lookup, so should
   // be preferred in performance-sensitive code.
@@ -53,6 +56,9 @@ class KUDU_EXPORT KuduRowResult {
   Status GetUInt16(int col_idx, uint16_t* val) const WARN_UNUSED_RESULT;
   Status GetUInt32(int col_idx, uint32_t* val) const WARN_UNUSED_RESULT;
   Status GetUInt64(int col_idx, uint64_t* val) const WARN_UNUSED_RESULT;
+
+  Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
+  Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
 
   // Gets the string but does not copy the value. Callers should
   // copy the resulting Slice if necessary.
