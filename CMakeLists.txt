@@ -274,6 +274,27 @@ if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}")
   endif()
 endif()
 
+# Code coverage
+if ("${KUDU_GENERATE_COVERAGE}")
+  if("${CMAKE_CXX_COMPILER}" MATCHES ".*clang.*")
+    # There appears to be some bugs in clang 3.3 which cause code coverage
+    # to have link errors, not locating the llvm_gcda_* symbols.
+    # This should be fixed in llvm 3.4 with http://llvm.org/viewvc/llvm-project?view=revision&revision=184666
+    message(SEND_ERROR "Cannot currently generate coverage with clang")
+  endif()
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage -DCOVERAGE_BUILD")
+
+  # For coverage to work properly, we need to use static linkage. Otherwise,
+  # __gcov_flush() doesn't properly flush coverage from every module.
+  # See http://stackoverflow.com/questions/28164543/using-gcov-flush-within-a-library-doesnt-force-the-other-modules-to-yield-gc
+  if("${KUDU_LINK}" STREQUAL "a")
+    message("Using static linking for coverage build")
+    set(KUDU_LINK "s")
+  elseif("${KUDU_LINK}" STREQUAL "d")
+    message(SEND_ERROR "Cannot use coverage with static linking")
+  endif()
+endif()
+
 # If we still don't know what kind of linking to perform, choose based on
 # build type (developers like fast builds).
 if ("${KUDU_LINK}" STREQUAL "a")
@@ -321,17 +342,6 @@ endif()
 # Position independent code is only necessary when producing shared objects.
 if("${KUDU_EXPORTED_CLIENT}" OR "${KUDU_LINK}" STREQUAL "d")
   add_definitions(-fPIC)
-endif()
-
-# Code coverage
-if ("${KUDU_GENERATE_COVERAGE}")
-  if("${CMAKE_CXX_COMPILER}" MATCHES ".*clang.*")
-    # There appears to be some bugs in clang 3.3 which cause code coverage
-    # to have link errors, not locating the llvm_gcda_* symbols.
-    # This should be fixed in llvm 3.4 with http://llvm.org/viewvc/llvm-project?view=revision&revision=184666
-    message(SEND_ERROR "Cannot currently generate coverage with clang")
-  endif()
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} --coverage")
 endif()
 
 # set compile output directory

@@ -15,6 +15,11 @@
 using std::string;
 using std::tr1::unordered_set;
 
+#ifdef COVERAGE_BUILD
+extern "C" void __gcov_flush(void);
+#endif
+
+
 namespace kudu {
 namespace server {
 
@@ -71,6 +76,21 @@ void GenericServiceImpl::SetFlag(const SetFlagRequestPB* req,
     resp->set_msg(ret);
   }
 
+  rpc->RespondSuccess();
+}
+
+void GenericServiceImpl::FlushCoverage(const FlushCoverageRequestPB* req,
+                                       FlushCoverageResponsePB* resp,
+                                       rpc::RpcContext* rpc) {
+#ifdef COVERAGE_BUILD
+  __gcov_flush();
+  LOG(INFO) << "Flushed coverage info. (request from " << rpc->requestor_string() << ")";
+  resp->set_success(true);
+#else
+  LOG(WARNING) << "Non-coverage build cannot flush coverage (request from "
+               << rpc->requestor_string() << ")";
+  resp->set_success(false);
+#endif
   rpc->RespondSuccess();
 }
 

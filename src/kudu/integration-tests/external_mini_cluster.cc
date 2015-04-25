@@ -17,6 +17,7 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/master_rpc.h"
 #include "kudu/server/server_base.pb.h"
+#include "kudu/server/server_base.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
@@ -176,8 +177,8 @@ vector<string> SubstituteInFlags(const vector<string>& orig_flags,
 Status ExternalMiniCluster::StartSingleMaster() {
   string exe = GetBinaryPath(kMasterBinaryName);
   scoped_refptr<ExternalMaster> master =
-      new ExternalMaster(exe, GetDataPath("master"),
-                         SubstituteInFlags(opts_.extra_master_flags, 0));
+    new ExternalMaster(messenger_, exe, GetDataPath("master"),
+                       SubstituteInFlags(opts_.extra_master_flags, 0));
   RETURN_NOT_OK(master->Start());
   masters_.push_back(master);
   return Status::OK();
@@ -205,7 +206,8 @@ Status ExternalMiniCluster::StartDistributedMasters() {
   // Start the masters.
   for (int i = 0; i < num_masters; i++) {
     scoped_refptr<ExternalMaster> peer =
-        new ExternalMaster(exe,
+        new ExternalMaster(messenger_,
+                           exe,
                            GetDataPath(Substitute("master-$0", i)),
                            peer_addrs[i],
                            SubstituteInFlags(flags, i));
@@ -240,7 +242,7 @@ Status ExternalMiniCluster::AddTabletServer() {
   }
 
   scoped_refptr<ExternalTabletServer> ts =
-    new ExternalTabletServer(exe, GetDataPath(Substitute("ts-$0", idx)),
+    new ExternalTabletServer(messenger_, exe, GetDataPath(Substitute("ts-$0", idx)),
                              GetBindIpForTabletServer(idx),
                              master_hostports,
                              SubstituteInFlags(opts_.extra_tserver_flags, idx));
@@ -361,9 +363,11 @@ Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder& builder,
 // ExternalDaemon
 //------------------------------------------------------------
 
-ExternalDaemon::ExternalDaemon(const string& exe,
+ExternalDaemon::ExternalDaemon(const shared_ptr<rpc::Messenger>& messenger,
+                               const string& exe,
                                const string& data_dir,
                                const vector<string>& extra_flags) :
+  messenger_(messenger),
   exe_(exe),
   data_dir_(data_dir),
   extra_flags_(extra_flags) {
@@ -470,11 +474,38 @@ void ExternalDaemon::Shutdown() {
   bound_rpc_ = bound_rpc_hostport();
   bound_http_ = bound_http_hostport();
 
+  // In coverage builds, ask the process nicely to flush coverage info
+  // before we kill -9 it. Otherwise, we never get any coverage from
+  // external clusters.
+  FlushCoverage();
+
   LOG(INFO) << "Killing " << exe_ << " with pid " << process_->pid();
   ignore_result(process_->Kill(SIGKILL));
   int ret;
   WARN_NOT_OK(process_->Wait(&ret), "Waiting on " + exe_);
   process_.reset();
+}
+
+void ExternalDaemon::FlushCoverage() {
+#ifndef COVERAGE_BUILD
+  return;
+#else
+  LOG(INFO) << "Attempting to flush coverage for " << exe_ << " pid " << process_->pid();
+  server::GenericServiceProxy proxy(messenger_, bound_rpc_addr());
+
+  server::FlushCoverageRequestPB req;
+  server::FlushCoverageResponsePB resp;
+  rpc::RpcController rpc;
+
+  // Set a reasonably short timeout, since some of our tests kill servers which
+  // are kill -STOPed.
+  rpc.set_timeout(MonoDelta::FromMilliseconds(100));
+  Status s = proxy.FlushCoverage(req, &resp, &rpc);
+  if (s.ok() && !resp.success()) {
+    s = Status::RemoteError("Server does not appear to be running a coverage build");
+  }
+  WARN_NOT_OK(s, Substitute("Unable to flush coverage on $0 pid $1", exe_, process_->pid()));
+#endif
 }
 
 HostPort ExternalDaemon::bound_rpc_hostport() const {
@@ -522,18 +553,20 @@ ScopedResumeExternalDaemon::~ScopedResumeExternalDaemon() {
 // ExternalMaster
 //------------------------------------------------------------
 
-ExternalMaster::ExternalMaster(const string& exe,
+ExternalMaster::ExternalMaster(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                               const string& exe,
                                const string& data_dir,
                                const vector<string>& extra_flags)
-    : ExternalDaemon(exe, data_dir, extra_flags),
+    : ExternalDaemon(messenger, exe, data_dir, extra_flags),
       rpc_bind_address_("127.0.0.1:0") {
 }
 
-ExternalMaster::ExternalMaster(const string& exe,
+ExternalMaster::ExternalMaster(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                               const string& exe,
                                const string& data_dir,
                                const string& rpc_bind_address,
                                const std::vector<string>& extra_flags)
-    : ExternalDaemon(exe, data_dir, extra_flags),
+    : ExternalDaemon(messenger, exe, data_dir, extra_flags),
       rpc_bind_address_(rpc_bind_address) {
 }
 
@@ -569,12 +602,13 @@ Status ExternalMaster::Restart() {
 // ExternalTabletServer
 //------------------------------------------------------------
 
-ExternalTabletServer::ExternalTabletServer(const string& exe,
+ExternalTabletServer::ExternalTabletServer(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                                           const string& exe,
                                            const string& data_dir,
                                            const string& bind_host,
                                            const vector<HostPort>& master_addrs,
                                            const vector<string>& extra_flags)
-  : ExternalDaemon(exe, data_dir, extra_flags),
+  : ExternalDaemon(messenger, exe, data_dir, extra_flags),
     master_addrs_(HostPort::ToCommaSeparatedString(master_addrs)),
     bind_host_(bind_host) {
 }

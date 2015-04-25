@@ -234,7 +234,8 @@ class ExternalMiniCluster {
 
 class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
  public:
-  ExternalDaemon(const std::string& exe, const std::string& data_dir,
+  ExternalDaemon(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                 const std::string& exe, const std::string& data_dir,
                  const std::vector<std::string>& extra_flags);
 
   HostPort bound_rpc_hostport() const;
@@ -255,8 +256,14 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
  protected:
   friend class RefCountedThreadSafe<ExternalDaemon>;
   virtual ~ExternalDaemon();
+
   Status StartProcess(const std::vector<std::string>& flags);
 
+  // In a code-coverage build, try to flush the coverage data to disk.
+  // In a non-coverage build, this does nothing.
+  void FlushCoverage();
+
+  const std::tr1::shared_ptr<rpc::Messenger> messenger_;
   const std::string exe_;
   const std::string data_dir_;
   const std::vector<std::string> extra_flags_;
@@ -293,10 +300,12 @@ class ScopedResumeExternalDaemon {
 
 class ExternalMaster : public ExternalDaemon {
  public:
-  ExternalMaster(const std::string& exe, const std::string& data_dir,
+  ExternalMaster(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                 const std::string& exe, const std::string& data_dir,
                  const std::vector<std::string>& extra_flags);
 
-  ExternalMaster(const std::string& exe, const std::string& data_dir,
+  ExternalMaster(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                 const std::string& exe, const std::string& data_dir,
                  const std::string& rpc_bind_address,
                  const std::vector<std::string>& extra_flags);
 
@@ -316,7 +325,8 @@ class ExternalMaster : public ExternalDaemon {
 
 class ExternalTabletServer : public ExternalDaemon {
  public:
-  ExternalTabletServer(const std::string& exe, const std::string& data_dir,
+  ExternalTabletServer(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                       const std::string& exe, const std::string& data_dir,
                        const std::string& bind_host,
                        const std::vector<HostPort>& master_addrs,
                        const std::vector<std::string>& extra_flags);

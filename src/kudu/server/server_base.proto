@@ -56,7 +56,18 @@ message SetFlagResponsePB {
   optional string old_value = 3;
 }
 
+// Attempt to flush coverage information to disk, if running a coverage build.
+message FlushCoverageRequestPB {
+}
+message FlushCoverageResponsePB {
+  // If the current build is not a coverage build, returns false.
+  optional bool success = 1;
+}
+
 service GenericService {
   rpc SetFlag(SetFlagRequestPB)
     returns (SetFlagResponsePB);
+
+  rpc FlushCoverage(FlushCoverageRequestPB)
+    returns (FlushCoverageResponsePB);
 }
