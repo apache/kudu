@@ -137,7 +137,7 @@ class DeltaFileReader : public DeltaStore,
 
   const BlockId& block_id() const { return block_id_; }
 
-  virtual const DeltaStats& delta_stats() const {
+  virtual const DeltaStats& delta_stats() const OVERRIDE {
     DCHECK(init_once_.initted());
     return *delta_stats_;
   }
