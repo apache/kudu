@@ -26,8 +26,8 @@
 // with modifications by m3b.  See also
 //    https://setisvn.ssl.berkeley.edu/svn/lib/fftw-3.0.1/kernel/cycle.h
 
-#ifndef SUPERSONIC_OPENSOURCE_AUXILIARY_CYCLECLOCK_INL_H_
-#define SUPERSONIC_OPENSOURCE_AUXILIARY_CYCLECLOCK_INL_H_
+#ifndef GUTIL_CYCLECLOCK_INL_H_
+#define GUTIL_CYCLECLOCK_INL_H_
 
 #include <sys/time.h>
 
@@ -195,4 +195,4 @@ inline int64 CycleClock::Now() {
 #error You need to define CycleTimer for your O/S and CPU
 #endif
 
-#endif  // SUPERSONIC_OPENSOURCE_AUXILIARY_CYCLECLOCK_INL_H_
+#endif  // GUTIL_CYCLECLOCK_INL_H_

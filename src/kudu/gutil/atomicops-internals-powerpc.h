@@ -23,8 +23,8 @@
 // This is not tested and may contain bugs.  Until we have bootstrapped
 // this.
 
-#ifndef SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_POWERPC_H_
-#define SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_POWERPC_H_
+#ifndef GUTIL_ATOMICOPS_INTERNALS_POWERPC_H_
+#define GUTIL_ATOMICOPS_INTERNALS_POWERPC_H_
 
 typedef int32_t Atomic32;
 #define BASE_HAS_ATOMIC64 1  // Use only in tests and base/atomic*
@@ -296,4 +296,4 @@ inline Atomic64 Release_CompareAndSwap(volatile Atomic64* ptr,
 
 #undef ATOMICOPS_COMPILER_BARRIER
 
-#endif  // SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_POWERPC_H_
+#endif  // GUTIL_ATOMICOPS_INTERNALS_POWERPC_H_

@@ -30,7 +30,7 @@
 // depends on structs that are defined in that file.  If atomicops.h
 // doesn't sub-include that file, then we aren't needed, and shouldn't
 // try to do anything.
-#ifdef SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_X86_H_
+#ifdef GUTIL_ATOMICOPS_INTERNALS_X86_H_
 
 // This macro was copied from //util/cpuid/cpuid.cc
 // Inline cpuid instruction.  In PIC compilations, %ebx contains the address
@@ -120,4 +120,4 @@ void AtomicOps_x86CPUFeaturesInit() {
 
 #endif
 
-#endif  // SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_X86_H_
+#endif  // GUTIL_ATOMICOPS_INTERNALS_X86_H_

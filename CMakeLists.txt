@@ -643,7 +643,7 @@ endif (UNIX)
 # Subdirectories
 ############################################################
 
-# Google util libraries borrowed from supersonic
+# Google util libraries borrowed from supersonic, tcmalloc, Chromium, etc.
 add_subdirectory(src/kudu/gutil)
 add_subdirectory(src/kudu/util)
 add_subdirectory(src/kudu/common)

@@ -16,8 +16,8 @@
 //
 // Memory arena for variable-length datatypes and STL collections.
 
-#ifndef SUPERSONIC_BASE_MEMORY_ARENA_H_
-#define SUPERSONIC_BASE_MEMORY_ARENA_H_
+#ifndef KUDU_UTIL_MEMORY_ARENA_H_
+#define KUDU_UTIL_MEMORY_ARENA_H_
 
 #include <boost/signals2/dummy_mutex.hpp>
 #include <glog/logging.h>
@@ -204,8 +204,8 @@ class ArenaBase {
 };
 
 // STL-compliant allocator, for use with hash_maps and other structures
-// needed by transformations. Enables memory control and improves performance.
-// (The code is shamelessly stolen from base/arena-inl.h).
+// which share lifetime with an Arena. Enables memory control and improves
+// performance.
 template<class T, bool THREADSAFE> class ArenaAllocator {
  public:
   typedef T value_type;
@@ -488,7 +488,6 @@ inline T *ArenaBase<THREADSAFE>::NewObject(A1 arg1, A2 arg2, A3 arg3) {
   return new (mem) T(arg1, arg2, arg3);
 }
 
-
 }  // namespace kudu
 
-#endif  // SUPERSONIC_BASE_MEMORY_ARENA_H_
+#endif  // KUDU_UTIL_MEMORY_ARENA_H_

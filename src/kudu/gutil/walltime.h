@@ -11,13 +11,8 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-//
-// Author: tkaftal@google.com (Tomasz Kaftal)
-//
-// The file provides walltime functionalities for the open source version
-// of Supersonic.
-#ifndef SUPERSONIC_OPENSOURCE_TIMER_WALLTIME_H_
-#define SUPERSONIC_OPENSOURCE_TIMER_WALLTIME_H_
+#ifndef GUTIL_WALLTIME_H_
+#define GUTIL_WALLTIME_H_
 
 #include <sys/time.h>
 
@@ -86,4 +81,4 @@ class CycleClock {
 };
 
 #include "kudu/gutil/cycleclock-inl.h"  // inline method bodies
-#endif  // SUPERSONIC_OPENSOURCE_TIMER_WALLTIME_H_
+#endif  // GUTIL_WALLTIME_H_

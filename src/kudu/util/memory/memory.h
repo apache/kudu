@@ -25,8 +25,8 @@
 // single allocator per a single user request, thus setting bounds on memory
 // usage on a per-request basis.
 
-#ifndef SUPERSONIC_BASE_MEMORY_MEMORY_H_
-#define SUPERSONIC_BASE_MEMORY_MEMORY_H_
+#ifndef KUDU_UTIL_MEMORY_MEMORY_H_
+#define KUDU_UTIL_MEMORY_MEMORY_H_
 
 #include <stddef.h>
 
@@ -267,11 +267,6 @@ class HeapBufferAllocator : public BufferAllocator {
   const bool aligned_mode_;
 
   friend class Singleton<HeapBufferAllocator>;
-
-  // A friend declaration for testing purposes. The function is in
-  // datawarehouse/supersonic/testing/expression_test_helper.cc.
-  // TODO(user): Refactor to make this unneccesary.
-  friend BufferAllocator* CreateAligningHeapBufferAllocator();
 
   // Always allocates 'requested'-sized buffer, or returns NULL on OOM.
   virtual Buffer* AllocateInternal(size_t requested,
@@ -978,4 +973,4 @@ void StaticQuota<thread_safe>::SetQuota(const size_t quota) {
 
 }  // namespace kudu
 
-#endif  // SUPERSONIC_BASE_MEMORY_MEMORY_H_
+#endif  // KUDU_UTIL_MEMORY_MEMORY_H_

@@ -19,8 +19,8 @@
 // be included directly.  Clients should instead include
 // "base/atomicops.h".
 
-#ifndef SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_X86_H_
-#define SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_X86_H_
+#ifndef GUTIL_ATOMICOPS_INTERNALS_X86_H_
+#define GUTIL_ATOMICOPS_INTERNALS_X86_H_
 
 #include <stdint.h>
 
@@ -505,4 +505,4 @@ inline Atomic64 Release_CompareAndSwap(volatile Atomic64* ptr,
 
 #undef ATOMICOPS_COMPILER_BARRIER
 
-#endif  // SUPERSONIC_OPENSOURCE_AUXILIARY_ATOMICOPS_INTERNALS_X86_H_
+#endif  // GUTIL_ATOMICOPS_INTERNALS_X86_H_
