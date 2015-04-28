@@ -3,6 +3,7 @@
 
 #include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
+#include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/fs/block_manager.h"
@@ -97,6 +98,26 @@ TEST_F(FsManagerTestBase, TestDuplicatePaths) {
   ASSERT_OK(new_fs_manager->CreateInitialFileSystemLayout());
   ASSERT_EQ(list_of(JoinPathSegments(path, new_fs_manager->kDataDirName)),
             new_fs_manager->GetDataRootDirs());
+}
+
+TEST_F(FsManagerTestBase, TestListTablets) {
+  vector<string> tablet_ids;
+  ASSERT_OK(fs_manager()->ListTabletIds(&tablet_ids));
+  ASSERT_EQ(0, tablet_ids.size());
+
+  string path = fs_manager()->GetTabletMetadataDir();
+  gscoped_ptr<WritableFile> writer;
+  ASSERT_OK(env_->NewWritableFile(
+      JoinPathSegments(path, "foo.tmp"), &writer));
+  ASSERT_OK(env_->NewWritableFile(
+      JoinPathSegments(path, "foo.tmp.abc123"), &writer));
+  ASSERT_OK(env_->NewWritableFile(
+      JoinPathSegments(path, ".hidden"), &writer));
+  ASSERT_OK(env_->NewWritableFile(
+      JoinPathSegments(path, "a_tablet_sort_of"), &writer));
+
+  ASSERT_OK(fs_manager()->ListTabletIds(&tablet_ids));
+  ASSERT_EQ(1, tablet_ids.size()) << tablet_ids;
 }
 
 } // namespace kudu

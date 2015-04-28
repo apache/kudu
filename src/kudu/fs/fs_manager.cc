@@ -66,7 +66,7 @@ const char *FsManager::kCorruptedSuffix = ".corrupted";
 const char *FsManager::kInstanceMetadataFileName = "instance";
 const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
-static const char* const kTmpSuffix = ".tmp";
+static const char* const kTmpInfix = ".tmp";
 
 FsManager::FsManager(Env* env, const string& root_path)
   : env_(env),
@@ -274,7 +274,7 @@ string FsManager::GetTabletMetadataPath(const string& tablet_id) const {
 namespace {
 // Return true if 'fname' is a valid tablet ID.
 bool IsValidTabletId(const std::string& fname) {
-  if (HasSuffixString(fname, kTmpSuffix)) {
+  if (fname.find(kTmpInfix) != string::npos) {
     LOG(WARNING) << "Ignoring tmp file in tablet metadata dir: " << fname;
     return false;
   }
