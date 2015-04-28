@@ -1,13 +1,12 @@
 // Copyright (c) 2014, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
-package kudu.mapreduce.util;
+package kudu.mapreduce.tools;
 
 import kudu.ColumnSchema;
 import kudu.mapreduce.CommandLineParser;
 import kudu.mapreduce.HadoopTestingUtility;
 import kudu.rpc.BaseKuduTest;
 import kudu.rpc.CreateTableBuilder;
-import kudu.rpc.KuduScanner;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;

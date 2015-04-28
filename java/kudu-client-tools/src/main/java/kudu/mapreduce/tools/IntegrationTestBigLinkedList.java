@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
-package kudu.mapreduce;
+package kudu.mapreduce.tools;
 
 import com.google.common.base.Joiner;
 import com.stumbleupon.async.Callback;
@@ -23,6 +23,8 @@ import com.stumbleupon.async.DeferredGroupException;
 import kudu.ColumnSchema;
 import kudu.Schema;
 import kudu.Type;
+import kudu.mapreduce.CommandLineParser;
+import kudu.mapreduce.KuduTableMapReduceUtil;
 import kudu.rpc.Bytes;
 import kudu.rpc.ColumnRangePredicate;
 import kudu.rpc.CreateTableBuilder;

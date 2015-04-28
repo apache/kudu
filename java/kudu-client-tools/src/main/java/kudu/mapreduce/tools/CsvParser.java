@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License. See accompanying LICENSE file.
  */
-package kudu.mapreduce.util;
+package kudu.mapreduce.tools;
 
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
