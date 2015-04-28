@@ -360,6 +360,10 @@ Status ReplicaState::CancelPendingTransactions() {
     if (state_ != kShuttingDown) {
       return Status::IllegalState("Can only wait for pending commits on kShuttingDown state.");
     }
+    if (pending_txns_.empty()) {
+      return Status::OK();
+    }
+
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Trying to abort " << pending_txns_.size()
                                    << " pending transactions.";
     for (IndexToRoundMap::iterator iter = pending_txns_.begin();
@@ -594,9 +598,10 @@ string ReplicaState::LogPrefix() {
 
 string ReplicaState::LogPrefixUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  return Substitute("T $0 P $1 [$2]: ",
+  return Substitute("T $0 P $1 [term $2 $3]: ",
                     options_.tablet_id,
                     peer_uuid_,
+                    GetCurrentTermUnlocked(),
                     QuorumPeerPB::Role_Name(active_quorum_state_->role));
 }
 
