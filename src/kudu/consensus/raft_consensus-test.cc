@@ -462,7 +462,8 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   // - A new committed index of 3.6
   ConsensusRequestPB request;
   request.set_caller_term(3);
-  request.set_caller_uuid("peer-0");
+  const string PEER_0_UUID = "peer-0";
+  request.set_caller_uuid(PEER_0_UUID);
   request.set_tablet_id(kTestTablet);
   request.mutable_preceding_id()->CopyFrom(MakeOpId(2, 4));
 
@@ -478,9 +479,9 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   cc_req->set_tablet_id(kTestTablet);
 
   // Build a change config request with the roles reversed.
+  BuildQuorumPBForTests(2, cc_req->mutable_old_config());
   BuildQuorumPBForTests(2, cc_req->mutable_new_config());
-  string uuid1 = cc_req->new_config().peers(1).permanent_uuid();
-  cc_req->mutable_new_config()->set_leader_uuid(uuid1);
+  cc_req->mutable_new_config()->set_leader_uuid(PEER_0_UUID);
 
   // Overwrite another 4 of the original rounds for a total of 5 overwrites.
   for (int i = 7; i < 10; i++) {
