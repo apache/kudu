@@ -20,6 +20,9 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
+DEFINE_bool(tpch_cache_blocks_when_scanning, true,
+            "Whether the scanners should cache the blocks that are read or not");
+
 using std::tr1::shared_ptr;
 
 namespace kudu {
@@ -140,6 +143,7 @@ void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
   KuduScanner *scanner = new KuduScanner(client_table_.get());
 
   current_scanner_.reset(scanner);
+  current_scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
   current_scanner_projection_.reset(new KuduSchema(query_schema));
   CHECK_OK(current_scanner_->SetProjection(current_scanner_projection_.get()));
   BOOST_FOREACH(const KuduColumnRangePredicate& pred, preds) {
