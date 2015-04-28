@@ -41,6 +41,10 @@ public class TestLeaderFailover extends BaseKuduTest {
       session.apply(createBasicSchemaInsert(table, i));
     }
 
+    // Make sure the rows are in there before messing things up.
+    KuduScanner scanner = client.newScannerBuilder(table, getBasicSchema()).build();
+    assertEquals(3, countRowsInScan(scanner));
+
     killTabletLeader(table);
 
     for (int i = 3; i < 6; i++) {
@@ -54,7 +58,7 @@ public class TestLeaderFailover extends BaseKuduTest {
       }
     }
 
-    KuduScanner scanner = client.newScannerBuilder(table, getBasicSchema()).build();
+    scanner = client.newScannerBuilder(table, getBasicSchema()).build();
     assertEquals(6, countRowsInScan(scanner));
   }
 }

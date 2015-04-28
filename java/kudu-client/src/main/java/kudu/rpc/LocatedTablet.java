@@ -61,13 +61,6 @@ public class LocatedTablet {
   }
 
   /**
-   * Return the current candidate, or null if there is none.
-   */
-  public Replica getCandidateReplica() {
-    return getOneOfRoleOrNull(Role.CANDIDATE);
-  }
-
-  /**
    * Return the first occurrence for the given role, or null if there is none.
    */
   private Replica getOneOfRoleOrNull(Role role) {

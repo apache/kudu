@@ -394,34 +394,34 @@ public class BaseKuduTest {
   /**
    * Helper method to easily kill a tablet server that serves the given table's only tablet's
    * leader. The currently running test case will be failed if there's more than one tablet,
-   * if the tablet has no leader, or if the tablet server was already killed.
+   * if the tablet has no leader after some retries, or if the tablet server was already killed.
    *
    * This method is thread-safe.
-   * @param table A KuduTable which will get its single tablet's leader killed.
+   * @param table a KuduTable which will get its single tablet's leader killed.
    * @throws Exception
    */
   protected static void killTabletLeader(KuduTable table) throws Exception {
-    List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
-    if (tablets.isEmpty() || tablets.size() > 1) {
-      fail("Currently only support killing leaders for tables containing 1 tablet, table " +
-          table.getName() + " has " + tablets.size());
-    }
-    LocatedTablet tablet = tablets.get(0);
-    if (tablet.getReplicas().size() == 1) {
-      fail("Table " + table.getName() + " only has 1 tablet, please enable replication");
-    }
-    LocatedTablet.Replica leader = tablet.getLeaderReplica();
-
-    if (leader == null) {
-      // Sometimes the master can have stale information about the quorum, we'll cheat and try
-      // to kill the current candidate if there's one.
-      // TODO we should be able to remove this at some point.
-      leader = tablet.getCandidateReplica();
+    LocatedTablet.Replica leader = null;
+    DeadlineTracker deadlineTracker = new DeadlineTracker();
+    deadlineTracker.setDeadline(DEFAULT_SLEEP);
+    while (leader == null) {
+      if (deadlineTracker.timedOut()) {
+        fail("Timed out while trying to find a leader for this table: " + table.getName());
+      }
+      List<LocatedTablet> tablets = table.getTabletsLocations(DEFAULT_SLEEP);
+      if (tablets.isEmpty() || tablets.size() > 1) {
+        fail("Currently only support killing leaders for tables containing 1 tablet, table " +
+            table.getName() + " has " + tablets.size());
+      }
+      LocatedTablet tablet = tablets.get(0);
+      if (tablet.getReplicas().size() == 1) {
+        fail("Table " + table.getName() + " only has 1 tablet, please enable replication");
+      }
+      leader = tablet.getLeaderReplica();
       if (leader == null) {
-        fail("The table's only tablet doesn't have a leader, tablet=" + tablet.toString()+ ", " +
-            "replicas=" + tablet.getReplicas());
-      } else {
-        LOG.warn("Picking a CANDIDATE instead of a LEADER to kill");
+        LOG.info("Sleeping while waiting for a tablet LEADER to arise, currently slept " +
+            deadlineTracker.getElapsedMillis() + "ms");
+        Thread.sleep(50);
       }
     }
 
