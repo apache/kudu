@@ -46,7 +46,7 @@ class KuduTabletTest : public KuduTest {
   }
 
   void CreateTestTablet(const string& root_dir = "") {
-    string dir = root_dir.empty() ? test_dir_ : root_dir;
+    string dir = root_dir.empty() ? GetTestPath("fs_root") : root_dir;
     TabletHarness::Options opts(dir);
     opts.enable_metrics = true;
     bool first_time = harness_ == NULL;

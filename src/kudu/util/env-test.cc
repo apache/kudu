@@ -688,7 +688,7 @@ TEST_F(TestEnv, TestCanonicalize) {
   BOOST_FOREACH(const string& synonym, synonyms) {
     string result;
     ASSERT_OK(env_->Canonicalize(synonym, &result));
-    ASSERT_EQ(test_dir_, result);
+    ASSERT_EQ(GetTestDataDirectory(), result);
   }
 
   string dir = GetTestPath("some_dir");

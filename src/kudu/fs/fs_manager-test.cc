@@ -30,7 +30,8 @@ class FsManagerTestBase : public KuduTest {
   }
 
   void ReinitFsManager() {
-    ReinitFsManager(test_dir_, list_of(test_dir_));
+    ReinitFsManager(GetTestPath("fs_root"),
+                    list_of(GetTestPath("fs_root")));
   }
 
   void ReinitFsManager(const string& wal_path, const vector<string>& data_paths) {
@@ -127,6 +128,20 @@ TEST_F(FsManagerTestBase, TestListTablets) {
 
   ASSERT_OK(fs_manager()->ListTabletIds(&tablet_ids));
   ASSERT_EQ(1, tablet_ids.size()) << tablet_ids;
+}
+
+TEST_F(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
+  string path = GetTestPath("new_fs_root");
+  ASSERT_OK(env_->CreateDir(path));
+  {
+    gscoped_ptr<WritableFile> writer;
+    ASSERT_OK(env_->NewWritableFile(
+        JoinPathSegments(path, "some_file"), &writer));
+  }
+
+  // Try to create the FS layout. It should fail.
+  ReinitFsManager(path, list_of(path));
+  ASSERT_TRUE(fs_manager()->CreateInitialFileSystemLayout().IsAlreadyPresent());
 }
 
 } // namespace kudu

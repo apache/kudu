@@ -71,7 +71,7 @@ class TestDeltaCompaction : public KuduTest {
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
     SeedRandom();
-    fs_manager_.reset(new FsManager(env_.get(), test_dir_));
+    fs_manager_.reset(new FsManager(env_.get(), GetTestPath("fs_root")));
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
   }

@@ -199,20 +199,27 @@ Status FsManager::CreateInitialFileSystemLayout() {
 
   // Initialize each root dir.
   //
-  // It's OK if a root already exists as long as there's no instance
-  // metadata. However, no subdirectories should exist.
+  // It's OK if a root already exists as long as there's nothing in it.
+  // However, no subdirectories should exist.
   InstanceMetadataPB metadata;
   CreateInstanceMetadata(&metadata);
   BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
+    if (!env_->FileExists(root)) {
+      // We'll create the directory below.
+      continue;
+    }
+    bool is_empty;
+    RETURN_NOT_OK_PREPEND(IsDirectoryEmpty(root, &is_empty),
+                          "Unable to check if FSManager root is empty");
+    if (!is_empty) {
+      return Status::AlreadyPresent("FSManager root is not empty", root);
+    }
+  }
+  BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
     RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root),
                           "Unable to create FSManager root");
-
-    if (env_->FileExists(GetInstanceMetadataPath(root))) {
-      return Status::AlreadyPresent("Instance metadata already present", root);
-    } else {
-      RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root),
-                            "Unable to write instance metadata");
-    }
+    RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root),
+                          "Unable to write instance metadata");
   }
 
   // Initialize wals dir.
@@ -254,6 +261,21 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
                                                 metadata, pb_util::SYNC));
   LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
             << metadata.DebugString();
+  return Status::OK();
+}
+
+Status FsManager::IsDirectoryEmpty(const string& path, bool* is_empty) {
+  vector<string> children;
+  RETURN_NOT_OK(env_->GetChildren(path, &children));
+  BOOST_FOREACH(const string& child, children) {
+    if (child == "." || child == "..") {
+      continue;
+    } else {
+      *is_empty = false;
+      return Status::OK();
+    }
+  }
+  *is_empty = true;
   return Status::OK();
 }
 

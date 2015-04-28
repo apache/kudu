@@ -32,8 +32,10 @@ class KuduTest : public ::testing::Test {
   std::string GetTestPath(const std::string& relative_path);
 
   gscoped_ptr<Env> env_;
-  std::string test_dir_;
   google::FlagSaver flag_saver_;  // Reset flags on every test.
+
+ private:
+  std::string test_dir_;
 };
 
 // Returns true if slow tests are runtime-enabled.

@@ -26,7 +26,7 @@ const char* kTabletId = "TestTablet";
 class RaftConsensusStateTest : public KuduTest {
  public:
   RaftConsensusStateTest()
-    : fs_manager_(env_.get(), test_dir_),
+    : fs_manager_(env_.get(), GetTestPath("fs_root")),
       txn_factory_(new MockTransactionFactory()) {
   }
 
