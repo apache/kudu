@@ -6,7 +6,7 @@ Asynchronous Native Java Client for Kudu
 System Requirements
 ------------------------------------------------------------
 
-- Java 6
+- Java 7
 - Maven 3
 - protobuf 2.5.0
 
