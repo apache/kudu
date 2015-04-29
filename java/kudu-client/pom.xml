@@ -71,7 +71,7 @@
             <plugin>
                 <groupId>com.google.protobuf.tools</groupId>
                 <artifactId>maven-protoc-plugin</artifactId>
-                <version>${protoc.version}</version>
+                <version>${maven-protoc-plugin.version}</version>
                 <configuration>
                     <!-- Documented at:
                          http://sergei-ivanov.github.io/maven-protoc-plugin/compile-mojo.html -->
@@ -197,7 +197,7 @@
                       <pluginExecutionFilter>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-antrun-plugin</artifactId>
-                        <versionRange>[${antrun.version},)</versionRange>
+                        <versionRange>[${maven-antrun-plugin.version},)</versionRange>
                         <goals>
                           <goal>run</goal>
                         </goals>
@@ -212,7 +212,7 @@
                       <pluginExecutionFilter>
                         <groupId>com.google.protobuf.tools</groupId>
                         <artifactId>maven-protoc-plugin</artifactId>
-                        <versionRange>[${protoc.version},)</versionRange>
+                        <versionRange>[${maven-protoc-plugin.version},)</versionRange>
                         <goals>
                           <goal>compile</goal>
                         </goals>

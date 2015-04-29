@@ -20,21 +20,29 @@
 
     <!-- Properties Management -->
     <properties>
-        <protobuf.version>2.5.0</protobuf.version>
-        <netty.version>3.8.0.Final</netty.version>
-        <log4j.version>1.2.17</log4j.version>
-        <guava.version>12.0.1</guava.version>
-        <mockito-all.version>1.9.0</mockito-all.version>
-        <junit.version>4.11</junit.version>
-        <async.version>1.4.0</async.version>
+        <!-- Platform encoding override -->
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <testdata.dir>target/testdata</testdata.dir>
-        <antrun.version>1.7</antrun.version>
-        <surefire.version>2.16</surefire.version>
-        <slf4j.version>1.6.1</slf4j.version>
-        <maven.assembly.version>2.2.1</maven.assembly.version>
-        <protoc.version>0.1.10</protoc.version>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+
+        <!-- Maven plugins -->
+        <maven-antrun-plugin.version>1.7</maven-antrun-plugin.version>
+        <maven-assembly-plugin.version>2.2.1</maven-assembly-plugin.version>
+        <maven-protoc-plugin.version>0.1.10</maven-protoc-plugin.version>
+        <maven-surefire-plugin.version>2.16</maven-surefire-plugin.version>
+
+        <!-- Library dependencies -->
+        <async.version>1.4.0</async.version>
+        <guava.version>12.0.1</guava.version>
         <hadoop.version>2.5.0-cdh5.3.2</hadoop.version>
+        <junit.version>4.11</junit.version>
+        <log4j.version>1.2.17</log4j.version>
+        <mockito-all.version>1.9.0</mockito-all.version>
+        <netty.version>3.8.0.Final</netty.version>
+        <protobuf.version>2.5.0</protobuf.version>
+        <slf4j.version>1.6.1</slf4j.version>
+
+        <!-- Misc variables -->
+        <testdata.dir>target/testdata</testdata.dir>
     </properties>
 
     <modules>
@@ -71,7 +79,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
-                <version>${surefire.version}</version>
+                <version>${maven-surefire-plugin.version}</version>
                 <configuration>
                     <failIfNoTests>false</failIfNoTests>
                     <reuseForks>false</reuseForks>
@@ -91,7 +99,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
-                <version>${antrun.version}</version>
+                <version>${maven-antrun-plugin.version}</version>
                 <executions>
                     <execution>
                         <phase>test-compile</phase>
