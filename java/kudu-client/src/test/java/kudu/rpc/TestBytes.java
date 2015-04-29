@@ -69,5 +69,15 @@ public class TestBytes {
     BigInteger largeUlong = new BigInteger("10000000000000000000");
     Bytes.setUnsignedLong(bytes, largeUlong);
     assertEquals(largeUlong, Bytes.getUnsignedLong(bytes));
+
+    // FLOAT
+    float aFloat = 123.456f;
+    Bytes.setFloat(bytes, aFloat);
+    assertEquals(aFloat, Bytes.getFloat(bytes), 0.001);
+
+    // DOUBLE
+    double aDouble = 123.456;
+    Bytes.setDouble(bytes, aDouble);
+    assertEquals(aDouble, Bytes.getDouble(bytes), 0.001);
   }
 }

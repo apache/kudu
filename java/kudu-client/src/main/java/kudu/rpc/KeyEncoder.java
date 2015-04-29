@@ -73,7 +73,7 @@ class KeyEncoder {
         break;
       default:
         throw new IllegalArgumentException("The column " + column.getName() + " is of type " +
-            column.getType() + " which is unknown");
+            column.getType() + " which is not valid as part of a table key");
     }
     this.lastIndex++;
   }

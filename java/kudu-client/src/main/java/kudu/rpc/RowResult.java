@@ -219,6 +219,32 @@ public class RowResult {
   }
 
   /**
+   * Get the specified column's float
+   * @param columnIndex Column index in the schema
+   * @return A float
+   */
+  public float getFloat(int columnIndex) {
+    checkValidColumn(columnIndex);
+    checkNull(columnIndex);
+    return Bytes.getFloat(this.rowData.getRawArray(),
+                          this.rowData.getRawOffset()
+                          + getCurrentRowDataOffsetForColumn(columnIndex));
+  }
+
+  /**
+   * Get the specified column's double
+   * @param columnIndex Column index in the schema
+   * @return A double
+   */
+  public double getDouble(int columnIndex) {
+    checkValidColumn(columnIndex);
+    checkNull(columnIndex);
+    return Bytes.getDouble(this.rowData.getRawArray(),
+                           this.rowData.getRawOffset()
+                           + getCurrentRowDataOffsetForColumn(columnIndex));
+  }
+
+  /**
    * Get the schema used for this scanner's column projection.
    * @return A column projection as a schema.
    */
@@ -314,6 +340,12 @@ public class RowResult {
         buf.append(getLong(i));
       } else if (col.getType().equals(Type.STRING)) {
         buf.append(getString(i));
+      } else if (col.getType().equals(Type.FLOAT)) {
+        buf.append(getFloat(i));
+      } else if (col.getType().equals(Type.DOUBLE)) {
+        buf.append(getDouble(i));
+      } else {
+        buf.append("<unknown type!>");
       }
       buf.append("}");
     }

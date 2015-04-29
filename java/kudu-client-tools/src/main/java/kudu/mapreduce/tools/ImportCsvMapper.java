@@ -92,15 +92,6 @@ public class ImportCsvMapper extends Mapper<LongWritable, Text, NullWritable, Op
         ColumnSchema col = this.schema.getColumn(colName);
         String colValue = Bytes.getString(parsed.getLineBytes(), parsed.getColumnOffset(i),
             parsed.getColumnLength(i));
-        // We don't have floating point data types, but for the moment we need to be able to
-        // parse those numbers. We just remove the period, assuming that we always have 2
-        // decimals (like tpch does)
-        // TODO remove once we can handle floating points
-        // TODO consider having a more general purpose handling in the mean time for when we have
-        // any number of decimals aftert the period.
-        if (col.getType() != Type.STRING) {
-          colValue = StringUtils.replace(colValue, ".", "");
-        }
         switch (col.getType()) {
           case BOOL:
             insert.addBoolean(colName, Boolean.parseBoolean(colValue));
@@ -119,6 +110,12 @@ public class ImportCsvMapper extends Mapper<LongWritable, Text, NullWritable, Op
             break;
           case STRING:
             insert.addString(colName, colValue);
+            break;
+          case FLOAT:
+            insert.addFloat(colName, Float.parseFloat(colValue));
+            break;
+          case DOUBLE:
+            insert.addDouble(colName, Double.parseDouble(colValue));
             break;
           default:
             throw new IllegalArgumentException("Type " + col.getType() + " not recognized");

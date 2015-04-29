@@ -3,6 +3,8 @@
 package kudu.mapreduce.tools;
 
 import kudu.ColumnSchema;
+import kudu.Schema;
+import kudu.Type;
 import kudu.mapreduce.CommandLineParser;
 import kudu.mapreduce.HadoopTestingUtility;
 import kudu.rpc.BaseKuduTest;
@@ -17,6 +19,7 @@ import org.junit.Test;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.util.ArrayList;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -28,10 +31,21 @@ public class TestImportCsv extends BaseKuduTest {
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
+  private static Schema schema;
+
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    createTable(TABLE_NAME, getBasicSchema(), new CreateTableBuilder());
+
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
+    columns.add(new ColumnSchema("key", Type.INT32, true));
+    columns.add(new ColumnSchema("column1_i", Type.INT32));
+    columns.add(new ColumnSchema("column2_d", Type.DOUBLE));
+    columns.add(new ColumnSchema("column3_s", Type.STRING, false, true, null));
+    columns.add(new ColumnSchema("column4_b", Type.BOOL));
+    schema = new Schema(columns);
+
+    createTable(TABLE_NAME, schema, new CreateTableBuilder());
   }
 
   @AfterClass
@@ -54,7 +68,7 @@ public class TestImportCsv extends BaseKuduTest {
     writeCsvFile(data);
 
     StringBuilder sb = new StringBuilder();
-    for (ColumnSchema col : basicSchema.getColumns()) {
+    for (ColumnSchema col : schema.getColumns()) {
       sb.append(col.getName());
       sb.append(",");
     }
@@ -69,18 +83,17 @@ public class TestImportCsv extends BaseKuduTest {
 
     assertEquals(1, job.getCounters().findCounter(ImportCsv.Counters.BAD_LINES).getValue());
 
-    assertEquals(4, countRowsInScan(
-        client.newScannerBuilder(openTable(TABLE_NAME), basicSchema).build()));
+    assertEquals(3, countRowsInScan(
+        client.newScannerBuilder(openTable(TABLE_NAME), schema).build()));
+    // TODO: should verify the actual returned rows, not just the count!
   }
 
   private void writeCsvFile(File data) throws IOException {
     FileOutputStream fos = new FileOutputStream(data);
-    fos.write("1\t2\t3\tsome string\ttrue\n".getBytes());
-    fos.write("2\t4\t5\tsome more\tfalse\n".getBytes());
-    fos.write("3\twait this is not an int\t7\tbad row\ttrue\n".getBytes());
-    // Test that we can handle floating points, treating them as ints. This is a valid line:
-    fos.write("4\t0.10\t8\twe have a double but that's fine\ttrue\n".getBytes());
-    fos.write("5\t9\t10\ttrailing separator isn't bad mkay?\ttrue\t\n".getBytes());
+    fos.write("1\t3\t2.3\tsome string\ttrue\n".getBytes());
+    fos.write("2\t5\t4.5\tsome more\tfalse\n".getBytes());
+    fos.write("3\t7\twait this is not a double\tbad row\ttrue\n".getBytes());
+    fos.write("4\t9\t10\ttrailing separator isn't bad mkay?\ttrue\t\n".getBytes());
     fos.close();
   }
 }

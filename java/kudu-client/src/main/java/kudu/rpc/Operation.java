@@ -149,6 +149,32 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   }
 
   /**
+   * Add an float for the specified column.
+   * @param columnName Name of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addFloat(String columnName, float val) {
+    ColumnSchema col = this.schema.getColumn(columnName);
+    checkColumn(col, Type.FLOAT);
+    Bytes.setFloat(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
+  }
+
+  /**
+   * Add an double for the specified column.
+   * @param columnName Name of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addDouble(String columnName, double val) {
+    ColumnSchema col = this.schema.getColumn(columnName);
+    checkColumn(col, Type.DOUBLE);
+    Bytes.setDouble(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
+  }
+
+  /**
    * Add a String for the specified column.
    * @param columnName Name of the column
    * @param val value to add

@@ -69,7 +69,7 @@ public final class Bytes {
   /**
    * Reads a boolean from the beginning of the given array.
    * @param b The array to read from.
-   * @return A byte
+   * @return A boolean
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
   public static boolean getBoolean(final byte[] b) {
@@ -565,6 +565,112 @@ public final class Bytes {
   public static byte[] fromUnsignedLong(final BigInteger n) {
     final byte[] b = new byte[8];
     setUnsignedLong(b, n);
+    return b;
+  }
+
+  /**
+   * Reads a little-endian 4-byte float from the beginning of the given array.
+   * @param b The array to read from.
+   * @return a float
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static float getFloat(final byte[] b) {
+    return getFloat(b, 0);
+  }
+
+  /**
+   * Reads a little-endian 4-byte float from an offset in the given array.
+   * @param b The array to read from.
+   * @param offset The offset in the array to start reading from.
+   * @return a float
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static float getFloat(final byte[] b, final int offset) {
+    return Float.intBitsToFloat(getInt(b, offset));
+  }
+
+  /**
+   * Writes a little-endian 4-byte float at the beginning of the given array.
+   * @param b The array to write to.
+   * @param n a float
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setFloat(final byte[] b, final float n) {
+    setFloat(b, n, 0);
+  }
+
+  /**
+   * Writes a little-endian 4-byte float at an offset in the given array.
+   * @param b The array to write to.
+   * @param offset The offset in the array to start writing at.
+   * @param n a float
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setFloat(final byte[] b, final float n, final int offset) {
+    setInt(b, Float.floatToIntBits(n), offset);
+  }
+
+  /**
+   * Creates a new byte array containing a little-endian 4-byte float.
+   * @param n A float
+   * @return A new byte array containing the given value.
+   */
+  public static byte[] fromFloat(float n) {
+    byte[] b = new byte[4];
+    setFloat(b, n);
+    return b;
+  }
+
+  /**
+   * Reads a little-endian 8-byte double from the beginning of the given array.
+   * @param b The array to read from.
+   * @return a double
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static double getDouble(final byte[] b) {
+    return getDouble(b, 0);
+  }
+
+  /**
+   * Reads a little-endian 8-byte double from an offset in the given array.
+   * @param b The array to read from.
+   * @param offset The offset in the array to start reading from.
+   * @return a double
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static double getDouble(final byte[] b, final int offset) {
+    return Double.longBitsToDouble(getLong(b, offset));
+  }
+
+  /**
+   * Writes a little-endian 8-byte double at the beginning of the given array.
+   * @param b The array to write to.
+   * @param n a double
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setDouble(final byte[] b, final double n) {
+    setDouble(b, n, 0);
+  }
+
+  /**
+   * Writes a little-endian 8-byte double at an offset in the given array.
+   * @param b The array to write to.
+   * @param offset The offset in the array to start writing at.
+   * @param n a double
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static void setDouble(final byte[] b, final double n, final int offset) {
+    setLong(b, Double.doubleToLongBits(n), offset);
+  }
+
+  /**
+   * Creates a new byte array containing a little-endian 8-byte double.
+   * @param n A double
+   * @return A new byte array containing the given value.
+   */
+  public static byte[] fromDouble(double n) {
+    byte[] b = new byte[8];
+    setDouble(b, n);
     return b;
   }
 

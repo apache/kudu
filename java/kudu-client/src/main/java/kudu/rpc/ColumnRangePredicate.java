@@ -93,6 +93,24 @@ public class ColumnRangePredicate {
   }
 
   /**
+   * Set a float for the lower bound
+   * @param lowerBound value for the lower bound
+   */
+  public void setLowerBound(float lowerBound) {
+    checkColumn(Type.FLOAT);
+    setLowerBound(Bytes.fromFloat(lowerBound));
+  }
+
+  /**
+   * Set a double for the lower bound
+   * @param lowerBound value for the lower bound
+   */
+  public void setLowerBound(double lowerBound) {
+    checkColumn(Type.DOUBLE);
+    setLowerBound(Bytes.fromDouble(lowerBound));
+  }
+
+  /**
    * Set a boolean for the upper bound
    * @param upperBound value for the upper bound
    */
@@ -144,6 +162,24 @@ public class ColumnRangePredicate {
   public void setUpperBound(String upperBound) {
     checkColumn(Type.STRING);
     setUpperBound(upperBound.getBytes());
+  }
+
+  /**
+   * Set a float for the upper bound
+   * @param upperBound value for the upper bound
+   */
+  public void setUpperBound(float upperBound) {
+    checkColumn(Type.FLOAT);
+    setUpperBound(Bytes.fromFloat(upperBound));
+  }
+
+  /**
+   * Set a double for the upper bound
+   * @param upperBound value for the upper bound
+   */
+  public void setUpperBound(double upperBound) {
+    checkColumn(Type.DOUBLE);
+    setUpperBound(Bytes.fromDouble(upperBound));
   }
 
   /**

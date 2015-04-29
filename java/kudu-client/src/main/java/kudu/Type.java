@@ -18,7 +18,9 @@ public enum Type {
   INT32 (DataType.INT32, "int32"),
   INT64 (DataType.INT64, "int64"),
   STRING (DataType.STRING, "string"),
-  BOOL (DataType.BOOL, "bool");
+  BOOL (DataType.BOOL, "bool"),
+  FLOAT (DataType.FLOAT, "float"),
+  DOUBLE (DataType.DOUBLE, "double");
 
 
   private final DataType dataType;
@@ -80,9 +82,9 @@ public enum Type {
       return 1;
     } else if (type == DataType.INT16) {
       return Shorts.BYTES;
-    } else if (type == DataType.INT32) {
+    } else if (type == DataType.INT32 || type == DataType.FLOAT) {
       return Ints.BYTES;
-    } else if (type == DataType.INT64) {
+    } else if (type == DataType.INT64 || type == DataType.DOUBLE) {
       return Longs.BYTES;
     } else {
       throw new IllegalArgumentException("The provided data type doesn't map" +
@@ -103,6 +105,8 @@ public enum Type {
       case INT16: return INT16;
       case INT32: return INT32;
       case INT64: return INT64;
+      case FLOAT: return FLOAT;
+      case DOUBLE: return DOUBLE;
       default:
         throw new IllegalArgumentException("The provided data type doesn't map" +
             " to know any known one: " + type.getDescriptorForType().getFullName());

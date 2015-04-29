@@ -79,6 +79,10 @@ public class ProtobufHelper {
         return Bytes.fromLong((Long) value);
       case STRING:
         return ((String)value).getBytes(Charset.forName("UTF-8"));
+      case FLOAT:
+        return Bytes.fromFloat((Float)value);
+      case DOUBLE:
+        return Bytes.fromDouble((Double)value);
       default:
         throw new IllegalArgumentException("The column " + col.getName() + " is of type " + col
             .getType() + " which is unknown");
@@ -98,6 +102,10 @@ public class ProtobufHelper {
         return Bytes.getInt(buf);
       case INT64:
         return Bytes.getLong(buf);
+      case FLOAT:
+        return Bytes.getFloat(buf);
+      case DOUBLE:
+        return Bytes.getDouble(buf);
       case STRING:
         return new String(buf, Charset.forName("UTF-8"));
       default:
