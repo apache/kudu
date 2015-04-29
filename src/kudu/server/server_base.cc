@@ -12,6 +12,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/generic_service.h"
@@ -26,10 +27,13 @@
 #include "kudu/server/tracing-path-handlers.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
+#include "kudu/util/jsonwriter.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/rolling_log.h"
 #include "kudu/util/spinlock_profiling.h"
 #include "kudu/util/thread.h"
 
@@ -38,6 +42,7 @@ DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
 DECLARE_bool(use_hybrid_clock);
 
 using std::string;
+using std::stringstream;
 using std::vector;
 
 namespace kudu {
@@ -74,7 +79,8 @@ ServerBase::ServerBase(const string& name,
     rpc_server_(new RpcServer(options.rpc_opts)),
     web_server_(new Webserver(options.webserver_opts)),
     is_first_run_(false),
-    options_(options) {
+    options_(options),
+    stop_metrics_logging_latch_(1) {
   if (FLAGS_use_hybrid_clock) {
     clock_ = new HybridClock();
   } else {
@@ -142,6 +148,9 @@ Status ServerBase::Init() {
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
+
+  RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
+
   return Status::OK();
 }
 
@@ -193,6 +202,58 @@ Status ServerBase::RegisterService(gscoped_ptr<rpc::ServiceIf> rpc_impl) {
   return rpc_server_->RegisterService(rpc_impl.Pass());
 }
 
+Status ServerBase::StartMetricsLogging() {
+  if (options_.metrics_log_interval_ms <= 0) {
+    return Status::OK();
+  }
+
+  return Thread::Create("server", "metrics-logger", &ServerBase::MetricsLoggingThread,
+                        this, &metrics_logging_thread_);
+}
+
+void ServerBase::MetricsLoggingThread() {
+  RollingLog log(Env::Default(), FLAGS_log_dir, "metrics");
+
+  // How long to wait before trying again if we experience a failure
+  // logging metrics.
+  const MonoDelta kWaitBetweenFailures = MonoDelta::FromSeconds(60);
+
+
+  MonoTime next_log = MonoTime::Now(MonoTime::FINE);
+  while (!stop_metrics_logging_latch_.WaitUntil(next_log)) {
+    next_log = MonoTime::Now(MonoTime::FINE);
+    next_log.AddDelta(MonoDelta::FromMilliseconds(options_.metrics_log_interval_ms));
+
+    std::stringstream buf;
+    buf << "metrics " << GetCurrentTimeMicros() << " ";
+
+    // Collect the metrics JSON string.
+    vector<string> metrics;
+    metrics.push_back("*");
+    MetricJsonOptions opts;
+    opts.include_raw_histograms = true;
+
+    JsonWriter writer(&buf, JsonWriter::COMPACT);
+    Status s = metric_registry_->WriteAsJson(&writer, metrics, opts);
+    if (!s.ok()) {
+      WARN_NOT_OK(s, "Unable to collect metrics to log");
+      next_log.AddDelta(kWaitBetweenFailures);
+      continue;
+    }
+
+    buf << "\n";
+
+    s = log.Append(buf.str());
+    if (!s.ok()) {
+      WARN_NOT_OK(s, "Unable to write metrics to log");
+      next_log.AddDelta(kWaitBetweenFailures);
+      continue;
+    }
+  }
+
+  WARN_NOT_OK(log.Close(), "Unable to close metric log");
+}
+
 Status ServerBase::Start() {
   GenerateInstanceID();
 
@@ -216,6 +277,10 @@ Status ServerBase::Start() {
 }
 
 void ServerBase::Shutdown() {
+  if (metrics_logging_thread_) {
+    stop_metrics_logging_latch_.CountDown();
+    metrics_logging_thread_->Join();
+  }
   web_server_->Stop();
   rpc_server_->Shutdown();
 }

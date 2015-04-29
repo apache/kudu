@@ -63,7 +63,8 @@ LogicalClock* LogicalClock::CreateStartingAt(const Timestamp& timestamp) {
 }
 
 uint64_t LogicalClock::NowForMetrics() {
-  return Now().ToUint64();
+  // We don't want reading metrics to change the clock.
+  return NoBarrier_Load(&now_);
 }
 
 

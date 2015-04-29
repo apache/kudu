@@ -23,6 +23,7 @@ class MetricRegistry;
 class NodeInstancePB;
 class RpcServer;
 class Sockaddr;
+class Thread;
 class Webserver;
 
 namespace rpc {
@@ -98,8 +99,13 @@ class ServerBase {
   void GenerateInstanceID();
   Status DumpServerInfo(const std::string& path,
                         const std::string& format) const;
+  Status StartMetricsLogging();
+  void MetricsLoggingThread();
 
   ServerBaseOptions options_;
+
+  scoped_refptr<Thread> metrics_logging_thread_;
+  CountDownLatch stop_metrics_logging_latch_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerBase);
 };

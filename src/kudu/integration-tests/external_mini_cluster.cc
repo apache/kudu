@@ -390,6 +390,12 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Ensure that we only bind to local host in tests.
   argv.push_back("--webserver_interface=localhost");
 
+  // Enable metrics logging.
+  // Even though we set -logtostderr down below, metrics logs end up being written
+  // based on -log_dir. So, we have to set that too.
+  argv.push_back("--metrics_log_interval_ms=1000");
+  argv.push_back("--log_dir=" + data_dir_);
+
   // Then the "extra flags" passed into the ctor (from the ExternalMiniCluster
   // options struct). These come at the end so they can override things like
   // web port or RPC bind address if necessary.

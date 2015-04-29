@@ -29,6 +29,8 @@ struct ServerBaseOptions {
   std::string dump_info_path;
   std::string dump_info_format;
 
+  int32_t metrics_log_interval_ms;
+
  protected:
   ServerBaseOptions();
 };
