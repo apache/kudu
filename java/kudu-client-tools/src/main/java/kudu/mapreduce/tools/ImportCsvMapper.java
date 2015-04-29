@@ -33,7 +33,6 @@ import org.apache.hadoop.mapreduce.Counter;
 import org.apache.hadoop.mapreduce.Mapper;
 
 import java.io.IOException;
-import java.math.BigInteger;
 
 /**
  * Mapper that ingests CSV lines and turns them into Kudu Inserts.
@@ -109,26 +108,14 @@ public class ImportCsvMapper extends Mapper<LongWritable, Text, NullWritable, Op
           case INT8:
             insert.addByte(colName, Byte.parseByte(colValue));
             break;
-          case UINT8:
-            insert.addUnsignedByte(colName, Short.parseShort(colValue));
-            break;
           case INT16:
             insert.addShort(colName, Short.parseShort(colValue));
-            break;
-          case UINT16:
-            insert.addUnsignedShort(colName, Integer.parseInt(colValue));
             break;
           case INT32:
             insert.addInt(colName, Integer.parseInt(colValue));
             break;
-          case UINT32:
-            insert.addUnsignedInt(colName, Integer.parseInt(colValue));
-            break;
           case INT64:
             insert.addLong(colName, Long.parseLong(colValue));
-            break;
-          case UINT64:
-            insert.addUnsignedLong(colName, new BigInteger(colValue));
             break;
           case STRING:
             insert.addString(colName, colValue);

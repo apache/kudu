@@ -74,8 +74,6 @@ import java.util.concurrent.*;
 
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static kudu.rpc.ExternalConsistencyMode.CLIENT_PROPAGATED;
-import static kudu.rpc.KuduScanner.ReadMode.READ_AT_SNAPSHOT;
-import static kudu.rpc.KuduScanner.ReadMode.READ_LATEST;
 
 /**
  * A fully asynchronous, thread-safe, modern Kudu client.

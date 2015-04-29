@@ -304,22 +304,14 @@ public class RowResult {
       buf.append(": {");
       if (isNull(i)) {
         buf.append("NULL");
-      } else if (col.getType().equals(Type.UINT8)) {
-        buf.append(getUnsignedByte(i));
       } else if (col.getType().equals(Type.INT8)) {
         buf.append(getByte(i));
-      } else if (col.getType().equals(Type.UINT16)) {
-        buf.append(getUnsignedShort(i));
       } else if (col.getType().equals(Type.INT16)) {
         buf.append(getShort(i));
-      } else if (col.getType().equals(Type.UINT32)) {
-        buf.append(getUnsignedInt(i));
       } else if (col.getType().equals(Type.INT32)) {
         buf.append(getInt(i));
       } else if (col.getType().equals(Type.INT64)) {
         buf.append(getLong(i));
-      } else if (col.getType().equals(Type.UINT64)) {
-        buf.append(getUnsignedLong(i));
       } else if (col.getType().equals(Type.STRING)) {
         buf.append(getString(i));
       }

@@ -13,13 +13,9 @@ import static kudu.Common.DataType;
  */
 public enum Type {
 
-  UINT8 (DataType.UINT8, "uint8"),
   INT8 (DataType.INT8, "int8"),
-  UINT16 (DataType.UINT16, "uint16"),
   INT16 (DataType.INT16, "int16"),
-  UINT32 (DataType.UINT32, "uint32"),
   INT32 (DataType.INT32, "int32"),
-  UINT64 (DataType.UINT64, "uint64"),
   INT64 (DataType.INT64, "int64"),
   STRING (DataType.STRING, "string"),
   BOOL (DataType.BOOL, "bool");
@@ -80,13 +76,13 @@ public enum Type {
       return 8 + 8; // offset then string length
     } else if (type == DataType.BOOL) {
       return 1;
-    } else if (type == DataType.UINT8 || type == DataType.INT8) {
+    } else if (type == DataType.INT8) {
       return 1;
-    } else if (type == DataType.UINT16 || type == DataType.INT16) {
+    } else if (type == DataType.INT16) {
       return Shorts.BYTES;
-    } else if (type == DataType.UINT32 || type == DataType.INT32) {
+    } else if (type == DataType.INT32) {
       return Ints.BYTES;
-    } else if (type == DataType.UINT64 || type == DataType.INT64) {
+    } else if (type == DataType.INT64) {
       return Longs.BYTES;
     } else {
       throw new IllegalArgumentException("The provided data type doesn't map" +
@@ -104,13 +100,9 @@ public enum Type {
       case STRING: return STRING;
       case BOOL: return BOOL;
       case INT8: return INT8;
-      case UINT8: return UINT8;
       case INT16: return INT16;
-      case UINT16: return UINT16;
       case INT32: return INT32;
-      case UINT32: return UINT32;
       case INT64: return INT64;
-      case UINT64: return UINT64;
       default:
         throw new IllegalArgumentException("The provided data type doesn't map" +
             " to know any known one: " + type.getDescriptorForType().getFullName());

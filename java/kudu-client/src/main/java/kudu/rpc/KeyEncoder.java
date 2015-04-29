@@ -33,15 +33,9 @@ class KeyEncoder {
   void addKey(byte[] bytes, int offset, int size, ColumnSchema column, int columnIndex) {
     assert columnIndex == this.lastIndex + 1 && columnIndex < this.schema.getKeysCount();
     switch (column.getType()) {
-      // Treat boolean value as unsigned int
       case BOOL:
-      case UINT8:
-      case UINT16:
-      case UINT32:
-      case UINT64:
-        for (int i = size - 1; i >= 0; i--) {
-          buf.write(bytes[offset + i]);
-        }
+        assert size == 1;
+        buf.write(bytes[0]);
         break;
       case INT8:
       case INT16:

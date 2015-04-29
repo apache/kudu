@@ -13,7 +13,6 @@ import kudu.tserver.Tserver;
 import kudu.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
-import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -83,58 +82,6 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    * @return Operation's ChangeType
    */
   abstract ChangeType getChangeType();
-
-  /**
-   * Add an unsigned byte for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addUnsignedByte(String columnName, short val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.UINT8);
-    Bytes.setUnsignedByte(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
-  }
-
-  /**
-   * Add an unsigned short for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addUnsignedShort(String columnName, int val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.UINT16);
-    Bytes.setUnsignedShort(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
-  }
-
-  /**
-   * Add an unsigned int for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addUnsignedInt(String columnName, long val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.UINT32);
-    Bytes.setUnsignedInt(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
-  }
-
-  /**
-   * Add an unsigned long for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addUnsignedLong(String columnName, BigInteger val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.UINT64);
-    Bytes.setUnsignedLong(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
-  }
 
   /**
    * Add a boolean for the specified column.

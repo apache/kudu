@@ -10,7 +10,6 @@ import kudu.Common;
 import kudu.Schema;
 import kudu.Type;
 
-import java.math.BigInteger;
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
@@ -72,20 +71,12 @@ public class ProtobufHelper {
         return Bytes.fromBoolean((Boolean) value);
       case INT8:
         return new byte[] { ((Byte)value).byteValue() };
-      case UINT8:
-        return Bytes.fromUnsignedByte((Short) value);
       case INT16:
         return Bytes.fromShort((Short)value);
-      case UINT16:
-        return Bytes.fromUnsignedShort((Integer) value);
       case INT32:
         return Bytes.fromInt((Integer) value);
-      case UINT32:
-        return Bytes.fromUnsignedInt((Long) value);
       case INT64:
         return Bytes.fromLong((Long) value);
-      case UINT64:
-        return Bytes.fromUnsignedLong((BigInteger) value);
       case STRING:
         return ((String)value).getBytes(Charset.forName("UTF-8"));
       default:
@@ -101,20 +92,12 @@ public class ProtobufHelper {
         return Bytes.getBoolean(buf);
       case INT8:
         return Bytes.getByte(buf);
-      case UINT8:
-        return Bytes.getUnsignedByte(buf);
       case INT16:
         return Bytes.getShort(buf);
-      case UINT16:
-        return Bytes.getUnsignedShort(buf);
       case INT32:
         return Bytes.getInt(buf);
-      case UINT32:
-        return Bytes.getUnsignedInt(buf);
       case INT64:
         return Bytes.getLong(buf);
-      case UINT64:
-        return Bytes.getUnsignedLong(buf);
       case STRING:
         return new String(buf, Charset.forName("UTF-8"));
       default:
