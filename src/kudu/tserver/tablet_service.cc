@@ -167,8 +167,8 @@ class ScanResultCollector {
   // Returns number of times HandleRowBlock() was called.
   virtual int BlocksProcessed() const = 0;
 
-  // Returns number of bytes processed.
-  virtual int64_t BytesRead() const = 0;
+  // Returns number of bytes which will be returned in the response.
+  virtual int64_t ResponseSize() const = 0;
 
   // Returns the encoded last row processed.
   virtual const faststring& encoded_last_row() const = 0;
@@ -223,7 +223,7 @@ class ScanResultCopier : public ScanResultCollector {
   virtual int BlocksProcessed() const OVERRIDE { return blocks_processed_; }
 
   // Returns number of bytes buffered to return.
-  virtual int64_t BytesRead() const OVERRIDE {
+  virtual int64_t ResponseSize() const OVERRIDE {
     return rows_data_->size() + indirect_data_->size();
   }
 
@@ -301,8 +301,8 @@ class ScanResultChecksummer : public ScanResultCollector {
 
   virtual int BlocksProcessed() const OVERRIDE { return blocks_processed_; }
 
-  // Returns number of bytes scanned.
-  virtual int64_t BytesRead() const OVERRIDE { return bytes_read_; }
+  // Returns a constant -- we only return checksum based on a time budget.
+  virtual int64_t ResponseSize() const OVERRIDE { return sizeof(agg_checksum_); }
 
   virtual const faststring& encoded_last_row() const OVERRIDE { return encoded_last_row_; }
 
@@ -1230,7 +1230,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
       result_collector->HandleRowBlock(scanner->client_projection_schema(), block);
     }
 
-    int64_t response_size = result_collector->BytesRead();
+    int64_t response_size = result_collector->ResponseSize();
 
     if (VLOG_IS_ON(2)) {
       // This may be fairly expensive if row block size is small
