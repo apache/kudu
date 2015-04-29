@@ -101,12 +101,13 @@ target_link_libraries(kudu_util
   ${CURL_LIBRARIES}
   ${Boost_LIBRARIES}
   crcutil
+  glog
   gutil
   histogram_proto
   pb_util_proto
   protobuf
-  glog
-  rt)
+  rt
+  zlib)
 
 # We use MallocExtension and HeapChecker
 if(${KUDU_TCMALLOC_AVAILABLE})

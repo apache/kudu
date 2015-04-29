@@ -56,6 +56,10 @@ class RollingLog {
   // on system utilities to clean up old logs to maintain some size limit.
   void SetSizeLimitBytes(int64_t bytes);
 
+  // If compression is enabled, log files are compressed.
+  // NOTE: this requires that the passed-in Env instance is the local file system.
+  void SetCompressionEnabled(bool compress);
+
   // Append the given data to the current log file.
   //
   // If appending this data would cross the configured file size limit, a new file
@@ -72,6 +76,9 @@ class RollingLog {
  private:
   std::string GetLogFileName(int sequence) const;
 
+  // Compress the given path, writing a new file '<path>.gz'.
+  Status CompressFile(const std::string& path) const;
+
   Env* const env_;
   const std::string log_dir_;
   const std::string log_name_;
@@ -79,6 +86,7 @@ class RollingLog {
   int64_t size_limit_bytes_;
 
   gscoped_ptr<WritableFile> file_;
+  bool compress_after_close_;
 
   DISALLOW_COPY_AND_ASSIGN(RollingLog);
 };

@@ -11,6 +11,14 @@
     # libev
     ev_*;
 
+    # zlib
+    adler32*;
+    crc32*;
+    get_crc_table;
+    inflate*;
+    zError;
+    zlib*;
+
     extern "C++" {
       # glog, gflags, and protobuf
       *google::*;
