@@ -75,6 +75,7 @@ add_library(kudu_util
   pb_util-internal.cc
   random_util.cc
   resettable_heartbeater.cc
+  rolling_log.cc
   rwc_lock.cc
   semaphore.cc
   slice.cc
@@ -189,6 +190,7 @@ ADD_KUDU_TEST(random-test)
 ADD_KUDU_TEST(random_util-test)
 ADD_KUDU_TEST(resettable_heartbeater-test)
 ADD_KUDU_TEST(rle-test)
+ADD_KUDU_TEST(rolling_log-test)
 ADD_KUDU_TEST(rw_semaphore-test)
 ADD_KUDU_TEST(rwc_lock-test)
 ADD_KUDU_TEST(safe_math-test)
