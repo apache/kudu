@@ -380,7 +380,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       scanner = client.newScannerBuilder(table, querySchema)
           .encodedStartKey(split.getStartKey())
           .encodedEndKey(split.getEndKey())
-          .cacheBlocks(false)
+          .cacheBlocks(cacheBlocks)
           .build();
 
       // Calling this now to set iterator.
