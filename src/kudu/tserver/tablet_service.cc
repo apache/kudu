@@ -241,41 +241,12 @@ class ScanResultCopier : public ScanResultCollector {
   DISALLOW_COPY_AND_ASSIGN(ScanResultCopier);
 };
 
-// Calculates a CRC32C for the given row.
-// Also returns number of bytes read in out param.
-static uint32_t CalcRowCrc32(const Schema& projection, const RowBlockRow& row,
-                             crc::Crc* crc, size_t* bytes_read) {
-  *bytes_read = 0;
-  uint64_t row_crc = 0;
-  for (size_t j = 0; j < projection.num_columns(); j++) {
-    uint32_t col_index = static_cast<uint32_t>(j);  // For the CRC.
-    crc->Compute(&col_index, sizeof(col_index), &row_crc, NULL);
-    ColumnBlockCell cell = row.cell(j);
-    if (cell.is_nullable()) {
-      uint8_t is_defined = cell.is_null() ? 0 : 1;
-      crc->Compute(&is_defined, sizeof(is_defined), &row_crc, NULL);
-      if (!is_defined) continue;
-    }
-    if (cell.type() == STRING) {
-      const Slice* data = reinterpret_cast<const Slice *>(cell.ptr());
-      crc->Compute(data->data(), data->size(), &row_crc, NULL);
-      *bytes_read += data->size();
-    } else {
-      crc->Compute(cell.ptr(), cell.size(), &row_crc, NULL);
-      *bytes_read += cell.size();
-    }
-  }
-
-  return static_cast<uint32_t>(row_crc); // CRC32 only uses the lower 32 bits.
-}
-
 // Checksums the scan result.
 class ScanResultChecksummer : public ScanResultCollector {
  public:
   ScanResultChecksummer()
       : crc_(crc::GetCrc32cInstance()),
         agg_checksum_(0),
-        bytes_read_(0),
         blocks_processed_(0) {
   }
 
@@ -289,11 +260,8 @@ class ScanResultChecksummer : public ScanResultCollector {
     size_t nrows = row_block.nrows();
     for (size_t i = 0; i < nrows; i++) {
       if (!row_block.selection_vector()->IsRowSelected(i)) continue;
-      size_t bytes_read;
-      uint32_t row_crc = CalcRowCrc32(*client_projection_schema, row_block.row(i), crc_,
-                                      &bytes_read);
+      uint32_t row_crc = CalcRowCrc32(*client_projection_schema, row_block.row(i));
       agg_checksum_ += row_crc;
-      bytes_read_ += bytes_read;
     }
     // Find the last selected row and save its encoded key.
     SetLastRow(row_block, &encoded_last_row_);
@@ -311,9 +279,36 @@ class ScanResultChecksummer : public ScanResultCollector {
   uint64_t agg_checksum() const { return agg_checksum_; }
 
  private:
+  // Calculates a CRC32C for the given row.
+  uint32_t CalcRowCrc32(const Schema& projection, const RowBlockRow& row) {
+    tmp_buf_.clear();
+
+    for (size_t j = 0; j < projection.num_columns(); j++) {
+      uint32_t col_index = static_cast<uint32_t>(j);  // For the CRC.
+      tmp_buf_.append(&col_index, sizeof(col_index));
+      ColumnBlockCell cell = row.cell(j);
+      if (cell.is_nullable()) {
+        uint8_t is_defined = cell.is_null() ? 0 : 1;
+        tmp_buf_.append(&is_defined, sizeof(is_defined));
+        if (!is_defined) continue;
+      }
+      if (cell.type() == STRING) {
+        const Slice* data = reinterpret_cast<const Slice *>(cell.ptr());
+        tmp_buf_.append(data->data(), data->size());
+      } else {
+        tmp_buf_.append(cell.ptr(), cell.size());
+      }
+    }
+
+    uint64_t row_crc = 0;
+    crc_->Compute(tmp_buf_.data(), tmp_buf_.size(), &row_crc, NULL);
+    return static_cast<uint32_t>(row_crc); // CRC32 only uses the lower 32 bits.
+  }
+
+
+  faststring tmp_buf_;
   crc::Crc* const crc_;
   uint64_t agg_checksum_;
-  int64_t bytes_read_;
   int blocks_processed_;
   faststring encoded_last_row_;
 
