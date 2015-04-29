@@ -26,6 +26,7 @@ class KUDU_EXPORT KuduEncodedKey {
 
  private:
   friend class KuduEncodedKeyBuilder;
+  friend class KuduScanner;
 
   explicit KuduEncodedKey(EncodedKey* key);
 

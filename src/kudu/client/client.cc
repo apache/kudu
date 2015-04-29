@@ -13,6 +13,7 @@
 #include "kudu/client/batcher.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client_builder-internal.h"
+#include "kudu/client/encoded_key.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/error-internal.h"
 #include "kudu/client/meta_cache.h"
@@ -788,7 +789,12 @@ Status KuduScanner::AddConjunctPredicate(const KuduColumnRangePredicate& pred) {
   return Status::OK();
 }
 
-Status KuduScanner::AddLowerBound(const Slice& key) {
+Status KuduScanner::AddLowerBound(const KuduEncodedKey& key) {
+  return AddLowerBoundRaw(key.key_->encoded_key());
+}
+
+Status KuduScanner::AddLowerBoundRaw(const Slice& key) {
+  // Make a copy of the key.
   gscoped_ptr<EncodedKey> enc_key;
   RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
                   *data_->table_->schema().schema_, &data_->arena_, key, &enc_key));
@@ -796,7 +802,13 @@ Status KuduScanner::AddLowerBound(const Slice& key) {
   data_->pool_.Add(enc_key.release());
   return Status::OK();
 }
-Status KuduScanner::AddUpperBound(const Slice& key) {
+
+Status KuduScanner::AddUpperBound(const KuduEncodedKey& key) {
+  return AddUpperBoundRaw(key.key_->encoded_key());
+}
+
+Status KuduScanner::AddUpperBoundRaw(const Slice& key) {
+  // Make a copy of the key.
   gscoped_ptr<EncodedKey> enc_key;
   RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
                   *data_->table_->schema().schema_, &data_->arena_, key, &enc_key));

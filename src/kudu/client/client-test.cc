@@ -45,10 +45,10 @@ DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(use_hybrid_clock);
 DECLARE_int32(max_clock_sync_error_usec);
-DECLARE_bool(enable_leader_failure_detection);
 DECLARE_int32(max_create_tablets_per_ts);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
+using boost::assign::list_of;
 using std::string;
 using std::set;
 using std::tr1::shared_ptr;
@@ -74,7 +74,7 @@ const uint32_t kNonNullDefault = 12345;
 class ClientTest : public KuduTest {
  public:
   ClientTest()
-    : schema_(boost::assign::list_of
+    : schema_(list_of
               (KuduColumnSchema("key", KuduColumnSchema::UINT32))
               (KuduColumnSchema("int_val", KuduColumnSchema::UINT32))
               (KuduColumnSchema("string_val", KuduColumnSchema::STRING, true))
@@ -1035,11 +1035,22 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   ASSERT_NO_FATAL_FAILURE(ScanTableToStrings(table.get(), &all_rows));
   ASSERT_EQ(100, all_rows.size());
 
+  // Build all encoded keys needed for this test.
+  KuduEncodedKeyBuilder builder(schema_);
+  vector<int32_t> raw_keys = list_of(0x5)(0x8)(0x15)(0x20);
+  unordered_map<int32_t, KuduEncodedKey*> encoded_keys;
+  ValueDeleter encoded_keys_deleter(&encoded_keys);
+  BOOST_FOREACH(int32_t raw_key, raw_keys) {
+    builder.Reset();
+    builder.AddColumnKey(&raw_key);
+    InsertOrDie(&encoded_keys, raw_key, builder.BuildEncodedKey());
+  }
+
   // Test a double-sided range within first tablet
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddLowerBound(Slice("\x00\x00\x00\x05", 4)));
-    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x08", 4)));
+    ASSERT_OK(scanner.AddLowerBound(*FindOrDie(encoded_keys, 0x5)));
+    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x8)));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(0x08 - 0x05 + 1, rows.size());
@@ -1050,8 +1061,8 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   // Test a double-sided range spanning tablets
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddLowerBound(Slice("\x00\x00\x00\x05", 4)));
-    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x15", 4)));
+    ASSERT_OK(scanner.AddLowerBound(*FindOrDie(encoded_keys, 0x5)));
+    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x15)));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(0x15 - 0x05 + 1, rows.size());
@@ -1062,8 +1073,8 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   // Test a double-sided range within second tablet
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddLowerBound(Slice("\x00\x00\x00\x15", 4)));
-    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x20", 4)));
+    ASSERT_OK(scanner.AddLowerBound(*FindOrDie(encoded_keys, 0x15)));
+    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x20)));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(0x20 - 0x15 + 1, rows.size());
@@ -1074,7 +1085,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   // Test a lower-bound only range.
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddLowerBound(Slice("\x00\x00\x00\x05", 4)));
+    ASSERT_OK(scanner.AddLowerBound(*FindOrDie(encoded_keys, 0x5)));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(95, rows.size());
@@ -1085,7 +1096,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   // Test an upper-bound only range in first tablet.
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x05", 4)));
+    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x5)));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(6, rows.size());
@@ -1096,7 +1107,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   // Test an upper-bound only range in second tablet.
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddUpperBound(Slice("\x00\x00\x00\x15", 4)));
+    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x15)));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(0x15 + 1, rows.size());

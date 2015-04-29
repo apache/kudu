@@ -26,6 +26,7 @@ class LinkedListTester;
 
 namespace client {
 
+class KuduEncodedKey;
 class KuduRowResult;
 class KuduSession;
 class KuduTable;
@@ -755,11 +756,23 @@ class KUDU_EXPORT KuduScanner {
 
   // Add a lower bound (inclusive) for the scan.
   // If any bound is already added, this bound is intersected with that one.
-  Status AddLowerBound(const Slice& key);
+  //
+  // The scanner makes a copy of 'key'; the caller may free it afterward.
+  Status AddLowerBound(const KuduEncodedKey& key);
+
+  // Like AddLowerBound(), but the encoded key is an opaque slice of data
+  // obtained elsewhere.
+  Status AddLowerBoundRaw(const Slice& key);
 
   // Add an upper bound (exclusive) for the scan.
   // If any bound is already added, this bound is intersected with that one.
-  Status AddUpperBound(const Slice& key);
+  //
+  // The scanner makes a copy of 'key'; the caller may free it afterward.
+  Status AddUpperBound(const KuduEncodedKey& key);
+
+  // Like AddUpperBound(), but the encoded key is an opaque slice of data
+  // obtained elsewhere.
+  Status AddUpperBoundRaw(const Slice& key);
 
   // Set the block caching policy for this scanner. If true, scanned data blocks will be cached
   // in memory and made available for future scans. Default is true.
