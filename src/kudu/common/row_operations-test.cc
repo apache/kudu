@@ -23,8 +23,8 @@ class RowOperationsTest : public KuduTest {
     SeedRandom();
 
     SchemaBuilder builder;
-    CHECK_OK(builder.AddKeyColumn("key", UINT32));
-    CHECK_OK(builder.AddColumn("int_val", UINT32));
+    CHECK_OK(builder.AddKeyColumn("key", INT32));
+    CHECK_OK(builder.AddColumn("int_val", INT32));
     CHECK_OK(builder.AddNullableColumn("string_val", STRING));
     schema_ = builder.Build();
     schema_without_ids_ = builder.BuildWithoutIds();
@@ -140,7 +140,7 @@ TEST_F(RowOperationsTest, FuzzTest) {
   const int n_iters = AllowSlowTests() ? 10000 : 1000;
 
   KuduPartialRow row(&schema_without_ids_);
-  EXPECT_OK(row.SetUInt32("int_val", 54321));
+  EXPECT_OK(row.SetInt32("int_val", 54321));
   EXPECT_OK(row.SetStringCopy("string_val", "hello world"));
   DoFuzzTest(schema_, row, n_iters);
   EXPECT_OK(row.SetNull("string_val"));
@@ -152,7 +152,7 @@ TEST_F(RowOperationsTest, FuzzTest) {
 void AddFuzzedColumn(SchemaBuilder* builder,
                      const string& name,
                      DataType default_type) {
-  DataType rand_types[] = {UINT32, UINT64, DOUBLE, STRING};
+  DataType rand_types[] = {INT32, INT64, DOUBLE, STRING};
   DataType t = default_type;
   if (random() % 3 == 0) {
     t = rand_types[random() % arraysize(rand_types)];
@@ -168,10 +168,10 @@ void AddFuzzedColumn(SchemaBuilder* builder,
 Schema GenRandomSchema(bool with_ids) {
   SchemaBuilder builder;
   if (random() % 5 != 0) {
-    AddFuzzedColumn(&builder, "c1", UINT32);
+    AddFuzzedColumn(&builder, "c1", INT32);
   }
   if (random() % 5 != 0) {
-    AddFuzzedColumn(&builder, "c2", UINT32);
+    AddFuzzedColumn(&builder, "c2", INT32);
   }
   if (random() % 5 != 0 || !builder.is_valid()) {
     AddFuzzedColumn(&builder, "c3", STRING);
@@ -230,11 +230,11 @@ TEST_F(RowOperationsTest, SchemaFuzz) {
         continue;
       }
       switch (client_schema.column(i).type_info()->type()) {
-        case UINT32:
-          CHECK_OK(row.SetUInt32(i, 12345));
+        case INT32:
+          CHECK_OK(row.SetInt32(i, 12345));
           break;
-        case UINT64:
-          CHECK_OK(row.SetUInt64(i, 12345678));
+        case INT64:
+          CHECK_OK(row.SetInt64(i, 12345678));
           break;
         case DOUBLE:
           CHECK_OK(row.SetDouble(i, 1234.5678));
@@ -256,15 +256,15 @@ TEST_F(RowOperationsTest, SchemaFuzz) {
 // One case from SchemaFuzz which failed previously.
 TEST_F(RowOperationsTest, TestFuzz1) {
   SchemaBuilder client_schema_builder;
-  client_schema_builder.AddColumn("c1", UINT32, false, NULL, NULL);
+  client_schema_builder.AddColumn("c1", INT32, false, NULL, NULL);
   client_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
   Schema client_schema = client_schema_builder.BuildWithoutIds();
   SchemaBuilder server_schema_builder;
-  server_schema_builder.AddColumn("c1", UINT32, false, NULL, NULL);
+  server_schema_builder.AddColumn("c1", INT32, false, NULL, NULL);
   server_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
   Schema server_schema = server_schema_builder.Build();
   KuduPartialRow row(&client_schema);
-  CHECK_OK(row.SetUInt32(0, 12345));
+  CHECK_OK(row.SetInt32(0, 12345));
   CHECK_OK(row.SetStringCopy(1, "hello"));
   DoFuzzTest(server_schema, row, 100);
 }
@@ -315,27 +315,27 @@ string TestProjection(RowOperationsPB::Type type,
 // the table schema.
 TEST_F(RowOperationsTest, ProjectionTestWholeSchemaSpecified) {
   Schema client_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
-                       (ColumnSchema("int_val", UINT32))
+                       (ColumnSchema("key", INT32))
+                       (ColumnSchema("int_val", INT32))
                        (ColumnSchema("string_val", STRING, true)),
                        1);
 
   // Test a row missing 'int_val', which is required.
   {
     KuduPartialRow client_row(&client_schema);
-    CHECK_OK(client_row.SetUInt32("key", 12345));
+    CHECK_OK(client_row.SetInt32("key", 12345));
     EXPECT_EQ("error: Invalid argument: No value provided for required column: "
-              "int_val[uint32 NOT NULL]",
+              "int_val[int32 NOT NULL]",
               TestProjection(RowOperationsPB::INSERT, client_row, schema_));
   }
 
   // Test a row missing 'string_val', which is nullable
   {
     KuduPartialRow client_row(&client_schema);
-    CHECK_OK(client_row.SetUInt32("key", 12345));
-             CHECK_OK(client_row.SetUInt32("int_val", 54321));
+    CHECK_OK(client_row.SetInt32("key", 12345));
+    CHECK_OK(client_row.SetInt32("int_val", 54321));
     // The NULL should get filled in.
-    EXPECT_EQ("INSERT (uint32 key=12345, uint32 int_val=54321, string string_val=NULL)",
+    EXPECT_EQ("INSERT (int32 key=12345, int32 int_val=54321, string string_val=NULL)",
               TestProjection(RowOperationsPB::INSERT, client_row, schema_));
   }
 
@@ -343,29 +343,29 @@ TEST_F(RowOperationsTest, ProjectionTestWholeSchemaSpecified) {
   // specified to be NULL and non-NULL.
   {
     KuduPartialRow client_row(&client_schema);
-    CHECK_OK(client_row.SetUInt32("key", 12345));
-    CHECK_OK(client_row.SetUInt32("int_val", 54321));
+    CHECK_OK(client_row.SetInt32("key", 12345));
+    CHECK_OK(client_row.SetInt32("int_val", 54321));
     CHECK_OK(client_row.SetStringCopy("string_val", "hello world"));
-    EXPECT_EQ("INSERT (uint32 key=12345, uint32 int_val=54321, string string_val=hello world)",
+    EXPECT_EQ("INSERT (int32 key=12345, int32 int_val=54321, string string_val=hello world)",
               TestProjection(RowOperationsPB::INSERT, client_row, schema_));
 
     // The first result should have the field specified.
     // The second result should have the field NULL, since it was explicitly set.
     CHECK_OK(client_row.SetNull("string_val"));
-    EXPECT_EQ("INSERT (uint32 key=12345, uint32 int_val=54321, string string_val=NULL)",
+    EXPECT_EQ("INSERT (int32 key=12345, int32 int_val=54321, string string_val=NULL)",
               TestProjection(RowOperationsPB::INSERT, client_row, schema_));
 
   }
 }
 
 TEST_F(RowOperationsTest, ProjectionTestWithDefaults) {
-  uint32_t nullable_default = 123;
-  uint32_t non_null_default = 456;
+  int32_t nullable_default = 123;
+  int32_t non_null_default = 456;
   SchemaBuilder b;
-  CHECK_OK(b.AddKeyColumn("key", UINT32));
-  CHECK_OK(b.AddColumn("nullable_with_default", UINT32, true,
+  CHECK_OK(b.AddKeyColumn("key", INT32));
+  CHECK_OK(b.AddColumn("nullable_with_default", INT32, true,
                        &nullable_default, &nullable_default));
-  CHECK_OK(b.AddColumn("non_null_with_default", UINT32, false,
+  CHECK_OK(b.AddColumn("non_null_with_default", INT32, false,
                        &non_null_default, &non_null_default));
   Schema server_schema = b.Build();
 
@@ -373,28 +373,28 @@ TEST_F(RowOperationsTest, ProjectionTestWithDefaults) {
   // TODO: evaluate whether this should be true - how "dumb" should clients be?
   Schema client_schema(
     boost::assign::list_of
-    (ColumnSchema("key", UINT32))
-    (ColumnSchema("nullable_with_default", UINT32, true))
-    (ColumnSchema("non_null_with_default", UINT32, false)),
+    (ColumnSchema("key", INT32))
+    (ColumnSchema("nullable_with_default", INT32, true))
+    (ColumnSchema("non_null_with_default", INT32, false)),
     1);
 
   // Specify just the key. The other two columns have defaults, so they'll get filled in.
   {
     KuduPartialRow client_row(&client_schema);
-    CHECK_OK(client_row.SetUInt32("key", 12345));
-    EXPECT_EQ("INSERT (uint32 key=12345, uint32 nullable_with_default=123,"
-              " uint32 non_null_with_default=456)",
+    CHECK_OK(client_row.SetInt32("key", 12345));
+    EXPECT_EQ("INSERT (int32 key=12345, int32 nullable_with_default=123,"
+              " int32 non_null_with_default=456)",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
 
   // Specify the key and override both defaults
   {
     KuduPartialRow client_row(&client_schema);
-    CHECK_OK(client_row.SetUInt32("key", 12345));
-    CHECK_OK(client_row.SetUInt32("nullable_with_default", 12345));
-    CHECK_OK(client_row.SetUInt32("non_null_with_default", 54321));
-    EXPECT_EQ("INSERT (uint32 key=12345, uint32 nullable_with_default=12345,"
-              " uint32 non_null_with_default=54321)",
+    CHECK_OK(client_row.SetInt32("key", 12345));
+    CHECK_OK(client_row.SetInt32("nullable_with_default", 12345));
+    CHECK_OK(client_row.SetInt32("non_null_with_default", 54321));
+    EXPECT_EQ("INSERT (int32 key=12345, int32 nullable_with_default=12345,"
+              " int32 non_null_with_default=54321)",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
 
@@ -402,11 +402,11 @@ TEST_F(RowOperationsTest, ProjectionTestWithDefaults) {
   // one to NULL.
   {
     KuduPartialRow client_row(&client_schema);
-    CHECK_OK(client_row.SetUInt32("key", 12345));
+    CHECK_OK(client_row.SetInt32("key", 12345));
     CHECK_OK(client_row.SetNull("nullable_with_default"));
-    CHECK_OK(client_row.SetUInt32("non_null_with_default", 54321));
-    EXPECT_EQ("INSERT (uint32 key=12345, uint32 nullable_with_default=NULL,"
-              " uint32 non_null_with_default=54321)",
+    CHECK_OK(client_row.SetInt32("non_null_with_default", 54321));
+    EXPECT_EQ("INSERT (int32 key=12345, int32 nullable_with_default=NULL,"
+              " int32 non_null_with_default=54321)",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
 }
@@ -415,26 +415,26 @@ TEST_F(RowOperationsTest, ProjectionTestWithDefaults) {
 // of the table, but where the missing columns have defaults
 // or are NULLable.
 TEST_F(RowOperationsTest, ProjectionTestWithClientHavingValidSubset) {
-  uint32_t nullable_default = 123;
+  int32_t nullable_default = 123;
   SchemaBuilder b;
-  CHECK_OK(b.AddKeyColumn("key", UINT32));
-  CHECK_OK(b.AddColumn("int_val", UINT32));
-  CHECK_OK(b.AddColumn("new_int_with_default", UINT32, false,
+  CHECK_OK(b.AddKeyColumn("key", INT32));
+  CHECK_OK(b.AddColumn("int_val", INT32));
+  CHECK_OK(b.AddColumn("new_int_with_default", INT32, false,
                        &nullable_default, &nullable_default));
-  CHECK_OK(b.AddNullableColumn("new_nullable_int", UINT32));
+  CHECK_OK(b.AddNullableColumn("new_nullable_int", INT32));
   Schema server_schema = b.Build();
 
   Schema client_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
-                       (ColumnSchema("int_val", UINT32)),
+                       (ColumnSchema("key", INT32))
+                       (ColumnSchema("int_val", INT32)),
                        1);
 
   // Specify just the key. This is an error because we're missing int_val.
   {
     KuduPartialRow client_row(&client_schema);
-    CHECK_OK(client_row.SetUInt32("key", 12345));
+    CHECK_OK(client_row.SetInt32("key", 12345));
     EXPECT_EQ("error: Invalid argument: No value provided for required column:"
-              " int_val[uint32 NOT NULL]",
+              " int_val[int32 NOT NULL]",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
 
@@ -442,10 +442,10 @@ TEST_F(RowOperationsTest, ProjectionTestWithClientHavingValidSubset) {
   // Defaults should be filled for the other two.
   {
     KuduPartialRow client_row(&client_schema);
-    CHECK_OK(client_row.SetUInt32("key", 12345));
-    CHECK_OK(client_row.SetUInt32("int_val", 12345));
-    EXPECT_EQ("INSERT (uint32 key=12345, uint32 int_val=12345,"
-              " uint32 new_int_with_default=123, uint32 new_nullable_int=NULL)",
+    CHECK_OK(client_row.SetInt32("key", 12345));
+    CHECK_OK(client_row.SetInt32("int_val", 12345));
+    EXPECT_EQ("INSERT (int32 key=12345, int32 int_val=12345,"
+              " int32 new_int_with_default=123, int32 new_nullable_int=NULL)",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
 }
@@ -454,8 +454,8 @@ TEST_F(RowOperationsTest, ProjectionTestWithClientHavingValidSubset) {
 // and has no default. This is an incompatible client.
 TEST_F(RowOperationsTest, ProjectionTestWithClientHavingInvalidSubset) {
   SchemaBuilder b;
-  CHECK_OK(b.AddKeyColumn("key", UINT32));
-  CHECK_OK(b.AddColumn("int_val", UINT32));
+  CHECK_OK(b.AddKeyColumn("key", INT32));
+  CHECK_OK(b.AddColumn("int_val", INT32));
   Schema server_schema = b.Build();
 
   CHECK_OK(b.RemoveColumn("int_val"));
@@ -463,9 +463,9 @@ TEST_F(RowOperationsTest, ProjectionTestWithClientHavingInvalidSubset) {
 
   {
     KuduPartialRow client_row(&client_schema);
-    CHECK_OK(client_row.SetUInt32("key", 12345));
+    CHECK_OK(client_row.SetInt32("key", 12345));
     EXPECT_EQ("error: Invalid argument: Client missing required column:"
-              " int_val[uint32 NOT NULL]",
+              " int_val[int32 NOT NULL]",
               TestProjection(RowOperationsPB::INSERT, client_row, server_schema));
   }
 }
@@ -473,36 +473,36 @@ TEST_F(RowOperationsTest, ProjectionTestWithClientHavingInvalidSubset) {
 // Simple Update case where the client and server schemas match.
 TEST_F(RowOperationsTest, TestProjectUpdates) {
   Schema client_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
-                       (ColumnSchema("int_val", UINT32))
+                       (ColumnSchema("key", INT32))
+                       (ColumnSchema("int_val", INT32))
                        (ColumnSchema("string_val", STRING, true)),
                        1);
   Schema server_schema = SchemaBuilder(client_schema).Build();
 
   // Check without specifying any columns
   KuduPartialRow client_row(&client_schema);
-  EXPECT_EQ("error: Invalid argument: No value provided for key column: key[uint32 NOT NULL]",
+  EXPECT_EQ("error: Invalid argument: No value provided for key column: key[int32 NOT NULL]",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
   // Specify the key and no columns to update
-  ASSERT_OK(client_row.SetUInt32("key", 12345));
-  EXPECT_EQ("error: Invalid argument: No fields updated, key is: (uint32 key=12345)",
+  ASSERT_OK(client_row.SetInt32("key", 12345));
+  EXPECT_EQ("error: Invalid argument: No fields updated, key is: (int32 key=12345)",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
 
   // Specify the key and update one column.
-  ASSERT_OK(client_row.SetUInt32("int_val", 12345));
-  EXPECT_EQ("MUTATE (uint32 key=12345) SET int_val=12345",
+  ASSERT_OK(client_row.SetInt32("int_val", 12345));
+  EXPECT_EQ("MUTATE (int32 key=12345) SET int_val=12345",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
   // Specify the key and update both columns
   ASSERT_OK(client_row.SetString("string_val", "foo"));
-  EXPECT_EQ("MUTATE (uint32 key=12345) SET int_val=12345, string_val=foo",
+  EXPECT_EQ("MUTATE (int32 key=12345) SET int_val=12345, string_val=foo",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 
   // Update the nullable column to null.
   ASSERT_OK(client_row.SetNull("string_val"));
-  EXPECT_EQ("MUTATE (uint32 key=12345) SET int_val=12345, string_val=NULL",
+  EXPECT_EQ("MUTATE (int32 key=12345) SET int_val=12345, string_val=NULL",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 }
 
@@ -510,21 +510,21 @@ TEST_F(RowOperationsTest, TestProjectUpdates) {
 // sure the name-based projection is functioning.
 TEST_F(RowOperationsTest, TestProjectUpdatesReorderedColumns) {
   Schema client_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
+                       (ColumnSchema("key", INT32))
                        (ColumnSchema("string_val", STRING, true))
-                       (ColumnSchema("int_val", UINT32)),
+                       (ColumnSchema("int_val", INT32)),
                        1);
   Schema server_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
-                       (ColumnSchema("int_val", UINT32))
+                       (ColumnSchema("key", INT32))
+                       (ColumnSchema("int_val", INT32))
                        (ColumnSchema("string_val", STRING, true)),
                        1);
   server_schema = SchemaBuilder(server_schema).Build();
 
   KuduPartialRow client_row(&client_schema);
-  ASSERT_OK(client_row.SetUInt32("key", 12345));
-  ASSERT_OK(client_row.SetUInt32("int_val", 54321));
-  EXPECT_EQ("MUTATE (uint32 key=12345) SET int_val=54321",
+  ASSERT_OK(client_row.SetInt32("key", 12345));
+  ASSERT_OK(client_row.SetInt32("int_val", 54321));
+  EXPECT_EQ("MUTATE (int32 key=12345) SET int_val=54321",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 }
 
@@ -532,63 +532,63 @@ TEST_F(RowOperationsTest, TestProjectUpdatesReorderedColumns) {
 // This is OK on an update.
 TEST_F(RowOperationsTest, DISABLED_TestProjectUpdatesSubsetOfColumns) {
   Schema client_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
+                       (ColumnSchema("key", INT32))
                        (ColumnSchema("string_val", STRING, true)),
                        1);
   Schema server_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
-                       (ColumnSchema("int_val", UINT32))
+                       (ColumnSchema("key", INT32))
+                       (ColumnSchema("int_val", INT32))
                        (ColumnSchema("string_val", STRING, true)),
                        1);
   server_schema = SchemaBuilder(server_schema).Build();
 
   KuduPartialRow client_row(&client_schema);
-  ASSERT_OK(client_row.SetUInt32("key", 12345));
+  ASSERT_OK(client_row.SetInt32("key", 12345));
   ASSERT_OK(client_row.SetString("string_val", "foo"));
-  EXPECT_EQ("MUTATE (uint32 key=12345) SET string_val=foo",
+  EXPECT_EQ("MUTATE (int32 key=12345) SET string_val=foo",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 }
 
 TEST_F(RowOperationsTest, TestClientMismatchedType) {
   Schema client_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
-                       (ColumnSchema("int_val", UINT8)),
+                       (ColumnSchema("key", INT32))
+                       (ColumnSchema("int_val", INT8)),
                        1);
   Schema server_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
-                       (ColumnSchema("int_val", UINT32)),
+                       (ColumnSchema("key", INT32))
+                       (ColumnSchema("int_val", INT32)),
                        1);
   server_schema = SchemaBuilder(server_schema).Build();
 
   KuduPartialRow client_row(&client_schema);
-  ASSERT_OK(client_row.SetUInt32("key", 12345));
-  ASSERT_OK(client_row.SetUInt8("int_val", 1));
+  ASSERT_OK(client_row.SetInt32("key", 12345));
+  ASSERT_OK(client_row.SetInt8("int_val", 1));
   EXPECT_EQ("error: Invalid argument: The column 'int_val' must have type "
-            "uint32 NOT NULL found uint8 NOT NULL",
+            "int32 NOT NULL found int8 NOT NULL",
             TestProjection(RowOperationsPB::UPDATE, client_row, server_schema));
 }
 
 TEST_F(RowOperationsTest, TestProjectDeletes) {
   Schema client_schema(boost::assign::list_of
-                       (ColumnSchema("key", UINT32))
-                       (ColumnSchema("key_2", UINT32))
+                       (ColumnSchema("key", INT32))
+                       (ColumnSchema("key_2", INT32))
                        (ColumnSchema("string_val", STRING, true)),
                        2);
   Schema server_schema = SchemaBuilder(client_schema).Build();
 
   KuduPartialRow client_row(&client_schema);
   // No columns set
-  EXPECT_EQ("error: Invalid argument: No value provided for key column: key[uint32 NOT NULL]",
+  EXPECT_EQ("error: Invalid argument: No value provided for key column: key[int32 NOT NULL]",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Only half the key set
-  ASSERT_OK(client_row.SetUInt32("key", 12345));
-  EXPECT_EQ("error: Invalid argument: No value provided for key column: key_2[uint32 NOT NULL]",
+  ASSERT_OK(client_row.SetInt32("key", 12345));
+  EXPECT_EQ("error: Invalid argument: No value provided for key column: key_2[int32 NOT NULL]",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Whole key set (correct)
-  ASSERT_OK(client_row.SetUInt32("key_2", 54321));
-  EXPECT_EQ("MUTATE (uint32 key=12345, uint32 key_2=54321) DELETE",
+  ASSERT_OK(client_row.SetInt32("key_2", 54321));
+  EXPECT_EQ("MUTATE (int32 key=12345, int32 key_2=54321) DELETE",
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 
   // Extra column set (incorrect)

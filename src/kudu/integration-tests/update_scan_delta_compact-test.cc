@@ -50,7 +50,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
   UpdateScanDeltaCompactionTest()
       :
       schema_(list_of
-             (KuduColumnSchema("key", KuduColumnSchema::UINT64))
+             (KuduColumnSchema("key", KuduColumnSchema::INT64))
              (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
              (KuduColumnSchema("int64", KuduColumnSchema::INT64)), 1) {
   }
@@ -114,11 +114,11 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
 
   // Sets the passed values on the row.
   // TODO randomize the string column.
-  void MakeRow(uint64_t key, uint64_t val, KuduPartialRow* row) const;
+  void MakeRow(int64_t key, int64_t val, KuduPartialRow* row) const;
 
   // If 'key' is a multiple of kSessionBatchSize, it uses 'last_s' to wait for the previous batch
   // to finish and then flushes the current one.
-  Status WaitForLastBatchAndFlush(uint64_t key,
+  Status WaitForLastBatchAndFlush(int64_t key,
                                   Synchronizer* last_s,
                                   shared_ptr<KuduSession> session);
 
@@ -155,7 +155,7 @@ void UpdateScanDeltaCompactionTest::InsertBaseData() {
   last_s.StatusCB(Status::OK());
 
   LOG_TIMING(INFO, "Insert") {
-    for (uint64_t key = 0; key < FLAGS_row_count; key++) {
+    for (int64_t key = 0; key < FLAGS_row_count; key++) {
       gscoped_ptr<KuduInsert> insert = table_->NewInsert();
       MakeRow(key, 0, insert->mutable_row());
       ASSERT_OK(session->Apply(insert.Pass()));
@@ -193,10 +193,10 @@ void UpdateScanDeltaCompactionTest::UpdateRows(CountDownLatch* stop_latch) {
   shared_ptr<KuduSession> session = CreateSession();
   Synchronizer last_s;
 
-  for (uint64_t iteration = 1; stop_latch->count() > 0; iteration++) {
+  for (int64_t iteration = 1; stop_latch->count() > 0; iteration++) {
     last_s.StatusCB(Status::OK());
     LOG_TIMING(INFO, "Update") {
-      for (uint64_t key = 0; key < FLAGS_row_count && stop_latch->count() > 0; key++) {
+      for (int64_t key = 0; key < FLAGS_row_count && stop_latch->count() > 0; key++) {
         gscoped_ptr<KuduUpdate> update = table_->NewUpdate();
         MakeRow(key, iteration, update->mutable_row());
         CHECK_OK(session->Apply(update.Pass()));
@@ -223,17 +223,17 @@ void UpdateScanDeltaCompactionTest::ScanRows(CountDownLatch* stop_latch) const {
   }
 }
 
-void UpdateScanDeltaCompactionTest::MakeRow(uint64_t key,
-                                            uint64_t val,
+void UpdateScanDeltaCompactionTest::MakeRow(int64_t key,
+                                            int64_t val,
                                             KuduPartialRow* row) const {
-  CHECK_OK(row->SetUInt64(kKeyCol, key));
+  CHECK_OK(row->SetInt64(kKeyCol, key));
   CHECK_OK(row->SetStringCopy(kStrCol, "TODO random string"));
   CHECK_OK(row->SetInt64(kInt64Col, val));
 }
 
-Status UpdateScanDeltaCompactionTest::WaitForLastBatchAndFlush(uint64_t key,
-                                                             Synchronizer* last_s,
-                                                             shared_ptr<KuduSession> session) {
+Status UpdateScanDeltaCompactionTest::WaitForLastBatchAndFlush(int64_t key,
+                                                               Synchronizer* last_s,
+                                                               shared_ptr<KuduSession> session) {
   if (key % kSessionBatchSize == 0) {
     RETURN_NOT_OK(last_s->Wait());
     last_s->Reset();

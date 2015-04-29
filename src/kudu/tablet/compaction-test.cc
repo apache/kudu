@@ -55,15 +55,15 @@ class TestCompaction : public KuduRowSetTest {
   static Schema CreateSchema() {
     SchemaBuilder builder;
     CHECK_OK(builder.AddKeyColumn("key", STRING));
-    CHECK_OK(builder.AddColumn("val", UINT32));
-    CHECK_OK(builder.AddNullableColumn("nullable_val", UINT32));
+    CHECK_OK(builder.AddColumn("val", INT32));
+    CHECK_OK(builder.AddNullableColumn("nullable_val", INT32));
     return builder.BuildWithoutIds();
   }
 
   // Insert n_rows rows of data.
   // Each row is the tuple: (string key=hello <n*10 + delta>, val=<n>)
   void InsertRows(MemRowSet *mrs, int n_rows, int delta) {
-    for (uint32_t i = 0; i < n_rows; i++) {
+    for (int32_t i = 0; i < n_rows; i++) {
       InsertRow(mrs, i * 10 + delta, i);
     }
   }
@@ -71,14 +71,14 @@ class TestCompaction : public KuduRowSetTest {
   // Inserts a row.
   // The 'nullable_val' column is set to either NULL (when val is odd)
   // or 'val' (when val is even).
-  void InsertRow(MemRowSet *mrs, int row_key, uint32_t val) {
+  void InsertRow(MemRowSet *mrs, int row_key, int32_t val) {
     ScopedTransaction tx(&mvcc_);
     row_builder_.Reset();
     snprintf(key_buf_, sizeof(key_buf_), kRowKeyFormat, row_key);
     row_builder_.AddString(Slice(key_buf_));
-    row_builder_.AddUint32(val);
+    row_builder_.AddInt32(val);
     if (val % 2 == 0) {
-      row_builder_.AddUint32(val);
+      row_builder_.AddInt32(val);
     } else {
       row_builder_.AddNull();
     }
@@ -102,7 +102,7 @@ class TestCompaction : public KuduRowSetTest {
   // If 'val' is even, 'nullable_val' is set to NULL. Otherwise, set to 'val'.
   // Note that this is the opposite of InsertRow() above, so that the updates
   // flop NULL to non-NULL and vice versa.
-  void UpdateRows(RowSet *rowset, int n_rows, int delta, uint32_t new_val) {
+  void UpdateRows(RowSet *rowset, int n_rows, int delta, int32_t new_val) {
     char keybuf[256];
     faststring update_buf;
     const Schema& schema = rowset->schema();
@@ -409,11 +409,11 @@ TEST_F(TestCompaction, TestMemRowSetInput) {
   gscoped_ptr<CompactionInput> input(CompactionInput::Create(*mrs, &schema_, snap));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
-  ASSERT_EQ("(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
+  ASSERT_EQ("(string key=hello 00000000, int32 val=0, int32 nullable_val=0) "
       "Undos: [@1(DELETE)] "
       "Redos: [@11(SET val=1, nullable_val=1), @21(SET val=2, nullable_val=NULL)]",
             out[0]);
-  ASSERT_EQ("(string key=hello 00000090, uint32 val=9, uint32 nullable_val=NULL) "
+  ASSERT_EQ("(string key=hello 00000090, int32 val=9, int32 nullable_val=NULL) "
       "Undos: [@10(DELETE)] "
       "Redos: [@20(SET val=1, nullable_val=1), @30(SET val=2, nullable_val=NULL)]",
             out[9]);
@@ -432,16 +432,16 @@ TEST_F(TestCompaction, TestFlushMRSWithRolling) {
   vector<string> rows;
   rows.reserve(30000 / 2);
   rowsets[0]->DebugDump(&rows);
-  EXPECT_EQ("(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
+  EXPECT_EQ("(string key=hello 00000000, int32 val=0, int32 nullable_val=0) "
             "Undos: [@1(DELETE)] Redos: []",
             rows[0]);
 
   rows.clear();
   rowsets[1]->DebugDump(&rows);
-  EXPECT_EQ("(string key=hello 00154700, uint32 val=15470, uint32 nullable_val=15470) "
+  EXPECT_EQ("(string key=hello 00154700, int32 val=15470, int32 nullable_val=15470) "
             "Undos: [@15471(DELETE)] Redos: []",
             rows[0]);
-  EXPECT_EQ("(string key=hello 00154710, uint32 val=15471, uint32 nullable_val=NULL) "
+  EXPECT_EQ("(string key=hello 00154710, int32 val=15471, int32 nullable_val=NULL) "
             "Undos: [@15472(DELETE)] Redos: []",
             rows[1]);
 }
@@ -470,7 +470,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
   ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(10, out.size());
-  EXPECT_EQ("(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
+  EXPECT_EQ("(string key=hello 00000000, int32 val=0, int32 nullable_val=0) "
             "Undos: [@1(DELETE)] "
             "Redos: ["
             "@11(SET val=1, nullable_val=1), "
@@ -478,7 +478,7 @@ TEST_F(TestCompaction, TestRowSetInput) {
             "@31(SET val=3, nullable_val=3), "
             "@41(SET val=4, nullable_val=NULL)]",
             out[0]);
-  EXPECT_EQ("(string key=hello 00000090, uint32 val=9, uint32 nullable_val=NULL) "
+  EXPECT_EQ("(string key=hello 00000090, int32 val=9, int32 nullable_val=NULL) "
             "Undos: [@10(DELETE)] "
             "Redos: ["
             "@20(SET val=1, nullable_val=1), "
@@ -542,10 +542,10 @@ TEST_F(TestCompaction, TestDuplicatedGhostRowsDontSurviveCompaction) {
   vector<string> out;
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 10);
-  EXPECT_EQ("(string key=hello 00000000, uint32 val=2, uint32 nullable_val=NULL) "
+  EXPECT_EQ("(string key=hello 00000000, int32 val=2, int32 nullable_val=NULL) "
       "Undos: [@61(SET val=0, nullable_val=0), @51(DELETE)] "
       "Redos: []", out[0]);
-  EXPECT_EQ("(string key=hello 00000090, uint32 val=2, uint32 nullable_val=NULL) "
+  EXPECT_EQ("(string key=hello 00000090, int32 val=2, int32 nullable_val=NULL) "
       "Undos: [@70(SET val=9, nullable_val=NULL), @60(DELETE)] "
       "Redos: []", out[9]);
 }
@@ -588,7 +588,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   ASSERT_OK(CompactionInput::Create(*rs, &schema_, MvccSnapshot(mvcc_), &input));
   IterateInput(input.get(), &out);
   ASSERT_EQ(1000, out.size());
-  EXPECT_EQ("(string key=hello 00000000, uint32 val=1, uint32 nullable_val=1) "
+  EXPECT_EQ("(string key=hello 00000000, int32 val=1, int32 nullable_val=1) "
       "Undos: [@1001(SET val=0, nullable_val=0), @1(DELETE)] "
       "Redos: [@2001(SET val=2, nullable_val=NULL), "
               "@3001(SET val=3, nullable_val=3)]", out[0]);
@@ -658,8 +658,8 @@ TEST_F(TestCompaction, TestMergeMultipleSchemas) {
   schemas.push_back(schema_);
 
   // Add an int column with default
-  uint32_t default_c2 = 10;
-  CHECK_OK(builder.AddColumn("c2", UINT32, false, &default_c2, &default_c2));
+  int32_t default_c2 = 10;
+  CHECK_OK(builder.AddColumn("c2", INT32, false, &default_c2, &default_c2));
   schemas.push_back(builder.Build());
 
   // add a string column with default
@@ -691,9 +691,9 @@ TEST_F(TestCompaction, TestMergeMRS) {
   vector<string> out;
   IterateInput(input.get(), &out);
   ASSERT_EQ(out.size(), 20);
-  EXPECT_EQ("(string key=hello 00000000, uint32 val=0, uint32 nullable_val=0) "
+  EXPECT_EQ("(string key=hello 00000000, int32 val=0, int32 nullable_val=0) "
             "Undos: [@1(DELETE)] Redos: []", out[0]);
-  EXPECT_EQ("(string key=hello 00000091, uint32 val=9, uint32 nullable_val=NULL) "
+  EXPECT_EQ("(string key=hello 00000091, int32 val=9, int32 nullable_val=NULL) "
             "Undos: [@20(DELETE)] Redos: []", out[19]);
 }
 
@@ -744,7 +744,7 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
       for (int j = 0; j < 10; j++) {
         int val = (i * 10) + j;
         ASSERT_OK(row.SetStringCopy("key", strings::Substitute("hello $0", val)));
-        ASSERT_OK(row.SetUInt32("val", val));
+        ASSERT_OK(row.SetInt32("val", val));
         ASSERT_OK(writer.Insert(row));
       }
       ASSERT_OK(tablet()->Flush());

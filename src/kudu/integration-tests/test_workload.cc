@@ -85,8 +85,8 @@ void TestWorkload::WriteThread() {
     for (int i = 0; i < write_batch_size_; i++) {
       gscoped_ptr<KuduInsert> insert = table->NewInsert();
       KuduPartialRow* row = insert->mutable_row();
-      CHECK_OK(row->SetUInt32(0, r.Next()));
-      CHECK_OK(row->SetUInt32(1, r.Next()));
+      CHECK_OK(row->SetInt32(0, r.Next()));
+      CHECK_OK(row->SetInt32(1, r.Next()));
       CHECK_OK(row->SetStringCopy(2, "hello world"));
       CHECK_OK(session->Apply(insert.Pass()));
     }

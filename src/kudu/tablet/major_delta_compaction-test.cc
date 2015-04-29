@@ -33,9 +33,9 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
   TestMajorDeltaCompaction() :
       KuduRowSetTest(Schema(boost::assign::list_of
                             (ColumnSchema("key", STRING))
-                            (ColumnSchema("val1", UINT32))
+                            (ColumnSchema("val1", INT32))
                             (ColumnSchema("val2", STRING))
-                            (ColumnSchema("val3", UINT32))
+                            (ColumnSchema("val3", INT32))
                             (ColumnSchema("val4", STRING)), 1)),
       mvcc_(scoped_refptr<server::Clock>(
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
@@ -43,14 +43,14 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
 
   struct ExpectedRow {
     string key;
-    uint32_t val1;
+    int32_t val1;
     string val2;
-    uint32_t val3;
+    int32_t val3;
     string val4;
 
     string Formatted() const {
       return strings::Substitute(
-        "(string key=$0, uint32 val1=$1, string val2=$2, uint32 val3=$3, string val4=$4)",
+        "(string key=$0, int32 val1=$1, string val2=$2, int32 val3=$3, string val4=$4)",
         key, val1, val2, val3, val4);
     }
   };
@@ -75,9 +75,9 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
 
       int col = 0;
       CHECK_OK(ins_row.SetString(col++, row.key));
-      CHECK_OK(ins_row.SetUInt32(col++, row.val1));
+      CHECK_OK(ins_row.SetInt32(col++, row.val1));
       CHECK_OK(ins_row.SetString(col++, row.val2));
-      CHECK_OK(ins_row.SetUInt32(col++, row.val3));
+      CHECK_OK(ins_row.SetInt32(col++, row.val3));
       CHECK_OK(ins_row.SetString(col++, row.val4));
       ASSERT_OK_FAST(writer.Insert(ins_row));
       expected_state_.push_back(row);
@@ -115,8 +115,8 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
         row->val4.append("[U]");
 
         // Apply the updates.
-        CHECK_OK(prow.SetUInt32(1, row->val1));
-        CHECK_OK(prow.SetUInt32(3, row->val3));
+        CHECK_OK(prow.SetInt32(1, row->val1));
+        CHECK_OK(prow.SetInt32(3, row->val3));
         CHECK_OK(prow.SetString(4, row->val4));
         ASSERT_OK(writer.Update(prow));
       }

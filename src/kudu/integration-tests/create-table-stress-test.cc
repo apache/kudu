@@ -40,8 +40,8 @@ class CreateTableStressTest : public KuduTest {
  public:
   CreateTableStressTest()
     : schema_(boost::assign::list_of
-              (KuduColumnSchema("key", KuduColumnSchema::UINT32))
-              (KuduColumnSchema("v1", KuduColumnSchema::UINT64))
+              (KuduColumnSchema("key", KuduColumnSchema::INT32))
+              (KuduColumnSchema("v1", KuduColumnSchema::INT64))
               (KuduColumnSchema("v2", KuduColumnSchema::STRING)),
               1) {
   }

@@ -68,18 +68,14 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
 class KUDU_EXPORT KuduColumnSchema {
  public:
   enum DataType {
-    UINT8 = 0,
-    INT8 = 1,
-    UINT16 = 2,
-    INT16 = 3,
-    UINT32 = 4,
-    INT32 = 5,
-    UINT64 = 6,
-    INT64 = 7,
-    STRING = 8,
-    BOOL = 9,
-    FLOAT = 10,
-    DOUBLE = 11
+    INT8 = 0,
+    INT16 = 1,
+    INT32 = 2,
+    INT64 = 3,
+    STRING = 4,
+    BOOL = 5,
+    FLOAT = 6,
+    DOUBLE = 7
   };
 
   KuduColumnSchema(const std::string &name,

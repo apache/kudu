@@ -34,8 +34,8 @@ class RemoteKsckTest : public KuduTest {
  public:
   RemoteKsckTest()
       : schema_(boost::assign::list_of
-              (KuduColumnSchema("key", KuduColumnSchema::UINT32))
-              (KuduColumnSchema("int_val", KuduColumnSchema::UINT32)),
+              (KuduColumnSchema("key", KuduColumnSchema::INT32))
+              (KuduColumnSchema("int_val", KuduColumnSchema::INT32)),
               1),
         random_(SeedRandom()) {
   }

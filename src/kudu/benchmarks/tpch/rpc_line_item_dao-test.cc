@@ -57,10 +57,10 @@ class RpcLineItemDAOTest : public KuduTest {
 
   static void BuildTestRow(int order, int line, KuduPartialRow* row) {
     CHECK_OK(row->SetInt64(tpch::kOrderKeyColIdx, order));
-    CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
-    CHECK_OK(row->SetUInt32(tpch::kPartKeyColIdx, 12345));
-    CHECK_OK(row->SetUInt32(tpch::kSuppKeyColIdx, 12345));
-    CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, 12345));
+    CHECK_OK(row->SetInt32(tpch::kLineNumberColIdx, line));
+    CHECK_OK(row->SetInt32(tpch::kPartKeyColIdx, 12345));
+    CHECK_OK(row->SetInt32(tpch::kSuppKeyColIdx, 12345));
+    CHECK_OK(row->SetInt32(tpch::kQuantityColIdx, 12345));
     CHECK_OK(row->SetDouble(tpch::kExtendedPriceColIdx, 123.45));
     CHECK_OK(row->SetDouble(tpch::kDiscountColIdx, 123.45));
     CHECK_OK(row->SetDouble(tpch::kTaxColIdx, 123.45));
@@ -76,8 +76,8 @@ class RpcLineItemDAOTest : public KuduTest {
 
   static void UpdateTestRow(int key, int line_number, int quantity, KuduPartialRow* row) {
     CHECK_OK(row->SetInt64(tpch::kOrderKeyColIdx, key));
-    CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line_number));
-    CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, quantity));
+    CHECK_OK(row->SetInt32(tpch::kLineNumberColIdx, line_number));
+    CHECK_OK(row->SetInt32(tpch::kQuantityColIdx, quantity));
   }
 
   int CountRows() {
@@ -120,8 +120,8 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
   while (dao_->HasMore()) {
     dao_->GetNext(&rows);
     BOOST_FOREACH(const KuduRowResult& row, rows) {
-      uint32_t l_quantity;
-      ASSERT_OK(row.GetUInt32(tpch::kQuantityColIdx, &l_quantity));
+      int32_t l_quantity;
+      ASSERT_OK(row.GetInt32(tpch::kQuantityColIdx, &l_quantity));
       ASSERT_EQ(12345, l_quantity);
     }
   }

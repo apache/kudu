@@ -46,7 +46,7 @@ static const int64_t kNoSnapshot = -1;
 static const int64_t kNoParticularCountExpected = -1;
 
 // Vector of snapshot timestamp, count pairs.
-typedef vector<pair<uint64_t, uint64_t> > SnapsAndCounts;
+typedef vector<pair<uint64_t, int64_t> > SnapsAndCounts;
 
 // Provides methods for writing data and reading it back in such a way that
 // facilitates checking for data integrity.
@@ -61,17 +61,17 @@ class LinkedListTester {
                    int num_replicas,
                    bool enable_mutation)
     : schema_(boost::assign::list_of
-                (client::KuduColumnSchema(kKeyColumnName, client::KuduColumnSchema::UINT64))
-                (client::KuduColumnSchema(kLinkColumnName, client::KuduColumnSchema::UINT64))
-                (client::KuduColumnSchema(kInsertTsColumnName, client::KuduColumnSchema::UINT64))
+                (client::KuduColumnSchema(kKeyColumnName, client::KuduColumnSchema::INT64))
+                (client::KuduColumnSchema(kLinkColumnName, client::KuduColumnSchema::INT64))
+                (client::KuduColumnSchema(kInsertTsColumnName, client::KuduColumnSchema::INT64))
                 (client::KuduColumnSchema(kUpdatedColumnName, client::KuduColumnSchema::BOOL,
                                           false, &kUpdatedColumnDefault)),
               1),
       verify_projection_(boost::assign::list_of
                            (client::KuduColumnSchema(kKeyColumnName,
-                                                     client::KuduColumnSchema::UINT64))
+                                                     client::KuduColumnSchema::INT64))
                            (client::KuduColumnSchema(kLinkColumnName,
-                                                     client::KuduColumnSchema::UINT64))
+                                                     client::KuduColumnSchema::INT64))
                            (client::KuduColumnSchema(kUpdatedColumnName,
                                                      client::KuduColumnSchema::BOOL,
                                                      false, &kUpdatedColumnDefault)),
@@ -149,11 +149,11 @@ class LinkedListTester {
                        const boost::function<Status(const std::string&)>& cb);
 
   // Generates a vector of keys for the table such that each tablet is
-  // responsible for an equal fraction of the uint64 key space.
+  // responsible for an equal fraction of the int64 key space.
   std::vector<std::string> GenerateSplitKeys(const client::KuduSchema& schema);
 
   // Generate a vector of ints which form the split keys.
-  std::vector<uint64_t> GenerateSplitInts();
+  std::vector<int64_t> GenerateSplitInts();
 
   void DumpInsertHistogram(bool print_flags);
 
@@ -181,7 +181,7 @@ class LinkedListChainGenerator {
   // 'chain_idx' is a unique ID for this chain. Chains with different indexes
   // will always generate distinct sets of keys (thus avoiding the possibility of
   // a collision even in a longer run).
-  explicit LinkedListChainGenerator(uint32_t chain_idx)
+  explicit LinkedListChainGenerator(uint8_t chain_idx)
     : chain_idx_(chain_idx),
       rand_(chain_idx * 0xDEADBEEF),
       prev_key_(0) {
@@ -191,21 +191,21 @@ class LinkedListChainGenerator {
   ~LinkedListChainGenerator() {
   }
 
-  // Generate a random 64-bit int.
+  // Generate a random 64-bit unsigned int.
   uint64_t Rand64() {
-    return (implicit_cast<int64_t>(rand_.Next()) << 32) | rand_.Next();
+    return (implicit_cast<uint64_t>(rand_.Next()) << 32) | rand_.Next();
   }
 
   Status GenerateNextInsert(client::KuduTable* table, client::KuduSession* session) {
     // Encode the chain index in the lowest 8 bits so that different chains never
     // intersect.
-    uint64_t this_key = (Rand64() << 8) | chain_idx_;
-    uint64_t ts = GetCurrentTimeMicros();
+    int64_t this_key = (Rand64() << 8) | chain_idx_;
+    int64_t ts = GetCurrentTimeMicros();
 
     gscoped_ptr<client::KuduInsert> insert = table->NewInsert();
-    CHECK_OK(insert->mutable_row()->SetUInt64(kKeyColumnName, this_key));
-    CHECK_OK(insert->mutable_row()->SetUInt64(kInsertTsColumnName, ts));
-    CHECK_OK(insert->mutable_row()->SetUInt64(kLinkColumnName, prev_key_));
+    CHECK_OK(insert->mutable_row()->SetInt64(kKeyColumnName, this_key));
+    CHECK_OK(insert->mutable_row()->SetInt64(kInsertTsColumnName, ts));
+    CHECK_OK(insert->mutable_row()->SetInt64(kLinkColumnName, prev_key_));
     RETURN_NOT_OK_PREPEND(session->Apply(insert.Pass()),
                           strings::Substitute("Unable to apply insert with key $0 at ts $1",
                                               this_key, ts));
@@ -213,7 +213,7 @@ class LinkedListChainGenerator {
     return Status::OK();
   }
 
-  uint64_t prev_key() const {
+  int64_t prev_key() const {
     return prev_key_;
   }
 
@@ -225,7 +225,7 @@ class LinkedListChainGenerator {
   Random rand_;
 
   // The previously output key.
-  uint64_t prev_key_;
+  int64_t prev_key_;
 
   DISALLOW_COPY_AND_ASSIGN(LinkedListChainGenerator);
 };
@@ -238,7 +238,7 @@ class ScopedRowUpdater {
   // the lifetime of this object.
   explicit ScopedRowUpdater(client::KuduTable* table)
     : table_(table),
-      to_update_(kuint64max) { // no limit
+      to_update_(kint64max) { // no limit
     CHECK_OK(Thread::Create("linked_list-test", "updater",
                             &ScopedRowUpdater::RowUpdaterThread, this, &updater_));
   }
@@ -250,7 +250,7 @@ class ScopedRowUpdater {
     }
   }
 
-  BlockingQueue<uint64_t>* to_update() { return &to_update_; }
+  BlockingQueue<int64_t>* to_update() { return &to_update_; }
 
  private:
   void RowUpdaterThread() {
@@ -258,11 +258,11 @@ class ScopedRowUpdater {
     session->SetTimeoutMillis(15000);
     CHECK_OK(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
 
-    uint64_t next_key;
+    int64_t next_key;
     int64_t updated_count = 0;
     while (to_update_.BlockingGet(&next_key)) {
       gscoped_ptr<client::KuduUpdate> update(table_->NewUpdate());
-      CHECK_OK(update->mutable_row()->SetUInt64(kKeyColumnName, next_key));
+      CHECK_OK(update->mutable_row()->SetInt64(kKeyColumnName, next_key));
       CHECK_OK(update->mutable_row()->SetBool(kUpdatedColumnName, true));
       CHECK_OK(session->Apply(update.Pass()));
       if (++updated_count % 50 == 0) {
@@ -274,7 +274,7 @@ class ScopedRowUpdater {
   }
 
   client::KuduTable* table_;
-  BlockingQueue<uint64_t> to_update_;
+  BlockingQueue<int64_t> to_update_;
   scoped_refptr<Thread> updater_;
 };
 
@@ -364,7 +364,7 @@ class PeriodicWebUIChecker {
 class LinkedListVerifier {
  public:
   LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected,
-                     const std::vector<uint64_t>& split_key_ints);
+                     const std::vector<int64_t>& split_key_ints);
 
   // Start the scan timer. The duration between starting the scan and verifying
   // the data is logged in the VerifyData() step, so this should be called
@@ -372,21 +372,21 @@ class LinkedListVerifier {
   void StartScanTimer();
 
   // Register a new row result during the verify step.
-  void RegisterResult(uint64_t key, uint64_t link, bool updated);
+  void RegisterResult(int64_t key, int64_t link, bool updated);
 
   // Run the common verify step once the scanned data is stored.
   Status VerifyData(int64_t* verified_count, bool log_errors);
 
  private:
   // Print a summary of the broken links to the log.
-  void SummarizeBrokenLinks(const std::vector<uint64_t>& broken_links);
+  void SummarizeBrokenLinks(const std::vector<int64_t>& broken_links);
 
   const int num_chains_;
   const int64_t expected_;
   const bool enable_mutation_;
-  const std::vector<uint64_t> split_key_ints_;
-  std::vector<uint64_t> seen_key_;
-  std::vector<uint64_t> seen_link_to_;
+  const std::vector<int64_t> split_key_ints_;
+  std::vector<int64_t> seen_key_;
+  std::vector<int64_t> seen_link_to_;
   int errors_;
   Stopwatch scan_timer_;
 };
@@ -398,9 +398,9 @@ class LinkedListVerifier {
 std::vector<string> LinkedListTester::GenerateSplitKeys(const client::KuduSchema& schema) {
   client::KuduEncodedKeyBuilder key_builder(schema);
   gscoped_ptr<client::KuduEncodedKey> key;
-  std::vector<uint64_t> split_ints = GenerateSplitInts();
+  std::vector<int64_t> split_ints = GenerateSplitInts();
   std::vector<string> split_keys;
-  BOOST_FOREACH(uint64_t val, split_ints) {
+  BOOST_FOREACH(int64_t val, split_ints) {
     key_builder.Reset();
     key_builder.AddColumnKey(&val);
     key.reset(key_builder.BuildEncodedKey());
@@ -409,11 +409,11 @@ std::vector<string> LinkedListTester::GenerateSplitKeys(const client::KuduSchema
   return split_keys;
 }
 
-std::vector<uint64_t> LinkedListTester::GenerateSplitInts() {
-  vector<uint64_t> ret;
+std::vector<int64_t> LinkedListTester::GenerateSplitInts() {
+  vector<int64_t> ret;
   ret.reserve(num_tablets_ - 1);
-  uint64_t increment = kuint64max / num_tablets_;
-  for (uint64_t i = 1; i < num_tablets_; i++) {
+  int64_t increment = kint64max / num_tablets_;
+  for (int64_t i = 1; i < num_tablets_; i++) {
     ret.push_back(i * increment);
   }
   return ret;
@@ -483,7 +483,7 @@ Status LinkedListTester::LoadLinkedList(
     if (next_sample.ComesBefore(now)) {
       Timestamp now = ht_clock->Now();
       sampled_timestamps_and_counts_.push_back(
-          pair<int64_t,int64_t>(now.ToUint64(), *written_count));
+          pair<uint64_t,int64_t>(now.ToUint64(), *written_count));
       next_sample.AddDelta(sample_interval);
       LOG(INFO) << "Sample at HT timestamp: " << now.ToString()
                 << " Inserted count: " << *written_count;
@@ -552,7 +552,7 @@ void LinkedListTester::DumpInsertHistogram(bool print_flags) {
 // Verify that the given sorted vector does not contain any duplicate entries.
 // If it does, *errors will be incremented once per duplicate and the given message
 // will be logged.
-static void VerifyNoDuplicateEntries(const std::vector<uint64_t>& ints, int* errors,
+static void VerifyNoDuplicateEntries(const std::vector<int64_t>& ints, int* errors,
                                      const string& message) {
   for (int i = 1; i < ints.size(); i++) {
     if (ints[i] == ints[i - 1]) {
@@ -612,11 +612,11 @@ Status LinkedListTester::VerifyLinkedListRemote(
     }
     RETURN_NOT_OK_PREPEND(scanner.NextBatch(&rows), "Couldn't fetch next row batch");
     BOOST_FOREACH(const client::KuduRowResult& row, rows) {
-      uint64_t key;
-      uint64_t link;
+      int64_t key;
+      int64_t link;
       bool updated;
-      RETURN_NOT_OK(row.GetUInt64(0, &key));
-      RETURN_NOT_OK(row.GetUInt64(1, &link));
+      RETURN_NOT_OK(row.GetInt64(0, &key));
+      RETURN_NOT_OK(row.GetInt64(1, &link));
 
       // For non-snapshot reads we also verify that all rows were updated. We don't
       // for snapshot reads as updates are performed by their own thread. This means
@@ -659,13 +659,13 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
   while (iter->HasNext()) {
     RETURN_NOT_OK(iter->NextBlock(&block));
     for (int i = 0; i < block.nrows(); i++) {
-      uint64_t key;
-      uint64_t link;
+      int64_t key;
+      int64_t link;
       bool updated;
 
       const RowBlockRow& row = block.row(i);
-      key = *tablet_schema->ExtractColumnFromRow<UINT64>(row, 0);
-      link = *tablet_schema->ExtractColumnFromRow<UINT64>(row, 1);
+      key = *tablet_schema->ExtractColumnFromRow<INT64>(row, 0);
+      link = *tablet_schema->ExtractColumnFromRow<INT64>(row, 1);
       updated = *tablet_schema->ExtractColumnFromRow<BOOL>(row, 3);
 
       verifier.RegisterResult(key, link, updated);
@@ -766,7 +766,7 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run,
 /////////////////////////////////////////////////////////////
 
 LinkedListVerifier::LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected,
-                                       const std::vector<uint64_t>& split_key_ints)
+                                       const std::vector<int64_t>& split_key_ints)
   : num_chains_(num_chains),
     expected_(expected),
     enable_mutation_(enable_mutation),
@@ -783,7 +783,7 @@ void LinkedListVerifier::StartScanTimer() {
   scan_timer_.start();
 }
 
-void LinkedListVerifier::RegisterResult(uint64_t key, uint64_t link, bool updated) {
+void LinkedListVerifier::RegisterResult(int64_t key, int64_t link, bool updated) {
   seen_key_.push_back(key);
   if (link != 0) {
     // Links to entry 0 don't count - the first inserts use this link
@@ -797,13 +797,13 @@ void LinkedListVerifier::RegisterResult(uint64_t key, uint64_t link, bool update
   }
 }
 
-void LinkedListVerifier::SummarizeBrokenLinks(const std::vector<uint64_t>& broken_links) {
+void LinkedListVerifier::SummarizeBrokenLinks(const std::vector<int64_t>& broken_links) {
   std::vector<int64_t> errors_by_tablet(split_key_ints_.size() + 1);
 
   int n_logged = 0;
   const int kMaxToLog = 100;
 
-  BOOST_FOREACH(uint64_t broken, broken_links) {
+  BOOST_FOREACH(int64_t broken, broken_links) {
     int tablet = std::upper_bound(split_key_ints_.begin(),
                                   split_key_ints_.end(),
                                   broken) - split_key_ints_.begin();
@@ -842,7 +842,7 @@ Status LinkedListVerifier::VerifyData(int64_t* verified_count, bool log_errors) 
   VerifyNoDuplicateEntries(seen_key_, &errors_, "Seen row key multiple times");
   VerifyNoDuplicateEntries(seen_link_to_, &errors_, "Seen link to row multiple times");
   // Verify that every key that was linked to was present
-  std::vector<uint64_t> broken_links = STLSetDifference(seen_link_to_, seen_key_);
+  std::vector<int64_t> broken_links = STLSetDifference(seen_link_to_, seen_key_);
   errors_ += broken_links.size();
   if (log_errors) {
     SummarizeBrokenLinks(broken_links);
@@ -850,7 +850,7 @@ Status LinkedListVerifier::VerifyData(int64_t* verified_count, bool log_errors) 
 
   // Verify that only the expected number of keys were seen but not linked to.
   // Only the last "batch" should have this characteristic.
-  std::vector<uint64_t> not_linked_to = STLSetDifference(seen_key_, seen_link_to_);
+  std::vector<int64_t> not_linked_to = STLSetDifference(seen_key_, seen_link_to_);
   if (not_linked_to.size() != num_chains_) {
     LOG_IF(ERROR, log_errors)
       << "Had " << not_linked_to.size() << " entries which were seen but not"

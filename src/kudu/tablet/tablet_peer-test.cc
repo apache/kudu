@@ -56,7 +56,7 @@ using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
 static Schema GetTestSchema() {
-  return Schema(boost::assign::list_of(ColumnSchema("key", UINT32)), 1);
+  return Schema(boost::assign::list_of(ColumnSchema("key", INT32)), 1);
 }
 
 class TabletPeerTest : public KuduTabletTest {
@@ -148,7 +148,7 @@ class TabletPeerTest : public KuduTabletTest {
     CHECK_OK(SchemaToPB(schema, write_req->mutable_schema()));
 
     KuduPartialRow row(&schema);
-    CHECK_OK(row.SetUInt32("key", insert_counter_++));
+    CHECK_OK(row.SetInt32("key", insert_counter_++));
 
     RowOperationsPBEncoder enc(write_req->mutable_row_operations());
     enc.Add(RowOperationsPB::INSERT, row);
@@ -164,7 +164,7 @@ class TabletPeerTest : public KuduTabletTest {
     CHECK_OK(SchemaToPB(schema, write_req->mutable_schema()));
 
     KuduPartialRow row(&schema);
-    CHECK_OK(row.SetUInt32("key", delete_counter_++));
+    CHECK_OK(row.SetInt32("key", delete_counter_++));
 
     RowOperationsPBEncoder enc(write_req->mutable_row_operations());
     enc.Add(RowOperationsPB::DELETE, row);
@@ -247,8 +247,8 @@ class TabletPeerTest : public KuduTabletTest {
   // We disable automatic log GC. Don't leak those changes.
   google::FlagSaver flag_saver_;
 
-  uint32_t insert_counter_;
-  uint32_t delete_counter_;
+  int32_t insert_counter_;
+  int32_t delete_counter_;
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   shared_ptr<Messenger> messenger_;

@@ -103,16 +103,16 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
 
   gscoped_ptr<KuduInsert> ins = table_->NewInsert();
   KuduPartialRow* r = ins->mutable_row();
-  CHECK_OK(r->SetUInt64("tweet_id", event_.tweet_event.tweet_id));
+  CHECK_OK(r->SetInt64("tweet_id", event_.tweet_event.tweet_id));
   CHECK_OK(r->SetStringCopy("text", event_.tweet_event.text));
   CHECK_OK(r->SetStringCopy("source", event_.tweet_event.source));
   CHECK_OK(r->SetStringCopy("created_at", created_at));
-  CHECK_OK(r->SetUInt64("user_id", event_.tweet_event.user_id));
+  CHECK_OK(r->SetInt64("user_id", event_.tweet_event.user_id));
   CHECK_OK(r->SetStringCopy("user_name", event_.tweet_event.user_name));
   CHECK_OK(r->SetStringCopy("user_description", event_.tweet_event.user_description));
   CHECK_OK(r->SetStringCopy("user_location", event_.tweet_event.user_location));
-  CHECK_OK(r->SetUInt32("user_followers_count", event_.tweet_event.user_followers_count));
-  CHECK_OK(r->SetUInt32("user_friends_count", event_.tweet_event.user_friends_count));
+  CHECK_OK(r->SetInt32("user_followers_count", event_.tweet_event.user_followers_count));
+  CHECK_OK(r->SetInt32("user_friends_count", event_.tweet_event.user_friends_count));
   CHECK_OK(r->SetStringCopy("user_image_url", event_.tweet_event.user_image_url));
   CHECK_OK(session_->Apply(ins.Pass()));
 

@@ -44,12 +44,12 @@ struct StringKeyTestSetup {
   static Schema CreateSchema() {
     return Schema(boost::assign::list_of
                   (ColumnSchema("key", STRING))
-                  (ColumnSchema("key_idx", UINT32))
-                  (ColumnSchema("val", UINT32)),
+                  (ColumnSchema("key_idx", INT32))
+                  (ColumnSchema("val", INT32)),
                   1);
   }
 
-  void BuildRowKey(KuduPartialRow *row, uint64_t key_idx) {
+  void BuildRowKey(KuduPartialRow *row, int64_t key_idx) {
     // This is called from multiple threads, so can't move this buffer
     // to be a class member. However, it's likely to get inlined anyway
     // and loop-hosted.
@@ -63,22 +63,22 @@ struct StringKeyTestSetup {
     CHECK_OK(row->SetStringCopy(0, *reinterpret_cast<const Slice*>(src_row.cell_ptr(0))));
   }
 
-  void BuildRow(KuduPartialRow *row, uint64_t key_idx, uint32_t val = 0) {
+  void BuildRow(KuduPartialRow *row, int64_t key_idx, int32_t val = 0) {
     BuildRowKey(row, key_idx);
-    CHECK_OK(row->SetUInt32(1, key_idx));
-    CHECK_OK(row->SetUInt32(2, val));
+    CHECK_OK(row->SetInt32(1, key_idx));
+    CHECK_OK(row->SetInt32(2, val));
   }
 
-  static void FormatKey(char *buf, size_t buf_size, uint64_t key_idx) {
+  static void FormatKey(char *buf, size_t buf_size, int64_t key_idx) {
     snprintf(buf, buf_size, "hello %ld", key_idx);
   }
 
-  string FormatDebugRow(uint64_t key_idx, uint32_t val, bool updated) {
+  string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
     char buf[256];
     FormatKey(buf, sizeof(buf), key_idx);
 
     return Substitute(
-      "(string key=$0, uint32 key_idx=$1, uint32 val=$2)",
+      "(string key=$0, int32 key_idx=$1, int32 val=$2)",
       buf, key_idx, val);
   }
 
@@ -94,27 +94,27 @@ struct CompositeKeyTestSetup {
   static Schema CreateSchema() {
     return Schema(boost::assign::list_of
                   (ColumnSchema("key1", STRING))
-                  (ColumnSchema("key2", UINT32))
-                  (ColumnSchema("key_idx", UINT32))
-                  (ColumnSchema("val", UINT32)),
+                  (ColumnSchema("key2", INT32))
+                  (ColumnSchema("key_idx", INT32))
+                  (ColumnSchema("val", INT32)),
                   2);
   }
 
   // builds a row key from an existing row for updates
   void BuildRowKeyFromExistingRow(KuduPartialRow *row, const RowBlockRow& src_row) {
     CHECK_OK(row->SetStringCopy(0, *reinterpret_cast<const Slice*>(src_row.cell_ptr(0))));
-    CHECK_OK(row->SetUInt32(1, *reinterpret_cast<const uint32_t*>(src_row.cell_ptr(1))));
+    CHECK_OK(row->SetInt32(1, *reinterpret_cast<const int32_t*>(src_row.cell_ptr(1))));
   }
 
-  static void FormatKey(char *buf, size_t buf_size, uint64_t key_idx) {
+  static void FormatKey(char *buf, size_t buf_size, int64_t key_idx) {
     snprintf(buf, buf_size, "hello %ld", key_idx);
   }
 
-  string FormatDebugRow(uint64_t key_idx, uint32_t val, bool updated) {
+  string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
     char buf[256];
     FormatKey(buf, sizeof(buf), key_idx);
     return Substitute(
-      "(string key1=$0, uint32 key2=$1, uint32 val=$2, uint32 val=$3)",
+      "(string key1=$0, int32 key2=$1, int32 val=$2, int32 val=$3)",
       buf, key_idx, key_idx, val);
   }
 
@@ -131,8 +131,8 @@ struct IntKeyTestSetup {
   static Schema CreateSchema() {
     return Schema(boost::assign::list_of
                   (ColumnSchema("key", Type))
-                  (ColumnSchema("key_idx", UINT32))
-                  (ColumnSchema("val", UINT32)), 1);;
+                  (ColumnSchema("key_idx", INT32))
+                  (ColumnSchema("val", INT32)), 1);
   }
 
   void BuildRowKey(KuduPartialRow *row, int64_t i) {
@@ -145,14 +145,14 @@ struct IntKeyTestSetup {
     CHECK(false) << "Unsupported type";
   }
 
-  void BuildRow(KuduPartialRow *row, uint64_t key_idx,
-                uint32_t val = 0) {
+  void BuildRow(KuduPartialRow *row, int64_t key_idx,
+                int32_t val = 0) {
     BuildRowKey(row, key_idx);
-    CHECK_OK(row->SetUInt32(1, key_idx));
-    CHECK_OK(row->SetUInt32(2, val));
+    CHECK_OK(row->SetInt32(1, key_idx));
+    CHECK_OK(row->SetInt32(2, val));
   }
 
-  string FormatDebugRow(int64_t key_idx, uint32_t val, bool updated) {
+  string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
     CHECK(false) << "Unsupported type";
     return "";
   }
@@ -163,18 +163,8 @@ struct IntKeyTestSetup {
 };
 
 template<>
-void IntKeyTestSetup<UINT8>::BuildRowKey(KuduPartialRow *row, int64_t i) {
-  CHECK_OK(row->SetUInt8(0, (uint8_t) i));
-}
-
-template<>
 void IntKeyTestSetup<INT8>::BuildRowKey(KuduPartialRow *row, int64_t i) {
   CHECK_OK(row->SetInt8(0, (int8_t) i * (i % 2 == 0 ? -1 : 1)));
-}
-
-template<>
-void IntKeyTestSetup<UINT16>::BuildRowKey(KuduPartialRow *row, int64_t i) {
-  CHECK_OK(row->SetUInt16(0, (uint16_t) i));
 }
 
 template<>
@@ -183,29 +173,13 @@ void IntKeyTestSetup<INT16>::BuildRowKey(KuduPartialRow *row, int64_t i) {
 }
 
 template<>
-void IntKeyTestSetup<UINT32>::BuildRowKey(KuduPartialRow *row, int64_t i) {
-  CHECK_OK(row->SetUInt32(0, (uint32_t) i));
-}
-
-template<>
 void IntKeyTestSetup<INT32>::BuildRowKey(KuduPartialRow *row, int64_t i) {
   CHECK_OK(row->SetInt32(0, (int32_t) i * (i % 2 == 0 ? -1 : 1)));
 }
 
 template<>
-void IntKeyTestSetup<UINT64>::BuildRowKey(KuduPartialRow *row, int64_t i) {
-  CHECK_OK(row->SetUInt64(0, (uint64_t) i));
-}
-
-template<>
 void IntKeyTestSetup<INT64>::BuildRowKey(KuduPartialRow *row, int64_t i) {
   CHECK_OK(row->SetInt64(0, (int64_t) i * (i % 2 == 0 ? -1 : 1)));
-}
-
-template<> template<class RowType>
-void IntKeyTestSetup<UINT8>::BuildRowKeyFromExistingRow(KuduPartialRow *row,
-                                                        const RowType& src_row) {
-  CHECK_OK(row->SetUInt8(0, *reinterpret_cast<const uint8_t*>(src_row.cell_ptr(0))));
 }
 
 template<> template<class RowType>
@@ -215,33 +189,14 @@ void IntKeyTestSetup<INT8>::BuildRowKeyFromExistingRow(KuduPartialRow *row,
 }
 
 template<> template<class RowType>
-void IntKeyTestSetup<UINT16>::BuildRowKeyFromExistingRow(KuduPartialRow *row,
-                                                         const RowType& src_row) {
-  CHECK_OK(row->SetUInt16(0, *reinterpret_cast<const uint16_t*>(src_row.cell_ptr(0))));
-}
-
-template<> template<class RowType>
 void IntKeyTestSetup<INT16>::BuildRowKeyFromExistingRow(KuduPartialRow *row,
                                                         const RowType& src_row) {
   CHECK_OK(row->SetInt16(0, *reinterpret_cast<const int16_t*>(src_row.cell_ptr(0))));
 }
-
-template<> template<class RowType>
-void IntKeyTestSetup<UINT32>::BuildRowKeyFromExistingRow(KuduPartialRow *row,
-                                                         const RowType& src_row) {
-  CHECK_OK(row->SetUInt32(0, *reinterpret_cast<const uint32_t*>(src_row.cell_ptr(0))));
-}
-
 template<> template<class RowType>
 void IntKeyTestSetup<INT32>::BuildRowKeyFromExistingRow(KuduPartialRow *row,
                                                         const RowType& src_row) {
   CHECK_OK(row->SetInt32(0, *reinterpret_cast<const int32_t*>(src_row.cell_ptr(0))));
-}
-
-template<> template<class RowType>
-void IntKeyTestSetup<UINT64>::BuildRowKeyFromExistingRow(KuduPartialRow *row,
-                                                         const RowType& src_row) {
-  CHECK_OK(row->SetUInt64(0, *reinterpret_cast<const uint64_t*>(src_row.cell_ptr(0))));
 }
 
 template<> template<class RowType>
@@ -251,58 +206,30 @@ void IntKeyTestSetup<INT64>::BuildRowKeyFromExistingRow(KuduPartialRow *row,
 }
 
 template<>
-string IntKeyTestSetup<UINT8>::FormatDebugRow(int64_t key_idx, uint32_t val, bool updated) {
+string IntKeyTestSetup<INT8>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
   return Substitute(
-    "(uint8 key=$0, uint32 key_idx=$1, uint32 val=$2)",
-    key_idx, key_idx, val);
-}
-
-template<>
-string IntKeyTestSetup<INT8>::FormatDebugRow(int64_t key_idx, uint32_t val, bool updated) {
-  return Substitute(
-    "(int8 key=$0, uint32 key_idx=$1, uint32 val=$2)",
+    "(int8 key=$0, int32 key_idx=$1, int32 val=$2)",
     (key_idx % 2 == 0) ? -key_idx : key_idx, key_idx, val);
 }
 
 template<>
-string IntKeyTestSetup<UINT16>::FormatDebugRow(int64_t key_idx, uint32_t val, bool updated) {
+string IntKeyTestSetup<INT16>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
   return Substitute(
-    "(uint16 key=$0, uint32 key_idx=$1, uint32 val=$2)",
-    key_idx, key_idx, val);
-}
-
-template<>
-string IntKeyTestSetup<INT16>::FormatDebugRow(int64_t key_idx, uint32_t val, bool updated) {
-  return Substitute(
-    "(int16 key=$0, uint32 key_idx=$1, uint32 val=$2)",
+    "(int16 key=$0, int32 key_idx=$1, int32 val=$2)",
     (key_idx % 2 == 0) ? -key_idx : key_idx, key_idx, val);
 }
 
 template<>
-string IntKeyTestSetup<UINT32>::FormatDebugRow(int64_t key_idx, uint32_t val, bool updated) {
+string IntKeyTestSetup<INT32>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
   return Substitute(
-    "(uint32 key=$0, uint32 key_idx=$1, uint32 val=$2)",
-    key_idx, key_idx, val);
-}
-
-template<>
-string IntKeyTestSetup<INT32>::FormatDebugRow(int64_t key_idx, uint32_t val, bool updated) {
-  return Substitute(
-    "(int32 key=$0, uint32 key_idx=$1, uint32 val=$2)",
+    "(int32 key=$0, int32 key_idx=$1, int32 val=$2)",
     (key_idx % 2 == 0) ? -key_idx : key_idx, key_idx, val);
 }
 
 template<>
-string IntKeyTestSetup<UINT64>::FormatDebugRow(int64_t key_idx, uint32_t val, bool updated) {
+string IntKeyTestSetup<INT64>::FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
   return Substitute(
-    "(uint64 key=$0, uint32 key_idx=$1, uint32 val=$2)",
-    key_idx, key_idx, val);
-}
-
-template<>
-string IntKeyTestSetup<INT64>::FormatDebugRow(int64_t key_idx, uint32_t val, bool updated) {
-  return Substitute(
-    "(int64 key=$0, uint32 key_idx=$1, uint32 val=$2)",
+    "(int64 key=$0, int32 key_idx=$1, int32 val=$2)",
     (key_idx % 2 == 0) ? -key_idx : key_idx, key_idx, val);
 }
 
@@ -310,44 +237,44 @@ string IntKeyTestSetup<INT64>::FormatDebugRow(int64_t key_idx, uint32_t val, boo
 struct NullableValueTestSetup {
   static Schema CreateSchema() {
     return Schema(boost::assign::list_of
-                  (ColumnSchema("key", UINT32))
-                  (ColumnSchema("key_idx", UINT32))
-                  (ColumnSchema("val", UINT32, true)), 1);
+                  (ColumnSchema("key", INT32))
+                  (ColumnSchema("key_idx", INT32))
+                  (ColumnSchema("val", INT32, true)), 1);
   }
 
-  void BuildRowKey(KuduPartialRow *row, uint64_t i) {
-    CHECK_OK(row->SetUInt32(0, (uint32_t)i));
+  void BuildRowKey(KuduPartialRow *row, int64_t i) {
+    CHECK_OK(row->SetInt32(0, (int32_t)i));
   }
 
   // builds a row key from an existing row for updates
   template<class RowType>
   void BuildRowKeyFromExistingRow(KuduPartialRow *row, const RowType& src_row) {
-    CHECK_OK(row->SetUInt32(0, *reinterpret_cast<const uint32_t*>(src_row.cell_ptr(0))));
+    CHECK_OK(row->SetInt32(0, *reinterpret_cast<const int32_t*>(src_row.cell_ptr(0))));
   }
 
-  void BuildRow(KuduPartialRow *row, uint64_t key_idx, uint32_t val = 0) {
+  void BuildRow(KuduPartialRow *row, int64_t key_idx, int32_t val = 0) {
     BuildRowKey(row, key_idx);
-    CHECK_OK(row->SetUInt32(1, key_idx));
+    CHECK_OK(row->SetInt32(1, key_idx));
     if (ShouldInsertAsNull(key_idx)) {
       CHECK_OK(row->SetNull(2));
     } else {
-      CHECK_OK(row->SetUInt32(2, val));
+      CHECK_OK(row->SetInt32(2, val));
     }
   }
 
-  string FormatDebugRow(uint64_t key_idx, uint64_t val, bool updated) {
+  string FormatDebugRow(int64_t key_idx, int64_t val, bool updated) {
     if (!updated && ShouldInsertAsNull(key_idx)) {
       return Substitute(
-      "(uint32 key=$0, uint32 key_idx=$1, uint32 val=NULL)",
-        (uint32_t)key_idx, key_idx);
+      "(int32 key=$0, int32 key_idx=$1, int32 val=NULL)",
+        (int32_t)key_idx, key_idx);
     }
 
     return Substitute(
-      "(uint32 key=$0, uint32 key_idx=$1, uint32 val=$2)",
-      (uint32_t)key_idx, key_idx, val);
+      "(int32 key=$0, int32 key_idx=$1, int32 val=$2)",
+      (int32_t)key_idx, key_idx, val);
   }
 
-  static bool ShouldInsertAsNull(uint64_t key_idx) {
+  static bool ShouldInsertAsNull(int64_t key_idx) {
     return (key_idx & 2) != 0;
   }
 
@@ -359,13 +286,9 @@ struct NullableValueTestSetup {
 // Use this with TYPED_TEST_CASE from gtest
 typedef ::testing::Types<
                          StringKeyTestSetup,
-                         IntKeyTestSetup<UINT8>,
                          IntKeyTestSetup<INT8>,
-                         IntKeyTestSetup<UINT16>,
                          IntKeyTestSetup<INT16>,
-                         IntKeyTestSetup<UINT32>,
                          IntKeyTestSetup<INT32>,
-                         IntKeyTestSetup<UINT64>,
                          IntKeyTestSetup<INT64>,
                          NullableValueTestSetup
                          > TabletTestHelperTypes;
@@ -381,16 +304,16 @@ class TabletTestBase : public KuduTabletTest {
   {}
 
   // Inserts "count" rows.
-  void InsertTestRows(uint64_t first_row,
-                      uint64_t count,
-                      uint32_t val,
+  void InsertTestRows(int64_t first_row,
+                      int64_t count,
+                      int32_t val,
                       TimeSeries *ts = NULL) {
 
     LocalTabletWriter writer(tablet().get(), &client_schema_);
     KuduPartialRow row(&client_schema_);
 
     uint64_t inserted_since_last_report = 0;
-    for (uint64_t i = first_row; i < first_row + count; i++) {
+    for (int64_t i = first_row; i < first_row + count; i++) {
       setup_.BuildRow(&row, i, val);
       CHECK_OK(writer.Insert(row));
 
@@ -407,28 +330,28 @@ class TabletTestBase : public KuduTabletTest {
 
   // Inserts a single test row within a transaction.
   Status InsertTestRow(LocalTabletWriter* writer,
-                       uint64_t key_idx,
-                       uint32_t val) {
+                       int64_t key_idx,
+                       int32_t val) {
     KuduPartialRow row(&client_schema_);
     setup_.BuildRow(&row, key_idx, val);
     return writer->Insert(row);
   }
 
   Status UpdateTestRow(LocalTabletWriter* writer,
-                       uint64_t key_idx,
-                       uint32_t new_val) {
+                       int64_t key_idx,
+                       int32_t new_val) {
     KuduPartialRow row(&client_schema_);
     setup_.BuildRowKey(&row, key_idx);
 
     // select the col to update (the third if there is only one key
     // or the fourth if there are two col keys).
     int col_idx = schema_.num_key_columns() == 1 ? 2 : 3;
-    CHECK_OK(row.SetUInt32(col_idx, new_val));
+    CHECK_OK(row.SetInt32(col_idx, new_val));
     return writer->Update(row);
   }
 
   Status UpdateTestRowToNull(LocalTabletWriter* writer,
-                             uint64_t key_idx) {
+                             int64_t key_idx) {
     KuduPartialRow row(&client_schema_);
     setup_.BuildRowKey(&row, key_idx);
 
@@ -439,18 +362,18 @@ class TabletTestBase : public KuduTabletTest {
     return writer->Update(row);
   }
 
-  Status DeleteTestRow(LocalTabletWriter* writer, uint64_t key_idx) {
+  Status DeleteTestRow(LocalTabletWriter* writer, int64_t key_idx) {
     KuduPartialRow row(&client_schema_);
     setup_.BuildRowKey(&row, key_idx);
     return writer->Delete(row);
   }
 
   template <class RowType>
-  void VerifyRow(const RowType& row, uint64_t key_idx, uint32_t val) {
+  void VerifyRow(const RowType& row, int64_t key_idx, int32_t val) {
     ASSERT_EQ(setup_.FormatDebugRow(key_idx, val, false), schema_.DebugRow(row));
   }
 
-  void VerifyTestRows(uint64_t first_row, uint64_t expected_count) {
+  void VerifyTestRows(int64_t first_row, uint64_t expected_count) {
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet()->NewRowIterator(client_schema_, &iter));
     ASSERT_OK(iter->Init(NULL));
@@ -482,7 +405,7 @@ class TabletTestBase : public KuduTabletTest {
 
       for (int i = 0; i < block.nrows(); i++) {
         rb_row.Reset(&block, i);
-        uint32_t key_idx = *schema_.ExtractColumnFromRow<UINT32>(rb_row, 1);
+        int32_t key_idx = *schema_.ExtractColumnFromRow<INT32>(rb_row, 1);
         if (key_idx >= first_row && key_idx < first_row + expected_count) {
           size_t rel_idx = key_idx - first_row;
           if (seen_rows[rel_idx]) {

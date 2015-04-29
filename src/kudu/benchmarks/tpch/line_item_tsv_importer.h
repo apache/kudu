@@ -94,7 +94,7 @@ class LineItemTsvImporter {
     bool ok_parse = SimpleAtoi(tmp_.c_str(), &number);
     CHECK(ok_parse) << "Bad integer in column " << col_idx
                     << ": '" << tmp_ << "'";
-    CHECK_OK(row->SetUInt32(col_idx, number));
+    CHECK_OK(row->SetInt32(col_idx, number));
     return number;
   }
 

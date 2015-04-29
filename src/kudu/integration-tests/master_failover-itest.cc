@@ -85,8 +85,8 @@ class MasterFailoverTest : public KuduTest {
 
   Status CreateTable(const std::string& table_name, CreateTableMode mode) {
     KuduSchema client_schema(boost::assign::list_of
-                             (KuduColumnSchema("key", KuduColumnSchema::UINT32))
-                             (KuduColumnSchema("int_val", KuduColumnSchema::UINT32))
+                             (KuduColumnSchema("key", KuduColumnSchema::INT32))
+                             (KuduColumnSchema("int_val", KuduColumnSchema::INT32))
                              (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
                              , 1);
     return client_->NewTableCreator()->table_name(table_name)

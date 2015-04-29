@@ -33,8 +33,8 @@ static const client::KuduColumnStorageAttributes kPlainEncoding =
 
 static const client::KuduColumnSchema::DataType kInt64 =
     client::KuduColumnSchema::INT64;
-static const client::KuduColumnSchema::DataType kUint32 =
-    client::KuduColumnSchema::UINT32;
+static const client::KuduColumnSchema::DataType kInt32 =
+    client::KuduColumnSchema::INT32;
 static const client::KuduColumnSchema::DataType kString =
     client::KuduColumnSchema::STRING;
 static const client::KuduColumnSchema::DataType kDouble =
@@ -62,10 +62,10 @@ enum {
 inline client::KuduSchema CreateLineItemSchema() {
   return client::KuduSchema(boost::assign::list_of
                 (client::KuduColumnSchema(kOrderKeyColName, kInt64))
-                (client::KuduColumnSchema(kLineNumberColName, kUint32))
-                (client::KuduColumnSchema(kPartKeyColName, kUint32))
-                (client::KuduColumnSchema(kSuppKeyColName, kUint32))
-                (client::KuduColumnSchema(kQuantityColName, kUint32)) // decimal??
+                (client::KuduColumnSchema(kLineNumberColName, kInt32))
+                (client::KuduColumnSchema(kPartKeyColName, kInt32))
+                (client::KuduColumnSchema(kSuppKeyColName, kInt32))
+                (client::KuduColumnSchema(kQuantityColName, kInt32)) // decimal??
                 (client::KuduColumnSchema(kExtendedPriceColName, kDouble))
                 (client::KuduColumnSchema(kDiscountColName, kDouble))
                 (client::KuduColumnSchema(kTaxColName, kDouble))
@@ -96,7 +96,7 @@ inline client::KuduSchema CreateTpch1QuerySchema() {
                                           false, NULL, kPlainEncoding))
                 (client::KuduColumnSchema(kLineStatusColName, kString,
                                           false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kQuantityColName, kUint32))
+                (client::KuduColumnSchema(kQuantityColName, kInt32))
                 (client::KuduColumnSchema(kExtendedPriceColName, kDouble))
                 (client::KuduColumnSchema(kDiscountColName, kDouble))
                 (client::KuduColumnSchema(kTaxColName, kDouble))
@@ -106,8 +106,8 @@ inline client::KuduSchema CreateTpch1QuerySchema() {
 inline client::KuduSchema CreateMS3DemoQuerySchema() {
   return client::KuduSchema(boost::assign::list_of
                 (client::KuduColumnSchema(kOrderKeyColName, kInt64))
-                (client::KuduColumnSchema(kLineNumberColName, kUint32))
-                (client::KuduColumnSchema(kQuantityColName, kUint32))
+                (client::KuduColumnSchema(kLineNumberColName, kInt32))
+                (client::KuduColumnSchema(kQuantityColName, kInt32))
                 , 0);
 }
 

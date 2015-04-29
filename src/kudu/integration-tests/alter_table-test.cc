@@ -60,8 +60,8 @@ class AlterTableTest : public KuduTest {
  public:
   AlterTableTest()
     : schema_(boost::assign::list_of
-              (KuduColumnSchema("c0", KuduColumnSchema::UINT32))
-              (KuduColumnSchema("c1", KuduColumnSchema::UINT32)),
+              (KuduColumnSchema("c0", KuduColumnSchema::INT32))
+              (KuduColumnSchema("c1", KuduColumnSchema::INT32)),
               1),
       stop_threads_(false),
       inserted_idx_(0) {
@@ -140,20 +140,20 @@ class AlterTableTest : public KuduTest {
     return Status::TimedOut("AlterTable not completed within the timeout");
   }
 
-  Status AddNewU32Column(const string& table_name,
+  Status AddNewI32Column(const string& table_name,
                          const string& column_name,
-                         uint32_t default_value) {
-    return AddNewU32Column(table_name, column_name, default_value,
+                         int32_t default_value) {
+    return AddNewI32Column(table_name, column_name, default_value,
                            MonoDelta::FromSeconds(60));
   }
 
-  Status AddNewU32Column(const string& table_name,
+  Status AddNewI32Column(const string& table_name,
                          const string& column_name,
-                         uint32_t default_value,
+                         int32_t default_value,
                          const MonoDelta& timeout) {
     return client_->NewTableAlterer()
       ->table_name(table_name)
-      .add_column(column_name, KuduColumnSchema::UINT32, &default_value)
+      .add_column(column_name, KuduColumnSchema::INT32, &default_value)
       .timeout(timeout)
       .Alter();
   }
@@ -176,8 +176,8 @@ class AlterTableTest : public KuduTest {
     vector<string> keys;
     KuduEncodedKeyBuilder key_builder(schema_);
     gscoped_ptr<KuduEncodedKey> key;
-    for (uint32_t i = 1; i < 10; i++) {
-      uint32_t val = i * 100;
+    for (int32_t i = 1; i < 10; i++) {
+      int32_t val = i * 100;
       key_builder.Reset();
       key_builder.AddColumnKey(&val);
       key.reset(key_builder.BuildEncodedKey());
@@ -216,7 +216,7 @@ const char *AlterTableTest::kTableName = "fake-table";
 // TODO: create and verify multiple tablets when the client will support that.
 TEST_F(AlterTableTest, TestTabletReports) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
-  ASSERT_OK(AddNewU32Column(kTableName, "new-u32", 0));
+  ASSERT_OK(AddNewI32Column(kTableName, "new-i32", 0));
   ASSERT_EQ(1, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
@@ -225,7 +225,7 @@ TEST_F(AlterTableTest, TestAddExistingColumn) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 
   {
-    Status s = AddNewU32Column(kTableName, "c1", 0);
+    Status s = AddNewI32Column(kTableName, "c1", 0);
     ASSERT_TRUE(s.IsAlreadyPresent());
     ASSERT_STR_CONTAINS(s.ToString(), "The column already exists: c1");
   }
@@ -247,7 +247,7 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
 
     AlterTableRequestPB::Step *step = req.add_alter_schema_steps();
     step->set_type(AlterTableRequestPB::ADD_COLUMN);
-    ColumnSchemaToPB(ColumnSchema("c2", UINT32),
+    ColumnSchemaToPB(ColumnSchema("c2", INT32),
                      step->mutable_add_column()->mutable_schema());
     AlterTableResponsePB resp;
     Status s = cluster_->mini_master()->master()->catalog_manager()->AlterTable(
@@ -267,7 +267,7 @@ TEST_F(AlterTableTest, TestAlterOnTSRestart) {
 
   // Send the Alter request
   {
-    Status s = AddNewU32Column(kTableName, "new-u32", 10,
+    Status s = AddNewI32Column(kTableName, "new-32", 10,
                                MonoDelta::FromMilliseconds(500));
     ASSERT_TRUE(s.IsTimedOut());
   }
@@ -294,7 +294,7 @@ TEST_F(AlterTableTest, TestShutdownWithPendingTasks) {
 
   // Send the Alter request
   {
-    Status s = AddNewU32Column(kTableName, "new-u32", 10,
+    Status s = AddNewI32Column(kTableName, "new-i32", 10,
                                MonoDelta::FromMilliseconds(500));
     ASSERT_TRUE(s.IsTimedOut());
   }
@@ -313,7 +313,7 @@ TEST_F(AlterTableTest, TestRestartTSDuringAlter) {
 
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 
-  Status s = AddNewU32Column(kTableName, "new-u32", 10,
+  Status s = AddNewI32Column(kTableName, "new-i32", 10,
                              MonoDelta::FromMilliseconds(1));
   ASSERT_TRUE(s.IsTimedOut());
 
@@ -329,7 +329,7 @@ TEST_F(AlterTableTest, TestRestartTSDuringAlter) {
 }
 
 TEST_F(AlterTableTest, TestGetSchemaAfterAlterTable) {
-  ASSERT_OK(AddNewU32Column(kTableName, "new-u32", 10));
+  ASSERT_OK(AddNewI32Column(kTableName, "new-i32", 10));
 
   KuduSchema s;
   ASSERT_OK(client_->GetTableSchema(kTableName, &s));
@@ -348,11 +348,11 @@ void AlterTableTest::InsertRows(int start_row, int num_rows) {
     // Endian-swap the key so that we spew inserts randomly
     // instead of just a sequential write pattern. This way
     // compactions may actually be triggered.
-    uint32_t key = bswap_32(i);
-    CHECK_OK(insert->mutable_row()->SetUInt32(0, key));
+    int32_t key = bswap_32(i);
+    CHECK_OK(insert->mutable_row()->SetInt32(0, key));
 
     if (table->schema().num_columns() > 1) {
-      CHECK_OK(insert->mutable_row()->SetUInt32(1, i));
+      CHECK_OK(insert->mutable_row()->SetInt32(1, i));
     }
 
     CHECK_OK(session->Apply(insert.Pass()));
@@ -381,9 +381,9 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
     CHECK_OK(scanner.NextBatch(&results));
 
     BOOST_FOREACH(const KuduRowResult& row, results) {
-      uint32_t key = 0;
-      CHECK_OK(row.GetUInt32(0, &key));
-      uint32_t row_idx = bswap_32(key);
+      int32_t key = 0;
+      CHECK_OK(row.GetInt32(0, &key));
+      int32_t row_idx = bswap_32(key);
       if (row_idx < start_row || row_idx >= start_row + num_rows) {
         // Outside the range we're verifying
         continue;
@@ -394,8 +394,8 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
         continue;
       }
 
-      uint32_t c1 = 0;
-      CHECK_OK(row.GetUInt32(1, &c1));
+      int32_t c1 = 0;
+      CHECK_OK(row.GetInt32(1, &c1));
 
       switch (pattern) {
         case C1_MATCHES_INDEX:
@@ -434,7 +434,7 @@ TEST_F(AlterTableTest, DISABLED_TestDropAndAddNewColumn) {
                    .drop_column("c1")
                    .Alter());
 
-  ASSERT_OK(AddNewU32Column(kTableName, "c1", 0xdeadbeef));
+  ASSERT_OK(AddNewI32Column(kTableName, "c1", 0xdeadbeef));
 
   LOG(INFO) << "Verifying that the new default shows up";
   VerifyRows(0, kNumRows, C1_IS_DEADBEEF);
@@ -474,15 +474,15 @@ void AlterTableTest::InserterThread() {
   session->SetTimeoutMillis(15 * 1000);
 
   CHECK_OK(client_->OpenTable(kTableName, &table));
-  uint32_t i = 0;
+  int32_t i = 0;
   while (!stop_threads_.Load()) {
     gscoped_ptr<KuduInsert> insert = table->NewInsert();
     // Endian-swap the key so that we spew inserts randomly
     // instead of just a sequential write pattern. This way
     // compactions may actually be triggered.
-    uint32_t key = bswap_32(i++);
-    CHECK_OK(insert->mutable_row()->SetUInt32(0, key));
-    CHECK_OK(insert->mutable_row()->SetUInt32(1, i));
+    int32_t key = bswap_32(i++);
+    CHECK_OK(insert->mutable_row()->SetInt32(0, key));
+    CHECK_OK(insert->mutable_row()->SetInt32(1, i));
     CHECK_OK(session->Apply(insert.Pass()));
 
     if (i % 50 == 0) {
@@ -506,11 +506,11 @@ void AlterTableTest::UpdaterThread() {
   CHECK_OK(client_->OpenTable(kTableName, &table));
 
   Random rng(1);
-  uint32_t i = 0;
+  int32_t i = 0;
   while (!stop_threads_.Load()) {
     gscoped_ptr<KuduUpdate> update = table->NewUpdate();
 
-    uint32_t max = inserted_idx_.Load();
+    int32_t max = inserted_idx_.Load();
     if (max == 0) {
       // Inserter hasn't inserted anything yet, so we have nothing to update.
       SleepFor(MonoDelta::FromMicroseconds(100));
@@ -518,9 +518,9 @@ void AlterTableTest::UpdaterThread() {
     }
     // Endian-swap the key to match the way the InserterThread generates
     // keys to insert.
-    uint32_t key = bswap_32(rng.Uniform(max));
-    CHECK_OK(update->mutable_row()->SetUInt32(0, key));
-    CHECK_OK(update->mutable_row()->SetUInt32(1, i));
+    int32_t key = bswap_32(rng.Uniform(max));
+    CHECK_OK(update->mutable_row()->SetInt32(0, key));
+    CHECK_OK(update->mutable_row()->SetInt32(1, i));
     CHECK_OK(session->Apply(update.Pass()));
 
     if (i++ % 50 == 0) {
@@ -589,7 +589,7 @@ TEST_F(AlterTableTest, DISABLED_TestAlterUnderWriteLoad) {
       SleepFor(MonoDelta::FromSeconds(3));
     }
 
-    ASSERT_OK(AddNewU32Column(kTableName,
+    ASSERT_OK(AddNewI32Column(kTableName,
                                      strings::Substitute("c$0", i),
                                      i));
   }
@@ -611,13 +611,13 @@ TEST_F(AlterTableTest, TestInsertAfterAlterTable) {
 
   // Add a column, and immediately try to insert a row including that
   // new column.
-  ASSERT_OK(AddNewU32Column(kSplitTableName, "new-u32", 10));
+  ASSERT_OK(AddNewI32Column(kSplitTableName, "new-i32", 10));
   scoped_refptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kSplitTableName, &table));
   gscoped_ptr<KuduInsert> insert = table->NewInsert();
-  ASSERT_OK(insert->mutable_row()->SetUInt32("c0", 1));
-  ASSERT_OK(insert->mutable_row()->SetUInt32("c1", 1));
-  ASSERT_OK(insert->mutable_row()->SetUInt32("new-u32", 1));
+  ASSERT_OK(insert->mutable_row()->SetInt32("c0", 1));
+  ASSERT_OK(insert->mutable_row()->SetInt32("c1", 1));
+  ASSERT_OK(insert->mutable_row()->SetInt32("new-i32", 1));
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15000);
@@ -643,7 +643,7 @@ TEST_F(AlterTableTest, TestInsertAfterAlterTable) {
 TEST_F(AlterTableTest, DISABLED_TestMultipleAlters) {
   const char *kSplitTableName = "split-table";
   const size_t kNumNewCols = 10;
-  const uint32_t kDefaultValue = 10;
+  const int32_t kDefaultValue = 10;
 
   // Create a new table with 10 tablets.
   //
@@ -656,7 +656,7 @@ TEST_F(AlterTableTest, DISABLED_TestMultipleAlters) {
     ASSERT_OK(client_->NewTableAlterer()
               ->table_name(kSplitTableName)
               .add_column(strings::Substitute("new_col$0", i),
-                          KuduColumnSchema::UINT32, &kDefaultValue)
+                          KuduColumnSchema::INT32, &kDefaultValue)
               .wait(false)
               .Alter());
   }

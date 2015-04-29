@@ -42,12 +42,12 @@ static Status CreateClient(const string& addr,
 }
 
 static KuduSchema CreateSchema() {
-  const uint32_t kNonNullDefault = 12345;
+  const int32_t kNonNullDefault = 12345;
   vector<KuduColumnSchema> columns;
-  columns.push_back(KuduColumnSchema("key", KuduColumnSchema::UINT32));
-  columns.push_back(KuduColumnSchema("int_val", KuduColumnSchema::UINT32));
+  columns.push_back(KuduColumnSchema("key", KuduColumnSchema::INT32));
+  columns.push_back(KuduColumnSchema("int_val", KuduColumnSchema::INT32));
   columns.push_back(KuduColumnSchema("string_val", KuduColumnSchema::STRING));
-  columns.push_back(KuduColumnSchema("non_null_with_default", KuduColumnSchema::UINT32, false,
+  columns.push_back(KuduColumnSchema("non_null_with_default", KuduColumnSchema::INT32, false,
                                      &kNonNullDefault));
   return KuduSchema(columns, 1);
 }
@@ -74,9 +74,9 @@ static Status CreateTable(const shared_ptr<KuduClient>& client,
   KuduEncodedKeyBuilder key_builder(schema);
   gscoped_ptr<KuduEncodedKey> key;
   vector<string> splits;
-  uint32_t increment = 1000 / num_tablets;
-  for (uint32_t i = 1; i < num_tablets; i++) {
-    uint32_t val = i * increment;
+  int32_t increment = 1000 / num_tablets;
+  for (int32_t i = 1; i < num_tablets; i++) {
+    int32_t val = i * increment;
     key_builder.Reset();
     key_builder.AddColumnKey(&val);
     key.reset(key_builder.BuildEncodedKey());
@@ -113,9 +113,9 @@ static Status InsertRows(scoped_refptr<KuduTable>& table, int num_rows) {
   for (int i = 0; i < num_rows; i++) {
     gscoped_ptr<KuduInsert> insert = table->NewInsert();
     KuduPartialRow* row = insert->mutable_row();
-    KUDU_RETURN_NOT_OK(row->SetUInt32("key", i));
-    KUDU_RETURN_NOT_OK(row->SetUInt32("integer_val", i * 2));
-    KUDU_RETURN_NOT_OK(row->SetUInt32("non_null_with_default", i * 5));
+    KUDU_RETURN_NOT_OK(row->SetInt32("key", i));
+    KUDU_RETURN_NOT_OK(row->SetInt32("integer_val", i * 2));
+    KUDU_RETURN_NOT_OK(row->SetInt32("non_null_with_default", i * 5));
     KUDU_RETURN_NOT_OK(session->Apply(insert.Pass()));
   }
   Status s = session->Flush();
@@ -140,8 +140,8 @@ static Status InsertRows(scoped_refptr<KuduTable>& table, int num_rows) {
 }
 
 static Status ScanRows(scoped_refptr<KuduTable>& table) {
-  uint32_t lower_bound = 5;
-  uint32_t upper_bound = 600;
+  int32_t lower_bound = 5;
+  int32_t upper_bound = 600;
   KuduColumnRangePredicate pred(table->schema().Column(0),
                                 &lower_bound, &upper_bound);
 
@@ -155,8 +155,8 @@ static Status ScanRows(scoped_refptr<KuduTable>& table) {
         iter != results.end();
         iter++, lower_bound++) {
       const KuduRowResult& result = *iter;
-      uint32_t val;
-      KUDU_RETURN_NOT_OK(result.GetUInt32("key", &val));
+      int32_t val;
+      KUDU_RETURN_NOT_OK(result.GetInt32("key", &val));
       if (val != lower_bound) {
         stringstream out;
         out << "Scan returned the wrong results. Expected key "

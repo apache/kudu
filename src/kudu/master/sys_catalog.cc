@@ -313,7 +313,7 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *re
 // protobuf itself.
 Schema SysCatalogTable::BuildTableSchema() {
   SchemaBuilder builder;
-  CHECK_OK(builder.AddKeyColumn(kSysCatalogTableColType, UINT8));
+  CHECK_OK(builder.AddKeyColumn(kSysCatalogTableColType, INT8));
   CHECK_OK(builder.AddKeyColumn(kSysCatalogTableColId, STRING));
   CHECK_OK(builder.AddColumn(kSysCatalogTableColMetadata, STRING));
   return builder.Build();
@@ -336,7 +336,7 @@ Status SysCatalogTable::AddTable(const TableInfo *table) {
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   KuduPartialRow row(&schema_);
-  CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLES_ENTRY));
+  CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
   CHECK_OK(row.SetString(kSysCatalogTableColId, table->id()));
   CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
@@ -359,7 +359,7 @@ Status SysCatalogTable::UpdateTable(const TableInfo *table) {
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   KuduPartialRow row(&schema_);
-  CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLES_ENTRY));
+  CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
   CHECK_OK(row.SetString(kSysCatalogTableColId, table->id()));
   CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
   RowOperationsPBEncoder enc(req.mutable_row_operations());
@@ -376,7 +376,7 @@ Status SysCatalogTable::DeleteTable(const TableInfo *table) {
   RETURN_NOT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
   KuduPartialRow row(&schema_);
-  CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLES_ENTRY));
+  CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLES_ENTRY));
   CHECK_OK(row.SetString(kSysCatalogTableColId, table->id()));
 
   RowOperationsPBEncoder enc(req.mutable_row_operations());
@@ -387,7 +387,7 @@ Status SysCatalogTable::DeleteTable(const TableInfo *table) {
 }
 
 Status SysCatalogTable::VisitTables(TableVisitor* visitor) {
-  const uint8_t tables_entry = TABLES_ENTRY;
+  const int8_t tables_entry = TABLES_ENTRY;
   const int type_col_idx = schema_.find_column(kSysCatalogTableColType);
   CHECK(type_col_idx != Schema::kColumnNotFound);
 
@@ -444,7 +444,7 @@ Status SysCatalogTable::AddTabletsToPB(const vector<TabletInfo*>& tablets,
                                 tablet->tablet_id());
     }
 
-    CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLETS_ENTRY));
+    CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
     CHECK_OK(row.SetString(kSysCatalogTableColId, tablet->tablet_id()));
     CHECK_OK(row.SetString(kSysCatalogTableColMetadata, metadata_buf));
     enc.Add(op_type, row);
@@ -494,7 +494,7 @@ Status SysCatalogTable::DeleteTablets(const vector<TabletInfo*>& tablets) {
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   KuduPartialRow row(&schema_);
   BOOST_FOREACH(const TabletInfo* tablet, tablets) {
-    CHECK_OK(row.SetUInt8(kSysCatalogTableColType, TABLETS_ENTRY));
+    CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
     CHECK_OK(row.SetString(kSysCatalogTableColId, tablet->tablet_id()));
     enc.Add(RowOperationsPB::DELETE, row);
   }
@@ -518,7 +518,7 @@ Status SysCatalogTable::VisitTabletFromRow(const RowBlockRow& row, TabletVisitor
 }
 
 Status SysCatalogTable::VisitTablets(TabletVisitor* visitor) {
-  const uint8_t tablets_entry = TABLETS_ENTRY;
+  const int8_t tablets_entry = TABLETS_ENTRY;
   const int type_col_idx = schema_.find_column(kSysCatalogTableColType);
   CHECK(type_col_idx != Schema::kColumnNotFound);
 

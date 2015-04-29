@@ -89,7 +89,7 @@ using client::KuduSchema;
 using std::tr1::unordered_map;
 
 struct Result {
-  uint32_t l_quantity;
+  int32_t l_quantity;
   double l_extendedprice;
   double l_discount;
   double l_tax;
@@ -156,8 +156,8 @@ void Tpch1(RpcLineItemDAO *dao) {
       CHECK_OK(row.GetString(1, &l_returnflag.slice));
       SliceMapKey l_linestatus;
       CHECK_OK(row.GetString(2, &l_linestatus.slice));
-      uint32_t l_quantity;
-      CHECK_OK(row.GetUInt32(3, &l_quantity));
+      int32_t l_quantity;
+      CHECK_OK(row.GetInt32(3, &l_quantity));
       double l_extendedprice;
       CHECK_OK(row.GetDouble(4, &l_extendedprice));
       double l_discount;

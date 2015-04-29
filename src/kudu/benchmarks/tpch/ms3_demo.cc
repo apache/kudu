@@ -62,8 +62,8 @@ class Demo {
 
 static void UpdateRow(int64_t order, int line, int quantity, KuduPartialRow* row) {
   CHECK_OK(row->SetInt64(tpch::kOrderKeyColIdx, order));
-  CHECK_OK(row->SetUInt32(tpch::kLineNumberColIdx, line));
-  CHECK_OK(row->SetUInt32(tpch::kQuantityColIdx, quantity));
+  CHECK_OK(row->SetInt32(tpch::kLineNumberColIdx, line));
+  CHECK_OK(row->SetInt32(tpch::kQuantityColIdx, quantity));
 }
 
 // This thread continuously updates the l_quantity column from orders
@@ -97,11 +97,11 @@ static void UpdateThread(Demo *demo) {
 
     // 3. The last row has the highest line, we update it
     int64_t l_orderkey;
-    uint32_t l_linenumber;
-    uint32_t l_quantity;
+    int32_t l_linenumber;
+    int32_t l_quantity;
     CHECK_OK(last_row.GetInt64(0, &l_orderkey));
-    CHECK_OK(last_row.GetUInt32(1, &l_linenumber));
-    CHECK_OK(last_row.GetUInt32(2, &l_quantity));
+    CHECK_OK(last_row.GetInt32(1, &l_linenumber));
+    CHECK_OK(last_row.GetInt32(2, &l_quantity));
     uint32_t new_l_quantity = l_quantity + 1;
 
     // 4. Do the update

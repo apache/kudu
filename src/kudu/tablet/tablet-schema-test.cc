@@ -44,23 +44,23 @@ class TestTabletSchema : public KuduTabletTest {
   void InsertRow(const Schema& schema, size_t key) {
     LocalTabletWriter writer(tablet().get(), &schema);
     KuduPartialRow row(&schema);
-    CHECK_OK(row.SetUInt32(0, key));
-    CHECK_OK(row.SetUInt32(1, key));
+    CHECK_OK(row.SetInt32(0, key));
+    CHECK_OK(row.SetInt32(1, key));
     ASSERT_OK(writer.Insert(row));
   }
 
   void DeleteRow(const Schema& schema, size_t key) {
     LocalTabletWriter writer(tablet().get(), &schema);
     KuduPartialRow row(&schema);
-    CHECK_OK(row.SetUInt32(0, key));
+    CHECK_OK(row.SetInt32(0, key));
     ASSERT_OK(writer.Delete(row));
   }
 
-  void MutateRow(const Schema& schema, size_t key, size_t col_idx, uint32_t new_val) {
+  void MutateRow(const Schema& schema, size_t key, size_t col_idx, int32_t new_val) {
     LocalTabletWriter writer(tablet().get(), &schema);
     KuduPartialRow row(&schema);
-    CHECK_OK(row.SetUInt32(0, key));
-    CHECK_OK(row.SetUInt32(col_idx, new_val));
+    CHECK_OK(row.SetInt32(0, key));
+    CHECK_OK(row.SetInt32(col_idx, new_val));
     ASSERT_OK(writer.Update(row));
   }
 
@@ -86,8 +86,8 @@ class TestTabletSchema : public KuduTabletTest {
  private:
   Schema CreateBaseSchema() {
     return Schema(boost::assign::list_of
-                   (ColumnSchema("key", UINT32))
-                   (ColumnSchema("c1", UINT32)),
+                   (ColumnSchema("key", INT32))
+                   (ColumnSchema("c1", INT32)),
                    1);
   }
 };
@@ -97,8 +97,8 @@ class TestTabletSchema : public KuduTabletTest {
 TEST_F(TestTabletSchema, TestRead) {
   const size_t kNumRows = 10;
   Schema projection(boost::assign::list_of
-                    (ColumnSchema("key", UINT32))
-                    (ColumnSchema("c2", UINT64))
+                    (ColumnSchema("key", INT32))
+                    (ColumnSchema("c2", INT64))
                     (ColumnSchema("c3", STRING)),
                     1);
 
@@ -122,11 +122,11 @@ TEST_F(TestTabletSchema, TestWrite) {
   InsertRows(client_schema_, 0, kNumBaseRows);
 
   // Add one column with a default value
-  const uint32_t c2_write_default = 5;
-  const uint32_t c2_read_default = 7;
+  const int32_t c2_write_default = 5;
+  const int32_t c2_read_default = 7;
 
   SchemaBuilder builder(tablet()->metadata()->schema());
-  ASSERT_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
+  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, &c2_write_default));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 
@@ -165,11 +165,11 @@ TEST_F(TestTabletSchema, TestReInsert) {
   InsertRow(client_schema_, s1Key);
 
   // Add one column with a default value
-  const uint32_t c2_write_default = 5;
-  const uint32_t c2_read_default = 7;
+  const int32_t c2_write_default = 5;
+  const int32_t c2_read_default = 7;
 
   SchemaBuilder builder(tablet()->metadata()->schema());
-  ASSERT_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
+  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, &c2_write_default));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 
@@ -243,7 +243,7 @@ TEST_F(TestTabletSchema, TestDeleteAndReAddColumn) {
   ASSERT_OK(builder.RemoveColumn("c1"));
   // NOTE this new 'c1' will have a different id from the previous one
   //      so the data added to the previous 'c1' will not be visible.
-  ASSERT_OK(builder.AddNullableColumn("c1", UINT32));
+  ASSERT_OK(builder.AddNullableColumn("c1", INT32));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 
@@ -259,7 +259,7 @@ TEST_F(TestTabletSchema, TestModifyEmptyMemRowSet) {
 
   // Switch schema to s2
   SchemaBuilder builder(tablet()->metadata()->schema());
-  ASSERT_OK(builder.AddNullableColumn("c2", UINT32));
+  ASSERT_OK(builder.AddNullableColumn("c2", INT32));
   AlterSchema(builder.Build());
   Schema s2 = builder.BuildWithoutIds();
 
@@ -267,23 +267,23 @@ TEST_F(TestTabletSchema, TestModifyEmptyMemRowSet) {
   // Inserts the row "(2, 2, 2)"
   LocalTabletWriter writer(tablet().get(), &s2);
   KuduPartialRow row(&s2);
-  CHECK_OK(row.SetUInt32(0, 2));
-  CHECK_OK(row.SetUInt32(1, 2));
-  CHECK_OK(row.SetUInt32(2, 2));
+  CHECK_OK(row.SetInt32(0, 2));
+  CHECK_OK(row.SetInt32(1, 2));
+  CHECK_OK(row.SetInt32(2, 2));
   ASSERT_OK(writer.Insert(row));
 
   vector<string> rows;
   ASSERT_OK(DumpTablet(*tablet(), s2, &rows));
-  EXPECT_EQ("(uint32 key=2, uint32 c1=2, uint32 c2=2)", rows[0]);
+  EXPECT_EQ("(int32 key=2, int32 c1=2, int32 c2=2)", rows[0]);
 
   // Update some columns.
   MutateRow(s2, /* key= */ 2, /* col_idx= */ 2, /* new_val= */ 3);
   ASSERT_OK(DumpTablet(*tablet(), s2, &rows));
-  EXPECT_EQ("(uint32 key=2, uint32 c1=2, uint32 c2=3)", rows[0]);
+  EXPECT_EQ("(int32 key=2, int32 c1=2, int32 c2=3)", rows[0]);
 
   MutateRow(s2, /* key= */ 2, /* col_idx= */ 1, /* new_val= */ 4);
   ASSERT_OK(DumpTablet(*tablet(), s2, &rows));
-  EXPECT_EQ("(uint32 key=2, uint32 c1=4, uint32 c2=3)", rows[0]);
+  EXPECT_EQ("(int32 key=2, int32 c1=4, int32 c2=3)", rows[0]);
 }
 
 } // namespace tablet

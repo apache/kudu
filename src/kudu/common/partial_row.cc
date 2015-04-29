@@ -130,18 +130,6 @@ Status KuduPartialRow::SetInt32(const Slice& col_name, int32_t val) {
 Status KuduPartialRow::SetInt64(const Slice& col_name, int64_t val) {
   return Set<TypeTraits<INT64> >(col_name, val);
 }
-Status KuduPartialRow::SetUInt8(const Slice& col_name, uint8_t val) {
-  return Set<TypeTraits<UINT8> >(col_name, val);
-}
-Status KuduPartialRow::SetUInt16(const Slice& col_name, uint16_t val) {
-  return Set<TypeTraits<UINT16> >(col_name, val);
-}
-Status KuduPartialRow::SetUInt32(const Slice& col_name, uint32_t val) {
-  return Set<TypeTraits<UINT32> >(col_name, val);
-}
-Status KuduPartialRow::SetUInt64(const Slice& col_name, uint64_t val) {
-  return Set<TypeTraits<UINT64> >(col_name, val);
-}
 Status KuduPartialRow::SetFloat(const Slice& col_name, float val) {
   return Set<TypeTraits<FLOAT> >(col_name, val);
 }
@@ -166,18 +154,6 @@ Status KuduPartialRow::SetInt32(int col_idx, int32_t val) {
 }
 Status KuduPartialRow::SetInt64(int col_idx, int64_t val) {
   return Set<TypeTraits<INT64> >(col_idx, val);
-}
-Status KuduPartialRow::SetUInt8(int col_idx, uint8_t val) {
-  return Set<TypeTraits<UINT8> >(col_idx, val);
-}
-Status KuduPartialRow::SetUInt16(int col_idx, uint16_t val) {
-  return Set<TypeTraits<UINT16> >(col_idx, val);
-}
-Status KuduPartialRow::SetUInt32(int col_idx, uint32_t val) {
-  return Set<TypeTraits<UINT32> >(col_idx, val);
-}
-Status KuduPartialRow::SetUInt64(int col_idx, uint64_t val) {
-  return Set<TypeTraits<UINT64> >(col_idx, val);
 }
 Status KuduPartialRow::SetString(int col_idx, const Slice& val) {
   return Set<TypeTraits<STRING> >(col_idx, val, false);
@@ -294,18 +270,6 @@ Status KuduPartialRow::GetInt32(const Slice& col_name, int32_t* val) const {
 Status KuduPartialRow::GetInt64(const Slice& col_name, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_name, val);
 }
-Status KuduPartialRow::GetUInt8(const Slice& col_name, uint8_t* val) const {
-  return Get<TypeTraits<UINT8> >(col_name, val);
-}
-Status KuduPartialRow::GetUInt16(const Slice& col_name, uint16_t* val) const {
-  return Get<TypeTraits<UINT16> >(col_name, val);
-}
-Status KuduPartialRow::GetUInt32(const Slice& col_name, uint32_t* val) const {
-  return Get<TypeTraits<UINT32> >(col_name, val);
-}
-Status KuduPartialRow::GetUInt64(const Slice& col_name, uint64_t* val) const {
-  return Get<TypeTraits<UINT64> >(col_name, val);
-}
 Status KuduPartialRow::GetFloat(const Slice& col_name, float* val) const {
   return Get<TypeTraits<FLOAT> >(col_name, val);
 }
@@ -330,18 +294,6 @@ Status KuduPartialRow::GetInt32(int col_idx, int32_t* val) const {
 }
 Status KuduPartialRow::GetInt64(int col_idx, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_idx, val);
-}
-Status KuduPartialRow::GetUInt8(int col_idx, uint8_t* val) const {
-  return Get<TypeTraits<UINT8> >(col_idx, val);
-}
-Status KuduPartialRow::GetUInt16(int col_idx, uint16_t* val) const {
-  return Get<TypeTraits<UINT16> >(col_idx, val);
-}
-Status KuduPartialRow::GetUInt32(int col_idx, uint32_t* val) const {
-  return Get<TypeTraits<UINT32> >(col_idx, val);
-}
-Status KuduPartialRow::GetUInt64(int col_idx, uint64_t* val) const {
-  return Get<TypeTraits<UINT64> >(col_idx, val);
 }
 Status KuduPartialRow::GetFloat(int col_idx, float* val) const {
   return Get<TypeTraits<FLOAT> >(col_idx, val);

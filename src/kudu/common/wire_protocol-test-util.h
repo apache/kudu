@@ -17,22 +17,22 @@ namespace kudu {
 
 Schema GetSimpleTestSchema() {
   return Schema(boost::assign::list_of
-      (ColumnSchema("key", UINT32))
-      (ColumnSchema("int_val", UINT32))
+      (ColumnSchema("key", INT32))
+      (ColumnSchema("int_val", INT32))
       (ColumnSchema("string_val", STRING, true)),
       1);
 }
 
 void AddTestRowWithNullableStringToPB(RowOperationsPB::Type op_type,
                                       const Schema& schema,
-                                      uint32_t key,
-                                      uint32_t int_val,
+                                      int32_t key,
+                                      int32_t int_val,
                                       const char* string_val,
                                       RowOperationsPB* ops) {
   DCHECK(schema.initialized());
   KuduPartialRow row(&schema);
-  CHECK_OK(row.SetUInt32("key", key));
-  CHECK_OK(row.SetUInt32("int_val", int_val));
+  CHECK_OK(row.SetInt32("key", key));
+  CHECK_OK(row.SetInt32("int_val", int_val));
   if (string_val) {
     CHECK_OK(row.SetStringCopy("string_val", string_val));
   }
@@ -42,8 +42,8 @@ void AddTestRowWithNullableStringToPB(RowOperationsPB::Type op_type,
 
 void AddTestRowToPB(RowOperationsPB::Type op_type,
                     const Schema& schema,
-                    uint32_t key,
-                    uint32_t int_val,
+                    int32_t key,
+                    int32_t int_val,
                     const string& string_val,
                     RowOperationsPB* ops) {
   AddTestRowWithNullableStringToPB(op_type, schema, key, int_val, string_val.c_str(), ops);
@@ -51,10 +51,10 @@ void AddTestRowToPB(RowOperationsPB::Type op_type,
 
 void AddTestKeyToPB(RowOperationsPB::Type op_type,
                     const Schema& schema,
-                    uint32_t key,
+                    int32_t key,
                     RowOperationsPB* ops) {
   KuduPartialRow row(&schema);
-  CHECK_OK(row.SetUInt32(0, key));
+  CHECK_OK(row.SetInt32(0, key));
   RowOperationsPBEncoder enc(ops);
   enc.Add(op_type, row);
 }

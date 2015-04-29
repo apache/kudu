@@ -89,7 +89,7 @@ class FullStackInsertScanTest : public KuduTest {
     random_(SeedRandom()),
     // schema has kNumIntCols contiguous columns of Int32 and Int64, in order.
     schema_(list_of
-            (KuduColumnSchema("key", KuduColumnSchema::UINT64))
+            (KuduColumnSchema("key", KuduColumnSchema::INT64))
             (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
             (KuduColumnSchema("int32_val1", KuduColumnSchema::INT32))
             (KuduColumnSchema("int32_val2", KuduColumnSchema::INT32))
@@ -144,7 +144,7 @@ class FullStackInsertScanTest : public KuduTest {
 
   // Generate random row according to schema_.
   static void RandomRow(Random* rng, KuduPartialRow* row,
-                        char* buf, uint64_t key, int id);
+                        char* buf, int64_t key, int id);
 
   void InitCluster() {
     // Start mini-cluster with 1 tserver, config client options
@@ -232,7 +232,7 @@ void InterruptNotNull(gscoped_ptr<Subprocess> sub) {
 // If key is approximately at an even multiple of 1/10 of the way between
 // start and end, then a % completion update is printed to LOG(INFO)
 // Assumes that end - start + 1 fits into an int
-void ReportTenthDone(uint64_t key, uint64_t start, uint64_t end,
+void ReportTenthDone(int64_t key, int64_t start, int64_t end,
                      int id, int numids) {
   int done = key - start + 1;
   int total = end - start + 1;
@@ -335,8 +335,8 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   KuduSession* session = CHECK_NOTNULL(sessions_[id].get());
   KuduTable* table = CHECK_NOTNULL(tables_[id].get());
   // Identify start and end of keyrange id is responsible for
-  uint64_t start = kNumInsertsPerClient * id;
-  uint64_t end = start + kNumInsertsPerClient;
+  int64_t start = kNumInsertsPerClient * id;
+  int64_t end = start + kNumInsertsPerClient;
   // Printed id value is in the range 1..kNumInsertClients inclusive
   ++id;
   // Use synchronizer to keep 1 asynchronous batch flush maximum
@@ -346,7 +346,7 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   // Maintain buffer for random string generation
   char randstr[kRandomStrMaxLength + 1];
   // Insert in the id's key range
-  for (uint64_t key = start; key < end; ++key) {
+  for (int64_t key = start; key < end; ++key) {
     gscoped_ptr<KuduInsert> insert = table->NewInsert();
     RandomRow(&rng, insert->mutable_row(), randstr, key, id);
     CHECK_OK(session->Apply(insert.Pass()));
@@ -391,12 +391,12 @@ void FullStackInsertScanTest::ScanProjection(const KuduSchema& schema,
 
 // Fills in the fields for a row as defined by the Schema below
 // name: (key,      string_val, int32_val$, int64_val$)
-// type: (uint64_t, string,     int32_t x4, int64_t x4)
+// type: (int64_t,  string,     int32_t x4, int64_t x4)
 // The first int32 gets the id and the first int64 gets the thread
 // id. The key is assigned to "key," and the other fields are random.
 void FullStackInsertScanTest::RandomRow(Random* rng, KuduPartialRow* row, char* buf,
-                                        uint64_t key, int id) {
-  CHECK_OK(row->SetUInt64(kKeyCol, key));
+                                        int64_t key, int id) {
+  CHECK_OK(row->SetInt64(kKeyCol, key));
   int len = kRandomStrMinLength +
     rng->Uniform(kRandomStrMaxLength - kRandomStrMinLength + 1);
   RandomString(buf, len, rng);

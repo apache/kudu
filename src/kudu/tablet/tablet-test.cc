@@ -434,12 +434,12 @@ TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
 
 
 template<class SETUP>
-bool TestSetupExpectsNulls(uint32_t key_idx) {
+bool TestSetupExpectsNulls(int32_t key_idx) {
   return false;
 }
 
 template<>
-bool TestSetupExpectsNulls<NullableValueTestSetup>(uint32_t key_idx) {
+bool TestSetupExpectsNulls<NullableValueTestSetup>(int32_t key_idx) {
   // If it's a row that the test updates, then we should expect null
   // based on whether it updated to NULL or away from NULL.
   bool should_update = (key_idx % 2 == 1);
@@ -459,7 +459,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
 
   // Put a row in disk rowset 1 (insert and flush)
   LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
-  for (uint32_t i = 0; i < max_rows; i++) {
+  for (int32_t i = 0; i < max_rows; i++) {
     ASSERT_OK_FAST(this->InsertTestRow(&writer, i, 0));
 
     if (i % 300 == 0) {
@@ -473,7 +473,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   // as some data in memrowset.
 
   // Update a subset of the rows
-  for (uint32_t i = 0; i < max_rows; i++) {
+  for (int32_t i = 0; i < max_rows; i++) {
     bool should_update = (i % 2 == 1);
     if (!should_update) continue;
 
@@ -503,7 +503,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
     for (size_t i = 0; i < block.nrows(); i++) {
       SCOPED_TRACE(schema.DebugRow(block.row(i)));
       // Verify that we see each key exactly once.
-      uint32_t key_idx = *schema.ExtractColumnFromRow<UINT32>(block.row(i), 1);
+      int32_t key_idx = *schema.ExtractColumnFromRow<INT32>(block.row(i), 1);
       if (seen[key_idx]) {
         FAIL() << "Saw row " << key_idx << " multiple times";
       }
@@ -511,7 +511,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
       seen_count++;
 
       // Verify that we see the correctly updated value
-      const uint32_t* val = schema.ExtractColumnFromRow<UINT32>(block.row(i), 2);
+      const int32_t* val = schema.ExtractColumnFromRow<INT32>(block.row(i), 2);
 
       bool set_to_null = TestSetupExpectsNulls<TypeParam>(key_idx);
       bool should_update = (key_idx % 2 == 1);

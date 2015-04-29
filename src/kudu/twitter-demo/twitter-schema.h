@@ -17,16 +17,16 @@ using client::KuduSchema;
 
 inline KuduSchema CreateTwitterSchema() {
   return KuduSchema(boost::assign::list_of
-                (KuduColumnSchema("tweet_id", KuduColumnSchema::UINT64))
+                (KuduColumnSchema("tweet_id", KuduColumnSchema::INT64))
                 (KuduColumnSchema("text", KuduColumnSchema::STRING))
                 (KuduColumnSchema("source", KuduColumnSchema::STRING))
                 (KuduColumnSchema("created_at", KuduColumnSchema::STRING))
-                (KuduColumnSchema("user_id", KuduColumnSchema::UINT64))
+                (KuduColumnSchema("user_id", KuduColumnSchema::INT64))
                 (KuduColumnSchema("user_name", KuduColumnSchema::STRING))
                 (KuduColumnSchema("user_description", KuduColumnSchema::STRING))
                 (KuduColumnSchema("user_location", KuduColumnSchema::STRING))
-                (KuduColumnSchema("user_followers_count", KuduColumnSchema::UINT32))
-                (KuduColumnSchema("user_friends_count", KuduColumnSchema::UINT32))
+                (KuduColumnSchema("user_followers_count", KuduColumnSchema::INT32))
+                (KuduColumnSchema("user_friends_count", KuduColumnSchema::INT32))
                 (KuduColumnSchema("user_image_url", KuduColumnSchema::STRING)),
                 1);
 }

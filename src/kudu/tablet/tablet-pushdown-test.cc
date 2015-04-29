@@ -29,8 +29,8 @@ class TabletPushdownTest : public KuduTabletTest,
  public:
   TabletPushdownTest()
     : KuduTabletTest(Schema(boost::assign::list_of
-              (ColumnSchema("key", UINT32))
-              (ColumnSchema("int_val", UINT32))
+              (ColumnSchema("key", INT32))
+              (ColumnSchema("int_val", INT32))
               (ColumnSchema("string_val", STRING)),
               1)) {
   }
@@ -51,9 +51,9 @@ class TabletPushdownTest : public KuduTabletTest,
 
     LocalTabletWriter writer(tablet().get(), &client_schema_);
     KuduPartialRow row(&client_schema_);
-    for (uint64_t i = 0; i < nrows_; i++) {
-      CHECK_OK(row.SetUInt32(0, i));
-      CHECK_OK(row.SetUInt32(1, i * 10));
+    for (int64_t i = 0; i < nrows_; i++) {
+      CHECK_OK(row.SetInt32(0, i));
+      CHECK_OK(row.SetInt32(1, i * 10));
       CHECK_OK(row.SetStringCopy(2, StringPrintf("%08ld", i)));
       ASSERT_OK_FAST(writer.Insert(row));
 
@@ -85,9 +85,9 @@ class TabletPushdownTest : public KuduTabletTest,
       LOG(INFO) << str;
     }
     ASSERT_EQ(11, results.size());
-    ASSERT_EQ("(uint32 key=200, uint32 int_val=2000, string string_val=00000200)",
+    ASSERT_EQ("(int32 key=200, int32 int_val=2000, string string_val=00000200)",
               results[0]);
-    ASSERT_EQ("(uint32 key=210, uint32 int_val=2100, string string_val=00000210)",
+    ASSERT_EQ("(int32 key=210, int32 int_val=2100, string string_val=00000210)",
               results[10]);
 
     int expected_blocks_from_disk;
@@ -153,8 +153,8 @@ class TabletPushdownTest : public KuduTabletTest,
 
 TEST_P(TabletPushdownTest, TestPushdownIntKeyRange) {
   ScanSpec spec;
-  uint32_t lower = 200;
-  uint32_t upper = 210;
+  int32_t lower = 200;
+  int32_t upper = 210;
   ColumnRangePredicate pred0(schema_.column(0), &lower, &upper);
   spec.AddPredicate(pred0);
 
@@ -166,8 +166,8 @@ TEST_P(TabletPushdownTest, TestPushdownIntValueRange) {
   // Push down a double-ended range on the integer value column.
 
   ScanSpec spec;
-  uint32_t lower = 2000;
-  uint32_t upper = 2100;
+  int32_t lower = 2000;
+  int32_t upper = 2100;
   ColumnRangePredicate pred1(schema_.column(1), &lower, &upper);
   spec.AddPredicate(pred1);
 

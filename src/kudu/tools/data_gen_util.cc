@@ -18,26 +18,14 @@ void WriteValueToColumn(const client::KuduSchema& schema,
   client::KuduColumnSchema::DataType type = schema.Column(col_idx).type();
   char buf[kFastToBufferSize];
   switch (type) {
-    case client::KuduColumnSchema::UINT8:
-      CHECK_OK(row->SetUInt8(col_idx, value));
-      break;
     case client::KuduColumnSchema::INT8:
       CHECK_OK(row->SetInt8(col_idx, value));
-      break;
-    case client::KuduColumnSchema::UINT16:
-      CHECK_OK(row->SetUInt16(col_idx, value));
       break;
     case client::KuduColumnSchema::INT16:
       CHECK_OK(row->SetInt16(col_idx, value));
       break;
-    case client::KuduColumnSchema::UINT32:
-      CHECK_OK(row->SetUInt32(col_idx, value));
-      break;
     case client::KuduColumnSchema::INT32:
       CHECK_OK(row->SetInt32(col_idx, value));
-      break;
-    case client::KuduColumnSchema::UINT64:
-      CHECK_OK(row->SetUInt64(col_idx, value));
       break;
     case client::KuduColumnSchema::INT64:
       CHECK_OK(row->SetInt64(col_idx, value));

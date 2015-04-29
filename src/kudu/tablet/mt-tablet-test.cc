@@ -130,10 +130,10 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
         RowBlockRow rb_row = block.row(0);
         if (rand() % 10 == 7) {
           // Increment the "val"
-          const uint32_t *old_val = schema.ExtractColumnFromRow<UINT32>(rb_row, col_idx);
+          const int32_t *old_val = schema.ExtractColumnFromRow<INT32>(rb_row, col_idx);
           // Issue an update. In the NullableValue setup, many of the rows start with
           // NULL here, so we have to check for it.
-          uint32_t new_val;
+          int32_t new_val;
           if (old_val != NULL) {
             new_val = *old_val + 1;
           } else {
@@ -142,7 +142,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
 
           // Rebuild the key by extracting the cells from the row
           setup_.BuildRowKeyFromExistingRow(&row, rb_row);
-          CHECK_OK(row.SetUInt32(col_idx, new_val));
+          CHECK_OK(row.SetInt32(col_idx, new_val));
           CHECK_OK(writer.Update(row));
 
           if (++updates_since_last_report >= 10) {
@@ -222,7 +222,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
       CHECK_OK(iter->NextBlock(&block));
 
       for (size_t j = 0; j < block.nrows(); j++) {
-        sum += *reinterpret_cast<const uint32_t *>(column.cell_ptr(j));
+        sum += *reinterpret_cast<const int32_t *>(column.cell_ptr(j));
       }
       count_since_report += block.nrows();
 
@@ -309,7 +309,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // Thread which cycles between inserting and deleting a test row, each time
   // with a different value.
   void DeleteAndReinsertCycleThread(int tid) {
-    uint32_t iteration = 0;
+    int32_t iteration = 0;
     LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
 
     while (running_insert_count_.count() > 0) {
@@ -325,7 +325,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   // DeleteAndReinsertCycleThread to check for races where we might accidentally
   // succeed in UPDATING a ghost row.
   void StubbornlyUpdateSameRowThread(int tid) {
-    uint32_t iteration = 0;
+    int32_t iteration = 0;
     LocalTabletWriter writer(this->tablet().get(), &this->client_schema_);
     while (running_insert_count_.count() > 0) {
       for (int i = 0; i < 100; i++) {

@@ -226,7 +226,7 @@ TEST_F(TabletServerTest, TestInsert) {
     Status s = StatusFromPB(resp.error().status());
     EXPECT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Client missing required column: key[uint32 NOT NULL]");
+                        "Client missing required column: key[int32 NOT NULL]");
     req.clear_row_operations();
   }
 
@@ -585,7 +585,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
 // throws an exception.
 TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
   SchemaBuilder schema_builder(schema_);
-  ASSERT_OK(schema_builder.AddColumn("col_doesnt_exist", UINT32));
+  ASSERT_OK(schema_builder.AddColumn("col_doesnt_exist", INT32));
   Schema bad_schema_with_ids = schema_builder.Build();
   Schema bad_schema = schema_builder.BuildWithoutIds();
 
@@ -600,10 +600,10 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     ASSERT_OK(SchemaToPB(bad_schema, req.mutable_schema()));
 
     KuduPartialRow row(&bad_schema);
-    CHECK_OK(row.SetUInt32("key", 1234));
-    CHECK_OK(row.SetUInt32("int_val", 5678));
+    CHECK_OK(row.SetInt32("key", 1234));
+    CHECK_OK(row.SetInt32("int_val", 5678));
     CHECK_OK(row.SetStringCopy("string_val", "hello world via RPC"));
-    CHECK_OK(row.SetUInt32("col_doesnt_exist", 91011));
+    CHECK_OK(row.SetInt32("col_doesnt_exist", 91011));
     RowOperationsPBEncoder enc(data);
     enc.Add(RowOperationsPB::INSERT, row);
 
@@ -613,7 +613,7 @@ TEST_F(TabletServerTest, TestInvalidWriteRequest_BadSchema) {
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::MISMATCHED_SCHEMA, resp.error().code());
     ASSERT_STR_CONTAINS(resp.error().status().message(),
-                        "Client provided column col_doesnt_exist[uint32 NOT NULL]"
+                        "Client provided column col_doesnt_exist[int32 NOT NULL]"
                         " not present in tablet");
   }
 
@@ -650,7 +650,7 @@ class MyCommonHooks : public Tablet::FlushCompactCommonHooks,
   : test_(test),
     iteration_(0) {}
 
-  Status DoHook(uint32_t key, uint32_t new_int_val) {
+  Status DoHook(int32_t key, int32_t new_int_val) {
     test_->UpdateTestRowRemote(0, key, new_int_val);
     return Status::OK();
   }
@@ -1011,8 +1011,8 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
     }
 
     // assert that the first and last rows were the expected ones
-    ASSERT_EQ("(uint32 key=0, uint32 int_val=0, string string_val=original0)", results[0]);
-    ASSERT_EQ(Substitute("(uint32 key=$0, uint32 int_val=$0, string string_val=original$0)",
+    ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=original0)", results[0]);
+    ASSERT_EQ(Substitute("(int32 key=$0, int32 int_val=$0, string string_val=original$0)",
                          (batch_idx * (num_rows / num_batches) - 1)), results[results.size() - 1]);
     batch_idx++;
   }
@@ -1193,7 +1193,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
     // Verify that we get the rows back in order.
     KuduPartialRow row(&projection);
     for (int j = 0; j < num_rows; j++) {
-      ASSERT_OK(row.SetUInt32(0, j * 2));
+      ASSERT_OK(row.SetInt32(0, j * 2));
       ASSERT_OK(row.SetStringCopy(1, StringPrintf("hello %d", j)));
       string expected = "(" + row.ToString() + ")";
       ASSERT_EQ(expected, results[j]);
@@ -1257,7 +1257,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimes
   vector<string> results;
   ASSERT_NO_FATAL_FAILURE(DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(1, results.size());
-  ASSERT_EQ("(uint32 key=0, uint32 int_val=0, string string_val=original0)", results[0]);
+  ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=original0)", results[0]);
 }
 
 
@@ -1336,8 +1336,8 @@ TEST_F(TabletServerTest, TestScanWithStringPredicates) {
   ASSERT_NO_FATAL_FAILURE(
     DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(10, results.size());
-  ASSERT_EQ("(uint32 key=50, uint32 int_val=100, string string_val=hello 50)", results[0]);
-  ASSERT_EQ("(uint32 key=59, uint32 int_val=118, string string_val=hello 59)", results[9]);
+  ASSERT_EQ("(int32 key=50, int32 int_val=100, string string_val=hello 50)", results[0]);
+  ASSERT_EQ("(int32 key=59, int32 int_val=118, string string_val=hello 59)", results[9]);
 }
 
 TEST_F(TabletServerTest, TestScanWithPredicates) {
@@ -1361,8 +1361,8 @@ TEST_F(TabletServerTest, TestScanWithPredicates) {
   ColumnRangePredicatePB* pred = scan->add_range_predicates();
   pred->mutable_column()->CopyFrom(scan->projected_columns(0));
 
-  uint32_t lower_bound_int = 51;
-  uint32_t upper_bound_int = 100;
+  int32_t lower_bound_int = 51;
+  int32_t upper_bound_int = 100;
   pred->mutable_lower_bound()->append(reinterpret_cast<char*>(&lower_bound_int),
                                       sizeof(lower_bound_int));
   pred->mutable_upper_bound()->append(reinterpret_cast<char*>(&upper_bound_int),
@@ -1397,8 +1397,8 @@ TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
 
   // Set up a range predicate: 51 <= key <= 60
   // using encoded keys
-  uint32_t start_key_int = 51;
-  uint32_t stop_key_int = 60;
+  int32_t start_key_int = 51;
+  int32_t stop_key_int = 60;
   EncodedKeyBuilder ekb(&schema_);
   ekb.AddColumnKey(&start_key_int);
   gscoped_ptr<EncodedKey> start_encoded(ekb.BuildEncodedKey());
@@ -1427,9 +1427,9 @@ TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
   ASSERT_NO_FATAL_FAILURE(
     DrainScannerToStrings(resp.scanner_id(), schema_, &results));
   ASSERT_EQ(10, results.size());
-  EXPECT_EQ("(uint32 key=51, uint32 int_val=102, string string_val=hello 51)",
+  EXPECT_EQ("(int32 key=51, int32 int_val=102, string string_val=hello 51)",
             results.front());
-  EXPECT_EQ("(uint32 key=60, uint32 int_val=120, string string_val=hello 60)",
+  EXPECT_EQ("(int32 key=60, int32 int_val=120, string string_val=hello 60)",
             results.back());
 }
 
@@ -1471,7 +1471,7 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
 // throws an exception.
 TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjection) {
   const Schema projection(boost::assign::list_of
-                          (ColumnSchema("col_doesnt_exist", UINT32)),
+                          (ColumnSchema("col_doesnt_exist", INT32)),
                           0);
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
@@ -1485,12 +1485,12 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
   // Verify mismatched nullability for the not-null int field
   ASSERT_OK(
     projection.Reset(boost::assign::list_of
-      (ColumnSchema("int_val", UINT32, true)),     // should be NOT NULL
+      (ColumnSchema("int_val", INT32, true)),     // should be NOT NULL
       0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
-                           "The column 'int_val' must have type uint32 NOT "
-                           "NULL found uint32 NULLABLE");
+                           "The column 'int_val' must have type int32 NOT "
+                           "NULL found int32 NULLABLE");
 
   // Verify mismatched nullability for the nullable string field
   ASSERT_OK(
@@ -1505,22 +1505,22 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
   // Verify mismatched type for the not-null int field
   ASSERT_OK(
     projection.Reset(boost::assign::list_of
-      (ColumnSchema("int_val", UINT16, false)),     // should be UINT32 NOT NULL
+      (ColumnSchema("int_val", INT16, false)),     // should be INT32 NOT NULL
       0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
-                           "The column 'int_val' must have type uint32 NOT "
-                           "NULL found uint16 NOT NULL");
+                           "The column 'int_val' must have type int32 NOT "
+                           "NULL found int16 NOT NULL");
 
   // Verify mismatched type for the nullable string field
   ASSERT_OK(
     projection.Reset(boost::assign::list_of
-      (ColumnSchema("string_val", UINT32, true)), // should be STRING NULLABLE
+      (ColumnSchema("string_val", INT32, true)), // should be STRING NULLABLE
       0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'string_val' must have type string "
-                           "NULLABLE found uint32 NULLABLE");
+                           "NULLABLE found int32 NULLABLE");
 }
 
 // Test that passing a projection with Column IDs throws an exception.
@@ -1568,10 +1568,10 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   InsertTestRowsRemote(0, 0, 2);
 
   // Add one column with a default value
-  const uint32_t c2_write_default = 5;
-  const uint32_t c2_read_default = 7;
+  const int32_t c2_write_default = 5;
+  const int32_t c2_read_default = 7;
   SchemaBuilder builder(schema_);
-  ASSERT_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, &c2_write_default));
+  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, &c2_write_default));
   Schema s2 = builder.Build();
 
   req.set_tablet_id(kTabletId);
@@ -1594,8 +1594,8 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   }
 
   const Schema projection(boost::assign::list_of
-                          (ColumnSchema("key", UINT32))
-                          (ColumnSchema("c2", UINT32)),
+                          (ColumnSchema("key", INT32))
+                          (ColumnSchema("c2", INT32)),
                           1);
 
   // Try recovering from the original log

@@ -55,7 +55,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
   RemoteBootstrapTest()
     : KuduTabletTest(Schema(boost::assign::list_of
                               (ColumnSchema("key", STRING))
-                              (ColumnSchema("val", UINT32)),
+                              (ColumnSchema("val", INT32)),
                               1)) {
     CHECK_OK(ThreadPoolBuilder("test-ldr-exec").Build(&leader_apply_pool_));
     CHECK_OK(ThreadPoolBuilder("test-rep-exec").Build(&replica_apply_pool_));
@@ -126,7 +126,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
   }
 
   void PopulateTablet() {
-    for (uint32_t i = 0; i < 1000; i++) {
+    for (int32_t i = 0; i < 1000; i++) {
       WriteRequestPB req;
       req.set_tablet_id(tablet_peer_->tablet_id());
       ASSERT_OK(SchemaToPB(client_schema_, req.mutable_schema()));
@@ -136,7 +136,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
 
       string key = Substitute("key$0", i);
       ASSERT_OK(row.SetString(0, key));
-      ASSERT_OK(row.SetUInt32(1, i));
+      ASSERT_OK(row.SetInt32(1, i));
       enc.Add(RowOperationsPB::INSERT, row);
 
       WriteResponsePB resp;

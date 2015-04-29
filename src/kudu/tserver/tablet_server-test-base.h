@@ -58,7 +58,7 @@ namespace tserver {
 
 class TabletServerTestBase : public KuduTest {
  public:
-  typedef pair<uint32_t, uint32_t> KeyValue;
+  typedef pair<int32_t, int32_t> KeyValue;
 
   TabletServerTestBase()
     : schema_(GetSimpleTestSchema()),
@@ -124,8 +124,8 @@ class TabletServerTestBase : public KuduTest {
   }
 
   void UpdateTestRowRemote(int tid,
-                           uint64_t row_idx,
-                           uint32_t new_val,
+                           int64_t row_idx,
+                           int32_t new_val,
                            TimeSeries *ts = NULL) {
 
     WriteRequestPB req;
@@ -164,10 +164,10 @@ class TabletServerTestBase : public KuduTest {
   }
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
-  void InsertTestRowsDirect(uint64_t start_row, uint64_t num_rows) {
+  void InsertTestRowsDirect(int64_t start_row, uint64_t num_rows) {
     tablet::LocalTabletWriter writer(tablet_peer_->tablet(), &schema_);
     KuduPartialRow row(&schema_);
-    for (uint64_t i = 0; i < num_rows; i++) {
+    for (int64_t i = 0; i < num_rows; i++) {
       BuildTestRow(start_row + i, &row);
       CHECK_OK(writer.Insert(row));
     }
@@ -177,7 +177,7 @@ class TabletServerTestBase : public KuduTest {
   // Rows are grouped in batches of 'count'/'num_batches' size.
   // Batch size defaults to 1.
   void InsertTestRowsRemote(int tid,
-                            uint64_t first_row,
+                            int64_t first_row,
                             uint64_t count,
                             uint64_t num_batches = -1,
                             TabletServerServiceProxy* proxy = NULL,
@@ -248,7 +248,7 @@ class TabletServerTestBase : public KuduTest {
   }
 
   // Delete specified test row range.
-  void DeleteTestRowsRemote(uint64_t first_row,
+  void DeleteTestRowsRemote(int64_t first_row,
                             uint64_t count,
                             TabletServerServiceProxy* proxy = NULL,
                             string tablet_id = kTabletId) {
@@ -264,7 +264,7 @@ class TabletServerTestBase : public KuduTest {
     ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
     RowOperationsPB* ops = req.mutable_row_operations();
-    for (uint64_t rowid = first_row; rowid < first_row + count; rowid++) {
+    for (int64_t rowid = first_row; rowid < first_row + count; rowid++) {
       AddTestKeyToPB(RowOperationsPB::DELETE, schema_, rowid, ops);
     }
 
@@ -275,8 +275,8 @@ class TabletServerTestBase : public KuduTest {
   }
 
   void BuildTestRow(int index, KuduPartialRow* row) {
-    ASSERT_OK(row->SetUInt32(0, index));
-    ASSERT_OK(row->SetUInt32(1, index * 2));
+    ASSERT_OK(row->SetInt32(0, index));
+    ASSERT_OK(row->SetInt32(1, index * 2));
     ASSERT_OK(row->SetStringCopy(2, StringPrintf("hello %d", index)));
   }
 
@@ -383,8 +383,8 @@ class TabletServerTestBase : public KuduTest {
           rb_row.Reset(&block, i);
           VLOG(1) << "Verified row " << schema.DebugRow(rb_row);
           ASSERT_LT(count, expected.size()) << "Got more rows than expected!";
-          ASSERT_EQ(expected[count].first, *schema.ExtractColumnFromRow<UINT32>(rb_row, 0));
-          ASSERT_EQ(expected[count].second, *schema.ExtractColumnFromRow<UINT32>(rb_row, 1));
+          ASSERT_EQ(expected[count].first, *schema.ExtractColumnFromRow<INT32>(rb_row, 0));
+          ASSERT_EQ(expected[count].second, *schema.ExtractColumnFromRow<INT32>(rb_row, 1));
           count++;
         }
       }

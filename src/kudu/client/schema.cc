@@ -18,7 +18,7 @@ MAKE_ENUM_LIMITS(kudu::client::KuduColumnStorageAttributes::CompressionType,
                  kudu::client::KuduColumnStorageAttributes::ZLIB);
 
 MAKE_ENUM_LIMITS(kudu::client::KuduColumnSchema::DataType,
-                 kudu::client::KuduColumnSchema::UINT8,
+                 kudu::client::KuduColumnSchema::INT8,
                  kudu::client::KuduColumnSchema::BOOL);
 
 namespace kudu {
@@ -74,13 +74,9 @@ KuduColumnStorageAttributes::CompressionType FromInternalCompressionType(
 
 kudu::DataType ToInternalDataType(KuduColumnSchema::DataType type) {
   switch (type) {
-    case KuduColumnSchema::UINT8: return kudu::UINT8;
     case KuduColumnSchema::INT8: return kudu::INT8;
-    case KuduColumnSchema::UINT16: return kudu::UINT16;
     case KuduColumnSchema::INT16: return kudu::INT16;
-    case KuduColumnSchema::UINT32: return kudu::UINT32;
     case KuduColumnSchema::INT32: return kudu::INT32;
-    case KuduColumnSchema::UINT64: return kudu::UINT64;
     case KuduColumnSchema::INT64: return kudu::INT64;
     case KuduColumnSchema::FLOAT: return kudu::FLOAT;
     case KuduColumnSchema::DOUBLE: return kudu::DOUBLE;
@@ -92,13 +88,9 @@ kudu::DataType ToInternalDataType(KuduColumnSchema::DataType type) {
 
 KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
   switch (type) {
-    case kudu::UINT8: return KuduColumnSchema::UINT8;
     case kudu::INT8: return KuduColumnSchema::INT8;
-    case kudu::UINT16: return KuduColumnSchema::UINT16;
     case kudu::INT16: return KuduColumnSchema::INT16;
-    case kudu::UINT32: return KuduColumnSchema::UINT32;
     case kudu::INT32: return KuduColumnSchema::INT32;
-    case kudu::UINT64: return KuduColumnSchema::UINT64;
     case kudu::INT64: return KuduColumnSchema::INT64;
     case kudu::FLOAT: return KuduColumnSchema::FLOAT;
     case kudu::DOUBLE: return KuduColumnSchema::DOUBLE;

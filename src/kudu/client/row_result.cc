@@ -84,22 +84,6 @@ Status KuduRowResult::GetInt64(const Slice& col_name, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_name, val);
 }
 
-Status KuduRowResult::GetUInt8(const Slice& col_name, uint8_t* val) const {
-  return Get<TypeTraits<UINT8> >(col_name, val);
-}
-
-Status KuduRowResult::GetUInt16(const Slice& col_name, uint16_t* val) const {
-  return Get<TypeTraits<UINT16> >(col_name, val);
-}
-
-Status KuduRowResult::GetUInt32(const Slice& col_name, uint32_t* val) const {
-  return Get<TypeTraits<UINT32> >(col_name, val);
-}
-
-Status KuduRowResult::GetUInt64(const Slice& col_name, uint64_t* val) const {
-  return Get<TypeTraits<UINT64> >(col_name, val);
-}
-
 Status KuduRowResult::GetFloat(const Slice& col_name, float* val) const {
   return Get<TypeTraits<FLOAT> >(col_name, val);
 }
@@ -130,22 +114,6 @@ Status KuduRowResult::GetInt32(int col_idx, int32_t* val) const {
 
 Status KuduRowResult::GetInt64(int col_idx, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_idx, val);
-}
-
-Status KuduRowResult::GetUInt8(int col_idx, uint8_t* val) const {
-  return Get<TypeTraits<UINT8> >(col_idx, val);
-}
-
-Status KuduRowResult::GetUInt16(int col_idx, uint16_t* val) const {
-  return Get<TypeTraits<UINT16> >(col_idx, val);
-}
-
-Status KuduRowResult::GetUInt32(int col_idx, uint32_t* val) const {
-  return Get<TypeTraits<UINT32> >(col_idx, val);
-}
-
-Status KuduRowResult::GetUInt64(int col_idx, uint64_t* val) const {
-  return Get<TypeTraits<UINT64> >(col_idx, val);
 }
 
 Status KuduRowResult::GetFloat(int col_idx, float* val) const {

@@ -69,16 +69,16 @@ using master::TabletLocationsPB;
 using tablet::TabletPeer;
 using tserver::MiniTabletServer;
 
-const uint32_t kNonNullDefault = 12345;
+const int32_t kNonNullDefault = 12345;
 
 class ClientTest : public KuduTest {
  public:
   ClientTest()
     : schema_(list_of
-              (KuduColumnSchema("key", KuduColumnSchema::UINT32))
-              (KuduColumnSchema("int_val", KuduColumnSchema::UINT32))
+              (KuduColumnSchema("key", KuduColumnSchema::INT32))
+              (KuduColumnSchema("int_val", KuduColumnSchema::INT32))
               (KuduColumnSchema("string_val", KuduColumnSchema::STRING, true))
-              (KuduColumnSchema("non_null_with_default", KuduColumnSchema::UINT32, false,
+              (KuduColumnSchema("non_null_with_default", KuduColumnSchema::INT32, false,
                                 &kNonNullDefault)),
               1) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
@@ -132,7 +132,7 @@ class ClientTest : public KuduTest {
 
   static const char *kTableName;
   static const char *kTable2Name;
-  static const uint32_t kNoBound;
+  static const int32_t kNoBound;
 
   string GetFirstTabletId(KuduTable* table) {
     GetTableLocationsRequestPB req;
@@ -200,18 +200,18 @@ class ClientTest : public KuduTest {
   gscoped_ptr<KuduInsert> BuildTestRow(KuduTable* table, int index) {
     gscoped_ptr<KuduInsert> insert = table->NewInsert();
     KuduPartialRow* row = insert->mutable_row();
-    CHECK_OK(row->SetUInt32(0, index));
-    CHECK_OK(row->SetUInt32(1, index * 2));
+    CHECK_OK(row->SetInt32(0, index));
+    CHECK_OK(row->SetInt32(1, index * 2));
     CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello %d", index))));
-    CHECK_OK(row->SetUInt32(3, index * 3));
+    CHECK_OK(row->SetInt32(3, index * 3));
     return insert.Pass();
   }
 
   gscoped_ptr<KuduUpdate> UpdateTestRow(KuduTable* table, int index) {
     gscoped_ptr<KuduUpdate> update = table->NewUpdate();
     KuduPartialRow* row = update->mutable_row();
-    CHECK_OK(row->SetUInt32(0, index));
-    CHECK_OK(row->SetUInt32(1, index * 2 + 1));
+    CHECK_OK(row->SetInt32(0, index));
+    CHECK_OK(row->SetInt32(1, index * 2 + 1));
     CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello again %d", index))));
     return update.Pass();
   }
@@ -219,7 +219,7 @@ class ClientTest : public KuduTest {
   gscoped_ptr<KuduDelete> DeleteTestRow(KuduTable* table, int index) {
     gscoped_ptr<KuduDelete> del = table->NewDelete();
     KuduPartialRow* row = del->mutable_row();
-    CHECK_OK(row->SetUInt32(0, index));
+    CHECK_OK(row->SetInt32(0, index));
     return del.Pass();
   }
 
@@ -237,8 +237,8 @@ class ClientTest : public KuduTest {
         ASSERT_OK(scanner.NextBatch(&rows));
 
         BOOST_FOREACH(const KuduRowResult& row, rows) {
-          uint32_t value;
-          ASSERT_OK(row.GetUInt32(0, &value));
+          int32_t value;
+          ASSERT_OK(row.GetInt32(0, &value));
           sum += value;
         }
         rows.clear();
@@ -280,8 +280,8 @@ class ClientTest : public KuduTest {
 
   void DoTestScanWithKeyPredicate() {
     KuduScanner scanner(client_table_.get());
-    uint32_t lower = 5;
-    uint32_t upper = 10;
+    int32_t lower = 5;
+    int32_t upper = 10;
     KuduColumnRangePredicate pred(schema_.Column(0), &lower, &upper);
     ASSERT_OK(scanner.AddConjunctPredicate(pred));
 
@@ -294,8 +294,8 @@ class ClientTest : public KuduTest {
         ASSERT_OK(scanner.NextBatch(&rows));
 
         BOOST_FOREACH(const KuduRowResult& row, rows) {
-          uint32_t k;
-          ASSERT_OK(row.GetUInt32(0, &k));
+          int32_t k;
+          ASSERT_OK(row.GetInt32(0, &k));
           if (k < 5 || k > 10) {
             FAIL() << row.ToString();
           }
@@ -309,12 +309,12 @@ class ClientTest : public KuduTest {
     return CountRowsFromClient(table, kNoBound, kNoBound);
   }
 
-  int CountRowsFromClient(KuduTable* table, uint32_t lower_bound, uint32_t upper_bound) {
+  int CountRowsFromClient(KuduTable* table, int32_t lower_bound, int32_t upper_bound) {
     return CountRowsFromClient(table, KuduClient::LEADER_ONLY, lower_bound, upper_bound);
   }
 
   int CountRowsFromClient(KuduTable* table, KuduClient::ReplicaSelection selection,
-                          uint32_t lower_bound, uint32_t upper_bound) {
+                          int32_t lower_bound, int32_t upper_bound) {
     KuduScanner scanner(table);
     CHECK_OK(scanner.SetSelection(selection));
     KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
@@ -474,7 +474,7 @@ class ClientTest : public KuduTest {
 
 const char *ClientTest::kTableName = "client-testtb";
 const char *ClientTest::kTable2Name = "client-testtb2";
-const uint32_t ClientTest::kNoBound = kuint32max;
+const int32_t ClientTest::kNoBound = kint32max;
 
 TEST_F(ClientTest, TestListTables) {
   vector<string> tables;
@@ -756,16 +756,16 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
-  KuduSchema no_key_projection(boost::assign::list_of
+  KuduSchema no_key_projection(list_of
                                (schema_.Column(1)), 0);
   ASSERT_OK(scanner.SetProjection(&no_key_projection));
-  uint32_t lower = 5;
-  uint32_t upper = 10;
+  int32_t lower = 5;
+  int32_t upper = 10;
   KuduColumnRangePredicate pred(schema_.Column(0), &lower, &upper);
   ASSERT_OK(scanner.AddConjunctPredicate(pred));
 
   size_t nrows = 0;
-  uint32_t curr_key = lower;
+  int32_t curr_key = lower;
   LOG_TIMING(INFO, "Scanning with predicate columns not projected") {
     ASSERT_OK(scanner.Open());
 
@@ -775,8 +775,8 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
       ASSERT_OK(scanner.NextBatch(&rows));
 
       BOOST_FOREACH(const KuduRowResult& row, rows) {
-        uint32_t val;
-        ASSERT_OK(row.GetUInt32(0, &val));
+        int32_t val;
+        ASSERT_OK(row.GetInt32(0, &val));
         ASSERT_EQ(curr_key * 2, val);
         nrows++;
         curr_key++;
@@ -795,13 +795,13 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   KuduScanner scanner(client_table_.get());
   KuduSchema key_projection = schema_.CreateKeyProjection();
 
-  uint32_t lower = 10;
-  uint32_t upper = 20;
+  int32_t lower = 10;
+  int32_t upper = 20;
   KuduColumnRangePredicate pred(schema_.Column(1), &lower, &upper);
   ASSERT_OK(scanner.AddConjunctPredicate(pred));
 
   size_t nrows = 0;
-  uint32_t curr_key = lower;
+  int32_t curr_key = lower;
 
   ASSERT_OK(scanner.SetProjection(&key_projection));
 
@@ -814,8 +814,8 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
       ASSERT_OK(scanner.NextBatch(&rows));
 
       BOOST_FOREACH(const KuduRowResult& row, rows) {
-        uint32_t val;
-        ASSERT_OK(row.GetUInt32(0, &val));
+        int32_t val;
+        ASSERT_OK(row.GetInt32(0, &val));
         ASSERT_EQ(curr_key / 2, val);
         nrows++;
         curr_key += 2;
@@ -1206,13 +1206,13 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
 
   gscoped_ptr<KuduInsert> insert = client_table_->NewInsert();
   // Try inserting without specifying a key: should fail.
-  ASSERT_OK(insert->mutable_row()->SetUInt32("int_val", 54321));
+  ASSERT_OK(insert->mutable_row()->SetInt32("int_val", 54321));
   ASSERT_OK(insert->mutable_row()->SetStringCopy("string_val", "hello world"));
 
   KuduInsert* ptr = insert.get();
   Status s = session->Apply(insert.Pass());
   ASSERT_EQ("Illegal state: Key not specified: "
-            "INSERT uint32 int_val=54321, string string_val=hello world",
+            "INSERT int32 int_val=54321, string string_val=hello world",
             s.ToString());
 
   // Get error
@@ -1227,7 +1227,7 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   insert.reset(ptr);
 
   // Retry
-  ASSERT_OK(insert->mutable_row()->SetUInt32("key", 12345));
+  ASSERT_OK(insert->mutable_row()->SetInt32("key", 12345));
   ASSERT_OK(session->Apply(insert.Pass()));
   ASSERT_TRUE(insert == NULL) << "Successful insert should take ownership";
   ASSERT_TRUE(session->HasPendingOperations()) << "Should be pending until we Flush";
@@ -1241,8 +1241,8 @@ static Status ApplyInsertToSession(KuduSession* session,
                                    int int_val,
                                    const char* string_val) {
   gscoped_ptr<KuduInsert> insert = table->NewInsert();
-  RETURN_NOT_OK(insert->mutable_row()->SetUInt32("key", row_key));
-  RETURN_NOT_OK(insert->mutable_row()->SetUInt32("int_val", int_val));
+  RETURN_NOT_OK(insert->mutable_row()->SetInt32("key", row_key));
+  RETURN_NOT_OK(insert->mutable_row()->SetInt32("int_val", int_val));
   RETURN_NOT_OK(insert->mutable_row()->SetStringCopy("string_val", string_val));
   return session->Apply(insert.Pass());
 }
@@ -1252,8 +1252,8 @@ static Status ApplyUpdateToSession(KuduSession* session,
                                    int row_key,
                                    int int_val) {
   gscoped_ptr<KuduUpdate> update = table->NewUpdate();
-  RETURN_NOT_OK(update->mutable_row()->SetUInt32("key", row_key));
-  RETURN_NOT_OK(update->mutable_row()->SetUInt32("int_val", int_val));
+  RETURN_NOT_OK(update->mutable_row()->SetInt32("key", row_key));
+  RETURN_NOT_OK(update->mutable_row()->SetInt32("int_val", int_val));
   return session->Apply(update.Pass());
 }
 
@@ -1261,7 +1261,7 @@ static Status ApplyDeleteToSession(KuduSession* session,
                                    const scoped_refptr<KuduTable>& table,
                                    int row_key) {
   gscoped_ptr<KuduDelete> del = table->NewDelete();
-  RETURN_NOT_OK(del->mutable_row()->SetUInt32("key", row_key));
+  RETURN_NOT_OK(del->mutable_row()->SetInt32("key", row_key));
   return session->Apply(del.Pass());
 }
 
@@ -1321,8 +1321,8 @@ TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {
   ScanTableToStrings(client_table_.get(), &rows);
   std::sort(rows.begin(), rows.end());
   ASSERT_EQ(kNumRowsPerTablet, rows.size());
-  ASSERT_EQ("(uint32 key=0, uint32 int_val=0, string string_val=hello world, "
-            "uint32 non_null_with_default=12345)"
+  ASSERT_EQ("(int32 key=0, int32 int_val=0, string string_val=hello world, "
+            "int32 non_null_with_default=12345)"
             , rows[0]);
 }
 
@@ -1354,17 +1354,17 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
   ASSERT_EQ(1, errors.size());
   ASSERT_TRUE(errors[0]->status().IsAlreadyPresent());
   ASSERT_EQ(errors[0]->failed_op().ToString(),
-            "INSERT uint32 key=1, uint32 int_val=1, string string_val=Attempted dup");
+            "INSERT int32 key=1, int32 int_val=1, string string_val=Attempted dup");
 
   // Verify that the other row was successfully inserted
   vector<string> rows;
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(2, rows.size());
   std::sort(rows.begin(), rows.end());
-  ASSERT_EQ("(uint32 key=1, uint32 int_val=1, string string_val=original row, "
-            "uint32 non_null_with_default=12345)", rows[0]);
-  ASSERT_EQ("(uint32 key=2, uint32 int_val=1, string string_val=Should succeed, "
-            "uint32 non_null_with_default=12345)", rows[1]);
+  ASSERT_EQ("(int32 key=1, int32 int_val=1, string string_val=original row, "
+            "int32 non_null_with_default=12345)", rows[0]);
+  ASSERT_EQ("(int32 key=2, int32 int_val=1, string string_val=Should succeed, "
+            "int32 non_null_with_default=12345)", rows[1]);
 }
 
 // Test flushing an empty batch (should be a no-op).
@@ -1412,7 +1412,7 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   }
 
   ASSERT_EQ(errors[0]->failed_op().ToString(),
-            "INSERT uint32 key=1, uint32 int_val=1, string string_val=x");
+            "INSERT int32 key=1, int32 int_val=1, string string_val=x");
 }
 
 // Test error handling cases where the master is down (tablet resolution fails)
@@ -1469,8 +1469,8 @@ TEST_F(ClientTest, TestMutationsWork) {
   vector<string> rows;
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=original row, "
-            "uint32 non_null_with_default=12345)", rows[0]);
+  ASSERT_EQ("(int32 key=1, int32 int_val=2, string string_val=original row, "
+            "int32 non_null_with_default=12345)", rows[0]);
   rows.clear();
 
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
@@ -1504,7 +1504,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   ASSERT_FALSE(overflow);
   ASSERT_EQ(1, errors.size());
   ASSERT_EQ(errors[0]->failed_op().ToString(),
-            "UPDATE uint32 key=1, uint32 int_val=2");
+            "UPDATE int32 key=1, int32 int_val=2");
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
@@ -1521,7 +1521,7 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   ASSERT_FALSE(overflow);
   ASSERT_EQ(1, errors2.size());
   ASSERT_EQ(errors2[0]->failed_op().ToString(),
-            "DELETE uint32 key=1");
+            "DELETE int32 key=1");
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 }
@@ -1545,7 +1545,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ASSERT_FALSE(overflow);
   ASSERT_EQ(1, errors.size());
   ASSERT_EQ(errors[0]->failed_op().ToString(),
-            "UPDATE uint32 key=1, uint32 int_val=2");
+            "UPDATE int32 key=1, int32 int_val=2");
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 
@@ -1562,7 +1562,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ASSERT_FALSE(overflow);
   ASSERT_EQ(1, errors2.size());
   ASSERT_EQ(errors2[0]->failed_op().ToString(),
-            "DELETE uint32 key=1");
+            "DELETE int32 key=1");
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
 }
@@ -1575,8 +1575,8 @@ TEST_F(ClientTest, TestWriteWithBadColumn) {
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   gscoped_ptr<KuduInsert> insert = table->NewInsert();
-  ASSERT_OK(insert->mutable_row()->SetUInt32("key", 12345));
-  Status s = insert->mutable_row()->SetUInt32("bad_col", 12345);
+  ASSERT_OK(insert->mutable_row()->SetInt32("key", 12345));
+  Status s = insert->mutable_row()->SetInt32("bad_col", 12345);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "No such column: bad_col");
 }
@@ -1611,10 +1611,10 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
   ASSERT_EQ(1, errors.size());
   ASSERT_TRUE(errors[0]->status().IsInvalidArgument());
   ASSERT_EQ(errors[0]->status().ToString(),
-            "Invalid argument: Client provided column int_val[uint32 NOT NULL] "
+            "Invalid argument: Client provided column int_val[int32 NOT NULL] "
             "not present in tablet");
   ASSERT_EQ(errors[0]->failed_op().ToString(),
-            "INSERT uint32 key=12345, uint32 int_val=12345, string string_val=x");
+            "INSERT int32 key=12345, int32 int_val=12345, string string_val=x");
 }
 
 TEST_F(ClientTest, TestBasicAlterOperations) {
@@ -1640,7 +1640,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
   {
     Status s = client_->NewTableAlterer()
         ->table_name(kTableName)
-        .add_column("key", KuduColumnSchema::UINT32, NULL)
+        .add_column("key", KuduColumnSchema::INT32, NULL)
         .Alter();
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "A new column must have a default value");
@@ -1686,7 +1686,7 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
     ASSERT_OK(client_->NewTableAlterer()
                      ->table_name(kTableName)
                      .drop_column("int_val")
-                     .add_nullable_column("new_col", KuduColumnSchema::UINT32)
+                     .add_nullable_column("new_col", KuduColumnSchema::INT32)
                      .Alter());
     ASSERT_EQ(1, tablet_peer->tablet()->metadata()->schema_version());
   }
@@ -1999,11 +1999,11 @@ void CheckCorrectness(KuduScanner* scanner, int expected[], int nrows) {
   while (scanner->HasMoreRows()) {
     ASSERT_OK(scanner->NextBatch(&rows));
     BOOST_FOREACH(const KuduRowResult& r, rows) {
-      uint32_t key;
-      uint32_t val;
+      int32_t key;
+      int32_t val;
       Slice strval;
-      ASSERT_OK(r.GetUInt32(0, &key));
-      ASSERT_OK(r.GetUInt32(1, &val));
+      ASSERT_OK(r.GetInt32(0, &key));
+      ASSERT_OK(r.GetInt32(1, &val));
       ASSERT_OK(r.GetString(2, &strval));
       ASSERT_NE(expected[key], -1) << "Deleted key found in table in table " << key;
       ASSERT_EQ(expected[key], val) << "Incorrect int value for key " <<  key;
@@ -2099,8 +2099,8 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   vector<string> rows;
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
-            "uint32 non_null_with_default=12345)", rows[0]);
+  ASSERT_EQ("(int32 key=1, int32 int_val=2, string string_val=, "
+            "int32 non_null_with_default=12345)", rows[0]);
   rows.clear();
 
 
@@ -2111,8 +2111,8 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
-            "uint32 non_null_with_default=12345)", rows[0]);
+  ASSERT_EQ("(int32 key=1, int32 int_val=2, string string_val=, "
+            "int32 non_null_with_default=12345)", rows[0]);
   rows.clear();
 
   // Test update/delete
@@ -2129,8 +2129,8 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(uint32 key=1, uint32 int_val=1, string string_val=, "
-            "uint32 non_null_with_default=12345)", rows[0]);
+  ASSERT_EQ("(int32 key=1, int32 int_val=1, string string_val=, "
+            "int32 non_null_with_default=12345)", rows[0]);
   rows.clear();
   LOG(INFO) << "Testing delete/insert in same batch, key " << 1 << ".";
   ASSERT_OK(ApplyDeleteToSession(session.get(), client_table_, 1));
@@ -2138,8 +2138,8 @@ TEST_F(ClientTest, TestSeveralRowMutatesPerBatch) {
   FlushSessionOrDie(session);
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(1, rows.size());
-  ASSERT_EQ("(uint32 key=1, uint32 int_val=2, string string_val=, "
-            "uint32 non_null_with_default=12345)", rows[0]);
+  ASSERT_EQ("(int32 key=1, int32 int_val=2, string string_val=, "
+            "int32 non_null_with_default=12345)", rows[0]);
             rows.clear();
 }
 
@@ -2171,7 +2171,7 @@ namespace {
   };
 
   // Returns col1 value of first row.
-  uint32_t ReadFirstRowKeyFirstCol(scoped_refptr<KuduTable> tbl) {
+  int32_t ReadFirstRowKeyFirstCol(scoped_refptr<KuduTable> tbl) {
     KuduScanner scanner(tbl.get());
 
     scanner.Open();
@@ -2179,13 +2179,13 @@ namespace {
     CHECK(scanner.HasMoreRows());
     CHECK_OK(scanner.NextBatch(&rows));
     KuduRowResult& row = rows.front();
-    uint32_t val;
-    CHECK_OK(row.GetUInt32(1, &val));
+    int32_t val;
+    CHECK_OK(row.GetInt32(1, &val));
     return val;
   }
 
   // Checks that all rows have value equal to expected, return number of rows.
-  int CheckRowsEqual(scoped_refptr<KuduTable> tbl, uint32_t expected) {
+  int CheckRowsEqual(scoped_refptr<KuduTable> tbl, int32_t expected) {
     KuduScanner scanner(tbl.get());
     scanner.Open();
     vector<KuduRowResult> rows;
@@ -2194,17 +2194,17 @@ namespace {
       CHECK_OK(scanner.NextBatch(&rows));
       BOOST_FOREACH(const KuduRowResult& row, rows) {
         // Check that for every key:
-        // 1. Column 1 uint32_t value == expected
+        // 1. Column 1 int32_t value == expected
         // 2. Column 2 string value is empty
-        // 3. Column 3 uint32_t value is default, 12345
-        uint32_t key;
-        uint32_t val;
+        // 3. Column 3 int32_t value is default, 12345
+        int32_t key;
+        int32_t val;
         Slice strval;
-        uint32_t val2;
-        CHECK_OK(row.GetUInt32(0, &key));
-        CHECK_OK(row.GetUInt32(1, &val));
+        int32_t val2;
+        CHECK_OK(row.GetInt32(0, &key));
+        CHECK_OK(row.GetInt32(1, &val));
         CHECK_OK(row.GetString(2, &strval));
-        CHECK_OK(row.GetUInt32(3, &val2));
+        CHECK_OK(row.GetInt32(3, &val2));
         CHECK_EQ(expected, val) << "Incorrect int value for key " << key;
         CHECK_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
         CHECK_EQ(12345, val2);
@@ -2297,7 +2297,7 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
       prev2 = lctr2;
     }
   } while (lctr1 != kNumSessions|| lctr2 != kNumSessions);
-  uint32_t expected = ReadFirstRowKeyFirstCol(client_table_);
+  int32_t expected = ReadFirstRowKeyFirstCol(client_table_);
 
   // Check transaction from forward client.
   fwd = CheckRowsEqual(client_table_, expected);
