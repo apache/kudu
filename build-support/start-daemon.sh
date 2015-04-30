@@ -8,8 +8,9 @@ MASTER_ADDRESS=$2
 FLAG_FILE=tests/5nodes_test/$PROC_NAME.flags
 echo 16777216 | sudo tee /proc/sys/vm/max_map_count
 ulimit -c unlimited
-DATA_DIR=$3/$PROC_NAME
-LOG_DIR=$DATA_DIR/glogs
+BASE_DIR=$3/$PROC_NAME
+DATA_DIR=$BASE_DIR/data
+LOG_DIR=$BASE_DIR/glogs
 mkdir -p $LOG_DIR
 
 case $PROC_NAME in
@@ -32,7 +33,7 @@ esac
                           $DATA_DIR_OPTION --log_dir=$LOG_DIR &> $PROC_NAME.log &
 
 PID=$!
-echo $PID > $DATA_DIR/$PROC_NAME.pid
+echo $PID > $BASE_DIR/$PROC_NAME.pid
 wait $PID
 my_status=$?
 echo $my_status > $PROC_NAME.ext
