@@ -281,20 +281,35 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
   static Schema getTableSchema() {
     List<ColumnSchema> columns = new ArrayList<ColumnSchema>(7);
-    columns.add(new ColumnSchema(COLUMN_KEY_ONE, Type.INT64, true));
-    columns.add(new ColumnSchema(COLUMN_KEY_TWO, Type.INT64, true));
-    columns.add(new ColumnSchema(COLUMN_PREV_ONE, Type.INT64, false, true, null));
-    columns.add(new ColumnSchema(COLUMN_PREV_TWO, Type.INT64, false, true, null));
-    columns.add(new ColumnSchema(COLUMN_ROW_ID, Type.INT64, false));
-    columns.add(new ColumnSchema(COLUMN_CLIENT, Type.STRING, false));
-    columns.add(new ColumnSchema(COLUMN_UPDATE_COUNT, Type.INT32, false));
+    columns.add(new ColumnSchema.ColumnSchemaBuilder(COLUMN_KEY_ONE, Type.INT64)
+        .key(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder(COLUMN_KEY_TWO, Type.INT64)
+        .key(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder(COLUMN_PREV_ONE, Type.INT64)
+        .nullable(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder(COLUMN_PREV_TWO, Type.INT64)
+        .nullable(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder(COLUMN_ROW_ID, Type.INT64)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder(COLUMN_CLIENT, Type.STRING)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder(COLUMN_UPDATE_COUNT, Type.INT32)
+        .build());
     return new Schema(columns);
   }
 
   static Schema getHeadsTableSchema() {
     List<ColumnSchema> columns = new ArrayList<ColumnSchema>(2);
-    columns.add(new ColumnSchema(COLUMN_KEY_ONE, Type.INT64, true));
-    columns.add(new ColumnSchema(COLUMN_KEY_TWO, Type.INT64, true));
+    columns.add(new ColumnSchema.ColumnSchemaBuilder(COLUMN_KEY_ONE, Type.INT64)
+        .key(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder(COLUMN_KEY_TWO, Type.INT64)
+        .key(true)
+        .build());
     return new Schema(columns);
   }
 

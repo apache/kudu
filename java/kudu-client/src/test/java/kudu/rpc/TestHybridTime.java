@@ -45,7 +45,9 @@ public class TestHybridTime extends BaseKuduTest {
 
   private static Schema getSchema() {
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(1);
-    columns.add(new ColumnSchema("key", STRING, true));
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", STRING)
+        .key(true)
+        .build());
     return new Schema(columns);
   }
 

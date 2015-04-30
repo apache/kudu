@@ -58,8 +58,11 @@ public class ProtobufHelper {
       Type type = Type.getTypeForDataType(columnPb.getType());
       Object defaultValue = columnPb.hasReadDefaultValue() ? byteStringToObject(type,
           columnPb.getReadDefaultValue()) : null;
-      ColumnSchema column = new ColumnSchema(columnPb.getName(), type, columnPb.getIsKey(),
-          columnPb.getIsNullable(), defaultValue);
+      ColumnSchema column = new ColumnSchema.ColumnSchemaBuilder(columnPb.getName(), type)
+          .key(columnPb.getIsKey())
+          .nullable(columnPb.getIsNullable())
+          .defaultValue(defaultValue)
+          .build();
       columns.add(column);
     }
     return new Schema(columns);

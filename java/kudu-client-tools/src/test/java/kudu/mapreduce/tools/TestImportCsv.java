@@ -38,11 +38,18 @@ public class TestImportCsv extends BaseKuduTest {
     BaseKuduTest.setUpBeforeClass();
 
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
-    columns.add(new ColumnSchema("key", Type.INT32, true));
-    columns.add(new ColumnSchema("column1_i", Type.INT32));
-    columns.add(new ColumnSchema("column2_d", Type.DOUBLE));
-    columns.add(new ColumnSchema("column3_s", Type.STRING, false, true, null));
-    columns.add(new ColumnSchema("column4_b", Type.BOOL));
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
+        .key(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column1_i", Type.INT32)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column2_d", Type.DOUBLE)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column3_s", Type.STRING)
+        .nullable(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column4_b", Type.BOOL)
+        .build());
     schema = new Schema(columns);
 
     createTable(TABLE_NAME, schema, new CreateTableBuilder());

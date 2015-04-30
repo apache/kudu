@@ -349,11 +349,13 @@ public class BaseKuduTest {
 
   public static Schema getBasicSchema() {
     ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
-    columns.add(new ColumnSchema("key", INT32, true));
-    columns.add(new ColumnSchema("column1_i", INT32));
-    columns.add(new ColumnSchema("column2_i", INT32));
-    columns.add(new ColumnSchema("column3_s", STRING, false, true, null));
-    columns.add(new ColumnSchema("column4_b", BOOL));
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", INT32).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column1_i", INT32).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column2_i", INT32).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column3_s", STRING)
+        .nullable(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("column4_b", BOOL).build());
     return new Schema(columns);
   }
 

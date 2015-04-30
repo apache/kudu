@@ -35,7 +35,9 @@ public class AlterTableBuilder {
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.ADD_COLUMN);
     step.setAddColumn(AlterTableRequestPB.AddColumn.newBuilder().setSchema(ProtobufHelper
-        .columnToPb(new ColumnSchema(name, type, false, false, defaultVal))));
+        .columnToPb(new ColumnSchema.ColumnSchemaBuilder(name, type)
+            .defaultValue(defaultVal)
+            .build())));
   }
 
   /**
@@ -47,7 +49,9 @@ public class AlterTableBuilder {
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.ADD_COLUMN);
     step.setAddColumn(AlterTableRequestPB.AddColumn.newBuilder().setSchema(ProtobufHelper
-        .columnToPb(new ColumnSchema(name, type, false, true, null))));
+        .columnToPb(new ColumnSchema.ColumnSchemaBuilder(name, type)
+            .nullable(true)
+            .build())));
   }
 
   /**

@@ -30,8 +30,10 @@ public class TestKuduTable extends BaseKuduTest {
   public void testBadSchema() {
     // Test creating a table with keys in the wrong order
     List<ColumnSchema> badColumns = new ArrayList<ColumnSchema>(2);
-    badColumns.add(new ColumnSchema("not_key", Type.STRING, false));
-    badColumns.add(new ColumnSchema("key", Type.STRING, true));
+    badColumns.add(new ColumnSchema.ColumnSchemaBuilder("not_key", Type.STRING).build());
+    badColumns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING)
+        .key(true)
+        .build());
     new Schema(badColumns);
   }
 
@@ -67,8 +69,11 @@ public class TestKuduTable extends BaseKuduTest {
       } else {
         defaultValue = defaultString;
       }
-      columns.add(new ColumnSchema(columnSchema.getName(), columnSchema.getType(),
-          columnSchema.isKey(), columnSchema.isNullable(), defaultValue));
+      columns.add(
+          new ColumnSchema.ColumnSchemaBuilder(columnSchema.getName(), columnSchema.getType())
+              .key(columnSchema.isKey())
+              .nullable(columnSchema.isNullable())
+              .defaultValue(defaultValue).build());
     }
     Schema schemaWithDefault = new Schema(columns);
     createTable(tableWithDefault, schemaWithDefault, builder);

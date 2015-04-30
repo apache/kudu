@@ -17,7 +17,9 @@ public class TestKeyEncoding {
   @Test
   public void testBoolKey() {
     List<ColumnSchema> cols1 = new ArrayList<ColumnSchema>();
-    cols1.add(new ColumnSchema("key", Type.BOOL, true));
+    cols1.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.BOOL)
+        .key(true)
+        .build());
     Schema schema = new Schema(cols1);
     KuduTable table = new KuduTable(null, "one", schema);
     Insert oneKeyInsert = new Insert(table);
@@ -35,7 +37,9 @@ public class TestKeyEncoding {
   @Test
   public void test() {
     List<ColumnSchema> cols1 = new ArrayList<ColumnSchema>();
-    cols1.add(new ColumnSchema("key", Type.STRING, true));
+    cols1.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING)
+        .key(true)
+        .build());
     Schema schemaOneString = new Schema(cols1);
     KuduTable table = new KuduTable(null, "one", schemaOneString);
     Insert oneKeyInsert = new Insert(table);
@@ -44,8 +48,12 @@ public class TestKeyEncoding {
         'o'}, oneKeyInsert.key()));
 
     List<ColumnSchema> cols2 = new ArrayList<ColumnSchema>();
-    cols2.add(new ColumnSchema("key", Type.STRING, true));
-    cols2.add(new ColumnSchema("key2", Type.STRING, true));
+    cols2.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING)
+        .key(true)
+        .build());
+    cols2.add(new ColumnSchema.ColumnSchemaBuilder("key2", Type.STRING)
+        .key(true)
+        .build());
     Schema schemaTwoString = new Schema(cols2);
     KuduTable table2 = new KuduTable(null, "two", schemaTwoString);
     Insert twoKeyInsert = new Insert(table2);
@@ -66,8 +74,12 @@ public class TestKeyEncoding {
 
     // test that we get the correct memcmp result, the bytes are in big-endian order in a key
     List<ColumnSchema> cols3 = new ArrayList<ColumnSchema>();
-    cols3.add(new ColumnSchema("key", Type.INT32, true));
-    cols3.add(new ColumnSchema("key2", Type.STRING, true));
+    cols3.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32)
+        .key(true)
+        .build());
+    cols3.add(new ColumnSchema.ColumnSchemaBuilder("key2", Type.STRING)
+        .key(true)
+        .build());
     Schema schemaIntString = new Schema(cols3);
     KuduTable table3 = new KuduTable(null, "three", schemaIntString);
     Insert small = new Insert(table3);
