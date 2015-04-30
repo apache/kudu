@@ -117,44 +117,48 @@ Status MemRowSet::Insert(Timestamp timestamp,
   CHECK(row.schema()->has_column_ids());
   DCHECK_SCHEMA_EQ(schema_, *row.schema());
 
-  faststring enc_key_buf;
-  schema_.EncodeComparableKey(row, &enc_key_buf);
-  Slice enc_key(enc_key_buf);
+  {
+    faststring enc_key_buf;
+    schema_.EncodeComparableKey(row, &enc_key_buf);
+    Slice enc_key(enc_key_buf);
 
-  btree::PreparedMutation<MSBTreeTraits> mutation(enc_key);
-  mutation.Prepare(&tree_);
+    btree::PreparedMutation<MSBTreeTraits> mutation(enc_key);
+    mutation.Prepare(&tree_);
 
-  // TODO: for now, the key ends up stored doubly --
-  // once encoded in the btree key, and again in the value
-  // (unencoded).
-  // That's not very memory-efficient!
+    // TODO: for now, the key ends up stored doubly --
+    // once encoded in the btree key, and again in the value
+    // (unencoded).
+    // That's not very memory-efficient!
 
-  if (mutation.exists()) {
-    // It's OK for it to exist if it's just a "ghost" row -- i.e the
-    // row is deleted.
-    MRSRow ms_row(this, mutation.current_mutable_value());
-    if (!ms_row.IsGhost()) {
-      return Status::AlreadyPresent("entry already present in memrowset");
+    if (mutation.exists()) {
+      // It's OK for it to exist if it's just a "ghost" row -- i.e the
+      // row is deleted.
+      MRSRow ms_row(this, mutation.current_mutable_value());
+      if (!ms_row.IsGhost()) {
+        return Status::AlreadyPresent("entry already present in memrowset");
+      }
+
+      // Insert a "reinsert" mutation.
+      return Reinsert(timestamp, row, &ms_row);
     }
 
-    // Insert a "reinsert" mutation.
-    return Reinsert(timestamp, row, &ms_row);
-  }
+    // Copy the non-encoded key onto the stack since we need
+    // to mutate it when we relocate its Slices into our arena.
+    DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
+    mrsrow.header_->insertion_timestamp = timestamp;
+    mrsrow.header_->redo_head = NULL;
+    RETURN_NOT_OK(mrsrow.CopyRow(row, arena_.get()));
 
-  // Copy the non-encoded key onto the stack since we need
-  // to mutate it when we relocate its Slices into our arena.
-  DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
-  mrsrow.header_->insertion_timestamp = timestamp;
-  mrsrow.header_->redo_head = NULL;
-  RETURN_NOT_OK(mrsrow.CopyRow(row, arena_.get()));
-
-  CHECK(mutation.Insert(mrsrow_slice))
+    CHECK(mutation.Insert(mrsrow_slice))
     << "Expected to be able to insert, since the prepared mutation "
     << "succeeded!";
+  }
 
   anchorer_.AnchorIfMinimum(op_id.index());
 
   debug_insert_count_++;
+
+  // Done outside of the lock so we don't slow down readers.
   SlowMutators();
   return Status::OK();
 }
@@ -225,10 +229,9 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
   stats->mrs_consulted++;
 
   anchorer_.AnchorIfMinimum(op_id.index());
-
-  // Throttle the writer if we're low on memory, but do this outside of the lock
-  // so we don't slow down readers.
   debug_update_count_++;
+
+  // Done outside of the lock so we don't slow down readers.
   SlowMutators();
   return Status::OK();
 }
