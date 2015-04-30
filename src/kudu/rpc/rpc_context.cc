@@ -36,7 +36,7 @@ RpcContext::~RpcContext() {
 void RpcContext::RespondSuccess() {
   call_->RecordHandlingCompleted(metrics_.handler_latency);
   VLOG(4) << call_->remote_method().service_name() << ": Sending RPC success response for "
-          << call_->ToString() << ":" << std::endl << request_pb_->DebugString();
+          << call_->ToString() << ":" << std::endl << response_pb_->DebugString();
   call_->RespondSuccess(*response_pb_);
   delete this;
 }
