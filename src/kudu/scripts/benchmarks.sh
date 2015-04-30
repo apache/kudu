@@ -21,6 +21,7 @@ MODE_LOCAL="local"
 
 LOCAL_STATS_BASE="local-stats"
 
+NUM_MT_TABLET_TESTS=5
 MT_TABLET_TEST=mt-tablet-test
 RPC_BENCH_TEST=RpcBenchBenchmark
 CBTREE_TEST=cbtree-test
@@ -176,7 +177,7 @@ build_kudu() {
 
 run_benchmarks() {
 
-  # run mt-tablet-tests 0 through 9
+  # run all of the variations of mt-tablet-test
   ./build/latest/mt-tablet-test \
     --gtest_filter=\*DoTestAllAtOnce\* \
     --num_counter_threads=0 \
@@ -277,14 +278,14 @@ parse_and_record_all_results() {
   pushd kudu
   pushd scripts
 
-  # parse the number of ms out of "[       OK ] MultiThreadedTabletTest/9.DoTestAllAtOnce (14966 ms)"
+  # parse the number of ms out of "[       OK ] MultiThreadedTabletTest/5.DoTestAllAtOnce (14966 ms)"
   local MT_TABLET_TEST_TIMINGS="${MT_TABLET_TEST}-timings"
   grep OK $LOGDIR/${MT_TABLET_TEST}.log | cut -d "(" -f2 | cut -d ")" -f1 | cut -d " " -f1 \
     > $LOGDIR/${MT_TABLET_TEST_TIMINGS}.txt
 
-  # The tests go from 0 to 9, but files start at line one so we add +1 to the line number. Then using the
-  # timing we found, we multiply it by 1000 to gets seconds in float, then send it to MySQL
-  for i in {0..9}; do
+  # The tests go from 0 to NUM_MT_TABLET_TEST, but files start at line one so we add +1 to the line number.
+  # Then using the timing we found, we multiply it by 1000 to gets seconds in float, then send it to MySQL
+  for i in {0..$NUM_MT_TABLET_TESTS}; do
     linenumber=$[ $i + 1 ]
     timing=`sed -n "${linenumber}p" $LOGDIR/${MT_TABLET_TEST_TIMINGS}.txt`
     record_result $BUILD_IDENTIFIER MultiThreadedTabletTest_$i 1 `echo $timing / 1000 | bc -l`
@@ -478,7 +479,7 @@ load_stats_and_generate_plots() {
   load_and_generate_plot "${FS_SCANINSERT_DISK}%_scan%" fs-withdisk-scan
 
   # Generate all the pngs for all the mt-tablet tests
-  for i in {0..9}; do
+  for i in {0..$NUM_MT_TABLET_TESTS}; do
     cat $LOGDIR/${MT_TABLET_TEST}.log | ./graph-metrics.py MultiThreadedTabletTest/$i > $OUTDIR/test$i.tsv
     # Don't bail on failure (why not?)
     write_mttablet_img_plots $OUTDIR/test$i.tsv test$i || true
