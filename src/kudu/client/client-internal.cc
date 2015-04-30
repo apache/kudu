@@ -384,7 +384,7 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
                                      const MonoTime& deadline) {
   DeleteTableRequestPB req;
   DeleteTableResponsePB resp;
-  int attempts;
+  int attempts = 0;
 
   req.mutable_table()->set_table_name(table_name);
   Status s = SyncLeaderMasterRpc<DeleteTableRequestPB, DeleteTableResponsePB>(
