@@ -124,7 +124,7 @@ class LogReader {
   Status AppendEmptySegment(const scoped_refptr<ReadableLogSegment>& segment);
 
   // Removes segments with sequence numbers less than or equal to 'seg_seqno' from this reader.
-  Status TrimSegmentsUpToAndIncluding(uint64_t seg_seqno);
+  Status TrimSegmentsUpToAndIncluding(int64_t seg_seqno);
 
   // Replaces the last segment in the reader with 'segment'.
   // Used to replace a segment that was still in the process of being written
@@ -145,7 +145,7 @@ class LogReader {
   // the current segment. Requires that the reader has at least one segment
   // and that the last segment has no footer, meaning it is currently being
   // written to.
-  void UpdateLastSegmentOffset(uint64_t readable_to_offset);
+  void UpdateLastSegmentOffset(int64_t readable_to_offset);
 
   // Read the LogEntryBatch pointed to by the provided index entry.
   // 'tmp_buf' is used as scratch space to avoid extra allocation.

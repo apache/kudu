@@ -269,7 +269,7 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
   }
 
   CHECK_GT(index_entry.offset_in_segment, 0);
-  uint64_t offset = index_entry.offset_in_segment;
+  int64_t offset = index_entry.offset_in_segment;
   gscoped_ptr<ScopedLatencyMetric> scoped;
   if (read_batch_latency_) {
     scoped.reset(new ScopedLatencyMetric(read_batch_latency_));
@@ -381,7 +381,7 @@ Status LogReader::GetSegmentsSnapshot(SegmentSequence* segments) const {
   return Status::OK();
 }
 
-Status LogReader::TrimSegmentsUpToAndIncluding(uint64_t segment_sequence_number) {
+Status LogReader::TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number) {
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   SegmentSequence::iterator iter = segments_.begin();
@@ -400,7 +400,7 @@ Status LogReader::TrimSegmentsUpToAndIncluding(uint64_t segment_sequence_number)
   return Status::OK();
 }
 
-void LogReader::UpdateLastSegmentOffset(uint64_t readable_to_offset) {
+void LogReader::UpdateLastSegmentOffset(int64_t readable_to_offset) {
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
   DCHECK(!segments_.empty());

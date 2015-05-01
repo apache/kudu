@@ -88,14 +88,14 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // ReadableLogSegment for the current WritableLogSegment, i.e. for reading
   // the log entries in the same segment that is currently being written to.
   Status Init(const LogSegmentHeaderPB& header,
-              uint64_t first_entry_offset);
+              int64_t first_entry_offset);
 
   // Initialize the ReadableLogSegment.
   // This initializer provides methods for avoiding disk IO when creating a
   // ReadableLogSegment from a WritableLogSegment (i.e. for log rolling).
   Status Init(const LogSegmentHeaderPB& header,
               const LogSegmentFooterPB& footer,
-              uint64_t first_entry_offset);
+              int64_t first_entry_offset);
 
   // Initialize the ReadableLogSegment.
   // This initializer will parse the log segment header and footer.
@@ -157,18 +157,18 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
     return readable_file_;
   }
 
-  const uint64_t file_size() const {
-    return file_size_;
+  const int64_t file_size() const {
+    return file_size_.Load();
   }
 
-  const uint64_t first_entry_offset() const {
+  const int64_t first_entry_offset() const {
     return first_entry_offset_;
   }
 
   // Returns the full size of the file, if the segment is closed and has
   // a footer, or the offset where the last written, non corrupt entry
   // ends.
-  const uint64_t readable_up_to() const;
+  const int64_t readable_up_to() const;
 
  private:
   friend class RefCountedThreadSafe<ReadableLogSegment>;
@@ -216,12 +216,12 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
                               std::vector<int64_t>* recent_offsets,
                               const Status& status) const;
 
-  Status ReadEntryHeaderAndBatch(uint64_t* offset, faststring* tmp_buf,
+  Status ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
                                  gscoped_ptr<LogEntryBatchPB>* batch);
 
   // Reads a log entry header from the segment.
   // Also increments the passed offset* by the length of the entry.
-  Status ReadEntryHeader(uint64_t *offset, EntryHeader* header);
+  Status ReadEntryHeader(int64_t *offset, EntryHeader* header);
 
   // Decode a log entry header from the given slice, which must be kEntryHeaderSize
   // bytes long. Returns true if successful, false if corrupt.
@@ -233,17 +233,19 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   // Reads a log entry batch from the provided readable segment, which gets decoded
   // into 'entry_batch' and increments 'offset' by the batch's length.
-  Status ReadEntryBatch(uint64_t *offset,
+  Status ReadEntryBatch(int64_t *offset,
                         const EntryHeader& header,
                         faststring* tmp_buf,
                         gscoped_ptr<LogEntryBatchPB>* entry_batch);
 
-  void UpdateReadableToOffset(uint64_t readable_to_offset);
+  void UpdateReadableToOffset(int64_t readable_to_offset);
 
   const std::string path_;
 
-  // the size of the readable file
-  uint64_t file_size_;
+  // The size of the readable file.
+  // This is set by Init(). In the case of a log being written to,
+  // this may be increased by UpdateReadableToOffset()
+  AtomicInt<int64_t> file_size_;
 
   // The offset up to which we can read the file.
   // For already written segments this is fixed and equal to the file size
@@ -267,7 +269,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   bool footer_was_rebuilt_;
 
   // the offset of the first entry in the log
-  uint64_t first_entry_offset_;
+  int64_t first_entry_offset_;
 
   DISALLOW_COPY_AND_ASSIGN(ReadableLogSegment);
 };
@@ -289,7 +291,7 @@ class WritableLogSegment {
     return IsHeaderWritten() && IsFooterWritten();
   }
 
-  uint64_t Size() const {
+  int64_t Size() const {
     return writable_file_->Size();
   }
 
@@ -327,11 +329,11 @@ class WritableLogSegment {
     return path_;
   }
 
-  const uint64_t first_entry_offset() const {
+  const int64_t first_entry_offset() const {
     return first_entry_offset_;
   }
 
-  const uint64_t written_offset() const {
+  const int64_t written_offset() const {
     return written_offset_;
   }
 
@@ -356,10 +358,10 @@ class WritableLogSegment {
   LogSegmentFooterPB footer_;
 
   // the offset of the first entry in the log
-  uint64_t first_entry_offset_;
+  int64_t first_entry_offset_;
 
   // The offset where the last written entry ends.
-  uint64_t written_offset_;
+  int64_t written_offset_;
 
   DISALLOW_COPY_AND_ASSIGN(WritableLogSegment);
 };

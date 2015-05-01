@@ -181,6 +181,30 @@ TEST_F(LogTest, TestFsync) {
   ASSERT_OK(log_->Close());
 }
 
+// Regression test for part of KUDU-735:
+// if a log is not preallocated, we should properly track its on-disk size as we append to
+// it.
+TEST_F(LogTest, TestSizeIsMaintained) {
+  options_.preallocate_segments = false;
+  BuildLog();
+
+  OpId opid = MakeOpId(0, 1);
+  AppendNoOp(&opid);
+
+  SegmentSequence segments;
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  int64_t orig_size = segments[0]->file_size();
+  ASSERT_GT(orig_size, 0);
+
+  AppendNoOp(&opid);
+
+  ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
+  int64_t new_size = segments[0]->file_size();
+  ASSERT_GT(new_size, orig_size);
+
+  ASSERT_OK(log_->Close());
+}
+
 // Test that the reader can read from the log even if it hasn't been
 // properly closed.
 TEST_F(LogTest, TestLogNotTrimmed) {

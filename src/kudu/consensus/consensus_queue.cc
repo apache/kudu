@@ -294,8 +294,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                          &preceding_id);
 
     if (PREDICT_FALSE(!s.ok())) {
-      CHECK(messages.empty());
-      LOG_WITH_PREFIX_UNLOCKED(DFATAL) << "Error while reading the log: " << s.ToString();
+      LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error while reading the log: " << s.ToString();
     }
 
     // We use AddAllocated rather than copy, because we pin the log cache at the
