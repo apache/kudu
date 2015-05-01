@@ -162,6 +162,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
     : base_data_(base_data),
       projection_(projection),
       initted_(false),
+      cur_idx_(0),
       prepared_count_(0) {
     CHECK_OK(base_data_->CountRows(&row_count_));
   }

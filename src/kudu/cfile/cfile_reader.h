@@ -251,7 +251,7 @@ class ColumnIterator {
 class DefaultColumnValueIterator : public ColumnIterator {
  public:
   DefaultColumnValueIterator(DataType type, const void *value)
-    : type_(type), value_(value) {
+    : type_(type), value_(value), ordinal_(0) {
   }
 
   Status SeekToOrdinal(rowid_t ord_idx) OVERRIDE;

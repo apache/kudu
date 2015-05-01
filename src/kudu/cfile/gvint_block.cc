@@ -111,7 +111,8 @@ Slice GVIntBlockBuilder::Finish(rowid_t ordinal_pos) {
 GVIntBlockDecoder::GVIntBlockDecoder(const Slice &slice)
   : data_(slice),
     parsed_(false),
-    cur_pos_(NULL) {
+    cur_pos_(NULL),
+    cur_idx_(0) {
 }
 
 

@@ -504,6 +504,7 @@ void CopyTraceEventParameter(char** buffer,
 
 TraceEvent::TraceEvent()
     : duration_(-1),
+      thread_duration_(-1),
       id_(0u),
       category_group_enabled_(NULL),
       name_(NULL),
