@@ -43,7 +43,7 @@ Status CompressedBlockBuilder::Compress(const vector<Slice> &data_slices, Slice 
         max_compressed_size, compressed_size_limit_));
   }
 
-  buffer_.reserve(kHeaderReservedLength + max_compressed_size);
+  buffer_.resize(kHeaderReservedLength + max_compressed_size);
 
   // Compress
   size_t compressed_size;

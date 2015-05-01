@@ -37,6 +37,11 @@ set(LLVM_REQ_COMPONENTS
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
+# Workaround for a conflict between LLVM's Support/Valgrind.h file
+# and our dynamic_annotations.h. Defining this prevents the LLVM
+# header from getting included.
+add_definitions(-DLLVM_SUPPORT_VALGRIND_H)
+
 ## Get the required libraries to link to in llvm
 # as of llvm 3.5, there are two different functions for this
 if (${LLVM_PACKAGE_VERSION} VERSION_LESS 3.5)

@@ -21,6 +21,14 @@ static void DoTestRoundTripGVI32(
   faststring buf;
   AppendGroupVarInt32(&buf, a, b, c, d);
 
+  int real_size = buf.size();
+
+  // The implementations actually read past the group varint,
+  // so append some extra padding data to ensure that it's not reading
+  // uninitialized memory. The SSE implementation uses 128-bit reads
+  // and the non-SSE one uses 32-bit reads.
+  buf.append(string('x', use_sse ? 16 : 4));
+
   uint32_t ret[4];
 
   const uint8_t *end;
@@ -37,7 +45,7 @@ static void DoTestRoundTripGVI32(
   ASSERT_EQ(b, ret[1]);
   ASSERT_EQ(c, ret[2]);
   ASSERT_EQ(d, ret[3]);
-  ASSERT_EQ(end, buf.data() + buf.size());
+  ASSERT_EQ(end, buf.data() + real_size);
 }
 
 

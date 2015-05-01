@@ -5,6 +5,7 @@
 
 #include <string>
 
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/fastmem.h"
 
@@ -30,9 +31,11 @@ class faststring {
       data_ = new uint8_t[capacity];
       capacity_ = capacity;
     }
+    ASAN_POISON_MEMORY_REGION(data_, capacity_);
   }
 
   ~faststring() {
+    ASAN_UNPOISON_MEMORY_REGION(initial_data_, arraysize(initial_data_));
     if (data_ != initial_data_) {
       delete[] data_;
     }
@@ -43,6 +46,7 @@ class faststring {
   // This does not free up any memory. The capacity of the string remains unchanged.
   void clear() {
     resize(0);
+    ASAN_POISON_MEMORY_REGION(data_, capacity_);
   }
 
   // Resize the string to the given length.
@@ -55,6 +59,8 @@ class faststring {
       reserve(newsize);
     }
     len_ = newsize;
+    ASAN_POISON_MEMORY_REGION(data_ + len_, capacity_ - len_);
+    ASAN_UNPOISON_MEMORY_REGION(data_, len_);
   }
 
   // Releases the underlying array; after this, the buffer is left empty.
@@ -69,20 +75,25 @@ class faststring {
     len_ = 0;
     capacity_ = kInitialCapacity;
     data_ = initial_data_;
+    ASAN_POISON_MEMORY_REGION(data_, capacity_);
     return ret;
   }
 
   // Reserve space for the given total amount of data. If the current capacity is already
-  // larger than the newly requested capacity, this is a no-op (i.e. it does not ever free memory)
+  // larger than the newly requested capacity, this is a no-op (i.e. it does not ever free memory).
+  //
+  // NOTE: even though the new capacity is reserved, it is illegal to begin writing into that memory
+  // directly using pointers. If ASAN is enabled, this is ensured using manual memory poisoning.
   void reserve(size_t newcapacity) {
     if (PREDICT_TRUE(newcapacity <= capacity_)) return;
     GrowArray(newcapacity);
   }
 
-  // Append the given data to the string, resizing capcaity as necessary.
+  // Append the given data to the string, resizing capacity as necessary.
   void append(const void *src_v, size_t count) {
     const uint8_t *src = reinterpret_cast<const uint8_t *>(src_v);
     EnsureRoomForAppend(count);
+    ASAN_UNPOISON_MEMORY_REGION(data_ + len_, count);
 
     // appending short values is common enough that this
     // actually helps, according to benchmarks. In theory
@@ -108,6 +119,7 @@ class faststring {
   // Append the given character to this string.
   void push_back(const char byte) {
     EnsureRoomForAppend(1);
+    ASAN_UNPOISON_MEMORY_REGION(data_ + len_, 1);
     data_[len_] = byte;
     len_++;
   }

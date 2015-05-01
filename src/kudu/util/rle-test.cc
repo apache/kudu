@@ -38,8 +38,8 @@ const int MAX_WIDTH = 32;
 class TestRle : public KuduTest {};
 
 TEST(BitArray, TestBool) {
-  const int len = 8;
-  faststring buffer(len);
+  const int len_bytes = 2;
+  faststring buffer(len_bytes);
 
   BitWriter writer(&buffer);
 
@@ -71,7 +71,7 @@ TEST(BitArray, TestBool) {
   EXPECT_EQ(buffer[1], BOOST_BINARY(1 1 0 0 1 1 0 0));
 
   // Use the reader and validate
-  BitReader reader(buffer.data(), len);
+  BitReader reader(buffer.data(), buffer.size());
   for (int i = 0; i < 8; ++i) {
     bool val = false;
     bool result = reader.GetValue(1, &val);
@@ -132,12 +132,12 @@ TEST(BitArray, TestValues) {
 
 // Test some mixed values
 TEST(BitArray, TestMixed) {
-  const int kTestLen = 1024;
-  faststring buffer(kTestLen);
+  const int kTestLenBits = 1024;
+  faststring buffer(kTestLenBits / 8);
   bool parity = true;
 
   BitWriter writer(&buffer);
-  for (int i = 0; i < kTestLen; ++i) {
+  for (int i = 0; i < kTestLenBits; ++i) {
     if (i % 2 == 0) {
       writer.PutValue(parity, 1);
       parity = !parity;
@@ -148,8 +148,8 @@ TEST(BitArray, TestMixed) {
   writer.Flush();
 
   parity = true;
-  BitReader reader(buffer.data(), kTestLen);
-  for (int i = 0; i < kTestLen; ++i) {
+  BitReader reader(buffer.data(), buffer.size());
+  for (int i = 0; i < kTestLenBits; ++i) {
     bool result;
     if (i % 2 == 0) {
       bool val = false;

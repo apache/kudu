@@ -186,13 +186,12 @@ inline void AppendGroupVarInt32(
     d_tag + 1;
 
   size_t old_size = s->size();
+
   // Reserving 4 extra bytes means we can use simple
   // 4-byte stores instead of variable copies here --
   // if we hang off the end of the array into the "empty" area, it's OK.
-
-  s->reserve(old_size + size + 4);
-  s->resize(old_size + size);
-
+  // We'll chop it back off down below.
+  s->resize(old_size + size + 4);
   uint8_t *ptr = &((*s)[old_size]);
 
 #if __BYTE_ORDER != __LITTLE_ENDIAN
@@ -207,6 +206,8 @@ inline void AppendGroupVarInt32(
   memcpy(ptr, &c, 4);
   ptr += c_tag + 1;
   memcpy(ptr, &d, 4);
+
+  s->resize(old_size + size);
 }
 
 // Append a sequence of uint32s encoded using group-varint.

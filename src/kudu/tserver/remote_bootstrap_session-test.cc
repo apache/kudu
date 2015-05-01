@@ -240,7 +240,7 @@ TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
       uint64_t session_block_size = 0;
       ASSERT_OK(Env::Default()->GetFileSize(path, &session_block_size));
       faststring buf;
-      buf.reserve(session_block_size);
+      buf.resize(session_block_size);
       Slice data;
       ASSERT_OK(file->Read(session_block_size, &data, buf.data()));
       uint32_t session_crc = crc::Crc32c(data.data(), data.size());
@@ -251,7 +251,7 @@ TEST_F(RemoteBootstrapTest, TestBlocksEqual) {
       ASSERT_OK(fs_manager()->OpenBlock(block_id, &tablet_block));
       uint64_t tablet_block_size = 0;
       ASSERT_OK(tablet_block->Size(&tablet_block_size));
-      buf.reserve(tablet_block_size);
+      buf.resize(tablet_block_size);
       ASSERT_OK(tablet_block->Read(0, tablet_block_size, &data, buf.data()));
       uint32_t tablet_crc = crc::Crc32c(data.data(), data.size());
       LOG(INFO) << "tablet block file has size of " << tablet_block_size
