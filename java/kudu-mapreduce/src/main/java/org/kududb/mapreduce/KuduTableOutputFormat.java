@@ -5,13 +5,8 @@ package org.kududb.mapreduce;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import com.stumbleupon.async.DeferredGroupException;
-import org.kududb.client.KuduClient;
-import org.kududb.client.KuduSession;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
-import org.kududb.client.OperationResponse;
-import org.kududb.client.PleaseThrottleException;
-import org.kududb.client.RowsWithErrorException;
+import org.kududb.client.*;
+import org.kududb.client.AsyncKuduClient;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
@@ -42,7 +37,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * resources we assume that once either
  * {@link #checkOutputSpecs(org.apache.hadoop.mapreduce.JobContext)}
  * or {@link TableRecordWriter#close(org.apache.hadoop.mapreduce.TaskAttemptContext)}
- * have been called that the object won't be used again and the KuduClient is shut down.
+ * have been called that the object won't be used again and the AsyncKuduClient is shut down.
  * </p>
  */
 public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
@@ -84,9 +79,9 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
 
   private Configuration conf = null;
 
-  private KuduClient client;
+  private AsyncKuduClient client;
   private KuduTable table;
-  private KuduSession session;
+  private AsyncKuduSession session;
   private long operationTimeoutMs;
 
   @Override
@@ -109,7 +104,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     }
     this.session = client.newSession();
     this.session.setTimeoutMillis(this.operationTimeoutMs);
-    this.session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
+    this.session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
     this.session.setMutationBufferSpace(bufferSpace);
     String multitonKey = String.valueOf(Thread.currentThread().getId());
     assert(MULTITON.get(multitonKey) == null);
@@ -158,9 +153,9 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
   protected class TableRecordWriter extends RecordWriter<NullWritable, Operation> {
 
     private final AtomicLong rowsWithErrors = new AtomicLong();
-    private final KuduSession session;
+    private final AsyncKuduSession session;
 
-    public TableRecordWriter(KuduSession session) {
+    public TableRecordWriter(AsyncKuduSession session) {
       this.session = session;
     }
 

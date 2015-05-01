@@ -29,14 +29,14 @@ import org.kududb.client.Bytes;
 import org.kududb.client.ColumnRangePredicate;
 import org.kududb.client.CreateTableBuilder;
 import org.kududb.client.KeyBuilder;
-import org.kududb.client.KuduClient;
+import org.kududb.client.AsyncKuduClient;
 import org.kududb.client.KuduScanner;
 import org.kududb.client.KuduTable;
 import org.kududb.client.Operation;
 import org.kududb.client.RowResult;
 import org.kududb.client.RowsWithErrorException;
 import org.kududb.client.SessionConfiguration;
-import org.kududb.client.SynchronousKuduSession;
+import org.kududb.client.KuduSession;
 import org.kududb.client.Update;
 import org.kududb.util.Pair;
 import org.apache.commons.cli.CommandLine;
@@ -441,9 +441,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private String id;
       private long rowId = 0;
       private int i;
-      private KuduClient client;
+      private AsyncKuduClient client;
       private KuduTable table;
-      private SynchronousKuduSession session;
+      private KuduSession session;
       private KuduTable headsTable;
       private long numNodes;
       private long wrap;
@@ -622,7 +622,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     protected void createSchema(String tableName, Schema schema, int numTablets) throws Exception {
       CommandLineParser parser = new CommandLineParser(getConf());
-      KuduClient client = parser.getClient();
+      AsyncKuduClient client = parser.getClient();
       try {
         if (numTablets < 1) {
           numTablets = 1;
@@ -1056,7 +1056,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       CommandLineParser cmdLineParser = new CommandLineParser(getConf());
       long timeout = cmdLineParser.getOperationTimeoutMs();
-      KuduClient client = cmdLineParser.getClient();
+      AsyncKuduClient client = cmdLineParser.getClient();
 
       KuduTable table = client.openTable(getTableName(getConf())).join(timeout);
       KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, table.getSchema());
@@ -1141,9 +1141,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     public static class UpdaterMapper extends Mapper<NullWritable, RowResult,
         NullWritable, NullWritable> {
-      private KuduClient client;
+      private AsyncKuduClient client;
       private KuduTable table;
-      private SynchronousKuduSession session;
+      private KuduSession session;
       private long timeout;
       private Schema scanSchema;
       private long numUpdatesPerMapper;
@@ -1461,7 +1461,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
   private static class Walker extends Configured implements Tool {
 
     private long timeout;
-    private KuduClient client;
+    private AsyncKuduClient client;
     private KuduTable table;
 
     @Override

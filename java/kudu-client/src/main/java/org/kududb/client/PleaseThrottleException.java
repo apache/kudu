@@ -32,9 +32,9 @@ import com.stumbleupon.async.Deferred;
 /**
  * This exception notifies the application to throttle its use of Kudu.
  * <p>
- * Since all APIs of {@link KuduSession} are asynchronous and non-blocking,
+ * Since all APIs of {@link AsyncKuduSession} are asynchronous and non-blocking,
  * it's possible that the application would produce RPCs at a rate higher
- * than Kudu is able to handle.  When this happens, {@link KuduSession}
+ * than Kudu is able to handle.  When this happens, {@link AsyncKuduSession}
  * will typically do some buffering up to a certain point beyond which RPCs
  * will fail-fast with this exception, to prevent the application from
  * running itself out of memory.

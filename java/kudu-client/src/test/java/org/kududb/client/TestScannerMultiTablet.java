@@ -37,8 +37,8 @@ public class TestScannerMultiTablet extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void test() throws Exception {
-    KuduSession session = client.newSession();
-    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
+    AsyncKuduSession session = client.newSession();
+    session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_SYNC);
 
     String[] keys = new String[] {"1", "2", "3"};
     for (String key1 : keys) {

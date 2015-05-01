@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * A KuduTable represents a table on a particular cluster. It holds the current
- * schema of the table. Any given KuduTable instance belongs to a specific KuduClient
+ * schema of the table. Any given KuduTable instance belongs to a specific AsyncKuduClient
  * instance.
  *
  * Upon construction, the table is looked up in the catalog (or catalog cache),
@@ -20,11 +20,11 @@ import java.util.List;
 public class KuduTable {
 
   private final Schema schema;
-  private final KuduClient client;
+  private final AsyncKuduClient client;
   private final String name;
   private final Slice nameAsSlice;
 
-  KuduTable(KuduClient client, String name, Schema schema) {
+  KuduTable(AsyncKuduClient client, String name, Schema schema) {
     this.schema = schema;
     this.client = client;
     this.name = name;
@@ -39,7 +39,7 @@ public class KuduTable {
     return this.name;
   }
 
-  public KuduClient getClient() {
+  public AsyncKuduClient getClient() {
     return this.client;
   }
 

@@ -7,7 +7,7 @@ import org.kududb.Schema;
 import org.kududb.client.BaseKuduTest;
 import org.kududb.client.CreateTableBuilder;
 import org.kududb.client.Insert;
-import org.kududb.client.KuduSession;
+import org.kududb.client.AsyncKuduSession;
 import org.kududb.client.KuduTable;
 import org.kududb.client.RowResult;
 import org.apache.hadoop.conf.Configuration;
@@ -38,7 +38,7 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     insert.addInt(schema.getColumn(2).getName(), 3);
     insert.addString(schema.getColumn(3).getName(), "a string");
     insert.addBoolean(schema.getColumn(4).getName(), true);
-    KuduSession session = client.newSession();
+    AsyncKuduSession session = client.newSession();
     session.apply(insert).join(DEFAULT_SLEEP);
     session.close().join(DEFAULT_SLEEP);
 

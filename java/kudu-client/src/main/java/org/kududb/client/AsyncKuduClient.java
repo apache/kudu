@@ -76,15 +76,15 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 /**
- * A fully asynchronous, thread-safe, modern Kudu client.
+ * A fully asynchronous and thread-safe Kudu client.
  * <p>
  * This client should be
  * instantiated only once. You can use it with any number of tables at the
  * same time. The only case where you should have multiple instances is when
  * you want to use multiple different clusters at the same time.
  * <p>
- * If you play by the rules, this client is (in theory {@code :D}) completely
- * thread-safe.  Read the documentation carefully to know what the requirements
+ * If you play by the rules, this client is completely
+ * thread-safe. Read the documentation carefully to know what the requirements
  * are for this guarantee to apply.
  * <p>
  * This client is fully non-blocking, any blocking operation will return a
@@ -109,9 +109,9 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  * handle in your errback.  Asynchronous exceptions will be indicated as such
  * in the javadoc with "(deferred)".
  */
-public class KuduClient {
+public class AsyncKuduClient {
 
-  public static final Logger LOG = LoggerFactory.getLogger(KuduClient.class);
+  public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);
   public static final int SLEEP_TIME = 500;
   public static final byte[] EMPTY_ARRAY = new byte[0];
   public static final int NO_TIMESTAMP = -1;
@@ -176,7 +176,7 @@ public class KuduClient {
       new HashMap<String, TabletClient>();
 
   @GuardedBy("sessions")
-  private final Set<KuduSession> sessions = new HashSet<KuduSession>();
+  private final Set<AsyncKuduSession> sessions = new HashSet<AsyncKuduSession>();
 
   // TODO Below is an uber hack, the master is considered a tablet with
   // a table name.
@@ -217,11 +217,11 @@ public class KuduClient {
    * Doesn't block and won't throw an exception if the masters don't exist.
    * @param masterQuorum Comma-separated list of "host:port" pairs of the masters
    */
-  public KuduClient(final String masterQuorum) {
+  public AsyncKuduClient(final String masterQuorum) {
     this(NetUtil.parseStrings(masterQuorum, 7051));
   }
 
-  public KuduClient(final List<HostAndPort> masterAddresses) {
+  public AsyncKuduClient(final List<HostAndPort> masterAddresses) {
     this(masterAddresses, defaultChannelFactory());
   }
 
@@ -232,8 +232,8 @@ public class KuduClient {
    * @param channelFactory socket channel factory for this client; can be
    *                       configured to specify a custom connection timeout
    */
-  public KuduClient(final List<HostAndPort> masterAddresses,
-                    final ClientSocketChannelFactory channelFactory) {
+  public AsyncKuduClient(final List<HostAndPort> masterAddresses,
+                         final ClientSocketChannelFactory channelFactory) {
     this.channelFactory = channelFactory;
     this.masterAddresses = masterAddresses;
     this.masterTableHack = new KuduTable(this, MASTER_TABLE_HACK,
@@ -428,7 +428,7 @@ public class KuduClient {
     return getTableSchema(name).addCallback(new Callback<KuduTable, GetTableSchemaResponse>() {
       @Override
       public KuduTable call(GetTableSchemaResponse response) throws Exception {
-        return new KuduTable(KuduClient.this, name, response.getSchema());
+        return new KuduTable(AsyncKuduClient.this, name, response.getSchema());
       }
     });
   }
@@ -469,11 +469,11 @@ public class KuduClient {
    * Create a new session for interacting with the cluster.
    * User is responsible for destroying the session object.
    * This is a fully local operation (no RPCs or blocking).
-   * @return a new KuduSession
+   * @return a new AsyncKuduSession
    */
-  public KuduSession newSession() {
+  public AsyncKuduSession newSession() {
     checkIsClosed();
-    KuduSession session = new KuduSession(this);
+    AsyncKuduSession session = new AsyncKuduSession(this);
     synchronized (sessions) {
       sessions.add(session);
     }
@@ -481,20 +481,20 @@ public class KuduClient {
   }
 
   /**
-   * Same as {@link #newSession} but returns a synchronous version of {@link KuduSession},
-   * see {@link SynchronousKuduSession}.
+   * Same as {@link #newSession} but returns a synchronous version of {@link AsyncKuduSession},
+   * see {@link KuduSession}.
    * @return A synchronous wrapper around KuduSession.
    */
-  public SynchronousKuduSession newSynchronousSession() {
-    KuduSession session = newSession();
-    return new SynchronousKuduSession(session);
+  public KuduSession newSynchronousSession() {
+    AsyncKuduSession session = newSession();
+    return new KuduSession(session);
   }
 
   /**
    * This method is for KuduSessions so that they can remove themselves as part of closing down.
    * @param session Session to remove
    */
-  void removeSession(KuduSession session) {
+  void removeSession(AsyncKuduSession session) {
     synchronized (sessions) {
       boolean removed = sessions.remove(session);
       assert removed == true;
@@ -601,7 +601,7 @@ public class KuduClient {
    * should go.
    * <p>
    * Use {@code AsyncUtil.addCallbacksDeferring} to add this as the callback and
-   * {@link KuduClient.RetryRpcErrback} as the "errback" to the {@code Deferred}
+   * {@link AsyncKuduClient.RetryRpcErrback} as the "errback" to the {@code Deferred}
    * returned by {@link #locateTablet(String, byte[])}.
    * @param <R> RPC's return type.
    * @param <D> Previous query's return type, which we don't use, but need to specify in order to
@@ -774,7 +774,7 @@ public class KuduClient {
   }
 
   /**
-   * Modifying the list returned by this method won't change how KuduClient behaves,
+   * Modifying the list returned by this method won't change how AsyncKuduClient behaves,
    * but calling certain methods on the returned TabletClients can. For example,
    * it's possible to forcefully shutdown a connection to a tablet server by calling {@link
    * TabletClient#shutdown()}.
@@ -790,7 +790,7 @@ public class KuduClient {
   /**
    * This method first clears tabletsCache and then tablet2client without any regards for
    * calls to {@link #discoverTablets(String, kudu.master.Master.GetTableLocationsResponsePB)}.
-   * Call only when KuduClient is in a steady state.
+   * Call only when AsyncKuduClient is in a steady state.
    * @param tableName Table for which we remove all the RemoteTablet entries
    */
   @VisibleForTesting
@@ -1232,7 +1232,7 @@ public class KuduClient {
    * Performs a graceful shutdown of this instance.
    * <p>
    * <ul>
-   *   <li>{@link KuduSession#flush Flushes} all buffered edits.</li>
+   *   <li>{@link AsyncKuduSession#flush Flushes} all buffered edits.</li>
    *   <li>Cancels all the other requests.</li>
    *   <li>Terminates all connections.</li>
    *   <li>Releases all other resources.</li>
@@ -1243,7 +1243,7 @@ public class KuduClient {
    * of the above have been done. If this callback chain doesn't fail, then
    * the clean shutdown will be successful, and all the data will be safe on
    * the Kudu side. In case of a failure (the "errback" is invoked) you will have
-   * to open a new KuduClient if you want to retry those operations.
+   * to open a new AsyncKuduClient if you want to retry those operations.
    * The Deferred doesn't actually hold any content.
    */
   public Deferred<ArrayList<Void>> shutdown() {
@@ -1256,7 +1256,7 @@ public class KuduClient {
     // down from another thread.
     final class ShutdownThread extends Thread {
       ShutdownThread() {
-        super("KuduClient@" + KuduClient.super.hashCode() + " shutdown");
+        super("AsyncKuduClient@" + AsyncKuduClient.super.hashCode() + " shutdown");
       }
       public void run() {
         // This terminates the Executor.
@@ -1298,11 +1298,11 @@ public class KuduClient {
   }
 
   private Deferred<ArrayList<ArrayList<OperationResponse>>> closeAllSessions() {
-    // We create a copy because KuduSession.close will call removeSession which would get us a
+    // We create a copy because AsyncKuduSession.close will call removeSession which would get us a
     // concurrent modification during the iteration.
-    Set<KuduSession> copyOfSessions;
+    Set<AsyncKuduSession> copyOfSessions;
     synchronized (sessions) {
-      copyOfSessions = new HashSet<KuduSession>(sessions);
+      copyOfSessions = new HashSet<AsyncKuduSession>(sessions);
     }
     if (sessions.isEmpty()) {
       return Deferred.fromResult(null);
@@ -1310,7 +1310,7 @@ public class KuduClient {
     // Guaranteed that we'll have at least one session to close.
     ArrayList<Deferred<ArrayList<OperationResponse>>> deferreds =
         new ArrayList<Deferred<ArrayList<OperationResponse>>>(copyOfSessions.size());
-    for (KuduSession session : copyOfSessions ) {
+    for (AsyncKuduSession session : copyOfSessions ) {
       deferreds.add(session.close());
     }
 
@@ -1485,7 +1485,7 @@ public class KuduClient {
     private boolean disconnected = false;
 
     TabletClient init(String uuid, boolean isMasterTable) {
-      final TabletClient client = new TabletClient(KuduClient.this, uuid, isMasterTable);
+      final TabletClient client = new TabletClient(AsyncKuduClient.this, uuid, isMasterTable);
       super.addLast("handler", client);
       return client;
     }

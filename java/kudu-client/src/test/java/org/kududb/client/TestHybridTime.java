@@ -60,8 +60,8 @@ public class TestHybridTime extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void test() throws Exception {
-    KuduSession session = client.newSession();
-    session.setFlushMode(KuduSession.FlushMode.AUTO_FLUSH_SYNC);
+    AsyncKuduSession session = client.newSession();
+    session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_SYNC);
     session.setExternalConsistencyMode(CLIENT_PROPAGATED);
     long[] clockValues;
     long previousLogicalValue = 0;
@@ -96,7 +96,7 @@ public class TestHybridTime extends BaseKuduTest {
     }
 
     // Test timestamp propagation with Batches
-    session.setFlushMode(KuduSession.FlushMode.MANUAL_FLUSH);
+    session.setFlushMode(AsyncKuduSession.FlushMode.MANUAL_FLUSH);
     keys = new String[] {"11", "22", "33"};
     for (int i = 0; i < keys.length; i++) {
       Insert insert = table.newInsert();

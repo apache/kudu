@@ -127,7 +127,7 @@ final class GetMasterRegistrationReceived {
         Master.TabletLocationsPB.Builder locationBuilder = Master.TabletLocationsPB.newBuilder();
         locationBuilder.setStartKey(ByteString.copyFromUtf8(""));
         locationBuilder.setEndKey(ByteString.copyFromUtf8(""));
-        locationBuilder.setTabletId(ByteString.copyFromUtf8(KuduClient.MASTER_TABLE_HACK));
+        locationBuilder.setTabletId(ByteString.copyFromUtf8(AsyncKuduClient.MASTER_TABLE_HACK));
         locationBuilder.setStale(false);
         locationBuilder.addReplicas(replicaBuilder);
         // No one else has called this before us.

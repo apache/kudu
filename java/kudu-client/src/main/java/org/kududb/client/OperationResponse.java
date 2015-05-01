@@ -3,7 +3,7 @@
 package org.kududb.client;
 
 /**
- * Response type for Insert, Update, Delete, and Batch (which is used internally by KuduSession).
+ * Response type for Insert, Update, Delete, and Batch (which is used internally by AsyncKuduSession).
  * Provides the Hybrid Time write timestamp returned by the Tablet Server.
  */
 public class OperationResponse extends KuduRpcResponse {
@@ -21,7 +21,7 @@ public class OperationResponse extends KuduRpcResponse {
 
   /**
    * Gives the write timestamp that was returned by the Tablet Server.
-   * @return Timestamp in milliseconds, 0 if the external consistency mode set in KuduSession
+   * @return Timestamp in milliseconds, 0 if the external consistency mode set in AsyncKuduSession
    * wasn't CLIENT_PROPAGATED.
    */
   public long getWriteTimestamp() {

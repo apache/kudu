@@ -29,7 +29,7 @@ public class TestRowErrors extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void test() throws Exception {
-    KuduSession session = client.newSession();
+    AsyncKuduSession session = client.newSession();
 
     // Insert 3 rows to play with.
     for (int i = 0; i < 3; i++) {
@@ -50,7 +50,7 @@ public class TestRowErrors extends BaseKuduTest {
     // Now try inserting two dupes and one good row, make sure we get only two errors back.
     dupeForZero = createInsert(0);
     Insert dupeForTwo = createInsert(2);
-    session.setFlushMode(KuduSession.FlushMode.MANUAL_FLUSH);
+    session.setFlushMode(AsyncKuduSession.FlushMode.MANUAL_FLUSH);
     session.apply(dupeForZero);
     session.apply(dupeForTwo);
     session.apply(createInsert(4));

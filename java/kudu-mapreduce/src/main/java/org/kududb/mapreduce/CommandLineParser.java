@@ -2,7 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.mapreduce;
 
-import org.kududb.client.KuduClient;
+import org.kududb.client.AsyncKuduClient;
 import org.apache.hadoop.conf.Configuration;
 
 /**
@@ -63,7 +63,7 @@ public class CommandLineParser {
    * Get a client connected to the configured Master.
    * @return a kudu client
    */
-  public KuduClient getClient() {
+  public AsyncKuduClient getClient() {
     return KuduTableMapReduceUtil.connect(getMasterQuorum());
   }
 

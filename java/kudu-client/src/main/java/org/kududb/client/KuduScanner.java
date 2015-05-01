@@ -98,7 +98,7 @@ public final class KuduScanner {
   // Initial configurations.
   //////////////////////////
 
-  private final KuduClient client;
+  private final AsyncKuduClient client;
   private final KuduTable table;
   private final Schema schema;
   private final ColumnRangePredicates columnRangePredicates;
@@ -154,7 +154,7 @@ public final class KuduScanner {
    * If == DONE, then we're done scanning.
    * Otherwise it contains a proper tabletSlice name, and we're currently scanning.
    */
-  private KuduClient.RemoteTablet tablet;
+  private AsyncKuduClient.RemoteTablet tablet;
 
   /**
    * This is the scanner ID we got from the TabletServer.
@@ -176,7 +176,7 @@ public final class KuduScanner {
 
   private boolean inFirstTablet = true;
 
-  private KuduScanner(KuduClient client, KuduTable table, Schema schema,
+  private KuduScanner(AsyncKuduClient client, KuduTable table, Schema schema,
                       ReadMode readMode, DeadlineTracker deadlineTracker,
                       ColumnRangePredicates columnRangePredicates, long limit, boolean cacheBlocks,
                       boolean prefetching, byte[] startKey, byte[] endKey,
@@ -185,7 +185,7 @@ public final class KuduScanner {
         "got %s", maxNumBytes);
     Preconditions.checkArgument(limit > 0, "Need a strictly positive number for the limit, " +
         "got %s", limit);
-    if (htTimestamp != KuduClient.NO_TIMESTAMP) {
+    if (htTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
       Preconditions.checkArgument(readMode == ReadMode.READ_AT_SNAPSHOT, "When specifying a " +
           "HybridClock timestamp, the read mode needs to be set to READ_AT_SNAPSHOT");
     }
@@ -337,7 +337,7 @@ public final class KuduScanner {
   private final Callback<Exception, Exception> nextRowErrback() {
     return new Callback<Exception, Exception>() {
       public Exception call(final Exception error) {
-        final KuduClient.RemoteTablet old_tablet = tablet;  // Save before invalidate().
+        final AsyncKuduClient.RemoteTablet old_tablet = tablet;  // Save before invalidate().
         String message = old_tablet + " pretends to not know " + KuduScanner.this;
         LOG.warn(message, error);
         invalidate();  // If there was an error, don't assume we're still OK.
@@ -352,7 +352,7 @@ public final class KuduScanner {
   void scanFinished() {
     // We're done if 1) we finished scanning the last tablet, or 2) we're past a configured end
     // row key
-    if (tablet.getEndKey() == KuduClient.EMPTY_ARRAY || (this.endKey != KuduClient.EMPTY_ARRAY
+    if (tablet.getEndKey() == AsyncKuduClient.EMPTY_ARRAY || (this.endKey != AsyncKuduClient.EMPTY_ARRAY
         && Bytes.memcmp(this.endKey , tablet.getEndKey()) <= 0)) {
       hasMore = false;
       closed = true; // the scanner is closed on the other side at this point
@@ -429,7 +429,7 @@ public final class KuduScanner {
    * Sets the name of the tabletSlice that's hosting {@code this.start_key}.
    * @param tablet The tabletSlice we're currently supposed to be scanning.
    */
-  void setTablet(final KuduClient.RemoteTablet tablet) {
+  void setTablet(final AsyncKuduClient.RemoteTablet tablet) {
     this.tablet = tablet;
   }
 
@@ -446,7 +446,7 @@ public final class KuduScanner {
   /**
    * Returns the tabletSlice currently being scanned, if any.
    */
-  KuduClient.RemoteTablet currentTablet() {
+  AsyncKuduClient.RemoteTablet currentTablet() {
     return tablet;
   }
 
@@ -466,14 +466,14 @@ public final class KuduScanner {
         Preconditions.checkState(this.startKey == null, errorMessage, "start");
         this.startKey = this.columnRangePredicates.getStartKey();
       } else if (this.startKey == null) {
-        this.startKey = KuduClient.EMPTY_ARRAY;
+        this.startKey = AsyncKuduClient.EMPTY_ARRAY;
       }
 
       if (this.columnRangePredicates.hasEndKey()) {
         Preconditions.checkState(this.endKey == null, errorMessage, "end");
         this.endKey = this.columnRangePredicates.getEndKey();
       } else if (this.endKey == null) {
-        this.endKey = KuduClient.EMPTY_ARRAY;
+        this.endKey = AsyncKuduClient.EMPTY_ARRAY;
       }
     }
     return new ScanRequest(table, State.OPENING);
@@ -581,14 +581,14 @@ public final class KuduScanner {
           newBuilder.setReadMode(KuduScanner.this.getReadMode().pbVersion());
           newBuilder.setCacheBlocks(cacheBlocks);
           // if the last propagated timestamp is set send it with the scan
-          if (table.getClient().getLastPropagatedTimestamp() != KuduClient.NO_TIMESTAMP) {
+          if (table.getClient().getLastPropagatedTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
             newBuilder.setPropagatedTimestamp(table.getClient().getLastPropagatedTimestamp());
           }
           newBuilder.setReadMode(KuduScanner.this.getReadMode().pbVersion());
 
           // if the mode is set to read on snapshot sent the snapshot timestamp
           if (KuduScanner.this.getReadMode() == ReadMode.READ_AT_SNAPSHOT &&
-            KuduScanner.this.getSnapshotTimestamp() != KuduClient.NO_TIMESTAMP) {
+            KuduScanner.this.getSnapshotTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
             newBuilder.setSnapTimestamp(KuduScanner.this.getSnapshotTimestamp());
           }
 
@@ -749,11 +749,11 @@ public final class KuduScanner {
   }
 
   /**
-   * A Builder class to build {@link KuduScanner}. Use {@link KuduClient#newScannerBuilder}
+   * A Builder class to build {@link KuduScanner}. Use {@link AsyncKuduClient#newScannerBuilder}
    * in order to get a builder instance.
    */
   public static class KuduScannerBuilder {
-    private final KuduClient nestedClient;
+    private final AsyncKuduClient nestedClient;
     private final KuduTable nestedTable;
     private final Schema nestedSchema;
     private final DeadlineTracker nestedDeadlineTracker;
@@ -764,11 +764,11 @@ public final class KuduScanner {
     private long nestedLimit = Long.MAX_VALUE;
     private boolean nestedPrefetching = false;
     private boolean nestedCacheBlocks = true;
-    private long nestedHtTimestamp = KuduClient.NO_TIMESTAMP;
+    private long nestedHtTimestamp = AsyncKuduClient.NO_TIMESTAMP;
     private byte[] nestedStartKey = null;
     private byte[] nestedEndKey = null;
 
-    KuduScannerBuilder(KuduClient client, KuduTable table, Schema schema) {
+    KuduScannerBuilder(AsyncKuduClient client, KuduTable table, Schema schema) {
       this.nestedClient = client;
       this.nestedTable = table;
       this.nestedSchema = schema;

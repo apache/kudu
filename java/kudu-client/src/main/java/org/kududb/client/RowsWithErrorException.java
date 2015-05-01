@@ -58,7 +58,7 @@ public class RowsWithErrorException extends NonRecoverableException {
    * Helper method to help with the clumsiness of merging all the RowsWithErrorException that
    * might be contained in a DeferredGroupException. The latter can contain all sorts of
    * exceptions, this method will only merge those that are of type RowsWithErrorException.
-   * @param dge Exception returned by {@link KuduSession#flush} after joining or in the errback.
+   * @param dge Exception returned by {@link AsyncKuduSession#flush} after joining or in the errback.
    * @return A RowsWithErrorException that is the merged result of all the
    * RowsWithErrorExceptions contained in DeferredGroupException or null if none of the
    * exceptions were RowsWithErrorException.

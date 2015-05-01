@@ -9,10 +9,10 @@ import com.stumbleupon.async.Deferred;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
-public class TestKuduClient extends BaseKuduTest {
+public class TestAsyncKuduClient extends BaseKuduTest {
 
   private static final String TABLE_NAME =
-      TestKuduClient.class.getName() + "-" + System.currentTimeMillis();
+      TestAsyncKuduClient.class.getName() + "-" + System.currentTimeMillis();
   private static KuduTable table;
 
   @BeforeClass
@@ -38,7 +38,7 @@ public class TestKuduClient extends BaseKuduTest {
 
     // Test that we can reconnect to a TS while scanning.
     // 1. Insert enough rows to have to call next() mulitple times.
-    SynchronousKuduSession session = client.newSynchronousSession();
+    KuduSession session = client.newSynchronousSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
     int rowCount = 200;
     for (int i = 0; i < rowCount; i++) {

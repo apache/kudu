@@ -72,7 +72,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * This class needs careful synchronization. It's a non-sharable handler,
  * meaning there is one instance of it per Netty {@link Channel} and each
  * instance is only used by one Netty IO thread at a time.  At the same time,
- * {@link KuduClient} calls methods of this class from random threads at
+ * {@link AsyncKuduClient} calls methods of this class from random threads at
  * random times. The bottom line is that any data only used in the Netty IO
  * threads doesn't require synchronization, everything else does.
  * <p>
@@ -117,7 +117,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   /**
    * Set to {@code true} once we've disconnected from the server.
    * This way, if any thread is still trying to use this client after it's
-   * been removed from the caches in the {@link KuduClient}, we will
+   * been removed from the caches in the {@link AsyncKuduClient}, we will
    * immediately fail / reschedule its requests.
    * <p>
    * Manipulating this value requires synchronizing on `this'.
@@ -131,13 +131,13 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private final ConcurrentHashMap<Integer, KuduRpc<?>> rpcs_inflight =
       new ConcurrentHashMap<Integer, KuduRpc<?>>();
 
-  private final KuduClient kuduClient;
+  private final AsyncKuduClient kuduClient;
 
   private final String uuid;
 
   private SecureRpcHelper secureRpcHelper;
 
-  public TabletClient(KuduClient client, String uuid, boolean isMaster) {
+  public TabletClient(AsyncKuduClient client, String uuid, boolean isMaster) {
     this.kuduClient = client;
     this.uuid = uuid;
   }
@@ -619,7 +619,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private void failOrRetryRpcs(final Collection<KuduRpc<?>> rpcs,
                                final ConnectionResetException exception) {
     for (final KuduRpc<?> rpc : rpcs) {
-      final KuduClient.RemoteTablet tablet = rpc.getTablet();
+      final AsyncKuduClient.RemoteTablet tablet = rpc.getTablet();
       if (tablet == null  // Can't retry, dunno where this RPC should go.
           ) {
         rpc.errback(exception);

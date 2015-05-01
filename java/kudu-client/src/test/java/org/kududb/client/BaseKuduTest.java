@@ -75,7 +75,7 @@ public class BaseKuduTest {
 
   private static final String FLAGS_PATH = System.getProperty(FLAGS_PATH_PROP);
 
-  protected static KuduClient client;
+  protected static AsyncKuduClient client;
   protected static Schema basicSchema = getBasicSchema();
   protected static boolean startCluster;
 
@@ -110,7 +110,7 @@ public class BaseKuduTest {
           System.getProperty(MASTER_ADDRESS) + ":" + Integer.getInteger(MASTER_PORT));
       masterHostPorts = NetUtil.parseStrings(masterQuorum, DEFAULT_MASTER_RPC_PORT);
     }
-    client = new KuduClient(masterHostPorts);
+    client = new AsyncKuduClient(masterHostPorts);
     if (!waitForTabletServers(NUM_TABLET_SERVERS)) {
       fail("Couldn't get " + NUM_MASTERS + " tablet servers running, aborting");
     }
@@ -326,7 +326,7 @@ public class BaseKuduTest {
       builder.addSplitKey(keyBuilder.addInt(i));
     }
     createTable(tableName, basicSchema, builder);
-    KuduSession session = client.newSession();
+    AsyncKuduSession session = client.newSession();
 
     // create a table with on empty tablet and 3 tablets of 3 rows each
     KuduTable table = openTable(tableName);

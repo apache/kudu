@@ -23,10 +23,9 @@ import com.stumbleupon.async.Deferred;
 import org.kududb.ColumnSchema;
 import kudu.Common;
 import org.kududb.Schema;
-import kudu.consensus.Metadata;
 import org.kududb.client.Bytes;
 import org.kududb.client.DeadlineTracker;
-import org.kududb.client.KuduClient;
+import org.kududb.client.AsyncKuduClient;
 import org.kududb.client.KuduScanner;
 import org.kududb.client.KuduTable;
 import org.kududb.client.LocatedTablet;
@@ -66,7 +65,7 @@ import java.util.Map;
  * Hadoop doesn't have the concept of "closing" the input format so in order to release the
  * resources we assume that once either {@link #getSplits(org.apache.hadoop.mapreduce.JobContext)}
  * or {@link KuduTableInputFormat.TableRecordReader#close()} have been called that
- * the object won't be used again and the KuduClient is shut down.
+ * the object won't be used again and the AsyncKuduClient is shut down.
  * </p>
  */
 public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
@@ -105,7 +104,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   private final Map<String, String> reverseDNSCacheMap = new HashMap<String, String>();
 
   private Configuration conf;
-  private KuduClient client;
+  private AsyncKuduClient client;
   private KuduTable table;
   private long operationTimeoutMs;
   private String nameServer;

@@ -61,7 +61,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   int partialRowSize = 0;
 
   /**
-   * Package-private constructor. Subclasses need to be instantiated via KuduSession
+   * Package-private constructor. Subclasses need to be instantiated via AsyncKuduSession
    * @param table table with the schema to use for this operation
    */
   Operation(KuduTable table) {
@@ -288,7 +288,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     final Tserver.WriteRequestPB.Builder builder = createAndFillWriteRequestPB(this);
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
     builder.setExternalConsistencyMode(this.externalConsistencyMode.pbVersion());
-    if (this.propagatedTimestamp != KuduClient.NO_TIMESTAMP) {
+    if (this.propagatedTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
       builder.setPropagatedTimestamp(this.propagatedTimestamp);
     }
     return toChannelBuffer(header, builder.build());
