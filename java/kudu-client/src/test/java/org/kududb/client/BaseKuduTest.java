@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import com.google.common.base.Joiner;
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
@@ -83,8 +84,9 @@ public class BaseKuduTest {
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
-    // the following props are set via kudu-client's pom
+    LOG.info("Setting up before class...");
 
+    // The following props are set via kudu-client's pom.
     String baseDirPath = System.getProperty(BASE_DIR_PATH);
     startCluster = Boolean.parseBoolean(System.getProperty(START_CLUSTER));
 
@@ -92,6 +94,7 @@ public class BaseKuduTest {
       long now = System.currentTimeMillis();
 
       int port = startMasters(PORT_START, NUM_MASTERS, baseDirPath);
+      LOG.info("Starting {} tablet servers...", NUM_TABLET_SERVERS);
       for (int i = 0; i < NUM_TABLET_SERVERS; i++) {
         port = TestUtils.findFreePort(port);
         String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
@@ -110,7 +113,9 @@ public class BaseKuduTest {
           System.getProperty(MASTER_ADDRESS) + ":" + Integer.getInteger(MASTER_PORT));
       masterHostPorts = NetUtil.parseStrings(masterQuorum, DEFAULT_MASTER_RPC_PORT);
     }
+    LOG.info("Creating new Kudu client...");
     client = new AsyncKuduClient(masterHostPorts);
+    LOG.info("Waiting for tablet servers...");
     if (!waitForTabletServers(NUM_TABLET_SERVERS)) {
       fail("Couldn't get " + NUM_MASTERS + " tablet servers running, aborting");
     }
@@ -128,6 +133,7 @@ public class BaseKuduTest {
    */
   static int startMasters(int masterStartPort, int numMasters,
                           String baseDirPath) throws Exception {
+    LOG.info("Starting {} masters...", numMasters);
     // Get the list of web and RPC ports to use for the master quorum:
     // request NUM_MASTERS * 2 free ports as we want to also reserve the web
     // ports for the quorum.
@@ -199,6 +205,7 @@ public class BaseKuduTest {
    * we'll log the exit value).
    */
   static Process configureAndStartProcess(String[] command) throws Exception {
+    LOG.info("Starting process: {}", Joiner.on(" ").join(command));
     ProcessBuilder processBuilder = new ProcessBuilder(command);
     processBuilder.redirectErrorStream(true);
     Process proc = processBuilder.start();
@@ -266,6 +273,7 @@ public class BaseKuduTest {
   }
 
   protected static void createTable(String tableName, Schema schema, CreateTableBuilder builder) {
+    LOG.info("Creating table: {}", tableName);
     Deferred<CreateTableResponse> d = client.createTable(tableName, schema, builder);
     final AtomicBoolean gotError = new AtomicBoolean(false);
     d.addErrback(new Callback<Object, Object>() {
