@@ -17,6 +17,7 @@
 package org.kududb.mapreduce;
 
 import org.kududb.client.AsyncKuduClient;
+import org.kududb.client.KuduClient;
 import org.kududb.client.KuduTable;
 import org.kududb.client.Operation;
 import org.apache.commons.logging.Log;
@@ -314,12 +315,21 @@ public class KuduTableMapReduceUtil {
   }
 
   /**
-   * Utility method to parse the master address out and create a AsyncKuduClient
-   * @param masterQuorum Comma-separated list of master quorum addresses.
-   * @return a AsyncKuduClient
+   * Utility method to parse the master addresses out and create an AsyncKuduClient.
+   * @param masterQuorum comma-separated list of master quorum addresses
+   * @return an AsyncKuduClient
    */
-  static AsyncKuduClient connect(String masterQuorum) {
+  static AsyncKuduClient getAsyncClient(String masterQuorum) {
     return new AsyncKuduClient(masterQuorum);
+  }
+
+  /**
+   * Utility method to parse the master addresses out and create a KuduClient.
+   * @param masterQuorum comma-separated list of master quorum addresses
+   * @return a KuduClient
+   */
+  static KuduClient getClient(String masterQuorum) {
+    return new KuduClient(masterQuorum);
   }
 
   /**

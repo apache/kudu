@@ -38,7 +38,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
 
     // Test that we can reconnect to a TS while scanning.
     // 1. Insert enough rows to have to call next() mulitple times.
-    KuduSession session = client.newSynchronousSession();
+    KuduSession session = syncClient.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
     int rowCount = 200;
     for (int i = 0; i < rowCount; i++) {

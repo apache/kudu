@@ -36,7 +36,7 @@ public class TestLeaderFailover extends BaseKuduTest {
       return;
     }
 
-    KuduSession session = client.newSynchronousSession();
+    KuduSession session = syncClient.newSession();
     for (int i = 0; i < 3; i++) {
       session.apply(createBasicSchemaInsert(table, i));
     }

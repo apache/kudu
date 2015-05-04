@@ -11,7 +11,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * RPC used to check if an alter is running for the specified table
  */
-class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponsePB> {
+class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponse> {
 
   static final String IS_ALTER_TABLE_DONE = "IsAlterTableDone";
   private final String name;
@@ -41,11 +41,12 @@ class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponsePB> {
   }
 
   @Override
-  Pair<IsAlterTableDoneResponsePB, Object> deserialize(final CallResponse callResponse,
+  Pair<IsAlterTableDoneResponse, Object> deserialize(final CallResponse callResponse,
                                                        String tsUUID) throws Exception {
     final IsAlterTableDoneResponsePB.Builder respBuilder = IsAlterTableDoneResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
-    IsAlterTableDoneResponsePB resp = respBuilder.build();
-    return new Pair<IsAlterTableDoneResponsePB, Object>(resp, resp.getError());
+    IsAlterTableDoneResponse resp = new IsAlterTableDoneResponse(deadlineTracker.getElapsedMillis(),
+        tsUUID, respBuilder.getDone());
+    return new Pair<IsAlterTableDoneResponse, Object>(resp, respBuilder.getError());
   }
 }

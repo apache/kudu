@@ -24,7 +24,7 @@ public class TestKuduSession extends BaseKuduTest {
 
   @Test(timeout = 100000)
   public void test() throws Exception {
-    KuduSession session = client.newSynchronousSession();
+    KuduSession session = syncClient.newSession();
     for (int i = 0; i < 10; i++) {
       session.apply(createInsert(i));
     }

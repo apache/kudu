@@ -313,7 +313,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     }
     Deferred<AlterTableResponse> alterDeffered = client.alterTable(tableToAlter, atb);
     alterDeffered.join(DEFAULT_SLEEP);
-    boolean done  = client.syncWaitOnAlterCompletion(tableToCheck, DEFAULT_SLEEP);
+    boolean done  = syncClient.isAlterTableDone(tableToCheck);
     assertTrue(done);
   }
 

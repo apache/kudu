@@ -76,7 +76,9 @@ public class BaseKuduTest {
 
   private static final String FLAGS_PATH = System.getProperty(FLAGS_PATH_PROP);
 
+  // We create both versions of the client for ease of use.
   protected static AsyncKuduClient client;
+  protected static KuduClient syncClient;
   protected static Schema basicSchema = getBasicSchema();
   protected static boolean startCluster;
 
@@ -115,6 +117,7 @@ public class BaseKuduTest {
     }
     LOG.info("Creating new Kudu client...");
     client = new AsyncKuduClient(masterHostPorts);
+    syncClient = new KuduClient(client);
     LOG.info("Waiting for tablet servers...");
     if (!waitForTabletServers(NUM_TABLET_SERVERS)) {
       fail("Couldn't get " + NUM_MASTERS + " tablet servers running, aborting");
@@ -253,6 +256,8 @@ public class BaseKuduTest {
           Deferred<ArrayList<Void>> d = client.shutdown();
           d.addErrback(defaultErrorCB);
           d.join(DEFAULT_SLEEP);
+          // No need to explicitly shutdown the sync client,
+          // shutting down the async client effectively does that.
         }
       } finally {
         if (startCluster) {

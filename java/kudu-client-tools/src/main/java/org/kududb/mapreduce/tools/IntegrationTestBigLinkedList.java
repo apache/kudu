@@ -23,21 +23,9 @@ import com.stumbleupon.async.DeferredGroupException;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
+import org.kududb.client.*;
 import org.kududb.mapreduce.CommandLineParser;
 import org.kududb.mapreduce.KuduTableMapReduceUtil;
-import org.kududb.client.Bytes;
-import org.kududb.client.ColumnRangePredicate;
-import org.kududb.client.CreateTableBuilder;
-import org.kududb.client.KeyBuilder;
-import org.kududb.client.AsyncKuduClient;
-import org.kududb.client.KuduScanner;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
-import org.kududb.client.RowResult;
-import org.kududb.client.RowsWithErrorException;
-import org.kududb.client.SessionConfiguration;
-import org.kududb.client.KuduSession;
-import org.kududb.client.Update;
 import org.kududb.util.Pair;
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.GnuParser;
@@ -443,7 +431,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private String id;
       private long rowId = 0;
       private int i;
-      private AsyncKuduClient client;
+      private KuduClient client;
       private KuduTable table;
       private KuduSession session;
       private KuduTable headsTable;
@@ -459,13 +447,14 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         CommandLineParser parser = new CommandLineParser(conf);
         timeout = parser.getOperationTimeoutMs();
         client = parser.getClient();
+        client.setTimeoutMillis(timeout);
         try {
-          table = client.openTable(getTableName(conf)).join(timeout);
-          headsTable = client.openTable(getHeadsTable(conf)).join(timeout);
+          table = client.openTable(getTableName(conf));
+          headsTable = client.openTable(getHeadsTable(conf));
         } catch (Exception e) {
           throw new IOException(e);
         }
-        session = client.newSynchronousSession();
+        session = client.newSession();
         session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
         session.setMutationBufferSpace(WIDTH_DEFAULT);
         session.setTimeoutMillis(timeout);
@@ -485,7 +474,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       protected void cleanup(Context context) throws IOException, InterruptedException {
         try {
           session.close();
-          client.shutdown().join(timeout);
+          client.shutdown();
         } catch (Exception ex) {
           // ugh.
           throw new IOException(ex);
@@ -624,13 +613,14 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     protected void createSchema(String tableName, Schema schema, int numTablets) throws Exception {
       CommandLineParser parser = new CommandLineParser(getConf());
-      AsyncKuduClient client = parser.getClient();
+      KuduClient client = parser.getClient();
+      client.setTimeoutMillis(parser.getOperationTimeoutMs());
       try {
         if (numTablets < 1) {
           numTablets = 1;
         }
 
-        if (client.tableExists(tableName).join(parser.getOperationTimeoutMs())) {
+        if (client.tableExists(tableName)) {
           return;
         }
 
@@ -652,10 +642,10 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           }
         }
 
-        client.createTable(tableName, schema, builder).join(parser.getOperationTimeoutMs());
+        client.createTable(tableName, schema, builder);
       } finally {
         // Done with this client.
-        client.shutdown().join(parser.getOperationTimeoutMs());
+        client.shutdown();
       }
     }
 
@@ -1058,7 +1048,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       CommandLineParser cmdLineParser = new CommandLineParser(getConf());
       long timeout = cmdLineParser.getOperationTimeoutMs();
-      AsyncKuduClient client = cmdLineParser.getClient();
+      AsyncKuduClient client = cmdLineParser.getAsyncClient();
 
       KuduTable table = client.openTable(getTableName(getConf())).join(timeout);
       KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, table.getSchema());
@@ -1143,7 +1133,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     public static class UpdaterMapper extends Mapper<NullWritable, RowResult,
         NullWritable, NullWritable> {
-      private AsyncKuduClient client;
+      private KuduClient client;
       private KuduTable table;
       private KuduSession session;
       private long timeout;
@@ -1163,12 +1153,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         CommandLineParser parser = new CommandLineParser(conf);
         timeout = parser.getOperationTimeoutMs();
         client = parser.getClient();
+        client.setTimeoutMillis(timeout);
         try {
-          table = client.openTable(getTableName(conf)).join(timeout);
+          table = client.openTable(getTableName(conf));
         } catch (Exception e) {
           throw new IOException("Couldn't open the linked list table", e);
         }
-        session = client.newSynchronousSession();
+        session = client.newSession();
         session.setTimeoutMillis(timeout);
 
         Schema tableSchema = table.getSchema();
@@ -1337,7 +1328,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       protected void cleanup(Context context) throws IOException, InterruptedException {
         try {
           session.close();
-          client.shutdown().join(timeout);
+          client.shutdown();
         } catch (Exception ex) {
           // Goes right out and fails the job.
           throw new IOException("Coulnd't close the scanner after the task completed", ex);
@@ -1501,7 +1492,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     private void walk(long headKeyOne, long headKeyTwo, int maxNumNodes) throws Exception {
       CommandLineParser parser = new CommandLineParser(getConf());
       timeout = parser.getOperationTimeoutMs();
-      client = parser.getClient();
+      client = parser.getAsyncClient();
       table = client.openTable(getTableName(getConf())).join(timeout);
 
       long prevKeyOne = headKeyOne;

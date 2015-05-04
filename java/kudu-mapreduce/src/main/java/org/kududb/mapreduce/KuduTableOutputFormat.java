@@ -93,7 +93,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     this.operationTimeoutMs = this.conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
     int bufferSpace = this.conf.getInt(BUFFER_ROW_COUNT_KEY, 1000);
 
-    this.client = KuduTableMapReduceUtil.connect(masterAddress);
+    this.client = KuduTableMapReduceUtil.getAsyncClient(masterAddress);
     Deferred<KuduTable> d = client.openTable(tableName);
     try {
       this.table = d.join(this.operationTimeoutMs);

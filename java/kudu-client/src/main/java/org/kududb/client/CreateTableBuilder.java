@@ -13,17 +13,18 @@ public class CreateTableBuilder {
   Master.CreateTableRequestPB.Builder pb = Master.CreateTableRequestPB.newBuilder();
 
   /**
-   * Add a split point for the table. The table in the end will have splits + 1 tablets.
-   * @param builder Key builder for the split point. The builder is reset as part of this
-   *                operation and can be reused.
+   * Add a split point for the table. The table in the end will have splits + 1 tablets. The builder
+   * is reset as part of this operation and can be reused.
+   * @param builder a key builder for the split point
    */
   public void addSplitKey(KeyBuilder builder) {
     pb.addPreSplitKeys(ZeroCopyLiteralByteString.wrap(builder.extractByteArray()));
   }
 
   /**
-   * Currently unsupported
-   * @param numReplicas
+   * Sets the number of replicas that each tablet will have. If not specified, it defaults to 1
+   * replica which isn't safe for production usage.
+   * @param numReplicas the number of replicas to use
    */
   public void setNumReplicas(int numReplicas) {
     pb.setNumReplicas(numReplicas);

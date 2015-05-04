@@ -226,7 +226,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     this.nameServer = conf.get(NAME_SERVER_KEY);
     this.cacheBlocks = conf.getBoolean(SCAN_CACHE_BLOCKS, false);
 
-    this.client = KuduTableMapReduceUtil.connect(masterQuorum);
+    this.client = KuduTableMapReduceUtil.getAsyncClient(masterQuorum);
     Deferred<KuduTable> d = client.openTable(tableName);
     try {
       this.table = d.join(this.operationTimeoutMs);

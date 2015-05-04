@@ -4,6 +4,7 @@ package org.kududb.mapreduce;
 
 import org.kududb.client.AsyncKuduClient;
 import org.apache.hadoop.conf.Configuration;
+import org.kududb.client.KuduClient;
 
 /**
  * Utility class that manages common configurations to all MR jobs. For example,
@@ -60,11 +61,19 @@ public class CommandLineParser {
   }
 
   /**
-   * Get a client connected to the configured Master.
+   * Get an async client connected to the configured Master(s).
+   * @return an async kudu client
+   */
+  public AsyncKuduClient getAsyncClient() {
+    return KuduTableMapReduceUtil.getAsyncClient(getMasterQuorum());
+  }
+
+  /**
+   * Get a client connected to the configured Master(s).
    * @return a kudu client
    */
-  public AsyncKuduClient getClient() {
-    return KuduTableMapReduceUtil.connect(getMasterQuorum());
+  public KuduClient getClient() {
+    return KuduTableMapReduceUtil.getClient(getMasterQuorum());
   }
 
   /**

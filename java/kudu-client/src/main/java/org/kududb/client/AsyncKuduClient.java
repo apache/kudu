@@ -76,7 +76,7 @@ import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 /**
- * A fully asynchronous and thread-safe Kudu client.
+ * A fully asynchronous and thread-safe client for Kudu.
  * <p>
  * This client should be
  * instantiated only once. You can use it with any number of tables at the
@@ -215,12 +215,17 @@ public class AsyncKuduClient {
    * Create a new client that connects to masters specified by a comma-separated
    * list.
    * Doesn't block and won't throw an exception if the masters don't exist.
-   * @param masterQuorum Comma-separated list of "host:port" pairs of the masters
+   * @param masterQuorum comma-separated list of "host:port" pairs of the masters
    */
   public AsyncKuduClient(final String masterQuorum) {
     this(NetUtil.parseStrings(masterQuorum, 7051));
   }
 
+  /**
+   * Create a new client that connects to the masters.
+   * Doesn't block and won't throw an exception if the masters don't exist.
+   * @param masterAddresses list of master addresses
+   */
   public AsyncKuduClient(final List<HostAndPort> masterAddresses) {
     this(masterAddresses, defaultChannelFactory());
   }
@@ -262,21 +267,21 @@ public class AsyncKuduClient {
 
   /**
    * Create a table on the cluster with the specified name and schema. Default table
-   * configurations are used, mainly the tablet will have one tablet.
-   * @param name Table's name
-   * @param schema Table's schema
-   * @return Deferred object to track the progress
+   * configurations are used, mainly the table will have one tablet.
+   * @param name the table's name
+   * @param schema the table's schema
+   * @return a deferred object to track the progress of the createTable command
    */
   public Deferred<CreateTableResponse> createTable(String name, Schema schema) {
     return this.createTable(name, schema, new CreateTableBuilder());
   }
 
   /**
-   * Create a table on the cluster with the specified name, schema, and table configurations
-   * @param name Table's name
-   * @param schema Table's schema
-   * @param builder Table's configurations
-   * @return Deferred object to track the progress
+   * Create a table on the cluster with the specified name, schema, and table configurations.
+   * @param name the table's name
+   * @param schema the table's schema
+   * @param builder a builder containing the table's configurations
+   * @return a deferred object to track the progress of the createTable command
    */
   public Deferred<CreateTableResponse> createTable(String name, Schema schema, CreateTableBuilder builder) {
     checkIsClosed();
@@ -289,9 +294,9 @@ public class AsyncKuduClient {
   }
 
   /**
-   * Delete a tablet on the cluster with the specified name
-   * @param name Table's name
-   * @return Deferred object to track the progress
+   * Delete a table on the cluster with the specified name.
+   * @param name the table's name
+   * @return a deferred object to track the progress of the deleteTable command
    */
   public Deferred<DeleteTableResponse> deleteTable(String name) {
     checkIsClosed();
@@ -301,11 +306,12 @@ public class AsyncKuduClient {
 
   /**
    * Alter a table on the cluster as specified by the builder.
-   * @param name Table's name, if this is a table rename then the old table name must be passed
-   * @param atb The information for the alter command
-   * @return Deferred object to track the progress of the alter command,
-   * but it's completion only means that the master received the request. Use
-   * syncWaitOnAlterCompletion() to know when the alter completes.
+   *
+   * When the returned deferred completes it only indicates that the master accepted the alter
+   * command, use {@link AsyncKuduClient#isAlterTableDone(String)} to know when the alter finishes.
+   * @param name the table's name, if this is a table rename then the old table name must be passed
+   * @param atb the alter table builder
+   * @return a deferred object to track the progress of the alter command
    */
   public Deferred<AlterTableResponse> alterTable(String name, AlterTableBuilder atb) {
     checkIsClosed();
@@ -316,55 +322,18 @@ public class AsyncKuduClient {
   /**
    * Helper method that checks and waits until the completion of an alter command.
    * It will block until the alter command is done or the deadline is reached.
-   * @param name Table's name, if the table was renamed then that name must be checked against
-   * @param deadline For how many milliseconds this method can block
-   * @return
+   * @param name the table's name, if the table was renamed then that name must be checked against
+   * @return a deferred object to track the progress of the isAlterTableDone command
    */
-  public boolean syncWaitOnAlterCompletion(String name, long deadline) throws Exception {
+  public Deferred<IsAlterTableDoneResponse> isAlterTableDone(String name) throws Exception {
     checkIsClosed();
-    if (deadline < SLEEP_TIME) {
-      throw new IllegalArgumentException("deadline must be at least " + SLEEP_TIME + "ms");
-    }
-    long totalSleepTime = 0;
-    while (totalSleepTime < deadline) {
-      long start = System.currentTimeMillis();
-
-      // Send RPC, wait for reponse, process it
-      Deferred<Master.IsAlterTableDoneResponsePB> d =
-          sendRpcToTablet(new IsAlterTableDoneRequest(this.masterTableHack, name));
-      Master.IsAlterTableDoneResponsePB response;
-      try {
-        response = d.join(SLEEP_TIME);
-      } catch (Exception ex) {
-        throw ex;
-      }
-
-      if (response.getDone()) {
-        return true;
-      }
-
-      // Count time that was slept and see if we need to wait a little more
-      long elapsed = System.currentTimeMillis() - start;
-      // Don't oversleep the deadline
-      if (totalSleepTime + SLEEP_TIME > deadline) {
-        return false;
-      }
-      // elapsed can be bigger if we slept about 500ms
-      if (elapsed <= SLEEP_TIME) {
-        LOG.debug("Alter not done, sleep " + (SLEEP_TIME - elapsed) + " and slept " +
-            totalSleepTime);
-        Thread.sleep(SLEEP_TIME - elapsed);
-        totalSleepTime += SLEEP_TIME;
-      } else {
-        totalSleepTime += elapsed;
-      }
-    }
-    return false;
+    IsAlterTableDoneRequest request = new IsAlterTableDoneRequest(this.masterTableHack, name);
+    return sendRpcToTablet(request);
   }
 
   /**
-   * Get the count of running tablet servers
-   * @return an int, the count
+   * Get the list of running tablet servers.
+   * @return a deferred object that yields a list of tablet servers
    */
   public Deferred<ListTabletServersResponse> listTabletServers() {
     checkIsClosed();
@@ -378,7 +347,7 @@ public class AsyncKuduClient {
 
   /**
    * Get the list of all the tables.
-   * @return a list of all the tables
+   * @return a deferred object that yields a list of all the tables
    */
   public Deferred<ListTablesResponse> getTablesList() {
     return getTablesList(null);
@@ -388,7 +357,7 @@ public class AsyncKuduClient {
    * Get a list of table names. Passing a null filter returns all the tables. When a filter is
    * specified, it only returns tables that satisfy a substring match.
    * @param nameFilter an optional table name filter
-   * @return a deferred that contains the list of table names
+   * @return a deferred that yields the list of table names
    */
   public Deferred<ListTablesResponse> getTablesList(String nameFilter) {
     ListTablesRequest rpc = new ListTablesRequest(this.masterTableHack, nameFilter);
@@ -478,16 +447,6 @@ public class AsyncKuduClient {
       sessions.add(session);
     }
     return session;
-  }
-
-  /**
-   * Same as {@link #newSession} but returns a synchronous version of {@link AsyncKuduSession},
-   * see {@link KuduSession}.
-   * @return A synchronous wrapper around KuduSession.
-   */
-  public KuduSession newSynchronousSession() {
-    AsyncKuduSession session = newSession();
-    return new KuduSession(session);
   }
 
   /**
