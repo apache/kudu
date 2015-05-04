@@ -1596,7 +1596,7 @@ class CBTreeIterator {
   }
 
   bool Next() {
-    CHECK(seeked_);
+    DCHECK(seeked_);
     idx_in_leaf_++;
     if (idx_in_leaf_ < leaf_to_scan_->num_entries()) {
       return true;
@@ -1606,12 +1606,12 @@ class CBTreeIterator {
   }
 
   void GetCurrentEntry(Slice *key, Slice *val) const {
-    CHECK(seeked_);
+    DCHECK(seeked_);
     leaf_to_scan_->Get(idx_in_leaf_, key, val);
   }
 
   Slice GetCurrentKey() const {
-    CHECK(seeked_);
+    DCHECK(seeked_);
     return leaf_to_scan_->GetKey(idx_in_leaf_);
   }
 
@@ -1631,7 +1631,7 @@ class CBTreeIterator {
   // For example, if the leaf has three entries [A, B, C], and GetCurrentEntry
   // would return 'A', then this will return 3.
   size_t remaining_in_leaf() const {
-    CHECK(seeked_);
+    DCHECK(seeked_);
     return leaf_to_scan_->num_entries() - idx_in_leaf_;
   }
 
@@ -1647,14 +1647,14 @@ class CBTreeIterator {
   // If Next() was called more times than remaining_in_leaf(), then
   // this call will not be successful.
   void RewindToIndexInLeaf(size_t new_index_in_leaf) {
-    CHECK(seeked_);
+    DCHECK(seeked_);
     DCHECK_LT(new_index_in_leaf, leaf_to_scan_->num_entries());
     idx_in_leaf_ = new_index_in_leaf;
   }
 
   // Get the key at a specific leaf node
   Slice GetKeyInLeaf(size_t idx) const {
-    CHECK(seeked_);
+    DCHECK(seeked_);
     return leaf_to_scan_->GetKey(idx);
   }
 
@@ -1679,7 +1679,7 @@ class CBTreeIterator {
   {}
 
   bool SeekInLeaf(const Slice &key, bool *exact) {
-    CHECK(seeked_);
+    DCHECK(seeked_);
     idx_in_leaf_ = leaf_to_scan_->Find(key, exact);
     if (idx_in_leaf_ == leaf_to_scan_->num_entries()) {
       // not found in leaf, seek to start of next leaf if it exists.
@@ -1725,7 +1725,7 @@ class CBTreeIterator {
   }
 
   bool SeekNextLeaf() {
-    CHECK(seeked_);
+    DCHECK(seeked_);
     LeafNode<Traits> *next = leaf_to_scan_->next_;
     if (PREDICT_FALSE(next == NULL)) {
       seeked_ = false;
