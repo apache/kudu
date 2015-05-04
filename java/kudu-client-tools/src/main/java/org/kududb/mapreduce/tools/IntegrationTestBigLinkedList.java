@@ -78,6 +78,7 @@ import java.io.DataInput;
 import java.io.DataOutput;
 import java.io.IOException;
 import java.math.BigInteger;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -368,7 +369,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         public void initialize(InputSplit arg0, TaskAttemptContext context)
             throws IOException, InterruptedException {
           numNodes = context.getConfiguration().getLong(GENERATOR_NUM_ROWS_PER_MAP_KEY, 25000000);
-          rand = new Random();
+          // Use SecureRandom to avoid issue described in HBASE-13382.
+          rand = new SecureRandom();
         }
 
         @Override
