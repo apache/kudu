@@ -112,6 +112,11 @@ separate_arguments(IR_FLAGS)
 # if the JIT code is not instrumented.
 list(REMOVE_ITEM IR_FLAGS "-fsanitize=address")
 
+# Remove any optimization flags from the generated IR.
+# Optimizing during the precompilation limits the ability to optimize
+# again at runtime.
+list(REMOVE_ITEM IR_FLAGS "-O3" "-O2" "-O1" "-Os")
+
 # We need a library which depends on the IR source, because CMake+Ninja
 # doesn't support IMPLICIT_DEPENDS in ADD_CUSTOM_COMMAND.
 #
