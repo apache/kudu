@@ -220,9 +220,8 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Thread pool used to open the tablets async, whether bootstrap is required or not.
   gscoped_ptr<ThreadPool> open_tablet_pool_;
 
-  // Executors for apply transactions, shared between all tablets.
-  gscoped_ptr<ThreadPool> leader_apply_pool_;
-  gscoped_ptr<ThreadPool> replica_apply_pool_;
+  // Thread pool for apply transactions, shared between all tablets.
+  gscoped_ptr<ThreadPool> apply_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
 };

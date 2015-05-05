@@ -57,8 +57,7 @@ SysCatalogTable::SysCatalogTable(Master* master,
       master_(master),
       leader_cb_(leader_cb),
       old_role_(QuorumPeerPB::FOLLOWER) {
-  CHECK_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
-  CHECK_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
+  CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
 }
 
 SysCatalogTable::~SysCatalogTable() {
@@ -68,8 +67,7 @@ void SysCatalogTable::Shutdown() {
   if (tablet_peer_) {
     tablet_peer_->Shutdown();
   }
-  leader_apply_pool_->Shutdown();
-  replica_apply_pool_->Shutdown();
+  apply_pool_->Shutdown();
 }
 
 Status SysCatalogTable::Load(FsManager *fs_manager) {
@@ -210,8 +208,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   // partially created tablet here?
   tablet_peer_.reset(new TabletPeer(
       metadata,
-      leader_apply_pool_.get(),
-      replica_apply_pool_.get(),
+      apply_pool_.get(),
       boost::bind(&SysCatalogTable::SysCatalogStateChanged, this, _1)));
 
   consensus::ConsensusBootstrapInfo consensus_info;

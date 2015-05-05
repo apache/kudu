@@ -57,8 +57,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
                               (ColumnSchema("key", STRING))
                               (ColumnSchema("val", INT32)),
                               1)) {
-    CHECK_OK(ThreadPoolBuilder("test-ldr-exec").Build(&leader_apply_pool_));
-    CHECK_OK(ThreadPoolBuilder("test-rep-exec").Build(&replica_apply_pool_));
+    CHECK_OK(ThreadPoolBuilder("test-exec").Build(&apply_pool_));
   }
 
   virtual void SetUp() OVERRIDE {
@@ -86,7 +85,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
 
     tablet_peer_.reset(
         new TabletPeer(tablet()->metadata(),
-                       leader_apply_pool_.get(), replica_apply_pool_.get(),
+                       apply_pool_.get(),
                        boost::bind(&RemoteBootstrapTest::TabletPeerStateChangedCallback,
                                    this, _1)));
 
@@ -187,8 +186,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
 
   MetricRegistry metric_registry_;
   scoped_refptr<LogAnchorRegistry> log_anchor_registry_;
-  gscoped_ptr<ThreadPool> leader_apply_pool_;
-  gscoped_ptr<ThreadPool> replica_apply_pool_;
+  gscoped_ptr<ThreadPool> apply_pool_;
   scoped_refptr<TabletPeer> tablet_peer_;
   scoped_refptr<RemoteBootstrapSession> session_;
 };

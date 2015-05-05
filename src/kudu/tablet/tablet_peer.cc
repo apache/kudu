@@ -62,15 +62,13 @@ using tserver::TabletServerErrorPB;
 //  Tablet Peer
 // ============================================================================
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
-                       ThreadPool* leader_apply_pool,
-                       ThreadPool* replica_apply_pool,
+                       ThreadPool* apply_pool,
                        MarkDirtyCallback mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->tablet_id()),
     state_(BOOTSTRAPPING),
     status_listener_(new TabletStatusListener(meta)),
-    leader_apply_pool_(leader_apply_pool),
-    replica_apply_pool_(replica_apply_pool),
+    apply_pool_(apply_pool),
     // prepare executor has a single thread as prepare must be done in order
     // of submission
     consensus_ready_latch_(1),
@@ -457,7 +455,7 @@ void TabletPeer::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transaction
     consensus_.get(),
     log_.get(),
     prepare_pool_.get(),
-    leader_apply_pool_,
+    apply_pool_,
     &txn_order_verifier_);
   tx_driver->Init(transaction.Pass(), consensus::LEADER);
   driver->swap(tx_driver);
@@ -470,7 +468,7 @@ void TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transactio
     consensus_.get(),
     log_.get(),
     prepare_pool_.get(),
-    leader_apply_pool_,
+    apply_pool_,
     &txn_order_verifier_);
   tx_driver->Init(transaction.Pass(), consensus::REPLICA);
   driver->swap(tx_driver);

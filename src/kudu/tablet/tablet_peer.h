@@ -59,8 +59,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   typedef std::map<int64_t, int64_t> MaxIdxToSegmentSizeMap;
 
   TabletPeer(const scoped_refptr<TabletMetadata>& meta,
-             ThreadPool* leader_apply_pool,
-             ThreadPool* replica_apply_pool,
+             ThreadPool* apply_pool,
              MarkDirtyCallback mark_dirty_clbk);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
@@ -274,12 +273,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // TODO move the prepare pool to TabletServer.
   gscoped_ptr<ThreadPool> prepare_pool_;
 
-  // Pool for apply tasks for leader and replica
-  // transactions. These are multi-threaded pools,
-  // constructor-injected by either the Master (for system tables) or
+  // Pool that executes apply tasks for transactions. This is a multi-threaded
+  // pool, constructor-injected by either the Master (for system tables) or
   // the Tablet server.
-  ThreadPool* leader_apply_pool_;
-  ThreadPool* replica_apply_pool_;
+  ThreadPool* apply_pool_;
 
   // Latch that goes down to 0 when the tablet is in RUNNING state.
   CountDownLatch consensus_ready_latch_;

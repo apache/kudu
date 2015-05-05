@@ -100,13 +100,12 @@ TSTabletManager::TSTabletManager(FsManager* fs_manager,
   CHECK_OK(ThreadPoolBuilder("tablet-bootstrap")
       .set_max_threads(FLAGS_num_tablets_to_open_simultaneously)
       .Build(&open_tablet_pool_));
-  // TODO currently these are initialized to default values: no
+  // TODO currently this is initialized to default values: no
   // minimum number of threads, 500 ms idle timeout, and maximum
   // number of threads equal to number of CPU cores. Instead, it
   // likewise makes more sense to set this equal to the number of
   // physical storage devices available to us.
-  CHECK_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
-  CHECK_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
+  CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
 }
 
 TSTabletManager::~TSTabletManager() {
@@ -126,8 +125,7 @@ Status TSTabletManager::Init() {
                           "Failed to open tablet metadata for tablet: " + tablet_id);
     scoped_refptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
-                       leader_apply_pool_.get(),
-                       replica_apply_pool_.get(),
+                       apply_pool_.get(),
                        boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
     RegisterTablet(tablet_id, tablet_peer);
 
@@ -227,8 +225,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   scoped_refptr<TabletPeer> new_peer(
       new TabletPeer(meta,
-                     leader_apply_pool_.get(),
-                     replica_apply_pool_.get(),
+                     apply_pool_.get(),
                      boost::bind(&TSTabletManager::MarkTabletDirty, this, _1)));
   RegisterTablet(meta->tablet_id(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
@@ -387,9 +384,8 @@ void TSTabletManager::Shutdown() {
     peer->Shutdown();
   }
 
-  // Shut down the apply executors.
-  leader_apply_pool_->Shutdown();
-  replica_apply_pool_->Shutdown();
+  // Shut down the apply pool.
+  apply_pool_->Shutdown();
 
   {
     boost::lock_guard<rw_spinlock> l(lock_);

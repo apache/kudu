@@ -167,8 +167,7 @@ class SysCatalogTable {
 
   MetricRegistry* metric_registry_;
 
-  gscoped_ptr<ThreadPool> leader_apply_pool_;
-  gscoped_ptr<ThreadPool> replica_apply_pool_;
+  gscoped_ptr<ThreadPool> apply_pool_;
 
   scoped_refptr<tablet::TabletPeer> tablet_peer_;
 

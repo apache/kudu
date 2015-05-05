@@ -70,8 +70,7 @@ class TabletPeerTest : public KuduTabletTest {
   virtual void SetUp() OVERRIDE {
     KuduTabletTest::SetUp();
 
-    ASSERT_OK(ThreadPoolBuilder("ldr-apply").Build(&leader_apply_pool_));
-    ASSERT_OK(ThreadPoolBuilder("repl-apply").Build(&replica_apply_pool_));
+    ASSERT_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
 
     rpc::MessengerBuilder builder(CURRENT_TEST_NAME());
     ASSERT_OK(builder.Build(&messenger_));
@@ -81,8 +80,7 @@ class TabletPeerTest : public KuduTabletTest {
     // "Bootstrap" and start the TabletPeer.
     tablet_peer_.reset(
       new TabletPeer(make_scoped_refptr(tablet()->metadata()),
-                     leader_apply_pool_.get(),
-                     replica_apply_pool_.get(),
+                     apply_pool_.get(),
                      boost::bind(&TabletPeerTest::TabletPeerStateChangedCallback, this, _1)));
 
     // Make TabletPeer use the same LogAnchorRegistry as the Tablet created by the harness.
@@ -135,8 +133,7 @@ class TabletPeerTest : public KuduTabletTest {
 
   virtual void TearDown() OVERRIDE {
     tablet_peer_->Shutdown();
-    leader_apply_pool_->Shutdown();
-    replica_apply_pool_->Shutdown();
+    apply_pool_->Shutdown();
     KuduTabletTest::TearDown();
   }
 
@@ -253,8 +250,7 @@ class TabletPeerTest : public KuduTabletTest {
   scoped_refptr<MetricEntity> metric_entity_;
   shared_ptr<Messenger> messenger_;
   scoped_refptr<TabletPeer> tablet_peer_;
-  gscoped_ptr<ThreadPool> leader_apply_pool_;
-  gscoped_ptr<ThreadPool> replica_apply_pool_;
+  gscoped_ptr<ThreadPool> apply_pool_;
 };
 
 // A Transaction that waits on the apply_continue latch inside of Apply().
