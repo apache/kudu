@@ -26,21 +26,43 @@ TEST_F(KuduTest, TestPathInstanceMetadataFile) {
   }
   ASSERT_TRUE(env_->FileExists(kFileName));
 
-  // Test that we could open and parse it, returning back the PB (or not).
+  // Test that we could open and parse it.
   {
     PathInstanceMetadataFile file(env_.get(), kType, kFileName);
-    ASSERT_OK(file.Open(NULL));
-
-    PathInstanceMetadataPB pb;
-    ASSERT_OK(file.Open(&pb));
-    ASSERT_TRUE(pb.has_uuid());
+    ASSERT_OK(file.LoadFromDisk());
+    ASSERT_TRUE(file.metadata()->has_uuid());
   }
 
   // Test that expecting a different type of block manager fails.
   {
     PathInstanceMetadataFile file(env_.get(), "other type", kFileName);
     PathInstanceMetadataPB pb;
-    ASSERT_TRUE(file.Open(&pb).IsIOError());
+    ASSERT_TRUE(file.LoadFromDisk().IsIOError());
+  }
+
+  // Test that we can lock the file.
+  {
+    PathInstanceMetadataFile first(env_.get(), kType, kFileName);
+    ASSERT_OK(first.LoadFromDisk());
+    ASSERT_OK(first.Lock());
+
+    ASSERT_DEATH({
+      PathInstanceMetadataFile second(env_.get(), kType, kFileName);
+      CHECK_OK(second.LoadFromDisk());
+      CHECK_OK(second.Lock());
+    }, "Could not lock");
+
+    ASSERT_OK(first.Unlock());
+    ASSERT_DEATH({
+      PathInstanceMetadataFile second(env_.get(), kType, kFileName);
+      CHECK_OK(second.LoadFromDisk());
+      Status s = second.Lock();
+      if (s.ok()) {
+        LOG(FATAL) << "Lock successfully acquired";
+      } else {
+        LOG(FATAL) << "Could not lock: " << s.ToString();
+      }
+    }, "Lock successfully acquired");
   }
 }
 

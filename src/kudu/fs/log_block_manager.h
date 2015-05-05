@@ -22,11 +22,11 @@
 #include "kudu/util/oid_generator.h"
 
 namespace kudu {
-
 class Env;
 class MetricEntity;
 
 namespace fs {
+class PathInstanceMetadataFile;
 
 namespace internal {
 class LogBlock;
@@ -256,7 +256,7 @@ class LogBlockManager : public BlockManager {
   AtomicInt<int32> root_paths_idx_;
 
   // Maps root paths to instance metadata files found in each root path.
-  typedef std::tr1::unordered_map<std::string, PathInstanceMetadataPB*> InstanceMap;
+  typedef std::tr1::unordered_map<std::string, PathInstanceMetadataFile*> InstanceMap;
   InstanceMap instances_by_root_path_;
 
   // For generating block IDs and container names.

@@ -13,6 +13,8 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/flags.h"
 
+DECLARE_bool(block_manager_lock_dirs);
+
 DEFINE_bool(print_meta, true, "print the header and footer from the file");
 DEFINE_bool(iterate_rows, true, "iterate each row in the file");
 DEFINE_bool(print_rows, true, "print each row in the file");
@@ -26,11 +28,16 @@ using std::cout;
 using std::endl;
 
 void DumpFile(const string& root_path, const string& block_id_str) {
-  BlockId block_id(block_id_str);
+  // Allow read-only access to live blocks.
+  google::FlagSaver saver;
+  FLAGS_block_manager_lock_dirs = false;
   FsManager fs_manager(Env::Default(), root_path);
   CHECK_OK(fs_manager.Open());
+
+  BlockId block_id(block_id_str);
   gscoped_ptr<fs::ReadableBlock> block;
   CHECK_OK(fs_manager.OpenBlock(block_id, &block));
+
   gscoped_ptr<CFileReader> reader;
   CHECK_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
 

@@ -31,6 +31,8 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 
+DECLARE_bool(block_manager_lock_dirs);
+
 namespace kudu {
 namespace tools {
 
@@ -83,7 +85,9 @@ FsTool::~FsTool() {
 
 Status FsTool::Init() {
   CHECK(!initialized_) << "Already initialized";
-
+  // Allow read-only access to live blocks.
+  google::FlagSaver saver;
+  FLAGS_block_manager_lock_dirs = false;
   fs_manager_.reset(new FsManager(Env::Default(),
                                   scoped_refptr<MetricEntity>(),
                                   shared_ptr<MemTracker>(),

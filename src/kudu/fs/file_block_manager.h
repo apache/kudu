@@ -23,6 +23,7 @@ class MetricEntity;
 class WritableFile;
 
 namespace fs {
+class PathInstanceMetadataFile;
 
 namespace internal {
 class FileBlockLocation;
@@ -102,11 +103,11 @@ class FileBlockManager : public BlockManager {
   // Filesystem paths where all block directories are found.
   const std::vector<std::string> root_paths_;
 
-  // Maps path UUIDs to filesystem paths.
+  // Maps path UUIDs to path instance files.
   //
   // There's no need to synchronize access to the map as it is only written
   // to during Create() and Open(); all subsequent accesses are reads.
-  typedef std::map<std::string, std::string> PathMap;
+  typedef std::map<std::string, PathInstanceMetadataFile*> PathMap;
   PathMap root_paths_by_uuid_;
 
   // For generating block IDs.

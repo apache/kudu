@@ -16,6 +16,7 @@ namespace kudu {
 namespace fs {
 
 using std::string;
+using strings::Substitute;
 
 PathInstanceMetadataFile::PathInstanceMetadataFile(Env* env,
                                                    const string& block_manager_type,
@@ -25,7 +26,16 @@ PathInstanceMetadataFile::PathInstanceMetadataFile(Env* env,
     filename_(filename) {
 }
 
+PathInstanceMetadataFile::~PathInstanceMetadataFile() {
+  if (lock_) {
+    WARN_NOT_OK(Unlock(), Substitute("Failed to unlock file $0", filename_));
+  }
+}
+
 Status PathInstanceMetadataFile::Create() {
+  DCHECK(!lock_) <<
+      "Creating a metadata file that's already locked would release the lock";
+
   if (env_->FileExists(filename_)) {
     return Status::AlreadyPresent("Block manager instance already exists",
                                   filename_);
@@ -43,24 +53,43 @@ Status PathInstanceMetadataFile::Create() {
       FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
 }
 
-Status PathInstanceMetadataFile::Open(PathInstanceMetadataPB* metadata) const {
-  PathInstanceMetadataPB pb;
-  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, filename_, &pb));
+Status PathInstanceMetadataFile::LoadFromDisk() {
+  DCHECK(!lock_) <<
+      "Opening a metadata file that's already locked would release the lock";
 
-  if (pb.block_manager_type() != block_manager_type_) {
-    return Status::IOError("Wrong block manager type", pb.block_manager_type());
+  gscoped_ptr<PathInstanceMetadataPB> pb(new PathInstanceMetadataPB());
+  RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, filename_, pb.get()));
+
+  if (pb->block_manager_type() != block_manager_type_) {
+    return Status::IOError("Wrong block manager type", pb->block_manager_type());
   }
 
   uint64_t block_size;
   RETURN_NOT_OK(env_->GetBlockSize(filename_, &block_size));
-  if (pb.filesystem_block_size_bytes() != block_size) {
-    return Status::IOError("Wrong filesystem block size", strings::Substitute(
-        "Expected $0 but was $1", pb.filesystem_block_size_bytes(), block_size));
+  if (pb->filesystem_block_size_bytes() != block_size) {
+    return Status::IOError("Wrong filesystem block size", Substitute(
+        "Expected $0 but was $1", pb->filesystem_block_size_bytes(), block_size));
   }
 
-  if (metadata) {
-    pb.Swap(metadata);
-  }
+  metadata_.swap(pb);
+  return Status::OK();
+}
+
+Status PathInstanceMetadataFile::Lock() {
+  DCHECK(!lock_);
+
+  FileLock* lock;
+  RETURN_NOT_OK_PREPEND(env_->LockFile(filename_, &lock),
+                        Substitute("Could not lock $0", filename_));
+  lock_.reset(lock);
+  return Status::OK();
+}
+
+Status PathInstanceMetadataFile::Unlock() {
+  DCHECK(lock_);
+
+  RETURN_NOT_OK_PREPEND(env_->UnlockFile(lock_.release()),
+                        Substitute("Could not unlock $0", filename_));
   return Status::OK();
 }
 

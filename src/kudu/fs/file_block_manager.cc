@@ -27,6 +27,7 @@ using std::vector;
 using strings::Substitute;
 
 DECLARE_bool(enable_data_block_fsync);
+DECLARE_bool(block_manager_lock_dirs);
 
 namespace kudu {
 namespace fs {
@@ -516,7 +517,12 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
 
 bool FileBlockManager::FindRootPath(const string& root_path_uuid,
                                     string* root_path) const {
-  return FindCopy(root_paths_by_uuid_, root_path_uuid, root_path);
+  PathInstanceMetadataFile* metadata_file =
+      FindPtrOrNull(root_paths_by_uuid_, root_path_uuid);
+  if (metadata_file) {
+    *root_path = metadata_file->path();
+  }
+  return metadata_file != NULL;
 }
 
 FileBlockManager::FileBlockManager(Env* env,
@@ -535,6 +541,7 @@ FileBlockManager::FileBlockManager(Env* env,
 }
 
 FileBlockManager::~FileBlockManager() {
+  STLDeleteValues(&root_paths_by_uuid_);
 }
 
 Status FileBlockManager::Create() {
@@ -548,12 +555,16 @@ Status FileBlockManager::Create() {
 
     PathInstanceMetadataFile metadata(env_, kBlockManagerType,
                                       instance_filename);
-    RETURN_NOT_OK_PREPEND(metadata.Create(), instance_filename);
+    RETURN_NOT_OK_PREPEND(metadata.Create(),
+                          Substitute("Could not create $0", instance_filename));
   }
   return Status::OK();
 }
 
 Status FileBlockManager::Open() {
+  PathMap path_map;
+  ValueDeleter deleter(&path_map);
+
   BOOST_FOREACH(const string& root_path, root_paths_) {
     if (!env_->FileExists(root_path)) {
       return Status::NotFound(Substitute(
@@ -561,12 +572,20 @@ Status FileBlockManager::Open() {
     }
     string instance_filename = JoinPathSegments(
         root_path, kInstanceMetadataFileName);
-    PathInstanceMetadataPB new_instance;
-    PathInstanceMetadataFile metadata(env_, kBlockManagerType,
-                                      instance_filename);
-    RETURN_NOT_OK_PREPEND(metadata.Open(&new_instance), instance_filename);
-    InsertOrDie(&root_paths_by_uuid_, new_instance.uuid(), root_path);
+    gscoped_ptr<PathInstanceMetadataFile> metadata(
+        new PathInstanceMetadataFile(env_, kBlockManagerType,
+                                     instance_filename));
+    RETURN_NOT_OK_PREPEND(metadata->LoadFromDisk(),
+                          Substitute("Could not open $0", instance_filename));
+    if (FLAGS_block_manager_lock_dirs) {
+      RETURN_NOT_OK_PREPEND(metadata->Lock(),
+                            Substitute("Could not lock $0", instance_filename));
+    }
+    string uuid = metadata->metadata()->uuid();
+    InsertOrDie(&path_map, uuid, metadata.release());
   }
+
+  path_map.swap(root_paths_by_uuid_);
   next_root_path_ = root_paths_by_uuid_.begin();
   return Status::OK();
 }
@@ -580,7 +599,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
   {
     lock_guard<simple_spinlock> l(&lock_);
     root_uuid = next_root_path_->first;
-    root_path = next_root_path_->second;
+    root_path = next_root_path_->second->path();
     next_root_path_++;
     if (next_root_path_ == root_paths_by_uuid_.end()) {
       next_root_path_ = root_paths_by_uuid_.begin();

@@ -30,6 +30,7 @@ DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
               "creating new blocks. Set to 0 to disable preallocation");
 
 DECLARE_bool(enable_data_block_fsync);
+DECLARE_bool(block_manager_lock_dirs);
 
 METRIC_DEFINE_gauge_uint64(server, log_block_manager_bytes_under_management,
                            "Bytes Under Management",
@@ -1047,6 +1048,9 @@ Status LogBlockManager::Create() {
 }
 
 Status LogBlockManager::Open() {
+  InstanceMap instance_map;
+  ValueDeleter deleter(&instance_map);
+
   BOOST_FOREACH(const string& root_path, root_paths_) {
     if (!env_->FileExists(root_path)) {
       return Status::NotFound(Substitute("LogBlockManager at $0 not found",
@@ -1055,10 +1059,15 @@ Status LogBlockManager::Open() {
 
     string instance_filename = JoinPathSegments(
         root_path, kInstanceMetadataFileName);
-    gscoped_ptr<PathInstanceMetadataPB> new_instance(new PathInstanceMetadataPB());
-    PathInstanceMetadataFile metadata(env_, kBlockManagerType,
-                                      instance_filename);
-    RETURN_NOT_OK_PREPEND(metadata.Open(new_instance.get()), instance_filename);
+    gscoped_ptr<PathInstanceMetadataFile> metadata(
+        new PathInstanceMetadataFile(env_, kBlockManagerType,
+                                     instance_filename));
+    RETURN_NOT_OK_PREPEND(metadata->LoadFromDisk(),
+                          Substitute("Could not open $0", instance_filename));
+    if (FLAGS_block_manager_lock_dirs) {
+      RETURN_NOT_OK_PREPEND(metadata->Lock(),
+                            Substitute("Could not lock $0", instance_filename));
+    }
 
     vector<string> children;
     RETURN_NOT_OK_PREPEND(env_->GetChildren(root_path, &children), root_path);
@@ -1069,7 +1078,7 @@ Status LogBlockManager::Open() {
         continue;
       }
       gscoped_ptr<LogBlockContainer> container;
-      RETURN_NOT_OK_PREPEND(LogBlockContainer::Open(this, new_instance.get(),
+      RETURN_NOT_OK_PREPEND(LogBlockContainer::Open(this, metadata->metadata(),
                                                     root_path, id, &container),
                             root_path);
       {
@@ -1079,8 +1088,10 @@ Status LogBlockManager::Open() {
       }
     }
 
-    InsertOrDie(&instances_by_root_path_, root_path, new_instance.release());
+    InsertOrDie(&instance_map, root_path, metadata.release());
   }
+
+  instance_map.swap(instances_by_root_path_);
   return Status::OK();
 }
 
@@ -1104,10 +1115,13 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
     string root_path = root_paths_[old_idx];
 
     // Guaranteed by LogBlockManager::Open().
-    PathInstanceMetadataPB* instance = FindOrDie(instances_by_root_path_, root_path);
+    PathInstanceMetadataFile* instance = FindOrDie(instances_by_root_path_, root_path);
 
     gscoped_ptr<LogBlockContainer> new_container;
-    RETURN_NOT_OK(LogBlockContainer::Create(this, instance, root_path, &new_container));
+    RETURN_NOT_OK(LogBlockContainer::Create(this,
+                                            instance->metadata(),
+                                            root_path,
+                                            &new_container));
     container = new_container.release();
     {
       lock_guard<simple_spinlock> l(&lock_);

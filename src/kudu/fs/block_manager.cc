@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include "kudu/fs/block_manager.h"
+#include "kudu/util/flag_tags.h"
 
 // The default value is optimized for the case where:
 // 1. the cfile blocks are colocated with the WALs.
@@ -12,6 +13,11 @@
 // When all conditions hold, this value ensures low latency for WAL writes.
 DEFINE_bool(block_coalesce_close, false,
             "Coalesce synchronization of data during CloseBlocks()");
+
+DEFINE_bool(block_manager_lock_dirs, true,
+            "Lock the data block directories to prevent concurrent usage. "
+            "Note that read-only concurrent usage is still allowed.");
+TAG_FLAG(block_manager_lock_dirs, unsafe);
 
 namespace kudu {
 namespace fs {
