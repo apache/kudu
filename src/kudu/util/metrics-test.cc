@@ -35,7 +35,7 @@ class MetricsTest : public KuduTest {
   scoped_refptr<MetricEntity> entity_;
 };
 
-METRIC_DEFINE_counter(reqs_pending, "Requests Pending", MetricUnit::kRequests,
+METRIC_DEFINE_counter(test_entity, reqs_pending, "Requests Pending", MetricUnit::kRequests,
                       "Number of requests pending");
 
 TEST_F(MetricsTest, SimpleCounterTest) {
@@ -49,7 +49,7 @@ TEST_F(MetricsTest, SimpleCounterTest) {
   ASSERT_EQ(3, requests->value());
 }
 
-METRIC_DEFINE_gauge_uint64(fake_memory_usage, "Memory Usage",
+METRIC_DEFINE_gauge_uint64(test_entity, fake_memory_usage, "Memory Usage",
                            MetricUnit::kBytes, "Test Gauge 1");
 
 TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
@@ -63,7 +63,8 @@ TEST_F(MetricsTest, SimpleAtomicGaugeTest) {
   ASSERT_EQ(5, mem_usage->value());
 }
 
-METRIC_DEFINE_gauge_int64(test_func_gauge, "Test Gauge", MetricUnit::kBytes, "Test Gauge 2");
+METRIC_DEFINE_gauge_int64(test_entity, test_func_gauge, "Test Gauge", MetricUnit::kBytes,
+                          "Test Gauge 2");
 
 static int64_t MyFunction(int* metric_val) {
   return (*metric_val)++;
@@ -126,7 +127,7 @@ TEST_F(MetricsTest, AutoDetachToConstant) {
 }
 
 
-METRIC_DEFINE_histogram(test_hist, "Test Histogram",
+METRIC_DEFINE_histogram(test_entity, test_hist, "Test Histogram",
                         MetricUnit::kMilliseconds, "foo", 1000000, 3);
 
 TEST_F(MetricsTest, SimpleHistogramTest) {

@@ -1822,7 +1822,8 @@ TEST_F(TabletServerTest, TestChangeConfiguration_TsTabletManagerReportsNewRoles)
 }
 
 TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
-  METRIC_DEFINE_histogram(insert_latency,
+  METRIC_DEFINE_entity(test);
+  METRIC_DEFINE_histogram(test, insert_latency,
                           "Insert Latency",
                           MetricUnit::kMicroseconds,
                           "TabletServer single threaded insert latency.",

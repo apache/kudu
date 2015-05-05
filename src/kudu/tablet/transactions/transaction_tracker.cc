@@ -18,26 +18,25 @@
 namespace kudu {
 namespace tablet {
 
+METRIC_DEFINE_gauge_uint64(tablet, all_transactions_inflight,
+                           "Transactions In Flight",
+                           kudu::MetricUnit::kTransactions,
+                           "Number of transactions currently in-flight, including any type.");
+METRIC_DEFINE_gauge_uint64(tablet, write_transactions_inflight,
+                           "Write Transctions In Flight",
+                           kudu::MetricUnit::kTransactions,
+                           "Number of write transactions currently in-flight");
+METRIC_DEFINE_gauge_uint64(tablet, alter_schema_transactions_inflight,
+                           "Alter Schema Transactions In Flight",
+                           kudu::MetricUnit::kTransactions,
+                           "Number of alter schema transactions currently in-flight");
+METRIC_DEFINE_gauge_uint64(tablet, change_config_transactions_inflight,
+                           "Consensus Configuration Change Transactions In Flight",
+                           kudu::MetricUnit::kTransactions,
+                           "Number of config change transactions currently in-flight");
 using boost::bind;
 using std::vector;
 using strings::Substitute;
-
-METRIC_DEFINE_gauge_uint64(all_transactions_inflight,
-                           "Transactions In Flight",
-                           MetricUnit::kTransactions,
-                           "Number of transactions currently in-flight, including any type.");
-METRIC_DEFINE_gauge_uint64(write_transactions_inflight,
-                           "Write Transctions In Flight",
-                           MetricUnit::kTransactions,
-                           "Number of write transactions currently in-flight");
-METRIC_DEFINE_gauge_uint64(alter_schema_transactions_inflight,
-                           "Alter Schema Transactions In Flight",
-                           MetricUnit::kTransactions,
-                           "Number of alter schema transactions currently in-flight");
-METRIC_DEFINE_gauge_uint64(change_config_transactions_inflight,
-                           "Consensus Configuration Change Transactions In Flight",
-                           MetricUnit::kTransactions,
-                           "Number of config change transactions currently in-flight");
 
 TransactionsInFlight::TransactionsInFlight()
     : all_transactions_inflight(0),

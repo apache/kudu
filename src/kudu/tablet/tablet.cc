@@ -72,8 +72,7 @@ DEFINE_double(tablet_bloom_target_fp_rate, 0.01f,
               "required for bloom filters. (Advanced option)");
 
 METRIC_DEFINE_entity(tablet);
-
-METRIC_DEFINE_gauge_uint64(memrowset_size, "MemRowSet Memory Usage",
+METRIC_DEFINE_gauge_uint64(tablet, memrowset_size, "MemRowSet Memory Usage",
                            kudu::MetricUnit::kBytes,
                            "Size of this tablet's memrowset");
 

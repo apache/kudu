@@ -42,9 +42,9 @@ namespace kudu {
 
 class ThreadMgr;
 
-METRIC_DEFINE_gauge_uint64(threads_started, "Threads Started", MetricUnit::kThreads,
+METRIC_DEFINE_gauge_uint64(server, threads_started, "Threads Started", MetricUnit::kThreads,
                            "Total number of threads started on this server");
-METRIC_DEFINE_gauge_uint64(threads_running, "Threads Running", MetricUnit::kThreads,
+METRIC_DEFINE_gauge_uint64(server, threads_running, "Threads Running", MetricUnit::kThreads,
                            "Current number of running threads");
 __thread Thread* Thread::tls_ = NULL;
 

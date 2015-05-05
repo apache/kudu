@@ -43,11 +43,11 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using strings::Substitute;
 
-METRIC_DEFINE_gauge_int64(majority_done_ops, "Leader Operations Acked by Majority",
+METRIC_DEFINE_gauge_int64(tablet, majority_done_ops, "Leader Operations Acked by Majority",
                           MetricUnit::kOperations,
                           "Number of operations in the leader queue ack'd by a majority but "
                           "not all peers.");
-METRIC_DEFINE_gauge_int64(in_progress_ops, "Leader Operations in Progress",
+METRIC_DEFINE_gauge_int64(tablet, in_progress_ops, "Leader Operations in Progress",
                           MetricUnit::kOperations,
                           "Number of operations in the leader queue ack'd by a minority of "
                           "peers.");

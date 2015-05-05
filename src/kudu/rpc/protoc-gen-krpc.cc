@@ -436,7 +436,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         const MethodDescriptor *method = service->method(method_idx);
         subs->PushMethod(method);
         Print(printer, *subs,
-          "METRIC_DEFINE_histogram(handler_latency_$rpc_full_name_plainchars$,\n"
+          "METRIC_DEFINE_histogram(server, handler_latency_$rpc_full_name_plainchars$,\n"
           "  \"$rpc_full_name$ RPC Time\",\n"
           "  kudu::MetricUnit::kMicroseconds,\n"
           "  \"Microseconds spent handling $rpc_full_name$() RPC requests\",\n"

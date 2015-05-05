@@ -37,6 +37,8 @@
 
 DECLARE_int32(max_clock_sync_error_usec);
 
+METRIC_DECLARE_entity(tablet);
+
 namespace kudu {
 namespace log {
 
@@ -122,7 +124,7 @@ class LogTestBase : public KuduTest {
     current_index_ = 1;
     fs_manager_.reset(new FsManager(env_.get(), GetTestPath("fs_root")));
     metric_registry_.reset(new MetricRegistry());
-    metric_entity_ = METRIC_ENTITY_server.Instantiate(metric_registry_.get(), "log-test-base");
+    metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry_.get(), "log-test-base");
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 

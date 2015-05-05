@@ -18,12 +18,13 @@ using std::vector;
 using strings::Substitute;
 using kudu::tablet::MaintenanceManagerStatusPB;
 
-METRIC_DEFINE_gauge_uint32(maintenance_ops_running,
+METRIC_DEFINE_entity(test);
+METRIC_DEFINE_gauge_uint32(test, maintenance_ops_running,
                            "Number of Maintenance Operations Running",
                            kudu::MetricUnit::kMaintenanceOperations,
                            "The number of background maintenance operations currently running.");
 
-METRIC_DEFINE_histogram(maintenance_op_duration,
+METRIC_DEFINE_histogram(test, maintenance_op_duration,
                         "Maintenance Operation Duration",
                         kudu::MetricUnit::kSeconds, "", 60000000LU, 2);
 
@@ -72,7 +73,7 @@ class TestMaintenanceOp : public MaintenanceOp {
       ram_anchored_(500),
       logs_retained_bytes_(0),
       perf_improvement_(0),
-      metric_entity_(METRIC_ENTITY_server.Instantiate(&metric_registry_, "test")),
+      metric_entity_(METRIC_ENTITY_test.Instantiate(&metric_registry_, "test")),
       maintenance_op_duration_(METRIC_maintenance_op_duration.Instantiate(metric_entity_)),
       maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)) { }
 

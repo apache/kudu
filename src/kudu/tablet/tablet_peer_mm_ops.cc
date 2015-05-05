@@ -20,15 +20,14 @@ DEFINE_int32(flush_threshold_mb, 64,
 DEFINE_int32(log_gc_sleep_delay_ms, 10000,
     "Minimum number of milliseconds that the maintenance manager will wait between log GC runs.");
 
-METRIC_DEFINE_gauge_uint32(log_gc_running,
+METRIC_DEFINE_gauge_uint32(tablet, log_gc_running,
                            "Log GCs Running",
                            kudu::MetricUnit::kOperations,
                            "Number of log GC operations currently running.");
-METRIC_DEFINE_histogram(log_gc_duration,
+METRIC_DEFINE_histogram(tablet, log_gc_duration,
                         "Log GC Duration",
                         kudu::MetricUnit::kMilliseconds,
                         "Time spent garbage collecting the logs.", 60000LU, 1);
-
 
 namespace kudu {
 namespace tablet {

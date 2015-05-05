@@ -19,7 +19,9 @@ DEFINE_int32(tablet_server_scanner_ttl_millis, 60000,
              "Number of milliseconds of inactivity allowed for a scanner"
              "before it may be expired");
 
-METRIC_DEFINE_gauge_uint64(active_scanners,
+// TODO: would be better to scope this at a tablet level instead of
+// server level.
+METRIC_DEFINE_gauge_uint64(server, active_scanners,
                            "Active Scanners",
                            kudu::MetricUnit::kScanners,
                            "Number of scanners that are currently active");

@@ -139,6 +139,12 @@ MetricEntity::MetricEntity(const MetricEntityPrototype* prototype,
 MetricEntity::~MetricEntity() {
 }
 
+void MetricEntity::CheckInstantiation(const MetricPrototype* proto) const {
+  CHECK_STREQ(prototype_->name(), proto->entity_type())
+    << "Metric " << proto->name() << " may not be instantiated entity of type "
+    << prototype_->name() << " (expected: " << proto->entity_type() << ")";
+}
+
 scoped_refptr<Metric> MetricEntity::FindOrNull(const MetricPrototype& prototype) const {
   lock_guard<simple_spinlock> l(&lock_);
   return FindPtrOrNull(metric_map_, &prototype);

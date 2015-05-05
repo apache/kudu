@@ -31,22 +31,22 @@ DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
 
 DECLARE_bool(enable_data_block_fsync);
 
-METRIC_DEFINE_gauge_uint64(log_block_manager_bytes_under_management,
+METRIC_DEFINE_gauge_uint64(server, log_block_manager_bytes_under_management,
                            "Bytes Under Management",
                            kudu::MetricUnit::kBytes,
                            "Number of bytes of data blocks currently under management");
 
-METRIC_DEFINE_gauge_uint64(log_block_manager_blocks_under_management,
+METRIC_DEFINE_gauge_uint64(server, log_block_manager_blocks_under_management,
                            "Blocks Under Management",
                            kudu::MetricUnit::kBlocks,
                            "Number of data blocks currently under management");
 
-METRIC_DEFINE_counter(log_block_manager_containers,
+METRIC_DEFINE_counter(server, log_block_manager_containers,
                       "Number of Block Containers",
                       kudu::MetricUnit::kLogBlockContainers,
                       "Number of log block containers");
 
-METRIC_DEFINE_counter(log_block_manager_full_containers,
+METRIC_DEFINE_counter(server, log_block_manager_full_containers,
                       "Number of Full Block Counters",
                       kudu::MetricUnit::kLogBlockContainers,
                       "Number of full log block containers");
