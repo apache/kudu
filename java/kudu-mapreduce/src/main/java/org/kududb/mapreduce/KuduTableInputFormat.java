@@ -19,17 +19,10 @@ package org.kududb.mapreduce;
 import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
-import com.stumbleupon.async.Deferred;
 import org.kududb.ColumnSchema;
 import kudu.Common;
 import org.kududb.Schema;
-import org.kududb.client.Bytes;
-import org.kududb.client.DeadlineTracker;
-import org.kududb.client.AsyncKuduClient;
-import org.kududb.client.KuduScanner;
-import org.kududb.client.KuduTable;
-import org.kududb.client.LocatedTablet;
-import org.kududb.client.RowResult;
+import org.kududb.client.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.apache.hadoop.conf.Configurable;
@@ -104,7 +97,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   private final Map<String, String> reverseDNSCacheMap = new HashMap<String, String>();
 
   private Configuration conf;
-  private AsyncKuduClient client;
+  private KuduClient client;
   private KuduTable table;
   private long operationTimeoutMs;
   private String nameServer;
@@ -175,7 +168,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
   private void shutdownClient() throws IOException {
     try {
-      client.shutdown().join(operationTimeoutMs);
+      client.shutdown();
     } catch (Exception e) {
       throw new IOException(e);
     }
@@ -226,10 +219,10 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     this.nameServer = conf.get(NAME_SERVER_KEY);
     this.cacheBlocks = conf.getBoolean(SCAN_CACHE_BLOCKS, false);
 
-    this.client = KuduTableMapReduceUtil.getAsyncClient(masterQuorum);
-    Deferred<KuduTable> d = client.openTable(tableName);
+    this.client = KuduTableMapReduceUtil.getClient(masterQuorum);
+    this.client.setTimeoutMillis(this.operationTimeoutMs);
     try {
-      this.table = d.join(this.operationTimeoutMs);
+      this.table = client.openTable(tableName);
     } catch (Exception ex) {
       throw new RuntimeException("Could not obtain the table from the master, " +
           "is the master running and is this table created? tablename=" + tableName + " and " +
@@ -366,7 +359,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     private final NullWritable currentKey = NullWritable.get();
     private RowResult currentValue;
-    private KuduScanner.RowResultIterator iterator;
+    private AsyncKuduScanner.RowResultIterator iterator;
     private KuduScanner scanner;
     private TableSplit split;
 
@@ -408,7 +401,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
         return;
       }
       try {
-        iterator = scanner.nextRows().join(operationTimeoutMs);
+        iterator = scanner.nextRows();
       } catch (Exception e) {
         throw new IOException("Couldn't get scan data", e);
       }
@@ -433,7 +426,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     @Override
     public void close() throws IOException {
       try {
-        scanner.close().join(operationTimeoutMs);
+        scanner.close();
       } catch (Exception e) {
         throw new IOException(e);
       }

@@ -3,12 +3,7 @@
 package org.kududb.mapreduce;
 
 import org.kududb.Schema;
-import org.kududb.client.BaseKuduTest;
-import org.kududb.client.CreateTableBuilder;
-import org.kududb.client.Insert;
-import org.kududb.client.KuduScanner;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
+import org.kududb.client.*;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
 import org.apache.hadoop.mapreduce.RecordWriter;
@@ -52,7 +47,7 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
     RecordWriter<NullWritable, Operation> rw = output.getRecordWriter(null);
     rw.write(NullWritable.get(), insert);
     rw.close(null);
-    KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, schema);
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table, schema);
     assertEquals(1, countRowsInScan(builder.build()));
   }
 }

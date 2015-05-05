@@ -305,13 +305,13 @@ public class BaseKuduTest {
    * Counts the rows from the {@code scanner} until exhaustion. It doesn't require the scanner to
    * be new, so it can be used to finish scanning a previously-started scan.
    */
-  protected static int countRowsInScan(KuduScanner scanner)
+  protected static int countRowsInScan(AsyncKuduScanner scanner)
       throws Exception {
     final AtomicInteger counter = new AtomicInteger();
 
-    Callback<Object, KuduScanner.RowResultIterator> cb = new Callback<Object, KuduScanner.RowResultIterator>() {
+    Callback<Object, AsyncKuduScanner.RowResultIterator> cb = new Callback<Object, AsyncKuduScanner.RowResultIterator>() {
       @Override
-      public Object call(KuduScanner.RowResultIterator arg) throws Exception {
+      public Object call(AsyncKuduScanner.RowResultIterator arg) throws Exception {
         if (arg == null) return null;
         counter.addAndGet(arg.getNumRows());
         return null;
@@ -319,12 +319,12 @@ public class BaseKuduTest {
     };
 
     while (scanner.hasMoreRows()) {
-      Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
+      Deferred<AsyncKuduScanner.RowResultIterator> data = scanner.nextRows();
       data.addCallbacks(cb, defaultErrorCB);
       data.join(DEFAULT_SLEEP);
     }
 
-    Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
+    Deferred<AsyncKuduScanner.RowResultIterator> closer = scanner.close();
     closer.addCallbacks(cb, defaultErrorCB);
     closer.join(DEFAULT_SLEEP);
     return counter.get();

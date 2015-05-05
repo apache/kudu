@@ -203,13 +203,12 @@ public class KuduClient {
 
   /**
    * Creates a new {@link KuduScanner.KuduScannerBuilder} for a particular table.
-   * TODO create a sync version of KuduScanner and return it here.
    * @param table the name of the table you intend to scan.
    * The string is assumed to use the platform's default charset.
-   * @return a new scanner builder for this table.
+   * @return a new scanner builder for this table
    */
-  public KuduScanner.KuduScannerBuilder newScannerBuilder(final KuduTable table, Schema schema) {
-    return asyncClient.newScannerBuilder(table, schema);
+  public KuduScanner.KuduScannerBuilder newScannerBuilder(KuduTable table, Schema schema) {
+    return new KuduScanner.KuduScannerBuilder(asyncClient, table, schema);
   }
 
   /**

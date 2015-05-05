@@ -199,7 +199,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     assertEquals(20, countInRange(71, 91));
 
     // Test empty scanner projection
-    KuduScanner scanner = getScanner(71, 91, new Schema(new ArrayList<ColumnSchema>(0)));
+    AsyncKuduScanner scanner = getScanner(71, 91, new Schema(new ArrayList<ColumnSchema>(0)));
     assertEquals(20, countRowsInScan(scanner));
 
     // Test removing the connection and then do a rapid set of inserts
@@ -345,13 +345,13 @@ public class TestAsyncKuduSession extends BaseKuduTest {
 
   public static boolean exists(final int key) throws Exception {
 
-    KuduScanner scanner = getScanner(key, key);
+    AsyncKuduScanner scanner = getScanner(key, key);
     final AtomicBoolean exists = new AtomicBoolean(false);
 
-    Callback<Object, KuduScanner.RowResultIterator> cb =
-        new Callback<Object, KuduScanner.RowResultIterator>() {
+    Callback<Object, AsyncKuduScanner.RowResultIterator> cb =
+        new Callback<Object, AsyncKuduScanner.RowResultIterator>() {
       @Override
-      public Object call(KuduScanner.RowResultIterator arg) throws Exception {
+      public Object call(AsyncKuduScanner.RowResultIterator arg) throws Exception {
         if (arg == null) return null;
         for (RowResult row : arg) {
           if (row.getInt(0) == key) {
@@ -364,7 +364,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     };
 
     while (scanner.hasMoreRows()) {
-      Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
+      Deferred<AsyncKuduScanner.RowResultIterator> data = scanner.nextRows();
       data.addCallbacks(cb, defaultErrorCB);
       data.join(DEFAULT_SLEEP);
       if (exists.get()) {
@@ -372,20 +372,20 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       }
     }
 
-    Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
+    Deferred<AsyncKuduScanner.RowResultIterator> closer = scanner.close();
     closer.join(DEFAULT_SLEEP);
     return exists.get();
   }
 
   public static int countNullColumns(final int startKey, final int endKey) throws Exception {
 
-    KuduScanner scanner = getScanner(startKey, endKey);
+    AsyncKuduScanner scanner = getScanner(startKey, endKey);
     final AtomicInteger ai = new AtomicInteger();
 
-    Callback<Object, KuduScanner.RowResultIterator> cb =
-        new Callback<Object, KuduScanner.RowResultIterator>() {
+    Callback<Object, AsyncKuduScanner.RowResultIterator> cb =
+        new Callback<Object, AsyncKuduScanner.RowResultIterator>() {
           @Override
-          public Object call(KuduScanner.RowResultIterator arg) throws Exception {
+          public Object call(AsyncKuduScanner.RowResultIterator arg) throws Exception {
             if (arg == null) return null;
             for (RowResult row : arg) {
               if (row.isNull(3)) {
@@ -397,32 +397,32 @@ public class TestAsyncKuduSession extends BaseKuduTest {
         };
 
     while (scanner.hasMoreRows()) {
-      Deferred<KuduScanner.RowResultIterator> data = scanner.nextRows();
+      Deferred<AsyncKuduScanner.RowResultIterator> data = scanner.nextRows();
       data.addCallbacks(cb, defaultErrorCB);
       data.join(DEFAULT_SLEEP);
     }
 
-    Deferred<KuduScanner.RowResultIterator> closer = scanner.close();
+    Deferred<AsyncKuduScanner.RowResultIterator> closer = scanner.close();
     closer.join(DEFAULT_SLEEP);
     return ai.get();
   }
 
   public static int countInRange(final int startOrder, final int endOrder) throws Exception {
 
-    KuduScanner scanner = getScanner(startOrder, endOrder);
+    AsyncKuduScanner scanner = getScanner(startOrder, endOrder);
     return countRowsInScan(scanner);
   }
 
-  private static KuduScanner getScanner(int start, int end) {
+  private static AsyncKuduScanner getScanner(int start, int end) {
     return getScanner(start, end, schema);
   }
 
-  private static KuduScanner getScanner(int start, int end, Schema querySchema) {
+  private static AsyncKuduScanner getScanner(int start, int end, Schema querySchema) {
 
     ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumn(0));
     predicate.setLowerBound(start);
     predicate.setUpperBound(end);
-    KuduScanner scanner = client.newScannerBuilder(table, querySchema)
+    AsyncKuduScanner scanner = client.newScannerBuilder(table, querySchema)
         .addColumnRangePredicate(predicate)
         .build();
     return scanner;

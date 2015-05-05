@@ -403,22 +403,23 @@ public class AsyncKuduClient {
   }
 
   /**
-   * Creates a new {@link KuduScanner.KuduScannerBuilder} for a particular table.
+   * Creates a new {@link AsyncKuduScanner.AsyncKuduScannerBuilder} for a particular table.
    * @param table the name of the table you intend to scan.
    * The string is assumed to use the platform's default charset.
-   * @return a new scanner builder for this table.
+   * @return a new scanner builder for this table
    */
-  public KuduScanner.KuduScannerBuilder newScannerBuilder(final KuduTable table, Schema schema) {
+  public AsyncKuduScanner.AsyncKuduScannerBuilder newScannerBuilder(KuduTable table,
+                                                                    Schema schema) {
     checkIsClosed();
-    return new KuduScanner.KuduScannerBuilder(this, table, schema);
+    return new AsyncKuduScanner.AsyncKuduScannerBuilder(this, table, schema);
   }
 
   /**
-   * Package-private access point for {@link KuduScanner}s to open themselves.
+   * Package-private access point for {@link AsyncKuduScanner}s to open themselves.
    * @param scanner The scanner to open.
-   * @return A deferred {@link KuduScanner.Response}
+   * @return A deferred {@link AsyncKuduScanner.Response}
    */
-  Deferred<KuduScanner.Response> openScanner(final KuduScanner scanner) {
+  Deferred<AsyncKuduScanner.Response> openScanner(final AsyncKuduScanner scanner) {
     return sendRpcToTablet(scanner.getOpenRequest()).addErrback(
         new Callback<Exception, Exception>() {
           public Exception call(final Exception e) {
@@ -461,19 +462,19 @@ public class AsyncKuduClient {
   }
 
   /**
-   * Package-private access point for {@link KuduScanner}s to scan more rows.
+   * Package-private access point for {@link AsyncKuduScanner}s to scan more rows.
    * @param scanner The scanner to use.
    * @return A deferred row.
    */
-  Deferred<KuduScanner.Response> scanNextRows(final KuduScanner scanner) {
+  Deferred<AsyncKuduScanner.Response> scanNextRows(final AsyncKuduScanner scanner) {
     if (scanner.timedOut()) {
       Exception e = new NonRecoverableException("Time out:" + scanner);
       return Deferred.fromError(e);
     }
     final RemoteTablet tablet = scanner.currentTablet();
     final TabletClient client = clientFor(tablet);
-    final KuduRpc<KuduScanner.Response> next_request = scanner.getNextRowsRequest();
-    final Deferred<KuduScanner.Response> d = next_request.getDeferred();
+    final KuduRpc<AsyncKuduScanner.Response> next_request = scanner.getNextRowsRequest();
+    final Deferred<AsyncKuduScanner.Response> d = next_request.getDeferred();
     if (client == null) {
       // Oops, we no longer know anything about this client or tabletSlice.  Our
       // cache was probably invalidated while the client was scanning.  This
@@ -486,12 +487,12 @@ public class AsyncKuduClient {
   }
 
   /**
-   * Package-private access point for {@link KuduScanner}s to close themselves.
+   * Package-private access point for {@link AsyncKuduScanner}s to close themselves.
    * @param scanner The scanner to close.
    * @return A deferred object that indicates the completion of the request.
-   * The {@link KuduScanner.Response} can contain rows that were left to scan.
+   * The {@link AsyncKuduScanner.Response} can contain rows that were left to scan.
    */
-  Deferred<KuduScanner.Response> closeScanner(final KuduScanner scanner) {
+  Deferred<AsyncKuduScanner.Response> closeScanner(final AsyncKuduScanner scanner) {
     final RemoteTablet tablet = scanner.currentTablet();
     final TabletClient client = clientFor(tablet);
     if (client == null) {
@@ -502,8 +503,8 @@ public class AsyncKuduClient {
           + (tablet == null ? null : tablet));
       return Deferred.fromResult(null);
     }
-    final KuduRpc<KuduScanner.Response>  close_request = scanner.getCloseRequest();
-    final Deferred<KuduScanner.Response> d = close_request.getDeferred();
+    final KuduRpc<AsyncKuduScanner.Response>  close_request = scanner.getCloseRequest();
+    final Deferred<AsyncKuduScanner.Response> d = close_request.getDeferred();
     client.sendRpc(close_request);
     return d;
   }

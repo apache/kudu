@@ -47,10 +47,10 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     session.flush();
 
     // 2. Start a scanner with a small max num bytes.
-    KuduScanner scanner = client.newScannerBuilder(table, basicSchema)
+    AsyncKuduScanner scanner = client.newScannerBuilder(table, basicSchema)
         .maxNumBytes(1)
         .build();
-    Deferred<KuduScanner.RowResultIterator> rri = scanner.nextRows();
+    Deferred<AsyncKuduScanner.RowResultIterator> rri = scanner.nextRows();
     // 3. Register the number of rows we get back. We have no control over how many rows are
     // returned. When this test was written we were getting 100 rows back.
     int numRows = rri.join(DEFAULT_SLEEP).getNumRows();

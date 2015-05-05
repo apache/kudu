@@ -2,12 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.mapreduce;
 
-import org.kududb.client.BaseKuduTest;
-import org.kududb.client.CreateTableBuilder;
-import org.kududb.client.Insert;
-import org.kududb.client.KuduScanner;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
+import org.kududb.client.*;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
@@ -81,7 +76,8 @@ public class TestOutputFormatJob extends BaseKuduTest {
 
     // Make sure the data's there
     KuduTable table = openTable(TABLE_NAME);
-    KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, getBasicSchema());
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder =
+        client.newScannerBuilder(table, getBasicSchema());
     assertEquals(2, countRowsInScan(builder.build()));
   }
 
