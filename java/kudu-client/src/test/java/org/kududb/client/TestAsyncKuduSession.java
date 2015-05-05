@@ -185,7 +185,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
         session.flush().join(DEFAULT_SLEEP);
       }
     }
-    assertTrue(gotException);
+    assertTrue("Expected PleaseThrottleException", gotException);
     assertEquals(21, countInRange(50, 71));
 
     // Now test a more subtle issue, basically the race where we call flush from the client when
