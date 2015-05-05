@@ -29,6 +29,7 @@
 #include <llvm/Transforms/IPO/PassManagerBuilder.h>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
 
 #ifndef CODEGEN_MODULE_BUILDER_DO_OPTIMIZATIONS
@@ -62,6 +63,7 @@ using std::ostream;
 using std::string;
 using std::stringstream;
 using std::vector;
+using strings::Substitute;
 
 // These symbols are the beginning and end of the precompiled IR code
 // which is linked into this library. Taking the address of them results
@@ -78,9 +80,11 @@ namespace {
 string ToString(const SMDiagnostic& err) {
   stringstream sstr;
   raw_os_ostream os(sstr);
-  err.print("kudu/codegen", os);
+  err.print("precompiled.ll", os);
   os.flush();
-  return sstr.str();
+  return Substitute("line $0 col $1: $2",
+                    err.getLineNo(), err.getColumnNo(),
+                    sstr.str());
 }
 
 string ToString(const Module& m) {
@@ -117,14 +121,21 @@ Status ModuleBuilder::Init() {
 
   const char* ir_data_buf = &_binary_precompiled_ll_start;
   ptrdiff_t ir_data_len = &_binary_precompiled_ll_end - &_binary_precompiled_ll_start;
-  llvm::StringRef ir_data(ir_data_buf, ir_data_len);
-  DCHECK_GT(ir_data.size(), 0) << "IR not properly linked";
 
   // Even though the LLVM API takes an explicit length for the input IR,
   // it appears to actually depend on NULL termination. We assert for it
   // here because otherwise we end up with very strange LLVM errors which
   // are tough to debug.
-  DCHECK_EQ('\0', ir_data_buf[ir_data_len - 1]) << "IR not properly NULL-terminated";
+  CHECK_EQ('\0', ir_data_buf[ir_data_len - 1]) << "IR not properly NULL-terminated";
+
+  // However, despite depending on the buffer being null terminated, it doesn't
+  // expect the null terminator to be included in the length of the buffer.
+  // Per http://llvm.org/docs/doxygen/html/classllvm_1_1MemoryBuffer.html :
+  //   > In addition to basic access to the characters in the file, this interface
+  //   > guarantees you can read one character past the end of the file, and that this
+  //   > character will read as '\0'.
+  llvm::StringRef ir_data(ir_data_buf, ir_data_len - 1);
+  CHECK_GT(ir_data.size(), 0) << "IR not properly linked";
 
   // Parse IR.
   SMDiagnostic err;
