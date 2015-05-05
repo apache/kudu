@@ -14,6 +14,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/url-coding.h"
 
@@ -22,6 +23,13 @@ using std::cout;
 using std::endl;
 using std::string;
 using std::tr1::unordered_set;
+
+// Because every binary initializes its flags here, we use it as a convenient place
+// to offer some global flags as well.
+DEFINE_bool(dump_metrics_json, false,
+            "Dump a JSON document describing all of the metrics which may be emitted "
+            "by this binary.");
+TAG_FLAG(dump_metrics_json, hidden);
 
 DECLARE_bool(helpxml);
 
@@ -226,6 +234,8 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
 
   if (FLAGS_helpxml) {
     DumpFlagsXML();
+  } else if (FLAGS_dump_metrics_json) {
+    MetricPrototypeRegistry::get()->WriteAsJsonAndExit();
   } else {
     google::HandleCommandLineHelpFlags();
   }

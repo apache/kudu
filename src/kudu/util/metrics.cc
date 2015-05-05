@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 #include "kudu/util/metrics.h"
 
+#include <iostream>
 #include <map>
 #include <set>
 
@@ -11,6 +12,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/singleton.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flag_tags.h"
@@ -114,6 +116,7 @@ const char* MetricType::Name(MetricType::Type type) {
 
 MetricEntityPrototype::MetricEntityPrototype(const char* name)
   : name_(name) {
+  MetricPrototypeRegistry::get()->AddEntity(this);
 }
 
 MetricEntityPrototype::~MetricEntityPrototype() {
@@ -310,6 +313,90 @@ void MetricRegistry::RetireOldMetrics() {
 }
 
 //
+// MetricPrototypeRegistry
+//
+MetricPrototypeRegistry* MetricPrototypeRegistry::get() {
+  return Singleton<MetricPrototypeRegistry>::get();
+}
+
+void MetricPrototypeRegistry::AddMetric(const MetricPrototype* prototype) {
+  lock_guard<simple_spinlock> l(&lock_);
+  metrics_.push_back(prototype);
+}
+
+void MetricPrototypeRegistry::AddEntity(const MetricEntityPrototype* prototype) {
+  lock_guard<simple_spinlock> l(&lock_);
+  entities_.push_back(prototype);
+}
+
+void MetricPrototypeRegistry::WriteAsJson(JsonWriter* writer) const {
+  lock_guard<simple_spinlock> l(&lock_);
+  MetricJsonOptions opts;
+  opts.include_schema_info = true;
+  writer->StartObject();
+
+  // Dump metric prototypes.
+  writer->String("metrics");
+  writer->StartArray();
+  BOOST_FOREACH(const MetricPrototype* p, metrics_) {
+    writer->StartObject();
+    p->WriteFields(writer, opts);
+    writer->String("entity_type");
+    writer->String(p->entity_type());
+    writer->EndObject();
+  }
+  writer->EndArray();
+
+  // Dump entity prototypes.
+  writer->String("entities");
+  writer->StartArray();
+  BOOST_FOREACH(const MetricEntityPrototype* p, entities_) {
+    writer->StartObject();
+    writer->String("name");
+    writer->String(p->name());
+    writer->EndObject();
+  }
+  writer->EndArray();
+
+  writer->EndObject();
+}
+
+void MetricPrototypeRegistry::WriteAsJsonAndExit() const {
+  std::stringstream s;
+  JsonWriter w(&s, JsonWriter::PRETTY);
+  WriteAsJson(&w);
+  std::cout << s.str() << std::endl;
+  exit(0);
+}
+
+//
+// MetricPrototype
+//
+MetricPrototype::MetricPrototype(const CtorArgs& args) : args_(args) {
+  MetricPrototypeRegistry::get()->AddMetric(this);
+}
+
+void MetricPrototype::WriteFields(JsonWriter* writer,
+                                  const MetricJsonOptions& opts) const {
+  writer->String("name");
+  writer->String(name());
+
+  if (opts.include_schema_info) {
+    writer->String("label");
+    writer->String(label());
+
+    writer->String("type");
+    writer->String(MetricType::Name(type()));
+
+    writer->String("unit");
+    writer->String(MetricUnit::Name(unit()));
+
+    writer->String("description");
+    writer->String(description());
+  }
+}
+
+//
 // FunctionGaugeDetacher
 //
 
@@ -344,26 +431,6 @@ Metric::Metric(const MetricPrototype* prototype)
 Metric::~Metric() {
 }
 
-void Metric::WriteGenericFields(JsonWriter* writer,
-                                const MetricJsonOptions& opts) const {
-  writer->String("name");
-  writer->String(prototype_->name());
-
-  if (opts.include_schema_info) {
-    writer->String("label");
-    writer->String(prototype_->label());
-
-    writer->String("type");
-    writer->String(MetricType::Name(type()));
-
-    writer->String("unit");
-    writer->String(MetricUnit::Name(prototype_->unit()));
-
-    writer->String("description");
-    writer->String(prototype_->description());
-  }
-}
-
 //
 // Gauge
 //
@@ -372,7 +439,7 @@ Status Gauge::WriteAsJson(JsonWriter* writer,
                           const MetricJsonOptions& opts) const {
   writer->StartObject();
 
-  WriteGenericFields(writer, opts);
+  prototype_->WriteFields(writer, opts);
 
   writer->String("value");
   WriteValue(writer);
@@ -433,7 +500,7 @@ Status Counter::WriteAsJson(JsonWriter* writer,
                             const MetricJsonOptions& opts) const {
   writer->StartObject();
 
-  WriteGenericFields(writer, opts);
+  prototype_->WriteFields(writer, opts);
 
   writer->String("value");
   writer->Int64(value());
@@ -496,7 +563,7 @@ Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
   HdrHistogram snapshot(*histogram_);
   snapshot_pb->set_name(prototype_->name());
   if (opts.include_schema_info) {
-    snapshot_pb->set_type(MetricType::Name(type()));
+    snapshot_pb->set_type(MetricType::Name(prototype_->type()));
     snapshot_pb->set_unit(MetricUnit::Name(prototype_->unit()));
     snapshot_pb->set_description(prototype_->description());
     snapshot_pb->set_max_trackable_value(snapshot.highest_trackable_value());

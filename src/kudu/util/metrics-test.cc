@@ -4,9 +4,11 @@
 #include <gtest/gtest.h>
 #include <rapidjson/document.h>
 #include <string>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/util/hdr_histogram.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
@@ -14,6 +16,7 @@
 
 using boost::assign::list_of;
 using std::string;
+using std::tr1::unordered_set;
 using std::vector;
 
 DECLARE_int32(metrics_retirement_age_ms);
@@ -126,7 +129,6 @@ TEST_F(MetricsTest, AutoDetachToConstant) {
   ASSERT_EQ(12345, gauge->value());
 }
 
-
 METRIC_DEFINE_histogram(test_entity, test_hist, "Test Histogram",
                         MetricUnit::kMilliseconds, "foo", 1000000, 3);
 
@@ -209,6 +211,46 @@ TEST_F(MetricsTest, TestInstantiatingDifferentEntities) {
   scoped_refptr<MetricEntity> new_entity = METRIC_ENTITY_test_entity.Instantiate(
       &registry_, "some other ID");
   ASSERT_NE(new_entity.get(), entity_.get());
+}
+
+TEST_F(MetricsTest, TestDumpJsonPrototypes) {
+  // Dump the prototype info.
+  std::stringstream out;
+  JsonWriter w(&out, JsonWriter::PRETTY);
+  MetricPrototypeRegistry::get()->WriteAsJson(&w);
+  string json = out.str();
+
+  // Quick sanity check for one of our metrics defined in this file.
+  const char* expected =
+    "        {\n"
+    "            \"name\": \"test_func_gauge\",\n"
+    "            \"label\": \"Test Gauge\",\n"
+    "            \"type\": \"gauge\",\n"
+    "            \"unit\": \"bytes\",\n"
+    "            \"description\": \"Test Gauge 2\",\n"
+    "            \"entity_type\": \"test_entity\"\n"
+    "        }";
+  ASSERT_STR_CONTAINS(json, expected);
+
+  // Parse it.
+  rapidjson::Document d;
+  d.Parse<0>(json.c_str());
+
+  // Ensure that we got a reasonable number of metrics.
+  int num_metrics = d["metrics"].Size();
+  int num_entities = d["entities"].Size();
+  LOG(INFO) << "Parsed " << num_metrics << " metrics and " << num_entities << " entities";
+  ASSERT_GT(num_metrics, 5);
+  ASSERT_EQ(num_entities, 2);
+
+  // Spot-check that some metrics were properly registered and that the JSON was properly
+  // formed.
+  unordered_set<string> seen_metrics;
+  for (int i = 0; i < d["metrics"].Size(); i++) {
+    InsertOrDie(&seen_metrics, d["metrics"][i]["name"].GetString());
+  }
+  ASSERT_TRUE(ContainsKey(seen_metrics, "threads_started"));
+  ASSERT_TRUE(ContainsKey(seen_metrics, "test_hist"));
 }
 
 } // namespace kudu

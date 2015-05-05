@@ -200,6 +200,7 @@
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/gutil/singleton.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/locks.h"
@@ -445,17 +446,12 @@ class Metric : public RefCountedThreadSafe<Metric> {
   // All metrics must be able to render themselves as JSON.
   virtual Status WriteAsJson(JsonWriter* writer,
                              const MetricJsonOptions& opts) const = 0;
-  virtual MetricType::Type type() const = 0;
 
   const MetricPrototype* prototype() const { return prototype_; }
 
  protected:
   explicit Metric(const MetricPrototype* prototype);
   virtual ~Metric();
-
-  // Writes the JSON fields common to all metric types (eg name/type/unit).
-  void WriteGenericFields(JsonWriter* writer,
-                          const MetricJsonOptions& opts) const;
 
   const MetricPrototype* const prototype_;
 
@@ -510,6 +506,47 @@ class MetricRegistry {
   DISALLOW_COPY_AND_ASSIGN(MetricRegistry);
 };
 
+// Registry of all of the metric and entity prototypes that have been
+// defined.
+//
+// Prototypes are typically defined as static variables in different compilation
+// units, and their constructors register themselves here. The registry is then
+// used in order to dump metrics metadata to generate a Cloudera Manager MDL
+// file.
+//
+// This class is thread-safe.
+class MetricPrototypeRegistry {
+ public:
+  // Get the singleton instance.
+  static MetricPrototypeRegistry* get();
+
+  // Dump a JSON document including all of the registered entity and metric
+  // prototypes.
+  void WriteAsJson(JsonWriter* writer) const;
+
+  // Convenience wrapper around WriteAsJson(...). This dumps the JSON information
+  // to stdout and then exits.
+  void WriteAsJsonAndExit() const;
+ private:
+  friend class Singleton<MetricPrototypeRegistry>;
+  friend class MetricPrototype;
+  friend class MetricEntityPrototype;
+  MetricPrototypeRegistry() {}
+  ~MetricPrototypeRegistry() {}
+
+  // Register a metric prototype in the registry.
+  void AddMetric(const MetricPrototype* prototype);
+
+  // Register a metric entity prototype in the registry.
+  void AddEntity(const MetricEntityPrototype* prototype);
+
+  mutable simple_spinlock lock_;
+  std::vector<const MetricPrototype*> metrics_;
+  std::vector<const MetricEntityPrototype*> entities_;
+
+  DISALLOW_COPY_AND_ASSIGN(MetricPrototypeRegistry);
+};
+
 class MetricPrototype {
  public:
   // Simple struct to aggregate the arguments common to all prototypes.
@@ -539,10 +576,14 @@ class MetricPrototype {
   const char* label() const { return args_.label_; }
   MetricUnit::Type unit() const { return args_.unit_; }
   const char* description() const { return args_.description_; }
+  virtual MetricType::Type type() const = 0;
+
+  // Writes the fields of this prototype to the given JSON writer.
+  void WriteFields(JsonWriter* writer,
+                   const MetricJsonOptions& opts) const;
 
  protected:
-  explicit MetricPrototype(const CtorArgs& args) : args_(args) {
-  }
+  explicit MetricPrototype(const CtorArgs& args);
   virtual ~MetricPrototype() {
   }
 
@@ -574,6 +615,8 @@ class GaugePrototype : public MetricPrototype {
     return entity->FindOrCreateFunctionGauge(this, function);
   }
 
+  virtual MetricType::Type type() const OVERRIDE { return MetricType::kGauge; }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(GaugePrototype);
 };
@@ -585,7 +628,6 @@ class Gauge : public Metric {
     : Metric(prototype) {
   }
   virtual ~Gauge() {}
-  virtual MetricType::Type type() const OVERRIDE { return MetricType::kGauge; }
   virtual Status WriteAsJson(JsonWriter* w,
                              const MetricJsonOptions& opts) const OVERRIDE;
  protected:
@@ -776,6 +818,8 @@ class CounterPrototype : public MetricPrototype {
   }
   scoped_refptr<Counter> Instantiate(const scoped_refptr<MetricEntity>& entity);
 
+  virtual MetricType::Type type() const OVERRIDE { return MetricType::kCounter; }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(CounterPrototype);
 };
@@ -791,7 +835,6 @@ class Counter : public Metric {
   int64_t value() const;
   void Increment();
   void IncrementBy(int64_t amount);
-  virtual MetricType::Type type() const OVERRIDE { return MetricType::kCounter; }
   virtual Status WriteAsJson(JsonWriter* w,
                              const MetricJsonOptions& opts) const OVERRIDE;
 
@@ -814,6 +857,7 @@ class HistogramPrototype : public MetricPrototype {
 
   uint64_t max_trackable_value() const { return max_trackable_value_; }
   int num_sig_digits() const { return num_sig_digits_; }
+  virtual MetricType::Type type() const OVERRIDE { return MetricType::kHistogram; }
 
  private:
   const uint64_t max_trackable_value_;
@@ -831,7 +875,6 @@ class Histogram : public Metric {
   // 'value' and 'amount' must be non-negative.
   void IncrementBy(int64_t value, int64_t amount);
 
-  virtual MetricType::Type type() const OVERRIDE { return MetricType::kHistogram; }
   virtual Status WriteAsJson(JsonWriter* w,
                              const MetricJsonOptions& opts) const OVERRIDE;
 
