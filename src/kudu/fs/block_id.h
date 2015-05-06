@@ -9,6 +9,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/gutil/hash/hash.h"
 #include "kudu/gutil/macros.h"
 
 namespace kudu {
@@ -66,16 +67,16 @@ class BlockId {
   std::string hash2() const;
   std::string hash3() const;
 
-  size_t hash() const;
-
   std::string id_;
 };
 
 std::ostream& operator<<(std::ostream& o, const BlockId& block_id);
 
 struct BlockIdHash {
+  GoodFastHash<std::string> hash;
+
   size_t operator()(const BlockId& block_id) const {
-    return block_id.hash();
+    return hash(block_id.id_);
   }
 };
 
