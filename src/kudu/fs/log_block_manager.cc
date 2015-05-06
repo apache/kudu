@@ -16,10 +16,12 @@
 #include "kudu/util/alignment.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/threadpool.h"
 
 // TODO: How should this be configured? Should provide some guidance.
 DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
@@ -28,6 +30,10 @@ DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
 DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
               "Number of bytes to preallocate in a log container when "
               "creating new blocks. Set to 0 to disable preallocation");
+
+DEFINE_bool(log_block_manager_parallel_open, true,
+            "Open all log block manager paths in parallel");
+TAG_FLAG(log_block_manager_parallel_open, hidden);
 
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_bool(block_manager_lock_dirs);
@@ -53,6 +59,7 @@ METRIC_DEFINE_counter(server, log_block_manager_full_containers,
                       "Number of full log block containers");
 
 using std::tr1::shared_ptr;
+using std::tr1::unordered_map;
 using std::tr1::unordered_set;
 using strings::Substitute;
 using kudu::fs::internal::LogBlock;
@@ -1048,50 +1055,46 @@ Status LogBlockManager::Create() {
 }
 
 Status LogBlockManager::Open() {
-  InstanceMap instance_map;
-  ValueDeleter deleter(&instance_map);
+  // Use a thread pool to parallelize the work of opening the block manager. We
+  // expect a 1-1 relationship between root path and disk, thus each path gets
+  // its own thread.
+  //
+  // TODO: despite being I/O bound, this introduces a lot of contention on the
+  // block manager spinlock.
+  int num_threads = FLAGS_log_block_manager_parallel_open ? root_paths_.size() : 1;
+  gscoped_ptr<ThreadPool> open_pool;
+  RETURN_NOT_OK_PREPEND(ThreadPoolBuilder("open_pool")
+                        .set_max_threads(num_threads)
+                        .Build(&open_pool),
+                        "Could not create thread pool");
 
+  vector<Status> statuses(root_paths_.size());
+  unordered_map<string, PathInstanceMetadataFile*> metadata_files;
+  ValueDeleter deleter(&metadata_files);
   BOOST_FOREACH(const string& root_path, root_paths_) {
-    if (!env_->FileExists(root_path)) {
-      return Status::NotFound(Substitute("LogBlockManager at $0 not found",
-                                         root_path));
-    }
-
-    string instance_filename = JoinPathSegments(
-        root_path, kInstanceMetadataFileName);
-    gscoped_ptr<PathInstanceMetadataFile> metadata(
-        new PathInstanceMetadataFile(env_, kBlockManagerType,
-                                     instance_filename));
-    RETURN_NOT_OK_PREPEND(metadata->LoadFromDisk(),
-                          Substitute("Could not open $0", instance_filename));
-    if (FLAGS_block_manager_lock_dirs) {
-      RETURN_NOT_OK_PREPEND(metadata->Lock(),
-                            Substitute("Could not lock $0", instance_filename));
-    }
-
-    vector<string> children;
-    RETURN_NOT_OK_PREPEND(env_->GetChildren(root_path, &children), root_path);
-
-    BOOST_FOREACH(const string& child, children) {
-      string id;
-      if (!TryStripSuffixString(child, LogBlockContainer::kMetadataFileSuffix, &id)) {
-        continue;
-      }
-      gscoped_ptr<LogBlockContainer> container;
-      RETURN_NOT_OK_PREPEND(LogBlockContainer::Open(this, metadata->metadata(),
-                                                    root_path, id, &container),
-                            root_path);
-      {
-        lock_guard<simple_spinlock> l(&lock_);
-        AddNewContainerUnlocked(container.get());
-        MakeContainerAvailableUnlocked(container.release());
-      }
-    }
-
-    InsertOrDie(&instance_map, root_path, metadata.release());
+    InsertOrDie(&metadata_files, root_path, NULL);
   }
 
-  instance_map.swap(instances_by_root_path_);
+  int i = 0;
+  BOOST_FOREACH(const string& root_path, root_paths_) {
+    RETURN_NOT_OK_PREPEND(open_pool->SubmitClosure(
+        Bind(&LogBlockManager::OpenRootPath,
+             Unretained(this),
+             root_path,
+             &statuses[i],
+             &FindOrDie(metadata_files, root_path))),
+                          Substitute("Could not open root path $0", root_path));
+    i++;
+  }
+  open_pool->Wait();
+
+  BOOST_FOREACH(const Status& s, statuses) {
+    if (!s.ok()) {
+      return s;
+    }
+  }
+
+  instances_by_root_path_.swap(metadata_files);
   return Status::OK();
 }
 
@@ -1311,6 +1314,69 @@ scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlock(const BlockId& block_id)
     metrics()->bytes_under_management->DecrementBy(result->length());
   }
   return result;
+}
+
+void LogBlockManager::OpenRootPath(const string& root_path,
+                                   Status* result_status,
+                                   PathInstanceMetadataFile** result_metadata) {
+  if (!env_->FileExists(root_path)) {
+    *result_status = Status::NotFound(Substitute(
+        "LogBlockManager at $0 not found", root_path));
+    return;
+  }
+
+  // Open and lock the metadata instance file.
+  string instance_filename = JoinPathSegments(
+      root_path, kInstanceMetadataFileName);
+  gscoped_ptr<PathInstanceMetadataFile> metadata(
+      new PathInstanceMetadataFile(env_, kBlockManagerType,
+                                   instance_filename));
+  Status s = metadata->LoadFromDisk();
+  if (!s.ok()) {
+    *result_status = s.CloneAndPrepend(Substitute(
+        "Could not open $0", instance_filename));
+    return;
+  }
+  if (FLAGS_block_manager_lock_dirs) {
+    s = metadata->Lock();
+    if (!s.ok()) {
+      *result_status = s.CloneAndPrepend(Substitute(
+          "Could not lock $0", instance_filename));
+      return;
+    }
+  }
+
+  // Find all containers and open them.
+  vector<string> children;
+  s = env_->GetChildren(root_path, &children);
+  if (!s.ok()) {
+    *result_status = s.CloneAndPrepend(Substitute(
+        "Could not list children of $0", root_path));
+    return;
+  }
+  BOOST_FOREACH(const string& child, children) {
+    string id;
+    if (!TryStripSuffixString(child, LogBlockContainer::kMetadataFileSuffix, &id)) {
+      continue;
+    }
+    gscoped_ptr<LogBlockContainer> container;
+    s = LogBlockContainer::Open(this, metadata->metadata(),
+                                root_path, id, &container);
+    if (!s.ok()) {
+      *result_status = s.CloneAndPrepend(Substitute(
+          "Could not open container $0", id));
+      return;
+    }
+
+    {
+      lock_guard<simple_spinlock> l(&lock_);
+      AddNewContainerUnlocked(container.get());
+      MakeContainerAvailableUnlocked(container.release());
+    }
+  }
+
+  *result_status = Status::OK();
+  *result_metadata = metadata.release();
 }
 
 } // namespace fs

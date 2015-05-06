@@ -199,6 +199,14 @@ class LogBlockManager : public BlockManager {
   // already gone.
   scoped_refptr<internal::LogBlock> RemoveLogBlock(const BlockId& block_id);
 
+  // Open a particular root path belonging to the block manager.
+  //
+  // Success or failure is set in 'result_status'. On success, also sets
+  // 'result_metadata' with an allocated metadata file.
+  void OpenRootPath(const std::string& root_path,
+                    Status* result_status,
+                    PathInstanceMetadataFile** result_metadata);
+
   ObjectIdGenerator* oid_generator() { return &oid_generator_; }
 
   Env* env() const { return env_; }

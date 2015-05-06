@@ -51,6 +51,11 @@ race:kudu::RowChangeListDecoder::Init
 # https://code.google.com/p/google-glog/issues/detail?id=191
 signal:logging_fail
 
+# This method in Boost's UUID library operates on static state with impunity,
+# triggering (harmless) data races in TSAN when boost::uuids::random_generator
+# instances are created across threads (see kudu::ObjectIdGenerator).
+race:boost::uuids::detail::seed_rng::sha1_random_digest_
+
 # ------------------------------------------------------------
 # Known bugs below. As these JIRAs are resolved, please remove the relevant
 # suppression.
