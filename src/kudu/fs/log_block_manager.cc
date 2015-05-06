@@ -204,6 +204,17 @@ class LogBlockContainer {
   void ConsumeMemory(int64_t bytes);
   void ReleaseMemory(int64_t bytes);
 
+  // Reads the container's metadata from disk, sanity checking and
+  // returning the records.
+  Status ReadContainerRecords(std::deque<BlockRecordPB>* records) const;
+
+  // Updates 'total_bytes_written_', marking this container as full if
+  // needed. Should only be called when a block is fully written, as it
+  // will round up the container data file's position.
+  //
+  // This function is thread unsafe.
+  void UpdateBytesWritten(int64_t more_bytes);
+
   // Simple accessors.
   std::string dir() const { return DirName(path_); }
   const std::string& ToString() const { return path_; }
@@ -236,22 +247,9 @@ class LogBlockContainer {
                     gscoped_ptr<WritablePBContainerFile> metadata_writer,
                     gscoped_ptr<RWFile> data_file);
 
-  // Updates 'total_bytes_written_', marking this container as full if
-  // needed. Should only be called when a block is fully written, as it
-  // will round up the container data file's position.
-  //
-  // This function is thread unsafe.
-  void UpdateBytesWritten(int64_t more_bytes);
-
-  // Reads the container's metadata from disk, creating LogBlocks as needed
-  // and populating the block manager's in-memory maps.
-  Status LoadContainer();
-
-  // Parse a block record and use it to update in-memory maps. It is an
-  // error if a record lives beyond 'data_file_size', which is the
-  // container file's actual size.
-  void ProcessBlockRecord(const BlockRecordPB& record,
-                          uint64_t data_file_size);
+  // Performs sanity checks on a block record.
+  void CheckBlockRecord(const BlockRecordPB& record,
+                        uint64_t data_file_size) const;
 
   // The owning block manager. Must outlive the container itself.
   LogBlockManager* const block_manager_;
@@ -400,14 +398,12 @@ Status LogBlockContainer::Open(LogBlockManager* block_manager,
                                                                       common_path,
                                                                       metadata_pb_writer.Pass(),
                                                                       data_file.Pass()));
-  RETURN_NOT_OK(open_container->LoadContainer());
-
   VLOG(1) << "Opened log block container " << open_container->ToString();
   container->reset(open_container.release());
   return Status::OK();
 }
 
-Status LogBlockContainer::LoadContainer() {
+Status LogBlockContainer::ReadContainerRecords(deque<BlockRecordPB>* records) const {
   string metadata_path = StrCat(path_, kMetadataFileSuffix);
   gscoped_ptr<RandomAccessFile> metadata_reader;
   RETURN_NOT_OK(block_manager()->env()->NewRandomAccessFile(metadata_path, &metadata_reader));
@@ -416,62 +412,35 @@ Status LogBlockContainer::LoadContainer() {
 
   uint64_t data_file_size;
   RETURN_NOT_OK(data_file_->Size(&data_file_size));
+  deque<BlockRecordPB> local_records;
   Status read_status;
   while (true) {
-    BlockRecordPB record;
-    read_status = pb_reader.ReadNextPB(&record);
+    local_records.resize(local_records.size() + 1);
+    read_status = pb_reader.ReadNextPB(&local_records.back());
     if (!read_status.ok()) {
+      // Drop the last element; we didn't use it.
+      local_records.pop_back();
       break;
     }
-    ProcessBlockRecord(record, data_file_size);
+    CheckBlockRecord(local_records.back(), data_file_size);
   }
   Status close_status = pb_reader.Close();
-  return !read_status.IsEndOfFile() ? read_status : close_status;
+  Status ret = !read_status.IsEndOfFile() ? read_status : close_status;
+  if (ret.ok()) {
+    records->swap(local_records);
+  }
+  return ret;
 }
 
-void LogBlockContainer::ProcessBlockRecord(const BlockRecordPB& record,
-                                           uint64_t data_file_size) {
-  BlockId block_id(BlockId::FromPB(record.block_id()));
-  switch (record.op_type()) {
-    case CREATE: {
-      if (!record.has_offset() ||
-          !record.has_length() ||
-          record.offset() < 0  ||
-          record.length() < 0  ||
-          record.offset() + record.length() > data_file_size) {
-        LOG(FATAL) << "Found malformed block record: "
-                   << record.DebugString();
-      }
-      if (!block_manager()->AddLogBlock(this, block_id,
-                                        record.offset(), record.length())) {
-        LOG(FATAL) << "Found already existent block record: "
-                   << record.DebugString();
-      }
-
-      VLOG(2) << Substitute("Found CREATE block $0 at offset $1 with length $2",
-                            block_id.ToString(),
-                            record.offset(), record.length());
-
-      // This block must be included in the container's logical size, even
-      // if it has since been deleted. This helps satisfy one of our
-      // invariants: once a container byte range has been used, it may
-      // never be reused in the future.
-      //
-      // If we ignored deleted blocks, we would end up reusing the space
-      // belonging to the last deleted block in the container.
-      UpdateBytesWritten(record.length());
-      break;
-    }
-    case DELETE:
-      if (!block_manager()->RemoveLogBlock(block_id)) {
-        LOG(FATAL) << "Found already non-existent block record: "
-                   << record.DebugString();
-      }
-      VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
-      break;
-    default:
-      LOG(FATAL) << "Found unknown op type in block record: "
-                 << record.DebugString();
+void LogBlockContainer::CheckBlockRecord(const BlockRecordPB& record,
+                                         uint64_t data_file_size) const {
+  if (record.op_type() == CREATE &&
+      (!record.has_offset()  ||
+       !record.has_length()  ||
+        record.offset() < 0  ||
+        record.length() < 0  ||
+        record.offset() + record.length() > data_file_size)) {
+    LOG(FATAL) << "Found malformed block record: " << record.DebugString();
   }
 }
 
@@ -1058,9 +1027,6 @@ Status LogBlockManager::Open() {
   // Use a thread pool to parallelize the work of opening the block manager. We
   // expect a 1-1 relationship between root path and disk, thus each path gets
   // its own thread.
-  //
-  // TODO: despite being I/O bound, this introduces a lot of contention on the
-  // block manager spinlock.
   int num_threads = FLAGS_log_block_manager_parallel_open ? root_paths_.size() : 1;
   gscoped_ptr<ThreadPool> open_pool;
   RETURN_NOT_OK_PREPEND(ThreadPoolBuilder("open_pool")
@@ -1283,19 +1249,28 @@ bool LogBlockManager::TryUseBlockId(const BlockId& block_id) {
   return InsertIfNotPresent(&open_block_ids_, block_id);
 }
 
-bool LogBlockManager::AddLogBlock(LogBlockContainer* container, const BlockId& block_id,
-                                  int64_t offset, int64_t length) {
-  scoped_refptr<LogBlock> lb(new LogBlock(container, block_id, offset, length));
-  {
-    lock_guard<simple_spinlock> l(&lock_);
-    if (!InsertIfNotPresent(&blocks_by_block_id_, block_id, lb)) {
-      return false;
-    }
+bool LogBlockManager::AddLogBlock(LogBlockContainer* container,
+                                  const BlockId& block_id,
+                                  int64_t offset,
+                                  int64_t length) {
+  lock_guard<simple_spinlock> l(&lock_);
+  return AddLogBlockUnlocked(container, block_id, offset, length);
+}
 
-    // There may already be an entry in open_block_ids_ (e.g. we just
-    // finished writing out a block).
-    open_block_ids_.erase(block_id);
+bool LogBlockManager::AddLogBlockUnlocked(LogBlockContainer* container,
+                                          const BlockId& block_id,
+                                          int64_t offset,
+                                          int64_t length) {
+  DCHECK(lock_.is_locked());
+
+  scoped_refptr<LogBlock> lb(new LogBlock(container, block_id, offset, length));
+  if (!InsertIfNotPresent(&blocks_by_block_id_, block_id, lb)) {
+    return false;
   }
+
+  // There may already be an entry in open_block_ids_ (e.g. we just finished
+  // writing out a block).
+  open_block_ids_.erase(block_id);
   if (metrics()) {
     metrics()->blocks_under_management->Increment();
     metrics()->bytes_under_management->IncrementBy(length);
@@ -1304,11 +1279,15 @@ bool LogBlockManager::AddLogBlock(LogBlockContainer* container, const BlockId& b
 }
 
 scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlock(const BlockId& block_id) {
-  scoped_refptr<LogBlock> result;
-  {
-    lock_guard<simple_spinlock> l(&lock_);
-    result = EraseKeyReturnValuePtr(&blocks_by_block_id_, block_id);
-  }
+  lock_guard<simple_spinlock> l(&lock_);
+  return RemoveLogBlockUnlocked(block_id);
+}
+
+scoped_refptr<LogBlock> LogBlockManager::RemoveLogBlockUnlocked(const BlockId& block_id) {
+  DCHECK(lock_.is_locked());
+
+  scoped_refptr<LogBlock> result =
+      EraseKeyReturnValuePtr(&blocks_by_block_id_, block_id);
   if (result && metrics()) {
     metrics()->blocks_under_management->Decrement();
     metrics()->bytes_under_management->DecrementBy(result->length());
@@ -1368,8 +1347,19 @@ void LogBlockManager::OpenRootPath(const string& root_path,
       return;
     }
 
+    // Populate the in-memory block maps using each container's records.
+    deque<BlockRecordPB> records;
+    s = container->ReadContainerRecords(&records);
+    if (!s.ok()) {
+      *result_status = s.CloneAndPrepend(Substitute(
+          "Could not read records from container $0", container->ToString()));
+      return;
+    }
     {
       lock_guard<simple_spinlock> l(&lock_);
+      BOOST_FOREACH(const BlockRecordPB& r, records) {
+        ProcessBlockRecordUnlocked(container.get(), r);
+      }
       AddNewContainerUnlocked(container.get());
       MakeContainerAvailableUnlocked(container.release());
     }
@@ -1377,6 +1367,46 @@ void LogBlockManager::OpenRootPath(const string& root_path,
 
   *result_status = Status::OK();
   *result_metadata = metadata.release();
+}
+
+void LogBlockManager::ProcessBlockRecordUnlocked(LogBlockContainer* container,
+                                                 const BlockRecordPB& record) {
+  DCHECK(lock_.is_locked());
+
+  BlockId block_id(BlockId::FromPB(record.block_id()));
+  switch (record.op_type()) {
+    case CREATE: {
+      if (!AddLogBlockUnlocked(container, block_id,
+                               record.offset(), record.length())) {
+        LOG(FATAL) << "Found already existent block record: "
+                   << record.DebugString();
+      }
+
+      VLOG(2) << Substitute("Found CREATE block $0 at offset $1 with length $2",
+                            block_id.ToString(),
+                            record.offset(), record.length());
+
+      // This block must be included in the container's logical size, even if
+      // it has since been deleted. This helps satisfy one of our invariants:
+      // once a container byte range has been used, it may never be reused in
+      // the future.
+      //
+      // If we ignored deleted blocks, we would end up reusing the space
+      // belonging to the last deleted block in the container.
+      container->UpdateBytesWritten(record.length());
+      break;
+    }
+    case DELETE:
+      if (!RemoveLogBlockUnlocked(block_id)) {
+        LOG(FATAL) << "Found already non-existent block record: "
+                   << record.DebugString();
+      }
+      VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
+      break;
+    default:
+      LOG(FATAL) << "Found unknown op type in block record: "
+                 << record.DebugString();
+  }
 }
 
 } // namespace fs

@@ -190,14 +190,31 @@ class LogBlockManager : public BlockManager {
   //
   // Returns success if the LogBlock was successfully added, failure if it
   // was already present.
-  bool AddLogBlock(internal::LogBlockContainer* container, const BlockId& block_id,
-                   int64_t offset, int64_t length);
+  bool AddLogBlock(internal::LogBlockContainer* container,
+                   const BlockId& block_id,
+                   int64_t offset,
+                   int64_t length);
+
+  // Unlocked variant of AddLogblock(); must hold 'lock_'.
+  bool AddLogBlockUnlocked(internal::LogBlockContainer* container,
+                           const BlockId& block_id,
+                           int64_t offset,
+                           int64_t length);
 
   // Removes a LogBlock from in-memory data structures.
   //
   // Returns the LogBlock if it was successfully removed, NULL if it was
   // already gone.
   scoped_refptr<internal::LogBlock> RemoveLogBlock(const BlockId& block_id);
+
+  // Unlocked variant of RemoveLogBlock(); must hold 'lock_'.
+  scoped_refptr<internal::LogBlock> RemoveLogBlockUnlocked(const BlockId& block_id);
+
+  // Parse a block record and use it to update in-memory maps.
+  //
+  // Must be called with 'lock_' held.
+  void ProcessBlockRecordUnlocked(internal::LogBlockContainer* container,
+                                  const BlockRecordPB& record);
 
   // Open a particular root path belonging to the block manager.
   //
