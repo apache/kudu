@@ -23,7 +23,7 @@ target_link_libraries(tpch_real_world
   ${KUDU_TEST_LINK_LIBS})
 
 # ms3_demo
-add_executable(ms3_demo tpch/ms3_demo.cc tpch/rpc_line_item_dao.cc)
+add_executable(ms3_demo tpch/ms3_demo.cc)
 target_link_libraries(ms3_demo
   kudu_client
   tpch

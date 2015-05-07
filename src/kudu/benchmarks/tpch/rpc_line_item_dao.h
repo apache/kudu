@@ -22,8 +22,11 @@ namespace kudu {
 
 class RpcLineItemDAO {
  public:
-  RpcLineItemDAO(const std::string& master_address, const std::string& table_name,
-                 const int batch_size, const int mstimeout = 5000);
+  RpcLineItemDAO(const std::string& master_address,
+                 const std::string& table_name,
+                 int batch_size,
+                 int mstimeout = 5000,
+                 const std::vector<std::string>& tablet_splits = std::vector<std::string>());
   ~RpcLineItemDAO();
   void WriteLine(boost::function<void(KuduPartialRow*)> f);
   void MutateLine(boost::function<void(KuduPartialRow*)> f);
@@ -42,6 +45,8 @@ class RpcLineItemDAO {
   bool IsTableEmpty();
 
  private:
+  static const Slice kScanUpperBound;
+
   void FlushIfBufferFull();
 
   simple_spinlock lock_;
@@ -56,6 +61,7 @@ class RpcLineItemDAO {
   const std::string table_name_;
   const MonoDelta timeout_;
   const int batch_max_;
+  const std::vector<std::string> tablet_splits_;
   int batch_size_;
 
   // Semaphore which restricts us to one batch at a time.

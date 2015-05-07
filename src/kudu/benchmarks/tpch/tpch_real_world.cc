@@ -35,7 +35,8 @@
 #include "kudu/benchmarks/tpch/line_item_tsv_importer.h"
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
-#include "kudu/gutil/mathlimits.h"
+#include "kudu/client/encoded_key.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
@@ -45,11 +46,8 @@
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/path_util.h"
-#include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
-#include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
 DEFINE_bool(tpch_use_mini_cluster, true,
@@ -63,6 +61,11 @@ DEFINE_int32(tpch_test_client_timeout_msec, 10000,
 DEFINE_int32(tpch_test_runtime_sec, 0,
              "How long this test should run for excluding startup time (note that it will also "
              "stop if dbgen finished generating all its data)");
+DEFINE_int32(tpch_scaling_factor, 1,
+             "Scaling factor to use with dbgen, the default is 1");
+DEFINE_int32(tpch_num_inserters, 1,
+             "Number of data inserters to run in parallel. Each inserter implies a new tablet "
+             "in the table");
 DEFINE_string(tpch_master_addresses, "localhost",
               "Addresses of masters for the cluster to operate on if not using a mini cluster");
 DEFINE_string(tpch_mini_cluster_base_dir, "/tmp/tpch",
@@ -72,48 +75,64 @@ DEFINE_string(tpch_path_to_dbgen_dir, ".",
 DEFINE_string(tpch_path_to_ts_flags_file, "",
               "Path to the file that contains extra flags for the tablet servers if using "
               "a mini cluster. Doesn't use one by default.");
-DEFINE_string(tpch_scaling_factor, "1",
-             "Scaling factor to use with dbgen, the default is 1");
 DEFINE_string(tpch_table_name, "tpch_real_world",
               "Table name to use during the test");
 
 namespace kudu {
 
-using client::KuduColumnRangePredicate;
-using client::KuduColumnSchema;
+using client::KuduEncodedKey;
+using client::KuduEncodedKeyBuilder;
 using client::KuduRowResult;
 using client::KuduSchema;
 using strings::Substitute;
 
 class TpchRealWorld {
  public:
-  TpchRealWorld() : rows_inserted_(0), stop_threads_(false) {}
+  TpchRealWorld()
+    : rows_inserted_(0),
+      stop_threads_(false),
+      dbgen_processes_finished_(FLAGS_tpch_num_inserters) {
+  }
+
+  ~TpchRealWorld() {
+    STLDeleteElements(&dbgen_processes_);
+  }
 
   Status Init();
 
   gscoped_ptr<RpcLineItemDAO> GetInittedDAO();
 
-  void LoadLineItemsThread();
+  void LoadLineItemsThread(int i);
 
-  void MonitorDbgenThread();
+  void MonitorDbgenThread(int i);
 
   void RunQueriesThread();
 
-  Status WaitForRowCount(int64_t row_count);
+  void WaitForRowCount(int64_t row_count);
 
   Status Run();
 
  private:
-  Status CreateFifoFile();
-  Status StartDbgen();
+  static const char* kLineItemBase;
+
+  Status CreateFifos();
+  Status StartDbgens();
+  string GetNthLineItemFileName(int i) const {
+    // This is dbgen's naming convention; we're just following it.
+    return FLAGS_tpch_num_inserters > 1
+        ? Substitute("$0.$1", kLineItemBase, i + 1) : kLineItemBase;
+  }
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
   AtomicInt<int64_t> rows_inserted_;
   string master_addresses_;
   AtomicBool stop_threads_;
-  string path_to_lineitem_;
-  gscoped_ptr<Subprocess> dbgen_proc;
+  CountDownLatch dbgen_processes_finished_;
+
+  vector<Subprocess*> dbgen_processes_;
 };
+
+const char* TpchRealWorld::kLineItemBase = "lineitem.tbl";
 
 Status TpchRealWorld::Init() {
   Env* env = Env::Default();
@@ -137,70 +156,109 @@ Status TpchRealWorld::Init() {
     master_addresses_ = FLAGS_tpch_master_addresses;
   }
 
-  RETURN_NOT_OK(CreateFifoFile());
-  RETURN_NOT_OK(StartDbgen());
+  // Create the table before any other DAOs are constructed.
+  GetInittedDAO();
+
+  RETURN_NOT_OK(CreateFifos());
+  RETURN_NOT_OK(StartDbgens());
 
   return Status::OK();
 }
 
-Status TpchRealWorld::CreateFifoFile() {
-  path_to_lineitem_ = "./lineitem.tbl";
-  struct stat sbuf;
-  if (stat(path_to_lineitem_.c_str(), &sbuf) != 0) {
-    if (errno == ENOENT) {
-      if (mkfifo(path_to_lineitem_.c_str(), 0644) != 0) {
-        string msg = Substitute("Could not create the named pipe for the dbgen output at $0",
-                                path_to_lineitem_);
-        return Status::InvalidArgument(msg);
+Status TpchRealWorld::CreateFifos() {
+  for (int i = 0; i < FLAGS_tpch_num_inserters; i++) {
+    string path_to_lineitem = GetNthLineItemFileName(i);
+    struct stat sbuf;
+    if (stat(path_to_lineitem.c_str(), &sbuf) != 0) {
+      if (errno == ENOENT) {
+        if (mkfifo(path_to_lineitem.c_str(), 0644) != 0) {
+          string msg = Substitute("Could not create the named pipe for the dbgen output at $0",
+                                  path_to_lineitem);
+          return Status::InvalidArgument(msg);
+        }
+      } else {
+        return Status::IOError(path_to_lineitem, ErrnoToString(errno), errno);
       }
     } else {
-      return Status::IOError(path_to_lineitem_, ErrnoToString(errno), errno);
+      if (!S_ISFIFO(sbuf.st_mode)) {
+        string msg = Substitute("Please remove the current lineitem file at $0",
+                                path_to_lineitem);
+        return Status::InvalidArgument(msg);
+      }
     }
-  } else {
-    if (!S_ISFIFO(sbuf.st_mode)) {
-      string msg = Substitute("Please remove the current lineitem file at $0",
-                              path_to_lineitem_);
-      return Status::InvalidArgument(msg);
-    }
+    // We get here if the file was already a fifo or if we created it.
   }
-  // We get here if the file was already a fifo or if we created it.
   return Status::OK();
 }
 
-Status TpchRealWorld::StartDbgen() {
-  // This environment variable is necessary if dbgen isn't in the current dir.
-  setenv("DSS_CONFIG", FLAGS_tpch_path_to_dbgen_dir.c_str(), 1);
-  string path_to_dbgen = Substitute("$0/dbgen", FLAGS_tpch_path_to_dbgen_dir);
-  vector<string> argv;
-  argv.push_back(path_to_dbgen);
-  argv.push_back("-T");
-  argv.push_back("L");
-  argv.push_back("-s");
-  argv.push_back(FLAGS_tpch_scaling_factor);
-  dbgen_proc.reset(new Subprocess(path_to_dbgen, argv));
-
-  LOG(INFO) << "Running " << path_to_dbgen << "\n" << JoinStrings(argv, "\n");
-  RETURN_NOT_OK(dbgen_proc->Start());
+Status TpchRealWorld::StartDbgens() {
+  for (int i = 1; i <= FLAGS_tpch_num_inserters; i++) {
+    // This environment variable is necessary if dbgen isn't in the current dir.
+    setenv("DSS_CONFIG", FLAGS_tpch_path_to_dbgen_dir.c_str(), 1);
+    string path_to_dbgen = Substitute("$0/dbgen", FLAGS_tpch_path_to_dbgen_dir);
+    vector<string> argv;
+    argv.push_back(path_to_dbgen);
+    argv.push_back("-q");
+    argv.push_back("-T");
+    argv.push_back("L");
+    argv.push_back("-s");
+    argv.push_back(Substitute("$0", FLAGS_tpch_scaling_factor));
+    if (FLAGS_tpch_num_inserters > 1) {
+      argv.push_back("-C");
+      argv.push_back(Substitute("$0", FLAGS_tpch_num_inserters));
+      argv.push_back("-S");
+      argv.push_back(Substitute("$0", i));
+    }
+    gscoped_ptr<Subprocess> dbgen_proc(new Subprocess(path_to_dbgen, argv));
+    LOG(INFO) << "Running " << JoinStrings(argv, " ");
+    RETURN_NOT_OK(dbgen_proc->Start());
+    dbgen_processes_.push_back(dbgen_proc.release());
+  }
   return Status::OK();
 }
 
 gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
+  // When chunking, dbgen will begin the nth chunk on the order key:
+  //
+  //   6000000 * SF * n / num_chunks
+  //
+  // For example, when run with SF=2 and three chunks, the first keys for each
+  // chunk are 1, 4000001, and 8000001.
+  int64_t increment = 6000000L * FLAGS_tpch_scaling_factor /
+      FLAGS_tpch_num_inserters;
+
+  KuduSchema schema(tpch::CreateLineItemSchema());
+  KuduEncodedKeyBuilder key_builder(schema);
+  gscoped_ptr<KuduEncodedKey> key;
+  vector<string> split_keys;
+  for (int64_t i = 1; i < FLAGS_tpch_num_inserters; i++) {
+    int64_t order_key = i * increment;
+    int32_t line_number = 0;
+    key_builder.Reset();
+    key_builder.AddColumnKey(&order_key);
+    key_builder.AddColumnKey(&line_number);
+    key.reset(key_builder.BuildEncodedKey());
+    split_keys.push_back(key->ToString());
+  }
+
   gscoped_ptr<RpcLineItemDAO> dao(new RpcLineItemDAO(master_addresses_,
                                                      FLAGS_tpch_table_name,
                                                      FLAGS_tpch_max_batch_size,
-                                                     FLAGS_tpch_test_client_timeout_msec));
+                                                     FLAGS_tpch_test_client_timeout_msec,
+                                                     split_keys));
   dao->Init();
   return dao.Pass();
 }
 
-void TpchRealWorld::LoadLineItemsThread() {
+void TpchRealWorld::LoadLineItemsThread(int i) {
   LOG(INFO) << "Connecting to cluster at " << master_addresses_;
   gscoped_ptr<RpcLineItemDAO> dao = GetInittedDAO();
-  LineItemTsvImporter importer(path_to_lineitem_);
+  LineItemTsvImporter importer(GetNthLineItemFileName(i));
 
+  boost::function<void(KuduPartialRow*)> f =
+      boost::bind(&LineItemTsvImporter::GetNextLine, &importer, _1);
   while (importer.HasNextLine() && !stop_threads_.Load()) {
-    dao->WriteLine(boost::bind(&LineItemTsvImporter::GetNextLine,
-                               &importer, _1));
+    dao->WriteLine(f);
     int64_t current_count = rows_inserted_.Increment();
     if (current_count % 250000 == 0) {
       LOG(INFO) << "Inserted " << current_count << " rows";
@@ -209,14 +267,15 @@ void TpchRealWorld::LoadLineItemsThread() {
   dao->FinishWriting();
 }
 
-void TpchRealWorld::MonitorDbgenThread() {
-
+void TpchRealWorld::MonitorDbgenThread(int i) {
+  Subprocess* dbgen_proc = dbgen_processes_[i];
   while (!stop_threads_.Load()) {
     int ret;
     Status s = dbgen_proc->WaitNoBlock(&ret);
     if (s.ok()) {
       CHECK(ret == 0) << "dbgen exited with a non-zero return code: " << ret;
       LOG(INFO) << "dbgen finished inserting data";
+      dbgen_processes_finished_.CountDown();
       return;
     } else {
       SleepFor(MonoDelta::FromMilliseconds(100));
@@ -242,51 +301,48 @@ void TpchRealWorld::RunQueriesThread() {
   }
 }
 
-Status TpchRealWorld::WaitForRowCount(int64_t row_count) {
+void TpchRealWorld::WaitForRowCount(int64_t row_count) {
   while (rows_inserted_.Load() < row_count) {
     SleepFor(MonoDelta::FromMilliseconds(100));
   }
-  return Status::OK();
 }
 
 Status TpchRealWorld::Run() {
-  std::vector<scoped_refptr<Thread> > threads;
-  scoped_refptr<kudu::Thread> dbgen_thread;
-  RETURN_NOT_OK(kudu::Thread::Create("test", "lineitem-generator",
-                                     &TpchRealWorld::MonitorDbgenThread, this,
-                                     &dbgen_thread));
-
-  scoped_refptr<kudu::Thread> load_items_thread;
-  RETURN_NOT_OK(kudu::Thread::Create("test", "lineitem-loader",
-                                     &TpchRealWorld::LoadLineItemsThread, this,
-                                     &load_items_thread));
-  threads.push_back(load_items_thread);
+  vector<scoped_refptr<Thread> > threads;
+  for (int i = 0; i < FLAGS_tpch_num_inserters; i++) {
+    scoped_refptr<kudu::Thread> thr;
+    RETURN_NOT_OK(kudu::Thread::Create("test", Substitute("lineitem-gen$0", i),
+                                       &TpchRealWorld::MonitorDbgenThread, this, i,
+                                       &thr));
+    threads.push_back(thr);
+    RETURN_NOT_OK(kudu::Thread::Create("test", Substitute("lineitem-load$0", i),
+                                       &TpchRealWorld::LoadLineItemsThread, this, i,
+                                       &thr));
+    threads.push_back(thr);
+  }
 
   // It takes some time for dbgen to start outputting rows so there's no need to query yet.
   LOG(INFO) << "Waiting for dbgen to start...";
-  RETURN_NOT_OK(WaitForRowCount(10000));
+  WaitForRowCount(10000);
 
   if (FLAGS_tpch_run_queries) {
-    scoped_refptr<kudu::Thread> tpch1_thread;
-    RETURN_NOT_OK(kudu::Thread::Create("test", "tpch1-runner",
+    scoped_refptr<kudu::Thread> thr;
+    RETURN_NOT_OK(kudu::Thread::Create("test", "lineitem-query",
                                        &TpchRealWorld::RunQueriesThread, this,
-                                       &tpch1_thread));
-    threads.push_back(tpch1_thread);
+                                       &thr));
+    threads.push_back(thr);
   }
 
-  // We'll wait until dbgen finishes or after tpch_test_runtime_sec, whichever comes first.
-  int runtime_ms = FLAGS_tpch_test_runtime_sec * 1000;
-  ThreadJoiner tj(dbgen_thread.get());
-  if (runtime_ms > 0) {
-    tj.give_up_after_ms(runtime_ms).warn_after_ms(runtime_ms);
+  // We'll wait until all the dbgens finish or after tpch_test_runtime_sec,
+  // whichever comes first.
+  if (FLAGS_tpch_test_runtime_sec > 0) {
+    if (!dbgen_processes_finished_.WaitFor(
+        MonoDelta::FromSeconds(FLAGS_tpch_test_runtime_sec))) {
+      LOG(WARNING) << FLAGS_tpch_test_runtime_sec
+                   << " seconds expired, killing test";
+    }
   } else {
-    tj.warn_after_ms(MathLimits<int>::kMax);
-  }
-  Status s = tj.Join();
-
-  if (!s.ok()) {
-    // Likely we gave up at this point, so we'll need to join with this thread.
-    threads.push_back(dbgen_thread);
+    dbgen_processes_finished_.Wait();
   }
 
   stop_threads_.Store(true);

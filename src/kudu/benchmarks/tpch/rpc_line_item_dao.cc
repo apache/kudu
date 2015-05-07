@@ -10,6 +10,7 @@
 
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/client/client.h"
+#include "kudu/client/encoded_key.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/write_op.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -31,6 +32,8 @@ using client::KuduInsert;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnRangePredicate;
+using client::KuduEncodedKey;
+using client::KuduEncodedKeyBuilder;
 using client::KuduError;
 using client::KuduRowResult;
 using client::KuduScanner;
@@ -83,6 +86,8 @@ class FlushCallback : public RefCountedThreadSafe<FlushCallback> {
 
 } // anonymous namespace
 
+const Slice RpcLineItemDAO::kScanUpperBound = Slice("1998-09-02");
+
 void RpcLineItemDAO::Init() {
   const KuduSchema schema = tpch::CreateLineItemSchema();
 
@@ -95,6 +100,7 @@ void RpcLineItemDAO::Init() {
     CHECK_OK(client_->NewTableCreator()
              ->table_name(table_name_)
              .schema(&schema)
+             .split_keys(tablet_splits_)
              .Create());
     CHECK_OK(client_->OpenTable(table_name_, &client_table_));
   } else {
@@ -133,9 +139,9 @@ void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
 }
 
 void RpcLineItemDAO::FinishWriting() {
-  semaphore_.Acquire();
-  CHECK_OK(session_->Flush());
-  semaphore_.Release();
+  scoped_refptr<FlushCallback> cb(new FlushCallback(session_, &semaphore_));
+  Status s = session_->Flush();
+  cb->StatusCB(s);
 }
 
 void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
@@ -154,9 +160,8 @@ void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
 
 void RpcLineItemDAO::OpenTpch1Scanner() {
   KuduSchema schema(tpch::CreateTpch1QuerySchema());
-  Slice date("1998-09-02");
   vector<KuduColumnRangePredicate> preds;
-  KuduColumnRangePredicate pred1(schema.Column(0), NULL, &date);
+  KuduColumnRangePredicate pred1(schema.Column(0), NULL, &kScanUpperBound);
   preds.push_back(pred1);
   OpenScanner(schema, preds);
 }
@@ -187,11 +192,14 @@ RpcLineItemDAO::~RpcLineItemDAO() {
 
 RpcLineItemDAO::RpcLineItemDAO(const string& master_address,
                                const string& table_name,
-                               const int batch_size,
-                               const int mstimeout)
-  : master_address_(master_address), table_name_(table_name),
+                               int batch_size,
+                               int mstimeout,
+                               const vector<string>& tablet_splits)
+  : master_address_(master_address),
+    table_name_(table_name),
     timeout_(MonoDelta::FromMilliseconds(mstimeout)),
     batch_max_(batch_size),
+    tablet_splits_(tablet_splits),
     batch_size_(0),
     semaphore_(1) {
 }
