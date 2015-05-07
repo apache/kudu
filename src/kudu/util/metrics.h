@@ -46,6 +46,11 @@
 // example above, a tablet entity uses its tablet ID as its unique identifier. These
 // identifiers are exposed to the operator and surfaced in monitoring tools.
 //
+// MetricEntity instances may also carry a key-value map of string attributes. These
+// attributes are directly exposed to monitoring systems via the JSON output. Monitoring
+// systems may use this information to allow hierarchical aggregation beteween entities,
+// display them to the user, etc.
+//
 // Metric instances
 // ----------------
 // Given a MetricEntity instance and a Metric Prototype, one can instantiate a Metric
@@ -171,6 +176,10 @@
 //     {
 //         "type": "tablet",
 //         "id": "e95e57ba8d4d48458e7c7d35020d4a46",
+//         "attributes": {
+//           "table_id": "12345",
+//           "table_name": "my_table"
+//         },
 //         "metrics": [
 //             {
 //                 "type": "counter",
@@ -367,8 +376,19 @@ class MetricEntityPrototype {
 
   const char* name() const { return name_; }
 
-  scoped_refptr<MetricEntity> Instantiate(MetricRegistry* registry,
-                                          const std::string& id) const;
+  // Find or create an entity with the given ID within the provided 'registry'.
+  scoped_refptr<MetricEntity> Instantiate(
+      MetricRegistry* registry,
+      const std::string& id) const {
+    return Instantiate(registry, id, std::tr1::unordered_map<std::string, std::string>());
+  }
+
+  // If the entity already exists, then 'initial_attrs' will replace all existing
+  // attributes.
+  scoped_refptr<MetricEntity> Instantiate(
+      MetricRegistry* registry,
+      const std::string& id,
+      const std::tr1::unordered_map<std::string, std::string>& initial_attrs) const;
 
  private:
   const char* const name_;
@@ -379,6 +399,7 @@ class MetricEntityPrototype {
 class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
  public:
   typedef std::tr1::unordered_map<const MetricPrototype*, scoped_refptr<Metric> > MetricMap;
+  typedef std::tr1::unordered_map<std::string, std::string> AttributeMap;
 
   scoped_refptr<Counter> FindOrCreateCounter(const CounterPrototype* proto);
   scoped_refptr<Histogram> FindOrCreateHistogram(const HistogramPrototype* proto);
@@ -416,12 +437,20 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   // at least FLAGS_metrics_retirement_age_ms milliseconds.
   void RetireOldMetrics();
 
+  // Replaces all attributes for this entity.
+  // Any attributes currently set, but not in 'attrs', are removed.
+  void SetAttributes(const AttributeMap& attrs);
+
+  // Set a particular attribute. Replaces any current value.
+  void SetAttribute(const std::string& key, const std::string& val);
+
  private:
   friend class MetricRegistry;
   friend class RefCountedThreadSafe<MetricEntity>;
 
   MetricEntity(const MetricEntityPrototype* prototype,
-               const std::string& id);
+               const std::string& id,
+               const AttributeMap& attributes);
   ~MetricEntity();
 
   // Ensure that the given metric prototype is allowed to be instantiated
@@ -433,9 +462,14 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   const std::string id_;
 
   mutable simple_spinlock lock_;
+
+  // Map from metric name to Metric object. Protected by lock_.
   MetricMap metric_map_;
 
-  // The set of metrics which should never be retired.
+  // The key/value attributes. Protected by lock_
+  AttributeMap attributes_;
+
+  // The set of metrics which should never be retired. Protected by lock_.
   std::vector<scoped_refptr<Metric> > never_retire_metrics_;
 };
 
@@ -476,7 +510,8 @@ class MetricRegistry {
   ~MetricRegistry();
 
   scoped_refptr<MetricEntity> FindOrCreateEntity(const MetricEntityPrototype* prototype,
-                                                 const std::string& id);
+                                                 const std::string& id,
+                                                 const MetricEntity::AttributeMap& initial_attrs);
 
   // Writes metrics in this registry to 'writer'.
   //

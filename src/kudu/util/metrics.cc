@@ -124,8 +124,9 @@ MetricEntityPrototype::~MetricEntityPrototype() {
 
 scoped_refptr<MetricEntity> MetricEntityPrototype::Instantiate(
     MetricRegistry* registry,
-    const std::string& id) const {
-  return registry->FindOrCreateEntity(this, id);
+    const std::string& id,
+    const MetricEntity::AttributeMap& initial_attrs) const {
+  return registry->FindOrCreateEntity(this, id, initial_attrs);
 }
 
 
@@ -134,9 +135,11 @@ scoped_refptr<MetricEntity> MetricEntityPrototype::Instantiate(
 //
 
 MetricEntity::MetricEntity(const MetricEntityPrototype* prototype,
-                           const std::string& id)
+                           const std::string& id,
+                           const AttributeMap& attributes)
   : prototype_(prototype),
-    id_(id) {
+    id_(id),
+    attributes_(attributes) {
 }
 
 MetricEntity::~MetricEntity() {
@@ -179,9 +182,11 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
   // We want the keys to be in alphabetical order when printing, so we use an ordered map here.
   typedef std::map<const char*, scoped_refptr<Metric> > OrderedMetricMap;
   OrderedMetricMap metrics;
+  AttributeMap attrs;
   {
     // Snapshot the metrics in this registry (not guaranteed to be a consistent snapshot)
     lock_guard<simple_spinlock> l(&lock_);
+    attrs = attributes_;
     BOOST_FOREACH(const MetricMap::value_type& val, metric_map_) {
       const MetricPrototype* prototype = val.first;
       const scoped_refptr<Metric>& metric = val.second;
@@ -199,6 +204,14 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
 
   writer->String("id");
   writer->String(id_);
+
+  writer->String("attributes");
+  writer->StartObject();
+  BOOST_FOREACH(const AttributeMap::value_type& val, attrs) {
+    writer->String(val.first);
+    writer->String(val.second);
+  }
+  writer->EndObject();
 
   writer->String("metrics");
   writer->StartArray();
@@ -264,6 +277,16 @@ void MetricEntity::RetireOldMetrics() {
 void MetricEntity::NeverRetire(const scoped_refptr<Metric>& metric) {
   lock_guard<simple_spinlock> l(&lock_);
   never_retire_metrics_.push_back(metric);
+}
+
+void MetricEntity::SetAttributes(const AttributeMap& attrs) {
+  lock_guard<simple_spinlock> l(&lock_);
+  attributes_ = attrs;
+}
+
+void MetricEntity::SetAttribute(const string& key, const string& val) {
+  lock_guard<simple_spinlock> l(&lock_);
+  attributes_[key] = val;
 }
 
 //
@@ -411,12 +434,15 @@ FunctionGaugeDetacher::~FunctionGaugeDetacher() {
 
 scoped_refptr<MetricEntity> MetricRegistry::FindOrCreateEntity(
     const MetricEntityPrototype* prototype,
-    const std::string& id) {
+    const std::string& id,
+    const MetricEntity::AttributeMap& initial_attributes) {
   lock_guard<simple_spinlock> l(&lock_);
   scoped_refptr<MetricEntity> e = FindPtrOrNull(entities_, id);
   if (!e) {
-    e = new MetricEntity(prototype, id);
+    e = new MetricEntity(prototype, id, initial_attributes);
     InsertOrDie(&entities_, id, e);
+  } else {
+    e->SetAttributes(initial_attributes);
   }
   return e;
 }

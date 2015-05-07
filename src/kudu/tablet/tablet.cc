@@ -122,7 +122,13 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
   compaction_policy_.reset(CreateCompactionPolicy());
 
   if (metric_registry) {
-    metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry, tablet_id());
+    MetricEntity::AttributeMap attrs;
+    // TODO(KUDU-745): table_id is apparently not set in the metadata.
+    attrs["table_id"] = metadata_->table_id();
+    attrs["table_name"] = metadata_->table_name();
+    attrs["start_key"] = schema_->DebugEncodedRowKey(metadata_->start_key(), Schema::START_KEY);
+    attrs["end_key"] = schema_->DebugEncodedRowKey(metadata_->end_key(), Schema::END_KEY);
+    metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry, tablet_id(), attrs);
     metrics_.reset(new TabletMetrics(metric_entity_));
     METRIC_memrowset_size.InstantiateFunctionGauge(
       metric_entity_, Bind(&Tablet::MemRowSetSize, Unretained(this)))
@@ -654,6 +660,9 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
     metadata_->SetSchema(*schema_, tx_state->schema_version());
     if (tx_state->has_new_table_name()) {
       metadata_->SetTableName(tx_state->new_table_name());
+      if (metric_entity_) {
+        metric_entity_->SetAttribute("table_name", tx_state->new_table_name());
+      }
     }
 
     // If the current schema and the new one are equal, there is nothing to do.

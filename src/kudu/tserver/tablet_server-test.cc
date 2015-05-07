@@ -162,6 +162,10 @@ TEST_F(TabletServerTest, TestWebPages) {
     // Check that the tablet entry shows up.
     ASSERT_STR_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
     ASSERT_STR_CONTAINS(buf.ToString(), "\"id\": \"TestTablet\"");
+    ASSERT_STR_CONTAINS(buf.ToString(), "\"start_key\": \"<start of table>\"");
+
+    // Check entity attributes.
+    ASSERT_STR_CONTAINS(buf.ToString(), "\"table_name\": \"TestTable\"");
 
     // Check for the existence of some particular metrics for which we've had early-retirement
     // bugs in the past.

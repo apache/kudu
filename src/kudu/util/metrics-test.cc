@@ -146,6 +146,7 @@ TEST_F(MetricsTest, SimpleHistogramTest) {
 TEST_F(MetricsTest, JsonPrintTest) {
   scoped_refptr<Counter> bytes_seen = METRIC_reqs_pending.Instantiate(entity_);
   bytes_seen->Increment();
+  entity_->SetAttribute("test_attr", "attr_val");
 
   // Generate the JSON.
   std::stringstream out;
@@ -159,6 +160,7 @@ TEST_F(MetricsTest, JsonPrintTest) {
   // class overloads both operator[int] and operator[char*] and 0 == NULL.
   ASSERT_EQ(string("reqs_pending"), string(d["metrics"][0u]["name"].GetString()));
   ASSERT_EQ(1L, d["metrics"][0u]["value"].GetInt64());
+  ASSERT_EQ(string("attr_val"), string(d["attributes"]["test_attr"].GetString()));
 }
 
 // Test that metrics are retired when they are no longer referenced.
