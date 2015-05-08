@@ -37,7 +37,14 @@
       "pluralLabel" : "Masters",
       "startRunner" : {
         "program" : "scripts/kudu.sh",
-        "args" : ["master", "${log_dir}", "./master.properties", "${default_num_replicas}"]
+        "args" : [
+          "master",
+          "${log_dir}",
+          "${kudu_master_waldir}",
+          "${kudu_master_datadirs}",
+          "./master.properties",
+          "${default_num_replicas}"
+        ]
       },
       "logging" : {
         "dir" : "/var/log/kudu",
@@ -77,6 +84,24 @@
           "min" : "1",
           "softMin" : "3",
           "default" : "3"
+        },
+        {
+          "name" : "kudu_master_waldir",
+          "label" : "Kudu Master WAL directory",
+          "description" : "Directory where Kudu masters will store write-ahead logs",
+          "required" : "true",
+          "configurableInWizard" : true,
+          "type" : "path",
+          "pathType" : "localDataDir"
+        },
+        {
+          "name" : "kudu_master_datadirs",
+          "label" : "Kudu Master data directories",
+          "description" : "Directories where Kudu mastrs will store data blocks",
+          "required" : "true",
+          "configurableInWizard" : true,
+          "type" : "path_array",
+          "pathType" : "localDataDir"
         }
       ],
       "configWriter" : {
@@ -85,6 +110,11 @@
             "filename" : "master.properties",
             "params" : [ "master_address" ],
             "roleName" : "KUDU_MASTER"
+          }
+        ],
+        "auxConfigGenerators" : [
+          {
+            "filename" : "kudu-master.gflags"
           }
         ]
       }
@@ -95,7 +125,13 @@
       "pluralLabel" : "Tablet Servers",
       "startRunner" : {
         "program" : "scripts/kudu.sh",
-        "args" : ["tserver", "${log_dir}", "./master.properties"]
+        "args" : [
+          "tserver",
+          "${log_dir}",
+          "${kudu_ts_waldir}",
+          "${kudu_ts_datadirs}",
+          "./master.properties"
+        ]
       },
       "logging" : {
         "dir" : "/var/log/kudu",
@@ -116,6 +152,24 @@
           "type" : "port",
           "required" : "true",
           "default" : 8050
+        },
+        {
+          "name" : "kudu_ts_waldir",
+          "label" : "Kudu Tablet Server WAL directory",
+          "description" : "Directory where Kudu tablet servers will store write-ahead logs",
+          "required" : "true",
+          "configurableInWizard" : true,
+          "type" : "path",
+          "pathType" : "localDataDir"
+        },
+        {
+          "name" : "kudu_ts_datadirs",
+          "label" : "Kudu Tablet Server data directories",
+          "description" : "Directories where Kudu tablet servers will store data blocks",
+          "required" : "true",
+          "configurableInWizard" : true,
+          "type" : "path_array",
+          "pathType" : "localDataDir"
         }
       ],
       "configWriter" : {
@@ -124,6 +178,11 @@
             "filename" : "master.properties",
             "params" : [ "master_address" ],
             "roleName" : "KUDU_MASTER"
+          }
+        ],
+        "auxConfigGenerators" : [
+          {
+            "filename" : "kudu-ts.gflags"
           }
         ]
       },

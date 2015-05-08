@@ -27,14 +27,18 @@ export KUDU_HOME=${KUDU_HOME:-/usr/lib/kudu}
 
 CMD=$1
 LOG_DIR=$2
-MASTER_FILE=$CONF_DIR/$3
-DEFAULT_NUM_REPLICAS=$4
+WAL_DIR=$3
+DATA_DIRS=$4
+MASTER_FILE=$CONF_DIR/$5
+DEFAULT_NUM_REPLICAS=$6
 shift 2
 
 echo "KUDU_HOME: $KUDU_HOME"
 echo "CONF_DIR: $CONF_DIR"
 echo "CMD: $CMD"
 echo "LOG_DIR: $LOG_DIR"
+echo "WAL_DIR: $WAL_DIR"
+echo "DATA_DIRS: $DATA_DIRS"
 echo "MASTER_FILE: $MASTER_FILE"
 echo "DEFAULT_NUM_REPLICAS: $DEFAULT_NUM_REPLICAS"
 
@@ -87,11 +91,17 @@ if [ "$CMD" = "master" ]; then
   exec "$KUDU_HOME/bin/kudu-master" \
     --log_dir="$LOG_DIR" \
     $MASTER_QUORUM \
-    --default_num_replicas=$DEFAULT_NUM_REPLICAS
+    --default_num_replicas=$DEFAULT_NUM_REPLICAS \
+    --master_wal_dir="$WAL_DIR" \
+    --master_data_dirs="$DATA_DIRS" \
+    --flagfile="$CONF_DIR"/kudu-master.gflags
 elif [ "$CMD" = "tserver" ]; then
   exec "$KUDU_HOME/bin/kudu-tablet_server" \
     --log_dir="$LOG_DIR" \
-    --tablet_server_master_addrs="$MASTER_IPS"
+    --tablet_server_master_addrs="$MASTER_IPS" \
+    --tablet_server_wal_dir="$WAL_DIR" \
+    --tablet_server_data_dirs="$DATA_DIRS" \
+    --flagfile="$CONF_DIR"/kudu-ts.gflags
 else
   log "Unknown command: $CMD"
   exit 2
