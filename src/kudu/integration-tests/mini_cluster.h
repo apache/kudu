@@ -13,6 +13,11 @@
 
 namespace kudu {
 
+namespace client {
+class KuduClient;
+class KuduClientBuilder;
+}
+
 namespace master {
 class MiniMaster;
 class TSDescriptor;
@@ -53,7 +58,7 @@ struct MiniClusterOptions {
 class MiniCluster {
  public:
   MiniCluster(Env* env, const MiniClusterOptions& options);
-   ~MiniCluster();
+  ~MiniCluster();
 
   // Start a cluster with a Master and 'num_tablet_servers' TabletServers.
   // All servers run on the loopback interface with ephemeral ports.
@@ -131,6 +136,15 @@ class MiniCluster {
   Status WaitForTabletServerCount(int count);
   Status WaitForTabletServerCount(int count,
                                   std::vector<std::tr1::shared_ptr<master::TSDescriptor> >* descs);
+
+  // Create a client configured to talk to this cluster. Builder may contain
+  // override options for the client. The master address will be overridden to
+  // talk to the running master. If 'builder' is NULL, default options will be
+  // used.
+  //
+  // REQUIRES: the cluster must have already been Start()ed.
+  Status CreateClient(client::KuduClientBuilder* builder,
+                      std::tr1::shared_ptr<client::KuduClient>* client);
 
  private:
   enum {

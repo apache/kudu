@@ -18,6 +18,7 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/strings/strcat.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/util/stopwatch.h"
@@ -331,26 +332,29 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
     TServerDetails* old_leader;
     CHECK_OK(GetLeaderReplicaWithRetries(tablet_id_, &old_leader));
+    ExternalTabletServer* old_leader_ets = cluster_->tablet_server_by_uuid(old_leader->uuid());
 
     vector<TServerDetails*> followers;
     GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
 
     BOOST_FOREACH(TServerDetails* ts, followers) {
-      CHECK_OK(ts->external_ts->Pause());
+      ExternalTabletServer* ets = cluster_->tablet_server_by_uuid(ts->uuid());
+      CHECK_OK(ets->Pause());
       SleepFor(MonoDelta::FromMilliseconds(100));
     }
 
     // When all are paused also pause or kill the current leader. Since we've waited a bit
     // the old leader is likely to have operations that must be aborted.
     if (kill) {
-      old_leader->external_ts->Shutdown();
+      old_leader_ets->Shutdown();
     } else {
-      CHECK_OK(old_leader->external_ts->Pause());
+      CHECK_OK(old_leader_ets->Pause());
     }
 
     // Resume the replicas.
     BOOST_FOREACH(TServerDetails* ts, followers) {
-      CHECK_OK(ts->external_ts->Resume());
+      ExternalTabletServer* ets = cluster_->tablet_server_by_uuid(ts->uuid());
+      CHECK_OK(ets->Resume());
     }
 
     // Get the new leader.
@@ -359,14 +363,14 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
     // Bring the old leader back.
     if (kill) {
-      CHECK_OK(old_leader->external_ts->Restart());
+      CHECK_OK(old_leader_ets->Restart());
       // Wait until we have the same number of followers.
       int initial_followers = followers.size();
       do {
         GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
       } while (followers.size() < initial_followers);
     } else {
-      CHECK_OK(old_leader->external_ts->Resume());
+      CHECK_OK(old_leader_ets->Resume());
     }
   }
 
@@ -562,7 +566,8 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
 
   // Now shutdown the current leader.
   TServerDetails* leader = DCHECK_NOTNULL(GetLeaderReplicaOrNull(tablet_id_));
-  leader->external_ts->Shutdown();
+  ExternalTabletServer* leader_ets = cluster_->tablet_server_by_uuid(leader->uuid());
+  leader_ets->Shutdown();
 
   TServerDetails* replica = followers.back();
   CHECK_NE(leader->instance_id.permanent_uuid(), replica->instance_id.permanent_uuid());
@@ -577,7 +582,7 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
                              vector<CountDownLatch*>());
 
   // Restart the original replica and make sure they all agree.
-  ASSERT_OK(leader->external_ts->Restart());
+  ASSERT_OK(leader_ets->Restart());
 
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters * 2);
 }
@@ -592,6 +597,7 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
   BuildAndStart(extra_flags);
   TServerDetails* replica = (*tablet_replicas_.begin()).second;
   ASSERT_TRUE(replica != NULL);
+  ExternalTabletServer* replica_ets = cluster_->tablet_server_by_uuid(replica->uuid());
 
   // generate a 128Kb dummy payload
   string test_payload(128 * 1024, '0');
@@ -609,7 +615,7 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
   int key = 0;
 
   // Pause a replica
-  ASSERT_OK(replica->external_ts->Pause());
+  ASSERT_OK(replica_ets->Pause());
   LOG(INFO)<< "Paused one of the replicas, starting to write.";
 
   TServerDetails* leader = NULL;
@@ -629,8 +635,7 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
   }
 
   // Now unpause the replica, the lagging replica should eventually catch back up.
-
-  ASSERT_OK(replica->external_ts->Resume());
+  ASSERT_OK(replica_ets->Resume());
 
   ASSERT_ALL_REPLICAS_AGREE(kNumWrites);
 }
@@ -727,7 +732,7 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
     // propagated to all replicas. We kill the leader anyway.
     if (leaders_killed < kNumLeadersToKill) {
       LOG(INFO) << "Killing current leader " << leader->instance_id.permanent_uuid() << "...";
-      leader->external_ts->Shutdown();
+      cluster_->tablet_server_by_uuid(leader->uuid())->Shutdown();
       InsertOrDie(&killed_leaders, leader);
 
       LOG(INFO) << "Waiting for new guy to be elected leader.";
@@ -737,7 +742,7 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
 
   // Restart every node that was killed, and wait for the nodes to converge
   BOOST_FOREACH(TServerDetails* killed_node, killed_leaders) {
-    ASSERT_OK(killed_node->external_ts->Restart());
+    CHECK_OK(cluster_->tablet_server_by_uuid(killed_node->uuid())->Restart());
   }
   // Verify the data on the remaining replicas.
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * kFinalNumReplicas);
@@ -861,8 +866,8 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
 
   replica_ts = tservers[0];
-  tservers[1]->external_ts->Shutdown();
-  tservers[2]->external_ts->Shutdown();
+  cluster_->tablet_server_by_uuid(tservers[1]->uuid())->Shutdown();
+  cluster_->tablet_server_by_uuid(tservers[2]->uuid())->Shutdown();
 
 
   LOG(INFO) << "================================== Cluster setup complete.";

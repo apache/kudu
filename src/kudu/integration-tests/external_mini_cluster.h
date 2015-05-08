@@ -173,6 +173,9 @@ class ExternalMiniCluster {
     return tablet_servers_[idx].get();
   }
 
+  // Return ExternalTabletServer given its UUID. If not found, returns NULL.
+  ExternalTabletServer* tablet_server_by_uuid(const std::string& uuid) const;
+
   int num_tablet_servers() const {
     return tablet_servers_.size();
   }

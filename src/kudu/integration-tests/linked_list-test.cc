@@ -39,6 +39,7 @@
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
+using kudu::itest::TServerDetails;
 using std::tr1::shared_ptr;
 
 DEFINE_int32(seconds_to_run, 1, "Number of seconds for which to run the test");
@@ -175,7 +176,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     LOG(INFO) << "Will kill the tablet server during verification scan.";
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written,
                                      boost::bind(
-                                         &TabletServerIntegrationTestBase::KillServerWithUUID,
+                                         &TabletServerIntegrationTestBase::ShutdownServerWithUUID,
                                          this, _1)));
     LOG(INFO) << "Done with tserver kill test.";
     ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size()-1));
@@ -189,7 +190,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     EXPECT_OK(GetLeaderReplicaWithRetries(tablet, &leader));
     LOG(INFO) << "Killing TS: " << leader->instance_id.permanent_uuid() << ", leader of tablet: "
         << tablet << " and verifying that we can still read all results";
-    leader->external_ts->Shutdown();
+    ASSERT_OK(ShutdownServerWithUUID(leader->uuid()));
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
     ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size() - 1));
   }
@@ -220,7 +221,7 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
     EXPECT_OK(GetLeaderReplicaWithRetries(tablet, &leader));
     LOG(INFO) << "Killing TS: " << leader->instance_id.permanent_uuid() << ", leader of tablet: "
         << tablet << " and verifying that we can still read all results";
-    leader->external_ts->Shutdown();
+    ASSERT_OK(ShutdownServerWithUUID(leader->uuid()));
     ASSERT_OK(tester_->WaitAndVerify(FLAGS_seconds_to_run, written));
     ASSERT_OK(CheckTabletServersAreAlive(tablet_servers_.size() - 1));
   }

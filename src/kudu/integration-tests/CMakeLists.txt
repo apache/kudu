@@ -2,15 +2,17 @@
 # Confidential Cloudera Information: Covered by NDA.
 
 set(INTEGRATION_TESTS_SRCS
-  mini_cluster.cc
+  cluster_itest_util.cc
   cluster_verifier.cc
   external_mini_cluster.cc
+  mini_cluster.cc
   test_workload.cc
 )
 
 add_library(integration-tests ${INTEGRATION_TESTS_SRCS})
 target_link_libraries(integration-tests
   tserver
+  tserver_test_util
   master
   ksck
   kudu_client

@@ -338,6 +338,15 @@ Status ExternalMiniCluster::GetLeaderMasterIndex(int* idx) {
   return Status::OK();
 }
 
+ExternalTabletServer* ExternalMiniCluster::tablet_server_by_uuid(const std::string& uuid) const {
+  BOOST_FOREACH(const scoped_refptr<ExternalTabletServer>& ts, tablet_servers_) {
+    if (ts->instance_id().permanent_uuid() == uuid) {
+      return ts.get();
+    }
+  }
+  return NULL;
+}
+
 shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
   CHECK_EQ(masters_.size(), 1);
   return master_proxy(0);

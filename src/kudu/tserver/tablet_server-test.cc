@@ -888,8 +888,9 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   ASSERT_FALSE(ShutdownAndRebuildTablet().ok());
 
   // Connect to it.
-  ASSERT_OK(CreateClientProxies(mini_server_->bound_rpc_addr(),
-                                       &proxy_, &admin_proxy_, &consensus_proxy_));
+  CreateTsClientProxies(mini_server_->bound_rpc_addr(),
+                        client_messenger_,
+                        &proxy_, &admin_proxy_, &consensus_proxy_);
 
   WriteRequestPB req;
   req.set_tablet_id(kTabletId);

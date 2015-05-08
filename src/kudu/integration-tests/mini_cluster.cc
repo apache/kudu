@@ -25,6 +25,8 @@ using strings::Substitute;
 
 namespace kudu {
 
+using client::KuduClient;
+using client::KuduClientBuilder;
 using master::MiniMaster;
 using master::TSDescriptor;
 using master::TabletLocationsPB;
@@ -284,6 +286,20 @@ Status MiniCluster::WaitForTabletServerCount(int count,
     SleepFor(MonoDelta::FromMilliseconds(1));
   }
   return Status::TimedOut(Substitute("$0 TS(s) never registered with master", count));
+}
+
+Status MiniCluster::CreateClient(KuduClientBuilder* builder,
+                                 shared_ptr<KuduClient>* client) {
+  KuduClientBuilder default_builder;
+  if (builder == NULL) {
+    builder = &default_builder;
+  }
+  builder->clear_master_server_addrs();
+  BOOST_FOREACH(const shared_ptr<MiniMaster>& master, mini_masters_) {
+    CHECK(master);
+    builder->add_master_server_addr(master->bound_rpc_addr_str());
+  }
+  return builder->Build(client);
 }
 
 } // namespace kudu

@@ -36,7 +36,7 @@ target_link_libraries(tserver_proto
   wire_protocol_proto)
 
 #########################################
-# tserver_admin__proto
+# tserver_admin_proto
 #########################################
 
 KRPC_GENERATE(TSERVER_ADMIN_KRPC_SRCS TSERVER_ADMIN_KRPC_HDRS
@@ -118,10 +118,25 @@ target_link_libraries(kudu-tablet_server
   ${KUDU_BASE_LIBS})
 
 #########################################
+# tserver_test_util
+#########################################
+
+set(TSERVER_TEST_UTIL_SRCS
+  tablet_server_test_util.cc
+)
+
+add_library(tserver_test_util ${TSERVER_TEST_UTIL_SRCS})
+target_link_libraries(tserver_test_util
+  tserver)
+
+#########################################
 # tserver tests
 #########################################
 
-set(KUDU_TEST_LINK_LIBS tserver ${KUDU_MIN_TEST_LIBS})
+set(KUDU_TEST_LINK_LIBS
+  tserver
+  tserver_test_util
+  ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(remote_bootstrap_client-test)
 ADD_KUDU_TEST(remote_bootstrap_session-test)
 ADD_KUDU_TEST(remote_bootstrap_service-test)

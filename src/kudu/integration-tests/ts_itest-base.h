@@ -3,19 +3,15 @@
 #ifndef KUDU_INTEGRATION_TESTS_ITEST_UTIL_H_
 #define KUDU_INTEGRATION_TESTS_ITEST_UTIL_H_
 
-#include <algorithm>
 #include <boost/foreach.hpp>
 #include <glog/stl_logging.h>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "kudu/consensus/consensus.pb.h"
-#include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
-#include "kudu/gutil/strings/strcat.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/tserver/tablet_server-test-base.h"
@@ -35,6 +31,9 @@ namespace tserver {
 
 using consensus::OpId;
 using consensus::QuorumPeerPB;
+using itest::TabletReplicaMap;
+using itest::TabletServerMap;
+using itest::TServerDetails;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::TabletLocationsPB;
@@ -51,24 +50,6 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
  public:
 
   TabletServerIntegrationTestBase() : random_(SeedRandom()) {}
-
-  struct TServerDetails {
-    NodeInstancePB instance_id;
-    master::TSRegistrationPB registration;
-    gscoped_ptr<TabletServerServiceProxy> tserver_proxy;
-    gscoped_ptr<TabletServerAdminServiceProxy> tserver_admin_proxy;
-    gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
-    ExternalTabletServer* external_ts;
-
-    string ToString() const {
-      return Substitute("TabletServer: $0, Rpc address: $1",
-                        instance_id.permanent_uuid(),
-                        registration.rpc_addresses(0).ShortDebugString());
-    }
-  };
-
-  typedef std::tr1::unordered_multimap<string, TServerDetails*> TabletReplicaMap;
-  typedef std::tr1::unordered_map<string, TServerDetails*> TabletServerMap;
 
   void SetUp() OVERRIDE {
     TabletServerTestBase::SetUp();
@@ -124,40 +105,10 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // Creates TSServerDetails instance for each TabletServer and stores them
   // in 'tablet_servers_'.
   void CreateTSProxies() {
-    master::ListTabletServersRequestPB req;
-    master::ListTabletServersResponsePB resp;
-    rpc::RpcController controller;
-
-    CHECK_OK(cluster_->master_proxy()->ListTabletServers(req, &resp, &controller));
-    CHECK_OK(controller.status());
-    CHECK(!resp.has_error()) << "Response had an error: " << resp.error().ShortDebugString();
     CHECK(tablet_servers_.empty());
-
-    BOOST_FOREACH(const master::ListTabletServersResponsePB_Entry& entry, resp.servers()) {
-      HostPort host_port;
-      CHECK_OK(HostPortFromPB(entry.registration().rpc_addresses(0), &host_port));
-      vector<Sockaddr> addresses;
-      host_port.ResolveAddresses(&addresses);
-
-      gscoped_ptr<TServerDetails> peer(new TServerDetails);
-      peer->instance_id.CopyFrom(entry.instance_id());
-      peer->registration.CopyFrom(entry.registration());
-
-      for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-        if (cluster_->tablet_server(i)->instance_id().permanent_uuid() ==
-            entry.instance_id().permanent_uuid()) {
-          peer->external_ts = cluster_->tablet_server(i);
-        }
-      }
-
-      CHECK_OK(CreateClientProxies(addresses[0],
-                                   &peer->tserver_proxy,
-                                   &peer->tserver_admin_proxy,
-                                   &peer->consensus_proxy));
-
-      InsertOrDie(&tablet_servers_, peer->instance_id.permanent_uuid(), peer.get());
-      ignore_result(peer.release());
-    }
+    CHECK_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
+                                          client_messenger_,
+                                          &tablet_servers_));
   }
 
   // Waits that all replicas for a all tablets of 'kTableId' table are online
@@ -367,120 +318,6 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     }
   }
 
-  // Gets a vector containing the latest OpId for each of the given replicas.
-  // Returns a bad Status if any replica cannot be reached.
-  Status GetLastOpIdForEachReplica(const string& tablet_id,
-                                   const vector<TServerDetails*>& replicas,
-                                   vector<OpId>* op_ids) {
-    consensus::GetLastOpIdRequestPB opid_req;
-    consensus::GetLastOpIdResponsePB opid_resp;
-    opid_req.set_tablet_id(tablet_id);
-    RpcController controller;
-
-    op_ids->clear();
-    BOOST_FOREACH(TServerDetails* ts, replicas) {
-      controller.Reset();
-      controller.set_timeout(MonoDelta::FromSeconds(3));
-      opid_resp.Clear();
-      opid_req.set_tablet_id(tablet_id);
-      RETURN_NOT_OK_PREPEND(
-        ts->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller),
-        Substitute("Failed to fetch last op id from $0", ts->instance_id.ShortDebugString()));
-      op_ids->push_back(opid_resp.opid());
-    }
-
-    return Status::OK();
-  }
-
-  // Wait until all of the servers have converged on the same log index.
-  // The converged index must be at least equal to 'minimum_index'.
-  //
-  // Requires that all servers are running. Returns Status::TimedOut if the
-  // indexes do not converge within the given timeout.
-  Status WaitForServersToAgree(const MonoDelta& timeout,
-                               const TabletServerMap& tablet_servers,
-                               const string& tablet_id,
-                               int64_t minimum_index) {
-    MonoTime now = MonoTime::Now(MonoTime::COARSE);
-    MonoTime deadline = now;
-    deadline.AddDelta(timeout);
-
-    for (int i = 1; now.ComesBefore(deadline); i++) {
-      vector<TServerDetails*> servers;
-      AppendValuesFromMap(tablet_servers, &servers);
-      vector<consensus::OpId> ids;
-      Status s = GetLastOpIdForEachReplica(tablet_id, servers, &ids);
-      if (s.ok()) {
-        bool any_behind = false;
-        bool any_disagree = false;
-        int64_t cur_index = consensus::kInvalidOpIdIndex;
-        BOOST_FOREACH(const OpId& id, ids) {
-          if (cur_index == consensus::kInvalidOpIdIndex) {
-            cur_index = id.index();
-          }
-          if (id.index() != cur_index) {
-            any_disagree = true;
-            break;
-          }
-          if (id.index() < minimum_index) {
-            any_behind = true;
-            break;
-          }
-        }
-        if (!any_behind && !any_disagree) {
-          return Status::OK();
-        }
-      } else {
-        LOG(WARNING) << "Got error getting last opid for each replica: " << s.ToString();
-      }
-
-      LOG(INFO) << "Not converged past " << minimum_index << " yet: " << ids;
-      SleepFor(MonoDelta::FromMilliseconds(std::min(i * 100, 1000)));
-
-      now = MonoTime::Now(MonoTime::COARSE);
-    }
-    return Status::TimedOut(Substitute("Index $0 not available on all replicas after $1. ",
-                                       minimum_index, timeout.ToString()));
-  }
-
-  // Wait until all specified replicas have logged the given index.
-  Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
-                                    const string& tablet_id,
-                                    const vector<TServerDetails*>& replicas,
-                                    const MonoDelta& timeout) {
-    MonoTime start = MonoTime::Now(MonoTime::FINE);
-    MonoDelta passed = MonoDelta::FromMilliseconds(0);
-    while (true) {
-      vector<OpId> op_ids;
-      Status s = GetLastOpIdForEachReplica(tablet_id, replicas, &op_ids);
-      if (s.ok()) {
-        bool any_behind = false;
-        BOOST_FOREACH(const OpId& op_id, op_ids) {
-          if (op_id.index() < log_index) {
-            any_behind = true;
-            break;
-          }
-        }
-        if (!any_behind) return Status::OK();
-      } else {
-        LOG(WARNING) << "Got error getting last opid for each replica: " << s.ToString();
-      }
-      passed = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start);
-      if (passed.MoreThan(timeout)) {
-        break;
-      }
-      SleepFor(MonoDelta::FromMilliseconds(50));
-    }
-    string replicas_str;
-    BOOST_FOREACH(const TServerDetails* replica, replicas) {
-      if (!replicas_str.empty()) replicas_str += ", ";
-      replicas_str += "{ " + replica->ToString() + " }";
-    }
-    return Status::TimedOut(Substitute("Index $0 not available on all replicas after $1. "
-                                       "Replicas: [ $2 ]",
-                                       log_index, passed.ToString()));
-  }
-
   // Return the index within 'replicas' for the replica which is farthest ahead.
   int64_t GetFurthestAheadReplicaIdx(const string& tablet_id,
                                      const vector<TServerDetails*>& replicas) {
@@ -501,7 +338,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     return max_replica_index;
   }
 
-  Status KillServerWithUUID(const std::string& uuid) {
+  Status ShutdownServerWithUUID(const std::string& uuid) {
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       ExternalTabletServer* ts = cluster_->tablet_server(i);
       if (ts->instance_id().permanent_uuid() == uuid) {
@@ -567,7 +404,6 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
   ThreadSafeRandom random_;
 };
-
 
 }  // namespace tserver
 }  // namespace kudu
