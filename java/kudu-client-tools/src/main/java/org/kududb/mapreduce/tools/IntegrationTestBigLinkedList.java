@@ -17,8 +17,6 @@
 package org.kududb.mapreduce.tools;
 
 import com.google.common.base.Joiner;
-import com.stumbleupon.async.Callback;
-import com.stumbleupon.async.Deferred;
 import com.stumbleupon.async.DeferredGroupException;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
@@ -1048,11 +1046,11 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       CommandLineParser cmdLineParser = new CommandLineParser(getConf());
       long timeout = cmdLineParser.getOperationTimeoutMs();
-      AsyncKuduClient client = cmdLineParser.getAsyncClient();
+      KuduClient client = cmdLineParser.getClient();
+      client.setTimeoutMillis(timeout);
 
-      KuduTable table = client.openTable(getTableName(getConf())).join(timeout);
-      AsyncKuduScanner.AsyncKuduScannerBuilder builder =
-          client.newScannerBuilder(table, table.getSchema());
+      KuduTable table = client.openTable(getTableName(getConf()));
+      KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, table.getSchema());
 
 
       if (cmd.hasOption("s") || cmd.hasOption("e") ) {
@@ -1066,42 +1064,40 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         builder.addColumnRangePredicate(crpOne);
       }
 
-      final int limit = cmd.hasOption("l") ? Integer.parseInt(cmd.getOptionValue("l")) : 100;
+      int limit = cmd.hasOption("l") ? Integer.parseInt(cmd.getOptionValue("l")) : 100;
 
-      final AtomicInteger count = new AtomicInteger();
+      int count = 0;
 
-      Callback<Void, AsyncKuduScanner.RowResultIterator> cb =
-          new Callback<Void, AsyncKuduScanner.RowResultIterator>() {
-        @Override
-        public Void call(AsyncKuduScanner.RowResultIterator rowResults) throws Exception {
-          if (rowResults == null) {
-            return null;
-          }
-          CINode node = new CINode();
-          for (RowResult result : rowResults) {
-            node = getCINode(result, node);
-            printCINodeString(node);
-            if (count.incrementAndGet() == limit) {
-              break;
-            }
-          }
-          return null;
-        }
-      };
-
-      AsyncKuduScanner scanner = builder.build();
-      while (scanner.hasMoreRows() && count.get() < limit) {
-        Deferred<AsyncKuduScanner.RowResultIterator> data = scanner.nextRows();
-        data.addCallback(cb);
-        data.join(timeout);
+      KuduScanner scanner = builder.build();
+      while (scanner.hasMoreRows() && count < limit) {
+        AsyncKuduScanner.RowResultIterator rowResults = scanner.nextRows();
+        count = printNodesAndGetNewCount(count, limit, rowResults);
       }
-      Deferred<AsyncKuduScanner.RowResultIterator> closer = scanner.close();
-      closer.addCallback(cb);
-      closer.join(timeout);
+      AsyncKuduScanner.RowResultIterator rowResults = scanner.close();
+      printNodesAndGetNewCount(count, limit, rowResults);
 
-      client.shutdown().join(timeout);
+      client.shutdown();
 
       return 0;
+    }
+
+    private static int printNodesAndGetNewCount(int oldCount, int limit,
+                                                AsyncKuduScanner.RowResultIterator rowResults) {
+      int newCount = oldCount;
+      if (rowResults == null) {
+        return newCount;
+      }
+
+      CINode node = new CINode();
+      for (RowResult result : rowResults) {
+        newCount++;
+        node = getCINode(result, node);
+        printCINodeString(node);
+        if (oldCount == limit) {
+          break;
+        }
+      }
+      return newCount;
     }
   }
 
