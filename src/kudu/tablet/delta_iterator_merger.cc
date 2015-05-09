@@ -37,9 +37,9 @@ Status DeltaIteratorMerger::SeekToOrdinal(rowid_t idx) {
   return Status::OK();
 }
 
-Status DeltaIteratorMerger::PrepareBatch(size_t nrows) {
+Status DeltaIteratorMerger::PrepareBatch(size_t nrows, PrepareFlag flag) {
   BOOST_FOREACH(const shared_ptr<DeltaIterator> &iter, iters_) {
-    RETURN_NOT_OK(iter->PrepareBatch(nrows));
+    RETURN_NOT_OK(iter->PrepareBatch(nrows, flag));
   }
   return Status::OK();
 }
@@ -73,11 +73,12 @@ struct DeltaKeyUpdateComparator {
   }
 };
 
-Status DeltaIteratorMerger::FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
-                                                   vector<DeltaKeyAndUpdate>* out,
-                                                   Arena* arena) {
+Status DeltaIteratorMerger::FilterColumnsAndCollectDeltas(
+    const ColumnIndexes& col_indexes,
+    vector<DeltaKeyAndUpdate>* out,
+    Arena* arena) {
   BOOST_FOREACH(const shared_ptr<DeltaIterator>& iter, iters_) {
-    RETURN_NOT_OK(iter->FilterColumnsAndAppend(col_indexes, out, arena));
+    RETURN_NOT_OK(iter->FilterColumnsAndCollectDeltas(col_indexes, out, arena));
   }
   std::sort(out->begin(), out->end(), DeltaKeyUpdateComparator());
   return Status::OK();

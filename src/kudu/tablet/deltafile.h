@@ -191,11 +191,11 @@ class DeltaFileIterator : public DeltaIterator {
   Status Init(ScanSpec *spec) OVERRIDE;
 
   Status SeekToOrdinal(rowid_t idx) OVERRIDE;
-  Status PrepareBatch(size_t nrows) OVERRIDE;
+  Status PrepareBatch(size_t nrows, PrepareFlag flag) OVERRIDE;
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
   Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
-  Status FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
+  Status FilterColumnsAndCollectDeltas(const ColumnIndexes& col_indexes,
                                 vector<DeltaKeyAndUpdate>* out,
                                 Arena* arena) OVERRIDE;
   string ToString() const OVERRIDE;

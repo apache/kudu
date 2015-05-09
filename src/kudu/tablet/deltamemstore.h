@@ -3,6 +3,7 @@
 #ifndef KUDU_TABLET_DELTAMEMSTORE_H
 #define KUDU_TABLET_DELTAMEMSTORE_H
 
+#include <deque>
 #include <gtest/gtest_prod.h>
 #include <string>
 #include <vector>
@@ -179,7 +180,7 @@ class DMSIterator : public DeltaIterator {
 
   Status SeekToOrdinal(rowid_t row_idx) OVERRIDE;
 
-  Status PrepareBatch(size_t nrows) OVERRIDE;
+  Status PrepareBatch(size_t nrows, PrepareFlag flag) OVERRIDE;
 
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
 
@@ -187,9 +188,9 @@ class DMSIterator : public DeltaIterator {
 
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
 
-  Status FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
-                                vector<DeltaKeyAndUpdate>* out,
-                                Arena* arena) OVERRIDE;
+  Status FilterColumnsAndCollectDeltas(const ColumnIndexes& col_indexes,
+                                       vector<DeltaKeyAndUpdate>* out,
+                                       Arena* arena) OVERRIDE;
 
   string ToString() const OVERRIDE;
 
@@ -209,18 +210,6 @@ class DMSIterator : public DeltaIterator {
               const Schema *projection,
               const MvccSnapshot &snapshot);
 
-
-  // Decode a mutation as stored in the DMS.
-  Status DecodeMutation(Slice *src, DeltaKey *key, RowChangeList *changelist) const;
-
-  // Format a Corruption status
-  Status CorruptionStatus(const string &message, rowid_t row,
-                          const RowChangeList *changelist) const;
-
-  enum {
-    kPreparedBufInitialCapacity = 512
-  };
-
   const shared_ptr<const DeltaMemStore> dms_;
 
   // MVCC state which allows us to ignore uncommitted transactions.
@@ -237,19 +226,46 @@ class DMSIterator : public DeltaIterator {
   uint32_t prepared_count_;
 
   // Whether there are prepared blocks built through PrepareBatch().
-  bool prepared_;
+  enum PreparedFor {
+    NOT_PREPARED,
+    PREPARED_FOR_APPLY,
+    PREPARED_FOR_COLLECT
+  };
+  PreparedFor prepared_for_;
 
   // True if SeekToOrdinal() been called at least once.
   bool seeked_;
-
-  faststring prepared_buf_;
 
   // Projection from the schema of the deltamemstore to the projection
   // of the row blocks which will be passed to PrepareBatch(), etc.
   DeltaProjector projector_;
 
+  // State when prepared_for_ == PREPARED_FOR_APPLY
+  // ------------------------------------------------------------
+  struct ColumnUpdate {
+    rowid_t row_id;
+    void* new_val_ptr;
+    uint8_t new_val_buf[16];
+  };
+  typedef std::deque<ColumnUpdate> UpdatesForColumn;
+  std::vector<UpdatesForColumn> updates_by_col_;
+  struct DeleteOrReinsert {
+    rowid_t row_id;
+    bool exists;
+  };
+  std::deque<DeleteOrReinsert> deletes_and_reinserts_;
+
+  // State when prepared_for_ == PREPARED_FOR_COLLECT
+  // ------------------------------------------------------------
+  struct PreparedDelta {
+    DeltaKey key;
+    Slice val;
+  };
+  std::deque<PreparedDelta> prepared_deltas_;
+
   // Temporary buffer used for RowChangeList projection.
   faststring delta_buf_;
+
 };
 
 

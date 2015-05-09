@@ -16,8 +16,11 @@
 #include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/mutation.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
+
+DEFINE_int32(benchmark_num_passes, 100, "Number of passes to apply deltas in the benchmark");
 
 namespace kudu {
 namespace tablet {
@@ -71,7 +74,9 @@ class TestDeltaMemStore : public KuduTest {
                     size_t col_idx,
                     ColumnBlock *cb) {
     ColumnSchema col_schema(dms_->schema().column(col_idx));
-    Schema single_col_projection(boost::assign::list_of(col_schema), 0);
+    Schema single_col_projection(boost::assign::list_of(col_schema),
+                                 boost::assign::list_of(dms_->schema().column_id(col_idx)),
+                                 0);
 
     DeltaIterator* raw_iter;
     Status s = dms_->NewDeltaIterator(&single_col_projection, snapshot, &raw_iter);
@@ -82,7 +87,7 @@ class TestDeltaMemStore : public KuduTest {
     gscoped_ptr<DeltaIterator> iter(raw_iter);
     ASSERT_OK(iter->Init(NULL));
     ASSERT_OK(iter->SeekToOrdinal(row_idx));
-    ASSERT_OK(iter->PrepareBatch(cb->nrows()));
+    ASSERT_OK(iter->PrepareBatch(cb->nrows(), DeltaIterator::PREPARE_FOR_APPLY));
     ASSERT_OK(iter->ApplyUpdates(0, cb));
   }
 
@@ -175,6 +180,40 @@ TEST_F(TestDeltaMemStore, TestDMSSparseUpdates) {
     } else {
       // Otherwise expect the updated value
       ASSERT_EQ(i * 10, read_back[i]);
+    }
+  }
+}
+
+// Performance test for KUDU-749: zipfian workloads can cause a lot
+// of updates to a single row. This benchmark updates a single row many
+// times and times how long it takes to apply those updates during
+// the read path.
+TEST_F(TestDeltaMemStore, BenchmarkManyUpdatesToOneRow) {
+  const int kNumRows = 1000;
+  const int kNumUpdates = 10000;
+  const int kIdxToUpdate = 10;
+  const int kStringDataSize = 1000;
+
+  for (int i = 0; i < kNumUpdates; i++) {
+    faststring buf;
+    RowChangeListEncoder update(&schema_, &buf);
+
+    ScopedTransaction tx(&mvcc_);
+    string str(kStringDataSize, 'x');
+    Slice s(str);
+    update.AddColumnUpdate(schema_.column_id(kStringColumn), &s);
+    CHECK_OK(dms_->Update(tx.timestamp(), kIdxToUpdate, RowChangeList(buf), op_id_));
+  }
+
+  MvccSnapshot snap(mvcc_);
+  LOG_TIMING(INFO, "Applying updates") {
+    for (int i = 0; i < FLAGS_benchmark_num_passes; i++) {
+      ScopedColumnBlock<STRING> strings(kNumRows);
+      for (int i = 0; i < kNumRows; i++) {
+        strings[i] = Slice();
+      }
+
+      ApplyUpdates(snap, 0, kStringColumn, &strings);
     }
   }
 }
@@ -338,9 +377,7 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
 
   int block_start_row = 50;
   ASSERT_OK(iter->SeekToOrdinal(block_start_row));
-  ASSERT_OK(iter->PrepareBatch(block.nrows()));
-  VLOG(1) << "prepared: " << Slice(iter->prepared_buf_).ToDebugString();
-
+  ASSERT_OK(iter->PrepareBatch(block.nrows(), DeltaIterator::PREPARE_FOR_APPLY));
   ASSERT_OK(iter->ApplyUpdates(kIntColumn, &block));
 
   for (int i = 0; i < 100; i++) {
@@ -350,7 +387,7 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
 
   // Apply the next block
   block_start_row += block.nrows();
-  ASSERT_OK(iter->PrepareBatch(block.nrows()));
+  ASSERT_OK(iter->PrepareBatch(block.nrows(), DeltaIterator::PREPARE_FOR_APPLY));
   ASSERT_OK(iter->ApplyUpdates(kIntColumn, &block));
   for (int i = 0; i < 100; i++) {
     int actual_row = block_start_row + i;
@@ -386,7 +423,7 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
 
   ASSERT_OK(iter->Init(NULL));
   ASSERT_OK(iter->SeekToOrdinal(0));
-  ASSERT_OK(iter->PrepareBatch(kBatchSize));
+  ASSERT_OK(iter->PrepareBatch(kBatchSize, DeltaIterator::PREPARE_FOR_COLLECT));
   ASSERT_OK(iter->CollectMutations(&mutations, &arena));
 
   // Only row 5 is updated, everything else should be NULL.
@@ -403,7 +440,7 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
   // Collect the next batch of 10.
   arena.Reset();
   std::fill(mutations.begin(), mutations.end(), reinterpret_cast<Mutation *>(NULL));
-  ASSERT_OK(iter->PrepareBatch(kBatchSize));
+  ASSERT_OK(iter->PrepareBatch(kBatchSize, DeltaIterator::PREPARE_FOR_COLLECT));
   ASSERT_OK(iter->CollectMutations(&mutations, &arena));
 
   // Only row 2 is updated, everything else should be NULL.

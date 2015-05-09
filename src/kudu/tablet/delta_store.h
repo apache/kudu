@@ -110,21 +110,32 @@ class DeltaIterator {
   // block, and must be called at least once prior to PrepareBatch().
   virtual Status SeekToOrdinal(rowid_t idx) = 0;
 
+  // Argument to PrepareBatch(). See below.
+  enum PrepareFlag {
+    PREPARE_FOR_APPLY,
+    PREPARE_FOR_COLLECT
+  };
+
   // Prepare to apply deltas to a block of rows. This takes a consistent snapshot
   // of all updates to the next 'nrows' rows, so that subsequent calls to
   // ApplyUpdates() will not cause any "tearing"/non-atomicity.
   //
+  // 'flag' denotes whether the batch will be used for collecting mutations or
+  // for applying them. Some implementations may choose to prepare differently.
+  //
   // Each time this is called, the iterator is advanced by the full length
   // of the previously prepared block.
-  virtual Status PrepareBatch(size_t nrows) = 0;
+  virtual Status PrepareBatch(size_t nrows, PrepareFlag flag) = 0;
 
   // Apply the snapshotted updates to one of the columns.
   // 'dst' must be the same length as was previously passed to PrepareBatch()
+  // Must have called PrepareBatch() with flag = PREPARE_FOR_APPLY.
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) = 0;
 
   // Apply any deletes to the given selection vector.
   // Rows which have been deleted in the associated MVCC snapshot are set to
   // 0 in the selection vector so that they don't show up in the output.
+  // Must have called PrepareBatch() with flag = PREPARE_FOR_APPLY.
   virtual Status ApplyDeletes(SelectionVector *sel_vec) = 0;
 
   // Collect the mutations associated with each row in the current prepared batch.
@@ -135,6 +146,7 @@ class DeltaIterator {
   // (i.e in ascending timestamp order)
   //
   // The Mutation objects will be allocated out of the provided Arena, which must be non-NULL.
+  // Must have called PrepareBatch() with flag = PREPARE_FOR_COLLECT.
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) = 0;
 
   // Iterate through all deltas, adding deltas for columns not
@@ -142,9 +154,10 @@ class DeltaIterator {
   //
   // The delta objects will be allocated out the provided Arena which
   // must be non-NULL.
-  virtual Status FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
-                                        vector<DeltaKeyAndUpdate>* out,
-                                        Arena* arena) = 0;
+  // Must have called PrepareBatch() with flag = PREPARE_FOR_COLLECT.
+  virtual Status FilterColumnsAndCollectDeltas(const ColumnIndexes& col_indexes,
+                                               vector<DeltaKeyAndUpdate>* out,
+                                               Arena* arena) = 0;
 
   // Returns true if there are any more rows left in this iterator.
   virtual bool HasNext() = 0;

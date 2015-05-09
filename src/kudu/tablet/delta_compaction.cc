@@ -104,7 +104,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
 
     // 2) Fetch all the REDO mutations.
     vector<Mutation *> redo_mutation_block(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL));
-    RETURN_NOT_OK(delta_iter_->PrepareBatch(n));
+    RETURN_NOT_OK(delta_iter_->PrepareBatch(n, DeltaIterator::PREPARE_FOR_COLLECT));
     RETURN_NOT_OK(delta_iter_->CollectMutations(&redo_mutation_block, block.arena()));
 
     // 3) Apply new UNDO mutations for the current block. The REDO mutations are picked up
@@ -163,7 +163,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     BOOST_FOREACH(size_t idx, column_indexes_) {
       col_ids.push_back(base_schema_.column_id(idx));
     }
-    RETURN_NOT_OK(delta_iter_->FilterColumnsAndAppend(col_ids, &out, &arena));
+    RETURN_NOT_OK(delta_iter_->FilterColumnsAndCollectDeltas(col_ids, &out, &arena));
 
     // We only create a new redo delta file if we need to.
     if (!out.empty() && !new_redo_delta_writer_) {

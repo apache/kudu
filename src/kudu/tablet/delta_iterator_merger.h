@@ -36,13 +36,13 @@ class DeltaIteratorMerger : public DeltaIterator {
   ////////////////////////////////////////////////////////////
   virtual Status Init(ScanSpec *spec) OVERRIDE;
   virtual Status SeekToOrdinal(rowid_t idx) OVERRIDE;
-  virtual Status PrepareBatch(size_t nrows) OVERRIDE;
+  virtual Status PrepareBatch(size_t nrows, PrepareFlag flag) OVERRIDE;
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
   virtual Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
-  virtual Status FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
-                                        vector<DeltaKeyAndUpdate>* out,
-                                        Arena* arena) OVERRIDE;
+  virtual Status FilterColumnsAndCollectDeltas(const ColumnIndexes& col_indexes,
+                                               vector<DeltaKeyAndUpdate>* out,
+                                               Arena* arena) OVERRIDE;
   virtual bool HasNext() OVERRIDE;
   virtual std::string ToString() const OVERRIDE;
 

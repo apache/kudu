@@ -64,7 +64,7 @@ Status DeltaApplier::PrepareBatch(size_t *nrows) {
     first_prepare_ = false;
   }
   RETURN_NOT_OK(base_iter_->PrepareBatch(nrows));
-  RETURN_NOT_OK(delta_iter_->PrepareBatch(*nrows));
+  RETURN_NOT_OK(delta_iter_->PrepareBatch(*nrows, DeltaIterator::PREPARE_FOR_APPLY));
   return Status::OK();
 }
 

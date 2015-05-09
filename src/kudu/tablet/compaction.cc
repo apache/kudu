@@ -151,9 +151,11 @@ class DiskRowSetCompactionInput : public CompactionInput {
               reinterpret_cast<Mutation *>(NULL));
     std::fill(undo_mutation_block_.begin(), undo_mutation_block_.end(),
                   reinterpret_cast<Mutation *>(NULL));
-    RETURN_NOT_OK(redo_delta_iter_->PrepareBatch(block_.nrows()));
+    RETURN_NOT_OK(redo_delta_iter_->PrepareBatch(
+                      block_.nrows(), DeltaIterator::PREPARE_FOR_COLLECT));
     RETURN_NOT_OK(redo_delta_iter_->CollectMutations(&redo_mutation_block_, block_.arena()));
-    RETURN_NOT_OK(undo_delta_iter_->PrepareBatch(block_.nrows()));
+    RETURN_NOT_OK(undo_delta_iter_->PrepareBatch(
+                      block_.nrows(), DeltaIterator::PREPARE_FOR_COLLECT));
     RETURN_NOT_OK(undo_delta_iter_->CollectMutations(&undo_mutation_block_, block_.arena()));
 
     block->resize(block_.nrows());

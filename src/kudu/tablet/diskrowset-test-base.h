@@ -35,6 +35,7 @@ DEFINE_int32(n_read_passes, 10,
 namespace kudu {
 namespace tablet {
 
+using boost::assign::list_of;
 using std::tr1::unordered_set;
 
 class TestRowSet : public KuduRowSetTest {
@@ -54,6 +55,19 @@ class TestRowSet : public KuduRowSetTest {
     CHECK_OK(builder.AddKeyColumn("key", STRING));
     CHECK_OK(builder.AddColumn("val", UINT32));
     return builder.BuildWithoutIds();
+  }
+
+  static Schema CreateProjection(const Schema& schema,
+                                 const vector<string>& cols) {
+    vector<ColumnSchema> col_schemas;
+    vector<size_t> col_ids;
+    BOOST_FOREACH(const string& col, cols) {
+      int idx = schema.find_column(col);
+      CHECK_GE(idx, 0);
+      col_schemas.push_back(schema.column(idx));
+      col_ids.push_back(schema.column_id(idx));
+    }
+    return Schema(col_schemas, col_ids, 0);
   }
 
   void BuildRowKey(RowBuilder *rb, int row_idx) {
@@ -180,9 +194,7 @@ class TestRowSet : public KuduRowSetTest {
 
   void VerifyUpdatesWithRowIter(const DiskRowSet &rs,
                                 const unordered_set<uint32_t> &updated) {
-    Schema proj_val(boost::assign::list_of
-                    (ColumnSchema("val", UINT32)),
-                    1);
+    Schema proj_val = CreateProjection(schema_, list_of("val"));
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter;
     CHECK_OK(rs.NewRowIterator(&proj_val, snap, &row_iter));
@@ -270,18 +282,14 @@ class TestRowSet : public KuduRowSetTest {
 
   void BenchmarkIterationPerformance(const DiskRowSet &rs,
                                      const string &log_message) {
-    Schema proj_val(boost::assign::list_of
-                    (ColumnSchema("val", UINT32)),
-                    1);
+    Schema proj_val = CreateProjection(schema_, list_of("val"));
     LOG_TIMING(INFO, log_message + " (val column only)") {
       for (int i = 0; i < FLAGS_n_read_passes; i++) {
         IterateProjection(rs, proj_val, n_rows_, false);
       }
     }
 
-    Schema proj_key(boost::assign::list_of
-                    (ColumnSchema("key", STRING)),
-                    1);
+    Schema proj_key = CreateProjection(schema_, list_of("key"));
     LOG_TIMING(INFO, log_message + " (key string column only)") {
       for (int i = 0; i < FLAGS_n_read_passes; i++) {
         IterateProjection(rs, proj_key, n_rows_, false);

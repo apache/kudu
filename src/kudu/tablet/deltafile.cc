@@ -353,7 +353,7 @@ Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   ScanSpec spec;
   RETURN_NOT_OK(iter->Init(&spec));
   RETURN_NOT_OK(iter->SeekToOrdinal(row_idx));
-  RETURN_NOT_OK(iter->PrepareBatch(1));
+  RETURN_NOT_OK(iter->PrepareBatch(1, DeltaIterator::PREPARE_FOR_APPLY));
 
   // TODO: this does an allocation - can we stack-allocate the bitmap
   // and make SelectionVector able to "release" its buffer?
@@ -495,7 +495,7 @@ string DeltaFileIterator::PreparedDeltaBlock::ToString() const {
                       block_ptr_.ToString().c_str());
 }
 
-Status DeltaFileIterator::PrepareBatch(size_t nrows) {
+Status DeltaFileIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   DCHECK(initted_) << "Must call Init()";
   DCHECK(index_iter_) << "Must call SeekToOrdinal()";
 
@@ -893,9 +893,10 @@ struct FilterAndAppendVisitor {
   Arena* arena;
 };
 
-Status DeltaFileIterator::FilterColumnsAndAppend(const ColumnIndexes& col_indexes,
-                                                 vector<DeltaKeyAndUpdate>* out,
-                                                 Arena* arena) {
+Status DeltaFileIterator::FilterColumnsAndCollectDeltas(
+    const ColumnIndexes& col_indexes,
+    vector<DeltaKeyAndUpdate>* out,
+    Arena* arena) {
   FilterAndAppendVisitor visitor = {this, col_indexes, out, arena};
   return VisitMutations(&visitor);
 }

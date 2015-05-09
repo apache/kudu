@@ -255,10 +255,6 @@ class RowChangeListDecoder {
                                             const Schema& schema,
                                             RowChangeListEncoder* out);
 
- private:
-  FRIEND_TEST(TestRowChangeList, TestEncodeDecodeUpdates);
-  friend class RowChangeList;
-
   // Decode the next changed column.
   // Sets *col_id to the changed column id.
   // Sets *val_out to point to the new value.
@@ -272,6 +268,10 @@ class RowChangeListDecoder {
   // But, that Slice object will itself point to data which is part
   // of the source data that was passed in.
   Status DecodeNext(size_t *col_id, const void ** val_out);
+
+ private:
+  FRIEND_TEST(TestRowChangeList, TestEncodeDecodeUpdates);
+  friend class RowChangeList;
 
   const Schema* schema_;
 

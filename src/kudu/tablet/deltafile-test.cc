@@ -147,7 +147,7 @@ class TestDeltaFile : public ::testing::Test {
       block.ZeroMemory();
       arena_.Reset();
 
-      ASSERT_OK_FAST(it->PrepareBatch(block.nrows()));
+      ASSERT_OK_FAST(it->PrepareBatch(block.nrows(), DeltaIterator::PREPARE_FOR_APPLY));
       ColumnBlock dst_col = block.column_block(0);
       ASSERT_OK_FAST(it->ApplyUpdates(0, &dst_col));
 
@@ -275,7 +275,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
       std::fill(mutations.begin(), mutations.end(), reinterpret_cast<Mutation *>(NULL));
 
       arena_.Reset();
-      ASSERT_OK_FAST(it->PrepareBatch(mutations.size()));
+      ASSERT_OK_FAST(it->PrepareBatch(mutations.size(), DeltaIterator::PREPARE_FOR_COLLECT));
       ASSERT_OK(it->CollectMutations(&mutations, &arena_));
 
       for (int i = 0; i < mutations.size(); i++) {
