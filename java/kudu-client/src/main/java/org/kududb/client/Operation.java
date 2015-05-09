@@ -2,17 +2,24 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import com.google.protobuf.CodedOutputStream;
+import com.google.common.collect.Lists;
+import com.google.common.primitives.Longs;
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
+
 import kudu.WireProtocol.RowOperationsPB;
 import kudu.tserver.Tserver;
+
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.ArrayList;
@@ -46,19 +53,13 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
 
   static final String METHOD = "Write";
   final Schema schema;
-  final List<String> strings;
+
+  // String data, post UTF8-encoding.
+  final List<byte[]> strings;
   final int rowSize;
   final byte[] rowAlloc;
   final BitSet columnsBitSet;
   final BitSet nullsBitSet;
-
-  // The following attributes are used to speed up serialization
-  int stringsSize;
-  // This is used for update/delete that have strings in their key
-  int keyOnlyStringSize;
-  // Size of the RowChangeList. Starts at one for the ChangeType's ordinal, only used for update/delete.
-  int encodedSize = 1;
-  int partialRowSize = 0;
 
   /**
    * Package-private constructor. Subclasses need to be instantiated via AsyncKuduSession
@@ -72,7 +73,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
         new BitSet(this.schema.getColumnCount()) : null;
     this.rowSize = schema.getRowSize();
     this.rowAlloc = new byte[this.rowSize];
-    strings = new ArrayList<String>(schema.getStringCount());
+    strings = Lists.newArrayListWithCapacity(schema.getStringCount());
   }
 
   /**
@@ -180,20 +181,28 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    * the column's type
    */
   public void addString(String columnName, String val) {
+    addStringUtf8(columnName, Bytes.fromString(val));
+  }
+
+  /**
+   * Add a String for the specified value, encoded as UTF8.
+   * Note that the provided value must not be mutated after this.
+   */
+  public void addStringUtf8(String columnName, byte[] val) {
+    // TODO: use Utf8.isWellFormed from Guava 16 to verify that
+    // the user isn't putting in any garbage data.
     ColumnSchema col = this.schema.getColumn(columnName);
     checkColumn(col, Type.STRING);
-    int size = val.length();
-    this.strings.add(val);
-    this.stringsSize += size;
-    // special accounting for string row keys in updates or deletes
-    if (col.isKey()) {
-      keyOnlyStringSize += size;
-    } else {
-      encodedSize += CodedOutputStream.computeRawVarint32Size(size);
-      encodedSize += size;
-    }
+    int stringsIdx = strings.size();
+    strings.add(val);
     // Set the bit and set the usage bit
-    getPositionInRowAllocAndSetBitSet(col);
+    int pos = getPositionInRowAllocAndSetBitSet(col);
+
+    // For now, just store the index of the string.
+    // Later, we'll replace this with the offset within the wire buffer
+    // before we send it.
+    Bytes.setLong(rowAlloc, stringsIdx, pos);
+    Bytes.setLong(rowAlloc, val.length, pos + Longs.BYTES);
   }
 
   /**
@@ -225,12 +234,6 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     if (!column.getType().equals(type))
       throw new IllegalArgumentException(column.getName() +
           " isn't " + type.getName() + ", it's " + column.getType().getName());
-    if (!column.isKey()) {
-      encodedSize++; // col id
-      if (!column.getType().equals(Type.STRING)) {
-        encodedSize += column.getType().getSize(); // strings have their own processing in addString
-      }
-    }
   }
 
   /**
@@ -250,7 +253,6 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   int getPositionInRowAllocAndSetBitSet(ColumnSchema column) {
     int idx = schema.getColumns().indexOf(column);
     columnsBitSet.set(idx);
-    partialRowSize += column.getType().getSize();
     return schema.getColumnOffset(idx);
   }
 
@@ -316,9 +318,9 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     for (int i = 0; i < this.schema.getKeysCount(); i++) {
       ColumnSchema column = this.schema.getColumn(i);
       if (column.getType() == Type.STRING) {
-        String string = this.strings.get(seenStrings);
+        byte[] string = this.strings.get(seenStrings);
         seenStrings++;
-        keyEncoder.addKey(Bytes.fromString(string), 0, string.length(), column, i);
+        keyEncoder.addKey(string, 0, string.length, column, i);
       } else {
         keyEncoder.addKey(this.rowAlloc, this.schema.getColumnOffset(i), column.getType().getSize(),
             column, i);
@@ -339,23 +341,22 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
 
     Schema schema = operations[0].schema;
 
-    // Pre-calculate the sizes for the buffers.
-    int rowSize = 0;
-    int indirectSize = 0;
-    final int columnBitSetSize = Bytes.getBitSetSize(schema.getColumnCount());
-    for (Operation operation : operations) {
-      rowSize += 1 /* for the op type */ + operation.partialRowSize + columnBitSetSize;
-      if (schema.hasNullableColumns()) {
-        // nullsBitSet is the same size as the columnBitSet
-        rowSize += columnBitSetSize;
-      }
-      indirectSize += operation.stringsSize;
-    }
 
     // Set up the encoded data.
-    ByteBuffer rows = ByteBuffer.allocate(rowSize).order(ByteOrder.LITTLE_ENDIAN);
-    ByteBuffer indirectData = indirectSize == 0 ?
-        null : ByteBuffer.allocate(indirectSize).order(ByteOrder.LITTLE_ENDIAN);
+    // Estimate a maximum size for the data. This is conservative, but avoids
+    // having to loop through all the operations twice.
+    final int columnBitSetSize = Bytes.getBitSetSize(schema.getColumnCount());
+    int sizePerRow = 1 /* for the op type */ + schema.getRowSize() + columnBitSetSize;
+    if (schema.hasNullableColumns()) {
+      // nullsBitSet is the same size as the columnBitSet
+      sizePerRow += columnBitSetSize;
+    }
+
+    // TODO: would be more efficient to use a buffer which "chains" smaller allocations
+    // instead of a doubling buffer like BAOS.
+    ByteBuffer rows = ByteBuffer.allocate(sizePerRow * operations.length)
+        .order(ByteOrder.LITTLE_ENDIAN);
+    ByteArrayOutputStream indirect = new ByteArrayOutputStream();
 
     for (Operation operation : operations) {
       assert operation.schema == schema;
@@ -367,17 +368,21 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       }
       int colIdx = 0;
       byte[] rowData = operation.rowAlloc;
-      int stringsIndex = 0;
       int currentRowOffset = 0;
       for (ColumnSchema col : operation.schema.getColumns()) {
         // Keys should always be specified, maybe check?
         if (operation.isSet(colIdx) && !operation.isSetToNull(colIdx)) {
           if (col.getType() == Type.STRING) {
-            String string = operation.strings.get(stringsIndex);
-            rows.putLong(indirectData.position());
-            rows.putLong(string.length());
-            indirectData.put(Bytes.fromString(string), 0, string.length());
-            stringsIndex++;
+            int stringIndex = (int)Bytes.getLong(rowData, currentRowOffset);
+            byte[] string = operation.strings.get(stringIndex);
+            assert string.length == Bytes.getLong(rowData, currentRowOffset + Longs.BYTES);
+            rows.putLong(indirect.size());
+            rows.putLong(string.length);
+            try {
+              indirect.write(string);
+            } catch (IOException e) {
+              throw new AssertionError(e); // cannot occur
+            }
           } else {
             // This is for cols other than strings
             rows.put(rowData, currentRowOffset, col.getType().getSize());
@@ -387,14 +392,20 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
         colIdx++;
       }
     }
-    assert !rows.hasRemaining();
 
     // Actually build the protobuf.
     RowOperationsPB.Builder rowOpsBuilder = RowOperationsPB.newBuilder();
-    rowOpsBuilder.setRows(ZeroCopyLiteralByteString.wrap(rows.array()));
-    if (indirectData != null) {
-      assert !indirectData.hasRemaining();
-      rowOpsBuilder.setIndirectData(ZeroCopyLiteralByteString.wrap(indirectData.array()));
+
+    // TODO: we could implement a ZeroCopy approach here by subclassing LiteralByteString.
+    // We have ZeroCopyLiteralByteString, but that only supports an entire array. Here
+    // we've only partially filled in rows.array(), so we have to make the extra copy.
+    rows.limit(rows.position());
+    rows.flip();
+    rowOpsBuilder.setRows(ByteString.copyFrom(rows));
+    if (indirect.size() > 0) {
+      // TODO: same as above, we could avoid a copy here by using an implementation that allows
+      // zero-copy on a slice of an array.
+      rowOpsBuilder.setIndirectData(ZeroCopyLiteralByteString.wrap(indirect.toByteArray()));
     }
 
     Tserver.WriteRequestPB.Builder requestBuilder = Tserver.WriteRequestPB.newBuilder();

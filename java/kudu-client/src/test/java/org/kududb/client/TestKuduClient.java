@@ -6,39 +6,120 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
+import java.util.ArrayList;
+import java.util.List;
+
+import org.junit.Before;
 import org.junit.Test;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
 
-import java.util.List;
-
 public class TestKuduClient extends BaseKuduTest {
-  private static final String TABLE_NAME =
-      TestKuduClient.class.getName() + "-" + System.currentTimeMillis();
+  private String tableName;
+
+  @Before
+  public void setTableName() {
+    tableName = TestKuduClient.class.getName() + "-" + System.currentTimeMillis();
+  }
+
+  private Schema createManyStringsSchema() {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.STRING).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.STRING).nullable(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c4", Type.STRING).nullable(true).build());
+    return new Schema(columns);
+  }
 
   /**
-   * Test basic interactions through a KuduClient.
+   * Test creating and deleting a table through a KuduClient.
    */
   @Test(timeout = 100000)
-  public void test() throws Exception {
+  public void testCreateDeleteTable() throws Exception {
     // Check that we can create a table.
-    syncClient.createTable(TABLE_NAME, basicSchema);
+    syncClient.createTable(tableName, basicSchema);
     assertFalse(syncClient.getTablesList().getTablesList().isEmpty());
-    assertEquals(TABLE_NAME, syncClient.getTablesList().getTablesList().get(0));
+    assertTrue(syncClient.getTablesList().getTablesList().contains(tableName));
 
     // Check that we can delete it.
-    syncClient.deleteTable(TABLE_NAME);
-    assertTrue(syncClient.getTablesList().getTablesList().isEmpty());
+    syncClient.deleteTable(tableName);
+    assertFalse(syncClient.getTablesList().getTablesList().contains(tableName));
 
     // Check that we can re-recreate it, with a different schema.
     List<ColumnSchema> columns = basicSchema.getColumns();
     columns.add(new ColumnSchema.ColumnSchemaBuilder("one more", Type.STRING).build());
     Schema newSchema = new Schema(columns);
-    syncClient.createTable(TABLE_NAME, newSchema);
+    syncClient.createTable(tableName, newSchema);
 
     // Check that we can open a table and see that it has the new schema.
-    KuduTable table = syncClient.openTable(TABLE_NAME);
+    KuduTable table = syncClient.openTable(tableName);
     assertEquals(newSchema.getColumnCount(), table.getSchema().getColumnCount());
   }
+
+  /**
+   * Test inserting and retrieving string columns.
+   */
+  @Test(timeout = 100000)
+  public void testStrings() throws Exception {
+    Schema schema = createManyStringsSchema();
+    syncClient.createTable(tableName, schema);
+
+    KuduSession session = syncClient.newSession();
+    KuduTable table = syncClient.openTable(tableName);
+    for (int i = 0; i < 100; i++) {
+      Insert insert = table.newInsert();
+      insert.addString("key", String.format("key_%02d", i));
+      insert.addString("c2", "c2_" + i);
+      if (i % 2 == 1) {
+        insert.addString("c3", "c3_" + i);
+      }
+      insert.addString("c4", "c4_" + i);
+      // NOTE: we purposefully add the strings in a non-left-to-right
+      // order to verify that we still place them in the right position in
+      // the row.
+      insert.addString("c1", "c1_" + i);
+      session.apply(insert);
+      if (i % 50 == 0) {
+        session.flush();
+      }
+    }
+    session.flush();
+
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(100, rowStrings.size());
+    assertEquals(
+        "STRING key=key_03, STRING c1=c1_3, STRING c2=c2_3, STRING c3=c3_3, STRING c4=c4_3",
+        rowStrings.get(3));
+    assertEquals(
+        "STRING key=key_04, STRING c1=c1_4, STRING c2=c2_4, STRING c3=NULL, STRING c4=c4_4",
+        rowStrings.get(4));
+  }
+
+  /**
+   * Test to verify that we can write in and read back UTF8.
+   */
+  @Test(timeout = 100000)
+  public void testUTF8() throws Exception {
+    Schema schema = createManyStringsSchema();
+    syncClient.createTable(tableName, schema);
+
+    KuduSession session = syncClient.newSession();
+    KuduTable table = syncClient.openTable(tableName);
+    Insert insert = table.newInsert();
+    insert.addString("key", "กขฃคฅฆง"); // some thai
+    insert.addString("c1", "✁✂✃✄✆"); // some icons
+    insert.addString("c2", "hello"); // some normal chars
+    insert.addString("c4", "🐱"); // supplemental plane
+    session.apply(insert);
+    session.flush();
+
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(1, rowStrings.size());
+    assertEquals(
+        "STRING key=กขฃคฅฆง, STRING c1=✁✂✃✄✆, STRING c2=hello, STRING c3=NULL, STRING c4=🐱",
+        rowStrings.get(0));
+  }
+
 }

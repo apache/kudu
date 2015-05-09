@@ -8,6 +8,7 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -22,6 +23,7 @@ import org.junit.BeforeClass;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
+import org.kududb.client.AsyncKuduScanner.RowResultIterator;
 import org.kududb.util.NetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -320,6 +322,19 @@ public class BaseKuduTest {
     closer.addCallbacks(cb, defaultErrorCB);
     closer.join(DEFAULT_SLEEP);
     return counter.get();
+  }
+
+  protected List<String> scanTableToStrings(KuduTable table) throws Exception {
+    List<String> rowStrings = Lists.newArrayList();
+    KuduScanner scanner = syncClient.newScannerBuilder(table, table.getSchema()).build();
+    while (scanner.hasMoreRows()) {
+      RowResultIterator rows = scanner.nextRows();
+      for (RowResult r : rows) {
+        rowStrings.add(r.rowToString());
+      }
+    }
+    Collections.sort(rowStrings);
+    return rowStrings;
   }
 
   private static final int[] KEYS = new int[] {10, 20, 30};

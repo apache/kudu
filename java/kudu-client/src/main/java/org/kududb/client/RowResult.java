@@ -317,17 +317,18 @@ public class RowResult {
   }
 
   /**
-   *
-   * @return
+   * Return the actual data from this row in a stringified key=value
+   * form.
    */
-  public String toStringLongFormat() {
-    StringBuffer buf = new StringBuffer(this.rowSize); // super rough estimation
-    buf.append(this.toString());
+  public String rowToString() {
+    StringBuffer buf = new StringBuffer();
     for (int i = 0; i < schema.getColumnCount(); i++) {
       ColumnSchema col = schema.getColumn(i);
-      buf.append(", ");
-      buf.append(col.getName());
-      buf.append(": {");
+      if (i != 0) {
+        buf.append(", ");
+      }
+      buf.append(col.getType().name());
+      buf.append(" ").append(col.getName()).append("=");
       if (isNull(i)) {
         buf.append("NULL");
       } else if (col.getType().equals(Type.INT8)) {
@@ -347,8 +348,20 @@ public class RowResult {
       } else {
         buf.append("<unknown type!>");
       }
-      buf.append("}");
     }
+    return buf.toString();
+  }
+
+  /**
+   * @return a string describing the location of this row result within
+   * the iterator as well as its data.
+   */
+  public String toStringLongFormat() {
+    StringBuffer buf = new StringBuffer(this.rowSize); // super rough estimation
+    buf.append(this.toString());
+    buf.append("{");
+    buf.append(rowToString());
+    buf.append("}");
     return buf.toString();
   }
 
