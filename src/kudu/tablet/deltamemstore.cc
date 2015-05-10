@@ -150,7 +150,7 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
     RowChangeList val(v);
     // Mutation is for the target row, check deletion status.
     RowChangeListDecoder decoder(&schema_, RowChangeList(v));
-    RETURN_NOT_OK(decoder.Init());
+    decoder.InitNoSafetyChecks();
     decoder.TwiddleDeleteStatus(deleted);
 
     iter->Next();
@@ -250,7 +250,7 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
 
     if (flag == PREPARE_FOR_APPLY) {
       RowChangeListDecoder decoder(&dms_->schema_, RowChangeList(val));
-      decoder.Init();
+      decoder.InitNoSafetyChecks();
       if (decoder.is_delete() || decoder.is_reinsert()) {
         DeleteOrReinsert dor;
         dor.row_id = key.row_idx();

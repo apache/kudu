@@ -160,6 +160,19 @@ class RowChangeListDecoder {
   // appears to be corrupt/malformed.
   Status Init();
 
+  // Like Init() above, but does not perform any safety checks in a release build.
+  // This can be used when it's known that the source of the RowChangeList is
+  // guaranteed to be non-corrupt (e.g. we created it and have kept it in memory).
+  void InitNoSafetyChecks() {
+#ifndef NDEBUG
+    Status s = Init();
+    DCHECK(s.ok()) << s.ToString();
+#else
+    type_ = static_cast<RowChangeList::ChangeType>(remaining_[0]);
+    remaining_.remove_prefix(1);
+#endif
+  }
+
   bool HasNext() const {
     DCHECK(!is_delete());
     return !remaining_.empty();
