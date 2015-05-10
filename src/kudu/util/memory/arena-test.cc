@@ -161,4 +161,17 @@ TEST(TestArena, TestMemoryTrackingEnforced) {
   ASSERT_EQ(256, mem_tracker->consumption());
 }
 
+TEST(TestArena, TestSTLAllocator) {
+  Arena a(256, 256 * 1024);
+  typedef vector<int, ArenaAllocator<int, false> > ArenaVector;
+  ArenaAllocator<int, false> alloc(&a);
+  ArenaVector v(alloc);
+  for (int i = 0; i < 10000; i++) {
+    v.push_back(i);
+  }
+  for (int i = 0; i < 10000; i++) {
+    ASSERT_EQ(i, v[i]);
+  }
+}
+
 } // namespace kudu

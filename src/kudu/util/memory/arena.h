@@ -238,8 +238,8 @@ template<class T, bool THREADSAFE> class ArenaAllocator {
 
   void destroy(pointer p) { p->~T(); }
 
-  template<class U, bool TS> struct rebind {
-    typedef ArenaAllocator<U, TS> other;
+  template<class U> struct rebind {
+    typedef ArenaAllocator<U, THREADSAFE> other;
   };
 
   template<class U, bool TS> ArenaAllocator(const ArenaAllocator<U, TS>& other)
