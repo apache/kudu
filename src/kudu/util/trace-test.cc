@@ -10,6 +10,7 @@
 #include "kudu/util/trace.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/debug/trace_event_synthetic_delay.h"
+#include "kudu/util/debug/trace_logging.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -765,6 +766,42 @@ TEST_F(TraceEventSyntheticDelayTest, BeginParallel) {
   start_time = Now();
   delay->EndParallel(end_times[1]);
   EXPECT_LT(Now().GetDeltaSince(start_time).ToMilliseconds(), kShortDurationMs);
+}
+
+TEST_F(TraceTest, TestVLogTrace) {
+  for (FLAGS_v = 0; FLAGS_v <= 1; FLAGS_v++) {
+    TraceLog* tl = TraceLog::GetInstance();
+    tl->SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
+                   TraceLog::RECORDING_MODE,
+                   TraceLog::RECORD_CONTINUOUSLY);
+    VLOG_AND_TRACE("test", 1) << "hello world";
+    tl->SetDisabled();
+    string trace_json = TraceResultBuffer::FlushTraceLogToString();
+    ASSERT_STR_CONTAINS(trace_json, "hello world");
+    ASSERT_STR_CONTAINS(trace_json, "trace-test.cc");
+  }
+}
+
+namespace {
+string FunctionWithSideEffect(bool* b) {
+  *b = true;
+  return "function-result";
+}
+} // anonymous namespace
+
+// Test that, if tracing is not enabled, a VLOG_AND_TRACE doesn't evaluate its
+// arguments.
+TEST_F(TraceTest, TestVLogTraceLazyEvaluation) {
+  FLAGS_v = 0;
+  bool function_run = false;
+  VLOG_AND_TRACE("test", 1) << FunctionWithSideEffect(&function_run);
+  ASSERT_FALSE(function_run);
+
+  // If we enable verbose logging, we should run the side effect even though
+  // trace logging is disabled.
+  FLAGS_v = 1;
+  VLOG_AND_TRACE("test", 1) << FunctionWithSideEffect(&function_run);
+  ASSERT_TRUE(function_run);
 }
 
 } // namespace debug
