@@ -121,7 +121,7 @@ struct MaintenanceOpComparator {
 // Holds the information regarding a recently completed operation.
 struct CompletedOp {
   std::string name;
-  int duration_secs;
+  MonoDelta duration;
   MonoTime start_mono_time;
 };
 

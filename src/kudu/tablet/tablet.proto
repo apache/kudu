@@ -81,7 +81,7 @@ message MaintenanceManagerStatusPB {
 
   message CompletedOpPB {
     required string name = 1;
-    required int32 duration_secs = 2;
+    required int32 duration_millis = 2;
     // Number of seconds since this operation started.
     required int32 secs_since_start = 3;
   }

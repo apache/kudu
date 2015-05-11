@@ -19,6 +19,7 @@
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/debug/trace_logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
@@ -143,7 +144,7 @@ void MaintenanceManager::RegisterOp(MaintenanceOp* op) {
       << ", but it already exists in ops_.";
   op->manager_ = shared_from_this();
   op->cond_.reset(new ConditionVariable(&lock_));
-  VLOG(1) << "Registered " << op->name();
+  VLOG_AND_TRACE("maintenance", 1) << "Registered " << op->name();
 }
 
 void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
@@ -156,7 +157,7 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
         << ", but it was never registered";
     // While the op is running, wait for it to be finished.
     if (iter->first->running_ > 0) {
-      VLOG(1) << "Waiting for op " << op->name() << " to finish so "
+      VLOG_AND_TRACE("maintenance", 1) << "Waiting for op " << op->name() << " to finish so "
             << "we can unregister it.";
     }
     while (iter->first->running_ > 0) {
@@ -182,14 +183,14 @@ void MaintenanceManager::RunSchedulerThread() {
     // Loop until we are shutting down or it is time to run another op.
     cond_.TimedWait(polling_interval);
     if (shutdown_) {
-      VLOG(1) << "Shutting down maintenance manager.";
+      VLOG_AND_TRACE("maintenance", 1) << "Shutting down maintenance manager.";
       return;
     }
 
     // Find the best op.
     MaintenanceOp* op = FindBestOp();
     if (!op) {
-      VLOG(2) << "No maintenance operations look worth doing.";
+      VLOG_AND_TRACE("maintenance", 2) << "No maintenance operations look worth doing.";
       continue;
     }
 
@@ -218,12 +219,12 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   TRACE_EVENT0("maintenance", "MaintenanceManager::FindBestOp");
 
   if (!FLAGS_enable_maintenance_manager) {
-    VLOG(1) << "Maintenance manager is disabled. Doing nothing";
+    VLOG_AND_TRACE("maintenance", 1) << "Maintenance manager is disabled. Doing nothing";
     return NULL;
   }
   size_t free_threads = num_threads_ - running_ops_;
   if (free_threads == 0) {
-    VLOG(1) << "there are no free threads, so we can't run anything.";
+    VLOG_AND_TRACE("maintenance", 1) << "there are no free threads, so we can't run anything.";
     return NULL;
   }
 
@@ -273,7 +274,7 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
               << "no ops currently runnable which would free memory. ";
       return NULL;
     }
-    VLOG(1) << "mem_total is at " << mem_total << ", whereas we are "
+    VLOG_AND_TRACE("maintenance", 1) << "mem_total is at " << mem_total << ", whereas we are "
             << "targeting " << mem_target_ << ".  Running the op "
             << "which anchors the most memory: "
             << most_mem_anchored_op->name();
@@ -283,21 +284,22 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   // If our threadpool has more than one thread, we should leave a spare thread for future
   // memory emergencies that might happen in the future.
   if ((num_threads_ > 1) && (free_threads == 1)) {
-    VLOG(1) << "Leaving a free thread in case memory pressure becomes "
+    VLOG_AND_TRACE("maintenance", 1) << "Leaving a free thread in case memory pressure becomes "
             << "high in the future.";
     return NULL;
   }
   if (most_logs_retained_bytes_op) {
     if (most_logs_retained_bytes > 0) {
-      VLOG(1) << "Performing " << most_logs_retained_bytes_op->name() << ", "
-                 << "because it can free up more logs "
-                 << "at " << most_logs_retained_bytes << " bytes";
+      VLOG_AND_TRACE("maintenance", 1)
+        << "Performing " << most_logs_retained_bytes_op->name() << ", "
+        << "because it can free up more logs " << "at " << most_logs_retained_bytes
+        << " bytes";
       return most_logs_retained_bytes_op;
     }
   }
   if (best_perf_improvement_op) {
     if (best_perf_improvement > 0) {
-      VLOG(1) << "Performing " << best_perf_improvement_op->name() << ", "
+      VLOG_AND_TRACE("maintenance", 1) << "Performing " << best_perf_improvement_op->name() << ", "
                  << "because it had the best perf_improvement score, "
                  << "at " << best_perf_improvement;
       return best_perf_improvement_op;
@@ -319,15 +321,13 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
   MonoDelta delta(end_time.GetDeltaSince(start_time));
   lock_guard<Mutex> guard(&lock_);
 
-  int duration = delta.ToSeconds();
-
   CompletedOp& completed_op = completed_ops_[completed_ops_count_ % completed_ops_.size()];
   completed_op.name = op->name();
-  completed_op.duration_secs = duration;
+  completed_op.duration = delta;
   completed_op.start_mono_time = start_time;
   completed_ops_count_++;
 
-  op->DurationHistogram()->Increment(duration);
+  op->DurationHistogram()->Increment(delta.ToMilliseconds());
 
   running_ops_--;
   op->running_--;
@@ -386,7 +386,7 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
     if (!completed_op.name.empty()) {
       MaintenanceManagerStatusPB_CompletedOpPB* completed_pb = out_pb->add_completed_operations();
       completed_pb->set_name(completed_op.name);
-      completed_pb->set_duration_secs(completed_op.duration_secs);
+      completed_pb->set_duration_millis(completed_op.duration.ToMilliseconds());
 
       MonoDelta delta(MonoTime::Now(MonoTime::FINE).GetDeltaSince(completed_op.start_mono_time));
       completed_pb->set_secs_since_start(delta.ToSeconds());

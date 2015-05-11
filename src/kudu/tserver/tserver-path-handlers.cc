@@ -457,13 +457,17 @@ string TabletServerPathHandlers::GetDashboardLine(const std::string& link,
 
 void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::WebRequest& req,
                                                             std::stringstream* output) {
-  *output << "<h1>Maintenance Manager state</h1>\n";
   MaintenanceManager* manager = tserver_->maintenance_manager();
   MaintenanceManagerStatusPB pb;
   manager->GetMaintenanceManagerStatusDump(&pb);
+  if (ContainsKey(req.parsed_args, "raw")) {
+    *output << pb.DebugString();
+    return;
+  }
 
   int ops_count = pb.registered_operations_size();
 
+  *output << "<h1>Maintenance Manager state</h1>\n";
   *output << "<h3>Running operations</h3>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Name</th><th>Instances running</th></tr>\n";
@@ -484,21 +488,26 @@ void TabletServerPathHandlers::HandleMaintenanceManagerPage(const Webserver::Web
     MaintenanceManagerStatusPB_CompletedOpPB op_pb = pb.completed_operations(i);
     *output <<  Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
                            EscapeForHtmlToString(op_pb.name()),
-                           HumanReadableElapsedTime::ToShortString(op_pb.duration_secs()),
-                           HumanReadableElapsedTime::ToShortString(op_pb.secs_since_start()));
+                           HumanReadableElapsedTime::ToShortString(
+                               op_pb.duration_millis() / 1000.0),
+                           HumanReadableElapsedTime::ToShortString(
+                               op_pb.secs_since_start()));
   }
   *output << "</table>\n";
 
   *output << "<h3>Non-running operations</h3>\n";
   *output << "<table class='table table-striped'>\n";
-  *output << "  <tr><th>Name</th><th>RAM anchored</th><th>Logs retained</th></tr>\n";
+  *output << "  <tr><th>Name</th><th>Runnable</th><th>RAM anchored</th>\n"
+          << "       <th>Logs retained</th><th>Perf</th></tr>\n";
   for (int i = 0; i < ops_count; i++) {
     MaintenanceManagerStatusPB_MaintenanceOpPB op_pb = pb.registered_operations(i);
     if (op_pb.running() == 0) {
-      *output <<  Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
-                             EscapeForHtmlToString(op_pb.name()),
-                             HumanReadableNumBytes::ToString(op_pb.ram_anchored_bytes()),
-                             HumanReadableNumBytes::ToString(op_pb.logs_retained_bytes()));
+      *output << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td><td>$3</td><td>$4</td></tr>\n",
+                            EscapeForHtmlToString(op_pb.name()),
+                            op_pb.runnable(),
+                            HumanReadableNumBytes::ToString(op_pb.ram_anchored_bytes()),
+                            HumanReadableNumBytes::ToString(op_pb.logs_retained_bytes()),
+                            op_pb.perf_improvement());
     }
   }
   *output << "</table>\n";
