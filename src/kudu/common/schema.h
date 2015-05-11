@@ -13,6 +13,7 @@
 
 #include <glog/logging.h>
 
+#include "kudu/common/id_mapping.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/util/status.h"
 
@@ -644,11 +645,11 @@ class Schema {
   // If no such column exists, returns kColumnNotFound.
   int find_column_by_id(size_t id) const {
     DCHECK(has_column_ids());
-    IdToIndexMap::const_iterator iter = id_to_index_.find(id);
-    if (PREDICT_FALSE(iter == id_to_index_.end())) {
+    int ret = id_to_index_[id];
+    if (ret == -1) {
       return kColumnNotFound;
     }
-    return iter->second;
+    return ret;
   }
 
   enum {
@@ -689,8 +690,7 @@ class Schema {
   typedef unordered_map<StringPiece, size_t, __gnu_cxx::hash<StringPiece> > NameToIndexMap;
   NameToIndexMap name_to_index_;
 
-  typedef unordered_map<size_t, size_t> IdToIndexMap;
-  IdToIndexMap id_to_index_;
+  IdMapping id_to_index_;
 
   // Cached indicator whether any columns are nullable.
   bool has_nullables_;

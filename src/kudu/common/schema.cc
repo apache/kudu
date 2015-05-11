@@ -146,7 +146,7 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   col_ids_ = ids;
   id_to_index_.clear();
   for (int i = 0; i < ids.size(); ++i) {
-    id_to_index_[col_ids_[i]] = i;
+    id_to_index_.set(ids[i], i);
   }
 
   // Determine whether any column is nullable
