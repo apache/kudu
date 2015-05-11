@@ -1400,17 +1400,16 @@ shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const MaxIdxToSegmentMap&
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
     int64_t size = GetLogRetentionSizeForIndex(rowset->MinUnflushedLogIndex(),
                                                max_idx_to_segment_size);
-    if (size > retention_size) {
-      if (rowset->DeltaMemStoreSize() > mem_size) {
-        mem_size = rowset->DeltaMemStoreSize();
-        retention_size = size;
-        best_dms = rowset;
-      }
+    if ((size > retention_size) ||
+        (size == retention_size &&
+         (rowset->DeltaMemStoreSize() > mem_size))) {
+      mem_size = rowset->DeltaMemStoreSize();
+      retention_size = size;
+      best_dms = rowset;
     }
   }
   return best_dms;
 }
-
 
 int64_t Tablet::GetLogRetentionSizeForIndex(int64_t min_log_index,
                                             const MaxIdxToSegmentMap& max_idx_to_segment_size) {
