@@ -24,6 +24,10 @@ namespace kudu {
 
 class LinkedListTester;
 
+namespace tools {
+class TsAdminClient;
+} // namespace tools
+
 namespace client {
 
 class KuduEncodedKey;
@@ -839,6 +843,7 @@ class KUDU_EXPORT KuduScanner {
   std::string ToString() const;
  private:
   class KUDU_NO_EXPORT Data;
+  friend class kudu::tools::TsAdminClient;
 
   FRIEND_TEST(ClientTest, TestScanCloseProxy);
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);

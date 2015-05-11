@@ -713,7 +713,6 @@ Status KuduScanner::SetProjection(const KuduSchema* projection) {
     return Status::IllegalState("Projection must be set before Open()");
   }
   data_->projection_ = projection->schema_.get();
-  data_->projected_row_size_ = data_->CalculateProjectedRowSize(*data_->projection_);
   return Status::OK();
 }
 

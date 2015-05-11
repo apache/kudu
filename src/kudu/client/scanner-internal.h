@@ -52,6 +52,13 @@ class KuduScanner::Data {
   // Extracts data from the last scan response and adds them to 'rows'.
   Status ExtractRows(std::vector<KuduRowResult>* rows);
 
+  // Static implementation of ExtractRows. This is used by some external
+  // tools.
+  static Status ExtractRows(const rpc::RpcController& controller,
+                            const Schema* projection,
+                            tserver::ScanResponsePB* resp,
+                            std::vector<KuduRowResult>* rows);
+
   // Returns whether there exist more tablets we should scan.
   //
   // Note: there may not be any actual matching rows in subsequent tablets,
@@ -75,7 +82,7 @@ class KuduScanner::Data {
   void PrepareRequest(RequestType state);
 
   // Returns the size of a row for the given projection 'proj'.
-  size_t CalculateProjectedRowSize(const Schema& proj);
+  static size_t CalculateProjectedRowSize(const Schema& proj);
 
   bool open_;
   bool data_in_open_;
@@ -109,10 +116,8 @@ class KuduScanner::Data {
   // The table we're scanning.
   KuduTable* table_;
 
-  // The projection schema used in the scan, and the expected size (in
-  // bytes) per projected row.
+  // The projection schema used in the scan.
   const Schema* projection_;
-  size_t projected_row_size_;
 
   Arena arena_;
   AutoReleasePool pool_;

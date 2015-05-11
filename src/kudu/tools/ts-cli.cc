@@ -10,6 +10,8 @@
 #include <iostream>
 #include <strstream>
 
+#include "kudu/client/row_result.h"
+#include "kudu/client/scanner-internal.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -30,10 +32,15 @@ using std::ostringstream;
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
+using kudu::client::KuduRowResult;
+using kudu::client::KuduScanner;
 using kudu::tablet::TabletStatusPB;
 using kudu::tserver::TabletServerServiceProxy;
 using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
+using kudu::tserver::NewScanRequestPB;
+using kudu::tserver::ScanRequestPB;
+using kudu::tserver::ScanResponsePB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -43,6 +50,7 @@ using kudu::Sockaddr;
 const char* const kListTabletsOp = "list_tablets";
 const char* const kAreTabletsRunningOp = "are_tablets_running";
 const char* const kSetFlagOp = "set_flag";
+const char* const kDumpTabletOp = "dump_tablet";
 
 DEFINE_string(tserver_address, "localhost",
                 "Address of tablet server to run against");
@@ -71,11 +79,18 @@ class TsAdminClient {
   // given tablet server.
   Status ListTablets(std::vector<StatusAndSchemaPB>* tablets);
 
+
   // Sets the gflag 'flag' to 'val' on the remote server via RPC.
   // If 'force' is true, allows setting flags even if they're not marked as
   // safe to change at runtime.
   Status SetFlag(const string& flag, const string& val,
                  bool force);
+
+  // Get the schema for the given tablet.
+  Status GetTabletSchema(const std::string& tablet_id, SchemaPB* schema);
+
+  // Dump the contents of the given tablet, in key order, to the console.
+  Status DumpTablet(const std::string& tablet_id);
 
  private:
   std::string addr_;
@@ -154,6 +169,66 @@ Status TsAdminClient::SetFlag(const string& flag, const string& val,
   }
 }
 
+Status TsAdminClient::GetTabletSchema(const std::string& tablet_id,
+                                      SchemaPB* schema) {
+  VLOG(1) << "Fetching schema for tablet " << tablet_id;
+  vector<StatusAndSchemaPB> tablets;
+  RETURN_NOT_OK(ListTablets(&tablets));
+  BOOST_FOREACH(const StatusAndSchemaPB& pair, tablets) {
+    if (pair.tablet_status().tablet_id() == tablet_id) {
+      *schema = pair.schema();
+      return Status::OK();
+    }
+  }
+  return Status::NotFound("Cannot find tablet", tablet_id);
+}
+
+Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
+  SchemaPB schema_pb;
+  RETURN_NOT_OK(GetTabletSchema(tablet_id, &schema_pb));
+  Schema schema;
+  CHECK_OK(SchemaFromPB(schema_pb, &schema));
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+
+  NewScanRequestPB* new_req = req.mutable_new_scan_request();
+  CHECK_OK(SchemaToColumnPBsWithoutIds(schema, new_req->mutable_projected_columns()));
+  new_req->set_tablet_id(tablet_id);
+  new_req->set_cache_blocks(false);
+  new_req->set_order_mode(ORDERED);
+  new_req->set_read_mode(READ_AT_SNAPSHOT);
+
+  vector<KuduRowResult> rows;
+  while (true) {
+    RpcController rpc;
+    rpc.set_timeout(timeout_);
+    RETURN_NOT_OK_PREPEND(proxy_->Scan(req, &resp, &rpc),
+                          "Scan() failed");
+
+    if (resp.has_error()) {
+      return Status::IOError("Failed to read: ", resp.error().ShortDebugString());
+    }
+
+    rows.clear();
+    CHECK_OK(KuduScanner::Data::ExtractRows(rpc, &schema, &resp, &rows));
+    BOOST_FOREACH(const KuduRowResult& r, rows) {
+      std::cout << r.ToString() << std::endl;
+    }
+
+    // The first response has a scanner ID. We use this for all subsequent
+    // responses.
+    if (resp.has_scanner_id()) {
+      req.set_scanner_id(resp.scanner_id());
+      req.clear_new_scan_request();
+    }
+    if (!resp.has_more_results()) {
+      break;
+    }
+  }
+  return Status::OK();
+}
+
 namespace {
 
 void SetUsage(const char* argv0) {
@@ -163,23 +238,18 @@ void SetUsage(const char* argv0) {
       << "<operation> must be one of:\n"
       << "  " << kListTabletsOp << "\n"
       << "  " << kAreTabletsRunningOp << "\n"
-      << "  " << kSetFlagOp << " [-force] <flag> <value>\n";
+      << "  " << kSetFlagOp << " [-force] <flag> <value>\n"
+      << "  " << kDumpTabletOp << " <tablet_id>";
   google::SetUsageMessage(str.str());
 }
 
-string GetAndValidateOp(int argc, char** argv) {
+string GetOp(int argc, char** argv) {
   if (argc < 2) {
     google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
     exit(1);
   }
 
-  string op = argv[1];
-  if (op == kListTabletsOp || op == kAreTabletsRunningOp || op == kSetFlagOp) {
-    return op;
-  }
-  std::cerr << "Invalid operation: " << op << std::endl;
-  google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
-  exit(1);
+  return argv[1];
 }
 
 } // anonymous namespace
@@ -191,8 +261,7 @@ static int TsCliMain(int argc, char** argv) {
   InitGoogleLoggingSafe(argv[0]);
   const string addr = FLAGS_tserver_address;
 
-
-  string op = GetAndValidateOp(argc, argv);
+  string op = GetOp(argc, argv);
 
   TsAdminClient client(addr, FLAGS_timeout_ms);
 
@@ -251,8 +320,17 @@ static int TsCliMain(int argc, char** argv) {
       return 1;
     }
 
+  } else if (op == kDumpTabletOp) {
+    if (argc != 3) {
+      google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
+      exit(1);
+    }
+    string tablet_id = argv[2];
+    CHECK_OK(client.DumpTablet(tablet_id));
   } else {
-    LOG(FATAL) << "Invalid op specified: " << op;
+    std::cerr << "Invalid operation: " << op << std::endl;
+    google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
+    exit(1);
   }
 
   return 0;
