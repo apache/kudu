@@ -88,7 +88,7 @@ if [ "$CMD" = "master" ]; then
     MASTER_QUORUM="--master_quorum=$MASTER_IPS"
   fi
 
-  exec "$KUDU_HOME/bin/kudu-master" \
+  exec "$KUDU_HOME/sbin/kudu-master" \
     --log_dir="$LOG_DIR" \
     $MASTER_QUORUM \
     --default_num_replicas=$DEFAULT_NUM_REPLICAS \
@@ -96,7 +96,7 @@ if [ "$CMD" = "master" ]; then
     --master_data_dirs="$DATA_DIRS" \
     --flagfile="$CONF_DIR"/kudu-master.gflags
 elif [ "$CMD" = "tserver" ]; then
-  exec "$KUDU_HOME/bin/kudu-tablet_server" \
+  exec "$KUDU_HOME/sbin/kudu-tablet_server" \
     --log_dir="$LOG_DIR" \
     --tablet_server_master_addrs="$MASTER_IPS" \
     --tablet_server_wal_dir="$WAL_DIR" \
