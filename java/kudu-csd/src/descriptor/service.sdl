@@ -16,7 +16,7 @@
 {
   "name" : "KUDU",
   "label" : "Kudu",
-  "description" : "Kudu is a true column store for the Hadoop ecosystem.",
+  "description" : "Kudu is a true column store for the Hadoop ecosystem. <span class=\"error\">Kudu is currently in Beta and is not supported. Before adding this service, ensure that you have installed the Kudu binaries, which are not included in CDH.</span>",
   "version" : "0.1.0",
   "compatibility" : {
     "generation" : 1
@@ -60,8 +60,8 @@
       "parameters" : [
         {
           "name" : "master_web_port",
-          "label" : "Kudu Master WebUI Port",
-          "description" : "The port of the Kudu Master WebUI",
+          "label" : "Kudu Master Web UI Port",
+          "description" : "The port of the Kudu Master Web UI.",
           "type" : "port",
           "required" : "true",
           "default" : 8051
@@ -69,7 +69,7 @@
         {
           "name" : "master_address",
           "label" : "Master Address",
-          "description" : "Overrides the address where the Master will listen for connections.",
+          "description" : "Overrides the address where the Master will listen for connections. The default is to assume one standalone master running on localhost at port 7051.",
           "configName" : "server.address",
           "required" : "false",
           "type" : "string",
@@ -78,8 +78,8 @@
         {
           "name" : "default_num_replicas",
           "label" : "Default Number of Replicas",
-          "description" : "Default number of replicas for each tablet.  The default for this setting is 3.",
-          "required" : "false",
+          "description" : "Default number of replicas for each tablet.",
+          "required" : "true",
           "type" : "long",
           "min" : "1",
           "softMin" : "3",
@@ -88,7 +88,7 @@
         {
           "name" : "kudu_master_waldir",
           "label" : "Kudu Master WAL directory",
-          "description" : "Directory where Kudu masters will store write-ahead logs",
+          "description" : "Directory where Kudu masters will store write-ahead logs.",
           "required" : "true",
           "configurableInWizard" : true,
           "type" : "path",
@@ -97,7 +97,7 @@
         {
           "name" : "kudu_master_datadirs",
           "label" : "Kudu Master data directories",
-          "description" : "Directories where Kudu mastrs will store data blocks",
+          "description" : "Directories where Kudu masters will store data blocks.",
           "required" : "true",
           "configurableInWizard" : true,
           "type" : "path_array",
@@ -147,8 +147,8 @@
       "parameters" : [
         {
           "name" : "kudu_ts_web_port",
-          "label" : "Kudu Tablet Server WebUI Port",
-          "description" : "The port of the Kudu Tablet Server WebUI",
+          "label" : "Kudu Tablet Server Web UI Port",
+          "description" : "The port of the Kudu Tablet Server Web UI.",
           "type" : "port",
           "required" : "true",
           "default" : 8050
@@ -156,7 +156,7 @@
         {
           "name" : "kudu_ts_waldir",
           "label" : "Kudu Tablet Server WAL directory",
-          "description" : "Directory where Kudu tablet servers will store write-ahead logs",
+          "description" : "Directory where Kudu tablet servers will store write-ahead logs.",
           "required" : "true",
           "configurableInWizard" : true,
           "type" : "path",
@@ -165,7 +165,7 @@
         {
           "name" : "kudu_ts_datadirs",
           "label" : "Kudu Tablet Server data directories",
-          "description" : "Directories where Kudu tablet servers will store data blocks",
+          "description" : "Directories where Kudu tablet servers will store data blocks.",
           "required" : "true",
           "configurableInWizard" : true,
           "type" : "path_array",
