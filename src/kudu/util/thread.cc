@@ -383,16 +383,20 @@ Status ThreadJoiner::Join() {
                                              waited_ms, thread_->name_));
 }
 
-void Thread::CallAtExit(const Closure& cb) {
-  CHECK_EQ(Thread::current_thread(), this);
-  exit_callbacks_.push_back(cb);
-}
-
 Thread::~Thread() {
   if (joinable_) {
     int ret = pthread_detach(thread_);
     CHECK_EQ(ret, 0);
   }
+}
+
+void Thread::CallAtExit(const Closure& cb) {
+  CHECK_EQ(Thread::current_thread(), this);
+  exit_callbacks_.push_back(cb);
+}
+
+std::string Thread::ToString() const {
+  return Substitute("Thread $0 (name: \"$1\", category: \"$2\")", tid_, name_, category_);
 }
 
 Status Thread::StartThread(const std::string& category, const std::string& name,

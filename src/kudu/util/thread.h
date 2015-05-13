@@ -159,6 +159,9 @@ class Thread : public RefCountedThreadSafe<Thread> {
     return StartThread(category, name, boost::bind(f, a1, a2, a3, a4, a5, a6), holder);
   }
 
+  // Emulates boost::thread and detaches.
+  ~Thread();
+
   // Blocks until this thread finishes execution. Once this method returns, the thread
   // will be unregistered with the ThreadMgr and will not appear in the debug UI.
   void Join() { ThreadJoiner(this).Join(); }
@@ -180,6 +183,9 @@ class Thread : public RefCountedThreadSafe<Thread> {
   const std::string& name() const { return name_; }
   const std::string& category() const { return category_; }
 
+  // Return a string representation of the thread identifying information.
+  std::string ToString() const;
+
   // The current thread of execution, or NULL if the current thread isn't a kudu::Thread.
   // This call is signal-safe.
   static Thread* current_thread() { return tls_; }
@@ -200,9 +206,6 @@ class Thread : public RefCountedThreadSafe<Thread> {
     // this speeds up some code paths in the tracing implementation.
     return static_cast<int64_t>(pthread_self());
   }
-
-  // Emulates boost::thread and detaches.
-  ~Thread();
 
  private:
   friend class ThreadJoiner;

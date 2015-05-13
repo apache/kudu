@@ -4,6 +4,7 @@
 #include <glog/logging.h>
 #include <gperftools/heap-checker.h>
 
+#include "kudu/util/thread.h"
 #include "kudu/util/threadlocal.h"
 #include "kudu/util/thread_restrictions.h"
 
@@ -44,7 +45,8 @@ void ThreadRestrictions::AssertIOAllowed() {
     << "disallows IO!  If this thread really should be allowed to "
     << "make IO calls, adjust the call to "
     << "kudu::ThreadRestrictions::SetIOAllowed() in this thread's "
-    << "startup.";
+    << "startup. "
+    << (Thread::current_thread() ? Thread::current_thread()->ToString() : "(not a kudu::Thread)");
 }
 
 bool ThreadRestrictions::SetWaitAllowed(bool allowed) {
@@ -56,7 +58,8 @@ bool ThreadRestrictions::SetWaitAllowed(bool allowed) {
 void ThreadRestrictions::AssertWaitAllowed() {
   CHECK(LoadTLS()->wait_allowed)
     << "Waiting is not allowed to be used on this thread to prevent "
-    << "server-wide latency aberrations and deadlocks.";
+    << "server-wide latency aberrations and deadlocks. "
+    << (Thread::current_thread() ? Thread::current_thread()->ToString() : "(not a kudu::Thread)");
 }
 
 } // namespace kudu
