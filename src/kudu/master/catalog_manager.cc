@@ -566,6 +566,15 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
         return s;
   }
+  for (int i = 0; i < schema.num_key_columns(); i++) {
+    const DataType type = schema.column(i).type_info()->type();
+    if (!IsTypeAllowableInKey(type)) {
+        Status s = Status::InvalidArgument(
+            "Key column may not have type of BOOL, FLOAT, or DOUBLE");
+        SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+        return s;
+    }
+  }
   schema = schema.CopyWithColumnIds();
 
   int max_tablets = FLAGS_max_create_tablets_per_ts * master_->ts_manager()->GetCount();

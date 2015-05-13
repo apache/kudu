@@ -336,5 +336,36 @@ TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
   }
 }
 
+TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
+  const char *kTableName = "testtb";
+
+  {
+    const Schema kTableSchema(boost::assign::list_of(ColumnSchema("key", BOOL)),
+                              1);
+    Status s = CreateTable(kTableName, kTableSchema);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+        "Key column may not have type of BOOL, FLOAT, or DOUBLE");
+  }
+
+  {
+    const Schema kTableSchema(boost::assign::list_of(ColumnSchema("key", FLOAT)),
+                              1);
+    Status s = CreateTable(kTableName, kTableSchema);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+        "Key column may not have type of BOOL, FLOAT, or DOUBLE");
+  }
+
+  {
+    const Schema kTableSchema(boost::assign::list_of(ColumnSchema("key", DOUBLE)),
+                              1);
+    Status s = CreateTable(kTableName, kTableSchema);
+    ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
+    ASSERT_STR_CONTAINS(s.ToString(),
+        "Key column may not have type of BOOL, FLOAT, or DOUBLE");
+  }
+}
+
 } // namespace master
 } // namespace kudu

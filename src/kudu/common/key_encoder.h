@@ -182,28 +182,6 @@ struct KeyEncoderTraits<STRING> {
   }
 };
 
-// Currently unsupported
-template<>
-struct KeyEncoderTraits<BOOL> {
-
-  static const DataType key_type = BOOL;
-
-  static void Encode(const void* key, faststring* dst) {
-    LOG(FATAL) << "BOOL keys are presently unsupported";
-  }
-
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
-    Encode(key, dst);
-  }
-
-  static Status DecodeKeyPortion(Slice* encoded_key,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr) {
-    LOG(FATAL) << "BOOL keys are presently unsupported";
-  }
-};
-
 // The runtime version of the key encoder
 class KeyEncoder {
  public:
@@ -265,6 +243,8 @@ class KeyEncoder {
 };
 
 extern const KeyEncoder &GetKeyEncoder(DataType type);
+
+extern const bool IsTypeAllowableInKey(DataType type);
 
 } // namespace kudu
 

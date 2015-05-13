@@ -20,6 +20,10 @@ class EncoderResolver {
     return *encoders_[t];
   }
 
+  const bool HasKeyEncoderForType(DataType t) {
+    return t < encoders_.size();
+  }
+
  private:
   EncoderResolver() {
     AddMapping<UINT8>();
@@ -31,7 +35,6 @@ class EncoderResolver {
     AddMapping<UINT64>();
     AddMapping<INT64>();
     AddMapping<STRING>();
-    AddMapping<BOOL>();
   }
 
   template<DataType Type> void AddMapping() {
@@ -45,6 +48,11 @@ class EncoderResolver {
 
 const KeyEncoder &GetKeyEncoder(DataType type) {
   return Singleton<EncoderResolver>::get()->GetKeyEncoder(type);
+}
+
+// Returns true if the type is allowed in keys.
+const bool IsTypeAllowableInKey(DataType type) {
+  return Singleton<EncoderResolver>::get()->HasKeyEncoderForType(type);
 }
 
 }  // namespace kudu
