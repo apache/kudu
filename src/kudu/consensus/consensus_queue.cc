@@ -388,10 +388,10 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
   Mode mode_copy;
   {
     unique_lock<simple_spinlock> scoped_lock(&queue_lock_);
-    DCHECK_EQ(queue_state_.state, kQueueOpen);
+    DCHECK_NE(kQueueConstructed, queue_state_.state);
 
     TrackedPeer* peer = FindPtrOrNull(peers_map_, response.responder_uuid());
-    if (PREDICT_FALSE(peer == NULL)) {
+    if (PREDICT_FALSE(queue_state_.state != kQueueOpen || peer == NULL)) {
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Queue is closed or peer was untracked, disregarding "
           "peer response. Response: " << response.ShortDebugString();
       *more_pending = false;
