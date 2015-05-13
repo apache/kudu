@@ -76,28 +76,23 @@ class Log::AppendThread {
   // method.
   void Shutdown();
 
-  bool closing() const {
-    boost::lock_guard<boost::mutex> lock_guard(lock_);
-    return closing_;
-  }
-
  private:
   void RunThread();
 
+  Log* const log_;
+
+  // Lock to protect access to thread_ during shutdown.
   mutable boost::mutex lock_;
-  Log* log_;
-  bool closing_;
-  scoped_refptr<kudu::Thread> thread_;
+  scoped_refptr<Thread> thread_;
 };
 
 
 Log::AppendThread::AppendThread(Log *log)
-  : log_(log),
-    closing_(false) {
+  : log_(log) {
 }
 
 Status Log::AppendThread::Init() {
-  DCHECK(thread_.get() == NULL) << "Already initialized";
+  DCHECK(!thread_) << "Already initialized";
   VLOG(1) << "Starting log append thread for tablet " << log_->tablet_id();
   RETURN_NOT_OK(kudu::Thread::Create("log", "appender",
       &AppendThread::RunThread, this, &thread_));
@@ -105,13 +100,18 @@ Status Log::AppendThread::Init() {
 }
 
 void Log::AppendThread::RunThread() {
-  LogEntryBatchQueue* queue = log_->entry_queue();
-  while (PREDICT_TRUE(!closing())) {
+  bool shutting_down = false;
+  while (PREDICT_TRUE(!shutting_down)) {
     std::vector<LogEntryBatch*> entry_batches;
     ElementDeleter d(&entry_batches);
 
-    if (PREDICT_FALSE(!queue->BlockingDrainTo(&entry_batches))) {
-      break;
+    // We shut down the entry_queue when it's time to shut down the append
+    // thread, which causes this call to return false, while still populating
+    // the entry_batches vector with the final set of log entry batches that
+    // were enqueued. We finish processing this last bunch of log entry batches
+    // before exiting the main RunThread() loop.
+    if (PREDICT_FALSE(!log_->entry_queue()->BlockingDrainTo(&entry_batches))) {
+      shutting_down = true;
     }
 
     if (log_->metrics_) {
@@ -176,24 +176,14 @@ void Log::AppendThread::RunThread() {
 }
 
 void Log::AppendThread::Shutdown() {
-  {
-    boost::lock_guard<boost::mutex> lock_guard(lock_);
-    if (closing_) {
-      return;
-    }
-    closing_ = true;
-  }
-
-  VLOG(1) << "Shutting down log append thread for tablet " << log_->tablet_id();
-
-  LogEntryBatchQueue* queue = log_->entry_queue();
-  queue->Shutdown();
+  log_->entry_queue()->Shutdown();
+  boost::lock_guard<boost::mutex> lock_guard(lock_);
   if (thread_) {
+    VLOG(1) << "Shutting down log append thread for tablet " << log_->tablet_id();
     CHECK_OK(ThreadJoiner(thread_.get()).Join());
+    VLOG(1) << "Log append thread for tablet " << log_->tablet_id() << " is shut down";
     thread_.reset();
   }
-
-  VLOG(1) << "Log append thread for tablet " << log_->tablet_id() << " is shut down";
 }
 
 // This task is submitted to allocation_pool_ in order to
@@ -721,20 +711,16 @@ void Log::SetSchemaForNextLogSegment(const Schema& schema) {
 }
 
 Status Log::Close() {
-  if (log_hooks_) {
-    RETURN_NOT_OK_PREPEND(log_hooks_->PreClose(),
-                          "PreClose hook failed");
-  }
-
   allocation_pool_->Shutdown();
-  if (append_thread_) {
-    append_thread_->Shutdown();
-    VLOG(1) << "Append thread Shutdown()";
-  }
+  append_thread_->Shutdown();
 
   boost::lock_guard<percpu_rwlock> l(state_lock_);
   switch (log_state_) {
     case kLogWriting:
+      if (log_hooks_) {
+        RETURN_NOT_OK_PREPEND(log_hooks_->PreClose(),
+                              "PreClose hook failed");
+      }
       RETURN_NOT_OK(Sync());
       RETURN_NOT_OK(CloseCurrentSegment());
       RETURN_NOT_OK(ReplaceSegmentInReaderUnlocked());
@@ -882,12 +868,6 @@ Status Log::CreatePlaceholderSegment(const WritableFileOptions& opts,
 }
 
 Log::~Log() {
-  {
-    boost::shared_lock<rw_spinlock> l(state_lock_.get_lock());
-    if (log_state_ == kLogClosed) {
-      return;
-    }
-  }
   WARN_NOT_OK(Close(), "Error closing log");
 }
 
