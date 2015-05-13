@@ -100,6 +100,10 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
   }
 }
 
+std::string KuduColumnSchema::DataTypeToString(DataType type) {
+  return DataType_Name(ToInternalDataType(type));
+}
+
 KuduColumnSchema::KuduColumnSchema(const std::string &name,
                                    DataType type,
                                    bool is_nullable,
@@ -143,6 +147,7 @@ bool KuduColumnSchema::is_nullable() const {
 bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
   return this == &other || col_->Equals(*other.col_, true);
 }
+
 
 KuduSchema::KuduSchema() {}
 

@@ -78,6 +78,8 @@ class KUDU_EXPORT KuduColumnSchema {
     DOUBLE = 7
   };
 
+  static std::string DataTypeToString(DataType type);
+
   KuduColumnSchema(const std::string &name,
                    DataType type,
                    bool is_nullable = false,
