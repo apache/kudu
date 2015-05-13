@@ -11,12 +11,15 @@ import org.apache.hadoop.mapreduce.lib.output.NullOutputFormat;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 
 import static org.junit.Assert.*;
 
 public class TestInputFormatJob extends BaseKuduTest {
+  private static final Logger LOG = LoggerFactory.getLogger(TestInputFormatJob.class);
 
   private static final String TABLE_NAME =
       TestInputFormatJob.class.getName() + "-" + System.currentTimeMillis();

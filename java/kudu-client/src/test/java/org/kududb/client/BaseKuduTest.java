@@ -35,7 +35,7 @@ import static org.junit.Assert.fail;
 
 public class BaseKuduTest {
 
-  public static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);
+  private static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);
 
   private static final String MASTER_ADDRESS = "masterAddress";
   private static final String MASTER_PORT = "masterPort";

@@ -4,6 +4,8 @@ package org.kududb.client;
 
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import static org.junit.Assert.assertEquals;
 
@@ -12,7 +14,7 @@ import static org.junit.Assert.assertEquals;
  * Tests {@link AsyncKuduClient} with multiple masters.
  */
 public class TestMasterFailover extends BaseKuduTest {
-
+  private static final Logger LOG = LoggerFactory.getLogger(TestMasterFailover.class);
   private static final String TABLE_NAME =
       TestMasterFailover.class.getName() + "-" + System.currentTimeMillis();
 

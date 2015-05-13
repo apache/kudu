@@ -7,6 +7,8 @@ import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Date;
@@ -23,6 +25,7 @@ import static org.junit.Assert.assertTrue;
  * All the work for commit wait is done and tested on the server-side.
  */
 public class TestHybridTime extends BaseKuduTest {
+  private static final Logger LOG = LoggerFactory.getLogger(TestHybridTime.class);
 
   // Generate a unique table name
   protected static final String TABLE_NAME =

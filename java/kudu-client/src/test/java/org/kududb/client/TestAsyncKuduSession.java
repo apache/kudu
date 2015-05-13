@@ -9,6 +9,8 @@ import com.stumbleupon.async.Deferred;
 import org.kududb.Type;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -29,6 +31,7 @@ import static org.junit.Assert.*;
  */
 public class TestAsyncKuduSession extends BaseKuduTest {
   // Generate a unique table name
+  private static final Logger LOG = LoggerFactory.getLogger(TestAsyncKuduSession.class);
   private static final String TABLE_NAME =
       TestAsyncKuduSession.class.getName()+"-"+System.currentTimeMillis();
 
