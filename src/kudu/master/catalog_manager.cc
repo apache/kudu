@@ -54,6 +54,7 @@
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
@@ -81,6 +82,12 @@ DEFINE_int32(max_create_tablets_per_ts, 20,
              "(Advanced option)");
 DEFINE_bool(catalog_manager_allow_local_consensus, true,
             "Use local consensus when quorum size == 1");
+// TODO: Abdicate on timeout.
+DEFINE_int32(master_failover_catchup_timeout_ms, 30 * 1000, // 30 sec
+             "Amount of time to give a newly-elected leader master to load"
+             " the previous master's metadata and become active. If this time"
+             " is exceeded, the node crashes.");
+TAG_FLAG(master_failover_catchup_timeout_ms, advanced);
 
 namespace kudu {
 namespace master {
@@ -89,8 +96,10 @@ using base::subtle::NoBarrier_Load;
 using base::subtle::NoBarrier_CompareAndSwap;
 using cfile::TypeEncodingInfo;
 using consensus::kMinimumTerm;
+using consensus::Consensus;
 using consensus::ConsensusStatePB;
 using consensus::GetConsensusRole;
+using consensus::OpId;
 using consensus::QuorumPeerPB;
 using rpc::RpcContext;
 using std::string;
@@ -290,7 +299,7 @@ void CatalogManagerBgTasks::Run() {
           //
           // TODO Add tests for this in the revision that makes
           // create/alter fault tolerant.
-          LOG(ERROR) << "Error processing pending assignments, aborting the current task:"
+          LOG(ERROR) << "Error processing pending assignments, aborting the current task: "
                      << s.ToString();
         }
       }
@@ -349,7 +358,7 @@ void CheckIfNoLongerLeaderAndSetupError(Status s, RespClass* resp) {
 CatalogManager::CatalogManager(Master *master)
   : master_(master),
     state_(kConstructed),
-    leader_ready_(false) {
+    leader_ready_term_(-1) {
   CHECK_OK(ThreadPoolBuilder("leader-initialization")
            .set_max_threads(1)
            .Build(&worker_pool_));
@@ -393,21 +402,59 @@ Status CatalogManager::Init(bool is_first_run) {
 
 Status CatalogManager::ElectedAsLeaderCb() {
   boost::lock_guard<simple_spinlock> l(state_lock_);
-  leader_ready_ = false;
   return worker_pool_->SubmitClosure(
       Bind(&CatalogManager::VisitTablesAndTabletsTask, Unretained(this)));
 }
 
+Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
+  string uuid = master_->fs_manager()->uuid();
+  Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
+  ConsensusStatePB cstate = consensus->CommittedConsensusState();
+  if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
+    return Status::IllegalState(
+        Substitute("Node $0 not leader. Consensus state: $1",
+                    uuid, cstate.ShortDebugString()));
+  }
+
+  // Wait for all transactions to be committed.
+  RETURN_NOT_OK(sys_catalog_->tablet_peer()->transaction_tracker()->WaitForAllToFinish(timeout));
+  return Status::OK();
+}
+
 void CatalogManager::VisitTablesAndTabletsTask() {
-  LOG(INFO) << "Loading table and tablet metadata into memory...";
+
+  Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
+  int64_t term = consensus->CommittedConsensusState().current_term();
+  Status s = WaitUntilCaughtUpAsLeader(
+      MonoDelta::FromMilliseconds(FLAGS_master_failover_catchup_timeout_ms));
+  if (!s.ok()) {
+    WARN_NOT_OK(s, "Failed waiting for node to catch up after master election");
+    // TODO: Abdicate on timeout instead of crashing.
+    if (s.IsTimedOut()) {
+      LOG(FATAL) << "Shutting down due to unavailability of other masters after"
+                 << " election. TODO: Abdicate instead.";
+    }
+    return;
+  }
+
   {
     boost::lock_guard<LockType> lock(lock_);
+    int64_t term_after_wait = consensus->CommittedConsensusState().current_term();
+    if (term_after_wait != term) {
+      // If we got elected leader again while waiting to catch up then we will
+      // get another callback to visit the tables and tablets, so bail.
+      LOG(INFO) << "Term change from " << term << " to " << term_after_wait
+                << " while waiting for master leader catchup. Not loading sys catalog metadata";
+      return;
+    }
+
+    LOG(INFO) << "Loading table and tablet metadata into memory...";
     LOG_SLOW_EXECUTION(WARNING, 1000, LogPrefix() + "Loading metadata into memory") {
       CHECK_OK(VisitTablesAndTabletsUnlocked());
     }
   }
   boost::lock_guard<simple_spinlock> l(state_lock_);
-  leader_ready_ = true;
+  leader_ready_term_ = term;
 }
 
 Status CatalogManager::VisitTablesAndTabletsUnlocked() {
@@ -453,12 +500,15 @@ Status CatalogManager::CheckIsLeaderAndReady() const {
     return Status::ServiceUnavailable(
         Substitute("Catalog manager is shutting down. State: $0", state_));
   }
-  QuorumPeerPB::Role role = sys_catalog_->tablet_peer_->consensus()->role();
-  if (PREDICT_FALSE(role != QuorumPeerPB::LEADER)) {
+  Consensus* consensus = sys_catalog_->tablet_peer_->consensus();
+  ConsensusStatePB cstate = consensus->CommittedConsensusState();
+  string uuid = master_->fs_manager()->uuid();
+  if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
     return Status::IllegalState(
-        Substitute("Not the leader. Role: $0", QuorumPeerPB::Role_Name(role)));
+        Substitute("Not the leader. Local UUID: $0, Consensus state: $1",
+                   uuid, cstate.ShortDebugString()));
   }
-  if (PREDICT_FALSE(!leader_ready_)) {
+  if (PREDICT_FALSE(leader_ready_term_ != cstate.current_term())) {
     return Status::ServiceUnavailable("Leader not yet ready to serve requests");
   }
   return Status::OK();
@@ -1313,7 +1363,9 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (report.has_committed_consensus_state()) {
     // If the tablet was not RUNNING mark it as such
     if (!tablet_lock.data().is_running() && report.state() == tablet::RUNNING) {
-      DCHECK(tablet_lock.data().pb.state() == SysTabletsEntryPB::kTabletStateCreating);
+      DCHECK_EQ(SysTabletsEntryPB::kTabletStateCreating, tablet_lock.data().pb.state())
+          << "Tablet in unexpected state: " << tablet->ToString()
+          << ": " << tablet_lock.data().pb.ShortDebugString();
       // Mark the tablet as running
       // TODO: we could batch the IO onto a background thread, or at least
       // across multiple tablets in the same report.
@@ -1639,15 +1691,15 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
                     const string& permanent_uuid,
                     const scoped_refptr<TabletInfo>& tablet)
     : AsyncTabletRequestTask(master, callback_pool, permanent_uuid, tablet->table()),
-      tablet_(tablet) {
+      tablet_id_(tablet->tablet_id()) {
     deadline_ = start_ts_;
     deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_assignment_timeout_ms));
 
-    TableMetadataLock table_lock(tablet_->table(), TableMetadataLock::READ);
-    const SysTabletsEntryPB& tablet_pb = tablet_->metadata().dirty().pb;
+    TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
+    const SysTabletsEntryPB& tablet_pb = tablet->metadata().dirty().pb;
 
-    req_.set_table_id(tablet_->table()->id());
-    req_.set_tablet_id(tablet_->tablet_id());
+    req_.set_table_id(tablet->table()->id());
+    req_.set_tablet_id(tablet->tablet_id());
     req_.set_start_key(tablet_pb.start_key());
     req_.set_end_key(tablet_pb.end_key());
     req_.set_table_name(table_lock.data().pb.name());
@@ -1658,11 +1710,11 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
   virtual string type_name() const OVERRIDE { return "Create Tablet"; }
 
   virtual string description() const OVERRIDE {
-    return "CreateTablet RPC for tablet " + tablet_->ToString() + " on TS " + permanent_uuid_;
+    return "CreateTablet RPC for tablet " + tablet_id_ + " on TS " + permanent_uuid_;
   }
 
  protected:
-  virtual string tablet_id() const OVERRIDE { return tablet_->tablet_id(); }
+  virtual string tablet_id() const OVERRIDE { return tablet_id_; }
 
   virtual void HandleResponse(int attempt) OVERRIDE {
     if (!resp_.has_error()) {
@@ -1670,12 +1722,12 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
     } else {
       Status s = StatusFromPB(resp_.error().status());
       if (s.IsAlreadyPresent()) {
-        LOG(INFO) << "CreateTablet RPC for tablet " << tablet_->tablet_id()
+        LOG(INFO) << "CreateTablet RPC for tablet " << tablet_id_
                   << " on TS " << permanent_uuid_ << " returned already present: "
                   << s.ToString();
         MarkComplete();
       } else {
-        LOG(WARNING) << "CreateTablet RPC for tablet " << tablet_->tablet_id()
+        LOG(WARNING) << "CreateTablet RPC for tablet " << tablet_id_
                      << " on TS " << permanent_uuid_ << " failed: " << s.ToString();
       }
     }
@@ -1690,7 +1742,7 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
   }
 
  private:
-  const scoped_refptr<TabletInfo> tablet_;
+  const string tablet_id_;
   tserver::CreateTabletRequestPB req_;
   tserver::CreateTabletResponsePB resp_;
 };
@@ -2145,16 +2197,15 @@ Status CatalogManager::ProcessPendingAssignments(
 
   // Update the sys catalog with the new set of tablets/metadata.
   if (s.ok()) {
-    s = sys_catalog_->AddAndUpdateTablets(
-        deferred.tablets_to_add, deferred.tablets_to_update);
+    s = sys_catalog_->AddAndUpdateTablets(deferred.tablets_to_add,
+                                          deferred.tablets_to_update);
     if (!s.ok()) {
-      s = s.CloneAndPrepend(Substitute("An error occurred while updating tablets: $0",
-                                       s.ToString()));
+      s = s.CloneAndPrepend("An error occurred while persisting the updated tablet metadata");
     }
   }
 
   if (!s.ok()) {
-    LOG(WARNING) << s.ToString() << ", aborting the current task.";
+    LOG(WARNING) << "Aborting the current task due to error: " << s.ToString();
     // If there was an error, abort any mutations started by the
     // current task.
     vector<string> tablet_ids_to_remove;
@@ -2167,7 +2218,6 @@ Status CatalogManager::ProcessPendingAssignments(
       }
       tablet_ids_to_remove.push_back(new_tablet->tablet_id());
     }
-    LOG(WARNING) << s.ToString();
     boost::lock_guard<LockType> l(lock_);
     unlocker_out.Abort();
     unlocker_in.Abort();
@@ -2197,8 +2247,8 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
 
   if (ts_descs.size() < nreplicas) {
     return Status::InvalidArgument(
-        Substitute("Not enough Tablet Servers are online for table '$0'. Need at least $1 "
-                   "servers, but only $2 are available.",
+        Substitute("Not enough tablet servers are online for table '$0'. Need at least $1 "
+                   "replicas, but only $2 tablet servers are available",
                    table_guard.data().name(), nreplicas, ts_descs.size()));
   }
 

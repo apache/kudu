@@ -229,6 +229,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // This method is not thread safe.
   void UnregisterMaintenanceOps();
 
+  // Return pointer to the transaction tracker for this peer.
+  const TransactionTracker* transaction_tracker() const { return &txn_tracker_; }
+
  private:
   friend class RefCountedThreadSafe<TabletPeer>;
   friend class TabletPeerTest;

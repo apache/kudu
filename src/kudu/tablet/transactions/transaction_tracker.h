@@ -48,7 +48,8 @@ class TransactionTracker {
   // Returns number of pending transactions.
   int GetNumPendingForTests() const;
 
-  void WaitForAllToFinish();
+  void WaitForAllToFinish() const;
+  Status WaitForAllToFinish(const MonoDelta& timeout) const;
 
   void StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity);
 

@@ -24,7 +24,7 @@ public class TestMasterFailover extends BaseKuduTest {
     createTable(TABLE_NAME, basicSchema, new CreateTableBuilder());
   }
 
-  @Test(timeout = 100000)
+  @Test(timeout = 30000)
   public void testKillLeader() throws Exception {
     int countMasters = masterHostPorts.size();
     if (countMasters < 3) {

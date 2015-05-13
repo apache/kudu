@@ -404,6 +404,18 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // below.
   Status ElectedAsLeaderCb();
 
+  // Loops and sleeps until one of the following conditions occurs:
+  // 1. The current node is the leader of the master quorum in the current term
+  //    and at least one op from the current term is committed. Returns OK.
+  // 2. The current node is not the leader of the master quorum.
+  //    Returns IllegalState.
+  // 3. The provided timeout expires. Returns TimedOut.
+  //
+  // This method is intended to ensure that all operations replicated by
+  // previous masters are committed and visible to the local node before
+  // reading that data, to ensure consistency across failovers.
+  Status WaitUntilCaughtUpAsLeader(const MonoDelta& timeout);
+
   // This method is submitted to 'leader_initialization_pool_' by
   // ElectedAsLeaderCb above. It:
   // 1) Acquired 'lock_'
@@ -411,7 +423,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // 3) Runs VisitTablesAndTabletsUnlocked below
   // 4) Sets 'tables_tablets_visited_status_' to return value of
   // the call to VisitTablesAndTabletsUnlocked.
-  // 5) Releases 'lock_' and if successful, sets 'leader_ready_'
+  // 5) Releases 'lock_' and if successful, updates 'leader_ready_term_'
   // to true (under state_lock_).
   void VisitTablesAndTabletsTask();
 
@@ -528,6 +540,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // assignment/creation.
   //
   // This method is part of the "ProcessPendingAssignments()"
+  //
+  // This must be called after persisting the tablet state as
+  // kTabletStateCreating to ensure coherent state after Master failover.
   void SendCreateTabletRequests(const std::vector<TabletInfo*>& tablets);
 
   // Send the "alter table request" to all TS that have tablet of the specified table
@@ -596,7 +611,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
     kClosing
   };
 
-  // Lock protecting state_, leader_ready_
+  // Lock protecting state_, leader_ready_term_
   mutable simple_spinlock state_lock_;
   State state_;
 
@@ -608,12 +623,13 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // upon closely timed consecutive elections).
   gscoped_ptr<ThreadPool> worker_pool_;
 
-  // If we are the leader of a master quorum, Indicates whether all of
-  // the required in-memory state (tables and tablets metadata) has
-  // been successfully loaded into memory. This is used to "fence"
-  // clients and tablets server requests that depend on the in-memory
-  // state until this master can respond correctly.
-  bool leader_ready_;
+  // This field is updated when a node becomes leader of the master quorum,
+  // waits for all outstanding uncommitted metadata (table and tablet metadata)
+  // in the sys catalog to commit, and then reads that metadata into in-memory
+  // data structures. This is used to "fence" client and tablet server requests
+  // that depend on the in-memory state until this master can respond
+  // correctly.
+  int64_t leader_ready_term_;
 
   // Async operations are accessing some private methods
   // (TODO: this stuff should be deferred and done in the background thread)

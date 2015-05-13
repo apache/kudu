@@ -4,6 +4,7 @@
 #include "kudu/tablet/transactions/transaction_tracker.h"
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 #include <boost/foreach.hpp>
@@ -118,7 +119,12 @@ int TransactionTracker::GetNumPendingForTests() const {
   return pending_txns_.size();
 }
 
-void TransactionTracker::WaitForAllToFinish() {
+void TransactionTracker::WaitForAllToFinish() const {
+  // Wait indefinitely.
+  CHECK_OK(WaitForAllToFinish(MonoDelta::FromNanoseconds(std::numeric_limits<int64_t>::max())));
+}
+
+Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
   const int complain_ms = 1000;
   int wait_time = 250;
   int num_complaints = 0;
@@ -136,6 +142,11 @@ void TransactionTracker::WaitForAllToFinish() {
     }
     SleepFor(MonoDelta::FromMicroseconds(wait_time));
     MonoDelta diff = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time);
+    if (diff.MoreThan(timeout)) {
+      return Status::TimedOut(Substitute("Timed out waiting for all transactions to finish. "
+                                         "$0 transactions pending. Waited for $1",
+                                         txns.size(), diff.ToString()));
+    }
     int64_t waited_ms = diff.ToMilliseconds();
     if (waited_ms / complain_ms > num_complaints) {
       LOG(WARNING) << Substitute("TransactionTracker waiting for $0 outstanding transactions to"
@@ -144,6 +155,7 @@ void TransactionTracker::WaitForAllToFinish() {
     }
     wait_time = std::min(wait_time * 5 / 4, 1000000);
   }
+  return Status::OK();
 }
 
 void TransactionTracker::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {

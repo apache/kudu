@@ -156,6 +156,8 @@ class SysCatalogTable {
   Status VisitTableFromRow(const RowBlockRow& row, TableVisitor* visitor);
 
   // Tablet related private methods.
+
+  // Add dirty tablet data to the given row operations.
   Status AddTabletsToPB(const std::vector<TabletInfo*>& tablets,
                         RowOperationsPB::Type op_type,
                         RowOperationsPB* ops) const;
