@@ -10,6 +10,7 @@
 
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
+#include <gperftools/heap-profiler.h>
 
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -32,6 +33,14 @@ DEFINE_bool(dump_metrics_json, false,
 TAG_FLAG(dump_metrics_json, hidden);
 
 DECLARE_bool(helpxml);
+
+DEFINE_bool(enable_process_lifetime_heap_profiling, false, "(Advanced) Enables heap "
+    "profiling for the lifetime of the process. Profile output will be stored in the "
+    "directory specified by -heap_profile_path. Enabling this option will disable the "
+    "on-demand/remote server profile handlers.");
+
+DEFINE_string(heap_profile_path, "", "Output path to store heap profiles. If not set " \
+    "profiles are stored in /tmp/<process-name>.<pid>.<n>.heap.");
 
 // Tag a bunch of the flags that we inherit from glog/gflags.
 
@@ -239,6 +248,17 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
   } else {
     google::HandleCommandLineHelpFlags();
   }
+
+  if (FLAGS_heap_profile_path.empty()) {
+    FLAGS_heap_profile_path = strings::Substitute(
+        "/tmp/$0.$1", google::ProgramInvocationShortName(), getpid());
+  }
+
+#ifdef TCMALLOC_ENABLED
+  if (FLAGS_enable_process_lifetime_heap_profiling) {
+    HeapProfilerStart(FLAGS_heap_profile_path.c_str());
+  }
+#endif
 
   return ret;
 }

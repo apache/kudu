@@ -27,7 +27,7 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 
-DECLARE_string(heap_profile_dir);
+DECLARE_string(heap_profile_path);
 
 using std::endl;
 using std::ifstream;
@@ -66,7 +66,7 @@ static void PprofHeapHandler(const Webserver::WebRequest& req, stringstream* out
     seconds = atoi(it->second.c_str());
   }
 
-  HeapProfilerStart(FLAGS_heap_profile_dir.c_str());
+  HeapProfilerStart(FLAGS_heap_profile_path.c_str());
   // Sleep to allow for some samples to be collected.
   SleepFor(MonoDelta::FromSeconds(seconds));
   const char* profile = GetHeapProfile();

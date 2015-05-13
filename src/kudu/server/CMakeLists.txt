@@ -48,7 +48,6 @@ target_link_libraries(server_base_proto
 
 set(SERVER_PROCESS_SRCS
   generic_service.cc
-  global-flags.cc
   default-path-handlers.cc
   pprof-path-handlers.cc
   rpcz-path-handler.cc
