@@ -20,13 +20,13 @@ Mutex::Mutex()
   // In debug, setup attributes for lock error checking.
   pthread_mutexattr_t mta;
   int rv = pthread_mutexattr_init(&mta);
-  DCHECK_EQ(rv, 0) << ". " << strerror(rv);
+  DCHECK_EQ(0, rv) << ". " << strerror(rv);
   rv = pthread_mutexattr_settype(&mta, PTHREAD_MUTEX_ERRORCHECK);
-  DCHECK_EQ(rv, 0) << ". " << strerror(rv);
+  DCHECK_EQ(0, rv) << ". " << strerror(rv);
   rv = pthread_mutex_init(&native_handle_, &mta);
-  DCHECK_EQ(rv, 0) << ". " << strerror(rv);
+  DCHECK_EQ(0, rv) << ". " << strerror(rv);
   rv = pthread_mutexattr_destroy(&mta);
-  DCHECK_EQ(rv, 0) << ". " << strerror(rv);
+  DCHECK_EQ(0, rv) << ". " << strerror(rv);
 #else
   // In release, go with the default lock attributes.
   pthread_mutex_init(&native_handle_, NULL);
@@ -35,7 +35,7 @@ Mutex::Mutex()
 
 Mutex::~Mutex() {
   int rv = pthread_mutex_destroy(&native_handle_);
-  DCHECK_EQ(rv, 0) << ". " << strerror(rv);
+  DCHECK_EQ(0, rv) << ". " << strerror(rv);
 }
 
 bool Mutex::TryAcquire() {
@@ -51,7 +51,7 @@ bool Mutex::TryAcquire() {
 
 void Mutex::Acquire() {
   int rv = pthread_mutex_lock(&native_handle_);
-  DCHECK_EQ(rv, 0) << ". " << strerror(rv);
+  DCHECK_EQ(0, rv) << ". " << strerror(rv);
 #ifndef NDEBUG
   CheckUnheldAndMark();
 #endif
@@ -62,12 +62,12 @@ void Mutex::Release() {
   CheckHeldAndUnmark();
 #endif
   int rv = pthread_mutex_unlock(&native_handle_);
-  DCHECK_EQ(rv, 0) << ". " << strerror(rv);
+  DCHECK_EQ(0, rv) << ". " << strerror(rv);
 }
 
 #ifndef NDEBUG
 void Mutex::AssertAcquired() const {
-  DCHECK_EQ(owning_tid_, Env::Default()->gettid());
+  DCHECK_EQ(Env::Default()->gettid(), owning_tid_);
 }
 
 void Mutex::CheckHeldAndUnmark() {
@@ -76,7 +76,7 @@ void Mutex::CheckHeldAndUnmark() {
 }
 
 void Mutex::CheckUnheldAndMark() {
-  DCHECK_EQ(owning_tid_, 0);
+  DCHECK_EQ(0, owning_tid_);
   owning_tid_ = Env::Default()->gettid();
 }
 
