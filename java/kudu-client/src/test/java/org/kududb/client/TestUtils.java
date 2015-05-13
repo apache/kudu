@@ -6,20 +6,119 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 
+import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.ServerSocket;
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Set;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * A grouping of methods that help unit testing.
  */
 public class TestUtils {
+  private static final Logger LOG = LoggerFactory.getLogger(TestUtils.class);
 
   // Used by pidOfProcess()
   private static String UNIX_PROCESS_CLS_NAME =  "java.lang.UNIXProcess";
   private static Set VALID_SIGNALS =  ImmutableSet.of("STOP", "CONT", "TERM", "KILL");
+
+  private static final String MASTER_QUORUM_PROP = "masterQuorum";
+  private static final String MASTER_ADDRESS_PROP = "masterAddress";
+  private static final String DEFAULT_MASTER_ADDRESS = "127.0.0.1";
+
+  private static final String BASE_DIR_PATH_PROP = "baseDirPath";
+
+  private static final String BIN_DIR_PROP = "binDir";
+
+  /**
+   * @return the path of the flags file to pass to daemon processes
+   * started by the tests
+   */
+  public static String getFlagsPath() {
+    URL u = BaseKuduTest.class.getResource("/flags");
+    if (u == null) {
+      throw new RuntimeException("Unable to find 'flags' file");
+    }
+    if (u.getProtocol() == "file") {
+      return u.getPath();
+    }
+    // If the flags are inside a JAR, extract them into our temporary
+    // test directory.
+    try {
+      // Somewhat unintuitively, createTempFile() actually creates the file,
+      // not just the path, so we have to use REPLACE_EXISTING below.
+      Path tmpFile = Files.createTempFile("kudu-flags", ".flags");
+      Files.copy(BaseKuduTest.class.getResourceAsStream("/flags"), tmpFile,
+          StandardCopyOption.REPLACE_EXISTING);
+      return tmpFile.toAbsolutePath().toString();
+    } catch (IOException e) {
+      throw new RuntimeException("Unable to extract flags file into tmp", e);
+    }
+  }
+
+  /**
+   * @return the comma-separated list of addresses for the master(s)
+   */
+  public static String getMasterAddresses() {
+    String addr = System.getProperty(MASTER_QUORUM_PROP);
+    if (addr == null) {
+      addr = System.getProperty(MASTER_ADDRESS_PROP, DEFAULT_MASTER_ADDRESS);
+    }
+    return addr;
+  }
+
+  private static String findBuildDir() {
+    URL myUrl = BaseKuduTest.class.getProtectionDomain().getCodeSource().getLocation();
+    File myPath = new File(myUrl.getPath());
+    while (myPath != null) {
+      if (new File(myPath, ".git").isDirectory()) {
+        return new File(myPath, "build/latest").getAbsolutePath();
+      }
+      myPath = myPath.getParentFile();
+    }
+    return null;
+  }
+
+  /**
+   * @param binName the binary to look for (eg 'kudu-tablet_server')
+   * @return the absolute path of that binary
+   * @throws FileNotFoundException if no such binary is found
+   */
+  public static String findBinary(String binName) throws FileNotFoundException {
+    String binDir = System.getProperty(BIN_DIR_PROP);
+    if (binDir != null) {
+      LOG.info("Using binary directory specified by property: {}",
+          binDir);
+    } else {
+      binDir = findBuildDir();
+    }
+
+    File candidate = new File(binDir, binName);
+    if (candidate.canExecute()) {
+      return candidate.getAbsolutePath();
+    }
+    throw new FileNotFoundException("Cannot find binary " + binName +
+        " in binary directory " + binDir);
+  }
+
+  /**
+   * @return the base directory within which we will store server data
+   */
+  public static String getBaseDir() {
+    String s = System.getProperty(BASE_DIR_PATH_PROP, "target/test/data");
+    File f = new File(s);
+    f.mkdirs();
+    return f.getAbsolutePath();
+  }
 
   /**
    * Finds the next free port, starting with the one passed. Keep in mind the

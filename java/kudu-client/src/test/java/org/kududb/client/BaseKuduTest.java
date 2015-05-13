@@ -2,23 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import com.google.common.base.Joiner;
-import com.google.common.base.Stopwatch;
-import com.google.common.collect.Lists;
-import com.google.common.net.HostAndPort;
-import com.stumbleupon.async.Callback;
-import com.stumbleupon.async.Deferred;
-
-import org.kududb.ColumnSchema;
-import org.kududb.Schema;
-import kudu.master.Master;
-import org.kududb.util.NetUtil;
-
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.kududb.Type;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import static org.junit.Assert.fail;
 
 import java.io.BufferedReader;
 import java.io.InputStream;
@@ -31,26 +15,34 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static org.junit.Assert.fail;
+import kudu.master.Master;
+
+import org.junit.AfterClass;
+import org.junit.BeforeClass;
+import org.kududb.ColumnSchema;
+import org.kududb.Schema;
+import org.kududb.Type;
+import org.kududb.util.NetUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.google.common.base.Joiner;
+import com.google.common.base.Stopwatch;
+import com.google.common.collect.Lists;
+import com.google.common.net.HostAndPort;
+import com.stumbleupon.async.Callback;
+import com.stumbleupon.async.Deferred;
 
 public class BaseKuduTest {
 
   private static final Logger LOG = LoggerFactory.getLogger(BaseKuduTest.class);
 
-  private static final String MASTER_ADDRESS = "masterAddress";
-  private static final String MASTER_PORT = "masterPort";
-
-  private static final String MASTER_QUORUM = "masterQuorum";
   private static final int DEFAULT_MASTER_RPC_PORT = 7051;
-
-  private static final String FLAGS_PATH_PROP = "flagsPath";
-  private static final String BASE_DIR_PATH = "baseDirPath";
   private static final String START_CLUSTER = "startCluster";
   private static final String NUM_MASTERS_PROP = "NUM_MASTERS";
 
   // TS and Master ports will be assigned starting with this one.
   private static final int PORT_START = 64030;
-
 
   // Comma separate describing the master addresses and ports.
   protected static String masterQuorum;
@@ -74,8 +66,6 @@ public class BaseKuduTest {
   static final Map<Integer, Process> TABLET_SERVERS =
       new ConcurrentHashMap<Integer, Process>(NUM_TABLET_SERVERS);
 
-  private static final String FLAGS_PATH = System.getProperty(FLAGS_PATH_PROP);
-
   // We create both versions of the client for ease of use.
   protected static AsyncKuduClient client;
   protected static KuduClient syncClient;
@@ -87,20 +77,21 @@ public class BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     LOG.info("Setting up before class...");
-
     // The following props are set via kudu-client's pom.
-    String baseDirPath = System.getProperty(BASE_DIR_PATH);
-    startCluster = Boolean.parseBoolean(System.getProperty(START_CLUSTER));
+    String baseDirPath = TestUtils.getBaseDir();
+    startCluster = Boolean.parseBoolean(System.getProperty(START_CLUSTER, "true"));
 
     if (startCluster) {
       long now = System.currentTimeMillis();
-
+      LOG.info("Starting {} masters...", NUM_MASTERS);
       int port = startMasters(PORT_START, NUM_MASTERS, baseDirPath);
       LOG.info("Starting {} tablet servers...", NUM_TABLET_SERVERS);
       for (int i = 0; i < NUM_TABLET_SERVERS; i++) {
         port = TestUtils.findFreePort(port);
         String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
-        String[] tsCmdLine = {"kudu-tablet_server", "--flagfile=" + FLAGS_PATH,
+        String[] tsCmdLine = {
+            TestUtils.findBinary("kudu-tablet_server"),
+            "--flagfile=" + TestUtils.getFlagsPath(),
             "--tablet_server_wal_dir=" + dataDirPath,
             "--tablet_server_data_dirs=" + dataDirPath,
             "--tablet_server_master_addrs=" + masterQuorum,
@@ -111,8 +102,7 @@ public class BaseKuduTest {
         port++;
       }
     } else {
-      masterQuorum = System.getProperty(MASTER_QUORUM,
-          System.getProperty(MASTER_ADDRESS) + ":" + Integer.getInteger(MASTER_PORT));
+      masterQuorum = TestUtils.getMasterAddresses();
       masterHostPorts = NetUtil.parseStrings(masterQuorum, DEFAULT_MASTER_RPC_PORT);
     }
     LOG.info("Creating new Kudu client...");
@@ -164,7 +154,9 @@ public class BaseKuduTest {
       // 3) master 1 happens to bind to port b for the web port, as master 2 hasn't been
       // started yet and findFreePort(s) is "check-time-of-use" (it does not reserve the
       // ports, only checks that when it was last called, these ports could be used).
-      List<String> masterCmdLine = Lists.newArrayList("kudu-master", "--flagfile=" + FLAGS_PATH,
+      List<String> masterCmdLine = Lists.newArrayList(
+          TestUtils.findBinary("kudu-master"),
+          "--flagfile=" + TestUtils.getFlagsPath(),
           "--master_wal_dir=" + dataDirPath,
           "--master_data_dirs=" + dataDirPath,
           "--use_hybrid_clock=true",

@@ -26,12 +26,11 @@ Most of the unit tests will start their own cluster but it
 is also possible to provide your own.
 
 By default, the unit tests will start a master and a tablet
-server using the flags file located in the tests' resource
-directory. Make sure that both "kudu-master" and
-"kudu-tablet_server" are in the path. The build script does
-the following:
-
-$ export PATH=$(pwd)/build/latest/:$PATH
+server using the flags file located in the src/test/resources/
+directory. The tests will locate the master and tablet server
+binaries by looking in 'build/latest/' from the root of
+the git repository. If you have recently built the C++ code
+for Kudu, those should be present already.
 
 Once everything is setup correctly, run:
 
@@ -42,13 +41,16 @@ you need to use a command line like this one:
 
 $ mvn test -DstartCluster=false
 
-Since by default the test will look for a master on
-localhost:64000, you may want to override this by passing
--DmasterAddress and/or -DmasterPort.
+If you choose to not start a cluster, the tests will look for
+a master running on localhost:7051. If you would like to run
+against a remote cluster, you can override this using
+-DmasterAddress:
 
-To use a different flags file, pass the path to
--DflagsPath.
+$ mvn test -DstartCluster=false -DmasterAddress=foo.example.com:7051
 
+If for some reason you would like to start a cluster, but use
+binaries other than the ones in build/latest/, you can pass
+-DbinDir=/path/to/directory.
 
 State of Eclipse integration
 ------------------------------------------------------------

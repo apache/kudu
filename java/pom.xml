@@ -134,13 +134,6 @@
                     <failIfNoTests>false</failIfNoTests>
                     <reuseForks>false</reuseForks>
                     <redirectTestOutputToFile>true</redirectTestOutputToFile>
-                    <systemPropertyVariables>
-                        <masterAddress>localhost</masterAddress>
-                        <masterPort>64000</masterPort>
-                        <flagsPath>../test-resources/flags</flagsPath>
-                        <baseDirPath>${basedir}/target/testdata</baseDirPath>
-                        <startCluster>true</startCluster>
-                    </systemPropertyVariables>
                     <argLine>-enableassertions -Xmx1900m -XX:MaxPermSize=100m
                     -Djava.security.egd=file:/dev/./urandom -Djava.net.preferIPv4Stack=true
                     -Djava.awt.headless=true</argLine>

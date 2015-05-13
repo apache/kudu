@@ -283,8 +283,6 @@ if [ "$DO_COVERAGE" == "1" ]; then
 fi
 
 if [ "$BUILD_JAVA" == "1" ]; then
-  # PATH=<build_output>:<thirdparty_stuff>:<toolchain_stuff>:$PATH
-  export PATH=$(pwd)/build/latest/:$PATH
   # Make sure we use JDK7
   export JAVA_HOME=$JAVA7_HOME
   export PATH=$JAVA_HOME/bin:$PATH
