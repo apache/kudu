@@ -14,8 +14,7 @@
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_queue.h"
-#include "kudu/consensus/leader_election.h"
-#include "kudu/consensus/quorum_util.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/failure_detector.h"
 
 namespace kudu {
@@ -37,10 +36,12 @@ class Messenger;
 }
 
 namespace consensus {
+class ConsensusMetadata;
 class Peer;
 class PeerProxyFactory;
 class PeerManager;
 class ReplicaState;
+struct ElectionResult;
 
 class RaftConsensus : public Consensus,
                       public PeerMessageQueueObserver {
@@ -335,6 +336,8 @@ class RaftConsensus : public Consensus,
   mutable simple_spinlock update_lock_;
 
   const Closure mark_dirty_clbk_;
+
+  AtomicBool shutdown_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };

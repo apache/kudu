@@ -7,7 +7,6 @@
 #include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <iostream>
-#include <string>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log.h"
@@ -21,7 +20,6 @@
 #include "kudu/server/clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/util/debug/trace_event.h"
-#include "kudu/util/failure_detector.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/threadpool.h"
@@ -141,7 +139,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
           MonoDelta::FromMilliseconds(
               FLAGS_leader_heartbeat_interval_ms *
               FLAGS_leader_failure_max_missed_heartbeat_periods))),
-      mark_dirty_clbk_(mark_dirty_clbk) {
+      mark_dirty_clbk_(mark_dirty_clbk),
+      shutdown_(false) {
   DCHECK_NOTNULL(log_.get());
   state_.reset(new ReplicaState(options,
                                 peer_uuid,
@@ -1007,15 +1006,18 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
 }
 
 void RaftConsensus::Shutdown() {
+  // Avoid taking locks if already shut down so we don't violate
+  // ThreadRestrictions assertions in the case where the RaftConsensus
+  // destructor runs on the reactor thread due to an election callback being
+  // the last outstanding reference.
+  if (shutdown_.Load(kMemOrderAcquire)) return;
+
   CHECK_OK(ExecuteHook(PRE_SHUTDOWN));
 
   {
     ReplicaState::UniqueLock lock;
+    // Transition to kShuttingDown state.
     CHECK_OK(state_->LockForShutdown(&lock));
-    if (state_->state() == ReplicaState::kShutDown) {
-      // We have already shut down.
-      return;
-    }
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Raft consensus shutting down.";
   }
 
@@ -1030,16 +1032,18 @@ void RaftConsensus::Shutdown() {
   {
     ReplicaState::UniqueLock lock;
     CHECK_OK(state_->LockForShutdown(&lock));
-    if (state_->state() != ReplicaState::kShutDown) {
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Raft consensus Shutdown!";
-      CHECK_OK(state_->ShutdownUnlocked());
-    }
+    CHECK_EQ(ReplicaState::kShuttingDown, state_->state());
+    CHECK_OK(state_->ShutdownUnlocked());
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Raft consensus is shut down!";
   }
 
-  // Shut down the ThreadPool.
+  // Shut down things that might acquire locks during destruction.
   thread_pool_->Shutdown();
+  failure_monitor_.Shutdown();
 
   CHECK_OK(ExecuteHook(POST_SHUTDOWN));
+
+  shutdown_.Store(true, kMemOrderRelease);
 }
 
 QuorumPeerPB::Role RaftConsensus::GetActiveRole() const {
