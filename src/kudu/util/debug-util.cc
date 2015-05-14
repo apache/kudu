@@ -201,6 +201,12 @@ void HexStackTraceToString(char* buf, size_t size) {
   trace.StringifyToHex(buf, size);
 }
 
+string GetLogFormatStackTraceHex() {
+  StackTrace trace;
+  trace.Collect(1);
+  return trace.ToLogFormatHexString();
+}
+
 void StackTrace::Collect(int skip_frames) {
   num_frames_ = google::GetStackTrace(frames_, arraysize(frames_), skip_frames);
 }
@@ -266,6 +272,15 @@ string StackTrace::Symbolize() const {
       symbol = tmp;
     }
     StringAppendF(&ret, "    @ %*p  %s\n", kPrintfPointerFieldWidth, pc, symbol);
+  }
+  return ret;
+}
+
+string StackTrace::ToLogFormatHexString() const {
+  string ret;
+  for (int i = 0; i < num_frames_; i++) {
+    void* pc = frames_[i];
+    StringAppendF(&ret, "    @ %*p\n", kPrintfPointerFieldWidth, pc);
   }
   return ret;
 }

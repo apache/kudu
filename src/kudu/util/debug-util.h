@@ -45,6 +45,13 @@ std::string GetStackTrace();
 // NOTE: This inherits the same async-safety issue as HexStackTraceToString()
 std::string GetStackTraceHex();
 
+// This is the same as GetStackTraceHex(), except multi-line in a format that
+// looks very similar to GetStackTrace() but without symbols. Because it's in
+// that format, the tool stacktrace_addr2line.pl in the kudu build-support
+// directory can symbolize it automatically (to the extent that addr2line(1)
+// is able to find the symbols).
+std::string GetLogFormatStackTraceHex();
+
 // Collect the current stack trace in hex form into the given buffer.
 //
 // The resulting trace just includes the hex addresses, space-separated. This is suitable
@@ -88,9 +95,15 @@ class StackTrace {
   // This is not async-safe.
   std::string ToHexString() const;
 
-  // Return a string with a symbolized backtrace.
+  // Return a string with a symbolized backtrace in a format suitable for
+  // printing to a log file.
   // This is not async-safe.
   std::string Symbolize() const;
+
+  // Return a string with a hex-only backtrace in the format typically used in
+  // log files. Similar to the format given by Symbolize(), but symbols are not
+  // resolved (only the hex addresses are given).
+  std::string ToLogFormatHexString() const;
 
  private:
   enum {
