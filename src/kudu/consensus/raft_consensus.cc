@@ -1035,6 +1035,10 @@ void RaftConsensus::Shutdown() {
       CHECK_OK(state_->ShutdownUnlocked());
     }
   }
+
+  // Shut down the ThreadPool.
+  thread_pool_->Shutdown();
+
   CHECK_OK(ExecuteHook(POST_SHUTDOWN));
 }
 
