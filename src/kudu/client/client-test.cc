@@ -2233,8 +2233,11 @@ namespace {
   }
 } // anonymous namespace
 
-// Currently, deadlock simulation is disabled. See KUDU-47.
-TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
+// Starts many clients which update a table in parallel.
+// Half of the clients update rows in ascending order while the other
+// half update rows in descending order.
+// This ensures that we don't hit a deadlock in such a situation.
+TEST_F(ClientTest, TestDeadlockSimulation) {
   if (!AllowSlowTests()) {
     LOG(WARNING) << "TestDeadlockSimulation disabled since slow.";
     return;
@@ -2265,13 +2268,13 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
   ASSERT_EQ(kNumRows, rev);
 
   // Generate sessions
-  const int kNumSessions = 100; // Increase to reduce deadlock false-negative.
-  const int kTimoutMilis = 5000; // Increase to reduce false-positives.
+  const int kNumSessions = 100;
+  const int kTimeoutMilis = 60000;
   shared_ptr<KuduSession> fwd_sessions[kNumSessions];
   shared_ptr<KuduSession> rev_sessions[kNumSessions];
   for (int i = 0; i < kNumSessions; ++i) {
-    fwd_sessions[i] = LoadedSession(client_, client_table_, true, kNumRows, kTimoutMilis);
-    rev_sessions[i] = LoadedSession(rev_client, rev_table, true, kNumRows, kTimoutMilis);
+    fwd_sessions[i] = LoadedSession(client_, client_table_, true, kNumRows, kTimeoutMilis);
+    rev_sessions[i] = LoadedSession(rev_client, rev_table, true, kNumRows, kTimeoutMilis);
   }
 
   // Run async calls - one thread updates sequentially, another in reverse.
@@ -2298,6 +2301,7 @@ TEST_F(ClientTest, DISABLED_TestDeadlockSimulation) {
       prev1 = lctr1;
       prev2 = lctr2;
     }
+    SleepFor(MonoDelta::FromMilliseconds(100));
   } while (lctr1 != kNumSessions|| lctr2 != kNumSessions);
   int32_t expected = ReadFirstRowKeyFirstCol(client_table_);
 
