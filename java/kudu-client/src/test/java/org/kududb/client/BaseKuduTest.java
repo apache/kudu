@@ -23,7 +23,6 @@ import org.junit.BeforeClass;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
-import org.kududb.client.AsyncKuduScanner.RowResultIterator;
 import org.kududb.util.NetUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -303,9 +302,9 @@ public class BaseKuduTest {
       throws Exception {
     final AtomicInteger counter = new AtomicInteger();
 
-    Callback<Object, AsyncKuduScanner.RowResultIterator> cb = new Callback<Object, AsyncKuduScanner.RowResultIterator>() {
+    Callback<Object, RowResultIterator> cb = new Callback<Object, RowResultIterator>() {
       @Override
-      public Object call(AsyncKuduScanner.RowResultIterator arg) throws Exception {
+      public Object call(RowResultIterator arg) throws Exception {
         if (arg == null) return null;
         counter.addAndGet(arg.getNumRows());
         return null;
@@ -313,12 +312,12 @@ public class BaseKuduTest {
     };
 
     while (scanner.hasMoreRows()) {
-      Deferred<AsyncKuduScanner.RowResultIterator> data = scanner.nextRows();
+      Deferred<RowResultIterator> data = scanner.nextRows();
       data.addCallbacks(cb, defaultErrorCB);
       data.join(DEFAULT_SLEEP);
     }
 
-    Deferred<AsyncKuduScanner.RowResultIterator> closer = scanner.close();
+    Deferred<RowResultIterator> closer = scanner.close();
     closer.addCallbacks(cb, defaultErrorCB);
     closer.join(DEFAULT_SLEEP);
     return counter.get();

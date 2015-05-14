@@ -351,10 +351,10 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     AsyncKuduScanner scanner = getScanner(key, key);
     final AtomicBoolean exists = new AtomicBoolean(false);
 
-    Callback<Object, AsyncKuduScanner.RowResultIterator> cb =
-        new Callback<Object, AsyncKuduScanner.RowResultIterator>() {
+    Callback<Object, RowResultIterator> cb =
+        new Callback<Object, RowResultIterator>() {
       @Override
-      public Object call(AsyncKuduScanner.RowResultIterator arg) throws Exception {
+      public Object call(RowResultIterator arg) throws Exception {
         if (arg == null) return null;
         for (RowResult row : arg) {
           if (row.getInt(0) == key) {
@@ -367,7 +367,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     };
 
     while (scanner.hasMoreRows()) {
-      Deferred<AsyncKuduScanner.RowResultIterator> data = scanner.nextRows();
+      Deferred<RowResultIterator> data = scanner.nextRows();
       data.addCallbacks(cb, defaultErrorCB);
       data.join(DEFAULT_SLEEP);
       if (exists.get()) {
@@ -375,7 +375,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
       }
     }
 
-    Deferred<AsyncKuduScanner.RowResultIterator> closer = scanner.close();
+    Deferred<RowResultIterator> closer = scanner.close();
     closer.join(DEFAULT_SLEEP);
     return exists.get();
   }
@@ -385,27 +385,26 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     AsyncKuduScanner scanner = getScanner(startKey, endKey);
     final AtomicInteger ai = new AtomicInteger();
 
-    Callback<Object, AsyncKuduScanner.RowResultIterator> cb =
-        new Callback<Object, AsyncKuduScanner.RowResultIterator>() {
-          @Override
-          public Object call(AsyncKuduScanner.RowResultIterator arg) throws Exception {
-            if (arg == null) return null;
-            for (RowResult row : arg) {
-              if (row.isNull(3)) {
-                ai.incrementAndGet();
-              }
-            }
-            return null;
+    Callback<Object, RowResultIterator> cb = new Callback<Object, RowResultIterator>() {
+      @Override
+      public Object call(RowResultIterator arg) throws Exception {
+        if (arg == null) return null;
+        for (RowResult row : arg) {
+          if (row.isNull(3)) {
+            ai.incrementAndGet();
           }
-        };
+        }
+        return null;
+      }
+    };
 
     while (scanner.hasMoreRows()) {
-      Deferred<AsyncKuduScanner.RowResultIterator> data = scanner.nextRows();
+      Deferred<RowResultIterator> data = scanner.nextRows();
       data.addCallbacks(cb, defaultErrorCB);
       data.join(DEFAULT_SLEEP);
     }
 
-    Deferred<AsyncKuduScanner.RowResultIterator> closer = scanner.close();
+    Deferred<RowResultIterator> closer = scanner.close();
     closer.join(DEFAULT_SLEEP);
     return ai.get();
   }

@@ -1070,10 +1070,10 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       KuduScanner scanner = builder.build();
       while (scanner.hasMoreRows() && count < limit) {
-        AsyncKuduScanner.RowResultIterator rowResults = scanner.nextRows();
+        RowResultIterator rowResults = scanner.nextRows();
         count = printNodesAndGetNewCount(count, limit, rowResults);
       }
-      AsyncKuduScanner.RowResultIterator rowResults = scanner.close();
+      RowResultIterator rowResults = scanner.close();
       printNodesAndGetNewCount(count, limit, rowResults);
 
       client.shutdown();
@@ -1082,7 +1082,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     private static int printNodesAndGetNewCount(int oldCount, int limit,
-                                                AsyncKuduScanner.RowResultIterator rowResults) {
+                                                RowResultIterator rowResults) {
       int newCount = oldCount;
       if (rowResults == null) {
         return newCount;
@@ -1574,7 +1574,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
   }
 
   private static RowResult getOneRowResult(KuduScanner scanner) throws Exception {
-    AsyncKuduScanner.RowResultIterator rowResults;
+    RowResultIterator rowResults;
     rowResults = scanner.nextRows();
     if (rowResults.getNumRows() == 0) {
       return null;

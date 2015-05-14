@@ -33,8 +33,8 @@ public class KuduScanner {
    * behavior.
    * @return a list of rows.
    */
-  public AsyncKuduScanner.RowResultIterator nextRows() throws Exception {
-    Deferred<AsyncKuduScanner.RowResultIterator> d = asyncScanner.nextRows();
+  public RowResultIterator nextRows() throws Exception {
+    Deferred<RowResultIterator> d = asyncScanner.nextRows();
     return d.join(currentTimeoutMs);
   }
 
@@ -44,8 +44,8 @@ public class KuduScanner {
    * Closing a scanner already closed has no effect.
    * @return a deferred object that indicates the completion of the request
    */
-  public AsyncKuduScanner.RowResultIterator close() throws Exception {
-    Deferred<AsyncKuduScanner.RowResultIterator> d = asyncScanner.close();
+  public RowResultIterator close() throws Exception {
+    Deferred<RowResultIterator> d = asyncScanner.close();
     return d.join(currentTimeoutMs);
   }
 

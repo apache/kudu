@@ -359,7 +359,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     private final NullWritable currentKey = NullWritable.get();
     private RowResult currentValue;
-    private AsyncKuduScanner.RowResultIterator iterator;
+    private RowResultIterator iterator;
     private KuduScanner scanner;
     private TableSplit split;
 
