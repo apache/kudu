@@ -642,6 +642,16 @@ void TraceEvent::UpdateDuration(const MicrosecondsInt64& now,
   thread_duration_ = thread_now - thread_timestamp_;
 }
 
+namespace {
+// Escape the given string using JSON rules.
+void JsonEscape(StringPiece s, string* out) {
+  // Only the following characters need to be escaped, according to json.org.
+  // In particular, it's illegal to escape the single-quote character, and
+  // JSON does not support the "\x" escape sequence like C/Java.
+  strings::BackslashEscape(s, "\"\\/\b\f\n\r\t", out);
+}
+} // anonymous namespace
+
 // static
 void TraceEvent::AppendValueAsJSON(unsigned char type,
                                    TraceEvent::TraceValue value,
@@ -700,7 +710,9 @@ void TraceEvent::AppendValueAsJSON(unsigned char type,
       break;
     case TRACE_VALUE_TYPE_STRING:
     case TRACE_VALUE_TYPE_COPY_STRING:
-      *out += "\"" + strings::CEscape(value.as_string ? value.as_string : "NULL") + "\"";
+      *out += "\"";
+      JsonEscape(value.as_string ? value.as_string : "NULL", out);
+      *out += "\"";
       break;
     default:
       LOG(FATAL) << "Don't know how to print this value";

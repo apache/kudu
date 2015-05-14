@@ -208,6 +208,21 @@ TEST_F(TraceTest, TestWideSpan) {
   ASSERT_EQ(1001, ParseAndReturnEventCount(trace_json));
 }
 
+// Regression test for KUDU-753: faulty JSON escaping when dealing with
+// single quote characters.
+TEST_F(TraceTest, TestJsonEncodingString) {
+  TraceLog* tl = TraceLog::GetInstance();
+  tl->SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
+                 TraceLog::RECORDING_MODE,
+                 TraceLog::RECORD_CONTINUOUSLY);
+  {
+    TRACE_EVENT1("test", "test", "arg", "this is a test with \"'\"' characters");
+  }
+  tl->SetDisabled();
+  string trace_json = TraceResultBuffer::FlushTraceLogToString();
+  ASSERT_EQ(1, ParseAndReturnEventCount(trace_json));
+}
+
 // Generate trace events continuously until 'latch' fires.
 // Increment *num_events_generated for each event generated.
 void GenerateTracesUntilLatch(AtomicInt<int64_t>* num_events_generated,
