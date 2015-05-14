@@ -3,6 +3,7 @@
 
 #include "kudu/client/batcher.h"
 
+#include <algorithm>
 #include <boost/bind.hpp>
 #include <glog/logging.h>
 #include <set>
@@ -143,6 +144,10 @@ struct InFlightOp {
   // The tablet the operation is destined for.
   // This is only filled in after passing through the kLookingUpTablet state.
   scoped_refptr<RemoteTablet> tablet;
+
+  // Each operation has a unique sequence number which preserves the user's intended
+  // order of operations. This is important when multiple operations act on the same row.
+  int sequence_number_;
 
   string ToString() const {
     return strings::Substitute("op[state=$0, write_op=$1]",
@@ -435,6 +440,7 @@ Batcher::Batcher(KuduClient* client,
     weak_session_(session),
     error_collector_(error_collector),
     had_errors_(false),
+    next_op_sequence_number_(0),
     outstanding_lookups_(0) {
 }
 
@@ -582,6 +588,7 @@ void Batcher::AddInFlightOp(InFlightOp* op) {
   lock_guard<simple_spinlock> l(&lock_);
   CHECK_EQ(state_, kGatheringOps);
   InsertOrDie(&ops_, op);
+  op->sequence_number_ = next_op_sequence_number_++;
 }
 
 bool Batcher::IsAbortedUnlocked() const {
@@ -648,7 +655,27 @@ void Batcher::TabletLookupFinished(InFlightOp* op, const Status& s) {
     CHECK(op->tablet != NULL);
 
     op->state = InFlightOp::kBufferedToTabletServer;
-    per_tablet_ops_[op->tablet.get()].push_back(op);
+
+    vector<InFlightOp*>& to_ts = per_tablet_ops_[op->tablet.get()];
+    to_ts.push_back(op);
+
+    // "Reverse bubble sort" the operation into the right spot in the tablet server's
+    // buffer, based on the sequence numbers of the ops.
+    //
+    // There is a rare race (KUDU-743) where two operations in the same batch can get
+    // their order inverted with respect to the order that the user originally performed
+    // the operations. This loop re-sequences them back into the correct order. In
+    // the common case, it will break on the first iteration, so we expect the loop to be
+    // constant time, with worst case O(n). This is usually much better than something
+    // like a priority queue which would have O(lg n) in every case and a more complex
+    // code path.
+    for (int i = to_ts.size() - 1; i > 0; --i) {
+      if (to_ts[i]->sequence_number_ < to_ts[i - 1]->sequence_number_) {
+        std::swap(to_ts[i], to_ts[i - 1]);
+      } else {
+        break;
+      }
+    }
   }
 
   l.unlock();

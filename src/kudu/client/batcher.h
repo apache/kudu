@@ -151,6 +151,13 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   typedef std::tr1::unordered_map<RemoteTablet*, std::vector<InFlightOp*> > OpsMap;
   OpsMap per_tablet_ops_;
 
+  // When each operation is added to the batcher, it is assigned a sequence number
+  // which preserves the user's intended order. Preserving order is critical when
+  // a batch contains multiple operations against the same row key. This member
+  // assigns the sequence numbers.
+  // Protected by lock_.
+  int next_op_sequence_number_;
+
   // Amount of time to wait for a given op, from start to finish.
   //
   // Set by SetTimeoutMillis.
