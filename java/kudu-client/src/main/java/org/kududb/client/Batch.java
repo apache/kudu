@@ -9,6 +9,8 @@ import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 
 /**
@@ -16,7 +18,14 @@ import java.util.List;
  */
 class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
 
+  private static final OperationsComparatorBySequenceNumber SEQUENCE_NUMBER_COMPARATOR =
+      new OperationsComparatorBySequenceNumber();
+
   final List<Operation> ops;
+
+  // Operations can be added out of order to 'ops' if the tablet had to be looked up. We can detect
+  // this situation in AsyncKuduSession and set this to true.
+  boolean needsSorting = false;
 
   Batch(KuduTable table) {
     this(table, 1000);
@@ -29,6 +38,13 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
 
   @Override
   ChannelBuffer serialize(Message header) {
+
+    // This should only happen if at least one operation triggered a tablet lookup, which is rare
+    // on a long-running client.
+    if (needsSorting) {
+      Collections.sort(ops, SEQUENCE_NUMBER_COMPARATOR);
+    }
+
     final Tserver.WriteRequestPB.Builder builder =
         Operation.createAndFillWriteRequestPB(ops.toArray(new Operation[ops.size()]));
     builder.setTabletId(ZeroCopyLiteralByteString.wrap(getTablet().getTabletIdAsBytes()));
@@ -61,5 +77,15 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
   public byte[] key() {
     assert this.ops.size() > 0;
     return this.ops.get(0).key();
+  }
+
+  /**
+   * Sorts the Operations by their sequence number.
+   */
+  private static class OperationsComparatorBySequenceNumber implements Comparator<Operation> {
+    @Override
+    public int compare(Operation o1, Operation o2) {
+      return Long.compare(o1.getSequenceNumber(), o2.getSequenceNumber());
+    }
   }
 }

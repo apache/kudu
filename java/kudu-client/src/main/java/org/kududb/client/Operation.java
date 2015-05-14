@@ -34,6 +34,10 @@ import java.util.List;
  */
 public abstract class Operation extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
 
+  // Number given by the session when apply()'d for the first time. Necessary to retain operations
+  // in their original order even after tablet lookup.
+  private long sequenceNumber = -1;
+
   enum ChangeType {
     INSERT((byte)RowOperationsPB.Type.INSERT.getNumber()),
     UPDATE((byte)RowOperationsPB.Type.UPDATE.getNumber()),
@@ -275,6 +279,24 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       return false;
     }
     return this.nullsBitSet.get(column);
+  }
+
+  /**
+   * Sets the sequence number used when batching operations. Should only be called once.
+   * @param sequenceNumber a new sequence number
+   */
+  void setSequenceNumber(long sequenceNumber) {
+    assert (this.sequenceNumber == -1);
+    this.sequenceNumber = sequenceNumber;
+  }
+
+  /**
+   * Returns the sequence number given to this operation.
+   * @return a long representing the sequence number given to this operation after it was applied,
+   * can be -1 if it wasn't set
+   */
+  long getSequenceNumber() {
+    return this.sequenceNumber;
   }
 
   @Override

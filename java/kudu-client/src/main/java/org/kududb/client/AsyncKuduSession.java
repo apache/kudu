@@ -78,6 +78,10 @@ public class AsyncKuduSession implements SessionConfiguration {
   private ExternalConsistencyMode consistencyMode;
   private long currentTimeout = 0;
 
+  // We assign a number to each operation that we batch, so that the batch can sort itself before
+  // being sent to the server. We never reset this number.
+  private long nextSequenceNumber = 0;
+
   /**
    * The following two maps are to be handled together when batching is enabled. The first one is
    * where the batching happens, the second one is where we keep track of what's been sent but
@@ -282,6 +286,15 @@ public class AsyncKuduSession implements SessionConfiguration {
       operation.setExternalConsistencyMode(this.consistencyMode);
       return client.sendRpcToTablet(operation);
     }
+
+    // We need this protection because apply() can be called multiple times for the same operations
+    // due to retries, but we only want to set the sequence number once. Since a session isn't
+    // thread-safe, it means that we'll always set the sequence number from the user's thread, and
+    // we'll read later from other threads.
+    if (operation.getSequenceNumber() == -1) {
+      operation.setSequenceNumber(nextSequenceNumber++);
+    }
+
     String table = operation.getTable().getName();
     byte[] rowkey = operation.key();
     AsyncKuduClient.RemoteTablet tablet = client.getTablet(table, rowkey);
@@ -433,7 +446,15 @@ public class AsyncKuduSession implements SessionConfiguration {
       }
       batch.ops.add(operation);
       if (!operationsInLookup.isEmpty()) {
-        operationsInLookup.remove(operation);
+
+        boolean operationWasLookingUpTablet = operationsInLookup.remove(operation);
+        if (operationWasLookingUpTablet) {
+          // We know that the operation we just added was in the 'operationsInLookup' list so we're
+          // very likely adding it out of order from a different thread.
+          // We'll need to sort the whole list later.
+          batch.needsSorting = true;
+        }
+
         if (lookupsDone != null && operationsInLookup.isEmpty()) {
           lookupsDoneCopy = lookupsDone;
           lookupsDone = null;
