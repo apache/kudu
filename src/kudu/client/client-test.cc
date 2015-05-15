@@ -2253,9 +2253,10 @@ TEST_F(ClientTest, TestDeadlockSimulation) {
   ASSERT_OK(client_->OpenTable(kTableName, &rev_table));
 
   // Load up some rows
-  const int kNumRows = 3000; // Increase to reduce deadlock false-negative.
+  const int kNumRows = 300;
+  const int kTimeoutMillis = 60000;
   shared_ptr<KuduSession> session = client_->NewSession();
-  session->SetTimeoutMillis(5000);
+  session->SetTimeoutMillis(kTimeoutMillis);
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   for (int i = 0; i < kNumRows; ++i)
     ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, i, i,  ""));
@@ -2269,12 +2270,11 @@ TEST_F(ClientTest, TestDeadlockSimulation) {
 
   // Generate sessions
   const int kNumSessions = 100;
-  const int kTimeoutMilis = 60000;
   shared_ptr<KuduSession> fwd_sessions[kNumSessions];
   shared_ptr<KuduSession> rev_sessions[kNumSessions];
   for (int i = 0; i < kNumSessions; ++i) {
-    fwd_sessions[i] = LoadedSession(client_, client_table_, true, kNumRows, kTimeoutMilis);
-    rev_sessions[i] = LoadedSession(rev_client, rev_table, true, kNumRows, kTimeoutMilis);
+    fwd_sessions[i] = LoadedSession(client_, client_table_, true, kNumRows, kTimeoutMillis);
+    rev_sessions[i] = LoadedSession(rev_client, rev_table, true, kNumRows, kTimeoutMillis);
   }
 
   // Run async calls - one thread updates sequentially, another in reverse.
