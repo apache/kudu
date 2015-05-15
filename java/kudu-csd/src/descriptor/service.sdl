@@ -38,12 +38,7 @@
       "startRunner" : {
         "program" : "scripts/kudu.sh",
         "args" : [
-          "master",
-          "${log_dir}",
-          "${kudu_master_waldir}",
-          "${kudu_master_datadirs}",
-          "./master.properties",
-          "${default_num_replicas}"
+          "master"
         ]
       },
       "logging" : {
@@ -86,7 +81,7 @@
           "default" : "3"
         },
         {
-          "name" : "kudu_master_waldir",
+          "name" : "master_wal_dir",
           "label" : "Kudu Master WAL directory",
           "description" : "Directory where Kudu masters will store write-ahead logs.",
           "required" : "true",
@@ -95,7 +90,7 @@
           "pathType" : "localDataDir"
         },
         {
-          "name" : "kudu_master_datadirs",
+          "name" : "master_data_dirs",
           "label" : "Kudu Master data directories",
           "description" : "Directories where Kudu masters will store data blocks.",
           "required" : "true",
@@ -105,16 +100,20 @@
         }
       ],
       "configWriter" : {
+        "generators" : [
+          {
+            "filename" : "gflagfile",
+            "configFormat" : "gflags",
+            "excludedParams" : [
+              "master_address"
+            ]
+          }
+        ],
         "peerConfigGenerators" : [
           {
             "filename" : "master.properties",
             "params" : [ "master_address" ],
             "roleName" : "KUDU_MASTER"
-          }
-        ],
-        "auxConfigGenerators" : [
-          {
-            "filename" : "kudu-master.gflags"
           }
         ]
       }
@@ -126,11 +125,7 @@
       "startRunner" : {
         "program" : "scripts/kudu.sh",
         "args" : [
-          "tserver",
-          "${log_dir}",
-          "${kudu_ts_waldir}",
-          "${kudu_ts_datadirs}",
-          "./master.properties"
+          "tserver"
         ]
       },
       "logging" : {
@@ -141,12 +136,12 @@
       "externalLink" : {
         "name" : "kudu_ts_web_ui",
         "label" : "Kudu Tablet Server Web UI",
-        "url" : "http://${host}:${kudu_ts_web_port}"
+        "url" : "http://${host}:${tablet_server_web_port}"
       },
       "topology" : { "minInstances" : 1 },
       "parameters" : [
         {
-          "name" : "kudu_ts_web_port",
+          "name" : "tablet_server_web_port",
           "label" : "Kudu Tablet Server Web UI Port",
           "description" : "The port of the Kudu Tablet Server Web UI.",
           "type" : "port",
@@ -154,7 +149,7 @@
           "default" : 8050
         },
         {
-          "name" : "kudu_ts_waldir",
+          "name" : "tablet_server_wal_dir",
           "label" : "Kudu Tablet Server WAL directory",
           "description" : "Directory where Kudu tablet servers will store write-ahead logs.",
           "required" : "true",
@@ -163,7 +158,7 @@
           "pathType" : "localDataDir"
         },
         {
-          "name" : "kudu_ts_datadirs",
+          "name" : "tablet_server_data_dirs",
           "label" : "Kudu Tablet Server data directories",
           "description" : "Directories where Kudu tablet servers will store data blocks.",
           "required" : "true",
@@ -173,16 +168,17 @@
         }
       ],
       "configWriter" : {
+        "generators" : [
+          {
+            "filename" : "gflagfile",
+            "configFormat" : "gflags"
+          }
+        ],
         "peerConfigGenerators" : [
           {
             "filename" : "master.properties",
             "params" : [ "master_address" ],
             "roleName" : "KUDU_MASTER"
-          }
-        ],
-        "auxConfigGenerators" : [
-          {
-            "filename" : "kudu-ts.gflags"
           }
         ]
       },

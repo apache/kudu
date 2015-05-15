@@ -26,21 +26,7 @@ date 1>&2
 export KUDU_HOME=${KUDU_HOME:-/usr/lib/kudu}
 
 CMD=$1
-LOG_DIR=$2
-WAL_DIR=$3
-DATA_DIRS=$4
-MASTER_FILE=$CONF_DIR/$5
-DEFAULT_NUM_REPLICAS=$6
 shift 2
-
-echo "KUDU_HOME: $KUDU_HOME"
-echo "CONF_DIR: $CONF_DIR"
-echo "CMD: $CMD"
-echo "LOG_DIR: $LOG_DIR"
-echo "WAL_DIR: $WAL_DIR"
-echo "DATA_DIRS: $DATA_DIRS"
-echo "MASTER_FILE: $MASTER_FILE"
-echo "DEFAULT_NUM_REPLICAS: $DEFAULT_NUM_REPLICAS"
 
 function log {
   timestamp=$(date)
@@ -55,30 +41,47 @@ function readconf {
   IFS='=' read key value <<< "$conf"
 }
 
-if [ -f "$MASTER_FILE" ]; then
-  MASTER_IPS=
-  for line in $(cat "$MASTER_FILE")
-  do
-    readconf "$line"
-    case $key in
-      server.address)
-        # Fall back to the host only if there's no defined value.
-        if [ -n "$value" ]; then
-          actual_value="$value"
-        else
-          actual_value="$host"
-        fi
+log "KUDU_HOME: $KUDU_HOME"
+log "CONF_DIR: $CONF_DIR"
+log "CMD: $CMD"
 
-        # Append to comma-separated MASTER_IPS.
-        if [ -n "$MASTER_IPS" ]; then
-          MASTER_IPS="${MASTER_IPS},"
-        fi
-        MASTER_IPS="${MASTER_IPS}${actual_value}"
-        ;;
-    esac
-  done
-  log "Found master(s) on $MASTER_IPS"
+# Make sure we've got the main gflagfile.
+GFLAG_FILE="$CONF_DIR/gflagfile"
+if [ ! -r "$GFLAG_FILE" ]; then
+  log "Could not find $GFLAG_FILE, exiting"
+  exit 1
 fi
+
+# Make sure we've got a file describing the master quorum.
+MASTER_FILE="$CONF_DIR/master.properties"
+if [ ! -r "$MASTER_FILE" ]; then
+  log "Could not find $MASTER_FILE, exiting"
+  exit 1
+fi
+
+# Parse the master quorum.
+MASTER_IPS=
+for line in $(cat "$MASTER_FILE")
+do
+  readconf "$line"
+  case $key in
+    server.address)
+      # Fall back to the host only if there's no defined value.
+      if [ -n "$value" ]; then
+        actual_value="$value"
+      else
+        actual_value="$host"
+      fi
+
+      # Append to comma-separated MASTER_IPS.
+      if [ -n "$MASTER_IPS" ]; then
+        MASTER_IPS="${MASTER_IPS},"
+      fi
+      MASTER_IPS="${MASTER_IPS}${actual_value}"
+      ;;
+  esac
+done
+log "Found master(s) on $MASTER_IPS"
 
 if [ "$CMD" = "master" ]; then
   # Only pass --master_quorum if there's more than one master.
@@ -89,19 +92,12 @@ if [ "$CMD" = "master" ]; then
   fi
 
   exec "$KUDU_HOME/sbin/kudu-master" \
-    --log_dir="$LOG_DIR" \
     $MASTER_QUORUM \
-    --default_num_replicas=$DEFAULT_NUM_REPLICAS \
-    --master_wal_dir="$WAL_DIR" \
-    --master_data_dirs="$DATA_DIRS" \
-    --flagfile="$CONF_DIR"/kudu-master.gflags
+    --flagfile="$GFLAG_FILE"
 elif [ "$CMD" = "tserver" ]; then
   exec "$KUDU_HOME/sbin/kudu-tablet_server" \
-    --log_dir="$LOG_DIR" \
     --tablet_server_master_addrs="$MASTER_IPS" \
-    --tablet_server_wal_dir="$WAL_DIR" \
-    --tablet_server_data_dirs="$DATA_DIRS" \
-    --flagfile="$CONF_DIR"/kudu-ts.gflags
+    --flagfile="$GFLAG_FILE"
 else
   log "Unknown command: $CMD"
   exit 2
