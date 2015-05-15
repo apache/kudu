@@ -124,7 +124,6 @@ void ServerBase::GenerateInstanceID() {
 
 Status ServerBase::Init() {
   tcmalloc::RegisterMetrics(metric_entity_);
-  clock_->RegisterMetrics(metric_entity_);
 
   InitSpinLockContentionProfiling();
 
@@ -148,6 +147,7 @@ Status ServerBase::Init() {
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
+  clock_->RegisterMetrics(metric_entity_);
 
   RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
 
