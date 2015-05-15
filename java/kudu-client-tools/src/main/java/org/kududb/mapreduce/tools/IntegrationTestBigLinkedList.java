@@ -977,14 +977,14 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       }
 
       fs.delete(iterationOutput, true);
-      LOG.info("Verify finished with succees. Total nodes=" + expectedNumNodes);
+      LOG.info("Verify finished with success. Total nodes=" + expectedNumNodes);
     }
 
     @Override
     public int run(String[] args) throws Exception {
       if (args.length < 6) {
         System.err.println("Usage: Loop <num iterations> <num mappers> <num nodes per mapper> " +
-            "<output dir> <num reducers> [<width> <wrap multiplier>]");
+            "<output dir> <num reducers> [<width> <wrap multiplier> <start expected nodes>]");
         return 1;
       }
       LOG.info("Running Loop with args:" + Arrays.deepToString(args));
@@ -997,8 +997,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       int numReducers = Integer.parseInt(args[5]);
       Integer width = (args.length < 6) ? null : Integer.parseInt(args[6]);
       Integer wrapMuplitplier = (args.length < 8) ? null : Integer.parseInt(args[7]);
-
-      long expectedNumNodes = 0;
+      long expectedNumNodes = (args.length < 9) ? 0 : Long.parseLong(args[8]);
 
       if (numIterations < 0) {
         numIterations = Integer.MAX_VALUE; // run indefinitely (kind of)
