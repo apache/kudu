@@ -373,6 +373,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
           .encodedStartKey(split.getStartKey())
           .encodedEndKey(split.getEndKey())
           .cacheBlocks(cacheBlocks)
+          .timeoutMs(operationTimeoutMs)
           .build();
 
       // Calling this now to set iterator.

@@ -11,10 +11,11 @@ import org.kududb.Schema;
 public class KuduScanner {
 
   private final AsyncKuduScanner asyncScanner;
-  private long currentTimeoutMs = 5000;
+  private final long timeoutMs;
 
-  KuduScanner(AsyncKuduScanner asyncScanner) {
+  KuduScanner(AsyncKuduScanner asyncScanner, long timeoutMs) {
     this.asyncScanner = asyncScanner;
+    this.timeoutMs = timeoutMs;
   }
 
   /**
@@ -35,7 +36,7 @@ public class KuduScanner {
    */
   public RowResultIterator nextRows() throws Exception {
     Deferred<RowResultIterator> d = asyncScanner.nextRows();
-    return d.join(currentTimeoutMs);
+    return d.join(timeoutMs);
   }
 
   /**
@@ -46,19 +47,10 @@ public class KuduScanner {
    */
   public RowResultIterator close() throws Exception {
     Deferred<RowResultIterator> d = asyncScanner.close();
-    return d.join(currentTimeoutMs);
+    return d.join(timeoutMs);
   }
 
-  /**
-   * Sets the timeout used to wait when calling {@link KuduScanner#nextRows()} and
-   * {@link KuduScanner#close()}.
-   * The default timeout is 5 seconds.
-   * A value of 0 disables the timeout functionality.
-   * @param timeoutMs timeout in milliseconds
-   */
-  public void setTimeoutMillis(long timeoutMs) {
-    this.currentTimeoutMs = timeoutMs;
-  }
+
 
   /**
    * A Builder class to build {@link KuduScanner}.
@@ -67,8 +59,22 @@ public class KuduScanner {
   public static class KuduScannerBuilder
       extends AbstractKuduScannerBuilder<KuduScannerBuilder, KuduScanner> {
 
+    private long nestedTimeoutMs = 5000;
+
     KuduScannerBuilder(AsyncKuduClient client, KuduTable table, Schema schema) {
       super(client, table, schema);
+    }
+
+    /**
+     * Sets the timeout used to wait when calling {@link KuduScanner#nextRows()} and
+     * {@link KuduScanner#close()}.
+     * The default timeout is 5 seconds.
+     * A value of 0 disables the timeout functionality.
+     * @param timeoutMs timeout in milliseconds
+     */
+    public KuduScannerBuilder timeoutMs(long timeoutMs) {
+      this.nestedTimeoutMs = timeoutMs;
+      return this;
     }
 
     /**
@@ -79,7 +85,8 @@ public class KuduScanner {
       return new KuduScanner(new AsyncKuduScanner(
           nestedClient, nestedTable, nestedSchema, nestedReadMode,
           nestedDeadlineTracker, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
-          nestedPrefetching, nestedStartKey, nestedEndKey, nestedHtTimestamp, nestedMaxNumBytes));
+          nestedPrefetching, nestedStartKey, nestedEndKey, nestedHtTimestamp, nestedMaxNumBytes),
+          nestedTimeoutMs);
     }
   }
 }
