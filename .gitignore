@@ -51,3 +51,8 @@ nbproject/
 
 # WWW dependencies which are not checked in directly
 www/tracing.*
+
+# Python
+python/kudu/*.so
+python/kudu/*.cpp
+*.py[ocd]

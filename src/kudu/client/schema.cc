@@ -132,20 +132,20 @@ void KuduColumnSchema::CopyFrom(const KuduColumnSchema& other) {
   col_.reset(new ColumnSchema(*other.col_));
 }
 
-const std::string& KuduColumnSchema::name() const {
-  return col_->name();
+bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
+  return this == &other || col_->Equals(*other.col_, true);
 }
 
-KuduColumnSchema::DataType KuduColumnSchema::type() const {
-  return FromInternalDataType(col_->type_info()->type());
+const std::string& KuduColumnSchema::name() const {
+  return col_->name();
 }
 
 bool KuduColumnSchema::is_nullable() const {
   return col_->is_nullable();
 }
 
-bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
-  return this == &other || col_->Equals(*other.col_, true);
+KuduColumnSchema::DataType KuduColumnSchema::type() const {
+  return FromInternalDataType(col_->type_info()->type());
 }
 
 

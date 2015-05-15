@@ -34,6 +34,9 @@
 #
 #   BUILD_JAVA        Default: 1
 #     Build and test java code if this is set to 1.
+#
+#   BUILD_PYTHON       Default: 1
+#     Build and test the Python wrapper of the client API.
 
 # If a commit messages contains a line that says 'DONT_BUILD', exit
 # immediately.
@@ -67,6 +70,7 @@ export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
 BUILD_JAVA=${BUILD_JAVA:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
+BUILD_PYTHON=${BUILD_PYTHON:-0}
 
 # Ensure that the test data directory is usable.
 mkdir -p "$TEST_TMPDIR"
@@ -177,7 +181,11 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   cmake .
   make lint | tee $TEST_LOGDIR/lint.log
   exit $?
+
+
 elif [ "$BUILD_TYPE" = "CLIENT" ]; then
+  # Python is only built when the client libraries are built.
+  BUILD_PYTHON=1
   BUILD_TYPE=debug
   # Older versions of gcc suffer from at least one visibility-related bug
   # such that unexpected symbols are included in the client library.
@@ -306,6 +314,15 @@ if [ "$HEAPCHECK" = normal ]; then
     echo "All tests heap checked properly"
   fi
 fi
+
+if [ "$BUILD_PYTHON" == "1" ]; then
+  # Assuming we run this script from base dir
+  export KUDU_HOME=$(pwd)
+  pushd python
+  python setup.py build_ext
+  python setup.py test -a --junitxml=$TEST_LOGDIR/python_test.xml
+fi
+
 set -e
 
 exit $EXIT_STATUS
