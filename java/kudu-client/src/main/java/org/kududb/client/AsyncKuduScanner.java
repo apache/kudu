@@ -391,7 +391,7 @@ public final class AsyncKuduScanner {
         }
         tablet = null;
         scannerId = "client debug closed".getBytes();   // Make debugging easier.
-        return response.data;
+        return response == null ? null : response.data;
       }
       public String toString() {
         return "scanner closed";

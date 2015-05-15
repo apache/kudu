@@ -494,6 +494,11 @@ public class AsyncKuduClient {
    */
   Deferred<AsyncKuduScanner.Response> closeScanner(final AsyncKuduScanner scanner) {
     final RemoteTablet tablet = scanner.currentTablet();
+    // Getting a null tablet here without being in a closed state means we were in between tablets.
+    if (tablet == null) {
+      return Deferred.fromResult(null);
+    }
+
     final TabletClient client = clientFor(tablet);
     if (client == null) {
       // Oops, we no longer know anything about this client or tabletSlice.  Our

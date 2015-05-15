@@ -10,6 +10,7 @@ import org.junit.Test;
 
 import java.util.ArrayList;
 
+import static org.junit.Assert.assertNull;
 import static org.kududb.Type.STRING;
 import static org.junit.Assert.assertEquals;
 
@@ -70,6 +71,16 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     assertEquals(9, countRowsInScan(getScanner(null, "4"))); // Full table scan with empty lower
     assertEquals(9, countRowsInScan(getScanner(null, null))); // Full table scan with empty bounds
 
+    // Test that we can close a scanner while in between two tablets. We start on the second
+    // tablet and our first nextRows() will get 3 rows. At that moment we want to close the scanner
+    // before getting on the 3rd tablet.
+    AsyncKuduScanner scanner = getScanner("1", null);
+    Deferred<RowResultIterator> d = scanner.nextRows();
+    RowResultIterator rri = d.join(DEFAULT_SLEEP);
+    assertEquals(3, rri.getNumRows());
+    d = scanner.close();
+    rri = d.join(DEFAULT_SLEEP);
+    assertNull(rri);
   }
 
   private AsyncKuduScanner getScanner(String lowerBound, String upperBound) {
