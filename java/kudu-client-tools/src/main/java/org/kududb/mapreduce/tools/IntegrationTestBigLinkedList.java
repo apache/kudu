@@ -1092,7 +1092,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         newCount++;
         node = getCINode(result, node);
         printCINodeString(node);
-        if (oldCount == limit) {
+        if (newCount == limit) {
           break;
         }
       }
