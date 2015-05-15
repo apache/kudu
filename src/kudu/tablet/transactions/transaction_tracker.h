@@ -24,7 +24,6 @@ struct TransactionsInFlight {
   int64_t all_transactions_inflight;
   int64_t write_transactions_inflight;
   int64_t alter_schema_transactions_inflight;
-  int64_t change_config_transactions_inflight;
 };
 
 // Each TabletPeer has a TransactionTracker which keeps track of pending transactions.
@@ -71,9 +70,6 @@ class TransactionTracker {
 
   // Number of alter schema transactions currently in-flight.
   uint64_t NumAlterSchemaTransactionsInFlight() const;
-
-  // Number of change config transactions currenty in-flight.
-  uint64_t NumChangeConfigTransactionsInFlight() const;
 
   mutable simple_spinlock lock_;
   std::tr1::unordered_set<scoped_refptr<TransactionDriver>,

@@ -31,7 +31,6 @@ class Clock;
 }
 
 namespace tablet {
-class ChangeConfigTransaction;
 class TabletPeer;
 }
 
@@ -216,7 +215,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
  protected:
   friend class RefCountedThreadSafe<Consensus>;
-  friend class tablet::ChangeConfigTransaction;
   friend class tablet::TabletPeer;
   friend class master::SysCatalogTable;
 

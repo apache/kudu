@@ -41,7 +41,6 @@ class Transaction {
   enum TransactionType {
     WRITE_TXN,
     ALTER_SCHEMA_TXN,
-    CHANGE_CONFIG_TXN
   };
 
   enum TraceType {

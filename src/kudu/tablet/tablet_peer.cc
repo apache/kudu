@@ -25,7 +25,6 @@
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
-#include "kudu/tablet/transactions/change_config_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metrics.h"
@@ -73,8 +72,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
     // of submission
     consensus_ready_latch_(1),
     log_anchor_registry_(new LogAnchorRegistry()),
-    mark_dirty_clbk_(mark_dirty_clbk),
-    config_sem_(1) {
+    mark_dirty_clbk_(mark_dirty_clbk) {
   CHECK_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
 }
 
@@ -170,19 +168,6 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 const consensus::QuorumPB TabletPeer::Quorum() const {
   CHECK(consensus_) << "consensus is null";
   return consensus_->CommittedQuorum();
-}
-
-void TabletPeer::ConsensusStateChanged(consensus::QuorumPeerPB::Role new_role) {
-  // We count down the running latch on the role change cuz this signals
-  // when consensus is ready and other places are relying on that.
-  // TODO remove this latch and make people simply retry.
-  if (new_role != QuorumPeerPB::NON_PARTICIPANT) {
-    consensus_ready_latch_.CountDown();
-  }
-
-  // NOTE: This callback must be called outside the peer lock or we risk
-  // a deadlock.
-  consensus_->MarkDirty();
 }
 
 TabletStatePB TabletPeer::Shutdown() {
@@ -291,20 +276,6 @@ Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionState *state) {
   return driver->ExecuteAsync();
 }
 
-Status TabletPeer::SubmitChangeConfig(ChangeConfigTransactionState *state) {
-  RETURN_NOT_OK(CheckRunning());
-
-  if (!state->old_quorum().IsInitialized()) {
-    RETURN_NOT_OK(state->set_old_quorum(consensus_->CommittedQuorum()));
-    DCHECK(state->old_quorum().IsInitialized());
-  }
-  gscoped_ptr<ChangeConfigTransaction> transaction(
-      new ChangeConfigTransaction(state, consensus::LEADER, &config_sem_));
-  scoped_refptr<TransactionDriver> driver;
-  NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver);
-  return driver->ExecuteAsync();
-}
-
 void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   DCHECK(status_pb_out != NULL);
@@ -349,9 +320,6 @@ void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
           break;
         case Transaction::ALTER_SCHEMA_TXN:
           status_pb.set_tx_type(consensus::ALTER_SCHEMA_OP);
-          break;
-        case Transaction::CHANGE_CONFIG_TXN:
-          status_pb.set_tx_type(consensus::CHANGE_CONFIG_OP);
           break;
       }
       status_pb.set_description(driver->ToString());
@@ -437,18 +405,6 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
       transaction.reset(new WriteTransaction(
           new WriteTransactionState(this, &replicate_msg->write_request()),
           consensus::REPLICA));
-      break;
-    }
-    case CHANGE_CONFIG_OP:
-    {
-      DCHECK(replicate_msg->has_change_config_request()) << "CHANGE_CONFIG_OP"
-          " replica transaction must receive a ChangeConfigRequestPB";
-      DCHECK(replicate_msg->change_config_request().old_config().IsInitialized());
-      ChangeConfigTransactionState* state = new ChangeConfigTransactionState(
-          this,
-          &replicate_msg->change_config_request());
-      RETURN_NOT_OK(state->set_old_quorum(replicate_msg->change_config_request().old_config()));
-      transaction.reset(new ChangeConfigTransaction(state, consensus::REPLICA, &config_sem_));
       break;
     }
     default:

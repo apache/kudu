@@ -37,7 +37,6 @@ class MaintenanceManager;
 class MaintenanceOp;
 
 namespace tablet {
-class ChangeConfigTransactionState;
 class LeaderTransactionDriver;
 class ReplicaTransactionDriver;
 class TabletPeer;
@@ -105,15 +104,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // AlterSchema is in progress.
   Status SubmitAlterSchema(AlterSchemaTransactionState *tx_state);
 
-  // Called by the tablet service to start a change config transaction.
-  //
-  // The transaction contains all the information required to execute the
-  // change config operation and send the response back.
-  //
-  // If the returned Status is OK, the response to the master will be sent
-  // asynchronously.
-  Status SubmitChangeConfig(ChangeConfigTransactionState* tx_state);
-
   void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
 
   // Used by consensus to create and start a new ReplicaTransaction.
@@ -144,12 +134,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // RPC call and update.
   // TODO: move this to raft_consensus.h.
   Status UpdatePermanentUuids();
-
-  // Notifies the TabletPeer that the consensus state has changed.
-  // Currently this is called to activate the TsTabletManager callback that allows to
-  // mark the tablet report as dirty, so that the master will eventually become
-  // aware that the consensus role has changed for this peer.
-  void ConsensusStateChanged(consensus::QuorumPeerPB::Role new_role);
 
   TabletStatusListener* status_listener() const {
     return status_listener_.get();
@@ -289,12 +273,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // This function must be called any time the cluster membership or cluster
   // leadership changes.
   Closure mark_dirty_clbk_;
-
-  // Lock protecting updates to the configuration, stored in the tablet's
-  // metadata.
-  // ChangeConfigTransactions obtain this lock on prepare and release it on
-  // apply.
-  mutable Semaphore config_sem_;
 
   // List of maintenance operations for the tablet that need information that only the peer
   // can provide.

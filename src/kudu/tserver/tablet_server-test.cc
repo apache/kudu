@@ -1742,7 +1742,7 @@ TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
   ASSERT_EQ(1, num_success);
 }
 
-TEST_F(TabletServerTest, TestChangeConfiguration) {
+TEST_F(TabletServerTest, DISABLED_TestChangeConfiguration) {
   ChangeConfigRequestPB req;
   ChangeConfigResponsePB resp;
   RpcController rpc;

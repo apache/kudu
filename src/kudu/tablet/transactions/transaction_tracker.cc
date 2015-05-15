@@ -31,10 +31,6 @@ METRIC_DEFINE_gauge_uint64(tablet, alter_schema_transactions_inflight,
                            "Alter Schema Transactions In Flight",
                            kudu::MetricUnit::kTransactions,
                            "Number of alter schema transactions currently in-flight");
-METRIC_DEFINE_gauge_uint64(tablet, change_config_transactions_inflight,
-                           "Consensus Configuration Change Transactions In Flight",
-                           kudu::MetricUnit::kTransactions,
-                           "Number of config change transactions currently in-flight");
 using boost::bind;
 using std::vector;
 using strings::Substitute;
@@ -42,8 +38,7 @@ using strings::Substitute;
 TransactionsInFlight::TransactionsInFlight()
     : all_transactions_inflight(0),
       write_transactions_inflight(0),
-      alter_schema_transactions_inflight(0),
-      change_config_transactions_inflight(0) {
+      alter_schema_transactions_inflight(0) {
 }
 
 TransactionTracker::TransactionTracker() {
@@ -69,9 +64,6 @@ void TransactionTracker::IncrementCounters(Transaction::TransactionType tx_type)
     case Transaction::ALTER_SCHEMA_TXN:
       ++txns_in_flight_.alter_schema_transactions_inflight;
       break;
-    case Transaction::CHANGE_CONFIG_TXN:
-      ++txns_in_flight_.change_config_transactions_inflight;
-      break;
   }
 }
 
@@ -86,10 +78,6 @@ void TransactionTracker::DecrementCounters(Transaction::TransactionType tx_type)
     case Transaction::ALTER_SCHEMA_TXN:
       DCHECK_GT(txns_in_flight_.alter_schema_transactions_inflight, 0);
       --txns_in_flight_.alter_schema_transactions_inflight;
-      break;
-    case Transaction::CHANGE_CONFIG_TXN:
-      DCHECK_GT(txns_in_flight_.change_config_transactions_inflight, 0);
-      --txns_in_flight_.change_config_transactions_inflight;
       break;
   }
 }
@@ -171,10 +159,6 @@ void TransactionTracker::StartInstrumentation(const scoped_refptr<MetricEntity>&
     metric_entity, Bind(&TransactionTracker::NumAlterSchemaTransactionsInFlight,
                          Unretained(this)))
     ->AutoDetach(&metric_detacher_);
-  METRIC_change_config_transactions_inflight.InstantiateFunctionGauge(
-    metric_entity, Bind(&TransactionTracker::NumChangeConfigTransactionsInFlight,
-                         Unretained(this)))
-    ->AutoDetach(&metric_detacher_);
 }
 
 uint64_t TransactionTracker::NumAllTransactionsInFlight() const {
@@ -190,11 +174,6 @@ uint64_t TransactionTracker::NumWriteTransactionsInFlight() const {
 uint64_t TransactionTracker::NumAlterSchemaTransactionsInFlight() const {
   boost::lock_guard<simple_spinlock> l(lock_);
   return txns_in_flight_.alter_schema_transactions_inflight;
-}
-
-uint64_t TransactionTracker::NumChangeConfigTransactionsInFlight() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  return txns_in_flight_.change_config_transactions_inflight;
 }
 
 }  // namespace tablet

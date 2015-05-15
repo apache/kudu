@@ -34,7 +34,6 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
-#include "kudu/tablet/transactions/change_config_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/path_util.h"

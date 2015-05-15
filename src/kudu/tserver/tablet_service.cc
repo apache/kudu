@@ -23,7 +23,6 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
-#include "kudu/tablet/transactions/change_config_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
@@ -63,7 +62,6 @@ using rpc::RpcContext;
 using std::tr1::shared_ptr;
 using std::vector;
 using tablet::AlterSchemaTransactionState;
-using tablet::ChangeConfigTransactionState;
 using tablet::TabletPeer;
 using tablet::TabletStatusPB;
 using tablet::TransactionCompletionCallback;
@@ -565,30 +563,11 @@ void ConsensusServiceImpl::ChangeConfig(const consensus::ChangeConfigRequestPB* 
                                         ChangeConfigResponsePB* resp,
                                         rpc::RpcContext* context) {
   DVLOG(3) << "Received Change Config RPC: " << req->DebugString();
-
-  scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context,
-                             &tablet_peer)) {
-    return;
-  }
-
-  ChangeConfigTransactionState *tx_state =
-    new ChangeConfigTransactionState(tablet_peer.get(), req, resp);
-
-  tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
-      new RpcTransactionCompletionCallback<ChangeConfigResponsePB>(context,
-                                                                   resp)).Pass());
-
-  // Submit the change config op. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitChangeConfig(tx_state);
-  if (PREDICT_FALSE(!s.ok())) {
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
-                         context);
-    return;
-  }
+  SetupErrorAndRespond(resp->mutable_error(), Status::NotSupported("ConfigChange not implemented"),
+                       TabletServerErrorPB::UNKNOWN_ERROR,
+                       context);
+  return;
 }
-
 
 void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                                            ConsensusResponsePB* resp,

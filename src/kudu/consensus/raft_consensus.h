@@ -79,9 +79,10 @@ class RaftConsensus : public Consensus,
 
   virtual bool IsRunning() const OVERRIDE;
 
-  // Emulates an election by increasing the term number, marking
-  // this peer as leader, marking the previous leader as follower
-  // and calling ChangeConfig() with the resulting quorum.
+  // Emulates an election by increasing the term number and asserting leadership
+  // in the quorum by sending a NO_OP to other members of the quorum.
+  // This is NOT safe to use in a distributed quorum with failure detection
+  // enabled, as it could result in a split-brain scenario.
   virtual Status EmulateElection() OVERRIDE;
 
   virtual Status StartElection() OVERRIDE;
