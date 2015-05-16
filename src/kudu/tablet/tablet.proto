@@ -60,8 +60,10 @@ message TabletStatusPB {
   required string table_name = 2;
   required TabletStatePB state = 3;
   required string last_status = 4;
-  required string start_key = 5;
-  required string end_key = 6;
+  // The encoded start key of the tablet.
+  required bytes start_key = 5;
+  // The encoded end key of the tablet.
+  required bytes end_key = 6;
   optional int64 estimated_on_disk_size = 7;
 }
 
