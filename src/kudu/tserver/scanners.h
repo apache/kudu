@@ -186,6 +186,18 @@ class Scanner {
 
   const std::string& requestor_string() const { return requestor_string_; }
 
+  // Returns the current call sequence ID of the scanner.
+  uint32_t call_seq_id() const {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    return call_seq_id_;
+  }
+
+  // Increments the call sequence ID.
+  void IncrementCallSeqId() {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    call_seq_id_ += 1;
+  }
+
   // Return the delta from the last time this scan was updated to 'now'.
   MonoDelta TimeSinceLastAccess(const MonoTime& now) const {
     boost::lock_guard<simple_spinlock> l(lock_);
@@ -232,7 +244,10 @@ class Scanner {
   // The last time that the scanner was accessed.
   MonoTime last_access_time_;
 
-  // Protects last_access_time_.
+  // The current call sequence ID.
+  uint32_t call_seq_id_;
+
+  // Protects last_access_time_ and call_seq_id_.
   mutable simple_spinlock lock_;
 
   // The time the scanner was started.

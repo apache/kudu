@@ -58,6 +58,9 @@ message TabletServerErrorPB {
 
     // Client requested a snapshot read but the snapshot was invalid.
     INVALID_SNAPSHOT = 13;
+
+    // An invalid scan call sequence ID was specified.
+    INVALID_SCAN_CALL_SEQ_ID = 14;
   }
 
   // The error code.
@@ -210,7 +213,13 @@ message NewScanRequestPB {
 // scan request.
 //
 // The scanner will remain open if there are more results, and it's not
-// asked to be closed explicitly.
+// asked to be closed explicitly. Some errors on the Tablet Server may
+// close the scanner automatically if the scanner state becomes
+// inconsistent.
+//
+// Clients may choose to retry scan requests that fail to complete (due to, for
+// example, a timeout or network error). If a scan request completes with an
+// error result, the scanner should be closed by the client.
 //
 // You can fetch the results and ask the scanner to be closed to save
 // a trip if you are not interested in remaining results.

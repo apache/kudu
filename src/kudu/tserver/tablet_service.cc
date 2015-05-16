@@ -1137,6 +1137,10 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     continue_req.set_scanner_id(scanner->id());
     RETURN_NOT_OK(HandleContinueScanRequest(&continue_req, result_collector, has_more_results,
                                             error_code));
+  } else {
+    // Increment the scanner call sequence ID. HandleContinueScanRequest handles
+    // this in the non-empty scan case.
+    scanner->IncrementCallSeqId();
   }
   return Status::OK();
 }
@@ -1150,30 +1154,39 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   TRACE_EVENT1("tserver", "TabletServiceImpl::HandleContinueScanRequest",
                "scanner_id", req->scanner_id());
 
+  size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
+
   // TODO: need some kind of concurrency control on these scanner objects
   // in case multiple RPCs hit the same scanner at the same time. Probably
   // just a trylock and fail the RPC if it contends.
   SharedScanner scanner;
   if (!server_->scanner_manager()->LookupScanner(req->scanner_id(), &scanner)) {
-    *error_code = TabletServerErrorPB::SCANNER_EXPIRED;
-    return Status::NotFound("Scanner not found");
+    if (batch_size_bytes == 0 && req->close_scanner()) {
+      // A request to close a non-existent scanner.
+      return Status::OK();
+    } else {
+      *error_code = TabletServerErrorPB::SCANNER_EXPIRED;
+      return Status::NotFound("Scanner not found");
+    }
   }
+
+  // If we early-exit out of this function, automatically unregister the scanner.
+  ScopedUnregisterScanner unreg_scanner(server_->scanner_manager(), scanner->id());
+
   VLOG(2) << "Found existing scanner " << scanner->id() << " for request: "
           << req->ShortDebugString();
   TRACE("Found scanner $0", scanner->id());
 
-  size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
-
   if (batch_size_bytes == 0 && req->close_scanner()) {
     *has_more_results = false;
-    bool success = server_->scanner_manager()->UnregisterScanner(req->scanner_id());
-    LOG_IF(WARNING, !success) << "Scanner " << scanner->id() <<
-      " not removed successfully from scanner manager. May be a bug.";
     return Status::OK();
   }
 
-  // TODO: check the call_seq_id!
-
+  if (req->call_seq_id() != scanner->call_seq_id()) {
+    *error_code = TabletServerErrorPB::INVALID_SCAN_CALL_SEQ_ID;
+    return Status::InvalidArgument("Invalid call sequence ID in scan request");
+  }
+  scanner->IncrementCallSeqId();
   scanner->UpdateAccessTime();
 
   RowwiseIterator* iter = scanner->iter();
@@ -1224,11 +1237,10 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   scanner->UpdateAccessTime();
   *has_more_results = !req->close_scanner() && iter->HasNext();
-  if (!*has_more_results) {
+  if (*has_more_results) {
+    unreg_scanner.Cancel();
+  } else {
     VLOG(2) << "Scanner " << scanner->id() << " complete: removing...";
-    bool success = server_->scanner_manager()->UnregisterScanner(req->scanner_id());
-    LOG_IF(WARNING, !success) << "Scanner " << scanner->id() <<
-      " not removed successfully from scanner manager. May be a bug.";
   }
 
   return Status::OK();

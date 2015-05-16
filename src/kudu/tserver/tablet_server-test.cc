@@ -1565,6 +1565,48 @@ TEST_F(TabletServerTest, TestScan_NoResults) {
   }
 }
 
+// Test scanning a tablet that has no entries.
+TEST_F(TabletServerTest, TestScan_InvalidScanSeqId) {
+  InsertTestRowsDirect(0, 10);
+
+  ScanRequestPB req;
+  ScanResponsePB resp;
+  RpcController rpc;
+
+  {
+    // Set up a new scan request with no predicates, all columns.
+    const Schema& projection = schema_;
+    NewScanRequestPB* scan = req.mutable_new_scan_request();
+    scan->set_tablet_id(kTabletId);
+    ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+    req.set_call_seq_id(0);
+    req.set_batch_size_bytes(0); // so it won't return data right away
+
+    // Create the scanner
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+    ASSERT_FALSE(resp.has_error());
+    ASSERT_TRUE(resp.has_more_results());
+  }
+
+  string scanner_id = resp.scanner_id();
+  resp.Clear();
+
+  {
+    // Continue the scan with an invalid sequence ID
+    req.Clear();
+    rpc.Reset();
+    req.set_scanner_id(scanner_id);
+    req.set_batch_size_bytes(0); // so it won't return data right away
+    req.set_call_seq_id(42); // should be 1
+
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ(TabletServerErrorPB::INVALID_SCAN_CALL_SEQ_ID, resp.error().code());
+  }
+}
+
 TEST_F(TabletServerTest, TestAlterSchema) {
   AlterSchemaRequestPB req;
   AlterSchemaResponsePB resp;
@@ -1909,6 +1951,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
   ChecksumRequestPB req;
   req.mutable_new_request()->set_tablet_id(kTabletId);
   req.mutable_new_request()->set_read_mode(READ_LATEST);
+  req.set_call_seq_id(0);
   ASSERT_OK(SchemaToColumnPBsWithoutIds(schema_,
                                         req.mutable_new_request()->mutable_projected_columns()));
   ChecksumRequestPB new_req = req;  // Cache "new" request.
@@ -1957,6 +2000,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
   req.clear_new_request();
   req.mutable_continue_request()->set_scanner_id(scanner_id);
   req.mutable_continue_request()->set_previous_checksum(agg_checksum);
+  req.set_call_seq_id(1);
   controller.Reset();
   ASSERT_OK(proxy_->Checksum(req, &resp, &controller));
   ASSERT_EQ(total_crc, resp.checksum());

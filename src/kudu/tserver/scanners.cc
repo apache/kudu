@@ -148,6 +148,7 @@ Scanner::Scanner(const string& id,
     : id_(id),
       tablet_id_(tablet_id),
       requestor_string_(requestor_string),
+      call_seq_id_(0),
       start_time_(MonoTime::Now(MonoTime::COARSE)),
       metrics_(metrics),
       arena_(1024, 1024 * 1024) {

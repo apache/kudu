@@ -276,7 +276,8 @@ class TabletServerTestBase : public KuduTest {
   void DrainScannerToStrings(const string& scanner_id,
                              const Schema& projection,
                              vector<string>* results,
-                             TabletServerServiceProxy* proxy = NULL) {
+                             TabletServerServiceProxy* proxy = NULL,
+                             uint32_t call_seq_id = 1) {
 
     if (!proxy) {
       proxy = proxy_.get();
@@ -291,12 +292,14 @@ class TabletServerTestBase : public KuduTest {
     do {
       rpc.Reset();
       req.set_batch_size_bytes(10000);
+      req.set_call_seq_id(call_seq_id);
       SCOPED_TRACE(req.DebugString());
       ASSERT_OK(DCHECK_NOTNULL(proxy)->Scan(req, &resp, &rpc));
       SCOPED_TRACE(resp.DebugString());
       ASSERT_FALSE(resp.has_error());
 
       StringifyRowsFromResponse(projection, rpc, resp, results);
+      call_seq_id += 1;
     } while (resp.has_more_results());
   }
 
