@@ -44,7 +44,8 @@
       "logging" : {
         "dir" : "/var/log/kudu",
         "filename" : "kudu-master.INFO",
-        "modifiable" : true
+        "modifiable" : true,
+        "loggingType" : "glog"
       },
       "externalLink" : {
         "name" : "kudu_master_web_ui",
@@ -131,7 +132,8 @@
       "logging" : {
         "dir" : "/var/log/kudu",
         "filename" : "kudu-tablet_server.INFO",
-        "modifiable" : true
+        "modifiable" : true,
+        "loggingType" : "glog"
       },
       "externalLink" : {
         "name" : "kudu_ts_web_ui",
