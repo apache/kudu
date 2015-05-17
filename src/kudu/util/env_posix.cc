@@ -35,6 +35,7 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
@@ -55,6 +56,11 @@
 DEFINE_bool(writable_file_use_fsync, false,
             "Use fsync(2) instead of fdatasync(2) for synchronizing dirty "
             "data to disk.");
+TAG_FLAG(writable_file_use_fsync, advanced);
+
+DEFINE_bool(suicide_on_eio, true,
+            "Kill the process if an I/O operation results in EIO");
+TAG_FLAG(suicide_on_eio, advanced);
 
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
@@ -97,6 +103,12 @@ static Status IOError(const std::string& context, int err_number) {
       return Status::AlreadyPresent(context, ErrnoToString(err_number), err_number);
     case EOPNOTSUPP:
       return Status::NotSupported(context, ErrnoToString(err_number), err_number);
+    case EIO:
+      if (FLAGS_suicide_on_eio) {
+        // TODO: This is very, very coarse-grained. A more comprehensive
+        // approach is described in KUDU-616.
+        LOG(FATAL) << "Fatal I/O error, context: " << context;
+      }
   }
   return Status::IOError(context, ErrnoToString(err_number), err_number);
 }
@@ -669,7 +681,7 @@ class PosixWritableFile : public WritableFile {
 
     if (PREDICT_FALSE(written == -1)) {
       int err = errno;
-      return IOError("pwritev error", err);
+      return IOError(filename_, err);
     }
 
     filesize_ += written;
@@ -743,7 +755,7 @@ class PosixRWFile : public RWFile {
 
     if (PREDICT_FALSE(written == -1)) {
       int err = errno;
-      return IOError("pwrite error", err);
+      return IOError(filename_, err);
     }
 
     if (PREDICT_FALSE(written != data.size())) {
