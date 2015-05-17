@@ -499,10 +499,10 @@ TEST_F(LogTest, TestGCOfIndexChunks) {
   BuildLog();
 
   // Append some segments which cross from one index chunk into another.
-  // 999990-999994        \___the first index
-  // 999995-999999        /   chunk points to these
-  // 1000000-100004       \
-  // 1000005-100009        | the second index chunk points to these
+  // 999990-999994        \___ the first index
+  // 999995-999999        /    chunk points to these
+  // 1000000-100004       \_
+  // 1000005-100009        _|- the second index chunk points to these
   // 1000010-<still open> /
   const int kNumTotalSegments = 5;
   const int kNumOpsPerSegment = 5;
