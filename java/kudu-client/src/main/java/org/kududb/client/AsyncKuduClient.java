@@ -870,16 +870,17 @@ public class AsyncKuduClient {
         new GetMasterRegistrationReceived(masterAddresses, responseD);
     for (HostAndPort hostAndPort : masterAddresses) {
       Deferred<GetMasterRegistrationResponse> d;
-      try {
-        // Note: we need to create a client for that host first, as there's a
-        // chicken and egg problem: since there is no source of truth beyond
-        // the master, the only way to get information about a master host is
-        // by making an RPC to that host.
-        TabletClient clientForHostAndPort = newMasterClient(hostAndPort);
+      // Note: we need to create a client for that host first, as there's a
+      // chicken and egg problem: since there is no source of truth beyond
+      // the master, the only way to get information about a master host is
+      // by making an RPC to that host.
+      TabletClient clientForHostAndPort = newMasterClient(hostAndPort);
+      if (clientForHostAndPort == null) {
+        String message = "Couldn't resolve this master's address " + hostAndPort.toString();
+        LOG.warn(message);
+        d = Deferred.fromError(new NonRecoverableException(message));
+      } else {
         d = getMasterRegistration(clientForHostAndPort);
-      } catch (Exception e) {
-        LOG.warn("Error creating a TabletClient for " + hostAndPort.toString(), e);
-        d = Deferred.fromError(e);
       }
       d.addCallbacks(received.callbackForNode(hostAndPort), received.errbackForNode(hostAndPort));
     }
@@ -1159,11 +1160,14 @@ public class AsyncKuduClient {
    * otherwise, creates a new client for the specified master server.
    * @param masterHostPort The RPC host and port for the master server.
    * @return A live and initialized client for the specified master server.
-   * @throws Exception If we are unable to create a client.
    */
-  TabletClient newMasterClient(HostAndPort masterHostPort) throws Exception {
+  TabletClient newMasterClient(HostAndPort masterHostPort) {
+    String ip = getIP(masterHostPort.getHostText());
+    if (ip == null) {
+      return null;
+    }
     return newClient(MASTER_TABLE_HACK + masterHostPort.toString(),
-        masterHostPort.getHostText(), masterHostPort.getPort(), true);
+        ip, masterHostPort.getPort(), true);
   }
 
   TabletClient newClient(String uuid, final String host, final int port, boolean
@@ -1365,6 +1369,11 @@ public class AsyncKuduClient {
       return null;
     }
     final String host = getIP(hostport.substring(0, colon));
+    if (host == null) {
+      // getIP will print the reason why, there's nothing else we can do.
+      return null;
+    }
+
     int port;
     try {
       port = parsePortNumber(hostport.substring(colon + 1,
