@@ -17,7 +17,6 @@
 package org.kududb.mapreduce.tools;
 
 import com.google.common.base.Joiner;
-import com.stumbleupon.async.DeferredGroupException;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
@@ -456,6 +455,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
         session.setMutationBufferSpace(WIDTH_DEFAULT);
         session.setTimeoutMillis(timeout);
+        session.setIgnoreAllDuplicateRows(true);
 
         this.width = context.getConfiguration().getInt(GENERATOR_WIDTH_KEY, WIDTH_DEFAULT);
         current = new byte[this.width][];
@@ -511,13 +511,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
             try {
               session.apply(insert);
               session.flush();
-            } catch (DeferredGroupException dge) {
-              RowsWithErrorException errors =
-                  RowsWithErrorException.fromDeferredGroupException(dge);
-              // If all the rows are already present, assume KUDU-568.
-              if (errors == null || !errors.areAllErrorsOfAlreadyPresentType(true)) {
-                throw new IOException(dge);
-              }
             } catch (Exception e) {
               throw new IOException("Couldn't flush the head row, " + insert, e);
             }
@@ -571,12 +564,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           }
 
           session.flush();
-        } catch (DeferredGroupException dge) {
-          RowsWithErrorException errors = RowsWithErrorException.fromDeferredGroupException(dge);
-          // If all the rows are already present, assume KUDU-568.
-          if (errors == null || !errors.areAllErrorsOfAlreadyPresentType(true)) {
-            throw new IOException(dge);
-          }
         } catch (Exception ex) {
           throw new IOException(ex);
         }

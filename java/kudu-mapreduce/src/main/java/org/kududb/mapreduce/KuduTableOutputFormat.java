@@ -2,7 +2,6 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.mapreduce;
 
-import com.stumbleupon.async.DeferredGroupException;
 import org.kududb.client.*;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
@@ -16,6 +15,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -102,6 +103,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     this.session.setTimeoutMillis(this.operationTimeoutMs);
     this.session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
     this.session.setMutationBufferSpace(bufferSpace);
+    this.session.setIgnoreAllDuplicateRows(true);
     String multitonKey = String.valueOf(Thread.currentThread().getId());
     assert(MULTITON.get(multitonKey) == null);
     MULTITON.put(multitonKey, this);
@@ -161,7 +163,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
       try {
         session.apply(operation);
       } catch (Exception e) {
-        processException(e);
+        throw new IOException("Encountered an error while writing", e);
       }
     }
 
@@ -169,10 +171,10 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     public void close(TaskAttemptContext taskAttemptContext) throws IOException,
         InterruptedException {
       try {
-        session.close();
+        processRowErrors(session.close());
         shutdownClient();
       } catch (Exception e) {
-        processException(e);
+        throw new IOException("Encountered an error while closing this task", e);
       } finally {
         if (taskAttemptContext != null) {
           // This is the only place where we have access to the context in the record writer,
@@ -182,28 +184,13 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
       }
     }
 
-    // TODO this processing needs to be done upstream, KUDU-764.
-    private void processException(Exception ex) {
-      RowsWithErrorException rwe;
-      if (ex instanceof DeferredGroupException) {
-        rwe = RowsWithErrorException.fromDeferredGroupException((DeferredGroupException) ex);
-      } else if (ex instanceof RowsWithErrorException) {
-        rwe = (RowsWithErrorException) ex;
-      } else {
-        LOG.warn("Encountered an exception after applying rows", ex);
-        return;
-      }
-      if (rwe != null) {
-        // Assuming we had a leader election, see KUDU-568.
-        if (rwe.areAllErrorsOfAlreadyPresentType(false)) {
-          return;
-        }
-        int rowErrorsCount = rwe.getErrors().size();
+    private void processRowErrors(ArrayList<OperationResponse> responses) {
+      List<OperationResponse.RowError> errors = OperationResponse.collectErrors(responses);
+      if (!errors.isEmpty()) {
+        int rowErrorsCount = errors.size();
         rowsWithErrors.addAndGet(rowErrorsCount);
         LOG.warn("Got per errors for " + rowErrorsCount + " rows, " +
-            "the first one being " + rwe.getErrors().get(0).getStatus());
-      } else {
-        LOG.warn("Got an Exception without per-row errors", ex);
+            "the first one being " + errors.get(0).getStatus());
       }
     }
   }

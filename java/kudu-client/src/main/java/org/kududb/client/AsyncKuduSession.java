@@ -115,6 +115,8 @@ public class AsyncKuduSession implements SessionConfiguration {
    */
   volatile boolean closed;
 
+  private boolean ignoreAllDuplicateRows = false;
+
   /**
    * Package-private constructor meant to be used via AsyncKuduClient
    * @param client client that creates this session
@@ -197,6 +199,16 @@ public class AsyncKuduSession implements SessionConfiguration {
     return closed;
   }
 
+  @Override
+  public boolean isIgnoreAllDuplicateRows() {
+    return ignoreAllDuplicateRows;
+  }
+
+  @Override
+  public void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows) {
+    this.ignoreAllDuplicateRows = ignoreAllDuplicateRows;
+  }
+
   /**
    * Flushes the buffered operations and marks this sessions as closed.
    * See the javadoc on {@link #flush()} on how to deal with exceptions coming out of this method.
@@ -211,9 +223,6 @@ public class AsyncKuduSession implements SessionConfiguration {
 
   /**
    * Flushes the buffered operations.
-   * If joining on the Deferred throws a DeferredGroupException (or invokes the errback), call
-   * {@link RowsWithErrorException#fromDeferredGroupException(com.stumbleupon.async.DeferredGroupException)}
-   * in order to get a single RowsWithErrorException.
    * @return a Deferred whose callback chain will be invoked when
    * everything that was buffered at the time of the call has been flushed.
    */
@@ -437,7 +446,7 @@ public class AsyncKuduSession implements SessionConfiguration {
       if (batch == null) {
         // We found a tablet that needs batching, this is the only place where
         // we schedule a flush.
-        batch = new Batch(operation.getTable());
+        batch = new Batch(operation.getTable(), ignoreAllDuplicateRows);
         batch.setExternalConsistencyMode(this.consistencyMode);
         Batch oldBatch = operations.put(tablet, batch);
         assert (oldBatch == null);

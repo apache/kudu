@@ -102,4 +102,21 @@ public interface SessionConfiguration {
    * @throws IllegalArgumentException if the buffer isn't empty.
    */
   public void setExternalConsistencyMode(ExternalConsistencyMode consistencyMode);
+
+  /**
+   * Tells if the session is currently ignoring row errors when the whole list returned by a tablet
+   * server is of the AlreadyPresent type.
+   * @return true if the session is enforcing this, else false
+   */
+  public boolean isIgnoreAllDuplicateRows();
+
+  /**
+   * Configures the option to ignore all the row errors if they are all of the AlreadyPresent type.
+   * This can be needed when facing KUDU-568. The effect of enabling this is that operation
+   * responses that match this pattern will be cleared of their row errors, meaning that we consider
+   * them successful.
+   * This is disabled by default.
+   * @param ignoreAllDuplicateRows true if this session should enforce this, else false
+   */
+  public void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows);
 }

@@ -75,7 +75,8 @@ public class KuduSession implements SessionConfiguration {
    * it will be of type DeferredGroupException.
    */
   public ArrayList<OperationResponse> flush() throws Exception {
-    return session.flush().join(getTimeoutMillis());
+    ArrayList<OperationResponse> responses = session.flush().join(getTimeoutMillis());
+    return responses;
   }
 
   /**
@@ -85,7 +86,8 @@ public class KuduSession implements SessionConfiguration {
    * it will be of type DeferredGroupException.
    */
   public ArrayList<OperationResponse> close() throws Exception {
-    return session.close().join(getTimeoutMillis());
+    ArrayList<OperationResponse> responses = session.close().join(getTimeoutMillis());
+    return responses;
   }
 
   @Override
@@ -136,5 +138,15 @@ public class KuduSession implements SessionConfiguration {
   @Override
   public void setExternalConsistencyMode(ExternalConsistencyMode consistencyMode) {
     session.setExternalConsistencyMode(consistencyMode);
+  }
+
+  @Override
+  public boolean isIgnoreAllDuplicateRows() {
+    return session.isIgnoreAllDuplicateRows();
+  }
+
+  @Override
+  public void setIgnoreAllDuplicateRows(boolean ignoreAllDuplicateRows) {
+    session.setIgnoreAllDuplicateRows(ignoreAllDuplicateRows);
   }
 }

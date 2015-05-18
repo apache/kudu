@@ -25,12 +25,9 @@ public class TestKuduSession extends BaseKuduTest {
     }
     assertEquals(10, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
 
-    try {
-      session.apply(createInsert(0));
-      fail();
-    } catch (Exception ex) {
-      assertTrue(ex instanceof RowsWithErrorException);
-    }
+    OperationResponse resp = session.apply(createInsert(0));
+    assertTrue(resp.hasRowErrors());
+    assertEquals(1, resp.getRowErrors().size());
 
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
 

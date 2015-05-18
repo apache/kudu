@@ -37,6 +37,7 @@ public class TestLeaderFailover extends BaseKuduTest {
     }
 
     KuduSession session = syncClient.newSession();
+    session.setIgnoreAllDuplicateRows(true);
     for (int i = 0; i < 3; i++) {
       session.apply(createBasicSchemaInsert(table, i));
     }
@@ -48,13 +49,9 @@ public class TestLeaderFailover extends BaseKuduTest {
     killTabletLeader(table);
 
     for (int i = 3; i < 6; i++) {
-      try {
-        session.apply(createBasicSchemaInsert(table, i));
-      } catch (RowsWithErrorException e) {
-        // KUDU-568, we might get AlreadyPresent but it's fine.
-        if (!e.areAllErrorsOfAlreadyPresentType(true)) {
-          throw e;
-        }
+      OperationResponse resp = session.apply(createBasicSchemaInsert(table, i));
+      if (resp.hasRowErrors()) {
+        fail("Encountered a row error " + resp.getRowErrors().get(0));
       }
     }
 

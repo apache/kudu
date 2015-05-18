@@ -2,7 +2,6 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import com.stumbleupon.async.DeferredGroupException;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -38,14 +37,11 @@ public class TestRowErrors extends BaseKuduTest {
 
     // Try a single dupe row insert with AUTO_FLUSH_SYNC.
     Insert dupeForZero = createInsert(0);
-    try {
-      session.apply(dupeForZero).join(DEFAULT_SLEEP);
-      fail();
-    } catch (RowsWithErrorException ex) {
-      List<RowsWithErrorException.RowError> errors = ex.getErrors();
-      assertEquals(1, errors.size());
-      assertTrue(errors.get(0).getOperation() == dupeForZero);
-    }
+    OperationResponse resp = session.apply(dupeForZero).join(DEFAULT_SLEEP);
+    assertTrue(resp.hasRowErrors());
+    List<OperationResponse.RowError> errors = resp.getRowErrors();
+    assertEquals(1, errors.size());
+    assertTrue(errors.get(0).getOperation() == dupeForZero);
 
     // Now try inserting two dupes and one good row, make sure we get only two errors back.
     dupeForZero = createInsert(0);
@@ -54,17 +50,12 @@ public class TestRowErrors extends BaseKuduTest {
     session.apply(dupeForZero);
     session.apply(dupeForTwo);
     session.apply(createInsert(4));
-    try {
-      session.flush().join(DEFAULT_SLEEP);
-      fail();
-    } catch (DeferredGroupException dge) {
-      RowsWithErrorException ex = RowsWithErrorException.fromDeferredGroupException(dge);
-      List<RowsWithErrorException.RowError> errors = ex.getErrors();
-      assertEquals(2, errors.size());
-      assertTrue(errors.get(0).getOperation() == dupeForZero);
-      assertTrue(errors.get(1).getOperation() == dupeForTwo);
-    }
 
+    List<OperationResponse> responses = session.flush().join(DEFAULT_SLEEP);
+    errors = OperationResponse.collectErrors(responses);
+    assertEquals(2, errors.size());
+    assertTrue(errors.get(0).getOperation() == dupeForZero);
+    assertTrue(errors.get(1).getOperation() == dupeForTwo);
   }
 
   private Insert createInsert(int key) {

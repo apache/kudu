@@ -323,13 +323,13 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
                                               String tsUUID) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
+    List<Operation> ops = null;
     if (builder.getPerRowErrorsCount() != 0) {
-      List<Operation> ops = new ArrayList<Operation>(1);
+      ops = new ArrayList<>(1);
       ops.add(this);
-      throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops, tsUUID);
     }
     OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
-        builder.getTimestamp());
+        builder.getTimestamp(), builder.getPerRowErrorsList(), ops);
     return new Pair<OperationResponse, Object>(response, builder.getError());
   }
 

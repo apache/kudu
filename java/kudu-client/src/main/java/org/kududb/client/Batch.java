@@ -4,6 +4,7 @@ package org.kududb.client;
 
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import kudu.WireProtocol;
 import kudu.tserver.Tserver;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -27,13 +28,17 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
   // this situation in AsyncKuduSession and set this to true.
   boolean needsSorting = false;
 
-  Batch(KuduTable table) {
-    this(table, 1000);
+  /** See {@link SessionConfiguration#setIgnoreAllDuplicateRows(boolean)} */
+  final boolean ignoreAllDuplicateRows;
+
+  Batch(KuduTable table, boolean ignoreAllDuplicateRows) {
+    this(table, ignoreAllDuplicateRows, 1000);
   }
 
-  Batch(KuduTable table, int estimatedBatchSize) {
+  Batch(KuduTable table, boolean ignoreAllDuplicateRows, int estimatedBatchSize) {
     super(table);
     this.ops = new ArrayList<Operation>(estimatedBatchSize);
+    this.ignoreAllDuplicateRows = ignoreAllDuplicateRows;
   }
 
   @Override
@@ -65,11 +70,23 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
                                               String tsUUID) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
-    if (builder.getPerRowErrorsCount() != 0) {
-      throw RowsWithErrorException.fromPerRowErrorPB(builder.getPerRowErrorsList(), ops, tsUUID);
+
+    List<Tserver.WriteResponsePB.PerRowErrorPB> errorsPB = builder.getPerRowErrorsList();
+    if (ignoreAllDuplicateRows) {
+      boolean allAlreadyPresent = true;
+      for (Tserver.WriteResponsePB.PerRowErrorPB errorPB : errorsPB) {
+        if (errorPB.getError().getCode() != WireProtocol.AppStatusPB.ErrorCode.ALREADY_PRESENT) {
+          allAlreadyPresent = false;
+          break;
+        }
+      }
+      if (allAlreadyPresent) {
+        errorsPB = Collections.emptyList();
+      }
     }
+
     OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
-        builder.getTimestamp());
+        builder.getTimestamp(), errorsPB, ops);
     return new Pair<OperationResponse, Object>(response, builder.getError());
   }
 
