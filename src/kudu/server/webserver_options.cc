@@ -22,7 +22,6 @@ static std::string GetDefaultDocumentRoot();
 // not use these directly, but rather access them via WebserverOptions.
 // This makes it easier to instantiate web servers with different options
 // within a single unit test.
-DEFINE_int32(webserver_port, 25000, "Port to start debug webserver on");
 DEFINE_string(webserver_interface, "",
     "Interface to start debug webserver on. If blank, webserver binds to 0.0.0.0");
 DEFINE_string(webserver_doc_root, kudu::GetDefaultDocumentRoot(),
@@ -54,7 +53,7 @@ static string GetDefaultDocumentRoot() {
 
 WebserverOptions::WebserverOptions()
   : bind_interface(FLAGS_webserver_interface),
-    port(FLAGS_webserver_port),
+    port(0),
     doc_root(FLAGS_webserver_doc_root),
     enable_doc_root(FLAGS_enable_webserver_doc_root),
     certificate_file(FLAGS_webserver_certificate_file),
