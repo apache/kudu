@@ -19,6 +19,7 @@
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/util/stopwatch.h"
@@ -377,6 +378,17 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // Start an election on the specified tserver
   Status StartElection(const TServerDetails* replica, const string& tablet_id);
 
+  // Writes 'num_writes' operations to the current leader. Each of the operations
+  // has a payload of around 128KB. Causes a gtest failure on error.
+  void Write128KOpsToLeader(int num_writes);
+
+  // Wait until the given tablet server has GCed its logs such that it has
+  // 'max_expected' or fewer remaining segments.
+  //
+  // If the target number of segments is not achieved within 10 seconds,
+  // causes a gtest failure.
+  void WaitForLogGC(TServerDetails* leader, int max_expected);
+
  protected:
   shared_ptr<KuduClient> client_;
   scoped_refptr<KuduTable> table_;
@@ -587,6 +599,33 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
   ASSERT_ALL_REPLICAS_AGREE(FLAGS_client_inserts_per_thread * num_iters * 2);
 }
 
+void RaftConsensusITest::Write128KOpsToLeader(int num_writes) {
+  TServerDetails* leader = NULL;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+
+  WriteRequestPB req;
+  req.set_tablet_id(tablet_id_);
+  ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
+  RowOperationsPB* data = req.mutable_row_operations();
+  WriteResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromMilliseconds(10000));
+  int key = 0;
+
+  // generate a 128Kb dummy payload
+  string test_payload(128 * 1024, '0');
+  for (int i = 0; i < num_writes; i++) {
+    rpc.Reset();
+    data->Clear();
+    AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
+                   test_payload, data);
+    key++;
+    ASSERT_OK(leader->tserver_proxy->Write(req, &resp, &rpc));
+
+    ASSERT_FALSE(resp.has_error()) << resp.DebugString();
+  }
+}
+
 // Test that when a follower is stopped for a long time, the log cache
 // properly evicts operations, but still allows the follower to catch
 // up when it comes back.
@@ -599,45 +638,101 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
   ASSERT_TRUE(replica != NULL);
   ExternalTabletServer* replica_ets = cluster_->tablet_server_by_uuid(replica->uuid());
 
-  // generate a 128Kb dummy payload
-  string test_payload(128 * 1024, '0');
-
-  WriteRequestPB req;
-  req.set_tablet_id(tablet_id_);
-  ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
-  RowOperationsPB* data = req.mutable_row_operations();
-
-  WriteResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(MonoDelta::FromMilliseconds(10000));
-  Status s;
-
-  int key = 0;
-
   // Pause a replica
   ASSERT_OK(replica_ets->Pause());
   LOG(INFO)<< "Paused one of the replicas, starting to write.";
 
-  TServerDetails* leader = NULL;
-  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
-
   // Insert 3MB worth of data.
   const int kNumWrites = 25;
-  for (int i = 0; i < kNumWrites; i++) {
-    rpc.Reset();
-    data->Clear();
-    AddTestRowToPB(RowOperationsPB::INSERT, schema_, key, key,
-                   test_payload, data);
-    key++;
-    ASSERT_OK(leader->tserver_proxy->Write(req, &resp, &rpc));
-
-    ASSERT_FALSE(resp.has_error()) << resp.DebugString();
-  }
+  NO_FATALS(Write128KOpsToLeader(kNumWrites));
 
   // Now unpause the replica, the lagging replica should eventually catch back up.
   ASSERT_OK(replica_ets->Resume());
 
   ASSERT_ALL_REPLICAS_AGREE(kNumWrites);
+}
+
+void RaftConsensusITest::WaitForLogGC(TServerDetails* leader, int max_expected) {
+  ExternalTabletServer* ets = cluster_->tablet_server_by_uuid(leader->uuid());
+  MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
+  deadline.AddDelta(MonoDelta::FromSeconds(10));
+
+  while (true) {
+    vector<string> children;
+    string wal_dir = JoinPathSegments(ets->data_dir(), "wals");
+    ASSERT_OK(Env::Default()->GetChildren(wal_dir, &children));
+    int num_wals = 0;
+    BOOST_FOREACH(const string& child, children) {
+      if (HasPrefixString(child, "wal-")) {
+        num_wals++;
+      }
+    }
+    if (num_wals <= max_expected) {
+      return;
+    }
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::COARSE))) {
+      FAIL() << "Never GCed down to expected number of WALs " << max_expected
+             << ". Current contents of " << wal_dir << ":\n"
+             << children;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+  LOG(FATAL) << "Should not reach here";
+}
+
+// Test that the leader doesn't crash if one of its followers has
+// fallen behind so far that the logs necessary to catch it up
+// have been GCed.
+//
+// In a real cluster, this will eventually cause the follower to be
+// evicted/replaced. In any case, the leader should not crash.
+//
+// This is a regression test for KUDU-775.
+TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
+  // Configure a small log segment size so that we can roll
+  // frequently. Additionally configure a small cache size so that
+  // we evict data from the cache.
+  vector<string> extra_flags;
+  extra_flags.push_back("--log_cache_size_limit_mb=1");
+  extra_flags.push_back("--log_segment_size_mb=1");
+  BuildAndStart(extra_flags);
+
+  SleepFor(MonoDelta::FromSeconds(1));
+  // Pause one replica.
+  TServerDetails* replica = (*tablet_replicas_.begin()).second;
+  ASSERT_TRUE(replica != NULL);
+  ExternalTabletServer* replica_ets = cluster_->tablet_server_by_uuid(replica->uuid());
+  ASSERT_OK(replica_ets->Pause());
+
+  // Write ~12.8MB worth of data to the leader, and wait for the logs
+  // to GC.
+  const int kNumWrites = 100;
+  NO_FATALS(Write128KOpsToLeader(kNumWrites));
+
+  TServerDetails* leader = NULL;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+
+  // Wait for the leader to GC its logs.
+  NO_FATALS(WaitForLogGC(leader, 2));
+
+  // Then wait another couple of seconds to be sure that it has bothered to try
+  // to write to the paused peer.
+  SleepFor(MonoDelta::FromSeconds(2));
+
+  // Ensure that none of the tablet servers crashed.
+  ASSERT_OK(replica_ets->Resume());
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    // Make sure it didn't crash.
+    ASSERT_TRUE(cluster_->tablet_server(i)->IsProcessAlive())
+      << "Tablet server " << i << " crashed";
+  }
+
+  // NOTE: we can't assert that they eventually converge, because the delayed
+  // follower can never catch up!
+  // TODO: what's keeping the follower from disturbing the leader at this point?
+  // the leader will stop sending requests to it, so it might fire its election
+  // timer repeatedly and cause trouble. Do we need to implement the election pre-check
+  // thing?
 }
 
 TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {

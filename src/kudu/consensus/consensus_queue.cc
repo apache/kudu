@@ -294,6 +294,15 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                          &preceding_id);
 
     if (PREDICT_FALSE(!s.ok())) {
+      // It's normal to have a NotFound() here if a follower falls behind where
+      // the leader has GCed its logs.
+      if (s.IsNotFound()) {
+        LOG_WITH_PREFIX_UNLOCKED(WARNING)
+          << "The logs necessary to catch up peer " << uuid << " have been "
+          << "garbage collected. The follower will never be able to catch up ("
+          << s.ToString() << ")";
+        return s;
+      }
       LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error while reading the log: " << s.ToString();
     }
 

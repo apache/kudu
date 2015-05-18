@@ -482,8 +482,22 @@ bool ExternalDaemon::IsShutdown() const {
   return process_.get() == NULL;
 }
 
+bool ExternalDaemon::IsProcessAlive() const {
+  if (IsShutdown()) {
+    return false;
+  }
+
+  int rc = 0;
+  Status s = process_->WaitNoBlock(&rc);
+  // If the non-blocking Wait "times out", that means the process
+  // is running.
+  return s.IsTimedOut();
+}
+
 void ExternalDaemon::Shutdown() {
   if (!process_) return;
+  if (!IsProcessAlive()) return;
+
   // Before we kill the process, store the addresses. If we're told to
   // start again we'll reuse these.
   bound_rpc_ = bound_rpc_hostport();

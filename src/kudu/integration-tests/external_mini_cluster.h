@@ -252,9 +252,17 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Sends a SIGCONT signal to the daemon.
   Status Resume();
 
+  // Return true if we have explicitly shut down the process.
   bool IsShutdown() const;
 
+  // Return true if the process is still running.
+  // This may return false if the process crashed, even if we didn't
+  // explicitly call Shutdown().
+  bool IsProcessAlive() const;
+
   virtual void Shutdown();
+
+  const std::string& data_dir() const { return data_dir_; }
 
  protected:
   friend class RefCountedThreadSafe<ExternalDaemon>;
