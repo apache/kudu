@@ -80,8 +80,6 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
     common_flags.push_back("--max_clock_sync_error_usec=10000000");
 
     vector<string> ts_flags(common_flags);
-    ts_flags.push_back("--tablet_server_rpc_bind_addresses=127.0.0.1:705${index}");
-
     if (FLAGS_stress_flush_compact) {
       // Set the flush threshold low so that we have a mix of flushed and unflushed
       // operations in the WAL, when we bootstrap.
