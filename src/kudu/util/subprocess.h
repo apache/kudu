@@ -55,11 +55,19 @@ class Subprocess {
 
   // Wait for the subprocess to exit. The return value is the same as
   // that of the waitpid() syscall. Only call after starting.
+  //
+  // NOTE: unlike the standard wait(2) call, this may be called multiple
+  // times. If the process has exited, it will repeatedly return the same
+  // exit code.
   Status Wait(int* ret) { return DoWait(ret, 0); }
 
   // Like the above, but does not block. This returns Status::TimedOut
   // immediately if the child has not exited. Otherwise returns Status::OK
   // and sets *ret. Only call after starting.
+  //
+  // NOTE: unlike the standard wait(2) call, this may be called multiple
+  // times. If the process has exited, it will repeatedly return the same
+  // exit code.
   Status WaitNoBlock(int* ret) { return DoWait(ret, WNOHANG); }
 
   // Send a signal to the subprocess.
@@ -94,10 +102,19 @@ class Subprocess {
   std::string program_;
   std::vector<std::string> argv_;
 
-  bool started_;
+  enum State {
+    kNotStarted,
+    kRunning,
+    kExited
+  };
+  State state_;
   int child_pid_;
   enum StreamMode fd_state_[3];
   int child_fds_[3];
+
+  // The cached exit result code if Wait() has been called.
+  // Only valid if state_ == kExited.
+  int cached_rc_;
 
   DISALLOW_COPY_AND_ASSIGN(Subprocess);
 };

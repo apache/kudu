@@ -82,6 +82,13 @@ TEST_F(SubprocessTest, TestKill) {
   int wait_status = 0;
   ASSERT_OK(p.Wait(&wait_status));
   ASSERT_EQ(SIGKILL, WTERMSIG(wait_status));
+
+  // Test that calling Wait() a second time returns the same
+  // cached value instead of trying to wait on some other process
+  // that was assigned the same pid.
+  wait_status = 0;
+  ASSERT_OK(p.Wait(&wait_status));
+  ASSERT_EQ(SIGKILL, WTERMSIG(wait_status));
 }
 
 } // namespace kudu
