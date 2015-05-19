@@ -47,7 +47,7 @@ class LocalConsensus : public Consensus {
 
   virtual Status EmulateElection() OVERRIDE { return Status::OK(); }
 
-  virtual Status StartElection() OVERRIDE { return Status::OK(); }
+  virtual Status StartElection(ElectionMode mode) OVERRIDE { return Status::OK(); }
 
   virtual Status Replicate(const scoped_refptr<ConsensusRound>& context) OVERRIDE;
 

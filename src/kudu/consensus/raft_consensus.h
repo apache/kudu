@@ -85,7 +85,7 @@ class RaftConsensus : public Consensus,
   // enabled, as it could result in a split-brain scenario.
   virtual Status EmulateElection() OVERRIDE;
 
-  virtual Status StartElection() OVERRIDE;
+  virtual Status StartElection(ElectionMode mode) OVERRIDE;
 
   // Call StartElection(), log a warning if the call fails (usually due to
   // being shut down).
@@ -283,6 +283,11 @@ class RaftConsensus : public Consensus,
                                           const VoteRequestPB* request,
                                           VoteResponsePB* response);
 
+  // Respond to VoteRequest that the vote was not granted because we believe
+  // the leader to be alive.
+  Status RequestVoteRespondLeaderIsAlive(const VoteRequestPB* request,
+                                         VoteResponsePB* response);
+
   // Respond to VoteRequest that the vote is granted for candidate.
   Status RequestVoteRespondVoteGranted(const VoteRequestPB* request,
                                        VoteResponsePB* response);
@@ -321,6 +326,10 @@ class RaftConsensus : public Consensus,
   // period.
   Status SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta);
 
+  // Return the minimum election timeout. Due to backoff and random
+  // jitter, election timeouts may be longer than this.
+  MonoDelta MinimumElectionTimeout() const;
+
   // Calculates an additional snooze delta for leader election.
   // The additional delta increases exponentially with the difference
   // between the current term and the term of the last committed
@@ -350,6 +359,11 @@ class RaftConsensus : public Consensus,
   RandomizedFailureMonitor failure_monitor_;
 
   scoped_refptr<FailureDetector> failure_detector_;
+
+  // If any RequestVote() RPC arrives before this timestamp,
+  // the request will be ignored. This prevents abandoned or partitioned
+  // nodes from disturbing the healthy leader.
+  MonoTime withhold_votes_until_;
 
   // TODO hack to serialize updates due to repeated/out-of-order messages
   // should probably be refactored out.

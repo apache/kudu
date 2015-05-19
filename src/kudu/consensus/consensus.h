@@ -96,7 +96,17 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   virtual Status EmulateElection() = 0;
 
   // Triggers a leader election.
-  virtual Status StartElection() = 0;
+  enum ElectionMode {
+    // A normal leader election. Peers will not vote for this node
+    // if they believe that a leader is alive.
+    NORMAL_ELECTION,
+
+    // In this mode, peers will vote for this candidate even if they
+    // think a leader is alive. This can be used for a faster hand-off
+    // between a leader and one of its replicas.
+    ELECT_EVEN_IF_LEADER_IS_ALIVE
+  };
+  virtual Status StartElection(ElectionMode mode) = 0;
 
   // Creates a new ConsensusRound, the entity that owns all the data
   // structures required for a consensus round, such as the ReplicateMsg

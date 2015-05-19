@@ -60,10 +60,16 @@ void DoNothing() {
 }
 
 Status WaitUntilLeaderForTests(RaftConsensus* raft) {
-  while (raft->GetActiveRole() != QuorumPeerPB::LEADER) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromSeconds(15));
+  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+    if (raft->GetActiveRole() == QuorumPeerPB::LEADER) {
+      return Status::OK();
+    }
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  return Status::OK();
+
+  return Status::TimedOut("Timed out waiting to become leader");
 }
 
 // Test suite for tests that focus on multiple peer interaction, but
@@ -891,7 +897,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
     // This will force an election in which we expect to make the last
     // non-shutdown peer in the list become leader.
     LOG(INFO) << "Running election for future leader with index " << (current_quorum_size - 1);
-    ASSERT_OK(new_leader->StartElection());
+    ASSERT_OK(new_leader->StartElection(Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE));
     WaitUntilLeaderForTests(new_leader.get());
     LOG(INFO) << "Election won";
 
@@ -1008,14 +1014,20 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   request.set_tablet_id(kTestTablet);
   request.mutable_candidate_status()->mutable_last_received()->CopyFrom(last_op_id);
 
-  //
-  // Test that replicas only vote yes for a single peer per term.
-  //
-
-  // Our first vote should be a yes.
+  // Test that the replica won't vote since it has recently heard from
+  // a valid leader.
   VoteResponsePB response;
   request.set_candidate_uuid("peer-0");
   request.set_candidate_term(last_op_id.term() + 1);
+  ASSERT_OK(peer->RequestVote(&request, &response));
+  ASSERT_FALSE(response.vote_granted());
+  ASSERT_EQ(ConsensusErrorPB::LEADER_IS_ALIVE, response.consensus_error().code());
+
+  // Test that replicas only vote yes for a single peer per term.
+
+  // Indicate that replicas should vote even if they think another leader is alive.
+  // This will allow the rest of the requests in the test to go through.
+  request.set_ignore_live_leader(true);
   ASSERT_OK(peer->RequestVote(&request, &response));
   ASSERT_TRUE(response.vote_granted());
   ASSERT_EQ(last_op_id.term() + 1, response.responder_term());

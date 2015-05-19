@@ -631,7 +631,8 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
     return;
   }
 
-  Status s = tablet_peer->consensus()->StartElection();
+  Status s = tablet_peer->consensus()->StartElection(
+      consensus::Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

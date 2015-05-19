@@ -729,10 +729,20 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
 
   // NOTE: we can't assert that they eventually converge, because the delayed
   // follower can never catch up!
-  // TODO: what's keeping the follower from disturbing the leader at this point?
-  // the leader will stop sending requests to it, so it might fire its election
-  // timer repeatedly and cause trouble. Do we need to implement the election pre-check
-  // thing?
+
+  if (AllowSlowTests()) {
+    // Sleep long enough that the "abandoned" server's leader election interval
+    // will trigger several times. This ensures that the other servers properly
+    // ignore the election requests from the abandoned node.
+    SleepFor(MonoDelta::FromSeconds(5));
+    vector<OpId> op_ids;
+    ASSERT_OK(GetLastOpIdForEachReplica(tablet_id_,
+                                        boost::assign::list_of(leader),
+                                        &op_ids));
+    ASSERT_EQ(1, op_ids.size());
+    ASSERT_EQ(1, op_ids[0].term())
+      << "expected the leader to have not advanced terms but has op " << op_ids[0];
+  }
 }
 
 TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {

@@ -244,7 +244,7 @@ Status RaftConsensus::EmulateElection() {
   return BecomeLeaderUnlocked();
 }
 
-Status RaftConsensus::StartElection() {
+Status RaftConsensus::StartElection(ElectionMode mode) {
   TRACE_EVENT2("consensus", "RaftConsensus::StartElection",
                "peer", peer_uuid(),
                "tablet", tablet_id());
@@ -279,6 +279,7 @@ Status RaftConsensus::StartElection() {
                       << state_->GetCurrentTermUnlocked();
 
     VoteRequestPB request;
+    request.set_ignore_live_leader(mode == ELECT_EVEN_IF_LEADER_IS_ALIVE);
     request.set_candidate_uuid(state_->GetPeerUuid());
     request.set_candidate_term(state_->GetCurrentTermUnlocked());
     request.set_tablet_id(state_->GetOptions().tablet_id);
@@ -300,7 +301,7 @@ void RaftConsensus::ReportFailureDetected(const std::string& name, const Status&
   LOG_WITH_PREFIX(INFO) << "Failure of peer " << name << " detected. Triggering leader election";
 
   // Start an election.
-  Status s = StartElection();
+  Status s = StartElection(NORMAL_ELECTION);
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX(WARNING) << "Failed to trigger leader election: " << s.ToString();
   }
@@ -314,6 +315,9 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 
   // Disable FD while we are leader.
   RETURN_NOT_OK(EnsureFailureDetectorDisabledUnlocked());
+
+  // Don't vote for anyone if we're a leader.
+  withhold_votes_until_ = MonoTime::Max();
 
   queue_->RegisterObserver(this);
   const QuorumPB& active_quorum = state_->GetActiveQuorumUnlocked();
@@ -349,6 +353,9 @@ Status RaftConsensus::BecomeReplicaUnlocked() {
 
   // FD should be running while we are a follower.
   RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
+
+  // Now that we're a replica, we can allow voting for other nodes.
+  withhold_votes_until_ = MonoTime::Min();
 
   queue_->UnRegisterObserver(this);
   // Deregister ourselves from the queue. We don't care what get's replicated, since
@@ -812,6 +819,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     // sanity check.
     RETURN_NOT_OK(SnoozeFailureDetectorUnlocked());
 
+    // Also prohibit voting for anyone for the minimum election timeout.
+    withhold_votes_until_ = MonoTime::Now(MonoTime::FINE);
+    withhold_votes_until_.AddDelta(MinimumElectionTimeout());
+
     // 1 - Enqueue the prepares
 
     TRACE("Triggering prepare for $0 ops", deduped_req.messages.size());
@@ -977,8 +988,34 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
   response->set_responder_uuid(state_->GetPeerUuid());
 
   // Candidate is not a member of the active quorum.
+  //
+  // TODO(mpercy): is this actually correct? during a config change, do we need to allow
+  // a new leader to be able to win votes from old followers who have not yet received
+  // the config change?
   if (!IsQuorumMember(request->candidate_uuid(), state_->GetActiveQuorumUnlocked())) {
     return RequestVoteRespondNotInQuorum(request, response);
+  }
+
+  // If we've heard recently from the leader, then we should ignore the request.
+  // It might be from a "disruptive" server. This could happen in a few cases:
+  //
+  // 1) Network partitions
+  // If the leader can talk to a majority of the nodes, but is partitioned from a
+  // bad node, the bad node's failure detector will trigger. If the bad node is
+  // able to reach other nodes in the cluster, it will continuously trigger elections.
+  //
+  // 2) An abandoned node
+  // It's possible that a node has fallen behind the log GC mark of the leader. In that
+  // case, the leader will stop sending it requests. Eventually, the the configuration
+  // will change to eject the abandoned node, but until that point, we don't want the
+  // abandoned follower to disturb the other nodes.
+  //
+  // See also https://ramcloud.stanford.edu/~ongaro/thesis.pdf
+  // section 4.2.3.
+  MonoTime now = MonoTime::Now(MonoTime::COARSE);
+  if (!request->ignore_live_leader() &&
+      now.ComesBefore(withhold_votes_until_)) {
+    return RequestVoteRespondLeaderIsAlive(request, response);
   }
 
   // Candidate is running behind.
@@ -1176,6 +1213,20 @@ Status RaftConsensus::RequestVoteRespondLastOpIdTooOld(const OpId& local_last_lo
                           request->candidate_term(),
                           local_last_logged_opid.ShortDebugString(),
                           request->candidate_status().last_received().ShortDebugString());
+  LOG(INFO) << msg;
+  StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
+  return Status::OK();
+}
+
+Status RaftConsensus::RequestVoteRespondLeaderIsAlive(const VoteRequestPB* request,
+                                                      VoteResponsePB* response) {
+  FillVoteResponseVoteDenied(ConsensusErrorPB::LEADER_IS_ALIVE, response);
+  string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
+                          "replica is either leader or believes a valid leader to "
+                          "be alive.",
+                          GetRequestVoteLogPrefixUnlocked(),
+                          request->candidate_uuid(),
+                          request->candidate_term());
   LOG(INFO) << msg;
   StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
   return Status::OK();
@@ -1414,9 +1465,14 @@ Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_
   return failure_detector_->MessageFrom(kTimerId, time);
 }
 
-MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
+MonoDelta RaftConsensus::MinimumElectionTimeout() const {
   int32_t failure_timeout = FLAGS_leader_failure_max_missed_heartbeat_periods *
       FLAGS_leader_heartbeat_interval_ms;
+  return MonoDelta::FromMilliseconds(failure_timeout);
+}
+
+MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
+  int32_t failure_timeout = MinimumElectionTimeout().ToMilliseconds();
   int32_t exp_backoff_delta = pow(1.1, state_->GetCurrentTermUnlocked() -
                                   state_->GetCommittedOpIdUnlocked().term());
   exp_backoff_delta = std::min(failure_timeout * exp_backoff_delta,

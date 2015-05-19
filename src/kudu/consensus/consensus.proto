@@ -37,6 +37,10 @@ message ConsensusErrorPB {
 
     // The responder's last entry didn't match the caller's preceding entry.
     PRECEDING_ENTRY_DIDNT_MATCH = 6;
+
+    // The local replica is either a leader, or has heard from a valid leader
+    // more recently than the election timeout, so believes the leader to be alive.
+    LEADER_IS_ALIVE = 7;
   }
 
   // The error code.
@@ -194,6 +198,14 @@ message VoteRequestPB {
   // log, which corresponds to the lastLogIndex and lastLogTerm fields in Raft.
   // A replica must vote no for a candidate that has an OpId lower than them.
   required ConsensusStatusPB candidate_status = 4;
+
+  // Normally, replicas will deny a vote with a LEADER_IS_ALIVE error if
+  // they are a leader or recently heard from a leader. This is to prevent
+  // partitioned nodes from disturbing liveness. If this flag is true,
+  // peers will vote even if they think a leader is alive. This can be used
+  // for example to force a faster leader hand-off rather than waiting for
+  // the election timer to expire.
+  optional bool ignore_live_leader = 5 [ default = false ];
 }
 
 // A response from a replica to a leader election request.
