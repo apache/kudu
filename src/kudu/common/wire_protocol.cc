@@ -325,7 +325,7 @@ Status RewriteRowBlockPointers(const Schema& schema, const RowwiseRowBlockPB& ro
 
   if (PREDICT_FALSE(row_data_slice->size() != expected_data_size)) {
     return Status::Corruption(
-      StringPrintf("Row block has %zd bytes of data but expected %zd for %"PRIu32" rows",
+      StringPrintf("Row block has %zd bytes of data but expected %zd for %" PRIu32 " rows",
                    row_data_slice->size(), expected_data_size, rowblock_pb.num_rows()));
   }
 

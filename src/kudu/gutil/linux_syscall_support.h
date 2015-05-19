@@ -2603,15 +2603,15 @@ struct kernel_io_event {
             /* check for fn == NULL
              * and child_stack == NULL
              */
-            "cmp"LSS_SIZE_S"i cr0, %6, 0\n\t"
-            "cmp"LSS_SIZE_S"i cr1, %7, 0\n\t"
+            "cmp" LSS_SIZE_S "i cr0, %6, 0\n\t"
+            "cmp" LSS_SIZE_S "i cr1, %7, 0\n\t"
             "cror cr0*4+eq, cr1*4+eq, cr0*4+eq\n\t"
             "beq- cr0, 1f\n\t"
 
             /* set up stack frame for child                                  */
-            "clrr"LSS_SIZE_S"i %7, %7, 4\n\t"
+            "clrr" LSS_SIZE_S "i %7, %7, 4\n\t"
             "li 0, 0\n\t"
-            "st"LSS_SIZE_S"u 0, %13(%7)\n\t"
+            "st" LSS_SIZE_S "u 0, %13(%7)\n\t"
 
             /* fn, arg, child_stack are saved across the syscall: r27-29     */
             "mr 28, %6\n\t"
@@ -2629,7 +2629,7 @@ struct kernel_io_event {
             "sc\n\t"
 
             /* Test if syscall was successful                                */
-            "cmp"LSS_SIZE_S"i cr1, 3, 0\n\t"
+            "cmp" LSS_SIZE_S "i cr1, 3, 0\n\t"
             "crandc cr1*4+eq, cr1*4+eq, cr0*4+so\n\t"
             "bne- cr1, 1f\n\t"
 

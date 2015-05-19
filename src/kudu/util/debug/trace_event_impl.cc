@@ -705,7 +705,7 @@ void TraceEvent::AppendValueAsJSON(unsigned char type,
     case TRACE_VALUE_TYPE_POINTER:
       // JSON only supports double and int numbers.
       // So as not to lose bits from a 64-bit pointer, output as a hex string.
-      StringAppendF(out, "\"0x%"PRIx64"\"", static_cast<uint64>(
+      StringAppendF(out, "\"0x%" PRIx64 "\"", static_cast<uint64>(
                                      reinterpret_cast<intptr_t>(
                                      value.as_pointer)));
       break;
@@ -727,7 +727,7 @@ void TraceEvent::AppendAsJSON(std::string* out) const {
   // Category group checked at category creation time.
   DCHECK(!strchr(name_, '"'));
   StringAppendF(out,
-      "{\"cat\":\"%s\",\"pid\":%i,\"tid\":%i,\"ts\":%"PRId64","
+      "{\"cat\":\"%s\",\"pid\":%i,\"tid\":%i,\"ts\":%" PRId64 ","
       "\"ph\":\"%c\",\"name\":\"%s\",\"args\":{",
       TraceLog::GetCategoryGroupName(category_group_enabled_),
       process_id,
@@ -754,24 +754,24 @@ void TraceEvent::AppendAsJSON(std::string* out) const {
   if (phase_ == TRACE_EVENT_PHASE_COMPLETE) {
     int64 duration = duration_;
     if (duration != -1)
-      StringAppendF(out, ",\"dur\":%"PRId64, duration);
+      StringAppendF(out, ",\"dur\":%" PRId64, duration);
     if (thread_timestamp_ >= 0) {
       int64 thread_duration = thread_duration_;
       if (thread_duration != -1)
-        StringAppendF(out, ",\"tdur\":%"PRId64, thread_duration);
+        StringAppendF(out, ",\"tdur\":%" PRId64, thread_duration);
     }
   }
 
   // Output tts if thread_timestamp is valid.
   if (thread_timestamp_ >= 0) {
     int64 thread_time_int64 = thread_timestamp_;
-    StringAppendF(out, ",\"tts\":%"PRId64, thread_time_int64);
+    StringAppendF(out, ",\"tts\":%" PRId64, thread_time_int64);
   }
 
   // If id_ is set, print it out as a hex string so we don't loose any
   // bits (it might be a 64-bit pointer).
   if (flags_ & TRACE_EVENT_FLAG_HAS_ID)
-    StringAppendF(out, ",\"id\":\"0x%"PRIx64"\"", static_cast<uint64>(id_));
+    StringAppendF(out, ",\"id\":\"0x%" PRIx64 "\"", static_cast<uint64>(id_));
 
   // Instant events also output their scope.
   if (phase_ == TRACE_EVENT_PHASE_INSTANT) {

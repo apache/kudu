@@ -376,7 +376,7 @@ Status Socket::GetSockError() const {
 Status Socket::Write(const uint8_t *buf, int32_t amt, int32_t *nwritten) {
   if (amt <= 0) {
     return Status::NetworkError(
-              StringPrintf("invalid send of %"PRId32" bytes",
+              StringPrintf("invalid send of %" PRId32 " bytes",
                            amt), Slice(), EINVAL);
   }
   DCHECK_GE(fd_, 0);
