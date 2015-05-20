@@ -1407,6 +1407,9 @@ shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const MaxIdxToSegmentMap&
   int64_t retention_size = 0;
   shared_ptr<RowSet> best_dms;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+    if (rowset->DeltaMemStoreEmpty()) {
+      continue;
+    }
     int64_t size = GetLogRetentionSizeForIndex(rowset->MinUnflushedLogIndex(),
                                                max_idx_to_segment_size);
     if ((size > retention_size) ||
