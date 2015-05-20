@@ -340,7 +340,7 @@ void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
   // segments before we check the anchors.
   {
     OpId last_log_op;
-    Status s = log_->GetLastEntryOpId(&last_log_op);
+    Status s = log_->GetLatestEntryOpId(&last_log_op);
     // First check if we ever wrote to the log.
     if (s.IsNotFound()) {
       *min_index = 0;

@@ -161,11 +161,11 @@ class Log : public RefCountedThreadSafe<Log> {
     return tablet_id_;
   }
 
-  // Returns the last-used OpId.
+  // Returns the last-used OpId written to the log.
   // Will return Status::OK() iff there is any previous OpId in the log.
   // Otherwise, will return Status::NotFound().
   // This method will never return any other Status type.
-  Status GetLastEntryOpId(consensus::OpId* op_id) const;
+  Status GetLatestEntryOpId(consensus::OpId* op_id) const;
 
   // Runs the garbage collector on the set of previous segments. Segments that
   // only refer to in-mem state that has been flushed are candidates for

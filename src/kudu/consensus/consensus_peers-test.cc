@@ -84,7 +84,7 @@ class ConsensusPeersTest : public KuduTest {
 
   void CheckLastLogEntry(int term, int index) {
     OpId id;
-    log_->GetLastEntryOpId(&id);
+    log_->GetLatestEntryOpId(&id);
     ASSERT_EQ(id.term(), term);
     ASSERT_EQ(id.index(), index);
   }

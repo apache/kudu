@@ -616,7 +616,7 @@ Status Log::WaitUntilAllFlushed() {
   return s.Wait();
 }
 
-Status Log::GetLastEntryOpId(consensus::OpId* op_id) const {
+Status Log::GetLatestEntryOpId(consensus::OpId* op_id) const {
   boost::shared_lock<rw_spinlock> read_lock(last_entry_op_id_lock_);
   if (last_entry_op_id_.IsInitialized()) {
     DCHECK_NOTNULL(op_id)->CopyFrom(last_entry_op_id_);

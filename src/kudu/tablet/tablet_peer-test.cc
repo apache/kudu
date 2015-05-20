@@ -130,7 +130,7 @@ class TabletPeerTest : public KuduTabletTest {
     const int kMaxBackoffExp = 8;
     while (true) {
       OpId opid;
-      Status s = tablet_peer_->log()->GetLastEntryOpId(&opid);
+      Status s = tablet_peer_->log()->GetLatestEntryOpId(&opid);
       if (s.ok() && OpIdEquals(MakeOpId(0, 1), opid)) {
         break;
       }
@@ -251,7 +251,7 @@ class TabletPeerTest : public KuduTabletTest {
     // entry in the log; if they match there is nothing in flight.
     tablet_peer_->GetEarliestNeededLogIndex(&earliest_index);
     OpId last_log_opid;
-    CHECK_OK(tablet_peer_->log_->GetLastEntryOpId(&last_log_opid));
+    CHECK_OK(tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid));
     CHECK_EQ(earliest_index, last_log_opid.index())
       << "Found unexpected anchor: " << earliest_index
       << " Last log entry: " << last_log_opid.ShortDebugString();
@@ -262,7 +262,7 @@ class TabletPeerTest : public KuduTabletTest {
     int64_t earliest_index = -1;
     tablet_peer_->GetEarliestNeededLogIndex(&earliest_index);
     OpId last_log_opid;
-    CHECK_OK(tablet_peer_->log_->GetLastEntryOpId(&last_log_opid));
+    CHECK_OK(tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid));
     CHECK_LT(earliest_index, last_log_opid.index())
       << "Expected valid log anchor, got earliest opid: " << earliest_index
       << " (expected any value earlier than last log id: " << last_log_opid.ShortDebugString()
@@ -378,7 +378,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
   AssertNoLogAnchors();
 
   OpId id;
-  log->GetLastEntryOpId(&id);
+  log->GetLatestEntryOpId(&id);
   LOG(INFO) << "Before: " << id.ShortDebugString();
 
 

@@ -283,7 +283,7 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     request.set_candidate_uuid(state_->GetPeerUuid());
     request.set_candidate_term(state_->GetCurrentTermUnlocked());
     request.set_tablet_id(state_->GetOptions().tablet_id);
-    request.mutable_candidate_status()->mutable_last_received()->CopyFrom(GetLastOpIdFromLog());
+    request.mutable_candidate_status()->mutable_last_received()->CopyFrom(GetLatestOpIdFromLog());
 
     election.reset(new LeaderElection(active_quorum,
                                       peer_proxy_factory_.get(),
@@ -1045,7 +1045,7 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
 
   // Candidate must have last-logged OpId at least as large as our own to get
   // our vote.
-  OpId local_last_logged_opid = GetLastOpIdFromLog();
+  OpId local_last_logged_opid = GetLatestOpIdFromLog();
   if (OpIdLessThan(request->candidate_status().last_received(), local_last_logged_opid)) {
     return RequestVoteRespondLastOpIdTooOld(local_last_logged_opid, request, response);
   }
@@ -1101,14 +1101,14 @@ QuorumPeerPB::Role RaftConsensus::GetActiveRole() const {
   return state_->GetActiveRoleUnlocked();
 }
 
-OpId RaftConsensus::GetLastOpIdFromLog() {
+OpId RaftConsensus::GetLatestOpIdFromLog() {
   OpId id;
-  Status s = log_->GetLastEntryOpId(&id);
+  Status s = log_->GetLatestEntryOpId(&id);
   if (s.ok()) {
   } else if (s.IsNotFound()) {
     id = MinimumOpId();
   } else {
-    LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Unexpected status from Log::GetLastEntryOpId(): "
+    LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Unexpected status from Log::GetLatestEntryOpId(): "
                                     << s.ToString();
   }
   return id;

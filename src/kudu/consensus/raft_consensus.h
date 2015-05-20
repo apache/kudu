@@ -236,7 +236,8 @@ class RaftConsensus : public Consensus,
   // configuration. The peer cannot perform any additional operations until this succeeds.
   Status PushConfigurationToPeersUnlocked(const QuorumPB& new_config);
 
-  OpId GetLastOpIdFromLog();
+  // Returns the most recent OpId written to the Log.
+  OpId GetLatestOpIdFromLog();
 
   // Begin a replica transaction. If the type of message in 'msg' is not a type
   // that uses transactions, delegates to StartConsensusOnlyRoundUnlocked().
