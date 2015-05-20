@@ -9,6 +9,7 @@
 #include "kudu/tools/ksck.h"
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/locks.h"
@@ -155,25 +156,60 @@ Status Ksck::CheckTablesConsistency() {
   }
 }
 
-ChecksumResultReporter::ChecksumResultReporter(int num_tablet_replicas)
-    : responses_(num_tablet_replicas) {
-}
+// Class to act as a collector of scan results.
+// Provides thread-safe accessors to update and read a hash table of results.
+class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporter> {
+ public:
+  typedef std::pair<Status, uint64_t> ResultPair;
+  typedef std::tr1::unordered_map<std::string, ResultPair> ReplicaResultMap;
+  typedef std::tr1::unordered_map<std::string, ReplicaResultMap> TabletResultMap;
 
-void ChecksumResultReporter::HandleResponse(const string& tablet_id,
-                                            const string& replica_uuid,
-                                            const Status& status,
-                                            uint64_t checksum) {
-  lock_guard<simple_spinlock> guard(&lock_);
-  unordered_map<string, ResultPair>& replica_results =
-      LookupOrInsert(&checksums_, tablet_id, unordered_map<string, ResultPair>());
-  InsertOrDie(&replica_results, replica_uuid, ResultPair(status, checksum));
-  responses_.CountDown();
-}
+  // Initialize reporter with the number of replicas being queried.
+  explicit ChecksumResultReporter(int num_tablet_replicas)
+      : responses_(num_tablet_replicas) {
+  }
 
-ChecksumResultReporter::TabletResultMap ChecksumResultReporter::checksums() const {
-  lock_guard<simple_spinlock> guard(&lock_);
-  return checksums_;
-}
+  // Write an entry to the result map indicating a response from the remote.
+  void ReportResult(const std::string& tablet_id,
+                    const std::string& replica_uuid,
+                    const Status& status,
+                    uint64_t checksum) {
+    lock_guard<simple_spinlock> guard(&lock_);
+    unordered_map<string, ResultPair>& replica_results =
+        LookupOrInsert(&checksums_, tablet_id, unordered_map<string, ResultPair>());
+    InsertOrDie(&replica_results, replica_uuid, ResultPair(status, checksum));
+    responses_.CountDown();
+  }
+
+  // Blocks until either the number of results plus errors reported equals
+  // num_tablet_replicas (from the constructor), or until the timeout expires,
+  // whichever comes first.
+  // Returns false if the timeout expired before all responses came in.
+  // Otherwise, returns true.
+  bool WaitFor(const MonoDelta& timeout) const { return responses_.WaitFor(timeout); }
+
+  // Returns true iff all replicas have reported in.
+  bool AllReported() const { return responses_.count() == 0; }
+
+  // Get reported results.
+  TabletResultMap checksums() const {
+    lock_guard<simple_spinlock> guard(&lock_);
+    return checksums_;
+  }
+
+ private:
+  friend class RefCountedThreadSafe<ChecksumResultReporter>;
+  ~ChecksumResultReporter() {}
+
+  // Report either a success or error response.
+  void HandleResponse(const std::string& tablet_id, const std::string& replica_uuid,
+                      const Status& status, uint64_t checksum);
+
+  CountDownLatch responses_;
+  mutable simple_spinlock lock_; // Protects 'checksums_'.
+  // checksums_ is an unordered_map of { tablet_id : { replica_uuid : checksum } }.
+  TabletResultMap checksums_;
+};
 
 Status Ksck::ChecksumData(const vector<string>& tables,
                           const vector<string>& tablets,
@@ -210,7 +246,7 @@ Status Ksck::ChecksumData(const vector<string>& tables,
     }
     return Status::NotFound(msg);
   }
-  shared_ptr<ChecksumResultReporter> reporter(new ChecksumResultReporter(num_tablet_replicas));
+  scoped_refptr<ChecksumResultReporter> reporter(new ChecksumResultReporter(num_tablet_replicas));
 
   // Kick off the scans in parallel.
   // TODO: Add some way to throttle requests on big clusters.
@@ -220,10 +256,11 @@ Status Ksck::ChecksumData(const vector<string>& tables,
     BOOST_FOREACH(const shared_ptr<KsckTabletReplica>& replica, tablet->replicas()) {
       const shared_ptr<KsckTabletServer>& ts =
           FindOrDie(cluster_->tablet_servers(), replica->ts_uuid());
-      Status s = ts->RunTabletChecksumScanAsync(tablet->id(), table->schema(), reporter);
-      if (!s.ok()) {
-        reporter->ReportError(tablet->id(), replica->ts_uuid(), s);
-      }
+      ReportResultCallback callback = Bind(&ChecksumResultReporter::ReportResult,
+                                           reporter,
+                                           tablet->id(),
+                                           replica->ts_uuid());
+      ts->RunTabletChecksumScanAsync(tablet->id(), table->schema(), callback);
     }
   }
 

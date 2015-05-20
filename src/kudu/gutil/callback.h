@@ -103,7 +103,7 @@
 //
 // PASSING BOUND INPUT PARAMETERS
 //
-//   Bound parameters are specified when you create thee callback as arguments
+//   Bound parameters are specified when you create the callback as arguments
 //   to Bind(). They will be passed to the function and the Run()ner of the
 //   callback doesn't see those values or even know that the function it's
 //   calling.

@@ -111,52 +111,7 @@ class KsckTable {
   DISALLOW_COPY_AND_ASSIGN(KsckTable);
 };
 
-// Class to act as a collector of scan results.
-// Provides thread-safe accessors to update and read a hash table of results.
-class ChecksumResultReporter {
- public:
-  typedef std::pair<Status, uint64_t> ResultPair;
-  typedef std::tr1::unordered_map<std::string, ResultPair> ReplicaResultMap;
-  typedef std::tr1::unordered_map<std::string, ReplicaResultMap> TabletResultMap;
-
-  // Initialize reporter with the number of replicas being queried.
-  explicit ChecksumResultReporter(int num_tablet_replicas);
-
-  // Write an entry to the result map indicating a response from the remote.
-  void ReportResult(const std::string& tablet_id, const std::string& replica_uuid,
-                    uint64_t checksum) {
-    HandleResponse(tablet_id, replica_uuid, Status::OK(), checksum);
-  }
-
-  // Write an entry to the result map indicating a some error from the remote.
-  void ReportError(const std::string& tablet_id, const std::string& replica_uuid,
-                   const Status& status) {
-    HandleResponse(tablet_id, replica_uuid, status, 0);
-  }
-
-  // Blocks until either the number of results plus errors reported equals
-  // num_tablet_replicas (from the constructor), or until the timeout expires,
-  // whichever comes first.
-  // Returns false if the timeout expired before all responses came in.
-  // Otherwise, returns true.
-  bool WaitFor(const MonoDelta& timeout) const { return responses_.WaitFor(timeout); }
-
-  // Returns true iff all replicas have reported in.
-  bool AllReported() const { return responses_.count() == 0; }
-
-  // Get reported results.
-  TabletResultMap checksums() const;
-
- private:
-  // Report either a success or error response.
-  void HandleResponse(const std::string& tablet_id, const std::string& replica_uuid,
-                      const Status& status, uint64_t checksum);
-
-  CountDownLatch responses_;
-  mutable simple_spinlock lock_; // Protects 'checksums_'.
-  // checksums_ is an unordered_map of { tablet_id : { replica_uuid : checksum } }.
-  TabletResultMap checksums_;
-};
+typedef Callback<void(const Status& status, uint64_t checksum)> ReportResultCallback;
 
 // The following two classes must be extended in order to communicate with their respective
 // components. The two main use cases envisioned for this are:
@@ -183,14 +138,12 @@ class KsckTabletServer {
     return Connect();
   }
 
-  // Run a checksum scan on the associated hosted tablet.
-  // If the returned Status == OK, the handler is guaranteed to eventually
-  // call back to one of the reporter's methods.
-  // Otherwise, the reporter will not be called (you should do this yourself).
-  virtual Status RunTabletChecksumScanAsync(
+  // Executes a checksum scan on the associated tablet, and runs the callback
+  // with the result. The callback must be threadsafe.
+  virtual void RunTabletChecksumScanAsync(
                   const std::string& tablet_id,
                   const Schema& schema,
-                  const std::tr1::shared_ptr<ChecksumResultReporter>& reporter) = 0;
+                  const ReportResultCallback& callback) = 0;
 
   virtual const std::string& uuid() const {
     return uuid_;

@@ -75,23 +75,25 @@ class ChecksumStepper {
   ChecksumStepper(const string& tablet_id,
                   const Schema& schema,
                   const string& server_uuid,
-                  const shared_ptr<ChecksumResultReporter>& reporter,
+                  const ReportResultCallback& callback,
                   const shared_ptr<tserver::TabletServerServiceProxy>& proxy)
       : schema_(schema),
         tablet_id_(tablet_id),
         server_uuid_(server_uuid),
-        reporter_(reporter),
+        reporter_callback_(callback),
         proxy_(proxy),
         call_seq_id_(0),
         checksum_(0) {
-    DCHECK(reporter_);
     DCHECK(proxy_);
   }
 
-  Status Start() {
-    RETURN_NOT_OK(SchemaToColumnPBsWithoutIds(schema_, &cols_));
-    SendRequest(kNewRequest);
-    return Status::OK();
+  void Start() {
+    Status s = SchemaToColumnPBsWithoutIds(schema_, &cols_);
+    if (!s.ok()) {
+      reporter_callback_.Run(s, 0);
+    } else {
+      SendRequest(kNewRequest);
+    }
   }
 
   void HandleResponse() {
@@ -101,7 +103,7 @@ class ChecksumStepper {
       s = StatusFromPB(resp_.error().status());
     }
     if (!s.ok()) {
-      reporter_->ReportError(tablet_id_, server_uuid_, s);
+      reporter_callback_.Run(s, 0);
       return; // Deletes 'this'.
     }
 
@@ -110,7 +112,7 @@ class ChecksumStepper {
 
     // Report back with results.
     if (!resp_.has_more_results()) {
-      reporter_->ReportResult(tablet_id_, server_uuid_, checksum_);
+      reporter_callback_.Run(s, checksum_);
       return; // Deletes 'this'.
     }
 
@@ -164,7 +166,7 @@ class ChecksumStepper {
 
   const string tablet_id_;
   const string server_uuid_;
-  const shared_ptr<ChecksumResultReporter> reporter_;
+  const ReportResultCallback reporter_callback_;
   const shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   uint32_t call_seq_id_;
@@ -181,16 +183,19 @@ void ChecksumCallbackHandler::Run() {
   delete this;
 }
 
-Status RemoteKsckTabletServer::RunTabletChecksumScanAsync(
+void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
         const string& tablet_id,
         const Schema& schema,
-        const shared_ptr<ChecksumResultReporter>& reporter) {
-  RETURN_NOT_OK(EnsureConnected());
+        const ReportResultCallback& callback) {
+  Status s = EnsureConnected();
+  if (!s.ok()) {
+    callback.Run(s, 0);
+    return;
+  }
   gscoped_ptr<ChecksumStepper> stepper(
-      new ChecksumStepper(tablet_id, schema, uuid(), reporter, proxy_));
-  RETURN_NOT_OK(stepper->Start());
+      new ChecksumStepper(tablet_id, schema, uuid(), callback, proxy_));
+  stepper->Start();
   ignore_result(stepper.release()); // Deletes self on callback.
-  return Status::OK();
 }
 
 Status RemoteKsckMaster::Connect() {
