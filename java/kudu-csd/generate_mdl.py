@@ -7,7 +7,9 @@
 #
 # Requires that the daemon processes have already been built and available
 # in the build/latest directory.
-# Outputs the MDL file on stdout.
+#
+# Outputs the MDL file on stdout by default or to a file specified in the first
+# argument.
 
 import collections
 try:
@@ -58,7 +60,7 @@ def metric_to_mdl(m):
     print >>sys.stderr, "Skipping histogram metric %s" % m['name']
     return None
   return dict(
-    context=m['name'],
+    context=(m['name'] + "::value"),
     name=('kudu_' + m['name'].lower()),
     counter=(m['type'] == 'counter'),
     numeratorUnit=m['unit'],
@@ -153,7 +155,11 @@ def main():
            metricDefinitions=tablet_metrics),
       ])
 
-  print json.dumps(output, indent=4)
+  
+  f = sys.stdout
+  if len(sys.argv) > 1:
+    f = open(sys.argv[1], 'w')
+  f.write(json.dumps(output, indent=4))
 
 if __name__ == "__main__":
   main()

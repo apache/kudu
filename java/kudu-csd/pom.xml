@@ -17,6 +17,50 @@
 
   <build>
     <plugins>
+      <!-- Make the target descriptor directory if necessary. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>1.2</version>
+        <executions>
+          <execution>
+            <configuration>
+              <executable>mkdir</executable>
+              <arguments>
+                <argument>-p</argument>
+                <argument>${project.build.directory}/descriptor</argument>
+              </arguments>
+            </configuration>
+            <id>generate-target-descriptor-directory</id>
+            <phase>package</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Generate the MDL. -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>1.2</version>
+        <executions>
+          <execution>
+            <configuration>
+              <executable>${basedir}/generate_mdl.py</executable>
+              <arguments>
+                <argument>${project.build.directory}/descriptor/service.mdl</argument>
+              </arguments>
+            </configuration>
+            <id>generate-mdl</id>
+            <phase>package</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+      <!-- Assemble the CSD. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-assembly-plugin</artifactId>
@@ -37,5 +81,5 @@
          </executions>
       </plugin>
     </plugins>
-   </build>
+  </build>
 </project>

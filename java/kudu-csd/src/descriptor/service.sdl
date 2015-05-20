@@ -63,6 +63,12 @@
           "default" : 8051
         },
         {
+          "name" : "master_web_interface",
+          "label" : "Kudu Master Web UI Interface",
+          "description" : "The interface of the Kudu Master Web UI. If blank, binds to 0.0.0.0.",
+          "type" : "string"
+        },
+        {
           "name" : "master_address",
           "label" : "Master Address",
           "description" : "Overrides the address where the Master will listen for connections. The default is to assume one standalone master running on localhost at port 7051.",
@@ -108,6 +114,14 @@
             "excludedParams" : [
               "master_address"
             ]
+          },
+          {
+            "filename" : "kudu-monitoring.properties",
+            "configFormat" : "properties",
+            "includedParams" : [
+              "master_web_interface",
+              "master_web_port"
+            ]
           }
         ],
         "peerConfigGenerators" : [
@@ -143,6 +157,12 @@
       "topology" : { "minInstances" : 1 },
       "parameters" : [
         {
+          "name" : "tablet_server_web_interface",
+          "label" : "Kudu Tablet Server Web UI Interface",
+          "description" : "The interface of the Kudu Tablet Server Web UI. If blank, binds to 0.0.0.0.",
+          "type" : "string"
+        },
+        {
           "name" : "tablet_server_web_port",
           "label" : "Kudu Tablet Server Web UI Port",
           "description" : "The port of the Kudu Tablet Server Web UI.",
@@ -174,6 +194,14 @@
           {
             "filename" : "gflagfile",
             "configFormat" : "gflags"
+          },
+          {
+            "filename" : "kudu-monitoring.properties",
+            "configFormat" : "properties",
+            "includedParams" : [
+              "tablet_server_web_interface",
+              "tablet_server_web_port"
+            ]
           }
         ],
         "peerConfigGenerators" : [

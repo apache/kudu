@@ -9,6 +9,13 @@
       <fileSet>
         <directory>${project.basedir}/src</directory>
         <outputDirectory>/</outputDirectory>
-        </fileSet>
+      </fileSet>
+      <fileSet>
+        <directory>${project.build.directory}/descriptor</directory>
+        <outputDirectory>/descriptor</outputDirectory>
+        <includes>
+          <include>service.mdl</include>
+        </includes>
+      </fileSet>
      </fileSets>
 </assembly>
