@@ -53,10 +53,10 @@ METRIC_DEFINE_gauge_int64(tablet, in_progress_ops, "Leader Operations in Progres
                           "peers.");
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
-  return Substitute("Peer: $0, New: $1, Last received: $2, Last sent $3, "
-      "Last known committed idx: $4 Last exchange result: $5", uuid, is_new,
-      OpIdToString(log_tail), OpIdToString(last_received), last_known_committed_idx,
-      is_last_exchange_successful ? "SUCCESS" : "ERROR");
+  return Substitute("Peer: $0, Is new: $1, Last received: $2, Next index: $3, "
+                    "Last known committed idx: $4, Last exchange result: $5",
+                    uuid, is_new, OpIdToString(last_received), next_index,
+                    last_known_committed_idx, is_last_exchange_successful ? "SUCCESS" : "ERROR");
 }
 
 #define INSTANTIATE_METRIC(x) \
@@ -129,12 +129,15 @@ void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
   DCHECK_EQ(queue_state_.state, kQueueOpen);
 
   TrackedPeer* tracked_peer = new TrackedPeer(uuid);
-  tracked_peer->uuid = uuid;
-  // We don't know the last operation received by the peer so, following
-  // the raft protocol, we set it to the queue's last appended operation.
-  // If this is not the last operation the peer has received it will reset
-  // it accordingly.
-  tracked_peer->log_tail = queue_state_.last_appended;
+  // We don't know the last operation received by the peer so, following the
+  // Raft protocol, we set next_index to one past the end of our own log. This
+  // way, if calling this method is the result of a successful leader election
+  // and the logs between the new leader and remote peer match, the
+  // peer->next_index will point to the index of the soon-to-be-written NO_OP
+  // entry that is used to assert leadership. If we guessed wrong, and the peer
+  // does not have a log that matches ours, the normal queue negotiation
+  // process will eventually find the right point to resume from.
+  tracked_peer->next_index = queue_state_.last_appended.index() + 1;
   InsertOrDie(&peers_map_, uuid, tracked_peer);
 
   // We don't know how far back this peer is, so set the all replicated watermark to
@@ -161,13 +164,14 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
   // seems to work for now.
   ConsensusResponsePB fake_response;
   fake_response.set_responder_uuid(local_uuid_);
-  fake_response.mutable_status()->mutable_last_received()->CopyFrom(id);
+  *fake_response.mutable_status()->mutable_last_received() = id;
+  *fake_response.mutable_status()->mutable_last_received_current_leader() = id;
   {
     boost::unique_lock<simple_spinlock> lock(queue_lock_);
     fake_response.mutable_status()->set_last_committed_idx(queue_state_.committed_index.index());
   }
   bool junk;
-  ResponseFromPeer(id, fake_response, &junk);
+  ResponseFromPeer(fake_response, &junk);
 
   callback.Run(status);
 }
@@ -205,48 +209,6 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
   return Status::OK();
 }
 
-Status PeerMessageQueue::GetOpsFromCacheOrFallback(const OpId& op,
-                                                   int64_t fallback_index,
-                                                   int max_batch_size,
-                                                   vector<ReplicateRefPtr>* messages,
-                                                   OpId* preceding_id) {
-
-  OpId new_preceding;
-
-  Status s = log_cache_.ReadOps(op.index(),
-                                max_batch_size,
-                                messages,
-                                &new_preceding);
-  // If we could get the index we wanted, but the terms were different or if
-  // we couldn't get the index we wanter at all, try the fallback index.
-  if ((s.ok() && op.term() != new_preceding.term()) || s.IsNotFound()) {
-    if (s.ok()) {
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Tried to read ops starting at " << op << " from cache, "
-                            << "but found op " << new_preceding << " (term mismatch). "
-                            << "Falling back to index " << fallback_index;
-    } else {
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Tried to read ops starting at " << op << " from cache, "
-                            << "but could not find that index in the log. "
-                            << "Falling back to index " << fallback_index;
-    }
-    messages->clear();
-    new_preceding.Clear();
-    s = log_cache_.ReadOps(fallback_index,
-                           max_batch_size,
-                           messages,
-                           &new_preceding);
-    if (s.ok()) {
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Successfully fell back and found op " << new_preceding;
-    }
-  }
-
-  if (s.ok()) {
-    DCHECK(new_preceding.IsInitialized());
-    preceding_id->CopyFrom(new_preceding);
-  }
-  return s;
-}
-
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request,
                                         vector<ReplicateRefPtr>* msg_refs) {
@@ -274,25 +236,15 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
   // from the log starting at the last_received point.
   if (!peer->is_new) {
 
-    OpId send_after;
-    if (peer->last_received.IsInitialized()) {
-      send_after = peer->last_received;
-    } else {
-      send_after = peer->log_tail;
-    }
-
     // The batch of messages to send to the peer.
     vector<ReplicateRefPtr> messages;
     int max_batch_size = FLAGS_consensus_max_batch_size_bytes - request->ByteSize();
 
-    // We try to get the op after the one we last sent. If that fails because the op
-    // cannot be found in our log we fall back to the last committed index.
-    Status s = GetOpsFromCacheOrFallback(send_after,
-                                         peer->last_known_committed_idx,
-                                         max_batch_size,
-                                         &messages,
-                                         &preceding_id);
-
+    // We try to get the follower's next_index from our log.
+    Status s = log_cache_.ReadOps(peer->next_index - 1,
+                                  max_batch_size,
+                                  &messages,
+                                  &preceding_id);
     if (PREDICT_FALSE(!s.ok())) {
       // It's normal to have a NotFound() here if a follower falls behind where
       // the leader has GCed its logs.
@@ -386,12 +338,12 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
-void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
-                                        const ConsensusResponsePB& response,
+void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
                                         bool* more_pending) {
   CHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
       << "Got response from peer with empty UUID";
-  DCHECK(response.IsInitialized()) << "Response: " << response.ShortDebugString();
+  DCHECK(response.IsInitialized()) << "Error: Uninitialized: "
+      << response.InitializationErrorString() << ". Response: " << response.ShortDebugString();
 
   OpId updated_majority_replicated_opid;
   Mode mode_copy;
@@ -416,6 +368,7 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
     DCHECK(response.has_status());
     // The status must always have a last received op id and a last committed index.
     DCHECK(response.status().has_last_received());
+    DCHECK(response.status().has_last_received_current_leader());
     DCHECK(response.status().has_last_committed_idx());
 
     const ConsensusStatusPB& status = response.status();
@@ -424,9 +377,38 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
     TrackedPeer previous = *peer;
 
     // Update the peer status based on the response.
-    peer->log_tail.CopyFrom(status.last_received());
-    peer->last_known_committed_idx = status.last_committed_idx();
     peer->is_new = false;
+    peer->last_known_committed_idx = status.last_committed_idx();
+
+    // If the reported last-received op for the replica is in our local log,
+    // then resume sending entries from that point onward. Otherwise, resume
+    // after the last op they received from us. If we've never successfully
+    // sent them anything, start after the last-committed op in their log, which
+    // is guaranteed by the Raft protocol to be a valid op.
+
+    bool peer_has_prefix_of_log = IsOpInLog(status.last_received());
+    if (peer_has_prefix_of_log) {
+      // If the latest thing in their log is in our log, we are in sync.
+      peer->last_received = status.last_received();
+      peer->next_index = peer->last_received.index() + 1;
+
+    } else if (!OpIdEquals(status.last_received_current_leader(), MinimumOpId())) {
+      // Their log may have diverged from ours, however we are in the process
+      // of replicating our ops to them, so continue doing so. Eventually, we
+      // will cause the divergent entry in their log to be overwritten.
+      peer->last_received = status.last_received_current_leader();
+      peer->next_index = peer->last_received.index() + 1;
+
+    } else {
+      // The peer is divergent and they have not (successfully) received
+      // anything from us yet. Start sending from their last committed index.
+      // This logic differs from the Raft spec slightly because instead of
+      // stepping back one-by-one from the end until we no longer have an LMP
+      // error, we jump back to the last committed op indicated by the peer with
+      // the hope that doing so will result in a faster catch-up process.
+      DCHECK_GE(peer->last_known_committed_idx, 0);
+      peer->next_index = peer->last_known_committed_idx + 1;
+    }
 
     if (PREDICT_FALSE(status.has_error())) {
       peer->is_last_exchange_successful = false;
@@ -447,20 +429,17 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
           CHECK(response.has_responder_term());
           LOG_WITH_PREFIX_UNLOCKED(INFO) << "Peer responded invalid term: " << peer->ToString();
           NotifyObserversOfTermChange(response.responder_term());
-          *peer = previous;
-
           *more_pending = false;
           return;
         }
         default: {
-          LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Unexpected consensus error. Response: "
+          LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Unexpected consensus error. Code: "
+              << ConsensusErrorPB::Code_Name(status.error().code()) << ". Response: "
               << response.ShortDebugString();
         }
       }
     }
 
-    // On a successful response we update the last sent.
-    peer->last_received = last_sent;
     peer->is_last_exchange_successful = true;
 
     if (response.has_responder_term()) {
@@ -478,7 +457,7 @@ void PeerMessageQueue::ResponseFromPeer(const OpId& last_sent,
           << ". Response: " << response.ShortDebugString();
     }
 
-    *more_pending = log_cache_.HasOpBeenWritten(peer->log_tail.index() + 1);
+    *more_pending = log_cache_.HasOpBeenWritten(peer->next_index);
 
     mode_copy = queue_state_.mode;
     if (mode_copy == LEADER) {
@@ -621,6 +600,18 @@ Status PeerMessageQueue::UnRegisterObserver(PeerMessageQueueObserver* observer) 
   }
   observers_.erase(iter);
   return Status::OK();
+}
+
+bool PeerMessageQueue::IsOpInLog(const OpId& desired_op) const {
+  OpId log_op;
+  Status s = log_cache_.LookupOpId(desired_op.index(), &log_op);
+  if (PREDICT_TRUE(s.ok())) {
+    return OpIdEquals(desired_op, log_op);
+  }
+  if (PREDICT_TRUE(s.IsNotFound())) {
+    return false;
+  }
+  LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error while reading the log: " << s.ToString();
 }
 
 void PeerMessageQueue::NotifyObserversOfMajorityReplOpChange(

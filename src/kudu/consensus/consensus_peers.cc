@@ -187,15 +187,13 @@ void Peer::ProcessResponse() {
 void Peer::DoProcessResponse() {
   failed_attempts_ = 0;
 
-  DCHECK(response_.status().IsInitialized()) << "Error: " << response_.InitializationErrorString();
+  DCHECK(response_.status().IsInitialized()) << "Error: Uninitialized: "
+      << response_.InitializationErrorString() << ". Response: " << response_.ShortDebugString();
   VLOG_WITH_PREFIX_UNLOCKED(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
       << response_.ShortDebugString();
 
-  const OpId* last_sent = request_.ops_size() > 0 ? &request_.ops(request_.ops_size() - 1).id() :
-                                                    &request_.preceding_id();
-
   bool more_pending;
-  queue_->ResponseFromPeer(*last_sent, response_, &more_pending);
+  queue_->ResponseFromPeer(response_, &more_pending);
   state_ = kPeerIdle;
   if (more_pending && state_ != kPeerClosed) {
     SendNextRequest(true);

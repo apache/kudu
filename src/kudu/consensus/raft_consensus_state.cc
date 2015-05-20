@@ -37,7 +37,8 @@ ReplicaState::ReplicaState(const ConsensusOptions& options,
     cmeta_(cmeta.Pass()),
     next_index_(0),
     txn_factory_(txn_factory),
-    received_op_id_(MinimumOpId()),
+    last_received_op_id_(MinimumOpId()),
+    last_received_op_id_current_leader_(MinimumOpId()),
     last_committed_index_(MinimumOpId()),
     state_(kInitialized) {
   CHECK(cmeta_) << "ConsensusMeta passed as NULL";
@@ -48,13 +49,13 @@ Status ReplicaState::StartUnlocked(const OpId& last_id_in_wal) {
 
   // Our last persisted term can be higher than the last persisted operation
   // (i.e. if we called an election) but reverse should never happen.
-  CHECK_LE(last_id_in_wal.term(), cmeta_->current_term())
+  CHECK_LE(last_id_in_wal.term(), GetCurrentTermUnlocked())
       << "Last op in wal " << last_id_in_wal.term()
       << "has a term  which is greater than last recorded term "
-      << cmeta_->current_term();
+      << GetCurrentTermUnlocked();
 
   next_index_ = last_id_in_wal.index() + 1;
-  received_op_id_.CopyFrom(last_id_in_wal);
+  last_received_op_id_.CopyFrom(last_id_in_wal);
 
   state_ = kRunning;
   return Status::OK();
@@ -235,25 +236,21 @@ bool ReplicaState::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch
 }
 
 Status ReplicaState::IncrementTermUnlocked() {
-  DCHECK(update_lock_.is_locked());
-  cmeta_->set_current_term(cmeta_->current_term() + 1);
-  cmeta_->clear_voted_for();
-  RETURN_NOT_OK(cmeta_->Flush());
-  ClearLeaderUnlocked();
-  return Status::OK();
+  return SetCurrentTermUnlocked(GetCurrentTermUnlocked() + 1);
 }
 
 Status ReplicaState::SetCurrentTermUnlocked(uint64_t new_term) {
   DCHECK(update_lock_.is_locked());
-  if (PREDICT_FALSE(new_term < GetCurrentTermUnlocked())) {
+  if (PREDICT_FALSE(new_term <= GetCurrentTermUnlocked())) {
     return Status::IllegalState(
-        Substitute("Cannot change term to a term that is lower than the current one. "
-            "Current: $0, Proposed: $1", GetCurrentTermUnlocked(), new_term));
+        Substitute("Cannot change term to a term that is lower than or equal to the current one. "
+                   "Current: $0, Proposed: $1", GetCurrentTermUnlocked(), new_term));
   }
   cmeta_->set_current_term(new_term);
   cmeta_->clear_voted_for();
   RETURN_NOT_OK(cmeta_->Flush());
   ClearLeaderUnlocked();
+  last_received_op_id_current_leader_ = MinimumOpId();
   return Status::OK();
 }
 
@@ -364,7 +361,8 @@ Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
 
   // This is the same as UpdateLastReceivedOpIdUnlocked() but we do it
   // here to avoid the bounds check, since we're breaking monotonicity.
-  received_op_id_ = new_preceding;
+  last_received_op_id_ = new_preceding;
+  last_received_op_id_current_leader_ = last_received_op_id_;
   next_index_ = new_preceding.index() + 1;
 
   for (; iter != pending_txns_.end();) {
@@ -514,17 +512,23 @@ const OpId& ReplicaState::GetCommittedOpIdUnlocked() const {
 
 void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
   DCHECK(update_lock_.is_locked());
-  DCHECK_LE(OpIdCompare(received_op_id_, op_id), 0)
-    << "Previously received OpId: " << received_op_id_.ShortDebugString()
+  DCHECK_LE(OpIdCompare(last_received_op_id_, op_id), 0)
+    << "Previously received OpId: " << last_received_op_id_.ShortDebugString()
     << ", updated OpId: " << op_id.ShortDebugString()
     << ", Trace:" << std::endl << Trace::CurrentTrace()->DumpToString(true);
-  received_op_id_ = op_id;
+  last_received_op_id_ = op_id;
+  last_received_op_id_current_leader_ = last_received_op_id_;
   next_index_ = op_id.index() + 1;
 }
 
 const OpId& ReplicaState::GetLastReceivedOpIdUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  return received_op_id_;
+  return last_received_op_id_;
+}
+
+const OpId& ReplicaState::GetLastReceivedOpIdCurLeaderUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  return last_received_op_id_current_leader_;
 }
 
 void ReplicaState::NewIdUnlocked(OpId* id) {
@@ -547,7 +551,7 @@ void ReplicaState::CancelPendingOperation(const OpId& id) {
 
   // This is only ok if we do _not_ release the lock after calling
   // NewIdUnlocked() (which we don't in RaftConsensus::Replicate()).
-  received_op_id_ = previous;
+  last_received_op_id_ = previous;
   scoped_refptr<ConsensusRound> round = EraseKeyReturnValuePtr(&pending_txns_, id.index());
   DCHECK(round);
 }
@@ -592,7 +596,7 @@ string ReplicaState::ToStringUnlocked() const {
                       QuorumPeerPB::Role_Name(GetActiveRoleUnlocked()));
 
   SubstituteAndAppend(&ret, "Watermarks: {Received: $0 Committed: $1}\n",
-                      received_op_id_.ShortDebugString(),
+                      last_received_op_id_.ShortDebugString(),
                       last_committed_index_.ShortDebugString());
   return ret;
 }

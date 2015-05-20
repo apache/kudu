@@ -246,6 +246,9 @@ class ReplicaState {
   // Returns the last received op id. This must be called under the lock.
   const OpId& GetLastReceivedOpIdUnlocked() const;
 
+  // Returns the id of the last op received from the current leader.
+  const OpId& GetLastReceivedOpIdCurLeaderUnlocked() const;
+
   // Updates the last committed operation including removing it from the pending commits.
   //
   // 'commit_op_id' refers to the OpId of the actual commit operation, whereas
@@ -319,9 +322,21 @@ class ReplicaState {
   // this factory to start it.
   ReplicaTransactionFactory* txn_factory_;
 
-  // The id of the last received operation. Operations whose id is lower than or equal
-  // to this id do not need to be resent by the leader.
-  OpId received_op_id_;
+  // The id of the last received operation, which corresponds to the last entry
+  // written to the local log. Operations whose id is lower than or equal to
+  // this id do not need to be resent by the leader. This is not guaranteed to
+  // be monotonically increasing due to the possibility for log truncation and
+  // aborted operations when a leader change occurs.
+  OpId last_received_op_id_;
+
+  // Same as last_received_op_id_ but only includes operations sent by the
+  // current leader. The "term" in this op may not actually match the current
+  // term, since leaders may replicate ops from prior terms.
+  //
+  // As an implementation detail, this field is reset to MinumumOpId() every
+  // time there is a term advancement on the local node, to simplify the logic
+  // involved in resetting this every time a new node becomes leader.
+  OpId last_received_op_id_current_leader_;
 
   // The id of the Apply that was last triggered when the last message from the leader
   // was received. Initialized to MinimumOpId().

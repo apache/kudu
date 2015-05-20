@@ -111,18 +111,18 @@ class LogCache {
 
   std::string ToString() const;
 
- private:
-  FRIEND_TEST(LogCacheTest, TestAppendAndGetMessages);
-  FRIEND_TEST(LogCacheTest, TestGlobalMemoryLimit);
-  FRIEND_TEST(LogCacheTest, TestReplaceMessages);
-  friend class LogCacheTest;
-
   // Look up the OpId for the given operation index.
   // If it is not in the cache, this consults the on-disk log index and thus
   // may take a non-trivial amount of time due to IO.
   //
   // Returns a bad Status if the log index fails to load (eg. due to an IO error).
   Status LookupOpId(int64_t op_index, OpId* op_id) const;
+
+ private:
+  FRIEND_TEST(LogCacheTest, TestAppendAndGetMessages);
+  FRIEND_TEST(LogCacheTest, TestGlobalMemoryLimit);
+  FRIEND_TEST(LogCacheTest, TestReplaceMessages);
+  friend class LogCacheTest;
 
   // Try to evict the oldest operations from the queue, stopping either when
   // 'bytes_to_evict' bytes have been evicted, or the op with index

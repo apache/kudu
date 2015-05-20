@@ -178,7 +178,7 @@ class RaftConsensusTest : public KuduTest {
 
     gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(NULL));
 
-    string peer_uuid = Substitute("peer-$0", num_peers - 1);
+    string peer_uuid = quorum_.peers(num_peers - 1).permanent_uuid();
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     CHECK_OK(ConsensusMetadata::Create(fs_manager_.get(), kTestTablet, peer_uuid,
@@ -235,6 +235,14 @@ class RaftConsensusTest : public KuduTest {
         .Times(AnyNumber());
   }
 
+  // Create a ConsensusRequestPB suitable to send to a peer.
+  ConsensusRequestPB MakeConsensusRequest(int64_t caller_term,
+                                          const string& caller_uuid,
+                                          const OpId& preceding_opid);
+
+  // Add a single no-op with the given OpId to a ConsensusRequestPB.
+  void AddNoOpToConsensusRequest(ConsensusRequestPB* request, const OpId& noop_opid);
+
   scoped_refptr<ConsensusRound> AppendNoOpRound() {
     ReplicateRefPtr replicate_ptr(make_scoped_refptr_replicate(new ReplicateMsg));
     replicate_ptr->get()->set_op_type(NO_OP);
@@ -279,6 +287,26 @@ class RaftConsensusTest : public KuduTest {
   MockPeerManager* peer_manager_;
   gscoped_ptr<MockTransactionFactory> txn_factory_;
 };
+
+ConsensusRequestPB RaftConsensusTest::MakeConsensusRequest(int64_t caller_term,
+                                                           const string& caller_uuid,
+                                                           const OpId& preceding_opid) {
+  ConsensusRequestPB request;
+  request.set_caller_term(caller_term);
+  request.set_caller_uuid(caller_uuid);
+  request.set_tablet_id(kTestTablet);
+  *request.mutable_preceding_id() = preceding_opid;
+  return request;
+}
+
+void RaftConsensusTest::AddNoOpToConsensusRequest(ConsensusRequestPB* request,
+                                                  const OpId& noop_opid) {
+  ReplicateMsg* noop_msg = request->add_ops();
+  *noop_msg->mutable_id() = noop_opid;
+  noop_msg->set_op_type(NO_OP);
+  noop_msg->set_timestamp(clock_->Now().ToUint64());
+  noop_msg->mutable_noop_request();
+}
 
 // Tests that the committed index moves along with the majority replicated
 // index when the terms are the same.
@@ -591,6 +619,107 @@ TEST_F(RaftConsensusTest, TestReceivedIdIsInittedBeforeStart) {
   ASSERT_OK(consensus_->GetLastReceivedOpId(&opid));
   ASSERT_TRUE(opid.IsInitialized());
   ASSERT_OPID_EQ(opid, MinimumOpId());
+}
+
+// Ensure that followers reset their "last_received_current_leader"
+// ConsensusStatusPB field when a new term is encountered. This is a
+// correctness test for the logic on the follower side that allows the
+// leader-side queue to determine which op to send next in various scenarios.
+TEST_F(RaftConsensusTest, TestResetRcvdFromCurrentLeaderOnNewTerm) {
+  SetUpConsensus(kMinimumTerm, 3);
+  SetUpGeneralExpectations();
+  ConsensusBootstrapInfo info;
+  ASSERT_OK(consensus_->Start(info));
+
+  ConsensusRequestPB request;
+  ConsensusResponsePB response;
+  int64_t caller_term = 0;
+  int64_t log_index = 0;
+
+  caller_term = 1;
+  string caller_uuid = quorum_.peers(0).permanent_uuid();
+  OpId preceding_opid = MinimumOpId();
+
+  // Heartbeat. This will cause the term to increment on the follower.
+  request = MakeConsensusRequest(caller_term, caller_uuid, preceding_opid);
+  response.Clear();
+  ASSERT_OK(consensus_->Update(&request, &response));
+  ASSERT_FALSE(response.status().has_error()) << response.ShortDebugString();
+  ASSERT_EQ(caller_term, response.responder_term());
+  ASSERT_OPID_EQ(response.status().last_received(), MinimumOpId());
+  ASSERT_OPID_EQ(response.status().last_received_current_leader(), MinimumOpId());
+
+  // Replicate a no-op.
+  OpId noop_opid = MakeOpId(caller_term, ++log_index);
+  AddNoOpToConsensusRequest(&request, noop_opid);
+  response.Clear();
+  ASSERT_OK(consensus_->Update(&request, &response));
+  ASSERT_FALSE(response.status().has_error()) << response.ShortDebugString();
+  ASSERT_OPID_EQ(response.status().last_received(), noop_opid);
+  ASSERT_OPID_EQ(response.status().last_received_current_leader(),  noop_opid);
+
+  // New leader heartbeat. Term increase to 2.
+  // Expect current term replicated to be nothing (MinimumOpId) but log
+  // replicated to be everything sent so far.
+  caller_term = 2;
+  caller_uuid = quorum_.peers(1).permanent_uuid();
+  preceding_opid = noop_opid;
+  request = MakeConsensusRequest(caller_term, caller_uuid, preceding_opid);
+  response.Clear();
+  ASSERT_OK(consensus_->Update(&request, &response));
+  ASSERT_FALSE(response.status().has_error()) << response.ShortDebugString();
+  ASSERT_EQ(caller_term, response.responder_term());
+  ASSERT_OPID_EQ(response.status().last_received(), preceding_opid);
+  ASSERT_OPID_EQ(response.status().last_received_current_leader(), MinimumOpId());
+
+  // Append a no-op.
+  noop_opid = MakeOpId(caller_term, ++log_index);
+  AddNoOpToConsensusRequest(&request, noop_opid);
+  response.Clear();
+  ASSERT_OK(consensus_->Update(&request, &response));
+  ASSERT_FALSE(response.status().has_error()) << response.ShortDebugString();
+  ASSERT_OPID_EQ(response.status().last_received(), noop_opid);
+  ASSERT_OPID_EQ(response.status().last_received_current_leader(), noop_opid);
+
+  // New leader heartbeat. The term should rev but we should get an LMP mismatch.
+  caller_term = 3;
+  caller_uuid = quorum_.peers(0).permanent_uuid();
+  preceding_opid = MakeOpId(caller_term, log_index + 1); // Not replicated yet.
+  request = MakeConsensusRequest(caller_term, caller_uuid, preceding_opid);
+  response.Clear();
+  ASSERT_OK(consensus_->Update(&request, &response));
+  ASSERT_EQ(caller_term, response.responder_term());
+  ASSERT_OPID_EQ(response.status().last_received(), noop_opid); // Not preceding this time.
+  ASSERT_OPID_EQ(response.status().last_received_current_leader(), MinimumOpId());
+  ASSERT_TRUE(response.status().has_error()) << response.ShortDebugString();
+  ASSERT_EQ(ConsensusErrorPB::PRECEDING_ENTRY_DIDNT_MATCH, response.status().error().code());
+
+  // Decrement preceding and append a no-op.
+  preceding_opid = MakeOpId(2, log_index);
+  noop_opid = MakeOpId(caller_term, ++log_index);
+  request = MakeConsensusRequest(caller_term, caller_uuid, preceding_opid);
+  AddNoOpToConsensusRequest(&request, noop_opid);
+  response.Clear();
+  ASSERT_OK(consensus_->Update(&request, &response));
+  ASSERT_FALSE(response.status().has_error()) << response.ShortDebugString();
+  ASSERT_OPID_EQ(response.status().last_received(), noop_opid) << response.ShortDebugString();
+  ASSERT_OPID_EQ(response.status().last_received_current_leader(), noop_opid)
+      << response.ShortDebugString();
+
+  // Happy case. New leader with new no-op to append right off the bat.
+  // Response should be OK with all last_received* fields equal to the new no-op.
+  caller_term = 4;
+  caller_uuid = quorum_.peers(1).permanent_uuid();
+  preceding_opid = noop_opid;
+  noop_opid = MakeOpId(caller_term, ++log_index);
+  request = MakeConsensusRequest(caller_term, caller_uuid, preceding_opid);
+  AddNoOpToConsensusRequest(&request, noop_opid);
+  response.Clear();
+  ASSERT_OK(consensus_->Update(&request, &response));
+  ASSERT_FALSE(response.status().has_error()) << response.ShortDebugString();
+  ASSERT_EQ(caller_term, response.responder_term());
+  ASSERT_OPID_EQ(response.status().last_received(), noop_opid);
+  ASSERT_OPID_EQ(response.status().last_received_current_leader(), noop_opid);
 }
 
 }  // namespace consensus

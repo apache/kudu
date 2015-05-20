@@ -26,14 +26,15 @@
 #include "kudu/util/task_executor.h"
 #include "kudu/util/threadpool.h"
 
-#define ASSERT_OPID_EQ(left, right) do { \
-  OpId left_ = (left); \
-  OpId right_ = (right); \
-  if (!consensus::OpIdEquals(left_, right_)) { \
-    FAIL() << "Value of: " << left_.ShortDebugString() \
-    << "\nExpected: " << right_.ShortDebugString(); \
-  } \
-  } while (0);
+#define TOKENPASTE(x, y) x ## y
+#define TOKENPASTE2(x, y) TOKENPASTE(x, y)
+
+#define ASSERT_OPID_EQ(left, right) \
+  OpId TOKENPASTE2(_left, __LINE__) = (left); \
+  OpId TOKENPASTE2(_right, __LINE__) = (right); \
+  if (!consensus::OpIdEquals(TOKENPASTE2(_left, __LINE__), TOKENPASTE2(_right,__LINE__))) \
+    FAIL() << "Expected: " << TOKENPASTE2(_right,__LINE__).ShortDebugString() << "\n" \
+           << "Value: " << TOKENPASTE2(_left,__LINE__).ShortDebugString() << "\n"
 
 namespace kudu {
 namespace consensus {
@@ -207,6 +208,7 @@ class MockedPeerProxy : public TestPeerProxy {
   explicit MockedPeerProxy(ThreadPool* pool) : TestPeerProxy(pool) {}
 
   virtual void set_update_response(const ConsensusResponsePB& update_response) {
+    CHECK(update_response.IsInitialized()) << update_response.ShortDebugString();
     update_response_ = update_response;
   }
 
@@ -264,6 +266,7 @@ class NoOpTestPeerProxy : public TestPeerProxy {
       response->set_responder_uuid(peer_pb_.permanent_uuid());
       response->set_responder_term(request->caller_term());
       response->mutable_status()->mutable_last_received()->CopyFrom(last_received_);
+      response->mutable_status()->mutable_last_received_current_leader()->CopyFrom(last_received_);
       // We set the last committed index to be the same index as the last received. While
       // this is unlikely to happen in a real situation, its not technically incorrect and
       // avoids having to come up with some other index that it still correct.

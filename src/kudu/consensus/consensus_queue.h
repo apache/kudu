@@ -57,7 +57,8 @@ class PeerMessageQueue {
     explicit TrackedPeer(const std::string& uuid)
       : uuid(uuid),
         is_new(true),
-        log_tail(MinimumOpId()),
+        next_index(kInvalidOpIdIndex),
+        last_received(MinimumOpId()),
         last_known_committed_idx(MinimumOpId().index()),
         is_last_exchange_successful(false),
         last_seen_term_(0) {
@@ -72,16 +73,18 @@ class PeerMessageQueue {
 
     std::string ToString() const;
 
-    std::string uuid;
+    // UUID of the peer.
+    const std::string uuid;
 
     // Whether this is a newly tracked peer.
     bool is_new;
 
-    // The last operation in the peer's log.
-    OpId log_tail;
+    // Next index to send to the peer.
+    // This corresponds to "nextIndex" as specified in Raft.
+    int64_t next_index;
 
     // The last operation that we've sent to this peer and that
-    // it acked.
+    // it acked. Used for watermark movement.
     OpId last_received;
 
     // The last committed index this peer knows about.
@@ -89,6 +92,7 @@ class PeerMessageQueue {
 
     // Whether the last exchange with this peer was successful.
     bool is_last_exchange_successful;
+
    private:
     // The last term we saw from a given peer.
     // This is only used for sanity checking that a peer doesn't
@@ -170,10 +174,7 @@ class PeerMessageQueue {
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
-  // 'last_sent' corresponds to the last_message that we've sent to this peer
-  // and, on a successful response, we'll advance watermarks based on this OpId.
-  virtual void ResponseFromPeer(const OpId& last_sent,
-                                const ConsensusResponsePB& response,
+  virtual void ResponseFromPeer(const ConsensusResponsePB& response,
                                 bool* more_pending);
 
   // Closes the queue, peers are still allowed to call UntrackPeer() and
@@ -275,6 +276,12 @@ class PeerMessageQueue {
     std::string ToString() const;
   };
 
+  // Returns true iff given 'desired_op' is found in the local WAL.
+  // If the op is not found, returns false.
+  // If the log cache returns some error other than NotFound, crashes with a
+  // fatal error.
+  bool IsOpInLog(const OpId& desired_op) const;
+
   void NotifyObserversOfMajorityReplOpChange(const OpId new_majority_replicated_op);
 
   void NotifyObserversOfMajorityReplOpChangeTask(const OpId new_majority_replicated_op);
@@ -313,18 +320,6 @@ class PeerMessageQueue {
                              const OpId& replicated_before,
                              const OpId& replicated_after,
                              int num_peers_required);
-
-  // Tries to get messages after 'op' from the log cache. If 'op' is not found or if
-  // a message with the same index is found but term is not the same as in 'op', it
-  // tries another lookup with 'fallback_index'.
-  // If either 'op' or 'fallback_index' are found, i.e. if it returns Status::OK(),
-  // 'messages' is filled up to 'max_batch_size' bytes and 'preceding_id' is set to
-  // the OpId immediately before the first message in 'messages'.
-  Status GetOpsFromCacheOrFallback(const OpId& op,
-                                   int64_t fallback_index,
-                                   int max_batch_size,
-                                   std::vector<ReplicateRefPtr>* messages,
-                                   OpId* preceding_id);
 
   std::vector<PeerMessageQueueObserver*> observers_;
 

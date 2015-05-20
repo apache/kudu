@@ -284,7 +284,8 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     request.set_candidate_uuid(state_->GetPeerUuid());
     request.set_candidate_term(state_->GetCurrentTermUnlocked());
     request.set_tablet_id(state_->GetOptions().tablet_id);
-    request.mutable_candidate_status()->mutable_last_received()->CopyFrom(GetLatestOpIdFromLog());
+    *request.mutable_candidate_status()->mutable_last_received() =
+        state_->GetLastReceivedOpIdUnlocked();
 
     election.reset(new LeaderElection(active_quorum,
                                       peer_proxy_factory_.get(),
@@ -463,21 +464,21 @@ void RaftConsensus::NotifyTermChange(uint64_t term) {
 Status RaftConsensus::Update(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response) {
   RETURN_NOT_OK(ExecuteHook(PRE_UPDATE));
-  ConsensusStatusPB* status = response->mutable_status();
   response->set_responder_uuid(state_->GetPeerUuid());
 
   VLOG_WITH_PREFIX(2) << "Replica received request: " << request->ShortDebugString();
 
   // see var declaration
   boost::lock_guard<simple_spinlock> lock(update_lock_);
-  RETURN_NOT_OK(UpdateReplica(request, response));
-
+  Status s = UpdateReplica(request, response);
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops_size() == 0) {
       VLOG(1) << state_->LogPrefix() << "Replica replied to status only request. Replica: "
-              << state_->ToString() << " Status: " << status->ShortDebugString();
+              << state_->ToString() << ". Response: " << response->ShortDebugString();
     }
   }
+  RETURN_NOT_OK(s);
+
   RETURN_NOT_OK(ExecuteHook(POST_UPDATE));
   return Status::OK();
 }
@@ -957,10 +958,12 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 }
 
 void RaftConsensus::FillConsensusResponseOKUnlocked(ConsensusResponsePB* response) {
-  TRACE("Filling leader response.");
+  TRACE("Filling consensus response to leader.");
   response->set_responder_term(state_->GetCurrentTermUnlocked());
   response->mutable_status()->mutable_last_received()->CopyFrom(
       state_->GetLastReceivedOpIdUnlocked());
+  response->mutable_status()->mutable_last_received_current_leader()->CopyFrom(
+      state_->GetLastReceivedOpIdCurLeaderUnlocked());
   response->mutable_status()->set_last_committed_idx(
       state_->GetCommittedOpIdUnlocked().index());
 }
