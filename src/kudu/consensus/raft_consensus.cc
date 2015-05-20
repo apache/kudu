@@ -140,6 +140,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
           MonoDelta::FromMilliseconds(
               FLAGS_leader_heartbeat_interval_ms *
               FLAGS_leader_failure_max_missed_heartbeat_periods))),
+      withhold_votes_until_(MonoTime::Min()),
       mark_dirty_clbk_(mark_dirty_clbk),
       shutdown_(false) {
   DCHECK_NOTNULL(log_.get());
