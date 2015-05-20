@@ -39,7 +39,6 @@ add_library(kudu_util
   coding.cc
   condition_variable.cc
   crc.cc
-  curl_util.cc
   debug-util.cc
   debug/trace_event_impl.cc
   debug/trace_event_impl_constants.cc
@@ -96,9 +95,7 @@ add_library(kudu_util
   url-coding.cc
 )
 
-# TODO: we don't really need to link agaist libcurl, since it's only used by # tests.
 target_link_libraries(kudu_util
-  ${CURL_LIBRARIES}
   ${Boost_LIBRARIES}
   crcutil
   glog
@@ -119,8 +116,10 @@ endif()
 #######################################
 
 add_library(kudu_test_util
-  test_util.cc)
+  test_util.cc
+  curl_util.cc)
 target_link_libraries(kudu_test_util
+  ${CURL_LIBRARIES}
   gflags
   glog
   gmock

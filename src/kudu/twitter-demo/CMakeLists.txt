@@ -18,7 +18,8 @@ else()
     # the necessary symbols are hidden.
     target_link_libraries(twitter_demo
       gutil
-      kudu_util)
+      kudu_util
+      kudu_test_util)
   endif()
 
   target_link_libraries(twitter_demo
