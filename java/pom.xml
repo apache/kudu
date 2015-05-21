@@ -49,7 +49,6 @@
     <modules>
         <module>kudu-client</module>
         <module>kudu-client-tools</module>
-        <module>kudu-csd</module>
         <module>kudu-mapreduce</module>
     </modules>
 
@@ -192,4 +191,18 @@
       <name>Snapshots Repository</name>
     </snapshotRepository>
   </distributionManagement>
+
+  <profiles>
+    <profile>
+      <id>csd</id>
+      <activation>
+        <property>
+          <name>!skipCSD</name>
+        </property>
+      </activation>
+      <modules>
+        <module>kudu-csd</module>
+      </modules>
+    </profile>
+  </profiles>
 </project>

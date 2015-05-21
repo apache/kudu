@@ -19,6 +19,18 @@ $ mvn package -DskipTests
 The client jar will can then be found at kudu-client/target.
 
 
+Building the Kudu CSD
+------------------------------------------------------------
+
+By default, the Kudu CSD will be built along with the rest of
+the client. It requires access to the Kudu binaries which may
+not be available. For example, when building on OSX.
+
+Here's how to skip building the kudu-csd module:
+
+$ mvn package -DskipTests -DskipCSD
+
+
 Running the Tests
 ------------------------------------------------------------
 
