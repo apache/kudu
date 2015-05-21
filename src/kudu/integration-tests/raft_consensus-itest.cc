@@ -698,9 +698,13 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   // Configure a small log segment size so that we can roll
   // frequently. Additionally configure a small cache size so that
   // we evict data from the cache.
+  // We also turn off async segment allocation -- this ensures that
+  // we roll many segments of logs (with async allocation, it's possible
+  // that the preallocation is slow and we wouldn't roll enough).
   vector<string> extra_flags;
   extra_flags.push_back("--log_cache_size_limit_mb=1");
   extra_flags.push_back("--log_segment_size_mb=1");
+  extra_flags.push_back("--log_async_preallocate_segments=false");
   BuildAndStart(extra_flags);
 
   // Wait for all of the replicas to have acknowledged the elected
