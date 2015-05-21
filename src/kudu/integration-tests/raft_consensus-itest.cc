@@ -689,7 +689,11 @@ void RaftConsensusITest::WaitForLogGC(TServerDetails* leader, int max_expected) 
 // In a real cluster, this will eventually cause the follower to be
 // evicted/replaced. In any case, the leader should not crash.
 //
-// This is a regression test for KUDU-775.
+// We also ensure that, when the leader stops writing to the follower,
+// the follower won't disturb the other nodes when it attempts to elect
+// itself.
+//
+// This is a regression test for KUDU-775 and KUDU-562.
 TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   // Configure a small log segment size so that we can roll
   // frequently. Additionally configure a small cache size so that
@@ -751,6 +755,8 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   // Resume the follower.
   LOG(INFO) << "Resuming  " << replica->uuid();
   ASSERT_OK(replica_ets->Resume());
+
+  // Ensure that none of the tablet servers crashed.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     // Make sure it didn't crash.
     ASSERT_TRUE(cluster_->tablet_server(i)->IsProcessAlive())
@@ -765,6 +771,8 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
     // will trigger several times. Then, verify that the term has not increased.
     // This ensures that the other servers properly ignore the election requests
     // from the abandoned node.
+    // TODO: would be nicer to use an RPC to check the current term of the
+    // abandoned replica, and wait until it has incremented a couple of times.
     SleepFor(MonoDelta::FromSeconds(5));
     OpId op_id;
     ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, &op_id));
