@@ -141,7 +141,13 @@ class Peer {
   void SendNextRequest(bool even_if_queue_empty);
 
   // Signals that a response was received from the peer.
+  // This method is called from the reactor thread and calls
+  // DoProcessResponse() on thread_pool_ to do any work that requires IO or
+  // lock-taking.
   void ProcessResponse();
+
+  // Run on 'thread_pool'. Does response handling that requires IO or may block.
+  void DoProcessResponse();
 
   // Signals there was an error sending the request to the peer.
   void ProcessResponseError(const Status& status);

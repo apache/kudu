@@ -155,6 +155,8 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 }
 
 void Peer::ProcessResponse() {
+  // Note: This method runs on the reactor thread.
+
   DCHECK_EQ(0, sem_.GetValue())
     << "Got a response when nothing was pending";
   DCHECK_EQ(state_, kPeerWaitingForResponse);
@@ -168,6 +170,21 @@ void Peer::ProcessResponse() {
     ProcessResponseError(StatusFromPB(response_.error().status()));
     return;
   }
+
+  // The queue's handling of the peer response may generate IO (reads against
+  // the WAL) and SendNextRequest() may do the same thing. So we run the rest
+  // of the response handling logic on our thread pool and not on the reactor
+  // thread.
+  Status s = thread_pool_->SubmitClosure(Bind(&Peer::DoProcessResponse, Unretained(this)));
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to process peer response: " << s.ToString()
+        << ": " << response_.ShortDebugString();
+    state_ = kPeerIdle;
+    sem_.Release();
+  }
+}
+
+void Peer::DoProcessResponse() {
   failed_attempts_ = 0;
 
   DCHECK(response_.status().IsInitialized()) << "Error: " << response_.InitializationErrorString();
@@ -181,8 +198,6 @@ void Peer::ProcessResponse() {
   queue_->ResponseFromPeer(*last_sent, response_, &more_pending);
   state_ = kPeerIdle;
   if (more_pending && state_ != kPeerClosed) {
-    // TODO(KUDU-688): this runs on the reactor thread. We should not do IO here!
-    ThreadRestrictions::ScopedAllowIO allow_io;
     SendNextRequest(true);
   } else {
     sem_.Release();
@@ -208,6 +223,7 @@ void Peer::Close() {
 
   // Acquire the semaphore to wait for any concurrent request to finish.
   boost::lock_guard<Semaphore> l(sem_);
+
   // If the peer is already closed return.
   if (state_ == kPeerClosed) return;
   DCHECK(state_ == kPeerIdle || state_ == kPeerStarted) << "Unexpected state: " << state_;
