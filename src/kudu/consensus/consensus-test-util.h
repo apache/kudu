@@ -112,20 +112,20 @@ class TestPeerProxy : public PeerProxy {
   }
 
   // Answer the peer.
-  virtual Status Respond(Method method) {
+  virtual void Respond(Method method) {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    return RespondUnlocked(method);
+    RespondUnlocked(method);
   }
 
-  virtual Status RespondUnlocked(Method method) {
+  virtual void RespondUnlocked(Method method) {
     rpc::ResponseCallback callback = FindOrDie(callbacks_, method);
     CHECK_EQ(1, callbacks_.erase(method));
-    return pool_->SubmitFunc(callback);
+    CHECK_OK(pool_->SubmitFunc(callback));
   }
 
-  virtual Status RegisterCallbackAndRespond(Method method, const rpc::ResponseCallback& callback) {
+  virtual void RegisterCallbackAndRespond(Method method, const rpc::ResponseCallback& callback) {
     RegisterCallback(method, callback);
-    return Respond(method);
+    Respond(method);
   }
 
   simple_spinlock lock_;
@@ -162,28 +162,28 @@ class DelayablePeerProxy : public TestPeerProxy {
         return;
       }
     }
-    WARN_NOT_OK(TestPeerProxy::Respond(method), "Error while responding.");
+    TestPeerProxy::Respond(method);
   }
 
-  virtual Status Respond(Method method) OVERRIDE {
+  virtual void Respond(Method method) OVERRIDE {
     latch_.Wait();   // Wait until strictly after peer would have responded.
     return TestPeerProxy::Respond(method);
   }
 
-  virtual Status UpdateAsync(const ConsensusRequestPB* request,
-                             ConsensusResponsePB* response,
-                             rpc::RpcController* controller,
-                             const rpc::ResponseCallback& callback) OVERRIDE {
+  virtual void UpdateAsync(const ConsensusRequestPB* request,
+                           ConsensusResponsePB* response,
+                           rpc::RpcController* controller,
+                           const rpc::ResponseCallback& callback) OVERRIDE {
     RegisterCallback(kUpdate, callback);
     return proxy_->UpdateAsync(request, response, controller,
                                boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
                                            this, kUpdate));
   }
 
-  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                           VoteResponsePB* response,
-                                           rpc::RpcController* controller,
-                                           const rpc::ResponseCallback& callback) OVERRIDE {
+  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                         VoteResponsePB* response,
+                                         rpc::RpcController* controller,
+                                         const rpc::ResponseCallback& callback) OVERRIDE {
     RegisterCallback(kRequestVote, callback);
     return proxy_->RequestConsensusVoteAsync(request, response, controller,
                                              boost::bind(&DelayablePeerProxy::RespondUnlessDelayed,
@@ -214,18 +214,18 @@ class MockedPeerProxy : public TestPeerProxy {
     vote_response_ = vote_response;
   }
 
-  virtual Status UpdateAsync(const ConsensusRequestPB* request,
-                             ConsensusResponsePB* response,
-                             rpc::RpcController* controller,
-                             const rpc::ResponseCallback& callback) OVERRIDE {
+  virtual void UpdateAsync(const ConsensusRequestPB* request,
+                           ConsensusResponsePB* response,
+                           rpc::RpcController* controller,
+                           const rpc::ResponseCallback& callback) OVERRIDE {
     *response = update_response_;
     return RegisterCallbackAndRespond(kUpdate, callback);
   }
 
-  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                           VoteResponsePB* response,
-                                           rpc::RpcController* controller,
-                                           const rpc::ResponseCallback& callback) OVERRIDE {
+  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                         VoteResponsePB* response,
+                                         rpc::RpcController* controller,
+                                         const rpc::ResponseCallback& callback) OVERRIDE {
     *response = vote_response_;
     return RegisterCallbackAndRespond(kRequestVote, callback);
   }
@@ -245,10 +245,10 @@ class NoOpTestPeerProxy : public TestPeerProxy {
     last_received_.CopyFrom(MinimumOpId());
   }
 
-  virtual Status UpdateAsync(const ConsensusRequestPB* request,
-                             ConsensusResponsePB* response,
-                             rpc::RpcController* controller,
-                             const rpc::ResponseCallback& callback) OVERRIDE {
+  virtual void UpdateAsync(const ConsensusRequestPB* request,
+                           ConsensusResponsePB* response,
+                           rpc::RpcController* controller,
+                           const rpc::ResponseCallback& callback) OVERRIDE {
 
     response->Clear();
     {
@@ -272,10 +272,10 @@ class NoOpTestPeerProxy : public TestPeerProxy {
     return RegisterCallbackAndRespond(kUpdate, callback);
   }
 
-  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                           VoteResponsePB* response,
-                                           rpc::RpcController* controller,
-                                           const rpc::ResponseCallback& callback) OVERRIDE {
+  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                         VoteResponsePB* response,
+                                         rpc::RpcController* controller,
+                                         const rpc::ResponseCallback& callback) OVERRIDE {
     {
       boost::lock_guard<simple_spinlock> lock(lock_);
       response->set_responder_uuid(peer_pb_.permanent_uuid());
@@ -381,24 +381,22 @@ class LocalTestPeerProxy : public TestPeerProxy {
       miss_comm_(false) {
   }
 
-  virtual Status UpdateAsync(const ConsensusRequestPB* request,
-                             ConsensusResponsePB* response,
-                             rpc::RpcController* controller,
-                             const rpc::ResponseCallback& callback) OVERRIDE {
+  virtual void UpdateAsync(const ConsensusRequestPB* request,
+                           ConsensusResponsePB* response,
+                           rpc::RpcController* controller,
+                           const rpc::ResponseCallback& callback) OVERRIDE {
     RegisterCallback(kUpdate, callback);
-    RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendUpdateRequest,
-                                                this, request, response)));
-    return Status::OK();
+    CHECK_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendUpdateRequest,
+                                           this, request, response)));
   }
 
-  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                           VoteResponsePB* response,
-                                           rpc::RpcController* controller,
-                                           const rpc::ResponseCallback& callback) OVERRIDE {
+  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                         VoteResponsePB* response,
+                                         rpc::RpcController* controller,
+                                         const rpc::ResponseCallback& callback) OVERRIDE {
     RegisterCallback(kRequestVote, callback);
-    RETURN_NOT_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendVoteRequest,
-                                                this, request, response)));
-    return Status::OK();
+    CHECK_OK(pool_->SubmitFunc(boost::bind(&LocalTestPeerProxy::SendVoteRequest,
+                                           this, request, response)));
   }
 
   template<class Response>
@@ -427,7 +425,7 @@ class LocalTestPeerProxy : public TestPeerProxy {
     } else {
       final_response->CopyFrom(response_temp);
     }
-    WARN_NOT_OK(Respond(method), "Could not send response.");
+    Respond(method);
   }
 
   void SendUpdateRequest(const ConsensusRequestPB* request,

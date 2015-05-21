@@ -120,6 +120,8 @@ class Peer {
   //
   // Requests to this peer (which may end up doing IO to read non-cached
   // log entries) are assembled on 'thread_pool'.
+  // Response handling may also involve IO related to log-entry lookups and is
+  // also done on 'thread_pool'.
   static Status NewRemotePeer(const QuorumPeerPB& peer_pb,
                               const std::string& tablet_id,
                               const std::string& leader_uuid,
@@ -206,16 +208,16 @@ class PeerProxy {
  public:
 
   // Sends a request, asynchronously, to a remote peer.
-  virtual Status UpdateAsync(const ConsensusRequestPB* request,
-                             ConsensusResponsePB* response,
-                             rpc::RpcController* controller,
-                             const rpc::ResponseCallback& callback) = 0;
+  virtual void UpdateAsync(const ConsensusRequestPB* request,
+                           ConsensusResponsePB* response,
+                           rpc::RpcController* controller,
+                           const rpc::ResponseCallback& callback) = 0;
 
   // Sends a RequestConsensusVote to a remote peer.
-  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                           VoteResponsePB* response,
-                                           rpc::RpcController* controller,
-                                           const rpc::ResponseCallback& callback) = 0;
+  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                         VoteResponsePB* response,
+                                         rpc::RpcController* controller,
+                                         const rpc::ResponseCallback& callback) = 0;
 
   virtual ~PeerProxy() {}
 };
@@ -237,15 +239,15 @@ class RpcPeerProxy : public PeerProxy {
   RpcPeerProxy(gscoped_ptr<HostPort> hostport,
                gscoped_ptr<ConsensusServiceProxy> consensus_proxy);
 
-  virtual Status UpdateAsync(const ConsensusRequestPB* request,
-                             ConsensusResponsePB* response,
-                             rpc::RpcController* controller,
-                             const rpc::ResponseCallback& callback) OVERRIDE;
+  virtual void UpdateAsync(const ConsensusRequestPB* request,
+                           ConsensusResponsePB* response,
+                           rpc::RpcController* controller,
+                           const rpc::ResponseCallback& callback) OVERRIDE;
 
-  virtual Status RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                           VoteResponsePB* response,
-                                           rpc::RpcController* controller,
-                                           const rpc::ResponseCallback& callback) OVERRIDE;
+  virtual void RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                         VoteResponsePB* response,
+                                         rpc::RpcController* controller,
+                                         const rpc::ResponseCallback& callback) OVERRIDE;
 
   virtual ~RpcPeerProxy();
  public:

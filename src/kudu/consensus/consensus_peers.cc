@@ -150,10 +150,8 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
       << request_.ShortDebugString();
   controller_.Reset();
 
-  // TODO handle errors
-  CHECK_OK(proxy_->UpdateAsync(
-      &request_, &response_, &controller_,
-      boost::bind(&Peer::ProcessResponse, this)));
+  proxy_->UpdateAsync(&request_, &response_, &controller_,
+                      boost::bind(&Peer::ProcessResponse, this));
 }
 
 void Peer::ProcessResponse() {
@@ -232,22 +230,20 @@ RpcPeerProxy::RpcPeerProxy(gscoped_ptr<HostPort> hostport,
       consensus_proxy_(consensus_proxy.Pass()) {
 }
 
-Status RpcPeerProxy::UpdateAsync(const ConsensusRequestPB* request,
-                                 ConsensusResponsePB* response,
-                                 rpc::RpcController* controller,
-                                 const rpc::ResponseCallback& callback) {
+void RpcPeerProxy::UpdateAsync(const ConsensusRequestPB* request,
+                               ConsensusResponsePB* response,
+                               rpc::RpcController* controller,
+                               const rpc::ResponseCallback& callback) {
   controller->set_timeout(MonoDelta::FromMilliseconds(FLAGS_consensus_rpc_timeout_ms));
   consensus_proxy_->UpdateConsensusAsync(*request, response, controller, callback);
-  return Status::OK();
 }
 
-Status RpcPeerProxy::RequestConsensusVoteAsync(const VoteRequestPB* request,
-                                               VoteResponsePB* response,
-                                               rpc::RpcController* controller,
-                                               const rpc::ResponseCallback& callback) {
+void RpcPeerProxy::RequestConsensusVoteAsync(const VoteRequestPB* request,
+                                             VoteResponsePB* response,
+                                             rpc::RpcController* controller,
+                                             const rpc::ResponseCallback& callback) {
   controller->set_timeout(MonoDelta::FromMilliseconds(FLAGS_consensus_rpc_timeout_ms));
   consensus_proxy_->RequestConsensusVoteAsync(*request, response, controller, callback);
-  return Status::OK();
 }
 
 RpcPeerProxy::~RpcPeerProxy() {}

@@ -192,7 +192,7 @@ void LeaderElection::Run() {
 
     // Send the RPC request.
     LOG_WITH_PREFIX(INFO) << "Requesting vote from peer " << voter_uuid;
-    Status s = state->proxy->RequestConsensusVoteAsync(
+    state->proxy->RequestConsensusVoteAsync(
         &request_,
         &state->response,
         &state->rpc,
@@ -200,10 +200,6 @@ void LeaderElection::Run() {
         // gutil Callback to a thunk.
         boost::bind(&Closure::Run,
                     Bind(&LeaderElection::VoteResponseRpcCallback, this, voter_uuid)));
-    if (PREDICT_FALSE(!s.ok())) {
-      LOG_WITH_PREFIX(WARNING) << "Failed to request vote from " << voter_uuid
-                   << ": " << s.ToString();
-    }
   }
 }
 
