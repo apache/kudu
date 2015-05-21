@@ -38,10 +38,8 @@ public class TestRowErrors extends BaseKuduTest {
     // Try a single dupe row insert with AUTO_FLUSH_SYNC.
     Insert dupeForZero = createInsert(0);
     OperationResponse resp = session.apply(dupeForZero).join(DEFAULT_SLEEP);
-    assertTrue(resp.hasRowErrors());
-    List<OperationResponse.RowError> errors = resp.getRowErrors();
-    assertEquals(1, errors.size());
-    assertTrue(errors.get(0).getOperation() == dupeForZero);
+    assertTrue(resp.hasRowError());
+    assertTrue(resp.getRowError().getOperation() == dupeForZero);
 
     // Now try inserting two dupes and one good row, make sure we get only two errors back.
     dupeForZero = createInsert(0);
@@ -51,8 +49,8 @@ public class TestRowErrors extends BaseKuduTest {
     session.apply(dupeForTwo);
     session.apply(createInsert(4));
 
-    List<OperationResponse> responses = session.flush().join(DEFAULT_SLEEP);
-    errors = OperationResponse.collectErrors(responses);
+    List<BatchResponse> responses = session.flush().join(DEFAULT_SLEEP);
+    List<RowError> errors = BatchResponse.collectErrors(responses);
     assertEquals(2, errors.size());
     assertTrue(errors.get(0).getOperation() == dupeForZero);
     assertTrue(errors.get(1).getOperation() == dupeForTwo);

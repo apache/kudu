@@ -66,7 +66,7 @@ public final class PleaseThrottleException extends NonRecoverableException
   private final Operation rpc;
 
   /** A deferred one can wait on before retrying the failed RPC.  */
-  private final Deferred<OperationResponse> deferred;
+  private final Deferred deferred;
 
   /**
    * Constructor.
@@ -79,7 +79,7 @@ public final class PleaseThrottleException extends NonRecoverableException
   PleaseThrottleException(final String msg,
                           final KuduException cause,
                           final Operation rpc,
-                          final Deferred<OperationResponse> deferred) {
+                          final Deferred deferred) {
     super(msg, cause);
     this.rpc = rpc;
     this.deferred = deferred;
@@ -96,7 +96,7 @@ public final class PleaseThrottleException extends NonRecoverableException
    * Returns a deferred one can wait on before retrying the failed RPC.
    * @since 1.3
    */
-  public Deferred<OperationResponse> getDeferred() {
+  public Deferred getDeferred() {
     return deferred;
   }
 

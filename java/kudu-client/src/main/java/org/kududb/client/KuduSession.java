@@ -3,10 +3,9 @@
 package org.kududb.client;
 
 import com.stumbleupon.async.Deferred;
+import java.util.ArrayList;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.ArrayList;
 
 /**
  * Synchronous version of {@link AsyncKuduSession}. Offers the same API but with blocking methods.
@@ -41,7 +40,7 @@ public class KuduSession implements SessionConfiguration {
    * </ul>
    *
    * @param operation operation to apply.
-   * @return An OperationResponse for the applied Operation.
+   * @return A BatchResponse for the applied Operation.
    * @throws Exception if anything went wrong.
    */
   public OperationResponse apply(Operation operation) throws Exception {
@@ -70,24 +69,22 @@ public class KuduSession implements SessionConfiguration {
   /**
    * Blocking call that force flushes this session's buffers. Data is persisted when this call
    * returns, else it will throw an exception.
-   * @return List of OperationResponse, one per tablet for which a batch was flushed.
+   * @return List of BatchResponse, one per tablet for which a batch was flushed.
    * @throws Exception if anything went wrong. If it's an issue with some or all batches,
    * it will be of type DeferredGroupException.
    */
-  public ArrayList<OperationResponse> flush() throws Exception {
-    ArrayList<OperationResponse> responses = session.flush().join(getTimeoutMillis());
-    return responses;
+  public ArrayList<BatchResponse> flush() throws Exception {
+    return session.flush().join(getTimeoutMillis());
   }
 
   /**
    * Blocking call that flushes the buffers (see {@link this#flush()} and closes the sessions.
-   * @return List of OperationResponse, one per tablet for which a batch was flushed.
+   * @return List of BatchResponse, one per tablet for which a batch was flushed.
    * @throws Exception if anything went wrong. If it's an issue with some or all batches,
    * it will be of type DeferredGroupException.
    */
-  public ArrayList<OperationResponse> close() throws Exception {
-    ArrayList<OperationResponse> responses = session.close().join(getTimeoutMillis());
-    return responses;
+  public ArrayList<BatchResponse> close() throws Exception {
+    return session.close().join(getTimeoutMillis());
   }
 
   @Override

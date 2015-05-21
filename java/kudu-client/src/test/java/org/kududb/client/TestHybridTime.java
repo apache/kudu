@@ -105,12 +105,12 @@ public class TestHybridTime extends BaseKuduTest {
       Insert insert = table.newInsert();
       insert.addString(schema.getColumn(0).getName(), keys[i]);
       session.apply(insert);
-      Deferred<ArrayList<OperationResponse>> d = session.flush();
-      ArrayList<OperationResponse> responses = d.join(DEFAULT_SLEEP);
+      Deferred<ArrayList<BatchResponse>> d = session.flush();
+      ArrayList<BatchResponse> responses = d.join(DEFAULT_SLEEP);
       assertEquals("Response was not of the expected size: " + responses.size(),
         1, responses.size());
 
-      OperationResponse response = responses.get(0);
+      BatchResponse response = responses.get(0);
       assertTrue(response.getWriteTimestamp() != 0);
       clockValues = HTTimestampToPhysicalAndLogical(response.getWriteTimestamp());
       LOG.debug("Clock value after write[" + i + "]: " + new Date(clockValues[0] / 1000).toString()

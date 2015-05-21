@@ -26,8 +26,7 @@ public class TestKuduSession extends BaseKuduTest {
     assertEquals(10, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
 
     OperationResponse resp = session.apply(createInsert(0));
-    assertTrue(resp.hasRowErrors());
-    assertEquals(1, resp.getRowErrors().size());
+    assertTrue(resp.hasRowError());
 
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
 

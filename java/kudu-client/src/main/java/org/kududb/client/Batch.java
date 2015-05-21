@@ -17,7 +17,7 @@ import java.util.List;
 /**
  * Used internally to batch Operations together before sending to the cluster
  */
-class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
+class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
 
   private static final OperationsComparatorBySequenceNumber SEQUENCE_NUMBER_COMPARATOR =
       new OperationsComparatorBySequenceNumber();
@@ -66,7 +66,7 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
   }
 
   @Override
-  Pair<OperationResponse, Object> deserialize(final CallResponse callResponse,
+  Pair<BatchResponse, Object> deserialize(final CallResponse callResponse,
                                               String tsUUID) throws Exception {
     Tserver.WriteResponsePB.Builder builder = Tserver.WriteResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
@@ -85,9 +85,9 @@ class Batch extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
       }
     }
 
-    OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
+    BatchResponse response = new BatchResponse(deadlineTracker.getElapsedMillis(), tsUUID,
         builder.getTimestamp(), errorsPB, ops);
-    return new Pair<OperationResponse, Object>(response, builder.getError());
+    return new Pair<BatchResponse, Object>(response, builder.getError());
   }
 
   @Override

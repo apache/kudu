@@ -50,8 +50,8 @@ public class TestLeaderFailover extends BaseKuduTest {
 
     for (int i = 3; i < 6; i++) {
       OperationResponse resp = session.apply(createBasicSchemaInsert(table, i));
-      if (resp.hasRowErrors()) {
-        fail("Encountered a row error " + resp.getRowErrors().get(0));
+      if (resp.hasRowError()) {
+        fail("Encountered a row error " + resp.getRowError());
       }
     }
 

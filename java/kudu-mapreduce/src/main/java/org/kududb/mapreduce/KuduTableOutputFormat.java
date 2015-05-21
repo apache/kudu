@@ -184,8 +184,8 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
       }
     }
 
-    private void processRowErrors(ArrayList<OperationResponse> responses) {
-      List<OperationResponse.RowError> errors = OperationResponse.collectErrors(responses);
+    private void processRowErrors(ArrayList<BatchResponse> responses) {
+      List<RowError> errors = BatchResponse.collectErrors(responses);
       if (!errors.isEmpty()) {
         int rowErrorsCount = errors.size();
         rowsWithErrors.addAndGet(rowErrorsCount);

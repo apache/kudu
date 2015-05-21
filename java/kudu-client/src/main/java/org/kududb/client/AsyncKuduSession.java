@@ -94,11 +94,10 @@ public class AsyncKuduSession implements SessionConfiguration {
    * sent out.
    */
   @GuardedBy("this")
-  private final Map<Slice, Batch> operations = new HashMap<Slice, Batch>();
+  private final Map<Slice, Batch> operations = new HashMap<>();
 
   @GuardedBy("this")
-  private final Map<Slice, Deferred<OperationResponse>> operationsInFlight = new HashMap<Slice,
-      Deferred<OperationResponse>>();
+  private final Map<Slice, Deferred<BatchResponse>> operationsInFlight = new HashMap<>();
 
   /**
    * This Set is used when not in AUTO_FLUSH_SYNC mode in order to keep track of the operations
@@ -215,7 +214,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @return a Deferred whose callback chain will be invoked when.
    * everything that was buffered at the time of the call has been flushed.
    */
-  public Deferred<ArrayList<OperationResponse>> close() {
+  public Deferred<ArrayList<BatchResponse>> close() {
     closed = true;
     client.removeSession(this);
     return flush();
@@ -226,7 +225,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @return a Deferred whose callback chain will be invoked when
    * everything that was buffered at the time of the call has been flushed.
    */
-  public Deferred<ArrayList<OperationResponse>> flush() {
+  public Deferred<ArrayList<BatchResponse>> flush() {
     LOG.trace("Flushing all tablets");
     synchronized (this) {
       if (!operationsInLookup.isEmpty()) {
@@ -238,9 +237,9 @@ public class AsyncKuduSession implements SessionConfiguration {
   }
 
   class OperationsInLookupDoneCB implements
-      Callback<Deferred<ArrayList<OperationResponse>>, Void> {
+      Callback<Deferred<ArrayList<BatchResponse>>, Void> {
     @Override
-    public Deferred<ArrayList<OperationResponse>>
+    public Deferred<ArrayList<BatchResponse>>
         call(Void nothing) throws Exception {
       return flushAllBatches();
     }
@@ -249,10 +248,10 @@ public class AsyncKuduSession implements SessionConfiguration {
   /**
    * This will flush all the batches but not the operations that are currently in lookup.
    */
-  private Deferred<ArrayList<OperationResponse>> flushAllBatches() {
+  private Deferred<ArrayList<BatchResponse>> flushAllBatches() {
     HashMap<Slice, Batch> copyOfOps;
-    final ArrayList<Deferred<OperationResponse>> d =
-        new ArrayList<Deferred<OperationResponse>>(operations.size());
+    final ArrayList<Deferred<BatchResponse>> d =
+        new ArrayList<Deferred<BatchResponse>>(operations.size());
     synchronized (this) {
       copyOfOps = new HashMap<Slice, Batch>(operations);
     }
@@ -321,13 +320,14 @@ public class AsyncKuduSession implements SessionConfiguration {
     operation.attempt++;
     if (client.isTableNotServed(table)) {
       Callback<Deferred<OperationResponse>, Master.IsCreateTableDoneResponsePB> cb =
-          new TabletLookupCB<Master.IsCreateTableDoneResponsePB>(operation);
+          new TabletLookupCB<>(operation);
       return client.delayedIsCreateTableDone(table, operation, cb, getOpInLookupErrback(operation));
     }
 
     Deferred<Master.GetTableLocationsResponsePB> d = client.locateTablet(table, rowkey);
     d.addErrback(getOpInLookupErrback(operation));
-    return d.addCallbackDeferring(new TabletLookupCB<Master.GetTableLocationsResponsePB>(operation));
+    return d.addCallbackDeferring(
+        new TabletLookupCB<Master.GetTableLocationsResponsePB>(operation));
   }
 
   /**
@@ -363,11 +363,15 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
   }
 
-  Callback<Deferred<OperationResponse>, OperationResponse>
+  // This method returns a Callback with a KuduRpcResponse since it's possible for an
+  // OperationResponse to make its way here, even though we'd only expect BatchResponses. This is
+  // due to the call returning a Deferred<OperationResponse>. The actual type doesn't matter, we
+  // just want to be called back in order to retry.
+  Callback<Deferred<OperationResponse>, KuduRpcResponse>
   getRetryOpInLookupCB(final Operation operation) {
     final class RetryOpInFlightCB implements Callback<Deferred<OperationResponse>,
-        OperationResponse> {
-      public Deferred<OperationResponse> call(final OperationResponse arg) {
+        KuduRpcResponse> {
+      public Deferred<OperationResponse> call(final KuduRpcResponse arg) {
         return handleOperationInLookup(operation);
       }
 
@@ -493,15 +497,16 @@ public class AsyncKuduSession implements SessionConfiguration {
    */
   private void addBatchCallbacks(final Batch request) {
     final class BatchCallback implements
-        Callback<OperationResponse, OperationResponse> {
-      public OperationResponse call(final OperationResponse response) {
-        LOG.trace("Got a InsertsBatch response for " + request.ops.size() + " rows");
+        Callback<BatchResponse, BatchResponse> {
+      public BatchResponse call(final BatchResponse response) {
+        LOG.trace("Got a Batch response for " + request.ops.size() + " rows");
         if (response.getWriteTimestamp() != 0) {
           AsyncKuduSession.this.client.updateLastPropagatedTimestamp(response.getWriteTimestamp());
         }
-        // TODO return something specific for each operation
-        for (int i = 0; i < request.ops.size(); i++) {
-          request.ops.get(i).callback(response);
+
+        // Send individualized responses to all the operations in this batch.
+        for (OperationResponse operationResponse : response.getIndividualResponses()) {
+          operationResponse.getOperation().callback(operationResponse);
         }
         return response;
       }
@@ -515,6 +520,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     final class BatchErrCallback implements Callback<Exception, Exception> {
       @Override
       public Exception call(Exception e) throws Exception {
+        // Send the same exception to all the operations.
         for (int i = 0; i < request.ops.size(); i++) {
           request.ops.get(i).errback(e);
         }
@@ -549,7 +555,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * This method should not be called within a synchronized block because we can spend a lot of
    * time encoding the batch.
    */
-  private Deferred<OperationResponse> flushTablet(Slice tablet, Batch expectedBatch) {
+  private Deferred<BatchResponse> flushTablet(Slice tablet, Batch expectedBatch) {
     assert (expectedBatch != null);
     assert (!Thread.holdsLock(this));
     Batch batch;
@@ -574,9 +580,9 @@ public class AsyncKuduSession implements SessionConfiguration {
             Bytes.getString(tablet));
         return Deferred.fromResult(null);
       }
-      Deferred<OperationResponse> batchDeferred = batch.getDeferred();
+      Deferred<BatchResponse> batchDeferred = batch.getDeferred();
       batchDeferred.addCallbacks(getOpInFlightCallback(tablet), getOpInFlightErrback(tablet));
-      Deferred<OperationResponse> oldBatch = operationsInFlight.put(tablet, batchDeferred);
+      Deferred<BatchResponse> oldBatch = operationsInFlight.put(tablet, batchDeferred);
       assert (oldBatch == null);
       if (currentTimeout != 0) {
         batch.deadlineTracker.reset();
@@ -591,7 +597,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * Simple callback so that we try to flush this tablet again if we were waiting on the previous
    * Batch to finish.
    */
-  class FlushRetryCallback implements Callback<Deferred<OperationResponse>, OperationResponse> {
+  class FlushRetryCallback implements Callback<Deferred<BatchResponse>, BatchResponse> {
     private final Slice tablet;
     private final Batch expectedBatch;
     public FlushRetryCallback(Slice tablet, Batch expectedBatch) {
@@ -600,7 +606,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
 
     @Override
-    public Deferred<OperationResponse> call(OperationResponse o) throws Exception {
+    public Deferred<BatchResponse> call(BatchResponse o) throws Exception {
       LOG.trace("Previous batch in flight is done, flushing this tablet again: " +
           Bytes.getString(tablet));
       return flushTablet(tablet, expectedBatch);
@@ -610,11 +616,11 @@ public class AsyncKuduSession implements SessionConfiguration {
   /**
    * Simple callback that removes the tablet from the in flight operations map once it completed.
    */
-  private Callback<OperationResponse, OperationResponse>
+  private Callback<BatchResponse, BatchResponse>
       getOpInFlightCallback(final Slice tablet) {
-    return new Callback<OperationResponse, OperationResponse>() {
+    return new Callback<BatchResponse, BatchResponse>() {
       @Override
-      public OperationResponse call(OperationResponse o) throws Exception {
+      public BatchResponse call(BatchResponse o) throws Exception {
         tabletInFlightDone(tablet);
         return o;
       }
