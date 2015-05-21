@@ -697,20 +697,32 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   extra_flags.push_back("--log_segment_size_mb=1");
   BuildAndStart(extra_flags);
 
-  SleepFor(MonoDelta::FromSeconds(1));
-  // Pause one replica.
+  // Wait for all of the replicas to have acknowledged the elected
+  // leader and logged the first NO_OP.
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
+                                  tablet_id_, 1));
+
+  // Pause one server. This might be the leader, but pausing it will cause
+  // a leader election to happen.
   TServerDetails* replica = (*tablet_replicas_.begin()).second;
-  ASSERT_TRUE(replica != NULL);
   ExternalTabletServer* replica_ets = cluster_->tablet_server_by_uuid(replica->uuid());
   ASSERT_OK(replica_ets->Pause());
+
+  // Find a leader. In case we paused the leader above, this will wait until
+  // we have elected a new one.
+  TServerDetails* leader = NULL;
+  while (true) {
+    Status s = GetLeaderReplicaWithRetries(tablet_id_, &leader);
+    if (s.ok() && leader != NULL && leader != replica) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
 
   // Write ~12.8MB worth of data to the leader, and wait for the logs
   // to GC.
   const int kNumWrites = 100;
   NO_FATALS(Write128KOpsToLeader(kNumWrites));
-
-  TServerDetails* leader = NULL;
-  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
   // Wait for the leader to GC its logs.
   NO_FATALS(WaitForLogGC(leader, 2));
@@ -719,7 +731,18 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   // to write to the paused peer.
   SleepFor(MonoDelta::FromSeconds(2));
 
-  // Ensure that none of the tablet servers crashed.
+  // Make a note of whatever the current term of the cluster is,
+  // before we resume the follower.
+  int64_t orig_term;
+  {
+    OpId op_id;
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, &op_id));
+    orig_term = op_id.term();
+    LOG(INFO) << "Servers converged with original term " << orig_term;
+  }
+
+  // Resume the follower.
+  LOG(INFO) << "Resuming  " << replica->uuid();
   ASSERT_OK(replica_ets->Resume());
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     // Make sure it didn't crash.
@@ -732,16 +755,14 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
 
   if (AllowSlowTests()) {
     // Sleep long enough that the "abandoned" server's leader election interval
-    // will trigger several times. This ensures that the other servers properly
-    // ignore the election requests from the abandoned node.
+    // will trigger several times. Then, verify that the term has not increased.
+    // This ensures that the other servers properly ignore the election requests
+    // from the abandoned node.
     SleepFor(MonoDelta::FromSeconds(5));
-    vector<OpId> op_ids;
-    ASSERT_OK(GetLastOpIdForEachReplica(tablet_id_,
-                                        boost::assign::list_of(leader),
-                                        &op_ids));
-    ASSERT_EQ(1, op_ids.size());
-    ASSERT_EQ(1, op_ids[0].term())
-      << "expected the leader to have not advanced terms but has op " << op_ids[0];
+    OpId op_id;
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, &op_id));
+    ASSERT_EQ(orig_term, op_id.term())
+      << "expected the leader to have not advanced terms but has op " << op_id;
   }
 }
 

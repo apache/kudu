@@ -88,6 +88,11 @@ Status GetLastOpIdForEachReplica(const std::string& tablet_id,
                                  const std::vector<TServerDetails*>& replicas,
                                  std::vector<consensus::OpId>* op_ids);
 
+// Like the above, but for a single replica.
+Status GetLastOpIdForReplica(const std::string& tablet_id,
+                             TServerDetails* replica,
+                             consensus::OpId* op_id);
+
 // Wait until all of the servers have converged on the same log index.
 // The converged index must be at least equal to 'minimum_index'.
 //
