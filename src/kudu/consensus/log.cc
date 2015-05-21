@@ -18,6 +18,8 @@
 #include "kudu/consensus/log.h"
 
 #include <algorithm>
+#include <boost/thread/shared_mutex.hpp>
+#include <mutex>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/log_index.h"
@@ -138,7 +140,7 @@ class Log::AppendThread {
   Log* const log_;
 
   // Lock to protect access to thread_ during shutdown.
-  mutable boost::mutex lock_;
+  mutable std::mutex lock_;
   scoped_refptr<Thread> thread_;
 };
 
@@ -233,7 +235,7 @@ void Log::AppendThread::RunThread() {
 
 void Log::AppendThread::Shutdown() {
   log_->entry_queue()->Shutdown();
-  boost::lock_guard<boost::mutex> lock_guard(lock_);
+  std::lock_guard<std::mutex> lock_guard(lock_);
   if (thread_) {
     VLOG(1) << "Shutting down log append thread for tablet " << log_->tablet_id();
     CHECK_OK(ThreadJoiner(thread_.get()).Join());
@@ -301,7 +303,7 @@ Log::Log(LogOptions options, FsManager* fs_manager, string log_path,
 }
 
 Status Log::Init() {
-  boost::lock_guard<percpu_rwlock> write_lock(state_lock_);
+  std::lock_guard<percpu_rwlock> write_lock(state_lock_);
   CHECK_EQ(kLogInitialized, log_state_);
 
   // Init the index
@@ -343,7 +345,7 @@ Status Log::Init() {
 }
 
 Status Log::AsyncAllocateSegment() {
-  boost::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
+  std::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
   CHECK_EQ(allocation_state_, kAllocationNotStarted);
   allocation_status_.Reset();
   allocation_state_ = kAllocationInProgress;
@@ -486,7 +488,7 @@ Status Log::DoAppend(LogEntryBatch* entry_batch, bool caller_owns_operation) {
     // is not the last durable operation. Either move this to tablet peer (since we're
     // using in flights anyway no need to scan for ids here) or actually delay doing this
     // until fsync() has been done. See KUDU-527.
-    boost::lock_guard<rw_spinlock> write_lock(last_entry_op_id_lock_);
+    std::lock_guard<rw_spinlock> write_lock(last_entry_op_id_lock_);
     last_entry_op_id_.CopyFrom(entry_batch->MaxReplicateOpId());
   }
 
@@ -706,7 +708,7 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
     SegmentSequence segments_to_delete;
 
     {
-      boost::lock_guard<percpu_rwlock> l(state_lock_);
+      std::lock_guard<percpu_rwlock> l(state_lock_);
       CHECK_EQ(kLogWriting, log_state_);
 
       GetSegmentsToGCUnlocked(min_op_idx, &segments_to_delete);
@@ -778,7 +780,7 @@ void Log::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
 
 void Log::SetSchemaForNextLogSegment(const Schema& schema,
                                      uint32_t version) {
-  boost::lock_guard<rw_spinlock> l(schema_lock_);
+  std::lock_guard<rw_spinlock> l(schema_lock_);
   schema_ = schema;
   schema_version_ = version;
 }
@@ -787,7 +789,7 @@ Status Log::Close() {
   allocation_pool_->Shutdown();
   append_thread_->Shutdown();
 
-  boost::lock_guard<percpu_rwlock> l(state_lock_);
+  std::lock_guard<percpu_rwlock> l(state_lock_);
   switch (log_state_) {
     case kLogWriting:
       if (log_hooks_) {
@@ -846,7 +848,7 @@ Status Log::PreAllocateNewSegment() {
   }
 
   {
-    boost::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
+    std::lock_guard<boost::shared_mutex> lock_guard(allocation_lock_);
     allocation_state_ = kAllocationFinished;
   }
   return Status::OK();
@@ -895,7 +897,7 @@ Status Log::SwitchToAllocatedSegment() {
   // need to be able to replay the segments for other peers.
   {
     if (active_segment_.get() != nullptr) {
-      boost::lock_guard<percpu_rwlock> l(state_lock_);
+      std::lock_guard<percpu_rwlock> l(state_lock_);
       CHECK_OK(ReplaceSegmentInReaderUnlocked());
     }
   }

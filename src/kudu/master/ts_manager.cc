@@ -17,8 +17,8 @@
 
 #include "kudu/master/ts_manager.h"
 
-#include <boost/thread/locks.hpp>
-#include <boost/thread/mutex.hpp>
+#include <boost/thread/shared_mutex.hpp>
+#include <mutex>
 #include <vector>
 
 #include "kudu/gutil/map-util.h"
@@ -72,7 +72,7 @@ bool TSManager::LookupTSByUUID(const string& uuid,
 Status TSManager::RegisterTS(const NodeInstancePB& instance,
                              const TSRegistrationPB& registration,
                              std::shared_ptr<TSDescriptor>* desc) {
-  boost::lock_guard<rw_spinlock> l(lock_);
+  std::lock_guard<rw_spinlock> l(lock_);
   const string& uuid = instance.permanent_uuid();
 
   if (!ContainsKey(servers_by_id_, uuid)) {

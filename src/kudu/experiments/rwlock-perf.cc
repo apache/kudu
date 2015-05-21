@@ -16,10 +16,10 @@
 // under the License.
 
 #include <boost/smart_ptr/detail/spinlock.hpp>
-#include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <mutex>
 #include <stdio.h>
 #include <thread>
 #include <unistd.h>
@@ -82,7 +82,7 @@ struct shared_data {
 
   kudu::rw_spinlock rw_spinlock;
   boost::shared_mutex rwlock;
-  boost::mutex lock;
+  std::mutex lock;
   kudu::percpu_rwlock per_cpu;
 };
 
@@ -191,7 +191,7 @@ void test_shared_lock(int num_threads, TestMethod method, const char *name) {
         threads.emplace_back(shared_mutex_entry, &shared);
         break;
       case OWN_MUTEX:
-        threads.emplace_back(own_mutex_entry<boost::mutex>);
+        threads.emplace_back(own_mutex_entry<std::mutex>);
         break;
       case OWN_SPINLOCK:
         threads.emplace_back(own_mutex_entry<my_spinlock>);

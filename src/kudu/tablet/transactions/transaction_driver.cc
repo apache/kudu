@@ -17,6 +17,8 @@
 
 #include "kudu/tablet/transactions/transaction_driver.h"
 
+#include <mutex>
+
 #include "kudu/consensus/consensus.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/tablet/tablet_peer.h"
@@ -72,7 +74,7 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
   transaction_ = std::move(transaction);
 
   if (type == consensus::REPLICA) {
-    boost::lock_guard<simple_spinlock> lock(opid_lock_);
+    std::lock_guard<simple_spinlock> lock(opid_lock_);
     op_id_copy_ = transaction_->state()->op_id();
     DCHECK(op_id_copy_.IsInitialized());
     replication_state_ = REPLICATING;
@@ -95,7 +97,7 @@ Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
 }
 
 consensus::OpId TransactionDriver::GetOpId() {
-  boost::lock_guard<simple_spinlock> lock(opid_lock_);
+  std::lock_guard<simple_spinlock> lock(opid_lock_);
   return op_id_copy_;
 }
 
@@ -112,7 +114,7 @@ Transaction::TransactionType TransactionDriver::tx_type() const {
 }
 
 string TransactionDriver::ToString() const {
-  boost::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard<simple_spinlock> lock(lock_);
   return ToStringUnlocked();
 }
 
@@ -176,7 +178,7 @@ Status TransactionDriver::PrepareAndStart() {
   // phase.
   ReplicationState repl_state_copy;
   {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(prepare_state_, NOT_PREPARED);
     prepare_state_ = PREPARED;
     repl_state_copy = replication_state_;
@@ -194,14 +196,14 @@ Status TransactionDriver::PrepareAndStart() {
       // Trigger the consensus replication.
 
       {
-        boost::lock_guard<simple_spinlock> lock(lock_);
+        std::lock_guard<simple_spinlock> lock(lock_);
         replication_state_ = REPLICATING;
         replication_start_time_ = MonoTime::Now(MonoTime::FINE);
       }
       Status s = consensus_->Replicate(mutable_state()->consensus_round());
 
       if (PREDICT_FALSE(!s.ok())) {
-        boost::lock_guard<simple_spinlock> lock(lock_);
+        std::lock_guard<simple_spinlock> lock(lock_);
         CHECK_EQ(replication_state_, REPLICATING);
         transaction_status_ = s;
         replication_state_ = REPLICATION_FAILED;
@@ -237,7 +239,7 @@ void TransactionDriver::HandleFailure(const Status& s) {
   ReplicationState repl_state_copy;
 
   {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard<simple_spinlock> lock(lock_);
     transaction_status_ = s;
     repl_state_copy = replication_state_;
   }
@@ -271,7 +273,7 @@ void TransactionDriver::ReplicationFinished(const Status& status) {
 
   ADOPT_TRACE(trace());
   {
-    boost::lock_guard<simple_spinlock> op_id_lock(opid_lock_);
+    std::lock_guard<simple_spinlock> op_id_lock(opid_lock_);
     // TODO: it's a bit silly that we have three copies of the opid:
     // one here, one in ConsensusRound, and one in TransactionState.
 
@@ -283,7 +285,7 @@ void TransactionDriver::ReplicationFinished(const Status& status) {
   MonoDelta replication_duration;
   PrepareState prepare_state_copy;
   {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(replication_state_, REPLICATING);
     if (status.ok()) {
       replication_state_ = REPLICATED;
@@ -315,7 +317,7 @@ void TransactionDriver::Abort(const Status& status) {
 
   ReplicationState repl_state_copy;
   {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard<simple_spinlock> lock(lock_);
     repl_state_copy = replication_state_;
     transaction_status_ = status;
   }
@@ -332,7 +334,7 @@ void TransactionDriver::Abort(const Status& status) {
 
 Status TransactionDriver::ApplyAsync() {
   {
-    boost::unique_lock<simple_spinlock> lock(lock_);
+    std::unique_lock<simple_spinlock> lock(lock_);
     DCHECK_EQ(prepare_state_, PREPARED);
     if (transaction_status_.ok()) {
       DCHECK_EQ(replication_state_, REPLICATED);
@@ -361,7 +363,7 @@ void TransactionDriver::ApplyTask() {
   ADOPT_TRACE(trace());
 
   {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard<simple_spinlock> lock(lock_);
     DCHECK_EQ(replication_state_, REPLICATED);
     DCHECK_EQ(prepare_state_, PREPARED);
   }
@@ -427,7 +429,7 @@ void TransactionDriver::Finalize() {
   // TODO: this is an ugly hack so that the Release() call doesn't delete the
   // object while we still hold the lock.
   scoped_refptr<TransactionDriver> ref(this);
-  boost::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard<simple_spinlock> lock(lock_);
   transaction_->Finish(Transaction::COMMITTED);
   mutable_state()->completion_callback()->TransactionCompleted();
   txn_tracker_->Release(this);
@@ -473,7 +475,7 @@ std::string TransactionDriver::LogPrefix() const {
   string ts_string;
 
   {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard<simple_spinlock> lock(lock_);
     repl_state_copy = replication_state_;
     prep_state_copy = prepare_state_;
     ts_string = state()->has_timestamp() ? state()->timestamp().ToString() : "No timestamp";

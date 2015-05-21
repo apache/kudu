@@ -17,7 +17,6 @@
 #ifndef KUDU_CONSENSUS_LOCAL_CONSENSUS_H_
 #define KUDU_CONSENSUS_LOCAL_CONSENSUS_H_
 
-#include <boost/thread/locks.hpp>
 #include <string>
 #include <vector>
 

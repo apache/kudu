@@ -17,8 +17,9 @@
 #include "kudu/tserver/scanners.h"
 
 #include <boost/bind.hpp>
-#include <boost/thread/locks.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <gflags/gflags.h>
+#include <mutex>
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"
@@ -116,7 +117,7 @@ void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
     scanner->reset(new Scanner(id, tablet_peer, requestor_string, metrics_.get()));
 
     ScannerMapStripe& stripe = GetStripeByScannerId(id);
-    boost::lock_guard<boost::shared_mutex> l(stripe.lock_);
+    std::lock_guard<boost::shared_mutex> l(stripe.lock_);
     success = InsertIfNotPresent(&stripe.scanners_by_id_, id, *scanner);
   }
 }
@@ -129,7 +130,7 @@ bool ScannerManager::LookupScanner(const string& scanner_id, SharedScanner* scan
 
 bool ScannerManager::UnregisterScanner(const string& scanner_id) {
   ScannerMapStripe& stripe = GetStripeByScannerId(scanner_id);
-  boost::lock_guard<boost::shared_mutex> l(stripe.lock_);
+  std::lock_guard<boost::shared_mutex> l(stripe.lock_);
   return stripe.scanners_by_id_.erase(scanner_id) > 0;
 }
 
@@ -155,7 +156,7 @@ void ScannerManager::RemoveExpiredScanners() {
   MonoDelta scanner_ttl = MonoDelta::FromMilliseconds(FLAGS_scanner_ttl_ms);
 
   for (ScannerMapStripe* stripe : scanner_maps_) {
-    boost::lock_guard<boost::shared_mutex> l(stripe->lock_);
+    std::lock_guard<boost::shared_mutex> l(stripe->lock_);
     for (auto it = stripe->scanners_by_id_.begin(); it != stripe->scanners_by_id_.end();) {
       SharedScanner& scanner = it->second;
       MonoDelta time_live =
@@ -197,13 +198,13 @@ Scanner::~Scanner() {
 }
 
 void Scanner::UpdateAccessTime() {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   last_access_time_ = MonoTime::Now(MonoTime::COARSE);
 }
 
 void Scanner::Init(gscoped_ptr<RowwiseIterator> iter,
                    gscoped_ptr<ScanSpec> spec) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   CHECK(!iter_) << "Already initialized";
   iter_.reset(iter.release());
   spec_.reset(spec.release());

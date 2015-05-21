@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <mutex>
 #include <thread>
 
 #include "kudu/server/hybrid_clock.h"
@@ -45,12 +45,12 @@ class MvccTest : public KuduTest {
     MvccSnapshot s;
     CHECK_OK(mgr->WaitForCleanSnapshotAtTimestamp(ts, &s, MonoTime::Max()));
     CHECK(s.is_clean()) << "verifying postcondition";
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard<simple_spinlock> lock(lock_);
     result_snapshot_.reset(new MvccSnapshot(s));
   }
 
   bool HasResultSnapshot() {
-    boost::lock_guard<simple_spinlock> lock(lock_);
+    std::lock_guard<simple_spinlock> lock(lock_);
     return result_snapshot_ != nullptr;
   }
 

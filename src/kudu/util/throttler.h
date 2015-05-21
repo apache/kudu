@@ -19,8 +19,6 @@
 
 #include <algorithm>
 
-#include <boost/thread/locks.hpp>
-
 #include "kudu/gutil/macros.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"

@@ -17,6 +17,8 @@
 
 #include "kudu/util/throttler.h"
 
+#include <mutex>
+
 namespace kudu {
 
 Throttler::Throttler(MonoTime now, uint64_t op_rate, uint64_t byte_rate, double burst_factor) :
@@ -33,7 +35,7 @@ bool Throttler::Take(MonoTime now, uint64_t op, uint64_t byte) {
   if (op_refill_ == 0 && byte_refill_ == 0) {
     return true;
   }
-  boost::lock_guard<simple_spinlock> lock(lock_);
+  std::lock_guard<simple_spinlock> lock(lock_);
   Refill(now);
   if ((op_refill_ == 0 || op <= op_token_) &&
       (byte_refill_ == 0 || byte <= byte_token_)) {

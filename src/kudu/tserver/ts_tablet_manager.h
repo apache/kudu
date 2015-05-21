@@ -18,7 +18,7 @@
 #define KUDU_TSERVER_TS_TABLET_MANAGER_H
 
 #include <boost/optional/optional_fwd.hpp>
-#include <boost/thread/locks.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest_prod.h>
 #include <memory>
 #include <string>

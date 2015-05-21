@@ -17,13 +17,13 @@
 #ifndef KUDU_TABLET_TABLET_H
 #define KUDU_TABLET_TABLET_H
 
+#include <boost/thread/shared_mutex.hpp>
 #include <iosfwd>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
-
-#include <boost/thread/shared_mutex.hpp>
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
@@ -555,7 +555,7 @@ class Tablet {
   // Lock protecting the selection of rowsets for compaction.
   // Only one thread may run the compaction selection algorithm at a time
   // so that they don't both try to select the same rowset.
-  mutable boost::mutex compact_select_lock_;
+  mutable std::mutex compact_select_lock_;
 
   // We take this lock when flushing the tablet's rowsets in Tablet::Flush.  We
   // don't want to have two flushes in progress at once, in case the one which

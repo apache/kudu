@@ -17,18 +17,20 @@
 #include "kudu/server/webserver.h"
 
 #include <algorithm>
-#include <stdio.h>
-#include <signal.h>
-#include <string>
-#include <map>
-#include <vector>
-#include <boost/lexical_cast.hpp>
-#include <boost/bind.hpp>
-#include <boost/mem_fn.hpp>
 #include <boost/algorithm/string.hpp>
+#include <boost/bind.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/mem_fn.hpp>
+#include <boost/thread/shared_mutex.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <map>
+#include <mutex>
+#include <signal.h>
 #include <squeasel.h>
+#include <stdio.h>
+#include <string>
+#include <vector>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -365,7 +367,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
 
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
-  boost::lock_guard<boost::shared_mutex> lock(lock_);
+  std::lock_guard<boost::shared_mutex> lock(lock_);
   auto it = path_handlers_.find(path);
   if (it == path_handlers_.end()) {
     it = path_handlers_.insert(
@@ -423,7 +425,7 @@ bool Webserver::static_pages_available() const {
 }
 
 void Webserver::set_footer_html(const std::string& html) {
-  boost::lock_guard<boost::shared_mutex> l(lock_);
+  std::lock_guard<boost::shared_mutex> l(lock_);
   footer_html_ = html;
 }
 

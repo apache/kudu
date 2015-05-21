@@ -18,10 +18,10 @@
 #include "kudu/tablet/tablet_peer_mm_ops.h"
 
 #include <algorithm>
-#include <map>
-#include <string>
-
 #include <gflags/gflags.h>
+#include <map>
+#include <mutex>
+#include <string>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/maintenance_manager.h"
@@ -90,7 +90,7 @@ void FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(MaintenanceOpStats
 //
 
 void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
 
   map<int64_t, int64_t> max_idx_to_segment_size;
   if (tablet_peer_->tablet()->MemRowSetEmpty() ||
@@ -99,8 +99,7 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
   }
 
   {
-    boost::unique_lock<Semaphore> lock(tablet_peer_->tablet()->rowsets_flush_sem_,
-                                       boost::defer_lock);
+    std::unique_lock<Semaphore> lock(tablet_peer_->tablet()->rowsets_flush_sem_, std::defer_lock);
     stats->set_runnable(lock.try_lock());
   }
 
@@ -129,7 +128,7 @@ void FlushMRSOp::Perform() {
                         Substitute("FlushMRS failed on $0", tablet_peer_->tablet_id()));
 
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     time_since_flush_.start();
   }
   tablet_peer_->tablet()->rowsets_flush_sem_.unlock();
@@ -148,7 +147,7 @@ scoped_refptr<AtomicGauge<uint32_t> > FlushMRSOp::RunningGauge() const {
 //
 
 void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  std::lock_guard<simple_spinlock> l(lock_);
   int64_t dms_size;
   int64_t retention_size;
   map<int64_t, int64_t> max_idx_to_segment_size;
@@ -178,7 +177,7 @@ void FlushDeltaMemStoresOp::Perform() {
                   Substitute("Failed to flush DMS on $0",
                              tablet_peer_->tablet()->tablet_id()));
   {
-    boost::lock_guard<simple_spinlock> l(lock_);
+    std::lock_guard<simple_spinlock> l(lock_);
     time_since_flush_.start();
   }
 }

@@ -18,9 +18,9 @@
 #include "kudu/tablet/tablet_metadata.h"
 
 #include <algorithm>
-#include <gflags/gflags.h>
 #include <boost/optional.hpp>
-#include <boost/thread/locks.hpp>
+#include <gflags/gflags.h>
+#include <mutex>
 #include <string>
 
 #include "kudu/common/wire_protocol.h"
@@ -164,7 +164,7 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
   // We also set the state in our persisted metadata to indicate that
   // we have been deleted.
   {
-    boost::lock_guard<LockType> l(data_lock_);
+    std::lock_guard<LockType> l(data_lock_);
     for (const shared_ptr<RowSetMetadata>& rsmd : rowsets_) {
       AddOrphanedBlocksUnlocked(rsmd->GetAllBlocks());
     }
@@ -187,7 +187,7 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
 }
 
 Status TabletMetadata::DeleteSuperBlock() {
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   if (!orphaned_blocks_.empty()) {
     return Status::InvalidArgument("The metadata for tablet " + tablet_id_ +
                                    " still references orphaned blocks. "
@@ -271,7 +271,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
           << superblock.DebugString();
 
   {
-    boost::lock_guard<LockType> l(data_lock_);
+    std::lock_guard<LockType> l(data_lock_);
 
     // Verify that the tablet id matches with the one in the protobuf
     if (superblock.tablet_id() != tablet_id_) {
@@ -348,14 +348,14 @@ Status TabletMetadata::UpdateAndFlush(const RowSetMetadataIds& to_remove,
                                       const RowSetMetadataVector& to_add,
                                       int64_t last_durable_mrs_id) {
   {
-    boost::lock_guard<LockType> l(data_lock_);
+    std::lock_guard<LockType> l(data_lock_);
     RETURN_NOT_OK(UpdateUnlocked(to_remove, to_add, last_durable_mrs_id));
   }
   return Flush();
 }
 
 void TabletMetadata::AddOrphanedBlocks(const vector<BlockId>& blocks) {
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   AddOrphanedBlocksUnlocked(blocks);
 }
 
@@ -388,7 +388,7 @@ void TabletMetadata::DeleteOrphanedBlocks(const vector<BlockId>& blocks) {
 
   // Remove the successfully-deleted blocks from the set.
   {
-    boost::lock_guard<LockType> l(data_lock_);
+    std::lock_guard<LockType> l(data_lock_);
     for (const BlockId& b : deleted) {
       orphaned_blocks_.erase(b);
     }
@@ -396,14 +396,14 @@ void TabletMetadata::DeleteOrphanedBlocks(const vector<BlockId>& blocks) {
 }
 
 void TabletMetadata::PinFlush() {
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   CHECK_GE(num_flush_pins_, 0);
   num_flush_pins_++;
   VLOG(1) << "Number of flush pins: " << num_flush_pins_;
 }
 
 Status TabletMetadata::UnPinFlush() {
-  boost::unique_lock<LockType> l(data_lock_);
+  std::unique_lock<LockType> l(data_lock_);
   CHECK_GT(num_flush_pins_, 0);
   num_flush_pins_--;
   if (needs_flush_) {
@@ -421,7 +421,7 @@ Status TabletMetadata::Flush() {
   vector<BlockId> orphaned;
   TabletSuperBlockPB pb;
   {
-    boost::lock_guard<LockType> l(data_lock_);
+    std::lock_guard<LockType> l(data_lock_);
     CHECK_GE(num_flush_pins_, 0);
     if (num_flush_pins_ > 0) {
       needs_flush_ = true;
@@ -519,7 +519,7 @@ Status TabletMetadata::ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) co
 
 Status TabletMetadata::ToSuperBlock(TabletSuperBlockPB* super_block) const {
   // acquire the lock so that rowsets_ doesn't get changed until we're finished.
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   return ToSuperBlockUnlocked(super_block, rowsets_);
 }
 
@@ -576,7 +576,7 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
 }
 
 RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   for (const shared_ptr<RowSetMetadata>& rowset_meta : rowsets_) {
     if (rowset_meta->id() == id) {
       return rowset_meta.get();
@@ -587,7 +587,7 @@ RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
 
 void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
   gscoped_ptr<Schema> new_schema(new Schema(schema));
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   SetSchemaUnlocked(std::move(new_schema), version);
 }
 
@@ -606,24 +606,24 @@ void TabletMetadata::SetSchemaUnlocked(gscoped_ptr<Schema> new_schema, uint32_t 
 }
 
 void TabletMetadata::SetTableName(const string& table_name) {
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   table_name_ = table_name;
 }
 
 string TabletMetadata::table_name() const {
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   DCHECK_NE(state_, kNotLoadedYet);
   return table_name_;
 }
 
 uint32_t TabletMetadata::schema_version() const {
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   DCHECK_NE(state_, kNotLoadedYet);
   return schema_version_;
 }
 
 void TabletMetadata::set_tablet_data_state(TabletDataState state) {
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   tablet_data_state_ = state;
 }
 
@@ -632,7 +632,7 @@ string TabletMetadata::LogPrefix() const {
 }
 
 TabletDataState TabletMetadata::tablet_data_state() const {
-  boost::lock_guard<LockType> l(data_lock_);
+  std::lock_guard<LockType> l(data_lock_);
   return tablet_data_state_;
 }
 

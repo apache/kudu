@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/thread/locks.hpp>
+#include <mutex>
 #include <string>
 #include <thread>
 #include <vector>
@@ -57,19 +57,19 @@ struct LockHoldersCount {
   }
 
   void AdjustReaders(int delta) {
-    boost::lock_guard<simple_spinlock> l(lock);
+    std::lock_guard<simple_spinlock> l(lock);
     num_readers += delta;
     CheckInvariants();
   }
 
   void AdjustWriters(int delta) {
-    boost::lock_guard<simple_spinlock> l(lock);
+    std::lock_guard<simple_spinlock> l(lock);
     num_writers += delta;
     CheckInvariants();
   }
 
   void AdjustCommitters(int delta) {
-    boost::lock_guard<simple_spinlock> l(lock);
+    std::lock_guard<simple_spinlock> l(lock);
     num_committers += delta;
     CheckInvariants();
   }

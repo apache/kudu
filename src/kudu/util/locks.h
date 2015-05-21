@@ -231,7 +231,7 @@ class percpu_rwlock {
   padded_lock *locks_;
 };
 
-// Simpler version of boost::lock_guard. Only supports the basic object
+// Simpler version of std::lock_guard. Only supports the basic object
 // lifecycle and defers any error checking to the underlying mutex.
 template <typename Mutex>
 class lock_guard {

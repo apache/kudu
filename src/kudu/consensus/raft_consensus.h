@@ -18,8 +18,9 @@
 #ifndef KUDU_CONSENSUS_RAFT_CONSENSUS_H_
 #define KUDU_CONSENSUS_RAFT_CONSENSUS_H_
 
-#include <boost/thread/locks.hpp>
+#include <boost/optional/optional_fwd.hpp>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,7 +34,7 @@
 
 namespace kudu {
 
-typedef boost::lock_guard<simple_spinlock> Lock;
+typedef std::lock_guard<simple_spinlock> Lock;
 typedef gscoped_ptr<Lock> ScopedLock;
 
 class Counter;
