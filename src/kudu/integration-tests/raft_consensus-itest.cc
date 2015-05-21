@@ -660,6 +660,7 @@ void RaftConsensusITest::WaitForLogGC(TServerDetails* leader, int max_expected) 
   while (true) {
     vector<string> children;
     string wal_dir = JoinPathSegments(ets->data_dir(), "wals");
+    wal_dir = JoinPathSegments(wal_dir, tablet_id_);
     ASSERT_OK(Env::Default()->GetChildren(wal_dir, &children));
     int num_wals = 0;
     BOOST_FOREACH(const string& child, children) {
@@ -667,6 +668,7 @@ void RaftConsensusITest::WaitForLogGC(TServerDetails* leader, int max_expected) 
         num_wals++;
       }
     }
+    ASSERT_GE(num_wals, 1);
     if (num_wals <= max_expected) {
       return;
     }
@@ -724,11 +726,16 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   const int kNumWrites = 100;
   NO_FATALS(Write128KOpsToLeader(kNumWrites));
 
+  LOG(INFO) << "Waiting for log GC on " << leader->uuid();
   // Wait for the leader to GC its logs.
   NO_FATALS(WaitForLogGC(leader, 2));
+  LOG(INFO) << "Log GC complete on " << leader->uuid();
 
   // Then wait another couple of seconds to be sure that it has bothered to try
   // to write to the paused peer.
+  // TODO: would be nice to be able to poll the leader with an RPC like
+  // GetLeaderStatus() which could tell us whether it has made any requests
+  // since the log GC.
   SleepFor(MonoDelta::FromSeconds(2));
 
   // Make a note of whatever the current term of the cluster is,
