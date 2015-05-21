@@ -250,8 +250,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    */
   private Deferred<ArrayList<BatchResponse>> flushAllBatches() {
     HashMap<Slice, Batch> copyOfOps;
-    final ArrayList<Deferred<BatchResponse>> d =
-        new ArrayList<Deferred<BatchResponse>>(operations.size());
+    final ArrayList<Deferred<BatchResponse>> d = new ArrayList<>(operations.size());
     synchronized (this) {
       copyOfOps = new HashMap<Slice, Batch>(operations);
     }
@@ -515,7 +514,7 @@ public class AsyncKuduSession implements SessionConfiguration {
       public String toString() {
         return "apply batch response";
       }
-    };
+    }
 
     final class BatchErrCallback implements Callback<Exception, Exception> {
       @Override
