@@ -236,6 +236,7 @@ Log::Log(const LogOptions &options,
     entry_batch_queue_(FLAGS_group_commit_queue_size_bytes),
     append_thread_(new AppendThread(this)),
     force_sync_all_(options_.force_fsync_all),
+    sync_disabled_(false),
     allocation_state_(kAllocationNotStarted),
     metric_entity_(metric_entity) {
   CHECK_OK(ThreadPoolBuilder("log-alloc").set_max_threads(1).Build(&allocation_pool_));
@@ -538,7 +539,7 @@ Status Log::Sync() {
   TRACE_EVENT0("log", "Sync");
   SCOPED_LATENCY_METRIC(metrics_, sync_latency);
 
-  if (PREDICT_FALSE(FLAGS_log_inject_latency)) {
+  if (PREDICT_FALSE(FLAGS_log_inject_latency && !sync_disabled_)) {
     Random r(GetCurrentTimeMicros());
     int sleep_ms = r.Normal(FLAGS_log_inject_latency_ms_mean,
                             FLAGS_log_inject_latency_ms_stddev);
@@ -549,7 +550,7 @@ Status Log::Sync() {
     }
   }
 
-  if (force_sync_all_) {
+  if (force_sync_all_ && !sync_disabled_) {
     LOG_SLOW_EXECUTION(WARNING, 50, "Fsync log took a long time") {
       RETURN_NOT_OK(active_segment_->Sync());
 

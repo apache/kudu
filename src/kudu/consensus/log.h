@@ -145,14 +145,14 @@ class Log : public RefCountedThreadSafe<Log> {
   }
 
   void DisableSync() {
-    force_sync_all_ = false;
+    sync_disabled_ = true;
   }
 
   // If we previous called DisableSync(), we should restore the
   // default behavior and then call Sync() which will perform the
   // actual syncing if required.
   Status ReEnableSyncIfRequired() {
-    force_sync_all_ = options_.force_fsync_all;
+    sync_disabled_ = false;
     return Sync();
   }
 
@@ -362,6 +362,10 @@ class Log : public RefCountedThreadSafe<Log> {
 
   // If true, sync on all appends.
   bool force_sync_all_;
+
+  // If true, ignore the 'force_sync_all_' flag above.
+  // This is used to disable fsync during bootstrap.
+  bool sync_disabled_;
 
   // The status of the most recent log-allocation action.
   Promise<Status> allocation_status_;
