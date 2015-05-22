@@ -92,6 +92,7 @@ ADD_KUDU_TEST(major_delta_compaction-test)
 ADD_KUDU_TEST(transactions/transaction_tracker-test)
 ADD_KUDU_TEST(tablet_peer-test)
 ADD_KUDU_TEST(tablet_random_access-test)
+ADD_KUDU_TEST(tablet_mm_ops-test)
 
 # Some tests don't have dependencies on other tablet stuff
 set(KUDU_TEST_LINK_LIBS kudu_util gutil ${KUDU_MIN_TEST_LIBS})

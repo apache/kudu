@@ -728,30 +728,44 @@ int32_t Tablet::CurrentMrsIdForTests() const {
 
 CompactRowSetsOp::CompactRowSetsOp(Tablet* tablet)
   : MaintenanceOp(Substitute("CompactRowSetsOp($0)", tablet->tablet_id())),
+    last_num_mrs_flushed_(0),
+    last_num_rs_compacted_(0),
     tablet_(tablet) {
-  since_last_stats_update_.start();
 }
 
 void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  // If we've computed stats recently, no need to recompute.
-  // TODO: it would be nice if we could invalidate this on any Flush as well
-  // as after a compaction.
-  if (since_last_stats_update_.elapsed().wall_millis() < kRefreshIntervalMs) {
-    *stats = prev_stats_;
-    return;
+
+  // Any operation that changes the on-disk row layout invalidates the
+  // cached stats.
+  TabletMetrics* metrics = tablet_->metrics();
+  if (metrics) {
+    uint64_t new_num_mrs_flushed = metrics->flush_mrs_duration->TotalCount();
+    uint64_t new_num_rs_compacted = metrics->compact_rs_duration->TotalCount();
+    if (prev_stats_.valid() &&
+        new_num_mrs_flushed == last_num_mrs_flushed_ &&
+        new_num_rs_compacted == last_num_rs_compacted_) {
+      *stats = prev_stats_;
+      return;
+    } else {
+      last_num_mrs_flushed_ = new_num_mrs_flushed;
+      last_num_rs_compacted_ = new_num_rs_compacted;
+    }
   }
 
   tablet_->UpdateCompactionStats(&prev_stats_);
   *stats = prev_stats_;
-  since_last_stats_update_.start();
 }
 
 bool CompactRowSetsOp::Prepare() {
   boost::lock_guard<simple_spinlock> l(lock_);
-  // Resetting stats ensures that, while this compaction is running, if we
-  // are asked for more stats, we won't end up calling Compact() twice
-  // and accidentally scheduling a much less fruitful compaction.
+  // Invalidate the cached stats so that another section of the tablet can
+  // be compacted concurrently.
+  //
+  // TODO: we should acquire the rowset compaction locks here. Otherwise, until
+  // Compact() acquires them, the maintenance manager may compute the same
+  // stats for this op and run it again, even though Perform() will end up
+  // performing a much less fruitful compaction. See KUDU-790 for more details.
   prev_stats_.Clear();
   return true;
 }
@@ -775,17 +789,54 @@ scoped_refptr<AtomicGauge<uint32_t> > CompactRowSetsOp::RunningGauge() const {
 
 MinorDeltaCompactionOp::MinorDeltaCompactionOp(Tablet* tablet)
   : MaintenanceOp(Substitute("MinorDeltaCompactionOp($0)", tablet->tablet_id())),
+    last_num_mrs_flushed_(0),
+    last_num_dms_flushed_(0),
+    last_num_rs_compacted_(0),
+    last_num_rs_minor_delta_compacted_(0),
     tablet_(tablet) {
 }
 
 void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+
+  // Any operation that changes the number of REDO files invalidates the
+  // cached stats.
+  TabletMetrics* metrics = tablet_->metrics();
+  if (metrics) {
+    uint64_t new_num_mrs_flushed = metrics->flush_mrs_duration->TotalCount();
+    uint64_t new_num_dms_flushed = metrics->flush_dms_duration->TotalCount();
+    uint64_t new_num_rs_compacted = metrics->compact_rs_duration->TotalCount();
+    uint64_t new_num_rs_minor_delta_compacted =
+        metrics->delta_minor_compact_rs_duration->TotalCount();
+    if (prev_stats_.valid() &&
+        new_num_mrs_flushed == last_num_mrs_flushed_ &&
+        new_num_dms_flushed == last_num_dms_flushed_ &&
+        new_num_rs_compacted == last_num_rs_compacted_ &&
+        new_num_rs_minor_delta_compacted == last_num_rs_minor_delta_compacted_) {
+      *stats = prev_stats_;
+      return;
+    } else {
+      last_num_mrs_flushed_ = new_num_mrs_flushed;
+      last_num_dms_flushed_ = new_num_dms_flushed;
+      last_num_rs_compacted_ = new_num_rs_compacted;
+      last_num_rs_minor_delta_compacted_ = new_num_rs_minor_delta_compacted;
+    }
+  }
+
   double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
       RowSet::MINOR_DELTA_COMPACTION, NULL);
-  stats->set_perf_improvement(perf_improv);
-  stats->set_runnable(perf_improv > 0);
+  prev_stats_.set_perf_improvement(perf_improv);
+  prev_stats_.set_runnable(perf_improv > 0);
+  *stats = prev_stats_;
 }
 
 bool MinorDeltaCompactionOp::Prepare() {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  // Invalidate the cached stats so that another rowset in the tablet can
+  // be delta compacted concurrently.
+  //
+  // TODO: See CompactRowSetsOp::Prepare().
+  prev_stats_.Clear();
   return true;
 }
 
@@ -807,18 +858,60 @@ scoped_refptr<AtomicGauge<uint32_t> > MinorDeltaCompactionOp::RunningGauge() con
 ////////////////////////////////////////////////////////////
 
 MajorDeltaCompactionOp::MajorDeltaCompactionOp(Tablet* tablet)
-: MaintenanceOp(Substitute("MajorDeltaCompactionOp($0)", tablet->tablet_id())),
-  tablet_(tablet) {
+  : MaintenanceOp(Substitute("MajorDeltaCompactionOp($0)", tablet->tablet_id())),
+    last_num_mrs_flushed_(0),
+    last_num_dms_flushed_(0),
+    last_num_rs_compacted_(0),
+    last_num_rs_minor_delta_compacted_(0),
+    last_num_rs_major_delta_compacted_(0),
+    tablet_(tablet) {
 }
 
 void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+
+  // Any operation that changes the size of the on-disk data invalidates the
+  // cached stats.
+  TabletMetrics* metrics = tablet_->metrics();
+  if (metrics) {
+    int64_t new_num_mrs_flushed = metrics->flush_mrs_duration->TotalCount();
+    int64_t new_num_dms_flushed = metrics->flush_dms_duration->TotalCount();
+    int64_t new_num_rs_compacted = metrics->compact_rs_duration->TotalCount();
+    int64_t new_num_rs_minor_delta_compacted =
+        metrics->delta_minor_compact_rs_duration->TotalCount();
+    int64_t new_num_rs_major_delta_compacted =
+        metrics->delta_major_compact_rs_duration->TotalCount();
+    if (prev_stats_.valid() &&
+        new_num_mrs_flushed == last_num_mrs_flushed_ &&
+        new_num_dms_flushed == last_num_dms_flushed_ &&
+        new_num_rs_compacted == last_num_rs_compacted_ &&
+        new_num_rs_minor_delta_compacted == last_num_rs_minor_delta_compacted_ &&
+        new_num_rs_major_delta_compacted == last_num_rs_major_delta_compacted_) {
+      *stats = prev_stats_;
+      return;
+    } else {
+      last_num_mrs_flushed_ = new_num_mrs_flushed;
+      last_num_dms_flushed_ = new_num_dms_flushed;
+      last_num_rs_compacted_ = new_num_rs_compacted;
+      last_num_rs_minor_delta_compacted_ = new_num_rs_minor_delta_compacted;
+      last_num_rs_major_delta_compacted_ = new_num_rs_major_delta_compacted;
+    }
+  }
+
   double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
       RowSet::MAJOR_DELTA_COMPACTION, NULL);
-  stats->set_perf_improvement(perf_improv);
-  stats->set_runnable(perf_improv > 0);
+  prev_stats_.set_perf_improvement(perf_improv);
+  prev_stats_.set_runnable(perf_improv > 0);
+  *stats = prev_stats_;
 }
 
 bool MajorDeltaCompactionOp::Prepare() {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  // Invalidate the cached stats so that another rowset in the tablet can
+  // be delta compacted concurrently.
+  //
+  // TODO: See CompactRowSetsOp::Prepare().
+  prev_stats_.Clear();
   return true;
 }
 

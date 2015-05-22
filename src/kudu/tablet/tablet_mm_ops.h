@@ -5,7 +5,6 @@
 #define KUDU_TABLET_TABLET_MM_OPS_H_
 
 #include "kudu/tablet/maintenance_manager.h"
-#include "kudu/util/stopwatch.h"
 
 namespace kudu {
 
@@ -37,15 +36,11 @@ class CompactRowSetsOp : public MaintenanceOp {
   virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
 
  private:
-  enum {
-    kRefreshIntervalMs = 5000
-  };
-
   mutable simple_spinlock lock_;
-  Stopwatch since_last_stats_update_;
   MaintenanceOpStats prev_stats_;
-
-  Tablet * const tablet_;
+  uint64_t last_num_mrs_flushed_;
+  uint64_t last_num_rs_compacted_;
+  Tablet* const tablet_;
 };
 
 // MaintenanceOp to run minor compaction on delta stores.
@@ -68,7 +63,13 @@ class MinorDeltaCompactionOp : public MaintenanceOp {
   virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
 
  private:
-  Tablet * const tablet_;
+  mutable simple_spinlock lock_;
+  MaintenanceOpStats prev_stats_;
+  uint64_t last_num_mrs_flushed_;
+  uint64_t last_num_dms_flushed_;
+  uint64_t last_num_rs_compacted_;
+  uint64_t last_num_rs_minor_delta_compacted_;
+  Tablet* const tablet_;
 };
 
 // MaintenanceOp to run major compaction on delta stores.
@@ -89,7 +90,14 @@ class MajorDeltaCompactionOp : public MaintenanceOp {
   virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
 
  private:
-  Tablet * const tablet_;
+  mutable simple_spinlock lock_;
+  MaintenanceOpStats prev_stats_;
+  uint64_t last_num_mrs_flushed_;
+  uint64_t last_num_dms_flushed_;
+  uint64_t last_num_rs_compacted_;
+  uint64_t last_num_rs_minor_delta_compacted_;
+  uint64_t last_num_rs_major_delta_compacted_;
+  Tablet* const tablet_;
 };
 
 } // namespace tablet
