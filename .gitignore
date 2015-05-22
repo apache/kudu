@@ -37,6 +37,12 @@ install_manifest.txt
 # CMake-generated library export make file
 clientConfig.cmake
 
+# CMake-generated ninja build stuff
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+
 # VIM/emacs stuff
 *.swp
 *~
