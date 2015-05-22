@@ -38,14 +38,22 @@ class ClusterVerifier {
   // eventually agree.
   void CheckCluster();
 
-  // Check that the given table has exactly the given number of rows.
-  // Triggers a gtest assertion failure if the table has either fewer or a greater
-  // number of rows.
+  // Argument for CheckRowCount(...) below.
+  enum ComparisonMode {
+    AT_LEAST,
+    EXACTLY
+  };
+
+  // Check that the given table has the given number of rows. Depending on ComparisonMode,
+  // the comparison could be exact or a lower bound.
+  //
+  // Triggers a gtest assertion failure if the row count is not as expected.
   //
   // NOTE: this does not perform any retries. If it's possible that the replicas are
   // still converging, it's best to use CheckCluster() first, which will wait for
   // convergence.
   void CheckRowCount(const std::string& table_name,
+                     ComparisonMode mode,
                      int expected_row_count);
 
  private:

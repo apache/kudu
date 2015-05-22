@@ -17,6 +17,8 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -29,6 +31,11 @@ DEFINE_int32(quorum_get_node_instance_timeout_ms, 30000,
              "Timeout for retrieving node instance data over RPC.");
 
 DECLARE_int32(leader_heartbeat_interval_ms);
+
+DEFINE_double(fault_crash_on_leader_request_fraction, 0.0,
+              "Fraction of the time when the leader will crash just before sending an "
+              "UpdateConsensus RPC. (For testing only!)");
+TAG_FLAG(fault_crash_on_leader_request_fraction, unsafe);
 
 namespace kudu {
 namespace consensus {
@@ -143,6 +150,8 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   if (req_has_ops) {
     heartbeater_.Reset();
   }
+
+  MAYBE_FAULT(FLAGS_fault_crash_on_leader_request_fraction);
 
   state_ = kPeerWaitingForResponse;
 

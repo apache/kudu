@@ -264,6 +264,10 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
 
   const std::string& data_dir() const { return data_dir_; }
 
+  // Return a pointer to the flags used for this server on restart.
+  // Modifying these flags will only take effect on the next restart.
+  std::vector<std::string>* mutable_flags() { return &extra_flags_; }
+
  protected:
   friend class RefCountedThreadSafe<ExternalDaemon>;
   virtual ~ExternalDaemon();
@@ -277,7 +281,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   const std::tr1::shared_ptr<rpc::Messenger> messenger_;
   const std::string exe_;
   const std::string data_dir_;
-  const std::vector<std::string> extra_flags_;
+  std::vector<std::string> extra_flags_;
 
   gscoped_ptr<Subprocess> process_;
 

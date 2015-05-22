@@ -103,6 +103,11 @@ class Random {
     double uniform2 = (Next() + 1.0) / (random::internal::M + 1.0);
     return (mean + std_dev * sqrt(-2 * ::log(uniform1)) * cos(random::internal::kTwoPi * uniform2));
   }
+
+  // Return a random number between 0.0 and 1.0 inclusive.
+  double NextDoubleFraction() {
+    return Next() / static_cast<double>(random::internal::M + 1.0);
+  }
 };
 
 // Thread-safe wrapper around Random.

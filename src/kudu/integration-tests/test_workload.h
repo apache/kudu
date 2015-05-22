@@ -47,6 +47,10 @@ class TestWorkload {
     timeout_allowed_ = allowed;
   }
 
+  void set_num_replicas(int r) {
+    num_replicas_ = r;
+  }
+
   // Creates the internal client, and the table which will be used
   // for writing.
   void Setup();

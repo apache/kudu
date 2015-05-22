@@ -30,10 +30,12 @@ ADD_KUDU_TEST(registration-test RESOURCE_LOCK "master-web-port")
 
 # Can't be used with the exported client; it references hidden symbols.
 if (NOT KUDU_EXPORTED_CLIENT)
-  ADD_KUDU_TEST(client-stress-test RESOURCE_LOCK "master-rpc-ports")
+  ADD_KUDU_TEST(client-stress-test
+    RESOURCE_LOCK "master-rpc-ports"
+    RUN_SERIAL true)
   ADD_KUDU_TEST(master_replication-itest RESOURCE_LOCK "master-rpc-ports")
   ADD_KUDU_TEST(master_failover-itest RESOURCE_LOCK "master-rpc-ports")
-  ADD_KUDU_TEST(raft_consensus-itest)
+  ADD_KUDU_TEST(raft_consensus-itest RUN_SERIAL true)
   ADD_KUDU_TEST(ts_tablet_manager-itest)
 endif()
 
@@ -43,5 +45,5 @@ ADD_KUDU_TEST(linked_list-test RESOURCE_LOCK "master-rpc-ports")
 
 # Some tests have additional dependencies
 set(KUDU_TEST_LINK_LIBS kudu_client ${KUDU_TEST_LINK_LIBS})
-ADD_KUDU_TEST(full_stack-insert-scan-test)
-ADD_KUDU_TEST(update_scan_delta_compact-test)
+ADD_KUDU_TEST(full_stack-insert-scan-test RUN_SERIAL true)
+ADD_KUDU_TEST(update_scan_delta_compact-test RUN_SERIAL true)

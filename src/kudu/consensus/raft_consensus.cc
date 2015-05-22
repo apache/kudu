@@ -625,6 +625,11 @@ Status RaftConsensus::EnforceLogMatchingPropertyMatchesUnlocked(const LeaderRequ
   // Aborting preemptively here avoids us reporting a last received index that is
   // possibly higher than the leader's causing an avoidable cache miss on the leader's
   // queue.
+  //
+  // TODO: this isn't just an optimization! if we comment this out, we get
+  // failures on raft_consensus-itest a couple percent of the time! Should investigate
+  // why this is actually critical to do here, as opposed to just on requests that
+  // append some ops.
   if (term_mismatch) {
     return state_->AbortOpsAfterUnlocked(req.preceding_opid->index() - 1);
   }

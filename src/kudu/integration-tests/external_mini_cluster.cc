@@ -494,20 +494,21 @@ bool ExternalDaemon::IsProcessAlive() const {
 
 void ExternalDaemon::Shutdown() {
   if (!process_) return;
-  if (!IsProcessAlive()) return;
 
   // Before we kill the process, store the addresses. If we're told to
   // start again we'll reuse these.
   bound_rpc_ = bound_rpc_hostport();
   bound_http_ = bound_http_hostport();
 
-  // In coverage builds, ask the process nicely to flush coverage info
-  // before we kill -9 it. Otherwise, we never get any coverage from
-  // external clusters.
-  FlushCoverage();
+  if (IsProcessAlive()) {
+    // In coverage builds, ask the process nicely to flush coverage info
+    // before we kill -9 it. Otherwise, we never get any coverage from
+    // external clusters.
+    FlushCoverage();
 
-  LOG(INFO) << "Killing " << exe_ << " with pid " << process_->pid();
-  ignore_result(process_->Kill(SIGKILL));
+    LOG(INFO) << "Killing " << exe_ << " with pid " << process_->pid();
+    ignore_result(process_->Kill(SIGKILL));
+  }
   int ret;
   WARN_NOT_OK(process_->Wait(&ret), "Waiting on " + exe_);
   process_.reset();

@@ -43,6 +43,7 @@ void ClusterVerifier::CheckCluster() {
   deadline.AddDelta(checksum_options_.timeout);
 
   Status s;
+  double sleep_time = 0.1;
   while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
     s = DoKsck();
     if (s.ok()) {
@@ -50,7 +51,9 @@ void ClusterVerifier::CheckCluster() {
     }
 
     LOG(INFO) << "Check not successful yet, sleeping and retrying: " + s.ToString();
-    SleepFor(MonoDelta::FromSeconds(1));
+    sleep_time *= 1.5;
+    if (sleep_time > 1) { sleep_time = 1; }
+    SleepFor(MonoDelta::FromSeconds(sleep_time));
   }
   ASSERT_OK(s);
 }
@@ -75,6 +78,7 @@ Status ClusterVerifier::DoKsck() {
 }
 
 void ClusterVerifier::CheckRowCount(const std::string& table_name,
+                                    ComparisonMode mode,
                                     int expected_row_count) {
   shared_ptr<client::KuduClient> client;
   client::KuduClientBuilder builder;
@@ -93,7 +97,12 @@ void ClusterVerifier::CheckRowCount(const std::string& table_name,
     count += rows.size();
     rows.clear();
   }
-  ASSERT_EQ(count, expected_row_count);
+
+  if (mode == AT_LEAST) {
+    ASSERT_GE(count, expected_row_count);
+  } else {
+    ASSERT_EQ(expected_row_count, count);
+  }
 }
 
 } // namespace kudu

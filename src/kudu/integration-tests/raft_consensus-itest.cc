@@ -21,6 +21,7 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
@@ -237,7 +238,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   void AssertAllReplicasAgree(int expected_result_count) {
     ClusterVerifier v(cluster_.get());
     v.CheckCluster();
-    v.CheckRowCount(kTableId, expected_result_count);
+    v.CheckRowCount(kTableId, ClusterVerifier::EXACTLY, expected_result_count);
   }
 
   void InsertTestRowsRemoteThread(uint64_t first_row,
@@ -388,6 +389,10 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // If the target number of segments is not achieved within 10 seconds,
   // causes a gtest failure.
   void WaitForLogGC(TServerDetails* leader, int max_expected);
+
+  // Check for and restart any TS that have crashed.
+  // Returns the number of servers restarted.
+  int RestartAnyCrashedTabletServers();
 
  protected:
   shared_ptr<KuduClient> client_;
@@ -787,6 +792,110 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
     ASSERT_EQ(orig_term, op_id.term())
       << "expected the leader to have not advanced terms but has op " << op_id;
   }
+}
+
+int RaftConsensusITest::RestartAnyCrashedTabletServers() {
+  int restarted = 0;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    if (!cluster_->tablet_server(i)->IsProcessAlive()) {
+      LOG(INFO) << "TS " << i << " appears to have crashed. Restarting.";
+      cluster_->tablet_server(i)->Shutdown();
+      CHECK_OK(cluster_->tablet_server(i)->Restart());
+      restarted++;
+    }
+  }
+  return restarted;
+}
+
+// This test starts several tablet servers, and configures them with
+// fault injection so that the leaders frequently crash just before
+// sending RPCs to followers.
+//
+// This can result in various scenarios where leaders crash right after
+// being elected and never succeed in replicating their first operation.
+// For example, KUDU-783 reproduces from this test approximately 5% of the
+// time on a slow-test debug build.
+TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
+  int kCrashesToCause = 3;
+  if (AllowSlowTests()) {
+    FLAGS_num_tablet_servers = 7;
+    FLAGS_num_replicas = 7;
+    kCrashesToCause = 15;
+  }
+
+  vector<string> ts_flags, master_flags;
+
+  // Crash 5% of the time just before sending an RPC. With 7 servers,
+  // this means we crash about 30% of the time before we've fully
+  // replicated the NO_OP at the start of the term.
+  ts_flags.push_back("--fault_crash_on_leader_request_fraction=0.05");
+
+  // Inject latency to encourage the replicas to fall out of sync
+  // with each other.
+  ts_flags.push_back("--log_inject_latency");
+  ts_flags.push_back("--log_inject_latency_ms_mean=30");
+  ts_flags.push_back("--log_inject_latency_ms_stddev=60");
+
+  // Make leader elections faster so we get through more cycles of
+  // leaders.
+  ts_flags.push_back("--leader_heartbeat_interval_ms=100");
+  ts_flags.push_back("--leader_failure_monitor_check_mean_ms=50");
+  ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=25");
+
+  // Avoid preallocating segments since bootstrap is a little bit
+  // faster if it doesn't have to scan forward through the preallocated
+  // log area.
+  ts_flags.push_back("--log_preallocate_segments=false");
+
+  CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(FLAGS_num_replicas);
+  workload.set_timeout_allowed(true);
+  workload.set_write_timeout_millis(1000);
+  workload.set_num_write_threads(10);
+  workload.set_write_batch_size(1);
+  workload.Setup();
+  workload.Start();
+
+  int num_crashes = 0;
+  while (num_crashes < kCrashesToCause &&
+         workload.rows_inserted() < 100) {
+    num_crashes += RestartAnyCrashedTabletServers();
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  workload.StopAndJoin();
+
+  // After we stop the writes, we can still get crashes because heartbeats could
+  // trigger the fault path. So, disable the faults and restart one more time.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
+    vector<string>* flags = ts->mutable_flags();
+    bool removed_flag = false;
+    for (vector<string>::iterator it = flags->begin();
+         it != flags->end();
+         ++it) {
+      if (HasPrefixString(*it, "--fault_crash")) {
+        flags->erase(it);
+        removed_flag = true;
+        break;
+      }
+    }
+    ASSERT_TRUE(removed_flag) << "could not remove flag from TS " << i
+                              << "\nFlags:\n" << *flags;
+    ts->Shutdown();
+    CHECK_OK(ts->Restart());
+  }
+
+  // Ensure that the replicas converge.
+  // We don't know exactly how many rows got inserted, since the writer
+  // probably saw many errors which left inserts in indeterminate state.
+  // But, we should have at least as many as we got confirmation for.
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount("test-workload", ClusterVerifier::AT_LEAST,
+                            workload.rows_inserted()));
 }
 
 TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {

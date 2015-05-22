@@ -624,10 +624,10 @@ struct ReplayState {
       return true;
     }
 
-    // Within the same term, each entry should be have an index
-    // exactly one higher than the previous.
+    // Within the same term, we should never skip entries.
+    // We can, however go backwards (see KUDU-783 for an example)
     if (b.term() == a.term() &&
-        b.index() != a.index() + 1) {
+        b.index() > a.index() + 1) {
       return false;
     }
 
