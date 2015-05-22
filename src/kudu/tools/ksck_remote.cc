@@ -10,6 +10,7 @@
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 
+DEFINE_bool(checksum_cache_blocks, false, "Should the checksum scanners cache the read blocks");
 DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
 DEFINE_int64(tablets_batch_size_max, 100, "How many tablets to get from the Master per RPC");
 
@@ -133,6 +134,7 @@ class ChecksumStepper {
         req_.set_call_seq_id(call_seq_id_);
         req_.mutable_new_request()->mutable_projected_columns()->CopyFrom(cols_);
         req_.mutable_new_request()->set_tablet_id(tablet_id_);
+        req_.mutable_new_request()->set_cache_blocks(FLAGS_checksum_cache_blocks);
         rpc_.set_timeout(GetDefaultTimeout());
         break;
       }
