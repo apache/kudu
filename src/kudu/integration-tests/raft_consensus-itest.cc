@@ -453,6 +453,10 @@ TEST_F(RaftConsensusITest, TestInsertAndMutateThroughConsensus) {
 TEST_F(RaftConsensusITest, TestFailedTransaction) {
   BuildAndStart(vector<string>());
 
+  // Wait until we have a stable leader.
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
+                                  tablet_id_, 1));
+
   WriteRequestPB req;
   req.set_tablet_id(tablet_id_);
   ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
