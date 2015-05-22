@@ -6,10 +6,13 @@
 #include <string>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/tools/ksck.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+
+using tools::ChecksumOptions;
 
 class ExternalMiniCluster;
 class MonoDelta;
@@ -24,6 +27,9 @@ class ClusterVerifier {
   // state. We retry because it's possible that one of the replicas is behind
   // but in the process of catching up.
   void SetVerificationTimeout(const MonoDelta& timeout);
+
+  /// Set the number of concurrent scans to execute per tablet server.
+  void SetScanConcurrency(int concurrency);
 
   // Verify that the cluster is in good state. Triggers a gtest assertion failure
   // on failure.
@@ -47,8 +53,7 @@ class ClusterVerifier {
 
   ExternalMiniCluster* cluster_;
 
-  // The maximum amount of time to loop trying to verify the cluster integrity.
-  MonoDelta verification_timeout_;
+  ChecksumOptions checksum_options_;
 
   DISALLOW_COPY_AND_ASSIGN(ClusterVerifier);
 };

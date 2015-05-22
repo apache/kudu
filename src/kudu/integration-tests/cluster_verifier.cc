@@ -24,19 +24,23 @@ using tools::RemoteKsckMaster;
 
 ClusterVerifier::ClusterVerifier(ExternalMiniCluster* cluster)
   : cluster_(cluster),
-    verification_timeout_(MonoDelta::FromSeconds(60)) {
+    checksum_options_(ChecksumOptions()) {
 }
 
 ClusterVerifier::~ClusterVerifier() {
 }
 
 void ClusterVerifier::SetVerificationTimeout(const MonoDelta& timeout) {
-  verification_timeout_ = timeout;
+  checksum_options_.timeout = timeout;
+}
+
+void ClusterVerifier::SetScanConcurrency(int concurrency) {
+  checksum_options_.scan_concurrency = concurrency;
 }
 
 void ClusterVerifier::CheckCluster() {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(verification_timeout_);
+  deadline.AddDelta(checksum_options_.timeout);
 
   Status s;
   while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
@@ -66,7 +70,7 @@ Status ClusterVerifier::DoKsck() {
 
   vector<string> tables;
   vector<string> tablets;
-  RETURN_NOT_OK(ksck->ChecksumData(tables, tablets, verification_timeout_));
+  RETURN_NOT_OK(ksck->ChecksumData(tables, tablets, checksum_options_));
   return Status::OK();
 }
 

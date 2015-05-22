@@ -158,7 +158,9 @@ TEST_F(RemoteKsckTest, TestChecksum) {
   for (int i = 1; i <= 10; i++) {
     LOG(INFO) << "Checksum attempt " << i << "...";
     SleepFor(MonoDelta::FromMilliseconds(700));
-    s = ksck_->ChecksumData(vector<string>(), vector<string>(), MonoDelta::FromSeconds(1));
+    s = ksck_->ChecksumData(vector<string>(),
+                            vector<string>(),
+                            ChecksumOptions(MonoDelta::FromSeconds(1), 16));
     if (s.ok()) break;
   }
   ASSERT_OK(s);
@@ -170,7 +172,9 @@ TEST_F(RemoteKsckTest, TestChecksumTimeout) {
   ASSERT_OK(GenerateRowWrites(num_writes));
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   // Use an impossibly low timeout value of zero!
-  Status s = ksck_->ChecksumData(vector<string>(), vector<string>(), MonoDelta::FromNanoseconds(0));
+  Status s = ksck_->ChecksumData(vector<string>(),
+                                 vector<string>(),
+                                 ChecksumOptions(MonoDelta::FromNanoseconds(0), 16));
   ASSERT_TRUE(s.IsTimedOut()) << "Expected TimedOut Status, got: " << s.ToString();
 }
 

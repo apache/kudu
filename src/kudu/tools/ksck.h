@@ -21,6 +21,21 @@ namespace kudu {
 class MonoDelta;
 namespace tools {
 
+// Options for checksum scans.
+struct ChecksumOptions {
+ public:
+
+  ChecksumOptions();
+
+  ChecksumOptions(MonoDelta timeout, int scan_concurrency);
+
+  // The maximum total time to wait for results to come back from all replicas.
+  MonoDelta timeout;
+
+  // The maximum number of concurrent checksum scans to run per tablet server.
+  int scan_concurrency;
+};
+
 // Representation of a tablet replica on a tablet server.
 class KsckTabletReplica {
  public:
@@ -268,12 +283,10 @@ class Ksck {
   // If tablets is not empty, checks only the specified tablets.
   // If both are specified, takes the intersection.
   // If both are empty, all tables and tablets are checked.
-  // timeout specifies the maximum total time that the method will wait for
-  // results to come back from all replicas.
   // Must first call FetchTableAndTabletInfo().
   Status ChecksumData(const std::vector<std::string>& tables,
                       const std::vector<std::string>& tablets,
-                      const MonoDelta& timeout);
+                      const ChecksumOptions& options);
 
   // Verifies that the assignments reported by the master are the same reported by the
   // Tablet Servers.

@@ -34,10 +34,6 @@ DEFINE_string(master_address, "localhost",
 DEFINE_bool(checksum_scan, false,
             "Perform a checksum scan on data in the cluster");
 
-DEFINE_int32(checksum_timeout_sec, 120,
-             "Maximum total seconds that we will wait for a checksum scan to "
-             "complete before timing out.");
-
 DEFINE_string(tables, "",
               "Tables to check (comma-separated list of names). "
               "If not specified, checks all tables.");
@@ -84,10 +80,8 @@ static void RunKsck(vector<string>* error_messages) {
   if (FLAGS_checksum_scan) {
     vector<string> tables = strings::Split(FLAGS_tables, ",", strings::SkipEmpty());
     vector<string> tablets = strings::Split(FLAGS_tablets, ",", strings::SkipEmpty());
-    PUSH_PREPEND_NOT_OK(ksck->ChecksumData(tables, tablets,
-        MonoDelta::FromSeconds(FLAGS_checksum_timeout_sec)),
-        error_messages,
-        "Checksum scan error");
+    PUSH_PREPEND_NOT_OK(ksck->ChecksumData(tables, tablets, ChecksumOptions()),
+                        error_messages, "Checksum scan error");
   }
 }
 

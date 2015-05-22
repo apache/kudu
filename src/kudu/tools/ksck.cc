@@ -12,6 +12,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/blocking_queue.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/shared_ptr_util.h"
@@ -27,6 +28,13 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using strings::Substitute;
+
+DEFINE_int32(checksum_timeout_sec, 120,
+             "Maximum total seconds that we will wait for a checksum scan to "
+             "complete before timing out.");
+
+DEFINE_int32(checksum_scan_concurrency, 16,
+             "Number of concurrent checksum scans to execute per tablet server.");
 
 // Print an informational message to cerr.
 static ostream& Info() {
@@ -44,6 +52,16 @@ static ostream& Warn() {
 static ostream& Error() {
   cerr << "ERROR: ";
   return cerr;
+}
+
+ChecksumOptions::ChecksumOptions()
+    : timeout(MonoDelta::FromSeconds(FLAGS_checksum_timeout_sec)),
+      scan_concurrency(FLAGS_checksum_scan_concurrency) {
+}
+
+ChecksumOptions::ChecksumOptions(MonoDelta timeout, int scan_concurrency)
+    : timeout(timeout),
+      scan_concurrency(scan_concurrency) {
 }
 
 KsckCluster::~KsckCluster() {
@@ -209,9 +227,39 @@ class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporte
   TabletResultMap checksums_;
 };
 
+// Queue of tablet replicas for an individual tablet server.
+typedef shared_ptr<BlockingQueue<std::pair<Schema, std::string> > > TabletQueue;
+
+// A callback function which records the result of a tablet replica's checksum,
+// and then checks if the tablet server has any more tablets to checksum. If so,
+// a new async checksum scan is started.
+void TabletServerChecksumCallback(
+    const scoped_refptr<ChecksumResultReporter>& reporter,
+    const shared_ptr<KsckTabletServer>& tablet_server,
+    const TabletQueue& queue,
+    const Schema& schema,
+    const std::string& tablet_id,
+    const Status& status,
+    uint64_t checksum) {
+  reporter->ReportResult(tablet_id, tablet_server->uuid(), status, checksum);
+
+  std::pair<Schema, std::string> table_tablet;
+  if (queue->BlockingGet(&table_tablet)) {
+    const Schema& table_schema = table_tablet.first;
+    const std::string& tablet_id = table_tablet.second;
+    ReportResultCallback callback = Bind(&TabletServerChecksumCallback,
+                                         reporter,
+                                         tablet_server,
+                                         queue,
+                                         table_schema,
+                                         tablet_id);
+    tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, callback);
+  }
+}
+
 Status Ksck::ChecksumData(const vector<string>& tables,
                           const vector<string>& tablets,
-                          const MonoDelta& timeout) {
+                          const ChecksumOptions& options) {
   const unordered_set<string> tables_filter(tables.begin(), tables.end());
   const unordered_set<string> tablets_filter(tablets.begin(), tablets.end());
 
@@ -240,30 +288,57 @@ Status Ksck::ChecksumData(const vector<string>& tables,
       if (!tablets.empty()) {
         msg += "tablets=" + JoinStrings(tablets, ",") + ".";
       }
-
     }
     return Status::NotFound(msg);
   }
+
+  // Map of tablet servers to tablet queue.
+  typedef unordered_map<shared_ptr<KsckTabletServer>,
+                        TabletQueue,
+                        SharedPtrHashFunctor<KsckTabletServer> > TabletServerQueueMap;
+
+  TabletServerQueueMap tablet_server_queues;
   scoped_refptr<ChecksumResultReporter> reporter(new ChecksumResultReporter(num_tablet_replicas));
 
-  // Kick off the scans in parallel.
-  // TODO: Add some way to throttle requests on big clusters.
+  // Create a queue of checksum callbacks grouped by the tablet server.
   BOOST_FOREACH(const TabletTableMap::value_type& entry, tablet_table_map) {
     const shared_ptr<KsckTablet>& tablet = entry.first;
     const shared_ptr<KsckTable>& table = entry.second;
     BOOST_FOREACH(const shared_ptr<KsckTabletReplica>& replica, tablet->replicas()) {
       const shared_ptr<KsckTabletServer>& ts =
           FindOrDie(cluster_->tablet_servers(), replica->ts_uuid());
-      ReportResultCallback callback = Bind(&ChecksumResultReporter::ReportResult,
-                                           reporter,
-                                           tablet->id(),
-                                           replica->ts_uuid());
-      ts->RunTabletChecksumScanAsync(tablet->id(), table->schema(), callback);
+
+      const TabletQueue& queue =
+          LookupOrInsertNewSharedPtr(&tablet_server_queues, ts, num_tablet_replicas);
+      CHECK_EQ(QUEUE_SUCCESS, queue->Put(make_pair(table->schema(), tablet->id())));
+    }
+  }
+
+  // Kick off checksum scans in parallel. For each tablet server, we start
+  // scan_concurrency scans. Each callback then initiates one additional
+  // scan when it returns if the queue for that TS is not empty.
+  BOOST_FOREACH(const TabletServerQueueMap::value_type& entry, tablet_server_queues) {
+    const shared_ptr<KsckTabletServer>& tablet_server = entry.first;
+    const TabletQueue& queue = entry.second;
+    queue->Shutdown(); // Ensures that BlockingGet() will not block.
+    for (int i = 0; i < options.scan_concurrency; i++) {
+      std::pair<Schema, std::string> table_tablet;
+      if (queue->BlockingGet(&table_tablet)) {
+        const Schema& table_schema = table_tablet.first;
+        const std::string& tablet_id = table_tablet.second;
+        ReportResultCallback callback = Bind(&TabletServerChecksumCallback,
+                                             reporter,
+                                             tablet_server,
+                                             queue,
+                                             table_schema,
+                                             tablet_id);
+        tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, callback);
+      }
     }
   }
 
   bool timed_out = false;
-  if (!reporter->WaitFor(timeout)) {
+  if (!reporter->WaitFor(options.timeout)) {
     timed_out = true;
   }
   ChecksumResultReporter::TabletResultMap checksums = reporter->checksums();
@@ -317,7 +392,8 @@ Status Ksck::ChecksumData(const vector<string>& tables,
                                    num_results, num_tablet_replicas);
     return Status::TimedOut(Substitute("Checksum scan did not complete within the timeout of $0: "
                                        "Received results for $1 out of $2 expected replicas",
-                                       timeout.ToString(), num_results, num_tablet_replicas));
+                                       options.timeout.ToString(), num_results,
+                                       num_tablet_replicas));
   }
   if (num_mismatches != 0) {
     return Status::Corruption(Substitute("$0 checksum mismatches were detected", num_mismatches));
