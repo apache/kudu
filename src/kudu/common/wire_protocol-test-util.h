@@ -15,7 +15,7 @@
 
 namespace kudu {
 
-Schema GetSimpleTestSchema() {
+inline Schema GetSimpleTestSchema() {
   return Schema(boost::assign::list_of
       (ColumnSchema("key", INT32))
       (ColumnSchema("int_val", INT32))
@@ -23,12 +23,12 @@ Schema GetSimpleTestSchema() {
       1);
 }
 
-void AddTestRowWithNullableStringToPB(RowOperationsPB::Type op_type,
-                                      const Schema& schema,
-                                      int32_t key,
-                                      int32_t int_val,
-                                      const char* string_val,
-                                      RowOperationsPB* ops) {
+inline void AddTestRowWithNullableStringToPB(RowOperationsPB::Type op_type,
+                                             const Schema& schema,
+                                             int32_t key,
+                                             int32_t int_val,
+                                             const char* string_val,
+                                             RowOperationsPB* ops) {
   DCHECK(schema.initialized());
   KuduPartialRow row(&schema);
   CHECK_OK(row.SetInt32("key", key));
@@ -40,16 +40,16 @@ void AddTestRowWithNullableStringToPB(RowOperationsPB::Type op_type,
   enc.Add(op_type, row);
 }
 
-void AddTestRowToPB(RowOperationsPB::Type op_type,
-                    const Schema& schema,
-                    int32_t key,
-                    int32_t int_val,
-                    const string& string_val,
-                    RowOperationsPB* ops) {
+inline void AddTestRowToPB(RowOperationsPB::Type op_type,
+                           const Schema& schema,
+                           int32_t key,
+                           int32_t int_val,
+                           const string& string_val,
+                           RowOperationsPB* ops) {
   AddTestRowWithNullableStringToPB(op_type, schema, key, int_val, string_val.c_str(), ops);
 }
 
-void AddTestKeyToPB(RowOperationsPB::Type op_type,
+inline void AddTestKeyToPB(RowOperationsPB::Type op_type,
                     const Schema& schema,
                     int32_t key,
                     RowOperationsPB* ops) {
