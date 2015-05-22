@@ -396,9 +396,6 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   // Then all the flags coming from the minicluster framework.
   argv.insert(argv.end(), user_flags.begin(), user_flags.end());
 
-  // Ensure that we only bind to local host in tests.
-  argv.push_back("--webserver_interface=localhost");
-
   // Enable metrics logging.
   // Even though we set -logtostderr down below, metrics logs end up being written
   // based on -log_dir. So, we have to set that too.
@@ -607,6 +604,7 @@ Status ExternalMaster::Start() {
   flags.push_back("--master_wal_dir=" + data_dir_);
   flags.push_back("--master_data_dirs=" + data_dir_);
   flags.push_back("--master_rpc_bind_addresses=" + rpc_bind_address_);
+  flags.push_back("--webserver_interface=localhost");
   flags.push_back("--master_web_port=0");
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
@@ -621,6 +619,7 @@ Status ExternalMaster::Restart() {
   flags.push_back("--master_wal_dir=" + data_dir_);
   flags.push_back("--master_data_dirs=" + data_dir_);
   flags.push_back("--master_rpc_bind_addresses=" + rpc_bind_address_);
+  flags.push_back("--webserver_interface=localhost");
   flags.push_back(Substitute("--master_web_port=$0", bound_http_.port()));
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
@@ -653,6 +652,8 @@ Status ExternalTabletServer::Start() {
                              bind_host_));
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
                              bind_host_));
+  flags.push_back(Substitute("--webserver_interface=$0",
+                             bind_host_));
   flags.push_back("--tablet_server_web_port=0");
   flags.push_back("--tablet_server_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
@@ -671,6 +672,8 @@ Status ExternalTabletServer::Restart() {
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
                              bind_host_));
   flags.push_back(Substitute("--tablet_server_web_port=$0", bound_http_.port()));
+  flags.push_back(Substitute("--webserver_interface=$0",
+                             bind_host_));
   flags.push_back("--tablet_server_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
