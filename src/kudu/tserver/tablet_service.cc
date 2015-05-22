@@ -940,6 +940,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
                             gscoped_ptr<ScanSpec>* spec,
                             const SharedScanner& scanner) {
   gscoped_ptr<ScanSpec> ret(new ScanSpec);
+  ret->set_cache_blocks(scan_pb.cache_blocks());
 
   // First the column range predicates.
   BOOST_FOREACH(const ColumnRangePredicatePB& pred_pb, scan_pb.range_predicates()) {
@@ -979,8 +980,6 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
       VLOG(3) << "Parsed predicate " << pred.ToString() << " from " << scan_pb.ShortDebugString();
     }
     ret->AddPredicate(pred);
-
-    ret->set_cache_blocks(scan_pb.cache_blocks());
   }
 
   // When doing an ordered scan, we need to include the key columns to be able to encode
