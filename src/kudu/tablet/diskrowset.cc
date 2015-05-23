@@ -468,7 +468,7 @@ Status DiskRowSet::MajorCompactDeltaStores() {
 
 Status DiskRowSet::MajorCompactDeltaStoresWithColumns(const ColumnIndexes& col_indexes) {
   TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStores");
-  boost::lock_guard<boost::mutex> l(*delta_tracker()->compact_flush_lock());
+  boost::lock_guard<Mutex> l(*delta_tracker()->compact_flush_lock());
 
   // TODO: do we need to lock schema or anything here?
   gscoped_ptr<MajorDeltaCompaction> compaction;

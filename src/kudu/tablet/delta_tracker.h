@@ -4,8 +4,6 @@
 #ifndef KUDU_TABLET_DELTATRACKER_H
 #define KUDU_TABLET_DELTATRACKER_H
 
-#include <boost/thread/mutex.hpp>
-#include <boost/thread/shared_mutex.hpp>
 #include <gtest/gtest_prod.h>
 #include <string>
 #include <vector>
@@ -171,7 +169,7 @@ class DeltaTracker {
 
   const Schema& schema() const;
 
-  boost::mutex* compact_flush_lock() {
+  Mutex* compact_flush_lock() {
     return &compact_flush_lock_;
   }
 
@@ -252,7 +250,7 @@ class DeltaTracker {
   //
   // TODO(perf): convert this to a reader-biased lock to avoid any cacheline
   // contention between threads.
-  mutable boost::shared_mutex component_lock_;
+  mutable rw_spinlock component_lock_;
 
   // Exclusive lock that ensures that only one flush or compaction can run
   // at a time. Protects delta_stores_. NOTE: this lock cannot be acquired
@@ -260,7 +258,7 @@ class DeltaTracker {
   // (that both first acquire this lock and then component_lock) will deadlock.
   //
   // TODO(perf): this needs to be more fine grained
-  mutable boost::mutex compact_flush_lock_;
+  mutable Mutex compact_flush_lock_;
 };
 
 

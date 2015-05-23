@@ -3,8 +3,7 @@
 // All rights reserved.
 
 #include <boost/assign/list_of.hpp>
-#include <boost/thread/locks.hpp>
-#include <boost/thread/shared_mutex.hpp>
+#include <boost/foreach.hpp>
 #include <tr1/memory>
 #include <string>
 
@@ -145,7 +144,7 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& to_remove,
   RETURN_NOT_OK_PREPEND(OpenDeltaReaders(new_delta_blocks, &new_stores, type),
                         "Unable to open delta blocks");
 
-  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+  lock_guard<rw_spinlock> lock(&component_lock_);
   SharedDeltaStoreVector* stores_to_update =
       type == REDO ? &redo_delta_stores_ : &undo_delta_stores_;
   SharedDeltaStoreVector::iterator start_it;
@@ -188,7 +187,7 @@ Status DeltaTracker::CompactStores(int start_idx, int end_idx) {
   // Prevent concurrent compactions or a compaction concurrent with a flush
   //
   // TODO(perf): this could be more fine grained
-  boost::lock_guard<boost::mutex> l(compact_flush_lock_);
+  lock_guard<Mutex> l(&compact_flush_lock_);
   if (CountRedoDeltaStores() <= 1) {
     return Status::OK();
   }
@@ -245,7 +244,7 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
   Schema schema;
   {
     // Schema may be altered during a delta compaction.
-    boost::shared_lock<boost::shared_mutex> schema_lock(component_lock_);
+    shared_lock<rw_spinlock> schema_lock(&component_lock_);
     schema = schema_;
   }
   RETURN_NOT_OK(MakeDeltaIteratorMergerUnlocked(start_idx, end_idx, &schema, compacted_stores,
@@ -263,7 +262,7 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
 }
 
 void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const {
-  boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+  lock_guard<rw_spinlock> lock(&component_lock_);
   deltas->assign(undo_delta_stores_.begin(), undo_delta_stores_.end());
   deltas->insert(deltas->end(), redo_delta_stores_.begin(), redo_delta_stores_.end());
   deltas->push_back(dms_);
@@ -272,7 +271,7 @@ void DeltaTracker::CollectStores(vector<shared_ptr<DeltaStore> > *deltas) const 
 Status DeltaTracker::CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) const {
   std::vector<shared_ptr<DeltaStore> > undos;
   {
-    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    lock_guard<rw_spinlock> lock(&component_lock_);
     undos = undo_delta_stores_;
   }
   BOOST_FOREACH(const shared_ptr<DeltaStore>& undo, undos) {
@@ -307,7 +306,7 @@ Status DeltaTracker::NewDeltaFileIterator(
     vector<shared_ptr<DeltaStore> >* included_stores,
     shared_ptr<DeltaIterator>* out) const {
   {
-    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    lock_guard<rw_spinlock> lock(&component_lock_);
     // TODO perf: is this really needed? Will check
     // DeltaIteratorMerger::Create()
     if (type == UNDO) {
@@ -347,7 +346,7 @@ Status DeltaTracker::Update(Timestamp timestamp,
                             const consensus::OpId& op_id,
                             OperationResultPB* result) {
   // TODO: can probably lock this more fine-grained.
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  shared_lock<rw_spinlock> lock(&component_lock_);
   DCHECK_LT(row_idx, num_rows_);
 
   Status s = dms_->Update(timestamp, row_idx, update, op_id);
@@ -361,7 +360,7 @@ Status DeltaTracker::Update(Timestamp timestamp,
 
 Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted,
                                      ProbeStats* stats) const {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  shared_lock<rw_spinlock> lock(&component_lock_);
 
   DCHECK_LT(row_idx, num_rows_);
 
@@ -421,7 +420,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
 }
 
 Status DeltaTracker::Flush(MetadataFlushType flush_type) {
-  boost::lock_guard<boost::mutex> l(compact_flush_lock_);
+  lock_guard<Mutex> l(&compact_flush_lock_);
 
   // First, swap out the old DeltaMemStore a new one,
   // and add it to the list of delta stores to be reflected
@@ -431,7 +430,7 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
   {
     // Lock the component_lock_ in exclusive mode.
     // This shuts out any concurrent readers or writers.
-    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    lock_guard<rw_spinlock> lock(&component_lock_);
 
     count = dms_->Count();
 
@@ -466,7 +465,7 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
   // Now, re-take the lock and swap in the DeltaFileReader in place of
   // of the DeltaMemStore
   {
-    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    lock_guard<rw_spinlock> lock(&component_lock_);
     size_t idx = redo_delta_stores_.size() - 1;
 
     CHECK_EQ(redo_delta_stores_[idx], old_dms)
@@ -483,7 +482,7 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
 Status DeltaTracker::AlterSchema(const Schema& schema) {
   bool require_update;
   {
-    boost::lock_guard<boost::shared_mutex> lock(component_lock_);
+    lock_guard<rw_spinlock> lock(&component_lock_);
     if ((require_update = !schema_.Equals(schema))) {
       schema_ = schema;
     }
@@ -495,27 +494,27 @@ Status DeltaTracker::AlterSchema(const Schema& schema) {
 }
 
 size_t DeltaTracker::DeltaMemStoreSize() const {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  shared_lock<rw_spinlock> lock(&component_lock_);
   return dms_->memory_footprint();
 }
 
 bool DeltaTracker::DeltaMemStoreEmpty() const {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  shared_lock<rw_spinlock> lock(&component_lock_);
   return dms_->Empty();
 }
 
 int64_t DeltaTracker::MinUnflushedLogIndex() const {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  shared_lock<rw_spinlock> lock(&component_lock_);
   return dms_->MinLogIndex();
 }
 
 size_t DeltaTracker::CountRedoDeltaStores() const {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  shared_lock<rw_spinlock> lock(&component_lock_);
   return redo_delta_stores_.size();
 }
 
 uint64_t DeltaTracker::EstimateOnDiskSize() const {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  shared_lock<rw_spinlock> lock(&component_lock_);
   uint64_t size = 0;
   BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
     size += ds->EstimateSize();
@@ -524,7 +523,7 @@ uint64_t DeltaTracker::EstimateOnDiskSize() const {
 }
 
 void DeltaTracker::GetColumnsIdxWithUpdates(ColumnIndexes* columns) const {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  shared_lock<rw_spinlock> lock(&component_lock_);
 
   set<size_t> column_idx_with_updates;
   BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
@@ -546,7 +545,7 @@ void DeltaTracker::GetColumnsIdxWithUpdates(ColumnIndexes* columns) const {
 }
 
 const Schema& DeltaTracker::schema() const {
-  boost::shared_lock<boost::shared_mutex> lock(component_lock_);
+  shared_lock<rw_spinlock> lock(&component_lock_);
   return dms_->schema();
 }
 
