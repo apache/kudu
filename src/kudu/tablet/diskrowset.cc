@@ -497,7 +497,7 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumns(const ColumnIndexes& col_i
 Status DiskRowSet::NewMajorDeltaCompaction(
     const ColumnIndexes& col_indexes,
     gscoped_ptr<MajorDeltaCompaction>* out) const {
-  CHECK(open_);
+  DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   vector<shared_ptr<DeltaStore> > included_stores;
@@ -521,7 +521,7 @@ Status DiskRowSet::NewMajorDeltaCompaction(
 Status DiskRowSet::NewRowIterator(const Schema *projection,
                                   const MvccSnapshot &mvcc_snap,
                                   gscoped_ptr<RowwiseIterator>* out) const {
-  CHECK(open_);
+  DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   shared_ptr<CFileSet::Iterator> base_iter(base_data_->NewIterator(projection));
@@ -545,7 +545,7 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
                              const consensus::OpId& op_id,
                              ProbeStats* stats,
                              OperationResultPB* result) {
-  CHECK(open_);
+  DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   rowid_t row_idx;
@@ -567,7 +567,7 @@ Status DiskRowSet::MutateRow(Timestamp timestamp,
 Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                                    bool* present,
                                    ProbeStats* stats) const {
-  CHECK(open_);
+  DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   rowid_t row_idx;
@@ -585,7 +585,7 @@ Status DiskRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
 }
 
 Status DiskRowSet::CountRows(rowid_t *count) const {
-  CHECK(open_);
+  DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
   return base_data_->CountRows(count);
@@ -593,46 +593,46 @@ Status DiskRowSet::CountRows(rowid_t *count) const {
 
 Status DiskRowSet::GetBounds(Slice *min_encoded_key,
                              Slice *max_encoded_key) const {
-  CHECK(open_);
+  DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return base_data_->GetBounds(min_encoded_key, max_encoded_key);
 }
 
 uint64_t DiskRowSet::EstimateBaseDataDiskSize() const {
-  CHECK(open_);
+  DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return base_data_->EstimateOnDiskSize();
 }
 
 uint64_t DiskRowSet::EstimateDeltaDiskSize() const {
-  CHECK(open_);
+  DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return delta_tracker_->EstimateOnDiskSize();
 }
 
 uint64_t DiskRowSet::EstimateOnDiskSize() const {
-  CHECK(open_);
+  DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
   return EstimateBaseDataDiskSize() + EstimateDeltaDiskSize();
 }
 
 size_t DiskRowSet::DeltaMemStoreSize() const {
-  CHECK(open_);
+  DCHECK(open_);
   return delta_tracker_->DeltaMemStoreSize();
 }
 
 bool DiskRowSet::DeltaMemStoreEmpty() const {
-  CHECK(open_);
+  DCHECK(open_);
   return delta_tracker_->DeltaMemStoreEmpty();
 }
 
 int64_t DiskRowSet::MinUnflushedLogIndex() const {
-  CHECK(open_);
+  DCHECK(open_);
   return delta_tracker_->MinUnflushedLogIndex();
 }
 
 size_t DiskRowSet::CountDeltaStores() const {
-  CHECK(open_);
+  DCHECK(open_);
   return delta_tracker_->CountRedoDeltaStores();
 }
 
@@ -649,7 +649,7 @@ size_t DiskRowSet::CountDeltaStores() const {
 //                       latter is meant to be high since minor compactions don't give us much, so
 //                       we only consider it a gain if it gets rid of many tiny files.
 double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType type) const {
-  CHECK(open_);
+  DCHECK(open_);
   double perf_improv = 0;
   size_t store_count = CountDeltaStores();
   uint64_t base_data_size = EstimateBaseDataDiskSize();
