@@ -118,7 +118,7 @@ if [ -f "$TOOLCHAIN" ]; then
   # Explicitly add LLVM 3.5 to the PATH; it's not included in toolchain.sh.
   #
   # If it doesn't exist, this will have no effect.
-  PATH=/opt/toolchain/llvm-3.5.0/bin:$PATH  
+  PATH=/opt/toolchain/llvm-3.5.0/bin:$PATH
 fi
 
 thirdparty/build-if-necessary.sh
@@ -321,11 +321,23 @@ if [ "$HEAPCHECK" = normal ]; then
 fi
 
 if [ "$BUILD_PYTHON" == "1" ]; then
-  # Assuming we run this script from base dir
+  # Failing to compile the Python client should result in a build failure
+  set -e
   export KUDU_HOME=$(pwd)
   pushd python
+
+  # Create a sane test environment
+  virtualenv test_environment
+  source test_environment/bin/activate
+  pip install --upgrade pip
+  pip install -r requirements.txt
+
+  # Assuming we run this script from base dir
   python setup.py build_ext
-  python setup.py test -a --junitxml=$TEST_LOGDIR/python_test.xml
+  set +e
+  python setup.py nosetests --with-xunit \
+    --xunit-file=$KUDU_HOME/build/test-logs/python_client.xml 2> \
+    $KUDU_HOME/build/test-logs/python_client.log || EXIT_STATUS=$?
 fi
 
 set -e

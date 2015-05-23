@@ -5,19 +5,119 @@
 
 from __future__ import division
 
+import json
+import fnmatch
 import nose
-import unittest
+import os
+import shutil
+import subprocess
+import tempfile
 import time
+import unittest
+import signal
 
 import kudu
 
+class KuduBasicsBase(object):
+    """Base test class that will start a configurable number of master and tablet
+    servers."""
 
-def example_schema():
-    col1 = kudu.ColumnSchema.create('key', kudu.INT32)
-    col2 = kudu.ColumnSchema.create('int_val', kudu.INT32)
-    col3 = kudu.ColumnSchema.create('string_val', kudu.STRING)
+    BASE_PORT = 37000
+    NUM_TABLET_SERVERS = 3
 
-    return kudu.schema_from_list([col1, col2, col3], 1)
+    @classmethod
+    def start_cluster(cls):
+        local_path = tempfile.mkdtemp(dir=os.getenv("TEST_TMPDIR", None))
+        bin_path="{0}/build/latest".format(os.getenv("KUDU_HOME"))
+
+        os.makedirs("{0}/master/".format(local_path))
+        os.makedirs("{0}/master/data".format(local_path))
+        os.makedirs("{0}/master/logs".format(local_path))
+
+        path = ["{0}/kudu-master".format(bin_path),
+                "-master_rpc_bind_addresses=0.0.0.0:0",
+                "-master_wal_dir={0}/master/data".format(local_path),
+                "-master_data_dirs={0}/master/data".format(local_path),
+                "-log_dir={0}/master/logs".format(local_path),
+                "-logtostderr",
+                "-master_web_port=0",
+                "-server_dump_info_path={0}/master/config.json".format(local_path)
+              ]
+
+        p = subprocess.Popen(path, shell=False)
+        fid = open("{0}/master/kudu-master.pid".format(local_path), "w+")
+        fid.write("{0}".format(p.pid))
+        fid.close()
+
+        # We have to wait for the master to settle before the config file appears
+        config_file = "{0}/master/config.json".format(local_path)
+        for _ in range(30):
+            if os.path.exists(config_file):
+                break
+            time.sleep(1)
+        else:
+            raise Exception("Could not find kudu-master config file")
+
+        # If the server was started get the bind port from the config dump
+        master_config = json.load(open("{0}/master/config.json".format(local_path), "r"))
+        # One master bound on local host
+        master_port = master_config["bound_rpc_addresses"][0]["port"]
+
+        for m in range(cls.NUM_TABLET_SERVERS):
+            os.makedirs("{0}/ts/{1}".format(local_path, m))
+            os.makedirs("{0}/ts/{1}/logs".format(local_path, m))
+
+            path = ["{0}/kudu-tablet_server".format(bin_path),
+                    "-tablet_server_rpc_bind_addresses=0.0.0.0:0",
+                    "-tablet_server_master_addrs=127.0.0.1:{0}".format(master_port),
+                    "-tablet_server_web_port=0",
+                    "-log_dir={0}/master/logs".format(local_path),
+                    "-logtostderr",
+                    "-tablet_server_data_dirs={0}/ts/{1}/data".format(local_path, m),
+                    "-tablet_server_wal_dir={0}/ts/{1}/data".format(local_path, m),
+                  ]
+            p = subprocess.Popen(path, shell=False)
+            fid = open("{0}/ts/{1}/kudu-tablet_server.pid".format(local_path, m), "w+")
+            fid.write("{0}".format(p.pid))
+            fid.close()
+
+        return local_path, master_port
+
+    @classmethod
+    def stop_cluster(cls, path):
+        for root, dirnames, filenames in os.walk('{0}/..'.format(path)):
+            for filename in fnmatch.filter(filenames, '*.pid'):
+                with open(os.path.join(root, filename)) as fid:
+                    a = fid.read()
+                    r = subprocess.Popen(["kill", "{0}".format(a)])
+                    r.wait()
+                    os.remove(os.path.join(root, filename))
+        shutil.rmtree(path, True)
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cluster_path, master_port = cls.start_cluster()
+        time.sleep(1)
+        cls.client = kudu.Client('127.0.0.1:{0}'.format(master_port))
+
+        cls.schema = cls.example_schema()
+
+        cls.ex_table = 'example-table'
+        if cls.client.table_exists(cls.ex_table):
+            cls.client.delete_table(cls.ex_table)
+        cls.client.create_table(cls.ex_table, cls.schema)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.stop_cluster(cls.cluster_path)
+
+    @classmethod
+    def example_schema(cls):
+        col1 = kudu.ColumnSchema.create('key', kudu.INT32)
+        col2 = kudu.ColumnSchema.create('int_val', kudu.INT32)
+        col3 = kudu.ColumnSchema.create('string_val', kudu.STRING)
+
+        return kudu.schema_from_list([col1, col2, col3], 1)
 
 
 class TestSchema(unittest.TestCase):
@@ -55,24 +155,6 @@ class TestSchema(unittest.TestCase):
 
     def test_column_schema_default_value(self):
         pass
-
-
-class KuduBasicsBase(object):
-
-    @classmethod
-    def setUpClass(cls):
-        cls.client = kudu.Client('127.0.0.1')
-
-        cls.schema = example_schema()
-
-        cls.ex_table = 'example-table'
-        if cls.client.table_exists(cls.ex_table):
-            cls.client.delete_table(cls.ex_table)
-        cls.client.create_table(cls.ex_table, cls.schema)
-
-    @classmethod
-    def tearDownClass(cls):
-        cls.client.delete_table(cls.ex_table)
 
 
 class TestTable(KuduBasicsBase, unittest.TestCase):
@@ -191,8 +273,6 @@ class TestScanner(KuduBasicsBase, unittest.TestCase):
         tuples = batch.as_tuples()
 
         self.assertEqual(tuples, self.tuples[20:50])
-
-
 
 
 if __name__ == '__main__':

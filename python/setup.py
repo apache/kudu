@@ -10,7 +10,6 @@ import Cython
 if Cython.__version__ < '0.19.1':
     raise Exception('Please upgrade to Cython 0.19.1 or newer')
 import sys
-from setuptools.command.test import test as TestCommand
 from setuptools import setup
 from distutils.extension import Extension
 import os
@@ -32,26 +31,6 @@ class clean(_clean):
                 pass
 
 
-# The below class is a verbatim copy from https://pytest.org/latest/goodpractises.html
-class PyTest(TestCommand):
-    user_options = [('pytest-args=', 'a', "Arguments to pass to py.test")]
-
-    def initialize_options(self):
-        TestCommand.initialize_options(self)
-        self.pytest_args = []
-
-    def finalize_options(self):
-        TestCommand.finalize_options(self)
-        self.test_args = []
-        self.test_suite = True
-
-    def run_tests(self):
-        # Import here, because outside the eggs aren't loaded.
-        import pytest
-        errno = pytest.main(self.pytest_args)
-        sys.exit(errno)
-
-
 # TODO: a more portable method for this
 kudu_include_dir = os.path.join(os.environ['KUDU_HOME'], 'src')
 kudu_lib_dir = os.path.join(os.environ['KUDU_HOME'], 'build/latest')
@@ -71,14 +50,13 @@ extensions = cythonize([client_ext])
 setup(
     name="python-kudu",
     packages=["kudu"],
-    tests_require=['pytest'],
     version=VERSION,
+    setup_requires=['nose>=1.0'],
     package_data={'kudu': ['*.pxd', '*.pyx']},
     ext_modules=extensions,
     cmdclass = {
         'clean': clean,
-        'build_ext': build_ext,
-        'test' : PyTest
+        'build_ext': build_ext
     },
     install_requires=['cython >= 0.21'],
     description="Cython wrapper for the Kudu C++ API",

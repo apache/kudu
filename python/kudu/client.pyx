@@ -81,7 +81,7 @@ cdef class Client:
         pass
 
     def create_table(self, table_name, Schema schema):
-        cdef Status s = (self.cp.NewTableCreator().get()
+        cdef Status s = (self.cp.NewTableCreator()
                          .table_name(table_name)
                          .schema(&schema.schema)
                          .Create())
@@ -93,7 +93,7 @@ cdef class Client:
 
     def table_exists(self, table_name):
         cdef:
-            scoped_refptr[KuduTable] table
+            shared_ptr[KuduTable] table
             string c_name = table_name
 
         cdef Status s = self.cp.OpenTable(c_name, &table)
@@ -354,7 +354,7 @@ cdef class Schema:
 
 cdef class Table:
     cdef:
-        scoped_refptr[KuduTable] table
+        shared_ptr[KuduTable] table
         const KuduSchema* schema
         map[string, int] _col_mapping
         bint _mapping_initialized
@@ -829,28 +829,28 @@ cdef class WriteOperation:
 
 cdef class Insert(WriteOperation):
     cdef:
-        gscoped_ptr[KuduInsert] op
+        KuduInsert* op
 
     def __cinit__(self, Table table):
         self.op = self.table.table.get().NewInsert()
-        self.row = self.op.get().mutable_row()
+        self.row = self.op.mutable_row()
 
     cdef add_to_session(self, Session s):
         if self.applied:
             raise Exception
 
-        s.s.get().Apply(self.op.Pass())
+        s.s.get().Apply(self.op)
         self.applied = 1
 
 
 cdef class Update(WriteOperation):
     cdef:
-        gscoped_ptr[KuduUpdate] op
+        KuduUpdate* op
 
     def __cinit__(self, Table table):
         self.table = table
         self.op = table.table.get().NewUpdate()
-        self.row = self.op.get().mutable_row()
+        self.row = self.op.mutable_row()
 
     cdef add_to_session(self, Session s):
         pass
@@ -858,18 +858,18 @@ cdef class Update(WriteOperation):
 
 cdef class Delete(WriteOperation):
     cdef:
-        gscoped_ptr[KuduDelete] op
+        KuduDelete* op
 
     def __cinit__(self, Table table):
         self.table = table
         self.op = table.table.get().NewDelete()
-        self.row = self.op.get().mutable_row()
+        self.row = self.op.mutable_row()
 
     cdef add_to_session(self, Session s):
         if self.applied:
             raise Exception
 
-        s.s.get().Apply(self.op.Pass())
+        s.s.get().Apply(self.op)
         self.applied = 1
 
 

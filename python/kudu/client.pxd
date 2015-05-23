@@ -22,21 +22,6 @@ cdef extern from "<tr1/memory>" namespace "std::tr1" nogil:
         void reset()
         void reset(T* p)
 
-cdef extern from "kudu/gutil/gscoped_ptr.h" nogil:
-
-    cdef cppclass gscoped_ptr[T]:
-        T* get()
-        T& operator*()
-        void reset(T* p)
-        gscoped_ptr[T] Pass()
-
-cdef extern from "kudu/gutil/ref_counted.h" nogil:
-
-    cdef cppclass scoped_refptr[T]:
-        T* get()
-        T& operator*()
-        void reset(T* p)
-
 cdef extern from "kudu/util/status.h" namespace "kudu" nogil:
 
     # We can later add more of the common status factory methods as needed
@@ -373,17 +358,6 @@ cdef extern from "kudu/client/scan_predicate.h" namespace "kudu::client" nogil:
         void CopyFrom(KuduColumnRangePredicate& other)
 
 
-cdef extern from "kudu/gutil/callback.h" namespace "kudu" nogil:
-
-    # Have not yet attempted to implement callbacks
-    cdef cppclass Callback[T]:
-        pass
-
-    # const-ness may be a problem here
-    # kudu/util/status_callback.h
-    # typedef Callback<void(const Status& status)> StatusCallback
-    ctypedef Callback[void(Status& status)] StatusCallback
-
 cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
     # Omitted KuduClient::ReplicaSelection enum
@@ -391,14 +365,14 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
     cdef cppclass KuduClient:
 
         Status DeleteTable(string& table_name)
-        Status OpenTable(string& table_name, scoped_refptr[KuduTable]* table)
+        Status OpenTable(string& table_name, shared_ptr[KuduTable]* table)
         Status GetTableSchema(string& table_name, KuduSchema* schema)
 
-        gscoped_ptr[KuduTableCreator] NewTableCreator()
+        KuduTableCreator* NewTableCreator()
         Status IsCreateTableInProgress(string& table_name,
                                        bool* create_in_progress)
 
-        gscoped_ptr[KuduTableAlterer] NewTableAlterer()
+        KuduTableAlterer* NewTableAlterer()
         Status IsAlterTableInProgress(string& table_name,
                                       bool* alter_in_progress)
 
@@ -451,9 +425,9 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         string& name()
         KuduSchema& schema()
 
-        gscoped_ptr[KuduInsert] NewInsert()
-        gscoped_ptr[KuduUpdate] NewUpdate()
-        gscoped_ptr[KuduDelete] NewDelete()
+        KuduInsert* NewInsert()
+        KuduUpdate* NewUpdate()
+        KuduDelete* NewDelete()
 
         KuduClient* client()
 
@@ -471,10 +445,10 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
 
         void SetPriority(int priority)
 
-        Status Apply(gscoped_ptr[KuduWriteOperation] write_op)
-        Status Apply(gscoped_ptr[KuduInsert] write_op)
-        Status Apply(gscoped_ptr[KuduUpdate] write_op)
-        Status Apply(gscoped_ptr[KuduDelete] write_op)
+        Status Apply(KuduWriteOperation* write_op)
+        Status Apply(KuduInsert* write_op)
+        Status Apply(KuduUpdate* write_op)
+        Status Apply(KuduDelete* write_op)
 
         # This is thread-safe
         Status Flush()
@@ -482,15 +456,15 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         # TODO: Will need to decide on a strategy for exposing the session's
         # async API to Python
 
-        # Status ApplyAsync(gscoped_ptr[KuduWriteOperation] write_op,
-        #                   StatusCallback cb)
-        # Status ApplyAsync(gscoped_ptr[KuduInsert] write_op,
-        #                   StatusCallback cb)
-        # Status ApplyAsync(gscoped_ptr[KuduUpdate] write_op,
-        #                   StatusCallback cb)
-        # Status ApplyAsync(gscoped_ptr[KuduDelete] write_op,
-        #                   StatusCallback cb)
-        # void FlushAsync(StatusCallback& cb)
+        # Status ApplyAsync(KuduWriteOperation* write_op,
+        #                   KuduStatusCallback cb)
+        # Status ApplyAsync(KuduInsert* write_op,
+        #                   KuduStatusCallback cb)
+        # Status ApplyAsync(KuduUpdate* write_op,
+        #                   KuduStatusCallback cb)
+        # Status ApplyAsync(KuduDelete* write_op,
+        #                   KuduStatusCallback cb)
+        # void FlushAsync(KuduStatusCallback& cb)
 
 
         Status Close()
@@ -533,6 +507,6 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         Status& status()
 
         KuduWriteOperation& failed_op()
-        gscoped_ptr[KuduWriteOperation] release_failed_op()
+        KuduWriteOperation* release_failed_op()
 
         bool was_possibly_successful()
