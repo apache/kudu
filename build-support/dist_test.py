@@ -241,7 +241,11 @@ def create_task_json(staging,
   tasks = []
   with file(staging.archive_dump_path(), "r") as isolate_dump:
     inmap = json.load(isolate_dump)
-  for k, v in inmap['items'].iteritems():
+
+  # Some versions of 'isolate batcharchive' directly list the items in
+  # the dumped JSON. Others list it in an 'items' dictionary.
+  items = inmap.get('items', inmap)
+  for k, v in items.iteritems():
     tasks += [{"isolate_hash": str(v),
                "description": str(k),
                "timeout": TEST_TIMEOUT_SECS
