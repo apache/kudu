@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/net/net_util.h"
 
@@ -137,6 +138,10 @@ class KuduClient::Data {
 
   HostPort leader_master_hostport() const;
 
+  uint64_t GetLatestObservedTimestamp() const;
+
+  void UpdateLatestObservedTimestamp(uint64_t timestamp);
+
   // Retry 'func' until either:
   //
   // 1) Methods succeeds on a leader master.
@@ -194,6 +199,8 @@ class KuduClient::Data {
   // See: KuduClient::Data::SetMasterServerProxyAsync for a more
   // in-depth explanation of why this is needed and how it works.
   mutable simple_spinlock leader_master_lock_;
+
+  AtomicInt<uint64_t> latest_observed_timestamp_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

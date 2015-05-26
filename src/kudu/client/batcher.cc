@@ -740,7 +740,11 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
   // "aborted" state.
   CHECK_EQ(state_, kFlushing);
 
-  if (!s.ok()) {
+  if (s.ok()) {
+    if (rpc.resp().has_timestamp()) {
+      client_->data_->UpdateLatestObservedTimestamp(rpc.resp().timestamp());
+    }
+  } else {
     // Mark each of the rows in the write op as failed, since the whole RPC failed.
     BOOST_FOREACH(InFlightOp* op, rpc.ops()) {
       gscoped_ptr<KuduError> error(new KuduError(op->write_op.Pass(), s));

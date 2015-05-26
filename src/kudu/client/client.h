@@ -208,6 +208,15 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   const MonoDelta& default_admin_operation_timeout() const;
   const MonoDelta& default_rpc_timeout() const;
 
+  // Value for the latest observed timestamp when none has been observed or set.
+  static const uint64_t kNoTimestamp;
+
+  // Returns highest HybridTime timestamp observed by the client.
+  // The latest observed timestamp can be used to start a snapshot scan on a
+  // table which is guaranteed to contain all data written or previously read by
+  // this client. See KuduScanner for more details on timestamps.
+  uint64_t GetLatestObservedTimestamp() const;
+
  private:
   class KUDU_NO_EXPORT Data;
 
@@ -834,7 +843,7 @@ class KUDU_EXPORT KuduScanner {
 
   // Sets the snapshot timestamp in raw encoded form (i.e. as returned by a
   // previous call to a server), for scans in READ_AT_SNAPSHOT mode.
-  Status SetSnapshotRaw(uint64_t snapshot_timestamp_micros) WARN_UNUSED_RESULT;
+  Status SetSnapshotRaw(uint64_t snapshot_timestamp) WARN_UNUSED_RESULT;
 
   // Sets the maximum time that Open() and NextBatch() are allowed to take.
   Status SetTimeoutMillis(int millis);

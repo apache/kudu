@@ -208,7 +208,8 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
                                  ListTabletServersResponsePB*,
                                  RpcController*)>& func);
 
-KuduClient::Data::Data() {
+KuduClient::Data::Data()
+    : latest_observed_timestamp_(KuduClient::kNoTimestamp) {
 }
 
 KuduClient::Data::~Data() {
@@ -768,6 +769,14 @@ HostPort KuduClient::Data::leader_master_hostport() const {
 shared_ptr<master::MasterServiceProxy> KuduClient::Data::master_proxy() const {
   lock_guard<simple_spinlock> l(&leader_master_lock_);
   return master_proxy_;
+}
+
+uint64_t KuduClient::Data::GetLatestObservedTimestamp() const {
+  return latest_observed_timestamp_.Load();
+}
+
+void KuduClient::Data::UpdateLatestObservedTimestamp(uint64_t timestamp) {
+  latest_observed_timestamp_.StoreMax(timestamp);
 }
 
 } // namespace client

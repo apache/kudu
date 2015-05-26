@@ -314,6 +314,12 @@ const MonoDelta& KuduClient::default_rpc_timeout() const {
   return data_->default_rpc_timeout_;
 }
 
+const uint64_t KuduClient::kNoTimestamp = 0;
+
+uint64_t KuduClient::GetLatestObservedTimestamp() const {
+  return data_->GetLatestObservedTimestamp();
+}
+
 ////////////////////////////////////////////////////////////
 // KuduTableCreator
 ////////////////////////////////////////////////////////////
@@ -758,8 +764,6 @@ Status KuduScanner::SetSnapshotRaw(uint64_t snapshot_timestamp) {
   if (data_->open_) {
     return Status::IllegalState("Snapshot timestamp must be set before Open()");
   }
-  // Shift the HT timestamp bits to get well-formed HT timestamp with the logical
-  // bits zeroed out.
   data_->snapshot_timestamp_ = snapshot_timestamp;
   return Status::OK();
 }

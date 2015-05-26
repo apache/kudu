@@ -2332,5 +2332,31 @@ TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
             .Create().IsInvalidArgument());
 }
 
+TEST_F(ClientTest, TestLatestObservedTimestamp) {
+  // Check that a write updates the latest observed timestamp.
+  uint64_t ts0 = client_->GetLatestObservedTimestamp();
+  ASSERT_EQ(ts0, KuduClient::kNoTimestamp);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1, 0));
+  uint64_t ts1 = client_->GetLatestObservedTimestamp();
+  ASSERT_NE(ts0, ts1);
+
+  // Check that the timestamp of the previous write will be observed by another
+  // client performing a snapshot scan at that timestamp.
+  shared_ptr<KuduClient> client;
+  scoped_refptr<KuduTable> table;
+  ASSERT_OK(KuduClientBuilder()
+      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
+      .Build(&client));
+  ASSERT_EQ(client->GetLatestObservedTimestamp(), KuduClient::kNoTimestamp);
+  ASSERT_OK(client->OpenTable(client_table_->name(), &table));
+  KuduScanner scanner(table.get());
+  ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+  ASSERT_OK(scanner.SetSnapshotRaw(ts1));
+  ASSERT_OK(scanner.Open());
+  scanner.Close();
+  uint64_t ts2 = client->GetLatestObservedTimestamp();
+  ASSERT_EQ(ts1, ts2);
+}
+
 } // namespace client
 } // namespace kudu

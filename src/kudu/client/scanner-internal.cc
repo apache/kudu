@@ -280,6 +280,10 @@ Status KuduScanner::Data::OpenTablet(const Slice& key,
     }
   }
 
+  if (last_response_.has_snap_timestamp()) {
+    table_->client()->data_->UpdateLatestObservedTimestamp(last_response_.snap_timestamp());
+  }
+
   return Status::OK();
 }
 
