@@ -82,10 +82,10 @@ class MaintenanceOp {
   virtual void Perform() = 0;
 
   // Returns the histogram for this op that tracks duration. Cannot be NULL.
-  virtual scoped_refptr<Histogram> DurationHistogram() = 0;
+  virtual scoped_refptr<Histogram> DurationHistogram() const = 0;
 
   // Returns the gauge for this op that tracks when this op is running. Cannot be NULL.
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() = 0;
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const = 0;
 
   uint32_t running() { return running_; }
 

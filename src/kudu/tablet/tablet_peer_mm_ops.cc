@@ -108,11 +108,11 @@ void FlushMRSOp::Perform() {
   tablet_peer_->tablet()->rowsets_flush_sem_.unlock();
 }
 
-scoped_refptr<Histogram> FlushMRSOp::DurationHistogram() {
+scoped_refptr<Histogram> FlushMRSOp::DurationHistogram() const {
   return tablet_peer_->tablet()->metrics()->flush_mrs_duration;
 }
 
-scoped_refptr<AtomicGauge<uint32_t> > FlushMRSOp::RunningGauge() {
+scoped_refptr<AtomicGauge<uint32_t> > FlushMRSOp::RunningGauge() const {
   return tablet_peer_->tablet()->metrics()->flush_mrs_running;
 }
 
@@ -156,11 +156,11 @@ void FlushDeltaMemStoresOp::Perform() {
   }
 }
 
-scoped_refptr<Histogram> FlushDeltaMemStoresOp::DurationHistogram() {
+scoped_refptr<Histogram> FlushDeltaMemStoresOp::DurationHistogram() const {
   return tablet_peer_->tablet()->metrics()->flush_dms_duration;
 }
 
-scoped_refptr<AtomicGauge<uint32_t> > FlushDeltaMemStoresOp::RunningGauge() {
+scoped_refptr<AtomicGauge<uint32_t> > FlushDeltaMemStoresOp::RunningGauge() const {
   return tablet_peer_->tablet()->metrics()->flush_dms_running;
 }
 
@@ -202,11 +202,11 @@ void LogGCOp::Perform() {
   sem_.unlock();
 }
 
-scoped_refptr<Histogram> LogGCOp::DurationHistogram() {
+scoped_refptr<Histogram> LogGCOp::DurationHistogram() const {
   return log_gc_duration_;
 }
 
-scoped_refptr<AtomicGauge<uint32_t> > LogGCOp::RunningGauge() {
+scoped_refptr<AtomicGauge<uint32_t> > LogGCOp::RunningGauge() const {
   return log_gc_running_;
 }
 

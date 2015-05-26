@@ -152,11 +152,11 @@ class TestMaintenanceOp : public MaintenanceOp {
     perf_improvement_ = perf_improvement;
   }
 
-  virtual scoped_refptr<Histogram> DurationHistogram() OVERRIDE {
+  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE {
     return maintenance_op_duration_;
   }
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() OVERRIDE {
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE {
     return maintenance_ops_running_;
   }
 

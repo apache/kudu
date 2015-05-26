@@ -31,9 +31,9 @@ class FlushMRSOp : public MaintenanceOp {
 
   virtual void Perform() OVERRIDE;
 
-  virtual scoped_refptr<Histogram> DurationHistogram() OVERRIDE;
+  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() OVERRIDE;
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
 
  private:
   // Lock protecting time_since_flush_.
@@ -62,9 +62,9 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
 
   virtual void Perform() OVERRIDE;
 
-  virtual scoped_refptr<Histogram> DurationHistogram() OVERRIDE;
+  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() OVERRIDE;
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
 
  private:
   // Lock protecting time_since_flush_
@@ -88,9 +88,9 @@ class LogGCOp : public MaintenanceOp {
 
   virtual void Perform() OVERRIDE;
 
-  virtual scoped_refptr<Histogram> DurationHistogram() OVERRIDE;
+  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE;
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() OVERRIDE;
+  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE;
 
  private:
   TabletPeer *const tablet_peer_;
