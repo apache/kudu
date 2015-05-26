@@ -28,27 +28,60 @@ class Histogram;
 template<class T>
 class AtomicGauge;
 
-struct MaintenanceOpStats {
+class MaintenanceOpStats {
+ public:
   MaintenanceOpStats();
 
+  // Zero all stats.
+  void Clear();
+
+  bool runnable() const { return runnable_; }
+  void set_runnable(bool runnable) {
+    UpdateLastModified();
+    runnable_ = runnable;
+  }
+
+  uint64_t ram_anchored() const { return ram_anchored_; }
+  void set_ram_anchored(uint64_t ram_anchored) {
+    UpdateLastModified();
+    ram_anchored_ = ram_anchored;
+  }
+
+  int64_t logs_retained_bytes() const { return logs_retained_bytes_; }
+  void set_logs_retained_bytes(int64_t logs_retained_bytes) {
+    UpdateLastModified();
+    logs_retained_bytes_ = logs_retained_bytes;
+  }
+
+  double perf_improvement() const { return perf_improvement_; }
+  void set_perf_improvement(double perf_improvement) {
+    UpdateLastModified();
+    perf_improvement_ = perf_improvement;
+  }
+
+  const MonoTime& last_modified() const { return last_modified_; }
+
+ private:
+  void UpdateLastModified() { last_modified_ = MonoTime::Now(MonoTime::FINE); }
+
   // True if this op can be run now.
-  bool runnable;
+  bool runnable_;
 
   // The approximate amount of memory that not doing this operation keeps
   // around.  This number is used to decide when to start freeing memory, so it
   // should be fairly accurate.  May be 0.
-  uint64_t ram_anchored;
+  uint64_t ram_anchored_;
 
   // The approximate amount of disk space that not doing this operation keeps us from GCing from
   // the logs. May be 0.
-  int64_t logs_retained_bytes;
+  int64_t logs_retained_bytes_;
 
   // The estimated performance improvement-- how good it is to do this on some
   // absolute scale (yet TBD).
-  double perf_improvement;
+  double perf_improvement_;
 
-  // Zero all stats.
-  void Clear();
+  // The last time that the stats were modified.
+  MonoTime last_modified_;
 };
 
 // MaintenanceOp objects represent background operations that the

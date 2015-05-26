@@ -793,8 +793,8 @@ class MinorDeltaCompactionOp : public MaintenanceOp {
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
         RowSet::MINOR_DELTA_COMPACTION, NULL);
-    stats->perf_improvement = perf_improv;
-    stats->runnable = perf_improv > 0;
+    stats->set_perf_improvement(perf_improv);
+    stats->set_runnable(perf_improv > 0);
   }
 
   virtual bool Prepare() OVERRIDE {
@@ -831,8 +831,8 @@ class MajorDeltaCompactionOp : public MaintenanceOp {
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
         RowSet::MAJOR_DELTA_COMPACTION, NULL);
-    stats->perf_improvement = perf_improv;
-    stats->runnable = perf_improv > 0;
+    stats->set_perf_improvement(perf_improv);
+    stats->set_runnable(perf_improv > 0);
   }
 
   virtual bool Prepare() OVERRIDE {
@@ -1224,8 +1224,8 @@ void Tablet::UpdateCompactionStats(MaintenanceOpStats* stats) {
 
   VLOG(1) << "Best compaction for " << tablet_id() << ": " << quality;
 
-  stats->runnable = quality >= 0;
-  stats->perf_improvement = quality;
+  stats->set_runnable(quality >= 0);
+  stats->set_perf_improvement(quality);
 }
 
 

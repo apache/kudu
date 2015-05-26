@@ -101,10 +101,10 @@ class TestMaintenanceOp : public MaintenanceOp {
 
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     lock_guard<Mutex> guard(&lock_);
-    stats->runnable = (state_ == OP_RUNNABLE);
-    stats->ram_anchored = ram_anchored_;
-    stats->logs_retained_bytes = logs_retained_bytes_;
-    stats->perf_improvement = perf_improvement_;
+    stats->set_runnable(state_ == OP_RUNNABLE);
+    stats->set_ram_anchored(ram_anchored_);
+    stats->set_logs_retained_bytes(logs_retained_bytes_);
+    stats->set_perf_improvement(perf_improvement_);
   }
 
   void Enable() {

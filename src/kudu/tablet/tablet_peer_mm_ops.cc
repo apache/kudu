@@ -42,21 +42,21 @@ const int64_t kFlushDueToTimeMs = 120 * 1000;
 // flush.
 static void SetPerfImprovementForFlush(MaintenanceOpStats* stats,
                                        double elapsed_ms, bool is_empty) {
-  if (stats->ram_anchored > FLAGS_flush_threshold_mb * 1024 * 1024) {
+  if (stats->ram_anchored() > FLAGS_flush_threshold_mb * 1024 * 1024) {
     // If we're over the user-specified flush threshold, then consider the perf
     // improvement to be 1 for every extra MB.  This produces perf_improvement results
     // which are much higher than any compaction would produce, and means that, when
     // there is an MRS over threshold, a flush will almost always be selected instead of
     // a compaction.  That's not necessarily a good thing, but in the absense of better
     // heuristics, it will do for now.
-    int extra_mb = stats->ram_anchored / 1024 / 1024;
-    stats->perf_improvement = extra_mb;
+    int extra_mb = stats->ram_anchored() / 1024 / 1024;
+    stats->set_perf_improvement(extra_mb);
   } else if (!is_empty && elapsed_ms > kFlushDueToTimeMs) {
     // Even if we aren't over the threshold, consider flushing if we haven't flushed
     // in a long time. But, don't give it a large perf_improvement score. We should
     // only do this if we really don't have much else to do.
     double extra_millis = elapsed_ms - 60 * 1000;
-    stats->perf_improvement = std::min(600000.0 / extra_millis, 0.05);
+    stats->set_perf_improvement(std::min(600000.0 / extra_millis, 0.05));
   }
 }
 
@@ -75,12 +75,12 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
   {
     boost::unique_lock<Semaphore> lock(tablet_peer_->tablet()->rowsets_flush_sem_,
                                        boost::defer_lock);
-    stats->runnable = lock.try_lock();
+    stats->set_runnable(lock.try_lock());
   }
 
-  stats->ram_anchored = tablet_peer_->tablet()->MemRowSetSize();
-  stats->logs_retained_bytes =
-      tablet_peer_->tablet()->MemRowSetLogRetentionSize(max_idx_to_segment_size);
+  stats->set_ram_anchored(tablet_peer_->tablet()->MemRowSetSize());
+  stats->set_logs_retained_bytes(
+      tablet_peer_->tablet()->MemRowSetLogRetentionSize(max_idx_to_segment_size));
 
   // TODO: use workload statistics here to find out how "hot" the tablet has
   // been in the last 5 minutes.
@@ -131,9 +131,9 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
   tablet_peer_->tablet()->GetInfoForBestDMSToFlush(max_idx_to_segment_size,
                                                    &dms_size, &retention_size);
 
-  stats->ram_anchored = dms_size;
-  stats->runnable = true;
-  stats->logs_retained_bytes = retention_size;
+  stats->set_ram_anchored(dms_size);
+  stats->set_runnable(true);
+  stats->set_logs_retained_bytes(retention_size);
 
   SetPerfImprovementForFlush(stats,
                              time_since_flush_.elapsed().wall_millis(),
@@ -184,10 +184,9 @@ void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
     return;
   }
 
-  stats->logs_retained_bytes = retention_size;
-
-  stats->ram_anchored = 0;
-  stats->runnable = sem_.GetValue() == 1;
+  stats->set_logs_retained_bytes(retention_size);
+  stats->set_ram_anchored(0);
+  stats->set_runnable(sem_.GetValue() == 1);
 }
 
 bool LogGCOp::Prepare() {

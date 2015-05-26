@@ -54,10 +54,11 @@ MaintenanceOpStats::MaintenanceOpStats() {
 }
 
 void MaintenanceOpStats::Clear() {
-  runnable = false;
-  ram_anchored = 0;
-  logs_retained_bytes = 0;
-  perf_improvement = 0;
+  UpdateLastModified();
+  runnable_ = false;
+  ram_anchored_ = 0;
+  logs_retained_bytes_ = 0;
+  perf_improvement_ = 0;
 }
 
 MaintenanceOp::MaintenanceOp(const std::string &name)
@@ -243,25 +244,25 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
     stats.Clear();
     op->UpdateStats(&stats);
     // Add anchored memory to the total.
-    mem_total += stats.ram_anchored;
-    if (stats.runnable) {
-      if (stats.ram_anchored > most_mem_anchored) {
+    mem_total += stats.ram_anchored();
+    if (stats.runnable()) {
+      if (stats.ram_anchored() > most_mem_anchored) {
         most_mem_anchored_op = op;
-        most_mem_anchored = stats.ram_anchored;
+        most_mem_anchored = stats.ram_anchored();
       }
       // We prioritize ops that can free more logs, but when it's the same we pick the one that
       // also frees up the most memory.
-      if (stats.logs_retained_bytes > most_logs_retained_bytes ||
-          (stats.logs_retained_bytes == most_logs_retained_bytes &&
-           stats.ram_anchored > most_logs_retained_bytes_ram_anchored)) {
+      if (stats.logs_retained_bytes() > most_logs_retained_bytes ||
+          (stats.logs_retained_bytes() == most_logs_retained_bytes &&
+           stats.ram_anchored() > most_logs_retained_bytes_ram_anchored)) {
         most_logs_retained_bytes_op = op;
-        most_logs_retained_bytes = stats.logs_retained_bytes;
-        most_logs_retained_bytes_ram_anchored = stats.ram_anchored;
+        most_logs_retained_bytes = stats.logs_retained_bytes();
+        most_logs_retained_bytes_ram_anchored = stats.ram_anchored();
       }
       if ((!best_perf_improvement_op) ||
-          (stats.perf_improvement > best_perf_improvement)) {
+          (stats.perf_improvement() > best_perf_improvement)) {
         best_perf_improvement_op = op;
-        best_perf_improvement = stats.perf_improvement;
+        best_perf_improvement = stats.perf_improvement();
       }
     }
   }
@@ -372,10 +373,10 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
     MaintenanceOpStats& stat(val.second);
     op_pb->set_name(op->name());
     op_pb->set_running(op->running());
-    op_pb->set_runnable(stat.runnable);
-    op_pb->set_ram_anchored_bytes(stat.ram_anchored);
-    op_pb->set_logs_retained_bytes(stat.logs_retained_bytes);
-    op_pb->set_perf_improvement(stat.perf_improvement);
+    op_pb->set_runnable(stat.runnable());
+    op_pb->set_ram_anchored_bytes(stat.ram_anchored());
+    op_pb->set_logs_retained_bytes(stat.logs_retained_bytes());
+    op_pb->set_perf_improvement(stat.perf_improvement());
 
     if (best_op == op) {
       out_pb->mutable_best_op()->CopyFrom(*op_pb);

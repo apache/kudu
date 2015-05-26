@@ -44,7 +44,7 @@ class Clock;
 
 class MaintenanceManager;
 class MaintenanceOp;
-struct MaintenanceOpStats;
+class MaintenanceOpStats;
 
 namespace tablet {
 
