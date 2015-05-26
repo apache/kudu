@@ -35,6 +35,7 @@
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
+#include "kudu/tablet/tablet_mm_ops.h"
 #include "kudu/tablet/rowset_info.h"
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/tablet/row_op.h"
@@ -95,11 +96,19 @@ static CompactionPolicy *CreateCompactionPolicy() {
   return new BudgetedCompactionPolicy(FLAGS_tablet_compaction_budget_mb);
 }
 
+////////////////////////////////////////////////////////////
+// TabletComponents
+////////////////////////////////////////////////////////////
+
 TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
                                    const shared_ptr<RowSetTree>& rs_tree)
   : memrowset(mrs),
     rowsets(rs_tree) {
 }
+
+////////////////////////////////////////////////////////////
+// Tablet
+////////////////////////////////////////////////////////////
 
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                const scoped_refptr<server::Clock>& clock,
@@ -713,148 +722,122 @@ int32_t Tablet::CurrentMrsIdForTests() const {
   return components_->memrowset->mrs_id();
 }
 
-// MaintenanceOp for rowset compaction.
-//
-// This periodically invokes the tablet's CompactionPolicy to select a compaction.  The
-// compaction policy's "quality" is used as a proxy for the performance improvement which
-// is exposed back to the maintenance manager. As compactions become more fruitful (i.e.
-// more overlapping rowsets), the perf_improvement score goes up, increasing priority
-// with which a compaction on this tablet will be selected by the maintenance manager.
-class CompactRowSetsOp : public MaintenanceOp {
- public:
-  explicit CompactRowSetsOp(Tablet* tablet)
-    : MaintenanceOp(Substitute("CompactRowSetsOp($0)", tablet->tablet_id())),
-      tablet_(tablet) {
-    since_last_stats_update_.start();
-  }
+////////////////////////////////////////////////////////////
+// CompactRowSetsOp
+////////////////////////////////////////////////////////////
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
-    boost::lock_guard<simple_spinlock> l(lock_);
-    // If we've computed stats recently, no need to recompute.
-    // TODO: it would be nice if we could invalidate this on any Flush as well
-    // as after a compaction.
-    if (since_last_stats_update_.elapsed().wall_millis() < kRefreshIntervalMs) {
-      *stats = prev_stats_;
-      return;
-    }
+CompactRowSetsOp::CompactRowSetsOp(Tablet* tablet)
+  : MaintenanceOp(Substitute("CompactRowSetsOp($0)", tablet->tablet_id())),
+    tablet_(tablet) {
+  since_last_stats_update_.start();
+}
 
-    tablet_->UpdateCompactionStats(&prev_stats_);
+void CompactRowSetsOp::UpdateStats(MaintenanceOpStats* stats) {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  // If we've computed stats recently, no need to recompute.
+  // TODO: it would be nice if we could invalidate this on any Flush as well
+  // as after a compaction.
+  if (since_last_stats_update_.elapsed().wall_millis() < kRefreshIntervalMs) {
     *stats = prev_stats_;
-    since_last_stats_update_.start();
+    return;
   }
 
-  virtual bool Prepare() OVERRIDE {
-    boost::lock_guard<simple_spinlock> l(lock_);
-    // Resetting stats ensures that, while this compaction is running, if we
-    // are asked for more stats, we won't end up calling Compact() twice
-    // and accidentally scheduling a much less fruitful compaction.
-    prev_stats_.Clear();
-    return true;
-  }
+  tablet_->UpdateCompactionStats(&prev_stats_);
+  *stats = prev_stats_;
+  since_last_stats_update_.start();
+}
 
-  virtual void Perform() OVERRIDE {
-    WARN_NOT_OK(tablet_->Compact(Tablet::COMPACT_NO_FLAGS),
-                Substitute("Compaction failed on $0", tablet_->tablet_id()));
-  }
+bool CompactRowSetsOp::Prepare() {
+  boost::lock_guard<simple_spinlock> l(lock_);
+  // Resetting stats ensures that, while this compaction is running, if we
+  // are asked for more stats, we won't end up calling Compact() twice
+  // and accidentally scheduling a much less fruitful compaction.
+  prev_stats_.Clear();
+  return true;
+}
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE {
-    return tablet_->metrics()->compact_rs_duration;
-  }
+void CompactRowSetsOp::Perform() {
+  WARN_NOT_OK(tablet_->Compact(Tablet::COMPACT_NO_FLAGS),
+              Substitute("Compaction failed on $0", tablet_->tablet_id()));
+}
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE {
-    return tablet_->metrics()->compact_rs_running;
-  }
+scoped_refptr<Histogram> CompactRowSetsOp::DurationHistogram() const {
+  return tablet_->metrics()->compact_rs_duration;
+}
 
- private:
-  enum {
-    kRefreshIntervalMs = 5000
-  };
+scoped_refptr<AtomicGauge<uint32_t> > CompactRowSetsOp::RunningGauge() const {
+  return tablet_->metrics()->compact_rs_running;
+}
 
-  mutable simple_spinlock lock_;
-  Stopwatch since_last_stats_update_;
-  MaintenanceOpStats prev_stats_;
+////////////////////////////////////////////////////////////
+// MinorDeltaCompactionOp
+////////////////////////////////////////////////////////////
 
-  Tablet * const tablet_;
-};
+MinorDeltaCompactionOp::MinorDeltaCompactionOp(Tablet* tablet)
+  : MaintenanceOp(Substitute("MinorDeltaCompactionOp($0)", tablet->tablet_id())),
+    tablet_(tablet) {
+}
 
+void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
+  double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
+      RowSet::MINOR_DELTA_COMPACTION, NULL);
+  stats->set_perf_improvement(perf_improv);
+  stats->set_runnable(perf_improv > 0);
+}
 
-// MaintenanceOp to run minor compaction on delta stores.
-//
-// There is only one MinorDeltaCompactionOp per tablet, so it picks the RowSet that needs the most
-// work. The RS we end up compacting in Perform() can be different than the one reported in
-// UpdateStats, we just pick the worst each time.
-class MinorDeltaCompactionOp : public MaintenanceOp {
- public:
-  explicit MinorDeltaCompactionOp(Tablet* tablet)
-    : MaintenanceOp(Substitute("MinorDeltaCompactionOp($0)", tablet->tablet_id())),
-      tablet_(tablet) {
-  }
+bool MinorDeltaCompactionOp::Prepare() {
+  return true;
+}
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
-    double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
-        RowSet::MINOR_DELTA_COMPACTION, NULL);
-    stats->set_perf_improvement(perf_improv);
-    stats->set_runnable(perf_improv > 0);
-  }
+void MinorDeltaCompactionOp::Perform() {
+  WARN_NOT_OK(tablet_->CompactWorstDeltas(RowSet::MINOR_DELTA_COMPACTION),
+              Substitute("Minor delta compaction failed on $0", tablet_->tablet_id()));
+}
 
-  virtual bool Prepare() OVERRIDE {
-    return true;
-  }
+scoped_refptr<Histogram> MinorDeltaCompactionOp::DurationHistogram() const {
+  return tablet_->metrics()->delta_minor_compact_rs_duration;
+}
 
-  virtual void Perform() OVERRIDE {
-    WARN_NOT_OK(tablet_->CompactWorstDeltas(RowSet::MINOR_DELTA_COMPACTION),
-                Substitute("Minor delta compaction failed on $0", tablet_->tablet_id()));
-  }
+scoped_refptr<AtomicGauge<uint32_t> > MinorDeltaCompactionOp::RunningGauge() const {
+  return tablet_->metrics()->delta_minor_compact_rs_running;
+}
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE {
-    return tablet_->metrics()->delta_minor_compact_rs_duration;
-  }
+////////////////////////////////////////////////////////////
+// MajorDeltaCompactionOp
+////////////////////////////////////////////////////////////
 
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE {
-    return tablet_->metrics()->delta_minor_compact_rs_running;
-  }
+MajorDeltaCompactionOp::MajorDeltaCompactionOp(Tablet* tablet)
+: MaintenanceOp(Substitute("MajorDeltaCompactionOp($0)", tablet->tablet_id())),
+  tablet_(tablet) {
+}
 
- private:
-  Tablet * const tablet_;
-};
+void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
+  double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
+      RowSet::MAJOR_DELTA_COMPACTION, NULL);
+  stats->set_perf_improvement(perf_improv);
+  stats->set_runnable(perf_improv > 0);
+}
 
-// MaintenanceOp to run major compaction on delta stores.
-//
-// It functions just like MinorDeltaCompactionOp does, except it runs major compactions.
-class MajorDeltaCompactionOp : public MaintenanceOp {
- public:
-  explicit MajorDeltaCompactionOp(Tablet* tablet)
-    : MaintenanceOp(Substitute("MajorDeltaCompactionOp($0)", tablet->tablet_id())),
-      tablet_(tablet) {
-  }
+bool MajorDeltaCompactionOp::Prepare() {
+  return true;
+}
 
-  virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
-    double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
-        RowSet::MAJOR_DELTA_COMPACTION, NULL);
-    stats->set_perf_improvement(perf_improv);
-    stats->set_runnable(perf_improv > 0);
-  }
+void MajorDeltaCompactionOp::Perform() {
+  WARN_NOT_OK(tablet_->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION),
+              Substitute("Major delta compaction failed on $0", tablet_->tablet_id()));
+}
 
-  virtual bool Prepare() OVERRIDE {
-    return true;
-  }
+scoped_refptr<Histogram> MajorDeltaCompactionOp::DurationHistogram() const {
+  return tablet_->metrics()->delta_major_compact_rs_duration;
+}
 
-  virtual void Perform() OVERRIDE {
-    WARN_NOT_OK(tablet_->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION),
-                Substitute("Major delta compaction failed on $0", tablet_->tablet_id()));
-  }
+scoped_refptr<AtomicGauge<uint32_t> > MajorDeltaCompactionOp::RunningGauge() const {
+  return tablet_->metrics()->delta_major_compact_rs_running;
+}
 
-  virtual scoped_refptr<Histogram> DurationHistogram() const OVERRIDE {
-    return tablet_->metrics()->delta_major_compact_rs_duration;
-  }
-
-  virtual scoped_refptr<AtomicGauge<uint32_t> > RunningGauge() const OVERRIDE {
-    return tablet_->metrics()->delta_major_compact_rs_running;
-  }
-
- private:
-  Tablet * const tablet_;
-};
+////////////////////////////////////////////////////////////
+// Tablet
+////////////////////////////////////////////////////////////
 
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
                                     CompactFlags flags) const {
@@ -1558,6 +1541,10 @@ void Tablet::PrintRSLayout(ostream* o) {
   }
   *o << "</pre>" << std::endl;
 }
+
+////////////////////////////////////////////////////////////
+// Tablet::Iterator
+////////////////////////////////////////////////////////////
 
 Tablet::Iterator::Iterator(const Tablet *tablet,
                            const Schema &projection,
