@@ -54,7 +54,7 @@ MaintenanceOpStats::MaintenanceOpStats() {
 }
 
 void MaintenanceOpStats::Clear() {
-  UpdateLastModified();
+  valid_ = false;
   runnable_ = false;
   ram_anchored_ = 0;
   logs_retained_bytes_ = 0;
@@ -243,6 +243,9 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
     // Update op stats.
     stats.Clear();
     op->UpdateStats(&stats);
+    if (!stats.valid()) {
+      continue;
+    }
     // Add anchored memory to the total.
     mem_total += stats.ram_anchored();
     if (stats.runnable()) {

@@ -32,37 +32,66 @@ class MaintenanceOpStats {
  public:
   MaintenanceOpStats();
 
-  // Zero all stats.
+  // Zero all stats. They are invalid until the first setter is called.
   void Clear();
 
-  bool runnable() const { return runnable_; }
+  bool runnable() const {
+    DCHECK(valid_);
+    return runnable_;
+  }
+
   void set_runnable(bool runnable) {
     UpdateLastModified();
     runnable_ = runnable;
   }
 
-  uint64_t ram_anchored() const { return ram_anchored_; }
+  uint64_t ram_anchored() const {
+    DCHECK(valid_);
+    return ram_anchored_;
+  }
+
   void set_ram_anchored(uint64_t ram_anchored) {
     UpdateLastModified();
     ram_anchored_ = ram_anchored;
   }
 
-  int64_t logs_retained_bytes() const { return logs_retained_bytes_; }
+  int64_t logs_retained_bytes() const {
+    DCHECK(valid_);
+    return logs_retained_bytes_;
+  }
+
   void set_logs_retained_bytes(int64_t logs_retained_bytes) {
     UpdateLastModified();
     logs_retained_bytes_ = logs_retained_bytes;
   }
 
-  double perf_improvement() const { return perf_improvement_; }
+  double perf_improvement() const {
+    DCHECK(valid_);
+    return perf_improvement_;
+  }
+
   void set_perf_improvement(double perf_improvement) {
     UpdateLastModified();
     perf_improvement_ = perf_improvement;
   }
 
-  const MonoTime& last_modified() const { return last_modified_; }
+  const MonoTime& last_modified() const {
+    DCHECK(valid_);
+    return last_modified_;
+  }
+
+  bool valid() const {
+    return valid_;
+  }
 
  private:
-  void UpdateLastModified() { last_modified_ = MonoTime::Now(MonoTime::FINE); }
+  void UpdateLastModified() {
+    valid_ = true;
+    last_modified_ = MonoTime::Now(MonoTime::FINE);
+  }
+
+  // True if these stats are valid.
+  bool valid_;
 
   // True if this op can be run now.
   bool runnable_;
@@ -100,8 +129,10 @@ class MaintenanceOp {
   void Unregister();
 
   // Update the op statistics.  This will be called every scheduling period
-  // (about a few times a second), so it should not be too expensive.
-  // This will be run under the MaintenanceManager lock.
+  // (about a few times a second), so it should not be too expensive.  It's
+  // possible for the returned statistics to be invalid; the caller should
+  // call MaintenanceOpStats::valid() before using them.  This will be run
+  // under the MaintenanceManager lock.
   virtual void UpdateStats(MaintenanceOpStats* stats) = 0;
 
   // Prepare to perform the operation.  This will be run without holding the
