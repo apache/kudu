@@ -910,6 +910,10 @@ class Histogram : public Metric {
   // 'value' and 'amount' must be non-negative.
   void IncrementBy(int64_t value, int64_t amount);
 
+  // Return the total number of values added to the histogram (via Increment()
+  // or IncrementBy()).
+  uint64_t TotalCount() const;
+
   virtual Status WriteAsJson(JsonWriter* w,
                              const MetricJsonOptions& opts) const OVERRIDE;
 
@@ -918,7 +922,6 @@ class Histogram : public Metric {
                                 const MetricJsonOptions& opts) const;
 
   uint64_t CountInBucketForValueForTests(uint64_t value) const;
-  uint64_t TotalCountForTests() const;
   uint64_t MinValueForTests() const;
   uint64_t MaxValueForTests() const;
   double MeanValueForTests() const;

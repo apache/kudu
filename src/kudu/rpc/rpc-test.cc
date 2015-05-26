@@ -424,9 +424,9 @@ TEST_F(TestRpc, TestRpcHandlerLatencyMetric) {
   LOG(INFO) << "Sleep() min lat: " << latency_histogram->MinValueForTests();
   LOG(INFO) << "Sleep() mean lat: " << latency_histogram->MeanValueForTests();
   LOG(INFO) << "Sleep() max lat: " << latency_histogram->MaxValueForTests();
-  LOG(INFO) << "Sleep() #calls: " << latency_histogram->TotalCountForTests();
+  LOG(INFO) << "Sleep() #calls: " << latency_histogram->TotalCount();
 
-  ASSERT_EQ(1, latency_histogram->TotalCountForTests());
+  ASSERT_EQ(1, latency_histogram->TotalCount());
   ASSERT_GE(latency_histogram->MaxValueForTests(), sleep_micros);
   ASSERT_TRUE(latency_histogram->MinValueForTests() == latency_histogram->MaxValueForTests());
 

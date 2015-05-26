@@ -621,7 +621,7 @@ uint64_t Histogram::CountInBucketForValueForTests(uint64_t value) const {
   return histogram_->CountInBucketForValue(value);
 }
 
-uint64_t Histogram::TotalCountForTests() const {
+uint64_t Histogram::TotalCount() const {
   return histogram_->TotalCount();
 }
 
