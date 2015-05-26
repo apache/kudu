@@ -32,9 +32,12 @@ using strings::Substitute;
 DEFINE_int32(checksum_timeout_sec, 120,
              "Maximum total seconds that we will wait for a checksum scan to "
              "complete before timing out.");
-
 DEFINE_int32(checksum_scan_concurrency, 4,
              "Number of concurrent checksum scans to execute per tablet server.");
+DEFINE_bool(checksum_snapshot, true, "Should the checksum scanner use a snapshot scan");
+DEFINE_uint64(checksum_snapshot_timestamp, ChecksumOptions::kCurrentTimestamp,
+              "timestamp to use for snapshot checksum scans, defaults to 0, which means"
+              "use the current timestamp of a tablet server involved in the scan");
 
 // Print an informational message to cerr.
 static ostream& Info() {
@@ -56,18 +59,28 @@ static ostream& Error() {
 
 ChecksumOptions::ChecksumOptions()
     : timeout(MonoDelta::FromSeconds(FLAGS_checksum_timeout_sec)),
-      scan_concurrency(FLAGS_checksum_scan_concurrency) {
+      scan_concurrency(FLAGS_checksum_scan_concurrency),
+      use_snapshot(FLAGS_checksum_snapshot),
+      snapshot_timestamp(FLAGS_checksum_snapshot_timestamp) {
 }
 
-ChecksumOptions::ChecksumOptions(MonoDelta timeout, int scan_concurrency)
+ChecksumOptions::ChecksumOptions(MonoDelta timeout,
+                                 int scan_concurrency,
+                                 bool use_snapshot,
+                                 uint64_t snapshot_timestamp)
     : timeout(timeout),
-      scan_concurrency(scan_concurrency) {
+      scan_concurrency(scan_concurrency),
+      use_snapshot(use_snapshot),
+      snapshot_timestamp(snapshot_timestamp) {
 }
+
+const uint64_t ChecksumOptions::kCurrentTimestamp = 0;
 
 KsckCluster::~KsckCluster() {
 }
 
 Status KsckCluster::FetchTableAndTabletInfo() {
+  RETURN_NOT_OK(master_->Connect());
   RETURN_NOT_OK(RetrieveTablesList());
   RETURN_NOT_OK(RetrieveTabletServers());
   BOOST_FOREACH(const shared_ptr<KsckTable>& table, tables()) {
@@ -78,18 +91,15 @@ Status KsckCluster::FetchTableAndTabletInfo() {
 
 // Gets the list of tablet servers from the Master.
 Status KsckCluster::RetrieveTabletServers() {
-  RETURN_NOT_OK(master_->EnsureConnected());
   return master_->RetrieveTabletServers(&tablet_servers_);
 }
 
 // Gets the list of tables from the Master.
 Status KsckCluster::RetrieveTablesList() {
-  RETURN_NOT_OK(master_->EnsureConnected());
   return master_->RetrieveTablesList(&tables_);
 }
 
 Status KsckCluster::RetrieveTabletsList(const shared_ptr<KsckTable>& table) {
-  RETURN_NOT_OK(master_->EnsureConnected());
   return master_->RetrieveTabletsList(table);
 }
 
@@ -237,8 +247,8 @@ void TabletServerChecksumCallback(
     const scoped_refptr<ChecksumResultReporter>& reporter,
     const shared_ptr<KsckTabletServer>& tablet_server,
     const TabletQueue& queue,
-    const Schema& schema,
     const std::string& tablet_id,
+    const ChecksumOptions& options,
     const Status& status,
     uint64_t checksum) {
   reporter->ReportResult(tablet_id, tablet_server->uuid(), status, checksum);
@@ -251,17 +261,20 @@ void TabletServerChecksumCallback(
                                          reporter,
                                          tablet_server,
                                          queue,
-                                         table_schema,
-                                         tablet_id);
-    tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, callback);
+                                         tablet_id,
+                                         options);
+    tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, options, callback);
   }
 }
 
 Status Ksck::ChecksumData(const vector<string>& tables,
                           const vector<string>& tablets,
-                          const ChecksumOptions& options) {
+                          const ChecksumOptions& opts) {
   const unordered_set<string> tables_filter(tables.begin(), tables.end());
   const unordered_set<string> tablets_filter(tablets.begin(), tablets.end());
+
+  // Copy options so that local modifications can be made and passed on.
+  ChecksumOptions options = opts;
 
   typedef unordered_map<shared_ptr<KsckTablet>, shared_ptr<KsckTable>,
                         SharedPtrHashFunctor<KsckTablet> > TabletTableMap;
@@ -314,6 +327,12 @@ Status Ksck::ChecksumData(const vector<string>& tables,
     }
   }
 
+  if (options.use_snapshot && options.snapshot_timestamp == ChecksumOptions::kCurrentTimestamp) {
+    // Set the snapshot timestamp to the current timestamp of an arbitrary tablet server.
+    tablet_server_queues.begin()->first->CurrentTimestamp(&options.snapshot_timestamp);
+    Info() << "Using snapshot timestamp: " << options.snapshot_timestamp << endl;
+  }
+
   // Kick off checksum scans in parallel. For each tablet server, we start
   // scan_concurrency scans. Each callback then initiates one additional
   // scan when it returns if the queue for that TS is not empty.
@@ -330,9 +349,9 @@ Status Ksck::ChecksumData(const vector<string>& tables,
                                              reporter,
                                              tablet_server,
                                              queue,
-                                             table_schema,
-                                             tablet_id);
-        tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, callback);
+                                             tablet_id,
+                                             options);
+        tablet_server->RunTabletChecksumScanAsync(tablet_id, table_schema, options, callback);
       }
     }
   }

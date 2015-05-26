@@ -26,6 +26,7 @@ using std::cerr;
 using std::cout;
 using std::endl;
 using std::tr1::shared_ptr;
+using std::vector;
 using strings::Substitute;
 
 DEFINE_string(master_address, "localhost",
@@ -56,7 +57,16 @@ static string GetKsckUsage(const char* progname) {
 // Error information is appended to the provided vector.
 // If the vector is empty upon completion, ksck ran successfully.
 static void RunKsck(vector<string>* error_messages) {
-  shared_ptr<KsckMaster> master(new RemoteKsckMaster(FLAGS_master_address));
+  vector<Sockaddr> master_addrs;
+  PUSH_PREPEND_NOT_OK(ParseAddressList(FLAGS_master_address,
+                                       master::Master::kDefaultPort,
+                                       &master_addrs),
+                      error_messages, "Unable to parse master address");
+
+  shared_ptr<KsckMaster> master;
+  PUSH_PREPEND_NOT_OK(RemoteKsckMaster::Build(master_addrs[0], &master),
+                      error_messages, "Unable to build KsckMaster");
+  if (!error_messages->empty()) return;
   shared_ptr<KsckCluster> cluster(new KsckCluster(master));
   shared_ptr<Ksck> ksck(new Ksck(cluster));
 

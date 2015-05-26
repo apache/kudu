@@ -27,13 +27,25 @@ struct ChecksumOptions {
 
   ChecksumOptions();
 
-  ChecksumOptions(MonoDelta timeout, int scan_concurrency);
+  ChecksumOptions(MonoDelta timeout,
+                  int scan_concurrency,
+                  bool use_snapshot,
+                  uint64_t snapshot_timestamp);
 
   // The maximum total time to wait for results to come back from all replicas.
   MonoDelta timeout;
 
   // The maximum number of concurrent checksum scans to run per tablet server.
   int scan_concurrency;
+
+  // Whether to use a snapshot checksum scanner.
+  bool use_snapshot;
+
+  // The snapshot timestamp to use for snapshot checksum scans.
+  uint64_t snapshot_timestamp;
+
+  // A timestamp indicicating that the current time should be used for a checksum snapshot.
+  static const uint64_t kCurrentTimestamp;
 };
 
 // Representation of a tablet replica on a tablet server.
@@ -142,22 +154,16 @@ class KsckTabletServer {
   virtual ~KsckTabletServer() { }
 
   // Connects to the configured Tablet Server.
-  virtual Status Connect() = 0;
+  virtual Status Connect() const = 0;
 
-  // Returns true iff Connect() has been called and was successful.
-  virtual bool IsConnected() const = 0;
-
-  // Calls Connect() unless IsConnected() returns true. Helper method.
-  virtual Status EnsureConnected() {
-    if (IsConnected()) return Status::OK();
-    return Connect();
-  }
+  virtual Status CurrentTimestamp(uint64_t* timestamp) const = 0;
 
   // Executes a checksum scan on the associated tablet, and runs the callback
-  // with the result. The callback must be threadsafe.
+  // with the result. The callback must be threadsafe and non-blocking.
   virtual void RunTabletChecksumScanAsync(
                   const std::string& tablet_id,
                   const Schema& schema,
+                  const ChecksumOptions& options,
                   const ReportResultCallback& callback) = 0;
 
   virtual const std::string& uuid() const {
@@ -181,16 +187,7 @@ class KsckMaster {
   virtual ~KsckMaster() { }
 
   // Connects to the configured Master.
-  virtual Status Connect() = 0;
-
-  // Returns true iff Connect() has been called and was successful.
-  virtual bool IsConnected() const = 0;
-
-  // Calls Connect() unless IsConnected() returns true. Helper method.
-  virtual Status EnsureConnected() {
-    if (IsConnected()) return Status::OK();
-    return Connect();
-  }
+  virtual Status Connect() const = 0;
 
   // Gets the list of Tablet Servers from the Master and stores it in the passed
   // map, which is keyed on server permanent_uuid.

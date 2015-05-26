@@ -31,21 +31,23 @@ MonoDelta GetDefaultTimeout() {
   return MonoDelta::FromMilliseconds(FLAGS_timeout_ms);
 }
 
-Status RemoteKsckTabletServer::Connect() {
-  vector<Sockaddr> addrs;
-  RETURN_NOT_OK(ParseAddressList(address_, tserver::TabletServer::kDefaultPort, &addrs));
-  proxy_.reset(new tserver::TabletServerServiceProxy(messenger_, addrs[0]));
-
+Status RemoteKsckTabletServer::Connect() const {
   tserver::PingRequestPB req;
   tserver::PingResponsePB resp;
   RpcController rpc;
   rpc.set_timeout(GetDefaultTimeout());
-  last_connect_status_ = proxy_->Ping(req, &resp, &rpc);
-  return last_connect_status_;
+  return ts_proxy_->Ping(req, &resp, &rpc);
 }
 
-bool RemoteKsckTabletServer::IsConnected() const {
-  return last_connect_status_.ok();
+Status RemoteKsckTabletServer::CurrentTimestamp(uint64_t* timestamp) const {
+  server::ServerClockRequestPB req;
+  server::ServerClockResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(GetDefaultTimeout());
+  RETURN_NOT_OK(generic_proxy_->ServerClock(req, &resp, &rpc));
+  CHECK(resp.has_timestamp());
+  *timestamp = resp.timestamp();
+  return Status::OK();
 }
 
 class ChecksumStepper;
@@ -75,11 +77,13 @@ class ChecksumStepper {
   ChecksumStepper(const string& tablet_id,
                   const Schema& schema,
                   const string& server_uuid,
+                  const ChecksumOptions& options,
                   const ReportResultCallback& callback,
                   const shared_ptr<tserver::TabletServerServiceProxy>& proxy)
       : schema_(schema),
         tablet_id_(tablet_id),
         server_uuid_(server_uuid),
+        options_(options),
         reporter_callback_(callback),
         proxy_(proxy),
         call_seq_id_(0),
@@ -137,6 +141,10 @@ class ChecksumStepper {
         req_.mutable_new_request()->mutable_projected_columns()->CopyFrom(cols_);
         req_.mutable_new_request()->set_tablet_id(tablet_id_);
         req_.mutable_new_request()->set_cache_blocks(FLAGS_checksum_cache_blocks);
+        if (options_.use_snapshot) {
+          req_.mutable_new_request()->set_read_mode(READ_AT_SNAPSHOT);
+          req_.mutable_new_request()->set_snap_timestamp(options_.snapshot_timestamp);
+        }
         rpc_.set_timeout(GetDefaultTimeout());
         break;
       }
@@ -166,6 +174,7 @@ class ChecksumStepper {
 
   const string tablet_id_;
   const string server_uuid_;
+  const ChecksumOptions options_;
   const ReportResultCallback reporter_callback_;
   const shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
@@ -177,7 +186,6 @@ class ChecksumStepper {
   RpcController rpc_;
 };
 
-
 void ChecksumCallbackHandler::Run() {
   stepper->HandleResponse();
   delete this;
@@ -186,26 +194,15 @@ void ChecksumCallbackHandler::Run() {
 void RemoteKsckTabletServer::RunTabletChecksumScanAsync(
         const string& tablet_id,
         const Schema& schema,
+        const ChecksumOptions& options,
         const ReportResultCallback& callback) {
-  Status s = EnsureConnected();
-  if (!s.ok()) {
-    callback.Run(s, 0);
-    return;
-  }
   gscoped_ptr<ChecksumStepper> stepper(
-      new ChecksumStepper(tablet_id, schema, uuid(), callback, proxy_));
+      new ChecksumStepper(tablet_id, schema, uuid(), options, callback, ts_proxy_));
   stepper->Start();
   ignore_result(stepper.release()); // Deletes self on callback.
 }
 
-Status RemoteKsckMaster::Connect() {
-  vector<Sockaddr> addrs;
-  RETURN_NOT_OK(ParseAddressList(address_, master::Master::kDefaultPort, &addrs));
-
-  MessengerBuilder builder(kMessengerName);
-  RETURN_NOT_OK(builder.Build(&messenger_));
-  proxy_.reset(new master::MasterServiceProxy(messenger_, addrs[0]));
-
+Status RemoteKsckMaster::Connect() const {
   master::PingRequestPB req;
   master::PingResponsePB resp;
   RpcController rpc;
@@ -213,8 +210,12 @@ Status RemoteKsckMaster::Connect() {
   return proxy_->Ping(req, &resp, &rpc);
 }
 
-bool RemoteKsckMaster::IsConnected() const {
-  return last_connect_status_.ok();
+Status RemoteKsckMaster::Build(const Sockaddr& address, shared_ptr<KsckMaster>* master) {
+  shared_ptr<Messenger> messenger;
+  MessengerBuilder builder(kMessengerName);
+  RETURN_NOT_OK(builder.Build(&messenger));
+  master->reset(new RemoteKsckMaster(address, messenger));
+  return Status::OK();
 }
 
 Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
@@ -227,9 +228,11 @@ Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
   tablet_servers->clear();
   BOOST_FOREACH(const master::ListTabletServersResponsePB_Entry& e, resp.servers()) {
     HostPortPB addr = e.registration().rpc_addresses(0);
-    HostPort hp(addr.host(), addr.port());
+    vector<Sockaddr> addresses;
+    RETURN_NOT_OK(ParseAddressList(HostPort(addr.host(), addr.port()).ToString(),
+                                   tserver::TabletServer::kDefaultPort, &addresses));
     shared_ptr<KsckTabletServer> ts(
-        new RemoteKsckTabletServer(e.instance_id().permanent_uuid(), hp.ToString(), messenger_));
+        new RemoteKsckTabletServer(e.instance_id().permanent_uuid(), addresses[0], messenger_));
     InsertOrDie(tablet_servers, ts->uuid(), ts);
   }
   return Status::OK();

@@ -25,6 +25,7 @@ using tools::RemoteKsckMaster;
 ClusterVerifier::ClusterVerifier(ExternalMiniCluster* cluster)
   : cluster_(cluster),
     checksum_options_(ChecksumOptions()) {
+  checksum_options_.use_snapshot = false;
 }
 
 ClusterVerifier::~ClusterVerifier() {
@@ -59,9 +60,10 @@ void ClusterVerifier::CheckCluster() {
 }
 
 Status ClusterVerifier::DoKsck() {
-  string addr = cluster_->leader_master()->bound_rpc_addr().ToString();
+  Sockaddr addr = cluster_->leader_master()->bound_rpc_addr();
 
-  shared_ptr<KsckMaster> master(new RemoteKsckMaster(addr));
+  shared_ptr<KsckMaster> master;
+  RETURN_NOT_OK(RemoteKsckMaster::Build(addr, &master));
   shared_ptr<KsckCluster> cluster(new KsckCluster(master));
   shared_ptr<Ksck> ksck(new Ksck(cluster));
 

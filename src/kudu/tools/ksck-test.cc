@@ -28,19 +28,21 @@ class MockKsckTabletServer : public KsckTabletServer {
         address_("<mock>") {
   }
 
-  virtual Status Connect() OVERRIDE {
+  virtual Status Connect() const OVERRIDE {
     return connect_status_;
-  }
-
-  virtual bool IsConnected() const OVERRIDE {
-    return connect_status_.ok();
   }
 
   virtual void RunTabletChecksumScanAsync(
       const std::string& tablet_id,
       const Schema& schema,
+      const ChecksumOptions& options,
       const ReportResultCallback& callback) OVERRIDE {
     callback.Run(Status::OK(), 0);
+  }
+
+  virtual Status CurrentTimestamp(uint64_t* timestamp) const OVERRIDE {
+    *timestamp = 0;
+    return Status::OK();
   }
 
   virtual const std::string& address() const OVERRIDE {
@@ -60,12 +62,8 @@ class MockKsckMaster : public KsckMaster {
       : connect_status_(Status::OK()) {
   }
 
-  virtual Status Connect() OVERRIDE {
+  virtual Status Connect() const OVERRIDE {
     return connect_status_;
-  }
-
-  virtual bool IsConnected() const OVERRIDE {
-    return connect_status_.ok();
   }
 
   virtual Status RetrieveTabletServers(TSMap* tablet_servers) OVERRIDE {

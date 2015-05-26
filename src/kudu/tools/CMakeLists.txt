@@ -60,6 +60,7 @@ add_library(ksck
 )
 target_link_libraries(ksck
   master_proto
+  server_base_proto
   tserver_proto
   tserver_service_proto
   ${KUDU_BASE_LIBS}

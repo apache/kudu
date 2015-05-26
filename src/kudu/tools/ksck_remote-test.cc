@@ -33,9 +33,9 @@ class RemoteKsckTest : public KuduTest {
  public:
   RemoteKsckTest()
       : schema_(boost::assign::list_of
-              (KuduColumnSchema("key", KuduColumnSchema::INT32))
-              (KuduColumnSchema("int_val", KuduColumnSchema::INT32)),
-              1),
+                (KuduColumnSchema("key", KuduColumnSchema::INT32))
+                (KuduColumnSchema("int_val", KuduColumnSchema::INT32)),
+                1),
         random_(SeedRandom()) {
   }
 
@@ -50,11 +50,11 @@ class RemoteKsckTest : public KuduTest {
     mini_cluster_.reset(new MiniCluster(env_.get(), opts));
     ASSERT_OK(mini_cluster_->Start());
 
-    master_rpc_addr_ = mini_cluster_->mini_master()->bound_rpc_addr_str();
+    master_rpc_addr_ = mini_cluster_->mini_master()->bound_rpc_addr();
 
     // Connect to the cluster.
     ASSERT_OK(client::KuduClientBuilder()
-                     .add_master_server_addr(master_rpc_addr_)
+                     .add_master_server_addr(master_rpc_addr_.ToString())
                      .Build(&client_));
 
     // Create one table.
@@ -67,7 +67,7 @@ class RemoteKsckTest : public KuduTest {
     // Make sure we can open the table.
     ASSERT_OK(client_->OpenTable(kTableName, &client_table_));
 
-    master_.reset(new RemoteKsckMaster(master_rpc_addr_));
+    ASSERT_OK(RemoteKsckMaster::Build(master_rpc_addr_, &master_));
     cluster_.reset(new KsckCluster(master_));
     ksck_.reset(new Ksck(cluster_));
   }
@@ -78,6 +78,41 @@ class RemoteKsckTest : public KuduTest {
       mini_cluster_.reset();
     }
     KuduTest::TearDown();
+  }
+
+  // Writes rows to the table until the continue_writing flag is set to false.
+  //
+  // Public for use with boost::bind.
+  void GenerateRowWritesLoop(CountDownLatch* started_writing,
+                             const AtomicBool& continue_writing,
+                             Promise<Status>* promise) {
+    scoped_refptr<KuduTable> table;
+    Status status;
+    status = client_->OpenTable(kTableName, &table);
+    if (!status.ok()) {
+      promise->Set(status);
+    }
+    shared_ptr<KuduSession> session(client_->NewSession());
+    session->SetTimeoutMillis(10000);
+    status = session->SetFlushMode(KuduSession::MANUAL_FLUSH);
+    if (!status.ok()) {
+      promise->Set(status);
+    }
+
+    for (uint64_t i = 0; continue_writing.Load(); i++) {
+      gscoped_ptr<KuduInsert> insert = table->NewInsert();
+      GenerateDataForRow(table->schema(), i, &random_, insert->mutable_row());
+      status = session->Apply(insert.Pass());
+      if (!status.ok()) {
+        promise->Set(status);
+      }
+      status = session->Flush();
+      if (!status.ok()) {
+        promise->Set(status);
+      }
+      started_writing->CountDown(1);
+    }
+    promise->Set(Status::OK());
   }
 
  protected:
@@ -110,14 +145,14 @@ class RemoteKsckTest : public KuduTest {
   }
 
   shared_ptr<Ksck> ksck_;
+  shared_ptr<client::KuduClient> client_;
 
  private:
-  string master_rpc_addr_;
+  Sockaddr master_rpc_addr_;
   shared_ptr<MiniCluster> mini_cluster_;
-  shared_ptr<client::KuduClient> client_;
   client::KuduSchema schema_;
   scoped_refptr<client::KuduTable> client_table_;
-  shared_ptr<RemoteKsckMaster> master_;
+  shared_ptr<KsckMaster> master_;
   shared_ptr<KsckCluster> cluster_;
   Random random_;
 };
@@ -158,7 +193,7 @@ TEST_F(RemoteKsckTest, TestChecksum) {
     SleepFor(MonoDelta::FromMilliseconds(700));
     s = ksck_->ChecksumData(vector<string>(),
                             vector<string>(),
-                            ChecksumOptions(MonoDelta::FromSeconds(1), 16));
+                            ChecksumOptions(MonoDelta::FromSeconds(1), 16, false, 0));
     if (s.ok()) break;
   }
   ASSERT_OK(s);
@@ -172,8 +207,50 @@ TEST_F(RemoteKsckTest, TestChecksumTimeout) {
   // Use an impossibly low timeout value of zero!
   Status s = ksck_->ChecksumData(vector<string>(),
                                  vector<string>(),
-                                 ChecksumOptions(MonoDelta::FromNanoseconds(0), 16));
+                                 ChecksumOptions(MonoDelta::FromNanoseconds(0), 16, false, 0));
   ASSERT_TRUE(s.IsTimedOut()) << "Expected TimedOut Status, got: " << s.ToString();
+}
+
+TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
+  CountDownLatch started_writing(1);
+  AtomicBool continue_writing(true);
+  Promise<Status> promise;
+  scoped_refptr<Thread> writer_thread;
+
+  Thread::Create("RemoteKsckTest", "TestChecksumSnapshot",
+                 &RemoteKsckTest::GenerateRowWritesLoop, this,
+                 &started_writing, boost::cref(continue_writing), &promise,
+                 &writer_thread);
+  CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(1)));
+
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->ChecksumData(vector<string>(), vector<string>(),
+                                ChecksumOptions(MonoDelta::FromSeconds(10), 16, true,
+                                                client_->GetLatestObservedTimestamp())));
+  continue_writing.Store(false);
+  ASSERT_OK(promise.Get());
+  writer_thread->Join();
+}
+
+TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
+  CountDownLatch started_writing(1);
+  AtomicBool continue_writing(true);
+  Promise<Status> promise;
+  scoped_refptr<Thread> writer_thread;
+
+  Thread::Create("RemoteKsckTest", "TestChecksumSnapshot",
+                 &RemoteKsckTest::GenerateRowWritesLoop, this,
+                 &started_writing, boost::cref(continue_writing), &promise,
+                 &writer_thread);
+  CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(1)));
+
+  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  ASSERT_OK(ksck_->ChecksumData(vector<string>(), vector<string>(),
+                                ChecksumOptions(MonoDelta::FromSeconds(10), 16, true,
+                                                ChecksumOptions::kCurrentTimestamp)));
+  continue_writing.Store(false);
+  ASSERT_OK(promise.Get());
+  writer_thread->Join();
 }
 
 } // namespace tools
