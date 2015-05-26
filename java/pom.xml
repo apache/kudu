@@ -29,7 +29,7 @@
         <maven-assembly-plugin.version>2.2.1</maven-assembly-plugin.version>
         <maven-enforcer-plugin.version>1.4</maven-enforcer-plugin.version>
         <maven-protoc-plugin.version>0.1.10</maven-protoc-plugin.version>
-        <maven-surefire-plugin.version>2.16</maven-surefire-plugin.version>
+        <maven-surefire-plugin.version>2.18</maven-surefire-plugin.version>
 
         <!-- Library dependencies -->
         <async.version>1.4.0</async.version>
