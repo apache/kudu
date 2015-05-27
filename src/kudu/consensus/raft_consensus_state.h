@@ -237,10 +237,18 @@ class ReplicaState {
   // Marks ReplicaTransactions up to 'id' as majority replicated, meaning the
   // transaction may Apply() (immediately if Prepare() has completed or when Prepare()
   // completes, if not).
+  //
+  // If this advanced the committed index, sets *committed_index_changed to true.
   Status UpdateMajorityReplicatedUnlocked(const OpId& majority_replicated,
-                                  OpId* committed_index);
+                                          OpId* committed_index,
+                                          bool* committed_index_changed);
 
-  Status AdvanceCommittedIndexUnlocked(const OpId& committed_index);
+  // Advances the committed index.
+  // This is a no-op if the committed index has not changed.
+  // Returns in '*committed_index_changed' whether the operation actually advanced
+  // the index.
+  Status AdvanceCommittedIndexUnlocked(const OpId& committed_index,
+                                       bool* committed_index_changed);
 
   // Returns the watermark below which all operations are known to
   // be committed according to consensus.

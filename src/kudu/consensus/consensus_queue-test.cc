@@ -416,7 +416,9 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   SetLastReceivedAndLastCommitted(&response, last_sent, MinimumOpId().index());
 
   queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_FALSE(more_pending);
+  // The committed index moved so 'more_pending' should be true so that the peer is
+  // notified.
+  ASSERT_TRUE(more_pending);
 
   // Majority replicated watermark should be the same
   ASSERT_OPID_EQ(queue_->GetMajorityReplicatedOpIdForTests(), MakeOpId(0, 5));
@@ -424,7 +426,7 @@ TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
   // Ack the remaining operations for peer-4
   response.set_responder_uuid("peer-4");
   queue_->ResponseFromPeer(response.responder_uuid(), response, &more_pending);
-  ASSERT_FALSE(more_pending);
+  ASSERT_TRUE(more_pending);
 
   // Now that a majority of peers have replicated an operation in the queue's
   // term the committed index should advance.

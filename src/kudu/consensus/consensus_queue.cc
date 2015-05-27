@@ -581,7 +581,10 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
           << "Response: " << response.ShortDebugString();
     }
 
-    *more_pending = log_cache_.HasOpBeenWritten(peer->next_index);
+    // If our log has the next request for the peer or if the peer's committed index is
+    // lower than our own, set 'more_pending' to true.
+    *more_pending = log_cache_.HasOpBeenWritten(peer->next_index) ||
+        (peer->last_known_committed_idx < queue_state_.committed_index.index());
 
     mode_copy = queue_state_.mode;
     if (mode_copy == LEADER) {

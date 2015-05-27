@@ -260,7 +260,8 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
       RETURN_NOT_OK(StartReplicaTransactionUnlocked(replicate_ptr));
     }
 
-    state_->AdvanceCommittedIndexUnlocked(info.last_committed_id);
+    bool committed_index_changed = false;
+    state_->AdvanceCommittedIndexUnlocked(info.last_committed_id, &committed_index_changed);
 
     queue_->Init(state_->GetLastReceivedOpIdUnlocked());
   }
@@ -548,7 +549,9 @@ void RaftConsensus::UpdateMajorityReplicatedUnlocked(const OpId& majority_replic
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Marking majority replicated up to "
       << majority_replicated.ShortDebugString();
   TRACE("Marking majority replicated up to $0", majority_replicated.ShortDebugString());
-  Status s = state_->UpdateMajorityReplicatedUnlocked(majority_replicated, committed_index);
+  bool committed_index_changed = false;
+  Status s = state_->UpdateMajorityReplicatedUnlocked(majority_replicated, committed_index,
+                                                      &committed_index_changed);
   if (PREDICT_FALSE(!s.ok())) {
     string msg = Substitute("Unable to mark committed up to $0: $1",
                             majority_replicated.ShortDebugString(),
@@ -558,11 +561,9 @@ void RaftConsensus::UpdateMajorityReplicatedUnlocked(const OpId& majority_replic
     return;
   }
 
-  if (state_->GetActiveRoleUnlocked() == RaftPeerPB::LEADER) {
-    // TODO Enable the below to make the leader pro-actively send the commit
-    // index to followers. Right now we're keeping this disabled as it causes
-    // certain errors to be more probable.
-    // SignalRequestToPeers(false);
+  if (committed_index_changed &&
+      state_->GetActiveRoleUnlocked() == RaftPeerPB::LEADER) {
+    peer_manager_->SignalRequest(false);
   }
 }
 
@@ -1047,7 +1048,8 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
         early_apply_up_to.ShortDebugString();
     TRACE("Early marking committed up to $0",
           early_apply_up_to.ShortDebugString());
-    CHECK_OK(state_->AdvanceCommittedIndexUnlocked(early_apply_up_to));
+    bool committed_index_changed = false;
+    CHECK_OK(state_->AdvanceCommittedIndexUnlocked(early_apply_up_to, &committed_index_changed));
 
     // 2 - Enqueue the prepares
 
@@ -1127,7 +1129,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
 
     VLOG_WITH_PREFIX_UNLOCKED(1) << "Marking committed up to " << apply_up_to.ShortDebugString();
     TRACE(Substitute("Marking committed up to $0", apply_up_to.ShortDebugString()));
-    CHECK_OK(state_->AdvanceCommittedIndexUnlocked(apply_up_to));
+    CHECK_OK(state_->AdvanceCommittedIndexUnlocked(apply_up_to, &committed_index_changed));
 
     // We can now update the last received watermark.
     //

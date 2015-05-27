@@ -157,8 +157,12 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
 void Peer::SendNextRequest(bool even_if_queue_empty) {
   // The peer has no pending request nor is sending: send the request.
   bool needs_remote_bootstrap = false;
+  int64_t commit_index_before = request_.has_committed_index() ?
+      request_.committed_index().index() : kMinimumOpIdIndex;
   Status s = queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_,
                                     &replicate_msg_refs_, &needs_remote_bootstrap);
+  int64_t commit_index_after = request_.has_committed_index() ?
+      request_.committed_index().index() : kMinimumOpIdIndex;
 
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Could not obtain request from queue for peer: "
@@ -181,7 +185,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   request_.set_caller_uuid(leader_uuid_);
   request_.set_dest_uuid(peer_pb_.permanent_uuid());
 
-  bool req_has_ops = request_.ops_size() > 0;
+  bool req_has_ops = request_.ops_size() > 0 || (commit_index_after > commit_index_before);
   // If the queue is empty, check if we were told to send a status-only
   // message, if not just return.
   if (PREDICT_FALSE(!req_has_ops && !even_if_queue_empty)) {
