@@ -85,6 +85,7 @@ public class TestUtils {
       }
       myPath = myPath.getParentFile();
     }
+    LOG.warn("Unable to find build dir! myUrl={}", myUrl);
     return null;
   }
 
