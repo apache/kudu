@@ -30,7 +30,8 @@ make -j$NUM_PROCS
 popd
 
 # Start master+ts
-BASE_DIR=$(mktemp -d)
+export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
+BASE_DIR=$(mktemp -d --tmpdir=$TEST_TMPDIR client_samples-test.XXXXXXXX)
 $ROOT/build/latest/kudu-master \
   --log_dir=$BASE_DIR \
   --master_wal_dir=$BASE_DIR/master \
