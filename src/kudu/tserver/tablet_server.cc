@@ -76,13 +76,13 @@ Status TabletServer::Init() {
   RETURN_NOT_OK(ServerBase::Init());
   RETURN_NOT_OK(path_handlers_->Register(web_server_.get()));
 
+  heartbeater_.reset(new Heartbeater(opts_, this));
+
   RETURN_NOT_OK_PREPEND(tablet_manager_->Init(),
                         "Could not init Tablet Manager");
 
   RETURN_NOT_OK_PREPEND(scanner_manager_->StartRemovalThread(),
                         "Could not start expired Scanner removal thread");
-
-  heartbeater_.reset(new Heartbeater(opts_, this));
 
   initted_ = true;
   return Status::OK();

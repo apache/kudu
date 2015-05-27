@@ -18,7 +18,6 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
-#include "kudu/util/countdown_latch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
@@ -80,6 +79,7 @@ class Heartbeater::Thread {
 
   Status Start();
   Status Stop();
+  void TriggerASAP();
 
  private:
   void RunThread();
@@ -126,8 +126,14 @@ class Heartbeater::Thread {
   // This is tracked so as to back-off heartbeating.
   int consecutive_failed_heartbeats_;
 
-  // While this hasn't counted down to 0, the thread should keep running.
-  CountDownLatch run_latch_;
+  // Mutex/condition pair to trigger the heartbeater thread
+  // to either heartbeat early or exit.
+  Mutex mutex_;
+  ConditionVariable cond_;
+
+  // Protected by mutex_.
+  bool should_run_;
+  bool heartbeat_asap_;
 
   DISALLOW_COPY_AND_ASSIGN(Thread);
 };
@@ -145,6 +151,7 @@ Heartbeater::~Heartbeater() {
 
 Status Heartbeater::Start() { return thread_->Start(); }
 Status Heartbeater::Stop() { return thread_->Stop(); }
+void Heartbeater::TriggerASAP() { thread_->TriggerASAP(); }
 
 ////////////////////////////////////////////////////////////
 // Heartbeater::Thread
@@ -156,7 +163,9 @@ Heartbeater::Thread::Thread(const TabletServerOptions& opts, TabletServer* serve
     server_(server),
     has_heartbeated_(false),
     consecutive_failed_heartbeats_(0),
-    run_latch_(0) {
+    cond_(&mutex_),
+    should_run_(false),
+    heartbeat_asap_(false) {
   CHECK(!master_addrs_.empty());
 }
 
@@ -355,10 +364,29 @@ void Heartbeater::Thread::RunThread() {
   last_hb_response_.set_needs_full_tablet_report(true);
 
   while (true) {
-    if (run_latch_.WaitFor(MonoDelta::FromMilliseconds(GetMillisUntilNextHeartbeat()))) {
-      // Latch fired -- exit loop
-      VLOG(1) << "Heartbeat thread finished";
-      return;
+    MonoTime next_heartbeat = MonoTime::Now(MonoTime::FINE);
+    next_heartbeat.AddDelta(MonoDelta::FromMilliseconds(GetMillisUntilNextHeartbeat()));
+
+    // Wait for either the heartbeat interval to elapse, or for an "ASAP" heartbeat,
+    // or for the signal to shut down.
+    {
+      MutexLock l(mutex_);
+      while (true) {
+        MonoDelta remaining = next_heartbeat.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+        if (remaining.ToMilliseconds() <= 0 ||
+            heartbeat_asap_ ||
+            !should_run_) {
+          break;
+        }
+        cond_.TimedWait(remaining);
+      }
+
+      heartbeat_asap_ = false;
+
+      if (!should_run_) {
+        VLOG(1) << "Heartbeat thread finished";
+        return;
+      }
     }
 
     Status s = DoHeartbeat();
@@ -389,7 +417,7 @@ bool Heartbeater::Thread::IsCurrentThread() const {
 Status Heartbeater::Thread::Start() {
   CHECK(thread_ == NULL);
 
-  run_latch_.Reset(1);
+  should_run_ = true;
   return kudu::Thread::Create("heartbeater", "heartbeat",
       &Heartbeater::Thread::RunThread, this, &thread_);
 }
@@ -399,10 +427,20 @@ Status Heartbeater::Thread::Stop() {
     return Status::OK();
   }
 
-  run_latch_.CountDown();
+  {
+    MutexLock l(mutex_);
+    should_run_ = false;
+    cond_.Signal();
+  }
   RETURN_NOT_OK(ThreadJoiner(thread_.get()).Join());
   thread_ = NULL;
   return Status::OK();
+}
+
+void Heartbeater::Thread::TriggerASAP() {
+  MutexLock l(mutex_);
+  heartbeat_asap_ = true;
+  cond_.Signal();
 }
 
 } // namespace tserver

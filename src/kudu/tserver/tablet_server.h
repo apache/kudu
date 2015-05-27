@@ -59,6 +59,8 @@ class TabletServer : public server::ServerBase {
 
   ScannerManager* scanner_manager() { return scanner_manager_.get(); }
 
+  Heartbeater* heartbeater() { return heartbeater_.get(); }
+
   void set_fail_heartbeats_for_tests(bool fail_heartbeats_for_tests) {
     base::subtle::NoBarrier_Store(&fail_heartbeats_for_tests_, 1);
   }

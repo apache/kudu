@@ -28,6 +28,7 @@
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_peer.h"
+#include "kudu/tserver/heartbeater.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
@@ -461,6 +462,7 @@ void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
     InsertOrDie(&dirty_tablets_, tablet_id, state);
   }
   VLOG(2) << "Will report tablet " << tablet_id << " in report #" << next_report_seq_;
+  server_->heartbeater()->TriggerASAP();
 }
 
 void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
