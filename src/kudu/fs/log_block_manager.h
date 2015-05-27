@@ -134,10 +134,7 @@ struct LogBlockManagerMetrics;
 // The log-backed block manager.
 class LogBlockManager : public BlockManager {
  public:
-  LogBlockManager(Env* env,
-                  const scoped_refptr<MetricEntity>& metric_entity,
-                  const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
-                  const std::vector<std::string>& root_paths);
+  LogBlockManager(Env* env, const BlockManagerOptions& opts);
 
   virtual ~LogBlockManager();
 

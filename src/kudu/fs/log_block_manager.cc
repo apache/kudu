@@ -979,21 +979,18 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
 
 static const char* kBlockManagerType = "log";
 
-LogBlockManager::LogBlockManager(Env* env,
-                                 const scoped_refptr<MetricEntity>& metric_entity,
-                                 const shared_ptr<MemTracker>& parent_mem_tracker,
-                                 const vector<string>& root_paths)
+LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
   : mem_tracker_(MemTracker::CreateTracker(-1,
                                            "log_block_manager",
-                                           parent_mem_tracker)),
+                                           opts.parent_mem_tracker)),
     // TODO: C++11 provides a single-arg constructor
     blocks_by_block_id_(10, BlockIdHash(), BlockIdEqual(), BlockAllocator(mem_tracker_)),
-    env_(env),
-    root_paths_(root_paths),
+    env_(DCHECK_NOTNULL(env)),
+    root_paths_(opts.root_paths),
     root_paths_idx_(0) {
-  DCHECK_GT(root_paths.size(), 0);
-  if (metric_entity) {
-    metrics_.reset(new internal::LogBlockManagerMetrics(metric_entity));
+  DCHECK_GT(root_paths_.size(), 0);
+  if (opts.metric_entity) {
+    metrics_.reset(new internal::LogBlockManagerMetrics(opts.metric_entity));
   }
 }
 

@@ -93,17 +93,14 @@ class BlockManagerStressTest : public KuduTest {
   }
 
   BlockManager* CreateBlockManager() {
-    vector<string> paths;
+    BlockManagerOptions opts;
     if (FLAGS_block_manager_paths.empty()) {
-      paths.push_back(GetTestDataDirectory());
+      opts.root_paths.push_back(GetTestDataDirectory());
     } else {
-      paths = strings::Split(FLAGS_block_manager_paths, ",",
-                             strings::SkipEmpty());
+      opts.root_paths = strings::Split(FLAGS_block_manager_paths, ",",
+                                       strings::SkipEmpty());
     }
-    return new T(env_.get(),
-                 scoped_refptr<MetricEntity>(),
-                 shared_ptr<MemTracker>(),
-                 paths);
+    return new T(env_.get(), opts);
   }
 
   void RunTest(int secs) {

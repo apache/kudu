@@ -56,12 +56,8 @@ class FileBlockManager : public BlockManager {
 
   // Creates a new in-memory instance of a FileBlockManager.
   //
-  // If 'metric_entity' is NULL, no metrics are collected.
   // 'env' should remain alive for the lifetime of the block manager.
-  FileBlockManager(Env* env,
-                   const scoped_refptr<MetricEntity>& metric_entity,
-                   const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
-                   const std::vector<std::string>& root_paths);
+  FileBlockManager(Env* env, const BlockManagerOptions& opts);
 
   virtual ~FileBlockManager();
 

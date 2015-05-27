@@ -47,6 +47,7 @@ using std::map;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using kudu::fs::CreateBlockOptions;
+using kudu::fs::BlockManagerOptions;
 using kudu::fs::FileBlockManager;
 using kudu::fs::LogBlockManager;
 using kudu::fs::ReadableBlock;
@@ -155,16 +156,14 @@ Status FsManager::Init() {
 }
 
 void FsManager::InitBlockManager() {
+  BlockManagerOptions opts;
+  opts.metric_entity = metric_entity_;
+  opts.parent_mem_tracker = parent_mem_tracker_;
+  opts.root_paths = GetDataRootDirs();
   if (FLAGS_block_manager == "file") {
-    block_manager_.reset(new FileBlockManager(env_,
-                                              metric_entity_,
-                                              parent_mem_tracker_,
-                                              GetDataRootDirs()));
+    block_manager_.reset(new FileBlockManager(env_, opts));
   } else if (FLAGS_block_manager == "log") {
-    block_manager_.reset(new LogBlockManager(env_,
-                                             metric_entity_,
-                                             parent_mem_tracker_,
-                                             GetDataRootDirs()));
+    block_manager_.reset(new LogBlockManager(env_, opts));
   } else {
     LOG(FATAL) << "Invalid block manager: " << FLAGS_block_manager;
   }

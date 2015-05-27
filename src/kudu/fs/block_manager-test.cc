@@ -71,7 +71,11 @@ class BlockManagerTest : public KuduTest {
   BlockManager* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
                                    const shared_ptr<MemTracker>& parent_mem_tracker,
                                    const vector<string>& paths) {
-    return new T(env_.get(), metric_entity, parent_mem_tracker, paths);
+    BlockManagerOptions opts;
+    opts.metric_entity = metric_entity;
+    opts.parent_mem_tracker = parent_mem_tracker;
+    opts.root_paths = paths;
+    return new T(env_.get(), opts);
   }
 
   void ReopenBlockManager(const scoped_refptr<MetricEntity>& metric_entity,

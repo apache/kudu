@@ -7,10 +7,13 @@
 #include <boost/foreach.hpp>
 #include <cstddef>
 #include <stdint.h>
+#include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/status.h"
@@ -19,6 +22,8 @@ DECLARE_bool(block_coalesce_close);
 
 namespace kudu {
 
+class MemTracker;
+class MetricEntity;
 class Slice;
 
 namespace fs {
@@ -132,6 +137,22 @@ class ReadableBlock : public Block {
 
 // Provides options and hints for block placement.
 struct CreateBlockOptions {
+};
+
+// Block manager creation options.
+struct BlockManagerOptions {
+  // The entity under which all metrics should be grouped. If NULL, metrics
+  // will not be produced.
+  //
+  // Defaults to NULL.
+  scoped_refptr<MetricEntity> metric_entity;
+
+  // The memory tracker under which all new memory trackers will be parented.
+  // If NULL, new memory trackers will be parented to the root tracker.
+  std::tr1::shared_ptr<MemTracker> parent_mem_tracker;
+
+  // The paths where data blocks will be stored. Cannot be empty.
+  std::vector<std::string> root_paths;
 };
 
 // Utilities for Kudu block lifecycle management. All methods are

@@ -525,18 +525,15 @@ bool FileBlockManager::FindRootPath(const string& root_path_uuid,
   return metadata_file != NULL;
 }
 
-FileBlockManager::FileBlockManager(Env* env,
-                                   const scoped_refptr<MetricEntity>& metric_entity,
-                                   const shared_ptr<MemTracker>& parent_mem_tracker,
-                                   const vector<string>& root_paths)
-  : env_(env),
-    root_paths_(root_paths),
+FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)
+  : env_(DCHECK_NOTNULL(env)),
+    root_paths_(opts.root_paths),
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            "file_block_manager",
-                                           parent_mem_tracker)) {
-  DCHECK_GT(root_paths.size(), 0);
-  if (metric_entity) {
-    metrics_.reset(new internal::BlockManagerMetrics(metric_entity));
+                                           opts.parent_mem_tracker)) {
+  DCHECK_GT(root_paths_.size(), 0);
+  if (opts.metric_entity) {
+    metrics_.reset(new internal::BlockManagerMetrics(opts.metric_entity));
   }
 }
 
