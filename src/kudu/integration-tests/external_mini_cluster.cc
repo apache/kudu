@@ -428,8 +428,9 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 
   // The process is now starting -- wait for the bound port info to show up.
   Stopwatch sw;
+  sw.start();
   bool success = false;
-  while (sw.elapsed().wall < kProcessStartTimeoutSeconds) {
+  while (sw.elapsed().wall_seconds() < kProcessStartTimeoutSeconds) {
     if (Env::Default()->FileExists(info_path)) {
       success = true;
       break;
