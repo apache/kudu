@@ -17,12 +17,12 @@
 
   <build>
     <plugins>
-      <!-- Make the target descriptor directory if necessary. -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>exec-maven-plugin</artifactId>
         <version>1.2</version>
         <executions>
+          <!-- Make the target descriptor directory if necessary. -->
           <execution>
             <configuration>
               <executable>mkdir</executable>
@@ -37,14 +37,7 @@
               <goal>exec</goal>
             </goals>
           </execution>
-        </executions>
-      </plugin>
-      <!-- Generate the MDL. -->
-      <plugin>
-        <groupId>org.codehaus.mojo</groupId>
-        <artifactId>exec-maven-plugin</artifactId>
-        <version>1.2</version>
-        <executions>
+          <!-- Generate the MDL. -->
           <execution>
             <configuration>
               <executable>${basedir}/generate_mdl.py</executable>
