@@ -48,8 +48,6 @@ using consensus::MakeOpId;
 using consensus::QuorumPB;
 using consensus::QuorumPeerPB;
 using consensus::ReplicateMsg;
-using consensus::RunLeaderElectionResponsePB;
-using consensus::RunLeaderElectionRequestPB;
 using client::FromInternalCompressionType;
 using client::FromInternalDataType;
 using client::FromInternalEncodingType;
@@ -61,6 +59,11 @@ using client::KuduInsert;
 using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
+using itest::GetReplicaStatusAndCheckIfLeader;
+using itest::StartElection;
+using itest::LeaderStepDown;
+using itest::WaitUntilLeader;
+using itest::WriteSimpleTestRow;
 using master::TableIdentifierPB;
 using master::TabletLocationsPB;
 using master::TSInfoPB;
@@ -73,6 +76,9 @@ using tablet::TabletPeer;
 using tserver::TabletServer;
 
 static const int kConsensusRpcTimeoutForTests = 50;
+
+static const int kTestRowKey = 1234;
+static const int kTestRowIntVal = 5678;
 
 // Integration test for the raft consensus implementation.
 // Uses the whole tablet server stack with ExternalMiniCluster.
@@ -376,9 +382,6 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     }
   }
 
-  // Start an election on the specified tserver
-  Status StartElection(const TServerDetails* replica, const string& tablet_id);
-
   // Writes 'num_writes' operations to the current leader. Each of the operations
   // has a payload of around 128KB. Causes a gtest failure on error.
   void Write128KOpsToLeader(int num_writes);
@@ -406,21 +409,6 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   string tablet_id_;
 };
 
-Status RaftConsensusITest::StartElection(const TServerDetails* replica, const string& tablet_id) {
-  RunLeaderElectionRequestPB req;
-  req.set_tablet_id(tablet_id);
-  RunLeaderElectionResponsePB resp;
-  RpcController rpc;
-  rpc.set_timeout(MonoDelta::FromSeconds(10));
-  RETURN_NOT_OK(replica->consensus_proxy->RunLeaderElection(req, &resp, &rpc));
-  Status s;
-  if (resp.has_error()) {
-    return StatusFromPB(resp.error().status())
-      .CloneAndPrepend(Substitute("Code $0", TabletServerErrorPB::Code_Name(resp.error().code())));
-  }
-  return Status::OK();
-}
-
 // Test that we can retrieve the permanent uuid of a server running
 // consensus service via RPC.
 TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
@@ -440,7 +428,6 @@ TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
   ASSERT_OK(consensus::SetPermanentUuidForRemotePeer(messenger, &peer));
   ASSERT_EQ(expected_uuid, peer.permanent_uuid());
 }
-
 
 // TODO allow the scan to define an operation id, fetch the last id
 // from the leader and then use that id to make the replica wait
@@ -555,7 +542,7 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   RpcController rpc;
   req.set_tablet_id(tablet_id_);
   ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
-  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, kTestRowKey, kTestRowIntVal,
                  "hello world via RPC", req.mutable_row_operations());
 
   // Get the leader.
@@ -602,7 +589,7 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
   CHECK_NE(leader->instance_id.permanent_uuid(), replica->instance_id.permanent_uuid());
 
   // Make the new replica leader.
-  ASSERT_OK(StartElection(replica, tablet_id_));
+  ASSERT_OK(StartElection(replica, tablet_id_, MonoDelta::FromSeconds(10)));
 
   // Insert a bunch more rows.
   InsertTestRowsRemoteThread(FLAGS_client_inserts_per_thread * num_iters,
@@ -1092,8 +1079,9 @@ void RaftConsensusITest::StubbornlyWriteSameRowThread(int replica_idx, const Ato
   RpcController rpc;
   req.set_tablet_id(tablet_id_);
   ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
-  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1234, 5678,
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, kTestRowKey, kTestRowIntVal,
                  "hello world", req.mutable_row_operations());
+
   while (!finish->Load()) {
     resp.Clear();
     rpc.Reset();
@@ -1176,7 +1164,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   ASSERT_EQ(3, tservers.size());
 
   // Elect server 2 as leader and wait for log index 1 to propagate to all servers.
-  ASSERT_OK(StartElection(tservers[2], tablet_id_));
+  ASSERT_OK(StartElection(tservers[2], tablet_id_, MonoDelta::FromSeconds(10)));
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
 
   replica_ts = tservers[0];
@@ -1326,6 +1314,40 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     ASSERT_STR_CONTAINS(results[3], Substitute("term: $0 index: 5", leader_term));
     ASSERT_STR_CONTAINS(results[4], Substitute("term: $0 index: 6", leader_term));
   }
+}
+
+TEST_F(RaftConsensusITest, TestLeaderStepDown) {
+  FLAGS_num_replicas = 3;
+  FLAGS_num_tablet_servers = 3;
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  BuildAndStart(flags);
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+
+  // Start with no leader.
+  Status s = GetReplicaStatusAndCheckIfLeader(tservers[0], tablet_id_, MonoDelta::FromSeconds(10));
+  ASSERT_TRUE(s.IsIllegalState()) << "TS #0 should not be leader yet: " << s.ToString();
+
+  // Become leader.
+  ASSERT_OK(StartElection(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitUntilLeader(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WriteSimpleTestRow(tservers[0], tablet_id_, RowOperationsPB::INSERT,
+                               kTestRowKey, kTestRowIntVal, "foo", MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 2));
+
+  // Step down and test that a 2nd stepdown returns the expected result.
+  ASSERT_OK(LeaderStepDown(tservers[0], tablet_id_, MonoDelta::FromSeconds(10)));
+  TabletServerErrorPB error;
+  s = LeaderStepDown(tservers[0], tablet_id_, MonoDelta::FromSeconds(10), &error);
+  ASSERT_TRUE(s.IsIllegalState()) << "TS #0 should not be leader anymore: " << s.ToString();
+  ASSERT_EQ(TabletServerErrorPB::NOT_THE_LEADER, error.code()) << error.ShortDebugString();
+
+  s = WriteSimpleTestRow(tservers[0], tablet_id_, RowOperationsPB::INSERT,
+                         kTestRowKey, kTestRowIntVal, "foo", MonoDelta::FromSeconds(10));
+  ASSERT_TRUE(s.IsIllegalState()) << "TS #0 should not accept writes as follower: "
+                                  << s.ToString();
 }
 
 }  // namespace tserver

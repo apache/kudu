@@ -87,6 +87,8 @@ class RaftConsensus : public Consensus,
 
   virtual Status StartElection(ElectionMode mode) OVERRIDE;
 
+  virtual Status StepDown(LeaderStepDownResponsePB* resp) OVERRIDE;
+
   // Call StartElection(), log a warning if the call fails (usually due to
   // being shut down).
   void ReportFailureDetected(const std::string& name, const Status& msg);

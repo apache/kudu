@@ -108,6 +108,11 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   };
   virtual Status StartElection(ElectionMode mode) = 0;
 
+  // Implement a LeaderStepDown() request.
+  virtual Status StepDown(LeaderStepDownResponsePB* resp) {
+    return Status::NotSupported("Not implemented.");
+  }
+
   // Creates a new ConsensusRound, the entity that owns all the data
   // structures required for a consensus round, such as the ReplicateMsg
   // (and later on the CommitMsg). ConsensusRound will also point to and

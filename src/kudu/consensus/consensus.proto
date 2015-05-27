@@ -328,6 +328,16 @@ message RunLeaderElectionResponsePB {
   optional tserver.TabletServerErrorPB error = 1;
 }
 
+message LeaderStepDownRequestPB {
+  // The id of the tablet.
+  required bytes tablet_id = 1;
+}
+
+message LeaderStepDownResponsePB {
+  // A generic error message (such as tablet not found).
+  optional tserver.TabletServerErrorPB error = 1;
+}
+
 message GetLastOpIdRequestPB {
   // the id of the tablet
   required bytes tablet_id = 1;
@@ -360,6 +370,9 @@ service ConsensusService {
   rpc GetNodeInstance(GetNodeInstanceRequestPB) returns (GetNodeInstanceResponsePB);
 
   rpc RunLeaderElection(RunLeaderElectionRequestPB) returns (RunLeaderElectionResponsePB);
+
+  // Force this node to step down as leader.
+  rpc LeaderStepDown(LeaderStepDownRequestPB) returns (LeaderStepDownResponsePB);
 
   rpc GetLastOpId(GetLastOpIdRequestPB) returns (GetLastOpIdResponsePB);
 

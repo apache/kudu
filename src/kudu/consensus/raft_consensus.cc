@@ -62,6 +62,7 @@ using log::LogEntryBatch;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 using strings::Substitute;
+using tserver::TabletServerErrorPB;
 
 // Special string that represents any known leader to the failure detector.
 static const char* const kTimerId = "election-timer";
@@ -308,6 +309,21 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
   return Status::OK();
 }
 
+Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
+  TRACE_EVENT0("consensus", "RaftConsensus::StepDown");
+  ReplicaState::UniqueLock lock;
+  RETURN_NOT_OK(state_->LockForConfigChange(&lock));
+  if (state_->GetActiveRoleUnlocked() != QuorumPeerPB::LEADER) {
+    resp->mutable_error()->set_code(TabletServerErrorPB::NOT_THE_LEADER);
+    StatusToPB(Status::IllegalState("Not currently leader"),
+               resp->mutable_error()->mutable_status());
+    // We return OK so that the tablet service won't overwrite the error code.
+    return Status::OK();
+  }
+  RETURN_NOT_OK(BecomeReplicaUnlocked());
+  return Status::OK();
+}
+
 void RaftConsensus::ReportFailureDetected(const std::string& name, const Status& msg) {
   LOG_WITH_PREFIX(INFO) << "Failure of peer " << name << " detected. Triggering leader election";
 
@@ -361,6 +377,8 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 Status RaftConsensus::BecomeReplicaUnlocked() {
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Becoming Follower/Learner. State: "
                                  << state_->ToStringUnlocked();
+
+  state_->ClearLeaderUnlocked();
 
   // FD should be running while we are a follower.
   RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
@@ -1524,8 +1542,6 @@ Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term) {
                                    << state_->GetCurrentTermUnlocked();
     RETURN_NOT_OK(BecomeReplicaUnlocked());
   }
-
-  state_->ClearLeaderUnlocked();
 
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Advancing to term " << new_term;
   RETURN_NOT_OK(state_->SetCurrentTermUnlocked(new_term));

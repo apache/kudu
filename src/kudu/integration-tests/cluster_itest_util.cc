@@ -9,6 +9,7 @@
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/map-util.h"
@@ -29,10 +30,16 @@ using client::KuduColumnSchema;
 using client::KuduClient;
 using client::KuduSchema;
 using client::KuduTable;
-using consensus::ConsensusServiceProxy;
+using consensus::GetConsensusStateRequestPB;
+using consensus::GetConsensusStateResponsePB;
 using consensus::GetLastOpIdRequestPB;
 using consensus::GetLastOpIdResponsePB;
+using consensus::LeaderStepDownRequestPB;
+using consensus::LeaderStepDownResponsePB;
 using consensus::OpId;
+using consensus::QuorumPeerPB;
+using consensus::RunLeaderElectionResponsePB;
+using consensus::RunLeaderElectionRequestPB;
 using consensus::kInvalidOpIdIndex;
 using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
@@ -46,7 +53,10 @@ using std::vector;
 using strings::Substitute;
 using tserver::CreateTsClientProxies;
 using tserver::TabletServerAdminServiceProxy;
+using tserver::TabletServerErrorPB;
 using tserver::TabletServerServiceProxy;
+using tserver::WriteRequestPB;
+using tserver::WriteResponsePB;
 
 const string& TServerDetails::uuid() const {
   return instance_id.permanent_uuid();
@@ -214,6 +224,115 @@ Status CreateTabletServerMap(MasterServiceProxy* master_proxy,
 
     InsertOrDie(ts_map, peer->instance_id.permanent_uuid(), peer.get());
     ignore_result(peer.release());
+  }
+  return Status::OK();
+}
+
+Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
+                                        const string& tablet_id,
+                                        const MonoDelta& timeout) {
+  GetConsensusStateRequestPB req;
+  GetConsensusStateResponsePB resp;
+  RpcController controller;
+  controller.set_timeout(timeout);
+  req.set_tablet_id(tablet_id);
+  if (!replica->consensus_proxy->GetConsensusState(req, &resp, &controller).ok() ||
+      resp.has_error()) {
+    VLOG(1) << "Error getting consensus state from replica: "
+            << replica->instance_id.permanent_uuid();
+    return Status::NotFound("Error connecting to replica");
+  }
+  const string& replica_uuid = replica->instance_id.permanent_uuid();
+  if (resp.cstate().has_leader_uuid() && resp.cstate().leader_uuid() == replica_uuid) {
+    return Status::OK();
+  }
+  VLOG(1) << "Replica not leader of quorum: " << replica->instance_id.permanent_uuid();
+  return Status::IllegalState("Replica found but not leader");
+}
+
+Status WaitUntilLeader(const TServerDetails* replica,
+                       const string& tablet_id,
+                       const MonoDelta& timeout) {
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = start;
+  deadline.AddDelta(timeout);
+
+  int backoff_exp = 0;
+  const int kMaxBackoffExp = 7;
+  Status s;
+  while (true) {
+    MonoDelta remaining_timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    s = GetReplicaStatusAndCheckIfLeader(replica, tablet_id, remaining_timeout);
+    if (s.ok()) {
+      return Status::OK();
+    }
+
+    if (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).MoreThan(timeout)) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
+    backoff_exp = min(backoff_exp + 1, kMaxBackoffExp);
+  }
+  return Status::TimedOut(Substitute("Replica $0 is not leader after waiting for $1: $2",
+                                     replica->ToString(), timeout.ToString(), s.ToString()));
+}
+
+Status StartElection(const TServerDetails* replica,
+                     const string& tablet_id,
+                     const MonoDelta& timeout) {
+  RunLeaderElectionRequestPB req;
+  req.set_tablet_id(tablet_id);
+  RunLeaderElectionResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(replica->consensus_proxy->RunLeaderElection(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status())
+      .CloneAndPrepend(Substitute("Code $0", TabletServerErrorPB::Code_Name(resp.error().code())));
+  }
+  return Status::OK();
+}
+
+Status LeaderStepDown(const TServerDetails* replica,
+                      const string& tablet_id,
+                      const MonoDelta& timeout,
+                      TabletServerErrorPB* error) {
+  LeaderStepDownRequestPB req;
+  req.set_tablet_id(tablet_id);
+  LeaderStepDownResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(replica->consensus_proxy->LeaderStepDown(req, &resp, &rpc));
+  if (resp.has_error()) {
+    if (error != NULL) {
+      *error = resp.error();
+    }
+    return StatusFromPB(resp.error().status())
+      .CloneAndPrepend(Substitute("Code $0", TabletServerErrorPB::Code_Name(resp.error().code())));
+  }
+  return Status::OK();
+}
+
+Status WriteSimpleTestRow(const TServerDetails* replica,
+                          const std::string& tablet_id,
+                          RowOperationsPB::Type write_type,
+                          int32_t key,
+                          int32_t int_val,
+                          const string& string_val,
+                          const MonoDelta& timeout) {
+  WriteRequestPB req;
+  WriteResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+
+  req.set_tablet_id(tablet_id);
+  Schema schema = GetSimpleTestSchema();
+  RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
+  AddTestRowToPB(write_type, schema, key, int_val, string_val, req.mutable_row_operations());
+
+  RETURN_NOT_OK(replica->tserver_proxy->Write(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
   }
   return Status::OK();
 }

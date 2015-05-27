@@ -52,6 +52,8 @@ using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
 using consensus::GetNodeInstanceRequestPB;
 using consensus::GetNodeInstanceResponsePB;
+using consensus::LeaderStepDownRequestPB;
+using consensus::LeaderStepDownResponsePB;
 using consensus::RunLeaderElectionRequestPB;
 using consensus::RunLeaderElectionResponsePB;
 using consensus::VoteRequestPB;
@@ -633,6 +635,25 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
 
   Status s = tablet_peer->consensus()->StartElection(
       consensus::Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
+  }
+  context->RespondSuccess();
+}
+
+void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
+                                          LeaderStepDownResponsePB* resp,
+                                          RpcContext* context) {
+  DVLOG(3) << "Received Leader stepdown RPC: " << req->DebugString();
+  scoped_refptr<TabletPeer> tablet_peer;
+  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
+    return;
+  }
+
+  Status s = tablet_peer->consensus()->StepDown(resp);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

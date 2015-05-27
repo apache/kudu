@@ -24,6 +24,7 @@
 
 namespace kudu {
 class MonoDelta;
+class Schema;
 class Sockaddr;
 class Status;
 
@@ -47,6 +48,7 @@ class Messenger;
 }
 
 namespace tserver {
+class TabletServerErrorPB;
 class TabletServerAdminServiceProxy;
 class TabletServerServiceProxy;
 }
@@ -110,6 +112,49 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
                                   const std::string& tablet_id,
                                   const std::vector<TServerDetails*>& replicas,
                                   const MonoDelta& timeout);
+
+// Returns:
+// Status::OK() if the replica is alive and leader of the quorum.
+// Status::NotFound() if the replica is not part of the quorum or is dead.
+// Status::IllegalState() if the replica is live but not the leader.
+Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
+                                        const std::string& tablet_id,
+                                        const MonoDelta& timeout);
+
+// Wait until the specified replica is leader.
+Status WaitUntilLeader(const TServerDetails* replica,
+                       const std::string& tablet_id,
+                       const MonoDelta& timeout);
+
+// Start an election on the specified tserver.
+// 'timeout' only refers to the RPC asking the peer to start an election. The
+// StartElection() RPC does not block waiting for the results of the election,
+// and neither does this call.
+Status StartElection(const TServerDetails* replica,
+                     const std::string& tablet_id,
+                     const MonoDelta& timeout);
+
+// Cause a leader to step down on the specified server.
+// 'timeout' refers to the RPC timeout waiting synchronously for stepdown to
+// complete on the leader side. Since that does not require communication with
+// other nodes at this time, this call is rather quick.
+Status LeaderStepDown(const TServerDetails* replica,
+                      const std::string& tablet_id,
+                      const MonoDelta& timeout,
+                      tserver::TabletServerErrorPB* error = NULL);
+
+// Write a "simple test schema" row to the specified tablet on the given
+// replica. This schema is commonly used by tests and is defined in
+// wire_protocol-test-util.h
+// The caller must specify whether this is an INSERT or UPDATE call via
+// write_type.
+Status WriteSimpleTestRow(const TServerDetails* replica,
+                          const std::string& tablet_id,
+                          RowOperationsPB::Type write_type,
+                          int32_t key,
+                          int32_t int_val,
+                          const std::string& string_val,
+                          const MonoDelta& timeout);
 
 } // namespace itest
 } // namespace kudu

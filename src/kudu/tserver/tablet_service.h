@@ -123,6 +123,10 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
                                  consensus::RunLeaderElectionResponsePB* resp,
                                  rpc::RpcContext* context) OVERRIDE;
 
+  virtual void LeaderStepDown(const consensus::LeaderStepDownRequestPB* req,
+                                 consensus::LeaderStepDownResponsePB* resp,
+                                 rpc::RpcContext* context) OVERRIDE;
+
   virtual void GetLastOpId(const consensus::GetLastOpIdRequestPB *req,
                            consensus::GetLastOpIdResponsePB *resp,
                            rpc::RpcContext *context) OVERRIDE;

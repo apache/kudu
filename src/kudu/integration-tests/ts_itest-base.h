@@ -31,6 +31,7 @@ namespace tserver {
 
 using consensus::OpId;
 using consensus::QuorumPeerPB;
+using itest::GetReplicaStatusAndCheckIfLeader;
 using itest::TabletReplicaMap;
 using itest::TabletServerMap;
 using itest::TServerDetails;
@@ -151,30 +152,6 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     } while (replicas_missing && num_retries < kMaxRetries);
   }
 
-  // Returns:
-  // Status::OK() if the replica is alive and leader of the quorum.
-  // Status::NotFound() if the replica is not part of the quorum or is dead.
-  // Status::IllegalState() if the replica is live but not the leader.
-  Status GetReplicaStatusAndCheckIfLeader(const string& tablet_id, TServerDetails* replica) {
-    consensus::GetConsensusStateRequestPB req;
-    consensus::GetConsensusStateResponsePB resp;
-    RpcController controller;
-    controller.set_timeout(MonoDelta::FromMilliseconds(100));
-    req.set_tablet_id(tablet_id);
-    if (!replica->consensus_proxy->GetConsensusState(req, &resp, &controller).ok() ||
-        resp.has_error()) {
-      VLOG(1) << "Error getting consensus state from replica: "
-              << replica->instance_id.permanent_uuid();
-      return Status::NotFound("Error connecting to replica");
-    }
-    const string& replica_uuid = replica->instance_id.permanent_uuid();
-    if (resp.cstate().has_leader_uuid() && resp.cstate().leader_uuid() == replica_uuid) {
-      return Status::OK();
-    }
-    VLOG(1) << "Replica not leader of quorum: " << replica->instance_id.permanent_uuid();
-    return Status::IllegalState("Replica found but not leader");
-  }
-
   // Returns the last committed leader of the quorum. Tries to get it from master
   // but then actually tries to the get the committed quorum to make sure.
   TServerDetails* GetLeaderReplicaOrNull(const string& tablet_id) {
@@ -187,7 +164,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     TServerDetails* leader;
     if (master_found_leader_result.ok()) {
       leader = GetReplicaWithUuidOrNull(tablet_id, leader_uuid);
-      if (leader && GetReplicaStatusAndCheckIfLeader(tablet_id, leader).ok()) {
+      if (leader && GetReplicaStatusAndCheckIfLeader(leader, tablet_id,
+                                                     MonoDelta::FromMilliseconds(100)).ok()) {
         return leader;
       }
     }
@@ -203,7 +181,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
     std::random_shuffle(replicas_copy.begin(), replicas_copy.end());
     BOOST_FOREACH(TServerDetails* replica, replicas_copy) {
-      if (GetReplicaStatusAndCheckIfLeader(tablet_id, replica).ok()) {
+      if (GetReplicaStatusAndCheckIfLeader(replica, tablet_id,
+                                           MonoDelta::FromMilliseconds(100)).ok()) {
         return replica;
       }
     }
@@ -314,7 +293,9 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
           replica->instance_id.permanent_uuid() == leader->instance_id.permanent_uuid()) {
         continue;
       }
-      if (GetReplicaStatusAndCheckIfLeader(tablet_id, replica).IsIllegalState()) {
+      Status s = GetReplicaStatusAndCheckIfLeader(replica, tablet_id,
+                                                  MonoDelta::FromMilliseconds(100));
+      if (s.IsIllegalState()) {
         followers->push_back(replica);
       }
     }

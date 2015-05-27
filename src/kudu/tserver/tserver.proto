@@ -63,6 +63,9 @@ message TabletServerErrorPB {
 
     // An invalid scan call sequence ID was specified.
     INVALID_SCAN_CALL_SEQ_ID = 14;
+
+    // This tserver is not the leader of the quorum.
+    NOT_THE_LEADER = 15;
   }
 
   // The error code.
