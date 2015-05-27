@@ -88,11 +88,10 @@ Status FsTool::Init() {
   // Allow read-only access to live blocks.
   google::FlagSaver saver;
   FLAGS_block_manager_lock_dirs = false;
-  fs_manager_.reset(new FsManager(Env::Default(),
-                                  scoped_refptr<MetricEntity>(),
-                                  shared_ptr<MemTracker>(),
-                                  wal_dir_,
-                                  data_dirs_));
+  FsManagerOpts opts;
+  opts.wal_path = wal_dir_;
+  opts.data_paths = data_dirs_;
+  fs_manager_.reset(new FsManager(Env::Default(), opts));
   RETURN_NOT_OK(fs_manager_->Open());
 
   LOG(INFO) << "Opened file system with uuid: " << fs_manager_->uuid();

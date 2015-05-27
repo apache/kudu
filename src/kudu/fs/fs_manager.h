@@ -37,8 +37,25 @@ class WritableBlock;
 } // namespace fs
 
 class BlockId;
-
 class InstanceMetadataPB;
+
+struct FsManagerOpts {
+  // The entity under which all metrics should be grouped. If NULL, metrics
+  // will not be produced.
+  //
+  // Defaults to NULL.
+  scoped_refptr<MetricEntity> metric_entity;
+
+  // The memory tracker under which all new memory trackers will be parented.
+  // If NULL, new memory trackers will be parented to the root tracker.
+  std::tr1::shared_ptr<MemTracker> parent_mem_tracker;
+
+  // The path where WALs will be stored. Cannot be empty.
+  std::string wal_path;
+
+  // The paths where data blocks will be stored. Cannot be empty.
+  std::vector<std::string> data_paths;
+};
 
 // FsManager provides helpers to read data and metadata files,
 // and it's responsible for abstracting the file-system layout.
@@ -55,12 +72,10 @@ class FsManager {
   static const char *kWalFileNamePrefix;
   static const char *kWalsRecoveryDirSuffix;
 
+  // Only for unit tests.
   FsManager(Env* env, const std::string& root_path);
-  FsManager(Env* env,
-            const scoped_refptr<MetricEntity>& entity,
-            const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
-            const std::string& wal_path,
-            const std::vector<std::string>& data_paths);
+
+  FsManager(Env* env, const FsManagerOpts& opts);
   ~FsManager();
 
   // Initialize and load the basic filesystem metadata.

@@ -37,11 +37,11 @@ class FsManagerTestBase : public KuduTest {
   void ReinitFsManager(const string& wal_path, const vector<string>& data_paths) {
     // Blow away the old memtrackers first.
     fs_manager_.reset();
-    fs_manager_.reset(new FsManager(env_.get(),
-                                    scoped_refptr<MetricEntity>(),
-                                    shared_ptr<MemTracker>(),
-                                    wal_path,
-                                    data_paths));
+
+    FsManagerOpts opts;
+    opts.wal_path = wal_path;
+    opts.data_paths = data_paths;
+    fs_manager_.reset(new FsManager(env_.get(), opts));
   }
 
   void TestReadWriteDataFile(const Slice& data) {

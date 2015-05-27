@@ -69,7 +69,7 @@ const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 static const char* const kTmpInfix = ".tmp";
 
 FsManager::FsManager(Env* env, const string& root_path)
-  : env_(env),
+  : env_(DCHECK_NOTNULL(env)),
     wal_fs_root_(root_path),
     data_fs_roots_(boost::assign::list_of(root_path).convert_to_container<vector<string> >()),
     metric_entity_(NULL),
@@ -77,15 +77,12 @@ FsManager::FsManager(Env* env, const string& root_path)
 }
 
 FsManager::FsManager(Env* env,
-                     const scoped_refptr<MetricEntity>& metric_entity,
-                     const shared_ptr<MemTracker>& parent_mem_tracker,
-                     const string& wal_path,
-                     const vector<string>& data_paths)
-  : env_(env),
-    wal_fs_root_(wal_path),
-    data_fs_roots_(data_paths),
-    metric_entity_(metric_entity),
-    parent_mem_tracker_(parent_mem_tracker),
+                     const FsManagerOpts& opts)
+  : env_(DCHECK_NOTNULL(env)),
+    wal_fs_root_(opts.wal_path),
+    data_fs_roots_(opts.data_paths),
+    metric_entity_(opts.metric_entity),
+    parent_mem_tracker_(opts.parent_mem_tracker),
     initted_(false) {
 }
 

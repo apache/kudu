@@ -71,21 +71,25 @@ ServerBase::ServerBase(const string& name,
     mem_tracker_(CreateMemTrackerForServer()),
     metric_registry_(new MetricRegistry()),
     metric_entity_(METRIC_ENTITY_server.Instantiate(metric_registry_.get(), metric_namespace)),
-    fs_manager_(new FsManager(options.env,
-                              metric_entity_,
-                              mem_tracker_,
-                              options.wal_dir,
-                              options.data_dirs)),
+
     rpc_server_(new RpcServer(options.rpc_opts)),
     web_server_(new Webserver(options.webserver_opts)),
     is_first_run_(false),
     options_(options),
     stop_metrics_logging_latch_(1) {
+  FsManagerOpts fs_opts;
+  fs_opts.metric_entity = metric_entity_;
+  fs_opts.parent_mem_tracker = mem_tracker_;
+  fs_opts.wal_path = options.wal_dir;
+  fs_opts.data_paths = options.data_dirs;
+  fs_manager_.reset(new FsManager(options.env, fs_opts));
+
   if (FLAGS_use_hybrid_clock) {
     clock_ = new HybridClock();
   } else {
     clock_ = LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
   }
+
   CHECK_OK(StartThreadInstrumentation(metric_entity_, web_server_.get()));
   CHECK_OK(codegen::CompilationManager::GetSingleton()->StartInstrumentation(
                metric_entity_));

@@ -100,23 +100,23 @@ class RaftConsensusQuorumTest : public KuduTest {
           MemTracker::CreateTracker(-1, Substitute("peer-$0", i));
       parent_mem_trackers_.push_back(parent_mem_tracker);
       string test_path = GetTestPath(Substitute("peer-$0-root", i));
-      FsManager* fs_manager = new FsManager(env_.get(),
-                                            scoped_refptr<MetricEntity>(),
-                                            parent_mem_tracker,
-                                            test_path,
-                                            boost::assign::list_of(test_path));
+      FsManagerOpts opts;
+      opts.parent_mem_tracker = parent_mem_tracker;
+      opts.wal_path = test_path;
+      opts.data_paths = boost::assign::list_of(test_path);
+      gscoped_ptr<FsManager> fs_manager(new FsManager(env_.get(), opts));
       RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
       RETURN_NOT_OK(fs_manager->Open());
-      fs_managers_.push_back(fs_manager);
 
       scoped_refptr<Log> log;
       RETURN_NOT_OK(Log::Open(LogOptions(),
-                              fs_manager,
+                              fs_manager.get(),
                               kTestTablet,
                               schema_,
                               NULL,
                               &log));
       logs_.push_back(log.get());
+      fs_managers_.push_back(fs_manager.release());
     }
     return Status::OK();
   }
