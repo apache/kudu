@@ -199,7 +199,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
 
     // If this is the first term expire the FD immediately so that we have a fast first
     // election, otherwise we just let the timer expire normally.
-    if (state_->GetCurrentTermUnlocked() == 1) {
+    if (state_->GetCurrentTermUnlocked() == 0) {
       // Initialize the failure detector timeout to some time in the past so that
       // the next time the failure detector monitor runs it triggers an election
       // (unless someone else requested a vote from us first, which resets the
