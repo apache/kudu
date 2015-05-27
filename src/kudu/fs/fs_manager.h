@@ -40,6 +40,9 @@ class BlockId;
 class InstanceMetadataPB;
 
 struct FsManagerOpts {
+  FsManagerOpts();
+  ~FsManagerOpts();
+
   // The entity under which all metrics should be grouped. If NULL, metrics
   // will not be produced.
   //
@@ -55,6 +58,9 @@ struct FsManagerOpts {
 
   // The paths where data blocks will be stored. Cannot be empty.
   std::vector<std::string> data_paths;
+
+  // Whether or not read-write operations should be allowed. Defaults to false.
+  bool read_only;
 };
 
 // FsManager provides helpers to read data and metadata files,
@@ -217,6 +223,9 @@ class FsManager {
   static const char *kConsensusMetadataDirName;
 
   Env *env_;
+
+  // If false, operations that mutate on-disk state are prohibited.
+  const bool read_only_;
 
   // These roots are the constructor input verbatim. None of them are used
   // as-is; they are first canonicalized during Init().

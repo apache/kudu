@@ -69,8 +69,16 @@ const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 
 static const char* const kTmpInfix = ".tmp";
 
+FsManagerOpts::FsManagerOpts()
+  : read_only(false) {
+}
+
+FsManagerOpts::~FsManagerOpts() {
+}
+
 FsManager::FsManager(Env* env, const string& root_path)
   : env_(DCHECK_NOTNULL(env)),
+    read_only_(false),
     wal_fs_root_(root_path),
     data_fs_roots_(boost::assign::list_of(root_path).convert_to_container<vector<string> >()),
     metric_entity_(NULL),
@@ -80,6 +88,7 @@ FsManager::FsManager(Env* env, const string& root_path)
 FsManager::FsManager(Env* env,
                      const FsManagerOpts& opts)
   : env_(DCHECK_NOTNULL(env)),
+    read_only_(opts.read_only),
     wal_fs_root_(opts.wal_path),
     data_fs_roots_(opts.data_paths),
     metric_entity_(opts.metric_entity),
@@ -160,6 +169,7 @@ void FsManager::InitBlockManager() {
   opts.metric_entity = metric_entity_;
   opts.parent_mem_tracker = parent_mem_tracker_;
   opts.root_paths = GetDataRootDirs();
+  opts.read_only = read_only_;
   if (FLAGS_block_manager == "file") {
     block_manager_.reset(new FileBlockManager(env_, opts));
   } else if (FLAGS_block_manager == "log") {
@@ -191,6 +201,8 @@ Status FsManager::Open() {
 }
 
 Status FsManager::CreateInitialFileSystemLayout() {
+  CHECK(!read_only_);
+
   RETURN_NOT_OK(Init());
 
   // Initialize each root dir.
@@ -393,6 +405,8 @@ void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
 // ==========================================================================
 
 Status FsManager::CreateNewBlock(gscoped_ptr<WritableBlock>* block) {
+  CHECK(!read_only_);
+
   return block_manager_->CreateBlock(block);
 }
 
@@ -401,6 +415,8 @@ Status FsManager::OpenBlock(const BlockId& block_id, gscoped_ptr<ReadableBlock>*
 }
 
 Status FsManager::DeleteBlock(const BlockId& block_id) {
+  CHECK(!read_only_);
+
   return block_manager_->DeleteBlock(block_id);
 }
 

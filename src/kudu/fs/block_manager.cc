@@ -3,6 +3,7 @@
 
 #include "kudu/fs/block_manager.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/metrics.h"
 
 // The default value is optimized for the case where:
 // 1. the cfile blocks are colocated with the WALs.
@@ -23,6 +24,13 @@ namespace kudu {
 namespace fs {
 
 const char* BlockManager::kInstanceMetadataFileName = "block_manager_instance";
+
+BlockManagerOptions::BlockManagerOptions()
+  : read_only(false) {
+}
+
+BlockManagerOptions::~BlockManagerOptions() {
+}
 
 } // namespace fs
 } // namespace kudu

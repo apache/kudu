@@ -271,6 +271,9 @@ class LogBlockManager : public BlockManager {
   // For manipulating files.
   Env* env_;
 
+  // If true, only read operations are allowed.
+  const bool read_only_;
+
   // Filesystem paths where all block directories are found.
   const std::vector<std::string> root_paths_;
 

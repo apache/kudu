@@ -527,6 +527,7 @@ bool FileBlockManager::FindRootPath(const string& root_path_uuid,
 
 FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)
   : env_(DCHECK_NOTNULL(env)),
+    read_only_(opts.read_only),
     root_paths_(opts.root_paths),
     mem_tracker_(MemTracker::CreateTracker(-1,
                                            "file_block_manager",
@@ -542,6 +543,8 @@ FileBlockManager::~FileBlockManager() {
 }
 
 Status FileBlockManager::Create() {
+  CHECK(!read_only_);
+
   BOOST_FOREACH(const string& root_path, root_paths_) {
     Status s = env_->CreateDir(root_path);
     if (!s.ok() && !s.IsAlreadyPresent()) {
@@ -589,6 +592,7 @@ Status FileBlockManager::Open() {
 
 Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                      gscoped_ptr<WritableBlock>* block) {
+  CHECK(!read_only_);
 
   // Pick a root path using a simple round-robin block placement strategy.
   string root_uuid;
@@ -655,6 +659,8 @@ Status FileBlockManager::OpenBlock(const BlockId& block_id,
 }
 
 Status FileBlockManager::DeleteBlock(const BlockId& block_id) {
+  CHECK(!read_only_);
+
   internal::FileBlockLocation location;
   RETURN_NOT_OK(internal::FileBlockLocation::FromBlockId(*this, block_id, &location));
   string path = location.GetFullPath();

@@ -91,6 +91,7 @@ Status FsTool::Init() {
   FsManagerOpts opts;
   opts.wal_path = wal_dir_;
   opts.data_paths = data_dirs_;
+  opts.read_only = true;
   fs_manager_.reset(new FsManager(Env::Default(), opts));
   RETURN_NOT_OK(fs_manager_->Open());
 

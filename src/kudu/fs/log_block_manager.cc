@@ -986,6 +986,7 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
     // TODO: C++11 provides a single-arg constructor
     blocks_by_block_id_(10, BlockIdHash(), BlockIdEqual(), BlockAllocator(mem_tracker_)),
     env_(DCHECK_NOTNULL(env)),
+    read_only_(opts.read_only),
     root_paths_(opts.root_paths),
     root_paths_idx_(0) {
   DCHECK_GT(root_paths_.size(), 0);
@@ -1004,6 +1005,8 @@ LogBlockManager::~LogBlockManager() {
 }
 
 Status LogBlockManager::Create() {
+  CHECK(!read_only_);
+
   BOOST_FOREACH(const string& root_path, root_paths_) {
     Status s = env_->CreateDir(root_path);
     if (!s.ok() && !s.IsAlreadyPresent()) {
@@ -1064,6 +1067,8 @@ Status LogBlockManager::Open() {
 
 Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
                                     gscoped_ptr<WritableBlock>* block) {
+  CHECK(!read_only_);
+
   // Find a free container. If one cannot be found, create a new one.
   //
   // TODO: should we cap the number of outstanding containers and force
@@ -1140,6 +1145,8 @@ Status LogBlockManager::OpenBlock(const BlockId& block_id,
 }
 
 Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
+  CHECK(!read_only_);
+
   scoped_refptr<LogBlock> lb(RemoveLogBlock(block_id));
   if (!lb) {
     return Status::NotFound("Can't find block", block_id.ToString());

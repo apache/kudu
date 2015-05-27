@@ -141,6 +141,9 @@ struct CreateBlockOptions {
 
 // Block manager creation options.
 struct BlockManagerOptions {
+  BlockManagerOptions();
+  ~BlockManagerOptions();
+
   // The entity under which all metrics should be grouped. If NULL, metrics
   // will not be produced.
   //
@@ -153,6 +156,9 @@ struct BlockManagerOptions {
 
   // The paths where data blocks will be stored. Cannot be empty.
   std::vector<std::string> root_paths;
+
+  // Whether the block manager should only allow reading. Defaults to false.
+  bool read_only;
 };
 
 // Utilities for Kudu block lifecycle management. All methods are
