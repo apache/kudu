@@ -804,5 +804,15 @@ TEST_F(TraceTest, TestVLogTraceLazyEvaluation) {
   ASSERT_TRUE(function_run);
 }
 
+TEST_F(TraceTest, TestVLogAndEchoToConsole) {
+  TraceLog* tl = TraceLog::GetInstance();
+  tl->SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
+                 TraceLog::RECORDING_MODE,
+                 TraceLog::ECHO_TO_CONSOLE);
+  FLAGS_v = 1;
+  VLOG_AND_TRACE("test", 1) << "hello world";
+  tl->SetDisabled();
+}
+
 } // namespace debug
 } // namespace kudu

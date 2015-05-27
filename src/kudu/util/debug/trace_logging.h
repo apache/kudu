@@ -29,6 +29,7 @@
 #define KUDU_DEBUG_TRACE_LOGGING_H
 
 #include <glog/logging.h>
+#include <string>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/util/debug/trace_event.h"
@@ -68,17 +69,30 @@ class TraceVLog {
   class TraceLogSink : public google::LogSink {
    public:
     explicit TraceLogSink(const char* category) : category_(category) {}
-    virtual ~TraceLogSink() {}
     virtual void send(google::LogSeverity severity, const char* full_filename,
                       const char* base_filename, int line,
                       const struct ::tm* tm_time,
                       const char* message, size_t message_len) {
-      TRACE_EVENT_INSTANT1(category_, "vlog", TRACE_EVENT_SCOPE_THREAD,
-                           "msg", ToString(severity, base_filename, line,
-                                           tm_time, message, message_len));
+      // Rather than calling TRACE_EVENT_INSTANT here, we have to do it from
+      // the destructor. This is because glog holds its internal mutex while
+      // calling send(). So, if we try to use TRACE_EVENT here, and --trace_to_console
+      // is enabled, then we'd end up calling back into glog when its lock is already
+      // held. glog isn't re-entrant, so that causes a crash.
+      //
+      // By just storing the string here, and then emitting the trace in the dtor,
+      // we defer the tracing until the google::LogMessage has destructed and the
+      // glog lock is available again.
+      str_ = ToString(severity, base_filename, line,
+                      tm_time, message, message_len);
     }
+    virtual ~TraceLogSink() {
+      TRACE_EVENT_INSTANT1(category_, "vlog", TRACE_EVENT_SCOPE_THREAD,
+                           "msg", str_);
+    }
+
    private:
     const char* const category_;
+    std::string str_;
   };
 
   TraceLogSink sink_;
