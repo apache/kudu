@@ -140,9 +140,7 @@ Status Ksck::CheckTablesConsistency() {
   VLOG(1) << "Verifying each table";
   int bad_tables_count = 0;
   BOOST_FOREACH(const shared_ptr<KsckTable> &table, cluster_->tables()) {
-    if (!VerifyTableWithTimeout(table,
-                                MonoDelta::FromSeconds(2),
-                                MonoDelta::FromMilliseconds(100))) {
+    if (!VerifyTable(table)) {
       bad_tables_count++;
     }
   }
@@ -329,24 +327,6 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   }
 
   return Status::OK();
-}
-
-bool Ksck::VerifyTableWithTimeout(const shared_ptr<KsckTable>& table,
-                                  const MonoDelta& timeout,
-                                  const MonoDelta& retry_interval) {
-
-  MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
-  deadline.AddDelta(timeout);
-  while (true) {
-    if (VerifyTable(table)) {
-      break;
-    }
-    if (deadline.ComesBefore(MonoTime::Now(MonoTime::COARSE))) {
-      return false;
-    }
-    SleepFor(retry_interval);
-  }
-  return true;
 }
 
 bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
