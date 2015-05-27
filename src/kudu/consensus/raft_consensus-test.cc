@@ -64,8 +64,7 @@ class MockQueue : public PeerMessageQueue {
   MOCK_METHOD3(RequestForPeer, Status(const std::string& uuid,
                                       ConsensusRequestPB* request,
                                       vector<ReplicateRefPtr>* refs));
-  MOCK_METHOD3(ResponseFromPeer, void(const OpId& last_sent,
-                                      const ConsensusResponsePB& response,
+  MOCK_METHOD2(ResponseFromPeer, void(const ConsensusResponsePB& response,
                                       bool* more_pending));
   MOCK_METHOD0(Close, void());
 };
