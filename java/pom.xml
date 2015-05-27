@@ -41,6 +41,7 @@
         <netty.version>3.8.0.Final</netty.version>
         <protobuf.version>2.5.0</protobuf.version>
         <slf4j.version>1.6.1</slf4j.version>
+        <commons-io.version>2.4</commons-io.version>
 
         <!-- Misc variables -->
         <testdata.dir>target/testdata</testdata.dir>

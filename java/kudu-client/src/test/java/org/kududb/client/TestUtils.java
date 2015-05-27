@@ -5,6 +5,7 @@ package org.kududb.client;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
+import com.sun.security.auth.module.UnixSystem;
 
 import java.io.File;
 import java.io.FileNotFoundException;
@@ -14,6 +15,7 @@ import java.net.ServerSocket;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.util.List;
 import java.util.Set;
@@ -29,13 +31,11 @@ public class TestUtils {
 
   // Used by pidOfProcess()
   private static String UNIX_PROCESS_CLS_NAME =  "java.lang.UNIXProcess";
-  private static Set VALID_SIGNALS =  ImmutableSet.of("STOP", "CONT", "TERM", "KILL");
+  private static Set<String> VALID_SIGNALS =  ImmutableSet.of("STOP", "CONT", "TERM", "KILL");
 
   private static final String MASTER_QUORUM_PROP = "masterQuorum";
   private static final String MASTER_ADDRESS_PROP = "masterAddress";
   private static final String DEFAULT_MASTER_ADDRESS = "127.0.0.1";
-
-  private static final String BASE_DIR_PATH_PROP = "baseDirPath";
 
   private static final String BIN_DIR_PROP = "binDir";
 
@@ -56,7 +56,8 @@ public class TestUtils {
     try {
       // Somewhat unintuitively, createTempFile() actually creates the file,
       // not just the path, so we have to use REPLACE_EXISTING below.
-      Path tmpFile = Files.createTempFile("kudu-flags", ".flags");
+      Path tmpFile = Files.createTempFile(
+          Paths.get(getBaseDir()), "kudu-flags", ".flags");
       Files.copy(BaseKuduTest.class.getResourceAsStream("/flags"), tmpFile,
           StandardCopyOption.REPLACE_EXISTING);
       return tmpFile.toAbsolutePath().toString();
@@ -115,7 +116,10 @@ public class TestUtils {
    * @return the base directory within which we will store server data
    */
   public static String getBaseDir() {
-    String s = System.getProperty(BASE_DIR_PATH_PROP, "target/test/data");
+    String s = System.getenv("TEST_TMPDIR");
+    if (s == null) {
+      s = String.format("/tmp/kudutest-%d", new UnixSystem().getUid());
+    }
     File f = new File(s);
     f.mkdirs();
     return f.getAbsolutePath();

@@ -5,6 +5,8 @@ package org.kududb.client;
 import static org.junit.Assert.fail;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
@@ -18,6 +20,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import kudu.master.Master;
 
+import org.apache.commons.io.FileUtils;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.kududb.ColumnSchema;
@@ -53,7 +56,7 @@ public class BaseKuduTest {
   protected static final int NUM_TABLET_SERVERS = 3;
   protected static final int DEFAULT_NUM_MASTERS = 3;
 
-  static final List<Thread> PROCESS_INPUT_PRINTERS = new ArrayList<Thread>();
+  static final List<Thread> PROCESS_INPUT_PRINTERS = new ArrayList<>();
 
   // Number of masters that will be started for this test if we're starting
   // a cluster.
@@ -61,7 +64,7 @@ public class BaseKuduTest {
       Integer.getInteger(NUM_MASTERS_PROP, DEFAULT_NUM_MASTERS);
 
   // Map of ports to master servers.
-  static final Map<Integer, Process> MASTERS = new ConcurrentHashMap<Integer, Process>(NUM_MASTERS);
+  static final Map<Integer, Process> MASTERS = new ConcurrentHashMap<>(NUM_MASTERS);
 
   // Map of ports to tablet servers.
   static final Map<Integer, Process> TABLET_SERVERS =
@@ -73,7 +76,8 @@ public class BaseKuduTest {
   protected static Schema basicSchema = getBasicSchema();
   protected static boolean startCluster;
 
-  private static List<String> tableNames = new ArrayList<String>();
+  private static List<String> tableNames = new ArrayList<>();
+  private static List<String> pathsToDelete = new ArrayList<>();
 
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
@@ -90,9 +94,10 @@ public class BaseKuduTest {
       for (int i = 0; i < NUM_TABLET_SERVERS; i++) {
         port = TestUtils.findFreePort(port);
         String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
+        String flagsPath = TestUtils.getFlagsPath();
         String[] tsCmdLine = {
             TestUtils.findBinary("kudu-tablet_server"),
-            "--flagfile=" + TestUtils.getFlagsPath(),
+            "--flagfile=" + flagsPath,
             "--tablet_server_wal_dir=" + dataDirPath,
             "--tablet_server_data_dirs=" + dataDirPath,
             "--tablet_server_master_addrs=" + masterQuorum,
@@ -101,6 +106,12 @@ public class BaseKuduTest {
             "--max_clock_sync_error_usec=10000000"};
         TABLET_SERVERS.put(port, configureAndStartProcess(tsCmdLine));
         port++;
+
+        if (flagsPath.startsWith(baseDirPath)) {
+          // We made a temporary copy of the flags; delete them later.
+          pathsToDelete.add(flagsPath);
+        }
+        pathsToDelete.add(dataDirPath);
       }
     } else {
       masterQuorum = TestUtils.getMasterAddresses();
@@ -148,6 +159,7 @@ public class BaseKuduTest {
     for (int i = 0; i < numMasters; i++) {
       long now = System.currentTimeMillis();
       String dataDirPath = baseDirPath + "/master-" + i + "-" + now;
+      String flagsPath = TestUtils.getFlagsPath();
       // The web port must be reserved in the call to findFreePorts above and specified
       // to avoid the scenario where:
       // 1) findFreePorts finds RPC ports a, b, c for the 3 masters.
@@ -157,7 +169,7 @@ public class BaseKuduTest {
       // ports, only checks that when it was last called, these ports could be used).
       List<String> masterCmdLine = Lists.newArrayList(
           TestUtils.findBinary("kudu-master"),
-          "--flagfile=" + TestUtils.getFlagsPath(),
+          "--flagfile=" + flagsPath,
           "--master_wal_dir=" + dataDirPath,
           "--master_data_dirs=" + dataDirPath,
           "--use_hybrid_clock=true",
@@ -169,6 +181,12 @@ public class BaseKuduTest {
       }
       MASTERS.put(masterRpcPorts.get(i),
           configureAndStartProcess(masterCmdLine.toArray(new String[masterCmdLine.size()])));
+
+      if (flagsPath.startsWith(baseDirPath)) {
+        // We made a temporary copy of the flags; delete them later.
+        pathsToDelete.add(flagsPath);
+      }
+      pathsToDelete.add(dataDirPath);
     }
     return lastFreePort + 1;
   }
@@ -228,20 +246,15 @@ public class BaseKuduTest {
   public static void tearDownAfterClass() throws Exception {
     try {
       for (String tableName : tableNames) {
-        final AtomicBoolean gotError = new AtomicBoolean(false);
         Deferred<DeleteTableResponse> d = client.deleteTable(tableName);
         d.addErrback(new Callback<Object, Object>() {
           @Override
           public Object call(Object arg) throws Exception {
             LOG.warn("tearDown errback " + arg);
-            gotError.set(true);
             return null;
           }
         });
         d.join(DEFAULT_SLEEP);
-        if (gotError.get()) {
-          fail("Couldn't delete a table");
-        }
       }
     } finally {
       try {
@@ -264,6 +277,18 @@ public class BaseKuduTest {
           }
           for (Thread thread : PROCESS_INPUT_PRINTERS) {
             thread.interrupt();
+          }
+        }
+        for (String path : pathsToDelete) {
+          try {
+            File f = new File(path);
+            if (f.isDirectory()) {
+              FileUtils.deleteDirectory(f);
+            } else {
+              f.delete();
+            }
+          } catch (Exception e) {
+            LOG.warn("Could not delete path {}", path, e);
           }
         }
       }
