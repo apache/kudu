@@ -35,6 +35,11 @@ DEFINE_bool(log_block_manager_parallel_open, true,
             "Open all log block manager paths in parallel");
 TAG_FLAG(log_block_manager_parallel_open, hidden);
 
+DEFINE_bool(log_block_manager_test_hole_punching, true,
+            "Ensure hole punching is supported by the underlying filesystem");
+TAG_FLAG(log_block_manager_test_hole_punching, advanced);
+TAG_FLAG(log_block_manager_test_hole_punching, unsafe);
+
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_bool(block_manager_lock_dirs);
 
@@ -1013,6 +1018,11 @@ Status LogBlockManager::Create() {
       return s;
     }
 
+    if (FLAGS_log_block_manager_test_hole_punching) {
+      RETURN_NOT_OK_PREPEND(CheckHolePunch(root_path),
+                            "Error during hole punch test");
+    }
+
     string instance_filename = JoinPathSegments(
         root_path, kInstanceMetadataFileName);
 
@@ -1411,6 +1421,44 @@ void LogBlockManager::ProcessBlockRecordUnlocked(LogBlockContainer* container,
       LOG(FATAL) << "Found unknown op type in block record: "
                  << record.DebugString();
   }
+}
+
+Status LogBlockManager::CheckHolePunch(const string& path) {
+  // Arbitrary constants.
+  static uint64_t kFileSize = 4096 * 4;
+  static uint64_t kHoleOffset = 4096;
+  static uint64_t kHoleSize = 8192;
+  static uint64_t kPunchedFileSize = kFileSize - kHoleSize;
+
+  // Open the test file.
+  string filename = JoinPathSegments(path, "hole_punch_test_file");
+  gscoped_ptr<RWFile> file;
+  RWFileOptions opts;
+  RETURN_NOT_OK(env_->NewRWFile(opts, filename, &file));
+
+  // Preallocate it, making sure the file's size is what we'd expect.
+  uint64_t sz;
+  RETURN_NOT_OK(file->PreAllocate(0, kFileSize));
+  RETURN_NOT_OK(env_->GetFileSizeOnDisk(filename, &sz));
+  if (sz != kFileSize) {
+    return Status::IOError(Substitute(
+        "Unexpected pre-punch file size for $0: expected $1 but got $2",
+        filename, kFileSize, sz));
+  }
+
+  // Punch the hole, testing the file's size again.
+  RETURN_NOT_OK(file->PunchHole(kHoleOffset, kHoleSize));
+  RETURN_NOT_OK(env_->GetFileSizeOnDisk(filename, &sz));
+  if (sz != kPunchedFileSize) {
+    return Status::IOError(Substitute(
+        "Unexpected post-punch file size for $0: expected $1 but got $2",
+        filename, kPunchedFileSize, sz));
+  }
+
+  // Explicitly leave the file behind if the test fails, so that someone can
+  // troubleshoot manually.
+  RETURN_NOT_OK(env_->DeleteFile(filename));
+  return Status::OK();
 }
 
 } // namespace fs

@@ -221,6 +221,9 @@ class LogBlockManager : public BlockManager {
                     Status* result_status,
                     PathInstanceMetadataFile** result_metadata);
 
+  // Test for hole punching support at 'path'.
+  Status CheckHolePunch(const std::string& path);
+
   ObjectIdGenerator* oid_generator() { return &oid_generator_; }
 
   Env* env() const { return env_; }
