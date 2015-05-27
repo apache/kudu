@@ -88,6 +88,16 @@ export TSAN_OPTIONS
 ASAN_OPTIONS="$ASAN_OPTIONS detect_leaks=1"
 export ASAN_OPTIONS
 
+# Set up supressions for LeakSanitizer
+LSAN_OPTIONS="$LSAN_OPTIONS supressions=$ROOT/build-support/lsan-suppressions.txt"
+export LSAN_OPTIONS
+
+# Suppressions require symbolization. We'll default to using the symbolizer in
+# thirdparty.
+if [ -z "$ASAN_SYMBOLIZER_PATH" ]; then
+  export ASAN_SYMBOLIZER_PATH=$ROOT/thirdparty/installed/bin/llvm-symbolizer
+fi
+
 # Set a 15-minute timeout for tests run via 'make test'.
 # This keeps our jenkins builds from hanging in the case that there's
 # a deadlock or anything.
