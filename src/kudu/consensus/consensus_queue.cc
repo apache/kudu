@@ -612,6 +612,7 @@ bool PeerMessageQueue::IsOpInLog(const OpId& desired_op) const {
     return false;
   }
   LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error while reading the log: " << s.ToString();
+  return false; // Unreachable; here to squelch GCC warning.
 }
 
 void PeerMessageQueue::NotifyObserversOfMajorityReplOpChange(
