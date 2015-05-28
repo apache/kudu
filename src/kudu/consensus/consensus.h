@@ -196,6 +196,14 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) = 0;
 
+  // Implement a ChangeConfig() request.
+  virtual Status ChangeConfig(ChangeConfigType type,
+                              const QuorumPeerPB& server,
+                              ChangeConfigResponsePB* resp,
+                              const StatusCallback& client_cb) {
+    return Status::NotSupported("Not implemented.");
+  }
+
   // Returns the current quorum role of this instance.
   virtual QuorumPeerPB::Role role() const = 0;
 

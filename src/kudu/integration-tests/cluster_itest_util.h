@@ -113,6 +113,19 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
                                   const std::vector<TServerDetails*>& replicas,
                                   const MonoDelta& timeout);
 
+// Get the committed consensus state from the given replica.
+Status GetCommittedConsensusState(const TServerDetails* replica,
+                                  const std::string& tablet_id,
+                                  const MonoDelta& timeout,
+                                  consensus::ConsensusStatePB* consensus_state);
+
+// Wait until the number of voters in the committed quorum is 'quorum_size',
+// according to the specified replica.
+Status WaitUntilCommittedQuorumNumVotersIs(int quorum_size,
+                                           const TServerDetails* replica,
+                                           const std::string& tablet_id,
+                                           const MonoDelta& timeout);
+
 // Returns:
 // Status::OK() if the replica is alive and leader of the quorum.
 // Status::NotFound() if the replica is not part of the quorum or is dead.
@@ -155,6 +168,21 @@ Status WriteSimpleTestRow(const TServerDetails* replica,
                           int32_t int_val,
                           const std::string& string_val,
                           const MonoDelta& timeout);
+
+// Run a ConfigChange to ADD_SERVER on 'replica_to_add'.
+// The RPC request is sent to 'leader'.
+Status AddServer(const TServerDetails* leader,
+                 const std::string& tablet_id,
+                 const TServerDetails* replica_to_add,
+                 consensus::QuorumPeerPB::MemberType member_type,
+                 const MonoDelta& timeout);
+
+// Run a ConfigChange to REMOVE_SERVER on 'replica_to_remove'.
+// The RPC request is sent to 'leader'.
+Status RemoveServer(const TServerDetails* leader,
+                    const std::string& tablet_id,
+                    const TServerDetails* replica_to_remove,
+                    const MonoDelta& timeout);
 
 } // namespace itest
 } // namespace kudu

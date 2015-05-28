@@ -5,6 +5,7 @@
 #include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
+#include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <tr1/unordered_set>
 
@@ -15,6 +16,7 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
@@ -41,12 +43,17 @@ namespace kudu {
 namespace tserver {
 
 using boost::assign::list_of;
+using consensus::ChangeConfigRequestPB;
+using consensus::ChangeConfigResponsePB;
 using consensus::ConsensusResponsePB;
 using consensus::ConsensusRequestPB;
 using consensus::ConsensusServiceProxy;
+using consensus::MajoritySize;
 using consensus::MakeOpId;
 using consensus::QuorumPB;
 using consensus::QuorumPeerPB;
+using consensus::ADD_SERVER;
+using consensus::REMOVE_SERVER;
 using consensus::ReplicateMsg;
 using client::FromInternalCompressionType;
 using client::FromInternalDataType;
@@ -59,9 +66,11 @@ using client::KuduInsert;
 using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
+using itest::AddServer;
 using itest::GetReplicaStatusAndCheckIfLeader;
-using itest::StartElection;
 using itest::LeaderStepDown;
+using itest::RemoveServer;
+using itest::StartElection;
 using itest::WaitUntilLeader;
 using itest::WriteSimpleTestRow;
 using master::TableIdentifierPB;
@@ -400,6 +409,14 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // Assert that no tablet servers have crashed.
   // Tablet servers that have been manually Shutdown() are allowed.
   void AssertNoTabletServersCrashed();
+
+  // Ensure that a majority of servers is required for elections and writes.
+  // This is done by pausing a majority and asserting that writes and elections fail,
+  // then unpausing the majority and asserting that elections and writes succeed.
+  // If fails, throws a gtest assertion.
+  // Note: This test assumes all tablet servers listed in tablet_servers are voters.
+  void AssertMajorityRequiredForElectionsAndWrites(const TabletServerMap& tablet_servers,
+                                                   const string& leader_uuid);
 
  protected:
   shared_ptr<KuduClient> client_;
@@ -1319,6 +1336,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
 TEST_F(RaftConsensusITest, TestLeaderStepDown) {
   FLAGS_num_replicas = 3;
   FLAGS_num_tablet_servers = 3;
+
   vector<string> flags;
   flags.push_back("--enable_leader_failure_detection=false");
   BuildAndStart(flags);
@@ -1348,6 +1366,380 @@ TEST_F(RaftConsensusITest, TestLeaderStepDown) {
                          kTestRowKey, kTestRowIntVal, "foo", MonoDelta::FromSeconds(10));
   ASSERT_TRUE(s.IsIllegalState()) << "TS #0 should not accept writes as follower: "
                                   << s.ToString();
+}
+
+void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
+    const TabletServerMap& tablet_servers, const string& leader_uuid) {
+
+  TServerDetails* initial_leader = FindOrDie(tablet_servers, leader_uuid);
+
+  // Calculate number of servers to leave unpaused (minority).
+  // This math is a little unintuitive but works for cluster sizes including 2 and 1.
+  // Note: We assume all of these TSes are voters.
+  int quorum_size = tablet_servers.size();
+  int minority_to_retain = MajoritySize(quorum_size) - 1;
+
+  // Only perform this part of the test if we have some servers to pause, else
+  // the failure assertions will throw.
+  if (quorum_size > 1) {
+    // Pause enough replicas to prevent a majority.
+    int num_to_pause = quorum_size - minority_to_retain;
+    LOG(INFO) << "Pausing " << num_to_pause << " tablet servers in quorum of size " << quorum_size;
+    vector<string> paused_uuids;
+    BOOST_FOREACH(const TabletServerMap::value_type& entry, tablet_servers) {
+      if (paused_uuids.size() == num_to_pause) {
+        continue;
+      }
+      const string& replica_uuid = entry.first;
+      if (replica_uuid == leader_uuid) {
+        // Always leave this one alone.
+        continue;
+      }
+      ExternalTabletServer* replica_ts = cluster_->tablet_server_by_uuid(replica_uuid);
+      ASSERT_OK(replica_ts->Pause());
+      paused_uuids.push_back(replica_uuid);
+    }
+
+    // Ensure writes timeout while only a minority is alive.
+    Status s = WriteSimpleTestRow(initial_leader, tablet_id_, RowOperationsPB::UPDATE,
+                                  kTestRowKey, kTestRowIntVal, "foo",
+                                  MonoDelta::FromMilliseconds(100));
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+
+    // Step down.
+    ASSERT_OK(LeaderStepDown(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+
+    // Assert that elections time out without a live majority.
+    // We specify a very short timeout here to keep the tests fast.
+    ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+    s = WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromMilliseconds(100));
+    ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
+    LOG(INFO) << "Expected timeout encountered on election with weakened quorum: " << s.ToString();
+
+    // Resume the paused servers.
+    LOG(INFO) << "Resuming " << num_to_pause << " tablet servers in quorum of size " << quorum_size;
+    BOOST_FOREACH(const string& replica_uuid, paused_uuids) {
+      ExternalTabletServer* replica_ts = cluster_->tablet_server_by_uuid(replica_uuid);
+      ASSERT_OK(replica_ts->Resume());
+    }
+  }
+
+  // Now an election should succeed.
+  ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+  LOG(INFO) << "Successful election with full quorum of size " << quorum_size;
+
+  // And a write should also succeed.
+  ASSERT_OK(WriteSimpleTestRow(initial_leader, tablet_id_, RowOperationsPB::UPDATE,
+                               kTestRowKey, kTestRowIntVal, Substitute("qsz=$0", quorum_size),
+                               MonoDelta::FromSeconds(10)));
+}
+
+// Basic test of adding and removing servers from a quorum.
+TEST_F(RaftConsensusITest, TestAddRemoveServer) {
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  BuildAndStart(flags);
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+
+  // Elect server 0 as leader and wait for log index 1 to propagate to all servers.
+  TServerDetails* leader_tserver = tservers[0];
+  const string& leader_uuid = tservers[0]->uuid();
+  ASSERT_OK(StartElection(leader_tserver, tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+
+  // Make sure the server rejects removal of itself from the quorum.
+  Status s = RemoveServer(leader_tserver, tablet_id_, leader_tserver, MonoDelta::FromSeconds(10));
+  ASSERT_TRUE(s.IsInvalidArgument()) << "Should not be able to remove self from quorum: "
+                                     << s.ToString();
+
+  // Insert the row that we will update throughout the test.
+  ASSERT_OK(WriteSimpleTestRow(leader_tserver, tablet_id_, RowOperationsPB::INSERT,
+                               kTestRowKey, kTestRowIntVal, "initial insert",
+                               MonoDelta::FromSeconds(10)));
+
+  // Kill the master, so we can change the config without interference.
+  cluster_->master()->Shutdown();
+
+  TabletServerMap active_tablet_servers = tablet_servers_;
+
+  // Do majority correctness check for 3 servers.
+  NO_FATALS(AssertMajorityRequiredForElectionsAndWrites(active_tablet_servers, leader_uuid));
+  OpId opid;
+  ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, &opid));
+  int64_t cur_log_index = opid.index();
+
+  // Go from 3 tablet servers down to 1 in the quorum.
+  vector<int> remove_list = list_of(2)(1);
+  BOOST_FOREACH(int to_remove_idx, remove_list) {
+    int num_servers = active_tablet_servers.size();
+    LOG(INFO) << "Remove: Going from " << num_servers << " to " << num_servers - 1 << " replicas";
+
+    TServerDetails* tserver_to_remove = tservers[to_remove_idx];
+    LOG(INFO) << "Removing tserver with uuid " << tserver_to_remove->uuid();
+    ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tserver_to_remove,
+                           MonoDelta::FromSeconds(10)));
+    ASSERT_EQ(1, active_tablet_servers.erase(tserver_to_remove->uuid()));
+    ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
+                                    active_tablet_servers, tablet_id_, ++cur_log_index));
+
+    // Do majority correctness check for each incremental decrease.
+    NO_FATALS(AssertMajorityRequiredForElectionsAndWrites(active_tablet_servers, leader_uuid));
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, &opid));
+    cur_log_index = opid.index();
+  }
+
+  // Add the tablet servers back, in reverse order, going from 1 to 3 servers in the quorum.
+  vector<int> add_list = list_of(1)(2);
+  BOOST_FOREACH(int to_add_idx, add_list) {
+    int num_servers = active_tablet_servers.size();
+    LOG(INFO) << "Add: Going from " << num_servers << " to " << num_servers + 1 << " replicas";
+
+    TServerDetails* tserver_to_add = tservers[to_add_idx];
+    LOG(INFO) << "Adding tserver with uuid " << tserver_to_add->uuid();
+    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add, QuorumPeerPB::VOTER,
+                        MonoDelta::FromSeconds(10)));
+    InsertOrDie(&active_tablet_servers, tserver_to_add->uuid(), tserver_to_add);
+    ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
+                                    active_tablet_servers, tablet_id_, ++cur_log_index));
+
+    // Do majority correctness check for each incremental increase.
+    NO_FATALS(AssertMajorityRequiredForElectionsAndWrites(active_tablet_servers, leader_uuid));
+    ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, &opid));
+    cur_log_index = opid.index();
+  }
+}
+
+// Ensure that we can elect a server that is in the "pending" quorum.
+// This is required by the Raft protocol. See Diego Ongaro's PhD thesis, section
+// 4.1, where it states that "it is the caller’s configuration that is used in
+// reaching consensus, both for voting and for log replication".
+//
+// This test also tests the case where a node comes back from the dead to a
+// leader that was not in its quorum when it died. That should also work, i.e.
+// the revived node should accept writes from the new leader.
+TEST_F(RaftConsensusITest, TestElectPendingVoter) {
+  // Test plan:
+  //  1. Disable failure detection to avoid non-deterministic behavior.
+  //  2. Start with a quorum size of 5, all servers synced.
+  //  3. Remove one server from the quorum, wait until committed.
+  //  4. Pause the 3 remaining non-leaders (SIGSTOP).
+  //  5. Run a config change to add back the previously-removed server.
+  //     Ensure that, while the op cannot be committed yet due to lack of a
+  //     majority in the new config (only 2 out of 5 servers are alive), the op
+  //     has been replicated to both the local leader and the new member.
+  //  6. Force the existing leader to step down.
+  //  7. Resume one of the paused nodes so that a majority (of the 5-node
+  //     quorum, but not the original 4-node quorum) will be available.
+  //  8. Start a leader election on the new (pending) node. It should win.
+  //  9. Unpause the two remaining stopped nodes.
+  // 10. Wait for all nodes to sync to the new leader's log.
+  FLAGS_num_tablet_servers = 5;
+  FLAGS_num_replicas = 5;
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  BuildAndStart(flags);
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+
+  // Elect server 0 as leader and wait for log index 1 to propagate to all servers.
+  TServerDetails* initial_leader = tservers[0];
+  ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+
+  // The server we will remove and then bring back.
+  TServerDetails* final_leader = tservers[4];
+
+  // Kill the master, so we can change the config without interference.
+  cluster_->master()->Shutdown();
+
+  // Now remove server 4 from the quorum.
+  TabletServerMap active_tablet_servers = tablet_servers_;
+  LOG(INFO) << "Removing tserver with uuid " << final_leader->uuid();
+  ASSERT_OK(RemoveServer(initial_leader, tablet_id_, final_leader, MonoDelta::FromSeconds(10)));
+  ASSERT_EQ(1, active_tablet_servers.erase(final_leader->uuid()));
+  int64_t cur_log_index = 2;
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
+                                  active_tablet_servers, tablet_id_, cur_log_index));
+
+  // Pause tablet servers 1 through 3, so they won't see the operation to add
+  // server 4 back.
+  LOG(INFO) << "Pausing 3 replicas...";
+  for (int i = 1; i <= 3; i++) {
+    ExternalTabletServer* replica_ts = cluster_->tablet_server_by_uuid(tservers[i]->uuid());
+    ASSERT_OK(replica_ts->Pause());
+  }
+
+  // Now add server 4 back to the quorum.
+  // This operation will time out on the client side.
+  LOG(INFO) << "Adding back Peer " << final_leader->uuid() << " and expecting timeout...";
+  Status s = AddServer(initial_leader, tablet_id_, final_leader, QuorumPeerPB::VOTER,
+                       MonoDelta::FromMilliseconds(100));
+  ASSERT_TRUE(s.IsTimedOut()) << "Expected AddServer() to time out. Result: " << s.ToString();
+  LOG(INFO) << "Timeout achieved.";
+  active_tablet_servers = tablet_servers_; // Reset to the unpaused servers.
+  for (int i = 1; i <= 3; i++) {
+    ASSERT_EQ(1, active_tablet_servers.erase(tservers[i]->uuid()));
+  }
+  // Only wait for TS 0 and 4 to agree that the new change config op has been
+  // replicated.
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
+                                  active_tablet_servers, tablet_id_, ++cur_log_index));
+
+  // Now that TS 4 is electable (and pending), have TS 0 step down.
+  LOG(INFO) << "Forcing Peer " << initial_leader->uuid() << " to step down...";
+  ASSERT_OK(LeaderStepDown(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+
+  // Resume TS 1 so we have a majority of 3 to elect a new leader.
+  LOG(INFO) << "Resuming Peer " << tservers[1]->uuid() << " ...";
+  ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[1]->uuid())->Resume());
+  InsertOrDie(&active_tablet_servers, tservers[1]->uuid(), tservers[1]);
+
+  // Now try to get TS 4 elected. It should succeed and push a NO_OP.
+  LOG(INFO) << "Trying to elect Peer " << tservers[4]->uuid() << " ...";
+  ASSERT_OK(StartElection(final_leader, tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
+                                  active_tablet_servers, tablet_id_, ++cur_log_index));
+
+  // Resume the remaining paused nodes.
+  LOG(INFO) << "Resuming remaining nodes...";
+  ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[2]->uuid())->Resume());
+  ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[3]->uuid())->Resume());
+  active_tablet_servers = tablet_servers_;
+
+  // Do one last operation on the new leader: an insert.
+  ASSERT_OK(WriteSimpleTestRow(final_leader, tablet_id_, RowOperationsPB::INSERT,
+                               kTestRowKey, kTestRowIntVal, "Ob-La-Di, Ob-La-Da",
+                               MonoDelta::FromSeconds(10)));
+
+  // Wait for all servers to replicate everything up through the last write op.
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
+                                  active_tablet_servers, tablet_id_, ++cur_log_index));
+}
+
+// Writes test rows in ascending order to a single tablet server.
+// Essentially a poor-man's version of TestWorkload that only operates on a
+// single tablet. Does not batch, does not tolerate timeouts, and does not
+// interact with the Master. 'rows_inserted' is used to determine row id and is
+// incremented prior to each successful insert. Since a write failure results in
+// a crash, as long as there is no crash then 'rows_inserted' will have a
+// correct count at the end of the run.
+// Crashes on any failure, so 'write_timeout' should be high.
+void DoWriteTestRows(const TServerDetails* leader_tserver,
+                     const string& tablet_id,
+                     const MonoDelta& write_timeout,
+                     AtomicInt<int32_t>* rows_inserted,
+                     const AtomicBool* finish) {
+
+  while (!finish->Load()) {
+    int row_key = rows_inserted->Increment();
+    CHECK_OK(WriteSimpleTestRow(leader_tserver, tablet_id, RowOperationsPB::INSERT,
+                                row_key, row_key, Substitute("key=$0", row_key),
+                                write_timeout));
+  }
+}
+
+// Test that config change works while running a workload.
+TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  BuildAndStart(flags);
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+
+  // Elect server 0 as leader and wait for log index 1 to propagate to all servers.
+  TServerDetails* leader_tserver = tservers[0];
+  ASSERT_OK(StartElection(leader_tserver, tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+
+  // Pause the master, so we can change the config without interference.
+  ASSERT_OK(cluster_->master()->Pause());
+
+  TabletServerMap active_tablet_servers = tablet_servers_;
+
+  // Start a write workload.
+  LOG(INFO) << "Starting write workload...";
+  vector<scoped_refptr<Thread> > threads;
+  AtomicInt<int32_t> rows_inserted(0);
+  AtomicBool finish(false);
+  int num_threads = FLAGS_num_client_threads;
+  for (int i = 0; i < num_threads; i++) {
+    scoped_refptr<Thread> thread;
+    ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(), Substitute("row-writer-$0", i),
+                             &DoWriteTestRows,
+                             leader_tserver, tablet_id_, MonoDelta::FromSeconds(10),
+                             &rows_inserted, &finish,
+                             &thread));
+    threads.push_back(thread);
+  }
+
+  LOG(INFO) << "Removing servers...";
+  // Go from 3 tablet servers down to 1 in the quorum.
+  vector<int> remove_list = list_of(2)(1);
+  BOOST_FOREACH(int to_remove_idx, remove_list) {
+    int num_servers = active_tablet_servers.size();
+    LOG(INFO) << "Remove: Going from " << num_servers << " to " << num_servers - 1 << " replicas";
+
+    TServerDetails* tserver_to_remove = tservers[to_remove_idx];
+    LOG(INFO) << "Removing tserver with uuid " << tserver_to_remove->uuid();
+    ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tserver_to_remove,
+                           MonoDelta::FromSeconds(10)));
+    ASSERT_EQ(1, active_tablet_servers.erase(tserver_to_remove->uuid()));
+    ASSERT_OK(WaitUntilCommittedQuorumNumVotersIs(active_tablet_servers.size(),
+                                                  leader_tserver, tablet_id_,
+                                                  MonoDelta::FromSeconds(10)));
+  }
+
+  LOG(INFO) << "Adding servers...";
+  // Add the tablet servers back, in reverse order, going from 1 to 3 servers in the quorum.
+  vector<int> add_list = list_of(1)(2);
+  BOOST_FOREACH(int to_add_idx, add_list) {
+    int num_servers = active_tablet_servers.size();
+    LOG(INFO) << "Add: Going from " << num_servers << " to " << num_servers + 1 << " replicas";
+
+    TServerDetails* tserver_to_add = tservers[to_add_idx];
+    LOG(INFO) << "Adding tserver with uuid " << tserver_to_add->uuid();
+    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add, QuorumPeerPB::VOTER,
+                        MonoDelta::FromSeconds(10)));
+    InsertOrDie(&active_tablet_servers, tserver_to_add->uuid(), tserver_to_add);
+    ASSERT_OK(WaitUntilCommittedQuorumNumVotersIs(active_tablet_servers.size(),
+                                                  leader_tserver, tablet_id_,
+                                                  MonoDelta::FromSeconds(10)));
+  }
+
+  LOG(INFO) << "Joining writer threads...";
+  finish.Store(true);
+  BOOST_FOREACH(const scoped_refptr<Thread>& thread, threads) {
+    ASSERT_OK(ThreadJoiner(thread.get()).Join());
+  }
+
+  LOG(INFO) << "Waiting for replicas to agree...";
+  // Wait for all servers to replicate everything up through the last write op.
+  // Since we don't batch, there should be at least # rows inserted log entries,
+  // plus the initial leader's no-op, plus 2 for the removed servers, plus 2 for
+  // the added servers for a total of 5.
+  int min_log_index = rows_inserted.Load() + 5;
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
+                                  active_tablet_servers, tablet_id_,
+                                  min_log_index));
+
+  LOG(INFO) << "Resuming master...";
+  // Resume the master so we can use ksck to verify the inserted rows.
+  ASSERT_OK(cluster_->master()->Resume());
+
+  LOG(INFO) << "Number of rows inserted: " << rows_inserted.Load();
+  ASSERT_ALL_REPLICAS_AGREE(rows_inserted.Load());
 }
 
 }  // namespace tserver

@@ -103,6 +103,11 @@ class RaftConsensus : public Consensus,
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
 
+  virtual Status ChangeConfig(ChangeConfigType type,
+                              const QuorumPeerPB& server,
+                              ChangeConfigResponsePB* resp,
+                              const StatusCallback& client_cb) OVERRIDE;
+
   virtual QuorumPeerPB::Role role() const OVERRIDE;
 
   virtual std::string peer_uuid() const OVERRIDE;
@@ -183,6 +188,17 @@ class RaftConsensus : public Consensus,
   // Set the leader UUID of the quorum and mark the tablet config dirty for
   // reporting to the master.
   void SetLeaderUuidUnlocked(const std::string& uuid);
+
+  // Replicate (as leader) a pre-validated config change. This includes
+  // updating the quorum peers and setting the new_quorum as pending.
+  // The old_quorum must be the currently-committed quorum.
+  Status ReplicateConfigChangeUnlocked(const QuorumPB& old_quorum,
+                                       const QuorumPB& new_quorum,
+                                       const StatusCallback& client_cb);
+
+  // Update the peers and queue to be consistent with a new active quorum.
+  // Should only be called by the leader.
+  Status RefreshConsensusQueueAndPeersUnlocked();
 
   // Makes the peer become leader.
   // Returns OK once the change config transaction that has this peer as leader
@@ -269,9 +285,6 @@ class RaftConsensus : public Consensus,
   // - Set vote_granted to false.
   // - Set consensus_error.code to the given code.
   void FillVoteResponseVoteDenied(ConsensusErrorPB::Code error_code, VoteResponsePB* response);
-
-  // Respond to VoteRequest that the candidate is not in the quorum.
-  Status RequestVoteRespondNotInQuorum(const VoteRequestPB* request, VoteResponsePB* response);
 
   // Respond to VoteRequest that the candidate has an old term.
   Status RequestVoteRespondInvalidTerm(const VoteRequestPB* request, VoteResponsePB* response);

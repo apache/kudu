@@ -132,7 +132,7 @@ Status LocalConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
     // Local consensus transactions are always committed so we
     // can just persist the quorum, if this is a change config.
     if (round->replicate_msg()->op_type() == CHANGE_CONFIG_OP) {
-      QuorumPB new_quorum = round->replicate_msg()->change_config_request().new_config();
+      QuorumPB new_quorum = round->replicate_msg()->change_config_record().new_config();
       DCHECK(!new_quorum.has_opid_index());
       new_quorum.set_opid_index(round->replicate_msg()->id().index());
       cmeta_->set_committed_quorum(new_quorum);

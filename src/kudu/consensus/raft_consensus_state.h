@@ -131,6 +131,10 @@ class ReplicaState {
   Status LockForMajorityReplicatedIndexUpdate(
       UniqueLock* lock) const WARN_UNUSED_RESULT;
 
+  // Ensure the local peer is the active leader.
+  // Returns OK if leader, IllegalState otherwise.
+  Status CheckActiveLeaderUnlocked() const;
+
   // Completes the Shutdown() of this replica. No more operations, local
   // or otherwise can happen after this point.
   // Called after the quiescing phase (started with LockForShutdown())
@@ -149,6 +153,11 @@ class ReplicaState {
   // committed.
   bool IsQuorumChangePendingUnlocked() const;
 
+  // Inverse of IsQuorumChangePendingUnlocked(): returns OK if there is
+  // currently *no* quorum change pending, and IllegalState is there *is* a
+  // quorum change pending.
+  Status CheckNoQuorumChangePendingUnlocked() const;
+
   // Returns true if an operation is in this replica's log, namely:
   // - If the op's index is lower than or equal to our committed index
   // - If the op id matches an inflight op.
@@ -160,12 +169,15 @@ class ReplicaState {
   // metadata. In order to be persisted, SetCommittedQuorumUnlocked() must be called.
   Status SetPendingQuorumUnlocked(const QuorumPB& new_quorum) WARN_UNUSED_RESULT;
 
+  // Clear (cancel) the pending quorum.
+  void ClearPendingQuorumUnlocked();
+
   // Return the pending quorum, or crash if one is not set.
   const QuorumPB& GetPendingQuorumUnlocked() const;
 
-  // Changes the config for this replica. Checks that the role change
-  // is legal. Also checks that if the pending quorum is set, the persistent
-  // quorum matches it, and resets the pending quorum to null.
+  // Changes the committed config for this replica. Checks that there is a
+  // pending quorum and that it is equal to this one. Persists changes to disk.
+  // Resets the pending quorum to null.
   Status SetCommittedQuorumUnlocked(const QuorumPB& new_quorum);
 
   // Return the persisted quorum.

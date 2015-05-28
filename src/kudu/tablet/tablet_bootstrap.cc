@@ -49,7 +49,7 @@ namespace kudu {
 namespace tablet {
 
 using boost::shared_lock;
-using consensus::ChangeConfigRequestPB;
+using consensus::ChangeConfigRecordPB;
 using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
@@ -1136,7 +1136,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
 
 Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
                                                 const CommitMsg& commit_msg) {
-  ChangeConfigRequestPB* change_config = replicate_msg->mutable_change_config_request();
+  ChangeConfigRecordPB* change_config = replicate_msg->mutable_change_config_record();
   QuorumPB quorum = change_config->new_config();
 
   int64_t cmeta_opid_index =  cmeta_->committed_quorum().opid_index();

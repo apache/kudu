@@ -12,6 +12,7 @@
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
@@ -30,6 +31,10 @@ using client::KuduColumnSchema;
 using client::KuduClient;
 using client::KuduSchema;
 using client::KuduTable;
+using consensus::ChangeConfigRequestPB;
+using consensus::ChangeConfigResponsePB;
+using consensus::ConsensusStatePB;
+using consensus::CountVoters;
 using consensus::GetConsensusStateRequestPB;
 using consensus::GetConsensusStateResponsePB;
 using consensus::GetLastOpIdRequestPB;
@@ -228,22 +233,69 @@ Status CreateTabletServerMap(MasterServiceProxy* master_proxy,
   return Status::OK();
 }
 
-Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
-                                        const string& tablet_id,
-                                        const MonoDelta& timeout) {
+Status GetCommittedConsensusState(const TServerDetails* replica,
+                                  const string& tablet_id,
+                                  const MonoDelta& timeout,
+                                  ConsensusStatePB* consensus_state) {
   GetConsensusStateRequestPB req;
   GetConsensusStateResponsePB resp;
   RpcController controller;
   controller.set_timeout(timeout);
   req.set_tablet_id(tablet_id);
-  if (!replica->consensus_proxy->GetConsensusState(req, &resp, &controller).ok() ||
-      resp.has_error()) {
+
+  RETURN_NOT_OK(replica->consensus_proxy->GetConsensusState(req, &resp, &controller));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  *consensus_state = resp.cstate();
+  return Status::OK();
+}
+
+Status WaitUntilCommittedQuorumNumVotersIs(int quorum_size,
+                                           const TServerDetails* replica,
+                                           const std::string& tablet_id,
+                                           const MonoDelta& timeout) {
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = start;
+  deadline.AddDelta(timeout);
+
+  int backoff_exp = 0;
+  const int kMaxBackoffExp = 7;
+  Status s;
+  ConsensusStatePB cstate;
+  while (true) {
+    MonoDelta remaining_timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    s = GetCommittedConsensusState(replica, tablet_id, remaining_timeout, &cstate);
+    if (s.ok()) {
+      if (CountVoters(cstate.quorum()) == quorum_size) {
+        return Status::OK();
+      }
+    }
+
+    if (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).MoreThan(timeout)) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
+    backoff_exp = min(backoff_exp + 1, kMaxBackoffExp);
+  }
+  return Status::TimedOut(Substitute("Number of voters does not equal $0 after waiting for $1."
+                                     "Last consensus state: $2. Last status: $3",
+                                     quorum_size, timeout.ToString(),
+                                     cstate.ShortDebugString(), s.ToString()));
+}
+
+Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
+                                        const string& tablet_id,
+                                        const MonoDelta& timeout) {
+  ConsensusStatePB cstate;
+  Status s = GetCommittedConsensusState(replica, tablet_id, timeout, &cstate);
+  if (PREDICT_FALSE(!s.ok())) {
     VLOG(1) << "Error getting consensus state from replica: "
             << replica->instance_id.permanent_uuid();
-    return Status::NotFound("Error connecting to replica");
+    return Status::NotFound("Error connecting to replica", s.ToString());
   }
   const string& replica_uuid = replica->instance_id.permanent_uuid();
-  if (resp.cstate().has_leader_uuid() && resp.cstate().leader_uuid() == replica_uuid) {
+  if (cstate.has_leader_uuid() && cstate.leader_uuid() == replica_uuid) {
     return Status::OK();
   }
   VLOG(1) << "Replica not leader of quorum: " << replica->instance_id.permanent_uuid();
@@ -331,6 +383,51 @@ Status WriteSimpleTestRow(const TServerDetails* replica,
   AddTestRowToPB(write_type, schema, key, int_val, string_val, req.mutable_row_operations());
 
   RETURN_NOT_OK(replica->tserver_proxy->Write(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status AddServer(const TServerDetails* leader,
+                 const std::string& tablet_id,
+                 const TServerDetails* replica_to_add,
+                 consensus::QuorumPeerPB::MemberType member_type,
+                 const MonoDelta& timeout) {
+  ChangeConfigRequestPB req;
+  ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+
+  req.set_tablet_id(tablet_id);
+  req.set_type(consensus::ADD_SERVER);
+  QuorumPeerPB* peer = req.mutable_server();
+  peer->set_permanent_uuid(replica_to_add->uuid());
+  peer->set_member_type(member_type);
+  *peer->mutable_last_known_addr() = replica_to_add->registration.rpc_addresses(0);
+
+  RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status RemoveServer(const TServerDetails* leader,
+                    const std::string& tablet_id,
+                    const TServerDetails* replica_to_remove,
+                    const MonoDelta& timeout) {
+  ChangeConfigRequestPB req;
+  ChangeConfigResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+
+  req.set_tablet_id(tablet_id);
+  req.set_type(consensus::REMOVE_SERVER);
+  QuorumPeerPB* peer = req.mutable_server();
+  peer->set_permanent_uuid(replica_to_remove->uuid());
+
+  RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }

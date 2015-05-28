@@ -103,10 +103,6 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
 
   virtual ~ConsensusServiceImpl();
 
-  virtual void ChangeConfig(const consensus::ChangeConfigRequestPB* req,
-                            consensus::ChangeConfigResponsePB* resp,
-                            rpc::RpcContext* context) OVERRIDE;
-
   virtual void UpdateConsensus(const consensus::ConsensusRequestPB *req,
                                consensus::ConsensusResponsePB *resp,
                                rpc::RpcContext *context) OVERRIDE;
@@ -114,6 +110,10 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
   virtual void RequestConsensusVote(const consensus::VoteRequestPB* req,
                                     consensus::VoteResponsePB* resp,
                                     rpc::RpcContext* context) OVERRIDE;
+
+  virtual void ChangeConfig(const consensus::ChangeConfigRequestPB* req,
+                         consensus::ChangeConfigResponsePB* resp,
+                         rpc::RpcContext* context) OVERRIDE;
 
   virtual void GetNodeInstance(const consensus::GetNodeInstanceRequestPB* req,
                                consensus::GetNodeInstanceResponsePB* resp,

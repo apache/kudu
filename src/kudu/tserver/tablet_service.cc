@@ -12,6 +12,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.h"
+#include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/escaping.h"
@@ -33,6 +34,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
+#include "kudu/util/status_callback.h"
 #include "kudu/util/trace.h"
 
 DEFINE_int32(tablet_server_default_scan_batch_size_bytes, 1024 * 1024,
@@ -46,10 +48,10 @@ DEFINE_int32(tablet_server_scan_batch_size_rows, 100,
 namespace kudu {
 namespace tserver {
 
-using consensus::ConsensusRequestPB;
-using consensus::ConsensusResponsePB;
 using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
+using consensus::ConsensusRequestPB;
+using consensus::ConsensusResponsePB;
 using consensus::GetNodeInstanceRequestPB;
 using consensus::GetNodeInstanceResponsePB;
 using consensus::LeaderStepDownRequestPB;
@@ -103,6 +105,30 @@ bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
   }
   return true;
 }
+
+template <class ReqType, class RespType>
+void HandleUnknownError(const ReqType* req, RespType* resp,
+                        RpcContext* context, const Status& s) {
+  resp->Clear();
+  SetupErrorAndRespond(resp->mutable_error(), s,
+                       TabletServerErrorPB::UNKNOWN_ERROR,
+                       context);
+}
+
+template <class ReqType, class RespType>
+void HandleResponse(const ReqType* req, RespType* resp,
+                    RpcContext* context, const Status& s) {
+  if (PREDICT_FALSE(!s.ok())) {
+    HandleUnknownError(req, resp, context, s);
+  }
+  context->RespondSuccess();
+}
+
+template <class ReqType, class RespType>
+static StatusCallback BindHandleResponse(const ReqType* req, RespType* resp, RpcContext* context) {
+  return Bind(&HandleResponse<ReqType, RespType>, req, resp, context);
+}
+
 } // namespace
 
 typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
@@ -561,16 +587,6 @@ ConsensusServiceImpl::ConsensusServiceImpl(const scoped_refptr<MetricEntity>& me
 ConsensusServiceImpl::~ConsensusServiceImpl() {
 }
 
-void ConsensusServiceImpl::ChangeConfig(const consensus::ChangeConfigRequestPB* req,
-                                        ChangeConfigResponsePB* resp,
-                                        rpc::RpcContext* context) {
-  DVLOG(3) << "Received Change Config RPC: " << req->DebugString();
-  SetupErrorAndRespond(resp->mutable_error(), Status::NotSupported("ConfigChange not implemented"),
-                       TabletServerErrorPB::UNKNOWN_ERROR,
-                       context);
-  return;
-}
-
 void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                                            ConsensusResponsePB* resp,
                                            rpc::RpcContext* context) {
@@ -614,6 +630,36 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
     return;
   }
   context->RespondSuccess();
+}
+
+void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
+                                        ChangeConfigResponsePB* resp,
+                                        RpcContext* context) {
+  DVLOG(3) << "Received ChangeConfig RPC: " << req->DebugString();
+
+  scoped_refptr<TabletPeer> tablet_peer;
+  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                             &tablet_peer)) {
+    return;
+  }
+
+  // All currently-supported requests require server to be set.
+  if (PREDICT_FALSE(!req->has_server())) {
+    SetupErrorAndRespond(
+        resp->mutable_error(),
+        Status::InvalidArgument("The server argument must be specified in a ChangeConfigRequestPB"),
+        TabletServerErrorPB::INVALID_CONFIG,
+        context);
+    return;
+  }
+
+  Status s = tablet_peer->consensus()->ChangeConfig(req->type(), req->server(), resp,
+                                                    BindHandleResponse(req, resp, context));
+  if (PREDICT_FALSE(!s.ok())) {
+    HandleUnknownError(req, resp, context, s);
+    return;
+  }
+  // The success case is handled when the callback fires.
 }
 
 void ConsensusServiceImpl::GetNodeInstance(const GetNodeInstanceRequestPB* req,

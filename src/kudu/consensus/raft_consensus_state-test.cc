@@ -87,10 +87,14 @@ TEST_F(RaftConsensusStateTest, TestPersistentWrites) {
   ASSERT_FALSE(state_->IsQuorumChangePendingUnlocked());
   ASSERT_EQ(kInvalidOpIdIndex, state_->GetCommittedQuorumUnlocked().opid_index());
 
+  quorum_.clear_opid_index();
+  ASSERT_OK(state_->SetPendingQuorumUnlocked(quorum_));
   quorum_.set_opid_index(1);
   ASSERT_OK(state_->SetCommittedQuorumUnlocked(quorum_));
   ASSERT_EQ(1, state_->GetCommittedQuorumUnlocked().opid_index());
 
+  quorum_.clear_opid_index();
+  ASSERT_OK(state_->SetPendingQuorumUnlocked(quorum_));
   quorum_.set_opid_index(2);
   ASSERT_OK(state_->SetCommittedQuorumUnlocked(quorum_));
   ASSERT_EQ(2, state_->GetCommittedQuorumUnlocked().opid_index());

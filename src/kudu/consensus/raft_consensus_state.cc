@@ -85,19 +85,9 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg)
     return Status::IllegalState("Replica not in running state");
   }
 
-  QuorumPeerPB::Role role = GetActiveRoleUnlocked();
-  switch (role) {
-    case QuorumPeerPB::LEADER:
-      lock->swap(&l);
-      return Status::OK();
-    default:
-      ConsensusStatePB cstate = ConsensusStateUnlocked(ConsensusMetadata::ACTIVE);
-      return Status::IllegalState(Substitute("Replica $0 is not leader of this quorum. Role: $1. "
-                                             "Consensus state: $2",
-                                             peer_uuid_,
-                                             QuorumPeerPB::Role_Name(role),
-                                             cstate.ShortDebugString()));
-  }
+  RETURN_NOT_OK(CheckActiveLeaderUnlocked());
+  lock->swap(&l);
+  return Status::OK();
 }
 
 Status ReplicaState::LockForCommit(UniqueLock* lock) const {
@@ -125,6 +115,21 @@ Status ReplicaState::LockForMajorityReplicatedIndexUpdate(UniqueLock* lock) cons
   return Status::OK();
 }
 
+Status ReplicaState::CheckActiveLeaderUnlocked() const {
+  QuorumPeerPB::Role role = GetActiveRoleUnlocked();
+  switch (role) {
+    case QuorumPeerPB::LEADER:
+      return Status::OK();
+    default:
+      ConsensusStatePB cstate = ConsensusStateUnlocked(ConsensusMetadata::ACTIVE);
+      return Status::IllegalState(Substitute("Replica $0 is not leader of this quorum. Role: $1. "
+                                             "Consensus state: $2",
+                                             peer_uuid_,
+                                             QuorumPeerPB::Role_Name(role),
+                                             cstate.ShortDebugString()));
+  }
+}
+
 Status ReplicaState::LockForConfigChange(UniqueLock* lock) const {
   ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
@@ -144,7 +149,7 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
     return Status::IllegalState("Replica not in running state");
   }
   if (!IsQuorumVoter(peer_uuid_, ConsensusStateUnlocked(ConsensusMetadata::ACTIVE).quorum())) {
-    return Status::IllegalState("Replica is not a participant of this quorum.");
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Allowing update even though not a member of the quorum";
   }
   lock->swap(&l);
   return Status::OK();
@@ -177,13 +182,32 @@ bool ReplicaState::IsQuorumChangePendingUnlocked() const {
   return cmeta_->has_pending_quorum();
 }
 
-// TODO check that the role change is legal.
+Status ReplicaState::CheckNoQuorumChangePendingUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  if (IsQuorumChangePendingUnlocked()) {
+    return Status::IllegalState(
+        Substitute("Quorum change currently pending. Only one is allowed at a time.\n"
+                   "  Committed quorum: $0.\n  Pending quorum: $1",
+                   GetCommittedQuorumUnlocked().ShortDebugString(),
+                   GetPendingQuorumUnlocked().ShortDebugString()));
+  }
+  return Status::OK();
+}
+
 Status ReplicaState::SetPendingQuorumUnlocked(const QuorumPB& new_quorum) {
   DCHECK(update_lock_.is_locked());
   RETURN_NOT_OK_PREPEND(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM),
                         "Invalid quorum to set as pending");
+  CHECK(!cmeta_->has_pending_quorum())
+      << "Attempt to set pending quorum while another is already pending! "
+      << "Existing pending quorum: " << cmeta_->pending_quorum().ShortDebugString() << "; "
+      << "Attempted new pending quorum: " << new_quorum.ShortDebugString();
   cmeta_->set_pending_quorum(new_quorum);
   return Status::OK();
+}
+
+void ReplicaState::ClearPendingQuorumUnlocked() {
+  cmeta_->clear_pending_quorum();
 }
 
 const QuorumPB& ReplicaState::GetPendingQuorumUnlocked() const {
@@ -192,14 +216,27 @@ const QuorumPB& ReplicaState::GetPendingQuorumUnlocked() const {
   return cmeta_->pending_quorum();
 }
 
-Status ReplicaState::SetCommittedQuorumUnlocked(const QuorumPB& new_quorum) {
+Status ReplicaState::SetCommittedQuorumUnlocked(const QuorumPB& committed_quorum) {
   DCHECK(update_lock_.is_locked());
-  DCHECK(new_quorum.IsInitialized());
+  DCHECK(committed_quorum.IsInitialized());
+  RETURN_NOT_OK_PREPEND(VerifyQuorum(committed_quorum, COMMITTED_QUORUM),
+                        "Invalid quorum to set as committed");
 
-  cmeta_->set_committed_quorum(new_quorum);
+  // Compare committed with pending quorum, ensure they are the same.
+  // Pending will not have an opid_index, so ignore that field.
+  DCHECK(cmeta_->has_pending_quorum());
+  QuorumPB quorum_no_opid = committed_quorum;
+  quorum_no_opid.clear_opid_index();
+  const QuorumPB& pending_quorum = GetPendingQuorumUnlocked();
+  // Quorums must be exactly equal, even w.r.t. peer ordering.
+  CHECK_EQ(GetPendingQuorumUnlocked().SerializeAsString(), quorum_no_opid.SerializeAsString())
+      << Substitute("New committed quorum must equal pending quorum, but does not. "
+                    "Pending quorum: $0, committed quorum: $1",
+                    pending_quorum.ShortDebugString(), committed_quorum.ShortDebugString());
+
+  cmeta_->set_committed_quorum(committed_quorum);
   cmeta_->clear_pending_quorum();
-  RETURN_NOT_OK(cmeta_->Flush());
-
+  CHECK_OK(cmeta_->Flush());
   return Status::OK();
 }
 
@@ -244,7 +281,7 @@ Status ReplicaState::SetCurrentTermUnlocked(uint64_t new_term) {
   }
   cmeta_->set_current_term(new_term);
   cmeta_->clear_voted_for();
-  RETURN_NOT_OK(cmeta_->Flush());
+  CHECK_OK(cmeta_->Flush());
   ClearLeaderUnlocked();
   last_received_op_id_current_leader_ = MinimumOpId();
   return Status::OK();
@@ -273,8 +310,7 @@ const bool ReplicaState::HasVotedCurrentTermUnlocked() const {
 Status ReplicaState::SetVotedForCurrentTermUnlocked(const std::string& uuid) {
   DCHECK(update_lock_.is_locked());
   cmeta_->set_voted_for(uuid);
-  RETURN_NOT_OK_PREPEND(cmeta_->Flush(),
-                        "Unable to flush consensus metadata after recording vote");
+  CHECK_OK(cmeta_->Flush());
   return Status::OK();
 }
 
@@ -384,6 +420,27 @@ Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& ro
     }
   }
 
+  // Mark pending quorum.
+  if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
+    DCHECK(round->replicate_msg()->change_config_record().has_old_config());
+    DCHECK(round->replicate_msg()->change_config_record().old_config().has_opid_index());
+    DCHECK(round->replicate_msg()->change_config_record().has_new_config());
+    DCHECK(!round->replicate_msg()->change_config_record().new_config().has_opid_index());
+    const QuorumPB& new_quorum = round->replicate_msg()->change_config_record().new_config();
+    if (GetActiveRoleUnlocked() != QuorumPeerPB::LEADER) {
+      // The leader has to mark the quorum as pending before it gets here
+      // because the active quorum affects the replication queue.
+      // Do one last sanity check.
+      Status s = CheckNoQuorumChangePendingUnlocked();
+      if (PREDICT_FALSE(!s.ok())) {
+        s = s.CloneAndAppend(Substitute("\n  New quorum: $0", new_quorum.ShortDebugString()));
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << s.ToString();
+        return s;
+      }
+      CHECK_OK(SetPendingQuorumUnlocked(new_quorum));
+    }
+  }
+
   InsertOrDie(&pending_txns_, round->replicate_msg()->id().index(), round);
   return Status::OK();
 }
@@ -478,15 +535,16 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
 
     pending_txns_.erase(iter++);
 
-    // If we're committing a change config op, persist the new quorum first
+    // Set committed quorum.
     if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
-      DCHECK(round->replicate_msg()->change_config_request().has_old_config());
-      DCHECK(round->replicate_msg()->change_config_request().has_new_config());
-      QuorumPB old_quorum = round->replicate_msg()->change_config_request().old_config();
-      QuorumPB new_quorum = round->replicate_msg()->change_config_request().new_config();
+      DCHECK(round->replicate_msg()->change_config_record().has_old_config());
+      DCHECK(round->replicate_msg()->change_config_record().has_new_config());
+      QuorumPB old_quorum = round->replicate_msg()->change_config_record().old_config();
+      QuorumPB new_quorum = round->replicate_msg()->change_config_record().new_config();
+      DCHECK(old_quorum.has_opid_index());
       DCHECK(!new_quorum.has_opid_index());
       new_quorum.set_opid_index(current_id.index());
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Committing change config transaction with OpId "
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Committing config change with OpId "
           << current_id << ". "
           << "Old quorum: { " << old_quorum.ShortDebugString() << " }. "
           << "New quorum: {" << new_quorum.ShortDebugString() << "}";

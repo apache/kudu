@@ -1075,22 +1075,6 @@ TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
   ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
 
   //
-  // Ensure replicas vote no for someone who does not claim to be a member of
-  // the quorum.
-  //
-
-  request.set_candidate_uuid("unknown-replica");
-  request.set_candidate_term(last_op_id.term() + 3);
-  response.Clear();
-  ASSERT_OK(peer->RequestVote(&request, &response));
-  ASSERT_FALSE(response.vote_granted());
-  ASSERT_TRUE(response.has_consensus_error());
-  ASSERT_EQ(ConsensusErrorPB::NOT_IN_QUORUM, response.consensus_error().code());
-  // Also should not rev the term to match a non-member.
-  ASSERT_EQ(last_op_id.term() + 2, response.responder_term());
-  ASSERT_NO_FATAL_FAILURE(AssertDurableTermAndVote(kPeerIndex, last_op_id.term() + 2, "peer-0"));
-
-  //
   // Ensure replicas vote no for an old op index.
   //
 

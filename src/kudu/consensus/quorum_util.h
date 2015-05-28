@@ -21,6 +21,11 @@ enum QuorumPBType {
 bool IsQuorumMember(const std::string& uuid, const QuorumPB& quorum);
 bool IsQuorumVoter(const std::string& uuid, const QuorumPB& quorum);
 
+// Modifies 'quorum' remove the peer with the specified 'uuid'.
+// Returns false if the server with 'uuid' is not found in the quorum.
+// Returns true on success.
+bool RemoveFromQuorum(QuorumPB* quorum, const std::string& uuid);
+
 // Counts the number of voters in the quorum.
 int CountVoters(const QuorumPB& quorum);
 

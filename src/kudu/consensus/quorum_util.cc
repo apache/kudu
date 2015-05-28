@@ -13,6 +13,7 @@
 namespace kudu {
 namespace consensus {
 
+using google::protobuf::RepeatedPtrField;
 using std::string;
 using strings::Substitute;
 
@@ -32,6 +33,21 @@ bool IsQuorumVoter(const std::string& uuid, const QuorumPB& quorum) {
     }
   }
   return false;
+}
+
+bool RemoveFromQuorum(QuorumPB* quorum, const string& uuid) {
+  RepeatedPtrField<QuorumPeerPB> modified_peers;
+  bool removed = false;
+  BOOST_FOREACH(const QuorumPeerPB& peer, quorum->peers()) {
+    if (peer.permanent_uuid() == uuid) {
+      removed = true;
+      continue;
+    }
+    *modified_peers.Add() = peer;
+  }
+  if (!removed) return false;
+  quorum->mutable_peers()->Swap(&modified_peers);
+  return true;
 }
 
 int CountVoters(const QuorumPB& quorum) {

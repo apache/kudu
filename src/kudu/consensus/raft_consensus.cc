@@ -347,13 +347,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   withhold_votes_until_ = MonoTime::Max();
 
   queue_->RegisterObserver(this);
-  const QuorumPB& active_quorum = state_->GetActiveQuorumUnlocked();
-  queue_->SetLeaderMode(state_->GetCommittedOpIdUnlocked(),
-                        state_->GetCurrentTermUnlocked(),
-                        MajoritySize(CountVoters(active_quorum)));
-
-  // Create the peers so that we're able to replicate messages remotely and locally
-  RETURN_NOT_OK(peer_manager_->UpdateQuorum(active_quorum));
+  RETURN_NOT_OK(RefreshConsensusQueueAndPeersUnlocked());
 
   // Initiate a NO_OP transaction that is sent at the beginning of every term
   // change in raft.
@@ -511,9 +505,16 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   return Status::OK();
 }
 
+// Helper function to check if the op is a non-Transaction op.
+static bool IsConsensusOnlyOperation(OperationType op_type) {
+  if (op_type == NO_OP || op_type == CHANGE_CONFIG_OP) {
+    return true;
+  }
+  return false;
+}
 
 Status RaftConsensus::StartReplicaTransactionUnlocked(const ReplicateRefPtr& msg) {
-  if (msg->get()->op_type() == NO_OP) {
+  if (IsConsensusOnlyOperation(msg->get()->op_type())) {
     return StartConsensusOnlyRoundUnlocked(msg);
   }
 
@@ -1024,13 +1025,11 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
 
   response->set_responder_uuid(state_->GetPeerUuid());
 
-  // Candidate is not a member of the active quorum.
-  //
-  // TODO(mpercy): is this actually correct? during a config change, do we need to allow
-  // a new leader to be able to win votes from old followers who have not yet received
-  // the config change?
+  // If the node is not in the quorum, allow the vote (this is required by Raft)
+  // but log an informational message anyway.
   if (!IsQuorumMember(request->candidate_uuid(), state_->GetActiveQuorumUnlocked())) {
-    return RequestVoteRespondNotInQuorum(request, response);
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Handling vote request from an unknown peer "
+                                   << request->candidate_uuid();
   }
 
   // If we've heard recently from the leader, then we should ignore the request.
@@ -1089,6 +1088,71 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
 
   // Passed all our checks. Vote granted.
   return RequestVoteRespondVoteGranted(request, response);
+}
+
+Status RaftConsensus::ChangeConfig(ChangeConfigType type,
+                                   const QuorumPeerPB& server,
+                                   ChangeConfigResponsePB* resp,
+                                   const StatusCallback& client_cb) {
+  {
+    ReplicaState::UniqueLock lock;
+    RETURN_NOT_OK(state_->LockForConfigChange(&lock));
+    RETURN_NOT_OK(state_->CheckActiveLeaderUnlocked());
+    RETURN_NOT_OK(state_->CheckNoQuorumChangePendingUnlocked());
+    if (!server.has_permanent_uuid()) {
+      return Status::InvalidArgument("server must have permanent_uuid specified",
+                                     server.ShortDebugString());
+    }
+    const QuorumPB& committed_quorum = state_->GetCommittedQuorumUnlocked();
+    QuorumPB new_quorum = committed_quorum;
+    new_quorum.clear_opid_index();
+    // Ensure the server we are adding is not already a member of the quorum.
+    const string& server_uuid = server.permanent_uuid();
+    switch (type) {
+      case ADD_SERVER:
+        if (IsQuorumMember(server_uuid, committed_quorum)) {
+          return Status::InvalidArgument(
+              Substitute("Server with UUID $0 is already a member of the quorum. Quorum: $1",
+                        server_uuid, committed_quorum.ShortDebugString()));
+        }
+        if (!server.has_member_type()) {
+          return Status::InvalidArgument("server must have member_type specified",
+                                         server.ShortDebugString());
+        }
+        if (!server.has_last_known_addr()) {
+          return Status::InvalidArgument("server must have last_known_addr specified",
+                                         server.ShortDebugString());
+        }
+        *new_quorum.add_peers() = server;
+        break;
+
+      case REMOVE_SERVER:
+        if (server_uuid == peer_uuid()) {
+          return Status::InvalidArgument(
+              Substitute("Cannot remove peer $0 from the quorum because it is the leader. "
+                         "Force another leader to be elected to remove this server. "
+                         "Active consensus state: $1",
+                         server_uuid,
+                         state_->ConsensusStateUnlocked(ConsensusMetadata::ACTIVE)
+                            .ShortDebugString()));
+        }
+        if (!RemoveFromQuorum(&new_quorum, server_uuid)) {
+          return Status::NotFound(
+              Substitute("Server with UUID $0 not a member of the quorum. Quorum: $1",
+                        server_uuid, committed_quorum.ShortDebugString()));
+        }
+        break;
+
+      // TODO: Support role change.
+      case CHANGE_ROLE:
+      default:
+        return Status::NotSupported("Role change is not yet implemented.");
+    }
+
+    RETURN_NOT_OK(ReplicateConfigChangeUnlocked(committed_quorum, new_quorum, client_cb));
+  }
+  peer_manager_->SignalRequest();
+  return Status::OK();
 }
 
 void RaftConsensus::Shutdown() {
@@ -1152,7 +1216,9 @@ OpId RaftConsensus::GetLatestOpIdFromLog() {
 }
 
 Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg) {
-  DCHECK_EQ(NO_OP, msg->get()->op_type()); // Until other types are supported.
+  OperationType op_type = msg->get()->op_type();
+  CHECK(IsConsensusOnlyOperation(op_type))
+      << "Expected op type: " << OperationType_Name(op_type);
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting consensus round: "
                                << msg->get()->id().ShortDebugString();
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
@@ -1183,22 +1249,6 @@ void RaftConsensus::FillVoteResponseVoteDenied(ConsensusErrorPB::Code error_code
   response->set_responder_term(state_->GetCurrentTermUnlocked());
   response->set_vote_granted(false);
   response->mutable_consensus_error()->set_code(error_code);
-}
-
-Status RaftConsensus::RequestVoteRespondNotInQuorum(const VoteRequestPB* request,
-                                                    VoteResponsePB* response) {
-  FillVoteResponseVoteDenied(ConsensusErrorPB::NOT_IN_QUORUM, response);
-  string msg = Substitute("$0: Not considering vote for candidate $1 in term $2 due to "
-                          "candidate not being a member of the quorum in current term $3. "
-                          "Quorum: $4",
-                          GetRequestVoteLogPrefixUnlocked(),
-                          request->candidate_uuid(),
-                          request->candidate_term(),
-                          state_->GetCurrentTermUnlocked(),
-                          state_->GetCommittedQuorumUnlocked().ShortDebugString());
-  LOG(INFO) << msg;
-  StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
-  return Status::OK();
 }
 
 Status RaftConsensus::RequestVoteRespondInvalidTerm(const VoteRequestPB* request,
@@ -1306,6 +1356,46 @@ std::string RaftConsensus::LogPrefix() {
 void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
   state_->SetLeaderUuidUnlocked(uuid);
   MarkDirty();
+}
+
+Status RaftConsensus::ReplicateConfigChangeUnlocked(const QuorumPB& old_quorum,
+                                                    const QuorumPB& new_quorum,
+                                                    const StatusCallback& client_cb) {
+  ReplicateMsg* cc_replicate = new ReplicateMsg();
+  cc_replicate->set_op_type(CHANGE_CONFIG_OP);
+  ChangeConfigRecordPB* cc_req = cc_replicate->mutable_change_config_record();
+  cc_req->set_tablet_id(tablet_id());
+  *cc_req->mutable_old_config() = old_quorum;
+  *cc_req->mutable_new_config() = new_quorum;
+
+  // TODO We should have no-ops (?) and config changes be COMMIT_WAIT transactions.
+  cc_replicate->set_timestamp(clock_->Now().ToUint64());
+
+  scoped_refptr<ConsensusRound> round(
+      new ConsensusRound(this, make_scoped_refptr(new RefCountedReplicate(cc_replicate))));
+  round->SetConsensusReplicatedCallback(Bind(&RaftConsensus::NonTxRoundReplicationFinished,
+                                             Unretained(this),
+                                             Unretained(round.get()),
+                                             client_cb));
+
+  // Set as pending.
+  RETURN_NOT_OK(state_->SetPendingQuorumUnlocked(new_quorum));
+  RETURN_NOT_OK(RefreshConsensusQueueAndPeersUnlocked());
+  CHECK_OK(AppendNewRoundToQueueUnlocked(round));
+  return Status::OK();
+}
+
+Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
+  DCHECK_EQ(QuorumPeerPB::LEADER, state_->GetActiveRoleUnlocked());
+  const QuorumPB& active_quorum = state_->GetActiveQuorumUnlocked();
+  queue_->SetLeaderMode(state_->GetCommittedOpIdUnlocked(),
+                        state_->GetCurrentTermUnlocked(),
+                        MajoritySize(CountVoters(active_quorum)));
+
+  // Create the peers so that we're able to replicate messages remotely and locally.
+  peer_manager_->Close();
+  RETURN_NOT_OK(peer_manager_->UpdateQuorum(active_quorum));
+  return Status::OK();
 }
 
 string RaftConsensus::peer_uuid() const {
@@ -1442,14 +1532,18 @@ void RaftConsensus::MarkDirty() {
 void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
                                                   const StatusCallback& client_cb,
                                                   const Status& status) {
-  CHECK_EQ(NO_OP, round->replicate_msg()->op_type());
+  OperationType op_type = round->replicate_msg()->op_type();
+  string op_type_str = OperationType_Name(op_type);
+  CHECK(IsConsensusOnlyOperation(op_type)) << "Expected op type: " << op_type_str;
   if (!status.ok()) {
     // TODO: Do something with the status on failure?
-    LOG(INFO) << state_->LogPrefixThreadSafe() << "NO_OP replication failed: " << status.ToString();
+    LOG(INFO) << state_->LogPrefixThreadSafe() << op_type_str << " replication failed: "
+              << status.ToString();
     client_cb.Run(status);
     return;
   }
-  VLOG(1) << state_->LogPrefixThreadSafe() << "Committing NO_OP with op id " << round->id();
+  VLOG(1) << state_->LogPrefixThreadSafe() << "Committing " << op_type_str << " with op id "
+          << round->id();
   gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
   commit_msg->set_op_type(round->replicate_msg()->op_type());
   *commit_msg->mutable_commited_op_id() = round->id();

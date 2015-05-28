@@ -24,8 +24,6 @@ using kudu::server::HybridClock;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using strings::Substitute;
-using kudu::consensus::ChangeConfigRequestPB;
-using kudu::consensus::ChangeConfigResponsePB;
 
 DEFINE_int32(single_threaded_insert_latency_bench_warmup_rows, 100,
              "Number of rows to insert in the warmup phase of the single threaded"
@@ -1782,41 +1780,6 @@ TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
   // Verify that the tablet is removed from the tablet map
   ASSERT_FALSE(mini_server_->server()->tablet_manager()->LookupTablet(kTabletId, &tablet));
   ASSERT_EQ(1, num_success);
-}
-
-TEST_F(TabletServerTest, DISABLED_TestChangeConfiguration) {
-  ChangeConfigRequestPB req;
-  ChangeConfigResponsePB resp;
-  RpcController rpc;
-
-  req.set_tablet_id(kTabletId);
-
-  QuorumPB* new_quorum = req.mutable_new_config();
-  new_quorum->set_local(true);
-  new_quorum->clear_opid_index();
-  QuorumPeerPB* peer = new_quorum->add_peers();
-  peer->set_permanent_uuid(mini_server_->server()->instance_pb().permanent_uuid());
-
-  {
-    SCOPED_TRACE(req.DebugString());
-    ASSERT_OK(consensus_proxy_->ChangeConfig(req, &resp, &rpc));
-    SCOPED_TRACE(resp.DebugString());
-    ASSERT_FALSE(resp.has_error());
-    rpc.Reset();
-  }
-
-  // Now try and insert some rows, and shutdown and rebuild
-  // the TS so that we know that the tablet survives.
-  InsertTestRowsRemote(0, 1, 7);
-
-  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))
-                                            (KeyValue(2, 2))
-                                            (KeyValue(3, 3))
-                                            (KeyValue(4, 4))
-                                            (KeyValue(5, 5))
-                                            (KeyValue(6, 6))
-                                            (KeyValue(7, 7)));
 }
 
 TEST_F(TabletServerTest, TestInsertLatencyMicroBenchmark) {
