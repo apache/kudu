@@ -175,10 +175,6 @@ class ReplicaState {
   // otherwise return the committed quorum.
   const QuorumPB& GetActiveQuorumUnlocked() const;
 
-  // Increments this peer's term and sets 'has voted' to no for the current
-  // term.
-  Status IncrementTermUnlocked() WARN_UNUSED_RESULT;
-
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
   Status SetCurrentTermUnlocked(uint64_t new_term) WARN_UNUSED_RESULT;

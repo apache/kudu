@@ -394,6 +394,10 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // Returns the number of servers restarted.
   int RestartAnyCrashedTabletServers();
 
+  // Assert that no tablet servers have crashed.
+  // Tablet servers that have been manually Shutdown() are allowed.
+  void AssertNoTabletServersCrashed();
+
  protected:
   shared_ptr<KuduClient> client_;
   scoped_refptr<KuduTable> table_;
@@ -807,6 +811,15 @@ int RaftConsensusITest::RestartAnyCrashedTabletServers() {
   return restarted;
 }
 
+void RaftConsensusITest::AssertNoTabletServersCrashed() {
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    if (cluster_->tablet_server(i)->IsShutdown()) continue;
+
+    ASSERT_TRUE(cluster_->tablet_server(i)->IsProcessAlive())
+      << "Tablet server " << i << " crashed";
+  }
+}
+
 // This test starts several tablet servers, and configures them with
 // fault injection so that the leaders frequently crash just before
 // sending RPCs to followers.
@@ -887,6 +900,44 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
     ts->Shutdown();
     CHECK_OK(ts->Restart());
   }
+
+  // Ensure that the replicas converge.
+  // We don't know exactly how many rows got inserted, since the writer
+  // probably saw many errors which left inserts in indeterminate state.
+  // But, we should have at least as many as we got confirmation for.
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount("test-workload", ClusterVerifier::AT_LEAST,
+                            workload.rows_inserted()));
+}
+
+// This test sets all of the election timers to be very short, resulting
+// in a lot of churn. We expect to make some progress and not diverge or
+// crash, despite the frequent re-elections and races.
+TEST_F(RaftConsensusITest, TestChurnyElections) {
+  vector<string> ts_flags, master_flags;
+
+  ts_flags.push_back("--leader_heartbeat_interval_ms=1");
+  ts_flags.push_back("--leader_failure_monitor_check_mean_ms=1");
+  ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
+  CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(FLAGS_num_replicas);
+  workload.set_timeout_allowed(true);
+  workload.set_write_timeout_millis(100);
+  workload.set_num_write_threads(2);
+  workload.set_write_batch_size(1);
+  workload.Setup();
+  workload.Start();
+
+  const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
+  while (workload.rows_inserted() < kNumWrites) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+    NO_FATALS(AssertNoTabletServersCrashed());
+  }
+
+  workload.StopAndJoin();
 
   // Ensure that the replicas converge.
   // We don't know exactly how many rows got inserted, since the writer

@@ -235,10 +235,6 @@ bool ReplicaState::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch
   return true;
 }
 
-Status ReplicaState::IncrementTermUnlocked() {
-  return SetCurrentTermUnlocked(GetCurrentTermUnlocked() + 1);
-}
-
 Status ReplicaState::SetCurrentTermUnlocked(uint64_t new_term) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(new_term <= GetCurrentTermUnlocked())) {

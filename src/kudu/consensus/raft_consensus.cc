@@ -240,7 +240,7 @@ Status RaftConsensus::EmulateElection() {
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Emulating election...";
 
   // Assume leadership of new term.
-  RETURN_NOT_OK(state_->IncrementTermUnlocked());
+  RETURN_NOT_OK(IncrementTermUnlocked());
   SetLeaderUuidUnlocked(state_->GetPeerUuid());
   return BecomeLeaderUnlocked();
 }
@@ -254,8 +254,13 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
+    if (state_->GetActiveRoleUnlocked() == QuorumPeerPB::LEADER) {
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Not starting election -- already leader";
+      return Status::OK();
+    }
+
     // Increment the term.
-    RETURN_NOT_OK(state_->IncrementTermUnlocked());
+    RETURN_NOT_OK(IncrementTermUnlocked());
 
     // Snooze to avoid the election timer firing again as much as possible.
     // We do not disable the election timer while running an election.
@@ -1487,6 +1492,10 @@ MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
   exp_backoff_delta = std::min(failure_timeout * exp_backoff_delta,
                                FLAGS_leader_failure_exp_backoff_max_delta_ms);
   return MonoDelta::FromMilliseconds(exp_backoff_delta);
+}
+
+Status RaftConsensus::IncrementTermUnlocked() {
+  return HandleTermAdvanceUnlocked(state_->GetCurrentTermUnlocked() + 1);
 }
 
 Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term) {
