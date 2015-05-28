@@ -359,6 +359,8 @@ class RaftConsensus : public Consensus,
 
   gscoped_ptr<ReplicaState> state_;
 
+  Random rng_;
+
   // TODO: Plumb this from ServerBase.
   RandomizedFailureMonitor failure_monitor_;
 

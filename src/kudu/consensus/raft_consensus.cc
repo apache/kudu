@@ -22,6 +22,7 @@
 #include "kudu/server/metadata.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -133,6 +134,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
       peer_proxy_factory_(proxy_factory.Pass()),
       peer_manager_(peer_manager.Pass()),
       queue_(queue.Pass()),
+      rng_(GetRandomSeed32()),
       failure_monitor_(GetRandomSeed32(),
                        FLAGS_leader_failure_monitor_check_mean_ms,
                        FLAGS_leader_failure_monitor_check_stddev_ms),
@@ -1486,12 +1488,24 @@ MonoDelta RaftConsensus::MinimumElectionTimeout() const {
 }
 
 MonoDelta RaftConsensus::LeaderElectionExpBackoffDeltaUnlocked() {
-  int32_t failure_timeout = MinimumElectionTimeout().ToMilliseconds();
-  int32_t exp_backoff_delta = pow(1.1, state_->GetCurrentTermUnlocked() -
-                                  state_->GetCommittedOpIdUnlocked().term());
-  exp_backoff_delta = std::min(failure_timeout * exp_backoff_delta,
-                               FLAGS_leader_failure_exp_backoff_max_delta_ms);
-  return MonoDelta::FromMilliseconds(exp_backoff_delta);
+  // Compute a backoff factor based on how many leader elections have
+  // taken place since a leader was successfully elected.
+  int term_difference = state_->GetCurrentTermUnlocked() -
+    state_->GetCommittedOpIdUnlocked().term();
+  double backoff_factor = pow(1.1, term_difference);
+  double min_timeout = MinimumElectionTimeout().ToMilliseconds();
+  double max_timeout = std::min<double>(
+      min_timeout * backoff_factor,
+      FLAGS_leader_failure_exp_backoff_max_delta_ms);
+
+  // Randomize the timeout between the minimum and the calculated value.
+  // We do this after the above capping to the max. Otherwise, after a
+  // churny period, we'd end up highly likely to backoff exactly the max
+  // amount.
+  double timeout = min_timeout + (max_timeout - min_timeout) * rng_.NextDoubleFraction();
+  DCHECK_GE(timeout, min_timeout);
+
+  return MonoDelta::FromMilliseconds(timeout);
 }
 
 Status RaftConsensus::IncrementTermUnlocked() {
