@@ -209,7 +209,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
     final KuduRpc<?> oldrpc = rpcs_inflight.put(rpcid, rpc);
     if (oldrpc != null) {
-      final String wtf = "WTF?  There was already an RPC in flight with"
+      final String wtf = getPeerUuidLoggingString() +
+          "WTF?  There was already an RPC in flight with"
           + " rpcid=" + rpcid + ": " + oldrpc
           + ".  This happened when sending out: " + rpc;
       LOG.error(wtf);
@@ -218,8 +219,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
 
     if (LOG.isDebugEnabled()) {
-      LOG.debug(chan + " Sending RPC #" + rpcid + ", payload=" + payload + ' '
-          + Bytes.pretty(payload));
+      LOG.debug(getPeerUuidLoggingString() + chan + " Sending RPC #" + rpcid
+          + ", payload=" + payload + ' ' + Bytes.pretty(payload));
     }
 
     payload = secureRpcHelper.wrap(payload);
@@ -305,7 +306,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     try {
       buf = secureRpcHelper.handleResponse(buf, chan);
     } catch (SaslException e) {
-      String message = "Couldn't complete the SASL handshake";
+      String message = getPeerUuidLoggingString() + "Couldn't complete the SASL handshake";
       LOG.error(message);
       throw new NonRecoverableException(message, e);
     }
@@ -318,7 +319,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     RpcHeader.ResponseHeader header = response.getHeader();
     if (!header.hasCallId()) {
       final int size = response.getTotalResponseSize();
-      final String msg = "RPC response (size: " + size + ") doesn't"
+      final String msg = getPeerUuidLoggingString() + "RPC response (size: " + size + ") doesn't"
           + " have a call ID: " + header + ", buf=" + Bytes.pretty(buf);
       LOG.error(msg);
       throw new NonRecoverableException(msg);
@@ -329,7 +330,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     final KuduRpc rpc = rpcs_inflight.get(rpcid);
 
     if (rpc == null) {
-      final String msg = "Invalid rpcid: " + rpcid + " found in "
+      final String msg = getPeerUuidLoggingString() + "Invalid rpcid: " + rpcid + " found in "
           + buf + '=' + Bytes.pretty(buf);
       LOG.error(msg);
       // The problem here is that we don't know which Deferred corresponds to
@@ -353,7 +354,8 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         kuduClient.handleRetryableError(rpc, new TabletServerErrorException(error));
         return null;
       }
-      String message = "Tablet server sent error " + error.getMessage();
+      String message = getPeerUuidLoggingString() +
+          "Tablet server sent error " + error.getMessage();
       exception = new NonRecoverableException(message);
       LOG.error(message); // can be useful
     } else {
@@ -364,7 +366,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       }
     }
     if (LOG.isDebugEnabled()) {
-      LOG.debug("rpcid=" + rpcid
+      LOG.debug(getPeerUuidLoggingString() + "rpcid=" + rpcid
           + ", response size=" + (buf.readerIndex() - rdx) + " bytes"
           + ", " + actualReadableBytes() + " readable bytes left"
           + ", rpc=" + rpc);
@@ -414,7 +416,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         rpc.errback(exception);
       }
     } catch (Exception e) {
-      LOG.debug("Unexpected exception while handling RPC #" + rpcid
+      LOG.debug(getPeerUuidLoggingString() + "Unexpected exception while handling RPC #" + rpcid
           + ", rpc=" + rpc + ", buf=" + Bytes.pretty(buf), e);
     }
     if (LOG.isDebugEnabled()) {
@@ -500,7 +502,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         return decode(ctx, chan, buf, unused);
       } finally {
         if (buf.readable()) {
-          LOG.error("After decoding the last message on " + chan
+          LOG.error(getPeerUuidLoggingString() + "After decoding the last message on " + chan
               + ", there was still some undecoded bytes in the channel's"
               + " buffer (which are going to be lost): "
               + buf + '=' + Bytes.pretty(buf));
@@ -563,7 +565,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   public void handleUpstream(final ChannelHandlerContext ctx,
                              final ChannelEvent e) throws Exception {
     if (LOG.isDebugEnabled()) {
-      LOG.debug(e.toString());
+      LOG.debug(getPeerUuidLoggingString() + e.toString());
     }
     super.handleUpstream(ctx, e);
   }
@@ -595,7 +597,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    */
   private void cleanup(final Channel chan) {
     final ConnectionResetException exception =
-        new ConnectionResetException("Connection reset on " + chan);
+        new ConnectionResetException(getPeerUuidLoggingString() + "Connection reset on " + chan);
     failOrRetryRpcs(rpcs_inflight.values(), exception);
     rpcs_inflight.clear();
 
@@ -638,10 +640,10 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     final Channel c = event.getChannel();
 
     if (e instanceof RejectedExecutionException) {
-      LOG.warn("RPC rejected by the executor,"
+      LOG.warn(getPeerUuidLoggingString() + "RPC rejected by the executor,"
           + " ignore this if we're shutting down", e);
     } else {
-      LOG.error("Unexpected exception from downstream on " + c, e);
+      LOG.error(getPeerUuidLoggingString() + "Unexpected exception from downstream on " + c, e);
     }
     if (c.isOpen()) {
       Channels.close(c);  // Will trigger channelClosed(), which will cleanup()
@@ -673,7 +675,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     }
     if (rpcs != null) {
       for (final KuduRpc<?> rpc : rpcs) {
-        LOG.debug("Executing RPC queued: " + rpc);
+        LOG.debug(getPeerUuidLoggingString() + "Executing RPC queued: " + rpc);
         sendRpc(rpc);
       }
     }
@@ -696,12 +698,18 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     return KuduRpc.toChannelBuffer(header, pb);
   }
 
+  private String getPeerUuidLoggingString() {
+    return "[Peer " + uuid + "] ";
+  }
+
   public String toString() {
-    final StringBuilder buf = new StringBuilder(13 + 10 + 6 + 64 + 16 + 1 + 17 + 2 + 1);
+    final StringBuilder buf = new StringBuilder(13 + 10 + 6 + 64 + 7 + 32 + 16 + 1 + 17 + 2 + 1);
     buf.append("TabletClient@")           // =13
         .append(hashCode())                 // ~10
         .append("(chan=")                   // = 6
         .append(chan)                       // ~64 (up to 66 when using IPv4)
+        .append(", uuid=")                  // = 7
+        .append(uuid)                       // = 32
         .append(", #pending_rpcs=");        // =16
     int npending_rpcs;
     synchronized (this) {
