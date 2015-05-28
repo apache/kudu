@@ -330,7 +330,7 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
   for (MessageCache::iterator iter = cache_.begin();
        iter != cache_.end();) {
     const ReplicateRefPtr& msg = (*iter).second;
-    VLOG_WITH_PREFIX_UNLOCKED(1) << "considering for eviction: " << msg->get()->id();
+    VLOG_WITH_PREFIX_UNLOCKED(2) << "considering for eviction: " << msg->get()->id();
     int64_t msg_index = msg->get()->id().index();
     if (msg_index == 0) {
       // Always keep our special '0' op.
@@ -344,12 +344,12 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
 
     if (!msg->HasOneRef()) {
       VLOG_WITH_PREFIX_UNLOCKED(2) << "Evicting cache: cannot remove " << msg->get()->id()
-                          << " because it is in-use by a peer.";
+                                   << " because it is in-use by a peer.";
       ++iter;
       continue;
     }
 
-    VLOG_WITH_PREFIX_UNLOCKED(1) << "Evicting cache. Removing: " << msg->get()->id();
+    VLOG_WITH_PREFIX_UNLOCKED(2) << "Evicting cache. Removing: " << msg->get()->id();
     AccountForMessageRemovalUnlocked(msg);
     bytes_evicted += msg->get()->SpaceUsed();
     cache_.erase(iter++);
