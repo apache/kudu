@@ -66,8 +66,9 @@ enum TestMaintenanceOpState {
 class TestMaintenanceOp : public MaintenanceOp {
  public:
   TestMaintenanceOp(const std::string& name,
+                    IOUsage io_usage,
                     TestMaintenanceOpState state)
-    : MaintenanceOp(name),
+    : MaintenanceOp(name, io_usage),
       state_change_cond_(&lock_),
       state_(state),
       ram_anchored_(500),
@@ -177,7 +178,7 @@ class TestMaintenanceOp : public MaintenanceOp {
 // running and verify that UnregisterOp waits for it to finish before
 // proceeding.
 TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
-  TestMaintenanceOp op1("1", OP_DISABLED);
+  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE, OP_DISABLED);
   op1.set_ram_anchored(1001);
   manager_->RegisterOp(&op1);
   scoped_refptr<kudu::Thread> thread;
@@ -191,7 +192,7 @@ TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
 // Test that we'll run an operation that doesn't improve performance when memory
 // pressure gets high.
 TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
-  TestMaintenanceOp op("op", OP_RUNNABLE);
+  TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE);
   op.set_perf_improvement(0);
   op.set_ram_anchored(100);
   manager_->RegisterOp(&op);
@@ -212,30 +213,35 @@ TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
 TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
   manager_->Shutdown();
 
-  TestMaintenanceOp op1("op1", OP_RUNNABLE);
-  op1.set_perf_improvement(0);
-  op1.set_ram_anchored(100);
+  TestMaintenanceOp op1("op1", MaintenanceOp::LOW_IO_USAGE, OP_RUNNABLE);
+  op1.set_ram_anchored(0);
   op1.set_logs_retained_bytes(100);
-  manager_->RegisterOp(&op1);
 
-  MaintenanceOp* best_op = manager_->FindBestOp();
-  ASSERT_EQ(&op1, best_op);
-
-  TestMaintenanceOp op2("op2", OP_RUNNABLE);
-  op2.set_perf_improvement(0);
-  op2.set_ram_anchored(200);
+  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE);
+  op2.set_ram_anchored(100);
   op2.set_logs_retained_bytes(100);
+
+  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE);
+  op3.set_ram_anchored(200);
+  op3.set_logs_retained_bytes(100);
+
+  manager_->RegisterOp(&op1);
   manager_->RegisterOp(&op2);
+  manager_->RegisterOp(&op3);
 
-  best_op = manager_->FindBestOp();
-  ASSERT_EQ(&op2, best_op);
-
-  manager_->UnregisterOp(&op2);
-
-  best_op = manager_->FindBestOp();
-  ASSERT_EQ(&op1, best_op);
+  // We want to do the low IO op first since it clears up some log retention.
+  ASSERT_EQ(&op1, manager_->FindBestOp());
 
   manager_->UnregisterOp(&op1);
+
+  // Low IO is taken care of, now we find the op clears the most log retention and ram.
+  ASSERT_EQ(&op3, manager_->FindBestOp());
+
+  manager_->UnregisterOp(&op3);
+
+  ASSERT_EQ(&op2, manager_->FindBestOp());
+
+  manager_->UnregisterOp(&op2);
 }
 
 // Test adding operations and make sure that the history of recently completed operations
@@ -243,7 +249,7 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
 TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {
   for (int i = 0; i < 5; i++) {
     string name = Substitute("op$0", i);
-    TestMaintenanceOp op(name, OP_RUNNABLE);
+    TestMaintenanceOp op(name, MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE);
     op.set_perf_improvement(1);
     op.set_ram_anchored(100);
     manager_->RegisterOp(&op);

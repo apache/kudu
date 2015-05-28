@@ -61,9 +61,10 @@ void MaintenanceOpStats::Clear() {
   perf_improvement_ = 0;
 }
 
-MaintenanceOp::MaintenanceOp(const std::string &name)
+MaintenanceOp::MaintenanceOp(const std::string &name, IOUsage io_usage)
   : name_(name),
-    running_(0) {
+    running_(0),
+    io_usage_(io_usage) {
 }
 
 MaintenanceOp::~MaintenanceOp() {
@@ -216,6 +217,24 @@ void MaintenanceManager::RunSchedulerThread() {
   }
 }
 
+// Finding the best operation goes through four filters:
+// - If there's an Op that we can run quickly that frees log retention, we run it.
+// - If we're close to reaching our memory limit, we run the Op with the highest RAM usage.
+// - If there are Ops that retain logs, we run the one that has the highest retention (and if many
+//   qualify, then we run the one that also frees up the most RAM).
+// - Finally, if there's nothing else that we really need to do, we run the Op that will improve
+//   performance the most.
+//
+// The reason it's done this way is that we want to prioritize limiting the amount of resources we
+// hold on to. Low IO Ops go first since we can quickly run them, then we can look at memory usage.
+// Reversing those can starve the low IO Ops when the system is under intense memory pressure.
+//
+// In the third priority we're at a point where nothing's urgent and there's nothing we can run
+// quickly.
+// TODO We currently optimize for freeing log retention but we could consider having some sort of
+// sliding priority between log retention and RAM usage. For example, is an Op that frees
+// 128MB of log retention and 12MB of RAM always better than an op that frees 12MB of log retention
+// and 128MB of RAM? Maybe a more holistic approach would be better.
 MaintenanceOp* MaintenanceManager::FindBestOp() {
   TRACE_EVENT0("maintenance", "MaintenanceManager::FindBestOp");
 
@@ -229,12 +248,17 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
     return NULL;
   }
 
+  int64_t low_io_most_logs_retained_bytes = 0;
+  MaintenanceOp* low_io_most_logs_retained_bytes_op = NULL;
+
   uint64_t mem_total = 0;
   uint64_t most_mem_anchored = 0;
   MaintenanceOp* most_mem_anchored_op = NULL;
+
   int64_t most_logs_retained_bytes = 0;
   int64_t most_logs_retained_bytes_ram_anchored = 0;
   MaintenanceOp* most_logs_retained_bytes_op = NULL;
+
   double best_perf_improvement = 0;
   MaintenanceOp* best_perf_improvement_op = NULL;
   BOOST_FOREACH(OpMapTy::value_type &val, ops_) {
@@ -249,15 +273,22 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
     // Add anchored memory to the total.
     mem_total += stats.ram_anchored();
     if (stats.runnable()) {
+      if (stats.logs_retained_bytes() > low_io_most_logs_retained_bytes &&
+          op->io_usage_ == MaintenanceOp::LOW_IO_USAGE) {
+        low_io_most_logs_retained_bytes_op = op;
+        low_io_most_logs_retained_bytes = stats.logs_retained_bytes();
+      }
+
       if (stats.ram_anchored() > most_mem_anchored) {
         most_mem_anchored_op = op;
         most_mem_anchored = stats.ram_anchored();
       }
       // We prioritize ops that can free more logs, but when it's the same we pick the one that
       // also frees up the most memory.
-      if (stats.logs_retained_bytes() > most_logs_retained_bytes ||
-          (stats.logs_retained_bytes() == most_logs_retained_bytes &&
-           stats.ram_anchored() > most_logs_retained_bytes_ram_anchored)) {
+      if (stats.logs_retained_bytes() > 0 &&
+          (stats.logs_retained_bytes() > most_logs_retained_bytes ||
+           (stats.logs_retained_bytes() == most_logs_retained_bytes &&
+            stats.ram_anchored() > most_logs_retained_bytes_ram_anchored))) {
         most_logs_retained_bytes_op = op;
         most_logs_retained_bytes = stats.logs_retained_bytes();
         most_logs_retained_bytes_ram_anchored = stats.ram_anchored();
@@ -269,7 +300,20 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
       }
     }
   }
-  // Look at free memory.  If it is dangerously low, we must select something
+
+  // Look at ops that we can run quickly that free up log retention.
+  if (low_io_most_logs_retained_bytes_op) {
+    if (low_io_most_logs_retained_bytes > 0) {
+      VLOG_AND_TRACE("maintenance", 1)
+                    << "Performing " << low_io_most_logs_retained_bytes_op->name() << ", "
+                    << "because it can free up more logs "
+                    << "at " << low_io_most_logs_retained_bytes
+                    << " bytes with a low IO cost";
+      return low_io_most_logs_retained_bytes_op;
+    }
+  }
+
+  // Look at free memory. If it is dangerously low, we must select something
   // that frees memory-- the op with the most anchored memory.
   if (mem_total > mem_target_) {
     if (!most_mem_anchored_op) {
@@ -284,23 +328,15 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
             << most_mem_anchored_op->name();
     return most_mem_anchored_op;
   }
-  // At this point, we know memory pressure is not too high.
-  // If our threadpool has more than one thread, we should leave a spare thread for future
-  // memory emergencies that might happen in the future.
-  if ((num_threads_ > 1) && (free_threads == 1)) {
-    VLOG_AND_TRACE("maintenance", 1) << "Leaving a free thread in case memory pressure becomes "
-            << "high in the future.";
-    return NULL;
-  }
+
   if (most_logs_retained_bytes_op) {
-    if (most_logs_retained_bytes > 0) {
-      VLOG_AND_TRACE("maintenance", 1)
-        << "Performing " << most_logs_retained_bytes_op->name() << ", "
-        << "because it can free up more logs " << "at " << most_logs_retained_bytes
-        << " bytes";
-      return most_logs_retained_bytes_op;
-    }
+    VLOG_AND_TRACE("maintenance", 1)
+            << "Performing " << most_logs_retained_bytes_op->name() << ", "
+            << "because it can free up more logs " << "at " << most_logs_retained_bytes
+            << " bytes";
+    return most_logs_retained_bytes_op;
   }
+
   if (best_perf_improvement_op) {
     if (best_perf_improvement > 0) {
       VLOG_AND_TRACE("maintenance", 1) << "Performing " << best_perf_improvement_op->name() << ", "

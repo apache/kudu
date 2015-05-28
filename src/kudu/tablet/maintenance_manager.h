@@ -122,7 +122,13 @@ class MaintenanceOp {
  public:
   friend class MaintenanceManager;
 
-  explicit MaintenanceOp(const std::string& name);
+  // General indicator of how much IO the Op will use.
+  enum IOUsage {
+    LOW_IO_USAGE, // Low impact operations like removing a file, updating metadata.
+    HIGH_IO_USAGE // Everything else.
+  };
+
+  explicit MaintenanceOp(const std::string& name, IOUsage io_usage);
   virtual ~MaintenanceOp();
 
   // Unregister this op, if it is currently registered.
@@ -155,6 +161,8 @@ class MaintenanceOp {
 
   std::string name() const { return name_; }
 
+  IOUsage io_usage() const { return io_usage_; }
+
  private:
   DISALLOW_COPY_AND_ASSIGN(MaintenanceOp);
 
@@ -173,6 +181,8 @@ class MaintenanceOp {
   // The MaintenanceManager with which this op is registered, or null
   // if it is not registered.
   std::tr1::shared_ptr<MaintenanceManager> manager_;
+
+  IOUsage io_usage_;
 };
 
 struct MaintenanceOpComparator {

@@ -20,7 +20,8 @@ namespace tablet {
 class FlushMRSOp : public MaintenanceOp {
  public:
   explicit FlushMRSOp(TabletPeer* tablet_peer)
-    : MaintenanceOp(StringPrintf("FlushMRSOp(%s)", tablet_peer->tablet()->tablet_id().c_str())),
+    : MaintenanceOp(StringPrintf("FlushMRSOp(%s)", tablet_peer->tablet()->tablet_id().c_str()),
+                    MaintenanceOp::HIGH_IO_USAGE),
       tablet_peer_(tablet_peer) {
     time_since_flush_.start();
   }
@@ -49,7 +50,8 @@ class FlushDeltaMemStoresOp : public MaintenanceOp {
  public:
   explicit FlushDeltaMemStoresOp(TabletPeer* tablet_peer)
     : MaintenanceOp(StringPrintf("FlushDeltaMemStoresOp(%s)",
-                                 tablet_peer->tablet()->tablet_id().c_str())),
+                                 tablet_peer->tablet()->tablet_id().c_str()),
+                    MaintenanceOp::HIGH_IO_USAGE),
       tablet_peer_(tablet_peer) {
     time_since_flush_.start();
   }
