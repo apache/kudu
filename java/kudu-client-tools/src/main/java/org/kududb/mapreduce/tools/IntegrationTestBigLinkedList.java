@@ -1036,7 +1036,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       client.setTimeoutMillis(timeout);
 
       KuduTable table = client.openTable(getTableName(getConf()));
-      KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, table.getSchema());
+      KuduScanner.KuduScannerBuilder builder =
+          client.newScannerBuilder(table, table.getSchema())
+              .timeoutMs(timeout);
 
 
       if (cmd.hasOption("s") || cmd.hasOption("e") ) {
@@ -1253,7 +1255,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
        */
       private RowResult nextNode(long prevKeyOne, long prevKeyTwo) throws IOException {
         KuduScanner.KuduScannerBuilder builder =
-            client.newScannerBuilder(table, scanSchema);
+            client.newScannerBuilder(table, scanSchema)
+                .timeoutMs(timeout);
 
         configureScannerForRandomRead(builder, table, prevKeyOne, prevKeyTwo);
 
@@ -1506,7 +1509,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     private RowResult nextNode(long keyOne, long keyTwo) throws Exception {
       KuduScanner.KuduScannerBuilder builder =
-          client.newScannerBuilder(table, table.getSchema());
+          client.newScannerBuilder(table, table.getSchema())
+              .timeoutMs(timeout);
       configureScannerForRandomRead(builder, table, keyOne, keyTwo);
 
       return getOneRowResult(builder.deadlineMillis(timeout).build());
