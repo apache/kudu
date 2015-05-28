@@ -88,8 +88,8 @@ export TSAN_OPTIONS
 ASAN_OPTIONS="$ASAN_OPTIONS detect_leaks=1"
 export ASAN_OPTIONS
 
-# Set up supressions for LeakSanitizer
-LSAN_OPTIONS="$LSAN_OPTIONS supressions=$ROOT/build-support/lsan-suppressions.txt"
+# Set up suppressions for LeakSanitizer
+LSAN_OPTIONS="$LSAN_OPTIONS suppressions=$ROOT/build-support/lsan-suppressions.txt"
 export LSAN_OPTIONS
 
 # Suppressions require symbolization. We'll default to using the symbolizer in
