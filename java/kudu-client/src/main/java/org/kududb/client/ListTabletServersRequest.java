@@ -45,6 +45,6 @@ public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse>
     }
     ListTabletServersResponse response = new ListTabletServersResponse(deadlineTracker
         .getElapsedMillis(), tsUUID, serversCount, servers);
-    return new Pair<ListTabletServersResponse, Object>(response, null);
+    return new Pair<ListTabletServersResponse, Object>(response, respBuilder.getError());
   }
 }
