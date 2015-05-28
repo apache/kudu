@@ -28,7 +28,7 @@ DEFINE_int32(tablet_server_web_port, TabletServer::kDefaultWebPort,
              "Port to bind to for the tablet server web server");
 DEFINE_int32(tablet_server_num_acceptors_per_address, 1,
              "Number of RPC acceptor threads for each bound address");
-DEFINE_int32(tablet_server_num_service_threads, 10,
+DEFINE_int32(tablet_server_num_service_threads, 20,
              "Number of RPC worker threads to run");
 DEFINE_string(tablet_server_master_addrs, "127.0.0.1:7051",
               "Comma separated addresses of the masters which the "

@@ -33,7 +33,7 @@ DEFINE_int32(checksum_timeout_sec, 120,
              "Maximum total seconds that we will wait for a checksum scan to "
              "complete before timing out.");
 
-DEFINE_int32(checksum_scan_concurrency, 16,
+DEFINE_int32(checksum_scan_concurrency, 4,
              "Number of concurrent checksum scans to execute per tablet server.");
 
 // Print an informational message to cerr.
