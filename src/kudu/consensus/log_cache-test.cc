@@ -258,7 +258,7 @@ TEST_F(LogCacheTest, TestGlobalMemoryLimit) {
   CloseAndReopenCache(MinimumOpId());
 
   // Exceed the global hard limit.
-  cache_->parent_tracker_->Consume(3 * 1024 * 1024);
+  ScopedTrackedConsumption consumption(cache_->parent_tracker_, 3*1024*1024);
 
   const int kPayloadSize = 768 * 1024;
 
@@ -268,8 +268,6 @@ TEST_F(LogCacheTest, TestGlobalMemoryLimit) {
 
   ASSERT_EQ(1, cache_->num_cached_ops());
   ASSERT_LE(cache_->BytesUsed(), 1024 * 1024);
-
-  cache_->parent_tracker_->Release(3 * 1024 * 1024);
 }
 
 // Test that the log cache properly replaces messages when an index

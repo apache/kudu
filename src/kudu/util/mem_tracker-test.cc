@@ -211,4 +211,13 @@ TEST(MemTrackerTest, FindFunctionsTakeOwnership) {
   refs.clear();
 }
 
+TEST(MemTrackerTest, ScopedTrackedConsumption) {
+  shared_ptr<MemTracker> m = MemTracker::CreateTracker(-1, "test");
+  ASSERT_EQ(0, m->consumption());
+  {
+    ScopedTrackedConsumption consumption(m, 1);
+    ASSERT_EQ(1, m->consumption());
+  }
+  ASSERT_EQ(0, m->consumption());
+}
 } // namespace kudu

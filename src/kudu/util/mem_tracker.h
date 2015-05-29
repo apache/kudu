@@ -338,6 +338,26 @@ class MemTrackerAllocator : public Alloc {
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
 };
 
+// Convenience class that adds memory consumption to a tracker when declared,
+// releasing it when the end of scope is reached.
+class ScopedTrackedConsumption {
+ public:
+  ScopedTrackedConsumption(const std::tr1::shared_ptr<MemTracker>& tracker,
+                           int64_t to_consume)
+    : tracker_(tracker),
+      consumption_(to_consume) {
+    tracker_->Consume(consumption_);
+  }
+
+  ~ScopedTrackedConsumption() {
+    tracker_->Release(consumption_);
+  }
+
+ private:
+  std::tr1::shared_ptr<MemTracker> tracker_;
+  int64_t consumption_;
+};
+
 } // namespace kudu
 
 #endif // KUDU_UTIL_MEM_TRACKER_H
