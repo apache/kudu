@@ -249,7 +249,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     CHECK_OK(client_->OpenTable(kTableId, &table));
 
     shared_ptr<KuduSession> session = client_->NewSession();
-    session->SetTimeoutMillis(20000);
+    session->SetTimeoutMillis(60000);
     CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
     for (int i = 0; i < num_batches; i++) {
@@ -931,13 +931,19 @@ TEST_F(RaftConsensusITest, TestChurnyElections) {
   workload.Setup();
   workload.Start();
 
+  // Run for either a prescribed number of writes, or 30 seconds,
+  // whichever comes first. This prevents test timeouts on slower
+  // build machines, TSAN builds, etc.
+  Stopwatch sw;
+  sw.start();
   const int kNumWrites = AllowSlowTests() ? 10000 : 1000;
-  while (workload.rows_inserted() < kNumWrites) {
+  while (workload.rows_inserted() < kNumWrites &&
+         sw.elapsed().wall_seconds() < 30) {
     SleepFor(MonoDelta::FromMilliseconds(10));
     NO_FATALS(AssertNoTabletServersCrashed());
   }
-
   workload.StopAndJoin();
+  ASSERT_GT(workload.rows_inserted(), 0) << "No rows inserted";
 
   // Ensure that the replicas converge.
   // We don't know exactly how many rows got inserted, since the writer
