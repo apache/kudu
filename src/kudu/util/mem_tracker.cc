@@ -16,8 +16,13 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/env.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
+
+DEFINE_int64(mem_tracker_memory_limit, 0,
+       "Maximum amount of memory this daemon should use. 0 for "
+       "autosizing based on the total system memory.");
 
 namespace kudu {
 
@@ -42,8 +47,17 @@ static GoogleOnceType root_tracker_once = GOOGLE_ONCE_INIT;
 static Atomic64 released_memory_since_gc;
 
 void MemTracker::CreateRootTracker() {
-  // TODO: The byte limit should be configurable via gflag.
-  root_tracker.reset(new MemTracker(NULL, -1, "root",
+  int64_t limit = FLAGS_mem_tracker_memory_limit;
+  if (limit == 0) {
+    // If no limit is provided, we'll use 80% of system RAM.
+    int64_t total_ram;
+    CHECK_OK(Env::Default()->GetTotalRAMBytes(&total_ram));
+    limit = total_ram * 4;
+    limit /= 5;
+  }
+  LOG(INFO) << StringPrintf("MemTracker: targeting memory size of %.6f GB",
+                            (static_cast<float>(limit) / (1024.0 * 1024.0 * 1024.0)));
+  root_tracker.reset(new MemTracker(NULL, limit, "root",
                                     shared_ptr<MemTracker>()));
   root_tracker->Init();
 }

@@ -8,6 +8,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.pb.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -18,12 +19,13 @@ using std::vector;
 using strings::Substitute;
 using kudu::tablet::MaintenanceManagerStatusPB;
 
+DECLARE_int64(mem_tracker_memory_limit);
+
 METRIC_DEFINE_entity(test);
 METRIC_DEFINE_gauge_uint32(test, maintenance_ops_running,
                            "Number of Maintenance Operations Running",
                            kudu::MetricUnit::kMaintenanceOperations,
                            "The number of background maintenance operations currently running.");
-
 METRIC_DEFINE_histogram(test, maintenance_op_duration,
                         "Maintenance Operation Duration",
                         kudu::MetricUnit::kSeconds, "", 60000000LU, 2);
@@ -35,10 +37,11 @@ const int kHistorySize = 4;
 class MaintenanceManagerTest : public KuduTest {
  public:
   MaintenanceManagerTest() {
+    FLAGS_mem_tracker_memory_limit = 1000;
+
     MaintenanceManager::Options options;
     options.num_threads = 2;
     options.polling_interval_ms = 1;
-    options.memory_limit = 1000;
     options.history_size = kHistorySize;
     manager_.reset(new MaintenanceManager(options));
     manager_->Init();
@@ -76,9 +79,12 @@ class TestMaintenanceOp : public MaintenanceOp {
       perf_improvement_(0),
       metric_entity_(METRIC_ENTITY_test.Instantiate(&metric_registry_, "test")),
       maintenance_op_duration_(METRIC_maintenance_op_duration.Instantiate(metric_entity_)),
-      maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)) { }
+      maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)) {
+    MemTracker::GetRootTracker()->Consume(ram_anchored_);
+  }
 
   virtual ~TestMaintenanceOp() {
+    MemTracker::GetRootTracker()->Release(ram_anchored_);
   }
 
   virtual bool Prepare() OVERRIDE {
@@ -140,7 +146,9 @@ class TestMaintenanceOp : public MaintenanceOp {
 
   void set_ram_anchored(uint64_t ram_anchored) {
     lock_guard<Mutex> guard(&lock_);
+    MemTracker::GetRootTracker()->Release(ram_anchored_);
     ram_anchored_ = ram_anchored;
+    MemTracker::GetRootTracker()->Consume(ram_anchored_);
   }
 
   void set_logs_retained_bytes(uint64_t logs_retained_bytes) {
@@ -193,7 +201,6 @@ TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
 // pressure gets high.
 TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
   TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE);
-  op.set_perf_improvement(0);
   op.set_ram_anchored(100);
   manager_->RegisterOp(&op);
 

@@ -208,7 +208,6 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
   struct Options {
     int32_t num_threads;
     int32_t polling_interval_ms;
-    int64_t memory_limit;
     uint32_t history_size;
   };
 
@@ -235,9 +234,6 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
   typedef std::map<MaintenanceOp*, MaintenanceOpStats,
           MaintenanceOpComparator> OpMapTy;
 
-  static Status CalculateMemTotal(uint64_t* total);
-  Status CalculateMemTarget(uint64_t* mem_target);
-
   void RunSchedulerThread();
 
   // find the best op, or null if there is nothing we want to run
@@ -252,10 +248,8 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
   gscoped_ptr<ThreadPool> thread_pool_;
   ConditionVariable cond_;
   bool shutdown_;
-  uint64_t mem_target_;
   uint64_t running_ops_;
   int32_t polling_interval_ms_;
-  int64_t memory_limit_;
   // Vector used as a circular buffer for recently completed ops. Elements need to be added at
   // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
   std::vector<CompletedOp> completed_ops_;

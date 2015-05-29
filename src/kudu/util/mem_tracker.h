@@ -112,6 +112,9 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
   // Returns a list of all the valid trackers.
   static void ListTrackers(std::vector<std::tr1::shared_ptr<MemTracker> >* trackers);
 
+  // Gets a shared_ptr to the "root" tracker, creating it if necessary.
+  static std::tr1::shared_ptr<MemTracker> GetRootTracker();
+
   // Updates consumption from the consumption metric specified in the constructor.
   // NOTE: this method will crash if 'consumption_metric_' is not set.
   void UpdateConsumption();
@@ -240,9 +243,6 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
       const std::string& id,
       std::tr1::shared_ptr<MemTracker>* tracker,
       const std::tr1::shared_ptr<MemTracker>& parent);
-
-  // Gets a shared_ptr to the "root" tracker, creating it if necessary.
-  static std::tr1::shared_ptr<MemTracker> GetRootTracker();
 
   // Creates the root tracker.
   static void CreateRootTracker();

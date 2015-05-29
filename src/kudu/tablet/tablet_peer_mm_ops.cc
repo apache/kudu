@@ -186,7 +186,6 @@ void LogGCOp::UpdateStats(MaintenanceOpStats* stats) {
   }
 
   stats->set_logs_retained_bytes(retention_size);
-  stats->set_ram_anchored(0);
   stats->set_runnable(sem_.GetValue() == 1);
 }
 

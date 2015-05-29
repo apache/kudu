@@ -4,11 +4,8 @@
 #include "kudu/tablet/maintenance_manager.h"
 
 #include <boost/foreach.hpp>
-#include <errno.h>
-#include <set>
 #include <stdint.h>
 #include <string>
-#include <sys/sysinfo.h>
 #include <tr1/memory>
 #include <utility>
 
@@ -16,10 +13,9 @@
 
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/tablet/mvcc.h"
-#include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/debug/trace_logging.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
@@ -35,9 +31,6 @@ DEFINE_int32(maintenance_manager_num_threads, 1,
 DEFINE_int32(maintenance_manager_polling_interval_ms, 250,
        "Polling interval for the maintenance manager scheduler, "
        "in milliseconds.");
-DEFINE_int64(maintenance_manager_memory_limit, 0,
-       "Maximum amount of memory this daemon should use.  0 for "
-       "autosizing based on the total system memory.");
 DEFINE_int32(maintenance_manager_history_size, 8,
        "Number of completed operations the manager is keeping track of.");
 DEFINE_bool(enable_maintenance_manager, true,
@@ -81,7 +74,6 @@ const MaintenanceManager::Options MaintenanceManager::DEFAULT_OPTIONS = {
   0,
   0,
   0,
-  0,
 };
 
 MaintenanceManager::MaintenanceManager(const Options& options)
@@ -89,13 +81,10 @@ MaintenanceManager::MaintenanceManager(const Options& options)
       FLAGS_maintenance_manager_num_threads : options.num_threads),
     cond_(&lock_),
     shutdown_(false),
-    mem_target_(0),
     running_ops_(0),
     polling_interval_ms_(options.polling_interval_ms <= 0 ?
           FLAGS_maintenance_manager_polling_interval_ms :
           options.polling_interval_ms),
-    memory_limit_(options.memory_limit <= 0 ?
-          FLAGS_maintenance_manager_memory_limit : options.memory_limit),
     completed_ops_count_(0) {
   CHECK_OK(ThreadPoolBuilder("MaintenanceMgr").set_min_threads(num_threads_)
                .set_max_threads(num_threads_).Build(&thread_pool_));
@@ -110,9 +99,6 @@ MaintenanceManager::~MaintenanceManager() {
 }
 
 Status MaintenanceManager::Init() {
-  RETURN_NOT_OK(CalculateMemTarget(&mem_target_));
-  LOG(INFO) << StringPrintf("MaintenanceManager: targeting memory size of %.6f GB",
-                (static_cast<float>(mem_target_) / (1024.0 * 1024.0 * 1024.0)));
   RETURN_NOT_OK(Thread::Create("maintenance", "maintenance_scheduler",
       boost::bind(&MaintenanceManager::RunSchedulerThread, this),
       &monitor_thread_));
@@ -219,7 +205,8 @@ void MaintenanceManager::RunSchedulerThread() {
 
 // Finding the best operation goes through four filters:
 // - If there's an Op that we can run quickly that frees log retention, we run it.
-// - If we're close to reaching our memory limit, we run the Op with the highest RAM usage.
+// - If we've hit the overall process memory limit (note: this includes memory that the Ops cannot
+//   free), we run the Op with the highest RAM usage.
 // - If there are Ops that retain logs, we run the one that has the highest retention (and if many
 //   qualify, then we run the one that also frees up the most RAM).
 // - Finally, if there's nothing else that we really need to do, we run the Op that will improve
@@ -251,7 +238,6 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   int64_t low_io_most_logs_retained_bytes = 0;
   MaintenanceOp* low_io_most_logs_retained_bytes_op = NULL;
 
-  uint64_t mem_total = 0;
   uint64_t most_mem_anchored = 0;
   MaintenanceOp* most_mem_anchored_op = NULL;
 
@@ -267,37 +253,33 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
     // Update op stats.
     stats.Clear();
     op->UpdateStats(&stats);
-    if (!stats.valid()) {
+    if (!stats.valid() || !stats.runnable()) {
       continue;
     }
-    // Add anchored memory to the total.
-    mem_total += stats.ram_anchored();
-    if (stats.runnable()) {
-      if (stats.logs_retained_bytes() > low_io_most_logs_retained_bytes &&
-          op->io_usage_ == MaintenanceOp::LOW_IO_USAGE) {
-        low_io_most_logs_retained_bytes_op = op;
-        low_io_most_logs_retained_bytes = stats.logs_retained_bytes();
-      }
+    if (stats.logs_retained_bytes() > low_io_most_logs_retained_bytes &&
+        op->io_usage_ == MaintenanceOp::LOW_IO_USAGE) {
+      low_io_most_logs_retained_bytes_op = op;
+      low_io_most_logs_retained_bytes = stats.logs_retained_bytes();
+    }
 
-      if (stats.ram_anchored() > most_mem_anchored) {
-        most_mem_anchored_op = op;
-        most_mem_anchored = stats.ram_anchored();
-      }
-      // We prioritize ops that can free more logs, but when it's the same we pick the one that
-      // also frees up the most memory.
-      if (stats.logs_retained_bytes() > 0 &&
-          (stats.logs_retained_bytes() > most_logs_retained_bytes ||
-           (stats.logs_retained_bytes() == most_logs_retained_bytes &&
-            stats.ram_anchored() > most_logs_retained_bytes_ram_anchored))) {
-        most_logs_retained_bytes_op = op;
-        most_logs_retained_bytes = stats.logs_retained_bytes();
-        most_logs_retained_bytes_ram_anchored = stats.ram_anchored();
-      }
-      if ((!best_perf_improvement_op) ||
-          (stats.perf_improvement() > best_perf_improvement)) {
-        best_perf_improvement_op = op;
-        best_perf_improvement = stats.perf_improvement();
-      }
+    if (stats.ram_anchored() > most_mem_anchored) {
+      most_mem_anchored_op = op;
+      most_mem_anchored = stats.ram_anchored();
+    }
+    // We prioritize ops that can free more logs, but when it's the same we pick the one that
+    // also frees up the most memory.
+    if (stats.logs_retained_bytes() > 0 &&
+        (stats.logs_retained_bytes() > most_logs_retained_bytes ||
+            (stats.logs_retained_bytes() == most_logs_retained_bytes &&
+                stats.ram_anchored() > most_logs_retained_bytes_ram_anchored))) {
+      most_logs_retained_bytes_op = op;
+      most_logs_retained_bytes = stats.logs_retained_bytes();
+      most_logs_retained_bytes_ram_anchored = stats.ram_anchored();
+    }
+    if ((!best_perf_improvement_op) ||
+        (stats.perf_improvement() > best_perf_improvement)) {
+      best_perf_improvement_op = op;
+      best_perf_improvement = stats.perf_improvement();
     }
   }
 
@@ -315,16 +297,19 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 
   // Look at free memory. If it is dangerously low, we must select something
   // that frees memory-- the op with the most anchored memory.
-  if (mem_total > mem_target_) {
+  shared_ptr<MemTracker> root_tracker = MemTracker::GetRootTracker();
+  int64_t mem_limit = root_tracker->limit();
+  int64_t mem_consumed = root_tracker->consumption();
+  if (mem_consumed > mem_limit) {
     if (!most_mem_anchored_op) {
-      LOG(INFO) << "mem_total is at " << mem_total << ", whereas we are "
-              << "targeting " << mem_target_ << ".  However, there are "
-              << "no ops currently runnable which would free memory. ";
+      LOG(INFO) << "we are consuming " << mem_consumed << " bytes but "
+                << "targeting " << mem_limit << " bytes.  However, there are "
+                << "no ops currently runnable which would free memory.";
       return NULL;
     }
-    VLOG_AND_TRACE("maintenance", 1) << "mem_total is at " << mem_total << ", whereas we are "
-            << "targeting " << mem_target_ << ".  Running the op "
-            << "which anchors the most memory: "
+    VLOG_AND_TRACE("maintenance", 1) << "we are consuming " << mem_consumed
+            << " bytes but targeting " << mem_limit
+            << " bytes.  Running the op which anchors the most memory: "
             << most_mem_anchored_op->name();
     return most_mem_anchored_op;
   }
@@ -372,34 +357,6 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
   running_ops_--;
   op->running_--;
   op->cond_->Signal();
-}
-
-Status MaintenanceManager::CalculateMemTarget(uint64_t* mem_target) {
-  if (memory_limit_ > 0) {
-    *mem_target = memory_limit_;
-    return Status::OK();
-  }
-  uint64_t mem_total = 0;
-  RETURN_NOT_OK(CalculateMemTotal(&mem_total));
-  *mem_target = mem_total * 4;
-  *mem_target /= 5;
-  return Status::OK();
-}
-
-// TODO: put this into Env
-Status MaintenanceManager::CalculateMemTotal(uint64_t* total) {
-#ifdef __linux__
-  struct sysinfo info;
-  if (sysinfo(&info) < 0) {
-    int ret = errno;
-    return Status::IOError("sysinfo() failed",
-                           ErrnoToString(ret), ret);
-  }
-  *total = info.totalram;
-  return Status::OK();
-#else
-#error "please implement CalculateMemTotal for this platform"
-#endif
 }
 
 void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
