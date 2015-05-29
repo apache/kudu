@@ -178,6 +178,9 @@ build_kudu() {
 run_benchmarks() {
 
   # run all of the variations of mt-tablet-test
+  #
+  # TODO: remove --block_manager override once kudu-benchmarks Jenkins job is no
+  # longer running on CentOS 6.2. See KUDU-794.
   ./build/latest/mt-tablet-test \
     --gtest_filter=\*DoTestAllAtOnce\* \
     --num_counter_threads=0 \
@@ -187,6 +190,7 @@ run_benchmarks() {
     --flusher_backoff=1.0 \
     --flusher_initial_frequency_ms=1000 \
     --inserts_per_thread=1000000 \
+    --block_manager=file \
     &> $LOGDIR/${MT_TABLET_TEST}.log
 
   # run rpc-bench test 5 times. 10 seconds per run
