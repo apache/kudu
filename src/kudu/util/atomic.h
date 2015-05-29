@@ -5,6 +5,7 @@
 #define KUDU_UTIL_ATOMIC_H
 
 #include <algorithm>
+#include <boost/type_traits/make_signed.hpp>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
@@ -37,7 +38,9 @@ enum MemoryOrder {
 // NOTE: All of public operations use an implicit memory order of
 // kMemOrderNoBarrier unless otherwise specified.
 //
-// NOTE: currently only int32_t and int64_t are supported.
+// Unlike std::atomic<>, overflowing an unsigned AtomicInt via Increment or
+// IncrementBy is undefined behavior (it is also undefined for signed types,
+// as always).
 //
 // See also: kudu/gutil/atomicops.h
 template<typename T>
@@ -112,11 +115,14 @@ class AtomicInt {
                                         const char* supported =
                                         "kMemNorderNoBarrier, kMemOrderAcquire, kMemOrderRelease");
 
-  T value_;
+  // The gutil/atomicops.h functions only operate on signed types.
+  // So, even if the user specializes on an unsigned type, we use a
+  // signed type internally.
+  typedef typename boost::make_signed<T>::type SignedT;
+  SignedT value_;
 
   DISALLOW_COPY_AND_ASSIGN(AtomicInt);
 };
-
 
 // Adapts AtomicInt to handle boolean values.
 //
@@ -204,7 +210,7 @@ inline T AtomicInt<T>::CompareAndSwap(T expected_val, T new_val, MemoryOrder mem
           &value_, expected_val, new_val);
     }
     case kMemOrderBarrier: {
-      FatalMemOrderNotSupported("CompareAndSwap/CompareAndSwap");
+      FatalMemOrderNotSupported("CompareAndSwap/CompareAndSet");
       break;
     }
     case kMemOrderAcquire: {
