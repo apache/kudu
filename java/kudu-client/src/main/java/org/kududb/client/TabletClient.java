@@ -702,6 +702,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     return "[Peer " + uuid + "] ";
   }
 
+  /**
+   * Returns this tablet server's uuid.
+   * @return a string that contains this tablet server's uuid
+   */
+  String getUuid() {
+    return uuid;
+  }
+
   public String toString() {
     final StringBuilder buf = new StringBuilder(13 + 10 + 6 + 64 + 7 + 32 + 16 + 1 + 17 + 2 + 1);
     buf.append("TabletClient@")           // =13

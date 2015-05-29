@@ -1001,7 +1001,7 @@ public class AsyncKuduClient {
    * the tablet itself from the caches.
    */
   private void invalidateTabletCache(RemoteTablet tablet, TabletClient server) {
-    LOG.info("Removing a tablet server location from " +
+    LOG.info("Removing server " + server.getUuid() + " from this tablet's cache " +
         tablet.getTabletIdAsString());
     tablet.removeTabletServer(server);
   }
