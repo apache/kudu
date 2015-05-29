@@ -457,8 +457,9 @@ std::string TransactionDriver::LogPrefix() const {
   // We use the tablet and the peer (T, P) to identify ts and tablet and the timestamp (Ts) to
   // (help) identify the transaction. The state string (S) describes the state of the transaction.
   return strings::Substitute("T $0 P $1 S $2 Ts $3: ",
-                             consensus_->tablet_id(),
-                             consensus_->peer_uuid(),
+                             // consensus_ is NULL in some unit tests.
+                             PREDICT_TRUE(consensus_) ? consensus_->tablet_id() : "(unknown)",
+                             PREDICT_TRUE(consensus_) ? consensus_->peer_uuid() : "(unknown)",
                              state_str,
                              ts_string);
 }
