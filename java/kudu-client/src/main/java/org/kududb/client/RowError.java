@@ -2,8 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import kudu.WireProtocol;
-import kudu.tserver.Tserver;
+import org.kududb.WireProtocol;
+import org.kududb.tserver.Tserver;
 
 /**
  * Wrapper class for a single row error.

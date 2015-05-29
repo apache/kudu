@@ -2,9 +2,9 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import kudu.WireProtocol;
-import kudu.consensus.Metadata;
-import kudu.master.Master;
+import org.kududb.WireProtocol;
+import org.kududb.consensus.Metadata;
+import org.kududb.master.Master;
 
 /**
  * Response for {@link GetMasterRegistrationRequest}.

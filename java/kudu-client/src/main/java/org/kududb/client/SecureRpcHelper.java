@@ -29,11 +29,11 @@ package org.kududb.client;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import kudu.rpc.RpcHeader;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.Channels;
+import org.kududb.rpc.RpcHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

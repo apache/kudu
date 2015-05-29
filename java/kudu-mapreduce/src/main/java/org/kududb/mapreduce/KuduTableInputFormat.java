@@ -20,7 +20,7 @@ import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import org.kududb.ColumnSchema;
-import kudu.Common;
+import org.kududb.Common;
 import org.kududb.Schema;
 import org.kududb.client.*;
 import org.apache.commons.logging.Log;

@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package kudu.tablet;
 
+option java_package = "org.kududb.tablet";
+
 import "kudu/common/wire_protocol.proto";
 import "kudu/tablet/metadata.proto";
 

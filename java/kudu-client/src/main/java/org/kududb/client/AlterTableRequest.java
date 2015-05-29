@@ -6,7 +6,7 @@ import com.google.protobuf.Message;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
-import static kudu.master.Master.*;
+import static org.kududb.master.Master.*;
 
 /**
  * RPC used to alter a table. When it returns it doesn't mean that the table is altered,

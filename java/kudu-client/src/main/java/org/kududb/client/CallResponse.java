@@ -4,7 +4,7 @@ package org.kududb.client;
 
 import java.util.List;
 
-import kudu.rpc.RpcHeader;
+import org.kududb.rpc.RpcHeader;
 import org.kududb.util.Slice;
 
 import org.jboss.netty.buffer.ChannelBuffer;

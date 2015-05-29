@@ -6,7 +6,7 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.common.primitives.Shorts;
 
-import static kudu.Common.DataType;
+import static org.kududb.Common.DataType;
 
 /**
  * Describes all the types available to build table schemas.

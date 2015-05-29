@@ -8,7 +8,7 @@ import com.google.common.collect.Ranges;
 import com.google.common.collect.Sets;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import kudu.master.Master;
+import org.kududb.master.Master;
 import org.kududb.util.Slice;
 import org.jboss.netty.util.Timeout;
 import org.jboss.netty.util.TimerTask;

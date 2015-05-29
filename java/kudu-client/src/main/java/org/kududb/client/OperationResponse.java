@@ -2,7 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import kudu.tserver.Tserver;
+import org.kududb.tserver.Tserver;
 
 public class OperationResponse extends KuduRpcResponse {
 

@@ -3,8 +3,8 @@
 package org.kududb.client;
 
 import java.util.Iterator;
-import kudu.WireProtocol;
 import org.kududb.Schema;
+import org.kududb.WireProtocol;
 import org.kududb.util.Slice;
 
 /**

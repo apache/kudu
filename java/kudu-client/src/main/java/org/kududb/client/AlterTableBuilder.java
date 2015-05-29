@@ -4,7 +4,7 @@ package org.kududb.client;
 
 import org.kududb.ColumnSchema;
 import org.kududb.Type;
-import static kudu.master.Master.AlterTableRequestPB;
+import static org.kududb.master.Master.AlterTableRequestPB;
 
 /**
  * This builder must be used to alter a table. At least one change must be specified.

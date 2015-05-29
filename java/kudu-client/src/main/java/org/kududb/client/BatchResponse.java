@@ -5,7 +5,7 @@ package org.kududb.client;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import kudu.tserver.Tserver;
+import org.kududb.tserver.Tserver;
 
 /**
  * Response type for Batch (which is used internally by AsyncKuduSession).

@@ -4,7 +4,7 @@ package org.kududb.client;
 
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
-import kudu.tserver.Tserver;
+import org.kududb.tserver.Tserver;
 
 import java.util.ArrayList;
 

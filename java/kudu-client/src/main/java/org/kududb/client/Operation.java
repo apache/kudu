@@ -11,10 +11,8 @@ import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
-
-import kudu.WireProtocol.RowOperationsPB;
-import kudu.tserver.Tserver;
-
+import org.kududb.WireProtocol.RowOperationsPB;
+import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
@@ -22,7 +20,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 

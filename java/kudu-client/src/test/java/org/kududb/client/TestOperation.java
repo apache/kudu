@@ -6,14 +6,13 @@ import static org.junit.Assert.assertEquals;
 
 import java.util.ArrayList;
 
-import kudu.WireProtocol.RowOperationsPB;
-import kudu.tserver.Tserver.WriteRequestPBOrBuilder;
-
 import org.junit.Test;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
+import org.kududb.WireProtocol.RowOperationsPB;
 import org.kududb.client.Operation.ChangeType;
+import org.kududb.tserver.Tserver.WriteRequestPBOrBuilder;
 import org.mockito.Mockito;
 
 import com.google.common.primitives.Longs;

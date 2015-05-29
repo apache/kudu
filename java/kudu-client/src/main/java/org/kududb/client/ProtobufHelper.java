@@ -6,7 +6,7 @@ import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
-import kudu.Common;
+import org.kududb.Common;
 import org.kududb.Schema;
 import org.kududb.Type;
 

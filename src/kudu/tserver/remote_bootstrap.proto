@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package kudu.tserver;
 
+option java_package = "org.kududb.tserver";
+
 import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/consensus.proto";
 import "kudu/fs/fs.proto";

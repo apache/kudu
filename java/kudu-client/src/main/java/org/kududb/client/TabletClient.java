@@ -28,13 +28,12 @@
 
 package org.kududb.client;
 
-import kudu.WireProtocol;
-import kudu.master.Master;
-
 import com.stumbleupon.async.Deferred;
 
-import kudu.rpc.RpcHeader;
-import kudu.tserver.Tserver;
+import org.kududb.WireProtocol;
+import org.kududb.master.Master;
+import org.kududb.rpc.RpcHeader;
+import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
 
 import org.jboss.netty.buffer.ChannelBuffer;

@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package kudu.log;
 
+option java_package = "org.kududb.log";
+
 import "kudu/common/common.proto";
 import "kudu/consensus/consensus.proto";
 import "kudu/consensus/metadata.proto";

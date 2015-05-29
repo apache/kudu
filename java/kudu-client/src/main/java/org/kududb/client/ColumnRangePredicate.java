@@ -5,7 +5,7 @@ package org.kududb.client;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
 import org.kududb.Type;
-import kudu.tserver.Tserver;
+import org.kududb.tserver.Tserver;
 
 /**
  * A range predicate on one of the columns in the underlying data

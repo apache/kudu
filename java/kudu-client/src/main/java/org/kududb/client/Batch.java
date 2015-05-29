@@ -4,8 +4,8 @@ package org.kududb.client;
 
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import kudu.WireProtocol;
-import kudu.tserver.Tserver;
+import org.kududb.WireProtocol;
+import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 

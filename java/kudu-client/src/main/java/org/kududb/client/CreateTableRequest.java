@@ -4,7 +4,7 @@ package org.kududb.client;
 
 import com.google.protobuf.Message;
 import org.kududb.Schema;
-import kudu.master.Master;
+import org.kududb.master.Master;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 

@@ -2,7 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import kudu.Common;
+import org.kududb.Common;
 
 /**
  * The possible external consistency modes on which Kudu operates.

@@ -2,8 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import kudu.WireProtocol;
-import kudu.rpc.RpcHeader;
+import org.kududb.WireProtocol;
+import org.kududb.rpc.RpcHeader;
 
 /**
  * This exception is thrown by Tablet Servers when something goes wrong processing a request.

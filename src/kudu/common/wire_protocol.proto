@@ -8,6 +8,8 @@
 // place such as common/common.proto or within cfile/, server/, etc.
 package kudu;
 
+option java_package = "org.kududb";
+
 import "kudu/common/common.proto";
 import "kudu/consensus/metadata.proto";
 

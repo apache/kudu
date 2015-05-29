@@ -3,7 +3,7 @@
 package org.kududb.client;
 
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import kudu.master.Master;
+import org.kududb.master.Master;
 
 /**
  * This is a builder class for all the options that can be provided while creating a table.

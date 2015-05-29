@@ -2,8 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import kudu.master.Master;
-import kudu.rpc.RpcHeader;
+import org.kududb.master.Master;
+import org.kududb.rpc.RpcHeader;
 
 /**
  * This exception is thrown when a Master responds to an RPC with an error message

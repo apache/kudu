@@ -25,6 +25,8 @@ option optimize_for = SPEED;
 
 package kudu.rpc;
 
+option java_package = "org.kududb.rpc";
+
 // See https://issues.apache.org/jira/browse/HBASE-7898 for high-level
 // description of RPC specification.
 //

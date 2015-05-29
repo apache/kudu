@@ -30,7 +30,7 @@ package org.kududb.client;
 import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
-import kudu.Common;
+import org.kududb.Common;
 import org.kududb.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
@@ -39,7 +39,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import static kudu.tserver.Tserver.*;
+import static org.kududb.tserver.Tserver.*;
 
 /**
  * Creates a scanner to read data from Kudu.
