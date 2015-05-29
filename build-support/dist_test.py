@@ -38,6 +38,8 @@ DEPS_FOR_ALL = \
      "build-support/stacktrace_addr2line.pl",
      "build-support/run-test.sh",
      "build-support/run_dist_test.py",
+     "build-support/tsan-suppressions.txt",
+     "build-support/lsan-suppressions.txt",
 
      # TODO: should pick these up from ldd so that we don't
      # distribute more than necessary.
