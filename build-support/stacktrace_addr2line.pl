@@ -47,6 +47,9 @@ if (! -x $binary || ! -r $binary) {
 # Cache lookups to speed processing of files with repeated trace addresses.
 my %addr2line_map = ();
 
+# Disable stdout buffering
+$| = 1;
+
 # Reading from <ARGV> is magical in Perl.
 while (defined(my $input = <ARGV>)) {
   if ($input =~ /^\s+\@\s+(0x[[:xdigit:]]{6,})(?:\s(\S+))?/) {
