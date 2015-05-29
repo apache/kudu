@@ -18,6 +18,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/raft_consensus.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
@@ -671,10 +672,14 @@ PeerMessageQueue::~PeerMessageQueue() {
 }
 
 string PeerMessageQueue::LogPrefixUnlocked() const {
+  // TODO: we should probably use an atomic here. We'll just annotate
+  // away the TSAN error for now, since the worst case is a slightly out-of-date
+  // log message, and not very likely.
+  Mode mode = ANNOTATE_UNPROTECTED_READ(queue_state_.mode);
   return Substitute("T $0 P $1 [$2]: ",
                     tablet_id_,
                     local_uuid_,
-                    queue_state_.mode == LEADER ? "LEADER" : "NON_LEADER");
+                    mode == LEADER ? "LEADER" : "NON_LEADER");
 }
 
 string PeerMessageQueue::QueueState::ToString() const {
