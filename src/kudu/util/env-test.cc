@@ -700,4 +700,12 @@ TEST_F(TestEnv, TestCanonicalize) {
   ASSERT_TRUE(env_->Canonicalize(dir + "/bar", NULL).IsNotFound());
 }
 
+TEST_F(TestEnv, TestGetTotalRAMBytes) {
+  int64_t ram = 0;
+  ASSERT_OK(env_->GetTotalRAMBytes(&ram));
+
+  // Can't test much about it.
+  ASSERT_GT(ram, 0);
+}
+
 }  // namespace kudu

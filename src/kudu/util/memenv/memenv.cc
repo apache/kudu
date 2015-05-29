@@ -582,6 +582,10 @@ class InMemoryEnv : public EnvWrapper {
     return Status::OK();
   }
 
+  virtual Status GetTotalRAMBytes(int64_t* ram) OVERRIDE {
+    LOG(FATAL) << "Not implemented";
+  }
+
  private:
   void DeleteFileInternal(const std::string& fname) {
     if (!ContainsKey(file_map_, fname)) {

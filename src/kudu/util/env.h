@@ -254,6 +254,8 @@ class Env {
   // All directory entries in 'path' must exist on the filesystem.
   virtual Status Canonicalize(const std::string& path, std::string* result) = 0;
 
+  // Get the total amount of RAM installed on this machine.
+  virtual Status GetTotalRAMBytes(int64_t* ram) = 0;
  private:
   // No copying allowed
   Env(const Env&);
@@ -595,6 +597,9 @@ class EnvWrapper : public Env {
   }
   Status Canonicalize(const std::string& path, std::string* result) OVERRIDE {
     return target_->Canonicalize(path, result);
+  }
+  Status GetTotalRAMBytes(int64_t* ram) OVERRIDE {
+    return target_->GetTotalRAMBytes(ram);
   }
  private:
   Env* target_;
