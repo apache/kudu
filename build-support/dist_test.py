@@ -210,10 +210,12 @@ def create_archive_input(staging, argv,
   for shard in xrange(0, num_shards):
     out_archive = os.path.join(staging.dir, '%s.%d.gen.json' % (test_name, shard))
     out_isolate = os.path.join(staging.dir, '%s.%d.isolate' % (test_name, shard))
+
     command = ['build-support/run_dist_test.py',
-               '-s', str(shard),
-               '-t', str(num_shards),
-               '--timeout', str(TEST_TIMEOUT_SECS - 30),
+               '-e', 'GTEST_SHARD_INDEX=%d' % shard,
+               '-e', 'GTEST_TOTAL_SHARDS=%d' % num_shards,
+               '-e', 'KUDU_TEST_TIMEOUT=%d' % (TEST_TIMEOUT_SECS - 30),
+               '-e', 'KUDU_ALLOW_SLOW_TESTS=%s' % os.environ.get('KUDU_ALLOW_SLOW_TESTS', 1),
                "--"] + argv[1:]
 
     archive_json = dict(args=["-i", out_isolate,
