@@ -222,6 +222,7 @@ int64_t LogReader::GetMinReplicateIndex() const {
 void LogReader::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx, int32_t segments_count,
                                               std::map<int64_t, int64_t>*
                                               max_idx_to_segment_size) const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
   DCHECK_GE(segments_count, 0);
   BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
     if (max_idx_to_segment_size->size() == segments_count) {
