@@ -544,6 +544,10 @@ TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
 TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   BuildAndStart(vector<string>());
 
+  // Wait for the initial leader election to complete.
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
+                                  tablet_id_, 1));
+
   // Manually construct a write RPC to a replica and make sure it responds
   // with the correct error code.
   WriteRequestPB req;
@@ -971,7 +975,6 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
   // higher replica count so that we kill more leaders).
 
   vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=true");
   BuildAndStart(flags);
 
   OverrideFlagForSlowTests(
@@ -1022,9 +1025,7 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
     FLAGS_num_tablet_servers = 5;
     FLAGS_num_replicas = 5;
   }
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=true");
-  BuildAndStart(flags);
+  BuildAndStart(vector<string>());
 
   TServerDetails* leader;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
@@ -1067,7 +1068,7 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
 TEST_F(RaftConsensusITest, TestAutomaticLeaderElectionOneReplica) {
   FLAGS_num_tablet_servers = 1;
   FLAGS_num_replicas = 1;
-  vector<string> ts_flags = list_of("--enable_leader_failure_detection=true");
+  vector<string> ts_flags;
   vector<string> master_flags = list_of("--catalog_manager_allow_local_consensus=false");
   BuildAndStart(ts_flags, master_flags);
 
@@ -1121,9 +1122,7 @@ void RaftConsensusITest::StubbornlyWriteSameRowThread(int replica_idx, const Ato
 TEST_F(RaftConsensusITest, TestKUDU_597) {
   FLAGS_num_replicas = 3;
   FLAGS_num_tablet_servers = 3;
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=true");
-  BuildAndStart(flags);
+  BuildAndStart(vector<string>());
 
   AtomicBool finish(false);
   for (int i = 0; i < FLAGS_num_tablet_servers; i++) {
