@@ -267,7 +267,9 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     // Snooze to avoid the election timer firing again as much as possible.
     // We do not disable the election timer while running an election.
     RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
-    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked()));
+
+    MonoDelta timeout = LeaderElectionExpBackoffDeltaUnlocked();
+    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(timeout));
 
     const QuorumPB& active_quorum = state_->GetActiveQuorumUnlocked();
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Starting election with quorum: "
@@ -296,7 +298,7 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
 
     election.reset(new LeaderElection(active_quorum,
                                       peer_proxy_factory_.get(),
-                                      request, counter.Pass(),
+                                      request, counter.Pass(), timeout,
                                       Bind(&RaftConsensus::ElectionCallback, this)));
   }
 

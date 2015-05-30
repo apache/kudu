@@ -144,6 +144,7 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
                  PeerProxyFactory* proxy_factory,
                  const VoteRequestPB& request,
                  gscoped_ptr<VoteCounter> vote_counter,
+                 const MonoDelta& timeout,
                  const ElectionDecisionCallback& decision_callback);
 
   // Run the election: send the vote request to followers.
@@ -207,6 +208,9 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
 
   // Object to count the votes.
   const gscoped_ptr<VoteCounter> vote_counter_;
+
+  // Timeout for sending RPCs.
+  const MonoDelta timeout_;
 
   // Callback invoked to notify the caller of an election decision.
   const ElectionDecisionCallback decision_callback_;

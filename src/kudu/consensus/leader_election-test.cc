@@ -27,6 +27,8 @@ using strings::Substitute;
 
 namespace {
 
+const int kLeaderElectionTimeoutSecs = 10;
+
 // Generate list of voter uuids.
 static vector<string> GenVoterUUIDs(int num_voters) {
   vector<string> voter_uuids;
@@ -184,6 +186,7 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithHighTermVoter
 
   scoped_refptr<LeaderElection> election(
       new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
+                         MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                          Bind(&LeaderElectionTest::ElectionCallback,
                               Unretained(this))));
   return election;
@@ -239,6 +242,7 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
 
   scoped_refptr<LeaderElection> election(
       new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
+                         MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                          Bind(&LeaderElectionTest::ElectionCallback,
                               Unretained(this))));
   return election;
@@ -264,6 +268,7 @@ TEST_F(LeaderElectionTest, TestPerfectElection) {
 
     scoped_refptr<LeaderElection> election(
         new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
+                           MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                            Bind(&LeaderElectionTest::ElectionCallback,
                                 Unretained(this))));
     election->Run();

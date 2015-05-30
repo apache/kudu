@@ -141,10 +141,12 @@ LeaderElection::LeaderElection(const QuorumPB& quorum,
                                PeerProxyFactory* proxy_factory,
                                const VoteRequestPB& request,
                                gscoped_ptr<VoteCounter> vote_counter,
+                               const MonoDelta& timeout,
                                const ElectionDecisionCallback& decision_callback)
   : has_responded_(false),
     request_(request),
     vote_counter_(vote_counter.Pass()),
+    timeout_(timeout),
     decision_callback_(decision_callback) {
 
   BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
@@ -192,6 +194,7 @@ void LeaderElection::Run() {
 
     // Send the RPC request.
     LOG_WITH_PREFIX(INFO) << "Requesting vote from peer " << voter_uuid;
+    state->rpc.set_timeout(timeout_);
     state->proxy->RequestConsensusVoteAsync(
         &request_,
         &state->response,

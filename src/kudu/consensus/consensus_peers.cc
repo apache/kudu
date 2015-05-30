@@ -265,7 +265,6 @@ void RpcPeerProxy::RequestConsensusVoteAsync(const VoteRequestPB* request,
                                              VoteResponsePB* response,
                                              rpc::RpcController* controller,
                                              const rpc::ResponseCallback& callback) {
-  controller->set_timeout(MonoDelta::FromMilliseconds(FLAGS_consensus_rpc_timeout_ms));
   consensus_proxy_->RequestConsensusVoteAsync(*request, response, controller, callback);
 }
 
