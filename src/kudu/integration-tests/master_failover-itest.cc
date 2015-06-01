@@ -89,7 +89,8 @@ class MasterFailoverTest : public KuduTest {
                              (KuduColumnSchema("int_val", KuduColumnSchema::INT32))
                              (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
                              , 1);
-    return client_->NewTableCreator()->table_name(table_name)
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    return table_creator->table_name(table_name)
         .schema(&client_schema)
         .timeout(MonoDelta::FromSeconds(90))
         .wait(mode == kWaitForCreate)
@@ -97,7 +98,8 @@ class MasterFailoverTest : public KuduTest {
   }
 
   Status RenameTable(const std::string& table_name_orig, const std::string& table_name_new) {
-    return client_->NewTableAlterer()->table_name(table_name_orig)
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+    return table_alterer->table_name(table_name_orig)
         .rename_table(table_name_new)
         .timeout(MonoDelta::FromSeconds(90))
         .wait(true)

@@ -38,6 +38,7 @@ using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
+using client::KuduTableCreator;
 using client::KuduUpdate;
 
 // This integration test tries to trigger all the update-related bits while also serving as a
@@ -61,8 +62,8 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
 
   void CreateTable() {
     ASSERT_NO_FATAL_FAILURE(InitCluster());
-    ASSERT_OK(client_->NewTableCreator()
-             ->table_name(kTableName)
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
              .Create());
     ASSERT_OK(client_->OpenTable(kTableName, &table_));
@@ -156,9 +157,9 @@ void UpdateScanDeltaCompactionTest::InsertBaseData() {
 
   LOG_TIMING(INFO, "Insert") {
     for (int64_t key = 0; key < FLAGS_row_count; key++) {
-      gscoped_ptr<KuduInsert> insert = table_->NewInsert();
+      gscoped_ptr<KuduInsert> insert(table_->NewInsert());
       MakeRow(key, 0, insert->mutable_row());
-      ASSERT_OK(session->Apply(insert.Pass()));
+      ASSERT_OK(session->Apply(insert.release()));
       ASSERT_OK(WaitForLastBatchAndFlush(key, &last_s, session));
     }
     ASSERT_OK(WaitForLastBatchAndFlush(kSessionBatchSize, &last_s, session));
@@ -197,9 +198,9 @@ void UpdateScanDeltaCompactionTest::UpdateRows(CountDownLatch* stop_latch) {
     last_s.StatusCB(Status::OK());
     LOG_TIMING(INFO, "Update") {
       for (int64_t key = 0; key < FLAGS_row_count && stop_latch->count() > 0; key++) {
-        gscoped_ptr<KuduUpdate> update = table_->NewUpdate();
+        gscoped_ptr<KuduUpdate> update(table_->NewUpdate());
         MakeRow(key, iteration, update->mutable_row());
-        CHECK_OK(session->Apply(update.Pass()));
+        CHECK_OK(session->Apply(update.release()));
         CHECK_OK(WaitForLastBatchAndFlush(key, &last_s, session));
       }
       CHECK_OK(WaitForLastBatchAndFlush(kSessionBatchSize, &last_s, session));

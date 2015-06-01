@@ -26,7 +26,8 @@ class KUDU_EXPORT KuduColumnRangePredicate {
  private:
   friend class KuduScanner;
 
-  gscoped_ptr<ColumnRangePredicate> pred_;
+  // Owned.
+  ColumnRangePredicate* pred_;
 };
 
 } // namespace client

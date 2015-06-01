@@ -4,6 +4,7 @@
 #define KUDU_CLIENT_ERROR_INTERNAL_H
 
 #include "kudu/client/client.h"
+#include "kudu/gutil/gscoped_ptr.h"
 
 namespace kudu {
 

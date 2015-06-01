@@ -75,6 +75,7 @@ using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
+using client::KuduTableCreator;
 using strings::Split;
 using strings::Substitute;
 
@@ -117,8 +118,8 @@ class FullStackInsertScanTest : public KuduTest {
     InitCluster();
     shared_ptr<KuduClient> reader;
     ASSERT_OK(client_builder_.Build(&reader));
-    ASSERT_OK(reader->NewTableCreator()
-             ->table_name(kTableName)
+    gscoped_ptr<KuduTableCreator> table_creator(reader->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
              .Create());
     ASSERT_OK(reader->OpenTable(kTableName, &reader_table_));
@@ -347,9 +348,9 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   char randstr[kRandomStrMaxLength + 1];
   // Insert in the id's key range
   for (int64_t key = start; key < end; ++key) {
-    gscoped_ptr<KuduInsert> insert = table->NewInsert();
+    gscoped_ptr<KuduInsert> insert(table->NewInsert());
     RandomRow(&rng, insert->mutable_row(), randstr, key, id);
-    CHECK_OK(session->Apply(insert.Pass()));
+    CHECK_OK(session->Apply(insert.release()));
 
     // Report updates or flush every so often, using the synchronizer to always
     // start filling up the next batch while previous one is sent out.

@@ -11,15 +11,18 @@ namespace client {
 
 KuduColumnRangePredicate::KuduColumnRangePredicate(const KuduColumnSchema &col,
                                                    const void* lower_bound,
-                                                   const void* upper_bound) {
-  pred_.reset(new ColumnRangePredicate(*col.col_, lower_bound, upper_bound));
+                                                   const void* upper_bound)
+  : pred_(new ColumnRangePredicate(*col.col_, lower_bound, upper_bound)) {
 }
 
-KuduColumnRangePredicate::KuduColumnRangePredicate(const KuduColumnRangePredicate& other) {
+KuduColumnRangePredicate::KuduColumnRangePredicate(const KuduColumnRangePredicate& other)
+  : pred_(NULL) {
   CopyFrom(other);
 }
 
-KuduColumnRangePredicate::~KuduColumnRangePredicate() {}
+KuduColumnRangePredicate::~KuduColumnRangePredicate() {
+  delete pred_;
+}
 
 KuduColumnRangePredicate& KuduColumnRangePredicate::operator=(
     const KuduColumnRangePredicate& other) {
@@ -30,8 +33,8 @@ KuduColumnRangePredicate& KuduColumnRangePredicate::operator=(
 }
 
 void KuduColumnRangePredicate::CopyFrom(const KuduColumnRangePredicate& other) {
-  pred_.reset(new ColumnRangePredicate(*other.pred_));
-
+  delete pred_;
+  pred_ = new ColumnRangePredicate(*other.pred_);
 }
 
 } // namespace client

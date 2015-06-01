@@ -22,6 +22,7 @@ using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduSchema;
+using kudu::client::KuduTableCreator;
 using kudu::rpc::RpcController;
 using kudu::master::MasterServiceProxy;
 
@@ -93,12 +94,12 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
     keys.push_back(StringPrintf("k_%05d", i));
   }
 
-  ASSERT_OK(client_->NewTableCreator()
-                   ->table_name(table_name)
-                   .schema(&schema_)
-                   .split_keys(keys)
-                   .wait(false)
-                   .Create());
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(table_name)
+            .schema(&schema_)
+            .split_keys(keys)
+            .wait(false)
+            .Create());
 }
 
 TEST_F(CreateTableStressTest, CreateBigTable) {

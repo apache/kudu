@@ -11,7 +11,6 @@
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/write_op.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/gtest.h"
 #include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/ref_counted.h"
@@ -114,7 +113,8 @@ class KUDU_EXPORT KuduClientBuilder {
  private:
   class KUDU_NO_EXPORT Data;
 
-  gscoped_ptr<Data> data_;
+  // Owned.
+  Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduClientBuilder);
 };
@@ -145,7 +145,10 @@ class KUDU_EXPORT KuduClientBuilder {
 // This class is thread-safe.
 class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClient> {
  public:
-  gscoped_ptr<KuduTableCreator> NewTableCreator();
+  ~KuduClient();
+
+  // Creates a KuduTableCreator; it is the caller's responsibility to free it.
+  KuduTableCreator* NewTableCreator();
 
   // set 'create_in_progress' to true if a CreateTable operation is in-progress
   Status IsCreateTableInProgress(const std::string& table_name,
@@ -153,7 +156,8 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
 
   Status DeleteTable(const std::string& table_name);
 
-  gscoped_ptr<KuduTableAlterer> NewTableAlterer();
+  // Creates a KuduTableAlterer; it is the caller's responsibility to free it.
+  KuduTableAlterer* NewTableAlterer();
 
   // set 'alter_in_progress' to true if an AlterTable operation is in-progress
   Status IsAlterTableInProgress(const std::string& table_name,
@@ -244,7 +248,8 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
 
   KuduClient();
 
-  gscoped_ptr<Data> data_;
+  // Owned.
+  Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduClient);
 };
@@ -298,7 +303,8 @@ class KUDU_EXPORT KuduTableCreator {
 
   explicit KuduTableCreator(KuduClient* client);
 
-  gscoped_ptr<Data> data_;
+  // Owned.
+  Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduTableCreator);
 };
@@ -319,10 +325,11 @@ class KUDU_EXPORT KuduTable : public RefCountedThreadSafe<KuduTable> {
 
   const KuduSchema& schema() const;
 
-  // Create a new write operation for this table.
-  gscoped_ptr<KuduInsert> NewInsert();
-  gscoped_ptr<KuduUpdate> NewUpdate();
-  gscoped_ptr<KuduDelete> NewDelete();
+  // Create a new write operation for this table. It is the caller's
+  // responsibility to free it, unless it is passed to KuduSession::Apply().
+  KuduInsert* NewInsert();
+  KuduUpdate* NewUpdate();
+  KuduDelete* NewDelete();
 
   KuduClient* client() const;
 
@@ -335,7 +342,8 @@ class KUDU_EXPORT KuduTable : public RefCountedThreadSafe<KuduTable> {
             const std::string& name,
             const KuduSchema& schema);
 
-  gscoped_ptr<Data> data_;
+  // Owned.
+  Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduTable);
 };
@@ -343,7 +351,7 @@ class KUDU_EXPORT KuduTable : public RefCountedThreadSafe<KuduTable> {
 // Alters an existing table based on the provided steps.
 //
 // Sample usage:
-//   gscoped_ptr<KuduTableAlterer> alterer = client->NewTableAlterer();
+//   gscoped_ptr<KuduTableAlterer> alterer(client->NewTableAlterer());
 //   alterer->table_name("table-name");
 //   alterer->add_nullable_column("col1", UINT32);
 //   alterer->Alter();
@@ -406,7 +414,8 @@ class KUDU_EXPORT KuduTableAlterer {
 
   explicit KuduTableAlterer(KuduClient* client);
 
-  gscoped_ptr<Data> data_;
+  // Owned.
+  Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduTableAlterer);
 };
@@ -425,7 +434,7 @@ class KUDU_EXPORT KuduError {
 
   // Release the operation that failed. The caller takes ownership. Must only
   // be called once.
-  gscoped_ptr<KuduWriteOperation> release_failed_op();
+  KuduWriteOperation* release_failed_op();
 
   // In some cases, it's possible that the server did receive and successfully
   // perform the requested operation, but the client can't tell whether or not
@@ -443,9 +452,10 @@ class KUDU_EXPORT KuduError {
   friend class internal::Batcher;
   friend class KuduSession;
 
-  KuduError(gscoped_ptr<KuduWriteOperation> failed_op, const Status& error);
+  KuduError(KuduWriteOperation* failed_op, const Status& error);
 
-  gscoped_ptr<Data> data_;
+  // Owned.
+  Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduError);
 };
@@ -583,22 +593,14 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
   // may be retrieved at any time.
   //
   // This is thread safe.
-  Status Apply(gscoped_ptr<KuduWriteOperation> write_op) WARN_UNUSED_RESULT;
-  // Aliases to derived classes provided for convenience.
-  Status Apply(gscoped_ptr<KuduInsert> write_op) WARN_UNUSED_RESULT;
-  Status Apply(gscoped_ptr<KuduUpdate> write_op) WARN_UNUSED_RESULT;
-  Status Apply(gscoped_ptr<KuduDelete> write_op) WARN_UNUSED_RESULT;
+  Status Apply(KuduWriteOperation* write_op) WARN_UNUSED_RESULT;
 
   // Similar to the above, except never blocks. Even in the flush modes that return
   // immediately, StatusCallback is triggered with the result. The callback may
   // be called by a reactor thread, or in some cases may be called inline by
   // the same thread which calls ApplyAsync().
   // TODO: not yet implemented.
-  void ApplyAsync(gscoped_ptr<KuduWriteOperation> write_op, StatusCallback cb);
-  // Aliases to derived classes provided for convenience
-  void ApplyAsync(gscoped_ptr<KuduInsert> write_op, StatusCallback cb);
-  void ApplyAsync(gscoped_ptr<KuduUpdate> write_op, StatusCallback cb);
-  void ApplyAsync(gscoped_ptr<KuduDelete> write_op, StatusCallback cb);
+  void ApplyAsync(KuduWriteOperation* write_op, StatusCallback cb);
 
   // Flush any pending writes.
   //
@@ -686,7 +688,8 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
   friend class internal::Batcher;
   explicit KuduSession(const std::tr1::shared_ptr<KuduClient>& client);
 
-  gscoped_ptr<Data> data_;
+  // Owned.
+  Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduSession);
 };
@@ -858,7 +861,8 @@ class KUDU_EXPORT KuduScanner {
   FRIEND_TEST(ClientTest, TestScanNoBlockCaching);
   FRIEND_TEST(ClientTest, TestScanTimeout);
 
-  gscoped_ptr<Data> data_;
+  // Owned.
+  Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduScanner);
 };
@@ -884,7 +888,8 @@ class KUDU_EXPORT KuduTabletServer {
 
   KuduTabletServer();
 
-  gscoped_ptr<Data> data_;
+  // Owned.
+  Data* data_;
 
   DISALLOW_COPY_AND_ASSIGN(KuduTabletServer);
 };

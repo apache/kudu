@@ -29,6 +29,7 @@ using std::vector;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
+using kudu::client::KuduTableCreator;
 using kudu::rpc::RpcController;
 
 DEFINE_string(master_address, "localhost",
@@ -92,8 +93,8 @@ static int CreateDemoTable(int argc, char** argv) {
            .master_server_addrs(addrs)
            .Build(&client));
 
-  CHECK_OK(client->NewTableCreator()
-           ->table_name(table_name)
+  gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+  CHECK_OK(table_creator->table_name(table_name)
            .schema(&schema)
            .Create());
   return 0;

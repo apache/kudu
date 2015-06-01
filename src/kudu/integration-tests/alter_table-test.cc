@@ -46,6 +46,8 @@ using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
+using client::KuduTableAlterer;
+using client::KuduTableCreator;
 using client::KuduUpdate;
 using master::MiniMaster;
 using master::AlterTableRequestPB;
@@ -80,8 +82,8 @@ class AlterTableTest : public KuduTest {
              .Build(&client_));
 
     // Add a table, make sure it reports itself.
-    CHECK_OK(client_->NewTableCreator()
-             ->table_name(kTableName)
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    CHECK_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
              .num_replicas(1)
              .Create());
@@ -148,11 +150,11 @@ class AlterTableTest : public KuduTest {
                          const string& column_name,
                          int32_t default_value,
                          const MonoDelta& timeout) {
-    return client_->NewTableAlterer()
-      ->table_name(table_name)
-      .add_column(column_name, KuduColumnSchema::INT32, &default_value)
-      .timeout(timeout)
-      .Alter();
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+    return table_alterer->table_name(table_name)
+        .add_column(column_name, KuduColumnSchema::INT32, &default_value)
+        .timeout(timeout)
+        .Alter();
   }
 
   enum VerifyPattern {
@@ -176,8 +178,8 @@ class AlterTableTest : public KuduTest {
       CHECK_OK(key->SetInt32(0, i * 100));
       keys.push_back(key->ToEncodedRowKeyOrDie());
     }
-    return client_->NewTableCreator()
-        ->table_name(table_name)
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    return table_creator->table_name(table_name)
         .schema(&schema_)
         .num_replicas(1)
         .split_keys(keys)
@@ -337,7 +339,7 @@ void AlterTableTest::InsertRows(int start_row, int num_rows) {
 
   // Insert a bunch of rows with the current schema
   for (int i = start_row; i < start_row + num_rows; i++) {
-    gscoped_ptr<KuduInsert> insert = table->NewInsert();
+    gscoped_ptr<KuduInsert> insert(table->NewInsert());
     // Endian-swap the key so that we spew inserts randomly
     // instead of just a sequential write pattern. This way
     // compactions may actually be triggered.
@@ -348,7 +350,7 @@ void AlterTableTest::InsertRows(int start_row, int num_rows) {
       CHECK_OK(insert->mutable_row()->SetInt32(1, i));
     }
 
-    CHECK_OK(session->Apply(insert.Pass()));
+    CHECK_OK(session->Apply(insert.release()));
 
     if (i % 50 == 0) {
       FlushSessionOrDie(session);
@@ -422,10 +424,10 @@ TEST_F(AlterTableTest, DISABLED_TestDropAndAddNewColumn) {
   VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
 
   LOG(INFO) << "Dropping and adding back c1";
-  ASSERT_OK(client_->NewTableAlterer()
-                   ->table_name(kTableName)
-                   .drop_column("c1")
-                   .Alter());
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+  ASSERT_OK(table_alterer->table_name(kTableName)
+            .drop_column("c1")
+            .Alter());
 
   ASSERT_OK(AddNewI32Column(kTableName, "c1", 0xdeadbeef));
 
@@ -443,10 +445,10 @@ TEST_F(AlterTableTest, DISABLED_TestBootstrapAfterColumnRemoved) {
   VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
 
   LOG(INFO) << "Dropping c1";
-  ASSERT_OK(client_->NewTableAlterer()
-                   ->table_name(kTableName)
-                   .drop_column("c1")
-                   .Alter());
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+  ASSERT_OK(table_alterer->table_name(kTableName)
+            .drop_column("c1")
+            .Alter());
 
   LOG(INFO) << "Inserting more rows";
   InsertRows(kNumRows, kNumRows);
@@ -469,14 +471,14 @@ void AlterTableTest::InserterThread() {
   CHECK_OK(client_->OpenTable(kTableName, &table));
   int32_t i = 0;
   while (!stop_threads_.Load()) {
-    gscoped_ptr<KuduInsert> insert = table->NewInsert();
+    gscoped_ptr<KuduInsert> insert(table->NewInsert());
     // Endian-swap the key so that we spew inserts randomly
     // instead of just a sequential write pattern. This way
     // compactions may actually be triggered.
     int32_t key = bswap_32(i++);
     CHECK_OK(insert->mutable_row()->SetInt32(0, key));
     CHECK_OK(insert->mutable_row()->SetInt32(1, i));
-    CHECK_OK(session->Apply(insert.Pass()));
+    CHECK_OK(session->Apply(insert.release()));
 
     if (i % 50 == 0) {
       FlushSessionOrDie(session);
@@ -501,7 +503,7 @@ void AlterTableTest::UpdaterThread() {
   Random rng(1);
   int32_t i = 0;
   while (!stop_threads_.Load()) {
-    gscoped_ptr<KuduUpdate> update = table->NewUpdate();
+    gscoped_ptr<KuduUpdate> update(table->NewUpdate());
 
     int32_t max = inserted_idx_.Load();
     if (max == 0) {
@@ -514,7 +516,7 @@ void AlterTableTest::UpdaterThread() {
     int32_t key = bswap_32(rng.Uniform(max));
     CHECK_OK(update->mutable_row()->SetInt32(0, key));
     CHECK_OK(update->mutable_row()->SetInt32(1, i));
-    CHECK_OK(session->Apply(update.Pass()));
+    CHECK_OK(session->Apply(update.release()));
 
     if (i++ % 50 == 0) {
       FlushSessionOrDie(session);
@@ -607,14 +609,14 @@ TEST_F(AlterTableTest, TestInsertAfterAlterTable) {
   ASSERT_OK(AddNewI32Column(kSplitTableName, "new-i32", 10));
   scoped_refptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kSplitTableName, &table));
-  gscoped_ptr<KuduInsert> insert = table->NewInsert();
+  gscoped_ptr<KuduInsert> insert(table->NewInsert());
   ASSERT_OK(insert->mutable_row()->SetInt32("c0", 1));
   ASSERT_OK(insert->mutable_row()->SetInt32("c1", 1));
   ASSERT_OK(insert->mutable_row()->SetInt32("new-i32", 1));
   shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15000);
-  ASSERT_OK(session->Apply(insert.Pass()));
+  ASSERT_OK(session->Apply(insert.release()));
   Status s = session->Flush();
   if (!s.ok()) {
     ASSERT_EQ(1, session->CountPendingErrors());
@@ -646,8 +648,8 @@ TEST_F(AlterTableTest, DISABLED_TestMultipleAlters) {
 
   // Issue a bunch of new alters without waiting for them to finish.
   for (int i = 0; i < kNumNewCols; i++) {
-    ASSERT_OK(client_->NewTableAlterer()
-              ->table_name(kSplitTableName)
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+    ASSERT_OK(table_alterer->table_name(kSplitTableName)
               .add_column(strings::Substitute("new_col$0", i),
                           KuduColumnSchema::INT32, &kDefaultValue)
               .wait(false)

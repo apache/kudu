@@ -38,6 +38,7 @@ namespace tserver {
 using client::KuduClient;
 using client::KuduSchema;
 using client::KuduTable;
+using client::KuduTableCreator;
 using consensus::GetConsensusRole;
 using consensus::RaftPeerPB;
 using itest::SimpleIntKeyKuduSchema;
@@ -101,7 +102,8 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
 
   // Create the table.
   scoped_refptr<KuduTable> table;
-  ASSERT_OK(client_->NewTableCreator()->table_name(kTableName)
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&schema_)
             .num_replicas(kNumReplicas)
             .Create());

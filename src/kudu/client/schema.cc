@@ -112,15 +112,18 @@ KuduColumnSchema::KuduColumnSchema(const std::string &name,
                                    KuduColumnStorageAttributes attributes) {
   ColumnStorageAttributes attr_private(ToInternalEncodingType(attributes.encoding()),
                                        ToInternalCompressionType(attributes.compression()));
-  col_.reset(new ColumnSchema(name, ToInternalDataType(type), is_nullable,
-                              default_value, default_value, attr_private));
+  col_ = new ColumnSchema(name, ToInternalDataType(type), is_nullable,
+                          default_value, default_value, attr_private);
 }
 
-KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other) {
+KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other)
+  : col_(NULL) {
   CopyFrom(other);
 }
 
-KuduColumnSchema::~KuduColumnSchema() {}
+KuduColumnSchema::~KuduColumnSchema() {
+  delete col_;
+}
 
 KuduColumnSchema& KuduColumnSchema::operator=(const KuduColumnSchema& other) {
   if (&other != this) {
@@ -130,7 +133,8 @@ KuduColumnSchema& KuduColumnSchema::operator=(const KuduColumnSchema& other) {
 }
 
 void KuduColumnSchema::CopyFrom(const KuduColumnSchema& other) {
-  col_.reset(new ColumnSchema(*other.col_));
+  delete col_;
+  col_ = new ColumnSchema(*other.col_);
 }
 
 bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
@@ -150,17 +154,23 @@ KuduColumnSchema::DataType KuduColumnSchema::type() const {
 }
 
 
-KuduSchema::KuduSchema() {}
+KuduSchema::KuduSchema()
+  : schema_(NULL) {
+}
 
-KuduSchema::KuduSchema(const vector<KuduColumnSchema>& columns, int key_columns) {
+KuduSchema::KuduSchema(const vector<KuduColumnSchema>& columns, int key_columns)
+  : schema_(NULL) {
   Reset(columns, key_columns);
 }
 
-KuduSchema::KuduSchema(const KuduSchema& other) {
+KuduSchema::KuduSchema(const KuduSchema& other)
+  : schema_(NULL) {
   CopyFrom(other);
 }
 
-KuduSchema::~KuduSchema() {}
+KuduSchema::~KuduSchema() {
+  delete schema_;
+}
 
 KuduSchema& KuduSchema::operator=(const KuduSchema& other) {
   if (&other != this) {
@@ -170,7 +180,8 @@ KuduSchema& KuduSchema::operator=(const KuduSchema& other) {
 }
 
 void KuduSchema::CopyFrom(const KuduSchema& other) {
-  schema_.reset(new Schema(*other.schema_));
+  delete schema_;
+  schema_ = new Schema(*other.schema_);
 }
 
 void KuduSchema::Reset(const vector<KuduColumnSchema>& columns, int key_columns) {
@@ -178,7 +189,8 @@ void KuduSchema::Reset(const vector<KuduColumnSchema>& columns, int key_columns)
   BOOST_FOREACH(const KuduColumnSchema& col, columns) {
     cols_private.push_back(*col.col_);
   }
-  schema_.reset(new Schema(cols_private, key_columns));
+  delete schema_;
+  schema_ = new Schema(cols_private, key_columns);
 }
 
 bool KuduSchema::Equals(const KuduSchema& other) const {
@@ -197,12 +209,12 @@ KuduColumnSchema KuduSchema::Column(size_t idx) const {
 
 KuduSchema KuduSchema::CreateKeyProjection() const {
   KuduSchema projection;
-  projection.schema_.reset(new Schema(schema_->CreateKeyProjection()));
+  projection.schema_ = new Schema(schema_->CreateKeyProjection());
   return projection;
 }
 
 KuduPartialRow* KuduSchema::NewRow() const {
-  return new KuduPartialRow(schema_.get());
+  return new KuduPartialRow(schema_);
 }
 
 size_t KuduSchema::num_columns() const {

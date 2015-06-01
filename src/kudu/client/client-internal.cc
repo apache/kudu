@@ -647,7 +647,8 @@ void GetTableSchemaRpc::SendRpcCb(const Status& status) {
     if (new_status.ok()) {
       gscoped_ptr<Schema> client_schema(new Schema());
       client_schema->Reset(server_schema.columns(), server_schema.num_key_columns());
-      out_schema_->schema_.swap(client_schema);
+      delete out_schema_->schema_;
+      out_schema_->schema_ = client_schema.release();
     }
   }
   if (!new_status.ok()) {

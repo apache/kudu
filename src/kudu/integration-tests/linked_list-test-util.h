@@ -201,11 +201,11 @@ class LinkedListChainGenerator {
     int64_t this_key = (Rand64() << 8) | chain_idx_;
     int64_t ts = GetCurrentTimeMicros();
 
-    gscoped_ptr<client::KuduInsert> insert = table->NewInsert();
+    gscoped_ptr<client::KuduInsert> insert(table->NewInsert());
     CHECK_OK(insert->mutable_row()->SetInt64(kKeyColumnName, this_key));
     CHECK_OK(insert->mutable_row()->SetInt64(kInsertTsColumnName, ts));
     CHECK_OK(insert->mutable_row()->SetInt64(kLinkColumnName, prev_key_));
-    RETURN_NOT_OK_PREPEND(session->Apply(insert.Pass()),
+    RETURN_NOT_OK_PREPEND(session->Apply(insert.release()),
                           strings::Substitute("Unable to apply insert with key $0 at ts $1",
                                               this_key, ts));
     prev_key_ = this_key;
@@ -263,7 +263,7 @@ class ScopedRowUpdater {
       gscoped_ptr<client::KuduUpdate> update(table_->NewUpdate());
       CHECK_OK(update->mutable_row()->SetInt64(kKeyColumnName, next_key));
       CHECK_OK(update->mutable_row()->SetBool(kUpdatedColumnName, true));
-      CHECK_OK(session->Apply(update.Pass()));
+      CHECK_OK(session->Apply(update.release()));
       if (++updated_count % 50 == 0) {
         FlushSessionOrDie(session);
       }
@@ -416,8 +416,8 @@ std::vector<int64_t> LinkedListTester::GenerateSplitInts() {
 }
 
 Status LinkedListTester::CreateLinkedListTable() {
-  RETURN_NOT_OK_PREPEND(client_->NewTableCreator()
-                        ->table_name(table_name_)
+  gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+  RETURN_NOT_OK_PREPEND(table_creator->table_name(table_name_)
                         .schema(&schema_)
                         .split_keys(GenerateSplitKeys(schema_))
                         .num_replicas(num_replicas_)

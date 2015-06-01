@@ -30,6 +30,7 @@ using client::KuduInsert;
 using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
+using client::KuduTableCreator;
 using std::tr1::shared_ptr;
 
 static const char* kTableName = "test-workload";
@@ -83,12 +84,12 @@ void TestWorkload::WriteThread() {
 
   while (should_run_.Load()) {
     for (int i = 0; i < write_batch_size_; i++) {
-      gscoped_ptr<KuduInsert> insert = table->NewInsert();
+      gscoped_ptr<KuduInsert> insert(table->NewInsert());
       KuduPartialRow* row = insert->mutable_row();
       CHECK_OK(row->SetInt32(0, r.Next()));
       CHECK_OK(row->SetInt32(1, r.Next()));
       CHECK_OK(row->SetStringCopy(2, "hello world"));
-      CHECK_OK(session->Apply(insert.Pass()));
+      CHECK_OK(session->Apply(insert.release()));
     }
 
     int inserted = write_batch_size_;
@@ -145,15 +146,15 @@ void TestWorkload::Setup() {
   CHECK_OK(cluster_->CreateClient(client_builder_, &client_));
 
   KuduSchema client_schema(GetClientSchema(GetSimpleTestSchema()));
-  CHECK_OK(client_->NewTableCreator()
-            ->table_name(kTableName)
-            .schema(&client_schema)
-            .num_replicas(num_replicas_)
-            // NOTE: this is quite high as a timeout, but the default (5 sec) does not
-            // seem to be high enough in some cases (see KUDU-550). We should remove
-            // this once that ticket is addressed.
-            .timeout(MonoDelta::FromSeconds(20))
-            .Create());
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  CHECK_OK(table_creator->table_name(kTableName)
+           .schema(&client_schema)
+           .num_replicas(num_replicas_)
+           // NOTE: this is quite high as a timeout, but the default (5 sec) does not
+           // seem to be high enough in some cases (see KUDU-550). We should remove
+           // this once that ticket is addressed.
+           .timeout(MonoDelta::FromSeconds(20))
+           .Create());
 }
 
 void TestWorkload::Start() {

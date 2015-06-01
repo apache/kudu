@@ -36,6 +36,7 @@ using client::KuduRowResult;
 using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduSession;
+using client::KuduTableCreator;
 using client::KuduUpdate;
 using std::vector;
 
@@ -94,8 +95,8 @@ void RpcLineItemDAO::Init() {
            .Build(&client_));
   Status s = client_->OpenTable(table_name_, &client_table_);
   if (s.IsNotFound()) {
-    CHECK_OK(client_->NewTableCreator()
-             ->table_name(table_name_)
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    CHECK_OK(table_creator->table_name(table_name_)
              .schema(&schema)
              .split_keys(tablet_splits_)
              .Create());
@@ -110,9 +111,9 @@ void RpcLineItemDAO::Init() {
 }
 
 void RpcLineItemDAO::WriteLine(boost::function<void(KuduPartialRow*)> f) {
-  gscoped_ptr<KuduInsert> insert = client_table_->NewInsert();
+  gscoped_ptr<KuduInsert> insert(client_table_->NewInsert());
   f(insert->mutable_row());
-  CHECK_OK(session_->Apply(insert.Pass()));
+  CHECK_OK(session_->Apply(insert.release()));
   ++batch_size_;
   FlushIfBufferFull();
 }
@@ -128,9 +129,9 @@ void RpcLineItemDAO::FlushIfBufferFull() {
 }
 
 void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
-  gscoped_ptr<KuduUpdate> update = client_table_->NewUpdate();
+  gscoped_ptr<KuduUpdate> update(client_table_->NewUpdate());
   f(update->mutable_row());
-  CHECK_OK(session_->Apply(update.Pass()));
+  CHECK_OK(session_->Apply(update.release()));
   ++batch_size_;
   FlushIfBufferFull();
 }

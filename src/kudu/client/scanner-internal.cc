@@ -42,9 +42,9 @@ KuduScanner::Data::Data(KuduTable* table)
     order_mode_(UNORDERED),
     snapshot_timestamp_(kNoTimestamp),
     table_(DCHECK_NOTNULL(table)),
-    projection_(table->schema().schema_.get()),
+    projection_(table->schema().schema_),
     arena_(1024, 1024*1024),
-    spec_encoder_(table->schema().schema_.get(), &arena_),
+    spec_encoder_(table->schema().schema_, &arena_),
     timeout_(MonoDelta::FromMilliseconds(kScanTimeoutMillis)) {
 }
 

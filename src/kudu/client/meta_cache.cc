@@ -366,7 +366,7 @@ LookupRpc::~LookupRpc() {
 }
 
 void LookupRpc::SendRpc() {
-  const Schema* schema = table_->schema().schema_.get();
+  const Schema* schema = table_->schema().schema_;
 
   // Fast path: lookup in the cache.
   scoped_refptr<RemoteTablet> result;

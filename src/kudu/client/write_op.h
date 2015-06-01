@@ -6,7 +6,6 @@
 #include <string>
 
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/ref_counted.h"
 
@@ -60,7 +59,7 @@ class KUDU_EXPORT KuduWriteOperation {
   // Create and encode the key for this write (key must be set)
   //
   // Caller takes ownership of the allocated memory.
-  gscoped_ptr<EncodedKey> CreateKey() const;
+  EncodedKey* CreateKey() const;
 
   const KuduTable* table() const { return table_.get(); }
 

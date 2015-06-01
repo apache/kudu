@@ -35,6 +35,7 @@ using kudu::client::KuduInsert;
 using kudu::client::KuduClient;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableCreator;
 
 InsertConsumer::InsertConsumer(const std::tr1::shared_ptr<KuduClient> &client)
   : initted_(false),
@@ -47,8 +48,8 @@ Status InsertConsumer::Init() {
   const char *kTableName = "twitter";
   Status s = client_->OpenTable(kTableName, &table_);
   if (s.IsNotFound()) {
-    RETURN_NOT_OK_PREPEND(client_->NewTableCreator()
-                          ->table_name(kTableName)
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    RETURN_NOT_OK_PREPEND(table_creator->table_name(kTableName)
                           .schema(&schema_)
                           .Create(),
                           "Couldn't create twitter table");
@@ -101,7 +102,7 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
 
   string created_at = TwitterEventParser::ReformatTime(event_.tweet_event.created_at);
 
-  gscoped_ptr<KuduInsert> ins = table_->NewInsert();
+  gscoped_ptr<KuduInsert> ins(table_->NewInsert());
   KuduPartialRow* r = ins->mutable_row();
   CHECK_OK(r->SetInt64("tweet_id", event_.tweet_event.tweet_id));
   CHECK_OK(r->SetStringCopy("text", event_.tweet_event.text));
@@ -114,7 +115,7 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
   CHECK_OK(r->SetInt32("user_followers_count", event_.tweet_event.user_followers_count));
   CHECK_OK(r->SetInt32("user_friends_count", event_.tweet_event.user_friends_count));
   CHECK_OK(r->SetStringCopy("user_image_url", event_.tweet_event.user_image_url));
-  CHECK_OK(session_->Apply(ins.Pass()));
+  CHECK_OK(session_->Apply(ins.release()));
 
   // TODO: once the auto-flush mode is implemented, switch to using that
   // instead of the manual batching here

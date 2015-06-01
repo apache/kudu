@@ -23,6 +23,8 @@ using kudu::client::KuduScanner;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
+using kudu::client::KuduTableAlterer;
+using kudu::client::KuduTableCreator;
 using kudu::KuduPartialRow;
 using kudu::MonoDelta;
 using kudu::Status;
@@ -70,30 +72,35 @@ static Status CreateTable(const shared_ptr<KuduClient>& client,
                           const KuduSchema& schema,
                           int num_tablets) {
   // Generate the split keys for the table.
-  gscoped_ptr<KuduPartialRow> key(schema.NewRow());
+  KuduPartialRow* key = schema.NewRow();
   vector<string> splits;
   int32_t increment = 1000 / num_tablets;
   for (int32_t i = 1; i < num_tablets; i++) {
     KUDU_CHECK_OK(key->SetInt32(0, i * increment));
     splits.push_back(key->ToEncodedRowKeyOrDie());
   }
+  delete key;
 
   // Create the table.
-  return client->NewTableCreator()
-      ->table_name(table_name)
+  KuduTableCreator* table_creator = client->NewTableCreator();
+  Status s = table_creator->table_name(table_name)
       .schema(&schema)
       .split_keys(splits)
       .Create();
+  delete table_creator;
+  return s;
 }
 
 static Status AlterTable(const shared_ptr<KuduClient>& client,
                          const string& table_name) {
-  return client->NewTableAlterer()
-      ->table_name(table_name)
+  KuduTableAlterer* table_alterer = client->NewTableAlterer();
+  Status s = table_alterer->table_name(table_name)
       .rename_column("int_val", "integer_val")
       .add_nullable_column("another_val", KuduColumnSchema::BOOL)
       .drop_column("string_val")
       .Alter();
+  delete table_alterer;
+  return s;
 }
 
 static void StatusCB(const Status& status) {
@@ -106,12 +113,12 @@ static Status InsertRows(scoped_refptr<KuduTable>& table, int num_rows) {
   session->SetTimeoutMillis(5000);
 
   for (int i = 0; i < num_rows; i++) {
-    gscoped_ptr<KuduInsert> insert = table->NewInsert();
+    KuduInsert* insert = table->NewInsert();
     KuduPartialRow* row = insert->mutable_row();
-    KUDU_RETURN_NOT_OK(row->SetInt32("key", i));
-    KUDU_RETURN_NOT_OK(row->SetInt32("integer_val", i * 2));
-    KUDU_RETURN_NOT_OK(row->SetInt32("non_null_with_default", i * 5));
-    KUDU_RETURN_NOT_OK(session->Apply(insert.Pass()));
+    KUDU_CHECK_OK(row->SetInt32("key", i));
+    KUDU_CHECK_OK(row->SetInt32("integer_val", i * 2));
+    KUDU_CHECK_OK(row->SetInt32("non_null_with_default", i * 5));
+    KUDU_CHECK_OK(session->Apply(insert));
   }
   Status s = session->Flush();
   if (s.ok()) {

@@ -231,7 +231,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
     current_ts_(NULL),
     ops_(ops) {
 
-  const Schema* schema = table()->schema().schema_.get();
+  const Schema* schema = table()->schema().schema_;
 
   req_.set_tablet_id(tablet->tablet_id());
   // Set up schema
@@ -561,7 +561,7 @@ Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
   InFlightOp* op = new InFlightOp;
   op->write_op.reset(write_op.release());
   op->state = InFlightOp::kLookingUpTablet;
-  op->key = op->write_op->CreateKey();
+  op->key.reset(op->write_op->CreateKey());
 
   AddInFlightOp(op);
   VLOG(3) << "Looking up tablet for " << op->write_op->ToString();
@@ -608,7 +608,7 @@ void Batcher::MarkInFlightOpFailed(InFlightOp* op, const Status& s) {
 void Batcher::MarkInFlightOpFailedUnlocked(InFlightOp* op, const Status& s) {
   CHECK_EQ(1, ops_.erase(op))
     << "Could not remove op " << op->ToString() << " from in-flight list";
-  gscoped_ptr<KuduError> error(new KuduError(op->write_op.Pass(), s));
+  gscoped_ptr<KuduError> error(new KuduError(op->write_op.release(), s));
   error_collector_->AddError(error.Pass());
   had_errors_ = true;
   delete op;
@@ -747,7 +747,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
   } else {
     // Mark each of the rows in the write op as failed, since the whole RPC failed.
     BOOST_FOREACH(InFlightOp* op, rpc.ops()) {
-      gscoped_ptr<KuduError> error(new KuduError(op->write_op.Pass(), s));
+      gscoped_ptr<KuduError> error(new KuduError(op->write_op.release(), s));
       error_collector_->AddError(error.Pass());
     }
 
@@ -782,7 +782,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
     VLOG(1) << "Error on op " << op->ToString() << ": "
             << err_pb.error().ShortDebugString();
     Status op_status = StatusFromPB(err_pb.error());
-    gscoped_ptr<KuduError> error(new KuduError(op.Pass(), op_status));
+    gscoped_ptr<KuduError> error(new KuduError(op.release(), op_status));
     error_collector_->AddError(error.Pass());
     MarkHadErrors();
   }

@@ -16,8 +16,6 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_bool(enable_leader_failure_detection);
-
 namespace kudu {
 namespace master {
 
@@ -27,6 +25,7 @@ using client::KuduColumnSchema;
 using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduTable;
+using client::KuduTableCreator;
 using std::vector;
 
 const char * const kTableId1 = "testMasterReplication-1";
@@ -101,7 +100,8 @@ class MasterReplicationTest : public KuduTest {
                              (KuduColumnSchema("int_val", KuduColumnSchema::INT32))
                              (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
                              , 1);
-    return client->NewTableCreator()->table_name(table_name)
+    gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
+    return table_creator->table_name(table_name)
         .schema(&client_schema)
         .Create();
   }

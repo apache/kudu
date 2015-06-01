@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/kudu_export.h"
 
 namespace kudu {
@@ -106,7 +105,8 @@ class KUDU_EXPORT KuduColumnSchema {
   friend class KuduColumnRangePredicate;
   friend class KuduSchema;
 
-  gscoped_ptr<ColumnSchema> col_;
+  // Owned.
+  ColumnSchema* col_;
 };
 
 class KUDU_EXPORT KuduSchema {
@@ -143,7 +143,8 @@ class KUDU_EXPORT KuduSchema {
   friend class internal::LookupRpc;
   friend class internal::WriteRpc;
 
-  gscoped_ptr<Schema> schema_;
+  // Owned.
+  Schema* schema_;
 };
 
 } // namespace client

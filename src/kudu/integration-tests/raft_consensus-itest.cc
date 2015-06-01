@@ -66,6 +66,7 @@ using client::KuduInsert;
 using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
+using client::KuduTableCreator;
 using itest::AddServer;
 using itest::GetReplicaStatusAndCheckIfLeader;
 using itest::LeaderStepDown;
@@ -127,8 +128,8 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     // The tests here make extensive use of server schemas, but we need
     // a client schema to create the table.
     KuduSchema client_schema(GetClientSchema(schema_));
-    ASSERT_OK(client_->NewTableCreator()
-             ->table_name(kTableId)
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableId)
              .schema(&client_schema)
              .num_replicas(FLAGS_num_replicas)
              // NOTE: this is quite high as a timeout, but the default (5 sec) does not
@@ -272,12 +273,12 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
       uint64_t last_row_in_batch = first_row_in_batch + count / num_batches;
 
       for (int j = first_row_in_batch; j < last_row_in_batch; j++) {
-        gscoped_ptr<KuduInsert> insert = table->NewInsert();
+        gscoped_ptr<KuduInsert> insert(table->NewInsert());
         KuduPartialRow* row = insert->mutable_row();
         CHECK_OK(row->SetInt32(0, j));
         CHECK_OK(row->SetInt32(1, j * 2));
         CHECK_OK(row->SetStringCopy(2, Slice(StringPrintf("hello %d", j))));
-        CHECK_OK(session->Apply(insert.Pass()));
+        CHECK_OK(session->Apply(insert.release()));
       }
 
       // We don't handle write idempotency yet. (i.e making sure that when a leader fails

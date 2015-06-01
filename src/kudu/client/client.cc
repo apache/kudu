@@ -107,11 +107,12 @@ void SetVerboseLogLevel(int level) {
   FLAGS_v = level;
 }
 
-KuduClientBuilder::KuduClientBuilder() {
-  data_.reset(new KuduClientBuilder::Data());
+KuduClientBuilder::KuduClientBuilder()
+  : data_(new KuduClientBuilder::Data()) {
 }
 
 KuduClientBuilder::~KuduClientBuilder() {
+  delete data_;
 }
 
 KuduClientBuilder& KuduClientBuilder::clear_master_server_addrs() {
@@ -170,12 +171,16 @@ Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
   return Status::OK();
 }
 
-KuduClient::KuduClient() {
-  data_.reset(new KuduClient::Data());
+KuduClient::KuduClient()
+  : data_(new KuduClient::Data()) {
 }
 
-gscoped_ptr<KuduTableCreator> KuduClient::NewTableCreator() {
-  return gscoped_ptr<KuduTableCreator>(new KuduTableCreator(this));
+KuduClient::~KuduClient() {
+  delete data_;
+}
+
+KuduTableCreator* KuduClient::NewTableCreator() {
+  return new KuduTableCreator(this);
 }
 
 Status KuduClient::IsCreateTableInProgress(const string& table_name,
@@ -191,8 +196,8 @@ Status KuduClient::DeleteTable(const string& table_name) {
   return data_->DeleteTable(this, table_name, deadline);
 }
 
-gscoped_ptr<KuduTableAlterer> KuduClient::NewTableAlterer() {
-  return gscoped_ptr<KuduTableAlterer>(new KuduTableAlterer(this));
+KuduTableAlterer* KuduClient::NewTableAlterer() {
+  return new KuduTableAlterer(this);
 }
 
 Status KuduClient::IsAlterTableInProgress(const string& table_name,
@@ -233,8 +238,8 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
   for (int i = 0; i < resp.servers_size(); i++) {
     const ListTabletServersResponsePB_Entry& e = resp.servers(i);
     KuduTabletServer* ts = new KuduTabletServer();
-    ts->data_.reset(new KuduTabletServer::Data(e.instance_id().permanent_uuid(),
-                                               e.registration().rpc_addresses(0).host()));
+    ts->data_ = new KuduTabletServer::Data(e.instance_id().permanent_uuid(),
+                                           e.registration().rpc_addresses(0).host());
     tablet_servers->push_back(ts);
   }
   return Status::OK();
@@ -323,11 +328,12 @@ uint64_t KuduClient::GetLatestObservedTimestamp() const {
 // KuduTableCreator
 ////////////////////////////////////////////////////////////
 
-KuduTableCreator::KuduTableCreator(KuduClient* client) {
-  data_.reset(new KuduTableCreator::Data(client));
+KuduTableCreator::KuduTableCreator(KuduClient* client)
+  : data_(new KuduTableCreator::Data(client)) {
 }
 
 KuduTableCreator::~KuduTableCreator() {
+  delete data_;
 }
 
 KuduTableCreator& KuduTableCreator::table_name(const string& name) {
@@ -410,11 +416,12 @@ Status KuduTableCreator::Create() {
 
 KuduTable::KuduTable(const shared_ptr<KuduClient>& client,
                      const string& name,
-                     const KuduSchema& schema) {
-  data_.reset(new KuduTable::Data(client, name, schema));
+                     const KuduSchema& schema)
+  : data_(new KuduTable::Data(client, name, schema)) {
 }
 
 KuduTable::~KuduTable() {
+  delete data_;
 }
 
 const string& KuduTable::name() const {
@@ -425,18 +432,16 @@ const KuduSchema& KuduTable::schema() const {
   return data_->schema_;
 }
 
-// Create a new write operation for this table.
-
-gscoped_ptr<KuduInsert> KuduTable::NewInsert() {
-  return gscoped_ptr<KuduInsert>(new KuduInsert(this));
+KuduInsert* KuduTable::NewInsert() {
+  return new KuduInsert(this);
 }
 
-gscoped_ptr<KuduUpdate> KuduTable::NewUpdate() {
-  return gscoped_ptr<KuduUpdate>(new KuduUpdate(this));
+KuduUpdate* KuduTable::NewUpdate() {
+  return new KuduUpdate(this);
 }
 
-gscoped_ptr<KuduDelete> KuduTable::NewDelete() {
-  return gscoped_ptr<KuduDelete>(new KuduDelete(this));
+KuduDelete* KuduTable::NewDelete() {
+  return new KuduDelete(this);
 }
 
 KuduClient* KuduTable::client() const {
@@ -455,9 +460,9 @@ const KuduWriteOperation& KuduError::failed_op() const {
   return *data_->failed_op_;
 }
 
-gscoped_ptr<KuduWriteOperation> KuduError::release_failed_op() {
+KuduWriteOperation* KuduError::release_failed_op() {
   CHECK_NOTNULL(data_->failed_op_.get());
-  return data_->failed_op_.Pass();
+  return data_->failed_op_.release();
 }
 
 bool KuduError::was_possibly_successful() const {
@@ -465,24 +470,27 @@ bool KuduError::was_possibly_successful() const {
   return true;
 }
 
-KuduError::KuduError(gscoped_ptr<KuduWriteOperation> failed_op,
-                     const Status& status) {
-  data_.reset(new KuduError::Data(failed_op.Pass(), status));
+KuduError::KuduError(KuduWriteOperation* failed_op,
+                     const Status& status)
+  : data_(new KuduError::Data(gscoped_ptr<KuduWriteOperation>(failed_op),
+                              status)) {
 }
 
 KuduError::~KuduError() {
+  delete data_;
 }
 
 ////////////////////////////////////////////////////////////
 // KuduSession
 ////////////////////////////////////////////////////////////
 
-KuduSession::KuduSession(const shared_ptr<KuduClient>& client) {
-  data_.reset(new KuduSession::Data(client));
+KuduSession::KuduSession(const shared_ptr<KuduClient>& client)
+  : data_(new KuduSession::Data(client)) {
 }
 
 KuduSession::~KuduSession() {
   WARN_NOT_OK(data_->Close(true), "Closed Session with pending operations.");
+  delete data_;
 }
 
 Status KuduSession::Close() {
@@ -546,27 +554,16 @@ bool KuduSession::HasPendingOperations() const {
   return false;
 }
 
-Status KuduSession::Apply(gscoped_ptr<KuduInsert> write_op) {
-  return Apply(write_op.PassAs<KuduWriteOperation>());
-}
-
-Status KuduSession::Apply(gscoped_ptr<KuduUpdate> write_op) {
-  return Apply(write_op.PassAs<KuduWriteOperation>());
-}
-
-Status KuduSession::Apply(gscoped_ptr<KuduDelete> write_op) {
-  return Apply(write_op.PassAs<KuduWriteOperation>());
-}
-
-Status KuduSession::Apply(gscoped_ptr<KuduWriteOperation> write_op) {
+Status KuduSession::Apply(KuduWriteOperation* write_op) {
   if (!write_op->row().IsKeySet()) {
     Status status = Status::IllegalState("Key not specified", write_op->ToString());
     data_->error_collector_->AddError(gscoped_ptr<KuduError>(
-        new KuduError(write_op.Pass(), status)));
+        new KuduError(write_op, status)));
     return status;
   }
 
-  data_->batcher_->Add(write_op.Pass());
+  gscoped_ptr<KuduWriteOperation> owned_write_op(write_op);
+  data_->batcher_->Add(owned_write_op.Pass());
 
   if (data_->flush_mode_ == AUTO_FLUSH_SYNC) {
     return Flush();
@@ -597,11 +594,12 @@ KuduClient* KuduSession::client() const {
 ////////////////////////////////////////////////////////////
 // KuduTableAlterer
 ////////////////////////////////////////////////////////////
-KuduTableAlterer::KuduTableAlterer(KuduClient* client) {
-  data_.reset(new KuduTableAlterer::Data(client));
+KuduTableAlterer::KuduTableAlterer(KuduClient* client)
+  : data_(new KuduTableAlterer::Data(client)) {
 }
 
 KuduTableAlterer::~KuduTableAlterer() {
+  delete data_;
 }
 
 KuduTableAlterer& KuduTableAlterer::table_name(const string& name) {
@@ -706,19 +704,20 @@ Status KuduTableAlterer::Alter() {
 // KuduScanner
 ////////////////////////////////////////////////////////////
 
-KuduScanner::KuduScanner(KuduTable* table) {
-  data_.reset(new KuduScanner::Data(table));
+KuduScanner::KuduScanner(KuduTable* table)
+  : data_(new KuduScanner::Data(table)) {
 }
 
 KuduScanner::~KuduScanner() {
   Close();
+  delete data_;
 }
 
 Status KuduScanner::SetProjection(const KuduSchema* projection) {
   if (data_->open_) {
     return Status::IllegalState("Projection must be set before Open()");
   }
-  data_->projection_ = projection->schema_.get();
+  data_->projection_ = projection->schema_;
   return Status::OK();
 }
 
@@ -999,14 +998,17 @@ Status KuduScanner::GetCurrentServer(KuduTabletServer** server) {
                                                     rts->ToString()));
   }
   *server = new KuduTabletServer();
-  (*server)->data_.reset(new KuduTabletServer::Data(rts->permanent_uuid(), host_ports[0].host()));
+  (*server)->data_ = new KuduTabletServer::Data(rts->permanent_uuid(),
+                                                host_ports[0].host());
   return Status::OK();
 }
 
-KuduTabletServer::KuduTabletServer() {
+KuduTabletServer::KuduTabletServer()
+  : data_(NULL) {
 }
 
 KuduTabletServer::~KuduTabletServer() {
+  delete data_;
 }
 
 const string& KuduTabletServer::uuid() const {

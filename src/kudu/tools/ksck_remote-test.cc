@@ -22,6 +22,7 @@ using client::KuduColumnSchema;
 using client::KuduInsert;
 using client::KuduSession;
 using client::KuduTable;
+using client::KuduTableCreator;
 using std::tr1::static_pointer_cast;
 using std::tr1::shared_ptr;
 using std::vector;
@@ -58,8 +59,8 @@ class RemoteKsckTest : public KuduTest {
                      .Build(&client_));
 
     // Create one table.
-    ASSERT_OK(client_->NewTableCreator()
-                     ->table_name(kTableName)
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableName)
                      .schema(&schema_)
                      .num_replicas(3)
                      .split_keys(GenerateSplitKeys())
@@ -100,9 +101,9 @@ class RemoteKsckTest : public KuduTest {
     }
 
     for (uint64_t i = 0; continue_writing.Load(); i++) {
-      gscoped_ptr<KuduInsert> insert = table->NewInsert();
+      gscoped_ptr<KuduInsert> insert(table->NewInsert());
       GenerateDataForRow(table->schema(), i, &random_, insert->mutable_row());
-      status = session->Apply(insert.Pass());
+      status = session->Apply(insert.release());
       if (!status.ok()) {
         promise->Set(status);
       }
@@ -136,9 +137,9 @@ class RemoteKsckTest : public KuduTest {
     RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     for (uint64_t i = 0; i < num_rows; i++) {
       VLOG(1) << "Generating write for row id " << i;
-      gscoped_ptr<KuduInsert> insert = table->NewInsert();
+      gscoped_ptr<KuduInsert> insert(table->NewInsert());
       GenerateDataForRow(table->schema(), i, &random_, insert->mutable_row());
-      RETURN_NOT_OK(session->Apply(insert.Pass()));
+      RETURN_NOT_OK(session->Apply(insert.release()));
     }
     RETURN_NOT_OK(session->Flush());
     return Status::OK();

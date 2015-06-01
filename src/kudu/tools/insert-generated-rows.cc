@@ -80,12 +80,12 @@ static int WriteRandomDataToTable(int argc, char** argv) {
   LOG(INFO) << "Inserting random rows...";
   for (uint64_t record_id = 0; true; ++record_id) {
 
-    gscoped_ptr<KuduInsert> insert = table->NewInsert();
+    gscoped_ptr<KuduInsert> insert(table->NewInsert());
     KuduPartialRow* row = insert->mutable_row();
     GenerateDataForRow(schema, record_id, &random, row);
 
     LOG(INFO) << "Inserting record: " << row->ToString();
-    CHECK_OK(session->Apply(insert.Pass()));
+    CHECK_OK(session->Apply(insert.release()));
     Status s = session->Flush();
     if (PREDICT_FALSE(!s.ok())) {
       std::vector<client::KuduError*> errors;

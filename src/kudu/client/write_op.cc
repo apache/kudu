@@ -24,12 +24,12 @@ RowOperationsPB_Type ToInternalWriteType(KuduWriteOperation::Type type) {
 
 KuduWriteOperation::KuduWriteOperation(KuduTable *table)
   : table_(table),
-    row_(table->schema().schema_.get()) {
+    row_(table->schema().schema_) {
 }
 
 KuduWriteOperation::~KuduWriteOperation() {}
 
-gscoped_ptr<EncodedKey> KuduWriteOperation::CreateKey() const {
+EncodedKey* KuduWriteOperation::CreateKey() const {
   CHECK(row_.IsKeySet()) << "key must be set";
 
   ConstContiguousRow row(row_.schema(), row_.row_data_);
@@ -38,7 +38,7 @@ gscoped_ptr<EncodedKey> KuduWriteOperation::CreateKey() const {
     kb.AddColumnKey(row.cell_ptr(i));
   }
   gscoped_ptr<EncodedKey> key(kb.BuildEncodedKey());
-  return key.Pass();
+  return key.release();
 }
 
 // Insert -----------------------------------------------------------------------
