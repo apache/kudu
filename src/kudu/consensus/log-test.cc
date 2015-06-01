@@ -105,7 +105,15 @@ class LogTest : public LogTestBase {
                             vector<int64_t>* terms_by_index);
   void AppendTestSequence(const vector<TestLogSequenceElem>& seq);
 
-  void DoCorruptionTest(CorruptionType type, int offset,
+  // Where to corrupt the log entry.
+  enum CorruptionPosition {
+    // Corrupt/truncate within the header.
+    IN_HEADER,
+    // Corrupt/truncate within the entry data itself.
+    IN_ENTRY
+  };
+
+  void DoCorruptionTest(CorruptionType type, CorruptionPosition place,
                         Status expected_status, int expected_entries);
 
 };
@@ -249,15 +257,29 @@ TEST_F(LogTest, TestBlankLogFile) {
   ASSERT_EQ(entries.size(), 0);
 }
 
-void LogTest::DoCorruptionTest(CorruptionType type, int offset,
+void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
                                Status expected_status, int expected_entries) {
   const int kNumEntries = 4;
   BuildLog();
   OpId op_id = MakeOpId(1, 1);
   ASSERT_OK(AppendNoOps(&op_id, kNumEntries));
+
+  // Find the entry that we want to corrupt before closing the log.
+  LogIndexEntry entry;
+  ASSERT_OK(log_->log_index_->GetEntry(4, &entry));
+
   ASSERT_OK(log_->Close());
 
   // Corrupt the log as specified.
+  int offset;
+  switch (place) {
+    case IN_HEADER:
+      offset = entry.offset_in_segment + 1;
+      break;
+    case IN_ENTRY:
+      offset = entry.offset_in_segment + kEntryHeaderSize + 1;
+      break;
+  }
   ASSERT_OK(CorruptLogFile(
       env_.get(), log_->ActiveSegmentPathForTests(), type, offset));
 
@@ -278,20 +300,28 @@ void LogTest::DoCorruptionTest(CorruptionType type, int offset,
   // Last entry is ignored, but we should still see the previous ones.
   ASSERT_EQ(expected_entries, entries_.size());
 }
-
-
 // Tests that the log reader reads up until some truncated entry is found.
 // It should still return OK, since on a crash, it's acceptable to have
 // a partial entry at EOF.
-TEST_F(LogTest, TestTruncateLog) {
-  DoCorruptionTest(TRUNCATE_FILE, 218, Status::OK(), 3);
+TEST_F(LogTest, TestTruncateLogInEntry) {
+  DoCorruptionTest(TRUNCATE_FILE, IN_ENTRY, Status::OK(), 3);
+}
+
+// Same, but truncate in the middle of the header of that entry.
+TEST_F(LogTest, TestTruncateLogInHeader) {
+  DoCorruptionTest(TRUNCATE_FILE, IN_HEADER, Status::OK(), 3);
 }
 
 // Similar to the above, except flips a byte. In this case, it should return
 // a Corruption instead of an OK, because we still have a valid footer in
 // the file (indicating that all of the entries should be valid as well).
-TEST_F(LogTest, TestCorruptLog) {
-  DoCorruptionTest(FLIP_BYTE, 218, Status::Corruption(""), 3);
+TEST_F(LogTest, TestCorruptLogInEntry) {
+  DoCorruptionTest(FLIP_BYTE, IN_ENTRY, Status::Corruption(""), 3);
+}
+
+// Same, but corrupt in the middle of the header of that entry.
+TEST_F(LogTest, TestCorruptLogInHeader) {
+  DoCorruptionTest(FLIP_BYTE, IN_HEADER, Status::Corruption(""), 3);
 }
 
 // Tests that segments roll over when max segment size is reached

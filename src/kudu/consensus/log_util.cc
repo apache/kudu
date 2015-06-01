@@ -424,7 +424,12 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries,
     gscoped_ptr<LogEntryBatchPB> current_batch;
 
     // Read and validate the entry header first.
-    Status s = ReadEntryHeaderAndBatch(&offset, &tmp_buf, &current_batch);
+    Status s;
+    if (offset + kEntryHeaderSize < read_up_to) {
+      s = ReadEntryHeaderAndBatch(&offset, &tmp_buf, &current_batch);
+    } else {
+      s = Status::Corruption(Substitute("Truncated log entry at offset $0", offset));
+    }
 
     if (PREDICT_FALSE(!s.ok())) {
       if (!s.IsCorruption()) {
