@@ -3,6 +3,7 @@
 
 #include "kudu/fs/fs_manager.h"
 
+#include <deque>
 #include <iostream>
 #include <map>
 #include <tr1/memory>
@@ -41,11 +42,13 @@ DEFINE_bool(enable_data_block_fsync, true,
 DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
               "Valid options are 'file' and 'log'.");
 
+using boost::assign::list_of;
 using google::protobuf::Message;
 using strings::Substitute;
 using std::map;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
+using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::CreateBlockOptions;
 using kudu::fs::BlockManagerOptions;
 using kudu::fs::FileBlockManager;
@@ -80,7 +83,7 @@ FsManager::FsManager(Env* env, const string& root_path)
   : env_(DCHECK_NOTNULL(env)),
     read_only_(false),
     wal_fs_root_(root_path),
-    data_fs_roots_(boost::assign::list_of(root_path).convert_to_container<vector<string> >()),
+    data_fs_roots_(list_of(root_path).convert_to_container<vector<string> >()),
     metric_entity_(NULL),
     initted_(false) {
 }
@@ -205,12 +208,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
 
   RETURN_NOT_OK(Init());
 
-  // Initialize each root dir.
-  //
   // It's OK if a root already exists as long as there's nothing in it.
-  // However, no subdirectories should exist.
-  InstanceMetadataPB metadata;
-  CreateInstanceMetadata(&metadata);
   BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
     if (!env_->FileExists(root)) {
       // We'll create the directory below.
@@ -223,26 +221,50 @@ Status FsManager::CreateInitialFileSystemLayout() {
       return Status::AlreadyPresent("FSManager root is not empty", root);
     }
   }
+
+  // All roots are either empty or non-existent. Create missing roots and all
+  // subdirectories.
+  //
+  // In the event of failure, delete everything we created.
+  deque<ScopedFileDeleter*> delete_on_failure;
+  ElementDeleter d(&delete_on_failure);
+
+  InstanceMetadataPB metadata;
+  CreateInstanceMetadata(&metadata);
   BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
-    RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root),
+    bool created;
+    RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root, &created),
                           "Unable to create FSManager root");
+    if (created) {
+      delete_on_failure.push_front(new ScopedFileDeleter(env_, root));
+    }
     RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root),
                           "Unable to write instance metadata");
+    delete_on_failure.push_front(new ScopedFileDeleter(
+        env_, GetInstanceMetadataPath(root)));
   }
 
-  // Initialize wals dir.
-  RETURN_NOT_OK_PREPEND(env_->CreateDir(GetWalsRootDir()),
-                        "Unable to create WAL directory");
+  // Initialize ancillary directories.
+  vector<string> ancillary_dirs = list_of
+      (GetWalsRootDir())
+      (GetTabletMetadataDir())
+      (GetConsensusMetadataDir());
+  BOOST_FOREACH(const string& dir, ancillary_dirs) {
+    bool created;
+    RETURN_NOT_OK_PREPEND(CreateDirIfMissing(dir, &created),
+                          Substitute("Unable to create directory $0", dir));
+    if (created) {
+      delete_on_failure.push_front(new ScopedFileDeleter(env_, dir));
+    }
+  }
 
-  // Initialize tablet metadata directory.
-  RETURN_NOT_OK_PREPEND(env_->CreateDir(GetTabletMetadataDir()),
-                        "Unable to create tablet metadata directory");
-
-  // Initialize consensus metadata dir.
-  RETURN_NOT_OK_PREPEND(env_->CreateDir(GetConsensusMetadataDir()),
-                        "Unable to create consensus metadata directory");
-
+  // And lastly, the block manager.
   RETURN_NOT_OK_PREPEND(block_manager_->Create(), "Unable to create block manager");
+
+  // Success: don't delete any files.
+  BOOST_FOREACH(ScopedFileDeleter* deleter, delete_on_failure) {
+    deleter->Cancel();
+  }
   return Status::OK();
 }
 

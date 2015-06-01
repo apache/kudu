@@ -4,6 +4,7 @@
 #include "kudu/fs/file_block_manager.h"
 
 #include <boost/foreach.hpp>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -21,6 +22,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
+using kudu::env_util::ScopedFileDeleter;
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
@@ -545,18 +547,30 @@ FileBlockManager::~FileBlockManager() {
 Status FileBlockManager::Create() {
   CHECK(!read_only_);
 
+  deque<ScopedFileDeleter*> delete_on_failure;
+  ElementDeleter d(&delete_on_failure);
+
+  // Ensure the data paths exist and create the instance files.
   BOOST_FOREACH(const string& root_path, root_paths_) {
-    Status s = env_->CreateDir(root_path);
-    if (!s.ok() && !s.IsAlreadyPresent()) {
-      return s;
+    bool created;
+    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_path, &created),
+                          Substitute("Could not create directory $0", root_path));
+    if (created) {
+      delete_on_failure.push_front(new ScopedFileDeleter(env_, root_path));
     }
+
     string instance_filename = JoinPathSegments(
         root_path, kInstanceMetadataFileName);
-
     PathInstanceMetadataFile metadata(env_, kBlockManagerType,
                                       instance_filename);
     RETURN_NOT_OK_PREPEND(metadata.Create(),
                           Substitute("Could not create $0", instance_filename));
+    delete_on_failure.push_front(new ScopedFileDeleter(env_, instance_filename));
+  }
+
+  // Success: don't delete any files.
+  BOOST_FOREACH(ScopedFileDeleter* deleter, delete_on_failure) {
+    deleter->Cancel();
   }
   return Status::OK();
 }

@@ -100,7 +100,20 @@ ScopedFileDeleter::ScopedFileDeleter(Env* env, const std::string& path)
 
 ScopedFileDeleter::~ScopedFileDeleter() {
   if (should_delete_) {
-    WARN_NOT_OK(env_->DeleteFile(path_), "Failed to remove temporary file");
+    bool is_dir;
+    Status s = env_->IsDirectory(path_, &is_dir);
+    WARN_NOT_OK(s, Substitute(
+        "Failed to determine if path is a directory: $0", path_));
+    if (!s.ok()) {
+      return;
+    }
+    if (is_dir) {
+      WARN_NOT_OK(env_->DeleteDir(path_),
+                  Substitute("Failed to remove directory: $0", path_));
+    } else {
+      WARN_NOT_OK(env_->DeleteFile(path_),
+          Substitute("Failed to remove file: $0", path_));
+    }
   }
 }
 

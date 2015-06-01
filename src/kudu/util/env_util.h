@@ -51,7 +51,7 @@ Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
 Status CreateDirIfMissing(Env* env, const std::string& path,
                           bool* created = NULL);
 
-// Deletes a file when this object goes out of scope.
+// Deletes a file or directory when this object goes out of scope.
 //
 // The deletion may be cancelled by calling .Cancel().
 // This is typically useful for cleaning up temporary files if the

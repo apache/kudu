@@ -16,6 +16,7 @@
 #include "kudu/util/alignment.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
@@ -67,6 +68,7 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using std::tr1::unordered_set;
 using strings::Substitute;
+using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::internal::LogBlock;
 using kudu::fs::internal::LogBlockContainer;
 using kudu::pb_util::ReadablePBContainerFile;
@@ -211,7 +213,7 @@ class LogBlockContainer {
 
   // Reads the container's metadata from disk, sanity checking and
   // returning the records.
-  Status ReadContainerRecords(std::deque<BlockRecordPB>* records) const;
+  Status ReadContainerRecords(deque<BlockRecordPB>* records) const;
 
   // Updates 'total_bytes_written_', marking this container as full if
   // needed. Should only be called when a block is fully written, as it
@@ -1012,10 +1014,16 @@ LogBlockManager::~LogBlockManager() {
 Status LogBlockManager::Create() {
   CHECK(!read_only_);
 
+  deque<ScopedFileDeleter*> delete_on_failure;
+  ElementDeleter d(&delete_on_failure);
+
+  // Ensure the data paths exist and create the instance files.
   BOOST_FOREACH(const string& root_path, root_paths_) {
-    Status s = env_->CreateDir(root_path);
-    if (!s.ok() && !s.IsAlreadyPresent()) {
-      return s;
+    bool created;
+    RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_path, &created),
+                          Substitute("Could not create directory $0", root_path));
+    if (created) {
+      delete_on_failure.push_front(new ScopedFileDeleter(env_, root_path));
     }
 
     if (FLAGS_log_block_manager_test_hole_punching) {
@@ -1025,10 +1033,15 @@ Status LogBlockManager::Create() {
 
     string instance_filename = JoinPathSegments(
         root_path, kInstanceMetadataFileName);
-
     PathInstanceMetadataFile metadata(env_, kBlockManagerType,
                                       instance_filename);
     RETURN_NOT_OK_PREPEND(metadata.Create(), instance_filename);
+    delete_on_failure.push_front(new ScopedFileDeleter(env_, instance_filename));
+  }
+
+  // Success: don't delete any files.
+  BOOST_FOREACH(ScopedFileDeleter* deleter, delete_on_failure) {
+    deleter->Cancel();
   }
   return Status::OK();
 }
@@ -1436,6 +1449,9 @@ Status LogBlockManager::CheckHolePunch(const string& path) {
   RWFileOptions opts;
   RETURN_NOT_OK(env_->NewRWFile(opts, filename, &file));
 
+  // The file has been created; delete it on exit no matter what happens.
+  ScopedFileDeleter file_deleter(env_, filename);
+
   // Preallocate it, making sure the file's size is what we'd expect.
   uint64_t sz;
   RETURN_NOT_OK(file->PreAllocate(0, kFileSize));
@@ -1455,9 +1471,6 @@ Status LogBlockManager::CheckHolePunch(const string& path) {
         filename, kPunchedFileSize, sz));
   }
 
-  // Explicitly leave the file behind if the test fails, so that someone can
-  // troubleshoot manually.
-  RETURN_NOT_OK(env_->DeleteFile(filename));
   return Status::OK();
 }
 
