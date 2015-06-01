@@ -1018,12 +1018,14 @@ Status LogBlockManager::Create() {
   ElementDeleter d(&delete_on_failure);
 
   // Ensure the data paths exist and create the instance files.
+  unordered_set<string> to_sync;
   BOOST_FOREACH(const string& root_path, root_paths_) {
     bool created;
     RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_path, &created),
                           Substitute("Could not create directory $0", root_path));
     if (created) {
       delete_on_failure.push_front(new ScopedFileDeleter(env_, root_path));
+      to_sync.insert(DirName(root_path));
     }
 
     if (FLAGS_log_block_manager_test_hole_punching) {
@@ -1037,6 +1039,14 @@ Status LogBlockManager::Create() {
                                       instance_filename);
     RETURN_NOT_OK_PREPEND(metadata.Create(), instance_filename);
     delete_on_failure.push_front(new ScopedFileDeleter(env_, instance_filename));
+  }
+
+  // Ensure newly created directories are synchronized to disk.
+  if (FLAGS_enable_data_block_fsync) {
+    BOOST_FOREACH(const string& dir, to_sync) {
+      RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
+                            Substitute("Unable to synchronize directory $0", dir));
+    }
   }
 
   // Success: don't delete any files.

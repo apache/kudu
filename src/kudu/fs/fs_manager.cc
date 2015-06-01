@@ -231,12 +231,14 @@ Status FsManager::CreateInitialFileSystemLayout() {
 
   InstanceMetadataPB metadata;
   CreateInstanceMetadata(&metadata);
+  unordered_set<string> to_sync;
   BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
     bool created;
     RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root, &created),
                           "Unable to create FSManager root");
     if (created) {
       delete_on_failure.push_front(new ScopedFileDeleter(env_, root));
+      to_sync.insert(DirName(root));
     }
     RETURN_NOT_OK_PREPEND(WriteInstanceMetadata(metadata, root),
                           "Unable to write instance metadata");
@@ -255,6 +257,15 @@ Status FsManager::CreateInitialFileSystemLayout() {
                           Substitute("Unable to create directory $0", dir));
     if (created) {
       delete_on_failure.push_front(new ScopedFileDeleter(env_, dir));
+      to_sync.insert(DirName(dir));
+    }
+  }
+
+  // Ensure newly created directories are synchronized to disk.
+  if (FLAGS_enable_data_block_fsync) {
+    BOOST_FOREACH(const string& dir, to_sync) {
+      RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
+                            Substitute("Unable to synchronize directory $0", dir));
     }
   }
 

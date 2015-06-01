@@ -6,6 +6,7 @@
 #include <boost/foreach.hpp>
 #include <deque>
 #include <string>
+#include <tr1/unordered_set>
 #include <vector>
 
 #include "kudu/fs/block_id-inl.h"
@@ -25,6 +26,7 @@
 using kudu::env_util::ScopedFileDeleter;
 using std::string;
 using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -551,12 +553,14 @@ Status FileBlockManager::Create() {
   ElementDeleter d(&delete_on_failure);
 
   // Ensure the data paths exist and create the instance files.
+  unordered_set<string> to_sync;
   BOOST_FOREACH(const string& root_path, root_paths_) {
     bool created;
     RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_path, &created),
                           Substitute("Could not create directory $0", root_path));
     if (created) {
       delete_on_failure.push_front(new ScopedFileDeleter(env_, root_path));
+      to_sync.insert(DirName(root_path));
     }
 
     string instance_filename = JoinPathSegments(
@@ -566,6 +570,14 @@ Status FileBlockManager::Create() {
     RETURN_NOT_OK_PREPEND(metadata.Create(),
                           Substitute("Could not create $0", instance_filename));
     delete_on_failure.push_front(new ScopedFileDeleter(env_, instance_filename));
+  }
+
+  // Ensure newly created directories are synchronized to disk.
+  if (FLAGS_enable_data_block_fsync) {
+    BOOST_FOREACH(const string& dir, to_sync) {
+      RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
+                            Substitute("Unable to synchronize directory $0", dir));
+    }
   }
 
   // Success: don't delete any files.
