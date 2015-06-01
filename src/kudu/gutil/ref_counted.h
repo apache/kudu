@@ -8,7 +8,6 @@
 #include <cassert>
 
 #include "kudu/gutil/atomic_refcount.h"
-#include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/threading/thread_collision_warner.h"
 
@@ -17,7 +16,7 @@ namespace subtle {
 
 typedef Atomic32 AtomicRefCount;
 
-class KUDU_EXPORT RefCountedBase {
+class RefCountedBase {
  public:
   bool HasOneRef() const { return ref_count_ == 1; }
 
@@ -41,7 +40,7 @@ class KUDU_EXPORT RefCountedBase {
   DISALLOW_COPY_AND_ASSIGN(RefCountedBase);
 };
 
-class KUDU_EXPORT RefCountedThreadSafeBase {
+class RefCountedThreadSafeBase {
  public:
   bool HasOneRef() const;
 

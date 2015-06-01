@@ -67,58 +67,13 @@ if (KUDU_EXPORTED_CLIENT)
 
   # Headers: gutil
   install(FILES
-    ../gutil/arm_instruction_set_select.h
-    ../gutil/atomic_refcount.h
-    ../gutil/atomicops.h
-    ../gutil/atomicops-internals-x86.h
-    ../gutil/basictypes.h
-    ../gutil/bind.h
-    ../gutil/bind_helpers.h
-    ../gutil/bind_internal.h
-    ../gutil/callback.h
-    ../gutil/callback_forward.h
-    ../gutil/callback_internal.h
-    ../gutil/casts.h
-    ../gutil/dynamic_annotations.h
-    ../gutil/gscoped_ptr.h
     ../gutil/gtest.h
-    ../gutil/int128.h
     ../gutil/integral_types.h
     ../gutil/kudu_export.h
     ../gutil/logging.h
-    ../gutil/logging-inl.h
     ../gutil/macros.h
-    ../gutil/move.h
     ../gutil/port.h
-    ../gutil/raw_scoped_refptr_mismatch_checker.h
-    ../gutil/ref_counted.h
-    ../gutil/template_util.h
-    ../gutil/tuple.h
-    ../gutil/type_traits.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/gutil)
-
-  # Headers: gutil/hash
-  install(FILES
-    ../gutil/hash/builtin_type_hash.h
-    ../gutil/hash/city.h
-    ../gutil/hash/hash.h
-    ../gutil/hash/hash128to64.h
-    ../gutil/hash/jenkins.h
-    ../gutil/hash/jenkins_lookup2.h
-    ../gutil/hash/legacy_hash.h
-    ../gutil/hash/string_hash.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/gutil/hash)
-
-  # Headers: gutil/strings
-  install(FILES
-    ../gutil/strings/fastmem.h
-    ../gutil/strings/stringpiece.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/gutil/strings)
-
-  # Headers: gutil/threading
-  install(FILES
-    ../gutil/threading/thread_collision_warner.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/gutil/threading)
 
   # Headers: client
   install(FILES
@@ -137,7 +92,6 @@ if (KUDU_EXPORTED_CLIENT)
 
   # Headers: util
   install(FILES
-    ../util/faststring.h
     ../util/monotime.h
     ../util/slice.h
     ../util/status.h
