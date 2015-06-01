@@ -114,6 +114,11 @@ fi
 export TOOLCHAIN=/mnt/toolchain/toolchain.sh
 if [ -f "$TOOLCHAIN" ]; then
   source $TOOLCHAIN
+
+  # Explicitly add LLVM 3.5 to the PATH; it's not included in toolchain.sh.
+  #
+  # If it doesn't exist, this will have no effect.
+  PATH=/opt/toolchain/llvm-3.5.0/bin:$PATH  
 fi
 
 thirdparty/build-if-necessary.sh
