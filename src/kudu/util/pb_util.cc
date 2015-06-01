@@ -599,10 +599,15 @@ Status ReadPBContainerFromPath(Env* env, const std::string& path, Message* msg) 
 
 Status WritePBContainerToPath(Env* env, const std::string& path,
                               const Message& msg,
+                              CreateMode create,
                               SyncMode sync) {
   TRACE_EVENT2("io", "WritePBContainerToPath",
                "path", path,
                "msg_type", msg.GetTypeName());
+
+  if (create == NO_OVERWRITE && env->FileExists(path)) {
+    return Status::AlreadyPresent(Substitute("File $0 already exists", path));
+  }
 
   const string tmp_template = path + kTmpTemplateSuffix;
   string tmp_path;

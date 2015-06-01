@@ -333,7 +333,8 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
 
   string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
-                            fs_manager_->env(), path, pb, pb_util::SYNC),
+                            fs_manager_->env(), path, pb,
+                            pb_util::OVERWRITE, pb_util::SYNC),
                         Substitute("Failed to write tablet metadata $0", tablet_id_));
 
   // Now that the superblock is written, try to delete the orphaned blocks.

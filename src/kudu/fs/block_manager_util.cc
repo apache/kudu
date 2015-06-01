@@ -36,10 +36,6 @@ Status PathInstanceMetadataFile::Create() {
   DCHECK(!lock_) <<
       "Creating a metadata file that's already locked would release the lock";
 
-  if (env_->FileExists(filename_)) {
-    return Status::AlreadyPresent("Block manager instance already exists",
-                                  filename_);
-  }
   uint64_t block_size;
   RETURN_NOT_OK(env_->GetBlockSize(DirName(filename_), &block_size));
 
@@ -50,6 +46,7 @@ Status PathInstanceMetadataFile::Create() {
 
   return pb_util::WritePBContainerToPath(
       env_, filename_, new_instance,
+      pb_util::NO_OVERWRITE,
       FLAGS_enable_data_block_fsync ? pb_util::SYNC : pb_util::NO_SYNC);
 }
 

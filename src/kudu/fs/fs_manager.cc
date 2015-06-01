@@ -266,7 +266,9 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
   // The instance metadata is written effectively once per TS, so the
   // durability cost is negligible.
   RETURN_NOT_OK(pb_util::WritePBContainerToPath(env_, path,
-                                                metadata, pb_util::SYNC));
+                                                metadata,
+                                                pb_util::NO_OVERWRITE,
+                                                pb_util::SYNC));
   LOG(INFO) << "Generated new instance metadata in path " << path << ":\n"
             << metadata.DebugString();
   return Status::OK();

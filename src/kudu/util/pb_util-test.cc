@@ -49,7 +49,8 @@ class TestPBUtil : public KuduTest {
   // Create a container file with expected values.
   // Since this is a unit test class, and we want it to be fast, we do not
   // fsync by default.
-  Status CreateKnownGoodContainerFile(SyncMode sync = NO_SYNC);
+  Status CreateKnownGoodContainerFile(CreateMode create = OVERWRITE,
+                                      SyncMode sync = NO_SYNC);
 
   // XORs the data in the specified range of the file at the given path.
   Status BitFlipFileByteRange(const string& path, uint64_t offset, uint64_t length);
@@ -60,11 +61,11 @@ class TestPBUtil : public KuduTest {
   string path_;
 };
 
-Status TestPBUtil::CreateKnownGoodContainerFile(SyncMode sync) {
+Status TestPBUtil::CreateKnownGoodContainerFile(CreateMode create, SyncMode sync) {
   ProtoContainerTestPB test_pb;
   test_pb.set_name(kTestKeyvalName);
   test_pb.set_value(kTestKeyvalValue);
-  return WritePBContainerToPath(env_.get(), path_, test_pb, sync);
+  return WritePBContainerToPath(env_.get(), path_, test_pb, create, sync);
 }
 
 Status TestPBUtil::BitFlipFileByteRange(const string& path, uint64_t offset, uint64_t length) {
@@ -149,7 +150,7 @@ TEST_F(TestPBUtil, TestPBContainerSimple) {
   BOOST_FOREACH(SyncMode mode, modes) {
 
     // Write the file.
-    ASSERT_OK(CreateKnownGoodContainerFile(mode));
+    ASSERT_OK(CreateKnownGoodContainerFile(NO_OVERWRITE, mode));
 
     // Read it back, should validate and contain the expected values.
     ProtoContainerTestPB test_pb;
@@ -396,6 +397,13 @@ TEST_F(TestPBUtil, TestDumpPBContainer) {
 
   DumpPBCToString(path_, true, &output);
   ASSERT_STREQ(kExpectedOutputShort, output.c_str());
+}
+
+TEST_F(TestPBUtil, TestOverwriteExistingPB) {
+  ASSERT_OK(CreateKnownGoodContainerFile(NO_OVERWRITE));
+  ASSERT_TRUE(CreateKnownGoodContainerFile(NO_OVERWRITE).IsAlreadyPresent());
+  ASSERT_OK(CreateKnownGoodContainerFile(OVERWRITE));
+  ASSERT_OK(CreateKnownGoodContainerFile(OVERWRITE));
 }
 
 } // namespace pb_util

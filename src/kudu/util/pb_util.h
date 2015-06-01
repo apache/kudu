@@ -42,6 +42,11 @@ enum SyncMode {
   NO_SYNC
 };
 
+enum CreateMode {
+  OVERWRITE,
+  NO_OVERWRITE
+};
+
 // See MessageLite::AppendToString
 bool AppendToString(const MessageLite &msg, faststring *output);
 
@@ -272,8 +277,12 @@ Status ReadPBContainerFromPath(Env* env, const std::string& path,
                                google::protobuf::Message* msg);
 
 // Serialize a "containerized" protobuf to the given path.
+//
+// If create == NO_OVERWRITE and 'path' already exists, the function will fail.
+// If sync == SYNC, the newly created file will be fsynced before returning.
 Status WritePBContainerToPath(Env* env, const std::string& path,
                               const google::protobuf::Message& msg,
+                              CreateMode create,
                               SyncMode sync);
 
 } // namespace pb_util

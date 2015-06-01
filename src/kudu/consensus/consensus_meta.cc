@@ -162,6 +162,7 @@ Status ConsensusMetadata::Flush() {
   string meta_file_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
   RETURN_NOT_OK_PREPEND(pb_util::WritePBContainerToPath(
       fs_manager_->env(), meta_file_path, pb_,
+      pb_util::OVERWRITE,
       // We use FLAGS_log_force_fsync_all here because the consensus metadata is
       // essentially an extension of the primary durability mechanism of the
       // consensus subsystem: the WAL. Using the same flag ensures that the WAL
