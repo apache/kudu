@@ -172,13 +172,7 @@ class FsManager {
     return env_->GetChildren(path, objects);
   }
 
-  Status CreateDirIfMissing(const std::string& path, bool* created = NULL) {
-    Status s = env_->CreateDir(path);
-    if (created != NULL) {
-      *created = s.ok();
-    }
-    return s.IsAlreadyPresent() ? Status::OK() : s;
-  }
+  Status CreateDirIfMissing(const std::string& path, bool* created = NULL);
 
  private:
   FRIEND_TEST(FsManagerTestBase, TestDuplicatePaths);

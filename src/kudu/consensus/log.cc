@@ -204,7 +204,6 @@ Status Log::Open(const LogOptions &options,
                  const scoped_refptr<MetricEntity>& metric_entity,
                  scoped_refptr<Log>* log) {
 
-  RETURN_NOT_OK(fs_manager->CreateDirIfMissing(fs_manager->GetWalsRootDir()));
   string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_id);
   RETURN_NOT_OK(fs_manager->CreateDirIfMissing(tablet_wal_path));
 

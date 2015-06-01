@@ -219,13 +219,6 @@ Status RemoteBootstrapClient::EndRemoteBootstrapSession() {
 Status RemoteBootstrapClient::DownloadWALs() {
   CHECK_EQ(kSessionStarted, state_);
 
-  // Create WAL root dir if needed.
-  bool created_wal_root = false;
-  RETURN_NOT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetWalsRootDir(), &created_wal_root));
-  if (created_wal_root) {
-    RETURN_NOT_OK(fs_manager_->env()->SyncDir(DirName(fs_manager_->GetWalsRootDir())));
-  }
-
   // Delete and recreate WAL dir if it already exists, to ensure stray files are
   // not kept from previous bootstraps and runs.
   string path = fs_manager_->GetTabletWalDir(tablet_id_);

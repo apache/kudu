@@ -289,6 +289,10 @@ Status FsManager::IsDirectoryEmpty(const string& path, bool* is_empty) {
   return Status::OK();
 }
 
+Status FsManager::CreateDirIfMissing(const string& path, bool* created) {
+  return env_util::CreateDirIfMissing(env_, path, created);
+}
+
 const string& FsManager::uuid() const {
   return CHECK_NOTNULL(metadata_.get())->uuid();
 }

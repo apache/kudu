@@ -44,6 +44,13 @@ Status OpenFileForSequential(Env *env, const string &path,
 Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
                  Slice* result, uint8_t* scratch);
 
+// Creates the directory given by 'path', unless it already exists.
+//
+// If 'created' is not NULL, sets it to true if the directory was
+// created, false otherwise.
+Status CreateDirIfMissing(Env* env, const std::string& path,
+                          bool* created = NULL);
+
 // Deletes a file when this object goes out of scope.
 //
 // The deletion may be cancelled by calling .Cancel().

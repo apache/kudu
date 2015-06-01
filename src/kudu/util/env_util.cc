@@ -84,6 +84,14 @@ Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
   return Status::OK();
 }
 
+Status CreateDirIfMissing(Env* env, const string& path, bool* created) {
+  Status s = env->CreateDir(path);
+  if (created != NULL) {
+    *created = s.ok();
+  }
+  return s.IsAlreadyPresent() ? Status::OK() : s;
+}
+
 ScopedFileDeleter::ScopedFileDeleter(Env* env, const std::string& path)
   : env_(DCHECK_NOTNULL(env)),
     path_(path),
