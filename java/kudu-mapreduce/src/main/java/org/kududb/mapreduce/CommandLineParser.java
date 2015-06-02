@@ -26,6 +26,9 @@ public class CommandLineParser {
   public static final long OPERATION_TIMEOUT_MS_DEFAULT =
       AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
   public static final String ADMIN_OPERATION_TIMEOUT_MS_KEY = "kudu.admin.operation.timeout.ms";
+  public static final String SOCKET_READ_TIMEOUT_MS_KEY = "kudu.socket.read.timeout.ms";
+  public static final long SOCKET_READ_TIMEOUT_MS_DEFAULT =
+      AsyncKuduClient.DEFAULT_SOCKET_READ_TIMEOUT_MS;
   public static final String NUM_REPLICAS_KEY = "kudu.num.replicas";
   public static final int NUM_REPLICAS_DEFAULT = 3;
 
@@ -63,6 +66,14 @@ public class CommandLineParser {
   }
 
   /**
+   * Get the configured timeout for socket reads.
+   * @return a long that represents the passed timeout, or the default value
+   */
+  public long getSocketReadTimeoutMs() {
+    return conf.getLong(SOCKET_READ_TIMEOUT_MS_KEY, SOCKET_READ_TIMEOUT_MS_DEFAULT);
+  }
+
+  /**
    * Get the number of replicas to use when configuring a new table.
    * @return an int that represents the passed number of replicas to use, or the default value.
    */
@@ -78,6 +89,7 @@ public class CommandLineParser {
     return new AsyncKuduClient.AsyncKuduClientBuilder(getMasterAddresses())
         .defaultOperationTimeoutMs(getOperationTimeoutMs())
         .defaultAdminOperationTimeoutMs(getAdminOperationTimeoutMs())
+        .defaultSocketReadTimeoutMs(getSocketReadTimeoutMs())
         .build();
   }
 
@@ -89,6 +101,7 @@ public class CommandLineParser {
     return new KuduClient.KuduClientBuilder(getMasterAddresses())
         .defaultOperationTimeoutMs(getOperationTimeoutMs())
         .defaultAdminOperationTimeoutMs(getAdminOperationTimeoutMs())
+        .defaultSocketReadTimeoutMs(getSocketReadTimeoutMs())
         .build();
   }
 
@@ -103,6 +116,8 @@ public class CommandLineParser {
           "operations, defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n"+
       "  -D" + ADMIN_OPERATION_TIMEOUT_MS_KEY + "=TIME - timeout for admin operations " +
         ", defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n"+
+      "  -D" + SOCKET_READ_TIMEOUT_MS_KEY + "=TIME - timeout for socket reads " +
+        ", defaults to " + SOCKET_READ_TIMEOUT_MS_DEFAULT + " \n"+
       "  -D" + MASTER_ADDRESSES_KEY + "=ADDRESSES - addresses to reach the Masters, " +
         "defaults to " + MASTER_ADDRESSES_DEFAULT + " which is usually wrong.\n" +
       "  -D " + NUM_REPLICAS_KEY + "=NUM - number of replicas to use when configuring a new " +

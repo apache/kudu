@@ -30,6 +30,7 @@ package org.kududb.client;
 
 import com.stumbleupon.async.Deferred;
 
+import org.jboss.netty.handler.timeout.ReadTimeoutException;
 import org.kududb.WireProtocol;
 import org.kududb.master.Master;
 import org.kududb.rpc.RpcHeader;
@@ -134,11 +135,14 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   private final String uuid;
 
+  private final long socketReadTimeoutMs;
+
   private SecureRpcHelper secureRpcHelper;
 
-  public TabletClient(AsyncKuduClient client, String uuid, boolean isMaster) {
+  public TabletClient(AsyncKuduClient client, String uuid) {
     this.kuduClient = client;
     this.uuid = uuid;
+    this.socketReadTimeoutMs = client.getDefaultSocketReadTimeoutMs();
   }
 
   <R> void sendRpc(KuduRpc<R> rpc) {
@@ -169,12 +173,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       }
     }
     if (copyOfDead) {
-      if (rpc.getTablet() == null) {
-        // Can't retry, dunno where it should go.
-        rpc.errback(new ConnectionResetException(null));
-      } else {
-        kuduClient.sendRpcToTablet(rpc);  // Re-schedule the RPC.
-      }
+      failOrRetryRpc(rpc, new ConnectionResetException(null));
       return;
     } else if (tryagain) {
       // This recursion will not lead to a loop because we only get here if we
@@ -197,9 +196,23 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
           .setCallId(rpcid)
           .setRemoteMethod(
               RpcHeader.RemoteMethodPB.newBuilder().setServiceName(service).setMethodName(method));
-      if (rpc.deadlineTracker.hasDeadline()) {
-        headerBuilder.setTimeoutMillis((int)rpc.deadlineTracker.getMillisBeforeDeadline());
+
+      // If any timeout is set, find the lowest non-zero one, since this will be the deadline that
+      // the server must respect.
+      if (rpc.deadlineTracker.hasDeadline() || socketReadTimeoutMs > 0) {
+        long millisBeforeDeadline = Long.MAX_VALUE;
+        if (rpc.deadlineTracker.hasDeadline()) {
+          millisBeforeDeadline = rpc.deadlineTracker.getMillisBeforeDeadline();
+        }
+
+        long localRpcTimeoutMs = Long.MAX_VALUE;
+        if (socketReadTimeoutMs > 0) {
+          localRpcTimeoutMs = socketReadTimeoutMs;
+        }
+
+        headerBuilder.setTimeoutMillis((int) Math.min(millisBeforeDeadline, localRpcTimeoutMs));
       }
+
       payload = rpc.serialize(headerBuilder.build());
     } catch (Exception e) {
         LOG.error("Uncaught exception while serializing RPC: " + rpc, e);
@@ -373,7 +386,10 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
     {
       final KuduRpc<?> removed = rpcs_inflight.remove(rpcid);
-      assert rpc == removed;
+      if (removed == null) {
+        // The RPC we were decoding was cleaned up already, give up.
+        throw new NonRecoverableException("RPC not found");
+      }
     }
 
     // We can get this Message from within the RPC's expected type,
@@ -593,8 +609,12 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private void cleanup(final Channel chan) {
     final ConnectionResetException exception =
         new ConnectionResetException(getPeerUuidLoggingString() + "Connection reset on " + chan);
-    failOrRetryRpcs(rpcs_inflight.values(), exception);
-    rpcs_inflight.clear();
+    for (Iterator<KuduRpc<?>> ite = rpcs_inflight.values().iterator(); ite
+        .hasNext();) {
+      KuduRpc<?> rpc = ite.next();
+      failOrRetryRpc(rpc, exception);
+      ite.remove();
+    }
 
     final ArrayList<KuduRpc<?>> rpcs;
     synchronized (this) {
@@ -608,22 +628,29 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   }
 
   /**
-   * Fail all RPCs in a collection or attempt to reschedule them if possible.
-   * @param rpcs A possibly empty but non-{@code null} collection of RPCs.
-   * @param exception The exception with which to fail RPCs that can't be
-   * retried.
+   * Retry all the given RPCs.
+   * @param rpcs a possibly empty but non-{@code null} collection of RPCs to retry or fail
+   * @param exception an exception to propagate with the RPCs
    */
   private void failOrRetryRpcs(final Collection<KuduRpc<?>> rpcs,
                                final ConnectionResetException exception) {
     for (final KuduRpc<?> rpc : rpcs) {
-      final AsyncKuduClient.RemoteTablet tablet = rpc.getTablet();
-      if (tablet == null  // Can't retry, dunno where this RPC should go.
-          ) {
-        rpc.errback(exception);
-      } else {
-        kuduClient.handleTabletNotFound(rpc, new ConnectionResetException(exception.getMessage(),
-                exception), this);
-      }
+      failOrRetryRpc(rpc, exception);
+    }
+  }
+
+  /**
+   * Retry the given RPC.
+   * @param rpc an RPC to retry or fail
+   * @param exception an exception to propagate with the RPC
+   */
+  private void failOrRetryRpc(final KuduRpc<?> rpc,
+                              final ConnectionResetException exception) {
+    AsyncKuduClient.RemoteTablet tablet = rpc.getTablet();
+    if (tablet == null) {  // Can't retry, dunno where this RPC should go.
+      rpc.errback(exception);
+    } else {
+      kuduClient.handleTabletNotFound(rpc, exception, this);
     }
   }
 
@@ -637,6 +664,11 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (e instanceof RejectedExecutionException) {
       LOG.warn(getPeerUuidLoggingString() + "RPC rejected by the executor,"
           + " ignore this if we're shutting down", e);
+    } else if (e instanceof ReadTimeoutException) {
+      LOG.debug(getPeerUuidLoggingString() + "Encountered a read timeout");
+      // Doing the cleanup here since we want to invalidate all the RPCs right _now_, and not let
+      // the ReplayingDecoder continue decoding through Channels.close() below.
+      cleanup(c);
     } else {
       LOG.error(getPeerUuidLoggingString() + "Unexpected exception from downstream on " + c, e);
     }

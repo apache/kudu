@@ -264,6 +264,19 @@ public class KuduClient {
     }
 
     /**
+     * Sets the default timeout to use when waiting on data from a socket.
+     * Optional.
+     * If not provided, defaults to 5s.
+     * A value of 0 disables the timeout.
+     * @param timeoutMs a timeout in milliseconds
+     * @return this builder
+     */
+    public KuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
+      clientBuilder.defaultSocketReadTimeoutMs(timeoutMs);
+      return this;
+    }
+
+    /**
      * Sets the channel factory to be used by the client.
      * Optional.
      * @param channelFactory a socket channel factory for this client

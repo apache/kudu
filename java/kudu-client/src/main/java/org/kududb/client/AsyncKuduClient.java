@@ -50,6 +50,7 @@ import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 import org.jboss.netty.channel.socket.SocketChannel;
 import org.jboss.netty.channel.socket.SocketChannelConfig;
 import org.jboss.netty.channel.socket.nio.NioClientSocketChannelFactory;
+import org.jboss.netty.handler.timeout.ReadTimeoutHandler;
 import org.jboss.netty.util.HashedWheelTimer;
 import org.jboss.netty.util.Timeout;
 import org.jboss.netty.util.TimerTask;
@@ -116,6 +117,7 @@ public class AsyncKuduClient {
   public static final byte[] EMPTY_ARRAY = new byte[0];
   public static final int NO_TIMESTAMP = -1;
   public static final long DEFAULT_OPERATION_TIMEOUT_MS = 10000;
+  public static final long DEFAULT_SOCKET_READ_TIMEOUT_MS = 5000;
 
   private final ClientSocketChannelFactory channelFactory;
 
@@ -214,18 +216,22 @@ public class AsyncKuduClient {
 
   private final long defaultAdminOperationTimeoutMs;
 
+  private final long defaultSocketReadTimeoutMs;
+
   private volatile boolean closed;
 
   private AsyncKuduClient(List<HostAndPort> masterAddresses,
                           ClientSocketChannelFactory channelFactory,
                           long defaultOperationTimeoutMs,
-                          long defaultAdminOperationTimeoutMs) {
+                          long defaultAdminOperationTimeoutMs,
+                          long defaultSocketReadTimeoutMs) {
     this.channelFactory = channelFactory;
     this.masterAddresses = masterAddresses;
     this.masterTableHack = new KuduTable(this, MASTER_TABLE_HACK,
        new Schema(new ArrayList<ColumnSchema>(0)));
     this.defaultOperationTimeoutMs = defaultOperationTimeoutMs;
     this.defaultAdminOperationTimeoutMs = defaultAdminOperationTimeoutMs;
+    this.defaultSocketReadTimeoutMs = defaultSocketReadTimeoutMs;
   }
 
   /**
@@ -405,6 +411,15 @@ public class AsyncKuduClient {
    */
   public long getDefaultAdminOperationTimeoutMs() {
     return defaultAdminOperationTimeoutMs;
+  }
+
+  /**
+   * Get the timeout used when waiting to read data from a socket. Will be triggered when nothing
+   * has been read on a socket connected to a tablet server for {@code timeout} milliseconds.
+   * @return a timeout in milliseconds
+   */
+  public long getDefaultSocketReadTimeoutMs() {
+    return defaultSocketReadTimeoutMs;
   }
 
   /**
@@ -1175,12 +1190,10 @@ public class AsyncKuduClient {
     if (ip == null) {
       return null;
     }
-    return newClient(MASTER_TABLE_HACK + masterHostPort.toString(),
-        ip, masterHostPort.getPort(), true);
+    return newClient(MASTER_TABLE_HACK + masterHostPort.toString(), ip, masterHostPort.getPort());
   }
 
-  TabletClient newClient(String uuid, final String host, final int port, boolean
-      isMasterTable) {
+  TabletClient newClient(String uuid, final String host, final int port) {
     final String hostport = host + ':' + port;
     TabletClient client;
     SocketChannel chan;
@@ -1190,7 +1203,7 @@ public class AsyncKuduClient {
         return client;
       }
       final TabletClientPipeline pipeline = new TabletClientPipeline();
-      client = pipeline.init(uuid, isMasterTable);
+      client = pipeline.init(uuid);
       chan = channelFactory.newChannel(pipeline);
       ip2client.put(hostport, client);  // This is guaranteed to return null.
     }
@@ -1456,7 +1469,7 @@ public class AsyncKuduClient {
 
   private final class TabletClientPipeline extends DefaultChannelPipeline {
 
-    private Logger log = LoggerFactory.getLogger(TabletClientPipeline.class);
+    private final Logger log = LoggerFactory.getLogger(TabletClientPipeline.class);
     /**
      * Have we already disconnected?.
      * We use this to avoid doing the cleanup work for the same client more
@@ -1467,9 +1480,16 @@ public class AsyncKuduClient {
      */
     private boolean disconnected = false;
 
-    TabletClient init(String uuid, boolean isMasterTable) {
-      final TabletClient client = new TabletClient(AsyncKuduClient.this, uuid, isMasterTable);
-      super.addLast("handler", client);
+    TabletClient init(String uuid) {
+      final TabletClient client = new TabletClient(AsyncKuduClient.this, uuid);
+      if (defaultSocketReadTimeoutMs > 0) {
+        super.addLast("timeout-handler",
+            new ReadTimeoutHandler(timer,
+                defaultSocketReadTimeoutMs,
+                TimeUnit.MILLISECONDS));
+      }
+      super.addLast("kudu-handler", client);
+
       return client;
     }
 
@@ -1664,7 +1684,7 @@ public class AsyncKuduClient {
           // based on some kind of policy. For now just use the first always.
           try {
             addTabletClient(uuid, addresses.get(0).getHost(), addresses.get(0).getPort(),
-                isMasterTable(table), replica.getRole().equals(Metadata.RaftPeerPB.Role.LEADER));
+                replica.getRole().equals(Metadata.RaftPeerPB.Role.LEADER));
           } catch (UnknownHostException ex) {
             lookupExceptions.add(ex);
           }
@@ -1685,20 +1705,20 @@ public class AsyncKuduClient {
     }
 
     // Must be called with tabletServers synchronized
-    void addTabletClient(String uuid, String host, int port, boolean isMasterTable, boolean
-        isLeader) throws UnknownHostException {
+    void addTabletClient(String uuid, String host, int port, boolean isLeader)
+        throws UnknownHostException {
       String ip = getIP(host);
       if (ip == null) {
         throw new UnknownHostException("Failed to resolve the IP of `" + host + "'");
       }
-      TabletClient client = newClient(uuid, ip, port, isMasterTable);
+      TabletClient client = newClient(uuid, ip, port);
 
       final ArrayList<RemoteTablet> tablets = client2tablets.get(client);
 
       if (tablets == null) {
         // We raced with removeClientFromCache and lost. The client we got was just disconnected.
         // Reconnect.
-        addTabletClient(uuid, host, port, isMasterTable, isLeader);
+        addTabletClient(uuid, host, port, isLeader);
       } else {
         synchronized (tablets) {
           if (isLeader) {
@@ -1854,6 +1874,7 @@ public class AsyncKuduClient {
     private final List<HostAndPort> nestedMasterAddresses;
     private long nestedDefaultAdminOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
     private long nestedDefaultOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
+    private long nestedDefaultSocketReadTimeoutMs = DEFAULT_SOCKET_READ_TIMEOUT_MS;
     private ClientSocketChannelFactory nestedChannelFactory = defaultChannelFactory();
 
     /**
@@ -1900,6 +1921,19 @@ public class AsyncKuduClient {
     }
 
     /**
+     * Sets the default timeout to use when waiting on data from a socket.
+     * Optional.
+     * If not provided, defaults to 5s.
+     * A value of 0 disables the timeout.
+     * @param timeoutMs a timeout in milliseconds
+     * @return this builder
+     */
+    public AsyncKuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
+      this.nestedDefaultSocketReadTimeoutMs = timeoutMs;
+      return this;
+    }
+
+    /**
      * Sets the channel factory to be used by the client.
      * Optional.
      * @param channelFactory a socket channel factory for this client
@@ -1919,7 +1953,8 @@ public class AsyncKuduClient {
       return new AsyncKuduClient(nestedMasterAddresses,
           nestedChannelFactory,
           nestedDefaultOperationTimeoutMs,
-          nestedDefaultAdminOperationTimeoutMs);
+          nestedDefaultAdminOperationTimeoutMs,
+          nestedDefaultSocketReadTimeoutMs);
     }
   }
 
