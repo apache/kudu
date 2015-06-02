@@ -120,8 +120,14 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
     MiniTabletServer* ts = cluster_->mini_tablet_server(replica);
     ts->FailHeartbeats(); // Stop heartbeating we don't race against the Master.
     vector<scoped_refptr<TabletPeer> > cur_ts_tablet_peers;
-    ts->server()->tablet_manager()->GetTabletPeers(&cur_ts_tablet_peers);
+    // The replicas may not have been created yet, so loop until we see them.
+    while (true) {
+      ts->server()->tablet_manager()->GetTabletPeers(&cur_ts_tablet_peers);
+      if (!cur_ts_tablet_peers.empty()) break;
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
     ASSERT_EQ(1, cur_ts_tablet_peers.size()); // Each TS should only have 1 tablet.
+    ASSERT_OK(cur_ts_tablet_peers[0]->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10)));
     tablet_peers.push_back(cur_ts_tablet_peers[0]);
   }
 
@@ -131,7 +137,8 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
     SCOPED_TRACE(Substitute("Iter: $0", i));
     int new_leader_idx = rand() % 2;
     LOG(INFO) << "Electing peer " << new_leader_idx << "...";
-    ASSERT_OK(tablet_peers[new_leader_idx]->consensus()->EmulateElection());
+    consensus::Consensus* con = CHECK_NOTNULL(tablet_peers[new_leader_idx]->consensus());
+    ASSERT_OK(con->EmulateElection());
     LOG(INFO) << "Waiting for servers to agree...";
     ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(5),
                                     ts_map, tablet_peers[0]->tablet_id(), i + 1));
