@@ -60,7 +60,9 @@ DEPS_FOR_ALL = \
 class StagingDir(object):
   @staticmethod
   def new():
-    dir = "/tmp/kudu-test-%d-%d" % (os.getpid(), time.time())
+    dir = rel_to_abs("build/isolate")
+    if os.path.isdir(dir):
+      shutil.rmtree(dir)
     os.makedirs(dir)
     return StagingDir(dir)
 
@@ -85,8 +87,8 @@ def rel_to_abs(rel_path):
   return abs
 
 
-def abs_to_rel(abs_path):
-  rel = os.path.relpath(abs_path, rel_to_abs("."))
+def abs_to_rel(abs_path, staging):
+  rel = os.path.relpath(abs_path, staging.dir)
   if abs_path.endswith('/') and not rel.endswith('/'):
     rel += '/'
   return rel
@@ -119,6 +121,11 @@ def is_lib_blacklisted(lib):
   return False
 
 
+def is_outside_of_tree(path):
+  repo_dir = rel_to_abs("./")
+  rel = os.path.relpath(path, repo_dir)
+  return rel.startswith("../")
+
 def copy_system_library(lib):
   """
   For most system libraries, we expect them to be installed on the test
@@ -135,7 +142,7 @@ def copy_system_library(lib):
   if not os.path.exists(dst):
     logging.info("Copying system library %s to %s...", lib, dst)
     shutil.copy2(rel_to_abs(lib), dst)
-  return abs_to_rel(dst)
+  return dst
 
 
 def ldd_deps(exe):
@@ -186,24 +193,24 @@ def create_archive_input(staging, argv,
     print >>sys.stderr, "Unable to handle test: ", argv
     return
   test_name = os.path.basename(argv[1])
-  argv[1] = abs_to_rel(os.path.realpath(argv[1]))
-  test_exe = argv[1]
+  abs_test_exe = os.path.realpath(argv[1])
+  rel_test_exe = abs_to_rel(abs_test_exe, staging)
+  argv[1] = rel_test_exe
   files = []
-  files.append(test_exe)
-  deps = ldd_deps(test_exe)
+  files.append(rel_test_exe)
+  deps = ldd_deps(abs_test_exe)
   for d in DEPS_FOR_ALL:
     d = os.path.realpath(d)
     if os.path.isdir(d):
       d += "/"
     deps.append(d)
   for d in deps:
-    rel = abs_to_rel(d)
-    if rel.startswith("../"):
-      # System libraries will end up being relative paths out
-      # of the build tree. We need to copy those into the build
-      # tree somewhere.
-      rel = copy_system_library(rel)
-    files.append(rel)
+    # System libraries will end up being relative paths out
+    # of the build tree. We need to copy those into the build
+    # tree somewhere.
+    if is_outside_of_tree(d):
+      d = copy_system_library(d)
+    files.append(abs_to_rel(d, staging))
 
   if disable_sharding:
     num_shards = 1
@@ -213,7 +220,7 @@ def create_archive_input(staging, argv,
     out_archive = os.path.join(staging.dir, '%s.%d.gen.json' % (test_name, shard))
     out_isolate = os.path.join(staging.dir, '%s.%d.isolate' % (test_name, shard))
 
-    command = ['build-support/run_dist_test.py',
+    command = ['../../build-support/run_dist_test.py',
                '-e', 'GTEST_SHARD_INDEX=%d' % shard,
                '-e', 'GTEST_TOTAL_SHARDS=%d' % num_shards,
                '-e', 'KUDU_TEST_TIMEOUT=%d' % (TEST_TIMEOUT_SECS - 30),
