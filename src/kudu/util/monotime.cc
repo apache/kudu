@@ -1,6 +1,5 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
-
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
@@ -151,8 +150,15 @@ void MonoDelta::ToTimeSpec(struct timespec *ts) const {
 
 MonoTime MonoTime::Now(enum Granularity granularity) {
   struct timespec ts;
-  CHECK_EQ(0, clock_gettime((granularity == COARSE) ?
-                    CLOCK_MONOTONIC_COARSE : CLOCK_MONOTONIC, &ts));
+  clockid_t clock;
+
+// Older systems do not support CLOCK_MONOTONIC_COARSE
+#ifdef CLOCK_MONOTONIC_COARSE
+  clock = (granularity == COARSE) ? CLOCK_MONOTONIC_COARSE : CLOCK_MONOTONIC;
+#else
+  clock = CLOCK_MONOTONIC;
+#endif
+  PCHECK(clock_gettime(clock, &ts) == 0);
   return MonoTime(ts);
 }
 
