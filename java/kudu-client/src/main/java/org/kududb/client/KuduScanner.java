@@ -50,8 +50,6 @@ public class KuduScanner {
     return d.join(timeoutMs);
   }
 
-
-
   /**
    * A Builder class to build {@link KuduScanner}.
    * Use {@link KuduClient#newScannerBuilder} in order to get a builder instance.
@@ -59,16 +57,18 @@ public class KuduScanner {
   public static class KuduScannerBuilder
       extends AbstractKuduScannerBuilder<KuduScannerBuilder, KuduScanner> {
 
-    private long nestedTimeoutMs = 5000;
+    private long nestedTimeoutMs;
 
     KuduScannerBuilder(AsyncKuduClient client, KuduTable table, Schema schema) {
       super(client, table, schema);
+      nestedTimeoutMs = client.getDefaultOperationTimeoutMs();
     }
 
     /**
      * Sets the timeout used to wait when calling {@link KuduScanner#nextRows()} and
      * {@link KuduScanner#close()}.
-     * The default timeout is 5 seconds.
+     * If not specified, this timeout will be used:
+     * {@link KuduClient#getDefaultOperationTimeoutMs()}.
      * A value of 0 disables the timeout functionality.
      * @param timeoutMs timeout in milliseconds
      */

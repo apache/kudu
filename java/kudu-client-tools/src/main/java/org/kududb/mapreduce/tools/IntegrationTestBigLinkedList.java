@@ -435,16 +435,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private long numNodes;
       private long wrap;
       private int width;
-      private long timeout;
 
       @Override
       protected void setup(Context context) throws IOException, InterruptedException {
         id = "Job: " + context.getJobID() + " Task: " + context.getTaskAttemptID();
         Configuration conf = context.getConfiguration();
         CommandLineParser parser = new CommandLineParser(conf);
-        timeout = parser.getOperationTimeoutMs();
         client = parser.getClient();
-        client.setTimeoutMillis(timeout);
         try {
           table = client.openTable(getTableName(conf));
           headsTable = client.openTable(getHeadsTable(conf));
@@ -454,7 +451,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         session = client.newSession();
         session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
         session.setMutationBufferSpace(WIDTH_DEFAULT);
-        session.setTimeoutMillis(timeout);
         session.setIgnoreAllDuplicateRows(true);
 
         this.width = context.getConfiguration().getInt(GENERATOR_WIDTH_KEY, WIDTH_DEFAULT);
@@ -599,7 +595,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     protected void createSchema(String tableName, Schema schema, int numTablets) throws Exception {
       CommandLineParser parser = new CommandLineParser(getConf());
       KuduClient client = parser.getClient();
-      client.setTimeoutMillis(parser.getOperationTimeoutMs());
       try {
         if (numTablets < 1) {
           numTablets = 1;
@@ -1031,7 +1026,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       CommandLineParser cmdLineParser = new CommandLineParser(getConf());
       long timeout = cmdLineParser.getOperationTimeoutMs();
       KuduClient client = cmdLineParser.getClient();
-      client.setTimeoutMillis(timeout);
 
       KuduTable table = client.openTable(getTableName(getConf()));
       KuduScanner.KuduScannerBuilder builder =
@@ -1119,7 +1113,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private KuduClient client;
       private KuduTable table;
       private KuduSession session;
-      private long timeout;
       private Schema scanSchema;
       private long numUpdatesPerMapper;
 
@@ -1134,16 +1127,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       protected void setup(Context context) throws IOException, InterruptedException {
         Configuration conf = context.getConfiguration();
         CommandLineParser parser = new CommandLineParser(conf);
-        timeout = parser.getOperationTimeoutMs();
         client = parser.getClient();
-        client.setTimeoutMillis(timeout);
         try {
           table = client.openTable(getTableName(conf));
         } catch (Exception e) {
           throw new IOException("Couldn't open the linked list table", e);
         }
         session = client.newSession();
-        session.setTimeoutMillis(timeout);
 
         Schema tableSchema = table.getSchema();
 
@@ -1252,14 +1242,12 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
        * Finds the next node in the linked list.
        */
       private RowResult nextNode(long prevKeyOne, long prevKeyTwo) throws IOException {
-        KuduScanner.KuduScannerBuilder builder =
-            client.newScannerBuilder(table, scanSchema)
-                .timeoutMs(timeout);
+        KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, scanSchema);
 
         configureScannerForRandomRead(builder, table, prevKeyOne, prevKeyTwo);
 
         try {
-          return getOneRowResult(builder.deadlineMillis(timeout).build());
+          return getOneRowResult(builder.build());
         } catch (Exception e) {
           // Goes right out and fails the job.
           throw new IOException("Couldn't read the following row: " +
@@ -1438,7 +1426,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
    */
   private static class Walker extends Configured implements Tool {
 
-    private long timeout;
     private KuduClient client;
     private KuduTable table;
 
@@ -1476,9 +1463,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     private void walk(long headKeyOne, long headKeyTwo, int maxNumNodes) throws Exception {
       CommandLineParser parser = new CommandLineParser(getConf());
-      timeout = parser.getOperationTimeoutMs();
       client = parser.getClient();
-      client.setTimeoutMillis(timeout);
       table = client.openTable(getTableName(getConf()));
 
       long prevKeyOne = headKeyOne;
@@ -1506,12 +1491,10 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     private RowResult nextNode(long keyOne, long keyTwo) throws Exception {
-      KuduScanner.KuduScannerBuilder builder =
-          client.newScannerBuilder(table, table.getSchema())
-              .timeoutMs(timeout);
+      KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, table.getSchema());
       configureScannerForRandomRead(builder, table, keyOne, keyTwo);
 
-      return getOneRowResult(builder.deadlineMillis(timeout).build());
+      return getOneRowResult(builder.build());
     }
   }
 

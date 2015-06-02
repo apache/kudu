@@ -87,11 +87,13 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
 
     String masterAddress = this.conf.get(MASTER_ADDRESSES_KEY);
     String tableName = this.conf.get(OUTPUT_TABLE_KEY);
-    this.operationTimeoutMs = this.conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
+    this.operationTimeoutMs = this.conf.getLong(OPERATION_TIMEOUT_MS_KEY,
+        AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS);
     int bufferSpace = this.conf.getInt(BUFFER_ROW_COUNT_KEY, 1000);
 
-    this.client = KuduTableMapReduceUtil.getClient(masterAddress);
-    this.client.setTimeoutMillis(this.operationTimeoutMs);
+    this.client = new KuduClient.KuduClientBuilder(masterAddress)
+        .defaultOperationTimeoutMs(operationTimeoutMs)
+        .build();
     try {
       this.table = client.openTable(tableName);
     } catch (Exception ex) {
@@ -100,7 +102,6 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
           "master address= " + masterAddress, ex);
     }
     this.session = client.newSession();
-    this.session.setTimeoutMillis(this.operationTimeoutMs);
     this.session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
     this.session.setMutationBufferSpace(bufferSpace);
     this.session.setIgnoreAllDuplicateRows(true);

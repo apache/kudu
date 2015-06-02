@@ -4,6 +4,7 @@ package org.kududb.client;
 
 import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
+import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 import org.kududb.Schema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,39 +16,15 @@ import java.util.List;
  * A synchronous and thread-safe client for Kudu.
  * <p>
  * This class acts as a wrapper around {@link AsyncKuduClient}. The {@link Deferred} objects are
- * joined against using the configured timeout (see {@link KuduClient#setTimeoutMillis(long)}).
+ * joined against using the default admin operation timeout
+ * (see {@link org.kududb.client.KuduClient.KuduClientBuilder#defaultAdminOperationTimeoutMs(long)} (long)}).
  */
 public class KuduClient {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);
 
   private final AsyncKuduClient asyncClient;
-  private long currentTimeoutMs = 5000;
 
-  /**
-   * Create a new client that connects to masters specified by a comma-separated
-   * list.
-   * Doesn't block and won't throw an exception if the masters don't exist.
-   * @param masterAddresses Comma-separated list of "host:port" pairs of the masters
-   */
-  public KuduClient(String masterAddresses) {
-    this.asyncClient = new AsyncKuduClient(masterAddresses);
-  }
-
-  /**
-   * Create a new client that connects to the masters.
-   * Doesn't block and won't throw an exception if the masters don't exist.
-   * @param masterAddresses list of master addresses
-   */
-  public KuduClient(List<HostAndPort> masterAddresses) {
-    this.asyncClient = new AsyncKuduClient(masterAddresses);
-  }
-
-  /**
-   * Package-private way of creating a client directly from an AsyncKuduClient. The passed client
-   * must _not_ be shutdown before this client.
-   * @param asyncClient
-   */
   KuduClient(AsyncKuduClient asyncClient) {
     this.asyncClient = asyncClient;
   }
@@ -73,7 +50,7 @@ public class KuduClient {
   public CreateTableResponse createTable(String name, Schema schema, CreateTableBuilder builder)
       throws Exception {
     Deferred<CreateTableResponse> d = asyncClient.createTable(name, schema, builder);
-    return d.join(currentTimeoutMs);
+    return d.join(getDefaultAdminOperationTimeoutMs());
   }
 
   /**
@@ -83,7 +60,7 @@ public class KuduClient {
    */
   public DeleteTableResponse deleteTable(String name) throws Exception {
     Deferred<DeleteTableResponse> d = asyncClient.deleteTable(name);
-    return d.join(currentTimeoutMs);
+    return d.join(getDefaultAdminOperationTimeoutMs());
   }
 
   /**
@@ -97,7 +74,7 @@ public class KuduClient {
    */
   public AlterTableResponse alterTable(String name, AlterTableBuilder atb) throws Exception {
     Deferred<AlterTableResponse> d = asyncClient.alterTable(name, atb);
-    return d.join(currentTimeoutMs);
+    return d.join(getDefaultAdminOperationTimeoutMs());
   }
 
   /**
@@ -108,7 +85,7 @@ public class KuduClient {
    */
   public boolean isAlterTableDone(String name) throws Exception {
     long totalSleepTime = 0;
-    while (totalSleepTime < currentTimeoutMs) {
+    while (totalSleepTime < getDefaultAdminOperationTimeoutMs()) {
       long start = System.currentTimeMillis();
 
       Deferred<IsAlterTableDoneResponse> d = asyncClient.isAlterTableDone(name);
@@ -126,7 +103,7 @@ public class KuduClient {
       // Count time that was slept and see if we need to wait a little more.
       long elapsed = System.currentTimeMillis() - start;
       // Don't oversleep the deadline.
-      if (totalSleepTime + AsyncKuduClient.SLEEP_TIME > currentTimeoutMs) {
+      if (totalSleepTime + AsyncKuduClient.SLEEP_TIME > getDefaultAdminOperationTimeoutMs()) {
         return false;
       }
       // elapsed can be bigger if we slept about 500ms
@@ -148,7 +125,7 @@ public class KuduClient {
    */
   public ListTabletServersResponse listTabletServers() throws Exception {
     Deferred<ListTabletServersResponse> d = asyncClient.listTabletServers();
-    return d.join(currentTimeoutMs);
+    return d.join(getDefaultAdminOperationTimeoutMs());
   }
 
   /**
@@ -167,7 +144,7 @@ public class KuduClient {
    */
   public ListTablesResponse getTablesList(String nameFilter) throws Exception {
     Deferred<ListTablesResponse> d = asyncClient.getTablesList(nameFilter);
-    return d.join(currentTimeoutMs);
+    return d.join(getDefaultAdminOperationTimeoutMs());
   }
 
   /**
@@ -177,7 +154,7 @@ public class KuduClient {
    */
   public boolean tableExists(String name) throws Exception {
     Deferred<Boolean> d = asyncClient.tableExists(name);
-    return d.join(currentTimeoutMs);
+    return d.join(getDefaultAdminOperationTimeoutMs());
   }
 
   /**
@@ -187,7 +164,7 @@ public class KuduClient {
    */
   public KuduTable openTable(final String name) throws Exception {
     Deferred<KuduTable> d = asyncClient.openTable(name);
-    return d.join(currentTimeoutMs);
+    return d.join(getDefaultAdminOperationTimeoutMs());
   }
 
   /**
@@ -217,16 +194,95 @@ public class KuduClient {
    */
   public void shutdown() throws Exception {
     Deferred<ArrayList<Void>> d = asyncClient.shutdown();
-    d.join(currentTimeoutMs);
+    d.join(getDefaultAdminOperationTimeoutMs());
   }
 
   /**
-   * Sets the timeout for the next operations.
-   * The default timeout is 5 seconds.
-   * A value of 0 disables the timeout functionality.
-   * @param timeoutMs timeout in milliseconds
+   * Get the timeout used for operations on sessions and scanners.
+   * @return a timeout in milliseconds
    */
-  public void setTimeoutMillis(long timeoutMs) {
-    this.currentTimeoutMs = timeoutMs;
+  public long getDefaultOperationTimeoutMs() {
+    return asyncClient.getDefaultOperationTimeoutMs();
+  }
+
+  /**
+   * Get the timeout used for admin operations.
+   * @return a timeout in milliseconds
+   */
+  public long getDefaultAdminOperationTimeoutMs() {
+    return asyncClient.getDefaultAdminOperationTimeoutMs();
+  }
+
+  /**
+   * Builder class to use in order to connect to Kudu.
+   * All the parameters beyond those in the constructors are optional.
+   */
+  public final static class KuduClientBuilder {
+    private AsyncKuduClient.AsyncKuduClientBuilder clientBuilder;
+
+    /**
+     * Creates a new builder for a client that will connect to the specified masters.
+     * @param masterAddresses comma-separated list of "host:port" pairs of the masters
+     */
+    public KuduClientBuilder(String masterAddresses) {
+      clientBuilder = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses);
+    }
+
+    /**
+     * Creates a new builder for a client that will connect to the specified masters.
+     * @param masterAddresses list of master addresses
+     */
+    public KuduClientBuilder(List<HostAndPort> masterAddresses) {
+      clientBuilder = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses);
+    }
+
+    /**
+     * Sets the default timeout used for administrative operations (e.g. createTable, deleteTable,
+     * etc).
+     * Optional.
+     * If not provided, defaults to 10s.
+     * A value of 0 disables the timeout.
+     * @param timeoutMs a timeout in milliseconds
+     * @return this builder
+     */
+    public KuduClientBuilder defaultAdminOperationTimeoutMs(long timeoutMs) {
+      clientBuilder.defaultAdminOperationTimeoutMs(timeoutMs);
+      return this;
+    }
+
+    /**
+     * Sets the default timeout used for user operations (using sessions and scanners).
+     * Optional.
+     * If not provided, defaults to 10s.
+     * A value of 0 disables the timeout.
+     * @param timeoutMs a timeout in milliseconds
+     * @return this builder
+     */
+    public KuduClientBuilder defaultOperationTimeoutMs(long timeoutMs) {
+      clientBuilder.defaultOperationTimeoutMs(timeoutMs);
+      return this;
+    }
+
+    /**
+     * Sets the channel factory to be used by the client.
+     * Optional.
+     * @param channelFactory a socket channel factory for this client
+     * @return this builder
+     */
+    public KuduClientBuilder channelFactory(ClientSocketChannelFactory channelFactory) {
+      clientBuilder.channelFactory(channelFactory);
+      return this;
+    }
+
+    /**
+     * Creates a new client that connects to the masters.
+     * Doesn't block and won't throw an exception if the masters don't exist.
+     * @return a new asynchronous Kudu client
+     */
+    public KuduClient build() {
+      AsyncKuduClient client = clientBuilder.build();
+      return new KuduClient(client);
+    }
+
   }
 }

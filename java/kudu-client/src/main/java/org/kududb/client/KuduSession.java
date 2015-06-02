@@ -11,8 +11,8 @@ import org.slf4j.LoggerFactory;
  * Synchronous version of {@link AsyncKuduSession}. Offers the same API but with blocking methods.
  *
  * A major difference with {@link AsyncKuduSession} is that the time spent waiting on operations is
- * defined by {@link this#setTimeoutMillis(long)} which defaults to 0,
- * meaning that it will wait as long as it takes unless that setting is overridden.
+ * defined by {@link this#setTimeoutMillis(long)} which defaults to getting it from
+ * {@link KuduClient#getDefaultOperationTimeoutMs()}.
  */
 public class KuduSession implements SessionConfiguration {
 

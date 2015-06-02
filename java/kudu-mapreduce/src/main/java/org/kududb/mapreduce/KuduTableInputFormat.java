@@ -215,12 +215,14 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     String tableName = conf.get(INPUT_TABLE_KEY);
     String masterAddresses = conf.get(MASTER_ADDRESSES_KEY);
-    this.operationTimeoutMs = conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
+    this.operationTimeoutMs = conf.getLong(OPERATION_TIMEOUT_MS_KEY,
+        AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS);
     this.nameServer = conf.get(NAME_SERVER_KEY);
     this.cacheBlocks = conf.getBoolean(SCAN_CACHE_BLOCKS, false);
 
-    this.client = KuduTableMapReduceUtil.getClient(masterAddresses);
-    this.client.setTimeoutMillis(this.operationTimeoutMs);
+    this.client = new KuduClient.KuduClientBuilder(masterAddresses)
+        .defaultOperationTimeoutMs(operationTimeoutMs)
+        .build();
     try {
       this.table = client.openTable(tableName);
     } catch (Exception ex) {
@@ -373,7 +375,6 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
           .encodedStartKey(split.getStartKey())
           .encodedEndKey(split.getEndKey())
           .cacheBlocks(cacheBlocks)
-          .timeoutMs(operationTimeoutMs)
           .build();
 
       // Calling this now to set iterator.

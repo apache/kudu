@@ -105,7 +105,7 @@ public class KuduTableMapReduceUtil {
       extends AbstractMapReduceConfigurator<S> {
 
     protected String masterAddresses;
-    protected long operationTimeoutMs = 10 * 1000;
+    protected long operationTimeoutMs = AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
 
     /**
      * {@inheritDoc}
@@ -143,7 +143,7 @@ public class KuduTableMapReduceUtil {
       extends AbstractMapReduceConfigurator<S> {
 
     protected String masterAddresses;
-    protected long operationTimeoutMs = 10 * 1000;
+    protected long operationTimeoutMs = AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
     protected final String columnProjection;
     protected boolean cacheBlocks;
 
@@ -312,24 +312,6 @@ public class KuduTableMapReduceUtil {
   public static KuduTable getTableFromContext(TaskInputOutputContext context) {
     String multitonKey = context.getConfiguration().get(KuduTableOutputFormat.MULTITON_KEY);
     return KuduTableOutputFormat.getKuduTable(multitonKey);
-  }
-
-  /**
-   * Utility method to parse the master addresses out and create an AsyncKuduClient.
-   * @param masterAddresses comma-separated list of master peer addresses
-   * @return an AsyncKuduClient
-   */
-  static AsyncKuduClient getAsyncClient(String masterAddresses) {
-    return new AsyncKuduClient(masterAddresses);
-  }
-
-  /**
-   * Utility method to parse the master addresses out and create a KuduClient.
-   * @param masterAddresses comma-separated list of master peer addresses
-   * @return a KuduClient
-   */
-  static KuduClient getClient(String masterAddresses) {
-    return new KuduClient(masterAddresses);
   }
 
   /**

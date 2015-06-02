@@ -116,7 +116,7 @@ public class BaseKuduTest {
       masterHostPorts = NetUtil.parseStrings(masterAddresses, DEFAULT_MASTER_RPC_PORT);
     }
     LOG.info("Creating new Kudu client...");
-    client = new AsyncKuduClient(masterHostPorts);
+    client = new AsyncKuduClient.AsyncKuduClientBuilder(masterHostPorts).build();
     syncClient = new KuduClient(client);
     LOG.info("Waiting for tablet servers...");
     if (!waitForTabletServers(NUM_TABLET_SERVERS)) {

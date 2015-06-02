@@ -76,7 +76,7 @@ public class AsyncKuduSession implements SessionConfiguration {
   private int mutationBufferLowWatermark;
   private FlushMode flushMode;
   private ExternalConsistencyMode consistencyMode;
-  private long currentTimeout = 0;
+  private long timeoutMs;
 
   // We assign a number to each operation that we batch, so that the batch can sort itself before
   // being sent to the server. We never reset this number.
@@ -124,6 +124,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     this.client = client;
     this.flushMode = FlushMode.AUTO_FLUSH_SYNC;
     this.consistencyMode = NO_CONSISTENCY;
+    this.timeoutMs = client.getDefaultOperationTimeoutMs();
     setMutationBufferLowWatermark(0.5f);
   }
 
@@ -185,12 +186,12 @@ public class AsyncKuduSession implements SessionConfiguration {
 
   @Override
   public void setTimeoutMillis(long timeout) {
-    this.currentTimeout = timeout;
+    this.timeoutMs = timeout;
   }
 
   @Override
   public long getTimeoutMillis() {
-    return this.currentTimeout;
+    return this.timeoutMs;
   }
 
   @Override
@@ -287,8 +288,8 @@ public class AsyncKuduSession implements SessionConfiguration {
 
     // If we autoflush, just send it to the TS
     if (flushMode == FlushMode.AUTO_FLUSH_SYNC) {
-      if (currentTimeout != 0) {
-        operation.setTimeoutMillis(currentTimeout);
+      if (timeoutMs != 0) {
+        operation.setTimeoutMillis(timeoutMs);
       }
       operation.setExternalConsistencyMode(this.consistencyMode);
       return client.sendRpcToTablet(operation);
@@ -583,9 +584,9 @@ public class AsyncKuduSession implements SessionConfiguration {
       batchDeferred.addCallbacks(getOpInFlightCallback(tablet), getOpInFlightErrback(tablet));
       Deferred<BatchResponse> oldBatch = operationsInFlight.put(tablet, batchDeferred);
       assert (oldBatch == null);
-      if (currentTimeout != 0) {
+      if (timeoutMs != 0) {
         batch.deadlineTracker.reset();
-        batch.setTimeoutMillis(currentTimeout);
+        batch.setTimeoutMillis(timeoutMs);
       }
     }
     return client.sendRpcToTablet(batch);

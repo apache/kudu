@@ -115,6 +115,7 @@ public class AsyncKuduClient {
   public static final int SLEEP_TIME = 500;
   public static final byte[] EMPTY_ARRAY = new byte[0];
   public static final int NO_TIMESTAMP = -1;
+  public static final long DEFAULT_OPERATION_TIMEOUT_MS = 10000;
 
   private final ClientSocketChannelFactory channelFactory;
 
@@ -209,40 +210,22 @@ public class AsyncKuduClient {
 
   private final Random sleepRandomizer = new Random();
 
+  private final long defaultOperationTimeoutMs;
+
+  private final long defaultAdminOperationTimeoutMs;
+
   private volatile boolean closed;
 
-  /**
-   * Create a new client that connects to masters specified by a comma-separated
-   * list.
-   * Doesn't block and won't throw an exception if the masters don't exist.
-   * @param masterAddresses comma-separated list of "host:port" pairs of the masters
-   */
-  public AsyncKuduClient(final String masterAddresses) {
-    this(NetUtil.parseStrings(masterAddresses, 7051));
-  }
-
-  /**
-   * Create a new client that connects to the masters.
-   * Doesn't block and won't throw an exception if the masters don't exist.
-   * @param masterAddresses list of master addresses
-   */
-  public AsyncKuduClient(final List<HostAndPort> masterAddresses) {
-    this(masterAddresses, defaultChannelFactory());
-  }
-
-  /**
-   * Create a new client that connects to the specified masters.
-   * Doesn't block and won't throw an exception if the masters don't exist.
-   * @param masterAddresses masters' addresses
-   * @param channelFactory socket channel factory for this client; can be
-   *                       configured to specify a custom connection timeout
-   */
-  public AsyncKuduClient(final List<HostAndPort> masterAddresses,
-                         final ClientSocketChannelFactory channelFactory) {
+  private AsyncKuduClient(List<HostAndPort> masterAddresses,
+                          ClientSocketChannelFactory channelFactory,
+                          long defaultOperationTimeoutMs,
+                          long defaultAdminOperationTimeoutMs) {
     this.channelFactory = channelFactory;
     this.masterAddresses = masterAddresses;
     this.masterTableHack = new KuduTable(this, MASTER_TABLE_HACK,
        new Schema(new ArrayList<ColumnSchema>(0)));
+    this.defaultOperationTimeoutMs = defaultOperationTimeoutMs;
+    this.defaultAdminOperationTimeoutMs = defaultAdminOperationTimeoutMs;
   }
 
   /**
@@ -290,6 +273,7 @@ public class AsyncKuduClient {
     }
     CreateTableRequest create = new CreateTableRequest(this.masterTableHack, name, schema,
         builder);
+    create.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(create);
   }
 
@@ -301,6 +285,7 @@ public class AsyncKuduClient {
   public Deferred<DeleteTableResponse> deleteTable(String name) {
     checkIsClosed();
     DeleteTableRequest delete = new DeleteTableRequest(this.masterTableHack, name);
+    delete.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(delete);
   }
 
@@ -316,6 +301,7 @@ public class AsyncKuduClient {
   public Deferred<AlterTableResponse> alterTable(String name, AlterTableBuilder atb) {
     checkIsClosed();
     AlterTableRequest alter = new AlterTableRequest(this.masterTableHack, name, atb);
+    alter.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(alter);
   }
 
@@ -328,6 +314,7 @@ public class AsyncKuduClient {
   public Deferred<IsAlterTableDoneResponse> isAlterTableDone(String name) throws Exception {
     checkIsClosed();
     IsAlterTableDoneRequest request = new IsAlterTableDoneRequest(this.masterTableHack, name);
+    request.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(request);
   }
 
@@ -338,6 +325,7 @@ public class AsyncKuduClient {
   public Deferred<ListTabletServersResponse> listTabletServers() {
     checkIsClosed();
     ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTableHack);
+    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(rpc);
   }
 
@@ -361,6 +349,7 @@ public class AsyncKuduClient {
    */
   public Deferred<ListTablesResponse> getTablesList(String nameFilter) {
     ListTablesRequest rpc = new ListTablesRequest(this.masterTableHack, nameFilter);
+    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(rpc);
   }
 
@@ -400,6 +389,22 @@ public class AsyncKuduClient {
         return new KuduTable(AsyncKuduClient.this, name, response.getSchema());
       }
     });
+  }
+
+  /**
+   * Get the timeout used for operations on sessions and scanners.
+   * @return a timeout in milliseconds
+   */
+  public long getDefaultOperationTimeoutMs() {
+    return defaultOperationTimeoutMs;
+  }
+
+  /**
+   * Get the timeout used for admin operations.
+   * @return a timeout in milliseconds
+   */
+  public long getDefaultAdminOperationTimeoutMs() {
+    return defaultAdminOperationTimeoutMs;
   }
 
   /**
@@ -1815,6 +1820,83 @@ public class AsyncKuduClient {
     @Override
     public int hashCode() {
       return Objects.hashCode(table, startKey, endKey);
+    }
+  }
+
+  /**
+   * Builder class to use in order to connect to Kudu.
+   * All the parameters beyond those in the constructors are optional.
+   */
+  public final static class AsyncKuduClientBuilder {
+    private final List<HostAndPort> nestedMasterAddresses;
+    private long nestedDefaultAdminOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
+    private long nestedDefaultOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
+    private ClientSocketChannelFactory nestedChannelFactory = defaultChannelFactory();
+
+    /**
+     * Creates a new builder for a client that will connect to the specified masters.
+     * @param masterAddresses comma-separated list of "host:port" pairs of the masters
+     */
+    public AsyncKuduClientBuilder(String masterAddresses) {
+      this(NetUtil.parseStrings(masterAddresses, 7051));
+    }
+
+    /**
+     * Creates a new builder for a client that will connect to the specified masters.
+     * @param masterAddresses list of master addresses
+     */
+    public AsyncKuduClientBuilder(List<HostAndPort> masterAddresses) {
+      this.nestedMasterAddresses = masterAddresses;
+    }
+
+    /**
+     * Sets the default timeout used for administrative operations (e.g. createTable, deleteTable,
+     * etc).
+     * Optional.
+     * If not provided, defaults to 10s.
+     * A value of 0 disables the timeout.
+     * @param timeoutMs a timeout in milliseconds
+     * @return this builder
+     */
+    public AsyncKuduClientBuilder defaultAdminOperationTimeoutMs(long timeoutMs) {
+      this.nestedDefaultAdminOperationTimeoutMs = timeoutMs;
+      return this;
+    }
+
+    /**
+     * Sets the default timeout used for user operations (using sessions and scanners).
+     * Optional.
+     * If not provided, defaults to 10s.
+     * A value of 0 disables the timeout.
+     * @param timeoutMs a timeout in milliseconds
+     * @return this builder
+     */
+    public AsyncKuduClientBuilder defaultOperationTimeoutMs(long timeoutMs) {
+      this.nestedDefaultOperationTimeoutMs = timeoutMs;
+      return this;
+    }
+
+    /**
+     * Sets the channel factory to be used by the client.
+     * Optional.
+     * @param channelFactory a socket channel factory for this client
+     * @return this builder
+     */
+    public AsyncKuduClientBuilder channelFactory(ClientSocketChannelFactory channelFactory) {
+      this.nestedChannelFactory = channelFactory;
+      return this;
+    }
+
+    /**
+     * Creates a new client that connects to the masters.
+     * Doesn't block and won't throw an exception if the masters don't exist.
+     * @return a new asynchronous Kudu client
+     */
+    public AsyncKuduClient build() {
+      return new AsyncKuduClient(nestedMasterAddresses,
+          nestedChannelFactory,
+          nestedDefaultOperationTimeoutMs,
+          nestedDefaultAdminOperationTimeoutMs);
     }
   }
 

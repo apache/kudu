@@ -23,7 +23,9 @@ public class CommandLineParser {
   public static final String MASTER_ADDRESSES_KEY = "kudu.master.addresses";
   public static final String MASTER_ADDRESSES_DEFAULT = "127.0.0.1";
   public static final String OPERATION_TIMEOUT_MS_KEY = "kudu.operation.timeout.ms";
-  public static final long OPERATION_TIMEOUT_MS_DEFAULT = 10000;
+  public static final long OPERATION_TIMEOUT_MS_DEFAULT =
+      AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
+  public static final String ADMIN_OPERATION_TIMEOUT_MS_KEY = "kudu.admin.operation.timeout.ms";
   public static final String NUM_REPLICAS_KEY = "kudu.num.replicas";
   public static final int NUM_REPLICAS_DEFAULT = 3;
 
@@ -45,11 +47,19 @@ public class CommandLineParser {
   }
 
   /**
-   * Get the configured timeout.
+   * Get the configured timeout for operations on sessions and scanners.
    * @return a long that represents the passed timeout, or the default value
    */
   public long getOperationTimeoutMs() {
     return conf.getLong(OPERATION_TIMEOUT_MS_KEY, OPERATION_TIMEOUT_MS_DEFAULT);
+  }
+
+  /**
+   * Get the configured timeout for admin operations.
+   * @return a long that represents the passed timeout, or the default value
+   */
+  public long getAdminOperationTimeoutMs() {
+    return conf.getLong(ADMIN_OPERATION_TIMEOUT_MS_KEY, OPERATION_TIMEOUT_MS_DEFAULT);
   }
 
   /**
@@ -65,7 +75,10 @@ public class CommandLineParser {
    * @return an async kudu client
    */
   public AsyncKuduClient getAsyncClient() {
-    return KuduTableMapReduceUtil.getAsyncClient(getMasterAddresses());
+    return new AsyncKuduClient.AsyncKuduClientBuilder(getMasterAddresses())
+        .defaultOperationTimeoutMs(getOperationTimeoutMs())
+        .defaultAdminOperationTimeoutMs(getAdminOperationTimeoutMs())
+        .build();
   }
 
   /**
@@ -73,7 +86,10 @@ public class CommandLineParser {
    * @return a kudu client
    */
   public KuduClient getClient() {
-    return KuduTableMapReduceUtil.getClient(getMasterAddresses());
+    return new KuduClient.KuduClientBuilder(getMasterAddresses())
+        .defaultOperationTimeoutMs(getOperationTimeoutMs())
+        .defaultAdminOperationTimeoutMs(getAdminOperationTimeoutMs())
+        .build();
   }
 
   /**
@@ -83,8 +99,10 @@ public class CommandLineParser {
    */
   public static String getHelpSnippet() {
     return "\nAdditionally, the following options are available:" +
-      "  -D" + OPERATION_TIMEOUT_MS_KEY + "=TIME - how long this job waits for " +
-          "Kudu operations, defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n"+
+      "  -D" + OPERATION_TIMEOUT_MS_KEY + "=TIME - timeout for read and write " +
+          "operations, defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n"+
+      "  -D" + ADMIN_OPERATION_TIMEOUT_MS_KEY + "=TIME - timeout for admin operations " +
+        ", defaults to " + OPERATION_TIMEOUT_MS_DEFAULT + " \n"+
       "  -D" + MASTER_ADDRESSES_KEY + "=ADDRESSES - addresses to reach the Masters, " +
         "defaults to " + MASTER_ADDRESSES_DEFAULT + " which is usually wrong.\n" +
       "  -D " + NUM_REPLICAS_KEY + "=NUM - number of replicas to use when configuring a new " +
