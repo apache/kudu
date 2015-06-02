@@ -22,29 +22,29 @@ namespace consensus {
 //
 // In addition to the persistent state, this class also provides access to some
 // transient state. This includes the peer that this node considers to be the
-// leader of the quorum, as well as the "pending" quorum, if any.
+// leader of the configuration, as well as the "pending" configuration, if any.
 //
-// Conceptually, a pending quorum is one that has been proposed via a config
+// Conceptually, a pending configuration is one that has been proposed via a config
 // change operation (AddServer or RemoveServer from Chapter 4 of Diego Ongaro's
 // Raft thesis) but has not yet been committed. According to the above spec,
 // as soon as a server hears of a new cluster membership configuration, it must
 // be adopted (even prior to be committed).
 //
-// The data structure difference between a committed quorum and a pending one
+// The data structure difference between a committed configuration and a pending one
 // is that opid_index (the index in the log of the committed config change
-// operation) is always set in a committed quorum, while it is always unset in
-// a pending quorum.
+// operation) is always set in a committed configuration, while it is always unset in
+// a pending configuration.
 //
-// Finally, this class exposes the concept of an "active" quorum, which means
-// the pending quorum if a pending quorum is set, otherwise the committed
-// quorum.
+// Finally, this class exposes the concept of an "active" configuration, which means
+// the pending configuration if a pending configuration is set, otherwise the committed
+// configuration.
 //
 // This class is not thread-safe and requires external synchronization.
 class ConsensusMetadata {
  public:
   enum ConfigType {
-    ACTIVE,   // Active quorum (pending or committed).
-    COMMITTED // Committed quorum.
+    ACTIVE,   // Active config (pending or committed).
+    COMMITTED // Committed config.
   };
 
   // Create a ConsensusMetadata object with provided initial state.
@@ -52,7 +52,7 @@ class ConsensusMetadata {
   static Status Create(FsManager* fs_manager,
                        const std::string& tablet_id,
                        const std::string& peer_uuid,
-                       QuorumPB& quorum,
+                       RaftConfigPB& config,
                        int64_t current_term,
                        gscoped_ptr<ConsensusMetadata>* cmeta);
 
@@ -72,36 +72,36 @@ class ConsensusMetadata {
   void clear_voted_for();
   void set_voted_for(const std::string& uuid);
 
-  // Accessors for committed quorum.
-  const QuorumPB& committed_quorum() const;
-  void set_committed_quorum(const QuorumPB& quorum);
+  // Accessors for committed configuration.
+  const RaftConfigPB& committed_config() const;
+  void set_committed_config(const RaftConfigPB& config);
 
-  // Returns whether a pending quorum is set.
-  bool has_pending_quorum() const;
+  // Returns whether a pending configuration is set.
+  bool has_pending_config() const;
 
-  // Returns the pending quorum if one is set. Otherwise, fires a DCHECK.
-  const QuorumPB& pending_quorum() const;
+  // Returns the pending configuration if one is set. Otherwise, fires a DCHECK.
+  const RaftConfigPB& pending_config() const;
 
-  // Set & clear the pending quorum.
-  void clear_pending_quorum();
-  void set_pending_quorum(const QuorumPB& quorum);
+  // Set & clear the pending configuration.
+  void clear_pending_config();
+  void set_pending_config(const RaftConfigPB& config);
 
-  // If a pending quorum is set, return it.
-  // Otherwise, return the committed quorum.
-  const QuorumPB& active_quorum() const;
+  // If a pending configuration is set, return it.
+  // Otherwise, return the committed configuration.
+  const RaftConfigPB& active_config() const;
 
   // Accessors for setting the active leader.
   const std::string& leader_uuid() const;
   void set_leader_uuid(const std::string& uuid);
 
   // Returns the currently active role of the current node.
-  QuorumPeerPB::Role active_role() const;
+  RaftPeerPB::Role active_role() const;
 
   // Copy the stored state into a ConsensusStatePB object.
-  // To get the active quorum, specify 'type' = ACTIVE.
+  // To get the active configuration, specify 'type' = ACTIVE.
   // Otherwise, 'type' = COMMITTED will return a version of the
-  // ConsensusStatePB using only the committed quorum. In this case, if the
-  // current leader is not a member of the committed quorum, then the
+  // ConsensusStatePB using only the committed configuration. In this case, if the
+  // current leader is not a member of the committed configuration, then the
   // leader_uuid field of the returned ConsensusStatePB will be cleared.
   ConsensusStatePB ToConsensusStatePB(ConfigType type) const;
 
@@ -125,13 +125,13 @@ class ConsensusMetadata {
   const std::string peer_uuid_;
   // Mutable:
   std::string leader_uuid_; // Leader of the current term (term == pb_.current_term).
-  bool has_pending_quorum_; // Indicates whether there is an as-yet uncommitted
-                            // quorum change pending.
-  // Quorum used by the peers when there is a pending config change operation.
-  QuorumPB pending_quorum_;
+  bool has_pending_config_; // Indicates whether there is an as-yet uncommitted
+                            // configuration change pending.
+  // RaftConfig used by the peers when there is a pending config change operation.
+  RaftConfigPB pending_config_;
 
-  // Cached role of the peer_uuid_ within the active quorum.
-  QuorumPeerPB::Role active_role_;
+  // Cached role of the peer_uuid_ within the active configuration.
+  RaftPeerPB::Role active_role_;
 
   // Durable fields.
   ConsensusMetadataPB pb_;

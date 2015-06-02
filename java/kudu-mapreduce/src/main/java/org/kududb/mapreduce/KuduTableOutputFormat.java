@@ -46,7 +46,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
   static final String OUTPUT_TABLE_KEY = "kudu.mapreduce.output.table";
 
   /** Job parameter that specifies where the masters are */
-  static final String MASTER_QUORUM_KEY = "kudu.mapreduce.master.quorum";
+  static final String MASTER_ADDRESSES_KEY = "kudu.mapreduce.master.addresses";
 
   /** Job parameter that specifies how long we wait for operations to complete */
   static final String OPERATION_TIMEOUT_MS_KEY = "kudu.mapreduce.operation.timeout.ms";
@@ -85,7 +85,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
   public void setConf(Configuration entries) {
     this.conf = new Configuration(entries);
 
-    String masterAddress = this.conf.get(MASTER_QUORUM_KEY);
+    String masterAddress = this.conf.get(MASTER_ADDRESSES_KEY);
     String tableName = this.conf.get(OUTPUT_TABLE_KEY);
     this.operationTimeoutMs = this.conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
     int bufferSpace = this.conf.getInt(BUFFER_ROW_COUNT_KEY, 1000);

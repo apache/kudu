@@ -42,9 +42,9 @@ class MasterPathHandlers {
   void HandleMasters(const Webserver::WebRequest& req,
                      std::stringstream* output);
 
-  // Convert location of quorum members to HTML, indicating the roles
-  // of each tablet server in a quorum.
-  std::string QuorumToHtml(const std::vector<TabletReplica>& locations) const;
+  // Convert location of peers to HTML, indicating the roles
+  // of each tablet server in a consensus configuration.
+  std::string RaftConfigToHtml(const std::vector<TabletReplica>& locations) const;
 
   // Convert the specified TSDescriptor to HTML, adding a link to the
   // tablet server's own webserver if specified in 'desc'.

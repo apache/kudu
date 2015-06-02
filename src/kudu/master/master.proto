@@ -86,7 +86,7 @@ message SysTabletsEntryPB {
   required bytes start_key = 1;
   required bytes end_key   = 2;
 
-  // The latest committed quorum consensus configuration reported to the Master.
+  // The latest committed consensus configuration consensus configuration reported to the Master.
   optional consensus.ConsensusStatePB committed_consensus_state = 3;
 
   // Debug state for the tablet
@@ -247,7 +247,7 @@ message TSHeartbeatResponsePB {
 message TabletLocationsPB {
   message ReplicaPB {
     required TSInfoPB ts_info = 1;
-    required consensus.QuorumPeerPB.Role role = 2;
+    required consensus.RaftPeerPB.Role role = 2;
   }
 
   required bytes tablet_id = 1;
@@ -473,8 +473,8 @@ message GetMasterRegistrationResponsePB {
   // error retrieving the host/port information.
   optional ServerRegistrationPB registration = 2;
 
-  // This server's role in the quorum.
-  optional consensus.QuorumPeerPB.Role role = 3;
+  // This server's role in the consensus configuration.
+  optional consensus.RaftPeerPB.Role role = 3;
 
   // Set if there an error retrieving the registration information.
   optional MasterErrorPB error = 4;

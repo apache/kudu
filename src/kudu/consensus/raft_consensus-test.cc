@@ -72,7 +72,7 @@ class MockQueue : public PeerMessageQueue {
 class MockPeerManager : public PeerManager {
  public:
   MockPeerManager() : PeerManager("", "", NULL, NULL, NULL, NULL) {}
-  MOCK_METHOD1(UpdateQuorum, Status(const consensus::QuorumPB& quorum));
+  MOCK_METHOD1(UpdateRaftConfig, Status(const consensus::RaftConfigPB& config));
   MOCK_METHOD1(SignalRequest, void(bool force_if_queue_empty));
   MOCK_METHOD0(Close, void());
 };
@@ -176,16 +176,16 @@ class RaftConsensusTest : public KuduTest {
   }
 
   void SetUpConsensus(int64_t initial_term = consensus::kMinimumTerm, int num_peers = 1) {
-    BuildQuorumPBForTests(num_peers, &quorum_);
-    quorum_.set_opid_index(kInvalidOpIdIndex);
+    BuildRaftConfigPBForTests(num_peers, &config_);
+    config_.set_opid_index(kInvalidOpIdIndex);
 
     gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(NULL));
 
-    string peer_uuid = quorum_.peers(num_peers - 1).permanent_uuid();
+    string peer_uuid = config_.peers(num_peers - 1).permanent_uuid();
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     CHECK_OK(ConsensusMetadata::Create(fs_manager_.get(), kTestTablet, peer_uuid,
-                                       quorum_, initial_term, &cmeta));
+                                       config_, initial_term, &cmeta));
 
     gscoped_ptr<ThreadPool> thread_pool;
     CHECK_OK(ThreadPoolBuilder("raft-pool") .Build(&thread_pool));
@@ -270,7 +270,7 @@ class RaftConsensusTest : public KuduTest {
 
  protected:
   ConsensusOptions options_;
-  QuorumPB quorum_;
+  RaftConfigPB config_;
   OpId initial_id_;
   gscoped_ptr<FsManager> fs_manager_;
   scoped_refptr<Log> log_;
@@ -316,7 +316,7 @@ void RaftConsensusTest::AddNoOpToConsensusRequest(ConsensusRequestPB* request,
 TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
   SetUpConsensus();
   SetUpGeneralExpectations();
-  EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
+  EXPECT_CALL(*peer_manager_, UpdateRaftConfig(_))
       .Times(1)
       .WillOnce(Return(Status::OK()));
   EXPECT_CALL(*queue_, Init(_))
@@ -354,7 +354,7 @@ TEST_F(RaftConsensusTest, TestCommittedIndexWhenInSameTerm) {
 TEST_F(RaftConsensusTest, TestCommittedIndexWhenTermsChange) {
   SetUpConsensus();
   SetUpGeneralExpectations();
-  EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
+  EXPECT_CALL(*peer_manager_, UpdateRaftConfig(_))
       .Times(2)
       .WillRepeatedly(Return(Status::OK()));
   EXPECT_CALL(*queue_, Init(_))
@@ -449,7 +449,7 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
   {
     InSequence dummy;
     // Peer manager gets updated with the new set of peers to send stuff to.
-    EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
+    EXPECT_CALL(*peer_manager_, UpdateRaftConfig(_))
         .Times(1).WillOnce(Return(Status::OK()));
     // The no-op should be appended to the queue.
     // One more op will be appended for the election.
@@ -522,7 +522,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
       .Times(1);
   EXPECT_CALL(*queue_, Init(_))
       .Times(1);
-  EXPECT_CALL(*peer_manager_, UpdateQuorum(_))
+  EXPECT_CALL(*peer_manager_, UpdateRaftConfig(_))
       .Times(1)
       .WillRepeatedly(Return(Status::OK()));
 
@@ -640,7 +640,7 @@ TEST_F(RaftConsensusTest, TestResetRcvdFromCurrentLeaderOnNewTerm) {
   int64_t log_index = 0;
 
   caller_term = 1;
-  string caller_uuid = quorum_.peers(0).permanent_uuid();
+  string caller_uuid = config_.peers(0).permanent_uuid();
   OpId preceding_opid = MinimumOpId();
 
   // Heartbeat. This will cause the term to increment on the follower.
@@ -665,7 +665,7 @@ TEST_F(RaftConsensusTest, TestResetRcvdFromCurrentLeaderOnNewTerm) {
   // Expect current term replicated to be nothing (MinimumOpId) but log
   // replicated to be everything sent so far.
   caller_term = 2;
-  caller_uuid = quorum_.peers(1).permanent_uuid();
+  caller_uuid = config_.peers(1).permanent_uuid();
   preceding_opid = noop_opid;
   request = MakeConsensusRequest(caller_term, caller_uuid, preceding_opid);
   response.Clear();
@@ -686,7 +686,7 @@ TEST_F(RaftConsensusTest, TestResetRcvdFromCurrentLeaderOnNewTerm) {
 
   // New leader heartbeat. The term should rev but we should get an LMP mismatch.
   caller_term = 3;
-  caller_uuid = quorum_.peers(0).permanent_uuid();
+  caller_uuid = config_.peers(0).permanent_uuid();
   preceding_opid = MakeOpId(caller_term, log_index + 1); // Not replicated yet.
   request = MakeConsensusRequest(caller_term, caller_uuid, preceding_opid);
   response.Clear();
@@ -712,7 +712,7 @@ TEST_F(RaftConsensusTest, TestResetRcvdFromCurrentLeaderOnNewTerm) {
   // Happy case. New leader with new no-op to append right off the bat.
   // Response should be OK with all last_received* fields equal to the new no-op.
   caller_term = 4;
-  caller_uuid = quorum_.peers(1).permanent_uuid();
+  caller_uuid = config_.peers(1).permanent_uuid();
   preceding_opid = noop_opid;
   noop_opid = MakeOpId(caller_term, ++log_index);
   request = MakeConsensusRequest(caller_term, caller_uuid, preceding_opid);

@@ -44,7 +44,7 @@ public class TestRowCounter extends BaseKuduTest {
     createFourTabletsTableWithNineRows(TABLE_NAME);
 
     String[] args = new String[] {
-        "-D" + CommandLineParser.MASTER_QUORUM_KEY + "=" + getMasterQuorum(), TABLE_NAME};
+        "-D" + CommandLineParser.MASTER_ADDRESSES_KEY + "=" + getMasterAddresses(), TABLE_NAME};
     GenericOptionsParser parser = new GenericOptionsParser(conf, args);
     Job job = RowCounter.createSubmittableJob(parser.getConfiguration(), parser.getRemainingArgs());
     assertTrue("Job did not end properly", job.waitForCompletion(true));

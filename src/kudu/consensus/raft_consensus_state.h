@@ -36,17 +36,17 @@ namespace consensus {
 // This has a 1-1 relationship with RaftConsensus and is essentially responsible for
 // keeping state and checking if state changes are viable.
 //
-// Note that, in the case of a LEADER role, there are two quorum states that
-// that are tracked: a pending and a committed quorum. The "active" state is
-// considered to be the pending quorum if it is non-null, otherwise the
-// committed quorum is the active quorum.
+// Note that, in the case of a LEADER role, there are two configuration states that
+// that are tracked: a pending and a committed configuration. The "active" state is
+// considered to be the pending configuration if it is non-null, otherwise the
+// committed configuration is the active configuration.
 //
-// When a replica becomes a leader of a quorum, it sets the pending quorum to
-// a new quorum declaring itself as leader and sets its "active" role to LEADER.
-// It then starts up ConsensusPeers for each member of the pending quorum and
-// tries to push a new configuration to the quorum. Once that configuration is
+// When a replica becomes a leader of a configuration, it sets the pending configuration to
+// a new configuration declaring itself as leader and sets its "active" role to LEADER.
+// It then starts up ConsensusPeers for each member of the pending configuration and
+// tries to push a new configuration to the peers. Once that configuration is
 // pushed to a majority of the cluster, it is considered committed and the
-// replica flushes that quorum to disk as the committed quorum.
+// replica flushes that configuration to disk as the committed configuration.
 //
 // Each time an operation is to be performed on the replica the appropriate LockFor*()
 // method should be called. The LockFor*() methods check that the replica is in the
@@ -146,17 +146,17 @@ class ReplicaState {
     return cmeta_->ToConsensusStatePB(type);
   }
 
-  // Returns the currently active quorum role.
-  QuorumPeerPB::Role GetActiveRoleUnlocked() const;
+  // Returns the currently active Raft role.
+  RaftPeerPB::Role GetActiveRoleUnlocked() const;
 
-  // Returns true if there is a quorum change currently in-flight but not yet
+  // Returns true if there is a configuration change currently in-flight but not yet
   // committed.
-  bool IsQuorumChangePendingUnlocked() const;
+  bool IsConfigChangePendingUnlocked() const;
 
-  // Inverse of IsQuorumChangePendingUnlocked(): returns OK if there is
-  // currently *no* quorum change pending, and IllegalState is there *is* a
-  // quorum change pending.
-  Status CheckNoQuorumChangePendingUnlocked() const;
+  // Inverse of IsConfigChangePendingUnlocked(): returns OK if there is
+  // currently *no* configuration change pending, and IllegalState is there *is* a
+  // configuration change pending.
+  Status CheckNoConfigChangePendingUnlocked() const;
 
   // Returns true if an operation is in this replica's log, namely:
   // - If the op's index is lower than or equal to our committed index
@@ -165,27 +165,27 @@ class ReplicaState {
   // are different 'term_mismatch' is set to true, it is false otherwise.
   bool IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch);
 
-  // Sets the given quorum as pending commit. Does not persist into the quorum
-  // metadata. In order to be persisted, SetCommittedQuorumUnlocked() must be called.
-  Status SetPendingQuorumUnlocked(const QuorumPB& new_quorum) WARN_UNUSED_RESULT;
+  // Sets the given configuration as pending commit. Does not persist into the peers
+  // metadata. In order to be persisted, SetCommittedConfigUnlocked() must be called.
+  Status SetPendingConfigUnlocked(const RaftConfigPB& new_config) WARN_UNUSED_RESULT;
 
-  // Clear (cancel) the pending quorum.
-  void ClearPendingQuorumUnlocked();
+  // Clear (cancel) the pending configuration.
+  void ClearPendingConfigUnlocked();
 
-  // Return the pending quorum, or crash if one is not set.
-  const QuorumPB& GetPendingQuorumUnlocked() const;
+  // Return the pending configuration, or crash if one is not set.
+  const RaftConfigPB& GetPendingConfigUnlocked() const;
 
   // Changes the committed config for this replica. Checks that there is a
-  // pending quorum and that it is equal to this one. Persists changes to disk.
-  // Resets the pending quorum to null.
-  Status SetCommittedQuorumUnlocked(const QuorumPB& new_quorum);
+  // pending configuration and that it is equal to this one. Persists changes to disk.
+  // Resets the pending configuration to null.
+  Status SetCommittedConfigUnlocked(const RaftConfigPB& new_config);
 
-  // Return the persisted quorum.
-  const QuorumPB& GetCommittedQuorumUnlocked() const;
+  // Return the persisted configuration.
+  const RaftConfigPB& GetCommittedConfigUnlocked() const;
 
-  // Return the "active" quorum - if there is a pending quorum return it;
-  // otherwise return the committed quorum.
-  const QuorumPB& GetActiveQuorumUnlocked() const;
+  // Return the "active" configuration - if there is a pending configuration return it;
+  // otherwise return the committed configuration.
+  const RaftConfigPB& GetActiveConfigUnlocked() const;
 
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.

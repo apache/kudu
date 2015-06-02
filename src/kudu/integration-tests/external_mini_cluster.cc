@@ -199,7 +199,7 @@ Status ExternalMiniCluster::StartDistributedMasters() {
   }
   string peer_addrs_str = JoinStrings(peer_addrs, ",");
   vector<string> flags = opts_.extra_master_flags;
-  flags.push_back("--master_quorum=" + peer_addrs_str);
+  flags.push_back("--master_addresses=" + peer_addrs_str);
   flags.push_back("--enable_leader_failure_detection=true");
   string exe = GetBinaryPath(kMasterBinaryName);
 

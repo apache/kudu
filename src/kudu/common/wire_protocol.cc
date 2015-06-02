@@ -404,7 +404,7 @@ Status FindLeaderHostPort(const RepeatedPtrField<ServerEntryPB>& entries,
           strings::Substitute("Every server in must have a role, but entry ($0) has no role.",
                               entry.ShortDebugString()));
     }
-    if (entry.role() == consensus::QuorumPeerPB::LEADER) {
+    if (entry.role() == consensus::RaftPeerPB::LEADER) {
       return HostPortFromPB(entry.registration().rpc_addresses(0), leader_hostport);
     }
   }

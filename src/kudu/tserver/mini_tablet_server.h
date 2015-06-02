@@ -16,7 +16,7 @@ namespace kudu {
 class FsManager;
 
 namespace consensus {
-class QuorumPB;
+class RaftConfigPB;
 } // namespace consensus
 
 namespace tserver {
@@ -49,23 +49,23 @@ class MiniTabletServer {
   // Restart a tablet server on the same RPC and webserver ports.
   Status Restart();
 
-  // Add a new tablet to the test server, use the default quorum.
+  // Add a new tablet to the test server, use the default consensus configuration.
   //
   // Requires that the server has already been started with Start().
   Status AddTestTablet(const std::string& table_id,
                        const std::string& tablet_id,
                        const Schema& schema);
 
-  // Add a new tablet to the test server and specify the quorum
+  // Add a new tablet to the test server and specify the consensus configuration
   // for the tablet.
   Status AddTestTablet(const std::string& table_id,
                        const std::string& tablet_id,
                        const Schema& schema,
-                       const consensus::QuorumPB& quorum);
+                       const consensus::RaftConfigPB& config);
 
-  // Create a QuorumPB which should be used to create a local-only
+  // Create a RaftConfigPB which should be used to create a local-only
   // tablet on the given tablet server.
-  consensus::QuorumPB CreateLocalQuorum() const;
+  consensus::RaftConfigPB CreateLocalConfig() const;
 
   const Sockaddr bound_rpc_addr() const;
   const Sockaddr bound_http_addr() const;

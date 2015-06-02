@@ -85,7 +85,7 @@ message ServerEntryPB {
 
   // If an error has occured earlier in the RPC call, the role
   // may be not be set.
-  optional consensus.QuorumPeerPB.Role role = 4;
+  optional consensus.RaftPeerPB.Role role = 4;
 }
 
 message ColumnBlockPB {

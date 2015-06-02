@@ -57,12 +57,12 @@ class SysCatalogTable {
   };
 
   // 'leader_cb_' is invoked whenever this node is elected as a leader
-  // of the quorum for this tablet, including for local standalone
-  // master quorums. It used to initialize leader state, submit any
+  // of the consensus configuration for this tablet, including for local standalone
+  // master consensus configurations. It used to initialize leader state, submit any
   // leader-specific tasks and so forth.
   //
   /// NOTE: Since 'leader_cb_' is invoked synchronously and can block
-  // the quorum's progress, any long running tasks (e.g., scanning
+  // the consensus configuration's progress, any long running tasks (e.g., scanning
   // tablets) should be performed asynchronously (by, e.g., submitting
   // them to a to a separate threadpool).
   SysCatalogTable(Master* master,
@@ -120,17 +120,17 @@ class SysCatalogTable {
 
   Status SetupTablet(const scoped_refptr<tablet::TabletMetadata>& metadata);
 
-  // Use the master options to generate a new quorum.
-  // In addition, resolve all UUIDs of this quorum.
+  // Use the master options to generate a new consensus configuration.
+  // In addition, resolve all UUIDs of this consensus configuration.
   //
-  // Note: The current node adds itself to the quorum whether leader or
+  // Note: The current node adds itself to the peers whether leader or
   // follower, depending on whether the Master options leader flag is
   // set. Even if the local node should be a follower, it should not be listed
   // in the Master options followers list, as it will add itself automatically.
   //
   // TODO: Revisit this whole thing when integrating leader election.
-  Status SetupDistributedQuorum(const MasterOptions& options,
-                                consensus::QuorumPB* committed_quorum);
+  Status SetupDistributedConfig(const MasterOptions& options,
+                                consensus::RaftConfigPB* committed_config);
 
   const scoped_refptr<tablet::TabletPeer>& tablet_peer() const {
     return tablet_peer_;
@@ -176,7 +176,7 @@ class SysCatalogTable {
   Master* master_;
 
   ElectedLeaderCallback leader_cb_;
-  consensus::QuorumPeerPB::Role old_role_;
+  consensus::RaftPeerPB::Role old_role_;
 };
 
 } // namespace master

@@ -9,7 +9,7 @@ import java.util.List;
 import com.google.common.collect.Lists;
 import com.google.common.collect.ImmutableList;
 import org.kududb.Common.HostPortPB;
-import org.kududb.consensus.Metadata.QuorumPeerPB.Role;
+import org.kududb.consensus.Metadata.RaftPeerPB.Role;
 import org.kududb.master.Master.TabletLocationsPB;
 import org.kududb.master.Master.TabletLocationsPB.ReplicaPB;
 

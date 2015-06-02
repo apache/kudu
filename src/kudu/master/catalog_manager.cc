@@ -81,7 +81,7 @@ DEFINE_int32(max_create_tablets_per_ts, 20,
              "The number of tablets per TS that can be requested for a new table. "
              "(Advanced option)");
 DEFINE_bool(catalog_manager_allow_local_consensus, true,
-            "Use local consensus when quorum size == 1");
+            "Use local consensus when config size == 1");
 // TODO: Abdicate on timeout.
 DEFINE_int32(master_failover_catchup_timeout_ms, 30 * 1000, // 30 sec
              "Amount of time to give a newly-elected leader master to load"
@@ -100,7 +100,7 @@ using consensus::Consensus;
 using consensus::ConsensusStatePB;
 using consensus::GetConsensusRole;
 using consensus::OpId;
-using consensus::QuorumPeerPB;
+using consensus::RaftPeerPB;
 using rpc::RpcContext;
 using std::string;
 using std::vector;
@@ -340,7 +340,7 @@ string RequestorString(RpcContext* rpc) {
 template<class RespClass>
 void CheckIfNoLongerLeaderAndSetupError(Status s, RespClass* resp) {
   // TODO (KUDU-591): This is a bit of a hack, as right now
-  // there's no way to propagate why a write to a quorum has
+  // there's no way to propagate why a write to a consensus configuration has
   // failed. However, since we use Status::IllegalState() to
   // indicate the situation where a write was issued on a node
   // that is no longer the leader, this suffices until we
@@ -514,7 +514,7 @@ Status CatalogManager::CheckIsLeaderAndReady() const {
   return Status::OK();
 }
 
-QuorumPeerPB::Role CatalogManager::Role() const {
+RaftPeerPB::Role CatalogManager::Role() const {
   CHECK(IsInitialized());
   return sys_catalog_->tablet_peer_->consensus()->role();
 }
@@ -1376,35 +1376,35 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
     const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.committed_consensus_state();
     const ConsensusStatePB& cstate = report.committed_consensus_state();
-    // The Master only accepts committed quorums since it needs the committed index
+    // The Master only accepts committed consensus configurations since it needs the committed index
     // to only cache the most up-to-date config.
-    if (PREDICT_FALSE(!cstate.quorum().has_opid_index())) {
-      LOG(DFATAL) << "Missing opid_index in reported quorum:\n" << report.DebugString();
-      return Status::InvalidArgument("Missing opid_index in reported quorum");
+    if (PREDICT_FALSE(!cstate.config().has_opid_index())) {
+      LOG(DFATAL) << "Missing opid_index in reported config:\n" << report.DebugString();
+      return Status::InvalidArgument("Missing opid_index in reported config");
     }
 
-    if (cstate.quorum().opid_index() > prev_cstate.quorum().opid_index() ||
+    if (cstate.config().opid_index() > prev_cstate.config().opid_index() ||
         (cstate.has_leader_uuid() &&
         (!prev_cstate.has_leader_uuid() || cstate.current_term() > prev_cstate.current_term()))) {
 
-      // If a replica is reporting a new quorum, reset the tablet's replicas. Note that
-      // we leave out replicas who live in tablet servers who have not heartbeated to
+      // If a replica is reporting a new consensus configuration, reset the tablet's replicas.
+      // Note that we leave out replicas who live in tablet servers who have not heartbeated to
       // master yet.
       LOG(INFO) << "Tablet: " << tablet->tablet_id() << " reported consensus state change."
                 << " New consensus state: " << cstate.ShortDebugString();
 
       VLOG(2) << "Resetting replicas for tablet " << report.tablet_id()
-              << " from quorum reported by " << ts_desc->permanent_uuid()
+              << " from config reported by " << ts_desc->permanent_uuid()
               << " to that committed in log index "
-              << report.committed_consensus_state().quorum().opid_index()
+              << report.committed_consensus_state().config().opid_index()
               << " with leader state from term "
               << report.committed_consensus_state().current_term();
 
       *tablet_lock.mutable_data()->pb.mutable_committed_consensus_state() = cstate;
-      ResetTabletReplicasFromReportedQuorum(ts_desc, report, tablet, &tablet_lock);
+      ResetTabletReplicasFromReportedConfig(ts_desc, report, tablet, &tablet_lock);
     } else {
       // Report opid_index is equal to the previous opid_index. If some
-      // replica is reporting the same quorum we already know about and hasn't
+      // replica is reporting the same consensus configuration we already know about and hasn't
       // been added as replica, add it.
       // TODO: Investigate this logic when we implement RemoveServer().
       DVLOG(2) << "Peer " << ts_desc->permanent_uuid() << " sent full tablet report"
@@ -1426,13 +1426,13 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   return Status::OK();
 }
 
-void CatalogManager::ResetTabletReplicasFromReportedQuorum(TSDescriptor* ts_desc,
+void CatalogManager::ResetTabletReplicasFromReportedConfig(TSDescriptor* ts_desc,
                                                            const ReportedTabletPB& report,
                                                            const scoped_refptr<TabletInfo>& tablet,
                                                            TabletMetadataLock* tablet_lock) {
   vector<TabletReplica> replicas;
-  BOOST_FOREACH(const consensus::QuorumPeerPB& peer,
-                report.committed_consensus_state().quorum().peers()) {
+  BOOST_FOREACH(const consensus::RaftPeerPB& peer,
+                report.committed_consensus_state().config().peers()) {
     std::tr1::shared_ptr<TSDescriptor> ts_desc;
     Status status = master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc);
     if (status.IsNotFound()) {
@@ -1470,7 +1470,7 @@ void CatalogManager::AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
       replica.role = GetConsensusRole(ts_desc->permanent_uuid(),
                                       report.committed_consensus_state());
     } else {
-      replica.role = QuorumPeerPB::NON_PARTICIPANT;
+      replica.role = RaftPeerPB::NON_PARTICIPANT;
     }
     replica.ts_desc = ts_desc;
     locations.push_back(replica);
@@ -1683,7 +1683,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
 
 // Fire off the async create tablet.
 // This requires that the new tablet info is locked for write, and the
-// quorum information has been filled into the 'dirty' data.
+// consensus configuration information has been filled into the 'dirty' data.
 class AsyncCreateTablet : public AsyncTabletRequestTask {
  public:
   AsyncCreateTablet(Master *master,
@@ -1704,7 +1704,7 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
     req_.set_end_key(tablet_pb.end_key());
     req_.set_table_name(table_lock.data().pb.name());
     req_.mutable_schema()->CopyFrom(table_lock.data().pb.schema());
-    req_.mutable_quorum()->CopyFrom(tablet_pb.committed_consensus_state().quorum());
+    req_.mutable_config()->CopyFrom(tablet_pb.committed_consensus_state().config());
   }
 
   virtual string type_name() const OVERRIDE { return "Create Tablet"; }
@@ -2256,24 +2256,24 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
   ConsensusStatePB* cstate = tablet->mutable_metadata()->mutable_dirty()
           ->pb.mutable_committed_consensus_state();
   cstate->set_current_term(kMinimumTerm);
-  consensus::QuorumPB *quorum = cstate->mutable_quorum();
+  consensus::RaftConfigPB *config = cstate->mutable_config();
 
   if (nreplicas == 1 && FLAGS_catalog_manager_allow_local_consensus) {
-    quorum->set_local(true);
+    config->set_local(true);
   } else {
-    quorum->set_local(false);
+    config->set_local(false);
   }
-  quorum->set_opid_index(consensus::kInvalidOpIdIndex);
-  SelectReplicas(ts_descs, nreplicas, quorum);
+  config->set_opid_index(consensus::kInvalidOpIdIndex);
+  SelectReplicas(ts_descs, nreplicas, config);
   return Status::OK();
 }
 
 void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets) {
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
-    const consensus::QuorumPB& quorum =
-        tablet->metadata().dirty().pb.committed_consensus_state().quorum();
+    const consensus::RaftConfigPB& config =
+        tablet->metadata().dirty().pb.committed_consensus_state().config();
     tablet->set_last_update_ts(MonoTime::Now(MonoTime::FINE));
-    BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+    BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
       AsyncCreateTablet *task = new AsyncCreateTablet(master_, worker_pool_.get(),
                                                       peer.permanent_uuid(), tablet);
       tablet->table()->AddTask(task);
@@ -2284,7 +2284,7 @@ void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets
 
 void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
                                     int nreplicas,
-                                    consensus::QuorumPB *quorum) {
+                                    consensus::RaftConfigPB *config) {
   // TODO: Select N Replicas
   // at the moment we have to scan all the tablets to build a map TS -> tablets
   // to know how many tablets a TS has... so, let's do a dumb assignment for now.
@@ -2293,7 +2293,7 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
   // TODO: In the future we should do something smarter based on number of tablets currently
   // running on each server, since round-robin may get unbalanced after moves/deletes.
 
-  DCHECK_EQ(0, quorum->peers_size()) << "Quorum not empty: " << quorum->ShortDebugString();
+  DCHECK_EQ(0, config->peers_size()) << "RaftConfig not empty: " << config->ShortDebugString();
 
   static int index = rand();
   for (int i = 0; i < nreplicas; ++i) {
@@ -2302,8 +2302,8 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
     TSRegistrationPB reg;
     ts->GetRegistration(&reg);
 
-    QuorumPeerPB *peer = quorum->add_peers();
-    peer->set_member_type(QuorumPeerPB::VOTER);
+    RaftPeerPB *peer = config->add_peers();
+    peer->set_member_type(RaftPeerPB::VOTER);
     peer->set_permanent_uuid(ts->permanent_uuid());
 
     // TODO: This is temporary, we will use only UUIDs
@@ -2357,7 +2357,7 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
   // If the locations were not cached.
   // TODO: Why would this ever happen? See KUDU-759.
   if (cstate.IsInitialized()) {
-    BOOST_FOREACH(const consensus::QuorumPeerPB& peer, cstate.quorum().peers()) {
+    BOOST_FOREACH(const consensus::RaftPeerPB& peer, cstate.config().peers()) {
       TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
       CHECK(peer.has_permanent_uuid()) << "Missing UUID: " << peer.ShortDebugString();
       replica_pb->set_role(GetConsensusRole(peer.permanent_uuid(), cstate));

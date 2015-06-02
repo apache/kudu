@@ -92,7 +92,7 @@ class RemoteTabletServer {
 
 struct RemoteReplica {
   RemoteTabletServer* ts;
-  consensus::QuorumPeerPB::Role role;
+  consensus::RaftPeerPB::Role role;
   bool failed;
 };
 
@@ -149,7 +149,7 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   const Slice& start_key() const { return start_key_; }
   const Slice& end_key() const { return end_key_; }
 
-  // Mark the specified tablet server as the leader of the quorum in the cache.
+  // Mark the specified tablet server as the leader of the consensus configuration in the cache.
   void MarkTServerAsLeader(const RemoteTabletServer* server);
 
   // Mark the specified tablet server as a follower in the cache.

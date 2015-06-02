@@ -38,7 +38,7 @@ DEFINE_int32(max_consecutive_failed_heartbeats, 3,
 
 using google::protobuf::RepeatedPtrField;
 using kudu::HostPortPB;
-using kudu::consensus::QuorumPeerPB;
+using kudu::consensus::RaftPeerPB;
 using kudu::master::GetLeaderMasterRpc;
 using kudu::master::ListMastersResponsePB;
 using kudu::master::Master;
@@ -101,7 +101,7 @@ class Heartbeater::Thread {
   vector<HostPort> master_addrs_;
 
   // Index of the master we last succesfully obtained the master
-  // quorum information from.
+  // consensus configuration information from.
   int last_locate_master_idx_;
 
   // The server for which we are heartbeating.

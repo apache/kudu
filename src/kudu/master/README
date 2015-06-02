@@ -19,7 +19,7 @@ log).
 To add or modify a table or tablet, the Master writes, but does not yet commit
 the changes to memory, then writes and flushes the system table to disk, and
 then makes the changes visible in-memory (commits them) if the disk write (and,
-in a distributed master setup, quorum-based replication) is successful. This
+in a distributed master setup, config-based replication) is successful. This
 allows readers to access the in-memory state in a consistent
 way, even while a write is in-progress.
 
@@ -79,15 +79,15 @@ in-memory TableInfo / TabletInfo "state" field on the Master.
 TODO: Could this race with table deletion / creation??
 
 At this point, the table is no longer externally visible to clients via Master
-RPC calls, but the tablet quorums that make up the table may still be up and
+RPC calls, but the tablet configs that make up the table may still be up and
 running. New clients trying to open the table will get a NotFound error, while
 clients that already have the tablet locations cached may still be able to
-read and write to the tablet quorums, as long as the corresponding tablet
+read and write to the tablet configs, as long as the corresponding tablet
 servers are online and their respective tablets have not yet been deleted.
 In some ways, this is similar the design of FS unlink.
 
 The Master will asynchronously send a DeleteTablet RPC request to each tablet
-(one RPC request per tablet server in the quorum, for each tablet), and the
+(one RPC request per tablet server in the config, for each tablet), and the
 tablets will therefore be deleted in parallel in some unspecified order. If the
 Master or tablet server goes offline before a particular DeleteTablet operation
 successfully completes, the Master will send a new DeleteTablet request at the
@@ -130,14 +130,14 @@ This is the current control flow:
        - Else, if the tablet is new (just created by CreateTable in "preparing" state):
          - Add it to the "create tablet" list.
      - Now, for each tablet in the "create tablet" list:
-       - Select a set of tablet servers to host the tablet quorum.
-       - Select a tablet server to be the initial quorum leader.
+       - Select a set of tablet servers to host the tablet config.
+       - Select a tablet server to be the initial config leader.
        [BEGIN-WRITE-TO-DISK]
        - Flush the "to create" to sys.catalog with state "creating"
        [If something fails here, the "Process Pending Assignments" will
         reprocess these tablets. As nothing was done, running tables will be replaced]
        [END-WRITE-TO-DISK]
-       - For each tablet server in the quorum:
+       - For each tablet server in the config:
          - Send an async CreateTablet() RPC request to the TS.
            On TS-heartbeat, the Master will receive the notification of "tablet creation".
      - Commit any changes in state to memory.

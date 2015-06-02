@@ -66,7 +66,7 @@ class ConsensusPeersTest : public KuduTest {
   DelayablePeerProxy<NoOpTestPeerProxy>* NewRemotePeer(
       const string& peer_name,
       gscoped_ptr<Peer>* peer) {
-    QuorumPeerPB peer_pb;
+    RaftPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
     DelayablePeerProxy<NoOpTestPeerProxy>* proxy_ptr =
         new DelayablePeerProxy<NoOpTestPeerProxy>(pool_.get(),

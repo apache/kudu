@@ -108,7 +108,7 @@ Status ReplicaState::LockForMajorityReplicatedIndexUpdate(UniqueLock* lock) cons
     return Status::IllegalState("Replica not in running state");
   }
 
-  if (PREDICT_FALSE(GetActiveRoleUnlocked() != QuorumPeerPB::LEADER)) {
+  if (PREDICT_FALSE(GetActiveRoleUnlocked() != RaftPeerPB::LEADER)) {
     return Status::IllegalState("Replica not LEADER");
   }
   lock->swap(&l);
@@ -116,16 +116,16 @@ Status ReplicaState::LockForMajorityReplicatedIndexUpdate(UniqueLock* lock) cons
 }
 
 Status ReplicaState::CheckActiveLeaderUnlocked() const {
-  QuorumPeerPB::Role role = GetActiveRoleUnlocked();
+  RaftPeerPB::Role role = GetActiveRoleUnlocked();
   switch (role) {
-    case QuorumPeerPB::LEADER:
+    case RaftPeerPB::LEADER:
       return Status::OK();
     default:
       ConsensusStatePB cstate = ConsensusStateUnlocked(ConsensusMetadata::ACTIVE);
-      return Status::IllegalState(Substitute("Replica $0 is not leader of this quorum. Role: $1. "
+      return Status::IllegalState(Substitute("Replica $0 is not leader of this config. Role: $1. "
                                              "Consensus state: $2",
                                              peer_uuid_,
-                                             QuorumPeerPB::Role_Name(role),
+                                             RaftPeerPB::Role_Name(role),
                                              cstate.ShortDebugString()));
   }
 }
@@ -148,8 +148,8 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
-  if (!IsQuorumVoter(peer_uuid_, ConsensusStateUnlocked(ConsensusMetadata::ACTIVE).quorum())) {
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Allowing update even though not a member of the quorum";
+  if (!IsRaftConfigVoter(peer_uuid_, ConsensusStateUnlocked(ConsensusMetadata::ACTIVE).config())) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Allowing update even though not a member of the config";
   }
   lock->swap(&l);
   return Status::OK();
@@ -172,82 +172,82 @@ Status ReplicaState::ShutdownUnlocked() {
   return Status::OK();
 }
 
-QuorumPeerPB::Role ReplicaState::GetActiveRoleUnlocked() const {
+RaftPeerPB::Role ReplicaState::GetActiveRoleUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return cmeta_->active_role();
 }
 
-bool ReplicaState::IsQuorumChangePendingUnlocked() const {
+bool ReplicaState::IsConfigChangePendingUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  return cmeta_->has_pending_quorum();
+  return cmeta_->has_pending_config();
 }
 
-Status ReplicaState::CheckNoQuorumChangePendingUnlocked() const {
+Status ReplicaState::CheckNoConfigChangePendingUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  if (IsQuorumChangePendingUnlocked()) {
+  if (IsConfigChangePendingUnlocked()) {
     return Status::IllegalState(
-        Substitute("Quorum change currently pending. Only one is allowed at a time.\n"
-                   "  Committed quorum: $0.\n  Pending quorum: $1",
-                   GetCommittedQuorumUnlocked().ShortDebugString(),
-                   GetPendingQuorumUnlocked().ShortDebugString()));
+        Substitute("RaftConfig change currently pending. Only one is allowed at a time.\n"
+                   "  Committed config: $0.\n  Pending config: $1",
+                   GetCommittedConfigUnlocked().ShortDebugString(),
+                   GetPendingConfigUnlocked().ShortDebugString()));
   }
   return Status::OK();
 }
 
-Status ReplicaState::SetPendingQuorumUnlocked(const QuorumPB& new_quorum) {
+Status ReplicaState::SetPendingConfigUnlocked(const RaftConfigPB& new_config) {
   DCHECK(update_lock_.is_locked());
-  RETURN_NOT_OK_PREPEND(VerifyQuorum(new_quorum, UNCOMMITTED_QUORUM),
-                        "Invalid quorum to set as pending");
-  CHECK(!cmeta_->has_pending_quorum())
-      << "Attempt to set pending quorum while another is already pending! "
-      << "Existing pending quorum: " << cmeta_->pending_quorum().ShortDebugString() << "; "
-      << "Attempted new pending quorum: " << new_quorum.ShortDebugString();
-  cmeta_->set_pending_quorum(new_quorum);
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(new_config, UNCOMMITTED_QUORUM),
+                        "Invalid config to set as pending");
+  CHECK(!cmeta_->has_pending_config())
+      << "Attempt to set pending config while another is already pending! "
+      << "Existing pending config: " << cmeta_->pending_config().ShortDebugString() << "; "
+      << "Attempted new pending config: " << new_config.ShortDebugString();
+  cmeta_->set_pending_config(new_config);
   return Status::OK();
 }
 
-void ReplicaState::ClearPendingQuorumUnlocked() {
-  cmeta_->clear_pending_quorum();
+void ReplicaState::ClearPendingConfigUnlocked() {
+  cmeta_->clear_pending_config();
 }
 
-const QuorumPB& ReplicaState::GetPendingQuorumUnlocked() const {
+const RaftConfigPB& ReplicaState::GetPendingConfigUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  CHECK(IsQuorumChangePendingUnlocked()) << "No pending quorum";
-  return cmeta_->pending_quorum();
+  CHECK(IsConfigChangePendingUnlocked()) << "No pending config";
+  return cmeta_->pending_config();
 }
 
-Status ReplicaState::SetCommittedQuorumUnlocked(const QuorumPB& committed_quorum) {
+Status ReplicaState::SetCommittedConfigUnlocked(const RaftConfigPB& committed_config) {
   DCHECK(update_lock_.is_locked());
-  DCHECK(committed_quorum.IsInitialized());
-  RETURN_NOT_OK_PREPEND(VerifyQuorum(committed_quorum, COMMITTED_QUORUM),
-                        "Invalid quorum to set as committed");
+  DCHECK(committed_config.IsInitialized());
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(committed_config, COMMITTED_QUORUM),
+                        "Invalid config to set as committed");
 
-  // Compare committed with pending quorum, ensure they are the same.
+  // Compare committed with pending configuration, ensure they are the same.
   // Pending will not have an opid_index, so ignore that field.
-  DCHECK(cmeta_->has_pending_quorum());
-  QuorumPB quorum_no_opid = committed_quorum;
-  quorum_no_opid.clear_opid_index();
-  const QuorumPB& pending_quorum = GetPendingQuorumUnlocked();
+  DCHECK(cmeta_->has_pending_config());
+  RaftConfigPB config_no_opid = committed_config;
+  config_no_opid.clear_opid_index();
+  const RaftConfigPB& pending_config = GetPendingConfigUnlocked();
   // Quorums must be exactly equal, even w.r.t. peer ordering.
-  CHECK_EQ(GetPendingQuorumUnlocked().SerializeAsString(), quorum_no_opid.SerializeAsString())
-      << Substitute("New committed quorum must equal pending quorum, but does not. "
-                    "Pending quorum: $0, committed quorum: $1",
-                    pending_quorum.ShortDebugString(), committed_quorum.ShortDebugString());
+  CHECK_EQ(GetPendingConfigUnlocked().SerializeAsString(), config_no_opid.SerializeAsString())
+      << Substitute("New committed config must equal pending config, but does not. "
+                    "Pending config: $0, committed config: $1",
+                    pending_config.ShortDebugString(), committed_config.ShortDebugString());
 
-  cmeta_->set_committed_quorum(committed_quorum);
-  cmeta_->clear_pending_quorum();
+  cmeta_->set_committed_config(committed_config);
+  cmeta_->clear_pending_config();
   CHECK_OK(cmeta_->Flush());
   return Status::OK();
 }
 
-const QuorumPB& ReplicaState::GetCommittedQuorumUnlocked() const {
+const RaftConfigPB& ReplicaState::GetCommittedConfigUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  return cmeta_->committed_quorum();
+  return cmeta_->committed_config();
 }
 
-const QuorumPB& ReplicaState::GetActiveQuorumUnlocked() const {
+const RaftConfigPB& ReplicaState::GetActiveConfigUnlocked() const {
   DCHECK(update_lock_.is_locked());
-  return cmeta_->active_quorum();
+  return cmeta_->active_config();
 }
 
 bool ReplicaState::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch) {
@@ -420,24 +420,24 @@ Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& ro
     }
   }
 
-  // Mark pending quorum.
+  // Mark pending configuration.
   if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
     DCHECK(round->replicate_msg()->change_config_record().has_old_config());
     DCHECK(round->replicate_msg()->change_config_record().old_config().has_opid_index());
     DCHECK(round->replicate_msg()->change_config_record().has_new_config());
     DCHECK(!round->replicate_msg()->change_config_record().new_config().has_opid_index());
-    const QuorumPB& new_quorum = round->replicate_msg()->change_config_record().new_config();
-    if (GetActiveRoleUnlocked() != QuorumPeerPB::LEADER) {
-      // The leader has to mark the quorum as pending before it gets here
-      // because the active quorum affects the replication queue.
+    const RaftConfigPB& new_config = round->replicate_msg()->change_config_record().new_config();
+    if (GetActiveRoleUnlocked() != RaftPeerPB::LEADER) {
+      // The leader has to mark the configuration as pending before it gets here
+      // because the active configuration affects the replication queue.
       // Do one last sanity check.
-      Status s = CheckNoQuorumChangePendingUnlocked();
+      Status s = CheckNoConfigChangePendingUnlocked();
       if (PREDICT_FALSE(!s.ok())) {
-        s = s.CloneAndAppend(Substitute("\n  New quorum: $0", new_quorum.ShortDebugString()));
+        s = s.CloneAndAppend(Substitute("\n  New config: $0", new_config.ShortDebugString()));
         LOG_WITH_PREFIX_UNLOCKED(INFO) << s.ToString();
         return s;
       }
-      CHECK_OK(SetPendingQuorumUnlocked(new_quorum));
+      CHECK_OK(SetPendingConfigUnlocked(new_config));
     }
   }
 
@@ -535,20 +535,20 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
 
     pending_txns_.erase(iter++);
 
-    // Set committed quorum.
+    // Set committed configuration.
     if (PREDICT_FALSE(round->replicate_msg()->op_type() == CHANGE_CONFIG_OP)) {
       DCHECK(round->replicate_msg()->change_config_record().has_old_config());
       DCHECK(round->replicate_msg()->change_config_record().has_new_config());
-      QuorumPB old_quorum = round->replicate_msg()->change_config_record().old_config();
-      QuorumPB new_quorum = round->replicate_msg()->change_config_record().new_config();
-      DCHECK(old_quorum.has_opid_index());
-      DCHECK(!new_quorum.has_opid_index());
-      new_quorum.set_opid_index(current_id.index());
+      RaftConfigPB old_config = round->replicate_msg()->change_config_record().old_config();
+      RaftConfigPB new_config = round->replicate_msg()->change_config_record().new_config();
+      DCHECK(old_config.has_opid_index());
+      DCHECK(!new_config.has_opid_index());
+      new_config.set_opid_index(current_id.index());
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Committing config change with OpId "
           << current_id << ". "
-          << "Old quorum: { " << old_quorum.ShortDebugString() << " }. "
-          << "New quorum: {" << new_quorum.ShortDebugString() << "}";
-      CHECK_OK(SetCommittedQuorumUnlocked(new_quorum));
+          << "Old config: { " << old_config.ShortDebugString() << " }. "
+          << "New config: {" << new_config.ShortDebugString() << "}";
+      CHECK_OK(SetCommittedConfigUnlocked(new_config));
     }
 
     prev_id.CopyFrom(round->id());
@@ -622,7 +622,7 @@ string ReplicaState::LogPrefixUnlocked() const {
                     options_.tablet_id,
                     peer_uuid_,
                     GetCurrentTermUnlocked(),
-                    QuorumPeerPB::Role_Name(GetActiveRoleUnlocked()));
+                    RaftPeerPB::Role_Name(GetActiveRoleUnlocked()));
 }
 
 string ReplicaState::LogPrefixThreadSafe() const {
@@ -647,7 +647,7 @@ string ReplicaState::ToStringUnlocked() const {
   string ret;
   SubstituteAndAppend(&ret, "Replica: $0, State: $1, Role: $2\n",
                       peer_uuid_, state_,
-                      QuorumPeerPB::Role_Name(GetActiveRoleUnlocked()));
+                      RaftPeerPB::Role_Name(GetActiveRoleUnlocked()));
 
   SubstituteAndAppend(&ret, "Watermarks: {Received: $0 Committed: $1}\n",
                       last_received_op_id_.ShortDebugString(),

@@ -46,8 +46,8 @@ using consensus::ConsensusOptions;
 using consensus::ConsensusRound;
 using consensus::LocalConsensus;
 using consensus::OpId;
-using consensus::QuorumPB;
-using consensus::QuorumPeerPB;
+using consensus::RaftConfigPB;
+using consensus::RaftPeerPB;
 using consensus::RaftConsensus;
 using consensus::CHANGE_CONFIG_OP;
 using consensus::WRITE_OP;
@@ -109,7 +109,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     RETURN_NOT_OK(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id_,
                                           meta_->fs_manager()->uuid(), &cmeta));
 
-    if (cmeta->committed_quorum().local()) {
+    if (cmeta->committed_config().local()) {
       consensus_.reset(new LocalConsensus(options,
                                           cmeta.Pass(),
                                           meta_->fs_manager()->uuid(),
@@ -147,7 +147,7 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer starting";
 
-  VLOG(2) << "Quorum before starting: " << consensus_->CommittedQuorum().DebugString();
+  VLOG(2) << "RaftConfig before starting: " << consensus_->CommittedConfig().DebugString();
 
   // TODO we likely should only change the state after starting consensus
   // but if we do that a lot of tests fail. We can't include Consensus::Start()
@@ -165,9 +165,9 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   return Status::OK();
 }
 
-const consensus::QuorumPB TabletPeer::Quorum() const {
+const consensus::RaftConfigPB TabletPeer::RaftConfig() const {
   CHECK(consensus_) << "consensus is null";
-  return consensus_->CommittedQuorum();
+  return consensus_->CommittedConfig();
 }
 
 TabletStatePB TabletPeer::Shutdown() {

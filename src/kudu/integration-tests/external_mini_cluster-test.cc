@@ -22,18 +22,18 @@ class EMCTest : public KuduTest {
     // Hard-coded RPC ports for the masters. This is safe, as this unit test
     // runs under a resource lock (see CMakeLists.txt in this directory).
     // TODO we should have a generic method to obtain n free ports.
-    master_quorum_ports_ = boost::assign::list_of(11010)(11011)(11012);
+    master_peer_ports_ = boost::assign::list_of(11010)(11011)(11012);
   }
 
  protected:
-  std::vector<uint16_t> master_quorum_ports_;
+  std::vector<uint16_t> master_peer_ports_;
 };
 
 TEST_F(EMCTest, TestBasicOperation) {
   ExternalMiniClusterOptions opts;
-  opts.num_masters = master_quorum_ports_.size();
+  opts.num_masters = master_peer_ports_.size();
   opts.num_tablet_servers = 3;
-  opts.master_rpc_ports = master_quorum_ports_;
+  opts.master_rpc_ports = master_peer_ports_;
 
   ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());

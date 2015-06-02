@@ -26,7 +26,7 @@
 
 namespace kudu {
 
-using consensus::QuorumPeerPB;
+using consensus::RaftPeerPB;
 using std::vector;
 using std::string;
 using strings::Substitute;
@@ -122,7 +122,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Tablet ID</th><th>Start-Key</th><th>End-Key</th><th>State</th>"
-      "<th>Quorum</th></tr>\n";
+      "<th>RaftConfig</th></tr>\n";
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
     vector<TabletReplica> locations;
     tablet->GetLocations(&locations);
@@ -136,7 +136,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
         EscapeForHtmlToString(end_key),
         SysTabletsEntryPB_State_Name(l.data().pb.state()).substr(kSysTabletsEntryStatePrefixLen),
         EscapeForHtmlToString(l.data().pb.state_msg()),
-        QuorumToHtml(locations));
+        RaftConfigToHtml(locations));
   }
   *output << "</table>\n";
 
@@ -186,7 +186,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
       reg_text = Substitute("<b>$0</b>", reg_text);
     }
     *output << Substitute("  <tr><td>$0</td><td>$1</td></tr>\n", reg_text,
-                          master.has_role() ?  QuorumPeerPB_Role_Name(master.role()) : "N/A");
+                          master.has_role() ?  RaftPeerPB_Role_Name(master.role()) : "N/A");
   }
 
   *output << "</table>";
@@ -218,7 +218,7 @@ bool CompareByRole(const TabletReplica& a, const TabletReplica& b) {
 
 } // anonymous namespace
 
-string MasterPathHandlers::QuorumToHtml(const std::vector<TabletReplica>& locations) const {
+string MasterPathHandlers::RaftConfigToHtml(const std::vector<TabletReplica>& locations) const {
   std::stringstream html;
   vector<TabletReplica> sorted_locations;
   sorted_locations.assign(locations.begin(), locations.end());
@@ -228,11 +228,11 @@ string MasterPathHandlers::QuorumToHtml(const std::vector<TabletReplica>& locati
   html << "<ul>\n";
   BOOST_FOREACH(const TabletReplica& location, sorted_locations) {
     string location_html = TSDescriptorToHtml(*location.ts_desc);
-    if (location.role == QuorumPeerPB::LEADER) {
+    if (location.role == RaftPeerPB::LEADER) {
       html << Substitute("  <li><b>LEADER: $0</b></li>\n", location_html);
     } else {
       html << Substitute("  <li>$0: $1</li>\n",
-                         QuorumPeerPB_Role_Name(location.role), location_html);
+                         RaftPeerPB_Role_Name(location.role), location_html);
     }
   }
   html << "</ul>\n";

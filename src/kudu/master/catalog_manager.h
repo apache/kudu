@@ -67,7 +67,7 @@ struct PersistentTabletInfo {
 struct TabletReplica {
   TSDescriptor* ts_desc;
   tablet::TabletStatePB state;
-  consensus::QuorumPeerPB::Role role;
+  consensus::RaftPeerPB::Role role;
 };
 
 // The information about a single tablet which exists in the cluster,
@@ -385,29 +385,29 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   bool IsInitialized() const;
 
-  // Return OK if this CatalogManager is a leader in a quorum and if
+  // Return OK if this CatalogManager is a leader in a consensus configuration and if
   // the required leader state (metadata for tables and tablets) has
   // been successfully loaded into memory. CatalogManager must be
   // initialized before calling this method.
   Status CheckIsLeaderAndReady() const;
 
-  // Returns this CatalogManager's role in a quorum. CatalogManager
+  // Returns this CatalogManager's role in a consensus configuration. CatalogManager
   // must be initialized before calling this method.
-  consensus::QuorumPeerPB::Role Role() const;
+  consensus::RaftPeerPB::Role Role() const;
 
  private:
   friend class TableLoader;
   friend class TabletLoader;
 
   // Called by SysCatalog::SysCatalogStateChanged when this node
-  // becomes the leader of a quorum. Executes VisitTablesAndTabletsTask
+  // becomes the leader of a consensus configuration. Executes VisitTablesAndTabletsTask
   // below.
   Status ElectedAsLeaderCb();
 
   // Loops and sleeps until one of the following conditions occurs:
-  // 1. The current node is the leader of the master quorum in the current term
+  // 1. The current node is the leader master in the current term
   //    and at least one op from the current term is committed. Returns OK.
-  // 2. The current node is not the leader of the master quorum.
+  // 2. The current node is not the leader master.
   //    Returns IllegalState.
   // 3. The provided timeout expires. Returns TimedOut.
   //
@@ -479,15 +479,15 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
                               const ReportedTabletPB& report,
                               ReportedTabletUpdatesPB *report_updates);
 
-  void ResetTabletReplicasFromReportedQuorum(TSDescriptor* ts_desc,
+  void ResetTabletReplicasFromReportedConfig(TSDescriptor* ts_desc,
                                              const ReportedTabletPB& report,
                                              const scoped_refptr<TabletInfo>& tablet,
                                              TabletMetadataLock* tablet_lock);
 
-  // Register a tablet server whenever it heartbeats with a quorum. This is
+  // Register a tablet server whenever it heartbeats with a consensus configuration. This is
   // needed because we have logic in the Master that states that if a tablet
-  // server that is part of a quorum has not heartbeated to the Master yet, we
-  // leave it out of the quorum reported to clients.
+  // server that is part of a consensus configuration has not heartbeated to the Master yet, we
+  // leave it out of the consensus configuration reported to clients.
   // TODO: See if we can remove this logic, as it seems confusing.
   void AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
                                     const ReportedTabletPB& report,
@@ -505,7 +505,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Status ProcessPendingAssignments(const std::vector<scoped_refptr<TabletInfo> >& tablets);
 
   // Select N Replicas from online tablet servers (as specified by
-  // 'ts_descs') for the specified tablet and populate the quorum
+  // 'ts_descs') for the specified tablet and populate the consensus configuration
   // object. If 'ts_descs' does not specify enough online tablet
   // servers to select the N replicas, return Status::InvalidArgument.
   //
@@ -513,12 +513,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Status SelectReplicasForTablet(const TSDescriptorVector& ts_descs, TabletInfo* tablet);
 
   // Select N Replicas from the online tablet servers
-  // and populate the quorum object.
+  // and populate the consensus configuration object.
   //
   // This method is called by "SelectReplicasForTablet".
   void SelectReplicas(const TSDescriptorVector& ts_descs,
                       int nreplicas,
-                      consensus::QuorumPB *quorum);
+                      consensus::RaftConfigPB *config);
 
   void HandleAssignPreparingTablet(TabletInfo* tablet,
                                    DeferredAssignmentActions* deferred);
@@ -533,7 +533,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   Status HandleTabletSchemaVersionReport(TabletInfo *tablet,
                                          uint32_t version);
 
-  // Send the create tablet requests to the selected peers of the quorums.
+  // Send the create tablet requests to the selected peers of the consensus configurations.
   // The creation is async, and at the moment there is no error checking on the
   // caller side. We rely on the assignment timeout. If we don't see the tablet
   // after the timeout, we regenerate a new one and proceed with a new
@@ -623,7 +623,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // upon closely timed consecutive elections).
   gscoped_ptr<ThreadPool> worker_pool_;
 
-  // This field is updated when a node becomes leader of the master quorum,
+  // This field is updated when a node becomes leader master,
   // waits for all outstanding uncommitted metadata (table and tablet metadata)
   // in the sys catalog to commit, and then reads that metadata into in-memory
   // data structures. This is used to "fence" client and tablet server requests

@@ -61,7 +61,7 @@ using consensus::OpIdEquals;
 using consensus::OpIdEqualsFunctor;
 using consensus::OpIdHashFunctor;
 using consensus::OpIdToString;
-using consensus::QuorumPB;
+using consensus::RaftConfigPB;
 using consensus::ReplicateMsg;
 using consensus::ALTER_SCHEMA_OP;
 using consensus::CHANGE_CONFIG_OP;
@@ -83,9 +83,9 @@ struct ReplayState;
 
 // Bootstraps an existing tablet by opening the metadata from disk, and rebuilding soft
 // state by playing log segments. A bootstrapped tablet can then be added to an existing
-// quorum as a LEARNER, which will bring its state up to date with the rest of the quorum,
-// or it can start serving the data itself, after it has been appointed LEADER of that
-// particular quorum.
+// consensus configuration as a LEARNER, which will bring its state up to date with the
+// rest of the consensus configuration, or it can start serving the data itself, after it
+// has been appointed LEADER of that particular consensus configuration.
 //
 // NOTE: this does not handle pulling data from other replicas in the cluster. That
 // is handled by the 'RemoteBootstrap' classes, which copy blocks and metadata locally
@@ -371,7 +371,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   string tablet_id = meta_->tablet_id();
 
   // Replay requires a valid Consensus metadata file to exist in order to
-  // compare the committed quorum seqno with the log entries and also to persist
+  // compare the committed consensus configuration seqno with the log entries and also to persist
   // committed but unpersisted changes.
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Load(meta_->fs_manager(), tablet_id,
                                                 meta_->fs_manager()->uuid(), &cmeta_),
@@ -1137,21 +1137,21 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
 Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
                                                 const CommitMsg& commit_msg) {
   ChangeConfigRecordPB* change_config = replicate_msg->mutable_change_config_record();
-  QuorumPB quorum = change_config->new_config();
+  RaftConfigPB config = change_config->new_config();
 
-  int64_t cmeta_opid_index =  cmeta_->committed_quorum().opid_index();
+  int64_t cmeta_opid_index =  cmeta_->committed_config().opid_index();
   if (replicate_msg->id().index() > cmeta_opid_index) {
-    DCHECK(!quorum.has_opid_index());
-    quorum.set_opid_index(replicate_msg->id().index());
-    VLOG(1) << "WAL replay found quorum configuration with log index " << quorum.opid_index()
-            << " that is greater than the committed quorum's index " << cmeta_opid_index
+    DCHECK(!config.has_opid_index());
+    config.set_opid_index(replicate_msg->id().index());
+    VLOG(1) << "WAL replay found Raft configuration with log index " << config.opid_index()
+            << " that is greater than the committed config's index " << cmeta_opid_index
             << ". Applying this configuration change.";
-    cmeta_->set_committed_quorum(quorum);
+    cmeta_->set_committed_config(config);
     // We flush once at the end of bootstrap.
   } else {
-    VLOG(1) << "WAL replay found quorum configuration with log index "
+    VLOG(1) << "WAL replay found Raft configuration with log index "
             << replicate_msg->id().index() << ", which is less than or equal to the committed "
-            << "quorum's index " << cmeta_opid_index << ". "
+            << "config's index " << cmeta_opid_index << ". "
             << "Skipping application of this config change.";
   }
 

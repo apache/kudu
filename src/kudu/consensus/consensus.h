@@ -121,11 +121,11 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
       gscoped_ptr<ReplicateMsg> replicate_msg,
       const ConsensusReplicatedCallback& replicated_cb);
 
-  // Called by a quorum client to replicate an entry to the state machine.
+  // Called by a Leader to replicate an entry to the state machine.
   //
   // From the leader instance perspective execution proceeds as follows:
   //
-  //           Leader                               Quorum
+  //           Leader                               RaftConfig
   //             +                                     +
   //     1) Req->| Replicate()                         |
   //             |                                     |
@@ -141,14 +141,14 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // 1) Caller calls Replicate(), method returns immediately to the caller and
   //    runs asynchronously.
   //
-  // 2) Leader replicates the entry to the quorum using the consensus
-  //    algorithm, proceeds as soon as a majority of the quorum acknowledges the
+  // 2) Leader replicates the entry to the peers using the consensus
+  //    algorithm, proceeds as soon as a majority of voters acknowledges the
   //    entry.
   //
   // 3) Leader defers to the caller by calling ConsensusRound::NotifyReplicationFinished,
   //    which calls the ConsensusReplicatedCallback.
   //
-  // 3a) The leader asynchronously notifies other members of the quorum of the new
+  // 3a) The leader asynchronously notifies other peers of the new
   //     commit index, which tells them to apply the operation.
   //
   // This method can only be called on the leader, i.e. role() == LEADER
@@ -198,14 +198,14 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
   // Implement a ChangeConfig() request.
   virtual Status ChangeConfig(ChangeConfigType type,
-                              const QuorumPeerPB& server,
+                              const RaftPeerPB& server,
                               ChangeConfigResponsePB* resp,
                               const StatusCallback& client_cb) {
     return Status::NotSupported("Not implemented.");
   }
 
-  // Returns the current quorum role of this instance.
-  virtual QuorumPeerPB::Role role() const = 0;
+  // Returns the current Raft role of this instance.
+  virtual RaftPeerPB::Role role() const = 0;
 
   // Returns the uuid of this peer.
   virtual std::string peer_uuid() const = 0;
@@ -216,8 +216,8 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // Returns a copy of the committed state of the Consensus system.
   virtual ConsensusStatePB CommittedConsensusState() const = 0;
 
-  // Returns a copy of the current committed Consensus quorum.
-  virtual QuorumPB CommittedQuorum() const = 0;
+  // Returns a copy of the current committed Raft configuration.
+  virtual RaftConfigPB CommittedConfig() const = 0;
 
   virtual void DumpStatusHtml(std::ostream& out) const = 0;
 
@@ -232,7 +232,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // TODO Remove once we have solid election.
   virtual Status GetLastReceivedOpId(OpId* id) { return Status::NotFound("Not implemented."); }
 
-  // Marks the quorum as dirty.
+  // Marks the configuration as dirty.
   // TODO: Make this private if possible.
   virtual void MarkDirty() = 0;
 

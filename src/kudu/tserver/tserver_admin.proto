@@ -40,8 +40,8 @@ message CreateTabletRequestPB {
   required string table_name = 5;
   required SchemaPB schema = 6;
 
-  // Initial quorum for the tablet.
-  required consensus.QuorumPB quorum = 7;
+  // Initial consensus configuration for the tablet.
+  required consensus.RaftConfigPB config = 7;
 }
 
 message CreateTabletResponsePB {

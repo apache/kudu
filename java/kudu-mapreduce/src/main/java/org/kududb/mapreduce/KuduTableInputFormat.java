@@ -75,7 +75,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   static final String SCAN_CACHE_BLOCKS = "kudu.mapreduce.input.scan.cache.blocks";
 
   /** Job parameter that specifies where the masters are. */
-  static final String MASTER_QUORUM_KEY = "kudu.mapreduce.master.address";
+  static final String MASTER_ADDRESSES_KEY = "kudu.mapreduce.master.address";
 
   /** Job parameter that specifies how long we wait for operations to complete (default: 10s). */
   static final String OPERATION_TIMEOUT_MS_KEY = "kudu.mapreduce.operation.timeout.ms";
@@ -214,19 +214,19 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     this.conf = new Configuration(entries);
 
     String tableName = conf.get(INPUT_TABLE_KEY);
-    String masterQuorum = conf.get(MASTER_QUORUM_KEY);
+    String masterAddresses = conf.get(MASTER_ADDRESSES_KEY);
     this.operationTimeoutMs = conf.getLong(OPERATION_TIMEOUT_MS_KEY, 10000);
     this.nameServer = conf.get(NAME_SERVER_KEY);
     this.cacheBlocks = conf.getBoolean(SCAN_CACHE_BLOCKS, false);
 
-    this.client = KuduTableMapReduceUtil.getClient(masterQuorum);
+    this.client = KuduTableMapReduceUtil.getClient(masterAddresses);
     this.client.setTimeoutMillis(this.operationTimeoutMs);
     try {
       this.table = client.openTable(tableName);
     } catch (Exception ex) {
       throw new RuntimeException("Could not obtain the table from the master, " +
           "is the master running and is this table created? tablename=" + tableName + " and " +
-          "master address= " + masterQuorum, ex);
+          "master address= " + masterAddresses, ex);
     }
 
     String projectionConfig = conf.get(COLUMN_PROJECTION_KEY);

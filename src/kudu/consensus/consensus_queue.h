@@ -135,7 +135,7 @@ class PeerMessageQueue {
   // Makes the queue untrack this peer.
   virtual void UntrackPeer(const std::string& peer_uuid);
 
-  // Appends a single message to be replicated to the quorum.
+  // Appends a single message to be replicated to the peers.
   // Returns OK unless the message could not be added to the queue for some
   // reason (e.g. the queue reached max size).
   // If it returns OK the queue takes ownership of 'msg'.
@@ -144,7 +144,7 @@ class PeerMessageQueue {
   // with concurrent Append calls.
   virtual Status AppendOperation(const ReplicateRefPtr& msg);
 
-  // Appends a vector of messages to be replicated to the quorum.
+  // Appends a vector of messages to be replicated to the peers.
   // Returns OK unless the message could not be added to the queue for some
   // reason (e.g. the queue reached max size), calls 'log_append_callback' when
   // the messages are durable in the local Log.
@@ -155,7 +155,7 @@ class PeerMessageQueue {
   virtual Status AppendOperations(const std::vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& log_append_callback);
 
-  // Assembles a request for a quorum peer, adding entries past 'op_id' up to
+  // Assembles a request for a peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.
   // Returns OK if the request was assembled or Status::NotFound() if the
   // peer with 'uuid' was not tracked, of if the queue is not in leader mode.
@@ -265,7 +265,7 @@ class PeerMessageQueue {
     uint64_t current_term;
 
     // The size of the majority for the queue.
-    // TODO support changing majority sizes when quorums change.
+    // TODO support changing majority sizes when configurations change.
     int majority_size_;
 
     State state;

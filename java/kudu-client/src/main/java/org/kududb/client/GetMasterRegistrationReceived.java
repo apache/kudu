@@ -89,9 +89,9 @@ final class GetMasterRegistrationReceived {
     if (countResponsesReceived.incrementAndGet() == numMasters) {
       if (responseDCalled.compareAndSet(false, true)) {
         String allHosts = NetUtil.hostsAndPortsToString(masterAddrs);
-        LOG.warn("Unable to find the leader of the master quorum(" + allHosts + ").");
+        LOG.warn("Unable to find the leader master(" + allHosts + ").");
         responseD.callback(NoLeaderMasterFoundException.create(
-            "Master quorum (" + allHosts + ") has no leader.",
+            "Master config (" + allHosts + ") has no leader.",
             exceptionsReceived));
       }
     }
@@ -122,7 +122,7 @@ final class GetMasterRegistrationReceived {
       tsInfoBuilder.addRpcAddresses(ProtobufHelper.hostAndPortToPB(hostAndPort));
       tsInfoBuilder.setPermanentUuid(r.getInstanceId().getPermanentUuid());
       replicaBuilder.setTsInfo(tsInfoBuilder);
-      if (r.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER)) {
+      if (r.getRole().equals(Metadata.RaftPeerPB.Role.LEADER)) {
         replicaBuilder.setRole(r.getRole());
         Master.TabletLocationsPB.Builder locationBuilder = Master.TabletLocationsPB.newBuilder();
         locationBuilder.setStartKey(ByteString.copyFromUtf8(""));

@@ -36,7 +36,7 @@ using std::min;
 using std::tr1::shared_ptr;
 using std::vector;
 
-using kudu::consensus::QuorumPeerPB;
+using kudu::consensus::RaftPeerPB;
 using kudu::rpc::ServiceIf;
 using kudu::tserver::ConsensusServiceImpl;
 using strings::Substitute;
@@ -201,12 +201,12 @@ Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
     ServerEntryPB local_entry;
     local_entry.mutable_instance_id()->CopyFrom(catalog_manager_->NodeInstance());
     RETURN_NOT_OK(GetMasterRegistration(local_entry.mutable_registration()));
-    local_entry.set_role(QuorumPeerPB::LEADER);
+    local_entry.set_role(RaftPeerPB::LEADER);
     masters->push_back(local_entry);
     return Status::OK();
   }
 
-  BOOST_FOREACH(const HostPort& peer_addr, opts_.master_quorum) {
+  BOOST_FOREACH(const HostPort& peer_addr, opts_.master_addresses) {
     ServerEntryPB peer_entry;
     Status s = GetMasterEntryForHost(messenger_, peer_addr, &peer_entry);
     if (!s.ok()) {

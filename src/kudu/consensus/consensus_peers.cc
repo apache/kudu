@@ -27,7 +27,7 @@
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
              "Timeout used for all consensus internal RPC comms.");
 
-DEFINE_int32(quorum_get_node_instance_timeout_ms, 30000,
+DEFINE_int32(raft_get_node_instance_timeout_ms, 30000,
              "Timeout for retrieving node instance data over RPC.");
 
 DECLARE_int32(leader_heartbeat_interval_ms);
@@ -47,7 +47,7 @@ using rpc::Messenger;
 using rpc::RpcController;
 using strings::Substitute;
 
-Status Peer::NewRemotePeer(const QuorumPeerPB& peer_pb,
+Status Peer::NewRemotePeer(const RaftPeerPB& peer_pb,
                            const string& tablet_id,
                            const string& leader_uuid,
                            PeerMessageQueue* queue,
@@ -66,7 +66,7 @@ Status Peer::NewRemotePeer(const QuorumPeerPB& peer_pb,
   return Status::OK();
 }
 
-Peer::Peer(const QuorumPeerPB& peer_pb,
+Peer::Peer(const RaftPeerPB& peer_pb,
            const string& tablet_id,
            const string& leader_uuid,
            gscoped_ptr<PeerProxy> proxy,
@@ -292,7 +292,7 @@ RpcPeerProxyFactory::RpcPeerProxyFactory(const shared_ptr<Messenger>& messenger)
     : messenger_(messenger) {
 }
 
-Status RpcPeerProxyFactory::NewProxy(const QuorumPeerPB& peer_pb,
+Status RpcPeerProxyFactory::NewProxy(const RaftPeerPB& peer_pb,
                                      gscoped_ptr<PeerProxy>* proxy) {
   gscoped_ptr<HostPort> hostport(new HostPort);
   RETURN_NOT_OK(HostPortFromPB(peer_pb.last_known_addr(), hostport.get()));
@@ -305,7 +305,7 @@ Status RpcPeerProxyFactory::NewProxy(const QuorumPeerPB& peer_pb,
 RpcPeerProxyFactory::~RpcPeerProxyFactory() {}
 
 Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
-                                     QuorumPeerPB* remote_peer) {
+                                     RaftPeerPB* remote_peer) {
   DCHECK(!remote_peer->has_permanent_uuid());
   HostPort hostport;
   RETURN_NOT_OK(HostPortFromPB(remote_peer->last_known_addr(), &hostport));
@@ -319,7 +319,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
   // same thing in catalog_manager.cc
   // (AsyncTabletRequestTask::RpcCallBack).
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_quorum_get_node_instance_timeout_ms));
+  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_raft_get_node_instance_timeout_ms));
   int attempt = 1;
   while (true) {
     VLOG(2) << "Getting uuid from remote peer. Request: " << req.ShortDebugString();
@@ -333,7 +333,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
       s = controller.status();
     }
 
-    LOG(WARNING) << "Error getting permanent uuid from quorum peer " << hostport.ToString() << ": "
+    LOG(WARNING) << "Error getting permanent uuid from config peer " << hostport.ToString() << ": "
                  << s.ToString();
     MonoTime now = MonoTime::Now(MonoTime::FINE);
     if (now.ComesBefore(deadline)) {
@@ -348,7 +348,7 @@ Status SetPermanentUuidForRemotePeer(const shared_ptr<Messenger>& messenger,
     } else {
       s = Status::TimedOut(Substitute("Getting permanent uuid from $0 timed out after $1 ms.",
                                       hostport.ToString(),
-                                      FLAGS_quorum_get_node_instance_timeout_ms),
+                                      FLAGS_raft_get_node_instance_timeout_ms),
                            s.ToString());
       return s;
     }

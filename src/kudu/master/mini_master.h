@@ -35,7 +35,7 @@ class MiniMaster {
   // bound to, call MiniMaster::bound_addr()
   Status Start();
 
-  Status StartDistributedMaster(const std::vector<uint16_t>& quorum_ports);
+  Status StartDistributedMaster(const std::vector<uint16_t>& peer_ports);
 
   Status WaitForCatalogManagerInit();
 
@@ -58,7 +58,7 @@ class MiniMaster {
 
  private:
   Status StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web_port,
-                                       const std::vector<uint16_t>& quorum_ports);
+                                       const std::vector<uint16_t>& peer_ports);
 
   Status StartOnPorts(uint16_t rpc_port, uint16_t web_port);
 

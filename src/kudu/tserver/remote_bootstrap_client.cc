@@ -36,8 +36,8 @@ namespace tserver {
 
 using consensus::ConsensusStatePB;
 using consensus::OpId;
-using consensus::QuorumPB;
-using consensus::QuorumPeerPB;
+using consensus::RaftConfigPB;
+using consensus::RaftPeerPB;
 using fs::WritableBlock;
 using rpc::Messenger;
 using std::string;
@@ -88,16 +88,16 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
   return Status::OK();
 }
 
-Status RemoteBootstrapClient::ExtractLeaderFromQuorum(const ConsensusStatePB& cstate,
-                                                      QuorumPeerPB* leader) {
-  BOOST_FOREACH(const QuorumPeerPB& peer, cstate.quorum().peers()) {
+Status RemoteBootstrapClient::ExtractLeaderFromConfig(const ConsensusStatePB& cstate,
+                                                      RaftPeerPB* leader) {
+  BOOST_FOREACH(const RaftPeerPB& peer, cstate.config().peers()) {
     if (!cstate.has_leader_uuid() || cstate.leader_uuid().empty()) break;
     if (peer.permanent_uuid() == cstate.leader_uuid()) {
       leader->CopyFrom(peer);
       return Status::OK();
     }
   }
-  return Status::NotFound("No leader found in quorum");
+  return Status::NotFound("No leader found in config");
 }
 
 // Decode the remote error into a human-readable Status object.
@@ -139,15 +139,15 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
 
   UpdateStatusMessage("Initializing remote bootstrap");
 
-  // Find the quorum leader's address.
-  // TODO: Support looking up quorum info from Master and also redirecting
-  // from follower to quorum leader in the future.
-  QuorumPeerPB leader;
-  RETURN_NOT_OK_PREPEND(ExtractLeaderFromQuorum(cstate, &leader),
-                        "Cannot find leader tablet in quorum to remotely bootstrap from: " +
+  // Find the consensus leader's address.
+  // TODO: Support looking up consensus configuration info from Master and also redirecting
+  // from follower to consensus leader in the future.
+  RaftPeerPB leader;
+  RETURN_NOT_OK_PREPEND(ExtractLeaderFromConfig(cstate, &leader),
+                        "Cannot find leader tablet in config to remotely bootstrap from: " +
                         cstate.ShortDebugString());
   if (!leader.has_last_known_addr()) {
-    return Status::InvalidArgument("Unknown address for quorum leader", leader.ShortDebugString());
+    return Status::InvalidArgument("Unknown address for config leader", leader.ShortDebugString());
   }
   HostPort host_port;
   RETURN_NOT_OK(HostPortFromPB(leader.last_known_addr(), &host_port));
@@ -175,9 +175,9 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
                                controller,
                                "Unable to begin remote bootstrap session");
 
-  // TODO: Support retrying based on updated info from Master or quorum.
+  // TODO: Support retrying based on updated info from Master or consensus configuration.
   if (resp.superblock().remote_bootstrap_state() != tablet::REMOTE_BOOTSTRAP_DONE) {
-    Status s = Status::IllegalState("Leader of quorum (" + cstate.ShortDebugString() + ")" +
+    Status s = Status::IllegalState("Leader of config (" + cstate.ShortDebugString() + ")" +
                                     " is currently remotely bootstrapping itself!",
                                     resp.superblock().ShortDebugString());
     LOG(WARNING) << s.ToString();

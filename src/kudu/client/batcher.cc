@@ -181,7 +181,7 @@ class WriteRpc : public Rpc {
   const WriteResponsePB& resp() const { return resp_; }
 
  private:
-  // Called when we finish a lookup (to find the new quorum leader). Retries
+  // Called when we finish a lookup (to find the new consensus leader). Retries
   // the rpc after a short delay.
   void LookupTabletCb(const Status& status);
 
@@ -206,7 +206,7 @@ class WriteRpc : public Rpc {
   RemoteTabletServer* current_ts_;
 
   // TSes that refused the write because they were followers at the time.
-  // Cleared when new quorum information arrives from the master.
+  // Cleared when new consensus configuration information arrives from the master.
   set<RemoteTabletServer*> followers_;
 
   // Request body.
@@ -286,7 +286,7 @@ void WriteRpc::SendRpc() {
   //    meta cache, so that our selection remains sticky until the next Master
   //    metadata refresh.
   // 4. If we're out of appropriate replicas, force a lookup to the master
-  //    to fetch new quorum information.
+  //    to fetch new consensus configuration information.
   // 5. When the lookup finishes, forget which replicas were followers and
   //    retry the write (i.e. goto 1).
   // 6. If we issue the write and it fails because the destination was a
@@ -330,10 +330,10 @@ void WriteRpc::SendRpc() {
   // new leader. This relies on some properties of LookupTabletByKey():
   // 1. The fast path only works when there's a non-failed leader (which we
   //    know is untrue here).
-  // 2. The slow path always fetches quorum information and updates the
+  // 2. The slow path always fetches consensus configuration information and updates the
   //    looked-up tablet.
   // Put another way, we don't care about the lookup results at all; we're
-  // just using it to fetch the latest quorum information.
+  // just using it to fetch the latest consensus configuration information.
   //
   // TODO: When we support tablet splits, we should let the lookup shift
   // the write to another tablet (i.e. if it's since been split).
@@ -414,7 +414,7 @@ void WriteRpc::SendRpcCb(const Status& status) {
   }
 
   // Oops, we failed over to a replica that wasn't a LEADER. Unlikely as
-  // we're using quorum information from the master, but still possible
+  // we're using consensus configuration information from the master, but still possible
   // (e.g. leader restarted and became a FOLLOWER). Try again.
   //
   // TODO: IllegalState is obviously way too broad an error category for

@@ -53,7 +53,7 @@ class FromMapPeerProxyFactory : public PeerProxyFactory {
       : proxy_map_(proxy_map) {
   }
 
-  virtual Status NewProxy(const QuorumPeerPB& peer_pb,
+  virtual Status NewProxy(const RaftPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) {
     PeerProxy* proxy_ptr = FindPtrOrNull(*proxy_map_, peer_pb.permanent_uuid());
     if (!proxy) return Status::NotFound("No proxy for peer.");
@@ -100,7 +100,7 @@ class LeaderElectionTest : public KuduTest {
   string candidate_uuid_;
   vector<string> voter_uuids_;
 
-  QuorumPB quorum_;
+  RaftConfigPB config_;
   ProxyMap proxies_;
   gscoped_ptr<PeerProxyFactory> proxy_factory_;
   gscoped_ptr<ThreadPool> pool_;
@@ -121,9 +121,9 @@ void LeaderElectionTest::InitUUIDs(int num_voters) {
 }
 
 void LeaderElectionTest::InitNoOpPeerProxies() {
-  quorum_.Clear();
+  config_.Clear();
   BOOST_FOREACH(const string& uuid, voter_uuids_) {
-    QuorumPeerPB* peer_pb = quorum_.add_peers();
+    RaftPeerPB* peer_pb = config_.add_peers();
     peer_pb->set_permanent_uuid(uuid);
     PeerProxy* proxy = new NoOpTestPeerProxy(pool_.get(), *peer_pb);
     InsertOrDie(&proxies_, uuid, proxy);
@@ -131,9 +131,9 @@ void LeaderElectionTest::InitNoOpPeerProxies() {
 }
 
 void LeaderElectionTest::InitDelayableMockedProxies(bool enable_delay) {
-  quorum_.Clear();
+  config_.Clear();
   BOOST_FOREACH(const string& uuid, voter_uuids_) {
-    QuorumPeerPB* peer_pb = quorum_.add_peers();
+    RaftPeerPB* peer_pb = config_.add_peers();
        peer_pb->set_permanent_uuid(uuid);
     DelayablePeerProxy<MockedPeerProxy>* proxy =
         new DelayablePeerProxy<MockedPeerProxy>(pool_.get(),
@@ -185,7 +185,7 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithHighTermVoter
   request.set_tablet_id(tablet_id_);
 
   scoped_refptr<LeaderElection> election(
-      new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
+      new LeaderElection(config_, proxy_factory_.get(), request, counter.Pass(),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                          Bind(&LeaderElectionTest::ElectionCallback,
                               Unretained(this))));
@@ -196,7 +196,7 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
     ConsensusTerm election_term, int num_grant, int num_deny, int num_error) {
   const int kNumVoters = num_grant + num_deny + num_error;
   CHECK_GE(num_grant, 1);       // Gotta vote for yourself.
-  CHECK_EQ(1, kNumVoters % 2);  // Quorum size must be odd.
+  CHECK_EQ(1, kNumVoters % 2);  // RaftConfig size must be odd.
   const int kMajoritySize = (kNumVoters / 2) + 1;
 
   InitUUIDs(kNumVoters);
@@ -241,7 +241,7 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
   request.set_tablet_id(tablet_id_);
 
   scoped_refptr<LeaderElection> election(
-      new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
+      new LeaderElection(config_, proxy_factory_.get(), request, counter.Pass(),
                          MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                          Bind(&LeaderElectionTest::ElectionCallback,
                               Unretained(this))));
@@ -250,10 +250,10 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
 
 // All peers respond "yes", no failures.
 TEST_F(LeaderElectionTest, TestPerfectElection) {
-  // Try quorum sizes of 1, 3, 5.
-  vector<int> quorum_sizes = boost::assign::list_of(1)(3)(5);
-  BOOST_FOREACH(int num_voters, quorum_sizes) {
-    LOG(INFO) << "Testing election with quorum size of " << num_voters;
+  // Try configuration sizes of 1, 3, 5.
+  vector<int> config_sizes = boost::assign::list_of(1)(3)(5);
+  BOOST_FOREACH(int num_voters, config_sizes) {
+    LOG(INFO) << "Testing election with config size of " << num_voters;
     int majority_size = (num_voters / 2) + 1;
     ConsensusTerm election_term = 10 + num_voters; // Just to be able to differentiate.
 
@@ -267,7 +267,7 @@ TEST_F(LeaderElectionTest, TestPerfectElection) {
     request.set_tablet_id(tablet_id_);
 
     scoped_refptr<LeaderElection> election(
-        new LeaderElection(quorum_, proxy_factory_.get(), request, counter.Pass(),
+        new LeaderElection(config_, proxy_factory_.get(), request, counter.Pass(),
                            MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
                            Bind(&LeaderElectionTest::ElectionCallback,
                                 Unretained(this))));
@@ -421,7 +421,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_EarlyDecision) {
     ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 1, 0));
     ASSERT_FALSE(counter.AreAllVotesIn());
 
-    // Second yes vote wins it in a quorum of 3.
+    // Second yes vote wins it in a configuration of 3.
     ASSERT_OK(counter.RegisterVote(voter_uuids[1], VOTE_GRANTED, &duplicate));
     ASSERT_FALSE(duplicate);
     ASSERT_TRUE(counter.IsDecided());
@@ -448,7 +448,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_EarlyDecision) {
     ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 0, 1));
     ASSERT_FALSE(counter.AreAllVotesIn());
 
-    // Second no vote loses it in a quorum of 3.
+    // Second no vote loses it in a configuration of 3.
     ASSERT_OK(counter.RegisterVote(voter_uuids[1], VOTE_DENIED, &duplicate));
     ASSERT_FALSE(duplicate);
     ASSERT_TRUE(counter.IsDecided());
@@ -525,7 +525,7 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
   ASSERT_NO_FATAL_FAILURE(AssertVoteCount(counter, 3, 2));
   ASSERT_TRUE(counter.AreAllVotesIn());
 
-  // Attempt to vote with > the whole quorum.
+  // Attempt to vote with > the whole configuration.
   s = counter.RegisterVote("some-random-node", VOTE_GRANTED, &duplicate);
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.ToString(), "cause the number of votes to exceed the expected number");

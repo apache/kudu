@@ -74,7 +74,7 @@ class MiniCluster {
   // Shuts down masters only.
   void ShutdownMasters();
 
-  // Setup a quorum of distributed masters, with count specified in
+  // Setup a consensus configuration of distributed masters, with count specified in
   // 'options'. Requires that a reserve RPC port is specified in
   // 'options' for each master.
   Status StartDistributedMasters();

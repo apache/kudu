@@ -137,7 +137,7 @@ ElectionResult::ElectionResult(ConsensusTerm election_term, ElectionVote decisio
 // LeaderElection
 ///////////////////////////////////////////////////
 
-LeaderElection::LeaderElection(const QuorumPB& quorum,
+LeaderElection::LeaderElection(const RaftConfigPB& config,
                                PeerProxyFactory* proxy_factory,
                                const VoteRequestPB& request,
                                gscoped_ptr<VoteCounter> vote_counter,
@@ -149,7 +149,7 @@ LeaderElection::LeaderElection(const QuorumPB& quorum,
     timeout_(timeout),
     decision_callback_(decision_callback) {
 
-  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+  BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
     if (request.candidate_uuid() == peer.permanent_uuid()) continue;
     follower_uuids_.push_back(peer.permanent_uuid());
     gscoped_ptr<PeerProxy> proxy;
@@ -166,7 +166,7 @@ LeaderElection::LeaderElection(const QuorumPB& quorum,
            vote_counter_->GetTotalExpectedVotes())
       << "Expected different number of followers. Follower UUIDs: ["
       << JoinStringsIterator(follower_uuids_.begin(), follower_uuids_.end(), ", ")
-      << "]; Quorum: {" << quorum.ShortDebugString() << "}";
+      << "]; RaftConfig: {" << config.ShortDebugString() << "}";
 }
 
 LeaderElection::~LeaderElection() {
@@ -179,10 +179,10 @@ void LeaderElection::Run() {
   VLOG_WITH_PREFIX(1) << "Running leader election.";
 
   // Check if we have already won the election (relevant if this is a
-  // single-node quorum, since we always pre-vote for ourselves).
+  // single-node configuration, since we always pre-vote for ourselves).
   CheckForDecision();
 
-  // The rest of the code below is for a typical multi-node quorum.
+  // The rest of the code below is for a typical multi-node configuration.
   BOOST_FOREACH(const std::string& voter_uuid, follower_uuids_) {
     VoterState* state = NULL;
     {
@@ -253,7 +253,7 @@ void LeaderElection::VoteResponseRpcCallback(const std::string& voter_uuid) {
       RecordVoteUnlocked(voter_uuid, VOTE_DENIED);
 
     // If the peer changed their IP address, we shouldn't count this vote since
-    // our knowledge of the quorum is in an inconsistent state.
+    // our knowledge of the configuration is in an inconsistent state.
     } else if (PREDICT_FALSE(voter_uuid != state->response.responder_uuid())) {
       LOG_WITH_PREFIX(DFATAL) << "Received vote response from peer we thought had UUID "
                   << voter_uuid << ", but its actual UUID is " << state->response.responder_uuid();

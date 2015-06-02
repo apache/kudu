@@ -104,15 +104,15 @@ class BootstrapTest : public LogTestBase {
     RETURN_NOT_OK_PREPEND(LoadTestTabletMetadata(mrs_id, delta_id, &meta),
                           "Unable to load test tablet metadata");
 
-    consensus::QuorumPB quorum;
-    quorum.set_local(true);
-    quorum.add_peers()->set_permanent_uuid(meta->fs_manager()->uuid());
-    quorum.set_opid_index(consensus::kInvalidOpIdIndex);
+    consensus::RaftConfigPB config;
+    config.set_local(true);
+    config.add_peers()->set_permanent_uuid(meta->fs_manager()->uuid());
+    config.set_opid_index(consensus::kInvalidOpIdIndex);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(meta->fs_manager(), meta->tablet_id(),
                                                     meta->fs_manager()->uuid(),
-                                                    quorum, kMinimumTerm, &cmeta),
+                                                    config, kMinimumTerm, &cmeta),
                           "Unable to create consensus metadata");
 
     RETURN_NOT_OK_PREPEND(RunBootstrapOnTestTablet(meta, tablet, boot_info),

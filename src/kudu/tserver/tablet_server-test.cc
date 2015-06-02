@@ -14,8 +14,8 @@
 
 using std::string;
 using std::tr1::shared_ptr;
-using kudu::consensus::QuorumPB;
-using kudu::consensus::QuorumPeerPB;
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::RaftPeerPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
@@ -1668,7 +1668,7 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
   req.set_start_key(" ");
   req.set_end_key(" ");
   req.set_table_name("testtb");
-  req.mutable_quorum()->CopyFrom(mini_server_->CreateLocalQuorum());
+  req.mutable_config()->CopyFrom(mini_server_->CreateLocalConfig());
   ASSERT_OK(SchemaToPB(SchemaBuilder(schema_).Build(),
                               req.mutable_schema()));
 
@@ -1856,7 +1856,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
       start->encoded_key().ToString(),
       end->encoded_key().ToString(),
       tabletId, SchemaBuilder(schema_).Build(),
-      mini_server_->CreateLocalQuorum(), NULL));
+      mini_server_->CreateLocalConfig(), NULL));
 
   ASSERT_OK(WaitForTabletRunning(tabletId));
 

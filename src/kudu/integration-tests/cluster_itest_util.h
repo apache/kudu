@@ -119,16 +119,16 @@ Status GetCommittedConsensusState(const TServerDetails* replica,
                                   const MonoDelta& timeout,
                                   consensus::ConsensusStatePB* consensus_state);
 
-// Wait until the number of voters in the committed quorum is 'quorum_size',
-// according to the specified replica.
-Status WaitUntilCommittedQuorumNumVotersIs(int quorum_size,
+// Wait until the number of voters in the committed consensus configuration is
+// 'quorum_size', according to the specified replica.
+Status WaitUntilCommittedConfigNumVotersIs(int config_size,
                                            const TServerDetails* replica,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout);
 
 // Returns:
-// Status::OK() if the replica is alive and leader of the quorum.
-// Status::NotFound() if the replica is not part of the quorum or is dead.
+// Status::OK() if the replica is alive and leader of the consensus configuration.
+// Status::NotFound() if the replica is not part of the consensus configuration or is dead.
 // Status::IllegalState() if the replica is live but not the leader.
 Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
                                         const std::string& tablet_id,
@@ -174,7 +174,7 @@ Status WriteSimpleTestRow(const TServerDetails* replica,
 Status AddServer(const TServerDetails* leader,
                  const std::string& tablet_id,
                  const TServerDetails* replica_to_add,
-                 consensus::QuorumPeerPB::MemberType member_type,
+                 consensus::RaftPeerPB::MemberType member_type,
                  const MonoDelta& timeout);
 
 // Run a ConfigChange to REMOVE_SERVER on 'replica_to_remove'.

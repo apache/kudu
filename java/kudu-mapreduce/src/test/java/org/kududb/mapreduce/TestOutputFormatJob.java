@@ -67,7 +67,7 @@ public class TestOutputFormatJob extends BaseKuduTest {
     new KuduTableMapReduceUtil.TableOutputFormatConfigurator(
         job,
         TABLE_NAME,
-        getMasterQuorum())
+        getMasterAddresses())
         .operationTimeoutMs(DEFAULT_SLEEP)
         .addDependencies(false)
         .configure();

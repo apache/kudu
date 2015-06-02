@@ -23,7 +23,7 @@ public final class NoLeaderMasterFoundException extends RecoverableException {
   /**
    * Factory method that creates a NoLeaderException given a message and a list
    * (which may be empty, but must be initialized) of exceptions encountered: they indicate
-   * why {@link GetMasterRegistrationRequest} calls to the masters in the quorum
+   * why {@link GetMasterRegistrationRequest} calls to the masters in the config
    * have failed, to aid in debugging the issue. If the list is non-empty, each exception's
    * 'toString()' message is appended to 'msg' and the last exception is used as the
    * cause for the exception.

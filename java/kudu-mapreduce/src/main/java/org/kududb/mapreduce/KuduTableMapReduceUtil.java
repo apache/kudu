@@ -104,7 +104,7 @@ public class KuduTableMapReduceUtil {
       <S extends AbstractTableOutputFormatConfigurator<? super S>>
       extends AbstractMapReduceConfigurator<S> {
 
-    protected String masterQuorum;
+    protected String masterAddresses;
     protected long operationTimeoutMs = 10 * 1000;
 
     /**
@@ -123,7 +123,7 @@ public class KuduTableMapReduceUtil {
       job.setOutputValueClass(Operation.class);
 
       Configuration conf = job.getConfiguration();
-      conf.set(KuduTableOutputFormat.MASTER_QUORUM_KEY, masterQuorum);
+      conf.set(KuduTableOutputFormat.MASTER_ADDRESSES_KEY, masterAddresses);
       conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, table);
       conf.setLong(KuduTableOutputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
       if (addDependencies) {
@@ -142,7 +142,7 @@ public class KuduTableMapReduceUtil {
       <S extends AbstractTableInputFormatConfigurator<? super S>>
       extends AbstractMapReduceConfigurator<S> {
 
-    protected String masterQuorum;
+    protected String masterAddresses;
     protected long operationTimeoutMs = 10 * 1000;
     protected final String columnProjection;
     protected boolean cacheBlocks;
@@ -179,7 +179,7 @@ public class KuduTableMapReduceUtil {
 
       Configuration conf = job.getConfiguration();
 
-      conf.set(KuduTableInputFormat.MASTER_QUORUM_KEY, masterQuorum);
+      conf.set(KuduTableInputFormat.MASTER_ADDRESSES_KEY, masterAddresses);
       conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, table);
       conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
       conf.setBoolean(KuduTableInputFormat.SCAN_CACHE_BLOCKS, cacheBlocks);
@@ -203,11 +203,11 @@ public class KuduTableMapReduceUtil {
      * Constructor for the required fields to configure.
      * @param job a job to configure
      * @param table a string that contains the name of the table to read from
-     * @param masterQuorum a comma-separated list of masters' hosts and ports
+     * @param masterAddresses a comma-separated list of masters' hosts and ports
      */
-    public TableOutputFormatConfigurator(Job job, String table, String masterQuorum) {
+    public TableOutputFormatConfigurator(Job job, String table, String masterAddresses) {
       super(job, table);
-      this.masterQuorum = masterQuorum;
+      this.masterAddresses = masterAddresses;
     }
 
     /**
@@ -229,7 +229,7 @@ public class KuduTableMapReduceUtil {
 
   /**
    * Table output format that uses a {@link CommandLineParser} in order to set the
-   * master quorum and the operation timeout.
+   * master config and the operation timeout.
    */
   public static class TableOutputFormatConfiguratorWithCommandLineParser extends
       AbstractTableOutputFormatConfigurator<TableOutputFormatConfiguratorWithCommandLineParser> {
@@ -240,7 +240,7 @@ public class KuduTableMapReduceUtil {
     public TableOutputFormatConfiguratorWithCommandLineParser(Job job, String table) {
       super(job, table);
       CommandLineParser parser = new CommandLineParser(job.getConfiguration());
-      this.masterQuorum = parser.getMasterQuorum();
+      this.masterAddresses = parser.getMasterAddresses();
       this.operationTimeoutMs = parser.getOperationTimeoutMs();
     }
   }
@@ -257,12 +257,12 @@ public class KuduTableMapReduceUtil {
      * @param table a string that contains the name of the table to read from
      * @param columnProjection a string containing a comma-separated list of columns to read.
      *                         It can be null in which case we read empty rows
-     * @param masterQuorum a comma-separated list of masters' hosts and ports
+     * @param masterAddresses a comma-separated list of masters' hosts and ports
      */
     public TableInputFormatConfigurator(Job job, String table, String columnProjection,
-                                        String masterQuorum) {
+                                        String masterAddresses) {
       super(job, table, columnProjection);
-      this.masterQuorum = masterQuorum;
+      this.masterAddresses = masterAddresses;
     }
 
     /**
@@ -284,7 +284,7 @@ public class KuduTableMapReduceUtil {
 
   /**
    * Table input format that uses a {@link CommandLineParser} in order to set the
-   * master quorum and the operation timeout.
+   * master config and the operation timeout.
    */
   public static class TableInputFormatConfiguratorWithCommandLineParser extends
       AbstractTableInputFormatConfigurator<TableInputFormatConfiguratorWithCommandLineParser> {
@@ -297,7 +297,7 @@ public class KuduTableMapReduceUtil {
                                                              String columnProjection) {
       super(job, table, columnProjection);
       CommandLineParser parser = new CommandLineParser(job.getConfiguration());
-      this.masterQuorum = parser.getMasterQuorum();
+      this.masterAddresses = parser.getMasterAddresses();
       this.operationTimeoutMs = parser.getOperationTimeoutMs();
     }
   }
@@ -316,20 +316,20 @@ public class KuduTableMapReduceUtil {
 
   /**
    * Utility method to parse the master addresses out and create an AsyncKuduClient.
-   * @param masterQuorum comma-separated list of master quorum addresses
+   * @param masterAddresses comma-separated list of master peer addresses
    * @return an AsyncKuduClient
    */
-  static AsyncKuduClient getAsyncClient(String masterQuorum) {
-    return new AsyncKuduClient(masterQuorum);
+  static AsyncKuduClient getAsyncClient(String masterAddresses) {
+    return new AsyncKuduClient(masterAddresses);
   }
 
   /**
    * Utility method to parse the master addresses out and create a KuduClient.
-   * @param masterQuorum comma-separated list of master quorum addresses
+   * @param masterAddresses comma-separated list of master peer addresses
    * @return a KuduClient
    */
-  static KuduClient getClient(String masterQuorum) {
-    return new KuduClient(masterQuorum);
+  static KuduClient getClient(String masterAddresses) {
+    return new KuduClient(masterAddresses);
   }
 
   /**

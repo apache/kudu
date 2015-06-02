@@ -10,10 +10,10 @@ missing information please refer to the original papers [1,3,4].
 Quorums, in Kudu, are a set of collaborating processes that serve the purpose
 of keeping a consistent, replicated log of operations on a given data set, e.g.
 a tablet. This replicated consistent log, also plays the role of the Write
-Ahead Log (WAL) for the tablet. Throughout this document we use quorum
+Ahead Log (WAL) for the tablet. Throughout this document we use config
 participant and process interchangeably, these do not represent machines or OS
 processes, as machines and or application daemons will participate in multiple
-quorums.
+configs.
 
 ============================================================
 The write ahead log (WAL)
@@ -126,26 +126,26 @@ size, the underlying file is truncated to the last written offset
 (i.e., the actual size).
 
 ============================================================
-Quorums and roles within quorums
+Quorums and roles within configs
 ============================================================
 
-A quorum in Kudu is a fault-tolerant, consistent unit that serves requests for
-a single tablet. As long as there are 2f+1 participants available in a quorum,
-where f is the number of possibly faulty participants, the quorum will keep
+A config in Kudu is a fault-tolerant, consistent unit that serves requests for
+a single tablet. As long as there are 2f+1 participants available in a config,
+where f is the number of possibly faulty participants, the config will keep
 serving requests for its tablet and it is guaranteed that clients perceive a
 fully consistent, linearizable view of both data and operations on that data.
 The f parameter, defined table wide through configuration implicitly
-defines the size of the quorum, f=0 indicates a single node quorum, f=1
-indicates a 3 node quorum, f=2 indicates a 5 node quorum, etc.. Quorums may
+defines the size of the config, f=0 indicates a single node config, f=1
+indicates a 3 node config, f=2 indicates a 5 node config, etc.. Quorums may
 overlap in the sense that each physical machine may be participating in
-multiple quorums, usually one per each tablet that it serves.
+multiple configs, usually one per each tablet that it serves.
 
-Within a single quorum, in steady state, i.e. when no peer is faulty, there
+Within a single config, in steady state, i.e. when no peer is faulty, there
 are two main types of peers. The leader peer and the follower peers.
 The leader peer dictates the serialization of the operations throughout the
-quorum, its version of the sequence of data altering requests is the "truth"
+config, its version of the sequence of data altering requests is the "truth"
 and any data altering request is only considered final (i.e. can be
-acknowledged to the client as successful) when a majority of the quorum
+acknowledged to the client as successful) when a majority of the config
 acknowledges that they "agree" with the leader's view of the event order.
 In practice this means that all write requests are sent directly to the
 leader, which then replicates them to a majority of the followers before
@@ -154,20 +154,20 @@ steady state, only receiving data from the leader and acknowledging back.
 Follower peers only become active when the leader process stops and one
 of the followers (if there are any) must be elected leader.
 
-Participants in a quorum may be assigned the following roles:
+Participants in a config may be assigned the following roles:
 
-LEADER - The current leader of the quorum, receives requests from clients
+LEADER - The current leader of the config, receives requests from clients
 and serializes them to other nodes.
 
-FOLLOWER - Active participants in the quorum, whose votes count towards
+FOLLOWER - Active participants in the config, whose votes count towards
 majority, replication count etc.
 
-LEARNER - Passive participants in the quorum, whose votes do not count
-towards majority or replication count. New nodes joining the quorum
+LEARNER - Passive participants in the config, whose votes do not count
+towards majority or replication count. New nodes joining the config
 will have this role until they catch up and can be promoted to FOLLOWER.
 
 NON_PARTICIPANT - A peer that does not participate in a particular
-quorum. Mostly used to mark prior participants that stopped being so
+config. Mostly used to mark prior participants that stopped being so
 on a configuration change.
 
 The following diagram illustrates the possible state changes:
@@ -175,9 +175,9 @@ The following diagram illustrates the possible state changes:
                  +------------+
                  |  NON_PART  +---+
                  +-----+------+   |
-       Exist. Quorum?  |          |
+       Exist. RaftConfig?  |          |
                  +-----v------+   |
-                 |  LEARNER   +   | New Quorum?
+                 |  LEARNER   +   | New RaftConfig?
                  +-----+------+   |
                        |          |
                  +-----v------+   |
@@ -196,47 +196,47 @@ Additionally all states can transition to NON_PARTICIPANT, on configuration
 changes and/or peer timeout/death.
 
 ============================================================
-Assembling/Rebooting a Quorum and Quorum States
+Assembling/Rebooting a RaftConfig and RaftConfig States
 ============================================================
 
 Prior to starting/rebooting a peer, the state in WAL must have been replayed
 in a bootstrap phase. This process will yield an up-to-date Log and Tablet.
 The new/rebooting peer is then Init()'ed with this Log. The Log is queried
-for the last committed configuration entry (A quorum configuration consists of
+for the last committed configuration entry (A Raft configuration consists of
 a set of peers (uuid and last known address) and hinted* roles). If there is
-none, it means this is a new quorum.
+none, it means this is a new config.
 
 After the peer has been Init()'ed, Start(Configuration) is called. The provided
 configuration is a hint which is only taken into account if there was no previous
 configuration*.
 
-Independently of whether the configuration is a new one (new quorum)
-or an old one (rebooting quorum), the quorum cannot start until a
+Independently of whether the configuration is a new one (new config)
+or an old one (rebooting config), the config cannot start until a
 leader has been elected and replicates the configuration through
 consensus. This ensures that a majority of nodes agree that this is
 the most recent configuration.
 
 The provided configuration will always specify a leader -- in the case
-of a new quorum, it is chosen by the master, and in the case of a
+of a new config, it is chosen by the master, and in the case of a
 rebooted one, it is the configuration that was active before the node
 crashed. In either case, replicating this initial configuration
-entry happens in the exact same way as any other quorum entry,
+entry happens in the exact same way as any other config entry,
 i.e. the LEADER will try and replicate it to FOLLOWERS. As usual if
 the LEADER fails, leader election is triggered and the new LEADER will
 try to replicate a new configuration.
 
-Only after the quorum has successfully replicated the initial configuration
-entry is the quorum ready to accept writes.
+Only after the config has successfully replicated the initial configuration
+entry is the config ready to accept writes.
 
 
-Peers in the quorum can therefore be in the following states:
+Peers in the config can therefore be in the following states:
 
 BOOTSTRAPPING - The phase prior to initialization where the Log is being
-replayed. If a majority of peers are still BOOTSTRAPPING, the quorum doesn't
+replayed. If a majority of peers are still BOOTSTRAPPING, the config doesn't
 exist yet.
 
 CONFIGURING: Until the current configuration is pushed though consensus. This
-is true for both new quorums and rebooting quorums. The peers do not accept
+is true for both new configs and rebooting configs. The peers do not accept
 client requests in this state. In this state, the Leader tries to replicate
 the configuration. Followers run failure detection and trigger leader election
 if the hinted leader doesn't successfully replicate within the configured
@@ -248,8 +248,8 @@ FOLLOWER replicas accepts writes from the leader and ACK.
 * The configuration provided on Start() can only be taken into account if there
 is an appropriate leader election algorithm. This can be added later but is not
 present in the initial implementation. Roles are hinted in the sense that the
-quorum initiator (usually the master) might hint what the roles for the peers
-in the quorum should be, but the quorum is the ultimate decider on whether that
+config initiator (usually the master) might hint what the roles for the peers
+in the config should be, but the config is the ultimate decider on whether that
 is possible or not.
 
 ============================================================

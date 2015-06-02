@@ -28,7 +28,7 @@
 
 using kudu::consensus::GetConsensusRole;
 using kudu::consensus::ConsensusStatePB;
-using kudu::consensus::QuorumPeerPB;
+using kudu::consensus::RaftPeerPB;
 using kudu::consensus::TransactionStatusPB;
 using kudu::tablet::MaintenanceManagerStatusPB;
 using kudu::tablet::MaintenanceManagerStatusPB_CompletedOpPB;
@@ -166,7 +166,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
       "<th>Start key</th><th>End key</th>"
-      "<th>State</th><th>On-disk size</th><th>Quorum</th><th>Last status</th></tr>\n";
+      "<th>State</th><th>On-disk size</th><th>RaftConfig</th><th>Last status</th></tr>\n";
   BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers) {
     TabletStatusPB status;
     peer->GetTabletStatusPB(&status);
@@ -195,7 +195,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
     (*output) << Substitute(
         // Table name, tablet id, start key, end key
         "<tr><td>$0</td><td>$1</td><td>$2</td><td>$3</td>"
-        // State, on-disk size, quorum, last status
+        // State, on-disk size, consensus configuration, last status
         "<td>$4</td><td>$5</td><td>$6</td><td>$7</td></tr>\n",
         EscapeForHtmlToString(table_name), // $0
         tablet_id_or_link, // $1
@@ -211,7 +211,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
 
 namespace {
 
-bool CompareByMemberType(const QuorumPeerPB& a, const QuorumPeerPB& b) {
+bool CompareByMemberType(const RaftPeerPB& a, const RaftPeerPB& b) {
   if (!a.has_member_type()) return false;
   if (!b.has_member_type()) return true;
   return a.member_type() < b.member_type();
@@ -223,10 +223,10 @@ string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& 
   std::stringstream html;
 
   html << "<ul>\n";
-  std::vector<QuorumPeerPB> sorted_peers;
-  sorted_peers.assign(cstate.quorum().peers().begin(), cstate.quorum().peers().end());
+  std::vector<RaftPeerPB> sorted_peers;
+  sorted_peers.assign(cstate.config().peers().begin(), cstate.config().peers().end());
   std::sort(sorted_peers.begin(), sorted_peers.end(), &CompareByMemberType);
-  BOOST_FOREACH(const QuorumPeerPB& peer, sorted_peers) {
+  BOOST_FOREACH(const RaftPeerPB& peer, sorted_peers) {
     string peer_addr_or_uuid =
         peer.has_last_known_addr() ? peer.last_known_addr().host() : peer.permanent_uuid();
     peer_addr_or_uuid = EscapeForHtmlToString(peer_addr_or_uuid);
@@ -235,7 +235,7 @@ string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& 
                            peer_addr_or_uuid);
     } else {
         html << Substitute(" <li>$0: $1</li>\n",
-                           QuorumPeerPB::Role_Name(GetConsensusRole(peer.permanent_uuid(), cstate)),
+                           RaftPeerPB::Role_Name(GetConsensusRole(peer.permanent_uuid(), cstate)),
                            peer_addr_or_uuid);
     }
   }

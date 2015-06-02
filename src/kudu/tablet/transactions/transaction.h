@@ -34,7 +34,7 @@ struct TransactionMetrics {
 // Base class for transactions.
 // There are different implementations for different types (Write, AlterSchema, etc.).
 // TransactionDriver implementations use Transactions along with Consensus to execute
-// and replicate operations in a quorum.
+// and replicate operations in a consensus configuration.
 class Transaction {
  public:
 

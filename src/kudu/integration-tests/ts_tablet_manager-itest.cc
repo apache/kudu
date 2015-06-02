@@ -38,7 +38,7 @@ using client::KuduClient;
 using client::KuduSchema;
 using client::KuduTable;
 using consensus::GetConsensusRole;
-using consensus::QuorumPeerPB;
+using consensus::RaftPeerPB;
 using itest::SimpleIntKeyKuduSchema;
 using master::MasterServiceProxy;
 using master::ReportedTabletPB;
@@ -92,7 +92,7 @@ void TsTabletManagerITest::TearDown() {
 // includes that information in the next tablet report.
 TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   // We need to control elections precisely for this test since we're using
-  // EmulateElection() with a distributed quorum.
+  // EmulateElection() with a distributed consensus configuration.
   FLAGS_enable_leader_failure_detection = false;
 
   // Run a few more iters in slow-test mode.
@@ -162,12 +162,12 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
       ASSERT_TRUE(reported_tablet.has_committed_consensus_state());
 
       string uuid = tablet_peers[replica]->permanent_uuid();
-      QuorumPeerPB::Role role = GetConsensusRole(uuid, reported_tablet.committed_consensus_state());
+      RaftPeerPB::Role role = GetConsensusRole(uuid, reported_tablet.committed_consensus_state());
       if (replica == new_leader_idx) {
-        ASSERT_EQ(QuorumPeerPB::LEADER, role)
+        ASSERT_EQ(RaftPeerPB::LEADER, role)
             << "Tablet report: " << report.ShortDebugString();
       } else {
-        ASSERT_EQ(QuorumPeerPB::FOLLOWER, role)
+        ASSERT_EQ(RaftPeerPB::FOLLOWER, role)
             << "Tablet report: " << report.ShortDebugString();
       }
     }

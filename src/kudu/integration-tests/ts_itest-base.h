@@ -30,7 +30,7 @@ namespace kudu {
 namespace tserver {
 
 using consensus::OpId;
-using consensus::QuorumPeerPB;
+using consensus::RaftPeerPB;
 using itest::GetReplicaStatusAndCheckIfLeader;
 using itest::TabletReplicaMap;
 using itest::TabletServerMap;
@@ -152,8 +152,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     } while (replicas_missing && num_retries < kMaxRetries);
   }
 
-  // Returns the last committed leader of the quorum. Tries to get it from master
-  // but then actually tries to the get the committed quorum to make sure.
+  // Returns the last committed leader of the consensus configuration. Tries to get it from master
+  // but then actually tries to the get the committed consensus configuration to make sure.
   TServerDetails* GetLeaderReplicaOrNull(const string& tablet_id) {
     string leader_uuid;
     Status master_found_leader_result = GetTabletLeaderUUIDFromMaster(tablet_id, &leader_uuid);
@@ -215,7 +215,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     BOOST_FOREACH(const TabletLocationsPB& loc, resp.tablet_locations()) {
       if (loc.tablet_id() == tablet_id) {
         BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& replica, loc.replicas()) {
-          if (replica.role() == QuorumPeerPB::LEADER) {
+          if (replica.role() == RaftPeerPB::LEADER) {
             *leader_uuid = replica.ts_info().permanent_uuid();
             return Status::OK();
           }
@@ -237,14 +237,14 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     return NULL;
   }
 
-  // Gets the the locations of the quorum and waits until all replicas are available for
-  // all tablets.
-  void WaitForTSAndQuorum() {
+  // Gets the the locations of the consensus configuration and waits until all replicas
+  // are available for all tablets.
+  void WaitForTSAndReplicas() {
     int num_retries = 0;
     // make sure the replicas are up and find the leader
     while (true) {
       if (num_retries >= kMaxRetries) {
-        FAIL() << " Reached max. retries while looking up the quorum.";
+        FAIL() << " Reached max. retries while looking up the config.";
       }
 
       Status status = cluster_->WaitForTabletServerCount(FLAGS_num_tablet_servers,

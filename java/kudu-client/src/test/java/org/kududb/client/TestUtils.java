@@ -33,7 +33,7 @@ public class TestUtils {
   private static String UNIX_PROCESS_CLS_NAME =  "java.lang.UNIXProcess";
   private static Set<String> VALID_SIGNALS =  ImmutableSet.of("STOP", "CONT", "TERM", "KILL");
 
-  private static final String MASTER_QUORUM_PROP = "masterQuorum";
+  private static final String MASTER_ADDRESSES_PROP = "masterAddresses";
   private static final String MASTER_ADDRESS_PROP = "masterAddress";
   private static final String DEFAULT_MASTER_ADDRESS = "127.0.0.1";
 
@@ -70,7 +70,7 @@ public class TestUtils {
    * @return the comma-separated list of addresses for the master(s)
    */
   public static String getMasterAddresses() {
-    String addr = System.getProperty(MASTER_QUORUM_PROP);
+    String addr = System.getProperty(MASTER_ADDRESSES_PROP);
     if (addr == null) {
       addr = System.getProperty(MASTER_ADDRESS_PROP, DEFAULT_MASTER_ADDRESS);
     }

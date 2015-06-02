@@ -24,7 +24,7 @@ DECLARE_bool(enable_data_block_fsync);
 namespace kudu {
 namespace tablet {
 
-using consensus::QuorumPB;
+using consensus::RaftConfigPB;
 using std::string;
 using std::vector;
 

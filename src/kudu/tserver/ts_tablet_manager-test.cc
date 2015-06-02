@@ -27,7 +27,7 @@ namespace kudu {
 namespace tserver {
 
 using consensus::kInvalidOpIdIndex;
-using consensus::QuorumPB;
+using consensus::RaftConfigPB;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
 using std::tr1::shared_ptr;
@@ -52,7 +52,7 @@ class TsTabletManagerTest : public KuduTest {
     ASSERT_OK(mini_server_->Start());
     mini_server_->FailHeartbeats();
 
-    quorum_ = mini_server_->CreateLocalQuorum();
+    config_ = mini_server_->CreateLocalConfig();
 
     tablet_manager_ = mini_server_->server()->tablet_manager();
     fs_manager_ = mini_server_->server()->fs_manager();
@@ -67,7 +67,7 @@ class TsTabletManagerTest : public KuduTest {
     RETURN_NOT_OK(tablet_manager_->CreateNewTablet(tablet_id, tablet_id, start_key, end_key,
                                                    tablet_id,
                                                    SchemaBuilder(schema).Build(),
-                                                   quorum_,
+                                                   config_,
                                                    &tablet_peer));
     if (out_tablet_peer) {
       (*out_tablet_peer) = tablet_peer;
@@ -82,7 +82,7 @@ class TsTabletManagerTest : public KuduTest {
   TSTabletManager* tablet_manager_;
 
   Schema schema_;
-  QuorumPB quorum_;
+  RaftConfigPB config_;
 };
 
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
@@ -125,13 +125,13 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
           << reported_tablet.ShortDebugString();
       ASSERT_TRUE(reported_tablet.committed_consensus_state().has_leader_uuid())
           << reported_tablet.ShortDebugString();
-      ASSERT_TRUE(reported_tablet.committed_consensus_state().has_quorum());
-      const QuorumPB& committed_quorum = reported_tablet.committed_consensus_state().quorum();
-      ASSERT_EQ(kInvalidOpIdIndex, committed_quorum.opid_index());
-      ASSERT_EQ(1, committed_quorum.peers_size());
-      ASSERT_TRUE(committed_quorum.peers(0).has_permanent_uuid())
+      ASSERT_TRUE(reported_tablet.committed_consensus_state().has_config());
+      const RaftConfigPB& committed_config = reported_tablet.committed_consensus_state().config();
+      ASSERT_EQ(kInvalidOpIdIndex, committed_config.opid_index());
+      ASSERT_EQ(1, committed_config.peers_size());
+      ASSERT_TRUE(committed_config.peers(0).has_permanent_uuid())
           << reported_tablet.ShortDebugString();
-      ASSERT_EQ(committed_quorum.peers(0).permanent_uuid(),
+      ASSERT_EQ(committed_config.peers(0).permanent_uuid(),
                 reported_tablet.committed_consensus_state().leader_uuid())
           << reported_tablet.ShortDebugString();
     }

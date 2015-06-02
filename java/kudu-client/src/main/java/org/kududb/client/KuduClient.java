@@ -28,10 +28,10 @@ public class KuduClient {
    * Create a new client that connects to masters specified by a comma-separated
    * list.
    * Doesn't block and won't throw an exception if the masters don't exist.
-   * @param masterQuorum Comma-separated list of "host:port" pairs of the masters
+   * @param masterAddresses Comma-separated list of "host:port" pairs of the masters
    */
-  public KuduClient(String masterQuorum) {
-    this.asyncClient = new AsyncKuduClient(masterQuorum);
+  public KuduClient(String masterAddresses) {
+    this.asyncClient = new AsyncKuduClient(masterAddresses);
   }
 
   /**

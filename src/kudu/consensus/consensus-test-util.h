@@ -77,13 +77,13 @@ static inline void AppendReplicateMessagesToQueue(
   }
 }
 
-// Builds a quorum of 'num' members.
-void BuildQuorumPBForTests(int num, QuorumPB* quorum) {
-  quorum->Clear();
-  quorum->set_local(false);
+// Builds a configuration of 'num' members.
+void BuildRaftConfigPBForTests(int num, RaftConfigPB* config) {
+  config->Clear();
+  config->set_local(false);
   for (int i = 0; i < num; i++) {
-    QuorumPeerPB* peer_pb = quorum->add_peers();
-    peer_pb->set_member_type(QuorumPeerPB::VOTER);
+    RaftPeerPB* peer_pb = config->add_peers();
+    peer_pb->set_member_type(RaftPeerPB::VOTER);
     peer_pb->set_permanent_uuid(Substitute("peer-$0", i));
     HostPortPB* hp = peer_pb->mutable_last_known_addr();
     hp->set_host(Substitute("peer-$0.fake-domain-for-tests", i));
@@ -242,7 +242,7 @@ class MockedPeerProxy : public TestPeerProxy {
 class NoOpTestPeerProxy : public TestPeerProxy {
  public:
 
-  explicit NoOpTestPeerProxy(ThreadPool* pool, const consensus::QuorumPeerPB& peer_pb)
+  explicit NoOpTestPeerProxy(ThreadPool* pool, const consensus::RaftPeerPB& peer_pb)
     : TestPeerProxy(pool), peer_pb_(peer_pb) {
     last_received_.CopyFrom(MinimumOpId());
   }
@@ -294,7 +294,7 @@ class NoOpTestPeerProxy : public TestPeerProxy {
   }
 
  private:
-  const consensus::QuorumPeerPB peer_pb_;
+  const consensus::RaftPeerPB peer_pb_;
   ConsensusStatusPB last_status_; // Protected by lock_.
   OpId last_received_;            // Protected by lock_.
 };
@@ -305,7 +305,7 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
     CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
   }
 
-  virtual Status NewProxy(const consensus::QuorumPeerPB& peer_pb,
+  virtual Status NewProxy(const consensus::RaftPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
     proxy->reset(new NoOpTestPeerProxy(pool_.get(), peer_pb));
     return Status::OK();
@@ -319,7 +319,7 @@ typedef std::tr1::unordered_map<std::string, scoped_refptr<RaftConsensus> > Test
 // Thread-safe manager for list of peers being used in tests.
 class TestPeerMapManager {
  public:
-  explicit TestPeerMapManager(const QuorumPB& quorum) : quorum_(quorum) {}
+  explicit TestPeerMapManager(const RaftConfigPB& config) : config_(config) {}
 
   void AddPeer(const std::string& peer_uuid, const scoped_refptr<RaftConsensus>& peer) {
     boost::lock_guard<simple_spinlock> lock(lock_);
@@ -327,8 +327,8 @@ class TestPeerMapManager {
   }
 
   Status GetPeerByIdx(int idx, scoped_refptr<RaftConsensus>* peer_out) const {
-    CHECK_LT(idx, quorum_.peers_size());
-    return GetPeerByUuid(quorum_.peers(idx).permanent_uuid(), peer_out);
+    CHECK_LT(idx, config_.peers_size());
+    return GetPeerByUuid(config_.peers(idx).permanent_uuid(), peer_out);
   }
 
   Status GetPeerByUuid(const std::string& peer_uuid,
@@ -364,7 +364,7 @@ class TestPeerMapManager {
   }
 
  private:
-  const QuorumPB quorum_;
+  const RaftConfigPB config_;
   TestPeerMap peers_;
   mutable simple_spinlock lock_;
 };
@@ -513,7 +513,7 @@ class LocalTestPeerProxyFactory : public PeerProxyFactory {
     CHECK_OK(ThreadPoolBuilder("test-peer-pool").set_max_threads(3).Build(&pool_));
   }
 
-  virtual Status NewProxy(const consensus::QuorumPeerPB& peer_pb,
+  virtual Status NewProxy(const consensus::RaftPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE {
     LocalTestPeerProxy* new_proxy = new LocalTestPeerProxy(peer_pb.permanent_uuid(),
                                                            pool_.get(),

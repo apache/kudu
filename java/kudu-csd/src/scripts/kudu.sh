@@ -52,14 +52,14 @@ if [ ! -r "$GFLAG_FILE" ]; then
   exit 1
 fi
 
-# Make sure we've got a file describing the master quorum.
+# Make sure we've got a file describing the master config.
 MASTER_FILE="$CONF_DIR/master.properties"
 if [ ! -r "$MASTER_FILE" ]; then
   log "Could not find $MASTER_FILE, exiting"
   exit 1
 fi
 
-# Parse the master quorum.
+# Parse the master config.
 MASTER_IPS=
 for line in $(cat "$MASTER_FILE")
 do
@@ -84,15 +84,15 @@ done
 log "Found master(s) on $MASTER_IPS"
 
 if [ "$CMD" = "master" ]; then
-  # Only pass --master_quorum if there's more than one master.
+  # Only pass --master_addresses if there's more than one master.
   #
   # Need to use [[ ]] for regex support.
   if [[ "$MASTER_IPS" =~ , ]]; then
-    MASTER_QUORUM="--master_quorum=$MASTER_IPS"
+    MASTER_ADDRESSES="--master_addresses=$MASTER_IPS"
   fi
 
   exec "$KUDU_HOME/sbin/kudu-master" \
-    $MASTER_QUORUM \
+    $MASTER_ADDRESSES \
     --flagfile="$GFLAG_FILE"
 elif [ "$CMD" = "tserver" ]; then
   exec "$KUDU_HOME/sbin/kudu-tablet_server" \

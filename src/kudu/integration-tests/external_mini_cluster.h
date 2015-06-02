@@ -88,7 +88,7 @@ struct ExternalMiniClusterOptions {
   std::vector<std::string> extra_master_flags;
 
   // If more than one master is specified, list of ports for the
-  // masters in a quorum. Port at index 0 is used for the leader
+  // masters in a consensus configuration. Port at index 0 is used for the leader
   // master.
   std::vector<uint16_t> master_rpc_ports;
 };

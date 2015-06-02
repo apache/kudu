@@ -149,7 +149,7 @@ WARNING: Multi-master is not fully tested, and running many masters is not recom
 - If you run three masters and one fails, the other two can continue. If it was
   the leader that failed, one of the other masters can become the leader.
 - If you run two masters and one fails, the other master cannot achieve a
-  quorum to become leader. With no lead master, your cluster will not function
+  config to become leader. With no lead master, your cluster will not function
   correctly.
 - You must have an odd number of masters, to avoid a "split brain" scenario
   where half the masters are on either side of the partition and neither side
@@ -157,18 +157,18 @@ WARNING: Multi-master is not fully tested, and running many masters is not recom
 
 You can start the master in the foreground for testing or in the background as
 a daemon. Each master will start regardless of the status of the other masters
-in the quorum.
+in the config.
 
 [source,bash]
 ----
 # Start in foreground
 $ KUDU_HOME=$(pwd) ./build/latest/kudu-master \
---master_quorum=<ip_of_master_1>,<ip_of_master_2>,<ip_of_master_3> \
+--master_addresses=<ip_of_master_1>,<ip_of_master_2>,<ip_of_master_3> \
 --logtostderr --default_num_replicas=3
 
 # Or start in background
 $ KUDU_HOME=$(pwd) ./build/latest/kudu-master \
---master_quorum=<ip_of_master_1>,<ip_of_master_2>,<ip_of_master_3> \
+--master_addresses=<ip_of_master_1>,<ip_of_master_2>,<ip_of_master_3> \
 --default_num_replicas=3 &
 ----
 
@@ -179,14 +179,14 @@ In a production environment, you would not run masters and tablet servers on
 the same host. For a proof of concept or in a testing environment, it is your
 decision. Regardless, start each tablet server, providing it with the list of
 masters it should communicate with. Run enough tablet servers so that you would
-still have a quorum if one fails.
+still have a config if one fails.
 
 .How Many Tablet Servers?
 - If you run three tablet servers and one fails, the other two can continue. If
   it was the leader that failed, one of the other tablet servers can become the
   leader.
 - If you run two tablet servers and one fails, the other tablet server cannot
-  achieve a quorum to become leader. With no leader, no writes can occur.
+  achieve a config to become leader. With no leader, no writes can occur.
 - You must have an odd number of tablet servers, to avoid a "split brain"
   scenario where half the tablet servers are on either side of the partition
   and neither side has the majority.

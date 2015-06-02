@@ -27,7 +27,7 @@ class FsManager;
 class Schema;
 
 namespace consensus {
-class QuorumPB;
+class RaftConfigPB;
 } // namespace consensus
 
 namespace master {
@@ -89,7 +89,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                          const std::string& end_key,
                          const std::string& table_name,
                          const Schema& schema,
-                         consensus::QuorumPB quorum,
+                         consensus::RaftConfigPB config,
                          scoped_refptr<tablet::TabletPeer>* tablet_peer);
 
   // Delete the specified tablet.

@@ -10,7 +10,7 @@ import "kudu/fs/fs.proto";
 import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";
 
-// Quorum remote bootstrap RPC calls.
+// RaftConfig remote bootstrap RPC calls.
 service RemoteBootstrapService {
   // Establish a remote bootstrap session.
   rpc BeginRemoteBootstrapSession(BeginRemoteBootstrapSessionRequestPB)

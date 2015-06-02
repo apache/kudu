@@ -114,7 +114,7 @@ class KuduClient::Data {
 
   // Asynchronously sets 'master_proxy_' to the leader master by
   // cycling through servers listed in 'master_server_addrs_' until
-  // one responds with a quorum configuration that contains the leader
+  // one responds with a Raft configuration that contains the leader
   // master or 'deadline' expires.
   //
   // Invokes 'cb' with the appropriate status when finished.

@@ -29,7 +29,7 @@ using strings::Substitute;
 
 namespace kudu {
 
-using consensus::QuorumPeerPB;
+using consensus::RaftPeerPB;
 using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using master::MasterServiceProxy;
@@ -186,7 +186,7 @@ int RemoteTablet::GetNumFailedReplicas() const {
 RemoteTabletServer* RemoteTablet::LeaderTServer() const {
   lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
-    if (!replica.failed && replica.role == QuorumPeerPB::LEADER) {
+    if (!replica.failed && replica.role == RaftPeerPB::LEADER) {
       return replica.ts;
     }
   }
@@ -212,10 +212,10 @@ void RemoteTablet::MarkTServerAsLeader(const RemoteTabletServer* server) {
   lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(RemoteReplica& replica, replicas_) {
     if (replica.ts == server) {
-      replica.role = QuorumPeerPB::LEADER;
+      replica.role = RaftPeerPB::LEADER;
       found = true;
-    } else if (replica.role == QuorumPeerPB::LEADER) {
-      replica.role = QuorumPeerPB::FOLLOWER;
+    } else if (replica.role == RaftPeerPB::LEADER) {
+      replica.role = RaftPeerPB::FOLLOWER;
     }
   }
   VLOG(3) << "Latest replicas: " << ReplicasAsStringUnlocked();
@@ -228,7 +228,7 @@ void RemoteTablet::MarkTServerAsFollower(const RemoteTabletServer* server) {
   lock_guard<simple_spinlock> l(&lock_);
   BOOST_FOREACH(RemoteReplica& replica, replicas_) {
     if (replica.ts == server) {
-      replica.role = QuorumPeerPB::FOLLOWER;
+      replica.role = RaftPeerPB::FOLLOWER;
       found = true;
     }
   }
@@ -249,7 +249,7 @@ std::string RemoteTablet::ReplicasAsStringUnlocked() const {
     if (!replicas_str.empty()) replicas_str += ", ";
     strings::SubstituteAndAppend(&replicas_str, "$0 ($1, $2)",
                                 rep.ts->permanent_uuid(),
-                                QuorumPeerPB::Role_Name(rep.role),
+                                RaftPeerPB::Role_Name(rep.role),
                                 rep.failed ? "FAILED" : "OK");
   }
   return replicas_str;

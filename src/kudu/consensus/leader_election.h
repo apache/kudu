@@ -23,7 +23,7 @@ namespace kudu {
 class Status;
 
 namespace metadata {
-class QuorumPeerPB;
+class RaftPeerPB;
 }
 
 namespace rpc {
@@ -98,7 +98,7 @@ struct ElectionResult {
   // Term the election was run for.
   const ConsensusTerm election_term;
 
-  // The overall election GRANTED/DENIED decision of the quorum.
+  // The overall election GRANTED/DENIED decision of the configuration.
   const ElectionVote decision;
 
   // At least one voter had a higher term than the candidate.
@@ -117,7 +117,7 @@ struct ElectionResult {
 // callback is provided. In that case, we should not care about the election
 // result, because the server is ostensibly shutting down.
 //
-// For a "Yes" decision, a majority of the quorum must grant their vote.
+// For a "Yes" decision, a majority of voters must grant their vote.
 //
 // A "No" decision may be caused by either one of the following:
 // - One of the peers replies with a higher term before a decision is made.
@@ -129,7 +129,7 @@ struct ElectionResult {
 // do not immediately cause the candidate/leader to step down, but this keeps
 // our implementation and API simple, and the newly-minted leader will soon
 // discover that it must step down when it attempts to replicate its first
-// message to the quorum.
+// message to the peers.
 //
 // This class is thread-safe.
 class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
@@ -140,7 +140,7 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   // Set up a new leader election driver.
   //
   // The 'vote_counter' must be initialized with the candidate's own yes vote.
-  LeaderElection(const QuorumPB& quorum,
+  LeaderElection(const RaftConfigPB& config,
                  PeerProxyFactory* proxy_factory,
                  const VoteRequestPB& request,
                  gscoped_ptr<VoteCounter> vote_counter,

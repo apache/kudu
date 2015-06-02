@@ -33,8 +33,8 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
-using consensus::QuorumPB;
-using consensus::QuorumPeerPB;
+using consensus::RaftConfigPB;
+using consensus::RaftPeerPB;
 using fs::ReadableBlock;
 using log::Log;
 using log::LogOptions;
@@ -91,18 +91,18 @@ class RemoteBootstrapTest : public KuduTabletTest {
                             tablet()->tablet_id())));
 
     // TODO similar to code in tablet_peer-test, consider refactor.
-    QuorumPB quorum;
-    quorum.set_local(true);
-    QuorumPeerPB quorum_peer;
-    quorum_peer.set_permanent_uuid(fs_manager()->uuid());
-    quorum_peer.set_member_type(QuorumPeerPB::VOTER);
-    quorum.add_peers()->CopyFrom(quorum_peer);
-    quorum.set_opid_index(consensus::kInvalidOpIdIndex);
+    RaftConfigPB config;
+    config.set_local(true);
+    RaftPeerPB config_peer;
+    config_peer.set_permanent_uuid(fs_manager()->uuid());
+    config_peer.set_member_type(RaftPeerPB::VOTER);
+    config.add_peers()->CopyFrom(config_peer);
+    config.set_opid_index(consensus::kInvalidOpIdIndex);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     CHECK_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),
                                        tablet()->tablet_id(), fs_manager()->uuid(),
-                                       quorum, consensus::kMinimumTerm, &cmeta));
+                                       config, consensus::kMinimumTerm, &cmeta));
 
     shared_ptr<Messenger> messenger;
     MessengerBuilder mbuilder(CURRENT_TEST_NAME());

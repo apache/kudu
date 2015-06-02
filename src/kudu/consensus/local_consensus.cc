@@ -58,15 +58,15 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
 
-    const QuorumPB& quorum = cmeta_->committed_quorum();
-    CHECK(quorum.local()) << "Local consensus must be passed a local quorum";
-    RETURN_NOT_OK_PREPEND(VerifyQuorum(quorum, COMMITTED_QUORUM),
-                          "Invalid quorum found in LocalConsensus::Start()");
+    const RaftConfigPB& config = cmeta_->committed_config();
+    CHECK(config.local()) << "Local consensus must be passed a local config";
+    RETURN_NOT_OK_PREPEND(VerifyRaftConfig(config, COMMITTED_QUORUM),
+                          "Invalid config found in LocalConsensus::Start()");
 
     next_op_id_index_ = info.last_id.index() + 1;
 
-    CHECK(quorum.peers(0).has_permanent_uuid()) << quorum.ShortDebugString();
-    cmeta_->set_leader_uuid(quorum.peers(0).permanent_uuid());
+    CHECK(config.peers(0).has_permanent_uuid()) << config.ShortDebugString();
+    cmeta_->set_leader_uuid(config.peers(0).permanent_uuid());
 
     // TODO: This NO_OP is here mostly for unit tests. We should get rid of it.
     ReplicateMsg* replicate = new ReplicateMsg;
@@ -130,12 +130,12 @@ Status LocalConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
                                 &reserved_entry_batch));
 
     // Local consensus transactions are always committed so we
-    // can just persist the quorum, if this is a change config.
+    // can just persist the configuration, if this is a change config.
     if (round->replicate_msg()->op_type() == CHANGE_CONFIG_OP) {
-      QuorumPB new_quorum = round->replicate_msg()->change_config_record().new_config();
-      DCHECK(!new_quorum.has_opid_index());
-      new_quorum.set_opid_index(round->replicate_msg()->id().index());
-      cmeta_->set_committed_quorum(new_quorum);
+      RaftConfigPB new_config = round->replicate_msg()->change_config_record().new_config();
+      DCHECK(!new_config.has_opid_index());
+      new_config.set_opid_index(round->replicate_msg()->id().index());
+      cmeta_->set_committed_config(new_config);
       CHECK_OK(cmeta_->Flush());
     }
   }
@@ -148,8 +148,8 @@ Status LocalConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
   return Status::OK();
 }
 
-QuorumPeerPB::Role LocalConsensus::role() const {
-  return QuorumPeerPB::LEADER;
+RaftPeerPB::Role LocalConsensus::role() const {
+  return RaftPeerPB::LEADER;
 }
 
 Status LocalConsensus::Update(const ConsensusRequestPB* request,
@@ -181,9 +181,9 @@ void LocalConsensus::NoOpReplicationFinished(ConsensusRound* round, const Status
               "Unable to append commit message");
 }
 
-QuorumPB LocalConsensus::CommittedQuorum() const {
+RaftConfigPB LocalConsensus::CommittedConfig() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  return cmeta_->committed_quorum();
+  return cmeta_->committed_config();
 }
 
 void LocalConsensus::Shutdown() {

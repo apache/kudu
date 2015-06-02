@@ -23,8 +23,8 @@ DEFINE_string(master_rpc_bind_addresses, "0.0.0.0:7051",
               "Comma-separated list of addresses for the Master to bind "
               "to for RPC connections");
 
-DEFINE_string(master_quorum, "",
-              "Comma-separated list of all the RPC addresses for Master quorum."
+DEFINE_string(master_addresses, "",
+              "Comma-separated list of all the RPC addresses for Master config."
               " NOTE: if not specified, assumes a standalone Master.");
 
 DEFINE_int32(master_web_port, Master::kDefaultWebPort,
@@ -51,28 +51,28 @@ MasterOptions::MasterOptions() {
 
   env = Env::Default();
 
-  if (!FLAGS_master_quorum.empty()) {
-    Status s = HostPort::ParseStrings(FLAGS_master_quorum, Master::kDefaultPort,
-                                      &master_quorum);
+  if (!FLAGS_master_addresses.empty()) {
+    Status s = HostPort::ParseStrings(FLAGS_master_addresses, Master::kDefaultPort,
+                                      &master_addresses);
     if (!s.ok()) {
-      LOG(FATAL) << "Couldn't parse the master_quorum flag('" << FLAGS_master_quorum << "'): "
+      LOG(FATAL) << "Couldn't parse the master_addresses flag('" << FLAGS_master_addresses << "'): "
                  << s.ToString();
     }
-    if (master_quorum.size() < 2) {
-      LOG(FATAL) << "At least 2 masters are required for a distributed quorum, but "
-          "master_quorum flag ('" << FLAGS_master_quorum << "') only specifies "
-                 << master_quorum.size() << " masters.";
+    if (master_addresses.size() < 2) {
+      LOG(FATAL) << "At least 2 masters are required for a distributed config, but "
+          "master_addresses flag ('" << FLAGS_master_addresses << "') only specifies "
+                 << master_addresses.size() << " masters.";
     }
-    if (master_quorum.size() == 2) {
-      LOG(WARNING) << "Only 2 masters are specified by master_quorum_flag ('" <<
-          FLAGS_master_quorum << "'), but minimum of 3 are required to tolerate failures"
+    if (master_addresses.size() == 2) {
+      LOG(WARNING) << "Only 2 masters are specified by master_addresses_flag ('" <<
+          FLAGS_master_addresses << "'), but minimum of 3 are required to tolerate failures"
           " of any one master. It is recommended to use at least 3 masters.";
     }
   }
 }
 
 bool MasterOptions::IsDistributed() const {
-  return !master_quorum.empty();
+  return !master_addresses.empty();
 }
 
 } // namespace master

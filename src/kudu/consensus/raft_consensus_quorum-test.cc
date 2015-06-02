@@ -63,7 +63,7 @@ Status WaitUntilLeaderForTests(RaftConsensus* raft) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(MonoDelta::FromSeconds(15));
   while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
-    if (raft->GetActiveRole() == QuorumPeerPB::LEADER) {
+    if (raft->GetActiveRole() == RaftPeerPB::LEADER) {
       return Status::OK();
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -85,17 +85,17 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
 
-  // Builds an initial quorum of 'num' elements.
-  // All of the quorum members start as followers.
-  void BuildInitialQuorumPB(int num) {
-    BuildQuorumPBForTests(num, &quorum_);
-    quorum_.set_opid_index(kInvalidOpIdIndex);
-    peers_.reset(new TestPeerMapManager(quorum_));
+  // Builds an initial configuration of 'num' elements.
+  // All of the peers start as followers.
+  void BuildInitialRaftConfigPB(int num) {
+    BuildRaftConfigPBForTests(num, &config_);
+    config_.set_opid_index(kInvalidOpIdIndex);
+    peers_.reset(new TestPeerMapManager(config_));
   }
 
   Status BuildFsManagersAndLogs() {
     // Build the fsmanagers and logs
-    for (int i = 0; i < quorum_.peers_size(); i++) {
+    for (int i = 0; i < config_.peers_size(); i++) {
       shared_ptr<MemTracker> parent_mem_tracker =
           MemTracker::CreateTracker(-1, Substitute("peer-$0", i));
       parent_mem_trackers_.push_back(parent_mem_tracker);
@@ -123,7 +123,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   void BuildPeers() {
     vector<LocalTestPeerProxyFactory*> proxy_factories;
-    for (int i = 0; i < quorum_.peers_size(); i++) {
+    for (int i = 0; i < config_.peers_size(); i++) {
       LocalTestPeerProxyFactory* proxy_factory = new LocalTestPeerProxyFactory(peers_.get());
       proxy_factories.push_back(proxy_factory);
 
@@ -132,7 +132,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       string peer_uuid = Substitute("peer-$0", i);
 
       gscoped_ptr<ConsensusMetadata> cmeta;
-      CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, peer_uuid, quorum_,
+      CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, peer_uuid, config_,
                                          kMinimumTerm, &cmeta));
 
       gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity_,
@@ -147,7 +147,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       gscoped_ptr<PeerManager> peer_manager(
           new PeerManager(options_.tablet_id,
-                          quorum_.peers(i).permanent_uuid(),
+                          config_.peers(i).permanent_uuid(),
                           proxy_factory,
                           queue.get(),
                           thread_pool.get(),
@@ -161,7 +161,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                             peer_manager.Pass(),
                             thread_pool.Pass(),
                             metric_entity_,
-                            quorum_.peers(i).permanent_uuid(),
+                            config_.peers(i).permanent_uuid(),
                             clock_,
                             txn_factory,
                             logs_[i],
@@ -169,7 +169,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       txn_factory->SetConsensus(peer.get());
       txn_factories_.push_back(txn_factory);
-      peers_->AddPeer(quorum_.peers(i).permanent_uuid(), peer);
+      peers_->AddPeer(config_.peers(i).permanent_uuid(), peer);
     }
   }
 
@@ -183,15 +183,15 @@ class RaftConsensusQuorumTest : public KuduTest {
     return Status::OK();
   }
 
-  Status BuildQuorum(int num) {
-    BuildInitialQuorumPB(num);
+  Status BuildConfig(int num) {
+    BuildInitialRaftConfigPB(num);
     RETURN_NOT_OK(BuildFsManagersAndLogs());
     BuildPeers();
     return Status::OK();
   }
 
-  Status BuildAndStartQuorum(int num) {
-    RETURN_NOT_OK(BuildQuorum(num));
+  Status BuildAndStartConfig(int num) {
+    RETURN_NOT_OK(BuildConfig(num));
     RETURN_NOT_OK(StartPeers());
 
     // Automatically elect the last node in the list.
@@ -544,7 +544,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
  protected:
   ConsensusOptions options_;
-  QuorumPB quorum_;
+  RaftConfigPB config_;
   OpId initial_id_;
   vector<shared_ptr<MemTracker> > parent_mem_trackers_;
   vector<FsManager*> fs_managers_;
@@ -566,7 +566,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitMessage) {
   const int kFollower1Idx = 1;
   const int kLeaderIdx = 2;
 
-  ASSERT_OK(BuildAndStartQuorum(3));
+  ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_op_id;
   vector<scoped_refptr<ConsensusRound> > rounds;
@@ -608,7 +608,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
 
   int seq_size = AllowSlowTests() ? 1000 : 100;
 
-  ASSERT_OK(BuildAndStartQuorum(3));
+  ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_op_id;
   vector<scoped_refptr<ConsensusRound> > rounds;
@@ -642,7 +642,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusContinuesIfAMinorityFallsBehind) {
   const int kFollower1Idx = 1;
   const int kLeaderIdx = 2;
 
-  ASSERT_OK(BuildAndStartQuorum(3));
+  ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_replicate;
   vector<scoped_refptr<ConsensusRound> > rounds;
@@ -686,7 +686,7 @@ TEST_F(RaftConsensusQuorumTest, TestConsensusStopsIfAMajorityFallsBehind) {
   const int kFollower1Idx = 1;
   const int kLeaderIdx = 2;
 
-  ASSERT_OK(BuildAndStartQuorum(3));
+  ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_op_id;
 
@@ -736,7 +736,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasHandleCommunicationErrors) {
   const int kFollower1Idx = 1;
   const int kLeaderIdx = 2;
 
-  ASSERT_OK(BuildAndStartQuorum(3));
+  ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_op_id;
 
@@ -803,7 +803,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   const int kFollower1Idx = 1;
   const int kLeaderIdx = 2;
 
-  ASSERT_OK(BuildQuorum(3));
+  ASSERT_OK(BuildConfig(3));
 
   scoped_refptr<RaftConsensus> follower0;
   CHECK_OK(peers_->GetPeerByIdx(kFollower0Idx, &follower0));
@@ -816,7 +816,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
       new CounterHooks(follower1->GetFaultHooks()));
 
   // Replace the default fault hooks on the replicas with counter hooks
-  // before we start the quorum.
+  // before we start the configuration.
   follower0->SetFaultHooks(counter_hook_rpl0);
   follower1->SetFaultHooks(counter_hook_rpl1);
 
@@ -852,25 +852,25 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
   VerifyLogs(2, 0, 1);
 }
 
-// After creating the initial quorum, this test writes a small sequence
+// After creating the initial configuration, this test writes a small sequence
 // of messages to the initial leader. It then shuts down the current
 // leader, makes another peer become leader and writes a sequence of
 // messages to it. The new leader and the follower should agree on the
 // sequence of messages.
 TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
-  const int kInitialQuorumSize = 5;
-  ASSERT_OK(BuildAndStartQuorum(kInitialQuorumSize));
+  const int kInitialNumPeers = 5;
+  ASSERT_OK(BuildAndStartConfig(kInitialNumPeers));
 
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
   vector<scoped_refptr<ConsensusRound> > rounds;
 
   // Loop twice, successively shutting down the previous leader.
-  for (int current_quorum_size = kInitialQuorumSize;
-       current_quorum_size >= kInitialQuorumSize - 1;
-       current_quorum_size--) {
+  for (int current_config_size = kInitialNumPeers;
+       current_config_size >= kInitialNumPeers - 1;
+       current_config_size--) {
     REPLICATE_SEQUENCE_OF_MESSAGES(10,
-                                   current_quorum_size - 1, // The index of the leader.
+                                   current_config_size - 1, // The index of the leader.
                                    WAIT_FOR_ALL_REPLICAS,
                                    COMMIT_ONE_BY_ONE,
                                    &last_op_id,
@@ -879,31 +879,31 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
 
     // Make sure the last operation is committed everywhere
     ASSERT_OK(last_commit_sync->Wait());
-    for (int i = 0; i < current_quorum_size - 1; i++) {
-      WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_quorum_size - 1);
+    for (int i = 0; i < current_config_size - 1; i++) {
+      WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_config_size - 1);
     }
 
     // Now shutdown the current leader.
-    LOG(INFO) << "Shutting down current leader with index " << (current_quorum_size - 1);
+    LOG(INFO) << "Shutting down current leader with index " << (current_config_size - 1);
     scoped_refptr<RaftConsensus> current_leader;
-    CHECK_OK(peers_->GetPeerByIdx(current_quorum_size - 1, &current_leader));
+    CHECK_OK(peers_->GetPeerByIdx(current_config_size - 1, &current_leader));
     current_leader->Shutdown();
     peers_->RemovePeer(current_leader->peer_uuid());
 
     // ... and make the peer before it become leader.
     scoped_refptr<RaftConsensus> new_leader;
-    CHECK_OK(peers_->GetPeerByIdx(current_quorum_size - 2, &new_leader));
+    CHECK_OK(peers_->GetPeerByIdx(current_config_size - 2, &new_leader));
 
     // This will force an election in which we expect to make the last
     // non-shutdown peer in the list become leader.
-    LOG(INFO) << "Running election for future leader with index " << (current_quorum_size - 1);
+    LOG(INFO) << "Running election for future leader with index " << (current_config_size - 1);
     ASSERT_OK(new_leader->StartElection(Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE));
     WaitUntilLeaderForTests(new_leader.get());
     LOG(INFO) << "Election won";
 
     // ... replicating a set of messages to the new leader should now be possible.
     REPLICATE_SEQUENCE_OF_MESSAGES(10,
-                                   current_quorum_size - 2, // The index of the new leader.
+                                   current_config_size - 2, // The index of the new leader.
                                    WAIT_FOR_MAJORITY,
                                    COMMIT_ONE_BY_ONE,
                                    &last_op_id,
@@ -912,8 +912,8 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
 
     // Make sure the last operation is committed everywhere
     ASSERT_OK(last_commit_sync->Wait());
-    for (int i = 0; i < current_quorum_size - 2; i++) {
-      WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_quorum_size - 2);
+    for (int i = 0; i < current_config_size - 2; i++) {
+      WaitForCommitIfNotAlreadyPresent(last_op_id, i, current_config_size - 2);
     }
   }
   // We can only verify the logs of the peers that were not killed, due to the
@@ -922,7 +922,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderElectionWithQuiescedQuorum) {
 }
 
 TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
-  ASSERT_OK(BuildAndStartQuorum(3));
+  ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;
@@ -985,7 +985,7 @@ TEST_F(RaftConsensusQuorumTest, TestReplicasEnforceTheLogMatchingProperty) {
 
 // Test that RequestVote performs according to "spec".
 TEST_F(RaftConsensusQuorumTest, TestRequestVote) {
-  ASSERT_OK(BuildAndStartQuorum(3));
+  ASSERT_OK(BuildAndStartConfig(3));
 
   OpId last_op_id;
   shared_ptr<Synchronizer> last_commit_sync;

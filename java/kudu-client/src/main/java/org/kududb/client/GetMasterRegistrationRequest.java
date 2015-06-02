@@ -41,7 +41,7 @@ public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationR
     final GetMasterRegistrationResponsePB.Builder respBuilder =
         GetMasterRegistrationResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
-    QuorumPeerPB.Role role = QuorumPeerPB.Role.FOLLOWER;
+    RaftPeerPB.Role role = RaftPeerPB.Role.FOLLOWER;
     if (!respBuilder.hasError() || respBuilder.getError().getCode() !=
         MasterErrorPB.Code.CATALOG_MANAGER_NOT_INITIALIZED) {
       role = respBuilder.getRole();

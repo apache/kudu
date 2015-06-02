@@ -47,7 +47,7 @@ public class BaseKuduTest {
   private static final int PORT_START = 64030;
 
   // Comma separate describing the master addresses and ports.
-  protected static String masterQuorum;
+  protected static String masterAddresses;
   protected static List<HostAndPort> masterHostPorts;
 
   protected static final int DEFAULT_SLEEP = 50000;
@@ -98,7 +98,7 @@ public class BaseKuduTest {
             "--flagfile=" + flagsPath,
             "--tablet_server_wal_dir=" + dataDirPath,
             "--tablet_server_data_dirs=" + dataDirPath,
-            "--tablet_server_master_addrs=" + masterQuorum,
+            "--tablet_server_master_addrs=" + masterAddresses,
             "--tablet_server_rpc_bind_addresses=127.0.0.1:" + port,
             "--use_hybrid_clock=true",
             "--max_clock_sync_error_usec=10000000"};
@@ -112,8 +112,8 @@ public class BaseKuduTest {
         pathsToDelete.add(dataDirPath);
       }
     } else {
-      masterQuorum = TestUtils.getMasterAddresses();
-      masterHostPorts = NetUtil.parseStrings(masterQuorum, DEFAULT_MASTER_RPC_PORT);
+      masterAddresses = TestUtils.getMasterAddresses();
+      masterHostPorts = NetUtil.parseStrings(masterAddresses, DEFAULT_MASTER_RPC_PORT);
     }
     LOG.info("Creating new Kudu client...");
     client = new AsyncKuduClient(masterHostPorts);
@@ -137,9 +137,9 @@ public class BaseKuduTest {
   static int startMasters(int masterStartPort, int numMasters,
                           String baseDirPath) throws Exception {
     LOG.info("Starting {} masters...", numMasters);
-    // Get the list of web and RPC ports to use for the master quorum:
+    // Get the list of web and RPC ports to use for the master consensus configuration:
     // request NUM_MASTERS * 2 free ports as we want to also reserve the web
-    // ports for the quorum.
+    // ports for the consensus configuration.
     List<Integer> ports = TestUtils.findFreePorts(masterStartPort, numMasters * 2);
     int lastFreePort = ports.get(ports.size() - 1);
     List<Integer> masterRpcPorts = Lists.newArrayListWithCapacity(numMasters);
@@ -153,7 +153,7 @@ public class BaseKuduTest {
         masterWebPorts.add(ports.get(i));
       }
     }
-    masterQuorum = NetUtil.hostsAndPortsToString(masterHostPorts);
+    masterAddresses = NetUtil.hostsAndPortsToString(masterHostPorts);
     for (int i = 0; i < numMasters; i++) {
       long now = System.currentTimeMillis();
       String dataDirPath = baseDirPath + "/master-" + i + "-" + now;
@@ -175,7 +175,7 @@ public class BaseKuduTest {
           "--master_web_port=" + masterWebPorts.get(i),
           "--max_clock_sync_error_usec=10000000");
       if (numMasters > 1) {
-        masterCmdLine.add("--master_quorum=" + masterQuorum);
+        masterCmdLine.add("--master_addresses=" + masterAddresses);
       }
       MASTERS.put(masterRpcPorts.get(i),
           configureAndStartProcess(masterCmdLine.toArray(new String[masterCmdLine.size()])));
@@ -311,8 +311,8 @@ public class BaseKuduTest {
       fail("Timed out");
     }
     if (gotError.get()) {
-      fail("Got error during table creation, is the Kudu master quorum running at " +
-          masterQuorum + "?");
+      fail("Got error during table creation, is the Kudu master running at " +
+          masterAddresses + "?");
     }
     tableNames.add(tableName);
   }
@@ -480,7 +480,7 @@ public class BaseKuduTest {
   }
 
   /**
-   * Helper method to easily kill the leader of the master quorum.
+   * Helper method to easily kill the leader master.
    *
    * This method is thread-safe.
    * @throws Exception If there is an error finding or killing the leader master.
@@ -523,11 +523,11 @@ public class BaseKuduTest {
 
   /**
    * Return the comma-separated list of "host:port" pairs that describes the master
-   * quorum for this cluster.
-   * @return The master quorum string.
+   * config for this cluster.
+   * @return The master config string.
    */
-  protected static String getMasterQuorum() {
-    return masterQuorum;
+  protected static String getMasterAddresses() {
+    return masterAddresses;
   }
 
   /**

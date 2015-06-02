@@ -30,8 +30,8 @@
 #include "kudu/util/threadpool.h"
 
 using kudu::consensus::ConsensusMetadata;
-using kudu::consensus::QuorumPB;
-using kudu::consensus::QuorumPeerPB;
+using kudu::consensus::RaftConfigPB;
+using kudu::consensus::RaftPeerPB;
 using kudu::log::Log;
 using kudu::log::LogAnchorRegistry;
 using kudu::tablet::LatchTransactionCompletionCallback;
@@ -56,7 +56,7 @@ SysCatalogTable::SysCatalogTable(Master* master,
     : metric_registry_(metrics),
       master_(master),
       leader_cb_(leader_cb),
-      old_role_(QuorumPeerPB::FOLLOWER) {
+      old_role_(RaftPeerPB::FOLLOWER) {
   CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
 }
 
@@ -81,15 +81,15 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
     return(Status::Corruption("Unexpected schema", metadata->schema().ToString()));
   }
 
-  // Allow for statically and explicitly assigning the quorum and roles through
+  // Allow for statically and explicitly assigning the consensus configuration and roles through
   // the master configuration on startup.
   //
   // TODO: The following assumptions need revisiting:
-  // 1. We always believe the local config options for who is in the quorum.
+  // 1. We always believe the local config options for who is in the consensus configuration.
   // 2. We always want to look up all node's UUIDs on start (via RPC).
   //    - TODO: Cache UUIDs. See KUDU-526.
   if (master_->opts().IsDistributed()) {
-    LOG(INFO) << "Configuring the quorum for distributed operation...";
+    LOG(INFO) << "Configuring consensus for distributed operation...";
 
     string tablet_id = metadata->tablet_id();
     gscoped_ptr<ConsensusMetadata> cmeta;
@@ -97,9 +97,9 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
                                                   fs_manager->uuid(), &cmeta),
                           "Unable to load consensus metadata for tablet " + tablet_id);
 
-    QuorumPB quorum;
-    RETURN_NOT_OK(SetupDistributedQuorum(master_->opts(), &quorum));
-    cmeta->set_committed_quorum(quorum);
+    RaftConfigPB config;
+    RETURN_NOT_OK(SetupDistributedConfig(master_->opts(), &config));
+    cmeta->set_committed_config(config);
     RETURN_NOT_OK_PREPEND(cmeta->Flush(),
                           "Unable to persist consensus metadata for tablet " + tablet_id);
   }
@@ -119,86 +119,86 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
                                                   tablet::REMOTE_BOOTSTRAP_DONE,
                                                   &metadata));
 
-  QuorumPB quorum;
+  RaftConfigPB config;
   if (master_->opts().IsDistributed()) {
-    RETURN_NOT_OK_PREPEND(SetupDistributedQuorum(master_->opts(), &quorum),
-                          "Failed to initialize distributed quorum");
+    RETURN_NOT_OK_PREPEND(SetupDistributedConfig(master_->opts(), &config),
+                          "Failed to initialize distributed config");
   } else {
-    quorum.set_local(true);
-    quorum.set_opid_index(consensus::kInvalidOpIdIndex);
-    QuorumPeerPB* peer = quorum.add_peers();
+    config.set_local(true);
+    config.set_opid_index(consensus::kInvalidOpIdIndex);
+    RaftPeerPB* peer = config.add_peers();
     peer->set_permanent_uuid(fs_manager->uuid());
-    peer->set_member_type(QuorumPeerPB::VOTER);
+    peer->set_member_type(RaftPeerPB::VOTER);
   }
 
   string tablet_id = metadata->tablet_id();
   gscoped_ptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager, tablet_id, fs_manager->uuid(),
-                                                  quorum, consensus::kMinimumTerm, &cmeta),
+                                                  config, consensus::kMinimumTerm, &cmeta),
                         "Unable to persist consensus metadata for tablet " + tablet_id);
 
   return SetupTablet(metadata);
 }
 
-Status SysCatalogTable::SetupDistributedQuorum(const MasterOptions& options,
-                                               QuorumPB* committed_quorum) {
+Status SysCatalogTable::SetupDistributedConfig(const MasterOptions& options,
+                                               RaftConfigPB* committed_config) {
   DCHECK(options.IsDistributed());
 
-  QuorumPB new_quorum;
-  new_quorum.set_local(false);
-  new_quorum.set_opid_index(consensus::kInvalidOpIdIndex);
+  RaftConfigPB new_config;
+  new_config.set_local(false);
+  new_config.set_opid_index(consensus::kInvalidOpIdIndex);
 
   // Build the set of followers from our server options.
-  BOOST_FOREACH(const HostPort& host_port, options.master_quorum) {
-    QuorumPeerPB peer;
+  BOOST_FOREACH(const HostPort& host_port, options.master_addresses) {
+    RaftPeerPB peer;
     HostPortPB peer_host_port_pb;
     RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
     peer.mutable_last_known_addr()->CopyFrom(peer_host_port_pb);
-    peer.set_member_type(QuorumPeerPB::VOTER);
-    new_quorum.add_peers()->CopyFrom(peer);
+    peer.set_member_type(RaftPeerPB::VOTER);
+    new_config.add_peers()->CopyFrom(peer);
   }
 
   // Now resolve UUIDs.
   // By the time a SysCatalogTable is created and initted, the masters should be
   // starting up, so this should be fine to do.
   DCHECK(master_->messenger());
-  QuorumPB resolved_quorum = new_quorum;
-  resolved_quorum.clear_peers();
-  BOOST_FOREACH(const QuorumPeerPB& peer, new_quorum.peers()) {
+  RaftConfigPB resolved_config = new_config;
+  resolved_config.clear_peers();
+  BOOST_FOREACH(const RaftPeerPB& peer, new_config.peers()) {
     if (peer.has_permanent_uuid()) {
-      resolved_quorum.add_peers()->CopyFrom(peer);
+      resolved_config.add_peers()->CopyFrom(peer);
     } else {
       LOG(INFO) << peer.ShortDebugString()
                 << " has no permanent_uuid. Determining permanent_uuid...";
-      QuorumPeerPB new_peer = peer;
+      RaftPeerPB new_peer = peer;
       // TODO: Use ConsensusMetadata to cache the results of these lookups so
-      // we only require RPC access to the full quorum on first startup.
+      // we only require RPC access to the full consensus configuration on first startup.
       // See KUDU-526.
       RETURN_NOT_OK_PREPEND(consensus::SetPermanentUuidForRemotePeer(master_->messenger(),
                                                                      &new_peer),
                             Substitute("Unable to resolve UUID for peer $0",
                                        peer.ShortDebugString()));
-      resolved_quorum.add_peers()->CopyFrom(new_peer);
+      resolved_config.add_peers()->CopyFrom(new_peer);
     }
   }
 
-  RETURN_NOT_OK(consensus::VerifyQuorum(resolved_quorum, consensus::COMMITTED_QUORUM));
-  VLOG(1) << "Distributed quorum configuration: " << resolved_quorum.ShortDebugString();
+  RETURN_NOT_OK(consensus::VerifyRaftConfig(resolved_config, consensus::COMMITTED_QUORUM));
+  VLOG(1) << "Distributed Raft configuration: " << resolved_config.ShortDebugString();
 
-  *committed_quorum = resolved_quorum;
+  *committed_config = resolved_config;
   return Status::OK();
 }
 
 void SysCatalogTable::SysCatalogStateChanged(const std::string& tablet_id) {
   CHECK_EQ(tablet_peer_->tablet_id(), tablet_id);
-  QuorumPB quorum = tablet_peer_->consensus()->CommittedQuorum();
-  LOG_WITH_PREFIX(INFO) << " SysCatalogTable state changed. New quorum config:"
-                        << quorum.ShortDebugString();
-  QuorumPeerPB::Role new_role = tablet_peer_->consensus()->role();
+  RaftConfigPB config = tablet_peer_->consensus()->CommittedConfig();
+  LOG_WITH_PREFIX(INFO) << " SysCatalogTable state changed. New config config:"
+                        << config.ShortDebugString();
+  RaftPeerPB::Role new_role = tablet_peer_->consensus()->role();
   LOG_WITH_PREFIX(INFO) << " This master's current role is: "
-                        << QuorumPeerPB::Role_Name(new_role)
-                        << ", previous role was: " << QuorumPeerPB::Role_Name(old_role_);
-  if (new_role == QuorumPeerPB::LEADER) {
+                        << RaftPeerPB::Role_Name(new_role)
+                        << ", previous role was: " << RaftPeerPB::Role_Name(old_role_);
+  if (new_role == RaftPeerPB::LEADER) {
     CHECK_OK(leader_cb_.Run());
   }
 }

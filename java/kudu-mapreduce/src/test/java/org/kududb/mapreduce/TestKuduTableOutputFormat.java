@@ -28,7 +28,7 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
 
     KuduTableOutputFormat output = new KuduTableOutputFormat();
     Configuration conf = new Configuration();
-    conf.set(KuduTableOutputFormat.MASTER_QUORUM_KEY, getMasterQuorum());
+    conf.set(KuduTableOutputFormat.MASTER_ADDRESSES_KEY, getMasterAddresses());
     conf.set(KuduTableOutputFormat.OUTPUT_TABLE_KEY, TABLE_NAME);
     output.setConf(conf);
 

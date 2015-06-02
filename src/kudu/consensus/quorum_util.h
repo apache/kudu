@@ -13,39 +13,39 @@ class Status;
 
 namespace consensus {
 
-enum QuorumPBType {
+enum RaftConfigState {
   UNCOMMITTED_QUORUM,
   COMMITTED_QUORUM,
 };
 
-bool IsQuorumMember(const std::string& uuid, const QuorumPB& quorum);
-bool IsQuorumVoter(const std::string& uuid, const QuorumPB& quorum);
+bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config);
+bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config);
 
-// Modifies 'quorum' remove the peer with the specified 'uuid'.
-// Returns false if the server with 'uuid' is not found in the quorum.
+// Modifies 'configuration' remove the peer with the specified 'uuid'.
+// Returns false if the server with 'uuid' is not found in the configuration.
 // Returns true on success.
-bool RemoveFromQuorum(QuorumPB* quorum, const std::string& uuid);
+bool RemoveFromRaftConfig(RaftConfigPB* config, const std::string& uuid);
 
-// Counts the number of voters in the quorum.
-int CountVoters(const QuorumPB& quorum);
+// Counts the number of voters in the configuration.
+int CountVoters(const RaftConfigPB& config);
 
-// Calculates size of a quorum majority based on # of voters.
+// Calculates size of a configuration majority based on # of voters.
 int MajoritySize(int num_voters);
 
 // Determines the role that the peer with uuid 'uuid' plays in the cluster.
-// If the peer uuid is not a voter in the quorum, this function will return
+// If the peer uuid is not a voter in the configuration, this function will return
 // NON_PARTICIPANT, regardless of whether it is listed as leader in cstate.
-QuorumPeerPB::Role GetConsensusRole(const std::string& uuid,
+RaftPeerPB::Role GetConsensusRole(const std::string& uuid,
                                     const ConsensusStatePB& cstate);
 
-// Verifies that the provided quorum is well formed.
+// Verifies that the provided configuration is well formed.
 // If type == COMMITTED_QUORUM, we enforce that opid_index is set.
 // If type == UNCOMMITTED_QUORUM, we enforce that opid_index is NOT set.
-Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type);
+Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type);
 
-// Superset of checks performed by VerifyQuorum. Also ensures that the
-// leader is a quorum voter, if it is set, and that a valid term is set.
-Status VerifyConsensusState(const ConsensusStatePB& cstate, QuorumPBType type);
+// Superset of checks performed by VerifyRaftConfig. Also ensures that the
+// leader is a configuration voter, if it is set, and that a valid term is set.
+Status VerifyConsensusState(const ConsensusStatePB& cstate, RaftConfigState type);
 
 }  // namespace consensus
 }  // namespace kudu

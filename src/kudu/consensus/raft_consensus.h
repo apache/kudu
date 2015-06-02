@@ -80,8 +80,8 @@ class RaftConsensus : public Consensus,
   virtual bool IsRunning() const OVERRIDE;
 
   // Emulates an election by increasing the term number and asserting leadership
-  // in the quorum by sending a NO_OP to other members of the quorum.
-  // This is NOT safe to use in a distributed quorum with failure detection
+  // in the configuration by sending a NO_OP to other peers.
+  // This is NOT safe to use in a distributed configuration with failure detection
   // enabled, as it could result in a split-brain scenario.
   virtual Status EmulateElection() OVERRIDE;
 
@@ -104,11 +104,11 @@ class RaftConsensus : public Consensus,
                              VoteResponsePB* response) OVERRIDE;
 
   virtual Status ChangeConfig(ChangeConfigType type,
-                              const QuorumPeerPB& server,
+                              const RaftPeerPB& server,
                               ChangeConfigResponsePB* resp,
                               const StatusCallback& client_cb) OVERRIDE;
 
-  virtual QuorumPeerPB::Role role() const OVERRIDE;
+  virtual RaftPeerPB::Role role() const OVERRIDE;
 
   virtual std::string peer_uuid() const OVERRIDE;
 
@@ -116,7 +116,7 @@ class RaftConsensus : public Consensus,
 
   virtual ConsensusStatePB CommittedConsensusState() const OVERRIDE;
 
-  virtual QuorumPB CommittedQuorum() const OVERRIDE;
+  virtual RaftConfigPB CommittedConfig() const OVERRIDE;
 
   virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;
 
@@ -126,7 +126,7 @@ class RaftConsensus : public Consensus,
   virtual Status AdvanceTermForTests(int64_t new_term);
 
   // Return the active (as opposed to committed) role.
-  QuorumPeerPB::Role GetActiveRole() const;
+  RaftPeerPB::Role GetActiveRole() const;
 
   // Returns the replica state for tests. This should never be used outside of
   // tests, in particular calling the LockFor* methods on the returned object
@@ -185,18 +185,18 @@ class RaftConsensus : public Consensus,
 
   std::string LogPrefix();
 
-  // Set the leader UUID of the quorum and mark the tablet config dirty for
+  // Set the leader UUID of the configuration and mark the tablet config dirty for
   // reporting to the master.
   void SetLeaderUuidUnlocked(const std::string& uuid);
 
   // Replicate (as leader) a pre-validated config change. This includes
-  // updating the quorum peers and setting the new_quorum as pending.
-  // The old_quorum must be the currently-committed quorum.
-  Status ReplicateConfigChangeUnlocked(const QuorumPB& old_quorum,
-                                       const QuorumPB& new_quorum,
+  // updating the peers and setting the new_configuration as pending.
+  // The old_configuration must be the currently-committed configuration.
+  Status ReplicateConfigChangeUnlocked(const RaftConfigPB& old_config,
+                                       const RaftConfigPB& new_config,
                                        const StatusCallback& client_cb);
 
-  // Update the peers and queue to be consistent with a new active quorum.
+  // Update the peers and queue to be consistent with a new active configuration.
   // Should only be called by the leader.
   Status RefreshConsensusQueueAndPeersUnlocked();
 
@@ -204,12 +204,12 @@ class RaftConsensus : public Consensus,
   // Returns OK once the change config transaction that has this peer as leader
   // has been enqueued, the transaction will complete asynchronously.
   //
-  // The ReplicaState must be locked for quorum change before calling.
+  // The ReplicaState must be locked for configuration change before calling.
   Status BecomeLeaderUnlocked();
 
   // Makes the peer become a replica, i.e. a FOLLOWER or a LEARNER.
   //
-  // The ReplicaState must be locked for quorum change before calling.
+  // The ReplicaState must be locked for configuration change before calling.
   Status BecomeReplicaUnlocked();
 
   // Updates the state in a replica by storing the received operations in the log
@@ -251,11 +251,11 @@ class RaftConsensus : public Consensus,
                                     ConsensusResponsePB* response,
                                     LeaderRequest* deduped_req);
 
-  // Pushes a new quorum configuration to a majority of peers. Contrary to write operations,
+  // Pushes a new Raft configuration to a majority of peers. Contrary to write operations,
   // this actually waits for the commit round to reach a majority of peers, so that we know
   // we can proceed. If this returns Status::OK(), a majority of peers have accepted the new
   // configuration. The peer cannot perform any additional operations until this succeeds.
-  Status PushConfigurationToPeersUnlocked(const QuorumPB& new_config);
+  Status PushConfigurationToPeersUnlocked(const RaftConfigPB& new_config);
 
   // Returns the most recent OpId written to the Log.
   OpId GetLatestOpIdFromLog();

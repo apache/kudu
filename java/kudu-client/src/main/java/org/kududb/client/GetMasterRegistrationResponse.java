@@ -11,7 +11,7 @@ import org.kududb.master.Master;
  */
 public class GetMasterRegistrationResponse extends KuduRpcResponse {
 
-  private final Metadata.QuorumPeerPB.Role role;
+  private final Metadata.RaftPeerPB.Role role;
   private final WireProtocol.ServerRegistrationPB serverRegistration;
   private final WireProtocol.NodeInstancePB instanceId;
 
@@ -19,12 +19,12 @@ public class GetMasterRegistrationResponse extends KuduRpcResponse {
    * Describes a response to a {@link GetMasterRegistrationRequest}, built from
    * {@link Master.GetMasterRegistrationResponsePB}.
    *
-   * @param role Master's role in the quorum.
+   * @param role Master's role in the config.
    * @param serverRegistration server registration (RPC and HTTP addresses) for this master.
    * @param instanceId Node instance (permanent uuid and
    */
   public GetMasterRegistrationResponse(long elapsedMillis, String tsUUID,
-                                       Metadata.QuorumPeerPB.Role role,
+                                       Metadata.RaftPeerPB.Role role,
                                        WireProtocol.ServerRegistrationPB serverRegistration,
                                        WireProtocol.NodeInstancePB instanceId) {
     super(elapsedMillis, tsUUID);
@@ -34,12 +34,12 @@ public class GetMasterRegistrationResponse extends KuduRpcResponse {
   }
 
   /**
-   * Returns this master's role in the quorum.
+   * Returns this master's role in the config.
    *
-   * @see Metadata.QuorumPeerPB.Role
+   * @see Metadata.RaftPeerPB.Role
    * @return Node's role in the cluster, or FOLLOWER if the node is not initialized.
    */
-  public Metadata.QuorumPeerPB.Role getRole() {
+  public Metadata.RaftPeerPB.Role getRole() {
     return role;
   }
 

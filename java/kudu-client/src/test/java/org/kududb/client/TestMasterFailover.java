@@ -46,7 +46,7 @@ public class TestMasterFailover extends BaseKuduTest {
 
     // Test that we can initialize a client when one of the masters specified in the
     // connection string is down.
-    AsyncKuduClient newClient = new AsyncKuduClient(masterQuorum);
+    AsyncKuduClient newClient = new AsyncKuduClient(masterAddresses);
     table = newClient.openTable(newTableName).join(DEFAULT_SLEEP);
     assertEquals(0, countRowsInScan(newClient.newScannerBuilder(table, basicSchema).build()));
   }

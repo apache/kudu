@@ -21,7 +21,7 @@
 using base::subtle::Barrier_AtomicIncrement;
 using strings::Substitute;
 
-using kudu::consensus::QuorumPB;
+using kudu::consensus::RaftConfigPB;
 
 namespace kudu {
 namespace tablet {

@@ -44,7 +44,7 @@ class TabletStatusPB;
 class TabletStatusListener;
 class TransactionDriver;
 
-// A peer in a tablet quorum, which coordinates writes to tablets.
+// A peer in a tablet consensus configuration, which coordinates writes to tablets.
 // Each time Write() is called this class appends a new entry to a replicated
 // state machine through a consensus algorithm, which makes sure that other
 // peers see the same updates in the same order. In addition to this, this
@@ -68,8 +68,8 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
               const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker);
 
   // Starts the TabletPeer, making it available for Write()s. If this
-  // TabletPeer is part of a quorum this will connect it to other peers
-  // in the quorum.
+  // TabletPeer is part of a consensus configuration this will connect it to other peers
+  // in the consensus configuration.
   Status Start(const consensus::ConsensusBootstrapInfo& info);
 
   // Shutdown this tablet peer.
@@ -127,10 +127,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     return state_;
   }
 
-  // Returns the current quorum configuration.
-  const consensus::QuorumPB Quorum() const;
+  // Returns the current Raft configuration.
+  const consensus::RaftConfigPB RaftConfig() const;
 
-  // If any peers in the quorum lack permanent uuids, get them via an
+  // If any peers in the consensus configuration lack permanent uuids, get them via an
   // RPC call and update.
   // TODO: move this to raft_consensus.h.
   Status UpdatePermanentUuids();
@@ -228,7 +228,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // After bootstrap is complete and consensus is setup this initiates the transactions
   // that were not complete on bootstrap.
   // Not implemented yet. See .cc file.
-  Status StartPendingTransactions(consensus::QuorumPeerPB::Role my_role,
+  Status StartPendingTransactions(consensus::RaftPeerPB::Role my_role,
                                   const consensus::ConsensusBootstrapInfo& bootstrap_info);
 
   scoped_refptr<TabletMetadata> meta_;

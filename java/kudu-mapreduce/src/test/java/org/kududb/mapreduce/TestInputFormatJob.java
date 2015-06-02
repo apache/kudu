@@ -63,7 +63,7 @@ public class TestInputFormatJob extends BaseKuduTest {
         job,
         TABLE_NAME,
         basicSchema.getColumn(0).getName(),
-        getMasterQuorum())
+        getMasterAddresses())
         .operationTimeoutMs(DEFAULT_SLEEP)
         .addDependencies(false)
         .cacheBlocks(false)

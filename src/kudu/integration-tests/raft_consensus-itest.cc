@@ -50,8 +50,8 @@ using consensus::ConsensusRequestPB;
 using consensus::ConsensusServiceProxy;
 using consensus::MajoritySize;
 using consensus::MakeOpId;
-using consensus::QuorumPB;
-using consensus::QuorumPeerPB;
+using consensus::RaftConfigPB;
+using consensus::RaftPeerPB;
 using consensus::ADD_SERVER;
 using consensus::REMOVE_SERVER;
 using consensus::ReplicateMsg;
@@ -110,7 +110,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
     CreateClient(&client_);
     CreateTable();
-    WaitForTSAndQuorum();
+    WaitForTSAndReplicas();
     CHECK_GT(tablet_replicas_.size(), 0);
     tablet_id_ = (*tablet_replicas_.begin()).first;
   }
@@ -341,7 +341,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // on the given tablet server identified by 'replica_idx'.
   void StubbornlyWriteSameRowThread(int replica_idx, const AtomicBool* finish);
 
-  // Stops the current leader of the quorum, runs leader election and then brings it back.
+  // Stops the current leader of the configuration, runs leader election and then brings it back.
   // Before stopping the leader this pauses all follower nodes in regular intervals so that
   // we get an increased chance of stuff being pending.
   void StopOrKillLeaderAndElectNewOne() {
@@ -431,7 +431,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
   BuildAndStart(vector<string>());
 
-  QuorumPeerPB peer;
+  RaftPeerPB peer;
   TServerDetails* leader = NULL;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
   peer.mutable_last_known_addr()->CopyFrom(leader->registration.rpc_addresses(0));
@@ -571,7 +571,7 @@ TEST_F(RaftConsensusITest, TestInsertOnNonLeader) {
   ASSERT_TRUE(resp.has_error());
   Status s = StatusFromPB(resp.error().status());
   EXPECT_TRUE(s.IsIllegalState());
-  ASSERT_STR_CONTAINS(s.ToString(), "is not leader of this quorum. Role: FOLLOWER");
+  ASSERT_STR_CONTAINS(s.ToString(), "is not leader of this config. Role: FOLLOWER");
   // TODO: need to change the error code to be something like REPLICA_NOT_LEADER
   // so that the client can properly handle this case! plumbing this is a little difficult
   // so not addressing at the moment.
@@ -975,7 +975,7 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
   // Reset consensus rpc timeout to the default value or the election might fail often.
   FLAGS_consensus_rpc_timeout_ms = 1000;
 
-  // Start a 7 node quorum cluster (since we can't bring leaders back we start with a
+  // Start a 7 node configuration cluster (since we can't bring leaders back we start with a
   // higher replica count so that we kill more leaders).
 
   vector<string> flags;
@@ -1040,7 +1040,7 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
   const int kFinalNumReplicas = FLAGS_num_replicas / 2 + 1;
 
   for (int leaders_killed = 0; leaders_killed < kFinalNumReplicas; leaders_killed++) {
-    LOG(INFO) << Substitute("Writing data to leader of $0-node quorum ($1 alive)...",
+    LOG(INFO) << Substitute("Writing data to leader of $0-node config ($1 alive)...",
                             FLAGS_num_replicas, FLAGS_num_replicas - leaders_killed);
 
     InsertTestRowsRemoteThread(leaders_killed * FLAGS_client_inserts_per_thread,
@@ -1376,15 +1376,15 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
   // Calculate number of servers to leave unpaused (minority).
   // This math is a little unintuitive but works for cluster sizes including 2 and 1.
   // Note: We assume all of these TSes are voters.
-  int quorum_size = tablet_servers.size();
-  int minority_to_retain = MajoritySize(quorum_size) - 1;
+  int config_size = tablet_servers.size();
+  int minority_to_retain = MajoritySize(config_size) - 1;
 
   // Only perform this part of the test if we have some servers to pause, else
   // the failure assertions will throw.
-  if (quorum_size > 1) {
+  if (config_size > 1) {
     // Pause enough replicas to prevent a majority.
-    int num_to_pause = quorum_size - minority_to_retain;
-    LOG(INFO) << "Pausing " << num_to_pause << " tablet servers in quorum of size " << quorum_size;
+    int num_to_pause = config_size - minority_to_retain;
+    LOG(INFO) << "Pausing " << num_to_pause << " tablet servers in config of size " << config_size;
     vector<string> paused_uuids;
     BOOST_FOREACH(const TabletServerMap::value_type& entry, tablet_servers) {
       if (paused_uuids.size() == num_to_pause) {
@@ -1414,10 +1414,10 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
     s = WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromMilliseconds(100));
     ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
-    LOG(INFO) << "Expected timeout encountered on election with weakened quorum: " << s.ToString();
+    LOG(INFO) << "Expected timeout encountered on election with weakened config: " << s.ToString();
 
     // Resume the paused servers.
-    LOG(INFO) << "Resuming " << num_to_pause << " tablet servers in quorum of size " << quorum_size;
+    LOG(INFO) << "Resuming " << num_to_pause << " tablet servers in config of size " << config_size;
     BOOST_FOREACH(const string& replica_uuid, paused_uuids) {
       ExternalTabletServer* replica_ts = cluster_->tablet_server_by_uuid(replica_uuid);
       ASSERT_OK(replica_ts->Resume());
@@ -1427,15 +1427,15 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
   // Now an election should succeed.
   ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
   ASSERT_OK(WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
-  LOG(INFO) << "Successful election with full quorum of size " << quorum_size;
+  LOG(INFO) << "Successful election with full config of size " << config_size;
 
   // And a write should also succeed.
   ASSERT_OK(WriteSimpleTestRow(initial_leader, tablet_id_, RowOperationsPB::UPDATE,
-                               kTestRowKey, kTestRowIntVal, Substitute("qsz=$0", quorum_size),
+                               kTestRowKey, kTestRowIntVal, Substitute("qsz=$0", config_size),
                                MonoDelta::FromSeconds(10)));
 }
 
-// Basic test of adding and removing servers from a quorum.
+// Basic test of adding and removing servers from a configuration.
 TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
@@ -1453,9 +1453,9 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   ASSERT_OK(StartElection(leader_tserver, tablet_id_, MonoDelta::FromSeconds(10)));
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
 
-  // Make sure the server rejects removal of itself from the quorum.
+  // Make sure the server rejects removal of itself from the configuration.
   Status s = RemoveServer(leader_tserver, tablet_id_, leader_tserver, MonoDelta::FromSeconds(10));
-  ASSERT_TRUE(s.IsInvalidArgument()) << "Should not be able to remove self from quorum: "
+  ASSERT_TRUE(s.IsInvalidArgument()) << "Should not be able to remove self from config: "
                                      << s.ToString();
 
   // Insert the row that we will update throughout the test.
@@ -1474,7 +1474,7 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader_tserver, &opid));
   int64_t cur_log_index = opid.index();
 
-  // Go from 3 tablet servers down to 1 in the quorum.
+  // Go from 3 tablet servers down to 1 in the configuration.
   vector<int> remove_list = list_of(2)(1);
   BOOST_FOREACH(int to_remove_idx, remove_list) {
     int num_servers = active_tablet_servers.size();
@@ -1494,7 +1494,7 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
     cur_log_index = opid.index();
   }
 
-  // Add the tablet servers back, in reverse order, going from 1 to 3 servers in the quorum.
+  // Add the tablet servers back, in reverse order, going from 1 to 3 servers in the configuration.
   vector<int> add_list = list_of(1)(2);
   BOOST_FOREACH(int to_add_idx, add_list) {
     int num_servers = active_tablet_servers.size();
@@ -1502,7 +1502,7 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
 
     TServerDetails* tserver_to_add = tservers[to_add_idx];
     LOG(INFO) << "Adding tserver with uuid " << tserver_to_add->uuid();
-    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add, QuorumPeerPB::VOTER,
+    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add, RaftPeerPB::VOTER,
                         MonoDelta::FromSeconds(10)));
     InsertOrDie(&active_tablet_servers, tserver_to_add->uuid(), tserver_to_add);
     ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10),
@@ -1515,19 +1515,19 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   }
 }
 
-// Ensure that we can elect a server that is in the "pending" quorum.
+// Ensure that we can elect a server that is in the "pending" configuration.
 // This is required by the Raft protocol. See Diego Ongaro's PhD thesis, section
 // 4.1, where it states that "it is the caller’s configuration that is used in
 // reaching consensus, both for voting and for log replication".
 //
 // This test also tests the case where a node comes back from the dead to a
-// leader that was not in its quorum when it died. That should also work, i.e.
+// leader that was not in its configuration when it died. That should also work, i.e.
 // the revived node should accept writes from the new leader.
 TEST_F(RaftConsensusITest, TestElectPendingVoter) {
   // Test plan:
   //  1. Disable failure detection to avoid non-deterministic behavior.
-  //  2. Start with a quorum size of 5, all servers synced.
-  //  3. Remove one server from the quorum, wait until committed.
+  //  2. Start with a configuration size of 5, all servers synced.
+  //  3. Remove one server from the configuration, wait until committed.
   //  4. Pause the 3 remaining non-leaders (SIGSTOP).
   //  5. Run a config change to add back the previously-removed server.
   //     Ensure that, while the op cannot be committed yet due to lack of a
@@ -1535,7 +1535,7 @@ TEST_F(RaftConsensusITest, TestElectPendingVoter) {
   //     has been replicated to both the local leader and the new member.
   //  6. Force the existing leader to step down.
   //  7. Resume one of the paused nodes so that a majority (of the 5-node
-  //     quorum, but not the original 4-node quorum) will be available.
+  //     configuration, but not the original 4-node configuration) will be available.
   //  8. Start a leader election on the new (pending) node. It should win.
   //  9. Unpause the two remaining stopped nodes.
   // 10. Wait for all nodes to sync to the new leader's log.
@@ -1560,7 +1560,7 @@ TEST_F(RaftConsensusITest, TestElectPendingVoter) {
   // Kill the master, so we can change the config without interference.
   cluster_->master()->Shutdown();
 
-  // Now remove server 4 from the quorum.
+  // Now remove server 4 from the configuration.
   TabletServerMap active_tablet_servers = tablet_servers_;
   LOG(INFO) << "Removing tserver with uuid " << final_leader->uuid();
   ASSERT_OK(RemoveServer(initial_leader, tablet_id_, final_leader, MonoDelta::FromSeconds(10)));
@@ -1577,10 +1577,10 @@ TEST_F(RaftConsensusITest, TestElectPendingVoter) {
     ASSERT_OK(replica_ts->Pause());
   }
 
-  // Now add server 4 back to the quorum.
+  // Now add server 4 back to the peers.
   // This operation will time out on the client side.
   LOG(INFO) << "Adding back Peer " << final_leader->uuid() << " and expecting timeout...";
-  Status s = AddServer(initial_leader, tablet_id_, final_leader, QuorumPeerPB::VOTER,
+  Status s = AddServer(initial_leader, tablet_id_, final_leader, RaftPeerPB::VOTER,
                        MonoDelta::FromMilliseconds(100));
   ASSERT_TRUE(s.IsTimedOut()) << "Expected AddServer() to time out. Result: " << s.ToString();
   LOG(INFO) << "Timeout achieved.";
@@ -1685,7 +1685,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   }
 
   LOG(INFO) << "Removing servers...";
-  // Go from 3 tablet servers down to 1 in the quorum.
+  // Go from 3 tablet servers down to 1 in the configuration.
   vector<int> remove_list = list_of(2)(1);
   BOOST_FOREACH(int to_remove_idx, remove_list) {
     int num_servers = active_tablet_servers.size();
@@ -1696,13 +1696,13 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
     ASSERT_OK(RemoveServer(leader_tserver, tablet_id_, tserver_to_remove,
                            MonoDelta::FromSeconds(10)));
     ASSERT_EQ(1, active_tablet_servers.erase(tserver_to_remove->uuid()));
-    ASSERT_OK(WaitUntilCommittedQuorumNumVotersIs(active_tablet_servers.size(),
+    ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
                                                   leader_tserver, tablet_id_,
                                                   MonoDelta::FromSeconds(10)));
   }
 
   LOG(INFO) << "Adding servers...";
-  // Add the tablet servers back, in reverse order, going from 1 to 3 servers in the quorum.
+  // Add the tablet servers back, in reverse order, going from 1 to 3 servers in the configuration.
   vector<int> add_list = list_of(1)(2);
   BOOST_FOREACH(int to_add_idx, add_list) {
     int num_servers = active_tablet_servers.size();
@@ -1710,10 +1710,10 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
 
     TServerDetails* tserver_to_add = tservers[to_add_idx];
     LOG(INFO) << "Adding tserver with uuid " << tserver_to_add->uuid();
-    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add, QuorumPeerPB::VOTER,
+    ASSERT_OK(AddServer(leader_tserver, tablet_id_, tserver_to_add, RaftPeerPB::VOTER,
                         MonoDelta::FromSeconds(10)));
     InsertOrDie(&active_tablet_servers, tserver_to_add->uuid(), tserver_to_add);
-    ASSERT_OK(WaitUntilCommittedQuorumNumVotersIs(active_tablet_servers.size(),
+    ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
                                                   leader_tserver, tablet_id_,
                                                   MonoDelta::FromSeconds(10)));
   }

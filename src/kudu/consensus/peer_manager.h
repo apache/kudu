@@ -25,7 +25,7 @@ namespace consensus {
 class Peer;
 class PeerMessageQueue;
 class PeerProxyFactory;
-class QuorumPB;
+class RaftConfigPB;
 
 // Manages the set of local and remote peers that pull data from the
 // queue into the local log/remote machines.
@@ -46,10 +46,10 @@ class PeerManager {
 
   virtual ~PeerManager();
 
-  // Updates 'peers_' according to the new quorum config.
-  virtual Status UpdateQuorum(const QuorumPB& quorum);
+  // Updates 'peers_' according to the new configuration config.
+  virtual Status UpdateRaftConfig(const RaftConfigPB& config);
 
-  // Signals all peers of the current quorum that there is a new request pending.
+  // Signals all peers of the current configuration that there is a new request pending.
   virtual void SignalRequest(bool force_if_queue_empty = false);
 
   // Closes all peers.

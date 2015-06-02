@@ -49,8 +49,8 @@ namespace tserver {
 
 using consensus::ConsensusMetadata;
 using consensus::ConsensusStatePB;
-using consensus::QuorumPB;
-using consensus::QuorumPeerPB;
+using consensus::RaftConfigPB;
+using consensus::RaftPeerPB;
 using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
@@ -168,19 +168,19 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const string& start_key, const string& end_key,
                                         const string& table_name,
                                         const Schema& schema,
-                                        QuorumPB quorum,
+                                        RaftConfigPB config,
                                         scoped_refptr<TabletPeer>* tablet_peer) {
   CHECK_EQ(state(), MANAGER_RUNNING);
 
-  // If the quorum is specified to use local consensus, verify that the peer
+  // If the consensus configuration is specified to use local consensus, verify that the peer
   // matches up with our local info.
-  if (quorum.local()) {
-    CHECK_EQ(1, quorum.peers_size());
-    CHECK_EQ(server_->instance_pb().permanent_uuid(), quorum.peers(0).permanent_uuid());
+  if (config.local()) {
+    CHECK_EQ(1, config.peers_size());
+    CHECK_EQ(server_->instance_pb().permanent_uuid(), config.peers(0).permanent_uuid());
   }
 
-  // Set the initial opid_index for a QuorumPB to -1.
-  quorum.set_opid_index(consensus::kInvalidOpIdIndex);
+  // Set the initial opid_index for a RaftConfigPB to -1.
+  config.set_opid_index(consensus::kInvalidOpIdIndex);
 
   {
     // acquire the lock in exclusive mode as we'll add a entry to the
@@ -222,7 +222,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   // tablet's TabletPeer and Consensus implementation.
   gscoped_ptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
-                                                  quorum, consensus::kMinimumTerm, &cmeta),
+                                                  config, consensus::kMinimumTerm, &cmeta),
                         "Unable to create new ConsensusMeta for tablet " + tablet_id);
 
   scoped_refptr<TabletPeer> new_peer(

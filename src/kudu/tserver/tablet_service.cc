@@ -468,7 +468,7 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
                                                  req->end_key(),
                                                  req->table_name(),
                                                  schema,
-                                                 req->quorum(),
+                                                 req->config(),
                                                  NULL);
   if (PREDICT_FALSE(!s.ok())) {
     TabletServerErrorPB::Code code;

@@ -29,8 +29,8 @@
 using kudu::consensus::Consensus;
 using kudu::consensus::ConsensusOptions;
 using kudu::consensus::OpId;
-using kudu::consensus::QuorumPeerPB;
-using kudu::consensus::QuorumPB;
+using kudu::consensus::RaftPeerPB;
+using kudu::consensus::RaftConfigPB;
 using kudu::log::Log;
 using kudu::log::LogOptions;
 using strings::Substitute;
@@ -85,31 +85,31 @@ Status MiniTabletServer::Restart() {
   return Status::OK();
 }
 
-QuorumPB MiniTabletServer::CreateLocalQuorum() const {
+RaftConfigPB MiniTabletServer::CreateLocalConfig() const {
   CHECK(started_) << "Must Start()";
-  QuorumPB quorum;
-  quorum.set_local(true);
-  QuorumPeerPB* peer = quorum.add_peers();
+  RaftConfigPB config;
+  config.set_local(true);
+  RaftPeerPB* peer = config.add_peers();
   peer->set_permanent_uuid(server_->instance_pb().permanent_uuid());
-  peer->set_member_type(QuorumPeerPB::VOTER);
+  peer->set_member_type(RaftPeerPB::VOTER);
   peer->mutable_last_known_addr()->set_host(bound_rpc_addr().host());
   peer->mutable_last_known_addr()->set_port(bound_rpc_addr().port());
-  return quorum;
+  return config;
 }
 
 Status MiniTabletServer::AddTestTablet(const std::string& table_id,
                                        const std::string& tablet_id,
                                        const Schema& schema) {
-  return AddTestTablet(table_id, tablet_id, schema, CreateLocalQuorum());
+  return AddTestTablet(table_id, tablet_id, schema, CreateLocalConfig());
 }
 
 Status MiniTabletServer::AddTestTablet(const std::string& table_id,
                                        const std::string& tablet_id,
                                        const Schema& schema,
-                                       const QuorumPB& quorum) {
+                                       const RaftConfigPB& config) {
   CHECK(started_) << "Must Start()";
   return server_->tablet_manager()->CreateNewTablet(
-    table_id, tablet_id, "", "", table_id, SchemaBuilder(schema).Build(), quorum, NULL);
+    table_id, tablet_id, "", "", table_id, SchemaBuilder(schema).Build(), config, NULL);
 }
 
 void MiniTabletServer::FailHeartbeats() {

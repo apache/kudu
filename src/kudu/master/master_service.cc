@@ -19,7 +19,7 @@
 namespace kudu {
 namespace master {
 
-using consensus::QuorumPeerPB;
+using consensus::RaftPeerPB;
 using std::string;
 using std::vector;
 using std::tr1::shared_ptr;

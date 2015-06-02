@@ -42,7 +42,7 @@ using consensus::GetLastOpIdResponsePB;
 using consensus::LeaderStepDownRequestPB;
 using consensus::LeaderStepDownResponsePB;
 using consensus::OpId;
-using consensus::QuorumPeerPB;
+using consensus::RaftPeerPB;
 using consensus::RunLeaderElectionResponsePB;
 using consensus::RunLeaderElectionRequestPB;
 using consensus::kInvalidOpIdIndex;
@@ -251,7 +251,7 @@ Status GetCommittedConsensusState(const TServerDetails* replica,
   return Status::OK();
 }
 
-Status WaitUntilCommittedQuorumNumVotersIs(int quorum_size,
+Status WaitUntilCommittedConfigNumVotersIs(int config_size,
                                            const TServerDetails* replica,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout) {
@@ -267,7 +267,7 @@ Status WaitUntilCommittedQuorumNumVotersIs(int quorum_size,
     MonoDelta remaining_timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
     s = GetCommittedConsensusState(replica, tablet_id, remaining_timeout, &cstate);
     if (s.ok()) {
-      if (CountVoters(cstate.quorum()) == quorum_size) {
+      if (CountVoters(cstate.config()) == config_size) {
         return Status::OK();
       }
     }
@@ -280,7 +280,7 @@ Status WaitUntilCommittedQuorumNumVotersIs(int quorum_size,
   }
   return Status::TimedOut(Substitute("Number of voters does not equal $0 after waiting for $1."
                                      "Last consensus state: $2. Last status: $3",
-                                     quorum_size, timeout.ToString(),
+                                     config_size, timeout.ToString(),
                                      cstate.ShortDebugString(), s.ToString()));
 }
 
@@ -298,7 +298,7 @@ Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
   if (cstate.has_leader_uuid() && cstate.leader_uuid() == replica_uuid) {
     return Status::OK();
   }
-  VLOG(1) << "Replica not leader of quorum: " << replica->instance_id.permanent_uuid();
+  VLOG(1) << "Replica not leader of config: " << replica->instance_id.permanent_uuid();
   return Status::IllegalState("Replica found but not leader");
 }
 
@@ -392,7 +392,7 @@ Status WriteSimpleTestRow(const TServerDetails* replica,
 Status AddServer(const TServerDetails* leader,
                  const std::string& tablet_id,
                  const TServerDetails* replica_to_add,
-                 consensus::QuorumPeerPB::MemberType member_type,
+                 consensus::RaftPeerPB::MemberType member_type,
                  const MonoDelta& timeout) {
   ChangeConfigRequestPB req;
   ChangeConfigResponsePB resp;
@@ -401,7 +401,7 @@ Status AddServer(const TServerDetails* leader,
 
   req.set_tablet_id(tablet_id);
   req.set_type(consensus::ADD_SERVER);
-  QuorumPeerPB* peer = req.mutable_server();
+  RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(replica_to_add->uuid());
   peer->set_member_type(member_type);
   *peer->mutable_last_known_addr() = replica_to_add->registration.rpc_addresses(0);
@@ -424,7 +424,7 @@ Status RemoveServer(const TServerDetails* leader,
 
   req.set_tablet_id(tablet_id);
   req.set_type(consensus::REMOVE_SERVER);
-  QuorumPeerPB* peer = req.mutable_server();
+  RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(replica_to_remove->uuid());
 
   RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));

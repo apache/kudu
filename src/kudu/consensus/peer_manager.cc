@@ -34,14 +34,14 @@ PeerManager::~PeerManager() {
   Close();
 }
 
-Status PeerManager::UpdateQuorum(const QuorumPB& quorum) {
+Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
   unordered_set<string> new_peers;
 
-  VLOG(1) << "Updating peers from new quorum: " << quorum.ShortDebugString();
+  VLOG(1) << "Updating peers from new config: " << config.ShortDebugString();
 
   boost::lock_guard<simple_spinlock> lock(lock_);
   // Create new peers
-  BOOST_FOREACH(const QuorumPeerPB& peer_pb, quorum.peers()) {
+  BOOST_FOREACH(const RaftPeerPB& peer_pb, config.peers()) {
     new_peers.insert(peer_pb.permanent_uuid());
     Peer* peer = FindPtrOrNull(peers_, peer_pb.permanent_uuid());
     if (peer != NULL) {

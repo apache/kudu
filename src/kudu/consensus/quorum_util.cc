@@ -17,8 +17,8 @@ using google::protobuf::RepeatedPtrField;
 using std::string;
 using strings::Substitute;
 
-bool IsQuorumMember(const std::string& uuid, const QuorumPB& quorum) {
-  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config) {
+  BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
     if (peer.permanent_uuid() == uuid) {
       return true;
     }
@@ -26,19 +26,19 @@ bool IsQuorumMember(const std::string& uuid, const QuorumPB& quorum) {
   return false;
 }
 
-bool IsQuorumVoter(const std::string& uuid, const QuorumPB& quorum) {
-  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config) {
+  BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
     if (peer.permanent_uuid() == uuid) {
-      return peer.member_type() == QuorumPeerPB::VOTER;
+      return peer.member_type() == RaftPeerPB::VOTER;
     }
   }
   return false;
 }
 
-bool RemoveFromQuorum(QuorumPB* quorum, const string& uuid) {
-  RepeatedPtrField<QuorumPeerPB> modified_peers;
+bool RemoveFromRaftConfig(RaftConfigPB* config, const string& uuid) {
+  RepeatedPtrField<RaftPeerPB> modified_peers;
   bool removed = false;
-  BOOST_FOREACH(const QuorumPeerPB& peer, quorum->peers()) {
+  BOOST_FOREACH(const RaftPeerPB& peer, config->peers()) {
     if (peer.permanent_uuid() == uuid) {
       removed = true;
       continue;
@@ -46,14 +46,14 @@ bool RemoveFromQuorum(QuorumPB* quorum, const string& uuid) {
     *modified_peers.Add() = peer;
   }
   if (!removed) return false;
-  quorum->mutable_peers()->Swap(&modified_peers);
+  config->mutable_peers()->Swap(&modified_peers);
   return true;
 }
 
-int CountVoters(const QuorumPB& quorum) {
+int CountVoters(const RaftConfigPB& config) {
   int voters = 0;
-  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
-    if (peer.member_type() == QuorumPeerPB::VOTER) {
+  BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
+    if (peer.member_type() == RaftPeerPB::VOTER) {
       voters++;
     }
   }
@@ -65,121 +65,121 @@ int MajoritySize(int num_voters) {
   return (num_voters / 2) + 1;
 }
 
-QuorumPeerPB::Role GetConsensusRole(const std::string& permanent_uuid,
+RaftPeerPB::Role GetConsensusRole(const std::string& permanent_uuid,
                                     const ConsensusStatePB& cstate) {
   if (cstate.leader_uuid() == permanent_uuid) {
-    if (IsQuorumVoter(permanent_uuid, cstate.quorum())) {
-      return QuorumPeerPB::LEADER;
+    if (IsRaftConfigVoter(permanent_uuid, cstate.config())) {
+      return RaftPeerPB::LEADER;
     }
-    return QuorumPeerPB::NON_PARTICIPANT;
+    return RaftPeerPB::NON_PARTICIPANT;
   }
 
-  BOOST_FOREACH(const QuorumPeerPB& peer, cstate.quorum().peers()) {
+  BOOST_FOREACH(const RaftPeerPB& peer, cstate.config().peers()) {
     if (peer.permanent_uuid() == permanent_uuid) {
       switch (peer.member_type()) {
-        case QuorumPeerPB::VOTER:
-          return QuorumPeerPB::FOLLOWER;
+        case RaftPeerPB::VOTER:
+          return RaftPeerPB::FOLLOWER;
         default:
-          return QuorumPeerPB::LEARNER;
+          return RaftPeerPB::LEARNER;
       }
     }
   }
-  return QuorumPeerPB::NON_PARTICIPANT;
+  return RaftPeerPB::NON_PARTICIPANT;
 }
 
-Status VerifyQuorum(const QuorumPB& quorum, QuorumPBType type) {
+Status VerifyRaftConfig(const RaftConfigPB& config, RaftConfigState type) {
   std::set<string> uuids;
-  if (quorum.peers_size() == 0) {
+  if (config.peers_size() == 0) {
     return Status::IllegalState(
-        Substitute("Quorum must have at least one peer. Quorum: $0",
-                   quorum.ShortDebugString()));
+        Substitute("RaftConfig must have at least one peer. RaftConfig: $0",
+                   config.ShortDebugString()));
   }
 
-  if (!quorum.has_local()) {
+  if (!config.has_local()) {
     return Status::IllegalState(
-        Substitute("Quorum must specify whether it is local. Quorum: ",
-                   quorum.ShortDebugString()));
+        Substitute("RaftConfig must specify whether it is local. RaftConfig: ",
+                   config.ShortDebugString()));
   }
 
   if (type == COMMITTED_QUORUM) {
-    // Committed quorums must have 'opid_index' populated.
-    if (!quorum.has_opid_index()) {
+    // Committed configurations must have 'opid_index' populated.
+    if (!config.has_opid_index()) {
       return Status::IllegalState(
-          Substitute("Committed quorums must have opid_index set. Quorum: $0",
-                     quorum.ShortDebugString()));
+          Substitute("Committed configs must have opid_index set. RaftConfig: $0",
+                     config.ShortDebugString()));
     }
   } else if (type == UNCOMMITTED_QUORUM) {
-    // Uncommitted quorums must *not* have 'opid_index' populated.
-    if (quorum.has_opid_index()) {
+    // Uncommitted configurations must *not* have 'opid_index' populated.
+    if (config.has_opid_index()) {
       return Status::IllegalState(
-          Substitute("Uncommitted quorums must not have opid_index set. Quorum: $0",
-                     quorum.ShortDebugString()));
+          Substitute("Uncommitted configs must not have opid_index set. RaftConfig: $0",
+                     config.ShortDebugString()));
     }
   }
 
-  // Local quorums must have only one peer and it may or may not
+  // Local configurations must have only one peer and it may or may not
   // have an address.
-  if (quorum.local()) {
-    if (quorum.peers_size() != 1) {
+  if (config.local()) {
+    if (config.peers_size() != 1) {
       return Status::IllegalState(
-          Substitute("Local quorums must have 1 and only one peer. Quorum: ",
-                     quorum.ShortDebugString()));
+          Substitute("Local configs must have 1 and only one peer. RaftConfig: ",
+                     config.ShortDebugString()));
     }
-    if (!quorum.peers(0).has_permanent_uuid() ||
-        quorum.peers(0).permanent_uuid() == "") {
+    if (!config.peers(0).has_permanent_uuid() ||
+        config.peers(0).permanent_uuid() == "") {
       return Status::IllegalState(
-          Substitute("Local peer must have an UUID. Quorum: ",
-                     quorum.ShortDebugString()));
+          Substitute("Local peer must have an UUID. RaftConfig: ",
+                     config.ShortDebugString()));
     }
     return Status::OK();
   }
 
-  BOOST_FOREACH(const QuorumPeerPB& peer, quorum.peers()) {
+  BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
     if (!peer.has_permanent_uuid() || peer.permanent_uuid() == "") {
       return Status::IllegalState(Substitute("One peer didn't have an uuid or had the empty"
-          " string. Quorum: $0", quorum.ShortDebugString()));
+          " string. RaftConfig: $0", config.ShortDebugString()));
     }
     if (ContainsKey(uuids, peer.permanent_uuid())) {
       return Status::IllegalState(
-          Substitute("Found multiple peers with uuid: $0. Quorum: $1",
-                     peer.permanent_uuid(), quorum.ShortDebugString()));
+          Substitute("Found multiple peers with uuid: $0. RaftConfig: $1",
+                     peer.permanent_uuid(), config.ShortDebugString()));
     }
     uuids.insert(peer.permanent_uuid());
 
     if (!peer.has_last_known_addr()) {
       return Status::IllegalState(
-          Substitute("Peer: $0 has no address. Quorum: $1",
-                     peer.permanent_uuid(), quorum.ShortDebugString()));
+          Substitute("Peer: $0 has no address. RaftConfig: $1",
+                     peer.permanent_uuid(), config.ShortDebugString()));
     }
     if (!peer.has_member_type()) {
       return Status::IllegalState(
-          Substitute("Peer: $0 has no member type set. Quorum: $1", peer.permanent_uuid(),
-                     quorum.ShortDebugString()));
+          Substitute("Peer: $0 has no member type set. RaftConfig: $1", peer.permanent_uuid(),
+                     config.ShortDebugString()));
     }
-    if (peer.member_type() == QuorumPeerPB::NON_VOTER) {
+    if (peer.member_type() == RaftPeerPB::NON_VOTER) {
       return Status::IllegalState(
           Substitute(
-              "Peer: $0 is a NON_VOTER, but this isn't supported yet. Quorum: $1",
-              peer.permanent_uuid(), quorum.ShortDebugString()));
+              "Peer: $0 is a NON_VOTER, but this isn't supported yet. RaftConfig: $1",
+              peer.permanent_uuid(), config.ShortDebugString()));
     }
   }
 
   return Status::OK();
 }
 
-Status VerifyConsensusState(const ConsensusStatePB& cstate, QuorumPBType type) {
+Status VerifyConsensusState(const ConsensusStatePB& cstate, RaftConfigState type) {
   if (!cstate.has_current_term()) {
     return Status::IllegalState("ConsensusStatePB missing current_term", cstate.ShortDebugString());
   }
-  if (!cstate.has_quorum()) {
-    return Status::IllegalState("ConsensusStatePB missing quorum", cstate.ShortDebugString());
+  if (!cstate.has_config()) {
+    return Status::IllegalState("ConsensusStatePB missing config", cstate.ShortDebugString());
   }
-  RETURN_NOT_OK(VerifyQuorum(cstate.quorum(), type));
+  RETURN_NOT_OK(VerifyRaftConfig(cstate.config(), type));
 
   if (cstate.has_leader_uuid() && !cstate.leader_uuid().empty()) {
-    if (!IsQuorumVoter(cstate.leader_uuid(), cstate.quorum())) {
+    if (!IsRaftConfigVoter(cstate.leader_uuid(), cstate.config())) {
       return Status::IllegalState(
-          Substitute("Leader with UUID $0 is not a VOTER in the quorum! Consensus state: $1",
+          Substitute("Leader with UUID $0 is not a VOTER in the config! Consensus state: $1",
                      cstate.leader_uuid(), cstate.ShortDebugString()));
     }
   }

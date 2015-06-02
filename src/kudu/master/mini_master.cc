@@ -89,7 +89,7 @@ Status MiniMaster::StartDistributedMasterOnPorts(uint16_t rpc_port, uint16_t web
     HostPort peer_address("127.0.0.1", peer_port);
     peer_addresses.push_back(peer_address);
   }
-  opts.master_quorum = peer_addresses;
+  opts.master_addresses = peer_addresses;
 
   return StartOnPorts(rpc_port, web_port, &opts);
 }

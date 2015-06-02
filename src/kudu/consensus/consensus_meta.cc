@@ -20,11 +20,11 @@ using strings::Substitute;
 Status ConsensusMetadata::Create(FsManager* fs_manager,
                                  const string& tablet_id,
                                  const std::string& peer_uuid,
-                                 QuorumPB& quorum,
+                                 RaftConfigPB& config,
                                  int64_t current_term,
                                  gscoped_ptr<ConsensusMetadata>* cmeta_out) {
   gscoped_ptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
-  cmeta->set_committed_quorum(quorum);
+  cmeta->set_committed_config(config);
   cmeta->set_current_term(current_term);
   RETURN_NOT_OK(cmeta->Flush());
   cmeta_out->swap(cmeta);
@@ -72,44 +72,44 @@ void ConsensusMetadata::set_voted_for(const string& uuid) {
   pb_.set_voted_for(uuid);
 }
 
-const QuorumPB& ConsensusMetadata::committed_quorum() const {
-  DCHECK(pb_.has_committed_quorum());
-  return pb_.committed_quorum();
+const RaftConfigPB& ConsensusMetadata::committed_config() const {
+  DCHECK(pb_.has_committed_config());
+  return pb_.committed_config();
 }
 
-void ConsensusMetadata::set_committed_quorum(const QuorumPB& quorum) {
-  *pb_.mutable_committed_quorum() = quorum;
-  if (!has_pending_quorum_) {
+void ConsensusMetadata::set_committed_config(const RaftConfigPB& config) {
+  *pb_.mutable_committed_config() = config;
+  if (!has_pending_config_) {
     UpdateActiveRole();
   }
 }
 
-bool ConsensusMetadata::has_pending_quorum() const {
-  return has_pending_quorum_;
+bool ConsensusMetadata::has_pending_config() const {
+  return has_pending_config_;
 }
 
-const QuorumPB& ConsensusMetadata::pending_quorum() const {
-  DCHECK(has_pending_quorum_);
-  return pending_quorum_;
+const RaftConfigPB& ConsensusMetadata::pending_config() const {
+  DCHECK(has_pending_config_);
+  return pending_config_;
 }
 
-void ConsensusMetadata::clear_pending_quorum() {
-  has_pending_quorum_ = false;
-  pending_quorum_.Clear();
+void ConsensusMetadata::clear_pending_config() {
+  has_pending_config_ = false;
+  pending_config_.Clear();
   UpdateActiveRole();
 }
 
-void ConsensusMetadata::set_pending_quorum(const QuorumPB& quorum) {
-  has_pending_quorum_ = true;
-  pending_quorum_ = quorum;
+void ConsensusMetadata::set_pending_config(const RaftConfigPB& config) {
+  has_pending_config_ = true;
+  pending_config_ = config;
   UpdateActiveRole();
 }
 
-const QuorumPB& ConsensusMetadata::active_quorum() const {
-  if (has_pending_quorum_) {
-    return pending_quorum();
+const RaftConfigPB& ConsensusMetadata::active_config() const {
+  if (has_pending_config_) {
+    return pending_config();
   }
-  return committed_quorum();
+  return committed_config();
 }
 
 const string& ConsensusMetadata::leader_uuid() const {
@@ -121,7 +121,7 @@ void ConsensusMetadata::set_leader_uuid(const string& uuid) {
   UpdateActiveRole();
 }
 
-QuorumPeerPB::Role ConsensusMetadata::active_role() const {
+RaftPeerPB::Role ConsensusMetadata::active_role() const {
   return active_role_;
 }
 
@@ -129,13 +129,13 @@ ConsensusStatePB ConsensusMetadata::ToConsensusStatePB(ConfigType type) const {
   ConsensusStatePB cstate;
   cstate.set_current_term(pb_.current_term());
   if (type == ACTIVE) {
-    *cstate.mutable_quorum() = active_quorum();
+    *cstate.mutable_config() = active_config();
     cstate.set_leader_uuid(leader_uuid_);
   } else {
-    *cstate.mutable_quorum() = committed_quorum();
-    // It's possible, though unlikely, that a new node from a pending quorum
+    *cstate.mutable_config() = committed_config();
+    // It's possible, though unlikely, that a new node from a pending configuration
     // could be elected leader. Do not indicate a leader in this case.
-    if (PREDICT_TRUE(IsQuorumVoter(leader_uuid_, cstate.quorum()))) {
+    if (PREDICT_TRUE(IsRaftConfigVoter(leader_uuid_, cstate.config()))) {
       cstate.set_leader_uuid(leader_uuid_);
     }
   }
@@ -143,9 +143,9 @@ ConsensusStatePB ConsensusMetadata::ToConsensusStatePB(ConfigType type) const {
 }
 
 Status ConsensusMetadata::Flush() {
-  // Sanity test to ensure we never write out a bad quorum.
-  RETURN_NOT_OK_PREPEND(VerifyQuorum(pb_.committed_quorum(), COMMITTED_QUORUM),
-                        "Invalid quorum in ConsensusMetadata, cannot flush to disk");
+  // Sanity test to ensure we never write out a bad configuration.
+  RETURN_NOT_OK_PREPEND(VerifyRaftConfig(pb_.committed_config(), COMMITTED_QUORUM),
+                        "Invalid config in ConsensusMetadata, cannot flush to disk");
 
   // Create directories if needed.
   string dir = fs_manager_->GetConsensusMetadataDir();
@@ -179,7 +179,7 @@ ConsensusMetadata::ConsensusMetadata(FsManager* fs_manager,
     : fs_manager_(CHECK_NOTNULL(fs_manager)),
       tablet_id_(tablet_id),
       peer_uuid_(peer_uuid),
-      has_pending_quorum_(false) {
+      has_pending_config_(false) {
 }
 
 std::string ConsensusMetadata::LogPrefix() const {
@@ -189,7 +189,7 @@ std::string ConsensusMetadata::LogPrefix() const {
 void ConsensusMetadata::UpdateActiveRole() {
   ConsensusStatePB cstate = ToConsensusStatePB(ACTIVE);
   active_role_ = GetConsensusRole(peer_uuid_, cstate);
-  VLOG_WITH_PREFIX(1) << "Updating active role to " << QuorumPeerPB::Role_Name(active_role_)
+  VLOG_WITH_PREFIX(1) << "Updating active role to " << RaftPeerPB::Role_Name(active_role_)
                       << ". Consensus state: " << cstate.ShortDebugString();
 }
 

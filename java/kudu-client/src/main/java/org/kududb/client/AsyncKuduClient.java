@@ -215,10 +215,10 @@ public class AsyncKuduClient {
    * Create a new client that connects to masters specified by a comma-separated
    * list.
    * Doesn't block and won't throw an exception if the masters don't exist.
-   * @param masterQuorum comma-separated list of "host:port" pairs of the masters
+   * @param masterAddresses comma-separated list of "host:port" pairs of the masters
    */
-  public AsyncKuduClient(final String masterQuorum) {
-    this(NetUtil.parseStrings(masterQuorum, 7051));
+  public AsyncKuduClient(final String masterAddresses) {
+    this(NetUtil.parseStrings(masterAddresses, 7051));
   }
 
   /**
@@ -844,7 +844,7 @@ public class AsyncKuduClient {
         rowkey, table);
     final Deferred<Master.GetTableLocationsResponsePB> d;
 
-    // If we know this is going to the master, check the master quorum (as specified by
+    // If we know this is going to the master, check the master consensus configuration (as specified by
     // 'masterAddresses' field) to determine and cache the current leader.
     if (isMasterTable(table)) {
       d = getMasterTableLocationsPB();
@@ -859,7 +859,7 @@ public class AsyncKuduClient {
   }
 
   /**
-   * Update the master quorum: send RPCs to all quorum members, use the returned data to
+   * Update the master config: send RPCs to all config members, use the returned data to
    * fill a {@link kudu.master.Master.GetTableLocationsResponsePB} object.
    * @return An initialized Deferred object to hold the response.
    */
@@ -1592,7 +1592,7 @@ public class AsyncKuduClient {
    * This class encapsulates the information regarding a tablet and its locations.
    *
    * Leader failover mecanism:
-   * When we get a complete quorum list from the master, we place the leader in the first
+   * When we get a complete peer list from the master, we place the leader in the first
    * position of the tabletServers array. When we detect that it isn't the leader anymore (in
    * TabletClient), we demote it and set the next TS in the array as the leader. When the RPC
    * gets retried, it will use that TS since we always pick the leader.
@@ -1652,7 +1652,7 @@ public class AsyncKuduClient {
           // TODO: if the TS advertises multiple host/ports, pick the right one
           // based on some kind of policy. For now just use the first always.
           addTabletClient(uuid, addresses.get(0).getHost(), addresses.get(0).getPort(),
-              isMasterTable(table), replica.getRole().equals(Metadata.QuorumPeerPB.Role.LEADER));
+              isMasterTable(table), replica.getRole().equals(Metadata.RaftPeerPB.Role.LEADER));
         }
         leaderIndex = 0;
         if (leaderIndex == NO_LEADER_INDEX) {

@@ -69,7 +69,7 @@ class Master : public server::ServerBase {
   // Get the RPC and HTTP addresses for this master instance.
   Status GetMasterRegistration(ServerRegistrationPB* registration) const;
 
-  // Get node instance, quorum role, RPC and HTTP addresses for all
+  // Get node instance, Raft role, RPC and HTTP addresses for all
   // masters.
   //
   // TODO move this to a separate class to be re-used in TS and

@@ -56,7 +56,7 @@ class GetMasterRegistrationRpc : public rpc::Rpc {
 };
 
 // In parallel, send requests to the specified Master servers until a
-// response comes back from the leader of the Master quorum.
+// response comes back from the leader of the Master consensus configuration.
 //
 // If queries have been made to all of the specified servers, but no
 // leader has been found, we re-try again (with an increasing delay,

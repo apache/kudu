@@ -21,7 +21,7 @@ using std::tr1::shared_ptr;
 using std::string;
 using std::vector;
 
-using kudu::consensus::QuorumPeerPB;
+using kudu::consensus::RaftPeerPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::Rpc;
 
@@ -74,7 +74,7 @@ void GetMasterRegistrationRpc::SendRpcCb(const Status& status) {
       // If CatalogManager is not initialized, treat the node as a
       // FOLLOWER for the time being, as currently this RPC is only
       // used for the purposes of finding the leader master.
-      resp_.set_role(QuorumPeerPB::FOLLOWER);
+      resp_.set_role(RaftPeerPB::FOLLOWER);
       new_status = Status::OK();
     } else {
       out_->mutable_error()->CopyFrom(resp_.error().status());
@@ -161,7 +161,7 @@ void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const Sockaddr& node_
                                                            const ServerEntryPB& resp,
                                                            const Status& status) {
   // TODO: handle the situation where one Master is partitioned from
-  // the rest of the Master quorum, all are reachable by the client,
+  // the rest of the Master consensus configuration, all are reachable by the client,
   // and the partitioned node "thinks" it's the leader.
   //
   // The proper way to do so is to add term/index to the responses
@@ -176,7 +176,7 @@ void GetLeaderMasterRpc::GetMasterRegistrationRpcCbForNode(const Sockaddr& node_
       return;
     }
     if (new_status.ok()) {
-      if (resp.role() != QuorumPeerPB::LEADER) {
+      if (resp.role() != RaftPeerPB::LEADER) {
         // Use a Status::NotFound() to indicate that the node is not
         // the leader: this way, we can handle the case where we've
         // received a reply from all of the nodes in the cluster (no

@@ -31,7 +31,7 @@ using std::vector;
 
 namespace kudu {
 
-using consensus::QuorumPeerPB;
+using consensus::RaftPeerPB;
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
 using master::CreateTableRequestPB;
@@ -317,7 +317,7 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
     if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT && attempts > 1) {
       // If the table already exists and the number of attempts is >
       // 1, then it means we may have succeeded in creating the
-      // table quorum, but client didn't receive the succesful
+      // table consensus configuration, but client didn't receive the succesful
       // response (e.g., due to failure before the succesful
       // response could be sent back, or due to a I/O pause or a
       // network blip leading to a timeout, etc...)

@@ -23,7 +23,7 @@ class TabletServerPB;
 namespace consensus {
 
 // Local implementation of Consensus. This is mostly for testing purposes/
-// using in single node quorums if/when applicable.
+// using in single node configurations if/when applicable.
 //
 // NOTE: While this implementation has a lot less overhead running on a single
 // node than a true consensus implementation in the same situation, this
@@ -51,7 +51,7 @@ class LocalConsensus : public Consensus {
 
   virtual Status Replicate(const scoped_refptr<ConsensusRound>& context) OVERRIDE;
 
-  virtual QuorumPeerPB::Role role() const OVERRIDE;
+  virtual RaftPeerPB::Role role() const OVERRIDE;
 
   virtual std::string peer_uuid() const OVERRIDE {
     return peer_uuid_;
@@ -63,7 +63,7 @@ class LocalConsensus : public Consensus {
 
   virtual ConsensusStatePB CommittedConsensusState() const OVERRIDE;
 
-  virtual QuorumPB CommittedQuorum() const OVERRIDE;
+  virtual RaftConfigPB CommittedConfig() const OVERRIDE;
 
   virtual void Shutdown() OVERRIDE;
 

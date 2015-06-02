@@ -44,7 +44,7 @@ using consensus::MakeOpId;
 using consensus::MinimumOpId;
 using consensus::OpId;
 using consensus::OpIdEquals;
-using consensus::QuorumPeerPB;
+using consensus::RaftPeerPB;
 using consensus::WRITE_OP;
 using log::Log;
 using log::LogOptions;
@@ -92,19 +92,19 @@ class TabletPeerTest : public KuduTabletTest {
     // TabletMetadata for consumption by TabletPeer before Tablet is instantiated.
     tablet_peer_->log_anchor_registry_ = tablet()->log_anchor_registry_;
 
-    QuorumPeerPB quorum_peer;
-    quorum_peer.set_permanent_uuid(tablet()->metadata()->fs_manager()->uuid());
-    quorum_peer.set_member_type(QuorumPeerPB::VOTER);
-    QuorumPB quorum;
-    quorum.set_local(true);
-    quorum.add_peers()->CopyFrom(quorum_peer);
-    quorum.set_opid_index(consensus::kInvalidOpIdIndex);
+    RaftPeerPB config_peer;
+    config_peer.set_permanent_uuid(tablet()->metadata()->fs_manager()->uuid());
+    config_peer.set_member_type(RaftPeerPB::VOTER);
+    RaftConfigPB config;
+    config.set_local(true);
+    config.add_peers()->CopyFrom(config_peer);
+    config.set_opid_index(consensus::kInvalidOpIdIndex);
 
     gscoped_ptr<ConsensusMetadata> cmeta;
     ASSERT_OK(ConsensusMetadata::Create(tablet()->metadata()->fs_manager(),
                                         tablet()->tablet_id(),
                                         tablet()->metadata()->fs_manager()->uuid(),
-                                        quorum,
+                                        config,
                                         consensus::kMinimumTerm, &cmeta));
 
     scoped_refptr<Log> log;

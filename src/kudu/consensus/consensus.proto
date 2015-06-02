@@ -34,7 +34,7 @@ message ConsensusErrorPB {
     ALREADY_VOTED = 4;
 
     // The replica does not recognize the caller's request as coming from a
-    // member of the quorum.
+    // member of the configuration.
     NOT_IN_QUORUM = 5;
 
     // The responder's last entry didn't match the caller's preceding entry.
@@ -94,11 +94,11 @@ enum DriverType {
 message ChangeConfigRecordPB {
   required bytes tablet_id = 1;
 
-  // The old committed quorum config for verification purposes.
-  required QuorumPB old_config = 2;
+  // The old committed configuration config for verification purposes.
+  required RaftConfigPB old_config = 2;
 
-  // The new configuration to set the quorum to.
-  required QuorumPB new_config = 3;
+  // The new configuration to set the configuration to.
+  required RaftConfigPB new_config = 3;
 }
 
 enum ChangeConfigType {
@@ -122,16 +122,16 @@ message ChangeConfigRequestPB {
   // The peer to add or remove.
   // When 'type' == ADD_SERVER, both the permanent_uuid and last_known_addr
   // fields must be set. Otherwise, only the permanent_uuid field is required.
-  optional QuorumPeerPB server = 3;
+  optional RaftPeerPB server = 3;
 }
 
 // The configuration change response. If any immediate error occurred
-// the 'error' field is set with it, otherwise 'new_quorum' is set.
+// the 'error' field is set with it, otherwise 'new_configuration' is set.
 message ChangeConfigResponsePB {
   optional tserver.TabletServerErrorPB error = 1;
 
-  // Updated quorum after changing the config.
-  optional QuorumPeerPB new_quorum = 2;
+  // Updated configuration after changing the config.
+  optional RaftPeerPB new_config = 2;
 
   // The timestamp chosen by the server for this change config operation.
   // TODO: At the time of writing, this field is never set in the response.
@@ -220,10 +220,10 @@ message ConsensusStatusPB {
 }
 
 // A request from a candidate peer that wishes to become leader of
-// the quorum serving tablet with 'tablet_id'.
+// the configuration serving tablet with 'tablet_id'.
 // See RAFT sec. 5.2.
 message VoteRequestPB {
-  // Identifies the tablet quorum a the vote is being requested for.
+  // Identifies the tablet configuration a the vote is being requested for.
   required string tablet_id = 1;
 
   // The uuid of the sending peer.
@@ -293,7 +293,7 @@ message ConsensusRequestPB {
   // This must be set if 'ops' is non-empty.
   optional OpId preceding_id = 4;
 
-  // The id of the last committed operation in the quorum. This is the
+  // The id of the last committed operation in the configuration. This is the
   // id of the last operation the leader deemed committed from a consensus
   // standpoint (not the last operation the leader applied).
   //
