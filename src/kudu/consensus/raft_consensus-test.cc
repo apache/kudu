@@ -109,7 +109,7 @@ class RaftConsensusSpy : public RaftConsensus {
     ON_CALL(*this, StartConsensusOnlyRoundUnlocked(_))
         .WillByDefault(Invoke(this,
               &RaftConsensusSpy::StartNonLeaderConsensusRoundUnlockedConcrete));
-    ON_CALL(*this, NonTxRoundReplicationFinished(_, _))
+    ON_CALL(*this, NonTxRoundReplicationFinished(_, _, _))
         .WillByDefault(Invoke(this, &RaftConsensusSpy::NonTxRoundReplicationFinishedConcrete));
   }
 
@@ -123,11 +123,15 @@ class RaftConsensusSpy : public RaftConsensus {
     return RaftConsensus::StartConsensusOnlyRoundUnlocked(msg);
   }
 
-  MOCK_METHOD2(NonTxRoundReplicationFinished, void(ConsensusRound* round, const Status& status));
-  void NonTxRoundReplicationFinishedConcrete(ConsensusRound* round, const Status& status) {
+  MOCK_METHOD3(NonTxRoundReplicationFinished, void(ConsensusRound* round,
+                                                   const StatusCallback& client_cb,
+                                                   const Status& status));
+  void NonTxRoundReplicationFinishedConcrete(ConsensusRound* round,
+                                             const StatusCallback& client_cb,
+                                             const Status& status) {
     LOG(INFO) << "Committing round with opid " << round->id()
               << " given Status " << status.ToString();
-    RaftConsensus::NonTxRoundReplicationFinished(round, status);
+    RaftConsensus::NonTxRoundReplicationFinished(round, client_cb, status);
   }
 
  private:
@@ -249,7 +253,7 @@ class RaftConsensusTest : public KuduTest {
     scoped_refptr<ConsensusRound> round(new ConsensusRound(consensus_.get(), replicate_ptr));
     round->SetConsensusReplicatedCallback(
         Bind(&RaftConsensusSpy::NonTxRoundReplicationFinished,
-             Unretained(consensus_.get()), Unretained(round.get())));
+             Unretained(consensus_.get()), Unretained(round.get()), Bind(&DoNothingStatusCB)));
 
     CHECK_OK(consensus_->Replicate(round));
     LOG(INFO) << "Appended NO_OP round with opid " << round->id();
@@ -465,7 +469,7 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
 
   // Commit the 5 no-ops from the previous term, along with the one pushed to
   // assert leadership.
-  EXPECT_CALL(*consensus_.get(), NonTxRoundReplicationFinished(HasOpId(), IsOk()))
+  EXPECT_CALL(*consensus_.get(), NonTxRoundReplicationFinished(HasOpId(), _, IsOk()))
       .Times(6);
   EXPECT_CALL(*peer_manager_, SignalRequest(_))
       .Times(AnyNumber());
@@ -549,14 +553,14 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   // 1 OK for the 3.6 op.
   for (int index = 1; index < 6; index++) {
     EXPECT_CALL(*consensus_.get(),
-                NonTxRoundReplicationFinished(RoundHasOpId(2, index), IsOk())).Times(1);
+                NonTxRoundReplicationFinished(RoundHasOpId(2, index), _, IsOk())).Times(1);
   }
   for (int index = 6; index < 12; index++) {
     EXPECT_CALL(*consensus_.get(),
-                NonTxRoundReplicationFinished(RoundHasOpId(2, index), IsAborted())).Times(1);
+                NonTxRoundReplicationFinished(RoundHasOpId(2, index), _, IsAborted())).Times(1);
   }
   EXPECT_CALL(*consensus_.get(),
-              NonTxRoundReplicationFinished(RoundHasOpId(3, 6), IsOk())).Times(1);
+              NonTxRoundReplicationFinished(RoundHasOpId(3, 6), _, IsOk())).Times(1);
 
   // Nothing's committed so far, so now just send an Update() message
   // emulating another guy got elected leader and is overwriting a suffix
@@ -601,7 +605,7 @@ TEST_F(RaftConsensusTest, TestAbortOperations) {
   // Now we expect to commit ops 3.7 - 3.9.
   for (int index = 7; index < 10; index++) {
     EXPECT_CALL(*consensus_.get(),
-                NonTxRoundReplicationFinished(RoundHasOpId(3, index), IsOk())).Times(1);
+                NonTxRoundReplicationFinished(RoundHasOpId(3, index), _, IsOk())).Times(1);
   }
 
   request.mutable_ops()->Clear();

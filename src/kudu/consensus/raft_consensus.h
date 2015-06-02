@@ -144,9 +144,12 @@ class RaftConsensus : public Consensus,
   // Trigger that a non-Transaction ConsensusRound has finished replication.
   // If the replication was successful, an status will be OK. Otherwise, it
   // may be Aborted or some other error status.
-  // If the status is OK, write a Commit message to the local WAL based on the
+  // If 'status' is OK, write a Commit message to the local WAL based on the
   // type of message it is.
-  virtual void NonTxRoundReplicationFinished(ConsensusRound* round, const Status& status);
+  // The 'client_cb' will be invoked at the end of this execution.
+  virtual void NonTxRoundReplicationFinished(ConsensusRound* round,
+                                             const StatusCallback& client_cb,
+                                             const Status& status);
 
   // As a leader, append a new ConsensusRond to the queue.
   // Only virtual and protected for mocking purposes.

@@ -366,9 +366,10 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 
   scoped_refptr<ConsensusRound> round(
       new ConsensusRound(this, make_scoped_refptr(new RefCountedReplicate(replicate))));
-  round->SetConsensusReplicatedCallback(
-      Bind(&RaftConsensus::NonTxRoundReplicationFinished,
-           Unretained(this), Unretained(round.get())));
+  round->SetConsensusReplicatedCallback(Bind(&RaftConsensus::NonTxRoundReplicationFinished,
+                                             Unretained(this),
+                                             Unretained(round.get()),
+                                             Bind(&DoNothingStatusCB)));
   RETURN_NOT_OK(AppendNewRoundToQueueUnlocked(round));
 
   return Status::OK();
@@ -1156,7 +1157,9 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
                                << msg->get()->id().ShortDebugString();
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
   round->SetConsensusReplicatedCallback(Bind(&RaftConsensus::NonTxRoundReplicationFinished,
-                                             Unretained(this), Unretained(round.get())));
+                                             Unretained(this),
+                                             Unretained(round.get()),
+                                             Bind(&DoNothingStatusCB)));
   return state_->AddPendingOperation(round);
 }
 
@@ -1436,11 +1439,14 @@ void RaftConsensus::MarkDirty() {
               state_->LogPrefixThreadSafe() + "Unable to run MarkDirty callback");
 }
 
-void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round, const Status& status) {
+void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
+                                                  const StatusCallback& client_cb,
+                                                  const Status& status) {
   CHECK_EQ(NO_OP, round->replicate_msg()->op_type());
   if (!status.ok()) {
     // TODO: Do something with the status on failure?
     LOG(INFO) << state_->LogPrefixThreadSafe() << "NO_OP replication failed: " << status.ToString();
+    client_cb.Run(status);
     return;
   }
   VLOG(1) << state_->LogPrefixThreadSafe() << "Committing NO_OP with op id " << round->id();
@@ -1449,6 +1455,7 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round, const S
   *commit_msg->mutable_commited_op_id() = round->id();
   WARN_NOT_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(&DoNothingStatusCB)),
               "Unable to append commit message");
+  client_cb.Run(status);
 }
 
 Status RaftConsensus::EnsureFailureDetectorEnabledUnlocked() {
