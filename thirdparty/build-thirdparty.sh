@@ -129,6 +129,10 @@ if [ -n "$F_ALL" -o -n "$F_GMOCK" ]; then
       $PREFIX/bin/cmake -DBUILD_SHARED_LIBS=$SHARED .
     make -j$PARALLEL
   done
+  echo Installing gmock...
+  cp -a libgmock.so libgmock.a $PREFIX/lib/
+  rsync -av include/ $PREFIX/include/
+  rsync -av gtest/include/ $PREFIX/include/
 fi
 
 # build protobuf

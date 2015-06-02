@@ -34,7 +34,7 @@
 # also defined, but not for general use are
 # GMOCK_LIBRARY, where to find the GMock library.
 
-set(GMOCK_SEARCH_PATH ${CMAKE_SOURCE_DIR}/thirdparty/gmock-1.7.0)
+set(GMOCK_SEARCH_PATH ${CMAKE_SOURCE_DIR}/thirdparty/installed)
 
 set(GMOCK_H gmock/gmock.h)
 set(GTEST_H gtest/gtest.h)
@@ -45,26 +45,25 @@ find_path(GMOCK_INCLUDE_DIR ${GMOCK_H}
   DOC   "Path to the ${GMOCK_H} file"
 )
 find_path(GTEST_INCLUDE_DIR ${GTEST_H}
-  PATHS ${GMOCK_SEARCH_PATH}/gtest/include
+  PATHS ${GMOCK_SEARCH_PATH}/include
         NO_DEFAULT_PATH
-  DOC   "Path to the ${GMOCK_H} file"
+  DOC   "Path to the ${GTEST_H} file"
 )
-
 find_library(GMOCK_LIBRARY
   NAMES gmock
-  PATHS ${GMOCK_SEARCH_PATH}
+  PATHS ${GMOCK_SEARCH_PATH}/lib/
         NO_DEFAULT_PATH
   DOC   "Google's framework for writing C++ tests (gmock)"
 )
 
 set(GMOCK_LIB_NAME libgmock)
 if(GMOCK_INCLUDE_DIR AND GTEST_INCLUDE_DIR AND GMOCK_LIBRARY)
-  set(GMOCK_STATIC_LIBRARY ${GMOCK_SEARCH_PATH}/${GMOCK_LIB_NAME}.a)
+  set(GMOCK_STATIC_LIBRARY ${GMOCK_SEARCH_PATH}/lib/${GMOCK_LIB_NAME}.a)
   if(EXISTS "${GMOCK_STATIC_LIBRARY}")
     set(GMOCK_FOUND TRUE)
   endif()
 
-  set(GMOCK_SHARED_LIBRARY ${GMOCK_SEARCH_PATH}/${GMOCK_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
+  set(GMOCK_SHARED_LIBRARY ${GMOCK_SEARCH_PATH}/lib/${GMOCK_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
   if(EXISTS "${GMOCK_SHARED_LIBRARY}")
     set(GMOCK_FOUND TRUE)
   endif()
