@@ -13,7 +13,6 @@
 #include "kudu/client/write_op.h"
 #include "kudu/gutil/gtest.h"
 #include "kudu/gutil/kudu_export.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/logging_callback.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -186,7 +185,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   // TODO: should we offer an async version of this as well?
   // TODO: probably should have a configurable timeout in KuduClientBuilder?
   Status OpenTable(const std::string& table_name,
-                   scoped_refptr<KuduTable>* table);
+                   std::tr1::shared_ptr<KuduTable>* table);
 
   // Create a new session for interacting with the cluster.
   // User is responsible for destroying the session object.
@@ -317,7 +316,7 @@ class KUDU_EXPORT KuduTableCreator {
 // and the schema fetched for introspection.
 //
 // This class is thread-safe.
-class KUDU_EXPORT KuduTable : public RefCountedThreadSafe<KuduTable> {
+class KUDU_EXPORT KuduTable : public std::tr1::enable_shared_from_this<KuduTable> {
  public:
   ~KuduTable();
 

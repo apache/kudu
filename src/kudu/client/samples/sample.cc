@@ -56,7 +56,7 @@ static KuduSchema CreateSchema() {
 static Status DoesTableExist(const shared_ptr<KuduClient>& client,
                              const string& table_name,
                              bool *exists) {
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   Status s = client->OpenTable(table_name, &table);
   if (s.ok()) {
     *exists = true;
@@ -107,7 +107,7 @@ static void StatusCB(const Status& status) {
   LOG(INFO) << "Asynchronous flush finished with status: " << status.ToString();
 }
 
-static Status InsertRows(scoped_refptr<KuduTable>& table, int num_rows) {
+static Status InsertRows(const shared_ptr<KuduTable>& table, int num_rows) {
   shared_ptr<KuduSession> session = table->client()->NewSession();
   KUDU_RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(5000);
@@ -144,7 +144,7 @@ static Status InsertRows(scoped_refptr<KuduTable>& table, int num_rows) {
   return session->Close();
 }
 
-static Status ScanRows(scoped_refptr<KuduTable>& table) {
+static Status ScanRows(const shared_ptr<KuduTable>& table) {
   int32_t lower_bound = 5;
   int32_t upper_bound = 600;
   KuduColumnRangePredicate pred(table->schema().Column(0),
@@ -238,7 +238,7 @@ int main(int argc, char* argv[]) {
   LOG(INFO) << "Altered a table";
 
   // Insert some rows into the table.
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   KUDU_CHECK_OK(client->OpenTable(kTableName, &table));
   KUDU_CHECK_OK(InsertRows(table, 1000));
   LOG(INFO) << "Inserted some rows into a table";

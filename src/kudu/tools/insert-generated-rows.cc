@@ -67,7 +67,7 @@ static int WriteRandomDataToTable(int argc, char** argv) {
            .Build(&client));
 
   LOG(INFO) << "Opening table...";
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   CHECK_OK(client->OpenTable(table_name, &table));
   KuduSchema schema = table->schema();
 

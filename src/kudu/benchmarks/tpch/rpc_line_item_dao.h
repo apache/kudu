@@ -13,7 +13,6 @@
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/semaphore.h"
@@ -76,7 +75,7 @@ class RpcLineItemDAO {
   simple_spinlock lock_;
   std::tr1::shared_ptr<client::KuduClient> client_;
   std::tr1::shared_ptr<client::KuduSession> session_;
-  scoped_refptr<client::KuduTable> client_table_;
+  std::tr1::shared_ptr<client::KuduTable> client_table_;
   const std::string master_address_;
   const std::string table_name_;
   const MonoDelta timeout_;

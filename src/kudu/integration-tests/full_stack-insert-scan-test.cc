@@ -195,10 +195,10 @@ class FullStackInsertScanTest : public KuduTest {
   KuduSchema schema_;
   shared_ptr<MiniCluster> cluster_;
   KuduClientBuilder client_builder_;
-  scoped_refptr<KuduTable> reader_table_;
+  shared_ptr<KuduTable> reader_table_;
   // Concurrent client insertion test variables
   vector<shared_ptr<KuduSession> > sessions_;
-  vector<scoped_refptr<KuduTable> > tables_;
+  vector<shared_ptr<KuduTable> > tables_;
 };
 
 namespace {

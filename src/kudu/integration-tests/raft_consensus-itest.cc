@@ -261,7 +261,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
                                   uint64_t count,
                                   uint64_t num_batches,
                                   const vector<CountDownLatch*>& latches) {
-    scoped_refptr<KuduTable> table;
+    shared_ptr<KuduTable> table;
     CHECK_OK(client_->OpenTable(kTableId, &table));
 
     shared_ptr<KuduSession> session = client_->NewSession();
@@ -421,7 +421,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
  protected:
   shared_ptr<KuduClient> client_;
-  scoped_refptr<KuduTable> table_;
+  shared_ptr<KuduTable> table_;
   std::vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch inserters_;
   string tablet_id_;

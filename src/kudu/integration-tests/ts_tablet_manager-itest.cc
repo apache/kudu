@@ -101,7 +101,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   OverrideFlagForSlowTests("num_election_test_loops", "10");
 
   // Create the table.
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&schema_)

@@ -112,7 +112,7 @@ class MasterFailoverTest : public KuduTest {
   // requires that the table and tablet exist both on the masters and
   // the tablet servers.
   Status OpenTableAndScanner(const std::string& table_name) {
-    scoped_refptr<KuduTable> table;
+    shared_ptr<KuduTable> table;
     RETURN_NOT_OK_PREPEND(client_->OpenTable(table_name, &table),
                           "Unable to open table " + table_name);
     KuduScanner scanner(table.get());
@@ -204,7 +204,7 @@ TEST_F(MasterFailoverTest, TestDeleteTableSync) {
   ScopedResumeExternalDaemon resume_daemon(cluster_->master(leader_idx));
 
   ASSERT_OK(client_->DeleteTable(table_name));
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   Status s = client_->OpenTable(table_name, &table);
   ASSERT_TRUE(s.IsNotFound());
 }
@@ -235,7 +235,7 @@ TEST_F(MasterFailoverTest, TestRenameTableSync) {
 
   string table_name_new = "testAlterTableSyncRenamed";
   ASSERT_OK(RenameTable(table_name_orig, table_name_new));
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(table_name_new, &table));
 
   Status s = client_->OpenTable(table_name_orig, &table);

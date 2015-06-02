@@ -332,7 +332,7 @@ TEST_F(AlterTableTest, TestGetSchemaAfterAlterTable) {
 
 void AlterTableTest::InsertRows(int start_row, int num_rows) {
   shared_ptr<KuduSession> session = client_->NewSession();
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15 * 1000);
   CHECK_OK(client_->OpenTable(kTableName, &table));
@@ -364,7 +364,7 @@ void AlterTableTest::InsertRows(int start_row, int num_rows) {
 // Note that the 'start_row' here is not a row key, but the pre-transformation row
 // key (InsertRows swaps endianness so that we random-write instead of sequential-write)
 void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern pattern) {
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
   KuduScanner scanner(table.get());
   CHECK_OK(scanner.Open());
@@ -464,7 +464,7 @@ TEST_F(AlterTableTest, DISABLED_TestBootstrapAfterColumnRemoved) {
 // updateable)
 void AlterTableTest::InserterThread() {
   shared_ptr<KuduSession> session = client_->NewSession();
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15 * 1000);
 
@@ -494,7 +494,7 @@ void AlterTableTest::InserterThread() {
 // updates across the previously inserted rows.
 void AlterTableTest::UpdaterThread() {
   shared_ptr<KuduSession> session = client_->NewSession();
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15 * 1000);
 
@@ -529,7 +529,7 @@ void AlterTableTest::UpdaterThread() {
 // Thread which loops reading data from the table.
 // No verification is performed.
 void AlterTableTest::ScannerThread() {
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
   while (!stop_threads_.Load()) {
     KuduScanner scanner(table.get());
@@ -607,7 +607,7 @@ TEST_F(AlterTableTest, TestInsertAfterAlterTable) {
   // Add a column, and immediately try to insert a row including that
   // new column.
   ASSERT_OK(AddNewI32Column(kSplitTableName, "new-i32", 10));
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kSplitTableName, &table));
   gscoped_ptr<KuduInsert> insert(table->NewInsert());
   ASSERT_OK(insert->mutable_row()->SetInt32("c0", 1));

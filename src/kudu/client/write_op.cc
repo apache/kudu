@@ -22,7 +22,7 @@ RowOperationsPB_Type ToInternalWriteType(KuduWriteOperation::Type type) {
 
 // WriteOperation --------------------------------------------------------------
 
-KuduWriteOperation::KuduWriteOperation(KuduTable *table)
+KuduWriteOperation::KuduWriteOperation(const shared_ptr<KuduTable>& table)
   : table_(table),
     row_(table->schema().schema_) {
 }
@@ -43,7 +43,7 @@ EncodedKey* KuduWriteOperation::CreateKey() const {
 
 // Insert -----------------------------------------------------------------------
 
-KuduInsert::KuduInsert(KuduTable *table)
+KuduInsert::KuduInsert(const shared_ptr<KuduTable>& table)
   : KuduWriteOperation(table) {
 }
 
@@ -51,7 +51,7 @@ KuduInsert::~KuduInsert() {}
 
 // Update -----------------------------------------------------------------------
 
-KuduUpdate::KuduUpdate(KuduTable *table)
+KuduUpdate::KuduUpdate(const shared_ptr<KuduTable>& table)
   : KuduWriteOperation(table) {
 }
 
@@ -59,7 +59,7 @@ KuduUpdate::~KuduUpdate() {}
 
 // Delete -----------------------------------------------------------------------
 
-KuduDelete::KuduDelete(KuduTable *table)
+KuduDelete::KuduDelete(const shared_ptr<KuduTable>& table)
   : KuduWriteOperation(table) {
 }
 

@@ -4,10 +4,10 @@
 #define KUDU_CLIENT_WRITE_OP_H
 
 #include <string>
+#include <tr1/memory>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/kudu_export.h"
-#include "kudu/gutil/ref_counted.h"
 
 namespace kudu {
 
@@ -46,10 +46,10 @@ class KUDU_EXPORT KuduWriteOperation {
 
   virtual std::string ToString() const = 0;
  protected:
-  explicit KuduWriteOperation(KuduTable *table);
+  explicit KuduWriteOperation(const std::tr1::shared_ptr<KuduTable>& table);
   virtual Type type() const = 0;
 
-  scoped_refptr<KuduTable> const table_;
+  std::tr1::shared_ptr<KuduTable> const table_;
   KuduPartialRow row_;
 
  private:
@@ -83,7 +83,7 @@ class KUDU_EXPORT KuduInsert : public KuduWriteOperation {
 
  private:
   friend class KuduTable;
-  explicit KuduInsert(KuduTable* table);
+  explicit KuduInsert(const std::tr1::shared_ptr<KuduTable>& table);
 };
 
 
@@ -105,7 +105,7 @@ class KUDU_EXPORT KuduUpdate : public KuduWriteOperation {
 
  private:
   friend class KuduTable;
-  explicit KuduUpdate(KuduTable* table);
+  explicit KuduUpdate(const std::tr1::shared_ptr<KuduTable>& table);
 };
 
 
@@ -126,7 +126,7 @@ class KUDU_EXPORT KuduDelete : public KuduWriteOperation {
 
  private:
   friend class KuduTable;
-  explicit KuduDelete(KuduTable* table);
+  explicit KuduDelete(const std::tr1::shared_ptr<KuduTable>& table);
 };
 
 } // namespace client

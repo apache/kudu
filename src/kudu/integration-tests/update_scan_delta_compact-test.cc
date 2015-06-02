@@ -125,7 +125,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
 
   KuduSchema schema_;
   shared_ptr<MiniCluster> cluster_;
-  scoped_refptr<KuduTable> table_;
+  shared_ptr<KuduTable> table_;
   shared_ptr<KuduClient> client_;
 };
 

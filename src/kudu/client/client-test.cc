@@ -389,7 +389,7 @@ class ClientTest : public KuduTest {
   void CreateTable(const string& table_name,
                    int num_replicas,
                    const vector<string>& split_keys,
-                   scoped_refptr<KuduTable>* table) {
+                   shared_ptr<KuduTable>* table) {
 
     bool added_replicas = false;
     // Add more tablet servers to satisfy all replicas, if necessary.
@@ -467,8 +467,8 @@ class ClientTest : public KuduTest {
 
   gscoped_ptr<MiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
-  scoped_refptr<KuduTable> client_table_;
-  scoped_refptr<KuduTable> client_table2_;
+  shared_ptr<KuduTable> client_table_;
+  shared_ptr<KuduTable> client_table2_;
 };
 
 const char *ClientTest::kTableName = "client-testtb";
@@ -499,7 +499,7 @@ TEST_F(ClientTest, TestListTabletServers) {
 }
 
 TEST_F(ClientTest, TestBadTable) {
-  scoped_refptr<KuduTable> t;
+  shared_ptr<KuduTable> t;
   Status s = client_->OpenTable("xxx-does-not-exist", &t);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "Not found: The table does not exist");
@@ -509,7 +509,7 @@ TEST_F(ClientTest, TestBadTable) {
 // to it (no "find the new leader master" since there's only one master).
 TEST_F(ClientTest, TestMasterDown) {
   cluster_->mini_master()->Shutdown();
-  scoped_refptr<KuduTable> t;
+  shared_ptr<KuduTable> t;
   client_->data_->default_admin_operation_timeout_ = MonoDelta::FromSeconds(1);
   Status s = client_->OpenTable("other-tablet", &t);
   ASSERT_TRUE(s.IsNetworkError());
@@ -604,7 +604,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
             .split_keys(keys)
             .Create());
 
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable("TestScanMultiTablet", &table));
 
   // Insert rows with keys 12, 13, 15, 17, 22, 23, 25, 27...47 into each
@@ -824,7 +824,7 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
 // Check that the tserver proxy is reset on close, even for empty tables.
 TEST_F(ClientTest, TestScanCloseProxy) {
   const string kEmptyTable = "TestScanCloseProxy";
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kEmptyTable, 3, GenerateSplitKeys(), &table));
 
   {
@@ -911,7 +911,7 @@ static void DoScanWithCallback(KuduTable* table,
 TEST_F(ClientTest, TestScanFaultTolerance) {
   // Create test table and insert test rows.
   const string kScanTable = "TestScanFaultTolerance";
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, 3, vector<string>(), &table));
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 
@@ -974,7 +974,7 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
 }
 
 TEST_F(ClientTest, TestGetTabletServerBlacklist) {
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable("blacklist",
                                       3,
                                       GenerateSplitKeys(),
@@ -1041,7 +1041,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
 }
 
 TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable("split-table",
                                       1, /* replicas */
                                       GenerateSplitKeys(),
@@ -1254,7 +1254,7 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
 }
 
 static Status ApplyInsertToSession(KuduSession* session,
-                                   const scoped_refptr<KuduTable>& table,
+                                   const shared_ptr<KuduTable>& table,
                                    int row_key,
                                    int int_val,
                                    const char* string_val) {
@@ -1266,7 +1266,7 @@ static Status ApplyInsertToSession(KuduSession* session,
 }
 
 static Status ApplyUpdateToSession(KuduSession* session,
-                                   const scoped_refptr<KuduTable>& table,
+                                   const shared_ptr<KuduTable>& table,
                                    int row_key,
                                    int int_val) {
   gscoped_ptr<KuduUpdate> update(table->NewUpdate());
@@ -1276,7 +1276,7 @@ static Status ApplyUpdateToSession(KuduSession* session,
 }
 
 static Status ApplyDeleteToSession(KuduSession* session,
-                                   const scoped_refptr<KuduTable>& table,
+                                   const shared_ptr<KuduTable>& table,
                                    int row_key) {
   gscoped_ptr<KuduDelete> del(table->NewDelete());
   RETURN_NOT_OK(del->mutable_row()->SetInt32("key", row_key));
@@ -1601,7 +1601,7 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
 }
 
 TEST_F(ClientTest, TestWriteWithBadColumn) {
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kTableName, &table));
 
   // Try to do a write with the bad schema.
@@ -1617,7 +1617,7 @@ TEST_F(ClientTest, TestWriteWithBadColumn) {
 // Do a write with a bad schema on the client side. This should make the Prepare
 // phase of the write fail, which will result in an error on the RPC response.
 TEST_F(ClientTest, TestWriteWithBadSchema) {
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kTableName, &table));
 
   // Remove the 'int_val' column.
@@ -1853,7 +1853,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
   const int kNumRowsToWrite = 100;
   const int kNumReplicas = 3;
 
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
                                       kNumReplicas,
                                       GenerateSplitKeys(),
@@ -1878,7 +1878,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   const int kNumReplicas = 3;
   const int kNumTries = 100;
 
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
                                       kNumReplicas,
                                       GenerateSplitKeys(),
@@ -1929,7 +1929,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   const int kNumRowsToWrite = 100;
   const int kNumReplicas = 3;
 
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
                                       kNumReplicas,
                                       vector<string>(),
@@ -2206,7 +2206,7 @@ namespace {
   };
 
   // Returns col1 value of first row.
-  int32_t ReadFirstRowKeyFirstCol(scoped_refptr<KuduTable> tbl) {
+  int32_t ReadFirstRowKeyFirstCol(const shared_ptr<KuduTable>& tbl) {
     KuduScanner scanner(tbl.get());
 
     scanner.Open();
@@ -2220,7 +2220,7 @@ namespace {
   }
 
   // Checks that all rows have value equal to expected, return number of rows.
-  int CheckRowsEqual(scoped_refptr<KuduTable> tbl, int32_t expected) {
+  int CheckRowsEqual(const shared_ptr<KuduTable>& tbl, int32_t expected) {
     KuduScanner scanner(tbl.get());
     scanner.Open();
     vector<KuduRowResult> rows;
@@ -2252,8 +2252,8 @@ namespace {
 
   // Return a session "loaded" with updates. Sets the session timeout
   // to the parameter value. Larger timeouts decrease false positives.
-  shared_ptr<KuduSession> LoadedSession(shared_ptr<KuduClient> client,
-                                        scoped_refptr<KuduTable> tbl,
+  shared_ptr<KuduSession> LoadedSession(const shared_ptr<KuduClient>& client,
+                                        const shared_ptr<KuduTable>& tbl,
                                         bool fwd, int max, int timeout) {
     shared_ptr<KuduSession> session = client->NewSession();
     session->SetTimeoutMillis(timeout);
@@ -2282,7 +2282,7 @@ TEST_F(ClientTest, TestDeadlockSimulation) {
   ASSERT_OK(KuduClientBuilder()
                    .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                    .Build(&rev_client));
-  scoped_refptr<KuduTable> rev_table;
+  shared_ptr<KuduTable> rev_table;
   ASSERT_OK(client_->OpenTable(kTableName, &rev_table));
 
   // Load up some rows
@@ -2378,7 +2378,7 @@ TEST_F(ClientTest, TestLatestObservedTimestamp) {
   // Check that the timestamp of the previous write will be observed by another
   // client performing a snapshot scan at that timestamp.
   shared_ptr<KuduClient> client;
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   ASSERT_OK(KuduClientBuilder()
       .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
       .Build(&client));

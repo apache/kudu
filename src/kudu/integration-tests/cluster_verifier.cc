@@ -86,7 +86,7 @@ void ClusterVerifier::CheckRowCount(const std::string& table_name,
   client::KuduClientBuilder builder;
   ASSERT_OK(cluster_->CreateClient(builder,
                                    &client));
-  scoped_refptr<client::KuduTable> table;
+  shared_ptr<client::KuduTable> table;
   ASSERT_OK(client->OpenTable(table_name, &table));
   client::KuduScanner scanner(table.get());
   client::KuduSchema empty_projection(vector<client::KuduColumnSchema>(), 0);

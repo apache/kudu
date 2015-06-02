@@ -87,7 +87,7 @@ class RemoteKsckTest : public KuduTest {
   void GenerateRowWritesLoop(CountDownLatch* started_writing,
                              const AtomicBool& continue_writing,
                              Promise<Status>* promise) {
-    scoped_refptr<KuduTable> table;
+    shared_ptr<KuduTable> table;
     Status status;
     status = client_->OpenTable(kTableName, &table);
     if (!status.ok()) {
@@ -130,7 +130,7 @@ class RemoteKsckTest : public KuduTest {
   }
 
   Status GenerateRowWrites(uint64_t num_rows) {
-    scoped_refptr<KuduTable> table;
+    shared_ptr<KuduTable> table;
     RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
     shared_ptr<KuduSession> session(client_->NewSession());
     session->SetTimeoutMillis(10000);
@@ -152,7 +152,7 @@ class RemoteKsckTest : public KuduTest {
   Sockaddr master_rpc_addr_;
   shared_ptr<MiniCluster> mini_cluster_;
   client::KuduSchema schema_;
-  scoped_refptr<client::KuduTable> client_table_;
+  shared_ptr<client::KuduTable> client_table_;
   shared_ptr<KsckMaster> master_;
   shared_ptr<KsckCluster> cluster_;
   Random random_;

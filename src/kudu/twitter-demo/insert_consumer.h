@@ -9,7 +9,6 @@
 #include <tr1/memory>
 
 #include "kudu/client/schema.h"
-#include "kudu/gutil/ref_counted.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/twitter-demo/parser.h"
@@ -51,7 +50,7 @@ class InsertConsumer : public TwitterConsumer {
 
   std::tr1::shared_ptr<client::KuduClient> client_;
   std::tr1::shared_ptr<client::KuduSession> session_;
-  scoped_refptr<client::KuduTable> table_;
+  std::tr1::shared_ptr<client::KuduTable> table_;
 
   simple_spinlock lock_;
   bool request_pending_;

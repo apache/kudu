@@ -53,7 +53,7 @@ TestWorkload::~TestWorkload() {
 void TestWorkload::WriteThread() {
   Random r(Env::Default()->gettid());
 
-  scoped_refptr<KuduTable> table;
+  shared_ptr<KuduTable> table;
   // Loop trying to open up the table. In some tests we set up very
   // low RPC timeouts to test those behaviors, so this might fail and
   // need retrying.

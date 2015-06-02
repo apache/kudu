@@ -287,13 +287,13 @@ Status KuduClient::TableExists(const string& table_name, bool* exists) {
 }
 
 Status KuduClient::OpenTable(const string& table_name,
-                             scoped_refptr<KuduTable>* table) {
+                             shared_ptr<KuduTable>* table) {
   KuduSchema schema;
   RETURN_NOT_OK(GetTableSchema(table_name, &schema));
 
   // In the future, probably will look up the table in some map to reuse KuduTable
   // instances.
-  scoped_refptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, schema));
+  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, schema));
   RETURN_NOT_OK(ret->data_->Open());
   table->swap(ret);
 
@@ -433,15 +433,15 @@ const KuduSchema& KuduTable::schema() const {
 }
 
 KuduInsert* KuduTable::NewInsert() {
-  return new KuduInsert(this);
+  return new KuduInsert(shared_from_this());
 }
 
 KuduUpdate* KuduTable::NewUpdate() {
-  return new KuduUpdate(this);
+  return new KuduUpdate(shared_from_this());
 }
 
 KuduDelete* KuduTable::NewDelete() {
-  return new KuduDelete(this);
+  return new KuduDelete(shared_from_this());
 }
 
 KuduClient* KuduTable::client() const {
