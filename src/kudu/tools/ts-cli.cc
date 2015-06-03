@@ -51,6 +51,7 @@ const char* const kListTabletsOp = "list_tablets";
 const char* const kAreTabletsRunningOp = "are_tablets_running";
 const char* const kSetFlagOp = "set_flag";
 const char* const kDumpTabletOp = "dump_tablet";
+const char* const kCurrentTimestamp = "current_timestamp";
 
 DEFINE_string(tserver_address, "localhost",
                 "Address of tablet server to run against");
@@ -92,12 +93,16 @@ class TsAdminClient {
   // Dump the contents of the given tablet, in key order, to the console.
   Status DumpTablet(const std::string& tablet_id);
 
+  // Sets timestamp to the value of the tablet server's current timestamp.
+  Status CurrentTimestamp(uint64_t* timestamp);
+
  private:
   std::string addr_;
   vector<Sockaddr> addrs_;
   MonoDelta timeout_;
   bool initted_;
-  gscoped_ptr<tserver::TabletServerServiceProxy> proxy_;
+  shared_ptr<server::GenericServiceProxy> generic_proxy_;
+  gscoped_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
   shared_ptr<rpc::Messenger> messenger_;
 
   DISALLOW_COPY_AND_ASSIGN(TsAdminClient);
@@ -119,7 +124,8 @@ Status TsAdminClient::Init() {
 
   RETURN_NOT_OK(host_port.ResolveAddresses(&addrs_))
 
-  proxy_.reset(new TabletServerServiceProxy(messenger_, addrs_[0]));
+  generic_proxy_.reset(new server::GenericServiceProxy(messenger_, addrs_[0]));
+  ts_proxy_.reset(new TabletServerServiceProxy(messenger_, addrs_[0]));
 
   initted_ = true;
 
@@ -136,7 +142,7 @@ Status TsAdminClient::ListTablets(vector<StatusAndSchemaPB>* tablets) {
   RpcController rpc;
 
   rpc.set_timeout(timeout_);
-  RETURN_NOT_OK(proxy_->ListTablets(req, &resp, &rpc));
+  RETURN_NOT_OK(ts_proxy_->ListTablets(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }
@@ -150,7 +156,6 @@ Status TsAdminClient::SetFlag(const string& flag, const string& val,
                               bool force) {
   server::SetFlagRequestPB req;
   server::SetFlagResponsePB resp;
-  server::GenericServiceProxy proxy(messenger_, addrs_[0]);
   RpcController rpc;
 
   rpc.set_timeout(timeout_);
@@ -158,7 +163,7 @@ Status TsAdminClient::SetFlag(const string& flag, const string& val,
   req.set_value(val);
   req.set_force(force);
 
-  RETURN_NOT_OK(proxy.SetFlag(req, &resp, &rpc));
+  RETURN_NOT_OK(generic_proxy_->SetFlag(req, &resp, &rpc));
   switch (resp.result()) {
     case server::SetFlagResponsePB::SUCCESS:
       return Status::OK();
@@ -203,7 +208,7 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
   while (true) {
     RpcController rpc;
     rpc.set_timeout(timeout_);
-    RETURN_NOT_OK_PREPEND(proxy_->Scan(req, &resp, &rpc),
+    RETURN_NOT_OK_PREPEND(ts_proxy_->Scan(req, &resp, &rpc),
                           "Scan() failed");
 
     if (resp.has_error()) {
@@ -229,6 +234,17 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
   return Status::OK();
 }
 
+Status TsAdminClient::CurrentTimestamp(uint64_t* timestamp) {
+  server::ServerClockRequestPB req;
+  server::ServerClockResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout_);
+  RETURN_NOT_OK(generic_proxy_->ServerClock(req, &resp, &rpc));
+  CHECK(resp.has_timestamp()) << resp.DebugString();
+  *timestamp = resp.timestamp();
+  return Status::OK();
+}
+
 namespace {
 
 void SetUsage(const char* argv0) {
@@ -239,7 +255,8 @@ void SetUsage(const char* argv0) {
       << "  " << kListTabletsOp << "\n"
       << "  " << kAreTabletsRunningOp << "\n"
       << "  " << kSetFlagOp << " [-force] <flag> <value>\n"
-      << "  " << kDumpTabletOp << " <tablet_id>";
+      << "  " << kDumpTabletOp << " <tablet_id>\n"
+      << "  " << kCurrentTimestamp;
   google::SetUsageMessage(str.str());
 }
 
@@ -327,6 +344,10 @@ static int TsCliMain(int argc, char** argv) {
     }
     string tablet_id = argv[2];
     CHECK_OK(client.DumpTablet(tablet_id));
+  } else if (op == kCurrentTimestamp) {
+    uint64_t timestamp;
+    CHECK_OK(client.CurrentTimestamp(&timestamp));
+    std::cout << timestamp << std::endl;
   } else {
     std::cerr << "Invalid operation: " << op << std::endl;
     google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
