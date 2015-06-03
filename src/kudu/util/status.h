@@ -14,6 +14,7 @@
 #ifndef KUDU_UTIL_STATUS_H_
 #define KUDU_UTIL_STATUS_H_
 
+#include <stdint.h>
 #include <string>
 
 #include "kudu/util/kudu_export.h"
@@ -44,23 +45,39 @@
 #define KUDU_WARN_NOT_OK(to_call, warning_prefix) do { \
     ::kudu::Status _s = (to_call); \
     if (PREDICT_FALSE(!_s.ok())) { \
-      LOG(WARNING) << (warning_prefix) << ": " << _s.ToString();  \
+      KUDU_LOG(KUDU_WARNING) << (warning_prefix) << ": " << _s.ToString();  \
     } \
   } while (0);
 
+// Log the given status and return immediately.
 #define KUDU_LOG_AND_RETURN(level, status) do { \
     ::kudu::Status _s = (status); \
-    LOG(level) << _s.ToString(); \
+    KUDU_LOG(level) << _s.ToString(); \
     return _s; \
   } while (0);
 
+// If 'to_call' returns a bad status, CHECK immediately with a logged message
+// of 'msg' followed by the status.
 #define KUDU_CHECK_OK_PREPEND(to_call, msg) do { \
   ::kudu::Status _s = (to_call); \
-  CHECK(_s.ok()) << (msg) << ": " << _s.ToString(); \
+  KUDU_CHECK(_s.ok()) << (msg) << ": " << _s.ToString(); \
   } while (0);
 
+// If the status is bad, CHECK immediately, appending the status to the
+// logged message.
 #define KUDU_CHECK_OK(s) KUDU_CHECK_OK_PREPEND(s, "Bad status")
 
+// This header is used in both the Kudu build as well as in builds of
+// applications that use the Kudu C++ client. In the latter we need to be
+// careful to "namespace" our macros, to avoid colliding or overriding with
+// similarly named macros belonging to the application.
+//
+// KUDU_HEADERS_USE_SHORT_STATUS_MACROS handles this behavioral change. When
+// defined, we're building Kudu and:
+// 1. Non-namespaced macros are allowed and mapped to the namespaced versions
+//    defined above.
+// 2. Namespaced versions of glog macros are mapped to the real glog macros
+//    (otherwise the macros are defined in the C++ client stubs).
 #ifdef KUDU_HEADERS_USE_SHORT_STATUS_MACROS
 #define RETURN_NOT_OK         KUDU_RETURN_NOT_OK
 #define RETURN_NOT_OK_PREPEND KUDU_RETURN_NOT_OK_PREPEND
@@ -69,6 +86,17 @@
 #define LOG_AND_RETURN        KUDU_LOG_AND_RETURN
 #define CHECK_OK_PREPEND      KUDU_CHECK_OK_PREPEND
 #define CHECK_OK              KUDU_CHECK_OK
+
+// These are all standard glog macros.
+//
+// LOG(...) needs to be handled differently due to how glog/logging.h does
+// token concatenation.
+#define KUDU_LOG(level)       LOG(level)
+#define KUDU_CHECK            CHECK
+#define KUDU_INFO             INFO
+#define KUDU_WARNING          WARNING
+#define KUDU_ERROR            ERROR
+#define KUDU_FATAL            FATAL
 #endif
 
 namespace kudu {

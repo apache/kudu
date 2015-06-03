@@ -6,7 +6,14 @@
 #include <stdint.h>
 #include <string>
 
-#include "kudu/gutil/gtest.h"
+#ifdef KUDU_HEADERS_NO_STUBS
+#include <gtest/gtest_prod.h>
+#else
+// This is a poor module interdependency, but the stubs are header-only and
+// it's only for exported header builds, so we'll make an exception.
+#include "kudu/client/stubs.h"
+#endif
+
 #include "kudu/util/kudu_export.h"
 
 struct timeval;

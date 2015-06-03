@@ -9,8 +9,8 @@
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/stubs.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/logging.h"
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
@@ -105,7 +105,8 @@ static Status AlterTable(const shared_ptr<KuduClient>& client,
 }
 
 static void StatusCB(void* unused, const Status& status) {
-  LOG(INFO) << "Asynchronous flush finished with status: " << status.ToString();
+  KUDU_LOG(KUDU_INFO) << "Asynchronous flush finished with status: "
+                      << status.ToString();
 }
 
 static Status InsertRows(const shared_ptr<KuduTable>& table, int num_rows) {
@@ -195,15 +196,15 @@ static void LogCb(void* unused,
                   const struct ::tm* time,
                   const char* message,
                   size_t message_len) {
-  LOG(INFO) << "Received log message from Kudu client library";
-  LOG(INFO) << " Severity: " << severity;
-  LOG(INFO) << " Filename: " << filename;
-  LOG(INFO) << " Line number: " << line_number;
+  KUDU_LOG(KUDU_INFO) << "Received log message from Kudu client library";
+  KUDU_LOG(KUDU_INFO) << " Severity: " << severity;
+  KUDU_LOG(KUDU_INFO) << " Filename: " << filename;
+  KUDU_LOG(KUDU_INFO) << " Line number: " << line_number;
   char time_buf[32];
   // Example: Tue Mar 24 11:46:43 2015.
-  CHECK(strftime(time_buf, sizeof(time_buf), "%a %b %d %T %Y", time));
-  LOG(INFO) << " Time: " << time_buf;
-  LOG(INFO) << " Message: " << string(message, message_len);
+  KUDU_CHECK(strftime(time_buf, sizeof(time_buf), "%a %b %d %T %Y", time));
+  KUDU_LOG(KUDU_INFO) << " Time: " << time_buf;
+  KUDU_LOG(KUDU_INFO) << " Message: " << string(message, message_len);
 }
 
 int main(int argc, char* argv[]) {
@@ -218,44 +219,44 @@ int main(int argc, char* argv[]) {
   // Create and connect a client.
   shared_ptr<KuduClient> client;
   KUDU_CHECK_OK(CreateClient("127.0.0.1", &client));
-  LOG(INFO) << "Created a client connection";
+  KUDU_LOG(KUDU_INFO) << "Created a client connection";
 
   // Disable the verbose logging.
   kudu::client::SetVerboseLogLevel(0);
 
   // Create a schema.
   KuduSchema schema(CreateSchema());
-  LOG(INFO) << "Created a schema";
+  KUDU_LOG(KUDU_INFO) << "Created a schema";
 
   // Create a table with that schema.
   bool exists;
   KUDU_CHECK_OK(DoesTableExist(client, kTableName, &exists));
   if (exists) {
     client->DeleteTable(kTableName);
-    LOG(INFO) << "Deleting old table before creating new one";
+    KUDU_LOG(KUDU_INFO) << "Deleting old table before creating new one";
   }
   KUDU_CHECK_OK(CreateTable(client, kTableName, schema, 10));
-  LOG(INFO) << "Created a table";
+  KUDU_LOG(KUDU_INFO) << "Created a table";
 
   // Alter the table.
   KUDU_CHECK_OK(AlterTable(client, kTableName));
-  LOG(INFO) << "Altered a table";
+  KUDU_LOG(KUDU_INFO) << "Altered a table";
 
   // Insert some rows into the table.
   shared_ptr<KuduTable> table;
   KUDU_CHECK_OK(client->OpenTable(kTableName, &table));
   KUDU_CHECK_OK(InsertRows(table, 1000));
-  LOG(INFO) << "Inserted some rows into a table";
+  KUDU_LOG(KUDU_INFO) << "Inserted some rows into a table";
 
   // Scan some rows.
   KUDU_CHECK_OK(ScanRows(table));
-  LOG(INFO) << "Scanned some rows out of a table";
+  KUDU_LOG(KUDU_INFO) << "Scanned some rows out of a table";
 
   // Delete the table.
   KUDU_CHECK_OK(client->DeleteTable(kTableName));
-  LOG(INFO) << "Deleted a table";
+  KUDU_LOG(KUDU_INFO) << "Deleted a table";
 
   // Done!
-  LOG(INFO) << "Done";
+  KUDU_LOG(KUDU_INFO) << "Done";
   return 0;
 }

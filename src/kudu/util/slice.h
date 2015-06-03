@@ -26,6 +26,7 @@
 #include <assert.h>
 #include <map>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 #include <string>
 

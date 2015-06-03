@@ -51,8 +51,9 @@ using std::pair;
 #include <vector>
 using std::vector;
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/logging.h"
 #include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/strings/charset.h"
 #include "kudu/gutil/strings/split_internal.h"

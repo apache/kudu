@@ -10,6 +10,8 @@
 #include <string>
 #include <vector>
 
+#include <gtest/gtest_prod.h>
+
 #include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"

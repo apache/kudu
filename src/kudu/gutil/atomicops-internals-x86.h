@@ -24,7 +24,7 @@
 
 #include <stdint.h>
 
-#include "kudu/gutil/logging.h"
+#include <glog/logging.h>
 
 #define BASE_HAS_ATOMIC64 1  // Use only in tests and base/atomic*
 

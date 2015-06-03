@@ -3,6 +3,7 @@
 #ifndef KUDU_CLIENT_CLIENT_H
 #define KUDU_CLIENT_CLIENT_H
 
+#include <stdint.h>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_set>
@@ -10,8 +11,14 @@
 
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
+#ifdef KUDU_HEADERS_NO_STUBS
+#include <gtest/gtest_prod.h>
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#else
+#include "kudu/client/stubs.h"
+#endif
 #include "kudu/client/write_op.h"
-#include "kudu/gutil/gtest.h"
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"

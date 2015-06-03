@@ -6,7 +6,7 @@
 
 #include <stdlib.h>
 
-#include "kudu/gutil/logging.h"
+#include <glog/logging.h>
 
 namespace kudu {
 

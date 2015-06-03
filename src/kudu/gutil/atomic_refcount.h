@@ -37,9 +37,10 @@
 //
 // If you need to do something very different from this, use a Mutex.
 
+#include <glog/logging.h>
+
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/integral_types.h"
-#include "kudu/gutil/logging.h"
 #include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/dynamic_annotations.h"
 

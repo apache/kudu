@@ -20,7 +20,8 @@
 
 #include <stddef.h>
 
-#include "kudu/gutil/logging.h"
+#include <glog/logging.h>
+
 #include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/manual_constructor.h"

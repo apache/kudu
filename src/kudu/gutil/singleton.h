@@ -59,7 +59,8 @@
 
 #include <stddef.h>
 
-#include "kudu/gutil/logging.h"
+#include <glog/logging.h>
+
 #include "kudu/gutil/logging-inl.h"
 #include "kudu/gutil/once.h"
 

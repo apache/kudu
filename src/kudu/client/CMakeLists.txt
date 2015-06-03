@@ -65,15 +65,6 @@ if (KUDU_EXPORTED_CLIENT)
     EXPORT kudu_client_export_set
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR})
 
-  # Headers: gutil
-  install(FILES
-    ../gutil/gtest.h
-    ../gutil/integral_types.h
-    ../gutil/logging.h
-    ../gutil/macros.h
-    ../gutil/port.h
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/gutil)
-
   # Headers: client
   install(FILES
     callbacks.h
@@ -81,6 +72,7 @@ if (KUDU_EXPORTED_CLIENT)
     row_result.h
     scan_predicate.h
     schema.h
+    stubs.h
     write_op.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/client)
 

@@ -3,10 +3,15 @@
 #ifndef KUDU_CLIENT_ROW_RESULT_H
 #define KUDU_CLIENT_ROW_RESULT_H
 
+#include <stdint.h>
 #include <string>
 
-#include "kudu/util/kudu_export.h"
+#ifdef KUDU_HEADERS_NO_STUBS
 #include "kudu/gutil/port.h"
+#else
+#include "kudu/client/stubs.h"
+#endif
+#include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
 

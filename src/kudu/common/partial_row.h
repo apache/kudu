@@ -3,10 +3,19 @@
 #ifndef KUDU_COMMON_PARTIAL_ROW_H
 #define KUDU_COMMON_PARTIAL_ROW_H
 
+#include <stdint.h>
 #include <string>
 #include <vector>
 
+#ifdef KUDU_HEADERS_NO_STUBS
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#else
+// This is a poor module interdependency, but the stubs are header-only and
+// it's only for exported header builds, so we'll make an exception.
+#include "kudu/client/stubs.h"
+#endif
+
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 

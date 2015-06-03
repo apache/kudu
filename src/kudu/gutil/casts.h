@@ -14,7 +14,8 @@
 #include <string.h>         // for memcpy
 #include <limits.h>         // for enumeration casts and tests
 
-#include "kudu/gutil/logging.h"
+#include <glog/logging.h>
+
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/template_util.h"
 #include "kudu/gutil/type_traits.h"
