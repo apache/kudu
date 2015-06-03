@@ -7,6 +7,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/server/hybrid_clock.h"
+#include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/curl_util.h"
@@ -59,6 +60,15 @@ TEST_F(TabletServerTest, TestPingServer) {
   PingResponsePB resp;
   RpcController controller;
   ASSERT_OK(proxy_->Ping(req, &resp, &controller));
+}
+
+TEST_F(TabletServerTest, TestServerClock) {
+  server::ServerClockRequestPB req;
+  server::ServerClockResponsePB resp;
+  RpcController controller;
+
+  ASSERT_OK(generic_proxy_->ServerClock(req, &resp, &controller));
+  ASSERT_GT(mini_server_->server()->clock()->Now().ToUint64(), resp.timestamp());
 }
 
 TEST_F(TabletServerTest, TestSetFlags) {
@@ -892,7 +902,7 @@ TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
   // Connect to it.
   CreateTsClientProxies(mini_server_->bound_rpc_addr(),
                         client_messenger_,
-                        &proxy_, &admin_proxy_, &consensus_proxy_);
+                        &proxy_, &admin_proxy_, &consensus_proxy_, &generic_proxy_);
 
   WriteRequestPB req;
   req.set_tablet_id(kTabletId);

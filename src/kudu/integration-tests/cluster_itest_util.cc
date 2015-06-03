@@ -7,8 +7,8 @@
 #include <glog/stl_logging.h>
 
 #include "kudu/client/client.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/opid_util.h"
@@ -18,6 +18,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/rpc_controller.h"
+#include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tablet_server_test_util.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
@@ -225,7 +226,8 @@ Status CreateTabletServerMap(MasterServiceProxy* master_proxy,
                           messenger,
                           &peer->tserver_proxy,
                           &peer->tserver_admin_proxy,
-                          &peer->consensus_proxy);
+                          &peer->consensus_proxy,
+                          &peer->generic_proxy);
 
     InsertOrDie(ts_map, peer->instance_id.permanent_uuid(), peer.get());
     ignore_result(peer.release());

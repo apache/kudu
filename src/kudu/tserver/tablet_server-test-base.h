@@ -21,27 +21,28 @@
 #include <utility>
 
 #include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/consensus.proxy.h"
+#include "kudu/consensus/log_reader.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/rpc/messenger.h"
+#include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/local_tablet_writer.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/remote_bootstrap.proxy.h"
+#include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_test_util.h"
-#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
-#include "kudu/tserver/scanners.h"
+#include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/test_graph.h"
 #include "kudu/util/test_util.h"
-#include "kudu/util/metrics.h"
-#include "kudu/rpc/messenger.h"
 
 DEFINE_int32(rpc_timeout, 1000, "Timeout for RPC calls, in seconds");
 DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
@@ -153,7 +154,7 @@ class TabletServerTestBase : public KuduTest {
   void ResetClientProxies() {
     CreateTsClientProxies(mini_server_->bound_rpc_addr(),
                           client_messenger_,
-                          &proxy_, &admin_proxy_, &consensus_proxy_);
+                          &proxy_, &admin_proxy_, &consensus_proxy_, &generic_proxy_);
   }
 
   // Inserts 'num_rows' test rows directly into the tablet (i.e not via RPC)
@@ -450,6 +451,7 @@ class TabletServerTestBase : public KuduTest {
   gscoped_ptr<TabletServerServiceProxy> proxy_;
   gscoped_ptr<TabletServerAdminServiceProxy> admin_proxy_;
   gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
+  gscoped_ptr<server::GenericServiceProxy> generic_proxy_;
 
   MetricRegistry ts_test_metric_registry_;
   scoped_refptr<MetricEntity> ts_test_metric_entity_;

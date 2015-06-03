@@ -21,6 +21,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/server/server_base.pb.h"
 
 namespace kudu {
 class MonoDelta;
@@ -53,6 +54,10 @@ class TabletServerAdminServiceProxy;
 class TabletServerServiceProxy;
 }
 
+namespace server {
+class GenericServiceProxy;
+}
+
 namespace itest {
 
 struct TServerDetails {
@@ -61,6 +66,7 @@ struct TServerDetails {
   gscoped_ptr<tserver::TabletServerServiceProxy> tserver_proxy;
   gscoped_ptr<tserver::TabletServerAdminServiceProxy> tserver_admin_proxy;
   gscoped_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
+  gscoped_ptr<server::GenericServiceProxy> generic_proxy;
 
   // Convenience function to get the UUID from the instance_id struct.
   const std::string& uuid() const;

@@ -6,9 +6,9 @@
 #include <tr1/memory>
 
 #include "kudu/client/client.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
-#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -18,12 +18,13 @@
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/server/server_base.proxy.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
-#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
+#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_leader_failure_detection);

@@ -17,6 +17,10 @@ namespace rpc {
 class Messenger;
 }
 
+namespace server {
+  class GenericServiceProxy;
+}
+
 namespace tserver {
 class TabletServerAdminServiceProxy;
 class TabletServerServiceProxy;
@@ -26,7 +30,8 @@ void CreateTsClientProxies(const Sockaddr& addr,
                            const std::tr1::shared_ptr<rpc::Messenger>& messenger,
                            gscoped_ptr<TabletServerServiceProxy>* proxy,
                            gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
-                           gscoped_ptr<consensus::ConsensusServiceProxy>* consensus_proxy);
+                           gscoped_ptr<consensus::ConsensusServiceProxy>* consensus_proxy,
+                           gscoped_ptr<server::GenericServiceProxy>* generic_proxy);
 
 } // namespace tserver
 } // namespace kudu

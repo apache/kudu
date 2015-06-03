@@ -23,6 +23,10 @@ class GenericServiceImpl : public GenericServiceIf {
   virtual void FlushCoverage(const FlushCoverageRequestPB* req,
                              FlushCoverageResponsePB* resp,
                              rpc::RpcContext* rpc) OVERRIDE;
+
+  virtual void ServerClock(const ServerClockRequestPB* req,
+                           ServerClockResponsePB* resp,
+                           rpc::RpcContext* rpc) OVERRIDE;
  private:
   ServerBase* server_;
 

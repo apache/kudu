@@ -9,6 +9,7 @@
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/server/clock.h"
 #include "kudu/server/server_base.h"
 #include "kudu/util/flag_tags.h"
 
@@ -91,6 +92,13 @@ void GenericServiceImpl::FlushCoverage(const FlushCoverageRequestPB* req,
                << rpc->requestor_string() << ")";
   resp->set_success(false);
 #endif
+  rpc->RespondSuccess();
+}
+
+void GenericServiceImpl::ServerClock(const ServerClockRequestPB* req,
+                                     ServerClockResponsePB* resp,
+                                     rpc::RpcContext* rpc) {
+  resp->set_timestamp(server_->clock()->Now().ToUint64());
   rpc->RespondSuccess();
 }
 
