@@ -13,6 +13,7 @@
 namespace kudu {
 
 class ColumnSchema;
+class KuduPartialRow;
 class Schema;
 
 namespace client {
@@ -125,8 +126,15 @@ class KUDU_EXPORT KuduSchema {
   size_t num_columns() const;
   size_t num_key_columns() const;
 
+  // Create a new row corresponding to this schema.
+  //
+  // The new row refers to this KuduSchema object, so must be destroyed before
+  // the KuduSchema object.
+  //
+  // The caller takes ownership of the created row.
+  KuduPartialRow* NewRow() const;
+
  private:
-  friend class KuduEncodedKeyBuilder;
   friend class KuduClient;
   friend class KuduScanner;
   friend class KuduTableCreator;

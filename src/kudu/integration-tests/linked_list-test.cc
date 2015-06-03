@@ -22,7 +22,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
-#include "kudu/client/encoded_key.h"
 #include "kudu/client/row_result.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"

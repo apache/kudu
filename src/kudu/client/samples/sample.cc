@@ -7,7 +7,6 @@
 #include <tr1/memory>
 
 #include "kudu/client/client.h"
-#include "kudu/client/encoded_key.h"
 #include "kudu/client/row_result.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/gutil/bind.h"
@@ -17,8 +16,6 @@ using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnRangePredicate;
 using kudu::client::KuduColumnSchema;
-using kudu::client::KuduEncodedKey;
-using kudu::client::KuduEncodedKeyBuilder;
 using kudu::client::KuduError;
 using kudu::client::KuduInsert;
 using kudu::client::KuduRowResult;
@@ -73,16 +70,12 @@ static Status CreateTable(const shared_ptr<KuduClient>& client,
                           const KuduSchema& schema,
                           int num_tablets) {
   // Generate the split keys for the table.
-  KuduEncodedKeyBuilder key_builder(schema);
-  gscoped_ptr<KuduEncodedKey> key;
+  gscoped_ptr<KuduPartialRow> key(schema.NewRow());
   vector<string> splits;
   int32_t increment = 1000 / num_tablets;
   for (int32_t i = 1; i < num_tablets; i++) {
-    int32_t val = i * increment;
-    key_builder.Reset();
-    key_builder.AddColumnKey(&val);
-    key.reset(key_builder.BuildEncodedKey());
-    splits.push_back(key->ToString());
+    KUDU_CHECK_OK(key->SetInt32(0, i * increment));
+    splits.push_back(key->ToEncodedRowKeyOrDie());
   }
 
   // Create the table.

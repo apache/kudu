@@ -10,7 +10,6 @@
 
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/client/client.h"
-#include "kudu/client/encoded_key.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/write_op.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -32,8 +31,6 @@ using client::KuduInsert;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnRangePredicate;
-using client::KuduEncodedKey;
-using client::KuduEncodedKeyBuilder;
 using client::KuduError;
 using client::KuduRowResult;
 using client::KuduScanner;

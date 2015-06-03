@@ -13,7 +13,6 @@
 #include "kudu/client/batcher.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client_builder-internal.h"
-#include "kudu/client/encoded_key.h"
 #include "kudu/client/error_collector.h"
 #include "kudu/client/error-internal.h"
 #include "kudu/client/meta_cache.h"
@@ -792,8 +791,12 @@ Status KuduScanner::AddConjunctPredicate(const KuduColumnRangePredicate& pred) {
   return Status::OK();
 }
 
-Status KuduScanner::AddLowerBound(const KuduEncodedKey& key) {
-  return AddLowerBoundRaw(key.key_->encoded_key());
+Status KuduScanner::AddLowerBound(const KuduPartialRow& key) {
+  gscoped_ptr<string> enc(new string());
+  RETURN_NOT_OK(key.EncodeRowKey(enc.get()));
+  RETURN_NOT_OK(AddLowerBoundRaw(Slice(*enc)));
+  data_->pool_.Add(enc.release());
+  return Status::OK();
 }
 
 Status KuduScanner::AddLowerBoundRaw(const Slice& key) {
@@ -806,8 +809,12 @@ Status KuduScanner::AddLowerBoundRaw(const Slice& key) {
   return Status::OK();
 }
 
-Status KuduScanner::AddUpperBound(const KuduEncodedKey& key) {
-  return AddUpperBoundRaw(key.key_->encoded_key());
+Status KuduScanner::AddUpperBound(const KuduPartialRow& key) {
+  gscoped_ptr<string> enc(new string());
+  RETURN_NOT_OK(key.EncodeRowKey(enc.get()));
+  RETURN_NOT_OK(AddUpperBoundRaw(Slice(*enc)));
+  data_->pool_.Add(enc.release());
+  return Status::OK();
 }
 
 Status KuduScanner::AddUpperBoundRaw(const Slice& key) {

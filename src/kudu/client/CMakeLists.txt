@@ -6,7 +6,6 @@ set(CLIENT_SRCS
   client.cc
   client_builder-internal.cc
   client-internal.cc
-  encoded_key.cc
   error_collector.cc
   error-internal.cc
   meta_cache.cc
@@ -124,7 +123,6 @@ if (KUDU_EXPORTED_CLIENT)
   # Headers: client
   install(FILES
     client.h
-    encoded_key.h
     row_result.h
     scan_predicate.h
     schema.h

@@ -27,6 +27,7 @@ class PartialRowTest : public KuduTest {
 
 TEST_F(PartialRowTest, UnitTest) {
   KuduPartialRow row(&schema_);
+  string enc_key;
 
   // Initially all columns are unset.
   EXPECT_FALSE(row.IsColumnSet(0));
@@ -34,6 +35,10 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_FALSE(row.IsColumnSet(2));
   EXPECT_FALSE(row.IsKeySet());
   EXPECT_EQ("", row.ToString());
+
+  // Encoding the key when it is not set should give an error.
+  EXPECT_EQ("Invalid argument: All key columns must be set: key",
+            row.EncodeRowKey(&enc_key).ToString());
 
   // Set just the key.
   EXPECT_OK(row.SetInt32("key", 12345));
@@ -45,6 +50,10 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_OK(row.GetInt32("key", &x));
   EXPECT_EQ(12345, x);
   EXPECT_FALSE(row.IsNull("key"));
+
+  // Test key encoding.
+  EXPECT_EQ("OK", row.EncodeRowKey(&enc_key).ToString());
+  EXPECT_EQ("\\x80\\x0009", Slice(enc_key).ToDebugString());
 
   // Fill in the other columns.
   EXPECT_OK(row.SetInt32("int_val", 54321));

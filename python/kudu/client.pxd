@@ -373,19 +373,6 @@ cdef extern from "kudu/client/scan_predicate.h" namespace "kudu::client" nogil:
         void CopyFrom(KuduColumnRangePredicate& other)
 
 
-cdef extern from "kudu/client/encoded_key.h" namespace "kudu::client" nogil:
-
-    cdef cppclass KuduEncodedKey:
-        string ToString()
-
-    cdef cppclass KuduEncodedKeyBuilder:
-        KuduEncodedKeyBuilder(KuduSchema& schema)
-
-        void Reset()
-        void AddColumnKey(const void* raw_key)
-        KuduEncodedKey* BuildEncodedKey()
-
-
 cdef extern from "kudu/gutil/callback.h" namespace "kudu" nogil:
 
     # Have not yet attempted to implement callbacks

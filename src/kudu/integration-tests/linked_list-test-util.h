@@ -14,7 +14,6 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
-#include "kudu/client/encoded_key.h"
 #include "kudu/client/row_result.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
@@ -396,15 +395,12 @@ class LinkedListVerifier {
 /////////////////////////////////////////////////////////////
 
 std::vector<string> LinkedListTester::GenerateSplitKeys(const client::KuduSchema& schema) {
-  client::KuduEncodedKeyBuilder key_builder(schema);
-  gscoped_ptr<client::KuduEncodedKey> key;
+  gscoped_ptr<KuduPartialRow> key(schema.NewRow());
   std::vector<int64_t> split_ints = GenerateSplitInts();
   std::vector<string> split_keys;
   BOOST_FOREACH(int64_t val, split_ints) {
-    key_builder.Reset();
-    key_builder.AddColumnKey(&val);
-    key.reset(key_builder.BuildEncodedKey());
-    split_keys.push_back(key->ToString());
+    CHECK_OK(key->SetInt64(0, val));
+    split_keys.push_back(key->ToEncodedRowKeyOrDie());
   }
   return split_keys;
 }

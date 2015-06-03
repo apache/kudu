@@ -7,6 +7,7 @@
 #include <glog/logging.h>
 
 #include "kudu/client/schema-internal.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
 
 MAKE_ENUM_LIMITS(kudu::client::KuduColumnStorageAttributes::EncodingType,
@@ -198,6 +199,10 @@ KuduSchema KuduSchema::CreateKeyProjection() const {
   KuduSchema projection;
   projection.schema_.reset(new Schema(schema_->CreateKeyProjection()));
   return projection;
+}
+
+KuduPartialRow* KuduSchema::NewRow() const {
+  return new KuduPartialRow(schema_.get());
 }
 
 size_t KuduSchema::num_columns() const {

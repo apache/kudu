@@ -9,7 +9,6 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
-#include "kudu/client/encoded_key.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -40,8 +39,6 @@ using std::tr1::shared_ptr;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
-using client::KuduEncodedKey;
-using client::KuduEncodedKeyBuilder;
 using client::KuduError;
 using client::KuduInsert;
 using client::KuduRowResult;
@@ -174,14 +171,10 @@ class AlterTableTest : public KuduTest {
 
   Status CreateSplitTable(const string& table_name) {
     vector<string> keys;
-    KuduEncodedKeyBuilder key_builder(schema_);
-    gscoped_ptr<KuduEncodedKey> key;
+    gscoped_ptr<KuduPartialRow> key(schema_.NewRow());
     for (int32_t i = 1; i < 10; i++) {
-      int32_t val = i * 100;
-      key_builder.Reset();
-      key_builder.AddColumnKey(&val);
-      key.reset(key_builder.BuildEncodedKey());
-      keys.push_back(key->ToString());
+      CHECK_OK(key->SetInt32(0, i * 100));
+      keys.push_back(key->ToEncodedRowKeyOrDie());
     }
     return client_->NewTableCreator()
         ->table_name(table_name)

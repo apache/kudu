@@ -5,7 +5,6 @@
 #include <boost/assign/list_of.hpp>
 
 #include "kudu/client/client.h"
-#include "kudu/client/encoded_key.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/tools/data_gen_util.h"
@@ -87,10 +86,9 @@ class RemoteKsckTest : public KuduTest {
     vector<string> keys;
     vector<int> split_nums = boost::assign::list_of(33)(66);
     BOOST_FOREACH(int i, split_nums) {
-      client::KuduEncodedKeyBuilder builder(schema_);
-      builder.AddColumnKey(&i);
-      gscoped_ptr<client::KuduEncodedKey> key(builder.BuildEncodedKey());
-      keys.push_back(key->ToString());
+      gscoped_ptr<KuduPartialRow> key(schema_.NewRow());
+      CHECK_OK(key->SetInt32(0, i));
+      keys.push_back(key->ToEncodedRowKeyOrDie());
     }
     return keys;
   }

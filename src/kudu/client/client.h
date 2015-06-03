@@ -30,7 +30,6 @@ class TsAdminClient;
 
 namespace client {
 
-class KuduEncodedKey;
 class KuduRowResult;
 class KuduSession;
 class KuduTable;
@@ -770,8 +769,8 @@ class KUDU_EXPORT KuduScanner {
   // Add a lower bound (inclusive) for the scan.
   // If any bound is already added, this bound is intersected with that one.
   //
-  // The scanner makes a copy of 'key'; the caller may free it afterward.
-  Status AddLowerBound(const KuduEncodedKey& key);
+  // The scanner does not take ownership of 'key'; the caller may free it afterward.
+  Status AddLowerBound(const KuduPartialRow& key);
 
   // Like AddLowerBound(), but the encoded key is an opaque slice of data
   // obtained elsewhere.
@@ -780,8 +779,8 @@ class KUDU_EXPORT KuduScanner {
   // Add an upper bound (exclusive) for the scan.
   // If any bound is already added, this bound is intersected with that one.
   //
-  // The scanner makes a copy of 'key'; the caller may free it afterward.
-  Status AddUpperBound(const KuduEncodedKey& key);
+  // The scanner does not take ownership of 'key'; the caller may free it afterward.
+  Status AddUpperBound(const KuduPartialRow& key);
 
   // Like AddUpperBound(), but the encoded key is an opaque slice of data
   // obtained elsewhere.

@@ -5,6 +5,7 @@
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
+#include <glog/stl_logging.h>
 
 #include <tr1/memory>
 #include <vector>
@@ -13,7 +14,6 @@
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
-#include "kudu/client/encoded_key.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scanner-internal.h"
@@ -112,11 +112,9 @@ class ClientTest : public KuduTest {
   // Generate a set of split keys for tablets used in this test.
   vector<string> GenerateSplitKeys() {
     vector<string> keys;
-    KuduEncodedKeyBuilder builder(schema_);
-    int val = 9;
-    builder.AddColumnKey(&val);
-    gscoped_ptr<KuduEncodedKey> key(builder.BuildEncodedKey());
-    keys.push_back(key->ToString());
+    gscoped_ptr<KuduPartialRow> row(schema_.NewRow());
+    CHECK_OK(row->SetInt32(0, 9));
+    keys.push_back(row->ToEncodedRowKeyOrDie());
     return keys;
   }
 
@@ -593,15 +591,11 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
 
 TEST_F(ClientTest, TestScanMultiTablet) {
   // 5 tablets, each with 10 rows worth of space.
-  KuduEncodedKeyBuilder key_builder(schema_);
-  gscoped_ptr<KuduEncodedKey> key;
+  gscoped_ptr<KuduPartialRow> row(schema_.NewRow());
   vector<string> keys;
   for (int i = 1; i < 5; i++) {
-    int val = i * 10;
-    key_builder.Reset();
-    key_builder.AddColumnKey(&val);
-    key.reset(key_builder.BuildEncodedKey());
-    keys.push_back(key->ToString());
+    CHECK_OK(row->SetInt32(0, i * 10));
+    keys.push_back(row->ToEncodedRowKeyOrDie());
   }
   ASSERT_OK(client_->NewTableCreator()
                    ->table_name("TestScanMultiTablet")
@@ -1035,25 +1029,18 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   ASSERT_NO_FATAL_FAILURE(ScanTableToStrings(table.get(), &all_rows));
   ASSERT_EQ(100, all_rows.size());
 
-  // Build all encoded keys needed for this test.
-  KuduEncodedKeyBuilder builder(schema_);
-  vector<int32_t> raw_keys = list_of(0x5)(0x8)(0x15)(0x20);
-  unordered_map<int32_t, KuduEncodedKey*> encoded_keys;
-  ValueDeleter encoded_keys_deleter(&encoded_keys);
-  BOOST_FOREACH(int32_t raw_key, raw_keys) {
-    builder.Reset();
-    builder.AddColumnKey(&raw_key);
-    InsertOrDie(&encoded_keys, raw_key, builder.BuildEncodedKey());
-  }
+  gscoped_ptr<KuduPartialRow> row(table->schema().NewRow());
 
   // Test a double-sided range within first tablet
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddLowerBound(*FindOrDie(encoded_keys, 0x5)));
-    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x8)));
+    CHECK_OK(row->SetInt32(0, 5));
+    ASSERT_OK(scanner.AddLowerBound(*row));
+    CHECK_OK(row->SetInt32(0, 8));
+    ASSERT_OK(scanner.AddUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
-    ASSERT_EQ(0x08 - 0x05 + 1, rows.size());
+    ASSERT_EQ(8 - 5 + 1, rows.size());
     EXPECT_EQ(all_rows[5], rows.front());
     EXPECT_EQ(all_rows[8], rows.back());
   }
@@ -1061,31 +1048,36 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   // Test a double-sided range spanning tablets
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddLowerBound(*FindOrDie(encoded_keys, 0x5)));
-    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x15)));
+    CHECK_OK(row->SetInt32(0, 5));
+    ASSERT_OK(scanner.AddLowerBound(*row));
+    CHECK_OK(row->SetInt32(0, 15));
+    ASSERT_OK(scanner.AddUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
-    ASSERT_EQ(0x15 - 0x05 + 1, rows.size());
+    ASSERT_EQ(15 - 5 + 1, rows.size());
     EXPECT_EQ(all_rows[5], rows.front());
-    EXPECT_EQ(all_rows[0x15], rows.back());
+    EXPECT_EQ(all_rows[15], rows.back());
   }
 
   // Test a double-sided range within second tablet
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddLowerBound(*FindOrDie(encoded_keys, 0x15)));
-    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x20)));
+    CHECK_OK(row->SetInt32(0, 15));
+    ASSERT_OK(scanner.AddLowerBound(*row));
+    CHECK_OK(row->SetInt32(0, 20));
+    ASSERT_OK(scanner.AddUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
-    ASSERT_EQ(0x20 - 0x15 + 1, rows.size());
-    EXPECT_EQ(all_rows[0x15], rows.front());
-    EXPECT_EQ(all_rows[0x20], rows.back());
+    ASSERT_EQ(20 - 15 + 1, rows.size());
+    EXPECT_EQ(all_rows[15], rows.front());
+    EXPECT_EQ(all_rows[20], rows.back());
   }
 
   // Test a lower-bound only range.
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddLowerBound(*FindOrDie(encoded_keys, 0x5)));
+    CHECK_OK(row->SetInt32(0, 5));
+    ASSERT_OK(scanner.AddLowerBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(95, rows.size());
@@ -1096,7 +1088,8 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   // Test an upper-bound only range in first tablet.
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x5)));
+    CHECK_OK(row->SetInt32(0, 5));
+    ASSERT_OK(scanner.AddUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
     ASSERT_EQ(6, rows.size());
@@ -1107,12 +1100,13 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   // Test an upper-bound only range in second tablet.
   {
     KuduScanner scanner(table.get());
-    ASSERT_OK(scanner.AddUpperBound(*FindOrDie(encoded_keys, 0x15)));
+    CHECK_OK(row->SetInt32(0, 15));
+    ASSERT_OK(scanner.AddUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
-    ASSERT_EQ(0x15 + 1, rows.size());
+    ASSERT_EQ(15 + 1, rows.size());
     EXPECT_EQ(all_rows[0], rows.front());
-    EXPECT_EQ(all_rows[0x15], rows.back());
+    EXPECT_EQ(all_rows[15], rows.back());
   }
 
 }

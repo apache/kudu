@@ -35,7 +35,6 @@
 #include "kudu/benchmarks/tpch/line_item_tsv_importer.h"
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
 #include "kudu/benchmarks/tpch/tpch-schemas.h"
-#include "kudu/client/encoded_key.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -80,8 +79,6 @@ DEFINE_string(tpch_table_name, "tpch_real_world",
 
 namespace kudu {
 
-using client::KuduEncodedKey;
-using client::KuduEncodedKeyBuilder;
 using client::KuduRowResult;
 using client::KuduSchema;
 using strings::Substitute;
@@ -228,17 +225,12 @@ gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
       FLAGS_tpch_num_inserters;
 
   KuduSchema schema(tpch::CreateLineItemSchema());
-  KuduEncodedKeyBuilder key_builder(schema);
-  gscoped_ptr<KuduEncodedKey> key;
+  gscoped_ptr<KuduPartialRow> key(schema.NewRow());
   vector<string> split_keys;
   for (int64_t i = 1; i < FLAGS_tpch_num_inserters; i++) {
-    int64_t order_key = i * increment;
-    int32_t line_number = 0;
-    key_builder.Reset();
-    key_builder.AddColumnKey(&order_key);
-    key_builder.AddColumnKey(&line_number);
-    key.reset(key_builder.BuildEncodedKey());
-    split_keys.push_back(key->ToString());
+    CHECK_OK(key->SetInt64(tpch::kOrderKeyColName, i * increment));
+    CHECK_OK(key->SetInt32(tpch::kLineNumberColName, 0));
+    split_keys.push_back(key->ToEncodedRowKeyOrDie());
   }
 
   gscoped_ptr<RpcLineItemDAO> dao(new RpcLineItemDAO(master_addresses_,
