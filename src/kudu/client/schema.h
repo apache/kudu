@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/kudu_export.h"
+#include "kudu/util/kudu_export.h"
 
 namespace kudu {
 

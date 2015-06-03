@@ -5,7 +5,7 @@
 
 #include <string>
 
-#include "kudu/gutil/kudu_export.h"
+#include "kudu/util/kudu_export.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"

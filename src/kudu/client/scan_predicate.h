@@ -4,7 +4,7 @@
 #define KUDU_CLIENT_SCAN_PREDICATE_H
 
 #include "kudu/client/schema.h"
-#include "kudu/gutil/kudu_export.h"
+#include "kudu/util/kudu_export.h"
 
 namespace kudu {
 

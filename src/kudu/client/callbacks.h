@@ -3,8 +3,8 @@
 #ifndef KUDU_CLIENT_CALLBACKS_H
 #define KUDU_CLIENT_CALLBACKS_H
 
-#include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/kudu_export.h"
 
 namespace kudu {
 

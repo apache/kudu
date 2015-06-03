@@ -6,8 +6,8 @@
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/kudu_export.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 
 namespace kudu {

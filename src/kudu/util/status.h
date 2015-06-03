@@ -16,7 +16,7 @@
 
 #include <string>
 
-#include "kudu/gutil/kudu_export.h"
+#include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 
 // Return the given status if it is not OK.

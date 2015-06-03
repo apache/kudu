@@ -29,12 +29,12 @@
 #include <string.h>
 #include <string>
 
-#include "kudu/gutil/kudu_export.h"
 #ifdef KUDU_HEADERS_USE_RICH_SLICE
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/faststring.h"
 #endif
+#include "kudu/util/kudu_export.h"
 
 namespace kudu {
 

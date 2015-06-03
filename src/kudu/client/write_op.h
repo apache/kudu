@@ -7,7 +7,7 @@
 #include <tr1/memory>
 
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/kudu_export.h"
+#include "kudu/util/kudu_export.h"
 
 namespace kudu {
 

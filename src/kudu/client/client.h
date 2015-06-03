@@ -12,7 +12,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/client/write_op.h"
 #include "kudu/gutil/gtest.h"
-#include "kudu/gutil/kudu_export.h"
+#include "kudu/util/kudu_export.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 

@@ -52,7 +52,7 @@ target_link_libraries(kudu_client ${CLIENT_LIBS_VISIBILITY} ${CLIENT_LIBS})
 # Generate kudu_export.h.
 generate_export_header(kudu_client
   BASE_NAME kudu
-  EXPORT_FILE_NAME ${CMAKE_SOURCE_DIR}/src/kudu/gutil/kudu_export.h)
+  EXPORT_FILE_NAME ${CMAKE_SOURCE_DIR}/src/kudu/util/kudu_export.h)
 
 # "make install" invocations to generate a directory tree containing the
 # exported client library and all of its headers.
@@ -69,7 +69,6 @@ if (KUDU_EXPORTED_CLIENT)
   install(FILES
     ../gutil/gtest.h
     ../gutil/integral_types.h
-    ../gutil/kudu_export.h
     ../gutil/logging.h
     ../gutil/macros.h
     ../gutil/port.h
@@ -92,6 +91,7 @@ if (KUDU_EXPORTED_CLIENT)
 
   # Headers: util
   install(FILES
+    ../util/kudu_export.h
     ../util/monotime.h
     ../util/slice.h
     ../util/status.h
