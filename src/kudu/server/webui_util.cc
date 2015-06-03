@@ -6,6 +6,7 @@
 #include <string>
 
 #include "kudu/common/schema.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -46,11 +47,13 @@ void HtmlOutputSchemaTable(const Schema& schema,
 
 void HtmlOutputImpalaSchema(const std::string& table_name,
                             const Schema& schema,
-                            const string& master_address,
+                            const string& master_addresses,
                             std::stringstream* output) {
   *output << "<code><pre>\n";
 
-  *output << "CREATE TABLE " << EscapeForHtmlToString(table_name) << " (\n";
+  *output << "CREATE EXTERNAL TABLE " << EscapeForHtmlToString(table_name) << " (\n";
+
+  vector<string> key_columns;
 
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
@@ -90,13 +93,18 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
       *output << ",";
     }
     *output << "\n";
+
+    if (schema.is_key_column(i)) {
+      key_columns.push_back(col.name());
+    }
   }
   *output << ")\n";
 
   *output << "TBLPROPERTIES(\n";
   *output << "  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',\n";
   *output << "  'kudu.table_name' = '" << table_name << "',\n";
-  *output << "  'kudu.master_address' = '" << master_address << "'\n";
+  *output << "  'kudu.master_addresses' = '" << master_addresses << "',\n";
+  *output << "  'kudu.key_columns' = '" << JoinElements(key_columns, ", ") << "'\n";
   *output << ");\n";
   *output << "</pre></code>\n";
 }

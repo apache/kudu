@@ -11,6 +11,7 @@
 
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -140,8 +141,18 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   *output << "</table>\n";
 
   *output << "<h2>Impala CREATE TABLE statement</h2>\n";
-  const string master_addr = master_->first_rpc_address().ToString();
-  HtmlOutputImpalaSchema(table_name, schema, master_addr, output);
+
+  string master_addresses;
+  if (master_->opts().IsDistributed()) {
+    vector<string> all_addresses;
+    BOOST_FOREACH(const HostPort& hp, master_->opts().master_quorum) {
+      master_addresses.append(hp.ToString());
+    }
+    master_addresses = JoinElements(all_addresses, ",");
+  } else {
+    master_addresses = master_->first_rpc_address().ToString();
+  }
+  HtmlOutputImpalaSchema(table_name, schema, master_addresses, output);
 
   std::vector<scoped_refptr<MonitoredTask> > task_list;
   table->GetTaskList(&task_list);
