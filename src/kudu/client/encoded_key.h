@@ -16,8 +16,6 @@ class EncodedKeyBuilder;
 
 namespace client {
 
-using std::string;
-
 class KUDU_EXPORT KuduEncodedKey {
  public:
   ~KuduEncodedKey();
