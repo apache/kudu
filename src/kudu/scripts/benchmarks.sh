@@ -178,9 +178,6 @@ build_kudu() {
 run_benchmarks() {
 
   # run all of the variations of mt-tablet-test
-  #
-  # TODO: remove --block_manager override once kudu-benchmarks Jenkins job is no
-  # longer running on CentOS 6.2. See KUDU-794.
   ./build/latest/mt-tablet-test \
     --gtest_filter=\*DoTestAllAtOnce\* \
     --num_counter_threads=0 \
@@ -190,7 +187,6 @@ run_benchmarks() {
     --flusher_backoff=1.0 \
     --flusher_initial_frequency_ms=1000 \
     --inserts_per_thread=1000000 \
-    --block_manager=file \
     &> $LOGDIR/${MT_TABLET_TEST}.log
 
   # run rpc-bench test 5 times. 10 seconds per run
@@ -207,7 +203,6 @@ run_benchmarks() {
   # run bloomfile-test 5 times. ~3.3 seconds per run
   for i in $(seq 1 $NUM_SAMPLES); do
     ./build/latest/bloomfile-test --benchmark_queries=10000000 --bloom_size_bytes=32768 \
-      --block_manager=file \
       --n_keys=100000 --gtest_filter=*Benchmark &> $LOGDIR/$BLOOM_TEST$i.log
   done
 
@@ -215,7 +210,6 @@ run_benchmarks() {
   # The block cache is set to 1MB to generate churn.
   for i in $(seq 1 $NUM_SAMPLES); do
     ./build/latest/mt-bloomfile-test --benchmark_queries=2000000 --bloom_size_bytes=32768 \
-      --block_manager=file \
       --n_keys=5000000 --block_cache_capacity_mb=1 &> $LOGDIR/$MT_BLOOM_TEST$i.log
   done
 
@@ -228,7 +222,6 @@ run_benchmarks() {
   # run compaction-test 5 times, 6 seconds each
   for i in $(seq 1 $NUM_SAMPLES); do
     KUDU_ALLOW_SLOW_TESTS=true ./build/latest/compaction-test \
-      --block_manager=file \
       --gtest_filter=TestCompaction.BenchmarkMerge* &> $LOGDIR/${COMPACT_MERGE_BENCH}$i.log
   done
 
@@ -242,7 +235,6 @@ run_benchmarks() {
   for i in $(seq 1 $NUM_SAMPLES) ; do
     KUDU_ALLOW_SLOW_TESTS=true ./build/latest/tablet_server-test \
       --gtest_filter=*MicroBench* \
-      --block_manager=file \
       --single_threaded_insert_latency_bench_warmup_rows=1000 \
       --single_threaded_insert_latency_bench_insert_rows=10000 &> $LOGDIR/${TS_INSERT_LATENCY}$i.log
   done
@@ -250,7 +242,6 @@ run_benchmarks() {
   # Run multi-threaded TS insert benchmark
   for i in $(seq 1 $NUM_SAMPLES) ; do
     KUDU_ALLOW_SLOW_TESTS=1 build/latest/tablet_server-stress-test \
-      --block_manager=file \
       --num_inserts_per_thread=30000 &> $LOGDIR/${TS_8THREAD_BENCH}$i.log
   done
 
@@ -258,7 +249,6 @@ run_benchmarks() {
   for i in $(seq 1 $NUM_SAMPLES) ; do
     ./build/latest/full_stack-insert-scan-test \
       --gtest_filter=FullStackInsertScanTest.MRSOnlyStressTest \
-      --block_manager=file \
       --concurrent_inserts=50 \
       --inserts_per_client=200000 \
       --rows_per_batch=10000 \
@@ -269,7 +259,6 @@ run_benchmarks() {
   for i in $(seq 1 $NUM_SAMPLES) ; do
     ./build/latest/full_stack-insert-scan-test \
       --gtest_filter=FullStackInsertScanTest.WithDiskStressTest \
-      --block_manager=file \
       --concurrent_inserts=50 \
       --inserts_per_client=200000 \
       --rows_per_batch=10000 \
