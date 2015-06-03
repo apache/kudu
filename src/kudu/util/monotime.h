@@ -7,6 +7,7 @@
 #include <string>
 
 #include "kudu/gutil/gtest.h"
+#include "kudu/gutil/kudu_export.h"
 
 struct timeval;
 struct timespec;
@@ -19,7 +20,7 @@ class MonoTime;
 //
 // A MonoDelta built with the default constructor is "uninitialized" and
 // may not be used for any operation.
-class MonoDelta {
+class KUDU_EXPORT MonoDelta {
  public:
   static MonoDelta FromSeconds(double seconds);
   static MonoDelta FromMilliseconds(int64_t ms);
@@ -61,7 +62,7 @@ class MonoDelta {
 //
 // This time is monotonic, meaning that if the user changes his or her system
 // clock, the monotime does not change.
-class MonoTime {
+class KUDU_EXPORT MonoTime {
  public:
   enum Granularity {
     COARSE,
@@ -112,7 +113,7 @@ class MonoTime {
 // This is preferred over sleep(3), usleep(3), and nanosleep(3). It's less prone to mixups with
 // units since it uses a MonoDelta. It also ignores EINTR, so will reliably sleep at least the
 // MonoDelta duration.
-void SleepFor(const MonoDelta& delta);
+void KUDU_EXPORT SleepFor(const MonoDelta& delta);
 
 } // namespace kudu
 

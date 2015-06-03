@@ -27,6 +27,7 @@ using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
 using kudu::client::KuduTable;
 using kudu::KuduPartialRow;
+using kudu::MonoDelta;
 using kudu::Status;
 
 using std::string;
@@ -38,6 +39,7 @@ static Status CreateClient(const string& addr,
                            shared_ptr<KuduClient>* client) {
   return KuduClientBuilder()
       .add_master_server_addr(addr)
+      .default_admin_operation_timeout(MonoDelta::FromSeconds(20))
       .Build(client);
 }
 
