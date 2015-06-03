@@ -11,6 +11,7 @@
 #include <vector>
 #include <algorithm>
 
+#include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client-test-util.h"
@@ -1290,7 +1291,8 @@ TEST_F(ClientTest, TestAsyncFlushResponseAfterSessionDropped) {
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
   Synchronizer s;
-  session->FlushAsync(s.AsStatusCallback());
+  KuduStatusMemberCallback<Synchronizer> cb(&s, &Synchronizer::StatusCB);
+  session->FlushAsync(&cb);
   session.reset();
   ASSERT_OK(s.Wait());
 
@@ -1300,7 +1302,7 @@ TEST_F(ClientTest, TestAsyncFlushResponseAfterSessionDropped) {
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
   ASSERT_EQ(1, session->CountBufferedOperations());
-  session->FlushAsync(s.AsStatusCallback());
+  session->FlushAsync(&cb);
   ASSERT_EQ(0, session->CountBufferedOperations());
   session.reset();
   ASSERT_FALSE(s.Wait().ok());
@@ -1315,7 +1317,8 @@ TEST_F(ClientTest, TestSessionClose) {
   ASSERT_TRUE(session->Close().IsIllegalState());
 
   Synchronizer s;
-  session->FlushAsync(s.AsStatusCallback());
+  KuduStatusMemberCallback<Synchronizer> cb(&s, &Synchronizer::StatusCB);
+  session->FlushAsync(&cb);
   ASSERT_OK(s.Wait());
 
   ASSERT_OK(session->Close());
@@ -2190,18 +2193,17 @@ TEST_F(ClientTest, TestMasterLookupPermits) {
 
 // Define callback for deadlock simulation, as well as various helper methods.
 namespace {
-  class DLSCallback : public RefCountedThreadSafe<DLSCallback> {
-  public:
-    explicit DLSCallback(Atomic32* i)
-      : i(i) {}
-    void StatusCB(const Status& s) {
+  class DLSCallback : public KuduStatusCallback {
+   public:
+    explicit DLSCallback(Atomic32* i) : i(i) {
+    }
+
+    virtual void Run(const Status& s) OVERRIDE {
       CHECK_OK(s);
       NoBarrier_AtomicIncrement(i, 1);
+      delete this;
     }
-    StatusCallback AsStatusCallback() {
-      return Bind(&DLSCallback::StatusCB, this);
-    }
-  private:
+   private:
     Atomic32* const i;
   };
 
@@ -2315,12 +2317,9 @@ TEST_F(ClientTest, TestDeadlockSimulation) {
   NoBarrier_Store(&ctr1, 0);
   NoBarrier_Store(&ctr2, 0);
   for (int i = 0; i < kNumSessions; ++i) {
-    DLSCallback* cb1 = new DLSCallback(&ctr1);
-    DLSCallback* cb2 = new DLSCallback(&ctr2);
-
-    // 'cb1' and 'cb2' will be freed after the callbacks are invoked.
-    fwd_sessions[i]->FlushAsync(cb1->AsStatusCallback());
-    rev_sessions[i]->FlushAsync(cb2->AsStatusCallback());
+    // The callbacks are freed after they are invoked.
+    fwd_sessions[i]->FlushAsync(new DLSCallback(&ctr1));
+    rev_sessions[i]->FlushAsync(new DLSCallback(&ctr2));
   }
 
   // Spin while waiting for ops to complete.

@@ -21,6 +21,7 @@ namespace client {
 
 class KuduClient;
 class KuduSession;
+class KuduStatusCallback;
 class KuduWriteOperation;
 
 namespace internal {
@@ -81,7 +82,7 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // then the callback will receive Status::OK. Otherwise, it will receive IOError,
   // and the caller must inspect the ErrorCollector to retrieve more detailed
   // information on which operations failed.
-  void FlushAsync(const StatusCallback& cb);
+  void FlushAsync(KuduStatusCallback* cb);
 
  private:
   friend class RefCountedThreadSafe<Batcher>;
@@ -143,7 +144,7 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // If state is kFlushing, this member will be set to the user-provided
   // callback. Once there are no more in-flight operations, the callback
   // will be called exactly once (and the state changed to kFlushed).
-  StatusCallback flush_callback_;
+  KuduStatusCallback* flush_callback_;
 
   // All buffered or in-flight ops.
   std::tr1::unordered_set<InFlightOp*> ops_;

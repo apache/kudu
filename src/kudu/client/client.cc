@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "kudu/client/batcher.h"
+#include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client_builder-internal.h"
 #include "kudu/client/error_collector.h"
@@ -95,8 +96,37 @@ static void InitializeBasicLogging() {
   InitGoogleLoggingSafeBasic(kProgName);
 }
 
-void InstallLoggingCallback(const LoggingCallback& cb) {
-  RegisterLoggingCallback(cb);
+// Adapts between the internal LogSeverity and the client's KuduLogSeverity.
+static void LoggingAdapterCB(KuduLoggingCallback* user_cb,
+                             LogSeverity severity,
+                             const char* filename,
+                             int line_number,
+                             const struct ::tm* time,
+                             const char* message,
+                             size_t message_len) {
+  KuduLogSeverity client_severity;
+  switch (severity) {
+    case kudu::SEVERITY_INFO:
+      client_severity = SEVERITY_INFO;
+      break;
+    case kudu::SEVERITY_WARNING:
+      client_severity = SEVERITY_WARNING;
+      break;
+    case kudu::SEVERITY_ERROR:
+      client_severity = SEVERITY_ERROR;
+      break;
+    case kudu::SEVERITY_FATAL:
+      client_severity = SEVERITY_FATAL;
+      break;
+    default:
+      LOG(FATAL) << "Unknown Kudu log severity: " << severity;
+  }
+  user_cb->Run(client_severity, filename, line_number, time,
+               message, message_len);
+}
+
+void InstallLoggingCallback(KuduLoggingCallback* cb) {
+  RegisterLoggingCallback(Bind(&LoggingAdapterCB, Unretained(cb)));
 }
 
 void UninstallLoggingCallback() {
@@ -519,11 +549,12 @@ void KuduSession::SetTimeoutMillis(int millis) {
 
 Status KuduSession::Flush() {
   Synchronizer s;
-  FlushAsync(s.AsStatusCallback());
+  KuduStatusMemberCallback<Synchronizer> ksmcb(&s, &Synchronizer::StatusCB);
+  FlushAsync(&ksmcb);
   return s.Wait();
 }
 
-void KuduSession::FlushAsync(const StatusCallback& user_callback) {
+void KuduSession::FlushAsync(KuduStatusCallback* user_callback) {
   CHECK_EQ(data_->flush_mode_, MANUAL_FLUSH) << "TODO: handle other flush modes";
 
   // Swap in a new batcher to start building the next batch.

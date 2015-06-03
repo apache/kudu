@@ -13,10 +13,8 @@
 #include "kudu/client/write_op.h"
 #include "kudu/gutil/gtest.h"
 #include "kudu/gutil/kudu_export.h"
-#include "kudu/util/logging_callback.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
-#include "kudu/util/status_callback.h"
 
 namespace kudu {
 
@@ -28,8 +26,10 @@ class TsAdminClient;
 
 namespace client {
 
+class KuduLoggingCallback;
 class KuduRowResult;
 class KuduSession;
+class KuduStatusCallback;
 class KuduTable;
 class KuduTableAlterer;
 class KuduTableCreator;
@@ -50,11 +50,12 @@ class WriteRpc;
 // log event of any severity, across any KuduClient instance.
 //
 // Only the first invocation has any effect; subsequent invocations are
-// a no-op.
+// a no-op. The caller must ensure that 'cb' stays alive until
+// UninstallLoggingCallback() is called.
 //
 // Before a callback is registered, all internal client log events are
 // logged to stderr.
-void KUDU_EXPORT InstallLoggingCallback(const LoggingCallback& cb);
+void KUDU_EXPORT InstallLoggingCallback(KuduLoggingCallback* cb);
 
 // Removes a callback installed via InstallLoggingCallback().
 //
@@ -594,12 +595,13 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
   // This is thread safe.
   Status Apply(KuduWriteOperation* write_op) WARN_UNUSED_RESULT;
 
-  // Similar to the above, except never blocks. Even in the flush modes that return
-  // immediately, StatusCallback is triggered with the result. The callback may
-  // be called by a reactor thread, or in some cases may be called inline by
-  // the same thread which calls ApplyAsync().
+  // Similar to the above, except never blocks. Even in the flush modes that
+  // return immediately, 'cb' is triggered with the result. The callback may be
+  // called by a reactor thread, or in some cases may be called inline by the
+  // same thread which calls ApplyAsync(). 'cb' must remain valid until it called.
+  //
   // TODO: not yet implemented.
-  void ApplyAsync(KuduWriteOperation* write_op, StatusCallback cb);
+  void ApplyAsync(KuduWriteOperation* write_op, KuduStatusCallback* cb);
 
   // Flush any pending writes.
   //
@@ -633,9 +635,11 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
   // either from an IO thread or the same thread which calls FlushAsync. The callback
   // should not block.
   //
+  // For FlushAsync, 'cb' must remain valid until it is invoked.
+  //
   // This function is thread-safe.
   Status Flush() WARN_UNUSED_RESULT;
-  void FlushAsync(const StatusCallback& cb);
+  void FlushAsync(KuduStatusCallback* cb);
 
   // Close the session.
   // Returns an error if there are unflushed or in-flight operations.

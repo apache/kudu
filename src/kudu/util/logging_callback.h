@@ -10,7 +10,7 @@
 
 namespace kudu {
 
-enum KuduLogSeverity {
+enum LogSeverity {
   SEVERITY_INFO,
   SEVERITY_WARNING,
   SEVERITY_ERROR,
@@ -19,8 +19,8 @@ enum KuduLogSeverity {
 
 // Callback for simple logging.
 //
-// 'msg' is NOT terminated with an endline.
-typedef Callback<void(KuduLogSeverity severity,
+// 'message' is NOT terminated with an endline.
+typedef Callback<void(LogSeverity severity,
                       const char* filename,
                       int line_number,
                       const struct ::tm* time,

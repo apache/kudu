@@ -34,12 +34,25 @@ using rpc::RpcController;
 using kudu::client::KuduInsert;
 using kudu::client::KuduClient;
 using kudu::client::KuduSession;
+using kudu::client::KuduStatusCallback;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableCreator;
 
-InsertConsumer::InsertConsumer(const std::tr1::shared_ptr<KuduClient> &client)
+FlushCB::FlushCB(InsertConsumer* consumer)
+  : consumer_(consumer) {
+}
+
+FlushCB::~FlushCB() {
+}
+
+void FlushCB::Run(const Status& status) {
+  consumer_->BatchFinished(status);
+}
+
+InsertConsumer::InsertConsumer(const shared_ptr<KuduClient> &client)
   : initted_(false),
     schema_(CreateTwitterSchema()),
+    flush_cb_(this),
     client_(client),
     request_pending_(false) {
 }
@@ -129,7 +142,7 @@ void InsertConsumer::ConsumeJSON(const Slice& json_slice) {
   }
   if (do_flush) {
     VLOG(1) << "Sending batch of " << session_->CountBufferedOperations();
-    session_->FlushAsync(Bind(&InsertConsumer::BatchFinished, Unretained(this)));
+    session_->FlushAsync(&flush_cb_);
   }
 }
 

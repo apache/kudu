@@ -58,7 +58,7 @@ class SimpleSink : public google::LogSink {
                     const char* base_filename, int line,
                     const struct ::tm* tm_time,
                     const char* message, size_t message_len) OVERRIDE {
-    KuduLogSeverity kudu_severity;
+    LogSeverity kudu_severity;
     switch (severity) {
       case google::INFO:
         kudu_severity = SEVERITY_INFO;
@@ -75,7 +75,6 @@ class SimpleSink : public google::LogSink {
       default:
         LOG(FATAL) << "Unknown glog severity: " << severity;
     }
-    string msg(message, message_len);
     cb_.Run(kudu_severity, full_filename, line, tm_time, message, message_len);
   }
 

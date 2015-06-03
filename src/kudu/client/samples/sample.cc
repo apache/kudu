@@ -6,10 +6,10 @@
 #include <sstream>
 #include <tr1/memory>
 
+#include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/common/partial_row.h"
-#include "kudu/gutil/bind.h"
 #include "kudu/gutil/logging.h"
 
 using kudu::client::KuduClient;
@@ -22,6 +22,7 @@ using kudu::client::KuduRowResult;
 using kudu::client::KuduScanner;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSession;
+using kudu::client::KuduStatusFunctionCallback;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
@@ -103,7 +104,7 @@ static Status AlterTable(const shared_ptr<KuduClient>& client,
   return s;
 }
 
-static void StatusCB(const Status& status) {
+static void StatusCB(void* unused, const Status& status) {
   LOG(INFO) << "Asynchronous flush finished with status: " << status.ToString();
 }
 
@@ -126,7 +127,8 @@ static Status InsertRows(const shared_ptr<KuduTable>& table, int num_rows) {
   }
 
   // Test asynchronous flush.
-  session->FlushAsync(Bind(&StatusCB));
+  KuduStatusFunctionCallback<void*> status_cb(&StatusCB, NULL);
+  session->FlushAsync(&status_cb);
 
   // Look at the session's errors.
   vector<KuduError*> errors;
@@ -186,7 +188,8 @@ static Status ScanRows(const shared_ptr<KuduTable>& table) {
   return Status::OK();
 }
 
-static void LogCb(kudu::KuduLogSeverity severity,
+static void LogCb(void* unused,
+                  kudu::client::KuduLogSeverity severity,
                   const char* filename,
                   int line_number,
                   const struct ::tm* time,
@@ -204,7 +207,8 @@ static void LogCb(kudu::KuduLogSeverity severity,
 }
 
 int main(int argc, char* argv[]) {
-  kudu::client::InstallLoggingCallback(kudu::Bind(&LogCb));
+  kudu::client::KuduLoggingFunctionCallback<void*> log_cb(&LogCb, NULL);
+  kudu::client::InstallLoggingCallback(&log_cb);
 
   const string kTableName = "test_table";
 

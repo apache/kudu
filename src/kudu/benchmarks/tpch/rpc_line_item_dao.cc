@@ -9,6 +9,7 @@
 #include <utility>
 
 #include "kudu/benchmarks/tpch/rpc_line_item_dao.h"
+#include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/write_op.h"
@@ -36,13 +37,15 @@ using client::KuduRowResult;
 using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduSession;
+using client::KuduStatusCallback;
+using client::KuduStatusMemberCallback;
 using client::KuduTableCreator;
 using client::KuduUpdate;
 using std::vector;
 
 namespace {
 
-class FlushCallback : public RefCountedThreadSafe<FlushCallback> {
+class FlushCallback : public KuduStatusCallback {
  public:
   FlushCallback(shared_ptr<KuduSession> session, Semaphore *sem)
     : session_(session),
@@ -50,14 +53,11 @@ class FlushCallback : public RefCountedThreadSafe<FlushCallback> {
     sem_->Acquire();
   }
 
-  void StatusCB(const Status& s) {
+  virtual void Run(const Status& s) OVERRIDE {
     BatchFinished();
     CHECK_OK(s);
     sem_->Release();
-  }
-
-  StatusCallback AsStatusCallback() {
-    return Bind(&FlushCallback::StatusCB, this);
+    delete this;
   }
 
  private:
@@ -123,9 +123,8 @@ void RpcLineItemDAO::FlushIfBufferFull() {
 
   batch_size_ = 0;
 
-  FlushCallback* cb = new FlushCallback(session_, &semaphore_);
-  // The callback object will free 'cb' after it is invoked.
-  session_->FlushAsync(cb->AsStatusCallback());
+  // The callback object frees itself after it is invoked.
+  session_->FlushAsync(new FlushCallback(session_, &semaphore_));
 }
 
 void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
@@ -137,9 +136,11 @@ void RpcLineItemDAO::MutateLine(boost::function<void(KuduPartialRow*)> f) {
 }
 
 void RpcLineItemDAO::FinishWriting() {
-  scoped_refptr<FlushCallback> cb(new FlushCallback(session_, &semaphore_));
+  FlushCallback* cb = new FlushCallback(session_, &semaphore_);
   Status s = session_->Flush();
-  cb->StatusCB(s);
+
+  // Also deletes 'cb'.
+  cb->Run(s);
 }
 
 void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,

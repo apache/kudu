@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/error_collector.h"
@@ -440,6 +441,7 @@ Batcher::Batcher(KuduClient* client,
     weak_session_(session),
     error_collector_(error_collector),
     had_errors_(false),
+    flush_callback_(NULL),
     next_op_sequence_number_(0),
     outstanding_lookups_(0) {
 }
@@ -461,10 +463,10 @@ void Batcher::Abort() {
     MarkInFlightOpFailedUnlocked(op, Status::Aborted("Batch aborted"));
   }
 
-  if (!flush_callback_.is_null()) {
+  if (flush_callback_) {
     l.unlock();
 
-    flush_callback_.Run(Status::Aborted(""));
+    flush_callback_->Run(Status::Aborted(""));
   }
 }
 
@@ -526,10 +528,10 @@ void Batcher::CheckForFinishedFlush() {
     s = Status::IOError("Some errors occurred");
   }
 
-  flush_callback_.Run(s);
+  flush_callback_->Run(s);
 }
 
-void Batcher::FlushAsync(const StatusCallback& cb) {
+void Batcher::FlushAsync(KuduStatusCallback* cb) {
   {
     lock_guard<simple_spinlock> l(&lock_);
     CHECK_EQ(state_, kGatheringOps);

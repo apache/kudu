@@ -122,6 +122,7 @@ if (KUDU_EXPORTED_CLIENT)
 
   # Headers: client
   install(FILES
+    callbacks.h
     client.h
     row_result.h
     scan_predicate.h
@@ -137,11 +138,9 @@ if (KUDU_EXPORTED_CLIENT)
   # Headers: util
   install(FILES
     ../util/faststring.h
-    ../util/logging_callback.h
     ../util/monotime.h
     ../util/slice.h
     ../util/status.h
-    ../util/status_callback.h
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/util)
 
   # Client sample code.

@@ -13,6 +13,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/write_op.h"
@@ -74,6 +75,7 @@ using client::KuduRowResult;
 using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduSession;
+using client::KuduStatusMemberCallback;
 using client::KuduTable;
 using client::KuduTableCreator;
 using strings::Split;
@@ -342,8 +344,9 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   ++id;
   // Use synchronizer to keep 1 asynchronous batch flush maximum
   Synchronizer sync;
+  KuduStatusMemberCallback<Synchronizer> cb(&sync, &Synchronizer::StatusCB);
   // Prime the synchronizer as if it was running a batch (for for-loop code)
-  sync.AsStatusCallback().Run(Status::OK());
+  cb.Run(Status::OK());
   // Maintain buffer for random string generation
   char randstr[kRandomStrMaxLength + 1];
   // Insert in the id's key range
@@ -357,7 +360,7 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
     if (key % kFlushEveryN == 0) {
       sync.Wait();
       sync.Reset();
-      session->FlushAsync(sync.AsStatusCallback());
+      session->FlushAsync(&cb);
     }
     ReportTenthDone(key, start, end, id, kNumInsertClients);
   }
