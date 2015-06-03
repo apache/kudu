@@ -12,6 +12,13 @@
 // external synchronization, but if any of the threads may call a
 // non-const method, all threads accessing the same Slice must use
 // external synchronization.
+//
+// Slices can be built around faststrings and StringPieces using constructors
+// with implicit casts. Both StringPieces and faststrings depend on a great
+// deal of gutil code, so these constructors are conditionalized on
+// KUDU_HEADERS_USE_RICH_SLICE. Likewise, KUDU_HEADERS_USE_RICH_SLICE controls
+// whether to use gutil-based memeq/memcmp substitutes; if it is unset, Slice
+// will fall back to standard memcmp.
 
 #ifndef KUDU_UTIL_SLICE_H_
 #define KUDU_UTIL_SLICE_H_
@@ -23,10 +30,11 @@
 #include <string>
 
 #include "kudu/gutil/kudu_export.h"
-#include "kudu/gutil/logging.h"
+#ifdef KUDU_HEADERS_USE_RICH_SLICE
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/faststring.h"
+#endif
 
 namespace kudu {
 
@@ -56,14 +64,19 @@ class KUDU_EXPORT Slice {
     data_(reinterpret_cast<const uint8_t *>(s)),
     size_(strlen(s)) { }
 
+#ifdef KUDU_HEADERS_USE_RICH_SLICE
   // Create a slice that refers to the contents of the faststring.
   // Note that further appends to the faststring may invalidate this slice.
-  Slice(const faststring &s) : data_(s.data()), size_(s.size()) { }  // NOLINT(runtime/explicit)
+  Slice(const faststring &s) // NOLINT(runtime/explicit)
+    : data_(s.data()),
+      size_(s.size()) {
+  }
 
   Slice(const StringPiece& s) // NOLINT(runtime/explicit)
     : data_(reinterpret_cast<const uint8_t*>(s.data())),
       size_(s.size()) {
   }
+#endif
 
   // Return a pointer to the beginning of the referenced data
   const uint8_t* data() const { return data_; }
@@ -99,7 +112,7 @@ class KUDU_EXPORT Slice {
 
   // Truncate the slice to "n" bytes
   void truncate(size_t n) {
-    DCHECK_LE(n, size());
+    assert(n <= size());
     size_ = n;
   }
 
@@ -121,7 +134,7 @@ class KUDU_EXPORT Slice {
   // Return true iff "x" is a prefix of "*this"
   bool starts_with(const Slice& x) const {
     return ((size_ >= x.size_) &&
-            (strings::memeq(data_, x.data_, x.size_)));
+            (MemEqual(data_, x.data_, x.size_)));
   }
 
   // Comparator struct, useful for ordered collections (like STL maps).
@@ -141,6 +154,24 @@ class KUDU_EXPORT Slice {
   }
 
  private:
+  friend bool operator==(const Slice& x, const Slice& y);
+
+  static bool MemEqual(const void* a, const void* b, size_t n) {
+#ifdef KUDU_HEADERS_USE_RICH_SLICE
+    return strings::memeq(a, b, n);
+#else
+    return memcmp(a, b, n) == 0;
+#endif
+  }
+
+  static int MemCompare(const void* a, const void* b, size_t n) {
+#ifdef KUDU_HEADERS_USE_RICH_SLICE
+    return strings::fastmemcmp_inlined(a, b, n);
+#else
+    return memcmp(a, b, n);
+#endif
+  }
+
   const uint8_t* data_;
   size_t size_;
 
@@ -149,7 +180,7 @@ class KUDU_EXPORT Slice {
 
 inline bool operator==(const Slice& x, const Slice& y) {
   return ((x.size() == y.size()) &&
-          (strings::memeq(x.data(), y.data(), x.size())));
+          (Slice::MemEqual(x.data(), y.data(), x.size())));
 }
 
 inline bool operator!=(const Slice& x, const Slice& y) {
@@ -162,7 +193,7 @@ inline std::ostream& operator<<(std::ostream& o, const Slice& s) {
 
 inline int Slice::compare(const Slice& b) const {
   const int min_len = (size_ < b.size_) ? size_ : b.size_;
-  int r = strings::fastmemcmp_inlined(data_, b.data_, min_len);
+  int r = MemCompare(data_, b.data_, min_len);
   if (r == 0) {
     if (size_ < b.size_) r = -1;
     else if (size_ > b.size_) r = +1;

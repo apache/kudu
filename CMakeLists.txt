@@ -47,6 +47,10 @@ add_definitions(-DKUDU_HEADERS_USE_GLOG=1)
 # We want short macros from util/status.h.
 add_definitions(-DKUDU_HEADERS_USE_SHORT_STATUS_MACROS=1)
 
+# Slice includes many gutil dependencies that third-party users of the Kudu
+# client library don't have. Our build has them, though.
+add_definitions(-DKUDU_HEADERS_USE_RICH_SLICE=1)
+
 # compiler flags for different build types (run 'cmake -DCMAKE_BUILD_TYPE=<type> .')
 # For all builds:
 # For CMAKE_BUILD_TYPE=Debug
