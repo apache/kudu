@@ -7,7 +7,6 @@
 #include <string>
 
 #include "kudu/gutil/gtest.h"
-#include "kudu/gutil/integral_types.h"
 
 struct timeval;
 struct timespec;
@@ -49,7 +48,7 @@ class MonoDelta {
   static void NanosToTimeSpec(int64_t nanos, struct timespec* ts);
 
  private:
-  static const int64_t kUninitialized = kint64min;
+  static const int64_t kUninitialized;
 
   friend class MonoTime;
   FRIEND_TEST(TestMonoTime, TestDeltaConversions);
