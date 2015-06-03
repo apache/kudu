@@ -27,16 +27,16 @@ TEST(SliceTest, TestSliceMap) {
 
   int expectedValue = 0;
   BOOST_FOREACH(const MySliceMap::value_type& pair, my_map) {
-    int data = 'a' + expectedValue;
+    int data = 'a' + expectedValue++;
     ASSERT_EQ(Slice(reinterpret_cast<uint8_t*>(&data), 1), pair.first);
-    ASSERT_EQ(++expectedValue, pair.second);
+    ASSERT_EQ(expectedValue, pair.second);
   }
 
   expectedValue = 0;
   for (MySliceMap::iterator iter = my_map.begin(); iter != my_map.end(); iter++) {
-    int data = 'a' + expectedValue;
+    int data = 'a' + expectedValue++;
     ASSERT_EQ(Slice(reinterpret_cast<uint8_t*>(&data), 1), iter->first);
-    ASSERT_EQ(++expectedValue, iter->second);
+    ASSERT_EQ(expectedValue, iter->second);
   }
 }
 
