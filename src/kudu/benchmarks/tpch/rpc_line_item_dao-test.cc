@@ -1,6 +1,7 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <algorithm>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
@@ -55,6 +56,8 @@ class RpcLineItemDAOTest : public KuduTest {
   gscoped_ptr<RpcLineItemDAO> dao_;
   KuduSchema schema_;
 
+  // Builds a test row to be inserted into the lineitem table.
+  // The row's ship_date is set such that it matches the TPCH Q1 predicate.
   static void BuildTestRow(int order, int line, KuduPartialRow* row) {
     CHECK_OK(row->SetInt64(tpch::kOrderKeyColIdx, order));
     CHECK_OK(row->SetInt32(tpch::kLineNumberColIdx, line));
@@ -66,9 +69,9 @@ class RpcLineItemDAOTest : public KuduTest {
     CHECK_OK(row->SetDouble(tpch::kTaxColIdx, 123.45));
     CHECK_OK(row->SetStringCopy(tpch::kReturnFlagColIdx, StringPrintf("hello %d", line)));
     CHECK_OK(row->SetStringCopy(tpch::kLineStatusColIdx, StringPrintf("hello %d", line)));
-    CHECK_OK(row->SetStringCopy(tpch::kShipDateColIdx, Slice("2013-11-13")));
-    CHECK_OK(row->SetStringCopy(tpch::kCommitDateColIdx, Slice("2013-11-13")));
-    CHECK_OK(row->SetStringCopy(tpch::kReceiptDateColIdx, Slice("2013-11-13")));
+    CHECK_OK(row->SetStringCopy(tpch::kShipDateColIdx, Slice("1985-07-15")));
+    CHECK_OK(row->SetStringCopy(tpch::kCommitDateColIdx, Slice("1985-11-13")));
+    CHECK_OK(row->SetStringCopy(tpch::kReceiptDateColIdx, Slice("1985-11-13")));
     CHECK_OK(row->SetStringCopy(tpch::kShipInstructColIdx, StringPrintf("hello %d", line)));
     CHECK_OK(row->SetStringCopy(tpch::kShipModeColIdx, StringPrintf("hello %d", line)));
     CHECK_OK(row->SetStringCopy(tpch::kCommentColIdx, StringPrintf("hello %d", line)));
@@ -83,14 +86,31 @@ class RpcLineItemDAOTest : public KuduTest {
   int CountRows() {
     KuduSchema query_schema = schema_.CreateKeyProjection();
     vector<KuduColumnRangePredicate> preds;
-    dao_->OpenScanner(query_schema, preds);
+    gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
+    dao_->OpenScanner(query_schema, preds, &scanner);
     vector<KuduRowResult> rows;
     int count = 0;
-    while (dao_->HasMore()) {
-      dao_->GetNext(&rows);
+    while (scanner->HasMore()) {
+      scanner->GetNext(&rows);
       count += rows.size();
     }
     return count;
+  }
+
+  void ScanTpch1RangeToStrings(int64_t min_orderkey, int64_t max_orderkey,
+                          vector<string>* str_rows) {
+    str_rows->clear();
+    gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
+    dao_->OpenTpch1ScannerForOrderKeyRange(min_orderkey, max_orderkey,
+                                          &scanner);
+    vector<KuduRowResult> rows;
+    while (scanner->HasMore()) {
+      scanner->GetNext(&rows);
+      BOOST_FOREACH(const KuduRowResult& row, rows) {
+        str_rows->push_back(row.ToString());
+      }
+    }
+    std::sort(str_rows->begin(), str_rows->end());
   }
 }; // class RpcLineItemDAOTest
 
@@ -98,13 +118,19 @@ TEST_F(RpcLineItemDAOTest, TestInsert) {
   dao_->WriteLine(boost::bind(BuildTestRow, 1, 1, _1));
   dao_->FinishWriting();
   ASSERT_EQ(1, CountRows());
-  for (int i = 2; i < 7; i++) {
+  for (int i = 2; i < 10; i++) {
     for (int y = 0; y < 5; y++) {
       dao_->WriteLine(boost::bind(BuildTestRow, i, y, _1));
     }
   }
   dao_->FinishWriting();
-  ASSERT_EQ(26, CountRows());
+  ASSERT_EQ(41, CountRows());
+
+  vector<string> rows;
+  ScanTpch1RangeToStrings(7, 7, &rows);
+  ASSERT_EQ(5, rows.size());
+  ScanTpch1RangeToStrings(5, 7, &rows);
+  ASSERT_EQ(15, rows.size());
 }
 
 TEST_F(RpcLineItemDAOTest, TestUpdate) {
@@ -115,10 +141,11 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
   dao_->MutateLine(boost::bind(UpdateTestRow, 1, 1, 12345, _1));
   dao_->FinishWriting();
   vector<KuduColumnRangePredicate> preds;
-  dao_->OpenScanner(schema_, preds);
+  gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
+  dao_->OpenScanner(schema_, preds, &scanner);
   vector<KuduRowResult> rows;
-  while (dao_->HasMore()) {
-    dao_->GetNext(&rows);
+  while (scanner->HasMore()) {
+    scanner->GetNext(&rows);
     BOOST_FOREACH(const KuduRowResult& row, rows) {
       int32_t l_quantity;
       ASSERT_OK(row.GetInt32(tpch::kQuantityColIdx, &l_quantity));

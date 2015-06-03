@@ -22,6 +22,8 @@ namespace kudu {
 
 class RpcLineItemDAO {
  public:
+  class Scanner;
+
   RpcLineItemDAO(const std::string& master_address,
                  const std::string& table_name,
                  int batch_size,
@@ -35,14 +37,36 @@ class RpcLineItemDAO {
   // Deletes previous scanner if one is open. 'query_schema' is copied internally and can safely
   // be discarded after this call.
   void OpenScanner(const client::KuduSchema& query_schema,
-                   const std::vector<client::KuduColumnRangePredicate>& preds);
+                   const std::vector<client::KuduColumnRangePredicate>& preds,
+                   gscoped_ptr<Scanner>* scanner);
   // Calls OpenScanner with the tpch1 query parameters.
-  void OpenTpch1Scanner();
-  bool HasMore();
+  void OpenTpch1Scanner(gscoped_ptr<Scanner>* scanner);
 
-  // Return the next batch of rows into '*rows'. Any existing data is cleared.
-  void GetNext(std::vector<client::KuduRowResult> *rows);
+  // Opens a scanner with the TPCH Q1 projection and filter, plus range filter to only
+  // select rows in the given order key range.
+  void OpenTpch1ScannerForOrderKeyRange(int64_t min_orderkey, int64_t max_orderkey,
+                                        gscoped_ptr<Scanner>* scanner);
   bool IsTableEmpty();
+
+  class Scanner {
+   public:
+    ~Scanner() {}
+
+    // Return true if there are more rows left in the scanner.
+    bool HasMore();
+
+    // Return the next batch of rows into '*rows'. Any existing data is cleared.
+    void GetNext(std::vector<client::KuduRowResult> *rows);
+
+   private:
+    friend class RpcLineItemDAO;
+    Scanner() {}
+
+    // Keeps a copy of the KuduSchema provided by OpenScanner() to ensure the schema's
+    // liveness while scanning.
+    gscoped_ptr<client::KuduSchema> projection_;
+    gscoped_ptr<client::KuduScanner> scanner_;
+  };
 
  private:
   static const Slice kScanUpperBound;
@@ -53,10 +77,6 @@ class RpcLineItemDAO {
   std::tr1::shared_ptr<client::KuduClient> client_;
   std::tr1::shared_ptr<client::KuduSession> session_;
   scoped_refptr<client::KuduTable> client_table_;
-  // Keeps a copy of the KuduSchema provided by OpenScanner() to ensure the schema's
-  // liveness while scanning.
-  gscoped_ptr<client::KuduSchema> current_scanner_projection_;
-  gscoped_ptr<client::KuduScanner> current_scanner_;
   const std::string master_address_;
   const std::string table_name_;
   const MonoDelta timeout_;

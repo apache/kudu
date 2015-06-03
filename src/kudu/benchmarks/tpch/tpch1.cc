@@ -133,7 +133,8 @@ void LoadLineItems(const string &path, RpcLineItemDAO *dao) {
 
 void WarmupScanCache(RpcLineItemDAO* dao) {
   // Warms up cache for the tpch1 query.
-  dao->OpenTpch1Scanner();
+  gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
+  dao->OpenTpch1Scanner(&scanner);
   codegen::CompilationManager::GetSingleton()->Wait();
 }
 
@@ -141,14 +142,15 @@ void Tpch1(RpcLineItemDAO *dao) {
   typedef unordered_map<SliceMapKey, Result*, hash> slice_map;
   typedef unordered_map<SliceMapKey, slice_map*, hash> slice_map_map;
 
-  dao->OpenTpch1Scanner();
+  gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
+  dao->OpenTpch1Scanner(&scanner);
 
   int matching_rows = 0;
   slice_map_map results;
   Result *r;
   vector<KuduRowResult> rows;
-  while (dao->HasMore()) {
-    dao->GetNext(&rows);
+  while (scanner->HasMore()) {
+    scanner->GetNext(&rows);
     BOOST_FOREACH(const KuduRowResult& row, rows) {
       matching_rows++;
 

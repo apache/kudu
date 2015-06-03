@@ -142,39 +142,52 @@ void RpcLineItemDAO::FinishWriting() {
 }
 
 void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
-                                 const vector<KuduColumnRangePredicate>& preds) {
-  KuduScanner *scanner = new KuduScanner(client_table_.get());
-
-  current_scanner_.reset(scanner);
-  current_scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
-  current_scanner_projection_.reset(new KuduSchema(query_schema));
-  CHECK_OK(current_scanner_->SetProjection(current_scanner_projection_.get()));
+                                 const vector<KuduColumnRangePredicate>& preds,
+                                 gscoped_ptr<Scanner>* out_scanner) {
+  gscoped_ptr<Scanner> ret(new Scanner);
+  ret->scanner_.reset(new KuduScanner(client_table_.get()));
+  ret->scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
+  ret->projection_.reset(new KuduSchema(query_schema));
+  CHECK_OK(ret->scanner_->SetProjection(ret->projection_.get()));
   BOOST_FOREACH(const KuduColumnRangePredicate& pred, preds) {
-    CHECK_OK(current_scanner_->AddConjunctPredicate(pred));
+    CHECK_OK(ret->scanner_->AddConjunctPredicate(pred));
   }
-  CHECK_OK(current_scanner_->Open());
+  CHECK_OK(ret->scanner_->Open());
+  out_scanner->swap(ret);
 }
 
-void RpcLineItemDAO::OpenTpch1Scanner() {
+void RpcLineItemDAO::OpenTpch1Scanner(gscoped_ptr<Scanner>* out_scanner) {
   KuduSchema schema(tpch::CreateTpch1QuerySchema());
   vector<KuduColumnRangePredicate> preds;
   KuduColumnRangePredicate pred1(schema.Column(0), NULL, &kScanUpperBound);
   preds.push_back(pred1);
-  OpenScanner(schema, preds);
+  OpenScanner(schema, preds, out_scanner);
 }
 
-bool RpcLineItemDAO::HasMore() {
-  bool has_more = current_scanner_->HasMoreRows();
+void RpcLineItemDAO::OpenTpch1ScannerForOrderKeyRange(int64_t min_key, int64_t max_key,
+                                                      gscoped_ptr<Scanner>* out_scanner) {
+  KuduSchema schema(tpch::CreateTpch1QuerySchema());
+  vector<KuduColumnRangePredicate> preds;
+  KuduColumnRangePredicate pred1(schema.Column(0), NULL, &kScanUpperBound);
+  preds.push_back(pred1);
+  KuduColumnRangePredicate pred2(client::KuduColumnSchema(tpch::kOrderKeyColName,
+                                                          client::KuduColumnSchema::INT64),
+                                 &min_key, &max_key);
+  preds.push_back(pred2);
+  OpenScanner(schema, preds, out_scanner);
+}
+
+bool RpcLineItemDAO::Scanner::HasMore() {
+  bool has_more = scanner_->HasMoreRows();
   if (!has_more) {
-    current_scanner_->Close();
+    scanner_->Close();
   }
   return has_more;
 }
 
-
-void RpcLineItemDAO::GetNext(vector<KuduRowResult> *rows) {
+void RpcLineItemDAO::Scanner::GetNext(vector<KuduRowResult> *rows) {
   rows->clear();
-  CHECK_OK(current_scanner_->NextBatch(rows));
+  CHECK_OK(scanner_->NextBatch(rows));
 }
 
 bool RpcLineItemDAO::IsTableEmpty() {

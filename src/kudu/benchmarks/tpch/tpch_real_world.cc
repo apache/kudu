@@ -282,12 +282,13 @@ void TpchRealWorld::RunQueriesThread() {
   gscoped_ptr<RpcLineItemDAO> dao = GetInittedDAO();
   while (!stop_threads_.Load()) {
     LOG_TIMING(INFO, StringPrintf("querying %ld rows", rows_inserted_.Load())) {
-      dao->OpenTpch1Scanner();
+      gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
+      dao->OpenTpch1Scanner(&scanner);
       vector<KuduRowResult> rows;
       // We check stop_threads_ even while scanning since it can takes tens of seconds to query.
       // This means that the last timing cannot be used for reporting.
-      while (dao->HasMore() && !stop_threads_.Load()) {
-        dao->GetNext(&rows);
+      while (scanner->HasMore() && !stop_threads_.Load()) {
+        scanner->GetNext(&rows);
       }
     }
   }
