@@ -714,6 +714,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
     private static final Log LOG = LogFactory.getLog(Verify.class);
     private static final BytesWritable DEF = new BytesWritable(NO_KEY);
+    private static final Joiner COMMA_JOINER = Joiner.on(",");
     private static final byte[] rowKey = new byte[ROWKEY_LENGTH];
     private static final byte[] prev = new byte[ROWKEY_LENGTH];
 
@@ -774,25 +775,22 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
         // TODO check for more than one def, should not happen
 
-        StringBuilder refsSb = null;
+        List<String> refsList = new ArrayList<>(refs.size());
         String keyString = null;
         if (defCount == 0 || refs.size() != 1) {
-          refsSb = new StringBuilder();
-          String comma = "";
           for (byte[] ref : refs) {
-            refsSb.append(comma);
-            comma = ",";
-            refsSb.append(Bytes.pretty(ref));
+            refsList.add(COMMA_JOINER.join(Bytes.getLong(ref), Bytes.getLong(ref, 8)));
           }
-          keyString = Bytes.pretty(key.getBytes());
+          keyString = COMMA_JOINER.join(Bytes.getLong(key.getBytes()),
+              Bytes.getLong(key.getBytes(), 8));
 
-          LOG.error("Linked List error: Key = " + keyString + " References = " + refsSb.toString());
+          LOG.error("Linked List error: Key = " + keyString + " References = " + refsList);
         }
 
         if (defCount == 0 && refs.size() > 0) {
           // this is bad, found a node that is referenced but not defined. It must have been
           // lost, emit some info about this node for debugging purposes.
-          context.write(new Text(keyString), new Text(refsSb.toString()));
+          context.write(new Text(keyString), new Text(refsList.toString()));
           context.getCounter(Counts.UNDEFINED).increment(1);
         } else if (defCount > 0 && refs.size() == 0) {
           // node is defined but not referenced
@@ -800,8 +798,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           context.getCounter(Counts.UNREFERENCED).increment(1);
         } else {
           if (refs.size() > 1) {
-            if (refsSb != null) {
-              context.write(new Text(keyString), new Text(refsSb.toString()));
+            if (refsList != null) {
+              context.write(new Text(keyString), new Text(refsList.toString()));
             }
             context.getCounter(Counts.EXTRAREFERENCES).increment(refs.size() - 1);
           }
