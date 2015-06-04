@@ -35,7 +35,8 @@ class EncodedKey {
 
   // Given an EncodedKey, increment it to the next lexicographically greater EncodedKey.
   static Status IncrementEncodedKey(const Schema& tablet_schema,
-                                    gscoped_ptr<EncodedKey>* key);
+                                    gscoped_ptr<EncodedKey>* key,
+                                    Arena* arena);
 
   const Slice &encoded_key() const { return encoded_key_; }
 
@@ -83,6 +84,9 @@ class EncodedKeyBuilder {
   // Calling this mutates the current value of the builder such that
   // another call to BuildEncodedKey() with the same value will not
   // return the same resullt as before.
+  //
+  // TODO: this thing doesn't work properly! It only increments the
+  // encoded key, and not 'raw_keys'.
   EncodedKey *BuildSuccessorEncodedKey();
 
   EncodedKey *BuildEncodedKey();

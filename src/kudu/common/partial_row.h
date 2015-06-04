@@ -148,6 +148,7 @@ class KUDU_EXPORT KuduPartialRow {
   const Schema* schema() const { return schema_; }
 
  private:
+  friend class RowKeyUtilTest;
   friend class RowOperationsPBEncoder;
   friend class client::KuduWriteOperation;   // for row_data_.
 

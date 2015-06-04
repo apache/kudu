@@ -984,7 +984,7 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
                             scan_pb.encoded_last_row_key(), &start),
                           "Failed to decode encoded last row key");
     // Increment the start key, so we don't return the last row again.
-    RETURN_NOT_OK_PREPEND(EncodedKey::IncrementEncodedKey(tablet_schema, &start),
+    RETURN_NOT_OK_PREPEND(EncodedKey::IncrementEncodedKey(tablet_schema, &start, scanner->arena()),
                           "Failed to increment encoded last row key");
   }
 

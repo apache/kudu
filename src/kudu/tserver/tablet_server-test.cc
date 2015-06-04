@@ -1137,6 +1137,10 @@ TEST_F(TabletServerTest, TestSnapshotScan_OpenScanner) {
 
 // Test retrying a snapshot scan using last_row.
 TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
+  // Set the internal batching within the tserver to be small. Otherwise,
+  // even though we use a small batch size in our request, we'd end up reading
+  // many rows at a time.
+  FLAGS_tablet_server_scan_batch_size_rows = 5;
   const int num_rows = AllowSlowTests() ? 1000 : 100;
   const int num_batches = AllowSlowTests() ? 10 : 5;
   const int batch_size = num_rows / num_batches;

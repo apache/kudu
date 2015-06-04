@@ -912,41 +912,64 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   const string kScanTable = "TestScanFaultTolerance";
   scoped_refptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, 3, vector<string>(), &table));
-  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(),
-                                         FLAGS_test_scan_num_rows));
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 
   // Do an initial scan to determine the expected rows for later verification.
   vector<string> expected_rows;
   ScanTableToStrings(table.get(), &expected_rows);
 
-  // Test a few different recoverable server-side error conditions.
-  // Since these are recoverable, the scan will succeed when retried elsewhere.
+  for (int with_flush = 0; with_flush <= 1; with_flush++) {
+    SCOPED_TRACE((with_flush == 1) ? "with flush" : "without flush");
+    // The second time through, flush to ensure that we test both against MRS and
+    // disk.
+    if (with_flush) {
+      string tablet_id = GetFirstTabletId(table.get());
+      for (int i = 0; i < 3; i++) {
+        scoped_refptr<TabletPeer> tablet_peer;
+        ASSERT_TRUE(cluster_->mini_tablet_server(i)->server()->tablet_manager()->LookupTablet(
+                tablet_id, &tablet_peer));
+        ASSERT_OK(tablet_peer->tablet()->Flush());
+      }
+    }
 
-  // Restarting and waiting should result in a SCANNER_EXPIRED error.
-  LOG(INFO) << "Doing a scan while restarting a tserver and waiting for it to come up...";
-  ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
-                          boost::bind<Status>(
-                              &ClientTest_TestScanFaultTolerance_Test::RestartTServerAndWait,
-                              this, _1)));
+    // Test a few different recoverable server-side error conditions.
+    // Since these are recoverable, the scan will succeed when retried elsewhere.
 
-  // Restarting and not waiting means the tserver is hopefully bootstrapping, leading to
-  // a TABLET_NOT_RUNNING error.
-  LOG(INFO) << "Doing a scan while restarting a tserver...";
-  ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
-                          boost::bind<Status>(
-                              &ClientTest_TestScanFaultTolerance_Test::RestartTServerAsync,
-                              this, _1)));
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
-    ASSERT_OK(ts->WaitStarted());
+    // Restarting and waiting should result in a SCANNER_EXPIRED error.
+    LOG(INFO) << "Doing a scan while restarting a tserver and waiting for it to come up...";
+    ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
+        boost::bind<Status>(
+            &ClientTest_TestScanFaultTolerance_Test::RestartTServerAndWait,
+            this, _1)));
+
+    // Restarting and not waiting means the tserver is hopefully bootstrapping, leading to
+    // a TABLET_NOT_RUNNING error.
+    LOG(INFO) << "Doing a scan while restarting a tserver...";
+    ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
+        boost::bind<Status>(
+            &ClientTest_TestScanFaultTolerance_Test::RestartTServerAsync,
+            this, _1)));
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+      ASSERT_OK(ts->WaitStarted());
+    }
+
+    // Killing the tserver should lead to an RPC timeout.
+    LOG(INFO) << "Doing a scan while killing a tserver...";
+    ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
+        boost::bind<Status>(
+            &ClientTest_TestScanFaultTolerance_Test::KillTServer,
+            this, _1)));
+
+    // Restart the server that we killed.
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+      if (!ts->is_started()) {
+        ASSERT_OK(ts->Start());
+        ASSERT_OK(ts->WaitStarted());
+      }
+    }
   }
-
-  // Killing the tserver should lead to an RPC timeout.
-  LOG(INFO) << "Doing a scan while killing a tserver...";
-  ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
-                          boost::bind<Status>(
-                              &ClientTest_TestScanFaultTolerance_Test::KillTServer,
-                              this, _1)));
 }
 
 TEST_F(ClientTest, TestGetTabletServerBlacklist) {

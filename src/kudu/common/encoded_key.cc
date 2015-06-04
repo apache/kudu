@@ -6,6 +6,8 @@
 
 #include "kudu/common/encoded_key.h"
 #include "kudu/common/key_encoder.h"
+#include "kudu/common/row.h"
+#include "kudu/common/row_key-util.h"
 
 namespace kudu {
 
@@ -48,20 +50,38 @@ Status EncodedKey::DecodeEncodedString(const Schema& schema,
   return Status::OK();
 }
 
-Status EncodedKey::IncrementEncodedKey(const Schema& tablet_schema, gscoped_ptr<EncodedKey> *key) {
-  EncodedKey* key_ptr = key->get();
-  DCHECK_EQ(key_ptr->num_key_columns(), tablet_schema.num_key_columns());
-  // Make a new builder out of the contents key.
-  EncodedKeyBuilder kb(&tablet_schema);
-  for (int i = 0; i < tablet_schema.num_key_columns(); i++) {
-    kb.AddColumnKey(key_ptr->raw_keys()[i]);
+Status EncodedKey::IncrementEncodedKey(const Schema& tablet_schema,
+                                       gscoped_ptr<EncodedKey> *key,
+                                       Arena* arena) {
+  // Copy the row itself to the Arena.
+  uint8_t* new_row_key = static_cast<uint8_t*>(
+      arena->AllocateBytes(tablet_schema.key_byte_size()));
+  if (PREDICT_FALSE(!new_row_key)) {
+    return Status::RuntimeError("Out of memory allocating row key");
   }
-  // Set the key to its next greater successor.
-  gscoped_ptr<EncodedKey> successor(kb.BuildSuccessorEncodedKey());
-  if (!successor) {
+
+  vector<const void*> new_raw_keys(tablet_schema.num_key_columns());
+  for (int i = 0; i < tablet_schema.num_key_columns(); i++) {
+    int size = tablet_schema.column(i).type_info()->size();
+
+    void* dst = new_row_key + tablet_schema.column_offset(i);
+    new_raw_keys[i] = dst;
+    memcpy(dst,
+           (*key)->raw_keys()[i],
+           size);
+  }
+
+  // Increment the new key
+  ContiguousRow new_row(&tablet_schema, new_row_key);
+  if (!row_key_util::IncrementKey(&new_row, arena)) {
     return Status::IllegalState("No lexicographically greater key exists");
   }
-  key->swap(successor);
+
+  // Re-encode it.
+  faststring buf;
+  tablet_schema.EncodeComparableKey(new_row, &buf);
+
+  key->reset(new EncodedKey(&buf, &new_raw_keys, tablet_schema.num_key_columns()));
   return Status::OK();
 }
 

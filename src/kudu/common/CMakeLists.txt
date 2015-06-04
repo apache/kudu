@@ -33,11 +33,18 @@ add_library(kudu_common
   scan_predicate.cc
   predicate_encoder.cc
   encoded_key.cc
+  row_key-util.cc
   scan_spec.cc
   schema.cc
   timestamp.cc
   types.cc
 )
+
+# Workaround for clang bug https://llvm.org/bugs/show_bug.cgi?id=23757
+# in which it incorrectly optimizes row_key-util.cc and causes incorrect results.
+if ("${COMPILER_FAMILY}" STREQUAL "clang")
+  set_source_files_properties(row_key-util.cc PROPERTIES COMPILE_FLAGS -fwrapv)
+endif()
 
 target_link_libraries(kudu_common
   kudu_common_proto
@@ -53,6 +60,7 @@ ADD_KUDU_TEST(partial_row-test)
 ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(predicate_encoder-test)
 ADD_KUDU_TEST(row_changelist-test)
+ADD_KUDU_TEST(row_key-util-test)
 ADD_KUDU_TEST(row_operations-test)
 ADD_KUDU_TEST(schema-test)
 ADD_KUDU_TEST(wire_protocol-test)
