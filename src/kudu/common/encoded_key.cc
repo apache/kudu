@@ -27,6 +27,15 @@ EncodedKey::EncodedKey(faststring* data,
   raw_keys_.swap(*raw_keys);
 }
 
+gscoped_ptr<EncodedKey> EncodedKey::FromContiguousRow(const ConstContiguousRow& row) {
+  EncodedKeyBuilder kb(row.schema());
+  for (int i = 0; i < row.schema()->num_key_columns(); i++) {
+    kb.AddColumnKey(row.cell_ptr(i));
+  }
+  return make_gscoped_ptr(kb.BuildEncodedKey());
+
+}
+
 Status EncodedKey::DecodeEncodedString(const Schema& schema,
                                        Arena* arena,
                                        const Slice& encoded,
@@ -136,10 +145,6 @@ void EncodedKeyBuilder::AddColumnKey(const void *raw_key) {
   ++idx_;
 }
 
-EncodedKey* EncodedKeyBuilder::BuildSuccessorEncodedKey() {
-  return encoded_key_.AdvanceToSuccessor() ? BuildEncodedKey() : NULL;
-}
-
 EncodedKey *EncodedKeyBuilder::BuildEncodedKey() {
   if (idx_ == 0) {
     return NULL;
@@ -176,6 +181,23 @@ string EncodedKey::RangeToString(const EncodedKey* lower, const EncodedKey* uppe
   } else {
     LOG(DFATAL) << "Invalid key!";
     ret = "invalid key range";
+  }
+  return ret;
+}
+
+string EncodedKey::RangeToStringWithSchema(const EncodedKey* lower, const EncodedKey* upper,
+                                           const Schema& s) {
+  string ret;
+  if (lower) {
+    ret.append("PK >= ");
+    ret.append(s.DebugEncodedRowKey(lower->encoded_key(), Schema::START_KEY));
+  }
+  if (lower && upper) {
+    ret.append(" AND ");
+  }
+  if (upper) {
+    ret.append("PK < ");
+    ret.append(s.DebugEncodedRowKey(upper->encoded_key(), Schema::END_KEY));
   }
   return ret;
 }

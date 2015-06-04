@@ -18,6 +18,7 @@ TypeInfo::TypeInfo(TypeTraitsClass t)
   : type_(TypeTraitsClass::type),
     name_(TypeTraitsClass::name()),
     size_(TypeTraitsClass::size),
+    min_value_(TypeTraitsClass::min_value()),
     append_func_(TypeTraitsClass::AppendDebugStringForValue),
     compare_func_(TypeTraitsClass::Compare) {
 }

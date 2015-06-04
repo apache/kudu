@@ -582,6 +582,10 @@ class Tablet::Iterator : public RowwiseIterator {
   const MvccSnapshot snap_;
   const OrderMode order_;
   gscoped_ptr<RowwiseIterator> iter_;
+
+  // TODO: we could probably share an arena with the Scanner object inside the
+  // tserver, but piping it in would require changing a lot of call-sites.
+  Arena arena_;
   RangePredicateEncoder encoder_;
 };
 

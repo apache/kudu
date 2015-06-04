@@ -423,9 +423,9 @@ Status MemRowSet::Iterator::Init(ScanSpec *spec) {
     }
   }
 
-  if (spec && spec->upper_bound_key()) {
-    const Slice &upper_bound = spec->upper_bound_key()->encoded_key();
-    upper_bound_.reset(upper_bound);
+  if (spec && spec->exclusive_upper_bound_key()) {
+    const Slice &upper_bound = spec->exclusive_upper_bound_key()->encoded_key();
+    exclusive_upper_bound_.reset(upper_bound);
   }
 
   state_ = kScanning;

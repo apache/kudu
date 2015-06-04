@@ -24,18 +24,35 @@ void ScanSpec::SetLowerBoundKey(const EncodedKey* key) {
     lower_bound_key_ = key;
   }
 }
-void ScanSpec::SetUpperBoundKey(const EncodedKey* key) {
-  if (upper_bound_key_ == NULL ||
-      key->encoded_key().compare(upper_bound_key_->encoded_key()) < 0) {
-    upper_bound_key_ = key;
+void ScanSpec::SetExclusiveUpperBoundKey(const EncodedKey* key) {
+  if (exclusive_upper_bound_key_ == NULL ||
+      key->encoded_key().compare(exclusive_upper_bound_key_->encoded_key()) < 0) {
+    exclusive_upper_bound_key_ = key;
   }
 }
 
 string ScanSpec::ToString() const {
+  return ToStringWithOptionalSchema(NULL);
+}
+
+string ScanSpec::ToStringWithSchema(const Schema& s) const {
+  return ToStringWithOptionalSchema(&s);
+}
+
+string ScanSpec::ToStringWithOptionalSchema(const Schema* s) const {
   vector<string> preds;
 
-  if (lower_bound_key_ || upper_bound_key_) {
-    preds.push_back(EncodedKey::RangeToString(lower_bound_key_, upper_bound_key_));
+  if (lower_bound_key_ || exclusive_upper_bound_key_) {
+    if (s) {
+      preds.push_back(EncodedKey::RangeToStringWithSchema(
+                          lower_bound_key_,
+                          exclusive_upper_bound_key_,
+                          *s));
+    } else {
+      preds.push_back(EncodedKey::RangeToString(
+                          lower_bound_key_,
+                          exclusive_upper_bound_key_));
+    }
   }
 
   BOOST_FOREACH(const ColumnRangePredicate& pred, predicates_) {

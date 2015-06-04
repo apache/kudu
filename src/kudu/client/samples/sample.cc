@@ -144,27 +144,33 @@ static Status ScanRows(scoped_refptr<KuduTable>& table) {
   KUDU_RETURN_NOT_OK(scanner.AddConjunctPredicate(pred));
   KUDU_RETURN_NOT_OK(scanner.Open());
   vector<KuduRowResult> results;
+
+  int next_row = lower_bound;
   while (scanner.HasMoreRows()) {
     KUDU_RETURN_NOT_OK(scanner.NextBatch(&results));
     for (vector<KuduRowResult>::iterator iter = results.begin();
         iter != results.end();
-        iter++, lower_bound++) {
+        iter++, next_row++) {
       const KuduRowResult& result = *iter;
       int32_t val;
       KUDU_RETURN_NOT_OK(result.GetInt32("key", &val));
-      if (val != lower_bound) {
+      if (val != next_row) {
         stringstream out;
         out << "Scan returned the wrong results. Expected key "
-            << lower_bound << " but got " << val;
+            << next_row << " but got " << val;
         return Status::IOError(out.str());
       }
     }
     results.clear();
   }
-  if (lower_bound != upper_bound) {
+
+  // next_row is now one past the last row we read.
+  int last_row_seen = next_row - 1;
+
+  if (last_row_seen != upper_bound) {
     stringstream out;
-    out << "Scan returned the wrong results. Expected "
-        << upper_bound << " rows but got " << lower_bound;
+    out << "Scan returned the wrong results. Expected last row to be "
+        << upper_bound << " rows but got " << last_row_seen;
     return Status::IOError(out.str());
   }
   return Status::OK();

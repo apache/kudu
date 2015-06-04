@@ -1443,10 +1443,10 @@ TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
   vector<string> results;
   ASSERT_NO_FATAL_FAILURE(
     DrainScannerToStrings(resp.scanner_id(), schema_, &results));
-  ASSERT_EQ(10, results.size());
+  ASSERT_EQ(9, results.size());
   EXPECT_EQ("(int32 key=51, int32 int_val=102, string string_val=hello 51)",
             results.front());
-  EXPECT_EQ("(int32 key=60, int32 int_val=120, string string_val=hello 60)",
+  EXPECT_EQ("(int32 key=59, int32 int_val=118, string string_val=hello 59)",
             results.back());
 }
 

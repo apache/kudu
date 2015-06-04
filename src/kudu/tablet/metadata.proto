@@ -60,10 +60,10 @@ message TabletSuperBlockPB {
   // The latest durable MemRowSet id
   required int64 last_durable_mrs_id = 3;
 
-  // Tablet start-key
+  // Tablet start-key (inclusive)
   required bytes start_key = 4;
 
-  // Tablet end-key
+  // Tablet end-key (exclusive)
   required bytes end_key = 5;
 
   // Tablet RowSets

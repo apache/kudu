@@ -15,6 +15,8 @@
 namespace kudu {
 namespace tablet {
 
+const char* const kTestHostnames[] = { "foo", "foobar", "baz", NULL };
+
 class CompositePushdownTest : public KuduTabletTest {
  public:
   CompositePushdownTest()
@@ -22,8 +24,9 @@ class CompositePushdownTest : public KuduTabletTest {
                               (ColumnSchema("year", INT16))
                               (ColumnSchema("month", INT8))
                               (ColumnSchema("day", INT8))
+                              (ColumnSchema("hostname", STRING))
                               (ColumnSchema("data", STRING)),
-                              3)) {
+                              4)) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -41,20 +44,39 @@ class CompositePushdownTest : public KuduTabletTest {
     for (int16_t year = 2000; year <= 2010; year++) {
       for (int8_t month = 1; month <= 12; month++) {
         for (int8_t day = 1; day <= 28; day++) {
-          CHECK_OK(row.SetInt16(0, year));
-          CHECK_OK(row.SetInt8(1, month));
-          CHECK_OK(row.SetInt8(2, day));
-          CHECK_OK(row.SetStringCopy(3, StringPrintf("%d/%02d/%02d", year, month, day)));
-          ASSERT_OK_FAST(writer.Insert(row));
+          for (int host_idx = 0; kTestHostnames[host_idx] != NULL; host_idx++) {
+            CHECK_OK(row.SetInt16(0, year));
+            CHECK_OK(row.SetInt8(1, month));
+            CHECK_OK(row.SetInt8(2, day));
+            CHECK_OK(row.SetStringCopy(3, kTestHostnames[host_idx]));
+            CHECK_OK(row.SetStringCopy(4, StringPrintf("%d/%02d/%02d-%s", year, month, day,
+                                                       kTestHostnames[host_idx])));
+            ASSERT_OK_FAST(writer.Insert(row));
 
-          if (i == nrows * 9 / 10) {
-            ASSERT_OK(tablet()->Flush());
+            if (i == nrows * 9 / 10) {
+              ASSERT_OK(tablet()->Flush());
+            }
+            ++i;
           }
-          ++i;
         }
       }
     }
   }
+
+  // Helper function for sorting returned results by the 'data' field.
+  // This is needed as "2" is lexicographically greater than "12" which means
+  // that, e.g., comparing "(int16 year=2001, int8 month=2, int8 day=7, string
+  // data=2001/02/07)" to "(int16 year=2001, int8 month=12, int8
+  // day=7, string data=2001/12/07)" would be semantically incorrect if
+  // the comparison was on the whole string vs the last portion of the
+  // string ("2001/02/01" vs. "2001/12/01")
+  struct SuffixComparator {
+    bool operator()(const string &a, const string &b) {
+      string s_a = a.substr(a.find("data="));
+      string s_b = b.substr(b.find("data="));
+      return s_a < s_b;
+    }
+  };
 
   void ScanTablet(ScanSpec *spec, vector<string> *results, const char *descr) {
     SCOPED_TRACE(descr);
@@ -66,30 +88,67 @@ class CompositePushdownTest : public KuduTabletTest {
     LOG_TIMING(INFO, descr) {
       ASSERT_OK(IterateToStringList(iter.get(), results));
     }
+    std::sort(results->begin(), results->end(), SuffixComparator());
     BOOST_FOREACH(const string &str, *results) {
       VLOG(1) << str;
     }
   }
 };
 
-// Helper function for sorting returned results by the last twelve
-// characters (the formatted date). This is needed as "2" is
-// lexicographically greater than "12" which means that, e.g.,
-// comparing "(int16 year=2001, int8 month=2, int8 day=7, string
-// data=2001/02/07)" to "(int16 year=2001, int8 month=12, int8
-// day=7, string data=2001/12/07)" would be semantically incorrect if
-// the comparison was on the whole string vs the last portion of the
-// string ("2001/02/01" vs. "2001/12/01")
-struct SuffixComparator {
-  bool operator()(const string &a, const string &b) {
-    size_t len = a.size();
-    string s_a = a.substr(len - 12, 11);
-    string s_b = b.substr(len - 12, 11);
-    return s_a < s_b;
-  }
-};
-
 TEST_F(CompositePushdownTest, TestPushDownExactEquality) {
+  ScanSpec spec;
+  int16_t year = 2001;
+  int8_t month = 9;
+  int8_t day = 7;
+  Slice host(kTestHostnames[0]);
+  ColumnRangePredicate pred_year(schema_.column(0), &year, &year);
+  ColumnRangePredicate pred_month(schema_.column(1), &month, &month);
+  ColumnRangePredicate pred_day(schema_.column(2), &day, &day);
+  ColumnRangePredicate pred_host(schema_.column(3), &host, &host);
+  spec.AddPredicate(pred_year);
+  spec.AddPredicate(pred_month);
+  spec.AddPredicate(pred_day);
+  spec.AddPredicate(pred_host);
+  vector<string> results;
+
+  ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Exact match using compound key"));
+  ASSERT_EQ(1, results.size());
+  EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
+            "string hostname=foo, string data=2001/09/07-foo)",
+            results.front());
+}
+
+
+// Test for "host <= 'foo'" which should reject 'foobaz'.
+// Regression test for a bug in an earlier implementation of predicate pushdown.
+TEST_F(CompositePushdownTest, TestPushDownStringInequality) {
+  ScanSpec spec;
+  int16_t year = 2001;
+  int8_t month = 9;
+  int8_t day = 7;
+  Slice host("foo");
+  ColumnRangePredicate pred_year(schema_.column(0), &year, &year);
+  ColumnRangePredicate pred_month(schema_.column(1), &month, &month);
+  ColumnRangePredicate pred_day(schema_.column(2), &day, &day);
+  ColumnRangePredicate pred_host(schema_.column(3), NULL, &host);
+  spec.AddPredicate(pred_year);
+  spec.AddPredicate(pred_month);
+  spec.AddPredicate(pred_day);
+  spec.AddPredicate(pred_host);
+  vector<string> results;
+
+  ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Exact match using compound key"));
+  ASSERT_EQ(2, results.size());
+  EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
+            "string hostname=baz, string data=2001/09/07-baz)",
+            results.front());
+  EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
+            "string hostname=foo, string data=2001/09/07-foo)",
+            results.back());
+}
+
+
+TEST_F(CompositePushdownTest, TestPushDownDateEquality) {
   ScanSpec spec;
   int16_t year = 2001;
   int8_t month = 9;
@@ -103,9 +162,16 @@ TEST_F(CompositePushdownTest, TestPushDownExactEquality) {
   vector<string> results;
 
   ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Exact match using compound key"));
-  ASSERT_EQ(1, results.size());
-  ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=7, string data=2001/09/07)",
-            results.front());
+  ASSERT_EQ(3, results.size());
+  EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
+            "string hostname=baz, string data=2001/09/07-baz)",
+            results[0]);
+  EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
+            "string hostname=foo, string data=2001/09/07-foo)",
+            results[1]);
+  EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=7, "
+            "string hostname=foobar, string data=2001/09/07-foobar)",
+            results[2]);
 }
 
 TEST_F(CompositePushdownTest, TestPushDownPrefixEquality) {
@@ -121,10 +187,12 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEquality) {
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results,
                                        "Prefix match using 2/3 of a compound key"));
-    ASSERT_EQ(28, results.size());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=1, string data=2001/09/01)",
+    ASSERT_EQ(28 * 3, results.size());
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
+              "string hostname=baz, string data=2001/09/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=28, string data=2001/09/28)",
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=28, "
+              "string hostname=foobar, string data=2001/09/28-foobar)",
               results.back());
   }
 
@@ -134,12 +202,15 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEquality) {
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results,
                                        "Prefix match using 1/3 of a compound key"));
-    ASSERT_EQ(28 * 12, results.size());
-    ASSERT_EQ("(int16 year=2001, int8 month=1, int8 day=1, string data=2001/01/01)",
+    ASSERT_EQ(28 * 12 * 3, results.size());
+    EXPECT_EQ("(int16 year=2001, int8 month=1, int8 day=1, "
+              "string hostname=baz, string data=2001/01/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2001, int8 month=2, int8 day=1, string data=2001/02/01)",
-              results[28]);
-    ASSERT_EQ("(int16 year=2001, int8 month=12, int8 day=28, string data=2001/12/28)",
+    EXPECT_EQ("(int16 year=2001, int8 month=2, int8 day=1, "
+              "string hostname=baz, string data=2001/02/01-baz)",
+              results[28 * 3]);
+    EXPECT_EQ("(int16 year=2001, int8 month=12, int8 day=28, "
+              "string hostname=foobar, string data=2001/12/28-foobar)",
               results.back());
   }
 }
@@ -169,10 +240,12 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     spec.AddPredicate(pred_day_ge_le);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
-    ASSERT_EQ(15, results.size());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=1, string data=2001/09/01)",
+    ASSERT_EQ(15 * 3, results.size());
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
+              "string hostname=baz, string data=2001/09/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=15, string data=2001/09/15)",
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=15, "
+              "string hostname=foobar, string data=2001/09/15-foobar)",
               results.back());
   }
 
@@ -184,10 +257,12 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     spec.AddPredicate(pred_day_ge);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
-    ASSERT_EQ(28, results.size());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=1, string data=2001/09/01)",
+    ASSERT_EQ(28 * 3, results.size());
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
+              "string hostname=baz, string data=2001/09/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=28, string data=2001/09/28)",
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=28, "
+              "string hostname=foobar, string data=2001/09/28-foobar)",
               results.back());
   }
 
@@ -199,10 +274,12 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     spec.AddPredicate(pred_day_le);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
-    ASSERT_EQ(15, results.size());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=1, string data=2001/09/01)",
+    ASSERT_EQ(15 * 3, results.size());
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
+              "string hostname=baz, string data=2001/09/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=15, string data=2001/09/15)",
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=15, "
+              "string hostname=foobar, string data=2001/09/15-foobar)",
               results.back());
   }
 
@@ -213,10 +290,12 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     spec.AddPredicate(pred_month_ge_le);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
-    ASSERT_EQ(3 * 28, results.size());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=1, string data=2001/09/01)",
+    ASSERT_EQ(3 * 28 * 3, results.size());
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=1, "
+              "string hostname=baz, string data=2001/09/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2001, int8 month=11, int8 day=28, string data=2001/11/28)",
+    EXPECT_EQ("(int16 year=2001, int8 month=11, int8 day=28, "
+              "string hostname=foobar, string data=2001/11/28-foobar)",
               results.back());
   }
 
@@ -227,10 +306,12 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
     spec.AddPredicate(pred_month_le);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix equality, suffix inequality"));
-    ASSERT_EQ(9 * 28, results.size());
-    ASSERT_EQ("(int16 year=2001, int8 month=1, int8 day=1, string data=2001/01/01)",
+    ASSERT_EQ(9 * 28 * 3, results.size());
+    EXPECT_EQ("(int16 year=2001, int8 month=1, int8 day=1, "
+              "string hostname=baz, string data=2001/01/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2001, int8 month=9, int8 day=28, string data=2001/09/28)",
+    EXPECT_EQ("(int16 year=2001, int8 month=9, int8 day=28, "
+              "string hostname=foobar, string data=2001/09/28-foobar)",
               results.back());
   }
 }
@@ -246,10 +327,12 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
     spec.AddPredicate(pred_year);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix inequality"));
-    ASSERT_EQ(3 * 12 * 28, results.size());
-    ASSERT_EQ("(int16 year=2001, int8 month=1, int8 day=1, string data=2001/01/01)",
+    ASSERT_EQ(3 * 12 * 28 * 3, results.size());
+    EXPECT_EQ("(int16 year=2001, int8 month=1, int8 day=1, "
+              "string hostname=baz, string data=2001/01/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2003, int8 month=12, int8 day=28, string data=2003/12/28)",
+    EXPECT_EQ("(int16 year=2003, int8 month=12, int8 day=28, "
+              "string hostname=foobar, string data=2003/12/28-foobar)",
               results.back());
   }
 
@@ -260,13 +343,14 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
     spec.AddPredicate(pred_year);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix inequality"));
-    ASSERT_EQ(10 * 12 * 28, results.size());
+    ASSERT_EQ(10 * 12 * 28 * 3, results.size());
     // Needed because results from memrowset are returned first and memrowset begins
     // with last 10% of the keys (e.g., last few years)
-    std::sort(results.begin(), results.end(), SuffixComparator());
-    ASSERT_EQ("(int16 year=2001, int8 month=1, int8 day=1, string data=2001/01/01)",
+    EXPECT_EQ("(int16 year=2001, int8 month=1, int8 day=1, "
+              "string hostname=baz, string data=2001/01/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2010, int8 month=12, int8 day=28, string data=2010/12/28)",
+    EXPECT_EQ("(int16 year=2010, int8 month=12, int8 day=28, "
+              "string hostname=foobar, string data=2010/12/28-foobar)",
               results.back());
   }
 
@@ -277,10 +361,12 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
     spec.AddPredicate(pred_year);
     vector<string> results;
     ASSERT_NO_FATAL_FAILURE(ScanTablet(&spec, &results, "Prefix inequality"));
-    ASSERT_EQ(4 * 12 * 28, results.size());
-    ASSERT_EQ("(int16 year=2000, int8 month=1, int8 day=1, string data=2000/01/01)",
+    ASSERT_EQ(4 * 12 * 28 * 3, results.size());
+    EXPECT_EQ("(int16 year=2000, int8 month=1, int8 day=1, "
+              "string hostname=baz, string data=2000/01/01-baz)",
               results.front());
-    ASSERT_EQ("(int16 year=2003, int8 month=12, int8 day=28, string data=2003/12/28)",
+    EXPECT_EQ("(int16 year=2003, int8 month=12, int8 day=28, "
+              "string hostname=foobar, string data=2003/12/28-foobar)",
               results.back());
   }
 }

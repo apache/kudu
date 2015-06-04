@@ -381,13 +381,13 @@ class MemRowSet::Iterator : public RowwiseIterator {
   virtual Status NextBlock(RowBlock *dst) OVERRIDE;
 
   bool has_upper_bound() const {
-    return upper_bound_.is_initialized();
+    return exclusive_upper_bound_.is_initialized();
   }
 
   bool out_of_bounds(const Slice &key) const {
     DCHECK(has_upper_bound()) << "No upper bound set!";
 
-    return key.compare(*upper_bound_) > 0;
+    return key.compare(*exclusive_upper_bound_) >= 0;
   }
 
   size_t remaining_in_leaf() const {
@@ -492,7 +492,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
   ScanState state_;
 
   // Pushed down encoded upper bound key, if any
-  boost::optional<const Slice &> upper_bound_;
+  boost::optional<const Slice &> exclusive_upper_bound_;
 };
 
 inline const Schema* MRSRow::schema() const {

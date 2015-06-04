@@ -14,6 +14,15 @@ class ContiguousRow;
 
 namespace row_key_util {
 
+// Set all of the parts of the key in 'row' to the minimum legal values
+// for their types.
+//
+// For example:
+// - signed ints become very large negative values
+// - unsigned ints become 0
+// - strings become ""
+void SetKeyToMinValues(ContiguousRow* row);
+
 // Increment the primary key of this row to the smallest key which is greater
 // than the current key.
 //

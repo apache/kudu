@@ -1060,12 +1060,12 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
     CHECK_OK(row->SetInt32(0, 5));
     ASSERT_OK(scanner.AddLowerBound(*row));
     CHECK_OK(row->SetInt32(0, 8));
-    ASSERT_OK(scanner.AddUpperBound(*row));
+    ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
-    ASSERT_EQ(8 - 5 + 1, rows.size());
+    ASSERT_EQ(8 - 5, rows.size());
     EXPECT_EQ(all_rows[5], rows.front());
-    EXPECT_EQ(all_rows[8], rows.back());
+    EXPECT_EQ(all_rows[7], rows.back());
   }
 
   // Test a double-sided range spanning tablets
@@ -1074,12 +1074,12 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
     CHECK_OK(row->SetInt32(0, 5));
     ASSERT_OK(scanner.AddLowerBound(*row));
     CHECK_OK(row->SetInt32(0, 15));
-    ASSERT_OK(scanner.AddUpperBound(*row));
+    ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
-    ASSERT_EQ(15 - 5 + 1, rows.size());
+    ASSERT_EQ(15 - 5, rows.size());
     EXPECT_EQ(all_rows[5], rows.front());
-    EXPECT_EQ(all_rows[15], rows.back());
+    EXPECT_EQ(all_rows[14], rows.back());
   }
 
   // Test a double-sided range within second tablet
@@ -1088,12 +1088,12 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
     CHECK_OK(row->SetInt32(0, 15));
     ASSERT_OK(scanner.AddLowerBound(*row));
     CHECK_OK(row->SetInt32(0, 20));
-    ASSERT_OK(scanner.AddUpperBound(*row));
+    ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
-    ASSERT_EQ(20 - 15 + 1, rows.size());
+    ASSERT_EQ(20 - 15, rows.size());
     EXPECT_EQ(all_rows[15], rows.front());
-    EXPECT_EQ(all_rows[20], rows.back());
+    EXPECT_EQ(all_rows[19], rows.back());
   }
 
   // Test a lower-bound only range.
@@ -1112,24 +1112,24 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   {
     KuduScanner scanner(table.get());
     CHECK_OK(row->SetInt32(0, 5));
-    ASSERT_OK(scanner.AddUpperBound(*row));
+    ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
-    ASSERT_EQ(6, rows.size());
+    ASSERT_EQ(5, rows.size());
     EXPECT_EQ(all_rows[0], rows.front());
-    EXPECT_EQ(all_rows[5], rows.back());
+    EXPECT_EQ(all_rows[4], rows.back());
   }
 
   // Test an upper-bound only range in second tablet.
   {
     KuduScanner scanner(table.get());
     CHECK_OK(row->SetInt32(0, 15));
-    ASSERT_OK(scanner.AddUpperBound(*row));
+    ASSERT_OK(scanner.AddExclusiveUpperBound(*row));
     vector<string> rows;
     ASSERT_NO_FATAL_FAILURE(ScanToStrings(&scanner, &rows));
-    ASSERT_EQ(15 + 1, rows.size());
+    ASSERT_EQ(15, rows.size());
     EXPECT_EQ(all_rows[0], rows.front());
-    EXPECT_EQ(all_rows[15], rows.back());
+    EXPECT_EQ(all_rows[14], rows.back());
   }
 
 }

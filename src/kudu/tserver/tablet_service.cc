@@ -993,7 +993,7 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
     scanner->autorelease_pool()->Add(start.release());
   }
   if (stop) {
-    spec->SetUpperBoundKey(stop.get());
+    spec->SetExclusiveUpperBoundKey(stop.get());
     scanner->autorelease_pool()->Add(stop.release());
   }
 

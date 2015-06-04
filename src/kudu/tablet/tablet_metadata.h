@@ -75,10 +75,14 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     DCHECK_NE(state_, kNotLoadedYet);
     return tablet_id_;
   }
+
+  // Return the inclusive start key of the tablet.
   const std::string& start_key() const {
     DCHECK_NE(state_, kNotLoadedYet);
     return start_key_;
   }
+
+  // Return the exclusive end key of the tablet.
   const std::string& end_key() const {
     DCHECK_NE(state_, kNotLoadedYet);
     return end_key_;
@@ -231,7 +235,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   const std::string tablet_id_;
   std::string table_id_;
+
+  // Start key (inclusive).
   std::string start_key_;
+
+  // End key (exclusive).
   std::string end_key_;
 
   FsManager *fs_manager_;

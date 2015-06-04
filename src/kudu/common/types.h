@@ -8,10 +8,12 @@
 
 #include <stdint.h>
 #include <string>
+#include <string.h>
 #include "kudu/common/common.pb.h"
-#include "kudu/util/slice.h"
+#include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/util/slice.h"
 
 namespace kudu {
 
@@ -35,6 +37,9 @@ class TypeInfo {
   const size_t size() const { return size_; }
   void AppendDebugStringForValue(const void *ptr, string *str) const;
   int Compare(const void *lhs, const void *rhs) const;
+  void CopyMinValue(void* dst) const {
+    memcpy(dst, min_value_, size_);
+  }
 
  private:
   friend class TypeInfoResolver;
@@ -43,6 +48,7 @@ class TypeInfo {
   const DataType type_;
   const string name_;
   const size_t size_;
+  const void* const min_value_;
 
   typedef void (*AppendDebugFunc)(const void *, string *);
   const AppendDebugFunc append_func_;
@@ -79,6 +85,9 @@ struct DataTypeTraits<UINT8> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT8>(lhs, rhs);
   }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
+  }
 };
 
 template<>
@@ -92,6 +101,9 @@ struct DataTypeTraits<INT8> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT8>(lhs, rhs);
+  }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
   }
 };
 
@@ -107,6 +119,9 @@ struct DataTypeTraits<UINT16> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT16>(lhs, rhs);
   }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
+  }
 };
 
 template<>
@@ -120,6 +135,9 @@ struct DataTypeTraits<INT16> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT16>(lhs, rhs);
+  }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
   }
 };
 
@@ -135,6 +153,9 @@ struct DataTypeTraits<UINT32> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT32>(lhs, rhs);
   }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
+  }
 };
 
 template<>
@@ -148,6 +169,9 @@ struct DataTypeTraits<INT32> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT32>(lhs, rhs);
+  }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
   }
 };
 
@@ -163,6 +187,9 @@ struct DataTypeTraits<UINT64> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<UINT64>(lhs, rhs);
   }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
+  }
 };
 
 template<>
@@ -176,6 +203,9 @@ struct DataTypeTraits<INT64> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<INT64>(lhs, rhs);
+  }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
   }
 };
 
@@ -191,6 +221,9 @@ struct DataTypeTraits<FLOAT> {
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<FLOAT>(lhs, rhs);
   }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
+  }
 };
 
 template<>
@@ -204,6 +237,9 @@ struct DataTypeTraits<DOUBLE> {
   }
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<DOUBLE>(lhs, rhs);
+  }
+  static const cpp_type* min_value() {
+    return &MathLimits<cpp_type>::kMin;
   }
 };
 
@@ -223,7 +259,10 @@ struct DataTypeTraits<STRING> {
     const Slice *rhs_slice = reinterpret_cast<const Slice *>(rhs);
     return lhs_slice->compare(*rhs_slice);
   }
-
+  static const cpp_type* min_value() {
+    static Slice s("");
+    return &s;
+  }
 };
 
 template<>
@@ -238,6 +277,10 @@ struct DataTypeTraits<BOOL> {
 
   static int Compare(const void *lhs, const void *rhs) {
     return GenericCompare<BOOL>(lhs, rhs);
+  }
+  static const cpp_type* min_value() {
+    static bool b = false;
+    return &b;
   }
 };
 

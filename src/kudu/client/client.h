@@ -779,12 +779,12 @@ class KUDU_EXPORT KuduScanner {
   // Add an upper bound (exclusive) for the scan.
   // If any bound is already added, this bound is intersected with that one.
   //
-  // The scanner does not take ownership of 'key'; the caller may free it afterward.
-  Status AddUpperBound(const KuduPartialRow& key);
+  // The scanner makes a copy of 'key'; the caller may free it afterward.
+  Status AddExclusiveUpperBound(const KuduPartialRow& key);
 
-  // Like AddUpperBound(), but the encoded key is an opaque slice of data
+  // Like AddExclusiveUpperBound(), but the encoded key is an opaque slice of data
   // obtained elsewhere.
-  Status AddUpperBoundRaw(const Slice& key);
+  Status AddExclusiveUpperBoundRaw(const Slice& key);
 
   // Set the block caching policy for this scanner. If true, scanned data blocks will be cached
   // in memory and made available for future scans. Default is true.

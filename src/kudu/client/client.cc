@@ -809,20 +809,20 @@ Status KuduScanner::AddLowerBoundRaw(const Slice& key) {
   return Status::OK();
 }
 
-Status KuduScanner::AddUpperBound(const KuduPartialRow& key) {
+Status KuduScanner::AddExclusiveUpperBound(const KuduPartialRow& key) {
   gscoped_ptr<string> enc(new string());
   RETURN_NOT_OK(key.EncodeRowKey(enc.get()));
-  RETURN_NOT_OK(AddUpperBoundRaw(Slice(*enc)));
+  RETURN_NOT_OK(AddExclusiveUpperBoundRaw(Slice(*enc)));
   data_->pool_.Add(enc.release());
   return Status::OK();
 }
 
-Status KuduScanner::AddUpperBoundRaw(const Slice& key) {
+Status KuduScanner::AddExclusiveUpperBoundRaw(const Slice& key) {
   // Make a copy of the key.
   gscoped_ptr<EncodedKey> enc_key;
   RETURN_NOT_OK(EncodedKey::DecodeEncodedString(
                   *data_->table_->schema().schema_, &data_->arena_, key, &enc_key));
-  data_->spec_.SetUpperBoundKey(enc_key.get());
+  data_->spec_.SetExclusiveUpperBoundKey(enc_key.get());
   data_->pool_.Add(enc_key.release());
   return Status::OK();
 }
@@ -857,9 +857,9 @@ struct CloseCallback {
 string KuduScanner::ToString() const {
   Slice start_key = data_->spec_.lower_bound_key() ?
     data_->spec_.lower_bound_key()->encoded_key() : Slice("INF");
-  Slice end_key = data_->spec_.upper_bound_key() ?
-    data_->spec_.upper_bound_key()->encoded_key() : Slice("INF");
-  return strings::Substitute("$0: [$1,$2]", data_->table_->name(),
+  Slice end_key = data_->spec_.exclusive_upper_bound_key() ?
+    data_->spec_.exclusive_upper_bound_key()->encoded_key() : Slice("INF");
+  return strings::Substitute("$0: [$1,$2)", data_->table_->name(),
                              start_key.ToDebugString(), end_key.ToDebugString());
 }
 

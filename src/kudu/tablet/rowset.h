@@ -169,7 +169,7 @@ class RowSetKeyProbe {
   // of this object.
   explicit RowSetKeyProbe(const ConstContiguousRow& row_key)
       : row_key_(row_key) {
-    cfile::EncodeKey(row_key, &encoded_key_);
+    encoded_key_ = EncodedKey::FromContiguousRow(row_key_);
     bloom_probe_ = BloomKeyProbe(encoded_key_slice());
   }
 
@@ -180,7 +180,7 @@ class RowSetKeyProbe {
   // underlying the original RowsetKeyProbe and is not copied.
   explicit RowSetKeyProbe(const RowSetKeyProbe& probe)
   : row_key_(probe.row_key_) {
-    cfile::EncodeKey(row_key_, &encoded_key_);
+    encoded_key_ = EncodedKey::FromContiguousRow(row_key_);
     bloom_probe_ = BloomKeyProbe(encoded_key_slice());
   }
 

@@ -269,7 +269,7 @@ Status Tablet::CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const {
   if (!probe.encoded_key().InRange(Slice(metadata_->start_key()),
                                    Slice(metadata_->end_key()))) {
     return Status::NotFound(
-        Substitute("Row not within tablet range. Tablet start key: '$0', end key: '$1'."
+        Substitute("Row not within tablet range. Tablet start key: '$0', exclusive end key: '$1'."
                    "Probe key: '$2'",
                    schema_->DebugEncodedRowKey(metadata_->start_key(), Schema::START_KEY),
                    schema_->DebugEncodedRowKey(metadata_->end_key(), Schema::END_KEY),
@@ -1341,16 +1341,17 @@ Status Tablet::CaptureConsistentIterators(
   RETURN_NOT_OK(components_->memrowset->NewRowIterator(projection, snap, &ms_iter));
   ret.push_back(shared_ptr<RowwiseIterator>(ms_iter.release()));
 
-  // We can only use this optimization if there is a single encoded predicate
-  // TODO : should we even support multiple predicates on the key, given they're
-  // currently ANDed together? This should be the job for a separate query
-  // optimizer.
-  if (spec != NULL && spec->lower_bound_key() && spec->upper_bound_key()) {
+  // Cull row-sets in the case of key-range queries.
+  if (spec != NULL && spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
     // TODO : support open-ended intervals
+    // TODO: the upper bound key is exclusive, but the RowSetTree function takes
+    // an inclusive interval. So, we might end up fetching one more rowset than
+    // necessary.
     vector<RowSet *> interval_sets;
-    components_->rowsets->FindRowSetsIntersectingInterval(spec->lower_bound_key()->encoded_key(),
-                                                          spec->upper_bound_key()->encoded_key(),
-                                                          &interval_sets);
+    components_->rowsets->FindRowSetsIntersectingInterval(
+        spec->lower_bound_key()->encoded_key(),
+        spec->exclusive_upper_bound_key()->encoded_key(),
+        &interval_sets);
     BOOST_FOREACH(const RowSet *rs, interval_sets) {
       gscoped_ptr<RowwiseIterator> row_it;
       RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, &row_it),
@@ -1650,7 +1651,8 @@ Tablet::Iterator::Iterator(const Tablet *tablet,
       projection_(projection),
       snap_(snap),
       order_(order),
-      encoder_(&tablet_->key_schema()) {
+      arena_(256, 4096),
+      encoder_(&tablet_->key_schema(), &arena_) {
 }
 
 Tablet::Iterator::~Iterator() {}

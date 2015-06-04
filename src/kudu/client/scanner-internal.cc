@@ -44,7 +44,7 @@ KuduScanner::Data::Data(KuduTable* table)
     table_(DCHECK_NOTNULL(table)),
     projection_(table->schema().schema_.get()),
     arena_(1024, 1024*1024),
-    spec_encoder_(table->schema().schema_.get()),
+    spec_encoder_(table->schema().schema_.get(), &arena_),
     timeout_(MonoDelta::FromMilliseconds(kScanTimeoutMillis)) {
 }
 
@@ -213,10 +213,10 @@ Status KuduScanner::Data::OpenTablet(const Slice& key,
   } else {
     scan->clear_encoded_start_key();
   }
-  if (spec_.upper_bound_key()) {
+  if (spec_.exclusive_upper_bound_key()) {
     scan->mutable_encoded_stop_key()->assign(
-      reinterpret_cast<const char*>(spec_.upper_bound_key()->encoded_key().data()),
-      spec_.upper_bound_key()->encoded_key().size());
+      reinterpret_cast<const char*>(spec_.exclusive_upper_bound_key()->encoded_key().data()),
+      spec_.exclusive_upper_bound_key()->encoded_key().size());
   } else {
     scan->clear_encoded_stop_key();
   }
@@ -350,9 +350,10 @@ Status KuduScanner::Data::ExtractRows(const RpcController& controller,
 
 bool KuduScanner::Data::MoreTablets() const {
   CHECK(open_);
+  // TODO(KUDU-565): add a test which has a scan end on a tablet boundary
   return !remote_->end_key().empty() &&
-    (spec_.upper_bound_key() == NULL ||
-     spec_.upper_bound_key()->encoded_key().compare(remote_->end_key()) > 0);
+    (spec_.exclusive_upper_bound_key() == NULL ||
+     spec_.exclusive_upper_bound_key()->encoded_key().compare(remote_->end_key()) > 0);
 }
 
 void KuduScanner::Data::PrepareRequest(RequestType state) {

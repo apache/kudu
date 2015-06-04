@@ -403,9 +403,9 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
     string range_pred_str;
     vector<string> other_preds;
     const ScanSpec& spec = scanner.spec();
-    if (spec.lower_bound_key() || spec.upper_bound_key()) {
+    if (spec.lower_bound_key() || spec.exclusive_upper_bound_key()) {
       range_pred_str = EncodedKey::RangeToString(spec.lower_bound_key(),
-                                                 spec.upper_bound_key());
+                                                 spec.exclusive_upper_bound_key());
     }
     BOOST_FOREACH(const ColumnRangePredicate& pred, scanner.spec().predicates()) {
       other_preds.push_back(pred.ToString());

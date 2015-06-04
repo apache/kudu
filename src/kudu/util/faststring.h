@@ -190,31 +190,6 @@ class faststring {
                        len_);
   }
 
-  // Based on PrefixSuccessor in gutil/strings/util.h: sets this
-  // string to the smallest lexicographically larger string of equal
-  // or smaller length. Returns false if there is no such successor
-  // (if the string is empty or consists entirely of 0xff bytes).
-  //
-  // Examples:
-  //
-  // AdvanceToSuccessor() on "foo" returns true, sets string to "fop";
-  // AdvanceToSuccessor() on "aab\xff\xff" returns true, sets string to
-  // "aac"; AdvanceToSuccessor() on "\xff" returns false.
-  bool AdvanceToSuccessor() {
-    bool done = false;
-    int index = len_ - 1;
-    while (!done && index >= 0) {
-      if (data_[index] == 255) {
-        index--;
-      } else {
-        data_[index]++;
-        done = true;
-        resize(index+1);
-      }
-    }
-    return done;
-  }
-
  private:
   DISALLOW_COPY_AND_ASSIGN(faststring);
 

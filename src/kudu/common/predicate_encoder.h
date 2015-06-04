@@ -4,9 +4,12 @@
 #ifndef KUDU_COMMON_PREDICATE_ENCODER_H
 #define KUDU_COMMON_PREDICATE_ENCODER_H
 
+#include <gtest/gtest_prod.h>
 #include <vector>
 
+
 #include "kudu/common/encoded_key.h"
+#include "kudu/common/row.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/schema.h"
 #include "kudu/util/auto_release_pool.h"
@@ -23,7 +26,11 @@ class RangePredicateEncoder {
  public:
   // 'key_schema' is not copied and must remain valid for the lifetime
   // of this object.
-  explicit RangePredicateEncoder(const Schema* key_schema);
+  //
+  // Some parts of the resulting predicates may be allocated out of 'arena'
+  // and thus 'arena' must not be reset or destructed until after any ScanSpecs
+  // modified by this encoder have been destroyed.
+  RangePredicateEncoder(const Schema* key_schema, Arena* arena);
 
   // Encodes the predicates found in 'spec' into a key range which is
   // then emitted back into 'spec'.
@@ -32,24 +39,29 @@ class RangePredicateEncoder {
   void EncodeRangePredicates(ScanSpec *spec, bool erase_pushed);
 
  private:
+  friend class TestRangePredicateEncoder;
+  FRIEND_TEST(CompositeIntKeysTest, TestSimplify);
 
-  // Collects any predicates that apply
-  void ExtractPredicatesOnKeys(const ScanSpec &spec,
-                               const ColumnRangePredicate **key_preds) const;
+  struct SimplifiedBounds {
+    SimplifiedBounds() : upper(NULL), lower(NULL) {}
+    const void* upper;
+    const void* lower;
+    vector<int> orig_predicate_indexes;
+  };
 
-  // Returns the number of contiguous equalities in the key prefix or
-  // -1 if none are found; mutates key_preds to NULL-out any
-  // predicates which come after the key predicates which may be
-  // pushed down.
-  int CountKeyPrefixEqualities(const ColumnRangePredicate **key_preds) const;
+  void SimplifyBounds(const ScanSpec& spec,
+                      std::vector<SimplifiedBounds>* key_bounds) const;
 
-  // Erases any predicates we've encoded from the predicate list
-  void ErasePushedPredicates(ScanSpec *spec,
-                             const ColumnRangePredicate **key_preds) const;
+  // Returns the number of contiguous equalities in the key prefix.
+  int CountKeyPrefixEqualities(const std::vector<SimplifiedBounds>& bounds) const;
+
+  // Erases any predicates we've encoded from the predicate list within the
+  // ScanSpec.
+  void ErasePushedPredicates(
+      ScanSpec *spec, const std::vector<bool>& should_erase) const;
 
   const Schema* key_schema_;
-  EncodedKeyBuilder lower_builder_;
-  EncodedKeyBuilder upper_builder_;
+  Arena* arena_;
   AutoReleasePool pool_;
 };
 

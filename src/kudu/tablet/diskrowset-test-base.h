@@ -235,12 +235,12 @@ class TestRowSet : public KuduRowSetTest {
   // asserting that the result matches 'expected_val'.
   void VerifyRandomRead(const DiskRowSet& rs, const Slice& row_key,
                         const string& expected_val) {
+    Arena arena(256, 1024);
     ScanSpec spec;
-    EncodedKeyBuilder key_builder(&schema_);
-    key_builder.AddColumnKey(&row_key);
-    gscoped_ptr<EncodedKey> encoded_key(key_builder.BuildEncodedKey());
-    spec.SetLowerBoundKey(encoded_key.get());
-    spec.SetUpperBoundKey(encoded_key.get());
+    ColumnRangePredicate pred(schema_.column(0), &row_key, &row_key);
+    spec.AddPredicate(pred);
+    RangePredicateEncoder enc(&schema_, &arena);
+    enc.EncodeRangePredicates(&spec, true);
 
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     gscoped_ptr<RowwiseIterator> row_iter;

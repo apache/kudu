@@ -18,7 +18,7 @@ class ScanSpec {
  public:
   ScanSpec()
     : lower_bound_key_(NULL),
-      upper_bound_key_(NULL),
+      exclusive_upper_bound_key_(NULL),
       cache_blocks_(true) {
   }
 
@@ -32,10 +32,10 @@ class ScanSpec {
   // If called multiple times, the most restrictive key will be used.
   void SetLowerBoundKey(const EncodedKey* key);
 
-  // Set the upper bound (inclusive) for the scan.
+  // Set the upper bound (exclusive) for the scan.
   // Does not take ownership of 'key', which must remain valid.
   // If called multiple times, the most restrictive key will be used.
-  void SetUpperBoundKey(const EncodedKey* key);
+  void SetExclusiveUpperBoundKey(const EncodedKey* key);
 
   const vector<ColumnRangePredicate> &predicates() const {
     return predicates_;
@@ -53,8 +53,8 @@ class ScanSpec {
   const EncodedKey* lower_bound_key() const {
     return lower_bound_key_;
   }
-  const EncodedKey* upper_bound_key() const {
-    return upper_bound_key_;
+  const EncodedKey* exclusive_upper_bound_key() const {
+    return exclusive_upper_bound_key_;
   }
 
   bool cache_blocks() const {
@@ -66,11 +66,15 @@ class ScanSpec {
   }
 
   std::string ToString() const;
+  std::string ToStringWithSchema(const Schema& s) const;
 
  private:
+  // Helper for the ToString*() methods. 's' may be NULL.
+  std::string ToStringWithOptionalSchema(const Schema* s) const;
+
   vector<ColumnRangePredicate> predicates_;
   const EncodedKey* lower_bound_key_;
-  const EncodedKey* upper_bound_key_;
+  const EncodedKey* exclusive_upper_bound_key_;
   bool cache_blocks_;
 };
 

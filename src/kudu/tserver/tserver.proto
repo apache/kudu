@@ -178,7 +178,7 @@ message NewScanRequestPB {
 
   // Encoded-key to start scanning at (inclusive).
   optional bytes encoded_start_key = 8;
-  // Encoded-key to stop scanning at (inclusive).
+  // Encoded-key to stop scanning at (exclusive).
   optional bytes encoded_stop_key = 9;
 
   // Which columns to select.

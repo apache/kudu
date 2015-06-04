@@ -12,6 +12,8 @@
 
 namespace kudu {
 
+class ConstContiguousRow;
+
 class EncodedKey {
  public:
   // Constructs a new EncodedKey.
@@ -23,6 +25,8 @@ class EncodedKey {
   EncodedKey(faststring *data,
              vector<const void *> *raw_keys,
              size_t num_key_cols);
+
+  static gscoped_ptr<EncodedKey> FromContiguousRow(const ConstContiguousRow& row);
 
   // Decode the encoded key specified in 'encoded', which must correspond to the
   // provided schema.
@@ -59,6 +63,11 @@ class EncodedKey {
   static std::string RangeToString(const EncodedKey* lower,
                                    const EncodedKey* upper);
 
+  static std::string RangeToStringWithSchema(const EncodedKey* lower,
+                                             const EncodedKey* upper,
+                                             const Schema& schema);
+
+
  private:
   const int num_key_cols_;
   Slice encoded_key_;
@@ -76,18 +85,6 @@ class EncodedKeyBuilder {
   void Reset();
 
   void AddColumnKey(const void *raw_key);
-
-  // Returns the successor of the current encoded key or NULL if
-  // there is no successor (i.e., if the key is empty or is composed
-  // entirely of 0xff bytes).
-  //
-  // Calling this mutates the current value of the builder such that
-  // another call to BuildEncodedKey() with the same value will not
-  // return the same resullt as before.
-  //
-  // TODO: this thing doesn't work properly! It only increments the
-  // encoded key, and not 'raw_keys'.
-  EncodedKey *BuildSuccessorEncodedKey();
 
   EncodedKey *BuildEncodedKey();
 

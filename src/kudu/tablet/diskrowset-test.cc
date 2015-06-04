@@ -161,6 +161,7 @@ TEST_F(TestRowSet, TestRandomRead) {
   // Read un-updated row.
   VerifyRandomRead(*rs, "hello 000000000000050",
                    "(string key=hello 000000000000050, uint32 val=50)");
+  NO_FATALS();
 
   // Update the row.
   OperationResultPB result;
@@ -169,16 +170,20 @@ TEST_F(TestRowSet, TestRandomRead) {
   // Read it again -- should see the updated value.
   VerifyRandomRead(*rs, "hello 000000000000050",
                    "(string key=hello 000000000000050, uint32 val=12345)");
+  NO_FATALS();
 
   // Try to read a row which comes before the first key.
   // This should return no rows.
   VerifyRandomRead(*rs, "aaaaa", "");
+  NO_FATALS();
 
   // Same with a row which falls between keys.
   VerifyRandomRead(*rs, "hello 000000000000050_between_keys", "");
+  NO_FATALS();
 
   // And a row which falls after the last key.
   VerifyRandomRead(*rs, "hello 000000000000101", "");
+  NO_FATALS();
 }
 
 // Test Delete() support within a DiskRowSet.
