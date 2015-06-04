@@ -71,6 +71,9 @@ bool IsPrivilegedPort(uint16_t port);
 // Return the local machine's hostname.
 Status GetHostname(std::string* hostname);
 
+// Return the local machine's FQDN.
+Status GetFQDN(std::string* fqdn);
+
 // Try to run 'lsof' to determine which process is preventing binding to
 // the given 'addr'. If pids can be determined, outputs full 'ps' and 'pstree'
 // output for that process.

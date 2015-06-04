@@ -168,6 +168,26 @@ Status GetHostname(string* hostname) {
   return Status::OK();
 }
 
+Status GetFQDN(string* hostname) {
+  // Start with the non-qualified hostname
+  RETURN_NOT_OK(GetHostname(hostname));
+
+  struct addrinfo hints;
+  memset(&hints, 0, sizeof(hints));
+  hints.ai_socktype = SOCK_DGRAM;
+  hints.ai_flags = AI_CANONNAME;
+
+  struct addrinfo* result;
+  int rc = getaddrinfo(hostname->c_str(), NULL, &hints, &result);
+  if (rc != 0) {
+    return Status::NetworkError("Unable to lookup FQDN", ErrnoToString(errno), errno);
+  }
+
+  *hostname = result->ai_canonname;
+  freeaddrinfo(result);
+  return Status::OK();
+}
+
 void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
   // Little inline bash script prints the full ancestry of any pid listening
   // on the same port as 'addr'. We could use 'pstree -s', but that option

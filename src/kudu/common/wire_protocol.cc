@@ -167,7 +167,7 @@ Status AddHostPortPBs(const vector<Sockaddr>& addrs,
   BOOST_FOREACH(const Sockaddr& addr, addrs) {
     HostPortPB* pb = pbs->Add();
     if (addr.IsWildcard()) {
-      RETURN_NOT_OK(GetHostname(pb->mutable_host()));
+      RETURN_NOT_OK(GetFQDN(pb->mutable_host()));
     } else {
       pb->set_host(addr.host());
     }

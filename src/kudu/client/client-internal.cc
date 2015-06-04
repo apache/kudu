@@ -469,7 +469,7 @@ Status KuduClient::Data::InitLocalHostNames() {
   // a list of potentially local hosts. It would be better to iterate over all of
   // the local network adapters. See KUDU-327.
   string hostname;
-  RETURN_NOT_OK(GetHostname(&hostname));
+  RETURN_NOT_OK(GetFQDN(&hostname));
 
   // We don't want to consider 'localhost' to be local - otherwise if a misconfigured
   // server reports its own name as localhost, all clients will hammer it.

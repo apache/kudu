@@ -90,4 +90,10 @@ TEST_F(NetUtilTest, TestLsof) {
   ASSERT_STR_CONTAINS(lsof_lines[2], "net_util-test");
 }
 
+TEST_F(NetUtilTest, TestGetFQDN) {
+  string fqdn;
+  ASSERT_OK(GetFQDN(&fqdn));
+  LOG(INFO) << "fqdn is " << fqdn;
+}
+
 } // namespace kudu
