@@ -88,11 +88,24 @@ final class GetMasterRegistrationReceived {
   private void incrementCountAndCheckExhausted() {
     if (countResponsesReceived.incrementAndGet() == numMasters) {
       if (responseDCalled.compareAndSet(false, true)) {
+        boolean allUnrecoverable = true;
+        for (Exception ex : exceptionsReceived) {
+          if (!(ex instanceof NonRecoverableException)) {
+            allUnrecoverable = false;
+            break;
+          }
+        }
         String allHosts = NetUtil.hostsAndPortsToString(masterAddrs);
-        LOG.warn("Unable to find the leader master(" + allHosts + ").");
-        responseD.callback(NoLeaderMasterFoundException.create(
-            "Master config (" + allHosts + ") has no leader.",
-            exceptionsReceived));
+        if (allUnrecoverable) {
+          // This will stop retries.
+          responseD.callback(new NonRecoverableException("Couldn't find a valid master in (" +
+              allHosts + "), exceptions: " + exceptionsReceived));
+        } else {
+          LOG.warn("Unable to find the leader master(" + allHosts + ").");
+          responseD.callback(NoLeaderMasterFoundException.create(
+              "Master config (" + allHosts + ") has no leader.",
+              exceptionsReceived));
+        }
       }
     }
   }

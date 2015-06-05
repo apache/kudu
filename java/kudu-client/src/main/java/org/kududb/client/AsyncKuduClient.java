@@ -1019,7 +1019,12 @@ public class AsyncKuduClient {
       this.table = table;
     }
     public Object call(final Master.GetTableLocationsResponsePB arg) {
-      discoverTablets(table, arg);
+      try {
+        discoverTablets(table, arg);
+      } catch (NonRecoverableException e) {
+        // Returning the exception means we early out and errback to the user.
+        return e;
+      }
       return null;
     }
     public String toString() {
@@ -1046,7 +1051,9 @@ public class AsyncKuduClient {
     masterLookups.release();
   }
 
-  private void discoverTablets(String table, Master.GetTableLocationsResponsePB response) {
+  @VisibleForTesting
+  void discoverTablets(String table, Master.GetTableLocationsResponsePB response)
+      throws NonRecoverableException {
     if (response.hasError()) {
       throw new MasterErrorException(response.getError());
     }
@@ -1638,11 +1645,13 @@ public class AsyncKuduClient {
       this.endKey = endKey.length == 0 ? EMPTY_ARRAY : endKey;
     }
 
-    void refreshServers(Master.TabletLocationsPB tabletLocations) {
+    void refreshServers(Master.TabletLocationsPB tabletLocations) throws NonRecoverableException {
 
       synchronized (tabletServers) { // TODO not a fat lock with IP resolving in it
         tabletServers.clear();
         leaderIndex = NO_LEADER_INDEX;
+        List<UnknownHostException> lookupExceptions =
+            new ArrayList<>(tabletLocations.getReplicasCount());
         for (Master.TabletLocationsPB.ReplicaPB replica : tabletLocations.getReplicasList()) {
 
           List<Common.HostPortPB> addresses = replica.getTsInfo().getRpcAddressesList();
@@ -1656,22 +1665,34 @@ public class AsyncKuduClient {
           // from meta_cache.cc
           // TODO: if the TS advertises multiple host/ports, pick the right one
           // based on some kind of policy. For now just use the first always.
-          addTabletClient(uuid, addresses.get(0).getHost(), addresses.get(0).getPort(),
-              isMasterTable(table), replica.getRole().equals(Metadata.RaftPeerPB.Role.LEADER));
+          try {
+            addTabletClient(uuid, addresses.get(0).getHost(), addresses.get(0).getPort(),
+                isMasterTable(table), replica.getRole().equals(Metadata.RaftPeerPB.Role.LEADER));
+          } catch (UnknownHostException ex) {
+            lookupExceptions.add(ex);
+          }
         }
         leaderIndex = 0;
         if (leaderIndex == NO_LEADER_INDEX) {
           LOG.warn("No leader provided for tablet " + getTabletIdAsString());
+        }
+
+        // If we found a tablet that doesn't contain a single location that we can resolve, there's
+        // no point in retrying.
+        if (!lookupExceptions.isEmpty() &&
+            lookupExceptions.size() == tabletLocations.getReplicasCount()) {
+          throw new NonRecoverableException("Couldn't find any valid locations, exceptions: " +
+              lookupExceptions);
         }
       }
     }
 
     // Must be called with tabletServers synchronized
     void addTabletClient(String uuid, String host, int port, boolean isMasterTable, boolean
-        isLeader) {
+        isLeader) throws UnknownHostException {
       String ip = getIP(host);
       if (ip == null) {
-        return;
+        throw new UnknownHostException("Failed to resolve the IP of `" + host + "'");
       }
       TabletClient client = newClient(uuid, ip, port, isMasterTable);
 
