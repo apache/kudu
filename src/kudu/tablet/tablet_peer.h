@@ -15,7 +15,6 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/transaction_order_verifier.h"
 #include "kudu/tablet/transactions/transaction_tracker.h"
-#include "kudu/util/countdown_latch.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/semaphore.h"
 
@@ -261,9 +260,6 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // pool, constructor-injected by either the Master (for system tables) or
   // the Tablet server.
   ThreadPool* apply_pool_;
-
-  // Latch that goes down to 0 when the tablet is in RUNNING state.
-  CountDownLatch consensus_ready_latch_;
 
   scoped_refptr<server::Clock> clock_;
 

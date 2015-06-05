@@ -68,9 +68,6 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
     state_(BOOTSTRAPPING),
     status_listener_(new TabletStatusListener(meta)),
     apply_pool_(apply_pool),
-    // prepare executor has a single thread as prepare must be done in order
-    // of submission
-    consensus_ready_latch_(1),
     log_anchor_registry_(new LogAnchorRegistry()),
     mark_dirty_clbk_(mark_dirty_clbk) {
   CHECK_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
