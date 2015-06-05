@@ -23,7 +23,6 @@ typedef boost::lock_guard<simple_spinlock> Lock;
 typedef gscoped_ptr<Lock> ScopedLock;
 
 class FailureDetector;
-class FutureCallback;
 class HostPort;
 class ThreadPool;
 

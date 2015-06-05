@@ -10,11 +10,11 @@
 
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/ref_counted_replicate.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
-#include "kudu/util/task_executor.h"
 
 namespace kudu {
 

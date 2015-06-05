@@ -23,7 +23,6 @@
 #include "kudu/server/clock.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/task_executor.h"
 #include "kudu/util/threadpool.h"
 
 #define TOKENPASTE(x, y) x ## y

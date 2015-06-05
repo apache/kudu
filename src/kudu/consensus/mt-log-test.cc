@@ -17,7 +17,6 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/random.h"
 #include "kudu/util/thread.h"
-#include "kudu/util/task_executor.h"
 
 DEFINE_int32(num_writer_threads, 4, "Number of threads writing to the log");
 DEFINE_int32(num_batches_per_thread, 2000, "Number of batches per thread");

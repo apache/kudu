@@ -10,7 +10,6 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/task_executor.h"
 
 namespace kudu {
 namespace consensus {

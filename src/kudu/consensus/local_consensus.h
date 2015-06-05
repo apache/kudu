@@ -14,7 +14,6 @@
 namespace kudu {
 
 class FsManager;
-class FutureCallback;
 
 namespace metadata {
 class TabletServerPB;

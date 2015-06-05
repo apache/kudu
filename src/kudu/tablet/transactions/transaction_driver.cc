@@ -10,7 +10,6 @@
 #include "kudu/util/debug-util.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/task_executor.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
 

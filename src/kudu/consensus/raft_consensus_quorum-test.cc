@@ -228,9 +228,9 @@ class RaftConsensusQuorumTest : public KuduTest {
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &peer));
 
     // Use a latch in place of a Transaction callback.
-    gscoped_ptr<LatchCallback> cb(new LatchCallback);
-    *round = peer->NewRound(msg.Pass(), cb->AsStatusCallback());
-    InsertOrDie(&latches_, round->get(), cb.release());
+    gscoped_ptr<Synchronizer> sync(new Synchronizer());
+    *round = peer->NewRound(msg.Pass(), sync->AsStatusCallback());
+    InsertOrDie(&syncs_, round->get(), sync.release());
     RETURN_NOT_OK_PREPEND(peer->Replicate(round->get()),
                           Substitute("Unable to replicate to peer $0", peer_idx));
     return Status::OK();
@@ -259,11 +259,11 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   Status WaitForReplicate(ConsensusRound* round) {
-    return FindOrDie(latches_, round)->Wait();
+    return FindOrDie(syncs_, round)->Wait();
   }
 
   Status TimedWaitForReplicate(ConsensusRound* round, const MonoDelta& delta) {
-    return FindOrDie(latches_, round)->WaitFor(delta);
+    return FindOrDie(syncs_, round)->WaitFor(delta);
   }
 
   void WaitForReplicateIfNotAlreadyPresent(const OpId& to_wait_for, int peer_idx) {
@@ -539,7 +539,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     // get a SIGSEGV when closing the logs.
     logs_.clear();
     STLDeleteElements(&fs_managers_);
-    STLDeleteValues(&latches_);
+    STLDeleteValues(&syncs_);
   }
 
  protected:
@@ -555,7 +555,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   MetricRegistry metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   const Schema schema_;
-  unordered_map<ConsensusRound*, LatchCallback*> latches_;
+  unordered_map<ConsensusRound*, Synchronizer*> syncs_;
 };
 
 // Tests Replicate/Commit a single message through the leader.
