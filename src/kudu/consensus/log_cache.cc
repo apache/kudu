@@ -217,6 +217,14 @@ Status LogCache::LookupOpId(int64_t op_index, OpId* op_id) const {
   // First check the log cache itself.
   {
     unique_lock<simple_spinlock> l(&lock_);
+
+    // We sometimes try to look up OpIds that have never been written
+    // on the local node. In that case, don't try to read the op from
+    // the log reader, since it might actually race against the writing
+    // of the op.
+    if (op_index >= next_sequential_op_index_) {
+      return Status::NotFound("op in future");
+    }
     MessageCache::const_iterator iter = cache_.find(op_index);
     if (iter != cache_.end()) {
       *op_id = iter->second->get()->id();
