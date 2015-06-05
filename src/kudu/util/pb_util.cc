@@ -272,51 +272,29 @@ Status WritablePBContainerFile::Init(const Message& msg) {
   // Serialize the version.
   InlineEncodeFixed32(buf.data() + offset, kPBContainerVersion);
   offset += sizeof(uint32_t);
-
-  // Write the serialized buffer to the file.
   DCHECK_EQ(kPBContainerHeaderLen, offset)
     << "Serialized unexpected number of total bytes";
-  RETURN_NOT_OK_PREPEND(writer_->Append(buf),
-                        "Failed to Append() header to file");
 
-  // Write the supplemental header to the file.
+  // Serialize the supplemental header.
   ContainerSupHeaderPB sup_header;
   PopulateDescriptorSet(msg.GetDescriptor()->file(),
                         sup_header.mutable_protos());
   sup_header.set_pb_type(msg.GetTypeName());
-  RETURN_NOT_OK_PREPEND(Append(sup_header),
-                        "Failed to Append() supplemental header to file");
+  RETURN_NOT_OK_PREPEND(AppendMsgToBuffer(sup_header, &buf),
+                        "Failed to prepare supplemental header for writing");
 
+  // Write the serialized buffer to the file.
+  RETURN_NOT_OK_PREPEND(writer_->Append(buf),
+                        "Failed to Append() header to file");
   return Status::OK();
 }
 
 Status WritablePBContainerFile::Append(const Message& msg) {
   DCHECK(!closed_);
 
-  DCHECK(msg.IsInitialized()) << InitializationErrorMessage("serialize", msg);
-  int data_size = msg.ByteSize();
-
   faststring buf;
-  uint64_t bufsize = sizeof(uint32_t) + data_size + kPBContainerChecksumLen;
-  buf.resize(bufsize);
-
-  // Serialize the data size.
-  InlineEncodeFixed32(buf.data(), static_cast<uint32_t>(data_size));
-  size_t offset = sizeof(uint32_t);
-
-  // Serialize the data.
-  if (PREDICT_FALSE(!msg.SerializeWithCachedSizesToArray(buf.data() + offset))) {
-    return Status::IOError("Failed to serialize PB to array");
-  }
-  offset += data_size;
-
-  // Calculate and serialize the checksum.
-  uint32_t checksum = crc::Crc32c(buf.data(), offset);
-  InlineEncodeFixed32(buf.data() + offset, checksum);
-  offset += kPBContainerChecksumLen;
-
-  // Write the serialized buffer to the file.
-  DCHECK_EQ(bufsize, offset) << "Serialized unexpected number of total bytes";
+  RETURN_NOT_OK_PREPEND(AppendMsgToBuffer(msg, &buf),
+                        "Failed to prepare buffer for writing");
   RETURN_NOT_OK_PREPEND(writer_->Append(buf), "Failed to Append() data to file");
 
   return Status::OK();
@@ -346,6 +324,35 @@ Status WritablePBContainerFile::Close() {
     RETURN_NOT_OK_PREPEND(writer_->Close(), "Failed to Close() file");
   }
 
+  return Status::OK();
+}
+
+Status WritablePBContainerFile::AppendMsgToBuffer(const Message& msg, faststring* buf) {
+  DCHECK(msg.IsInitialized()) << InitializationErrorMessage("serialize", msg);
+  int data_size = msg.ByteSize();
+  uint64_t bufsize = sizeof(uint32_t) + data_size + kPBContainerChecksumLen;
+
+  // Grow the buffer to hold the new data.
+  size_t orig_size = buf->size();
+  buf->resize(orig_size + bufsize);
+  uint8_t* dst = buf->data() + orig_size;
+
+  // Serialize the data size.
+  InlineEncodeFixed32(dst, static_cast<uint32_t>(data_size));
+  size_t offset = sizeof(uint32_t);
+
+  // Serialize the data.
+  if (PREDICT_FALSE(!msg.SerializeWithCachedSizesToArray(dst + offset))) {
+    return Status::IOError("Failed to serialize PB to array");
+  }
+  offset += data_size;
+
+  // Calculate and serialize the checksum.
+  uint32_t checksum = crc::Crc32c(dst, offset);
+  InlineEncodeFixed32(dst + offset, checksum);
+  offset += kPBContainerChecksumLen;
+
+  DCHECK_EQ(bufsize, offset) << "Serialized unexpected number of total bytes";
   return Status::OK();
 }
 

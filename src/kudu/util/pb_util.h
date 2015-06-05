@@ -202,6 +202,10 @@ class WritablePBContainerFile {
   static void PopulateDescriptorSet(const google::protobuf::FileDescriptor* desc,
                                     google::protobuf::FileDescriptorSet* output);
 
+  // Serialize the contents of 'msg' into 'buf' along with additional metadata
+  // to aid in deserialization.
+  Status AppendMsgToBuffer(const google::protobuf::Message& msg, faststring* buf);
+
   bool closed_;
 
   gscoped_ptr<WritableFile> writer_;
