@@ -131,7 +131,10 @@ static Status InsertRows(scoped_refptr<KuduTable>& table, int num_rows) {
     delete errors.back();
     errors.pop_back();
   }
-  return s;
+  KUDU_RETURN_NOT_OK(s);
+
+  // Close the session.
+  return session->Close();
 }
 
 static Status ScanRows(scoped_refptr<KuduTable>& table) {

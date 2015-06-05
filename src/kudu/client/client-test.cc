@@ -1305,6 +1305,21 @@ TEST_F(ClientTest, TestAsyncFlushResponseAfterSessionDropped) {
   ASSERT_FALSE(s.Wait().ok());
 }
 
+TEST_F(ClientTest, TestSessionClose) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+  // Closing the session now should return Status::IllegalState since we
+  // have a pending operation.
+  ASSERT_TRUE(session->Close().IsIllegalState());
+
+  Synchronizer s;
+  session->FlushAsync(s.AsStatusCallback());
+  ASSERT_OK(s.Wait());
+
+  ASSERT_OK(session->Close());
+}
+
 // Test which sends multiple batches through the same session, each of which
 // contains multiple rows spread across multiple tablets.
 TEST_F(ClientTest, TestMultipleMultiRowManualBatches) {

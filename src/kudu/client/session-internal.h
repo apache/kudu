@@ -33,6 +33,11 @@ class KuduSession::Data {
   // Called by Batcher when a flush has finished.
   void FlushFinished(internal::Batcher* b);
 
+  // Returns Status::IllegalState() if 'force' is false and there are still pending
+  // operations. If 'force' is true batcher_ is aborted even if there are pending
+  // operations.
+  Status Close(bool force);
+
   // The client that this session is associated with.
   const std::tr1::shared_ptr<KuduClient> client_;
 

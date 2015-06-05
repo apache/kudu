@@ -51,5 +51,13 @@ void KuduSession::Data::FlushFinished(Batcher* batcher) {
   CHECK_EQ(flushed_batchers_.erase(batcher), 1);
 }
 
+Status KuduSession::Data::Close(bool force) {
+  if (batcher_->HasPendingOperations() && !force) {
+    return Status::IllegalState("Could not close. There are pending operations.");
+  }
+  batcher_->Abort();
+  return Status::OK();
+}
+
 } // namespace client
 } // namespace kudu

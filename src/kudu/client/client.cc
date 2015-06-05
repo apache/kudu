@@ -482,10 +482,11 @@ KuduSession::KuduSession(const shared_ptr<KuduClient>& client) {
 }
 
 KuduSession::~KuduSession() {
-  if (data_->batcher_->HasPendingOperations()) {
-    LOG(WARNING) << "Closing Session with pending operations.";
-  }
-  data_->batcher_->Abort();
+  WARN_NOT_OK(data_->Close(true), "Closed Session with pending operations.");
+}
+
+Status KuduSession::Close() {
+  return data_->Close(false);
 }
 
 Status KuduSession::SetFlushMode(FlushMode m) {
