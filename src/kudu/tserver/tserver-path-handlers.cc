@@ -230,14 +230,14 @@ string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& 
     string peer_addr_or_uuid =
         peer.has_last_known_addr() ? peer.last_known_addr().host() : peer.permanent_uuid();
     peer_addr_or_uuid = EscapeForHtmlToString(peer_addr_or_uuid);
-    if (peer.permanent_uuid() == cstate.leader_uuid()) {
-        html << Substitute("  <li><b>LEADER: $0</b></li>\n",
-                           peer_addr_or_uuid);
-    } else {
-        html << Substitute(" <li>$0: $1</li>\n",
-                           RaftPeerPB::Role_Name(GetConsensusRole(peer.permanent_uuid(), cstate)),
-                           peer_addr_or_uuid);
+    string role_name = RaftPeerPB::Role_Name(GetConsensusRole(peer.permanent_uuid(), cstate));
+    string formatted = Substitute("$0: $1", role_name, peer_addr_or_uuid);
+    // Make the local peer bold.
+    if (peer.permanent_uuid() == tserver_->instance_pb().permanent_uuid()) {
+      formatted = Substitute("<b>$0</b>", formatted);
     }
+
+    html << Substitute(" <li>$0</li>\n", formatted);
   }
   html << "</ul>\n";
   return html.str();
