@@ -111,7 +111,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
     l.mutable_data()->pb.set_name("testtb");
     l.mutable_data()->pb.set_version(0);
     l.mutable_data()->pb.set_num_replicas(1);
-    l.mutable_data()->pb.set_state(SysTablesEntryPB::kTableStatePreparing);
+    l.mutable_data()->pb.set_state(SysTablesEntryPB::PREPARING);
     ASSERT_OK(SchemaToPB(Schema(), l.mutable_data()->pb.mutable_schema()));
     // Add the table
     ASSERT_OK(master_->catalog_manager()->sys_catalog()->AddTable(table.get()));
@@ -128,7 +128,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTablesOperations) {
   {
     TableMetadataLock l(table.get(), TableMetadataLock::WRITE);
     l.mutable_data()->pb.set_version(1);
-    l.mutable_data()->pb.set_state(SysTablesEntryPB::kTableStateRemoved);
+    l.mutable_data()->pb.set_state(SysTablesEntryPB::REMOVED);
     ASSERT_OK(master_->catalog_manager()->sys_catalog()->UpdateTable(table.get()));
     l.Commit();
   }
@@ -160,14 +160,14 @@ TEST_F(SysCatalogTest, TestTableInfoCommit) {
     TableMetadataLock reader_lock(table.get(), TableMetadataLock::READ);
     ASSERT_NE("foo", reader_lock.data().name());
   }
-  writer_lock.mutable_data()->set_state(SysTablesEntryPB::kTableStateRunning, "running");
+  writer_lock.mutable_data()->set_state(SysTablesEntryPB::RUNNING, "running");
 
 
   {
     TableMetadataLock reader_lock(table.get(), TableMetadataLock::READ);
     ASSERT_NE("foo", reader_lock.data().pb.name());
     ASSERT_NE("running", reader_lock.data().pb.state_msg());
-    ASSERT_NE(SysTablesEntryPB::kTableStateRunning, reader_lock.data().pb.state());
+    ASSERT_NE(SysTablesEntryPB::RUNNING, reader_lock.data().pb.state());
   }
 
   // Commit the changes
@@ -178,7 +178,7 @@ TEST_F(SysCatalogTest, TestTableInfoCommit) {
     TableMetadataLock reader_lock(table.get(), TableMetadataLock::READ);
     ASSERT_EQ("foo", reader_lock.data().pb.name());
     ASSERT_EQ("running", reader_lock.data().pb.state_msg());
-    ASSERT_EQ(SysTablesEntryPB::kTableStateRunning, reader_lock.data().pb.state());
+    ASSERT_EQ(SysTablesEntryPB::RUNNING, reader_lock.data().pb.state());
   }
 }
 
@@ -218,7 +218,7 @@ static TabletInfo *CreateTablet(TableInfo *table,
                                 const string& end_key) {
   TabletInfo *tablet = new TabletInfo(table, tablet_id);
   TabletMetadataLock l(tablet, TabletMetadataLock::WRITE);
-  l.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStatePreparing);
+  l.mutable_data()->pb.set_state(SysTabletsEntryPB::PREPARING);
   l.mutable_data()->pb.set_start_key(start_key);
   l.mutable_data()->pb.set_end_key(end_key);
   l.mutable_data()->pb.set_table_id(table->id());
@@ -265,7 +265,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
     tablets.push_back(tablet1.get());
 
     TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
-    l1.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStateRunning);
+    l1.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
     ASSERT_OK(sys_catalog->UpdateTablets(tablets));
     l1.Commit();
 
@@ -287,9 +287,9 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
     to_update.push_back(tablet2.get());
 
     TabletMetadataLock l1(tablet1.get(), TabletMetadataLock::WRITE);
-    l1.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStateReplaced);
+    l1.mutable_data()->pb.set_state(SysTabletsEntryPB::REPLACED);
     TabletMetadataLock l2(tablet2.get(), TabletMetadataLock::WRITE);
-    l2.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStateRunning);
+    l2.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
 
     loader.Reset();
     ASSERT_OK(sys_catalog->AddAndUpdateTablets(to_add, to_update));
@@ -327,7 +327,7 @@ TEST_F(SysCatalogTest, TestTabletInfoCommit) {
   TabletMetadataLock l(tablet.get(), TabletMetadataLock::WRITE);
   l.mutable_data()->pb.set_start_key("a");
   l.mutable_data()->pb.set_end_key("b");
-  l.mutable_data()->set_state(SysTabletsEntryPB::kTabletStateRunning, "running");
+  l.mutable_data()->set_state(SysTabletsEntryPB::RUNNING, "running");
   {
     // Changes shouldn't be visible, and lock should still be
     // acquired even though the mutation is under way.
@@ -335,7 +335,7 @@ TEST_F(SysCatalogTest, TestTabletInfoCommit) {
     ASSERT_NE("a", read_lock.data().pb.start_key());
     ASSERT_NE("b", read_lock.data().pb.end_key());
     ASSERT_NE("running", read_lock.data().pb.state_msg());
-    ASSERT_NE(SysTabletsEntryPB::kTabletStateRunning,
+    ASSERT_NE(SysTabletsEntryPB::RUNNING,
               read_lock.data().pb.state());
   }
 
@@ -348,7 +348,7 @@ TEST_F(SysCatalogTest, TestTabletInfoCommit) {
     ASSERT_EQ("a", read_lock.data().pb.start_key());
     ASSERT_EQ("b", read_lock.data().pb.end_key());
     ASSERT_EQ("running", read_lock.data().pb.state_msg());
-    ASSERT_EQ(SysTabletsEntryPB::kTabletStateRunning,
+    ASSERT_EQ(SysTabletsEntryPB::RUNNING,
               read_lock.data().pb.state());
   }
 }

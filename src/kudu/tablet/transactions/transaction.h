@@ -308,9 +308,7 @@ class LatchTransactionCompletionCallback : public TransactionCompletionCallback 
 
   virtual void TransactionCompleted() OVERRIDE {
     if (!status_.ok()) {
-      tserver::TabletServerErrorPB* error = response_->mutable_error();
-      StatusToPB(status_, error->mutable_status());
-      error->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
+      StatusToPB(status_, response_->mutable_error()->mutable_status());
     }
     latch_->CountDown();
   }

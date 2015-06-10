@@ -45,6 +45,7 @@ message BlockIdPB {
 
 // The kind of record.
 enum BlockRecordType {
+  UNKNOWN = 0;
   CREATE = 1;
   DELETE = 2;
 }

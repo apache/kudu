@@ -18,6 +18,8 @@ message ConsensusErrorPB {
   // by the caller. A generic error code is purposefully absent since
   // generic errors should use tserver.TabletServerErrorPB.
   enum Code {
+    UNKNOWN = 0;
+
     // Invalid term.
     // Sent by peers in response to leader RPCs whenever the term
     // of one of the messages sent in a batch is lower than the
@@ -75,6 +77,7 @@ message OpId {
 // The types of operations that need a commit message, i.e. those that require
 // at least one round of the consensus algorithm.
 enum OperationType {
+  UNKNOWN_OP = 0;
   NO_OP = 1;
   WRITE_OP = 3;
   ALTER_SCHEMA_OP = 4;
@@ -84,6 +87,7 @@ enum OperationType {
 // The transaction driver type: indicates whether a transaction is
 // being executed on a leader or a replica.
 enum DriverType {
+  UNKNOWN_DRIVER = 0;
   LEADER = 1;
   REPLICA = 2;
 }
@@ -102,6 +106,7 @@ message ChangeConfigRecordPB {
 }
 
 enum ChangeConfigType {
+  UNKNOWN_CHANGE = 0;
   ADD_SERVER = 1;
   REMOVE_SERVER = 2;
   CHANGE_ROLE = 3;

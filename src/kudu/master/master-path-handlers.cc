@@ -21,6 +21,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
+#include "kudu/util/string_case.h"
 #include "kudu/util/url-coding.h"
 
 
@@ -32,9 +33,6 @@ using std::string;
 using strings::Substitute;
 
 namespace master {
-
-const int kSysTablesEntryStatePrefixLen = 11;  // kTableState
-const int kSysTabletsEntryStatePrefixLen = 12; // kTabletState
 
 MasterPathHandlers::~MasterPathHandlers() {
 }
@@ -71,11 +69,13 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
   *output << "  <tr><th>Table Name</th><th>Table Id</th><th>State</th></tr>\n";
   BOOST_FOREACH(const scoped_refptr<TableInfo>& table, tables) {
     TableMetadataLock l(table.get(), TableMetadataLock::READ);
+    string state = SysTablesEntryPB_State_Name(l.data().pb.state());
+    Capitalize(&state);
     *output << Substitute(
         "<tr><th>$0</th><td><a href=\"/table?id=$1\">$1</a></td><td>$2 $3</td></tr>\n",
         EscapeForHtmlToString(l.data().name()),
         EscapeForHtmlToString(table->id()),
-        SysTablesEntryPB_State_Name(l.data().pb.state()).substr(kSysTablesEntryStatePrefixLen),
+        state,
         EscapeForHtmlToString(l.data().pb.state_msg()));
   }
   *output << "</table>\n";
@@ -108,10 +108,13 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
     *output << "<table class='table table-striped'>\n";
     *output << "  <tr><td>Version:</td><td>" << l.data().pb.version() << "</td></tr>\n";
+
+    string state = SysTablesEntryPB_State_Name(l.data().pb.state());
+    Capitalize(&state);
     *output << "  <tr><td>State:</td><td>"
-          << SysTablesEntryPB_State_Name(l.data().pb.state()).substr(kSysTablesEntryStatePrefixLen)
-          << EscapeForHtmlToString(l.data().pb.state_msg())
-          << "</td></tr>\n";
+            << state
+            << EscapeForHtmlToString(l.data().pb.state_msg())
+            << "</td></tr>\n";
     *output << "</table>\n";
 
     SchemaFromPB(l.data().pb.schema(), &schema);
@@ -129,12 +132,14 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
     string start_key = schema.DebugEncodedRowKey(l.data().pb.start_key(), Schema::START_KEY);
     string end_key = schema.DebugEncodedRowKey(l.data().pb.end_key(), Schema::END_KEY);
+    string state = SysTabletsEntryPB_State_Name(l.data().pb.state());
+    Capitalize(&state);
     *output << Substitute(
         "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3 $4</td><td>$5</td></tr>\n",
         tablet->tablet_id(),
         EscapeForHtmlToString(start_key),
         EscapeForHtmlToString(end_key),
-        SysTabletsEntryPB_State_Name(l.data().pb.state()).substr(kSysTabletsEntryStatePrefixLen),
+        state,
         EscapeForHtmlToString(l.data().pb.state_msg()),
         RaftConfigToHtml(locations));
   }

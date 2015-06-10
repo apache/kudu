@@ -36,4 +36,14 @@ TEST(TestStringCase, TestToUpperCaseInPlace) {
   ASSERT_EQ("FOO", in_out);
 }
 
+TEST(TestStringCase, TestCapitalize) {
+  string word = "foo";
+  Capitalize(&word);
+  ASSERT_EQ("Foo", word);
+
+  word = "HiBerNATe";
+  Capitalize(&word);
+  ASSERT_EQ("Hibernate", word);
+}
+
 } // namespace kudu

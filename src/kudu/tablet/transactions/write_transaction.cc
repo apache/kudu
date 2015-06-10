@@ -166,6 +166,8 @@ void WriteTransaction::Finish(TransactionResult result) {
         case COMMIT_WAIT:
           metrics->write_op_duration_commit_wait_consistency->Increment(op_duration_usec);
           break;
+        case UNKNOWN_EXTERNAL_CONSISTENCY_MODE:
+          break;
       }
     }
   }
@@ -275,6 +277,8 @@ void WriteTransactionState::UpdateMetricsForOp(const RowOp& op) {
       break;
     case RowOperationsPB::DELETE:
       tx_metrics_.successful_deletes++;
+      break;
+    case RowOperationsPB::UNKNOWN:
       break;
   }
 }

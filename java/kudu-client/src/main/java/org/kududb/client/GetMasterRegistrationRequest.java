@@ -52,6 +52,7 @@ public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationR
         role,
         respBuilder.getRegistration(),
         respBuilder.getInstanceId());
-    return new Pair<GetMasterRegistrationResponse, Object>(response, respBuilder.getError());
+    return new Pair<GetMasterRegistrationResponse, Object>(
+        response, respBuilder.hasError() ? respBuilder.getError() : null);
   }
 }

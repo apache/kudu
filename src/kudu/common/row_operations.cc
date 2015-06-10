@@ -491,6 +491,8 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
     op.type = type;
 
     switch (type) {
+      case RowOperationsPB::UNKNOWN:
+        return Status::NotSupported("Unknown row operation type");
       case RowOperationsPB::INSERT:
         RETURN_NOT_OK(DecodeInsert(prototype_row_storage, mapping, &op));
         break;
@@ -498,8 +500,6 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
       case RowOperationsPB::DELETE:
         RETURN_NOT_OK(DecodeUpdateOrDelete(mapping, &op));
         break;
-      default:
-        return Status::Corruption("Unexpected operation type");
     }
 
     ops->push_back(op);

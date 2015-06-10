@@ -14,6 +14,8 @@ import "kudu/common/common.proto";
 message RaftPeerPB {
   // The possible roles for peers.
   enum Role {
+    UNKNOWN_ROLE = 999;
+
     // Indicates this node is a follower in the configuration, i.e. that it participates
     // in majorities and accepts Consensus::Update() calls.
     FOLLOWER = 0;
@@ -35,6 +37,7 @@ message RaftPeerPB {
   };
 
   enum MemberType {
+    UNKNOWN_MEMBER_TYPE = 999;
     NON_VOTER = 0;
     VOTER = 1;
   };

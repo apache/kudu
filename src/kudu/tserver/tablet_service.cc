@@ -1148,6 +1148,11 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     TRACE_EVENT0("tserver", "Create iterator");
 
     switch (scan_pb.read_mode()) {
+      case UNKNOWN_READ_MODE: {
+        *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
+        s = Status::NotSupported("Unknown read mode.");
+        return s;
+      }
       case READ_LATEST: {
         s = tablet_peer->tablet()->NewRowIterator(projection, &iter);
         break;

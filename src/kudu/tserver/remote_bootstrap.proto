@@ -114,6 +114,7 @@ message CheckRemoteBootstrapSessionActiveResponsePB {
 // data (data blocks or log files).
 message DataIdPB {
   enum IdType {
+    UNKNOWN = 0;
     BLOCK = 1;
     LOG_SEGMENT = 2;
   }

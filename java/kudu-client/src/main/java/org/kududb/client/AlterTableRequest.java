@@ -48,6 +48,7 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
     readProtobuf(callResponse.getPBMessage(), respBuilder);
     AlterTableResponse response = new AlterTableResponse(deadlineTracker.getElapsedMillis(),
         tsUUID);
-    return new Pair<AlterTableResponse, Object>(response, respBuilder.getError());
+    return new Pair<AlterTableResponse, Object>(
+        response, respBuilder.hasError() ? respBuilder.getError() : null);
   }
 }

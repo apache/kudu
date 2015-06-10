@@ -31,6 +31,7 @@ message IndexBlockTrailerPB {
   required int32 num_entries = 1;
 
   enum BlockType {
+    UNKNOWN = 999;
     LEAF = 0;
     INTERNAL = 1;
   };

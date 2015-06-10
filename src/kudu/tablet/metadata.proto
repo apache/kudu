@@ -34,6 +34,8 @@ message RowSetDataPB {
 // State flags indicating whether the tablet is in the middle of being copied
 // and is therefore not possible to bring up.
 enum TabletBootstrapStatePB {
+  REMOTE_BOOSTRAP_UNKNOWN = 999;
+
   // The tablet is set to REMOTE_BOOTSTRAP_COPYING state when in the middle of
   // remote bootstrap while copying data files from a remote peer. If a tablet
   // server crashes with a tablet in this state, the remote bootstrap process
@@ -90,6 +92,7 @@ message TabletSuperBlockPB {
 // The enum of tablet states.
 // Tablet states are sent in TabletReports and kept in TabletPeer.
 enum TabletStatePB {
+  UNKNOWN = 999;
 
   // Indicates the Tablet is bootstrapping, i.e. that the Tablet is not
   // available for RPC.

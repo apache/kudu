@@ -21,6 +21,7 @@ import "kudu/consensus/metadata.proto";
 // This maps to kudu::Status in C++.
 message AppStatusPB {
   enum ErrorCode {
+    UNKNOWN_ERROR = 999;
     OK = 0;
     NOT_FOUND = 1;
     CORRUPTION = 2;
@@ -40,7 +41,6 @@ message AppStatusPB {
     CONFIGURATION_ERROR = 16;
     INCOMPLETE = 17;
     END_OF_FILE = 18;
-    UNKNOWN_ERROR = 999;
   }
 
   required ErrorCode code = 1;
@@ -148,6 +148,7 @@ message RowwiseRowBlockPB {
 // A set of operations (INSERT, UPDATE, or DELETE) to apply to a table.
 message RowOperationsPB {
   enum Type {
+    UNKNOWN = 0;
     INSERT = 1;
     UPDATE = 2;
     DELETE = 3;

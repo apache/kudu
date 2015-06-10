@@ -45,4 +45,17 @@ void ToUpperCase(const std::string &string,
   }
 }
 
+void Capitalize(string *word) {
+  uint32_t size = word->size();
+  if (size == 0) {
+    return;
+  }
+
+  (*word)[0] = toupper((*word)[0]);
+
+  for (int i = 1; i < size; i++) {
+    (*word)[i] = tolower((*word)[i]);
+  }
+}
+
 } // namespace kudu

@@ -1879,11 +1879,13 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
   RpcController controller;
   req.set_tablet_id(tabletId);
   ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
-  const google::protobuf::EnumDescriptor* op_type = RowOperationsPB_Type_descriptor();
-  for (int i = 0; i < op_type->value_count() - 1; i++) { // INSERT and UPDATE
+
+  vector<RowOperationsPB::Type> ops =
+      boost::assign::list_of(RowOperationsPB::INSERT)(RowOperationsPB::UPDATE);
+
+  BOOST_FOREACH(const RowOperationsPB::Type &op, ops) {
     RowOperationsPB* data = req.mutable_row_operations();
-    AddTestRowToPB(static_cast<RowOperationsPB_Type>(op_type->value(i)->number()),
-                   schema_, val, 1, "1", data);
+    AddTestRowToPB(op, schema_, val, 1, "1", data);
     SCOPED_TRACE(req.DebugString());
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());

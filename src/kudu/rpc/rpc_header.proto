@@ -102,6 +102,7 @@ message ConnectionContextPB {
 // Message type passed back & forth for the SASL negotiation.
 message SaslMessagePB {
   enum SaslState {
+    UNKNOWN   = 999;
     SUCCESS   = 0;
     NEGOTIATE = 1;
     INITIATE  = 2;
@@ -213,6 +214,8 @@ message ErrorStatusPB {
 
   // These codes have all been inherited from Hadoop's RPC mechanism.
   enum RpcErrorCodePB {
+    FATAL_UNKNOWN = 10;
+
     // Non-fatal RPC errors. Connection should be left open for future RPC calls.
     //------------------------------------------------------------
     // The application generated an error status. See the message field for
@@ -233,8 +236,6 @@ message ErrorStatusPB {
 
     // FATAL_* errors indicate that the client should shut down the connection.
     //------------------------------------------------------------
-    FATAL_UNKNOWN = 10;
-
     // The RPC server is already shutting down.
     FATAL_SERVER_SHUTTING_DOWN = 11;
     // Fields of RpcHeader are invalid.

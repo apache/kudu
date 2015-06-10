@@ -207,7 +207,7 @@ class TabletPeerTest : public KuduTabletTest {
 
     CHECK_OK(tablet_peer->SubmitWrite(tx_state));
     rpc_latch.Wait();
-    CHECK(StatusFromPB(resp->error().status()).ok())
+    CHECK(!resp->has_error())
         << "\nReq:\n" << req.DebugString() << "Resp:\n" << resp->DebugString();
 
     // Roll the log after each write.

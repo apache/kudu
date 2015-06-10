@@ -382,27 +382,23 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
     if (decoded != null) {
       if (decoded.getSecond() instanceof Tserver.TabletServerErrorPB) {
         Tserver.TabletServerErrorPB error = (Tserver.TabletServerErrorPB) decoded.getSecond();
-        if (error.getStatus().getCode() != WireProtocol.AppStatusPB.ErrorCode.OK) {
-          exception = dispatchTSErrorOrReturnException(rpc, error);
-          if (exception == null) {
-            // It was taken care of.
-            return null;
-          } else {
-            // We're going to errback.
-            decoded = null;
-          }
+        exception = dispatchTSErrorOrReturnException(rpc, error);
+        if (exception == null) {
+          // It was taken care of.
+          return null;
+        } else {
+          // We're going to errback.
+          decoded = null;
         }
 
       } else if (decoded.getSecond() instanceof Master.MasterErrorPB) {
         Master.MasterErrorPB error = (Master.MasterErrorPB) decoded.getSecond();
-        if (error.getStatus().getCode() != WireProtocol.AppStatusPB.ErrorCode.OK) {
-          exception = dispatchMasterErrorOrReturnException(rpc, error);
-          if (exception == null) {
-            // Exception was taken care of.
-            return null;
-          } else {
-            decoded = null;
-          }
+        exception = dispatchMasterErrorOrReturnException(rpc, error);
+        if (exception == null) {
+          // Exception was taken care of.
+          return null;
+        } else {
+          decoded = null;
         }
       }
     }

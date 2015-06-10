@@ -36,6 +36,7 @@ message SetFlagRequestPB {
 
 message SetFlagResponsePB {
   enum Code {
+    UNKNOWN = 0;
     SUCCESS = 1;
     NO_SUCH_FLAG = 2;
     BAD_VALUE = 3;

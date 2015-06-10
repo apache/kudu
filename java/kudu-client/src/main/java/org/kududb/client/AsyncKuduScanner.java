@@ -617,8 +617,8 @@ public final class AsyncKuduScanner {
       readProtobuf(callResponse.getPBMessage(), builder);
       ScanResponsePB resp = builder.build();
       final byte[] id = resp.getScannerId().toByteArray();
-      TabletServerErrorPB error = resp.getError();
-      if (error.getCode().equals(TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
+      TabletServerErrorPB error = resp.hasError() ? resp.getError() : null;
+      if (error != null && error.getCode().equals(TabletServerErrorPB.Code.TABLET_NOT_FOUND)) {
         if (state == State.OPENING) {
           // Doing this will trigger finding the new location.
           return new Pair<Response, Object>(null, error);

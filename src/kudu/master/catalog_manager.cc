@@ -176,7 +176,7 @@ class TabletLoader : public TabletVisitor {
       // if the table is missing and the tablet is in "preparing" state
       // may mean that the table was not created (maybe due to a failed write
       // for the sys-tablets). The cleaner will remove
-      if (l.data().pb.state() == SysTabletsEntryPB::kTabletStatePreparing) {
+      if (l.data().pb.state() == SysTabletsEntryPB::PREPARING) {
         LOG(WARNING) << "Missing Table " << table_id << " required by tablet " << tablet_id
                      << " (probably a failed table creation: the tablet was not assigned)";
         return Status::OK();
@@ -684,7 +684,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     table_ids_map_[table->id()] = table;
     table_names_map_[req->name()] = table;
 
-    // d. Create the TabletInfo objects in state kTabletStatePreparing.
+    // d. Create the TabletInfo objects in state PREPARING.
     CreateTablets(sorted_split_keys, table.get(), &tablets);
 
     // Add the table/tablets to the in-memory map for the assignment.
@@ -700,9 +700,9 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   // since the CreateTableInfo/CreateTabletInfo functions leave them in that state.
   // They will get committed at the end of this function.
   // Sanity check: the tables and tablets should all be in "preparing" state.
-  CHECK_EQ(SysTablesEntryPB::kTableStatePreparing, table->metadata().dirty().pb.state());
+  CHECK_EQ(SysTablesEntryPB::PREPARING, table->metadata().dirty().pb.state());
   BOOST_FOREACH(TabletInfo *tablet, tablets) {
-    CHECK_EQ(SysTabletsEntryPB::kTabletStatePreparing,
+    CHECK_EQ(SysTabletsEntryPB::PREPARING,
              tablet->metadata().dirty().pb.state());
   }
 
@@ -719,7 +719,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   TRACE("Wrote tablets to system table");
 
   // f. Update the on-disk table state to "running".
-  table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::kTableStateRunning);
+  table->mutable_metadata()->mutable_dirty()->pb.set_state(SysTablesEntryPB::RUNNING);
   s = sys_catalog_->AddTable(table.get());
   if (!s.ok()) {
     s = s.CloneAndPrepend(Substitute("An error occurred while inserting to sys-tablets: $0",
@@ -800,7 +800,7 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
   TableInfo* table = new TableInfo(GenerateId());
   table->mutable_metadata()->StartMutation();
   SysTablesEntryPB *metadata = &table->mutable_metadata()->mutable_dirty()->pb;
-  metadata->set_state(SysTablesEntryPB::kTableStatePreparing);
+  metadata->set_state(SysTablesEntryPB::PREPARING);
   metadata->set_name(req->name());
   metadata->set_version(0);
   if (req->has_num_replicas()) {
@@ -820,7 +820,7 @@ TabletInfo *CatalogManager::CreateTabletInfo(TableInfo *table,
   TabletInfo* tablet = new TabletInfo(table, GenerateId());
   tablet->mutable_metadata()->StartMutation();
   SysTabletsEntryPB *metadata = &tablet->mutable_metadata()->mutable_dirty()->pb;
-  metadata->set_state(SysTabletsEntryPB::kTabletStatePreparing);
+  metadata->set_state(SysTabletsEntryPB::PREPARING);
   metadata->set_start_key(start_key);
   metadata->set_end_key(end_key);
   metadata->set_table_id(table->id());
@@ -876,7 +876,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
 
   TRACE("Updating metadata on disk");
   // 2. Update the metadata for the on-disk state
-  l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRemoved,
+  l.mutable_data()->set_state(SysTablesEntryPB::REMOVED,
                               Substitute("Deleted at ts=$0", GetCurrentTimeMicros()));
 
   // 3. Update sys-catalog with the removed table state.
@@ -1064,7 +1064,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     CHECK_OK(SchemaToPB(new_schema, l.mutable_data()->pb.mutable_schema()));
   }
   l.mutable_data()->pb.set_version(l.mutable_data()->pb.version() + 1);
-  l.mutable_data()->set_state(SysTablesEntryPB::kTableStateAltering,
+  l.mutable_data()->set_state(SysTablesEntryPB::ALTERING,
                               Substitute("Alter Table version=$0 ts=$1",
                               l.mutable_data()->pb.version(),
                               GetCurrentTimeMicros()));
@@ -1131,7 +1131,7 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   // 2. Verify if the alter is in-progress
   TRACE("Verify if there is an alter operation in progress for $0", table->ToString());
   resp->set_schema_version(l.data().pb.version());
-  resp->set_done(l.data().pb.state() != SysTablesEntryPB::kTableStateAltering);
+  resp->set_done(l.data().pb.state() != SysTablesEntryPB::ALTERING);
 
   return Status::OK();
 }
@@ -1162,7 +1162,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   if (l.data().pb.has_fully_applied_schema()) {
     // An AlterTable is in progress; fully_applied_schema is the last
     // schema that has reached every TS.
-    CHECK(l.data().pb.state() == SysTablesEntryPB::kTableStateAltering);
+    CHECK(l.data().pb.state() == SysTablesEntryPB::ALTERING);
     resp->mutable_schema()->CopyFrom(l.data().pb.fully_applied_schema());
   } else {
     // There's no AlterTable, the regular schema is "fully applied".
@@ -1363,14 +1363,14 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (report.has_committed_consensus_state()) {
     // If the tablet was not RUNNING mark it as such
     if (!tablet_lock.data().is_running() && report.state() == tablet::RUNNING) {
-      DCHECK_EQ(SysTabletsEntryPB::kTabletStateCreating, tablet_lock.data().pb.state())
+      DCHECK_EQ(SysTabletsEntryPB::CREATING, tablet_lock.data().pb.state())
           << "Tablet in unexpected state: " << tablet->ToString()
           << ": " << tablet_lock.data().pb.ShortDebugString();
       // Mark the tablet as running
       // TODO: we could batch the IO onto a background thread, or at least
       // across multiple tablets in the same report.
       VLOG(1) << "Tablet " << tablet->ToString() << " is now online";
-      tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::kTabletStateRunning,
+      tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::RUNNING,
                                             "Tablet reported by leader");
     }
 
@@ -2002,7 +2002,7 @@ void CatalogManager::HandleAssignPreparingTablet(TabletInfo* tablet,
   // The tablet was just created (probably by a CreateTable RPC).
   // Update the state to "creating" to be ready for the creation request.
   tablet->mutable_metadata()->mutable_dirty()->set_state(
-    SysTabletsEntryPB::kTabletStateCreating, "Sending initial creation of tablet");
+    SysTabletsEntryPB::CREATING, "Sending initial creation of tablet");
   deferred->tablets_to_update.push_back(tablet);
   deferred->needs_create_rpc.push_back(tablet);
   VLOG(1) << "Assign new tablet " << tablet->ToString();
@@ -2041,13 +2041,13 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
 
   // Mark old tablet as replaced.
   tablet->mutable_metadata()->mutable_dirty()->set_state(
-    SysTabletsEntryPB::kTabletStateReplaced,
+    SysTabletsEntryPB::REPLACED,
     Substitute("Replaced by $0 at ts=$1",
                replacement->tablet_id(), GetCurrentTimeMicros()));
 
   // Mark new tablet as being created.
   replacement->mutable_metadata()->mutable_dirty()->set_state(
-    SysTabletsEntryPB::kTabletStateCreating,
+    SysTabletsEntryPB::CREATING,
     Substitute("Replacement for $0", tablet->tablet_id()));
 
   deferred->tablets_to_update.push_back(tablet);
@@ -2069,7 +2069,7 @@ Status CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint3
   // Verify if it's the last tablet report, and the alter completed.
   TableInfo *table = tablet->table();
   TableMetadataLock l(table, TableMetadataLock::WRITE);
-  if (l.data().is_deleted() || l.data().pb.state() != SysTablesEntryPB::kTableStateAltering) {
+  if (l.data().is_deleted() || l.data().pb.state() != SysTablesEntryPB::ALTERING) {
     return Status::OK();
   }
 
@@ -2081,7 +2081,7 @@ Status CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint3
   // Update the state from altering to running and remove the last fully
   // applied schema (if it exists).
   l.mutable_data()->pb.clear_fully_applied_schema();
-  l.mutable_data()->set_state(SysTablesEntryPB::kTableStateRunning,
+  l.mutable_data()->set_state(SysTablesEntryPB::RUNNING,
                               Substitute("Current schema version=$0", current_version));
 
   Status s = sys_catalog_->UpdateTable(table);
@@ -2155,11 +2155,11 @@ Status CatalogManager::ProcessPendingAssignments(
     SysTabletsEntryPB::State t_state = tablet->metadata().state().pb.state();
 
     switch (t_state) {
-      case SysTabletsEntryPB::kTabletStatePreparing:
+      case SysTabletsEntryPB::PREPARING:
         HandleAssignPreparingTablet(tablet.get(), &deferred);
         break;
 
-      case SysTabletsEntryPB::kTabletStateCreating:
+      case SysTabletsEntryPB::CREATING:
         HandleAssignCreatingTablet(tablet.get(), &deferred, &new_tablets);
         break;
 

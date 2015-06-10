@@ -26,5 +26,10 @@ void SnakeToCamelCase(const std::string &snake_case,
 void ToUpperCase(const std::string &string,
                  std::string *out);
 
+// Capitalizes a string containing a word in place.
+// For example:
+// - 'hiBerNATe' -> 'Hibernate'
+void Capitalize(std::string *word);
+
 } // namespace kudu
 #endif

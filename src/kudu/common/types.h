@@ -324,6 +324,8 @@ class Variant {
     Clear();
     type_ = type;
     switch (type_) {
+      case UNKNOWN_DATA:
+        LOG(FATAL) << "Unreachable";
       case BOOL:
         numeric_.b1 = *static_cast<const bool *>(value);
         break;
@@ -400,18 +402,19 @@ class Variant {
   //    static_cast<const Slice *>(variant.value())
   const void *value() const {
     switch (type_) {
-      case BOOL:      return &(numeric_.b1);
-      case INT8:      return &(numeric_.i8);
-      case UINT8:     return &(numeric_.u8);
-      case INT16:     return &(numeric_.i16);
-      case UINT16:    return &(numeric_.u16);
-      case INT32:     return &(numeric_.i32);
-      case UINT32:    return &(numeric_.u32);
-      case INT64:     return &(numeric_.i64);
-      case UINT64:    return &(numeric_.u64);
-      case FLOAT:     return (&numeric_.float_val);
-      case DOUBLE:     return (&numeric_.double_val);
-      case STRING:    return &vstr_;
+      case UNKNOWN_DATA: LOG(FATAL) << "Attempted to access value of unknown data type";
+      case BOOL:         return &(numeric_.b1);
+      case INT8:         return &(numeric_.i8);
+      case UINT8:        return &(numeric_.u8);
+      case INT16:        return &(numeric_.i16);
+      case UINT16:       return &(numeric_.u16);
+      case INT32:        return &(numeric_.i32);
+      case UINT32:       return &(numeric_.u32);
+      case INT64:        return &(numeric_.i64);
+      case UINT64:       return &(numeric_.u64);
+      case FLOAT:        return (&numeric_.float_val);
+      case DOUBLE:       return (&numeric_.double_val);
+      case STRING:       return &vstr_;
     }
     CHECK(false) << "not reached!";
     return NULL;

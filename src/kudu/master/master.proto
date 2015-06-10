@@ -72,39 +72,41 @@ message TableIdentifierPB {
 // Sys Tables Metadata
 ////////////////////////////////////////////////////////////
 
-// the on-disk entry in the sys.catalog table ("metadata" column) for
-// tablets entries
+// The on-disk entry in the sys.catalog table ("metadata" column) for
+// tablets entries.
 message SysTabletsEntryPB {
   enum State {
-    kTabletStatePreparing = 0;
-    kTabletStateCreating  = 1;
-    kTabletStateRunning   = 2;
-    kTabletStateReplaced  = 3;
+    UNKNOWN = 999;
+    PREPARING = 0;
+    CREATING = 1;
+    RUNNING = 2;
+    REPLACED = 3;
   }
 
-  // tablet key range
+  // Tablet key range.
   required bytes start_key = 1;
   required bytes end_key   = 2;
 
   // The latest committed consensus configuration consensus configuration reported to the Master.
   optional consensus.ConsensusStatePB committed_consensus_state = 3;
 
-  // Debug state for the tablet
+  // Debug state for the tablet.
   required State state = 4;
   optional bytes state_msg = 5;
 
-  // The table id for the tablet
+  // The table id for the tablet.
   required bytes table_id = 6;
 }
 
-// the on-disk entry in the sys.catalog table ("metadata" column) for
-// tables entries
+// The on-disk entry in the sys.catalog table ("metadata" column) for
+// tables entries.
 message SysTablesEntryPB {
   enum State {
-    kTableStatePreparing = 1;
-    kTableStateRunning   = 2;
-    kTableStateAltering  = 3;
-    kTableStateRemoved   = 4;
+    UNKNOWN = 0;
+    PREPARING = 1;
+    RUNNING = 2;
+    ALTERING = 3;
+    REMOVED = 4;
   }
 
   // Table name
@@ -126,7 +128,7 @@ message SysTablesEntryPB {
   // Number of TS replicas
   required int32 num_replicas = 5;
 
-  // Debug state for the tablet
+  // Debug state for the table.
   required State state = 6;
   optional bytes state_msg = 7;
 }
@@ -368,6 +370,7 @@ message GetTableLocationsResponsePB {
 
 message AlterTableRequestPB {
   enum StepType {
+    UNKNOWN = 0;
     ADD_COLUMN = 1;
     DROP_COLUMN = 2;
     RENAME_COLUMN = 3;

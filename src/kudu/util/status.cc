@@ -43,7 +43,6 @@ std::string Status::CodeAsString() const {
     return "OK";
   }
 
-  char tmp[30];
   const char* type;
   switch (code()) {
     case kOk:
@@ -100,10 +99,8 @@ std::string Status::CodeAsString() const {
     case kIncomplete:
       type = "Incomplete";
       break;
-    default:
-      snprintf(tmp, sizeof(tmp), "Unknown code(%d)",
-               static_cast<int>(code()));
-      type = tmp;
+    case kEndOfFile:
+      type = "End of file";
       break;
   }
   return std::string(type);

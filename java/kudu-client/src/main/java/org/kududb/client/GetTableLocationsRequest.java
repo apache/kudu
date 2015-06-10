@@ -44,7 +44,8 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
         .newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
     Master.GetTableLocationsResponsePB resp = builder.build();
-    return new Pair<Master.GetTableLocationsResponsePB, Object>(resp, resp.getError());
+    return new Pair<Master.GetTableLocationsResponsePB, Object>(
+        resp, builder.hasError() ? builder.getError() : null);
   }
 
   @Override

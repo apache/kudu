@@ -16,6 +16,7 @@ message RpcCallInProgressPB {
 
 message RpcConnectionPB {
   enum StateType {
+    UNKNOWN = 999;
     NEGOTIATING = 0;  // Connection is still being negotiated.
     OPEN = 1;         // Connection is active.
   };

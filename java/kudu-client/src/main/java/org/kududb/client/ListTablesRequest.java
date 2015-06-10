@@ -51,6 +51,7 @@ class ListTablesRequest extends KuduRpc<ListTablesResponse> {
     }
     ListTablesResponse response = new ListTablesResponse(deadlineTracker.getElapsedMillis(),
                                                          tsUUID, tables);
-    return new Pair<ListTablesResponse, Object>(response, respBuilder.getError());
+    return new Pair<ListTablesResponse, Object>(
+        response, respBuilder.hasError() ? respBuilder.getError() : null);
   }
 }

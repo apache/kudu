@@ -34,7 +34,8 @@ class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponseP
         .newBuilder();
     readProtobuf(callResponse.getPBMessage(), builder);
     Master.IsCreateTableDoneResponsePB resp = builder.build();
-    return new Pair<Master.IsCreateTableDoneResponsePB, Object>(resp, resp.getError());
+    return new Pair<Master.IsCreateTableDoneResponsePB, Object>(
+        resp, builder.hasError() ? builder.getError() : null);
   }
 
   @Override

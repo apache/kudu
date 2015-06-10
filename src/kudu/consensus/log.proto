@@ -14,6 +14,7 @@ import "kudu/consensus/metadata.proto";
 
 // Types of log entries.
 enum LogEntryTypePB {
+  UNKNOWN = 0;
   REPLICATE = 1;
   COMMIT = 2;
   // Marker entry for dummy log messages. These will never end up in the log,

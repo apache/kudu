@@ -87,7 +87,7 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
 
     BatchResponse response = new BatchResponse(deadlineTracker.getElapsedMillis(), tsUUID,
         builder.getTimestamp(), errorsPB, ops);
-    return new Pair<BatchResponse, Object>(response, builder.getError());
+    return new Pair<BatchResponse, Object>(response, builder.hasError() ? builder.getError() : null);
   }
 
   @Override

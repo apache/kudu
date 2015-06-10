@@ -47,11 +47,11 @@ struct DeferredAssignmentActions;
 // It wraps the underlying protobuf to add useful accessors.
 struct PersistentTabletInfo {
   bool is_running() const {
-    return pb.state() == SysTabletsEntryPB::kTabletStateRunning;
+    return pb.state() == SysTabletsEntryPB::RUNNING;
   }
 
   bool is_deleted() const {
-    return pb.state() == SysTabletsEntryPB::kTabletStateReplaced;
+    return pb.state() == SysTabletsEntryPB::REPLACED;
   }
 
   // Helper to set the state of the tablet with a custom message.
@@ -158,12 +158,12 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
 // It wraps the underlying protobuf to add useful accessors.
 struct PersistentTableInfo {
   bool is_deleted() const {
-    return pb.state() == SysTablesEntryPB::kTableStateRemoved;
+    return pb.state() == SysTablesEntryPB::REMOVED;
   }
 
   bool is_running() const {
-    return pb.state() == SysTablesEntryPB::kTableStateRunning ||
-           pb.state() == SysTablesEntryPB::kTableStateAltering;
+    return pb.state() == SysTablesEntryPB::RUNNING ||
+           pb.state() == SysTablesEntryPB::ALTERING;
   }
 
   // Return the table's name.
@@ -542,7 +542,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // This method is part of the "ProcessPendingAssignments()"
   //
   // This must be called after persisting the tablet state as
-  // kTabletStateCreating to ensure coherent state after Master failover.
+  // CREATING to ensure coherent state after Master failover.
   void SendCreateTabletRequests(const std::vector<TabletInfo*>& tablets);
 
   // Send the "alter table request" to all TS that have tablet of the specified table

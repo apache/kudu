@@ -326,7 +326,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     }
     OperationResponse response = new OperationResponse(deadlineTracker.getElapsedMillis(), tsUUID,
         builder.getTimestamp(), this, error);
-    return new Pair<OperationResponse, Object>(response, builder.getError());
+    return new Pair<OperationResponse, Object>(
+        response, builder.hasError() ? builder.getError() : null);
   }
 
   @Override

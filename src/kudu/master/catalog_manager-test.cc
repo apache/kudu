@@ -32,7 +32,7 @@ TEST(TableInfoTest, TestAssignmentRanges) {
 
     meta_lock.mutable_data()->pb.mutable_start_key()->assign(start_key);
     meta_lock.mutable_data()->pb.mutable_end_key()->assign(end_key);
-    meta_lock.mutable_data()->pb.set_state(SysTabletsEntryPB::kTabletStateRunning);
+    meta_lock.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
 
     table->AddTablet(tablet);
   }
