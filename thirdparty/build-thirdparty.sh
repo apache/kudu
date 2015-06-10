@@ -138,7 +138,11 @@ fi
 # build protobuf
 if [ -n "$F_ALL" -o -n "$F_PROTOBUF" ]; then
   cd $PROTOBUF_DIR
-  CXXFLAGS=$EXTRA_CXXFLAGS ./configure --with-pic --enable-shared --enable-static --prefix=$PREFIX
+  CXXFLAGS="-fno-omit-frame-pointer $EXTRA_CXXFLAGS" ./configure \
+    --with-pic \
+    --enable-shared \
+    --enable-static \
+    --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
