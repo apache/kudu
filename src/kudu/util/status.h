@@ -45,7 +45,7 @@
 #define KUDU_WARN_NOT_OK(to_call, warning_prefix) do { \
     ::kudu::Status _s = (to_call); \
     if (PREDICT_FALSE(!_s.ok())) { \
-      KUDU_LOG(KUDU_WARNING) << (warning_prefix) << ": " << _s.ToString();  \
+      KUDU_LOG(WARNING) << (warning_prefix) << ": " << _s.ToString();  \
     } \
   } while (0);
 
@@ -87,16 +87,9 @@
 #define CHECK_OK_PREPEND      KUDU_CHECK_OK_PREPEND
 #define CHECK_OK              KUDU_CHECK_OK
 
-// These are all standard glog macros.
-//
-// LOG(...) needs to be handled differently due to how glog/logging.h does
-// token concatenation.
-#define KUDU_LOG(level)       LOG(level)
+// These are standard glog macros.
+#define KUDU_LOG              LOG
 #define KUDU_CHECK            CHECK
-#define KUDU_INFO             INFO
-#define KUDU_WARNING          WARNING
-#define KUDU_ERROR            ERROR
-#define KUDU_FATAL            FATAL
 #endif
 
 namespace kudu {

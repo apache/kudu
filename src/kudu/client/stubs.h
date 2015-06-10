@@ -100,10 +100,11 @@
 #define KUDU_DFATAL KUDU_FATAL
 #endif // NDEBUG
 
-#define KUDU_LOG(level) kudu::internal_logging::CerrLog(level)
+#define KUDU_LOG_INTERNAL(level) kudu::internal_logging::CerrLog(level)
+#define KUDU_LOG(level) KUDU_LOG_INTERNAL(KUDU_##level)
 
 #define KUDU_CHECK(condition) \
-  (condition) ? 0 : KUDU_LOG(KUDU_FATAL) << "Check failed: " #condition " "
+  (condition) ? 0 : KUDU_LOG(FATAL) << "Check failed: " #condition " "
 
 namespace kudu {
 
