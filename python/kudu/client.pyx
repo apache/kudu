@@ -81,11 +81,17 @@ cdef class Client:
         pass
 
     def create_table(self, table_name, Schema schema):
-        cdef Status s = (self.cp.NewTableCreator()
-                         .table_name(table_name)
-                         .schema(&schema.schema)
-                         .Create())
-        return s.ok()
+        cdef:
+            KuduTableCreator* c
+            Status s
+        c = self.cp.NewTableCreator()
+        try:
+            s = (c.table_name(table_name)
+                 .schema(&schema.schema)
+                 .Create())
+            return s.ok()
+        finally:
+            del c
 
     def delete_table(self, table_name):
         cdef Status s = self.cp.DeleteTable(table_name)
@@ -835,11 +841,15 @@ cdef class Insert(WriteOperation):
         self.op = self.table.table.get().NewInsert()
         self.row = self.op.mutable_row()
 
+    def __dealloc__(self):
+        del self.op
+
     cdef add_to_session(self, Session s):
         if self.applied:
             raise Exception
 
         s.s.get().Apply(self.op)
+        self.op = NULL
         self.applied = 1
 
 
@@ -851,6 +861,9 @@ cdef class Update(WriteOperation):
         self.table = table
         self.op = table.table.get().NewUpdate()
         self.row = self.op.mutable_row()
+
+    def __dealloc__(self):
+        del self.op
 
     cdef add_to_session(self, Session s):
         pass
@@ -865,12 +878,16 @@ cdef class Delete(WriteOperation):
         self.op = table.table.get().NewDelete()
         self.row = self.op.mutable_row()
 
+    def __dealloc__(self):
+        del self.op
+
     cdef add_to_session(self, Session s):
         if self.applied:
             raise Exception
 
         s.s.get().Apply(self.op)
         self.applied = 1
+        self.op = NULL
 
 
 cdef class Column:
