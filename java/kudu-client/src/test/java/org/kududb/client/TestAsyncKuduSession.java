@@ -239,8 +239,10 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     assertEquals(50, countInRange(101, 151));
 
     // Test the low watermark.
-    session.setMutationBufferSpace(10);
+    // Before the fix for KUDU-804, a change to the buffer space did not result in a change to the
+    // low watermark causing this test to fail.
     session.setMutationBufferLowWatermark(0.1f);
+    session.setMutationBufferSpace(10);
     session.setRandomSeed(12345); // Will make us hit the exception after 6 tries
     gotException = false;
     for (int i = 151; i < 171; i++) {

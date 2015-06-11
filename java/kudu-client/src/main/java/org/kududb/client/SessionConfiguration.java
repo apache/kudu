@@ -58,13 +58,13 @@ public interface SessionConfiguration {
    * For example, a buffer space of 1000 with a low watermark set to 50% (0.5) will start randomly
    * sending PleaseRetryExceptions once there's an outstanding flush and the buffer is over 500.
    * As the buffer gets fuller, it becomes likelier to hit the exception.
-   * @param mutationBufferLowWatermark New low watermark as a percentage,
+   * @param mutationBufferLowWatermarkPercentage a new low watermark as a percentage,
    *                             has to be between 0  and 1 (inclusive). A value of 1 disables
-   *                             the low watermark since it's the same as the high one.
+   *                             the low watermark since it's the same as the high one
    * @throws IllegalArgumentException if the buffer isn't empty or if the watermark isn't between
-   * 0 and 1.
+   * 0 and 1
    */
-  public void setMutationBufferLowWatermark(float mutationBufferLowWatermark);
+  public void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage);
 
   /**
    * Set the flush interval, which will be used for the next scheduling decision.

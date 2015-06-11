@@ -72,7 +72,8 @@ public class AsyncKuduSession implements SessionConfiguration {
   private final AsyncKuduClient client;
   private final Random randomizer = new Random();
   private int interval = 1000;
-  private int mutationBufferSpace = 1000;
+  private int mutationBufferSpace = 1000; // TODO express this in terms of data size.
+  private float mutationBufferLowWatermarkPercentage = 0.5f;
   private int mutationBufferLowWatermark;
   private FlushMode flushMode;
   private ExternalConsistencyMode consistencyMode;
@@ -125,7 +126,7 @@ public class AsyncKuduSession implements SessionConfiguration {
     this.flushMode = FlushMode.AUTO_FLUSH_SYNC;
     this.consistencyMode = NO_CONSISTENCY;
     this.timeoutMs = client.getDefaultOperationTimeoutMs();
-    setMutationBufferLowWatermark(0.5f);
+    setMutationBufferLowWatermark(this.mutationBufferLowWatermarkPercentage);
   }
 
   @Override
@@ -157,17 +158,21 @@ public class AsyncKuduSession implements SessionConfiguration {
           " size when operations are buffered");
     }
     this.mutationBufferSpace = size;
+    // Reset the low watermark, using the same percentage as before.
+    setMutationBufferLowWatermark(mutationBufferLowWatermarkPercentage);
   }
 
   @Override
-  public void setMutationBufferLowWatermark(float mutationBufferLowWatermark) {
+  public void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage) {
     if (hasPendingOperations()) {
       throw new IllegalArgumentException("Cannot change the buffer" +
           " low watermark when operations are buffered");
-    } else if (!PERCENTAGE_RANGE.contains(mutationBufferLowWatermark)) {
+    } else if (!PERCENTAGE_RANGE.contains(mutationBufferLowWatermarkPercentage)) {
       throw new IllegalArgumentException("The low watermark must be between 0 and 1 inclusively");
     }
-    this.mutationBufferLowWatermark = (int)(mutationBufferLowWatermark * mutationBufferSpace);
+    this.mutationBufferLowWatermarkPercentage = mutationBufferLowWatermarkPercentage;
+    this.mutationBufferLowWatermark =
+        (int)(this.mutationBufferLowWatermarkPercentage * mutationBufferSpace);
   }
 
   /**
@@ -433,10 +438,11 @@ public class AsyncKuduSession implements SessionConfiguration {
       // new one, the same one, or null.
       batch = operations.get(tablet);
 
-      // doing + 1 to see if the current insert would push us over the limit.
-      // TODO obviously wrong, not same size thing.
-      if (batch != null && operationsInFlight.containsKey(tablet) &&
-          batch.ops.size() + 1 > mutationBufferLowWatermark) {
+      if (mutationBufferLowWatermark < mutationBufferSpace && // look if it's enabled
+          batch != null && // and if we have a batch
+          operationsInFlight.containsKey(tablet) && // and if there's another batch outstanding
+          batch.ops.size() + 1 > mutationBufferLowWatermark) { // and if we'll be over the mark
+
         // This is our low watermark, we throw PleaseThrottleException before hitting the high
         // mark. As we get fuller past the watermark it becomes likelier to trigger it.
         int randomWatermark = batch.ops.size() + 1 + randomizer.nextInt(mutationBufferSpace -

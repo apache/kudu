@@ -103,8 +103,8 @@ public class KuduSession implements SessionConfiguration {
   }
 
   @Override
-  public void setMutationBufferLowWatermark(float mutationBufferLowWatermark) {
-    session.setMutationBufferLowWatermark(mutationBufferLowWatermark);
+  public void setMutationBufferLowWatermark(float mutationBufferLowWatermarkPercentage) {
+    session.setMutationBufferLowWatermark(mutationBufferLowWatermarkPercentage);
   }
 
   @Override
