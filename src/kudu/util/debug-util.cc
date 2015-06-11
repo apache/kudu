@@ -222,7 +222,8 @@ void StackTrace::StringifyToHex(char* buf, size_t size) const {
     if (i != 0) {
       *dst++ = ' ';
     }
-    FastHex64ToBuffer(reinterpret_cast<uintptr_t>(frames_[i]), dst);
+    // See note in Symbolize() below about why we subtract 1 from each address here.
+    FastHex64ToBuffer(reinterpret_cast<uintptr_t>(frames_[i]) - 1, dst);
     dst += kHexEntryLength;
   }
   *dst = '\0';
@@ -267,6 +268,9 @@ string StackTrace::Symbolize() const {
     // If we were to take a stack trace while inside 'abort', the return pointer
     // on the stack would be 0x400449 (the first instruction of '_start'). By subtracting
     // 1, we end up with 0x400448, which is still within 'main'.
+    //
+    // This also ensures that we point at the correct line number when using addr2line
+    // on logged stacks.
     if (google::Symbolize(
             reinterpret_cast<char *>(pc) - 1, tmp, sizeof(tmp))) {
       symbol = tmp;
