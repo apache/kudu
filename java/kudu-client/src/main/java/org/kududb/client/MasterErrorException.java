@@ -11,11 +11,11 @@ import org.kududb.rpc.RpcHeader;
 @SuppressWarnings("serial")
 public class MasterErrorException extends KuduServerException {
 
-  MasterErrorException(RpcHeader.ErrorStatusPB errorStatus) {
-    super(errorStatus);
+  MasterErrorException(String serverUuid, RpcHeader.ErrorStatusPB errorStatus) {
+    super(serverUuid, errorStatus);
   }
 
-  MasterErrorException(Master.MasterErrorPB error) {
-    super(error.getStatus());
+  MasterErrorException(String serverUuid, Master.MasterErrorPB error) {
+    super(serverUuid, error.getStatus());
   }
 }

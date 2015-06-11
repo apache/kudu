@@ -11,12 +11,12 @@ import org.kududb.rpc.RpcHeader;
 @SuppressWarnings("serial")
 public class TabletServerErrorException extends KuduServerException {
 
-  TabletServerErrorException(WireProtocol.AppStatusPB appStatus) {
-    super(appStatus);
+  TabletServerErrorException(String serverUuid, WireProtocol.AppStatusPB appStatus) {
+    super(serverUuid, appStatus);
   }
 
-  TabletServerErrorException(RpcHeader.ErrorStatusPB errorStatus) {
-    super(errorStatus);
+  TabletServerErrorException(String serverUuid, RpcHeader.ErrorStatusPB errorStatus) {
+    super(serverUuid, errorStatus);
   }
 }
 

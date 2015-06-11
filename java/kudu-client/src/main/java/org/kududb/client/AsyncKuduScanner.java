@@ -404,8 +404,7 @@ public final class AsyncKuduScanner {
     final StringBuilder buf = new StringBuilder();
     buf.append("KuduScanner(table=");
     buf.append(table.getName());
-    buf.append("}")
-        .append(", tabletSlice=").append(tablet);
+    buf.append(", tablet=").append(tablet);
     buf.append(", scannerId=").append(Bytes.pretty(scannerId));
     buf.append(", ").append(deadlineTracker);
     buf.append(')');

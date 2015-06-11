@@ -350,7 +350,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
       RpcHeader.ErrorStatusPB error = errorBuilder.build();
       if (error.getCode().equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_SERVER_TOO_BUSY)) {
         // we're not calling rpc.callback() so we rely on the client to retry that RPC
-        kuduClient.handleRetryableError(rpc, new TabletServerErrorException(error));
+        kuduClient.handleRetryableError(rpc, new TabletServerErrorException(uuid, error));
         return null;
       }
       String message = getPeerUuidLoggingString() +
@@ -435,7 +435,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private Exception dispatchTSErrorOrReturnException(KuduRpc rpc,
                                                      Tserver.TabletServerErrorPB error) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
-    TabletServerErrorException ex = new TabletServerErrorException(error.getStatus());
+    TabletServerErrorException ex = new TabletServerErrorException(uuid, error.getStatus());
     if (error.getCode() == Tserver.TabletServerErrorPB.Code.TABLET_NOT_FOUND) {
       kuduClient.handleTabletNotFound(rpc, ex, this);
       // we're not calling rpc.callback() so we rely on the client to retry that RPC
@@ -461,7 +461,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   private Exception dispatchMasterErrorOrReturnException(KuduRpc rpc,
                                                          Master.MasterErrorPB error) {
     WireProtocol.AppStatusPB.ErrorCode code = error.getStatus().getCode();
-    MasterErrorException ex = new MasterErrorException(error);
+    MasterErrorException ex = new MasterErrorException(uuid, error);
     if (error.getCode() == Master.MasterErrorPB.Code.NOT_THE_LEADER) {
       kuduClient.handleNotLeader(rpc, ex, this);
     } else if (code == WireProtocol.AppStatusPB.ErrorCode.SERVICE_UNAVAILABLE &&

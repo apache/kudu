@@ -1054,9 +1054,6 @@ public class AsyncKuduClient {
   @VisibleForTesting
   void discoverTablets(String table, Master.GetTableLocationsResponsePB response)
       throws NonRecoverableException {
-    if (response.hasError()) {
-      throw new MasterErrorException(response.getError());
-    }
     if (response.getTabletLocationsCount() == 0) {
       // Keep a note that the table exists but it's not served yet, we'll retry
       if (LOG.isDebugEnabled()) {
@@ -1712,6 +1709,11 @@ public class AsyncKuduClient {
           tablets.add(this);
         }
       }
+    }
+
+    @Override
+    public String toString() {
+      return getTabletIdAsString();
     }
 
     /**

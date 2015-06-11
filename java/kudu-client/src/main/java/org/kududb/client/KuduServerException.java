@@ -11,17 +11,19 @@ import org.kududb.rpc.RpcHeader;
 @SuppressWarnings("serial")
 public class KuduServerException extends KuduException {
 
-  KuduServerException(RpcHeader.ErrorStatusPB errorStatus) {
-    this(errorStatus.getMessage(), errorStatus.getCode().toString(),
+  KuduServerException(String serverUuid, RpcHeader.ErrorStatusPB errorStatus) {
+    this(serverUuid, errorStatus.getMessage(), errorStatus.getCode().toString(),
         errorStatus.getCode().getNumber(), null);
   }
 
-  KuduServerException(WireProtocol.AppStatusPB appStatus) {
-    this(appStatus.getMessage(), appStatus.getCode().toString(),
+  KuduServerException(String serverUuid, WireProtocol.AppStatusPB appStatus) {
+    this(serverUuid, appStatus.getMessage(), appStatus.getCode().toString(),
         appStatus.getCode().getNumber(), null);
   }
 
-  KuduServerException(String message, String errorDesc, int errCode, Throwable cause) {
-    super(errorDesc + "[code " + errCode + "]: "  + message, cause);
+  KuduServerException(String serverUuid, String message, String errorDesc,
+                      int errCode, Throwable cause) {
+    super("Server[" + serverUuid + "] "
+        + errorDesc + "[code " + errCode + "]: "  + message, cause);
   }
 }
