@@ -341,11 +341,11 @@ template<class RespClass>
 void CheckIfNoLongerLeaderAndSetupError(Status s, RespClass* resp) {
   // TODO (KUDU-591): This is a bit of a hack, as right now
   // there's no way to propagate why a write to a consensus configuration has
-  // failed. However, since we use Status::IllegalState() to
+  // failed. However, since we use Status::IllegalState()/IsAborted() to
   // indicate the situation where a write was issued on a node
   // that is no longer the leader, this suffices until we
   // distinguish this cause of write failure more explicitly.
-  if (s.IsIllegalState()) {
+  if (s.IsIllegalState() || s.IsAborted()) {
     Status new_status = Status::ServiceUnavailable(
         "operation requested can only be executed on a leader master, but this"
         " master is no longer the leader", s.ToString());
