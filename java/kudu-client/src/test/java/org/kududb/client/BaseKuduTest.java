@@ -243,51 +243,37 @@ public class BaseKuduTest {
   @AfterClass
   public static void tearDownAfterClass() throws Exception {
     try {
-      for (String tableName : tableNames) {
-        Deferred<DeleteTableResponse> d = client.deleteTable(tableName);
-        d.addErrback(new Callback<Object, Object>() {
-          @Override
-          public Object call(Object arg) throws Exception {
-            LOG.warn("tearDown errback " + arg);
-            return null;
-          }
-        });
+      if (client != null) {
+        Deferred<ArrayList<Void>> d = client.shutdown();
+        d.addErrback(defaultErrorCB);
         d.join(DEFAULT_SLEEP);
+        // No need to explicitly shutdown the sync client,
+        // shutting down the async client effectively does that.
       }
     } finally {
-      try {
-        if (client != null) {
-          Deferred<ArrayList<Void>> d = client.shutdown();
-          d.addErrback(defaultErrorCB);
-          d.join(DEFAULT_SLEEP);
-          // No need to explicitly shutdown the sync client,
-          // shutting down the async client effectively does that.
+      if (startCluster) {
+        for (Iterator<Process> masterIter = MASTERS.values().iterator(); masterIter.hasNext(); ) {
+          masterIter.next().destroy();
+          masterIter.remove();
         }
-      } finally {
-        if (startCluster) {
-          for (Iterator<Process> masterIter = MASTERS.values().iterator(); masterIter.hasNext(); ) {
-            masterIter.next().destroy();
-            masterIter.remove();
-          }
-          for (Iterator<Process> tsIter = TABLET_SERVERS.values().iterator(); tsIter.hasNext(); ) {
-            tsIter.next().destroy();
-            tsIter.remove();
-          }
-          for (Thread thread : PROCESS_INPUT_PRINTERS) {
-            thread.interrupt();
-          }
+        for (Iterator<Process> tsIter = TABLET_SERVERS.values().iterator(); tsIter.hasNext(); ) {
+          tsIter.next().destroy();
+          tsIter.remove();
         }
-        for (String path : pathsToDelete) {
-          try {
-            File f = new File(path);
-            if (f.isDirectory()) {
-              FileUtils.deleteDirectory(f);
-            } else {
-              f.delete();
-            }
-          } catch (Exception e) {
-            LOG.warn("Could not delete path {}", path, e);
+        for (Thread thread : PROCESS_INPUT_PRINTERS) {
+          thread.interrupt();
+        }
+      }
+      for (String path : pathsToDelete) {
+        try {
+          File f = new File(path);
+          if (f.isDirectory()) {
+            FileUtils.deleteDirectory(f);
+          } else {
+            f.delete();
           }
+        } catch (Exception e) {
+          LOG.warn("Could not delete path {}", path, e);
         }
       }
     }
