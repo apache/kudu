@@ -47,6 +47,27 @@ DEFINE_int32(tablet_start_warn_threshold_ms, 500,
 namespace kudu {
 namespace tserver {
 
+METRIC_DEFINE_histogram(server, op_apply_queue_length, "Operation Apply Queue Length",
+                        MetricUnit::kTasks,
+                        "Number of operations waiting to be applied to the tablet. "
+                        "High queue lengths indicate that the server is unable to process "
+                        "operations as fast as they are being written to the WAL.",
+                        10000, 2);
+
+METRIC_DEFINE_histogram(server, op_apply_queue_time, "Operation Apply Queue Time",
+                        MetricUnit::kMicroseconds,
+                        "Time that operations spent waiting in the apply queue before being "
+                        "processed. High queue times indicate that the server is unable to "
+                        "process operations as fast as they are being written to the WAL.",
+                        10000000, 2);
+
+METRIC_DEFINE_histogram(server, op_apply_run_time, "Operation Apply Run Time",
+                        MetricUnit::kMicroseconds,
+                        "Time that operations spent being applied to the tablet. "
+                        "High values may indicate that the server is under-provisioned or "
+                        "that operations consist of very large batches.",
+                        10000000, 2);
+
 using consensus::ConsensusMetadata;
 using consensus::ConsensusStatePB;
 using consensus::RaftConfigPB;
@@ -108,6 +129,13 @@ TSTabletManager::TSTabletManager(FsManager* fs_manager,
   // likewise makes more sense to set this equal to the number of
   // physical storage devices available to us.
   CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
+
+  apply_pool_->SetQueueLengthHistogram(
+      METRIC_op_apply_queue_length.Instantiate(server_->metric_entity()));
+  apply_pool_->SetQueueTimeMicrosHistogram(
+      METRIC_op_apply_queue_time.Instantiate(server_->metric_entity()));
+  apply_pool_->SetRunTimeMicrosHistogram(
+      METRIC_op_apply_run_time.Instantiate(server_->metric_entity()));
 }
 
 TSTabletManager::~TSTabletManager() {
