@@ -9,6 +9,7 @@
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/promise.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/test_macros.h"
@@ -231,6 +232,48 @@ TEST(TestThreadPool, TestPromises) {
                      Bind(&Promise<int>::Set, Unretained(&my_promise), 5)));
   ASSERT_EQ(5, my_promise.Get());
   thread_pool->Shutdown();
+}
+
+
+METRIC_DEFINE_entity(test_entity);
+METRIC_DEFINE_histogram(test_entity, queue_length, "queue length",
+                        MetricUnit::kTasks, "queue length", 1000, 1);
+
+METRIC_DEFINE_histogram(test_entity, queue_time, "queue time",
+                        MetricUnit::kMicroseconds, "queue time", 1000000, 1);
+
+METRIC_DEFINE_histogram(test_entity, run_time, "run time",
+                        MetricUnit::kMicroseconds, "run time", 1000, 1);
+
+TEST(TestThreadPool, TestMetrics) {
+  MetricRegistry registry;
+  scoped_refptr<MetricEntity> entity = METRIC_ENTITY_test_entity.Instantiate(
+      &registry, "test entity");
+
+  gscoped_ptr<ThreadPool> thread_pool;
+  ASSERT_OK(ThreadPoolBuilder("test")
+            .set_min_threads(1).set_max_threads(1)
+            .Build(&thread_pool));
+
+  // Enable metrics for the thread pool.
+  scoped_refptr<Histogram> queue_length = METRIC_queue_length.Instantiate(entity);
+  scoped_refptr<Histogram> queue_time = METRIC_queue_time.Instantiate(entity);
+  scoped_refptr<Histogram> run_time = METRIC_run_time.Instantiate(entity);
+  thread_pool->SetQueueLengthHistogram(queue_length);
+  thread_pool->SetQueueTimeMicrosHistogram(queue_time);
+  thread_pool->SetRunTimeMicrosHistogram(run_time);
+
+  int kNumItems = 500;
+  for (int i = 0; i < kNumItems; i++) {
+    ASSERT_OK(thread_pool->SubmitFunc(boost::bind(&usleep, i)));
+  }
+
+  thread_pool->Wait();
+
+  // Check that all histograms were incremented once per submitted item.
+  ASSERT_EQ(kNumItems, queue_length->TotalCount());
+  ASSERT_EQ(kNumItems, queue_time->TotalCount());
+  ASSERT_EQ(kNumItems, run_time->TotalCount());
 }
 
 } // namespace kudu

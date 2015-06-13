@@ -12,6 +12,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
@@ -152,6 +153,8 @@ Status ThreadPool::SubmitFunc(const boost::function<void()>& func) {
 }
 
 Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
+  MonoTime submit_time = MonoTime::Now(MonoTime::FINE);
+
   MutexLock guard(lock_);
   if (PREDICT_FALSE(!pool_status_.ok())) {
     return pool_status_;
@@ -197,10 +200,18 @@ Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
   if (e.trace) {
     e.trace->AddRef();
   }
+  e.submit_time = submit_time;
+
   queue_.push_back(e);
-  queue_size_++;
+  int length_at_submit = queue_size_++;
 
   not_empty_.Signal();
+  guard.Unlock();
+
+  if (queue_length_histogram_) {
+    queue_length_histogram_->Increment(length_at_submit);
+  }
+
   return Status::OK();
 }
 
@@ -225,6 +236,20 @@ bool ThreadPool::WaitFor(const MonoDelta& delta) {
   }
   return true;
 }
+
+
+void ThreadPool::SetQueueLengthHistogram(const scoped_refptr<Histogram>& hist) {
+  queue_length_histogram_ = hist;
+}
+
+void ThreadPool::SetQueueTimeMicrosHistogram(const scoped_refptr<Histogram>& hist) {
+  queue_time_us_histogram_ = hist;
+}
+
+void ThreadPool::SetRunTimeMicrosHistogram(const scoped_refptr<Histogram>& hist) {
+  run_time_us_histogram_ = hist;
+}
+
 
 void ThreadPool::DispatchThread(bool permanent) {
   MutexLock unique_lock(lock_);
@@ -263,13 +288,23 @@ void ThreadPool::DispatchThread(bool permanent) {
     ++active_threads_;
 
     unique_lock.Unlock();
+
+    // Update metrics
+    if (queue_time_us_histogram_) {
+      MonoTime now(MonoTime::Now(MonoTime::FINE));
+      queue_time_us_histogram_->Increment(now.GetDeltaSince(entry.submit_time).ToMicroseconds());
+    }
+
     ADOPT_TRACE(entry.trace);
     // Release the reference which was held by the queued item.
     if (entry.trace) {
       entry.trace->Release();
     }
     // Execute the task
-    entry.runnable->Run();
+    {
+      ScopedLatencyMetric m(run_time_us_histogram_.get());
+      entry.runnable->Run();
+    }
     unique_lock.Lock();
 
     if (--active_threads_ == 0) {

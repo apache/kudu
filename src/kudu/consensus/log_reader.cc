@@ -271,10 +271,7 @@ Status LogReader::ReadBatchUsingIndexEntry(const LogIndexEntry& index_entry,
 
   CHECK_GT(index_entry.offset_in_segment, 0);
   int64_t offset = index_entry.offset_in_segment;
-  gscoped_ptr<ScopedLatencyMetric> scoped;
-  if (read_batch_latency_) {
-    scoped.reset(new ScopedLatencyMetric(read_batch_latency_));
-  }
+  ScopedLatencyMetric scoped(read_batch_latency_.get());
   RETURN_NOT_OK_PREPEND(segment->ReadEntryHeaderAndBatch(&offset, tmp_buf, batch),
                         Substitute("Failed to read LogEntry for index $0 from log segment "
                                    "$1 offset $2",

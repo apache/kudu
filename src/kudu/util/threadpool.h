@@ -16,6 +16,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
+#include "kudu/gutil/ref_counted.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/condition_variable.h"
 #include "kudu/util/mutex.h"
@@ -23,6 +24,7 @@
 
 namespace kudu {
 
+class Histogram;
 class ThreadPool;
 class Trace;
 
@@ -136,6 +138,23 @@ class ThreadPool {
   // Returns true if the pool reached the idle state, false otherwise.
   bool WaitFor(const MonoDelta& delta);
 
+  // Return the current number of tasks waiting in the queue.
+  // Typically used for metrics.
+  int queue_length() const {
+    return ANNOTATE_UNPROTECTED_READ(queue_size_);
+  }
+
+  // Attach a histogram which measures the queue length seen by tasks when they enter
+  // the thread pool's queue.
+  void SetQueueLengthHistogram(const scoped_refptr<Histogram>& hist);
+
+  // Attach a histogram which measures the amount of time that tasks spend waiting in
+  // the queue.
+  void SetQueueTimeMicrosHistogram(const scoped_refptr<Histogram>& hist);
+
+  // Attach a histogram which measures the amount of time that tasks spend running.
+  void SetRunTimeMicrosHistogram(const scoped_refptr<Histogram>& hist);
+
  private:
   friend class ThreadPoolBuilder;
 
@@ -161,6 +180,9 @@ class ThreadPool {
   struct QueueEntry {
     std::tr1::shared_ptr<Runnable> runnable;
     Trace* trace;
+
+    // Time at which the entry was submitted to the pool.
+    MonoTime submit_time;
   };
 
   const std::string name_;
@@ -178,6 +200,10 @@ class ThreadPool {
   int active_threads_;
   int queue_size_;
   std::list<QueueEntry> queue_;
+
+  scoped_refptr<Histogram> queue_length_histogram_;
+  scoped_refptr<Histogram> queue_time_us_histogram_;
+  scoped_refptr<Histogram> run_time_us_histogram_;
 
   DISALLOW_COPY_AND_ASSIGN(ThreadPool);
 };

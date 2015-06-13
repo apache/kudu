@@ -85,6 +85,8 @@ const char* MetricUnit::Name(Type unit) {
       return "blocks";
     case kLogBlockContainers:
       return "log block containers";
+    case kTasks:
+      return "tasks";
     default:
       return "UNKNOWN UNIT";
   }
@@ -636,14 +638,16 @@ double Histogram::MeanValueForTests() const {
   return histogram_->MeanValue();
 }
 
-ScopedLatencyMetric::ScopedLatencyMetric(scoped_refptr<Histogram> latency_hist)
-  : latency_hist_(latency_hist),
-    time_started_(MonoTime::Now(MonoTime::FINE)) {
+ScopedLatencyMetric::ScopedLatencyMetric(Histogram* latency_hist)
+  : latency_hist_(latency_hist) {
+  if (latency_hist_) {
+    time_started_ = MonoTime::Now(MonoTime::FINE);
+  }
 }
 
 ScopedLatencyMetric::~ScopedLatencyMetric() {
-  MonoTime time_now = MonoTime::Now(MonoTime::FINE);
   if (latency_hist_ != NULL) {
+    MonoTime time_now = MonoTime::Now(MonoTime::FINE);
     latency_hist_->Increment(time_now.GetDeltaSince(time_started_).ToMicroseconds());
   }
 }

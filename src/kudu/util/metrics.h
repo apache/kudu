@@ -337,6 +337,7 @@ struct MetricUnit {
     kMaintenanceOperations,
     kBlocks,
     kLogBlockContainers,
+    kTasks,
   };
   static const char* Name(Type unit);
 };
@@ -938,11 +939,13 @@ class Histogram : public Metric {
 // Measures a duration while in scope. Adds this duration to specified histogram on destruction.
 class ScopedLatencyMetric {
  public:
-  explicit ScopedLatencyMetric(scoped_refptr<Histogram> latency_hist);
+  // NOTE: the given histogram must live as long as this object.
+  // If 'latency_hist' is NULL, this turns into a no-op.
+  explicit ScopedLatencyMetric(Histogram* latency_hist);
   ~ScopedLatencyMetric();
 
  private:
-  scoped_refptr<Histogram> latency_hist_;
+  Histogram* latency_hist_;
   MonoTime time_started_;
 };
 
