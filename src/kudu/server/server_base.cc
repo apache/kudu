@@ -128,6 +128,7 @@ void ServerBase::GenerateInstanceID() {
 
 Status ServerBase::Init() {
   tcmalloc::RegisterMetrics(metric_entity_);
+  RegisterSpinLockContentionMetrics(metric_entity_);
 
   InitSpinLockContentionProfiling();
 

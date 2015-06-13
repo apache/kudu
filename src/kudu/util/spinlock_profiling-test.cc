@@ -5,6 +5,7 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/spinlock.h"
+#include "kudu/util/spinlock_profiling.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/trace.h"
 
@@ -38,6 +39,8 @@ TEST_F(SpinLockProfilingTest, TestSpinlockProfiling) {
   // on different machines might be different.
   ASSERT_STR_CONTAINS(result, "Waited ");
   ASSERT_STR_CONTAINS(result, "on lock ");
+
+  ASSERT_GT(GetSpinLockContentionMicros(), 0);
 }
 
 } // namespace kudu
