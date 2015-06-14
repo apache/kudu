@@ -8,7 +8,10 @@ TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 # We use -O2 instead of -O3 for thirdparty since benchmarks indicate
 # that the benefits of a smaller code size outweight the benefits of
 # more inlining.
-EXTRA_CXXFLAGS="-O2 -g $CXXFLAGS"
+#
+# We also enable -fno-omit-frame-pointer so that profiling tools which
+# use frame-pointer based stack unwinding can function correctly.
+EXTRA_CXXFLAGS="-O2 -g $CXXFLAGS -fno-omit-frame-pointer"
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
 elif [[ "$OSTYPE" == "darwin"* ]]; then
@@ -138,7 +141,7 @@ fi
 # build protobuf
 if [ -n "$F_ALL" -o -n "$F_PROTOBUF" ]; then
   cd $PROTOBUF_DIR
-  CXXFLAGS="-fno-omit-frame-pointer $EXTRA_CXXFLAGS" ./configure \
+  CXXFLAGS="$EXTRA_CXXFLAGS" ./configure \
     --with-pic \
     --enable-shared \
     --enable-static \
