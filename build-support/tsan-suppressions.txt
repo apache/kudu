@@ -43,6 +43,7 @@ race:concurrent_btree.h
 # hiding behind x86 TSO for now.
 race:kudu::tablet::ApplyMutationsAndGenerateUndos
 race:kudu::tablet::MemRowSet::Iterator::ApplyMutationsToProjectedRow
+race:kudu::tablet::MemRowSet::Iterator::FetchRows
 race:kudu::tablet::Mutation::*
 race:kudu::RowChangeListDecoder::Init
 
@@ -63,6 +64,7 @@ race:boost::uuids::detail::seed_rng::sha1_random_digest_
 
 # KUDU-186: sketchy synchronization in catalog manager
 race:kudu::master::CatalogManagerBgTasks::Shutdown
+race:kudu::master::CatalogManager::~CatalogManager
 
 # KUDU-189: unsynchronized access to 'state_' in DeferredCallback
 race:kudu::master::AsyncTabletRequestTask::DeferredCallback

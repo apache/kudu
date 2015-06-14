@@ -75,29 +75,6 @@ This can be particularly useful when trying to run tools like `git bisect`
 between two commits which may have different dependencies.
 
 
-.Building thirdparty with gcc 4.4 (eg on RHEL6)
-[NOTE]
-====
-The LLVM thirdparty dependency will not build properly with gcc 4.4, which is
-the version of gcc shipped with RHEL6. If your machine has a newer compiler such as
-LLVM 3.3 available, you can use that compiler to bootstrap the thirdparty LLVM:
-
-[source,bash]
-----
-$ export CC=/REPLACE/WITH/YOUR/PATH/llvm-3.3/bin/clang
-$ export CXX=/REPLACE/WITH/YOUR/PATH/llvm-3.3/bin/clang++
-$ thirdparty/build-if-necessary.sh
-----
-
-If you don't have access to a newer compiler, you can build LLVM twice, once
-without the gcc 4.4 incompatible code, and once with. Add the flag
-`-DLLVM_EXTERNAL_COMPILER_RT_BUILD=OFF` to the cmake invocation for LLVM in
-_thirdparty/build-thirdparty.sh_. When built, that will yield an incomplete but
-otherwise working LLVM 3.4. Then, using the `CC`/`CXX` environment variables as
-above, remove the aforementioned flag and rebuild LLVM using itself.
-====
-
-
 === Building Kudu itself
 
 
@@ -161,8 +138,8 @@ before pushing. To do so, you'll need to build using `clang`:
 [source,bash]
 ----
 $ rm -Rf CMakeCache.txt CMakeFiles/
-$ CC=$(pwd)/thirdparty/installed/bin/clang \
-  CXX=$(pwd)/thirdparty/installed/bin/clang++ \
+$ CC=$(pwd)/thirdparty/clang-toolchain/bin/clang \
+  CXX=$(pwd)/thirdparty/clang-toolchain/bin/clang++ \
   cmake -DKUDU_USE_ASAN=1 .
 $ make -j8
 $ make test
@@ -225,10 +202,6 @@ versions of ASAN will also detect leaks, so the tcmalloc leak checker is of
 limited utility.
 
 === Running tests with ThreadSanitizer enabled
-
-NOTE: this requires a relatively recent version of clang\+\+, and may also require
-a relatively recent version of libstdc\+\+ on your system. It seems to work reasonably
-well on Ubuntu 13.10, but YMMV.
 
 ThreadSanitizer (TSAN) is a clang feature which can detect improperly synchronized access to data
 along with many other threading bugs. To enable TSAN, pass `-DKUDU_USE_TSAN=1` to the `cmake`

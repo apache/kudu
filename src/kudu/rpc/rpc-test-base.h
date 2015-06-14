@@ -4,7 +4,6 @@
 #ifndef KUDU_RPC_RPC_TEST_BASE_H
 #define KUDU_RPC_RPC_TEST_BASE_H
 
-#include <boost/thread/thread.hpp>
 #include <algorithm>
 #include <list>
 #include <string>
@@ -173,7 +172,10 @@ class CalculatorService : public CalculatorServiceIf {
 
     if (req->deferred()) {
       // Spawn a new thread which does the sleep and responds later.
-      boost::thread new_thr(&CalculatorService::DoSleep, this, req, context);
+      scoped_refptr<Thread> thread;
+      CHECK_OK(Thread::Create("rpc-test", "deferred",
+                              &CalculatorService::DoSleep, this, req, context,
+                              &thread));
       return;
     }
     DoSleep(req, context);

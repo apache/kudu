@@ -250,21 +250,16 @@ if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
   mkdir -p $LLVM_BUILD
   cd $LLVM_BUILD
 
-  # Build LLVM with a pre-existing clang, if it exists.
+  # Build LLVM with the toolchain version of clang.
   #
-  # This isn't strictly necessary, but compiler-rt doesn't compile with
-  # gcc 4.4, so we use a pre-existing clang to safely bootstrap it.
-  #
-  # If we can't find clang, we'll use the system compiler and hope for
-  # the best.
+  # We always use our own clang to build LLVM because gcc 4.4 and earlier
+  # are unable to build compiler-rt:
   # - http://llvm.org/bugs/show_bug.cgi?id=16532
   # - http://code.google.com/p/address-sanitizer/issues/detail?id=146
-  CLANG=$(which clang || :)
-  CLANGXX=$(which clang++ || :)
-  if [ -n "$CLANG" -a -n "$CLANGXX" -a -z "$CC" -a -z "$CXX" ]; then
-    export CC=$CLANG
-    export CXX=$CLANGXX
-  fi
+  old_cc=$CC
+  old_cxx=$CXX
+  export CC=$TP_DIR/clang-toolchain/bin/clang
+  export CXX=${CC}++
 
   # Rebuild the CMake cache every time.
   rm -Rf CMakeCache.txt CMakeFiles/
@@ -275,8 +270,14 @@ if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
     -DLLVM_TARGETS_TO_BUILD=X86 \
     -DCMAKE_CXX_FLAGS=$EXTRA_CXXFLAGS \
     $LLVM_DIR
-  if [ -n $CLANG -a -n $CLANGXX ]; then
+  if [ -n "$old_cc" ]; then
+    export CC=$old_cc
+  else
     unset CC
+  fi
+  if [ -n "$old_cxx" ]; then
+    export CXX=$old_cxx
+  else
     unset CXX
   fi
 

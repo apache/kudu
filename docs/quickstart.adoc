@@ -44,7 +44,7 @@ Centos, Ubuntu, or Debian.
 .RHEL / Centos:
 ----
 $ sudo yum install boost-thread boost-devel liboauth liboauth-devel \
-libgsasl libgsasl-devel libssl-devel llvm-devel clang
+libgsasl libgsasl-devel libssl-devel
 ----
 +
 [source,bash]
@@ -52,21 +52,6 @@ libgsasl libgsasl-devel libssl-devel llvm-devel clang
 ----
 $ sudo apt-get install git autoconf automake libboost-thread-dev \
 curl gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
-----
-
-. *RHEL 6.4 / Centos 6.4*: Obtain LLVM 3.3 or newer. No RHEL 6.4 RPM is
-available, but you can get a precompiled binary from
-http://llvm.org/releases/download.html. Download and extract it to a location
-within the `kudu` user's home directory. Set the CC and CXX environment
-variables to point to the new LLVM. This does not need to be persistent, as it
-is only used to build Kudu.
-+
-[source,bash]
-----
-$ wget http://llvm.org/releases/3.3/clang+llvm-3.3-x86_64-fedora18.tar.bz2
-$ tar xjvf clang+llvm-3.3-x86_64-fedora18.tar.bz2
-$ export CC=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang
-$ export CXX=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang++
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -104,11 +89,7 @@ automated deployment scenario.
 #!/bin/bash
 
 sudo yum -y install boost-thread boost-devel liboauth liboauth-devel \
-libgsasl libgsasl-devel libssl-devel llvm-devel clang
-wget http://llvm.org/releases/3.3/clang+llvm-3.3-x86_64-fedora18.tar.bz2
-tar xjvf clang+llvm-3.3-x86_64-fedora18.tar.bz2
-export CC=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang
-export CXX=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang++
+libgsasl libgsasl-devel libssl-devel
 git clone http://github.sf.cloudera.com/CDH/kudu
 cd kudu
 thirdparty/build-if-necessary.sh

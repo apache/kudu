@@ -3,6 +3,7 @@
 
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
+#include <boost/thread/thread.hpp>
 #include <gtest/gtest.h>
 #include <string>
 

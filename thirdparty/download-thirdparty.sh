@@ -183,6 +183,15 @@ if [ ! -d $LLVM_DIR ]; then
   echo
 fi
 
+if [ ! -d $CLANG_TOOLCHAIN_DIR ]; then
+  fetch_and_expand clang-${CLANG_TOOLCHAIN_VERSION}.tgz
+fi
+# Make a link to the current version of the toolchain clang.
+# We don't want to put this in the thirdparty install directory, because then
+# clang assumes that it's installed system-wide, and no longer adds 'rpath'
+# entries for the other thirdparty libraries when building.
+ln -sf -T $CLANG_TOOLCHAIN_DIR clang-toolchain
+
 if [ ! -d $TRACE_VIEWER_DIR ]; then
   fetch_and_expand kudu-trace-viewer-${TRACE_VIEWER_VERSION}.tar.gz
 fi

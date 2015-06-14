@@ -84,6 +84,15 @@ LLVM_VERSION=3.4.2
 LLVM_DIR=$TP_DIR/llvm-${LLVM_VERSION}.src
 LLVM_BUILD=$TP_DIR/llvm-${LLVM_VERSION}.build
 
+# We have a separate clang package which we use for sanitizer builds. We're
+# stuck on llvm 3.4.2 to link against (because later versions require C++11)
+# but it's fine to use a much more recent version as a compiler.
+#
+# The binary packages we use here are built by the impala-deps repository:
+# http://github.mtv.cloudera.com/mgrund/impala-deps
+CLANG_TOOLCHAIN_VERSION=233105
+CLANG_TOOLCHAIN_DIR=clang-$CLANG_TOOLCHAIN_VERSION
+
 # Our trace-viewer repository is separate since it's quite large and
 # shouldn't change frequently. We upload the built artifacts (HTML/JS)
 # when we need to roll to a new revision.
