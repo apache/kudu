@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/gutil/strings/fastmem.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -74,6 +75,16 @@ class StackTrace {
     num_frames_ = 0;
   }
 
+  void CopyFrom(const StackTrace& s) {
+    memcpy(this, &s, sizeof(s));
+  }
+
+  bool Equals(const StackTrace& s) {
+    return s.num_frames_ == num_frames_ &&
+      strings::memeq(frames_, s.frames_,
+                     num_frames_ * sizeof(frames_[0]));
+  }
+
   // Collect and store the current stack trace. Skips the top 'skip_frames' frames
   // from the stack. For example, a value of '1' will skip the 'Collect()' function
   // call itself.
@@ -86,14 +97,22 @@ class StackTrace {
   // it proves to be a problem.
   void Collect(int skip_frames = 1);
 
+
+  enum Flags {
+    // Do not fix up the addresses on the stack to try to point to the 'call'
+    // instructions instead of the return address. This is necessary when dumping
+    // addresses to be interpreted by 'pprof', which does this fix-up itself.
+    NO_FIX_CALLER_ADDRESSES = 1
+  };
+
   // Stringify the trace into the given buffer.
   // The resulting output is hex addresses suitable for passing into 'addr2line'
   // later.
-  void StringifyToHex(char* buf, size_t size) const;
+  void StringifyToHex(char* buf, size_t size, int flags = 0) const;
 
   // Same as above, but returning a std::string.
   // This is not async-safe.
-  std::string ToHexString() const;
+  std::string ToHexString(int flags = 0) const;
 
   // Return a string with a symbolized backtrace in a format suitable for
   // printing to a log file.
@@ -104,6 +123,8 @@ class StackTrace {
   // log files. Similar to the format given by Symbolize(), but symbols are not
   // resolved (only the hex addresses are given).
   std::string ToLogFormatHexString() const;
+
+  uint64_t HashCode() const;
 
  private:
   enum {

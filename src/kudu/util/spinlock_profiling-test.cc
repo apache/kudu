@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 #include <glog/logging.h>
+#include <strstream>
 
 #include "kudu/gutil/spinlock.h"
 #include "kudu/util/spinlock_profiling.h"
@@ -41,6 +42,19 @@ TEST_F(SpinLockProfilingTest, TestSpinlockProfiling) {
   ASSERT_STR_CONTAINS(result, "on lock ");
 
   ASSERT_GT(GetSpinLockContentionMicros(), 0);
+}
+
+TEST_F(SpinLockProfilingTest, TestStackCollection) {
+  StartSynchronizationProfiling();
+  base::SpinLock lock;
+  gutil::SubmitSpinLockProfileData(&lock, 12345);
+  StopSynchronizationProfiling();
+  std::stringstream str;
+  int64_t dropped = 0;
+  FlushSynchronizationProfile(&str, &dropped);
+  string s = str.str();
+  ASSERT_STR_CONTAINS(s, "12345\t1 @ ");
+  ASSERT_EQ(0, dropped);
 }
 
 } // namespace kudu

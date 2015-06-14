@@ -207,6 +207,12 @@ TEST_F(TabletServerTest, TestWebPages) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/categories", addr),
                        &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), "trace_event_overhead");
+
+  // Smoke test the pprof contention profiler handler.
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/pprof/contention?seconds=1", addr),
+                       &buf));
+  ASSERT_STR_CONTAINS(buf.ToString(), "discarded samples = 0");
+  ASSERT_STR_CONTAINS(buf.ToString(), "tablet_server-test");
 }
 
 TEST_F(TabletServerTest, TestInsert) {

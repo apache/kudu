@@ -211,7 +211,7 @@ void StackTrace::Collect(int skip_frames) {
   num_frames_ = google::GetStackTrace(frames_, arraysize(frames_), skip_frames);
 }
 
-void StackTrace::StringifyToHex(char* buf, size_t size) const {
+void StackTrace::StringifyToHex(char* buf, size_t size, int flags) const {
   char* dst = buf;
 
   // Reserve kHexEntryLength for the first iteration of the loop, 1 byte for a
@@ -223,17 +223,21 @@ void StackTrace::StringifyToHex(char* buf, size_t size) const {
       *dst++ = ' ';
     }
     // See note in Symbolize() below about why we subtract 1 from each address here.
-    FastHex64ToBuffer(reinterpret_cast<uintptr_t>(frames_[i]) - 1, dst);
+    uintptr_t addr = reinterpret_cast<uintptr_t>(frames_[i]);
+    if (!(flags & NO_FIX_CALLER_ADDRESSES)) {
+      addr--;
+    }
+    FastHex64ToBuffer(addr, dst);
     dst += kHexEntryLength;
   }
   *dst = '\0';
 }
 
-string StackTrace::ToHexString() const {
+string StackTrace::ToHexString(int flags) const {
   // Each frame requires kHexEntryLength, plus a space
   // We also need one more byte at the end for '\0'
   char buf[kMaxFrames * (kHexEntryLength + 1) + 1];
-  StringifyToHex(buf, arraysize(buf));
+  StringifyToHex(buf, arraysize(buf), flags);
   return string(buf);
 }
 
@@ -287,6 +291,11 @@ string StackTrace::ToLogFormatHexString() const {
     StringAppendF(&ret, "    @ %*p\n", kPrintfPointerFieldWidth, pc);
   }
   return ret;
+}
+
+uint64_t StackTrace::HashCode() const {
+  return util_hash::CityHash64(reinterpret_cast<const char*>(frames_),
+                               sizeof(frames_[0]) * num_frames_);
 }
 
 }  // namespace kudu

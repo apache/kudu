@@ -24,10 +24,17 @@
 #include <sys/stat.h>
 
 #include "kudu/server/webserver.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/sysinfo.h"
+#include "kudu/util/env.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/spinlock_profiling.h"
 
+DECLARE_bool(enable_process_lifetime_heap_profiling);
 DECLARE_string(heap_profile_path);
+
 
 using std::endl;
 using std::ifstream;
@@ -37,9 +44,7 @@ using std::stringstream;
 
 namespace kudu {
 
-#ifdef TCMALLOC_ENABLED
 const int PPROF_DEFAULT_SAMPLE_SECS = 30; // pprof default sample time in seconds.
-#endif
 
 // pprof asks for the url /pprof/cmdline to figure out what application it's profiling.
 // The server should respond by reading the contents of /proc/self/cmdline.
@@ -60,6 +65,12 @@ static void PprofHeapHandler(const Webserver::WebRequest& req, stringstream* out
 #ifndef TCMALLOC_ENABLED
   (*output) << "Heap profiling is not available without tcmalloc.";
 #else
+  // Remote (on-demand) profiling is disabled if the process is already being profiled.
+  if (FLAGS_enable_process_lifetime_heap_profiling) {
+    (*output) << "Heap profiling is running for the process lifetime.";
+    return;
+  }
+
   Webserver::ArgumentMap::const_iterator it = req.parsed_args.find("seconds");
   int seconds = PPROF_DEFAULT_SAMPLE_SECS;
   if (it != req.parsed_args.end()) {
@@ -117,6 +128,36 @@ static void PprofGrowthHandler(const Webserver::WebRequest& req, stringstream* o
 #endif
 }
 
+// Lock contention profiling
+static void PprofContentionHandler(const Webserver::WebRequest& req, stringstream* output) {
+  string secs_str = FindWithDefault(req.parsed_args, "seconds", "");
+  int32_t seconds = ParseLeadingInt32Value(secs_str.c_str(), PPROF_DEFAULT_SAMPLE_SECS);
+  int64_t discarded_samples = 0;
+
+  *output << "--- contention" << endl;
+  *output << "sampling period = 1" << endl;
+  *output << "cycles/second = " << base::CyclesPerSecond() << endl;
+
+  MonoTime end = MonoTime::Now(MonoTime::FINE);
+  end.AddDelta(MonoDelta::FromSeconds(seconds));
+  StartSynchronizationProfiling();
+  while (MonoTime::Now(MonoTime::FINE).ComesBefore(end)) {
+    SleepFor(MonoDelta::FromMilliseconds(500));
+    FlushSynchronizationProfile(output, &discarded_samples);
+  }
+  StopSynchronizationProfiling();
+  FlushSynchronizationProfile(output, &discarded_samples);
+
+  // pprof itself ignores this value, but we can at least look at it in the textual
+  // output.
+  *output << "discarded samples = " << discarded_samples << std::endl;
+
+  faststring maps;
+  ReadFileToString(Env::Default(), "/proc/self/maps", &maps);
+  *output << maps.ToString();
+}
+
+
 // pprof asks for the url /pprof/symbol to map from hex addresses to variable names.
 // When the server receives a GET request for /pprof/symbol, it should return a line
 // formatted like: num_symbols: ###
@@ -148,6 +189,7 @@ void AddPprofPathHandlers(Webserver* webserver) {
   webserver->RegisterPathHandler("/pprof/growth", "", PprofGrowthHandler, false, false);
   webserver->RegisterPathHandler("/pprof/profile", "", PprofCpuProfileHandler, false, false);
   webserver->RegisterPathHandler("/pprof/symbol", "", PprofSymbolHandler, false, false);
+  webserver->RegisterPathHandler("/pprof/contention", "", PprofContentionHandler, false, false);
 }
 
 } // namespace kudu
