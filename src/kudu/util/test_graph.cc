@@ -16,17 +16,17 @@
 namespace kudu {
 
 void TimeSeries::AddValue(double val) {
-  lock_guard<PThreadSpinLock> l(&lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   val_ += val;
 }
 
 void TimeSeries::SetValue(double val) {
-  lock_guard<PThreadSpinLock> l(&lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   val_ = val;
 }
 
 double TimeSeries::value() const {
-  lock_guard<PThreadSpinLock> l(&lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return val_;
 }
 

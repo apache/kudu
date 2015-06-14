@@ -13,7 +13,6 @@
 #include "kudu/gutil/hash/city.h"
 #include "kudu/tablet/lock_manager.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/pthread_spinlock.h"
 #include "kudu/util/semaphore.h"
 
 namespace kudu {

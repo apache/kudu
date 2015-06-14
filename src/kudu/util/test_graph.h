@@ -12,7 +12,7 @@
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/faststring.h"
-#include "kudu/util/pthread_spinlock.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/thread.h"
 
 namespace kudu {
@@ -37,7 +37,7 @@ class TimeSeries {
     val_(0)
   {}
 
-  mutable PThreadSpinLock lock_;
+  mutable simple_spinlock lock_;
   double val_;
 };
 

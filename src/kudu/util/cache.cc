@@ -19,9 +19,8 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
+#include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
-#include "kudu/util/pthread_spinlock.h"
-
 
 namespace kudu {
 
@@ -35,7 +34,7 @@ namespace {
 using std::tr1::shared_ptr;
 using std::vector;
 
-typedef PThreadSpinLock MutexType;
+typedef simple_spinlock MutexType;
 
 // LRU cache implementation
 

@@ -14,7 +14,6 @@
 #include "kudu/util/coding.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/pb_util.h"
-#include "kudu/util/pthread_spinlock.h"
 
 DECLARE_bool(cfile_lazy_open);
 
@@ -177,7 +176,7 @@ Status BloomFileReader::InitOnce() {
     index_iters_.push_back(
       IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
   }
-  iter_locks_.resize(n_cpus);
+  iter_locks_.reset(new simple_spinlock[n_cpus]);
 
   return Status::OK();
 }
@@ -216,11 +215,9 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
   DCHECK(init_once_.initted());
 
   int cpu = sched_getcpu();
-  CHECK_LT(cpu, iter_locks_.size());
-
   BlockPointer bblk_ptr;
   {
-    boost::lock_guard<PThreadSpinLock> lock(iter_locks_[cpu]);
+    boost::lock_guard<simple_spinlock> lock(iter_locks_[cpu]);
     cfile::IndexTreeIterator *index_iter = &index_iters_[cpu];
 
     Status s = index_iter->SeekAtOrBefore(probe.key());
