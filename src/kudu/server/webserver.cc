@@ -15,6 +15,7 @@
 
 #include "kudu/server/webserver.h"
 
+#include <algorithm>
 #include <stdio.h>
 #include <signal.h>
 #include <string>
@@ -25,6 +26,7 @@
 #include <boost/bind.hpp>
 #include <boost/mem_fn.hpp>
 #include <boost/algorithm/string.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <squeasel.h>
 
@@ -36,6 +38,7 @@
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/url-coding.h"
 
@@ -43,6 +46,12 @@ using std::string;
 using std::stringstream;
 using std::vector;
 using std::make_pair;
+
+DEFINE_int32(webserver_max_post_length_bytes, 1024 * 1024,
+             "The maximum length of a POST request that will be accepted by "
+             "the embedded web server.");
+TAG_FLAG(webserver_max_post_length_bytes, advanced);
+TAG_FLAG(webserver_max_post_length_bytes, runtime);
 
 namespace kudu {
 
@@ -283,6 +292,40 @@ int Webserver::RunPathHandler(const PathHandler& handler,
     req.query_string = request_info->query_string;
     BuildArgumentMap(request_info->query_string, &req.parsed_args);
   }
+  req.request_method = request_info->request_method;
+  if (req.request_method == "POST") {
+    const char* content_len_str = sq_get_header(connection, "Content-Length");
+    int32_t content_len = 0;
+    if (content_len_str == NULL ||
+        !safe_strto32(content_len_str, &content_len)) {
+      sq_printf(connection, "HTTP/1.1 411 Length Required\r\n");
+      return 1;
+    }
+    if (content_len > FLAGS_webserver_max_post_length_bytes) {
+      // TODO: for this and other HTTP requests, we should log the
+      // remote IP, etc.
+      LOG(WARNING) << "Rejected POST with content length " << content_len;
+      sq_printf(connection, "HTTP/1.1 413 Request Entity Too Large\r\n");
+      return 1;
+    }
+
+    char buf[8192];
+    int rem = content_len;
+    while (rem > 0) {
+      int n = sq_read(connection, buf, std::min<int>(sizeof(buf), rem));
+      if (n <= 0) {
+        LOG(WARNING) << "error reading POST data: expected "
+                     << content_len << " bytes but only read "
+                     << req.post_data.size();
+        sq_printf(connection, "HTTP/1.1 500 Internal Server Error\r\n");
+        return 1;
+      }
+
+      req.post_data.append(buf, n);
+      rem -= n;
+    }
+  }
+
   if (!handler.is_styled() || ContainsKey(req.parsed_args, "raw")) {
     use_style = false;
   }

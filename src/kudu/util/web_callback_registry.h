@@ -20,6 +20,12 @@ class WebCallbackRegistry {
 
     // The raw query string passed in the URL. May be empty.
     std::string query_string;
+
+    // The method (POST/GET/etc).
+    std::string request_method;
+
+    // In the case of a POST, the posted data.
+    std::string post_data;
   };
 
   typedef boost::function<void (const WebRequest& args, std::stringstream* output)>

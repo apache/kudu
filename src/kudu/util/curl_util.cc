@@ -3,6 +3,8 @@
 
 #include "kudu/util/curl_util.h"
 
+#include "kudu/gutil/strings/substitute.h"
+
 #include <curl/curl.h>
 #include <glog/logging.h>
 
@@ -38,13 +40,35 @@ EasyCurl::~EasyCurl() {
 }
 
 Status EasyCurl::FetchURL(const std::string& url, faststring* buf) {
-  CHECK_NOTNULL(buf)->clear();
+  return DoRequest(url, NULL, buf);
+}
+
+Status EasyCurl::PostToURL(const std::string& url,
+                           const std::string& post_data,
+                           faststring* dst) {
+  return DoRequest(url, &post_data, dst);
+}
+
+Status EasyCurl::DoRequest(const std::string& url,
+                           const std::string* post_data,
+                           faststring* dst) {
+  CHECK_NOTNULL(dst)->clear();
 
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_URL, url.c_str())));
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_WRITEFUNCTION, WriteCallback)));
   RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_WRITEDATA,
-                                                reinterpret_cast<void *>(buf))));
+                                                static_cast<void *>(dst))));
+  if (post_data) {
+    RETURN_NOT_OK(TranslateError(curl_easy_setopt(curl_, CURLOPT_POSTFIELDS,
+                                                  post_data->c_str())));
+  }
+
   RETURN_NOT_OK(TranslateError(curl_easy_perform(curl_)));
+  long rc; // NOLINT(runtime/int) curl wants a long
+  RETURN_NOT_OK(TranslateError(curl_easy_getinfo(curl_, CURLINFO_RESPONSE_CODE, &rc)));
+  if (rc != 200) {
+    return Status::RemoteError(strings::Substitute("HTTP $0", rc));
+  }
 
   return Status::OK();
 }

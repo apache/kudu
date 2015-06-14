@@ -28,7 +28,18 @@ class EasyCurl {
   Status FetchURL(const std::string& url,
                   faststring* dst);
 
+  // Issue an HTTP POST to the given URL with the given data.
+  // Returns results in 'dst' as above.
+  Status PostToURL(const std::string& url,
+                   const std::string& post_data,
+                   faststring* dst);
+
  private:
+  // Do a request. If 'post_data' is non-NULL, does a POST.
+  // Otherwise, does a GET.
+  Status DoRequest(const std::string& url,
+                   const std::string* post_data,
+                   faststring* dst);
   CURL* curl_;
   DISALLOW_COPY_AND_ASSIGN(EasyCurl);
 };
