@@ -2,10 +2,15 @@
 # Confidential Cloudera Information: Covered by NDA.
 
 # Require cmake at least as new as the one in thirdparty/
-cmake_minimum_required(VERSION 2.8.10.2)
+cmake_minimum_required(VERSION 3.2.3)
+
+# TODO: can we somehow pass this into the java build?
+set(KUDU_VERSION_NUMBER "0.1.0")
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 include(CMakeParseArguments)
+
+set(BUILD_SUPPORT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build-support)
 
 # Make sure thirdparty stuff is up-to-date.
 if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
@@ -253,7 +258,7 @@ if ("${KUDU_USE_UBSAN}" OR "${KUDU_USE_ASAN}" OR "${KUDU_USE_TSAN}")
       message(SEND_ERROR "Must use clang 3.4 or newer to run a sanitizer build."
         " Try using clang from thirdparty/")
     endif()
-    add_definitions("-fsanitize-blacklist=${CMAKE_CURRENT_SOURCE_DIR}/build-support/sanitize-blacklist.txt")
+    add_definitions("-fsanitize-blacklist=${BUILD_SUPPORT_DIR}/sanitize-blacklist.txt")
   else()
     message(WARNING "GCC does not support specifying a sanitizer blacklist. Known sanitizer check failures will not be suppressed.")
   endif()
@@ -351,8 +356,6 @@ set(LIBRARY_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}")
 
 # where to put generated binaries
 set(EXECUTABLE_OUTPUT_PATH "${BUILD_OUTPUT_ROOT_DIRECTORY}")
-
-
 include_directories(src)
 
 ############################################################
@@ -510,7 +513,7 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
   endif()
 
   add_test(${TEST_NAME}
-    ${CMAKE_SOURCE_DIR}/build-support/run-test.sh ${TEST_PATH})
+    ${BUILD_SUPPORT_DIR}/run-test.sh ${TEST_PATH})
   if(ARGN)
     set_tests_properties(${TEST_NAME} PROPERTIES ${ARGN})
   endif()
@@ -815,10 +818,10 @@ endif (UNIX)
 ############################################################
 if (UNIX)
   # Full lint
-  add_custom_target(lint ${CMAKE_CURRENT_SOURCE_DIR}/build-support/lint.sh)
+  add_custom_target(lint ${BUILD_SUPPORT_DIR}/lint.sh)
   # Incremental lint - only checks files changed since the last
   # merged upstream commit
-  add_custom_target(ilint ${CMAKE_CURRENT_SOURCE_DIR}/build-support/lint.sh -c)
+  add_custom_target(ilint ${BUILD_SUPPORT_DIR}/lint.sh -c)
 endif (UNIX)
 
 ############################################################

@@ -18,6 +18,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/url-coding.h"
+#include "kudu/util/version_info.h"
 
 using google::CommandLineFlagInfo;
 using std::cout;
@@ -31,8 +32,6 @@ DEFINE_bool(dump_metrics_json, false,
             "Dump a JSON document describing all of the metrics which may be emitted "
             "by this binary.");
 TAG_FLAG(dump_metrics_json, hidden);
-
-DECLARE_bool(helpxml);
 
 DEFINE_bool(enable_process_lifetime_heap_profiling, false, "(Advanced) Enables heap "
     "profiling for the lifetime of the process. Profile output will be stored in the "
@@ -236,6 +235,12 @@ void DumpFlagsXML() {
   cout << "</AllFlags>" << endl;
   exit(1);
 }
+
+void ShowVersionAndExit() {
+  cout << VersionInfo::GetAllVersionInfo() << endl;
+  exit(0);
+}
+
 } // anonymous namespace
 
 int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
@@ -245,6 +250,8 @@ int ParseCommandLineFlags(int* argc, char*** argv, bool remove_flags) {
     DumpFlagsXML();
   } else if (FLAGS_dump_metrics_json) {
     MetricPrototypeRegistry::get()->WriteAsJsonAndExit();
+  } else if (FLAGS_version) {
+    ShowVersionAndExit();
   } else {
     google::HandleCommandLineHelpFlags();
   }

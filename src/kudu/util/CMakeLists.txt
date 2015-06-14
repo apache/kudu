@@ -25,6 +25,18 @@ ADD_EXPORTABLE_LIBRARY(pb_util_proto
   SRCS ${PB_UTIL_PROTO_SRCS}
   DEPS protobuf)
 
+############################################################
+# Version stamp
+############################################################
+include_directories(${BUILD_OUTPUT_ROOT_DIRECTORY})
+set(VERSION_STAMP_FILE ${BUILD_OUTPUT_ROOT_DIRECTORY}kudu/generated/version_defines.h)
+add_custom_target(gen_version_info
+    COMMAND "${BUILD_SUPPORT_DIR}/gen_version_info.py"
+            "--version=${KUDU_VERSION_NUMBER}"
+            "--build-type=${CMAKE_BUILD_TYPE}"
+            "${VERSION_STAMP_FILE}"
+    BYPRODUCTS "${VERSION_STAMP_FILE}")
+
 #######################################
 # kudu_util
 #######################################
@@ -97,7 +109,9 @@ set(UTIL_SRCS
   trace.cc
   user.cc
   url-coding.cc
+  version_info.cc
 )
+add_dependencies(kudu_util gen_version_info)
 
 set(UTIL_LIBS
   boost_system
