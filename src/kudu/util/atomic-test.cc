@@ -106,16 +106,16 @@ TEST(Atomic, AtomicBool) {
 
   BOOST_FOREACH(const MemoryOrder mem_order, memory_orders) {
     AtomicBool b(false);
-    EXPECT_EQ(false, b.Load(mem_order));
+    EXPECT_FALSE(b.Load(mem_order));
     b.Store(true, mem_order);
-    EXPECT_EQ(true, b.Load(mem_order));
+    EXPECT_TRUE(b.Load(mem_order));
     EXPECT_TRUE(b.CompareAndSet(true, false, mem_order));
-    EXPECT_EQ(false, b.Load(mem_order));
+    EXPECT_FALSE(b.Load(mem_order));
     EXPECT_FALSE(b.CompareAndSet(true, false, mem_order));
-    EXPECT_EQ(false, b.CompareAndSwap(false, true, mem_order));
-    EXPECT_EQ(true, b.Load(mem_order));
-    EXPECT_EQ(true, b.Exchange(false, mem_order));
-    EXPECT_EQ(false, b.Load(mem_order));
+    EXPECT_FALSE(b.CompareAndSwap(false, true, mem_order));
+    EXPECT_TRUE(b.Load(mem_order));
+    EXPECT_TRUE(b.Exchange(false, mem_order));
+    EXPECT_FALSE(b.Load(mem_order));
   }
 }
 
