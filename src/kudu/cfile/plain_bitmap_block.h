@@ -33,6 +33,10 @@ class PlainBitMapBlockBuilder : public BlockBuilder {
     Reset();
   }
 
+  virtual bool IsBlockFull(size_t limit) const OVERRIDE {
+    return writer_.bytes_written() > limit;
+  }
+
   virtual int Add(const uint8_t* vals, size_t count) OVERRIDE  {
     for (const uint8_t* val = vals;
          val < vals + count;
@@ -58,10 +62,6 @@ class PlainBitMapBlockBuilder : public BlockBuilder {
     // Reserve space for a header
     writer_.PutValue(0xdeadbeef, 32);
     writer_.PutValue(0xdeadbeef, 32);
-  }
-
-  virtual uint64_t EstimateEncodedSize() const OVERRIDE {
-    return writer_.bytes_written();
   }
 
   virtual size_t Count() const OVERRIDE {

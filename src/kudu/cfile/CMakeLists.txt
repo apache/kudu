@@ -22,6 +22,7 @@ add_library(cfile
   gvint_block.cc
   index_block.cc
   index_btree.cc
+  string_dict_block.cc
   string_plain_block.cc
   string_prefix_block.cc
   type_encodings.cc)

@@ -498,6 +498,20 @@ Status CFileIterator::PrepareForNewSeek() {
                                                  reader_->type_info()->type(), bp));
   }
 
+  // Initialize the decoder for the dictionary block
+  // in dictionary encoding mode.
+  if (!dict_decoder_ && reader_->footer().has_dict_block_ptr()) {
+    BlockPointer bp(reader_->footer().dict_block_ptr());
+
+    // Cache the dictionary for performance
+    BlockHandle handle;
+    RETURN_NOT_OK_PREPEND(reader_->ReadBlock(bp, CFileReader::CACHE_BLOCK, &handle),
+                          "Couldn't read dictionary block");
+
+    dict_decoder_.reset(new StringPlainBlockDecoder(handle.data()));
+    RETURN_NOT_OK_PREPEND(dict_decoder_->ParseHeader(), "Couldn't parse dictionary block header");
+  }
+
   seeked_ = NULL;
   BOOST_FOREACH(PreparedBlock *pb, prepared_blocks_) {
     prepared_block_pool_.Destroy(pb);
@@ -551,7 +565,7 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   }
 
   BlockDecoder *bd;
-  RETURN_NOT_OK(reader_->type_encoding_info()->CreateBlockDecoder(&bd, data_block));
+  RETURN_NOT_OK(reader_->type_encoding_info()->CreateBlockDecoder(&bd, data_block, this));
   prep_block->dblk_.reset(bd);
   RETURN_NOT_OK(prep_block->dblk_->ParseHeader());
 

@@ -47,6 +47,10 @@ class PlainBlockBuilder : public BlockBuilder {
     return count;
   }
 
+  virtual bool IsBlockFull(size_t limit) const OVERRIDE {
+    return buffer_.size() > limit;
+  }
+
   virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {
     InlineEncodeFixed32(&buffer_[0], count_);
     InlineEncodeFixed32(&buffer_[4], ordinal_pos);
@@ -57,10 +61,6 @@ class PlainBlockBuilder : public BlockBuilder {
     count_ = 0;
     buffer_.clear();
     buffer_.resize(kHeaderSize);
-  }
-
-  virtual uint64_t EstimateEncodedSize() const OVERRIDE {
-    return buffer_.size();
   }
 
   virtual size_t Count() const OVERRIDE {

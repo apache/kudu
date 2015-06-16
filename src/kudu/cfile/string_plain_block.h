@@ -29,6 +29,8 @@ class StringPlainBlockBuilder : public BlockBuilder {
  public:
   explicit StringPlainBlockBuilder(const WriterOptions *options);
 
+  bool IsBlockFull(size_t limit) const OVERRIDE;
+
   int Add(const uint8_t *vals, size_t count) OVERRIDE;
 
   // Return a Slice which represents the encoded data.
@@ -39,8 +41,6 @@ class StringPlainBlockBuilder : public BlockBuilder {
   Slice Finish(rowid_t ordinal_pos) OVERRIDE;
 
   void Reset() OVERRIDE;
-
-  uint64_t EstimateEncodedSize() const OVERRIDE;
 
   size_t Count() const OVERRIDE;
 
@@ -96,7 +96,11 @@ class StringPlainBlockDecoder : public BlockDecoder {
     return ordinal_pos_base_;
   }
 
-  Slice string_at_index(size_t indx) const;
+  Slice string_at_index(size_t idx) const {
+    const uint32_t offset = offsets_[idx];
+    uint32_t len = offsets_[idx + 1] - offset;
+    return Slice(&data_[offset], len);
+  }
 
   // Minimum length of a header.
   static const size_t kMinHeaderSize = sizeof(uint32_t) * 3;

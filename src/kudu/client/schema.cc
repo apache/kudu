@@ -33,6 +33,7 @@ kudu::EncodingType ToInternalEncodingType(KuduColumnStorageAttributes::EncodingT
     case KuduColumnStorageAttributes::AUTO_ENCODING: return kudu::AUTO_ENCODING;
     case KuduColumnStorageAttributes::PLAIN_ENCODING: return kudu::PLAIN_ENCODING;
     case KuduColumnStorageAttributes::PREFIX_ENCODING: return kudu::PREFIX_ENCODING;
+    case KuduColumnStorageAttributes::DICT_ENCODING: return kudu::DICT_ENCODING;
     case KuduColumnStorageAttributes::GROUP_VARINT: return kudu::GROUP_VARINT;
     case KuduColumnStorageAttributes::RLE: return kudu::RLE;
     default: LOG(FATAL) << "Unexpected encoding type: " << type;
@@ -44,6 +45,7 @@ KuduColumnStorageAttributes::EncodingType FromInternalEncodingType(kudu::Encodin
     case kudu::AUTO_ENCODING: return KuduColumnStorageAttributes::AUTO_ENCODING;
     case kudu::PLAIN_ENCODING: return KuduColumnStorageAttributes::PLAIN_ENCODING;
     case kudu::PREFIX_ENCODING: return KuduColumnStorageAttributes::PREFIX_ENCODING;
+    case kudu::DICT_ENCODING: return KuduColumnStorageAttributes::DICT_ENCODING;
     case kudu::GROUP_VARINT: return KuduColumnStorageAttributes::GROUP_VARINT;
     case kudu::RLE: return KuduColumnStorageAttributes::RLE;
     default: LOG(FATAL) << "Unexpected internal encoding type: " << type;

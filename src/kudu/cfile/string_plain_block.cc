@@ -36,6 +36,10 @@ void StringPlainBlockBuilder::Reset() {
   finished_ = false;
 }
 
+bool StringPlainBlockBuilder::IsBlockFull(size_t limit) const {
+  return size_estimate_ > limit;
+}
+
 Slice StringPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
   finished_ = true;
 
@@ -57,8 +61,10 @@ Slice StringPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
 int StringPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
   DCHECK(!finished_);
   DCHECK_GT(count, 0);
-  size_t i;
-  for (i = 0; i < count; i++) {
+  size_t i = 0;
+
+  // If the block is full, should stop adding more items.
+  while (!IsBlockFull(options_->block_size) && i < count) {
 
     // Every fourth entry needs a gvint selector byte
     // TODO: does it cost a lot to account these things specifically?
@@ -75,6 +81,7 @@ int StringPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
     buffer_.append(src->data(), src->size());
     size_estimate_ += src->size();
 
+    i++;
     vals += sizeof(Slice);
   }
 
@@ -83,9 +90,6 @@ int StringPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
   return i;
 }
 
-uint64_t StringPlainBlockBuilder::EstimateEncodedSize() const {
-  return size_estimate_;
-}
 
 uint64_t StringPlainBlockBuilder::Count() const {
   return offsets_.size();
@@ -265,12 +269,6 @@ Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
 
   *n = i;
   return Status::OK();
-}
-
-Slice StringPlainBlockDecoder::string_at_index(size_t idx) const {
-  const uint32_t offset = offsets_[idx];
-  uint32_t len = offsets_[idx + 1] - offset;
-  return Slice(&data_[offset], len);
 }
 
 } // namespace cfile

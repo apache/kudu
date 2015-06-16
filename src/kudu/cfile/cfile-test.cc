@@ -226,6 +226,29 @@ class TestCFile : public CFileTestBase {
     } while (iter->Next().ok());
     ASSERT_EQ(num_entries, count);
   }
+
+  void TestReadWriteStrings(EncodingType encoding);
+
+#ifdef NDEBUG
+  void TestWrite100MFileStrings(EncodingType encoding) {
+    BlockId block_id;
+    LOG_TIMING(INFO, "writing 100M strings") {
+      LOG(INFO) << "Starting writefile";
+      StringDataGenerator<false> generator("hello %zu");
+      WriteTestFile(&generator, PREFIX_ENCODING, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
+      LOG(INFO) << "Done writing";
+    }
+
+    LOG_TIMING(INFO, "reading 100M strings") {
+      LOG(INFO) << "Starting readfile";
+      size_t n;
+      TimeReadFile(fs_manager_.get(), block_id, &n);
+      ASSERT_EQ(100000000, n);
+      LOG(INFO) << "End readfile";
+    }
+  }
+#endif
+
 };
 
 
@@ -279,24 +302,55 @@ TEST_F(TestCFile, TestWrite100MFileNullableInts) {
   }
 }
 
-TEST_F(TestCFile, TestWrite100MFileStrings) {
+TEST_F(TestCFile, TestWrite100MFileStringsPrefixEncoding) {
+  TestWrite100MFileStrings(PREFIX_ENCODING);
+}
+
+TEST_F(TestCFile, TestWrite100MFileStringsDictncoding) {
+  TestWrite100MFileStrings(DICT_ENCODING);
+}
+
+#endif
+
+// Write and Read 1 million unique strings with dictionary encoding
+TEST_F(TestCFile, TestWrite1MUniqueFileStringsDictEncoding) {
   BlockId block_id;
-  LOG_TIMING(INFO, "writing 100M strings") {
+  LOG_TIMING(INFO, "writing 1M unique strings") {
     LOG(INFO) << "Starting writefile";
     StringDataGenerator<false> generator("hello %zu");
-    WriteTestFile(&generator, PREFIX_ENCODING, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
+    WriteTestFile(&generator, DICT_ENCODING, NO_COMPRESSION, 1000000, NO_FLAGS, &block_id);
     LOG(INFO) << "Done writing";
   }
 
-  LOG_TIMING(INFO, "reading 100M strings") {
+  LOG_TIMING(INFO, "reading 1M strings") {
     LOG(INFO) << "Starting readfile";
     size_t n;
     TimeReadFile(fs_manager_.get(), block_id, &n);
-    ASSERT_EQ(100000000, n);
+    ASSERT_EQ(1000000, n);
     LOG(INFO) << "End readfile";
   }
 }
-#endif
+
+// Write and Read 1 million strings, which contains duplicates with dictionary encoding
+TEST_F(TestCFile, TestWrite1MDuplicateFileStringsDictEncoding) {
+  BlockId block_id;
+  LOG_TIMING(INFO, "writing 1M duplicate strings") {
+    LOG(INFO) << "Starting writefile";
+
+    // The second parameter specify how many distinct strings are there
+    DuplicateStringDataGenerator<false> generator("hello %zu", 256);
+    WriteTestFile(&generator, DICT_ENCODING, NO_COMPRESSION, 1000000, NO_FLAGS, &block_id);
+    LOG(INFO) << "Done writing";
+  }
+
+  LOG_TIMING(INFO, "reading 1M strings") {
+    LOG(INFO) << "Starting readfile";
+    size_t n;
+    TimeReadFile(fs_manager_.get(), block_id, &n);
+    ASSERT_EQ(1000000, n);
+    LOG(INFO) << "End readfile";
+  }
+}
 
 TEST_F(TestCFile, TestFixedSizeReadWriteUInt32) {
   TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(GROUP_VARINT);
@@ -321,7 +375,7 @@ void EncodeStringKey(const Schema &schema, const Slice& key,
   encoded_key->reset(kb.BuildEncodedKey());
 }
 
-TEST_F(TestCFile, TestReadWriteStrings) {
+void TestCFile::TestReadWriteStrings(EncodingType encoding) {
   Schema schema(boost::assign::list_of
                 (ColumnSchema("key", STRING)),
                 1);
@@ -329,7 +383,7 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   const int nrows = 10000;
   BlockId block_id;
   StringDataGenerator<false> generator("hello %04d");
-  WriteTestFile(&generator, PREFIX_ENCODING, NO_COMPRESSION, nrows,
+  WriteTestFile(&generator, encoding, NO_COMPRESSION, nrows,
                 SMALL_BLOCKSIZE | WRITE_VALIDX, &block_id);
 
   gscoped_ptr<ReadableBlock> block;
@@ -421,6 +475,16 @@ TEST_F(TestCFile, TestReadWriteStrings) {
   size_t n = 10000;
   ASSERT_OK(iter->CopyNextValues(&n, &cb));
   ASSERT_EQ(10000, n);
+}
+
+
+TEST_F(TestCFile, TestReadWriteStringsPrefixEncoding) {
+  TestReadWriteStrings(PREFIX_ENCODING);
+}
+
+// Read/Write test for dictionary encoded blocks
+TEST_F(TestCFile, TestReadWriteStringsDictEncoding) {
+  TestReadWriteStrings(DICT_ENCODING);
 }
 
 // Test that metadata entries stored in the cfile are persisted.
@@ -533,6 +597,13 @@ TEST_F(TestCFile, TestNullPlainStrings) {
   StringDataGenerator<true> generator("hello %zu");
   TestNullTypes(&generator, PREFIX_ENCODING, NO_COMPRESSION);
   TestNullTypes(&generator, PREFIX_ENCODING, LZ4);
+}
+
+// Test for dictionary encoding
+TEST_F(TestCFile, TestNullDictStrings) {
+  StringDataGenerator<true> generator("hello %zu");
+  TestNullTypes(&generator, DICT_ENCODING, NO_COMPRESSION);
+  TestNullTypes(&generator, DICT_ENCODING, LZ4);
 }
 
 TEST_F(TestCFile, TestReleaseBlock) {

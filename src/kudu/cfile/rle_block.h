@@ -21,6 +21,7 @@
 namespace kudu {
 namespace cfile {
 
+struct WriterOptions;
 //
 // RLE encoder for the BOOL datatype: uses an RLE-encoded bitmap to
 // represent a bool column.
@@ -44,6 +45,10 @@ class RleBitMapBlockBuilder : public BlockBuilder {
     return count;
   }
 
+  virtual bool IsBlockFull(size_t limit) const OVERRIDE {
+    return encoder_.len() > limit;
+  }
+
   virtual Slice Finish(rowid_t ordinal_pos) OVERRIDE {
     InlineEncodeFixed32(&buf_[0], count_);
     InlineEncodeFixed32(&buf_[4], ordinal_pos);
@@ -55,10 +60,6 @@ class RleBitMapBlockBuilder : public BlockBuilder {
     count_ = 0;
     encoder_.Clear();
     encoder_.Reserve(kHeaderSize, 0);
-  }
-
-  virtual uint64_t EstimateEncodedSize() const OVERRIDE {
-    return encoder_.len();
   }
 
   virtual size_t Count() const OVERRIDE {
@@ -190,6 +191,10 @@ class RleIntBlockBuilder : public BlockBuilder {
     Reset();
   }
 
+  virtual bool IsBlockFull(size_t limit) const OVERRIDE {
+    return rle_encoder_.len() > limit;
+  }
+
   virtual int Add(const uint8_t* vals_void, size_t count) OVERRIDE {
     if (PREDICT_FALSE(count_ == 0)) {
       first_key_ = *reinterpret_cast<const CppType*>(vals_void);
@@ -213,10 +218,6 @@ class RleIntBlockBuilder : public BlockBuilder {
     count_ = 0;
     rle_encoder_.Clear();
     rle_encoder_.Reserve(kHeaderSize, 0);
-  }
-
-  virtual uint64_t EstimateEncodedSize() const OVERRIDE {
-    return rle_encoder_.len();
   }
 
   virtual size_t Count() const OVERRIDE {

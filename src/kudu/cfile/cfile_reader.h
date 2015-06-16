@@ -16,6 +16,7 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/cfile/type_encodings.h"
+#include "kudu/cfile/string_plain_block.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -350,6 +351,11 @@ class CFileIterator : public ColumnIterator {
     return io_stats_;
   }
 
+  // It the column is dictionary-coded, returns the decoder
+  // for the cfile's dictionary block. This is called by the
+  // StringDictBlockDecoder.
+  StringPlainBlockDecoder* GetDictDecoder() { return dict_decoder_.get();}
+
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileIterator);
 
@@ -415,6 +421,9 @@ class CFileIterator : public ColumnIterator {
 
   gscoped_ptr<IndexTreeIterator> posidx_iter_;
   gscoped_ptr<IndexTreeIterator> validx_iter_;
+
+  // Decoder for the dictionary block
+  gscoped_ptr<StringPlainBlockDecoder> dict_decoder_;
 
   // The currently in-use index iterator. This is equal to either
   // posidx_iter_.get(), validx_iter_.get(), or NULL if not seeked.

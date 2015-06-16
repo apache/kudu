@@ -25,8 +25,9 @@ TypeEncodingInfo::TypeEncodingInfo(TypeEncodingTraitsClass t)
 }
 
 Status TypeEncodingInfo::CreateBlockDecoder(BlockDecoder **bd,
-                                            const Slice &slice) const {
-  return create_decoder_func_(bd, slice);
+                                            const Slice &slice,
+                                            CFileIterator *iter) const {
+  return create_decoder_func_(bd, slice, iter);
 }
 
 Status TypeEncodingInfo::CreateBlockBuilder(
@@ -93,6 +94,7 @@ class TypeEncodingResolver {
     AddMapping<DOUBLE, PLAIN_ENCODING>();
     AddMapping<STRING, PLAIN_ENCODING>();
     AddMapping<STRING, PREFIX_ENCODING>();
+    AddMapping<STRING, DICT_ENCODING>();
     AddMapping<BOOL, RLE>();
     AddMapping<BOOL, PLAIN_ENCODING>();
   }

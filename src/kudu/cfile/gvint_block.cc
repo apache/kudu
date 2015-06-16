@@ -22,6 +22,7 @@ using kudu::coding::AppendGroupVarInt32Sequence;
 GVIntBlockBuilder::GVIntBlockBuilder(const WriterOptions *options)
  : estimated_raw_size_(0),
    options_(options) {
+  Reset();
 }
 
 
@@ -32,12 +33,17 @@ void GVIntBlockBuilder::Reset() {
   estimated_raw_size_ = 0;
 }
 
+bool GVIntBlockBuilder::IsBlockFull(size_t limit) const {
+  return EstimateEncodedSize() > limit;
+}
+
 int GVIntBlockBuilder::Add(const uint8_t *vals_void, size_t count) {
   const uint32_t *vals = reinterpret_cast<const uint32_t *>(vals_void);
 
   int added = 0;
-  while (estimated_raw_size_ < options_->block_size &&
-         added < count) {
+
+  // If the block is full, should stop adding more items.
+  while (!IsBlockFull(options_->block_size) && added < count) {
     uint32_t val = *vals++;
     estimated_raw_size_ += CalcRequiredBytes32(val);
     ints_.push_back(val);
@@ -45,17 +51,6 @@ int GVIntBlockBuilder::Add(const uint8_t *vals_void, size_t count) {
   }
 
   return added;
-}
-
-uint64_t GVIntBlockBuilder::EstimateEncodedSize() const {
-  // TODO: this currently does not do a good job of estimating
-  // when the ints are large but clustered together,
-  // since it doesn't take into account the delta coding relative
-  // to the min int. We could track the min int along the way
-  // but then we have extra branches in the add loop. Come back to this,
-  // probably the branches don't matter since this is write-side.
-  return estimated_raw_size_ + (ints_.size() + 3) / 4
-    + kEstimatedHeaderSizeBytes + kTrailerExtraPaddingBytes;
 }
 
 size_t GVIntBlockBuilder::Count() const {
@@ -267,6 +262,11 @@ Status GVIntBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
   DCHECK_EQ(dst->stride(), sizeof(uint32_t));
 
   PtrSink<uint32_t> sink(dst->data());
+  return DoGetNextValues(n, &sink);
+}
+
+Status GVIntBlockDecoder::CopyNextValuesToArray(size_t *n, uint8_t* array) {
+  PtrSink<uint32_t> sink(array);
   return DoGetNextValues(n, &sink);
 }
 

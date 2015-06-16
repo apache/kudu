@@ -6,6 +6,7 @@
 
 #include <glog/logging.h>
 #include <algorithm>
+#include <stdlib.h>
 #include <string>
 
 #include "kudu/cfile/cfile-test-base.h"
@@ -206,6 +207,44 @@ class StringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
   const char* format_;
 };
 
+// Class for generating strings that contain duplicate
+template<bool HAS_NULLS>
+class DuplicateStringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
+ public:
+
+  // num specify number of possible unique strings that can be generated
+  explicit DuplicateStringDataGenerator(const char* format, int num)
+  : format_(format),
+    num_(num) {
+  }
+
+  Slice BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+    // random number from 0 ~ num_-1
+    value = rand() % num_;
+    char *buf = data_buffer_[block_index].data;
+    int len = snprintf(buf, kItemBufferSize - 1, format_, value);
+    DCHECK_LT(len, kItemBufferSize);
+    return Slice(buf, len);
+  }
+
+  void Resize(size_t num_entries) OVERRIDE {
+    if (num_entries > this->block_entries()) {
+      data_buffer_.reset(new Buffer[num_entries]);
+    }
+    DataGenerator<STRING, HAS_NULLS>::Resize(num_entries);
+  }
+
+ private:
+  static const int kItemBufferSize = 16;
+
+  struct Buffer {
+    char data[kItemBufferSize];
+  };
+
+  gscoped_array<Buffer> data_buffer_;
+  const char* format_;
+  int num_;
+};
 
 class CFileTestBase : public KuduTest {
  public:

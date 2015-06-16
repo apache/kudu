@@ -15,6 +15,7 @@
 #include "kudu/cfile/block_compression.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_util.h"
+#include "kudu/cfile/string_plain_block.h"
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/types.h"
@@ -22,12 +23,16 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/util/env.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
+class Arena;
+
 namespace cfile {
+using std::tr1::unordered_map;
 
 class BlockPointer;
 class BTreeInfoPB;
@@ -128,6 +133,12 @@ class CFileWriter {
   size_t written_size() const;
 
   std::string ToString() const { return block_->id().ToString(); }
+
+  // Wrapper for AddBlock() to append the dictionary block to the end of a Cfile.
+  Status AppendDictBlock(const vector<Slice> &data_slices, BlockPointer *block_ptr,
+                         const char *name_for_log) {
+    return AddBlock(data_slices, block_ptr, name_for_log);
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileWriter);

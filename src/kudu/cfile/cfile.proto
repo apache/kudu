@@ -54,6 +54,10 @@ message CFileFooterPB {
   repeated FileMetadataPairPB metadata = 7;
 
   optional bool is_type_nullable = 8 [default=false]; // TODO use enum with encoding?
+
+  // Block pointer for dictionary block if the cfile is dictionary encoded.
+  // Only for dictionary encoding.
+  optional BlockPointerPB dict_block_ptr = 9;
 }
 
 

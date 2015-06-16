@@ -111,6 +111,7 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     validx_builder_.reset(new IndexTreeBuilder(&options_,
                                                this));
   }
+
 }
 
 CFileWriter::~CFileWriter() {
@@ -148,7 +149,7 @@ Status CFileWriter::Start() {
   off_ += buf.size();
 
   BlockBuilder *bb;
-  RETURN_NOT_OK(type_encoding_info_->CreateBlockBuilder(&bb, &options_) );
+  RETURN_NOT_OK(type_encoding_info_->CreateBlockBuilder(&bb, &options_));
   data_block_.reset(bb);
 
   if (is_nullable_) {
@@ -199,6 +200,10 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
     RETURN_NOT_OK_PREPEND(validx_builder_->Finish(&validx_info), "Couldn't write value index");
     footer.mutable_validx_info()->CopyFrom(validx_info);
   }
+
+  // Optionally append extra information to the end of cfile.
+  // Example: dictionary block for dictionary encoding
+  RETURN_NOT_OK(data_block_->AppendExtraInfo(this, &footer));
 
   // Flush metadata.
   FlushMetadataToPB(footer.mutable_metadata());
@@ -259,8 +264,7 @@ Status CFileWriter::AppendEntries(const void *entries, size_t count) {
     rem -= n;
     value_count_ += n;
 
-    size_t est_size = data_block_->EstimateEncodedSize();
-    if (est_size > options_.block_size) {
+    if (data_block_->IsBlockFull(options_.block_size)) {
       RETURN_NOT_OK(FinishCurDataBlock());
     }
   }
@@ -291,10 +295,10 @@ Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
         value_count_ += n;
         rem -= n;
 
-        size_t est_size = data_block_->EstimateEncodedSize();
-        if (est_size > options_.block_size) {
+        if (data_block_->IsBlockFull(options_.block_size)) {
           RETURN_NOT_OK(FinishCurDataBlock());
         }
+
       } while (rem > 0);
     } else {
       null_bitmap_builder_->AddRun(false, nblock);
@@ -323,8 +327,7 @@ Status CFileWriter::FinishCurDataBlock() {
   // The current data block is full, need to push it
   // into the file, and add to index
   Slice data = data_block_->Finish(first_elem_ord);
-  VLOG(2) << "estimated size=" << data_block_->EstimateEncodedSize()
-          << " actual=" << data.size();
+  VLOG(2) << " actual size=" << data.size();
 
   uint8_t key_tmp_space[typeinfo_->size()];
 

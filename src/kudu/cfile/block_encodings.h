@@ -19,11 +19,21 @@ namespace kudu {
 class ColumnDataView;
 
 namespace cfile {
-
+class CFileWriter;
 
 class BlockBuilder {
  public:
   BlockBuilder() { }
+
+  // Append extra information to the end of the current cfile, for example:
+  // append the dictionary block for under dictionary encoding mode.
+  virtual Status AppendExtraInfo(CFileWriter *c_writer, CFileFooterPB* footer) {
+    return Status::OK();
+  }
+
+  // Used by the cfile writer to determine whether the current block is full.
+  // If it is full, the cfile writer will call FinishCurDataBlock().
+  virtual bool IsBlockFull(size_t limit) const = 0;
 
   // Add a sequence of values to the block.
   // Returns the number of values actually added, which may be less
@@ -44,11 +54,6 @@ class BlockBuilder {
   //
   // Postcondition: Count() == 0
   virtual void Reset() = 0;
-
-  // Return an estimate of the number of bytes that this block
-  // will require once encoded. This is not necessarily
-  // an upper or lower bound.
-  virtual uint64_t EstimateEncodedSize() const = 0;
 
   // Return the number of entries that have been added to the
   // block.

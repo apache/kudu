@@ -35,6 +35,7 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
     PREFIX_ENCODING = 2,
     GROUP_VARINT = 3,
     RLE = 4,
+    DICT_ENCODING = 5,
   };
 
   enum CompressionType {

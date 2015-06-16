@@ -65,6 +65,11 @@ void StringPrefixBlockBuilder::Reset() {
   last_val_.clear();
 }
 
+bool StringPrefixBlockBuilder::IsBlockFull(size_t limit) const {
+  // TODO: take restarts size into account
+  return buffer_.size() > limit;
+}
+
 Slice StringPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
   CHECK(!finished_) << "already finished";
   DCHECK_GE(buffer_.size(), kHeaderReservedLength);
@@ -146,10 +151,6 @@ size_t StringPrefixBlockBuilder::Count() const {
   return val_count_;
 }
 
-uint64_t StringPrefixBlockBuilder::EstimateEncodedSize() const {
-  // TODO: add restarts size
-  return buffer_.size();
-}
 
 Status StringPrefixBlockBuilder::GetFirstKey(void *key) const {
   if (val_count_ == 0) {

@@ -33,13 +33,13 @@ class GVIntBlockBuilder : public BlockBuilder {
  public:
   explicit GVIntBlockBuilder(const WriterOptions *options);
 
+  bool IsBlockFull(size_t limit) const OVERRIDE;
+
   int Add(const uint8_t *vals, size_t count) OVERRIDE;
 
   Slice Finish(rowid_t ordinal_pos) OVERRIDE;
 
   void Reset() OVERRIDE;
-
-  uint64_t EstimateEncodedSize() const OVERRIDE;
 
   size_t Count() const OVERRIDE;
 
@@ -48,6 +48,18 @@ class GVIntBlockBuilder : public BlockBuilder {
   Status GetFirstKey(void *key) const OVERRIDE;
 
  private:
+
+  // TODO: this currently does not do a good job of estimating
+  // when the ints are large but clustered together,
+  // since it doesn't take into account the delta coding relative
+  // to the min int. We could track the min int along the way
+  // but then we have extra branches in the add loop. Come back to this,
+  // probably the branches don't matter since this is write-side.
+  uint64_t EstimateEncodedSize() const {
+    return estimated_raw_size_ + (ints_.size() + 3) / 4
+    + kEstimatedHeaderSizeBytes + kTrailerExtraPaddingBytes;
+  }
+
   friend class TestEncoding;
   FRIEND_TEST(TestEncoding, TestGroupVarInt);
   FRIEND_TEST(TestEncoding, TestIntBlockEncoder);
@@ -82,6 +94,10 @@ class GVIntBlockDecoder : public BlockDecoder {
   Status SeekAtOrAfterValue(const void *value, bool *exact_match) OVERRIDE;
 
   Status CopyNextValues(size_t *n, ColumnDataView *dst) OVERRIDE;
+
+  // Copy the integers to a temporary buffer, it is used by StringDictDecoder
+  // in its CopyNextValues() method.
+  Status CopyNextValuesToArray(size_t *n, uint8_t* array);
 
   size_t GetCurrentIndex() const OVERRIDE {
     DCHECK(parsed_) << "must parse header first";
