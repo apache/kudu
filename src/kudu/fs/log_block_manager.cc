@@ -1017,6 +1017,13 @@ Status LogBlockManager::Create() {
   deque<ScopedFileDeleter*> delete_on_failure;
   ElementDeleter d(&delete_on_failure);
 
+  // The UUIDs and indices will be included in every instance file.
+  vector<string> all_uuids(root_paths_.size());
+  BOOST_FOREACH(string& u, all_uuids) {
+    u = oid_generator()->Next();
+  }
+  int idx = 0;
+
   // Ensure the data paths exist and create the instance files.
   unordered_set<string> to_sync;
   BOOST_FOREACH(const string& root_path, root_paths_) {
@@ -1037,8 +1044,9 @@ Status LogBlockManager::Create() {
         root_path, kInstanceMetadataFileName);
     PathInstanceMetadataFile metadata(env_, kBlockManagerType,
                                       instance_filename);
-    RETURN_NOT_OK_PREPEND(metadata.Create(), instance_filename);
+    RETURN_NOT_OK_PREPEND(metadata.Create(all_uuids[idx], all_uuids), instance_filename);
     delete_on_failure.push_front(new ScopedFileDeleter(env_, instance_filename));
+    idx++;
   }
 
   // Ensure newly created directories are synchronized to disk.

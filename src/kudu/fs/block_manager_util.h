@@ -4,9 +4,9 @@
 #define KUDU_FS_BLOCK_MANAGER_UTIL_H
 
 #include <string>
+#include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
-#include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
@@ -31,7 +31,11 @@ class PathInstanceMetadataFile {
   ~PathInstanceMetadataFile();
 
   // Creates, writes, synchronizes, and closes a new instance metadata file.
-  Status Create();
+  //
+  // 'uuid' is this instance's UUID, and 'all_uuids' is all of the UUIDs in
+  // this instance's path set.
+  Status Create(const std::string& uuid,
+                const std::vector<std::string>& all_uuids);
 
   // Opens, reads, verifies, and closes an existing instance metadata file.
   //
@@ -50,14 +54,20 @@ class PathInstanceMetadataFile {
   // Unlocks the instance metadata file. Must have been locked to begin with.
   Status Unlock();
 
+  void SetMetadataForTests(gscoped_ptr<PathInstanceMetadataPB> metadata) {
+    metadata_ = metadata.Pass();
+  }
+
   std::string path() const { return DirName(filename_); }
   PathInstanceMetadataPB* const metadata() const { return metadata_.get(); }
+
+  // Check the integrity of the provided instances' path sets.
+  static Status CheckIntegrity(const std::vector<PathInstanceMetadataFile*>& instances);
 
  private:
   Env* env_;
   const std::string block_manager_type_;
   const std::string filename_;
-  ObjectIdGenerator oid_generator_;
   gscoped_ptr<PathInstanceMetadataPB> metadata_;
   gscoped_ptr<FileLock> lock_;
 };

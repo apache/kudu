@@ -14,12 +14,14 @@
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/fs/fs.pb.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/oid_generator.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/status.h"
 
@@ -494,6 +496,7 @@ Status FileReadableBlock::Read(uint64_t offset, size_t length,
 ////////////////////////////////////////////////////////////
 
 static const char* kBlockManagerType = "file";
+static const int kMaxPaths = (1 << 16) - 1;
 
 Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& location) {
   vector<string> parent_dirs;
@@ -552,6 +555,19 @@ Status FileBlockManager::Create() {
   deque<ScopedFileDeleter*> delete_on_failure;
   ElementDeleter d(&delete_on_failure);
 
+  if (root_paths_.size() > kMaxPaths) {
+    return Status::NotSupported(
+        Substitute("File block manager supports a maximum of $0 paths", kMaxPaths));
+  }
+
+  // The UUIDs and indices will be included in every instance file.
+  ObjectIdGenerator oid_generator;
+  vector<string> all_uuids(root_paths_.size());
+  BOOST_FOREACH(string& u, all_uuids) {
+    u = oid_generator.Next();
+  }
+  int idx = 0;
+
   // Ensure the data paths exist and create the instance files.
   unordered_set<string> to_sync;
   BOOST_FOREACH(const string& root_path, root_paths_) {
@@ -567,9 +583,10 @@ Status FileBlockManager::Create() {
         root_path, kInstanceMetadataFileName);
     PathInstanceMetadataFile metadata(env_, kBlockManagerType,
                                       instance_filename);
-    RETURN_NOT_OK_PREPEND(metadata.Create(),
+    RETURN_NOT_OK_PREPEND(metadata.Create(all_uuids[idx], all_uuids),
                           Substitute("Could not create $0", instance_filename));
     delete_on_failure.push_front(new ScopedFileDeleter(env_, instance_filename));
+    idx++;
   }
 
   // Ensure newly created directories are synchronized to disk.
@@ -588,8 +605,9 @@ Status FileBlockManager::Create() {
 }
 
 Status FileBlockManager::Open() {
-  PathMap path_map;
-  ValueDeleter deleter(&path_map);
+  vector<PathInstanceMetadataFile*> instances;
+  ElementDeleter deleter(&instances);
+  instances.reserve(root_paths_.size());
 
   BOOST_FOREACH(const string& root_path, root_paths_) {
     if (!env_->FileExists(root_path)) {
@@ -607,11 +625,33 @@ Status FileBlockManager::Open() {
       RETURN_NOT_OK_PREPEND(metadata->Lock(),
                             Substitute("Could not lock $0", instance_filename));
     }
-    string uuid = metadata->metadata()->uuid();
-    InsertOrDie(&path_map, uuid, metadata.release());
+
+    instances.push_back(metadata.release());
   }
 
-  path_map.swap(root_paths_by_uuid_);
+  RETURN_NOT_OK_PREPEND(PathInstanceMetadataFile::CheckIntegrity(instances),
+                        Substitute("Could not verify integrity of files: $0",
+                                   JoinStrings(root_paths_, ",")));
+
+  PathMap instances_by_uuid;
+  BOOST_FOREACH(PathInstanceMetadataFile* instance, instances) {
+    const PathSetPB& path_set = instance->metadata()->path_set();
+    uint32_t idx = -1;
+    for (int i = 0; i < path_set.all_uuids_size(); i++) {
+      if (path_set.uuid() == path_set.all_uuids(i)) {
+        idx = i;
+        break;
+      }
+    }
+    DCHECK_NE(idx, -1); // Guaranteed by CheckIntegrity().
+    if (idx > kMaxPaths) {
+      return Status::NotSupported(
+          Substitute("File block manager supports a maximum of $0 paths", kMaxPaths));
+    }
+    InsertOrDie(&instances_by_uuid, instance->metadata()->path_set().uuid(), instance);
+  }
+  instances.clear();
+  instances_by_uuid.swap(root_paths_by_uuid_);
   next_root_path_ = root_paths_by_uuid_.begin();
   return Status::OK();
 }

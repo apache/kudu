@@ -23,12 +23,29 @@ message InstanceMetadataPB {
   // TODO: add a "node type" (TS/Master?)
 }
 
+// Describes a collection of filesystem path instances and the membership of a
+// particular instance in the collection.
+//
+// In a healthy filesystem (see below), a path instance can be referred to via
+// its UUID's position in all_uuids instead of via the UUID itself. This is
+// useful when there are many such references, as the position is much shorter
+// than the UUID.
+message PathSetPB {
+  // Globally unique identifier for this path instance.
+  required bytes uuid = 1;
+
+  // All UUIDs in this path instance set. In a healthy filesystem:
+  // 1. There exists an on-disk PathInstanceMetadataPB for each listed UUID, and
+  // 2. Every PathSetPB contains an identical copy of all_uuids.
+  repeated bytes all_uuids = 2;
+}
+
 // A filesystem instance can contain multiple paths. One of these structures
 // is persisted in each path when the filesystem instance is created.
 message PathInstanceMetadataPB {
-  // Assigned when the filesystem instance is first formatted. Uniquely
-  // identifies the path within the filesystem instance.
-  required bytes uuid = 1;
+  // Describes this path instance as well as all of the other path instances
+  // that, taken together, describe a complete set.
+  required PathSetPB path_set = 1;
 
   // Textual representation of the block manager that formatted this path.
   required string block_manager_type = 2;
