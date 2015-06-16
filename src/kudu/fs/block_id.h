@@ -9,8 +9,8 @@
 
 #include <glog/logging.h>
 
-#include "kudu/gutil/hash/hash.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/stringprintf.h"
 
 namespace kudu {
 
@@ -24,34 +24,42 @@ class FileBlockLocation;
 
 class BlockId {
  public:
-  BlockId() {}
-  explicit BlockId(const std::string& id) { SetId(id); }
+  BlockId()
+    : id_(kInvalidId) {
+  }
 
-  void SetId(const std::string& id) {
-    CHECK_GE(id.size(), 8);
+  explicit BlockId(uint64_t id) {
+    SetId(id);
+  }
+
+  void SetId(uint64_t id) {
     id_ = id;
   }
 
-  bool IsNull() const { return id_.empty(); }
-  const std::string& ToString() const { return id_; }
+  bool IsNull() const { return id_ == kInvalidId; }
+
+  std::string ToString() const {
+    return StringPrintf("%016lx", id_);
+  }
 
   bool operator==(const BlockId& other) const {
     return id_ == other.id_;
   }
+
   bool operator!=(const BlockId& other) const {
     return id_ != other.id_;
   }
 
-  // Returns the approximate memory usage of the BlockId, the notable exclusion
-  // being the reference count structure of the ID's std::string (if any).
+  // Returns the approximate memory usage of the BlockId.
   int64_t memory_usage() const {
-    return sizeof(this) + id_.capacity();
+    return sizeof(this);
   }
 
   // Join the given block IDs with ','. Useful for debug printouts.
   static std::string JoinStrings(const std::vector<BlockId>& blocks);
 
   void CopyToPB(BlockIdPB* pb) const;
+
   static BlockId FromPB(const BlockIdPB& pb);
 
  private:
@@ -61,22 +69,16 @@ class BlockId {
   friend struct BlockIdCompare;
   friend struct BlockIdEqual;
 
-  // Used for on-disk partition
-  std::string hash0() const;
-  std::string hash1() const;
-  std::string hash2() const;
-  std::string hash3() const;
+  static const uint64_t kInvalidId;
 
-  std::string id_;
+  uint64_t id_;
 };
 
 std::ostream& operator<<(std::ostream& o, const BlockId& block_id);
 
 struct BlockIdHash {
-  GoodFastHash<std::string> hash;
-
   size_t operator()(const BlockId& block_id) const {
-    return hash(block_id.id_);
+    return block_id.id_;
   }
 };
 

@@ -16,6 +16,8 @@ using std::vector;
 
 namespace kudu {
 
+const uint64_t BlockId::kInvalidId = 0;
+
 string BlockId::JoinStrings(const vector<BlockId>& blocks) {
   vector<string> strings;
   strings.reserve(blocks.size());

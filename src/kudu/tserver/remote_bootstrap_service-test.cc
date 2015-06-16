@@ -214,7 +214,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidSessionId) {
     RpcController controller;
     DataIdPB data_id;
     data_id.set_type(DataIdPB::BLOCK);
-    data_id.mutable_block_id()->set_id("snarf");
+    data_id.mutable_block_id()->set_id(1);
     Status status = DoFetchData(session_id, data_id, NULL, NULL, &resp, &controller);
     ASSERT_REMOTE_ERROR(status, controller.error_response(), RemoteBootstrapErrorPB::NO_SESSION,
                         Status::NotFound("").CodeAsString());
@@ -245,26 +245,13 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
   string session_id;
   ASSERT_OK(DoBeginValidRemoteBootstrapSession(&session_id));
 
-  // Too-short BlockId name.
-  {
-    FetchDataResponsePB resp;
-    RpcController controller;
-    DataIdPB data_id;
-    data_id.set_type(DataIdPB::BLOCK);
-    data_id.mutable_block_id()->set_id("gurgle");
-    Status status = DoFetchData(session_id, data_id, NULL, NULL, &resp, &controller);
-    ASSERT_REMOTE_ERROR(status, controller.error_response(),
-                        RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST,
-                        Status::InvalidArgument("").CodeAsString());
-  }
-
   // Invalid BlockId.
   {
     FetchDataResponsePB resp;
     RpcController controller;
     DataIdPB data_id;
     data_id.set_type(DataIdPB::BLOCK);
-    data_id.mutable_block_id()->set_id("8charnam");
+    data_id.mutable_block_id()->set_id(1);
     Status status = DoFetchData(session_id, data_id, NULL, NULL, &resp, &controller);
     ASSERT_REMOTE_ERROR(status, controller.error_response(),
                         RemoteBootstrapErrorPB::BLOCK_NOT_FOUND,
@@ -290,7 +277,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
     FetchDataResponsePB resp;
     RpcController controller;
     DataIdPB data_id;
-    data_id.mutable_block_id()->set_id("8charman");
+    data_id.mutable_block_id()->set_id(1);
     Status status = DoFetchData(session_id, data_id, NULL, NULL, &resp, &controller);
     ASSERT_TRUE(status.IsInvalidArgument());
   }
@@ -313,7 +300,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidBlockOrOpId) {
     RpcController controller;
     DataIdPB data_id;
     data_id.set_type(DataIdPB::BLOCK);
-    data_id.mutable_block_id()->set_id("8charnam");
+    data_id.mutable_block_id()->set_id(1);
     data_id.set_wal_segment_seqno(0);
     Status status = DoFetchData(session_id, data_id, NULL, NULL, &resp, &controller);
     ASSERT_REMOTE_ERROR(status, controller.error_response(),

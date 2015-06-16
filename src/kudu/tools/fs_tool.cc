@@ -424,7 +424,12 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
 Status FsTool::DumpCFileBlock(const std::string& block_id_str,
                               const DumpOptions &opts,
                               int indent) {
-  BlockId block_id(block_id_str);
+  uint64_t numeric_id;
+  if (!safe_strtou64(block_id_str, &numeric_id)) {
+    return Status::InvalidArgument(Substitute("block '$0' could not be parsed",
+                                              block_id_str));
+  }
+  BlockId block_id(numeric_id);
   if (!fs_manager_->BlockExists(block_id)) {
     return Status::NotFound(Substitute("block '$0' does not exist", block_id_str));
   }

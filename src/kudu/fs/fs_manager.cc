@@ -16,7 +16,6 @@
 #include <google/protobuf/message.h>
 
 #include "kudu/fs/block_id.h"
-#include "kudu/fs/block_id-inl.h"
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/log_block_manager.h"
 #include "kudu/fs/fs.pb.h"

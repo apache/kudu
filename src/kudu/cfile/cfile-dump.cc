@@ -34,7 +34,9 @@ void DumpFile(const string& root_path, const string& block_id_str) {
   FsManager fs_manager(Env::Default(), root_path);
   CHECK_OK(fs_manager.Open());
 
-  BlockId block_id(block_id_str);
+  uint64_t numeric_id;
+  CHECK(safe_strtou64_base(block_id_str, &numeric_id, 16));
+  BlockId block_id(numeric_id);
   gscoped_ptr<fs::ReadableBlock> block;
   CHECK_OK(fs_manager.OpenBlock(block_id, &block));
 

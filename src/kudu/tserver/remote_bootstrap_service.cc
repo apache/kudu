@@ -273,12 +273,6 @@ Status RemoteBootstrapServiceImpl::ValidateFetchRequestDataId(
       return Status::InvalidArgument("block_id must be specified for type == BLOCK",
                                      data_id.ShortDebugString());
     }
-    // Validate block id minimum size. If we do not perform this validation,
-    // the server will crash with a CHECK error.
-    if (PREDICT_FALSE(data_id.block_id().id().size() < 8)) {
-      *app_error = RemoteBootstrapErrorPB::INVALID_REMOTE_BOOTSTRAP_REQUEST;
-      return Status::InvalidArgument("Invalid block id", data_id.block_id().id());
-    }
   } else {
     if (PREDICT_FALSE(!data_id.wal_segment_seqno())) {
       return Status::InvalidArgument(

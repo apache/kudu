@@ -5,7 +5,6 @@
 
 #include <boost/foreach.hpp>
 
-#include "kudu/fs/block_id-inl.h"
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
 #include "kudu/gutil/map-util.h"
@@ -22,6 +21,7 @@
 #include "kudu/util/mutex.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/threadpool.h"
 
 // TODO: How should this be configured? Should provide some guidance.
@@ -995,7 +995,8 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
     env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
     root_paths_(opts.root_paths),
-    root_paths_idx_(0) {
+    root_paths_idx_(0),
+    rand_(GetRandomSeed32()) {
   DCHECK_GT(root_paths_.size(), 0);
   if (opts.metric_entity) {
     metrics_.reset(new internal::LogBlockManagerMetrics(opts.metric_entity));
@@ -1152,7 +1153,7 @@ Status LogBlockManager::CreateBlock(const CreateBlockOptions& opts,
   // Generate a free block ID.
   BlockId new_block_id;
   do {
-    new_block_id.SetId(oid_generator()->Next());
+    new_block_id.SetId(rand_.Next64());
   } while (!TryUseBlockId(new_block_id));
 
   block->reset(new internal::LogWritableBlock(container,
@@ -1287,6 +1288,10 @@ Status LogBlockManager::SyncContainer(const LogBlockContainer& container) {
 }
 
 bool LogBlockManager::TryUseBlockId(const BlockId& block_id) {
+  if (block_id.IsNull()) {
+    return false;
+  }
+
   lock_guard<simple_spinlock> l(&lock_);
   if (ContainsKey(blocks_by_block_id_, block_id)) {
     return false;

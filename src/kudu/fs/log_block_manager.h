@@ -20,6 +20,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/oid_generator.h"
+#include "kudu/util/random.h"
 
 namespace kudu {
 class Env;
@@ -287,8 +288,11 @@ class LogBlockManager : public BlockManager {
   typedef std::tr1::unordered_map<std::string, PathInstanceMetadataFile*> InstanceMap;
   InstanceMap instances_by_root_path_;
 
-  // For generating block IDs and container names.
+  // For generating container names.
   ObjectIdGenerator oid_generator_;
+
+  // For generating block IDs.
+  ThreadSafeRandom rand_;
 
   // Metrics for the block manager.
   //

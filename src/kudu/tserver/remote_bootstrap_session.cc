@@ -6,7 +6,6 @@
 
 #include "kudu/consensus/log.h"
 #include "kudu/consensus/log_reader.h"
-#include "kudu/fs/block_id-inl.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"

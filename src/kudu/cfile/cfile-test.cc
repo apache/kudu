@@ -610,7 +610,6 @@ TEST_F(TestCFile, TestReleaseBlock) {
   gscoped_ptr<WritableBlock> sink;
   ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
   ASSERT_EQ(WritableBlock::CLEAN, sink->state());
-  BlockId id = sink->id();
   WriterOptions opts;
   CFileWriter w(opts, STRING, false, sink.Pass());
   ASSERT_OK(w.Start());

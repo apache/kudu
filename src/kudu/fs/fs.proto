@@ -57,7 +57,7 @@ message PathInstanceMetadataPB {
 }
 
 message BlockIdPB {
-  required string id = 1;
+  required fixed64 id = 1;
 }
 
 // The kind of record.

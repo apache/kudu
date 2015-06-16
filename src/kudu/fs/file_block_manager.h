@@ -13,7 +13,7 @@
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/oid_generator.h"
+#include "kudu/util/random.h"
 
 namespace kudu {
 
@@ -39,11 +39,11 @@ struct BlockManagerMetrics;
 // file on disk. To prevent the block directory from becoming too large,
 // blocks are aggregated into a 3-level directory hierarchy.
 //
-// The block manager can take advantage of multiple filesystem paths. A
-// small metadata file containing a UUID is persisted in each path. A block
-// written to a given path will be assigned an ID that includes that path's
-// UUID. The ID is resolved back into a filesystem path when the block is
-// opened for reading.
+// The block manager can take advantage of multiple filesystem paths. A block
+// written to a given path will be assigned an ID that includes enough
+// information to uniquely identify the path's underlying disk. The ID is
+// resolved back into a filesystem path when the block is opened for reading.
+// The structure of this ID limits the block manager to at most 65,536 disks.
 //
 // When creating blocks, the block manager will round robin through the
 // available filesystem paths.
@@ -85,11 +85,11 @@ class FileBlockManager : public BlockManager {
   // Synchronizes the metadata for a block with the given id.
   Status SyncMetadata(const internal::FileBlockLocation& block_id);
 
-  // Look up a root path by its UUID in 'root_paths_by_uuid_'.
+  // Looks up the path of the file backing a particular block ID.
   //
-  // On success, overwrites 'root_path' with the root path.
-  bool FindRootPath(const std::string& root_path_uuid,
-                    std::string* root_path) const;
+  // On success, overwrites 'path' with the file's path.
+  bool FindBlockPath(const BlockId& block_id,
+                     std::string* root_path) const;
 
   Env* env() const { return env_; }
 
@@ -102,15 +102,15 @@ class FileBlockManager : public BlockManager {
   // Filesystem paths where all block directories are found.
   const std::vector<std::string> root_paths_;
 
-  // Maps path UUIDs to path instance files.
+  // Maps path indices their instance files.
   //
   // There's no need to synchronize access to the map as it is only written
   // to during Create() and Open(); all subsequent accesses are reads.
-  typedef std::map<std::string, PathInstanceMetadataFile*> PathMap;
-  PathMap root_paths_by_uuid_;
+  typedef std::map<uint16_t, PathInstanceMetadataFile*> PathMap;
+  PathMap root_paths_by_idx_;
 
   // For generating block IDs.
-  ObjectIdGenerator oid_generator_;
+  ThreadSafeRandom rand_;
 
   // Protects 'dirty_dirs_' and 'next_root_path_'.
   mutable simple_spinlock lock_;
