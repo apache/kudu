@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/webserver.h"
@@ -74,7 +75,14 @@ void SomeMethodForSymbolTest1() {}
 // Used in symbolization test below.
 void SomeMethodForSymbolTest2() {}
 
-TEST_F(WebserverTest, TestPprofSymbols) {
+TEST_F(WebserverTest, TestPprofPaths) {
+  // Test /pprof/cmdline GET
+  ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/pprof/cmdline", addr_.ToString()),
+                           &buf_));
+  ASSERT_STR_CONTAINS(buf_.ToString(), "webserver-test");
+  ASSERT_TRUE(!HasSuffixString(buf_.ToString(), string("\x00", 1)))
+    << "should not have trailing NULL: " << Slice(buf_).ToDebugString();
+
   // Test /pprof/symbol GET
   ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/pprof/symbol", addr_.ToString()),
                            &buf_));

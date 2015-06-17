@@ -68,7 +68,12 @@ static void PprofCmdLineHandler(const Webserver::WebRequest& req, stringstream* 
     (*output) << "Unable to open file: /proc/self/cmdline";
     return;
   }
-  (*output) << cmd_line_file.rdbuf();
+  string cmdline;
+  cmd_line_file >> cmdline;
+  size_t size = cmdline.size();
+  // The result should not be NULL terminated.
+  if (size > 0 && cmdline[size - 1] == 0) --size;
+  output->write(cmdline.data(), size);
   cmd_line_file.close();
 }
 
