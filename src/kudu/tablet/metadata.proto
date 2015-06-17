@@ -5,7 +5,6 @@ package kudu.tablet;
 option java_package = "org.kududb.tablet";
 
 import "kudu/common/common.proto";
-import "kudu/consensus/metadata.proto";
 import "kudu/fs/fs.proto";
 
 // ============================================================================

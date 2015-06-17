@@ -30,6 +30,7 @@
         <maven-enforcer-plugin.version>1.4</maven-enforcer-plugin.version>
         <maven-protoc-plugin.version>0.1.10</maven-protoc-plugin.version>
         <maven-surefire-plugin.version>2.18</maven-surefire-plugin.version>
+        <maven-failsafe-plugin.version>2.18</maven-failsafe-plugin.version>
 
         <!-- Library dependencies -->
         <async.version>1.4.0</async.version>
@@ -39,12 +40,15 @@
         <log4j.version>1.2.17</log4j.version>
         <mockito-all.version>1.9.0</mockito-all.version>
         <netty.version>3.8.0.Final</netty.version>
-        <protobuf.version>2.5.0</protobuf.version>
+        <protobuf.version>2.6.1</protobuf.version>
         <slf4j.version>1.6.1</slf4j.version>
         <commons-io.version>2.4</commons-io.version>
 
         <!-- Misc variables -->
         <testdata.dir>target/testdata</testdata.dir>
+        <testArgLine>-enableassertions -Xmx1900m -XX:MaxPermSize=100m
+        -Djava.security.egd=file:/dev/./urandom -Djava.net.preferIPv4Stack=true
+        -Djava.awt.headless=true</testArgLine>
     </properties>
 
     <modules>
@@ -70,6 +74,36 @@
                                 <version>[1.7,)</version>
                             </requireJavaVersion>
                         </rules>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <version>${maven-failsafe-plugin.version}</version>
+                    <executions>
+                        <execution>
+                            <goals>
+                                <goal>integration-test</goal>
+                                <goal>verify</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                    <configuration>
+                        <failIfNoTests>false</failIfNoTests>
+                        <reuseForks>false</reuseForks>
+                        <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                        <argLine>${testArgLine}</argLine>
+                    </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-surefire-plugin</artifactId>
+                    <version>${maven-surefire-plugin.version}</version>
+                    <configuration>
+                        <failIfNoTests>false</failIfNoTests>
+                        <reuseForks>false</reuseForks>
+                        <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                        <argLine>${testArgLine}</argLine>
                     </configuration>
                 </plugin>
             </plugins>
@@ -125,19 +159,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>${maven-surefire-plugin.version}</version>
-                <configuration>
-                    <failIfNoTests>false</failIfNoTests>
-                    <reuseForks>false</reuseForks>
-                    <redirectTestOutputToFile>true</redirectTestOutputToFile>
-                    <argLine>-enableassertions -Xmx1900m -XX:MaxPermSize=100m
-                    -Djava.security.egd=file:/dev/./urandom -Djava.net.preferIPv4Stack=true
-                    -Djava.awt.headless=true</argLine>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

@@ -24,10 +24,10 @@ import java.util.ArrayList;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-public class TestImportCsv extends BaseKuduTest {
+public class ITImportCsv extends BaseKuduTest {
 
   private static final String TABLE_NAME =
-      TestImportCsv.class.getName() + "-" + System.currentTimeMillis();
+      ITImportCsv.class.getName() + "-" + System.currentTimeMillis();
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
@@ -68,7 +68,7 @@ public class TestImportCsv extends BaseKuduTest {
   public void test() throws Exception {
     Configuration conf = new Configuration();
     String testHome =
-        HADOOP_UTIL.setupAndGetTestDir(TestImportCsv.class.getName(), conf).getAbsolutePath();
+        HADOOP_UTIL.setupAndGetTestDir(ITImportCsv.class.getName(), conf).getAbsolutePath();
 
     // Create a 2 lines input file
     File data = new File(testHome, "data.csv");

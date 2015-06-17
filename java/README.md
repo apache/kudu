@@ -64,6 +64,11 @@ If for some reason you would like to start a cluster, but use
 binaries other than the ones in build/latest/, you can pass
 -DbinDir=/path/to/directory.
 
+Integration tests, including tests which cover Hadoop integration,
+may be run with:
+
+$ mvn verify
+
 State of Eclipse integration
 ------------------------------------------------------------
 

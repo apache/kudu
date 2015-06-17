@@ -5,7 +5,6 @@ package kudu.tserver;
 option java_package = "org.kududb.tserver";
 
 import "kudu/common/wire_protocol.proto";
-import "kudu/consensus/consensus.proto";
 import "kudu/fs/fs.proto";
 import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";

@@ -5,9 +5,7 @@ package kudu.tserver;
 option java_package = "org.kududb.tserver";
 
 import "kudu/common/common.proto";
-import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/metadata.proto";
-import "kudu/tablet/tablet.proto";
 import "kudu/tserver/tserver.proto";
 
 message AlterSchemaRequestPB {

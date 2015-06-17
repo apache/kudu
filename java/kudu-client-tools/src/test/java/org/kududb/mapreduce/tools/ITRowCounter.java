@@ -15,10 +15,10 @@ import org.junit.Test;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
-public class TestRowCounter extends BaseKuduTest {
+public class ITRowCounter extends BaseKuduTest {
 
   private static final String TABLE_NAME =
-      TestRowCounter.class.getName() + "-" + System.currentTimeMillis();
+      ITRowCounter.class.getName() + "-" + System.currentTimeMillis();
 
   private static final HadoopTestingUtility HADOOP_UTIL = new HadoopTestingUtility();
 
@@ -39,7 +39,7 @@ public class TestRowCounter extends BaseKuduTest {
   @Test
   public void test() throws Exception {
     Configuration conf = new Configuration();
-    HADOOP_UTIL.setupAndGetTestDir(TestRowCounter.class.getName(), conf).getAbsolutePath();
+    HADOOP_UTIL.setupAndGetTestDir(ITRowCounter.class.getName(), conf).getAbsolutePath();
 
     createFourTabletsTableWithNineRows(TABLE_NAME);
 

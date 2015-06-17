@@ -184,7 +184,11 @@
                 </execution>
               </executions>
             </plugin>
-        </plugins>
+            <plugin>
+              <groupId>org.apache.maven.plugins</groupId>
+              <artifactId>maven-surefire-plugin</artifactId>
+            </plugin>
+          </plugins>
 
         <!-- This big ol' block of nonsense tells the m2e Eclipse plugin what
              to do with maven plugins that don't have m2e "extensions" available.
