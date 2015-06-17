@@ -65,11 +65,11 @@ class DeltaMemStore : public DeltaStore,
                 const consensus::OpId& op_id);
 
   size_t Count() const {
-    return tree_.count();
+    return tree_->count();
   }
 
   bool Empty() const {
-    return tree_.empty();
+    return tree_->empty();
   }
 
   // Dump a debug version of the tree to the logs. This is not thread-safe, so
@@ -135,7 +135,7 @@ class DeltaMemStore : public DeltaStore,
   friend class DMSIterator;
 
   const DMSTree& tree() const {
-    return tree_;
+    return *tree_;
   }
 
   const int64_t id_;    // DeltaMemStore ID.
@@ -148,7 +148,7 @@ class DeltaMemStore : public DeltaStore,
   std::tr1::shared_ptr<ThreadSafeMemoryTrackingArena> arena_;
 
   // Concurrent B-Tree storing <key index> -> RowChangeList
-  DMSTree tree_;
+  gscoped_ptr<DMSTree> tree_;
 
   log::MinLogIndexAnchorer anchorer_;
 

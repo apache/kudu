@@ -4,14 +4,15 @@
 #include <utility>
 
 #include "kudu/consensus/consensus.pb.h"
+#include "kudu/gutil/port.h"
 #include "kudu/tablet/deltafile.h"
 #include "kudu/tablet/deltamemstore.h"
 #include "kudu/tablet/delta_tracker.h"
-#include "kudu/gutil/port.h"
-#include "kudu/util/mem_tracker.h"
-#include "kudu/util/hexdump.h"
-#include "kudu/util/status.h"
 #include "kudu/tablet/mvcc.h"
+#include "kudu/tablet/tablet.h"
+#include "kudu/util/hexdump.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace tablet {
@@ -27,16 +28,6 @@ using strings::Substitute;
 static const int kInitialArenaSize = 16;
 static const int kMaxArenaBufferSize = 5*1024*1024;
 
-namespace {
-
-shared_ptr<MemTracker> CreateMemTrackerForDMS(
-    int64_t rs_id, int64_t id, const shared_ptr<MemTracker>& parent_tracker) {
-  string mem_tracker_id = Substitute("DeltaMemStore-$0-$1", rs_id, id);
-  return MemTracker::CreateTracker(-1, mem_tracker_id, parent_tracker);
-}
-
-} // anonymous namespace
-
 DeltaMemStore::DeltaMemStore(int64_t id,
                              int64_t rs_id,
                              const Schema &schema,
@@ -45,15 +36,22 @@ DeltaMemStore::DeltaMemStore(int64_t id,
   : id_(id),
     rs_id_(rs_id),
     schema_(schema),
-    mem_tracker_(CreateMemTrackerForDMS(rs_id, id, parent_tracker)),
-    allocator_(new MemoryTrackingBufferAllocator(HeapBufferAllocator::Get(), mem_tracker_)),
-    arena_(new ThreadSafeMemoryTrackingArena(kInitialArenaSize, kMaxArenaBufferSize,
-                                             allocator_)),
-    tree_(arena_),
     anchorer_(log_anchor_registry, Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)),
     delta_stats_(0),
     disambiguator_sequence_number_(0) {
   CHECK(schema.has_column_ids());
+  if (parent_tracker) {
+    CHECK(MemTracker::FindTracker(Tablet::kDMSMemTrackerId,
+                                  &mem_tracker_,
+                                  parent_tracker));
+  } else {
+    mem_tracker_ = (MemTracker::GetRootTracker());
+  }
+  allocator_.reset(new MemoryTrackingBufferAllocator(
+      HeapBufferAllocator::Get(), mem_tracker_));
+  arena_.reset(new ThreadSafeMemoryTrackingArena(
+      kInitialArenaSize, kMaxArenaBufferSize, allocator_));
+  tree_.reset(new DMSTree(arena_));
 }
 
 Status DeltaMemStore::Init() {
@@ -72,7 +70,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
 
   Slice key_slice(buf);
   btree::PreparedMutation<DMSTreeTraits> mutation(key_slice);
-  mutation.Prepare(&tree_);
+  mutation.Prepare(tree_.get());
   if (PREDICT_FALSE(mutation.exists())) {
     // We already have a delta for this row at the same timestamp.
     // Try again with a disambiguating sequence number appended to the key.
@@ -80,7 +78,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
     PutMemcmpableVarint64(&buf, seq);
     key_slice = Slice(buf);
     mutation.Reset(key_slice);
-    mutation.Prepare(&tree_);
+    mutation.Prepare(tree_.get());
     CHECK(!mutation.exists())
       << "Appended a sequence number but still hit a duplicate "
       << "for rowid " << row_idx << " at timestamp " << timestamp;
@@ -98,7 +96,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
                                   gscoped_ptr<DeltaStats>* stats_ret) {
   gscoped_ptr<DeltaStats> stats(new DeltaStats(schema_.num_columns()));
 
-  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+  gscoped_ptr<DMSTreeIter> iter(tree_->NewIterator());
   iter->SeekToStart();
   while (iter->IsValid()) {
     Slice key_slice, val;
@@ -134,7 +132,7 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   bool exact;
 
   // TODO: can we avoid the allocation here?
-  gscoped_ptr<DMSTreeIter> iter(tree_.NewIterator());
+  gscoped_ptr<DMSTreeIter> iter(tree_->NewIterator());
   if (!iter->SeekAtOrAfter(key_slice, &exact)) {
     return Status::OK();
   }
@@ -166,7 +164,7 @@ Status DeltaMemStore::AlterSchema(const Schema& schema) {
 }
 
 void DeltaMemStore::DebugPrint() const {
-  tree_.DebugPrint();
+  tree_->DebugPrint();
 }
 
 ////////////////////////////////////////////////////////////
@@ -178,7 +176,7 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
                          const MvccSnapshot &snapshot)
   : dms_(dms),
     mvcc_snapshot_(snapshot),
-    iter_(dms->tree_.NewIterator()),
+    iter_(dms->tree_->NewIterator()),
     initted_(false),
     prepared_idx_(0),
     prepared_count_(0),

@@ -346,6 +346,7 @@ class Tablet {
   // Return handle to the metric entity of this tablet.
   const scoped_refptr<MetricEntity>& GetMetricEntity() const { return metric_entity_; }
 
+  static const char* kDMSMemTrackerId;
  private:
   friend class Iterator;
   friend class TabletPeerTest;
@@ -482,6 +483,7 @@ class Tablet {
 
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  std::tr1::shared_ptr<MemTracker> dms_mem_tracker_;
   shared_ptr<MemRowSet> memrowset_;
   shared_ptr<RowSetTree> rowsets_;
 

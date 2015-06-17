@@ -110,6 +110,8 @@ TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
 // Tablet
 ////////////////////////////////////////////////////////////
 
+const char* Tablet::kDMSMemTrackerId = "DeltaMemStores";
+
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                const scoped_refptr<server::Clock>& clock,
                const shared_ptr<MemTracker>& parent_mem_tracker,
@@ -121,6 +123,8 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     log_anchor_registry_(log_anchor_registry),
     mem_tracker_(MemTracker::CreateTracker(
         -1, Substitute("tablet-$0", tablet_id()), parent_mem_tracker)),
+    dms_mem_tracker_(MemTracker::CreateTracker(
+        -1, kDMSMemTrackerId, mem_tracker_)),
     rowsets_(new RowSetTree()),
     next_mrs_id_(0),
     clock_(clock),
