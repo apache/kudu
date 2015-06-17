@@ -624,9 +624,9 @@ endif (UNIX)
 ############################################################
 if (UNIX)
   add_custom_target(tags etags --members --declarations
-  `find ${CMAKE_CURRENT_SOURCE_DIR}/src -name
-*.cc -or -name *.hh -or -name *.cpp -or -name *.h -or -name *.c -or
--name *.f`)
+  `find ${CMAKE_CURRENT_SOURCE_DIR}/src
+   -name \\*.cc -or -name \\*.hh -or -name \\*.cpp -or -name \\*.h -or -name \\*.c -or
+   -name \\*.f`)
   add_custom_target(etags DEPENDS tags)
 endif (UNIX)
 
@@ -635,8 +635,8 @@ endif (UNIX)
 ############################################################
 if (UNIX)
   add_custom_target(cscope find ${CMAKE_CURRENT_SOURCE_DIR}
-  ( -name *.cc -or -name *.hh -or -name *.cpp -or
-    -name *.h -or -name *.c -or -name *.f )
+  ( -name \\*.cc -or -name \\*.hh -or -name \\*.cpp -or
+    -name \\*.h -or -name \\*.c -or -name \\*.f )
   -exec echo \"{}\" \; > cscope.files && cscope -q -b VERBATIM)
 endif (UNIX)
 
