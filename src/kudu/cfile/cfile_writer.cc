@@ -123,10 +123,9 @@ Status CFileWriter::Start() {
     "bad state for Start(): " << state_;
 
   if (compression_ != NO_COMPRESSION) {
-    shared_ptr<CompressionCodec> compression_codec;
-    RETURN_NOT_OK(
-        GetCompressionCodec(compression_, &compression_codec));
-    block_compressor_ .reset(new CompressedBlockBuilder(compression_codec, kBlockSizeLimit));
+    const CompressionCodec* codec;
+    RETURN_NOT_OK(GetCompressionCodec(compression_, &codec));
+    block_compressor_ .reset(new CompressedBlockBuilder(codec, kBlockSizeLimit));
   }
 
   CFileHeaderPB header;

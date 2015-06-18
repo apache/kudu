@@ -19,8 +19,8 @@ namespace cfile {
 
 class CompressedBlockBuilder {
  public:
-  explicit CompressedBlockBuilder(const std::tr1::shared_ptr<CompressionCodec> &codec,
-                                  size_t size_limit);
+  // 'codec' is expected to remain alive for the lifetime of this object.
+  CompressedBlockBuilder(const CompressionCodec* codec, size_t size_limit);
 
   // Sets "*result" to the compressed version of the "data".
   // The data inside the result is owned by the CompressedBlockBuilder class
@@ -35,15 +35,15 @@ class CompressedBlockBuilder {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockBuilder);
-  std::tr1::shared_ptr<CompressionCodec> codec_;
+  const CompressionCodec* codec_;
   faststring buffer_;
   size_t compressed_size_limit_;
 };
 
 class CompressedBlockDecoder {
  public:
-  explicit CompressedBlockDecoder(const std::tr1::shared_ptr<CompressionCodec> &codec,
-                                  size_t size_limit);
+  // 'codec' is expected to remain alive for the lifetime of this object.
+  CompressedBlockDecoder(const CompressionCodec* codec, size_t size_limit);
 
   // Sets "*result" to the uncompressed version of the "data".
   // It is the caller's responsibility to free the result data.
@@ -53,7 +53,7 @@ class CompressedBlockDecoder {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockDecoder);
-  std::tr1::shared_ptr<CompressionCodec> codec_;
+  const CompressionCodec* codec_;
   size_t uncompressed_size_limit_;
 };
 

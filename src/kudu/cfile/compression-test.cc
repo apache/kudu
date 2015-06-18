@@ -22,7 +22,7 @@ namespace cfile {
 static void TestCompressionCodec(CompressionType compression) {
   const int kInputSize = 64;
 
-  shared_ptr<CompressionCodec> codec;
+  const CompressionCodec* codec;
   uint8_t ibuffer[kInputSize];
   uint8_t ubuffer[kInputSize];
   size_t compressed;
@@ -80,9 +80,9 @@ class TestCompression : public CFileTestBase {
 };
 
 TEST_F(TestCompression, TestNoCompressionCodec) {
-  shared_ptr<CompressionCodec> codec;
+  const CompressionCodec* codec;
   ASSERT_OK(GetCompressionCodec(NO_COMPRESSION, &codec));
-  ASSERT_EQ(NULL, codec.get());
+  ASSERT_EQ(NULL, codec);
 }
 
 TEST_F(TestCompression, TestSnappyCompressionCodec) {

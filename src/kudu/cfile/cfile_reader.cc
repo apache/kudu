@@ -189,9 +189,9 @@ Status CFileReader::ReadAndParseFooter() {
 
   // Verify if the compression codec is available
   if (footer_->compression() != NO_COMPRESSION) {
-    shared_ptr<CompressionCodec> compression_codec;
-    RETURN_NOT_OK(GetCompressionCodec(footer_->compression(), &compression_codec));
-    block_uncompressor_.reset(new CompressedBlockDecoder(compression_codec, kBlockSizeLimit));
+    const CompressionCodec* codec;
+    RETURN_NOT_OK(GetCompressionCodec(footer_->compression(), &codec));
+    block_uncompressor_.reset(new CompressedBlockDecoder(codec, kBlockSizeLimit));
   }
 
   VLOG(2) << "Read footer: " << footer_->DebugString();

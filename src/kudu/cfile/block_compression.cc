@@ -16,11 +16,10 @@ namespace cfile {
 
 using std::vector;
 
-CompressedBlockBuilder::CompressedBlockBuilder(const shared_ptr<CompressionCodec> &codec,
+CompressedBlockBuilder::CompressedBlockBuilder(const CompressionCodec* codec,
                                                size_t size_limit)
-  : codec_(codec),
+  : codec_(DCHECK_NOTNULL(codec)),
     compressed_size_limit_(size_limit) {
-  CHECK_NOTNULL(codec_.get());
 }
 
 Status CompressedBlockBuilder::Compress(const Slice& data, Slice *result) {
@@ -58,15 +57,14 @@ Status CompressedBlockBuilder::Compress(const vector<Slice> &data_slices, Slice 
   return Status::OK();
 }
 
-CompressedBlockDecoder::CompressedBlockDecoder(const shared_ptr<CompressionCodec> &codec,
+CompressedBlockDecoder::CompressedBlockDecoder(const CompressionCodec* codec,
                                                size_t size_limit)
-  : codec_(codec),
+  : codec_(DCHECK_NOTNULL(codec)),
     uncompressed_size_limit_(size_limit) {
-  CHECK_NOTNULL(codec_.get());
 }
 
 Status CompressedBlockDecoder::Uncompress(const Slice& data, Slice *result) {
-  // Check if the on-dosk
+  // Check if the on-disk data is large enough to hold the header
   if (data.size() < CompressedBlockBuilder::kHeaderReservedLength) {
     return Status::Corruption(
       StringPrintf("data size %lu is not enough to contains the header. required %lu, buffer",
