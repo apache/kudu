@@ -110,6 +110,11 @@ if [ -n "$BUILD_ID" ]; then
   trap cleanup EXIT
 fi
 
+export TOOLCHAIN_DIR=/opt/toolchain
+if [ -d "$TOOLCHAIN_DIR" ]; then
+  PATH=$TOOLCHAIN_DIR/apache-maven-3.0/bin:$PATH
+fi
+
 thirdparty/build-if-necessary.sh
 
 THIRDPARTY_BIN=$(pwd)/thirdparty/installed/bin
