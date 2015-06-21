@@ -107,8 +107,8 @@ class TestMemRowSet : public ::testing::Test {
                    OperationResultPB* result) {
     ScopedTransaction tx(&mvcc_);
     mutation_buf_.clear();
-    RowChangeListEncoder update(&schema_, &mutation_buf_);
-    update.AddColumnUpdate(schema_.column_id(1), &new_val);
+    RowChangeListEncoder update(&mutation_buf_);
+    update.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &new_val);
 
     RowBuilder rb(key_schema_);
     rb.AddString(Slice(key));
@@ -125,7 +125,7 @@ class TestMemRowSet : public ::testing::Test {
   Status DeleteRow(MemRowSet *mrs, const string &key, OperationResultPB* result) {
     ScopedTransaction tx(&mvcc_);
     mutation_buf_.clear();
-    RowChangeListEncoder update(&schema_, &mutation_buf_);
+    RowChangeListEncoder update(&mutation_buf_);
     update.SetToDelete();
 
     RowBuilder rb(key_schema_);

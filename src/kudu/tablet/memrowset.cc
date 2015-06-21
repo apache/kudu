@@ -40,7 +40,7 @@ bool MRSRow::IsGhost() const {
   for (const Mutation *mut = header_->redo_head;
        mut != NULL;
        mut = mut->next()) {
-    RowChangeListDecoder decoder(schema(), mut->changelist());
+    RowChangeListDecoder decoder(mut->changelist());
     Status s = decoder.Init();
     if (!PREDICT_TRUE(s.ok())) {
       LOG(FATAL) << "Failed to decode: " << mut->changelist().ToString(*schema())
@@ -177,7 +177,7 @@ Status MemRowSet::Reinsert(Timestamp timestamp, const ConstContiguousRow& row, M
 
   // Encode the REINSERT mutation from the relocated row copy.
   faststring buf;
-  RowChangeListEncoder encoder(&schema_, &buf);
+  RowChangeListEncoder encoder(&buf);
   encoder.SetToReinsert(row_copy.row_slice());
 
   // Move the REINSERT mutation itself into our Arena.
@@ -553,16 +553,18 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
     // Apply the mutation.
 
     // Check if it's a deletion.
-    // TODO: can we reuse the 'decoder' object by adding a Reset or something?
-    RowChangeListDecoder decoder(&memrowset_->schema_nonvirtual(), mut->changelist());
+    RowChangeListDecoder decoder(mut->changelist());
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_delete()) {
       decoder.TwiddleDeleteStatus(&is_deleted);
     } else if (decoder.is_reinsert()) {
       decoder.TwiddleDeleteStatus(&is_deleted);
 
+      Slice reinserted_slice;
+      RETURN_NOT_OK(decoder.GetReinsertedRowSlice(memrowset_->schema_nonvirtual(),
+                                                  &reinserted_slice));
       ConstContiguousRow reinserted(&memrowset_->schema_nonvirtual(),
-                                    decoder.reinserted_row_slice());
+                                    reinserted_slice);
       RETURN_NOT_OK(projector_->ProjectRowForRead(reinserted, dst_row, dst_arena));
     } else {
       DCHECK(decoder.is_update());
@@ -571,10 +573,11 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
       // Instead, we should keep the backwards mapping of columns.
       BOOST_FOREACH(const RowProjector::ProjectionIdxMapping& mapping,
                     projector_->base_cols_mapping()) {
-        RowChangeListDecoder decoder(&memrowset_->schema_nonvirtual(), mut->changelist());
+        RowChangeListDecoder decoder(mut->changelist());
         RETURN_NOT_OK(decoder.Init());
         ColumnBlock dst_col = dst_row->column_block(mapping.first);
         RETURN_NOT_OK(decoder.ApplyToOneColumn(dst_row->row_index(), &dst_col,
+                                               memrowset_->schema_nonvirtual(),
                                                mapping.second, dst_arena));
       }
 

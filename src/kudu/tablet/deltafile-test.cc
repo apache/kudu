@@ -72,9 +72,9 @@ class TestDeltaFile : public ::testing::Test {
     for (int i = FLAGS_first_row_to_update; i <= FLAGS_last_row_to_update; i += 2) {
       for (int timestamp = min_timestamp; timestamp <= max_timestamp; timestamp++) {
         buf.clear();
-        RowChangeListEncoder update(&schema_, &buf);
+        RowChangeListEncoder update(&buf);
         uint32_t new_val = timestamp + i;
-        update.AddColumnUpdate(schema_.column_id(0), &new_val);
+        update.AddColumnUpdate(schema_.column(0), schema_.column_id(0), &new_val);
         DeltaKey key(i, Timestamp(timestamp));
         RowChangeList rcl(buf);
         ASSERT_OK_FAST(dfw.AppendDelta<REDO>(key, rcl));

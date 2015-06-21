@@ -360,7 +360,8 @@ class Schema {
     return col_ids_[idx];
   }
 
-  // Return true if the schema has the IDs mapping
+  // Return true if the schema contains an ID mapping for its columns.
+  // In the case of an empty schema, this is false.
   bool has_column_ids() const {
     return !col_ids_.empty();
   }
@@ -644,7 +645,7 @@ class Schema {
   // Returns the column index given the column ID.
   // If no such column exists, returns kColumnNotFound.
   int find_column_by_id(size_t id) const {
-    DCHECK(has_column_ids());
+    DCHECK(cols_.empty() || has_column_ids());
     int ret = id_to_index_[id];
     if (ret == -1) {
       return kColumnNotFound;

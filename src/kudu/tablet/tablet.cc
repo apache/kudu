@@ -385,7 +385,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
   // Validate the update.
-  RowChangeListDecoder rcl_decoder(schema_.get(), mutate->decoded_op.changelist);
+  RowChangeListDecoder rcl_decoder(mutate->decoded_op.changelist);
   Status s = rcl_decoder.Init();
   if (rcl_decoder.is_reinsert()) {
     // REINSERT mutations are the byproduct of an INSERT on top of a ghost

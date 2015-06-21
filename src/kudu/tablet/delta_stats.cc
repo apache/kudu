@@ -37,28 +37,22 @@ Status DeltaStats::UpdateStats(const Timestamp& timestamp,
                                const RowChangeList& update) {
   DCHECK_LE(schema.num_columns(), update_counts_.size());
 
-  // We'd like to maintain per column statistics of updates and deletes.
-  // Problem is that with updates, the column ids are encoded in the RowChangeList
-  // itself. In the long term, we should use bitmaps in RowChangeList to represent
-  // the columns as opposed to the existing [(id, change)] format -- this will be
-  // substantial change and useful elsewhere in the code. However, for now we're
-  // using the hacky approach of decoding the changelist and extracting the column ids.
-  RowChangeListDecoder update_decoder(&schema, update);
+  // Decode the update, incrementing the update count for each of the
+  // columns we find present.
+  RowChangeListDecoder update_decoder(update);
   RETURN_NOT_OK(update_decoder.Init());
   if (PREDICT_FALSE(update_decoder.is_delete())) {
     IncrDeleteCount(1);
   } else if (PREDICT_TRUE(update_decoder.is_update())) {
-    // VLAs aren't officially part of any C++ standard, but they're supported by
-    // both gcc and clang.
-    size_t bitmap_size = BitmapSize(schema.num_columns());
-    uint8_t bitmap[bitmap_size];
-    memset(bitmap, 0, bitmap_size);
-    RETURN_NOT_OK(update_decoder.GetIncludedColumns(bitmap));
-    for (TrueBitIterator iter(bitmap, schema.num_columns());
-         !iter.done();
-         ++iter) {
-      size_t col_idx = *iter;
-      IncrUpdateCount(col_idx, 1);
+    vector<int> col_ids;
+    RETURN_NOT_OK(update_decoder.GetIncludedColumnIds(&col_ids));
+    BOOST_FOREACH(int col_id, col_ids) {
+      int col_idx = schema.find_column_by_id(col_id);
+      if (col_idx != -1) {
+        // TODO: should we keep stats for columns not in the schema?
+        // probably should use a hashmap instead of a vector
+        IncrUpdateCount(col_idx, 1);
+      }
     }
   } // Don't handle re-inserts
 

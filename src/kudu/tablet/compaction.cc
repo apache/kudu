@@ -63,7 +63,7 @@ class MemRowSetCompactionInput : public CompactionInput {
     }
 
     arena_.Reset();
-    RowChangeListEncoder undo_encoder(&iter_->schema(), &buffer_);
+    RowChangeListEncoder undo_encoder(&buffer_);
     for (int i = 0; i < num_in_block; i++) {
       // TODO: A copy is performed to make all CompactionInputRow have the same schema
       CompactionInputRow &input_row = block->at(i);
@@ -619,7 +619,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
     " Undo Mutations: " << Mutation::StringifyMutationList(*dst_schema, undo_head)
 
   faststring dst;
-  RowChangeListEncoder undo_encoder(dst_schema, &dst);
+  RowChangeListEncoder undo_encoder(&dst);
 
   // Const cast this away here since we're ever only going to point to it
   // which doesn't actually mutate it and having Mutation::set_next()
@@ -642,7 +642,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
     DVLOG(3) << "  @" << redo_mut->timestamp() << ": "
              << redo_mut->changelist().ToString(*base_schema);
 
-    RowChangeListDecoder redo_decoder(base_schema, redo_mut->changelist());
+    RowChangeListDecoder redo_decoder(redo_mut->changelist());
     Status s = redo_decoder.Init();
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Unable to decode changelist. " << ERROR_LOG_CONTEXT;
@@ -655,7 +655,8 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
       s = redo_decoder.ApplyRowUpdate(ignore_some_columns, dst_row,
                                       reinterpret_cast<Arena *>(NULL), &undo_encoder);
       if (PREDICT_FALSE(!s.ok())) {
-        LOG(ERROR) << "Unable to apply update/create undo. " << ERROR_LOG_CONTEXT;
+        LOG(ERROR) << "Unable to apply update/create undo: " << s.ToString()
+                   << "\n" << ERROR_LOG_CONTEXT;
         return s;
       }
 
@@ -689,7 +690,9 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
         // clears the whole row history before it.
 
         // Copy the reinserted row over.
-        ConstContiguousRow reinserted(dst_schema, redo_decoder.reinserted_row_slice().data());
+        Slice reinserted_slice;
+        RETURN_NOT_OK(redo_decoder.GetReinsertedRowSlice(*dst_schema, &reinserted_slice));
+        ConstContiguousRow reinserted(dst_schema, reinserted_slice.data());
         // No need to copy into an arena -- can refer to the mutation's arena.
         Arena* null_arena = NULL;
         RETURN_NOT_OK(CopyRow(reinserted, dst_row, null_arena));
@@ -883,7 +886,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
       for (const Mutation *mut = row.redo_head;
            mut != NULL;
            mut = mut->next()) {
-        RowChangeListDecoder decoder(schema, mut->changelist());
+        RowChangeListDecoder decoder(mut->changelist());
         RETURN_NOT_OK(decoder.Init());
 
         if (snap_to_exclude.IsCommitted(mut->timestamp())) {

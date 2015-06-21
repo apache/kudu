@@ -33,6 +33,46 @@ class Schema;
 // RowChangeLists should be constructed using RowChangeListEncoder, and read
 // using RowChangeListDecoder. NOTE that the schema passed to the Decoder must
 // be the same one used by the Encoder.
+//
+// The actual serialization format is as follows:
+//
+//   The first byte indicates the RCL type. The values are specified by
+//   ChangeType below.
+//
+//   If type == kDelete, then no further data follows. The row is deleted.
+//
+//   If type == kReinsert, then a "tuple-format" row follows. TODO: this will
+//     be changed by http://gerrit.sjc.cloudera.com:8080/#/c/6318/ in the near future.
+//
+//   If type == kUpdate, then a sequence of column updates follow. Each update
+//   has the format:
+//
+//     <column id>  -- varint32
+//       The ID of the column to be updated.
+//
+//     <length+1>   -- varint32
+//       If 0, then indicates that the column is to be set to NULL.
+//       Otherwise, encodes the actual data length + 1.
+//
+//     <value>      -- length determined by previous field
+//       The value to which to set the column. In the case of a STRING field,
+//       this is the actual string value. Otherwise, this is a fixed-length
+//       field whose length is determined by the type.
+//
+// A few examples follow:
+//
+// 1) UPDATE SET [col_id 2] = "hello"
+//   0x01    0x02      0x06          h e l l o
+//   UPDATE  col_id=2  len(hello)+1  <raw value>
+//
+// 2) UPDATE SET [col_id 3] = 33  (assuming INT32 column)
+//   0x01    0x03      0x05              0x21 0x00 0x00 0x00
+//   UPDATE  col_id=3  sizeof(int32)+1   <raw little-endian value>
+//
+// 3) UPDATE SET [col id 3] = NULL
+//   0x01    0x03      0x00
+//   UPDATE  col_id=3  NULL
+//
 class RowChangeList {
  public:
   RowChangeList() {}
@@ -86,10 +126,7 @@ class RowChangeList {
 class RowChangeListEncoder {
  public:
   // Construct a new encoder.
-  // NOTE: The 'schema' parameter must remain valid as long as the encoder.
-  RowChangeListEncoder(const Schema* schema,
-                       faststring *dst) :
-    schema_(schema),
+  explicit RowChangeListEncoder(faststring *dst) :
     type_(RowChangeList::kUninitialized),
     dst_(dst)
   {}
@@ -113,7 +150,18 @@ class RowChangeListEncoder {
     dst_->append(row_data.data(), row_data.size());
   }
 
-  void AddColumnUpdate(size_t col_id, const void *new_val);
+  // Add a column update, given knowledge of the schema.
+  //
+  // If 'cell_ptr' is NULL, then 'col_schema' must refer to a nullable
+  // column, and we encode SET [col]=NULL.
+  //
+  // Otherwise, 'cell_ptr' should point to the in-memory format for the
+  // appropriate type. For example, for a STRING column, 'cell_ptr'
+  // should be a Slice*.
+  void AddColumnUpdate(const ColumnSchema& col_schema,
+                       int col_id,
+                       const void* cell_ptr);
+
 
   RowChangeList as_changelist() {
     DCHECK_GT(dst_->size(), 0);
@@ -129,13 +177,28 @@ class RowChangeListEncoder {
   }
 
  private:
+  FRIEND_TEST(TestRowChangeList, TestInvalid_SetNullForNonNullableColumn);
+  FRIEND_TEST(TestRowChangeList, TestInvalid_SetWrongSizeForIntColumn);
+  friend class RowChangeListDecoder;
+
   void SetType(RowChangeList::ChangeType type) {
     DCHECK_EQ(type_, RowChangeList::kUninitialized);
     type_ = type;
     dst_->push_back(type);
   }
 
-  const Schema* schema_;
+  // Add a column update by a raw value. This allows copying RCLs
+  // from one file to another without having any awareness of schema.
+  //
+  // If 'is_null' is set, then encodes a SET [col_id]=NULL update.
+  // Otherwise, SET [col_id] = 'new_val'.
+  //
+  // 'new_val' is the encoded form of the new value. In the case of
+  // a STRING, this is the actual user-provided STRING. Otherwise,
+  // it is the fixed-length representation of the type.
+  void AddRawColumnUpdate(int col_id, bool is_null, Slice new_val);
+
+
   RowChangeList::ChangeType type_;
   faststring *dst_;
 };
@@ -145,14 +208,8 @@ class RowChangeListDecoder {
  public:
 
   // Construct a new decoder.
-  // NOTE: The 'schema' must be the same one used to encode the RowChangeList.
-  // NOTE: The 'schema' parameter is stored by reference, rather than copied.
-  // It is assumed that this class is only used in tightly scoped contexts where
-  // this is appropriate.
-  RowChangeListDecoder(const Schema* schema,
-                       const RowChangeList &src)
-    : schema_(schema),
-      remaining_(src.slice()),
+  explicit RowChangeListDecoder(const RowChangeList &src)
+    : remaining_(src.slice()),
       type_(RowChangeList::kUninitialized) {
   }
 
@@ -190,29 +247,20 @@ class RowChangeListDecoder {
     return type_ == RowChangeList::kReinsert;
   }
 
-  Slice reinserted_row_slice() const {
-    DCHECK(is_reinsert());
-    return remaining_;
-  }
+  // If this RCL is a REINSERT, then returns the reinserted row in
+  // the contiguous in-memory row format.
+  Status GetReinsertedRowSlice(const Schema& schema, Slice* s) const;
 
-
-  // Sets bits in 'bitmap' that  correspond to column indexes that are
-  // present in the underlying RowChangeList. The bitmap is not zeroed
-  // by this function, it is the caller's responsibility to zero it
-  // first.
-  Status GetIncludedColumns(uint8_t* bitmap) {
+  // Append an entry to *column_ids for each column that is updated
+  // in this RCL.
+  // This 'consumes' the remainder of the encoded RowChangeList.
+  Status GetIncludedColumnIds(std::vector<int>* column_ids) {
+    column_ids->clear();
+    DCHECK(is_update());
     while (HasNext()) {
-      size_t col_id = 0xdeadbeef;
-      const void* col_val = NULL;
-      RETURN_NOT_OK(DecodeNext(&col_id, &col_val));
-      int col_idx = schema_->find_column_by_id(col_id);
-      // TODO: likely need to fix this to skip the column if it's not in the
-      // schema. This whole function is a little suspect that it's setting up
-      // a bitmap, only for the caller to iterate back through the bitmap.
-      // Maybe it should instead enqueue ids onto a vector, or just increment
-      // counts directly?
-      CHECK_NE(col_idx, -1);
-      BitmapSet(bitmap, col_idx);
+      DecodedUpdate dec;
+      RETURN_NOT_OK(DecodeNext(&dec));
+      column_ids->push_back(dec.col_id);
     }
     return Status::OK();
   }
@@ -226,8 +274,13 @@ class RowChangeListDecoder {
   Status ApplyRowUpdate(bool ignore_col_not_found, RowBlockRow *dst_row,
                         Arena *arena, RowChangeListEncoder* undo_encoder);
 
-  // This method is used by MemRowSet, DeltaMemStore and DeltaFile.
-  Status ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_col, size_t col_idx, Arena *arena);
+  // Apply this UPDATE RowChangeList to row number 'row_idx' in 'dst_col', but only
+  // any updates that correspond to column 'col_idx' of 'dst_schema'.
+  // Any indirect data is copied into 'arena' if non-NULL.
+  //
+  // REQUIRES: is_update()
+  Status ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_col,
+                          const Schema& dst_schema, int col_idx, Arena *arena);
 
   // If this changelist is a DELETE or REINSERT, twiddle '*deleted' to reference
   // the new state of the row. If it is an UPDATE, this call has no effect.
@@ -256,47 +309,64 @@ class RowChangeListDecoder {
   // changes are added to 'out' as-is. If an update only contained
   // changes for 'column_indexes', then out->is_initialized() will
   // return false.
-  // 'column_indexes' must be sorted; 'out' must be
+  // 'column_ids' must be sorted; 'out' must be
   // valid for the duration of this method, but not have been
   // previously initialized.
-  //
-  // TODO: 'column_indexes' is actually being treated like 'column_ids'
-  // in this function. No tests are currently failing, but this is almost
-  // certainly wrong. Need to track down callers.
   static Status RemoveColumnsFromChangeList(const RowChangeList& src,
-                                            const std::vector<size_t>& column_indexes,
-                                            const Schema& schema,
+                                            const std::vector<size_t>& column_ids,
                                             RowChangeListEncoder* out);
 
-  // Decode the next changed column.
-  // Sets *col_id to the changed column id.
-  // Sets *val_out to point to the new value.
+  struct DecodedUpdate {
+    // The updated column ID.
+    int col_id;
+
+    // If true, this update sets the given column to NULL.
+    bool null;
+
+    // The "raw" value of the updated column.
+    //   - in the case of a fixed length type such as an integer,
+    //     the slice will point directly to the new little-endian value.
+    //   - in the case of a variable length type such as a string,
+    //     the slice will point to the new string value (i.e not to a
+    //     "wrapper" slice.
+    // 'raw_value' is only relevant in the case that 'null' is not true.
+    Slice raw_value;
+
+    // Resolve the decoded update against the given Schema.
+    //
+    // If the updated column is present in the schema, and the decoded
+    // update has the correct length/type, then sets
+    // *col_idx, and sets *valid_value to point to the validated
+    // value.
+    //
+    // If the updated column is present, but the data provided is invalid,
+    // returns Status::Corruption.
+    //
+    // If the updated column is not present, sets *col_idx to -1 and returns
+    // Status::OK.
+    Status Validate(const Schema& s,
+                    int* col_idx,
+                    const void** valid_value) const;
+  };
+
+  // Decode the next updated column into '*update'.
+  // See the docs on DecodedUpdate above for field information.
   //
-  // *val_out may be set to temporary storage which is part of the
-  // RowChangeListDecoder instance. So, the value is only valid until
-  // the next call to DecodeNext.
+  // The update->raw_value slice points to memory within the buffer
+  // being decoded by this object. No copies are made.
   //
-  // That is to say, in the case of a string column, *val_out will
-  // be a temporary Slice object which is only temporarily valid.
-  // But, that Slice object will itself point to data which is part
-  // of the source data that was passed in.
-  Status DecodeNext(size_t *col_id, const void ** val_out);
+  // REQUIRES: is_update()
+  Status DecodeNext(DecodedUpdate* update);
 
  private:
   FRIEND_TEST(TestRowChangeList, TestEncodeDecodeUpdates);
   friend class RowChangeList;
-
-  const Schema* schema_;
 
   // Data remaining in the source buffer.
   // This slice is advanced forward as entries are decoded.
   Slice remaining_;
 
   RowChangeList::ChangeType type_;
-
-  // If an update is encountered which uses indirect data (eg a string update), then
-  // this Slice is used as temporary storage to point to that indirected data.
-  Slice last_decoded_slice_;
 };
 
 

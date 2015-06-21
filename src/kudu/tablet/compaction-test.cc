@@ -114,12 +114,14 @@ class TestCompaction : public KuduRowSetTest {
       snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
 
       update_buf.clear();
-      RowChangeListEncoder update(&schema, &update_buf);
-      update.AddColumnUpdate(col_id, &new_val);
+      RowChangeListEncoder update(&update_buf);
+      update.AddColumnUpdate(schema.column_by_id(col_id), col_id, &new_val);
       if (new_val % 2 == 0) {
-        update.AddColumnUpdate(nullable_col_id, NULL);
+        update.AddColumnUpdate(schema.column_by_id(nullable_col_id),
+                               nullable_col_id, NULL);
       } else {
-        update.AddColumnUpdate(nullable_col_id, &new_val);
+        update.AddColumnUpdate(schema.column_by_id(nullable_col_id),
+                               nullable_col_id, &new_val);
       }
 
       RowBuilder rb(schema.CreateKeyProjection());
@@ -146,7 +148,7 @@ class TestCompaction : public KuduRowSetTest {
       snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
 
       update_buf.clear();
-      RowChangeListEncoder update(&schema, &update_buf);
+      RowChangeListEncoder update(&update_buf);
       update.SetToDelete();
 
       RowBuilder rb(schema.CreateKeyProjection());

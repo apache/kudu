@@ -398,7 +398,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
   // For DELETE, we expect no other columns to be set (and we verify that).
   if (op->type == RowOperationsPB::UPDATE) {
     faststring buf;
-    RowChangeListEncoder rcl_encoder(tablet_schema_, &buf);
+    RowChangeListEncoder rcl_encoder(&buf);
 
     // Now process the rest of columns as updates.
     for (; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
@@ -422,7 +422,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
           }
           val_to_add = NULL;
         }
-        rcl_encoder.AddColumnUpdate(tablet_schema_->column_id(tablet_col_idx), val_to_add);
+        rcl_encoder.AddColumnUpdate(col, tablet_schema_->column_id(tablet_col_idx), val_to_add);
       }
     }
 

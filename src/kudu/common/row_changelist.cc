@@ -15,12 +15,13 @@
 #include "kudu/util/faststring.h"
 
 using strings::Substitute;
+using strings::SubstituteAndAppend;
 
 namespace kudu {
 
 string RowChangeList::ToString(const Schema &schema) const {
   DCHECK_GT(encoded_data_.size(), 0);
-  RowChangeListDecoder decoder(&schema, *this);
+  RowChangeListDecoder decoder(*this);
 
   Status s = decoder.Init();
   if (!s.ok()) {
@@ -45,56 +46,76 @@ string RowChangeList::ToString(const Schema &schema) const {
     }
     first = false;
 
-    size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
-    const void *new_val = NULL;
-    s = decoder.DecodeNext(&updated_col, &new_val);
-    if (!s.ok()) {
-      return "[invalid: " + s.ToString() + ", before corruption: " + ret + "]";
+    RowChangeListDecoder::DecodedUpdate dec;
+    int col_idx;
+    const void* value;
+    s = decoder.DecodeNext(&dec);
+    if (s.ok()) {
+      s = dec.Validate(schema, &col_idx, &value);
     }
 
-    const ColumnSchema& col_schema = schema.column_by_id(updated_col);
-    ret.append(col_schema.name());
-    ret.append("=");
-    if (col_schema.is_nullable() && new_val == NULL) {
-      ret.append("NULL");
+    if (!s.ok()) {
+      return "[invalid update: " + s.ToString() + ", before corruption: " + ret + "]";
+    }
+
+    if (col_idx == Schema::kColumnNotFound) {
+      // Unknown column.
+      SubstituteAndAppend(&ret, "[unknown column id $0]=", dec.col_id);
+      if (dec.null) {
+        ret.append("NULL");
+      } else {
+        ret.append(dec.raw_value.ToDebugString());
+      }
     } else {
-      ret.append(col_schema.Stringify(new_val));
+      // Known column.
+      const ColumnSchema& col_schema = schema.column(col_idx);
+      ret.append(col_schema.name());
+      ret.append("=");
+      if (value == NULL) {
+        ret.append("NULL");
+      } else {
+        ret.append(col_schema.Stringify(value));
+      }
     }
   }
 
   return ret;
 }
 
-void RowChangeListEncoder::AddColumnUpdate(size_t col_id, const void *new_val) {
+void RowChangeListEncoder::AddRawColumnUpdate(
+    int col_id, bool is_null, Slice new_val) {
   if (type_ == RowChangeList::kUninitialized) {
     SetType(RowChangeList::kUpdate);
   } else {
     DCHECK_EQ(RowChangeList::kUpdate, type_);
   }
 
-  const ColumnSchema& col_schema = schema_->column_by_id(col_id);
-  const TypeInfo* ti = col_schema.type_info();
-
   InlinePutVarint32(dst_, col_id);
-
-  // If the column is nullable set the null flag
-  if (col_schema.is_nullable()) {
-    dst_->push_back(new_val == NULL);
-    if (new_val == NULL) return;
-  }
-
-  // Copy the new value itself
-  if (ti->type() == STRING) {
-    Slice src;
-    memcpy(&src, new_val, sizeof(Slice));
-
-    // If it's a Slice column, copy the length followed by the data.
-    InlinePutVarint32(dst_, src.size());
-    dst_->append(src.data(), src.size());
+  if (is_null) {
+    dst_->push_back(0);
   } else {
-    // Otherwise, just copy the data itself.
-    dst_->append(new_val, ti->size());
+    InlinePutVarint32(dst_, new_val.size() + 1);
+    dst_->append(new_val.data(), new_val.size());
   }
+}
+
+void RowChangeListEncoder::AddColumnUpdate(const ColumnSchema& col_schema,
+                                           int col_id,
+                                           const void* cell_ptr) {
+  Slice val_slice;
+  if (cell_ptr != NULL) {
+    if (col_schema.type_info()->type() == STRING) {
+      memcpy(&val_slice, cell_ptr, sizeof(val_slice));
+    } else {
+      val_slice = Slice(reinterpret_cast<const uint8_t*>(cell_ptr),
+                        col_schema.type_info()->size());
+    }
+  } else {
+    // NULL value.
+    DCHECK(col_schema.is_nullable());
+  }
+
+  AddRawColumnUpdate(col_id, cell_ptr == NULL, val_slice);
 }
 
 Status RowChangeListDecoder::Init() {
@@ -113,33 +134,40 @@ Status RowChangeListDecoder::Init() {
                               remaining_.ToDebugString());
   }
 
-  if (PREDICT_FALSE(is_reinsert())) {
-    int expected_size = ContiguousRowHelper::row_size(*schema_) + 1;
-    if (remaining_.size() != expected_size) {
-      return Status::Corruption(Substitute("REINSERT changelist wrong length (expected $0)",
-                                           expected_size,
-                                           remaining_.ToDebugString()));
-    }
-  }
-
   remaining_.remove_prefix(1);
+  return Status::OK();
+}
+
+Status RowChangeListDecoder::GetReinsertedRowSlice(const Schema& schema, Slice* s) const {
+  DCHECK(is_reinsert());
+
+  int expected_size = ContiguousRowHelper::row_size(schema);
+  if (remaining_.size() != expected_size) {
+    return Status::Corruption(Substitute("REINSERT changelist wrong length (expected $0)",
+                                         expected_size,
+                                         remaining_.ToDebugString()));
+  }
+  *s = remaining_;
   return Status::OK();
 }
 
 Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
                                            const RowChangeList& src,
                                            faststring *buf) {
-  RowChangeListDecoder decoder(projector.delta_schema(), src);
+  RowChangeListDecoder decoder(src);
   RETURN_NOT_OK(decoder.Init());
 
   buf->clear();
-  RowChangeListEncoder encoder(projector.projection(), buf);
+  RowChangeListEncoder encoder(buf);
   if (decoder.is_delete()) {
     encoder.SetToDelete();
   } else if (decoder.is_reinsert()) {
+    Slice reinsert;
+    RETURN_NOT_OK(decoder.GetReinsertedRowSlice(*projector.delta_schema(), &reinsert));
+
     // ReInsert = MemStore Insert -> Delete -> (Re)Insert
     ConstContiguousRow src_row = ConstContiguousRow(projector.delta_schema(),
-                                                    decoder.reinserted_row_slice());
+                                                    reinsert);
     RowProjector row_projector(projector.delta_schema(), projector.projection());
     size_t row_size = ContiguousRowHelper::row_size(*projector.projection());
     uint8_t buffer[row_size];
@@ -149,16 +177,17 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
     encoder.SetToReinsert(Slice(buffer, row_size));
   } else if (decoder.is_update()) {
     while (decoder.HasNext()) {
-      size_t col_id = 0xdeadbeef; // avoid un-initialized usage warning
-      const void *col_val = NULL;
-      RETURN_NOT_OK(decoder.DecodeNext(&col_id, &col_val));
-
+      DecodedUpdate dec;
+      RETURN_NOT_OK(decoder.DecodeNext(&dec));
+      int col_idx;
+      const void* new_val;
+      RETURN_NOT_OK(dec.Validate(*projector.projection(), &col_idx, &new_val));
       // If the new schema doesn't have this column, throw away the update.
-      if (projector.projection()->find_column_by_id(col_id) == Schema::kColumnNotFound) {
+      if (col_idx == Schema::kColumnNotFound) {
         continue;
       }
 
-      encoder.AddColumnUpdate(col_id, col_val);
+      encoder.AddRawColumnUpdate(dec.col_id, dec.null, dec.raw_value);
     }
   }
   return Status::OK();
@@ -166,33 +195,32 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
 
 Status RowChangeListDecoder::ApplyRowUpdate(bool ignore_col_not_found, RowBlockRow *dst_row,
                                             Arena *arena, RowChangeListEncoder* undo_encoder) {
-  if (!ignore_col_not_found) {
-    DCHECK(schema_->Equals(*dst_row->schema()));
-  }
+  const Schema* dst_schema = dst_row->schema();
 
   while (HasNext()) {
-    size_t updated_col_id = 0xdeadbeef; // avoid un-initialized usage warning
-    const void *new_val = NULL;
-    RETURN_NOT_OK(DecodeNext(&updated_col_id, &new_val));
+    DecodedUpdate dec;
+    RETURN_NOT_OK(DecodeNext(&dec));
+    int col_idx;
+    const void* value;
+    RETURN_NOT_OK(dec.Validate(*dst_schema, &col_idx, &value));
 
-    int dst_idx = dst_row->schema()->find_column_by_id(updated_col_id);
     // TODO: This check may be invalid in some alter-table scenarios.
     // As we expand test coverage for alter-table, it might fail and need some fixing.
-    if (dst_idx == Schema::kColumnNotFound) {
+    if (col_idx == Schema::kColumnNotFound) {
       if (ignore_col_not_found) {
         continue;
       } else {
-        LOG(FATAL) << "Cannot apply update for column " << updated_col_id
-                   << ", verify the row's schema: " << dst_row->schema()->ToString();
+        LOG(FATAL) << "Cannot apply update for column " << dec.col_id
+                   << ", verify the row's schema: " << dst_schema->ToString();
       }
     }
 
-    SimpleConstCell src(&schema_->column_by_id(updated_col_id), new_val);
-
-    RowBlockRow::Cell dst_cell = dst_row->cell(dst_idx);
+    const ColumnSchema& col_schema = dst_schema->column(col_idx);
+    SimpleConstCell src(&col_schema, value);
 
     // save the old cell on the undo encoder
-    undo_encoder->AddColumnUpdate(updated_col_id, dst_cell.ptr());
+    RowBlockRow::Cell dst_cell = dst_row->cell(col_idx);
+    undo_encoder->AddColumnUpdate(col_schema, dec.col_id, dst_cell.ptr());
 
     // copy the new cell to the row
     RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
@@ -200,95 +228,122 @@ Status RowChangeListDecoder::ApplyRowUpdate(bool ignore_col_not_found, RowBlockR
   return Status::OK();
 }
 
+
+
 Status RowChangeListDecoder::ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_col,
-                                              size_t col_idx, Arena *arena) {
+                                              const Schema& dst_schema,
+                                              int col_idx, Arena *arena) {
   DCHECK_EQ(RowChangeList::kUpdate, type_);
 
-  const ColumnSchema& col_schema = schema_->column(col_idx);
-  size_t col_id = schema_->column_id(col_idx);
-
-  // TODO: Handle the "different type" case (adapter_cols_mapping)
-  DCHECK_EQ(col_schema.type_info()->type(), dst_col->type_info()->type());
+  const ColumnSchema& col_schema = dst_schema.column(col_idx);
+  int col_id = dst_schema.column_id(col_idx);
 
   while (HasNext()) {
-    size_t updated_col = 0xdeadbeef; // avoid un-initialized usage warning
-    const void *new_val = NULL;
-    RETURN_NOT_OK(DecodeNext(&updated_col, &new_val));
-    if (updated_col == col_id) {
-      SimpleConstCell src(&col_schema, new_val);
-      ColumnBlock::Cell dst_cell = dst_col->cell(row_idx);
-      RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
-      // TODO: could potentially break; here if we're guaranteed to only have one update
-      // per column in a RowChangeList (which would make sense!)
+    DecodedUpdate dec;
+    RETURN_NOT_OK(DecodeNext(&dec));
+    if (dec.col_id != col_id) {
+      continue;
     }
+
+    int junk_col_idx;
+    const void* new_val;
+    RETURN_NOT_OK(dec.Validate(dst_schema, &junk_col_idx, &new_val));
+    DCHECK_EQ(junk_col_idx, col_idx);
+
+    SimpleConstCell src(&col_schema, new_val);
+    ColumnBlock::Cell dst_cell = dst_col->cell(row_idx);
+    RETURN_NOT_OK(CopyCell(src, &dst_cell, arena));
+    // TODO: could potentially break; here if we're guaranteed to only have one update
+    // per column in a RowChangeList (which would make sense!)
   }
   return Status::OK();
 }
 
 Status RowChangeListDecoder::RemoveColumnsFromChangeList(const RowChangeList& src,
                                                          const std::vector<size_t>& col_ids,
-                                                         const Schema &schema,
                                                          RowChangeListEncoder* out) {
-  RowChangeListDecoder decoder(&schema, src);
+  RowChangeListDecoder decoder(src);
   RETURN_NOT_OK(decoder.Init());
   if (decoder.is_delete()) {
     out->SetToDelete();
   } else if (decoder.is_reinsert()) {
-    out->SetToReinsert(decoder.reinserted_row_slice());
+    out->SetToReinsert(decoder.remaining_);
   } else if (decoder.is_update()) {
     while (decoder.HasNext()) {
-      size_t col_id = 0xdeadbeef;
-      const void *col_val = NULL;
-      RETURN_NOT_OK(decoder.DecodeNext(&col_id, &col_val));
-      if (!std::binary_search(col_ids.begin(), col_ids.end(), col_id)) {
-        out->AddColumnUpdate(col_id, col_val);
+      DecodedUpdate dec;
+      RETURN_NOT_OK(decoder.DecodeNext(&dec));
+      if (!std::binary_search(col_ids.begin(), col_ids.end(), dec.col_id)) {
+        out->AddRawColumnUpdate(dec.col_id, dec.null, dec.raw_value);
       }
     }
   }
   return Status::OK();
 }
 
-Status RowChangeListDecoder::DecodeNext(size_t *col_id, const void ** val_out) {
+Status RowChangeListDecoder::DecodeNext(DecodedUpdate* dec) {
   DCHECK_NE(type_, RowChangeList::kUninitialized) << "Must call Init()";
   // Decode the column id.
   uint32_t id;
-  if (!GetVarint32(&remaining_, &id)) {
+  if (PREDICT_FALSE(!GetVarint32(&remaining_, &id))) {
     return Status::Corruption("Invalid column ID varint in delta");
   }
+  dec->col_id = id;
 
-  *col_id = id;
-
-  const ColumnSchema& col_schema = schema_->column_by_id(id);
-  const TypeInfo* ti = col_schema.type_info();
-
-  // If the column is nullable check the null flag
-  if (col_schema.is_nullable()) {
-    if (remaining_.size() < 1) {
-      return Status::Corruption("Missing column nullable varint in delta");
-    }
-
-    int is_null = *remaining_.data();
-    remaining_.remove_prefix(1);
-
-    // The value is null
-    if (is_null) {
-      *val_out = NULL;
-      return Status::OK();
-    }
+  uint32_t size;
+  if (PREDICT_FALSE(!GetVarint32(&remaining_, &size))) {
+    return Status::Corruption("Invalid size varint in delta");
   }
 
-  // Decode the value itself
-  if (ti->type() == STRING) {
-    if (!GetLengthPrefixedSlice(&remaining_, &last_decoded_slice_)) {
-      return Status::Corruption("invalid slice in delta");
-    }
-
-    *val_out = &last_decoded_slice_;
-
-  } else {
-    *val_out = remaining_.data();
-    remaining_.remove_prefix(ti->size());
+  dec->null = size == 0;
+  if (dec->null) {
+    return Status::OK();
   }
+
+  size--;
+
+  if (PREDICT_FALSE(remaining_.size() < size)) {
+    return Status::Corruption(
+        Substitute("truncated value for column id $0, expected $1 bytes, only $2 remaining",
+                   id, size, remaining_.size()));
+  }
+
+  dec->raw_value = Slice(remaining_.data(), size);
+  remaining_.remove_prefix(size);
+  return Status::OK();
+}
+
+Status RowChangeListDecoder::DecodedUpdate::Validate(const Schema& schema,
+                                                     int* col_idx,
+                                                     const void** value) const {
+  *col_idx = schema.find_column_by_id(this->col_id);
+  if (*col_idx == Schema::kColumnNotFound) {
+    return Status::OK();
+  }
+
+  // It's a valid column - validate it.
+  const ColumnSchema& col = schema.column(*col_idx);
+
+  if (null) {
+    if (!col.is_nullable()) {
+      return Status::Corruption("decoded set-to-NULL for non-nullable column",
+                                col.ToString());
+    }
+    *value = NULL;
+    return Status::OK();
+  }
+
+  if (col.type_info()->type() == STRING) {
+    *value = &this->raw_value;
+    return Status::OK();
+  }
+
+  if (PREDICT_FALSE(col.type_info()->size() != this->raw_value.size())) {
+    return Status::Corruption(Substitute(
+                                  "invalid value $0 for column $1",
+                                  this->raw_value.ToDebugString(), col.ToString()));
+  }
+
+  *value = reinterpret_cast<const void*>(this->raw_value.data());
 
   return Status::OK();
 }

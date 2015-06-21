@@ -147,7 +147,7 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
 
     RowChangeList val(v);
     // Mutation is for the target row, check deletion status.
-    RowChangeListDecoder decoder(&schema_, RowChangeList(v));
+    RowChangeListDecoder decoder((RowChangeList(v)));
     decoder.InitNoSafetyChecks();
     decoder.TwiddleDeleteStatus(deleted);
 
@@ -247,7 +247,7 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
     }
 
     if (flag == PREPARE_FOR_APPLY) {
-      RowChangeListDecoder decoder(&dms_->schema_, RowChangeList(val));
+      RowChangeListDecoder decoder((RowChangeList(val)));
       decoder.InitNoSafetyChecks();
       if (decoder.is_delete() || decoder.is_reinsert()) {
         DeleteOrReinsert dor;
@@ -257,11 +257,13 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
       } else {
         DCHECK(decoder.is_update());
         while (decoder.HasNext()) {
-          size_t col_id = 0xdeadbeef;
-          const void* col_val = NULL;
-          RETURN_NOT_OK(decoder.DecodeNext(&col_id, &col_val));
-          int col_idx = projector_.projection()->find_column_by_id(col_id);
+          RowChangeListDecoder::DecodedUpdate dec;
+          RETURN_NOT_OK(decoder.DecodeNext(&dec));
+          int col_idx;
+          const void* col_val;
+          RETURN_NOT_OK(dec.Validate(*projector_.projection(), &col_idx, &col_val));
           if (col_idx == -1) {
+            // This column isn't being projected.
             continue;
           }
           int col_size = projector_.projection()->column(col_idx).type_info()->size();

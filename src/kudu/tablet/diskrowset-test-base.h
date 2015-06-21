@@ -119,12 +119,12 @@ class TestRowSet : public KuduRowSetTest {
                           unordered_set<uint32_t> *updated) {
     int to_update = static_cast<int>(n_rows_ * update_ratio);
     faststring update_buf;
-    RowChangeListEncoder update(&schema_, &update_buf);
+    RowChangeListEncoder update(&update_buf);
     for (int i = 0; i < to_update; i++) {
       uint32_t idx_to_update = random() % n_rows_;
       uint32_t new_val = idx_to_update * 5;
       update.Reset();
-      update.AddColumnUpdate(schema_.column_id(1), &new_val);
+      update.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &new_val);
       OperationResultPB result;
       CHECK_OK(MutateRow(rs,
                          idx_to_update,
@@ -141,7 +141,7 @@ class TestRowSet : public KuduRowSetTest {
   // Delete the row with the given identifier.
   Status DeleteRow(DiskRowSet *rs, uint32_t row_idx, OperationResultPB* result) {
     faststring update_buf;
-    RowChangeListEncoder update(&schema_, &update_buf);
+    RowChangeListEncoder update(&update_buf);
     update.Reset();
     update.SetToDelete();
 
@@ -153,9 +153,9 @@ class TestRowSet : public KuduRowSetTest {
                    uint32_t new_val,
                    OperationResultPB* result)  {
     faststring update_buf;
-    RowChangeListEncoder update(&schema_, &update_buf);
+    RowChangeListEncoder update(&update_buf);
     update.Reset();
-    update.AddColumnUpdate(schema_.column_id(1), &new_val);
+    update.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &new_val);
 
     return MutateRow(rs, row_idx, RowChangeList(update_buf), result);
   }

@@ -57,13 +57,14 @@ class TestDeltaMemStore : public KuduTest {
   template<class Iterable>
   void UpdateIntsAtIndexes(const Iterable &indexes_to_update) {
     faststring buf;
-    RowChangeListEncoder update(&schema_, &buf);
+    RowChangeListEncoder update(&buf);
 
     BOOST_FOREACH(uint32_t idx_to_update, indexes_to_update) {
       ScopedTransaction tx(&mvcc_);
       update.Reset();
       uint32_t new_val = idx_to_update * 10;
-      update.AddColumnUpdate(schema_.column_id(kIntColumn), &new_val);
+      update.AddColumnUpdate(schema_.column(kIntColumn),
+                             schema_.column_id(kIntColumn), &new_val);
 
       CHECK_OK(dms_->Update(tx.timestamp(), idx_to_update, RowChangeList(buf), op_id_));
     }
@@ -122,18 +123,20 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
   uint32_t n_rows = 1000;
   faststring update_buf;
 
-  RowChangeListEncoder update(&schema_, &update_buf);
+  RowChangeListEncoder update(&update_buf);
   for (uint32_t idx = 0; idx < n_rows; idx++) {
     update.Reset();
     if (idx % 4 == 0) {
       char buf[256] = "update buf";
       Slice s(buf);
-      update.AddColumnUpdate(schema_.column_id(kStringColumn), &s);
+      update.AddColumnUpdate(schema_.column(kStringColumn),
+                             schema_.column_id(kStringColumn), &s);
     }
     if (idx % 2 == 0) {
       ScopedTransaction tx(&mvcc_);
       uint32_t new_val = idx * 10;
-      update.AddColumnUpdate(schema_.column_id(kIntColumn), &new_val);
+      update.AddColumnUpdate(schema_.column(kIntColumn),
+                             schema_.column_id(kIntColumn), &new_val);
       ASSERT_OK_FAST(dms_->Update(tx.timestamp(), idx, RowChangeList(update_buf), op_id_));
     }
   }
@@ -196,12 +199,13 @@ TEST_F(TestDeltaMemStore, BenchmarkManyUpdatesToOneRow) {
 
   for (int i = 0; i < kNumUpdates; i++) {
     faststring buf;
-    RowChangeListEncoder update(&schema_, &buf);
+    RowChangeListEncoder update(&buf);
 
     ScopedTransaction tx(&mvcc_);
     string str(kStringDataSize, 'x');
     Slice s(str);
-    update.AddColumnUpdate(schema_.column_id(kStringColumn), &s);
+    update.AddColumnUpdate(schema_.column(kStringColumn),
+                           schema_.column_id(kStringColumn), &s);
     CHECK_OK(dms_->Update(tx.timestamp(), kIdxToUpdate, RowChangeList(buf), op_id_));
   }
 
@@ -223,7 +227,7 @@ TEST_F(TestDeltaMemStore, BenchmarkManyUpdatesToOneRow) {
 // right arena.
 TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
   faststring update_buf;
-  RowChangeListEncoder update(&schema_, &update_buf);
+  RowChangeListEncoder update(&update_buf);
 
   // Update a cell, taking care that the buffer we use to perform
   // the update gets cleared after usage. This ensures that the
@@ -232,7 +236,8 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
     ScopedTransaction tx(&mvcc_);
     char buf[256] = "update 1";
     Slice s(buf);
-    update.AddColumnUpdate(schema_.column_id(0), &s);
+    update.AddColumnUpdate(schema_.column(0),
+                           schema_.column_id(0), &s);
     ASSERT_OK_FAST(dms_->Update(tx.timestamp(), 123, RowChangeList(update_buf), op_id_));
     memset(buf, 0xff, sizeof(buf));
   }
@@ -244,7 +249,8 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
     char buf[256] = "update 2";
     Slice s(buf);
     update.Reset();
-    update.AddColumnUpdate(schema_.column_id(0), &s);
+    update.AddColumnUpdate(schema_.column(0),
+                           schema_.column_id(0), &s);
     ASSERT_OK_FAST(dms_->Update(tx.timestamp(), 123, RowChangeList(update_buf), op_id_));
     memset(buf, 0xff, sizeof(buf));
   }
@@ -271,19 +277,21 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
 // are carried forward, but may fall behind newer transactions.
 TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
   faststring update_buf;
-  RowChangeListEncoder update(&schema_, &update_buf);
+  RowChangeListEncoder update(&update_buf);
 
   {
     ScopedTransaction tx1(&mvcc_);
     ScopedTransaction tx2(&mvcc_);
 
     Slice s("update 2");
-    update.AddColumnUpdate(schema_.column_id(kStringColumn), &s);
+    update.AddColumnUpdate(schema_.column(kStringColumn),
+                           schema_.column_id(kStringColumn), &s);
     ASSERT_OK(dms_->Update(tx2.timestamp(), 123, RowChangeList(update_buf), op_id_));
 
     update.Reset();
     s = Slice("update 1");
-    update.AddColumnUpdate(schema_.column_id(kStringColumn), &s);
+    update.AddColumnUpdate(schema_.column(kStringColumn),
+                           schema_.column_id(kStringColumn), &s);
     ASSERT_OK(dms_->Update(tx1.timestamp(), 123, RowChangeList(update_buf), op_id_));
   }
 
@@ -298,7 +306,7 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
 
 TEST_F(TestDeltaMemStore, TestDMSBasic) {
   faststring update_buf;
-  RowChangeListEncoder update(&schema_, &update_buf);
+  RowChangeListEncoder update(&update_buf);
 
   char buf[256];
   for (uint32_t i = 0; i < 1000; i++) {
@@ -306,11 +314,13 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
     update.Reset();
 
     uint32_t val = i * 10;
-    update.AddColumnUpdate(schema_.column_id(kIntColumn), &val);
+    update.AddColumnUpdate(schema_.column(kIntColumn),
+                           schema_.column_id(kIntColumn), &val);
 
     snprintf(buf, sizeof(buf), "hello %d", i);
     Slice s(buf);
-    update.AddColumnUpdate(schema_.column_id(kStringColumn), &s);
+    update.AddColumnUpdate(schema_.column(kStringColumn),
+                           schema_.column_id(kStringColumn), &s);
 
     ASSERT_OK_FAST(dms_->Update(tx.timestamp(), i, RowChangeList(update_buf), op_id_));
   }
@@ -346,7 +356,8 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
     update.Reset();
 
     uint32_t val = i * 20;
-    update.AddColumnUpdate(schema_.column_id(kIntColumn), &val);
+    update.AddColumnUpdate(schema_.column(kIntColumn),
+                           schema_.column_id(kIntColumn), &val);
     ASSERT_OK_FAST(dms_->Update(tx.timestamp(), i, RowChangeList(update_buf), op_id_));
   }
 

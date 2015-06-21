@@ -659,10 +659,11 @@ struct ApplyingVisitor {
     // TODO: this code looks eerily similar to DMSIterator::ApplyUpdates!
     // I bet it can be combined.
 
-    RowChangeListDecoder decoder(&dfi->dfr_->schema(), RowChangeList(deltas));
+    const Schema* schema = &dfi->dfr_->schema();
+    RowChangeListDecoder decoder((RowChangeList(deltas)));
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_update()) {
-      return decoder.ApplyToOneColumn(rel_idx, dst, col_to_apply, dst->arena());
+      return decoder.ApplyToOneColumn(rel_idx, dst, *schema, col_to_apply, dst->arena());
     } else if (decoder.is_delete()) {
       // If it's a DELETE, then it will be processed by DeletingVisitor.
       return Status::OK();
@@ -735,7 +736,7 @@ struct DeletingVisitor {
     int64_t rel_idx = key.row_idx() - dfi->prepared_idx_;
     DCHECK_GE(rel_idx, 0);
 
-    RowChangeListDecoder decoder(&dfi->dfr_->schema(), RowChangeList(deltas));
+    RowChangeListDecoder decoder((RowChangeList(deltas)));
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_update()) {
       DVLOG(3) << "Didn't delete row (update)";
@@ -869,11 +870,10 @@ struct FilterAndAppendVisitor {
     *continue_visit = true;
 
     faststring buf;
-    RowChangeListEncoder enc(&dfi->dfr_->schema(), &buf);
+    RowChangeListEncoder enc(&buf);
     RETURN_NOT_OK(
         RowChangeListDecoder::RemoveColumnsFromChangeList(RowChangeList(deltas),
                                                           col_ids,
-                                                          dfi->dfr_->schema(),
                                                           &enc));
     if (enc.is_initialized()) {
       RowChangeList rcl = enc.as_changelist();

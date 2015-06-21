@@ -8,12 +8,15 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/row.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/faststring.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
+
+using strings::Substitute;
 
 class TestRowChangeList : public KuduTest {
  public:
@@ -26,6 +29,7 @@ class TestRowChangeList : public KuduTest {
     CHECK_OK(builder.AddKeyColumn("col1", STRING));
     CHECK_OK(builder.AddColumn("col2", STRING));
     CHECK_OK(builder.AddColumn("col3", UINT32));
+    CHECK_OK(builder.AddNullableColumn("col4", UINT32));
     return(builder.Build());
   }
 
@@ -35,7 +39,7 @@ class TestRowChangeList : public KuduTest {
 
 TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
   faststring buf;
-  RowChangeListEncoder rcl(&schema_, &buf);
+  RowChangeListEncoder rcl(&buf);
 
   // Construct an update with several columns changed
   Slice update1("update1");
@@ -45,42 +49,57 @@ TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
   int c0_id = schema_.column_id(0);
   int c1_id = schema_.column_id(1);
   int c2_id = schema_.column_id(2);
+  int c3_id = schema_.column_id(3);
 
-  rcl.AddColumnUpdate(c0_id, &update1);
-  rcl.AddColumnUpdate(c1_id, &update2);
-  rcl.AddColumnUpdate(c2_id, &update3);
+  rcl.AddColumnUpdate(schema_.column(0), c0_id, &update1);
+  rcl.AddColumnUpdate(schema_.column(1), c1_id, &update2);
+  rcl.AddColumnUpdate(schema_.column(2), c2_id, &update3);
+  rcl.AddColumnUpdate(schema_.column(3), c3_id, NULL);
 
   LOG(INFO) << "Encoded: " << HexDump(buf);
 
   // Read it back.
-  EXPECT_EQ(string("SET col1=update1, col2=update2, col3=12345"),
+  EXPECT_EQ(string("SET col1=update1, col2=update2, col3=12345, col4=NULL"),
             RowChangeList(Slice(buf)).ToString(schema_));
 
-  RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
+  RowChangeListDecoder decoder((RowChangeList(buf)));
   ASSERT_OK(decoder.Init());
-  size_t id;
-  const void *val;
+  RowChangeListDecoder::DecodedUpdate dec;
+  ASSERT_TRUE(decoder.HasNext());
+  ASSERT_OK(decoder.DecodeNext(&dec));
+  ASSERT_EQ(c0_id, dec.col_id);
+  ASSERT_EQ(update1, dec.raw_value);
 
   ASSERT_TRUE(decoder.HasNext());
-  ASSERT_OK(decoder.DecodeNext(&id, &val));
-  ASSERT_EQ(c0_id, id);
-  ASSERT_TRUE(update1 == *reinterpret_cast<const Slice *>(val));
+  ASSERT_OK(decoder.DecodeNext(&dec));
+  ASSERT_EQ(c1_id, dec.col_id);
+  ASSERT_EQ(update2, dec.raw_value);
 
   ASSERT_TRUE(decoder.HasNext());
-  ASSERT_OK(decoder.DecodeNext(&id, &val));
-  ASSERT_EQ(c1_id, id);
-  ASSERT_TRUE(update2 == *reinterpret_cast<const Slice *>(val));
+  ASSERT_OK(decoder.DecodeNext(&dec));
+  ASSERT_EQ(c2_id, dec.col_id);
+  ASSERT_EQ("90\\x00\\x00", dec.raw_value.ToDebugString());
 
   ASSERT_TRUE(decoder.HasNext());
-  ASSERT_OK(decoder.DecodeNext(&id, &val));
-  ASSERT_EQ(c2_id, id);
+  ASSERT_OK(decoder.DecodeNext(&dec));
+  ASSERT_EQ(c3_id, dec.col_id);
+  ASSERT_TRUE(dec.null);
 
   ASSERT_FALSE(decoder.HasNext());
+
+  // ToString() with unknown columns should still be able to parse
+  // the whole changelist.
+  EXPECT_EQ(Substitute("SET [unknown column id $0]=update1, "
+                       "[unknown column id $1]=update2, "
+                       "[unknown column id $2]=90\\x00\\x00, "
+                       "[unknown column id $3]=NULL",
+                       c0_id, c1_id, c2_id, c3_id),
+            RowChangeList(Slice(buf)).ToString(Schema()));
 }
 
 TEST_F(TestRowChangeList, TestDeletes) {
   faststring buf;
-  RowChangeListEncoder rcl(&schema_, &buf);
+  RowChangeListEncoder rcl(&buf);
 
   // Construct a deletion.
   rcl.SetToDelete();
@@ -90,7 +109,7 @@ TEST_F(TestRowChangeList, TestDeletes) {
   // Read it back.
   EXPECT_EQ(string("DELETE"), RowChangeList(Slice(buf)).ToString(schema_));
 
-  RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
+  RowChangeListDecoder decoder((RowChangeList(buf)));
   ASSERT_OK(decoder.Init());
   ASSERT_TRUE(decoder.is_delete());
 }
@@ -100,47 +119,78 @@ TEST_F(TestRowChangeList, TestReinserts) {
   rb.AddString(Slice("hello"));
   rb.AddString(Slice("world"));
   rb.AddUint32(12345);
+  rb.AddNull();
 
   // Construct a REINSERT.
   faststring buf;
-  RowChangeListEncoder rcl(&schema_, &buf);
+  RowChangeListEncoder rcl(&buf);
   rcl.SetToReinsert(rb.data());
 
   LOG(INFO) << "Encoded: " << HexDump(buf);
 
   // Read it back.
-  EXPECT_EQ(string("REINSERT (string col1=hello, string col2=world, uint32 col3=12345)"),
+  EXPECT_EQ(string("REINSERT (string col1=hello, string col2=world, "
+                   "uint32 col3=12345, uint32 col4=NULL)"),
             RowChangeList(Slice(buf)).ToString(schema_));
 
-  RowChangeListDecoder decoder(&schema_, RowChangeList(buf));
+  RowChangeListDecoder decoder((RowChangeList(buf)));
   ASSERT_OK(decoder.Init());
   ASSERT_TRUE(decoder.is_reinsert());
-  ASSERT_EQ(decoder.reinserted_row_slice(), rb.data());
+
+  Slice s;
+  ASSERT_OK(decoder.GetReinsertedRowSlice(schema_, &s));
+  ASSERT_EQ(s, rb.data());
 }
 
 TEST_F(TestRowChangeList, TestInvalid_EmptySlice) {
-  RowChangeListDecoder decoder(&schema_, RowChangeList(Slice()));
+  RowChangeListDecoder decoder((RowChangeList(Slice())));
   ASSERT_STR_CONTAINS(decoder.Init().ToString(),
                       "empty changelist");
 }
 
 TEST_F(TestRowChangeList, TestInvalid_BadTypeEnum) {
-  RowChangeListDecoder decoder(&schema_, RowChangeList(Slice("\xff", 1)));
+  RowChangeListDecoder decoder(RowChangeList(Slice("\xff", 1)));
   ASSERT_STR_CONTAINS(decoder.Init().ToString(),
                       "Corruption: bad type enum value: 255 in \\xff");
 }
 
 TEST_F(TestRowChangeList, TestInvalid_TooLongDelete) {
-  RowChangeListDecoder decoder(&schema_, RowChangeList(Slice("\x02""blahblah")));
+  RowChangeListDecoder decoder(RowChangeList(Slice("\x02""blahblah")));
   ASSERT_STR_CONTAINS(decoder.Init().ToString(),
                       "Corruption: DELETE changelist too long");
 }
 
-
 TEST_F(TestRowChangeList, TestInvalid_TooShortReinsert) {
-  RowChangeListDecoder decoder(&schema_, RowChangeList(Slice("\x03")));
-  ASSERT_STR_CONTAINS(decoder.Init().ToString(),
+  RowChangeListDecoder decoder(RowChangeList(Slice("\x03")));
+  ASSERT_OK(decoder.Init());
+  Slice s;
+  ASSERT_STR_CONTAINS(decoder.GetReinsertedRowSlice(schema_, &s).ToString(),
                       "Corruption: REINSERT changelist wrong length");
+}
+
+TEST_F(TestRowChangeList, TestInvalid_SetNullForNonNullableColumn) {
+  faststring buf;
+  RowChangeListEncoder rcl(&buf);
+  // Set column 0 = NULL
+  rcl.AddRawColumnUpdate(schema_.column_id(0), true, Slice());
+
+  ASSERT_EQ("[invalid update: Corruption: decoded set-to-NULL "
+            "for non-nullable column: col1[string NOT NULL], "
+            "before corruption: SET ]",
+            RowChangeList(Slice(buf)).ToString(schema_));
+}
+
+TEST_F(TestRowChangeList, TestInvalid_SetWrongSizeForIntColumn) {
+  faststring buf;
+  RowChangeListEncoder rcl(&buf);
+  // Set column id 2 = \xff
+  // (column id 2 is UINT32, so should be 4 bytes)
+  rcl.AddRawColumnUpdate(schema_.column_id(2), false, Slice("\xff"));
+
+  ASSERT_EQ("[invalid update: Corruption: invalid value \\xff "
+            "for column col3[uint32 NOT NULL], "
+            "before corruption: SET ]",
+            RowChangeList(Slice(buf)).ToString(schema_));
 }
 
 } // namespace kudu
