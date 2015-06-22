@@ -89,8 +89,8 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
   RowBlock block(partial_schema_, kRowsPerBlock, &arena);
 
   DVLOG(1) << "Applying deltas and rewriting columns (" << partial_schema_.ToString() << ")";
-  DeltaStats redo_stats(base_schema_.num_columns());
-  DeltaStats undo_stats(base_schema_.num_columns());
+  DeltaStats redo_stats;
+  DeltaStats undo_stats;
   uint64_t num_rows_history_truncated = 0;
   size_t nrows = 0;
   // We know that we're reading everything from disk so we're including all transactions.
@@ -147,7 +147,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       for (const Mutation *mut = new_undos_head; mut != NULL; mut = mut->next()) {
         DeltaKey undo_key(nrows + dst_row.row_index(), mut->timestamp());
         RETURN_NOT_OK(new_undo_delta_writer_->AppendDelta<UNDO>(undo_key, mut->changelist()));
-        undo_stats.UpdateStats(mut->timestamp(), base_schema_, mut->changelist());
+        undo_stats.UpdateStats(mut->timestamp(), mut->changelist());
         undo_delta_mutations_written_++;
       }
     }
@@ -175,7 +175,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       RowChangeList update(key_and_update.cell);
       RETURN_NOT_OK_PREPEND(new_redo_delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
                             "Failed to append a delta");
-      WARN_NOT_OK(redo_stats.UpdateStats(key_and_update.key.timestamp(), base_schema_, update),
+      WARN_NOT_OK(redo_stats.UpdateStats(key_and_update.key.timestamp(), update),
                   "Failed to update stats");
     }
     redo_delta_mutations_written_ += out.size();
@@ -220,7 +220,7 @@ Status MajorDeltaCompaction::OpenRedoDeltaFileWriter() {
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
                         "Unable to create REDO delta output block");
   new_redo_delta_block_ = block->id();
-  new_redo_delta_writer_.reset(new DeltaFileWriter(base_schema_, block.Pass()));
+  new_redo_delta_writer_.reset(new DeltaFileWriter(block.Pass()));
   return new_redo_delta_writer_->Start();
 }
 
@@ -229,7 +229,7 @@ Status MajorDeltaCompaction::OpenUndoDeltaFileWriter() {
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
                         "Unable to create UNDO delta output block");
   new_undo_delta_block_ = block->id();
-  new_undo_delta_writer_.reset(new DeltaFileWriter(base_schema_, block.Pass()));
+  new_undo_delta_writer_.reset(new DeltaFileWriter(block.Pass()));
   return new_undo_delta_writer_->Start();
 }
 

@@ -45,8 +45,7 @@ class DeltaFileWriter {
   // Construct a new delta file writer.
   //
   // The writer takes ownership of the block and will Close it in Finish().
-  explicit DeltaFileWriter(const Schema &schema,
-                           gscoped_ptr<fs::WritableBlock> block);
+  explicit DeltaFileWriter(gscoped_ptr<fs::WritableBlock> block);
 
   Status Start();
 
@@ -64,13 +63,7 @@ class DeltaFileWriter {
 
   Status WriteDeltaStats(const DeltaStats& stats);
 
-  const Schema& schema() const { return schema_; }
-
  private:
-  const Schema schema_;
-
-  Status WriteSchema();
-
   Status DoAppendDelta(const DeltaKey &key, const RowChangeList &delta);
 
   gscoped_ptr<cfile::CFileWriter> writer_;
@@ -93,7 +86,6 @@ class DeltaFileWriter {
 class DeltaFileReader : public DeltaStore,
                         public std::tr1::enable_shared_from_this<DeltaFileReader> {
  public:
-  static const char * const kSchemaMetaEntryName;
   static const char * const kDeltaStatsEntryName;
 
   // Fully open a delta file using a previously opened block.
@@ -108,7 +100,7 @@ class DeltaFileReader : public DeltaStore,
   // does not incur additional I/O, nor does it validate the contents of
   // the delta file.
   //
-  // Init() must be called before using the file's schema or stats.
+  // Init() must be called before using the file's stats.
   static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> file,
                            const BlockId& block_id,
                            std::tr1::shared_ptr<DeltaFileReader>* reader_out,
@@ -129,11 +121,6 @@ class DeltaFileReader : public DeltaStore,
   virtual Status CheckRowDeleted(rowid_t row_idx, bool *deleted) const OVERRIDE;
 
   virtual uint64_t EstimateSize() const OVERRIDE;
-
-  virtual const Schema &schema() const OVERRIDE {
-    DCHECK(init_once_.initted());
-    return schema_;
-  }
 
   const BlockId& block_id() const { return block_id_; }
 
@@ -167,13 +154,10 @@ class DeltaFileReader : public DeltaStore,
   // Callback used in 'init_once_' to initialize this delta file.
   Status InitOnce();
 
-  Status ReadSchema();
-
   Status ReadDeltaStats();
 
   shared_ptr<cfile::CFileReader> reader_;
   gscoped_ptr<DeltaStats> delta_stats_;
-  Schema schema_;
 
   const BlockId block_id_;
 
@@ -281,11 +265,6 @@ class DeltaFileIterator : public DeltaIterator {
 
   // Schema used during projection.
   const Schema* projection_;
-
-  // Mapping from projected column index back to memrowset column index.
-  //
-  // Constructed on first seek.
-  gscoped_ptr<DeltaProjector> projector_;
 
   // The MVCC state which determines which deltas should be applied.
   const MvccSnapshot mvcc_snap_;

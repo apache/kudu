@@ -78,7 +78,7 @@ Status WriteDeltaIteratorToFile(DeltaIterator* iter,
   RETURN_NOT_OK(iter->SeekToOrdinal(0));
 
   const size_t kRowsPerBlock = 100;
-  DeltaStats stats(schema.num_columns());
+  DeltaStats stats;
   Arena arena(32 * 1024, 128 * 1024);
   for (size_t i = 0; iter->HasNext(); ) {
     size_t n;
@@ -101,7 +101,7 @@ Status WriteDeltaIteratorToFile(DeltaIterator* iter,
     BOOST_FOREACH(const DeltaKeyAndUpdate& cell, cells) {
       RowChangeList rcl(cell.cell);
       RETURN_NOT_OK(out->AppendDelta<Type>(cell.key, rcl));
-      RETURN_NOT_OK(stats.UpdateStats(cell.key.timestamp(), schema, rcl));
+      RETURN_NOT_OK(stats.UpdateStats(cell.key.timestamp(), rcl));
     }
 
     i += n;

@@ -62,13 +62,13 @@ class TestDeltaFile : public ::testing::Test {
     gscoped_ptr<WritableBlock> block;
     ASSERT_OK(fs_manager_->CreateNewBlock(&block));
     test_block_ = block->id();
-    DeltaFileWriter dfw(schema_, block.Pass());
+    DeltaFileWriter dfw(block.Pass());
     ASSERT_OK(dfw.Start());
 
     // Update even numbered rows.
     faststring buf;
 
-    DeltaStats stats(schema_.num_columns());
+    DeltaStats stats;
     for (int i = FLAGS_first_row_to_update; i <= FLAGS_last_row_to_update; i += 2) {
       for (int timestamp = min_timestamp; timestamp <= max_timestamp; timestamp++) {
         buf.clear();
@@ -78,7 +78,7 @@ class TestDeltaFile : public ::testing::Test {
         DeltaKey key(i, Timestamp(timestamp));
         RowChangeList rcl(buf);
         ASSERT_OK_FAST(dfw.AppendDelta<REDO>(key, rcl));
-        ASSERT_OK_FAST(stats.UpdateStats(key.timestamp(), schema_, rcl));
+        ASSERT_OK_FAST(stats.UpdateStats(key.timestamp(), rcl));
       }
     }
     ASSERT_OK(dfw.WriteDeltaStats(stats));
@@ -125,7 +125,7 @@ class TestDeltaFile : public ::testing::Test {
     shared_ptr<DeltaFileReader> reader;
     ASSERT_OK(OpenDeltaFileReader(test_block_, &reader));
     ASSERT_EQ(((FLAGS_last_row_to_update - FLAGS_first_row_to_update) / 2) + 1,
-              reader->delta_stats().update_count(0));
+              reader->delta_stats().update_count_for_col_id(schema_.column_id(0)));
     ASSERT_EQ(0, reader->delta_stats().delete_count());
     gscoped_ptr<DeltaIterator> it;
     Status s = OpenDeltaFileIteratorFromReader(REDO, reader, &it);
@@ -214,7 +214,7 @@ TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
   gscoped_ptr<WritableBlock> block;
   ASSERT_OK(fs_manager_->CreateNewBlock(&block));
   BlockId block_id(block->id());
-  DeltaFileWriter dfw(schema_, block.Pass());
+  DeltaFileWriter dfw(block.Pass());
   ASSERT_OK(dfw.Start());
   ASSERT_OK(WriteDeltaIteratorToFile<REDO>(it.get(),
                                                   schema_,

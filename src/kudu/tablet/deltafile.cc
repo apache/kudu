@@ -38,46 +38,15 @@ using fs::WritableBlock;
 
 namespace tablet {
 
-const char * const DeltaFileReader::kSchemaMetaEntryName = "schema";
 const char * const DeltaFileReader::kDeltaStatsEntryName = "deltafilestats";
 
 namespace {
 
-Status DeltaStatsToPB(const DeltaStats& delta_stats,
-                      size_t ncols,
-                      DeltaStatsPB* pb) {
-  pb->Clear();
-  pb->set_delete_count(delta_stats.delete_count());
-  for (size_t idx = 0; idx < ncols; idx++) {
-    int64_t update_count = delta_stats.update_count(idx);
-    pb->add_per_column_update_count(update_count);
-  }
-  pb->set_max_timestamp(delta_stats.max_timestamp().ToUint64());
-  pb->set_min_timestamp(delta_stats.min_timestamp().ToUint64());
-  return Status::OK();
-}
-
-Status DeltaStatsFromPB(const DeltaStatsPB& pb,
-                        DeltaStats* delta_stats) {
-  delta_stats->IncrDeleteCount(pb.delete_count());
-  for (size_t idx = 0; idx < delta_stats->num_columns(); idx++) {
-    delta_stats->IncrUpdateCount(idx, pb.per_column_update_count(idx));
-  }
-  Timestamp timestamp;
-  RETURN_NOT_OK(timestamp.FromUint64(pb.max_timestamp()));
-  delta_stats->set_max_timestamp(timestamp);
-  RETURN_NOT_OK(timestamp.FromUint64(pb.min_timestamp()));
-  delta_stats->set_min_timestamp(timestamp);
-  return Status::OK();
-}
-
 } // namespace
 
-DeltaFileWriter::DeltaFileWriter(const Schema &schema,
-                                 gscoped_ptr<WritableBlock> block) :
-    schema_(schema)
+DeltaFileWriter::DeltaFileWriter(gscoped_ptr<WritableBlock> block)
 #ifndef NDEBUG
-  ,has_appended_(false)
+ : has_appended_(false)
 #endif
 { // NOLINT(*)
   cfile::WriterOptions opts;
@@ -99,7 +68,6 @@ Status DeltaFileWriter::Finish() {
 }
 
 Status DeltaFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
-  RETURN_NOT_OK(WriteSchema());
   return writer_->FinishAndReleaseBlock(closer);
 }
 
@@ -161,22 +129,9 @@ Status DeltaFileWriter::AppendDelta<UNDO>(
   return DoAppendDelta(key, delta);
 }
 
-Status DeltaFileWriter::WriteSchema() {
-  SchemaPB schema_pb;
-  CHECK_OK(SchemaToPB(schema_, &schema_pb));
-
-  faststring buf;
-  if (!pb_util::SerializeToString(schema_pb, &buf)) {
-    return Status::IOError("Unable to serialize SchemaPB", schema_pb.DebugString());
-  }
-
-  writer_->AddMetadataPair(DeltaFileReader::kSchemaMetaEntryName, buf.ToString());
-  return Status::OK();
-}
-
 Status DeltaFileWriter::WriteDeltaStats(const DeltaStats& stats) {
   DeltaStatsPB delta_stats_pb;
-  CHECK_OK(DeltaStatsToPB(stats, schema_.num_columns(), &delta_stats_pb));
+  stats.ToPB(&delta_stats_pb);
 
   faststring buf;
   if (!pb_util::SerializeToString(delta_stats_pb, &buf)) {
@@ -246,24 +201,9 @@ Status DeltaFileReader::InitOnce() {
     return Status::Corruption("file does not have a value index!");
   }
 
-  // Initialize delta file schema
-  RETURN_NOT_OK(ReadSchema());
   // Initialize delta file stats
   RETURN_NOT_OK(ReadDeltaStats());
   return Status::OK();
-}
-
-Status DeltaFileReader::ReadSchema() {
-  string schema_pb_buf;
-  if (!reader_->GetMetadataEntry(kSchemaMetaEntryName, &schema_pb_buf)) {
-    return Status::Corruption("missing schema from the delta file metadata");
-  }
-
-  SchemaPB schema_pb;
-  if (!schema_pb.ParseFromString(schema_pb_buf)) {
-    return Status::Corruption("unable to parse schema protobuf");
-  }
-  return SchemaFromPB(schema_pb, &schema_);
 }
 
 Status DeltaFileReader::ReadDeltaStats() {
@@ -276,8 +216,8 @@ Status DeltaFileReader::ReadDeltaStats() {
   if (!deltastats_pb.ParseFromString(filestats_pb_buf)) {
     return Status::Corruption("unable to parse the delta stats protobuf");
   }
-  gscoped_ptr<DeltaStats>stats(new DeltaStats(schema_.num_columns()));
-  RETURN_NOT_OK(DeltaStatsFromPB(deltastats_pb, stats.get()));
+  gscoped_ptr<DeltaStats>stats(new DeltaStats());
+  RETURN_NOT_OK(stats->InitFromPB(deltastats_pb));
   delta_stats_.swap(stats);
   return Status::OK();
 }
@@ -334,14 +274,12 @@ Status DeltaFileReader::NewDeltaIterator(const Schema *projection,
 Status DeltaFileReader::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   MvccSnapshot snap_all(MvccSnapshot::CreateSnapshotIncludingAllTransactions());
 
-  // If the schema is uninitialized, it'll be set up in SeekToOrdinal().
-  // All schema operations until then should be avoided (i.e. it's OK to
-  // pass the schema by pointer, but not to actually use it).
-  //
-  // TODO: can use an empty schema here? also, would be nice to avoid the
-  // allocations, but would probably require some refactoring.
+  // TODO: would be nice to avoid allocation here, but we don't want to
+  // duplicate all the logic from NewDeltaIterator. So, we'll heap-allocate
+  // for now.
+  Schema empty_schema;
   DeltaIterator* raw_iter;
-  Status s = NewDeltaIterator(&schema_, snap_all, &raw_iter);
+  Status s = NewDeltaIterator(&empty_schema, snap_all, &raw_iter);
   if (s.IsNotFound()) {
     *deleted = false;
     return Status::OK();
@@ -406,10 +344,6 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
 
   // Finish the initialization of any lazily-initialized state.
   RETURN_NOT_OK(dfr_->Init());
-  if (!projector_) {
-    projector_.reset(new DeltaProjector(&dfr_->schema(), projection_));
-    RETURN_NOT_OK(projector_->Init());
-  }
   if (!index_iter_) {
     index_iter_.reset(IndexTreeIterator::Create(
         dfr_->cfile_reader().get(), STRING,
@@ -606,7 +540,7 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
       if (VLOG_IS_ON(3)) {
         RowChangeList rcl(slice);
         DVLOG(3) << "Visited delta for key: " << key.ToString() << " Mut: "
-            << rcl.ToString(dfr_->schema()) << " Continue?: "
+            << rcl.ToString(*projection_) << " Continue?: "
             << (continue_visit ? "TRUE" : "FALSE");
       }
     }
@@ -659,7 +593,7 @@ struct ApplyingVisitor {
     // TODO: this code looks eerily similar to DMSIterator::ApplyUpdates!
     // I bet it can be combined.
 
-    const Schema* schema = &dfi->dfr_->schema();
+    const Schema* schema = dfi->projection_;
     RowChangeListDecoder decoder((RowChangeList(deltas)));
     RETURN_NOT_OK(decoder.Init());
     if (decoder.is_update()) {
@@ -705,24 +639,14 @@ inline Status ApplyingVisitor<UNDO>::Visit(const DeltaKey& key,
 Status DeltaFileIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_LE(prepared_count_, dst->nrows());
 
-  size_t projected_col;
-  if (projector_->get_base_col_from_proj_idx(col_to_apply, &projected_col)) {
-    if (delta_type_ == REDO) {
-      DVLOG(3) << "Applying REDO mutations to " << col_to_apply;
-      ApplyingVisitor<REDO> visitor = {this, projected_col, dst};
-      return VisitMutations(&visitor);
-    } else {
-      DVLOG(3) << "Applying UNDO mutations to " << col_to_apply;
-      ApplyingVisitor<UNDO> visitor = {this, projected_col, dst};
-      return VisitMutations(&visitor);
-    }
-  } else if (projector_->get_adapter_col_from_proj_idx(col_to_apply, &projected_col)) {
-    // TODO: Handle the "different type" case (adapter_cols_mapping)
-    LOG(DFATAL) << "Alter type is not implemented yet";
-    return Status::NotSupported("Alter type is not implemented yet");
+  if (delta_type_ == REDO) {
+    DVLOG(3) << "Applying REDO mutations to " << col_to_apply;
+    ApplyingVisitor<REDO> visitor = {this, col_to_apply, dst};
+    return VisitMutations(&visitor);
   } else {
-    // Column not present in the deltas... skip!
-    return Status::OK();
+    DVLOG(3) << "Applying UNDO mutations to " << col_to_apply;
+    ApplyingVisitor<UNDO> visitor = {this, col_to_apply, dst};
+    return VisitMutations(&visitor);
   }
 }
 
@@ -803,15 +727,6 @@ struct CollectingVisitor {
     DCHECK_GE(rel_idx, 0);
 
     RowChangeList changelist(deltas);
-    if (!dfi->projector_->is_identity()) {
-      RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(*dfi->projector_,
-                                                        changelist,
-                                                        &dfi->delta_buf_));
-      // The projection resulted in an empty mutation (e.g. update of a removed column)
-      if (dfi->delta_buf_.size() == 0) return Status::OK();
-      changelist = RowChangeList(dfi->delta_buf_);
-    }
-
     Mutation *mutation = Mutation::CreateInArena(dst_arena, key.timestamp(), changelist);
     mutation->AppendToList(&dst->at(rel_idx));
 
@@ -904,7 +819,7 @@ Status DeltaFileIterator::FilterColumnsAndCollectDeltas(
 void DeltaFileIterator::FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas,
                                              const string &msg) {
   LOG(FATAL) << "Saw unexpected delta type in deltafile " << dfr_->ToString() << ": "
-             << " rcl=" << RowChangeList(deltas).ToString(dfr_->schema())
+             << " rcl=" << RowChangeList(deltas).ToString(*projection_)
              << " key=" << key.ToString() << " (" << msg << ")";
 }
 

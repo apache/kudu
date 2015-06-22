@@ -33,7 +33,7 @@ class TestDeltaMemStore : public KuduTest {
   TestDeltaMemStore()
     : op_id_(consensus::MaximumOpId()),
       schema_(CreateSchema()),
-      dms_(new DeltaMemStore(0, 0, schema_, new log::LogAnchorRegistry())),
+      dms_(new DeltaMemStore(0, 0, new log::LogAnchorRegistry())),
       mvcc_(scoped_refptr<server::Clock>(
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
   }
@@ -74,9 +74,9 @@ class TestDeltaMemStore : public KuduTest {
                     uint32_t row_idx,
                     size_t col_idx,
                     ColumnBlock *cb) {
-    ColumnSchema col_schema(dms_->schema().column(col_idx));
+    ColumnSchema col_schema(schema_.column(col_idx));
     Schema single_col_projection(boost::assign::list_of(col_schema),
-                                 boost::assign::list_of(dms_->schema().column_id(col_idx)),
+                                 boost::assign::list_of(schema_.column_id(col_idx)),
                                  0);
 
     DeltaIterator* raw_iter;
@@ -145,13 +145,13 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
   // Flush the delta file so that the stats get updated.
   gscoped_ptr<WritableBlock> block;
   ASSERT_OK(fs_manager_->CreateNewBlock(&block));
-  DeltaFileWriter dfw(schema_, block.Pass());
+  DeltaFileWriter dfw(block.Pass());
   ASSERT_OK(dfw.Start());
   gscoped_ptr<DeltaStats> stats;
   dms_->FlushToFile(&dfw, &stats);
 
-  ASSERT_EQ(n_rows / 2, stats->update_count(kIntColumn));
-  ASSERT_EQ(n_rows / 4, stats->update_count(kStringColumn));
+  ASSERT_EQ(n_rows / 2, stats->update_count_for_col_id(schema_.column_id(kIntColumn)));
+  ASSERT_EQ(n_rows / 4, stats->update_count_for_col_id(schema_.column_id(kStringColumn)));
 }
 
 TEST_F(TestDeltaMemStore, TestDMSSparseUpdates) {

@@ -47,7 +47,7 @@ struct DMSTreeTraits : public btree::BTreeTraits {
 class DeltaMemStore : public DeltaStore,
                       public std::tr1::enable_shared_from_this<DeltaMemStore> {
  public:
-  DeltaMemStore(int64_t id, int64_t rs_id, const Schema &schema,
+  DeltaMemStore(int64_t id, int64_t rs_id,
                 log::LogAnchorRegistry* log_anchor_registry,
                 const std::tr1::shared_ptr<MemTracker>& parent_tracker = shared_ptr<MemTracker>());
 
@@ -102,12 +102,6 @@ class DeltaMemStore : public DeltaStore,
     return memory_footprint();
   }
 
-  Status AlterSchema(const Schema& schema);
-
-  virtual const Schema &schema() const OVERRIDE {
-    return schema_;
-  }
-
   const int64_t id() const { return id_; }
 
   typedef btree::CBTree<DMSTreeTraits> DMSTree;
@@ -140,7 +134,6 @@ class DeltaMemStore : public DeltaStore,
 
   const int64_t id_;    // DeltaMemStore ID.
   const int64_t rs_id_; // Rowset ID.
-  Schema schema_;
 
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
   std::tr1::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
@@ -236,9 +229,8 @@ class DMSIterator : public DeltaIterator {
   // True if SeekToOrdinal() been called at least once.
   bool seeked_;
 
-  // Projection from the schema of the deltamemstore to the projection
-  // of the row blocks which will be passed to PrepareBatch(), etc.
-  DeltaProjector projector_;
+  // The schema of the row blocks that will be passed to PrepareBatch(), etc.
+  const Schema* projection_;
 
   // State when prepared_for_ == PREPARED_FOR_APPLY
   // ------------------------------------------------------------
@@ -267,8 +259,6 @@ class DMSIterator : public DeltaIterator {
   faststring delta_buf_;
 
 };
-
-
 
 } // namespace tablet
 } // namespace kudu

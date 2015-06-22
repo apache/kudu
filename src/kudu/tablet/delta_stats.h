@@ -7,13 +7,13 @@
 #include <glog/logging.h>
 #include <boost/function.hpp>
 
+#include <set>
 #include <stdint.h>
-#include <vector>
 #include <string>
-
+#include <tr1/unordered_map>
 
 #include "kudu/gutil/atomicops.h"
-#include "kudu/common/schema.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/common/row_changelist.h"
 #include "kudu/tablet/mvcc.h"
 
@@ -21,20 +21,15 @@ namespace kudu {
 
 namespace tablet {
 
+class DeltaStatsPB;
+
 // A wrapper class for describing data statistics.
 class DeltaStats {
  public:
-  // Constructs a stats object with an initial count of columns. This
-  // can be resized Resize() method below.
-  explicit DeltaStats(size_t ncols);
+  DeltaStats();
 
-  // Resizes the the vector containing the update counts to 'ncols',
-  // setting the additional columns to 0.
-  void Resize(size_t ncols);
-
-  // Increment update count for column at 'col_idx' (relative to the
-  // current schema) by 'update_count'.
-  void IncrUpdateCount(size_t col_idx, int64_t update_count);
+  // Increment update count for column 'col_id' by 'update_count'.
+  void IncrUpdateCount(int col_id, int64_t update_count);
 
   // Increment the per-store delete count by 'delete_count'.
   void IncrDeleteCount(int64_t delete_count);
@@ -42,21 +37,14 @@ class DeltaStats {
   // Increment delete and update counts based on changes contained in
   // 'update'.
   Status UpdateStats(const Timestamp& timestamp,
-                     const Schema& schema,
                      const RowChangeList& update);
 
   // Return the number of deletes in the current delta store.
   int64_t delete_count() const { return delete_count_; }
 
-  // Returns number of updates for column at 'col_idx' relative to the
-  // current schema.
-  int64_t update_count(size_t col_idx) const {
-    CHECK_LT(col_idx, num_columns());
-    return update_counts_[col_idx];
-  }
-
-  size_t num_columns() const {
-    return update_counts_.size();
+  // Returns number of updates for a given column.
+  int64_t update_count_for_col_id(int col_id) const {
+    return FindWithDefault(update_counts_by_col_id_, col_id, 0);
   }
 
   // Returns the maximum transaction id of any mutation in a delta file.
@@ -81,8 +69,18 @@ class DeltaStats {
 
   std::string ToString() const;
 
+  // Convert this object to the protobuf which is stored in the DeltaFile footer.
+  void ToPB(DeltaStatsPB* pb) const;
+
+  // Load this object from the protobuf which is stored in the DeltaFile footer.
+  Status InitFromPB(const DeltaStatsPB& pb);
+
+  // For each column which has at least one update, add that column's ID to the
+  // set 'col_ids'.
+  void AddColumnIdsWithUpdates(std::set<int>* col_ids) const;
+
  private:
-  std::vector<uint64_t> update_counts_;
+  std::tr1::unordered_map<int, int64_t> update_counts_by_col_id_;
   uint64_t delete_count_;
   Timestamp max_timestamp_;
   Timestamp min_timestamp_;

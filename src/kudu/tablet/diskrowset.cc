@@ -278,10 +278,10 @@ Status RollingDiskRowSetWriter::RollWriter() {
   RETURN_NOT_OK(fs->CreateNewBlock(&redo_data_block));
   cur_undo_ds_block_id_ = undo_data_block->id();
   cur_redo_ds_block_id_ = redo_data_block->id();
-  cur_undo_writer_.reset(new DeltaFileWriter(schema_, undo_data_block.Pass()));
-  cur_redo_writer_.reset(new DeltaFileWriter(schema_, redo_data_block.Pass()));
-  cur_undo_delta_stats.reset(new DeltaStats(schema_.num_columns()));
-  cur_redo_delta_stats.reset(new DeltaStats(schema_.num_columns()));
+  cur_undo_writer_.reset(new DeltaFileWriter(undo_data_block.Pass()));
+  cur_redo_writer_.reset(new DeltaFileWriter(redo_data_block.Pass()));
+  cur_undo_delta_stats.reset(new DeltaStats());
+  cur_redo_delta_stats.reset(new DeltaStats());
 
   row_idx_in_cur_drs_ = 0;
   can_roll_ = false;
@@ -339,7 +339,7 @@ Status RollingDiskRowSetWriter::AppendDeltas(rowid_t row_idx_in_block,
   for (const Mutation *mut = delta_head; mut != NULL; mut = mut->next()) {
     DeltaKey undo_key(*row_idx, mut->timestamp());
     RETURN_NOT_OK(writer->AppendDelta<Type>(undo_key, mut->changelist()));
-    delta_stats->UpdateStats(mut->timestamp(), schema_, mut->changelist());
+    delta_stats->UpdateStats(mut->timestamp(), mut->changelist());
   }
   return Status::OK();
 }
@@ -458,11 +458,28 @@ Status DiskRowSet::MinorCompactDeltaStores() {
 }
 
 Status DiskRowSet::MajorCompactDeltaStores() {
-  ColumnIndexes col_indexes;
-  delta_tracker_->GetColumnsIdxWithUpdates(&col_indexes);
+  vector<int> col_ids;
+  delta_tracker_->GetColumnIdsWithUpdates(&col_ids);
+
+  // Translate IDs to indexes, filtering out any that aren't
+  // present in our DRS.
+  vector<size_t> col_indexes;
+  BOOST_FOREACH(int col_id, col_ids) {
+    int idx = schema().find_column_by_id(col_id);
+    if (idx == -1) {
+      // TODO: this warning is probably inappropriate -- this will go away when
+      // AlterTable 2.0 is complete, since DRS won't have a schema at all.
+      LOG(WARNING) << "cannot major compact column ID " << col_id << " which has updates "
+                   << "because it is not present in the current DRS schema";
+      continue;
+    }
+    col_indexes.push_back(idx);
+  }
+
   if (col_indexes.empty()) {
     return Status::OK();
   }
+
   return MajorCompactDeltaStoresWithColumns(col_indexes);
 }
 
@@ -659,10 +676,10 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
   }
 
   if (type == RowSet::MAJOR_DELTA_COMPACTION) {
-    ColumnIndexes cols_with_updates;
-    delta_tracker_->GetColumnsIdxWithUpdates(&cols_with_updates);
+    vector<int> col_ids_with_updates;
+    delta_tracker_->GetColumnIdsWithUpdates(&col_ids_with_updates);
     // If we have files but no updates, we don't want to major compact.
-    if (!cols_with_updates.empty()) {
+    if (!col_ids_with_updates.empty()) {
       double ratio = static_cast<double>(EstimateDeltaDiskSize()) / base_data_size;
       if (ratio >= FLAGS_tablet_delta_store_major_compact_min_ratio) {
         perf_improv = ratio;

@@ -48,13 +48,24 @@ message TxResultPB {
 message DeltaStatsPB {
   // Number of deletes (deletes result in deletion of an entire row)
   required int64 delete_count = 1;
-  // Repeated update count for each column or zero if no updates are
-  // available for the column
-  repeated int64 per_column_update_count = 2;
+
+  // REMOVED: replaced by column_stats, which maps by column ID,
+  // whereas this older version mapped by index.
+  // repeated int64 per_column_update_count = 2;
+
   // The min Timestamp that was stored in this delta.
   required fixed64 min_timestamp = 3;
   // The max Timestamp that was stored in this delta.
   required fixed64 max_timestamp = 4;
+
+  // Per-column statistics about this delta file.
+  message ColumnStats {
+    // The column ID.
+    required int32 col_id = 1;
+    // The number of updates which refer to this column ID.
+    optional int64 update_count = 2 [ default = 0 ];
+  }
+  repeated ColumnStats column_stats = 5;
 }
 
 message TabletStatusPB {

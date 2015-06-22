@@ -89,7 +89,6 @@ Status DeltaTracker::Open() {
   // the id of the first DeltaMemStore is the max id of the current ones +1
   dms_.reset(new DeltaMemStore(rowset_metadata_->last_durable_redo_dms_id() + 1,
                                rowset_metadata_->id(),
-                               schema_,
                                log_anchor_registry_,
                                parent_tracker_));
   open_ = true;
@@ -250,7 +249,7 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
   RETURN_NOT_OK(MakeDeltaIteratorMergerUnlocked(start_idx, end_idx, &schema, compacted_stores,
                                                 compacted_blocks, &inputs_merge));
   LOG(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
-  DeltaFileWriter dfw(schema, block.Pass());
+  DeltaFileWriter dfw(block.Pass());
   RETURN_NOT_OK(dfw.Start());
   RETURN_NOT_OK(WriteDeltaIteratorToFile<REDO>(inputs_merge.get(),
                                                schema,
@@ -393,7 +392,7 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
                         "Unable to allocate new delta data writable_block");
   BlockId block_id(writable_block->id());
 
-  DeltaFileWriter dfw(dms->schema(), writable_block.Pass());
+  DeltaFileWriter dfw(writable_block.Pass());
   RETURN_NOT_OK_PREPEND(dfw.Start(),
                         Substitute("Unable to start writing to delta block $0",
                                    block_id.ToString()));
@@ -402,7 +401,6 @@ Status DeltaTracker::FlushDMS(DeltaMemStore* dms,
   RETURN_NOT_OK(dms->FlushToFile(&dfw, &stats));
   RETURN_NOT_OK(dfw.Finish());
   LOG(INFO) << "Flushed delta block: " << block_id.ToString();
-  VLOG(1) << "Delta block " << block_id.ToString() << " schema: " << dms->schema().ToString();
 
   // Now re-open for read
   gscoped_ptr<ReadableBlock> readable_block;
@@ -436,7 +434,7 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
 
     // Swap the DeltaMemStore to use the new schema
     old_dms = dms_;
-    dms_.reset(new DeltaMemStore(old_dms->id() + 1, rowset_metadata_->id(), schema_,
+    dms_.reset(new DeltaMemStore(old_dms->id() + 1, rowset_metadata_->id(),
                                  log_anchor_registry_, parent_tracker_));
 
     if (count == 0) {
@@ -522,31 +520,24 @@ uint64_t DeltaTracker::EstimateOnDiskSize() const {
   return size;
 }
 
-void DeltaTracker::GetColumnsIdxWithUpdates(ColumnIndexes* columns) const {
+void DeltaTracker::GetColumnIdsWithUpdates(std::vector<int>* col_ids) const {
   shared_lock<rw_spinlock> lock(&component_lock_);
 
-  set<size_t> column_idx_with_updates;
+  set<int> column_ids_with_updates;
   BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
     // We won't force open files just to read their stats.
     if (!ds->Initted()) {
       continue;
     }
 
-    for (int i = 0; i < ds->delta_stats().num_columns(); i++) {
-      // TODO this will break as soon as we start altering columns since those are indexes.
-      if (ds->delta_stats().update_count(i) > 0) {
-        column_idx_with_updates.insert(i);
-      }
-    }
+    ds->delta_stats().AddColumnIdsWithUpdates(&column_ids_with_updates);
   }
-  if (!column_idx_with_updates.empty()) {
-    columns->assign(column_idx_with_updates.begin(), column_idx_with_updates.end());
-  }
+  col_ids->assign(column_ids_with_updates.begin(), column_ids_with_updates.end());
 }
 
 const Schema& DeltaTracker::schema() const {
   shared_lock<rw_spinlock> lock(&component_lock_);
-  return dms_->schema();
+  return schema_;
 }
 
 } // namespace tablet

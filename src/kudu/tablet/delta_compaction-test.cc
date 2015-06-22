@@ -55,7 +55,7 @@ class TestDeltaCompaction : public KuduTest {
     gscoped_ptr<WritableBlock> block;
     RETURN_NOT_OK(fs_manager_->CreateNewBlock(&block));
     *block_id = block->id();
-    dfw->reset(new DeltaFileWriter(schema, block.Pass()));
+    dfw->reset(new DeltaFileWriter(block.Pass()));
     RETURN_NOT_OK((*dfw)->Start());
     return Status::OK();
   }
@@ -115,7 +115,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
     // and update number (see update_value assignment).
     size_t kNumUpdates = 10;
     size_t kNumMultipleUpdates = kNumUpdates / 2;
-    DeltaStats stats(schema.num_columns());
+    DeltaStats stats;
     for (size_t i = 0; i < kNumUpdates; ++i) {
       buf.clear();
       RowChangeListEncoder update(&buf);
@@ -152,7 +152,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       DeltaKey key((i < kNumMultipleUpdates) ? i : row_id, Timestamp(curr_timestamp));
       RowChangeList row_changes = update.as_changelist();
       ASSERT_OK(dfw->AppendDelta<REDO>(key, row_changes));
-      ASSERT_OK(stats.UpdateStats(key.timestamp(), schema, row_changes));
+      ASSERT_OK(stats.UpdateStats(key.timestamp(), row_changes));
       curr_timestamp++;
       row_id++;
     }

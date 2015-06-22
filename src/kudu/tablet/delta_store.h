@@ -59,8 +59,6 @@ class DeltaStore {
   // Get the store's estimated size in bytes.
   virtual uint64_t EstimateSize() const = 0;
 
-  virtual const Schema& schema() const = 0;
-
   virtual std::string ToString() const = 0;
 
   // TODO remove this once we don't need to have delta_stats for both DMS and DFR. Currently

@@ -30,16 +30,12 @@ static const int kMaxArenaBufferSize = 5*1024*1024;
 
 DeltaMemStore::DeltaMemStore(int64_t id,
                              int64_t rs_id,
-                             const Schema &schema,
                              LogAnchorRegistry* log_anchor_registry,
                              const shared_ptr<MemTracker>& parent_tracker)
   : id_(id),
     rs_id_(rs_id),
-    schema_(schema),
     anchorer_(log_anchor_registry, Substitute("Rowset-$0/DeltaMemStore-$1", rs_id_, id_)),
-    delta_stats_(0),
     disambiguator_sequence_number_(0) {
-  CHECK(schema.has_column_ids());
   if (parent_tracker) {
     CHECK(MemTracker::FindTracker(Tablet::kDMSMemTrackerId,
                                   &mem_tracker_,
@@ -94,7 +90,7 @@ Status DeltaMemStore::Update(Timestamp timestamp,
 
 Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
                                   gscoped_ptr<DeltaStats>* stats_ret) {
-  gscoped_ptr<DeltaStats> stats(new DeltaStats(schema_.num_columns()));
+  gscoped_ptr<DeltaStats> stats(new DeltaStats());
 
   gscoped_ptr<DMSTreeIter> iter(tree_->NewIterator());
   iter->SeekToStart();
@@ -105,7 +101,7 @@ Status DeltaMemStore::FlushToFile(DeltaFileWriter *dfw,
     RETURN_NOT_OK(key.DecodeFrom(&key_slice));
     RowChangeList rcl(val);
     RETURN_NOT_OK_PREPEND(dfw->AppendDelta<REDO>(key, rcl), "Failed to append delta");
-    stats->UpdateStats(key.timestamp(), schema_, rcl);
+    stats->UpdateStats(key.timestamp(), rcl);
     iter->Next();
   }
   RETURN_NOT_OK(dfw->WriteDeltaStats(*stats));
@@ -157,12 +153,6 @@ Status DeltaMemStore::CheckRowDeleted(rowid_t row_idx, bool *deleted) const {
   return Status::OK();
 }
 
-Status DeltaMemStore::AlterSchema(const Schema& schema) {
-  // The DeltaMemStore is flushed and re-created with the new Schema.
-  // See DeltaTracker::Flush()
-  return Status::NotSupported("The DeltaMemStore must be empty to alter the schema");
-}
-
 void DeltaMemStore::DebugPrint() const {
   tree_->DebugPrint();
 }
@@ -182,11 +172,10 @@ DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
     prepared_count_(0),
     prepared_for_(NOT_PREPARED),
     seeked_(false),
-    projector_(&dms->schema(), projection) {
+    projection_(projection) {
 }
 
 Status DMSIterator::Init(ScanSpec *spec) {
-  RETURN_NOT_OK(projector_.Init());
   initted_ = true;
   return Status::OK();
 }
@@ -223,7 +212,7 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
   rowid_t stop_row = start_row + nrows - 1;
 
   if (updates_by_col_.empty()) {
-    updates_by_col_.resize(projector_.projection()->num_columns());
+    updates_by_col_.resize(projection_->num_columns());
   }
   BOOST_FOREACH(UpdatesForColumn& ufc, updates_by_col_) {
     ufc.clear();
@@ -261,12 +250,12 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
           RETURN_NOT_OK(decoder.DecodeNext(&dec));
           int col_idx;
           const void* col_val;
-          RETURN_NOT_OK(dec.Validate(*projector_.projection(), &col_idx, &col_val));
+          RETURN_NOT_OK(dec.Validate(*projection_, &col_idx, &col_val));
           if (col_idx == -1) {
             // This column isn't being projected.
             continue;
           }
-          int col_size = projector_.projection()->column(col_idx).type_info()->size();
+          int col_size = projection_->column(col_idx).type_info()->size();
 
           // If we already have an earlier update for the same column, we can
           // just overwrite that one.
@@ -307,7 +296,7 @@ Status DMSIterator::ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) {
   DCHECK_EQ(prepared_for_, PREPARED_FOR_APPLY);
   DCHECK_EQ(prepared_count_, dst->nrows());
 
-  const ColumnSchema* col_schema = &projector_.projection()->column(col_to_apply);
+  const ColumnSchema* col_schema = &projection_->column(col_to_apply);
   BOOST_FOREACH(const ColumnUpdate& cu, updates_by_col_[col_to_apply]) {
     int32_t idx_in_block = cu.row_id - prepared_idx_;
     DCHECK_GE(idx_in_block, 0);
@@ -342,12 +331,8 @@ Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
     RowChangeList changelist(src.val);
     uint32_t rel_idx = key.row_idx() - prepared_idx_;
 
-    if (!projector_.is_identity()) {
-      RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(projector_, changelist, &delta_buf_));
-      // The projection resulted in an empty mutation (e.g. update of a removed column)
-      if (delta_buf_.size() == 0) continue;
-      changelist = RowChangeList(delta_buf_);
-    }
+    // TODO(KUDU-382): at some point we probably want to remove updates that apply to columns
+    // that have been deleted?
 
     Mutation *mutation = Mutation::CreateInArena(arena, key.timestamp(), changelist);
     mutation->AppendToList(&dst->at(rel_idx));
