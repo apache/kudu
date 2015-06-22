@@ -69,7 +69,6 @@ Status DebugDumpDeltaIterator(DeltaType type,
 
 template<DeltaType Type>
 Status WriteDeltaIteratorToFile(DeltaIterator* iter,
-                                const Schema& schema,
                                 size_t nrows,
                                 DeltaFileWriter* out) {
   ScanSpec spec;
@@ -112,13 +111,11 @@ Status WriteDeltaIteratorToFile(DeltaIterator* iter,
 
 template
 Status WriteDeltaIteratorToFile<REDO>(DeltaIterator* iter,
-                                      const Schema& schema,
                                       size_t nrows,
                                       DeltaFileWriter* out);
 
 template
 Status WriteDeltaIteratorToFile<UNDO>(DeltaIterator* iter,
-                                      const Schema& schema,
                                       size_t nrows,
                                       DeltaFileWriter* out);
 

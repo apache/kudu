@@ -49,8 +49,7 @@ class TestDeltaCompaction : public KuduTest {
     return builder.Build();
   }
 
-  Status GetDeltaFileWriter(const Schema& schema,
-                            gscoped_ptr<DeltaFileWriter>* dfw,
+  Status GetDeltaFileWriter(gscoped_ptr<DeltaFileWriter>* dfw,
                             BlockId* block_id) const {
     gscoped_ptr<WritableBlock> block;
     RETURN_NOT_OK(fs_manager_->CreateNewBlock(&block));
@@ -107,7 +106,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
     // Write the Deltas
     BlockId block_id;
     gscoped_ptr<DeltaFileWriter> dfw;
-    ASSERT_OK(GetDeltaFileWriter(schema, &dfw, &block_id));
+    ASSERT_OK(GetDeltaFileWriter(&dfw, &block_id));
 
     // Generate N updates with the new schema, some of them are on existing
     // rows others are on new rows (see kNumUpdates and kNumMultipleUpdates).
@@ -173,11 +172,10 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
                                         snap, &merge_iter));
   gscoped_ptr<DeltaFileWriter> dfw;
   BlockId block_id;
-  ASSERT_OK(GetDeltaFileWriter(merge_schema, &dfw, &block_id));
+  ASSERT_OK(GetDeltaFileWriter(&dfw, &block_id));
   ASSERT_OK(WriteDeltaIteratorToFile<REDO>(merge_iter.get(),
-                                                  merge_schema,
-                                                  ITERATE_OVER_ALL_ROWS,
-                                                  dfw.get()));
+                                           ITERATE_OVER_ALL_ROWS,
+                                           dfw.get()));
   ASSERT_OK(dfw->Finish());
 
   shared_ptr<DeltaFileReader> dfr;

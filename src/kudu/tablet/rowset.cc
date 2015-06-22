@@ -201,16 +201,6 @@ shared_ptr<RowSetMetadata> DuplicatingRowSet::metadata() {
   return shared_ptr<RowSetMetadata>(reinterpret_cast<RowSetMetadata *>(NULL));
 }
 
-Status DuplicatingRowSet::AlterSchema(const Schema& schema) {
-  BOOST_FOREACH(const shared_ptr<RowSet>& rs, old_rowsets_) {
-    RETURN_NOT_OK(rs->AlterSchema(schema));
-  }
-  BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_rowsets_) {
-    RETURN_NOT_OK(rs->AlterSchema(schema));
-  }
-  return Status::OK();
-}
-
 Status DuplicatingRowSet::DebugDump(vector<string> *lines) {
   int i = 1;
   BOOST_FOREACH(const shared_ptr<RowSet> &rs, old_rowsets_) {

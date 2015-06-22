@@ -682,15 +682,6 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
     if (same_schema) {
       return metadata_->Flush();
     }
-
-    // Update the DiskRowSet/DeltaTracker
-    // TODO: This triggers a flush of the DeltaMemStores...
-    //       The flush should be just a message (async)...
-    //       with the current code the only way we can do a flush ouside this big lock
-    //       is to get the list of DeltaMemStores out from the AlterSchema method...
-    BOOST_FOREACH(const shared_ptr<RowSet>& rs, components_->rowsets->all_rowsets()) {
-      RETURN_NOT_OK(rs->AlterSchema(*schema_.get()));
-    }
   }
 
 
@@ -1201,12 +1192,6 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   // Then we want to consider all those transactions that were in-flight when we did the
   // swap as committed in 'non_duplicated_txns_snap'.
   non_duplicated_txns_snap.AddCommittedTimestamps(in_flight_during_swap);
-
-  // Ensure that the latest schema is set to the new RowSets
-  BOOST_FOREACH(const shared_ptr<RowSet>& rs, new_disk_rowsets) {
-    RETURN_NOT_OK_PREPEND(rs->AlterSchema(*schema2.get()),
-                          "Failed to set current schema on latest RS");
-  }
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapInDuplicatingRowSet(),

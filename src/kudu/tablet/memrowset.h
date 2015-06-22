@@ -277,8 +277,6 @@ class MemRowSet : public RowSet,
         reinterpret_cast<RowSetMetadata *>(NULL));
   }
 
-  Status AlterSchema(const Schema& schema) OVERRIDE;
-
   // Dump the contents of the memrowset to the given vector.
   // If 'lines' is NULL, dumps to LOG(INFO).
   //

@@ -111,9 +111,6 @@ class RowSet {
   // Return the schema for data in this rowset.
   virtual const Schema &schema() const = 0;
 
-  // Alter RowSet Schema
-  virtual Status AlterSchema(const Schema& schema) = 0;
-
   // Returns the metadata associated with this rowset.
   virtual shared_ptr<RowSetMetadata> metadata() = 0;
 
@@ -269,8 +266,6 @@ class DuplicatingRowSet : public RowSet {
                            Slice *max_encoded_key) const OVERRIDE;
 
   uint64_t EstimateOnDiskSize() const OVERRIDE;
-
-  Status AlterSchema(const Schema& schema) OVERRIDE;
 
   string ToString() const OVERRIDE;
 

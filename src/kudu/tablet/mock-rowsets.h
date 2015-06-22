@@ -71,10 +71,6 @@ class MockRowSet : public RowSet {
     return shared_ptr<RowSetMetadata>(
       reinterpret_cast<RowSetMetadata *>(NULL));
   }
-  virtual Status AlterSchema(const Schema& schema) OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-    return Status::OK();
-  }
   virtual const Schema &schema() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
   }

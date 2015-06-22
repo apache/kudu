@@ -30,12 +30,10 @@ using std::tr1::shared_ptr;
 using strings::Substitute;
 
 DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
-                           const Schema &schema,
                            rowid_t num_rows,
                            log::LogAnchorRegistry* log_anchor_registry,
                            const shared_ptr<MemTracker>& parent_tracker) :
   rowset_metadata_(rowset_metadata),
-  schema_(schema),
   num_rows_(num_rows),
   open_(false),
   log_anchor_registry_(log_anchor_registry),
@@ -240,19 +238,18 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
          vector<shared_ptr<DeltaStore> > *compacted_stores,
          vector<BlockId> *compacted_blocks) {
   shared_ptr<DeltaIterator> inputs_merge;
-  Schema schema;
-  {
-    // Schema may be altered during a delta compaction.
-    shared_lock<rw_spinlock> schema_lock(&component_lock_);
-    schema = schema_;
-  }
-  RETURN_NOT_OK(MakeDeltaIteratorMergerUnlocked(start_idx, end_idx, &schema, compacted_stores,
+
+  // TODO(KUDU-382): currently, DeltaFile iterators ignore the passed-in projection in
+  // FilterColumnIdsAndCollectDeltas(). So, we just pass an empty schema here.
+  // If this changes in the future, we'll have to pass in the current tablet
+  // schema here.
+  Schema empty_schema;
+  RETURN_NOT_OK(MakeDeltaIteratorMergerUnlocked(start_idx, end_idx, &empty_schema, compacted_stores,
                                                 compacted_blocks, &inputs_merge));
   LOG(INFO) << "Compacting " << (end_idx - start_idx + 1) << " delta files.";
   DeltaFileWriter dfw(block.Pass());
   RETURN_NOT_OK(dfw.Start());
   RETURN_NOT_OK(WriteDeltaIteratorToFile<REDO>(inputs_merge.get(),
-                                               schema,
                                                ITERATE_OVER_ALL_ROWS,
                                                &dfw));
   RETURN_NOT_OK(dfw.Finish());
@@ -477,20 +474,6 @@ Status DeltaTracker::Flush(MetadataFlushType flush_type) {
   // and rename to final path!
 }
 
-Status DeltaTracker::AlterSchema(const Schema& schema) {
-  bool require_update;
-  {
-    lock_guard<rw_spinlock> lock(&component_lock_);
-    if ((require_update = !schema_.Equals(schema))) {
-      schema_ = schema;
-    }
-  }
-  if (!require_update) {
-    return Status::OK();
-  }
-  return Flush(DeltaTracker::FLUSH_METADATA);
-}
-
 size_t DeltaTracker::DeltaMemStoreSize() const {
   shared_lock<rw_spinlock> lock(&component_lock_);
   return dms_->memory_footprint();
@@ -533,11 +516,6 @@ void DeltaTracker::GetColumnIdsWithUpdates(std::vector<int>* col_ids) const {
     ds->delta_stats().AddColumnIdsWithUpdates(&column_ids_with_updates);
   }
   col_ids->assign(column_ids_with_updates.begin(), column_ids_with_updates.end());
-}
-
-const Schema& DeltaTracker::schema() const {
-  shared_lock<rw_spinlock> lock(&component_lock_);
-  return schema_;
 }
 
 } // namespace tablet

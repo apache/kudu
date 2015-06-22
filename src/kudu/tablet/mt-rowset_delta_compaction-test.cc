@@ -19,7 +19,6 @@ enum {
 };
 
 DEFINE_int32(num_update_threads, 1, "Number of updater threads");
-DEFINE_int32(num_alter_schema_threads, 0, "Number of AlterSchema threads");
 DEFINE_int32(num_flush_threads, kDefaultNumFlushThreads, "Number of flusher threads");
 DEFINE_int32(num_compaction_threads, kDefaultNumCompactionThreads, "Number of compaction threads");
 DEFINE_int32(num_seconds_per_thread, kDefaultNumSecondsPerThread,
@@ -73,20 +72,6 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
     }
   }
 
-  void RowSetAlterSchemaThread(DiskRowSet *rs, int col_prefix) {
-    SchemaBuilder builder(rs->schema());
-    uint32_t default_value = 10 * (1 + col_prefix);
-
-    size_t count = 0;
-    while (ShouldRun()) {
-      CHECK_OK(builder.AddColumn(StringPrintf("c%d-%zu", col_prefix, count), UINT32,
-                                 false, &default_value, &default_value));
-      CHECK_OK(rs->AlterSchema(builder.Build()));
-      boost::this_thread::sleep(boost::posix_time::milliseconds(200));
-      count++;
-    }
-  }
-
   void ReadVerify(DiskRowSet *rs) {
     Arena arena(1024, 1024*1024);
     RowBlock dst(rs->schema(), 1000, &arena);
@@ -125,12 +110,6 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
       CHECK_OK(kudu::Thread::Create("test", strings::Substitute("delta_compaction$0", i),
           &TestMultiThreadedRowSetDeltaCompaction::RowSetDeltaCompactionThread, this, rs, &thread));
       compaction_threads_.push_back(thread);
-    }
-    for (int i = 0; i < FLAGS_num_alter_schema_threads; i++) {
-      scoped_refptr<kudu::Thread> thread;
-      CHECK_OK(kudu::Thread::Create("test", strings::Substitute("alter_schema$0", i),
-          &TestMultiThreadedRowSetDeltaCompaction::RowSetAlterSchemaThread, this, rs, i, &thread));
-      alter_schema_threads_.push_back(thread);
     }
   }
 
@@ -207,17 +186,8 @@ TEST_F(TestMultiThreadedRowSetDeltaCompaction, TestMTUpdateAndCompact) {
   TestUpdateAndVerify();
 }
 
-TEST_F(TestMultiThreadedRowSetDeltaCompaction, TestMTAlterSchemaAndUpdates) {
-  if (AllowSlowTests()) {
-    SetupFlagsForSlowTests();
-  }
-
-  if (FLAGS_num_alter_schema_threads == 0) {
-    FLAGS_num_alter_schema_threads = 2;
-  }
-
-  TestUpdateAndVerify();
-}
+// TODO(KUDU-382): add a test where the tablet schema is changing and we
+// update newly-added columns, drop old columns, etc.
 
 } // namespace tablet
 } // namespace kudu

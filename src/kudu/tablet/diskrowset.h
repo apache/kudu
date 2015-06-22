@@ -327,8 +327,6 @@ class DiskRowSet : public RowSet {
   // Major compacts all the delta files for all the columns.
   Status MajorCompactDeltaStores();
 
-  Status AlterSchema(const Schema& schema) OVERRIDE;
-
   boost::mutex *compact_flush_lock() OVERRIDE {
     return &compact_flush_lock_;
   }

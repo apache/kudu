@@ -951,7 +951,6 @@ Status ReupdateMissedDeltas(const string &tablet_name,
         }
 
         gscoped_ptr<OperationResultPB> result(new OperationResultPB);
-        DCHECK_SCHEMA_EQ(*schema, cur_tracker->schema());
         Status s = cur_tracker->Update(mut->timestamp(),
                                        idx_in_delta_tracker,
                                        mut->changelist(),

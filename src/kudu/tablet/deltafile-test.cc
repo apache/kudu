@@ -217,9 +217,8 @@ TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
   DeltaFileWriter dfw(block.Pass());
   ASSERT_OK(dfw.Start());
   ASSERT_OK(WriteDeltaIteratorToFile<REDO>(it.get(),
-                                                  schema_,
-                                                  ITERATE_OVER_ALL_ROWS,
-                                                  &dfw));
+                                           ITERATE_OVER_ALL_ROWS,
+                                           &dfw));
   ASSERT_OK(dfw.Finish());
 
 

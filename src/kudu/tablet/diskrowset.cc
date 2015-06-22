@@ -437,7 +437,7 @@ Status DiskRowSet::Open() {
 
   rowid_t num_rows;
   RETURN_NOT_OK(base_data_->CountRows(&num_rows));
-  delta_tracker_.reset(new DeltaTracker(rowset_metadata_, schema(), num_rows,
+  delta_tracker_.reset(new DeltaTracker(rowset_metadata_, num_rows,
                                         log_anchor_registry_,
                                         parent_tracker_));
   RETURN_NOT_OK(delta_tracker_->Open());
@@ -693,11 +693,6 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
     LOG(FATAL) << "Unknown delta compaction type " << type;
   }
   return std::min(1.0, perf_improv);
-}
-
-Status DiskRowSet::AlterSchema(const Schema& schema) {
-  TRACE_EVENT0("tablet", "DiskRowSet::AlterSchema");
-  return delta_tracker_->AlterSchema(schema);
 }
 
 Status DiskRowSet::DebugDump(vector<string> *lines) {

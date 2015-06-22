@@ -88,12 +88,6 @@ MemRowSet::MemRowSet(int64_t id,
   ANNOTATE_BENIGN_RACE(&debug_update_count_, "update count isnt accurate");
 }
 
-Status MemRowSet::AlterSchema(const Schema& schema) {
-  // The MemRowSet is flushed and re-created with the new Schema.
-  // See Tablet::AlterSchema()
-  return Status::NotSupported("AlterSchema not supported by MemRowSet");
-}
-
 Status MemRowSet::DebugDump(vector<string> *lines) {
   gscoped_ptr<Iterator> iter(NewIterator());
   RETURN_NOT_OK(iter->Init(NULL));

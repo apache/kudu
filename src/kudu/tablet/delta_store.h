@@ -186,7 +186,6 @@ Status DebugDumpDeltaIterator(DeltaType type,
 // If nrows is 0, all rows will be dumped.
 template<DeltaType Type>
 Status WriteDeltaIteratorToFile(DeltaIterator* iter,
-                                const Schema& schema,
                                 size_t nrows,
                                 DeltaFileWriter* out);
 

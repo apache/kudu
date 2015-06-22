@@ -56,7 +56,6 @@ class DeltaTracker {
   };
 
   DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
-               const Schema &schema,
                rowid_t num_rows,
                log::LogAnchorRegistry* log_anchor_registry,
                const shared_ptr<MemTracker>& parent_tracker);
@@ -138,11 +137,6 @@ class DeltaTracker {
                             const std::vector<BlockId>& new_delta_blocks,
                             DeltaType type);
 
-  // Alter DeltaMemStore Schema
-  // If the schema is changed and there are any unflushed deltas
-  // the current DMS is flushed.
-  Status AlterSchema(const Schema& schema);
-
   // Return the number of rows encompassed by this DeltaTracker. Note that
   // this is _not_ the number of updated rows, but rather the number of rows
   // in the associated CFileSet base data. All updates must have a rowid
@@ -165,8 +159,6 @@ class DeltaTracker {
 
   // Retrieves the list of column indexes that currently have updates.
   void GetColumnIdsWithUpdates(std::vector<int>* col_ids) const;
-
-  const Schema& schema() const;
 
   Mutex* compact_flush_lock() {
     return &compact_flush_lock_;
@@ -222,7 +214,6 @@ class DeltaTracker {
                                          std::tr1::shared_ptr<DeltaIterator> *out);
 
   shared_ptr<RowSetMetadata> rowset_metadata_;
-  Schema schema_;
 
   // The number of rows in the DiskRowSet that this tracker is associated with.
   // This is just used for assertions to make sure that we don't update a row
