@@ -181,9 +181,9 @@ class DMSIterator : public DeltaIterator {
 
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
 
-  Status FilterColumnsAndCollectDeltas(const ColumnIndexes& col_indexes,
-                                       vector<DeltaKeyAndUpdate>* out,
-                                       Arena* arena) OVERRIDE;
+  Status FilterColumnIdsAndCollectDeltas(const vector<int>& col_ids,
+                                         vector<DeltaKeyAndUpdate>* out,
+                                         Arena* arena) OVERRIDE;
 
   string ToString() const OVERRIDE;
 

@@ -159,11 +159,11 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     //    delete mutations.
     arena.Reset();
     vector<DeltaKeyAndUpdate> out;
-    vector<size_t> col_ids;
+    vector<int> col_ids;
     BOOST_FOREACH(size_t idx, column_indexes_) {
       col_ids.push_back(base_schema_.column_id(idx));
     }
-    RETURN_NOT_OK(delta_iter_->FilterColumnsAndCollectDeltas(col_ids, &out, &arena));
+    RETURN_NOT_OK(delta_iter_->FilterColumnIdsAndCollectDeltas(col_ids, &out, &arena));
 
     // We only create a new redo delta file if we need to.
     if (!out.empty() && !new_redo_delta_writer_) {

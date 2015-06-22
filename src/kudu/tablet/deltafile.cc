@@ -787,9 +787,9 @@ struct FilterAndAppendVisitor {
     faststring buf;
     RowChangeListEncoder enc(&buf);
     RETURN_NOT_OK(
-        RowChangeListDecoder::RemoveColumnsFromChangeList(RowChangeList(deltas),
-                                                          col_ids,
-                                                          &enc));
+        RowChangeListDecoder::RemoveColumnIdsFromChangeList(RowChangeList(deltas),
+                                                            col_ids,
+                                                            &enc));
     if (enc.is_initialized()) {
       RowChangeList rcl = enc.as_changelist();
       DeltaKeyAndUpdate upd;
@@ -803,16 +803,16 @@ struct FilterAndAppendVisitor {
   }
 
   const DeltaFileIterator* dfi;
-  const ColumnIndexes& col_ids;
+  const vector<int>& col_ids;
   vector<DeltaKeyAndUpdate>* out;
   Arena* arena;
 };
 
-Status DeltaFileIterator::FilterColumnsAndCollectDeltas(
-    const ColumnIndexes& col_indexes,
+Status DeltaFileIterator::FilterColumnIdsAndCollectDeltas(
+    const vector<int>& col_ids,
     vector<DeltaKeyAndUpdate>* out,
     Arena* arena) {
-  FilterAndAppendVisitor visitor = {this, col_indexes, out, arena};
+  FilterAndAppendVisitor visitor = {this, col_ids, out, arena};
   return VisitMutations(&visitor);
 }
 

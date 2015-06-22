@@ -54,8 +54,8 @@ Status DebugDumpDeltaIterator(DeltaType type,
 
     RETURN_NOT_OK(iter->PrepareBatch(n, DeltaIterator::PREPARE_FOR_COLLECT));
     vector<DeltaKeyAndUpdate> cells;
-    RETURN_NOT_OK(iter->FilterColumnsAndCollectDeltas(
-                      vector<size_t>(),
+    RETURN_NOT_OK(iter->FilterColumnIdsAndCollectDeltas(
+                      vector<int>(),
                       &cells,
                       &arena));
     BOOST_FOREACH(const DeltaKeyAndUpdate& cell, cells) {
@@ -95,9 +95,9 @@ Status WriteDeltaIteratorToFile(DeltaIterator* iter,
 
     RETURN_NOT_OK(iter->PrepareBatch(n, DeltaIterator::PREPARE_FOR_COLLECT));
     vector<DeltaKeyAndUpdate> cells;
-    RETURN_NOT_OK(iter->FilterColumnsAndCollectDeltas(vector<size_t>(),
-                                                      &cells,
-                                                      &arena));
+    RETURN_NOT_OK(iter->FilterColumnIdsAndCollectDeltas(vector<int>(),
+                                                        &cells,
+                                                        &arena));
     BOOST_FOREACH(const DeltaKeyAndUpdate& cell, cells) {
       RowChangeList rcl(cell.cell);
       RETURN_NOT_OK(out->AppendDelta<Type>(cell.key, rcl));

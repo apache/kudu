@@ -148,14 +148,14 @@ class DeltaIterator {
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) = 0;
 
   // Iterate through all deltas, adding deltas for columns not
-  // specified in 'col_indexes' to 'out'.
+  // specified in 'col_ids' to 'out'.
   //
   // The delta objects will be allocated out the provided Arena which
   // must be non-NULL.
   // Must have called PrepareBatch() with flag = PREPARE_FOR_COLLECT.
-  virtual Status FilterColumnsAndCollectDeltas(const ColumnIndexes& col_indexes,
-                                               vector<DeltaKeyAndUpdate>* out,
-                                               Arena* arena) = 0;
+  virtual Status FilterColumnIdsAndCollectDeltas(const std::vector<int>& col_ids,
+                                                 vector<DeltaKeyAndUpdate>* out,
+                                                 Arena* arena) = 0;
 
   // Returns true if there are any more rows left in this iterator.
   virtual bool HasNext() = 0;

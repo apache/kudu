@@ -73,12 +73,12 @@ struct DeltaKeyUpdateComparator {
   }
 };
 
-Status DeltaIteratorMerger::FilterColumnsAndCollectDeltas(
-    const ColumnIndexes& col_indexes,
+Status DeltaIteratorMerger::FilterColumnIdsAndCollectDeltas(
+    const vector<int>& col_ids,
     vector<DeltaKeyAndUpdate>* out,
     Arena* arena) {
   BOOST_FOREACH(const shared_ptr<DeltaIterator>& iter, iters_) {
-    RETURN_NOT_OK(iter->FilterColumnsAndCollectDeltas(col_indexes, out, arena));
+    RETURN_NOT_OK(iter->FilterColumnIdsAndCollectDeltas(col_ids, out, arena));
   }
   std::sort(out->begin(), out->end(), DeltaKeyUpdateComparator());
   return Status::OK();

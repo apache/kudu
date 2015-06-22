@@ -312,9 +312,9 @@ class RowChangeListDecoder {
   // 'column_ids' must be sorted; 'out' must be
   // valid for the duration of this method, but not have been
   // previously initialized.
-  static Status RemoveColumnsFromChangeList(const RowChangeList& src,
-                                            const std::vector<size_t>& column_ids,
-                                            RowChangeListEncoder* out);
+  static Status RemoveColumnIdsFromChangeList(const RowChangeList& src,
+                                              const std::vector<int>& column_ids,
+                                              RowChangeListEncoder* out);
 
   struct DecodedUpdate {
     // The updated column ID.

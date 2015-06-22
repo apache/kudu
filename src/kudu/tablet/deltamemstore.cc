@@ -340,9 +340,10 @@ Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
   return Status::OK();
 }
 
-Status DMSIterator::FilterColumnsAndCollectDeltas(const ColumnIndexes& col_indexes,
-                                                  vector<DeltaKeyAndUpdate>* out,
-                                                  Arena* arena) {
+Status DMSIterator::FilterColumnIdsAndCollectDeltas(const vector<int>& col_ids,
+                                                    vector<DeltaKeyAndUpdate>* out,
+                                                    Arena* arena) {
+  LOG(DFATAL) << "Attempt to call FilterColumnIdsAndCollectDeltas on DMS" << GetStackTrace();
   return Status::InvalidArgument("FilterColumsAndAppend() is not supported by DMSIterator");
 }
 
