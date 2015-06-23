@@ -161,33 +161,37 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   return Status::OK();
 }
 
-Status Schema::CreatePartialSchema(const vector<size_t>& col_indexes,
-                                   unordered_map<size_t, size_t>* old_to_new,
-                                   Schema* out) const {
-  int keys_included = 0;
-  for (int i = 0; i < num_key_columns(); i++) {
-    if (std::binary_search(col_indexes.begin(), col_indexes.end(), i)) {
-      keys_included++;
+Status Schema::CreateProjectionByNames(const std::vector<StringPiece>& col_names,
+                                       Schema* out) const {
+  vector<size_t> ids;
+  vector<ColumnSchema> cols;
+  BOOST_FOREACH(const StringPiece& name, col_names) {
+    int idx = find_column(name);
+    if (idx == -1) {
+      return Status::NotFound("column not found", name);
     }
-  }
-  bool has_all_key_columns = (keys_included == num_key_columns());
-  if (keys_included > 0 && !has_all_key_columns) {
-    return Status::InvalidArgument("Partial Schema must either include all key columns or none!");
-  }
-  size_t new_idx = 0;
-  vector<ColumnSchema> cols_to_include;
-  std::vector<size_t> ids;
-  BOOST_FOREACH(size_t col_idx, col_indexes) {
-    cols_to_include.push_back(column(col_idx));
     if (has_column_ids()) {
-      ids.push_back(column_id(col_idx));
+      ids.push_back(column_id(idx));
     }
-    if (old_to_new != NULL) {
-      (*old_to_new)[col_idx] = new_idx++;
-    }
+    cols.push_back(column(idx));
   }
-  RETURN_NOT_OK(out->Reset(cols_to_include, ids, has_all_key_columns ? num_key_columns() : 0));
-  return Status::OK();
+  return out->Reset(cols, ids, 0);
+}
+
+Status Schema::CreateProjectionByIds(const std::vector<int>& col_ids,
+                                     Schema* out) const {
+  vector<ColumnSchema> cols;
+  // TODO: this class still uses size_t for col_ids, so we have to convert.
+  vector<size_t> col_ids_size_t;
+  BOOST_FOREACH(int id, col_ids) {
+    int idx = find_column_by_id(id);
+    if (idx == -1) {
+      return Status::NotFound("column id not found", strings::Substitute("$0", id));
+    }
+    cols.push_back(column(idx));
+    col_ids_size_t.push_back(id);
+  }
+  return out->Reset(cols, col_ids_size_t, 0);
 }
 
 Schema Schema::CopyWithColumnIds() const {

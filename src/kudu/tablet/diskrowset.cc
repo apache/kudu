@@ -47,24 +47,27 @@ const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
 const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
 
 DiskRowSetWriter::DiskRowSetWriter(RowSetMetadata *rowset_metadata,
+                                   const Schema* schema,
                                    const BloomFilterSizing &bloom_sizing)
   : rowset_metadata_(rowset_metadata),
+    schema_(schema),
     bloom_sizing_(bloom_sizing),
     finished_(false),
-    written_count_(0)
-{}
+    written_count_(0) {
+  CHECK(schema->has_column_ids());
+}
 
 Status DiskRowSetWriter::Open() {
   TRACE_EVENT0("tablet", "DiskRowSetWriter::Open");
 
   FsManager* fs = rowset_metadata_->fs_manager();
-  col_writer_.reset(new MultiColumnWriter(fs, &schema()));
+  col_writer_.reset(new MultiColumnWriter(fs, schema_));
   RETURN_NOT_OK(col_writer_->Open());
 
   // Open bloom filter.
   RETURN_NOT_OK(InitBloomFileWriter());
 
-  if (schema().num_key_columns() > 1) {
+  if (schema_->num_key_columns() > 1) {
     // Open ad-hoc index writer
     RETURN_NOT_OK(InitAdHocIndexWriter());
   }
@@ -120,13 +123,13 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
 }
 
 Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
-  DCHECK_EQ(block.schema().num_columns(), schema().num_columns());
+  DCHECK_EQ(block.schema().num_columns(), schema_->num_columns());
   CHECK(!finished_);
 
   // If this is the very first block, encode the first key and save it as metadata
   // in the index column.
   if (written_count_ == 0) {
-    Slice enc_key = schema().EncodeComparableKey(block.row(0), &last_encoded_key_);
+    Slice enc_key = schema_->EncodeComparableKey(block.row(0), &last_encoded_key_);
     key_index_writer()->AddMetadataPair(DiskRowSet::kMinKeyMetaEntryName, enc_key);
     last_encoded_key_.clear();
   }
@@ -148,7 +151,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     // encode a bunch of key slices, then pass them all in one go.
     RowBlockRow row = block.row(i);
     // Insert the encoded key into the bloom.
-    Slice enc_key = schema().EncodeComparableKey(row, &last_encoded_key_);
+    Slice enc_key = schema_->EncodeComparableKey(row, &last_encoded_key_);
     RETURN_NOT_OK(bloom_writer_->AppendKeys(&enc_key, 1));
 
     // Write the batch to the ad hoc index if we're using one
@@ -190,7 +193,9 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   RETURN_NOT_OK(col_writer_->FinishAndReleaseBlocks(closer));
 
   // Put the column data blocks in the metadata.
-  rowset_metadata_->SetColumnDataBlocks(col_writer_->FlushedBlocks());
+  RowSetMetadata::ColumnIdToBlockIdMap flushed_blocks;
+  col_writer_->GetFlushedBlocksByColumnId(&flushed_blocks);
+  rowset_metadata_->SetColumnDataBlocks(flushed_blocks);
 
   if (ad_hoc_index_writer_ != NULL) {
     Status s = ad_hoc_index_writer_->FinishAndReleaseBlock(closer);
@@ -268,7 +273,7 @@ Status RollingDiskRowSetWriter::RollWriter() {
 
   RETURN_NOT_OK(tablet_metadata_->CreateRowSet(&cur_drs_metadata_, schema_));
 
-  cur_writer_.reset(new DiskRowSetWriter(cur_drs_metadata_.get(), bloom_sizing_));
+  cur_writer_.reset(new DiskRowSetWriter(cur_drs_metadata_.get(), &schema_, bloom_sizing_));
   RETURN_NOT_OK(cur_writer_->Open());
 
   FsManager* fs = tablet_metadata_->fs_manager();
@@ -461,35 +466,20 @@ Status DiskRowSet::MajorCompactDeltaStores() {
   vector<int> col_ids;
   delta_tracker_->GetColumnIdsWithUpdates(&col_ids);
 
-  // Translate IDs to indexes, filtering out any that aren't
-  // present in our DRS.
-  vector<size_t> col_indexes;
-  BOOST_FOREACH(int col_id, col_ids) {
-    int idx = schema().find_column_by_id(col_id);
-    if (idx == -1) {
-      // TODO: this warning is probably inappropriate -- this will go away when
-      // AlterTable 2.0 is complete, since DRS won't have a schema at all.
-      LOG(WARNING) << "cannot major compact column ID " << col_id << " which has updates "
-                   << "because it is not present in the current DRS schema";
-      continue;
-    }
-    col_indexes.push_back(idx);
-  }
-
-  if (col_indexes.empty()) {
+  if (col_ids.empty()) {
     return Status::OK();
   }
 
-  return MajorCompactDeltaStoresWithColumns(col_indexes);
+  return MajorCompactDeltaStoresWithColumnIds(col_ids);
 }
 
-Status DiskRowSet::MajorCompactDeltaStoresWithColumns(const ColumnIndexes& col_indexes) {
+Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<int>& col_ids) {
   TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStores");
   boost::lock_guard<Mutex> l(*delta_tracker()->compact_flush_lock());
 
   // TODO: do we need to lock schema or anything here?
   gscoped_ptr<MajorDeltaCompaction> compaction;
-  RETURN_NOT_OK(NewMajorDeltaCompaction(col_indexes, &compaction));
+  RETURN_NOT_OK(NewMajorDeltaCompaction(col_ids, &compaction));
 
   RETURN_NOT_OK(compaction->Compact());
 
@@ -512,7 +502,7 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumns(const ColumnIndexes& col_i
 }
 
 Status DiskRowSet::NewMajorDeltaCompaction(
-    const ColumnIndexes& col_indexes,
+    const vector<int>& col_ids,
     gscoped_ptr<MajorDeltaCompaction>* out) const {
   DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
@@ -531,7 +521,7 @@ Status DiskRowSet::NewMajorDeltaCompaction(
                                       base_data_.get(),
                                       delta_iter,
                                       included_stores,
-                                      col_indexes));
+                                      col_ids));
   return Status::OK();
 }
 

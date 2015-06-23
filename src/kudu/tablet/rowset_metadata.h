@@ -5,12 +5,14 @@
 
 #include <boost/thread/locks.hpp>
 #include <string>
+#include <tr1/unordered_map>
 #include <vector>
 
 #include "kudu/common/schema.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/util/env.h"
 
@@ -49,6 +51,8 @@ class TabletMetadata;
 //
 class RowSetMetadata {
  public:
+  typedef std::tr1::unordered_map<int, BlockId> ColumnIdToBlockIdMap;
+
   // Create a new RowSetMetadata
   static Status CreateNew(TabletMetadata* tablet_metadata,
                           int64_t id,
@@ -78,7 +82,7 @@ class RowSetMetadata {
     adhoc_index_block_ = block_id;
   }
 
-  void SetColumnDataBlocks(const std::vector<BlockId>& blocks);
+  void SetColumnDataBlocks(const ColumnIdToBlockIdMap& blocks_by_col_id);
 
   Status CommitRedoDeltaDataBlock(int64_t dms_id, const BlockId& block_id);
 
@@ -92,9 +96,16 @@ class RowSetMetadata {
     return adhoc_index_block_;
   }
 
-  BlockId column_data_block(int col_idx) {
-    DCHECK_LT(col_idx, column_blocks_.size());
-    return column_blocks_[col_idx];
+  bool has_adhoc_index_block() const {
+    return !adhoc_index_block_.IsNull();
+  }
+
+  BlockId column_data_block_for_col_id(int col_id) {
+    return FindOrDie(blocks_by_col_id_, col_id);
+  }
+
+  ColumnIdToBlockIdMap GetColumnBlocksById() const {
+    return blocks_by_col_id_;
   }
 
   vector<BlockId> redo_delta_blocks() const {
@@ -115,8 +126,10 @@ class RowSetMetadata {
     last_durable_redo_dms_id_ = redo_dms_id;
   }
 
-  bool HasColumnDataBlockForTests(size_t idx) const {
-    return column_blocks_.size() > idx && fs_manager()->BlockExists(column_blocks_[idx]);
+  bool HasDataForColumnIdForTests(int col_id) const {
+    BlockId b;
+    if (!FindCopy(blocks_by_col_id_, col_id, &b)) return false;
+    return fs_manager()->BlockExists(b);
   }
 
   bool HasBloomDataBlockForTests() const {
@@ -125,7 +138,7 @@ class RowSetMetadata {
 
   bool HasUndoDeltaBlockForTests(size_t idx) const {
     return undo_delta_blocks_.size() > idx &&
-        fs_manager()->BlockExists(undo_delta_blocks_[idx]);
+      fs_manager()->BlockExists(undo_delta_blocks_[idx]);
   }
 
   FsManager *fs_manager() const { return tablet_metadata_->fs_manager(); }
@@ -167,15 +180,13 @@ class RowSetMetadata {
   typedef simple_spinlock LockType;
   mutable LockType deltas_lock_;
 
-  const BlockId& column_block(size_t col_idx) const {
-    return column_blocks_[col_idx];
-  }
-
   int64_t id_;
   Schema schema_;
   BlockId bloom_block_;
   BlockId adhoc_index_block_;
-  std::vector<BlockId> column_blocks_;
+
+  // Map of column ID to block ID.
+  ColumnIdToBlockIdMap blocks_by_col_id_;
   std::vector<BlockId> redo_delta_blocks_;
   std::vector<BlockId> undo_delta_blocks_;
   TabletMetadata *tablet_metadata_;
@@ -202,7 +213,7 @@ class RowSetMetadataUpdate {
   RowSetMetadataUpdate& ReplaceRedoDeltaBlocks(const std::vector<BlockId>& to_remove,
                                                const std::vector<BlockId>& to_add);
 
-  RowSetMetadataUpdate& ReplaceColumnBlock(int col_idx, const BlockId& block_id);
+  RowSetMetadataUpdate& ReplaceColumnId(int col_id, const BlockId& block_id);
 
   // Add a new UNDO delta block to the list of UNDO files.
   // We'll need to replace them instead when we start GCing.
@@ -210,7 +221,7 @@ class RowSetMetadataUpdate {
 
  private:
   friend class RowSetMetadata;
-  std::tr1::unordered_map<int, BlockId> cols_to_replace_;
+  RowSetMetadata::ColumnIdToBlockIdMap cols_to_replace_;
   std::vector<BlockId> new_redo_blocks_;
 
   struct ReplaceDeltaBlocks {

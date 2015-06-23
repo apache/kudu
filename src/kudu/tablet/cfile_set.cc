@@ -32,11 +32,11 @@ using std::tr1::shared_ptr;
 ////////////////////////////////////////////////////////////
 
 static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata,
-                         size_t col_idx,
+                         int col_id,
                          gscoped_ptr<CFileReader> *new_reader) {
   FsManager* fs = rowset_metadata->fs_manager();
   gscoped_ptr<ReadableBlock> block;
-  BlockId block_id = rowset_metadata->column_data_block(col_idx);
+  BlockId block_id = rowset_metadata->column_data_block_for_col_id(col_id);
   RETURN_NOT_OK(fs->OpenBlock(block_id, &block));
 
   // TODO: somehow pass reader options in schema
@@ -61,24 +61,21 @@ Status CFileSet::Open() {
 
   // Lazily open the column data cfiles. Each one will be fully opened
   // later, when the first iterator seeks for the first time.
-  readers_.resize(schema().num_columns());
-  for (int i = 0; i < schema().num_columns(); i++) {
-    if (readers_[i] != NULL) {
-      // Already open.
-      continue;
-    }
+  RowSetMetadata::ColumnIdToBlockIdMap block_map = rowset_metadata_->GetColumnBlocksById();
+  BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e, block_map) {
+    int col_id = e.first;
+    DCHECK(!ContainsKey(readers_by_col_id_, col_id)) << "already open";
 
     gscoped_ptr<CFileReader> reader;
-    RETURN_NOT_OK(OpenReader(rowset_metadata_, i, &reader));
-    readers_[i].reset(reader.release());
-    VLOG(1) << "Successfully opened cfile for column "
-            << schema().column(i).ToString()
+    RETURN_NOT_OK(OpenReader(rowset_metadata_, col_id, &reader));
+    readers_by_col_id_[col_id] = shared_ptr<CFileReader>(reader.release());
+    VLOG(1) << "Successfully opened cfile for column id " << col_id
             << " in " << rowset_metadata_->ToString();
   }
 
   // However, the key reader should always be fully opened, so that we
   // can figure out where in the rowset tree we belong.
-  if (schema().num_key_columns() > 1) {
+  if (rowset_metadata_->has_adhoc_index_block()) {
     RETURN_NOT_OK(OpenAdHocIndexReader());
   } else {
     RETURN_NOT_OK(key_index_reader()->Init());
@@ -142,14 +139,18 @@ Status CFileSet::LoadMinMaxKeys() {
 }
 
 CFileReader* CFileSet::key_index_reader() const {
-  return ad_hoc_idx_reader_ ? ad_hoc_idx_reader_.get() : readers_[0].get();
+  if (ad_hoc_idx_reader_) {
+    return ad_hoc_idx_reader_.get();
+  }
+  // TODO(KUDU-382): temporary hack: we have to use the schema here since
+  // we don't have another way of finding the key column.
+  int key_col_id = schema().column_id(0);
+  return FindOrDie(readers_by_col_id_, key_col_id).get();
 }
 
-Status CFileSet::NewColumnIterator(size_t col_idx, CFileReader::CacheControl cache_blocks,
+Status CFileSet::NewColumnIterator(int col_id, CFileReader::CacheControl cache_blocks,
                                    CFileIterator **iter) const {
-  CHECK_LT(col_idx, readers_.size());
-
-  return CHECK_NOTNULL(readers_[col_idx].get())->NewIterator(iter, cache_blocks);
+  return FindOrDie(readers_by_col_id_, col_id)->NewIterator(iter, cache_blocks);
 }
 
 Status CFileSet::NewAdHocIndexIterator(CFileIterator **iter) const {
@@ -174,7 +175,8 @@ Status CFileSet::GetBounds(Slice *min_encoded_key,
 
 uint64_t CFileSet::EstimateOnDiskSize() const {
   uint64_t ret = 0;
-  BOOST_FOREACH(const shared_ptr<CFileReader> &reader, readers_) {
+  BOOST_FOREACH(const ReaderMap::value_type& e, readers_by_col_id_) {
+    const shared_ptr<CFileReader> &reader = e.second;
     ret += reader->file_size();
   }
   return ret;
@@ -233,10 +235,14 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
 }
 
 Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
-  if (schema().num_key_columns() > 1) {
+  if (ad_hoc_idx_reader_) {
     RETURN_NOT_OK(NewAdHocIndexIterator(*&key_iter));
   } else {
-    RETURN_NOT_OK(NewColumnIterator(0, CFileReader::CACHE_BLOCK, *&key_iter));
+    // TODO(KUDU-382): remove dependence on the schema here - instead
+    // we need to know the key column ID as part of metadata, or fetch
+    // it from the tablet schema.
+    RETURN_NOT_OK(NewColumnIterator(schema().column_id(0),
+                                    CFileReader::CACHE_BLOCK, *&key_iter));
   }
   return Status::OK();
 }
@@ -282,7 +288,8 @@ class CFileSetIteratorProjector {
 
   Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
     CFileIterator *base_iter;
-    RETURN_NOT_OK(base_data_->NewColumnIterator(base_col_idx, cache_blocks_, &base_iter));
+    RETURN_NOT_OK(base_data_->NewColumnIterator(projection_->column_id(proj_col_idx),
+                                                cache_blocks_, &base_iter));
     col_iters_->push_back(base_iter);
     return Status::OK();
   }

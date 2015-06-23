@@ -26,8 +26,6 @@ class RowSetMetadataUpdate;
 
 typedef std::vector<std::tr1::shared_ptr<RowSetMetadata> > RowSetMetadataVector;
 typedef std::tr1::unordered_set<int64_t> RowSetMetadataIds;
-typedef std::vector<size_t> ColumnIndexes;
-
 
 extern const int64 kNoDurableMemStore;
 

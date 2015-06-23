@@ -524,10 +524,10 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
   components_ = new TabletComponents(components_->memrowset, new_tree);
 }
 
-Status Tablet::DoMajorDeltaCompaction(const ColumnIndexes& col_indexes,
+Status Tablet::DoMajorDeltaCompaction(const vector<int>& col_ids,
                                       shared_ptr<RowSet> input_rs) {
   Status s = down_cast<DiskRowSet*>(input_rs.get())
-      ->MajorCompactDeltaStoresWithColumns(col_indexes);
+      ->MajorCompactDeltaStoresWithColumnIds(col_ids);
   return s;
 }
 

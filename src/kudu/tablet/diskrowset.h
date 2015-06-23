@@ -54,6 +54,7 @@ class DiskRowSetWriter {
  public:
   // TODO: document ownership of rowset_metadata
   DiskRowSetWriter(RowSetMetadata *rowset_metadata,
+                   const Schema* schema,
                    const BloomFilterSizing &bloom_sizing);
 
   ~DiskRowSetWriter();
@@ -85,7 +86,7 @@ class DiskRowSetWriter {
   // a reasonable estimate for the total data size.
   size_t written_size() const;
 
-  const Schema& schema() const { return rowset_metadata_->schema(); }
+  const Schema& schema() const { return *schema_; }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(DiskRowSetWriter);
@@ -101,6 +102,8 @@ class DiskRowSetWriter {
   cfile::CFileWriter *key_index_writer();
 
   RowSetMetadata *rowset_metadata_;
+  const Schema* const schema_;
+
   BloomFilterSizing bloom_sizing_;
 
   bool finished_;
@@ -365,11 +368,11 @@ class DiskRowSet : public RowSet {
 
   // Create a new major delta compaction object to compact the specified columns.
   Status NewMajorDeltaCompaction(
-      const ColumnIndexes& col_indexes,
+      const std::vector<int>& col_ids,
       gscoped_ptr<MajorDeltaCompaction>* out) const;
 
   // Major compacts all the delta files for the specified columns.
-  Status MajorCompactDeltaStoresWithColumns(const ColumnIndexes& col_indexes);
+  Status MajorCompactDeltaStoresWithColumnIds(const std::vector<int>& col_ids);
 
   shared_ptr<RowSetMetadata> rowset_metadata_;
 

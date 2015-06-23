@@ -844,9 +844,10 @@ TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
   {
     vector<shared_ptr<tablet::RowSet> > rsets;
     tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-    ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(
-                       boost::assign::list_of(1)(2),
-                       rsets[0]));
+    vector<int> col_ids = boost::assign::list_of
+      (tablet_peer_->tablet()->schema()->column_id(1))
+      (tablet_peer_->tablet()->schema()->column_id(2));
+    ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]))
   }
 
   // Verify that data is still the same.
@@ -878,9 +879,10 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
   {
     vector<shared_ptr<tablet::RowSet> > rsets;
     tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-    ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(
-                       boost::assign::list_of(1)(2),
-                       rsets[0]));
+    vector<int> col_ids = boost::assign::list_of
+      (tablet_peer_->tablet()->schema()->column_id(1))
+      (tablet_peer_->tablet()->schema()->column_id(2));
+    ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]));
   }
   // Verify that data is still the same.
   ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));

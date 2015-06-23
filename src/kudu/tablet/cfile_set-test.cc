@@ -40,8 +40,8 @@ class TestCFileSet : public KuduRowSetTest {
   // The second contains the row index * 10.
   // The third column contains index * 100, but is never read.
   void WriteTestRowSet(int nrows) {
-    DiskRowSetWriter rsw(rowset_meta_.get(),
-                   BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
+    DiskRowSetWriter rsw(rowset_meta_.get(), &schema_,
+                         BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
     ASSERT_OK(rsw.Open());
 
@@ -186,12 +186,8 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
   shared_ptr<CFileSet> fileset(new CFileSet(rowset_meta_));
   ASSERT_OK(fileset->Open());
 
-  vector<size_t> sparse_cols;
-  sparse_cols.push_back(0);
-  sparse_cols.push_back(2);
-
   Schema new_schema;
-  ASSERT_OK(schema_.CreatePartialSchema(sparse_cols, NULL, &new_schema));
+  ASSERT_OK(schema_.CreateProjectionByNames(list_of("c0")("c2"), &new_schema));
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
 

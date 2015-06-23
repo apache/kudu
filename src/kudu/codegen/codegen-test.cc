@@ -46,6 +46,7 @@ class CodegenTest : public KuduTest {
       (ColumnSchema("str32-null-val", STRING,  true))
       (ColumnSchema("str32-null    ", STRING,  true));
     base_.Reset(cols, 1);
+    base_ = SchemaBuilder(base_).Build(); // add IDs
 
     // Create an extended default schema
     cols.push_back(ColumnSchema("int32-R ",  INT32, false, kI32R,  NULL));
@@ -53,6 +54,7 @@ class CodegenTest : public KuduTest {
     cols.push_back(ColumnSchema("str32-R ", STRING, false, kStrR,  NULL));
     cols.push_back(ColumnSchema("str32-RW", STRING, false, kStrR, kStrW));
     defaults_.Reset(cols, 1);
+    defaults_ = SchemaBuilder(defaults_).Build(); // add IDs
 
     test_rows_arena_.reset(new Arena(2 * 1024, 1024 * 1024));
     RowBuilder rb(base_);
@@ -100,6 +102,9 @@ class CodegenTest : public KuduTest {
     kStrRCol,
     kStrRWCol
   };
+
+  Status CreatePartialSchema(const vector<size_t>& col_indexes,
+                             Schema* out);
 
  private:
   // Projects the test rows into parameter rowblock using projector and
@@ -201,6 +206,14 @@ Status CodegenTest::Generate(const Schema* proj, gscoped_ptr<CodegenRP>* out) {
   return Status::OK();
 }
 
+Status CodegenTest::CreatePartialSchema(const vector<size_t>& col_indexes,
+                                        Schema* out) {
+  vector<int> col_ids;
+  BOOST_FOREACH(size_t col_idx, col_indexes) {
+    col_ids.push_back(defaults_.column_id(col_idx));
+  }
+  return defaults_.CreateProjectionByIds(col_ids, out);
+}
 
 TEST_F(CodegenTest, ObservablesTest) {
   // Test when not identity
@@ -237,7 +250,7 @@ TEST_F(CodegenTest, TestInts) {
   Schema ints;
   vector<size_t> part_cols = list_of<size_t>
     (kI32Col)(kI32NullValCol)(kI32NullCol);
-  ASSERT_OK(defaults_.CreatePartialSchema(part_cols, NULL, &ints));
+  ASSERT_OK(CreatePartialSchema(part_cols, &ints));
 
   TestProjection<true>(&ints);
   TestProjection<false>(&ints);
@@ -248,7 +261,7 @@ TEST_F(CodegenTest, TestStrings) {
   Schema strs;
   vector<size_t> part_cols = list_of<size_t>
     (kStrCol)(kStrNullValCol)(kStrNullCol);
-  ASSERT_OK(defaults_.CreatePartialSchema(part_cols, NULL, &strs));
+  ASSERT_OK(CreatePartialSchema(part_cols, &strs));
 
   TestProjection<true>(&strs);
   TestProjection<false>(&strs);
@@ -258,7 +271,7 @@ TEST_F(CodegenTest, TestStrings) {
 TEST_F(CodegenTest, TestNonNullables) {
   Schema non_null;
   vector<size_t> part_cols = list_of<size_t>(kKeyCol)(kI32Col)(kStrCol);
-  ASSERT_OK(defaults_.CreatePartialSchema(part_cols, NULL, &non_null));
+  ASSERT_OK(CreatePartialSchema(part_cols, &non_null));
 
   TestProjection<true>(&non_null);
   TestProjection<false>(&non_null);
@@ -269,7 +282,7 @@ TEST_F(CodegenTest, TestNullables) {
   Schema nullables;
   vector<size_t> part_cols = list_of<size_t>
     (kI32NullValCol)(kI32NullCol)(kStrNullValCol)(kStrNullCol);
-  ASSERT_OK(defaults_.CreatePartialSchema(part_cols, NULL, &nullables));
+  ASSERT_OK(CreatePartialSchema(part_cols, &nullables));
 
   TestProjection<true>(&nullables);
   TestProjection<false>(&nullables);
@@ -288,13 +301,13 @@ TEST_F(CodegenTest, TestDefaultsOnly) {
   // Default read projections
   vector<size_t> part_cols = list_of<size_t>
     (kI32RCol)(kI32RWCol)(kStrRCol)(kStrRWCol);
-  ASSERT_OK(defaults_.CreatePartialSchema(part_cols, NULL, &pure_defaults));
+  ASSERT_OK(CreatePartialSchema(part_cols, &pure_defaults));
 
   TestProjection<true>(&pure_defaults);
 
   // Default write projections
   part_cols = list_of<size_t>(kI32RWCol)(kStrRWCol);
-  ASSERT_OK(defaults_.CreatePartialSchema(part_cols, NULL, &pure_defaults));
+  ASSERT_OK(CreatePartialSchema(part_cols, &pure_defaults));
 
   TestProjection<false>(&pure_defaults);
 }
@@ -307,7 +320,7 @@ TEST_F(CodegenTest, TestFullSchemaWithDefaults) {
   Schema full_write;
   vector<size_t> part_cols = list_of<size_t>(kKeyCol)(kI32Col)(kI32NullValCol)
     (kI32NullCol)(kStrCol)(kStrNullValCol)(kStrNullCol)(kI32RWCol)(kStrRWCol);
-  ASSERT_OK(defaults_.CreatePartialSchema(part_cols, NULL, &full_write));
+  ASSERT_OK(CreatePartialSchema(part_cols, &full_write));
 
   TestProjection<false>(&full_write);
 }

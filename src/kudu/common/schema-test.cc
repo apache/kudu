@@ -10,6 +10,7 @@
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/key_encoder.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -17,8 +18,10 @@
 namespace kudu {
 namespace tablet {
 
+using boost::assign::list_of;
 using std::vector;
 using std::tr1::unordered_map;
+using strings::Substitute;
 
 // Copy a row and its referenced data into the given Arena.
 static Status CopyRowToArena(const Slice &row,
@@ -337,7 +340,7 @@ TEST(TestSchema, TestDecodeKeys_InvalidKeys) {
             schema.DebugEncodedRowKey(Slice("foo\x00\x00\xff\xff", 7), Schema::START_KEY));
 }
 
-TEST(TestSchema, TestCreatePartialSchema) {
+TEST(TestSchema, TestCreateProjection) {
   Schema schema(boost::assign::list_of
                 (ColumnSchema("col1", STRING))
                 (ColumnSchema("col2", STRING))
@@ -345,64 +348,51 @@ TEST(TestSchema, TestCreatePartialSchema) {
                 (ColumnSchema("col4", STRING))
                 (ColumnSchema("col5", STRING)),
                 2);
+  Schema schema_with_ids = SchemaBuilder(schema).Build();
+  Schema partial_schema;
 
-  vector<size_t> partial_cols;
-  unordered_map<size_t, size_t> old_to_new;
-  {
-    // All keys are included
-    Schema partial_schema;
-    partial_cols.push_back(0);
-    partial_cols.push_back(1);
-    partial_cols.push_back(3);
+  // By names, without IDs
+  ASSERT_OK(schema.CreateProjectionByNames(list_of("col1")("col2")("col4"), &partial_schema));
+  EXPECT_EQ("Schema [\n"
+            "\tcol1[string NOT NULL],\n"
+            "\tcol2[string NOT NULL],\n"
+            "\tcol4[string NOT NULL]\n"
+            "]",
+            partial_schema.ToString());
 
-    ASSERT_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
-    ASSERT_EQ("Schema [\n"
-              "\tcol1[string NOT NULL],\n"
-              "\tcol2[string NOT NULL],\n"
-              "\tcol4[string NOT NULL]\n"
-              "]",
-              partial_schema.ToString());
-    ASSERT_EQ(old_to_new[0], 0);
-    ASSERT_EQ(old_to_new[1], 1);
-    ASSERT_EQ(old_to_new[3], 2);
-  }
-  partial_cols.clear();
-  old_to_new.clear();
-  {
-    // No keys are included
-    Schema partial_schema;
-    partial_cols.push_back(2);
-     partial_cols.push_back(3);
-     partial_cols.push_back(4);
-     ASSERT_OK(schema.CreatePartialSchema(partial_cols, &old_to_new, &partial_schema));
-     ASSERT_EQ("Schema [\n"
-               "\tcol3[string NOT NULL],\n"
-               "\tcol4[string NOT NULL],\n"
-               "\tcol5[string NOT NULL]\n"
-               "]",
-               partial_schema.ToString());
-     ASSERT_EQ(old_to_new[2], 0);
-     ASSERT_EQ(old_to_new[3], 1);
-     ASSERT_EQ(old_to_new[4], 2);
-  }
-  partial_cols.clear();
-  {
-    // Keys are partially included
-    Schema partial_schema;
-    partial_cols.push_back(0);
-    partial_cols.push_back(4);
-    Status s = schema.CreatePartialSchema(partial_cols, NULL, &partial_schema);
-    ASSERT_TRUE(s.IsInvalidArgument());
-  }
-  partial_cols.clear();
-  partial_cols.push_back(1);
-  partial_cols.push_back(4);
-  {
-    // Keys are partially included, another variant
-    Schema partial_schema;
-    Status s = schema.CreatePartialSchema(partial_cols, NULL, &partial_schema);
-    ASSERT_TRUE(s.IsInvalidArgument());
-  }
+  // By names, with IDS
+  ASSERT_OK(schema_with_ids.CreateProjectionByNames(
+                list_of("col1")("col2")("col4"), &partial_schema));
+  EXPECT_EQ(Substitute("Schema [\n"
+                       "\t$0:col1[string NOT NULL],\n"
+                       "\t$1:col2[string NOT NULL],\n"
+                       "\t$2:col4[string NOT NULL]\n"
+                       "]",
+                       schema_with_ids.column_id(0),
+                       schema_with_ids.column_id(1),
+                       schema_with_ids.column_id(3)),
+            partial_schema.ToString());
+
+  // By names, with missing names.
+  Status s = schema.CreateProjectionByNames(list_of("foobar"), &partial_schema);
+  EXPECT_EQ("Not found: column not found: foobar", s.ToString());
+
+  // By IDs
+  ASSERT_OK(schema_with_ids.CreateProjectionByIds(
+                list_of
+                (schema_with_ids.column_id(0))
+                (schema_with_ids.column_id(1))
+                (schema_with_ids.column_id(3)),
+                &partial_schema));
+  EXPECT_EQ(Substitute("Schema [\n"
+                       "\t$0:col1[string NOT NULL],\n"
+                       "\t$1:col2[string NOT NULL],\n"
+                       "\t$2:col4[string NOT NULL]\n"
+                       "]",
+                       schema_with_ids.column_id(0),
+                       schema_with_ids.column_id(1),
+                       schema_with_ids.column_id(3)),
+            partial_schema.ToString());
 }
 
 #ifdef NDEBUG

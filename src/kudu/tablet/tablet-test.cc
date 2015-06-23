@@ -56,9 +56,9 @@ TYPED_TEST(TestTablet, TestFlush) {
   // Make sure the files were created as expected.
   RowSetMetadata* rowset_meta = tablet_meta->GetRowSetForTests(0);
   CHECK(rowset_meta) << "No row set found";
-  ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(0));
-  ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(1));
-  ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(2));
+  ASSERT_TRUE(rowset_meta->HasDataForColumnIdForTests(this->schema_.column_id(0)));
+  ASSERT_TRUE(rowset_meta->HasDataForColumnIdForTests(this->schema_.column_id(1)));
+  ASSERT_TRUE(rowset_meta->HasDataForColumnIdForTests(this->schema_.column_id(2)));
   ASSERT_TRUE(rowset_meta->HasBloomDataBlockForTests());
 
   // check that undo deltas are present
@@ -624,7 +624,8 @@ TYPED_TEST(TestTablet, TestCompaction) {
     // first MemRowSet had id 0, current one should be 1
     ASSERT_EQ(1, this->tablet()->CurrentMrsIdForTests());
     ASSERT_TRUE(
-      this->tablet()->metadata()->GetRowSetForTests(0)->HasColumnDataBlockForTests(0));
+      this->tablet()->metadata()->GetRowSetForTests(0)->HasDataForColumnIdForTests(
+          this->schema_.column_id(0)));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -637,7 +638,8 @@ TYPED_TEST(TestTablet, TestCompaction) {
     // previous MemRowSet had id 1, current one should be 2
     ASSERT_EQ(2, this->tablet()->CurrentMrsIdForTests());
     ASSERT_TRUE(
-      this->tablet()->metadata()->GetRowSetForTests(1)->HasColumnDataBlockForTests(0));
+      this->tablet()->metadata()->GetRowSetForTests(1)->HasDataForColumnIdForTests(
+          this->schema_.column_id(0)));
   }
 
   LOG_TIMING(INFO, "Inserting rows") {
@@ -650,7 +652,8 @@ TYPED_TEST(TestTablet, TestCompaction) {
     // previous MemRowSet had id 2, current one should be 3
     ASSERT_EQ(3, this->tablet()->CurrentMrsIdForTests());
     ASSERT_TRUE(
-      this->tablet()->metadata()->GetRowSetForTests(2)->HasColumnDataBlockForTests(0));
+      this->tablet()->metadata()->GetRowSetForTests(2)->HasDataForColumnIdForTests(
+          this->schema_.column_id(0)));
   }
 
   // Issue compaction
@@ -663,7 +666,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
 
     const RowSetMetadata *rowset_meta = this->tablet()->metadata()->GetRowSetForTests(3);
     ASSERT_TRUE(rowset_meta != NULL);
-    ASSERT_TRUE(rowset_meta->HasColumnDataBlockForTests(0));
+    ASSERT_TRUE(rowset_meta->HasDataForColumnIdForTests(this->schema_.column_id(0)));
     ASSERT_TRUE(rowset_meta->HasBloomDataBlockForTests());
   }
 

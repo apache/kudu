@@ -23,6 +23,7 @@
 namespace kudu {
 namespace tablet {
 
+using boost::assign::list_of;
 using std::tr1::unordered_set;
 
 using strings::Substitute;
@@ -31,7 +32,7 @@ using util::gtl::is_sorted;
 class TestMajorDeltaCompaction : public KuduRowSetTest {
  public:
   TestMajorDeltaCompaction() :
-      KuduRowSetTest(Schema(boost::assign::list_of
+      KuduRowSetTest(Schema(list_of
                             (ColumnSchema("key", STRING))
                             (ColumnSchema("val1", INT32))
                             (ColumnSchema("val2", STRING))
@@ -166,7 +167,10 @@ TEST_F(TestMajorDeltaCompaction, TestCompact) {
 
   shared_ptr<RowSet> rs = all_rowsets.front();
 
-  vector<size_t> cols_to_compact = boost::assign::list_of(1) (3) (4);
+  vector<int> col_ids_to_compact = list_of
+    (schema_.column_id(1))
+    (schema_.column_id(3))
+    (schema_.column_id(4));
 
   // We'll run a few rounds of update/compact to make sure
   // that we don't get into some funny state (regression test for
@@ -189,11 +193,11 @@ TEST_F(TestMajorDeltaCompaction, TestCompact) {
     ASSERT_NO_FATAL_FAILURE(VerifyData());
 
     // Major compact some columns.
-    vector<size_t> cols;
-    for (int col_index = 0; col_index < cols_to_compact.size() - i; col_index++) {
-      cols.push_back(cols_to_compact[col_index]);
+    vector<int> col_ids;
+    for (int col_index = 0; col_index < col_ids_to_compact.size() - i; col_index++) {
+      col_ids.push_back(col_ids_to_compact[col_index]);
     }
-    ASSERT_OK(tablet()->DoMajorDeltaCompaction(cols, rs));
+    ASSERT_OK(tablet()->DoMajorDeltaCompaction(col_ids, rs));
 
     ASSERT_NO_FATAL_FAILURE(VerifyData());
   }
@@ -223,8 +227,11 @@ TEST_F(TestMajorDeltaCompaction, TestUndos) {
   ASSERT_NO_FATAL_FAILURE(VerifyDataWithMvccAndExpectedState(snap, old_state));
 
   // Major compact, check we still have the old data.
-  vector<size_t> cols_to_compact = boost::assign::list_of(1) (3) (4);
-  ASSERT_OK(tablet()->DoMajorDeltaCompaction(cols_to_compact, rs));
+  vector<int> col_ids_to_compact = list_of
+    (schema_.column_id(1))
+    (schema_.column_id(3))
+    (schema_.column_id(4));
+  ASSERT_OK(tablet()->DoMajorDeltaCompaction(col_ids_to_compact, rs));
   ASSERT_NO_FATAL_FAILURE(VerifyDataWithMvccAndExpectedState(snap, old_state));
 
   // Test adding three updates per row to three REDO files.
@@ -237,8 +244,8 @@ TEST_F(TestMajorDeltaCompaction, TestUndos) {
 
   // To complicate things further, only major compact two columns, then verify we can read the old
   // and the new data.
-  cols_to_compact.pop_back();
-  ASSERT_OK(tablet()->DoMajorDeltaCompaction(cols_to_compact, rs));
+  col_ids_to_compact.pop_back();
+  ASSERT_OK(tablet()->DoMajorDeltaCompaction(col_ids_to_compact, rs));
   ASSERT_NO_FATAL_FAILURE(VerifyDataWithMvccAndExpectedState(snap, old_state));
   ASSERT_NO_FATAL_FAILURE(VerifyData());
 }
@@ -264,8 +271,8 @@ TEST_F(TestMajorDeltaCompaction, TestCarryDeletesOver) {
   ASSERT_NO_FATAL_FAILURE(DeleteRows(kNumRows));
   ASSERT_OK(tablet()->FlushBiggestDMS());
 
-  vector<size_t> cols_to_compact = boost::assign::list_of(4);
-  ASSERT_OK(tablet()->DoMajorDeltaCompaction(cols_to_compact, rs));
+  vector<int> col_ids_to_compact = list_of(schema_.column_id(4));
+  ASSERT_OK(tablet()->DoMajorDeltaCompaction(col_ids_to_compact, rs));
 
   ASSERT_NO_FATAL_FAILURE(VerifyData());
 
@@ -310,8 +317,8 @@ TEST_F(TestMajorDeltaCompaction, TestReinserts) {
 
   // Now we'll push some of the updates down.
   shared_ptr<RowSet> rs = all_rowsets.front();
-  vector<size_t> cols_to_compact = boost::assign::list_of(4);
-  ASSERT_OK(tablet()->DoMajorDeltaCompaction(cols_to_compact, rs));
+  vector<int> col_ids_to_compact = list_of(schema_.column_id(4));
+  ASSERT_OK(tablet()->DoMajorDeltaCompaction(col_ids_to_compact, rs));
 
   // The data we'll see here is the 3rd batch of inserts, doesn't have updates.
   ASSERT_NO_FATAL_FAILURE(VerifyData());

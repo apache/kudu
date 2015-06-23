@@ -33,7 +33,7 @@ class MajorDeltaCompaction {
   // Creates a new major delta compaction. The given 'base_data' should already
   // be open and must remain valid for the lifetime of this object.
   // 'delta_iter' must not be initialized.
-  // col_indexes determines which columns of 'base_schema' should be compacted.
+  // 'col_ids' determines which columns of 'base_schema' should be compacted.
   //
   // TODO: is base_schema supposed to be the same as base_data->schema()? how about
   // in an ALTER scenario?
@@ -42,7 +42,7 @@ class MajorDeltaCompaction {
                        CFileSet* base_data,
                        const shared_ptr<DeltaIterator>& delta_iter,
                        const std::vector<std::tr1::shared_ptr<DeltaStore> >& included_stores,
-                       const ColumnIndexes& col_indexes);
+                       const std::vector<int>& col_ids);
   ~MajorDeltaCompaction();
 
   // Executes the compaction.
@@ -86,11 +86,8 @@ class MajorDeltaCompaction {
   // compacted.
   Schema partial_schema_;
 
-  // The column indexes to compact (relative to the base schema)
-  const ColumnIndexes column_indexes_;
-
-  // Mapping from base schema index to partial schema index.
-  std::tr1::unordered_map<size_t, size_t> old_to_new_;
+  // The column ids to compact.
+  const std::vector<int> column_ids_;
 
   // Inputs:
   //-----------------

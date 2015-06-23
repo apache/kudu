@@ -60,9 +60,10 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
   std::vector<size_t> cols_ids;
   std::vector<ColumnSchema> cols;
   BOOST_FOREACH(const ColumnDataPB& col_pb, pb.columns()) {
-    column_blocks_.push_back(BlockId::FromPB(col_pb.block()));
+    int col_id = col_pb.schema().id();
+    blocks_by_col_id_[col_id] = BlockId::FromPB(col_pb.block());
     cols.push_back(ColumnSchemaFromPB(col_pb.schema()));
-    cols_ids.push_back(col_pb.schema().id());
+    cols_ids.push_back(col_id);
     key_columns += !!col_pb.schema().is_key();
   }
   RETURN_NOT_OK(schema_.Reset(cols, cols_ids, key_columns));
@@ -87,15 +88,22 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   pb->set_id(id_);
 
   // Write Column Files
-  size_t idx = 0;
-  BOOST_FOREACH(const BlockId& block_id, column_blocks_) {
+  // TODO(KUDU-582): currently we have to iterate over our schema
+  // because we rely on generating the schema in column-index order in the PB.
+  // Otherwise, upon load, we can't figure out which column is the key column.
+  // Eventually, we will remove all of the extra schema information here,
+  // just serialize the id -> block mapping, and get the ID of the key
+  // column from the tablet-wide schema.
+  for (int col_idx = 0; col_idx < schema_.num_columns(); col_idx++) {
+    int col_id = schema_.column_id(col_idx);
+    const BlockId& block_id = FindOrDie(blocks_by_col_id_, col_id);
+
     ColumnDataPB *col_data = pb->add_columns();
     ColumnSchemaPB *col_schema = col_data->mutable_schema();
     block_id.CopyToPB(col_data->mutable_block());
-    ColumnSchemaToPB(schema_.column(idx), col_schema);
-    col_schema->set_id(schema_.column_id(idx));
-    col_schema->set_is_key(idx < schema_.num_key_columns());
-    idx++;
+    ColumnSchemaToPB(schema_.column(col_idx), col_schema);
+    col_schema->set_id(col_id);
+    col_schema->set_is_key(col_idx < schema_.num_key_columns());
   }
 
   // Write Delta Files
@@ -129,9 +137,8 @@ const string RowSetMetadata::ToString() const {
   return Substitute("RowSet($0)", id_);
 }
 
-void RowSetMetadata::SetColumnDataBlocks(const std::vector<BlockId>& blocks) {
-  CHECK_EQ(blocks.size(), schema_.num_columns());
-  column_blocks_ = blocks;
+void RowSetMetadata::SetColumnDataBlocks(const ColumnIdToBlockIdMap& blocks) {
+  blocks_by_col_id_ = blocks;
 }
 
 Status RowSetMetadata::CommitRedoDeltaDataBlock(int64_t dms_id,
@@ -187,10 +194,8 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
       undo_delta_blocks_.insert(undo_delta_blocks_.begin(), update.new_undo_block_);
     }
 
-    typedef std::pair<int, BlockId> IntBlockPair;
-    BOOST_FOREACH(const IntBlockPair& e, update.cols_to_replace_) {
-      CHECK_LT(e.first, column_blocks_.size());
-      BlockId& old = column_blocks_[e.first];
+    BOOST_FOREACH(const ColumnIdToBlockIdMap::value_type& e, update.cols_to_replace_) {
+      BlockId& old = FindOrDie(blocks_by_col_id_, e.first);
       removed.push_back(old);
       old = e.second;
     }
@@ -211,8 +216,7 @@ vector<BlockId> RowSetMetadata::GetAllBlocks() {
   if (!bloom_block_.IsNull()) {
     blocks.push_back(bloom_block_);
   }
-  blocks.insert(blocks.end(),
-                column_blocks_.begin(), column_blocks_.end());
+  AppendValuesFromMap(blocks_by_col_id_, &blocks);
 
   boost::lock_guard<LockType> l(deltas_lock_);
   blocks.insert(blocks.end(),
@@ -226,9 +230,9 @@ RowSetMetadataUpdate::RowSetMetadataUpdate() {
 }
 RowSetMetadataUpdate::~RowSetMetadataUpdate() {
 }
-RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceColumnBlock(
-    int col_idx, const BlockId& block_id) {
-  InsertOrDie(&cols_to_replace_, col_idx, block_id);
+RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceColumnId(
+    int col_id, const BlockId& block_id) {
+  InsertOrDie(&cols_to_replace_, col_id, block_id);
   return *this;
 }
 RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceRedoDeltaBlocks(

@@ -29,6 +29,7 @@ DECLARE_int32(tablet_delta_store_minor_compact_max);
 namespace kudu {
 namespace tablet {
 
+using boost::assign::list_of;
 using std::tr1::unordered_set;
 using util::gtl::is_sorted;
 
@@ -50,9 +51,8 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
   }
 
   // Now iterate only over the key column
-  Schema proj_key(boost::assign::list_of
-                  (ColumnSchema("key", STRING)),
-                  1);
+  Schema proj_key;
+  ASSERT_OK(schema_.CreateProjectionByNames(list_of("key"), &proj_key));
 
   LOG_TIMING(INFO, "Iterating over only key column") {
     IterateProjection(*rs, proj_key, n_rows_);
@@ -60,9 +60,8 @@ TEST_F(TestRowSet, TestRowSetRoundTrip) {
 
 
   // Now iterate only over the non-key column
-  Schema proj_val(boost::assign::list_of
-                  (ColumnSchema("val", UINT32)),
-                  1);
+  Schema proj_val;
+  ASSERT_OK(schema_.CreateProjectionByNames(list_of("val"), &proj_val));
   LOG_TIMING(INFO, "Iterating over only val column") {
     IterateProjection(*rs, proj_val, n_rows_);
   }
@@ -291,8 +290,8 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
 
   // Write a single row into a new DiskRowSet.
   LOG_TIMING(INFO, "Writing rowset") {
-    DiskRowSetWriter drsw(rowset_meta_.get(),
-                   BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
+    DiskRowSetWriter drsw(rowset_meta_.get(), &schema_,
+                          BloomFilterSizing::BySizeAndFPRate(32*1024, 0.01f));
 
     ASSERT_OK(drsw.Open());
 
@@ -416,7 +415,7 @@ TEST_F(TestRowSet, TestRollingDiskRowSetWriter) {
   writer.GetWrittenRowSetMetadata(&metas);
   EXPECT_EQ(4, metas.size());
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
-    ASSERT_TRUE(meta->HasColumnDataBlockForTests(0));
+    ASSERT_TRUE(meta->HasDataForColumnIdForTests(schema_.column_id(0)));
   }
 }
 

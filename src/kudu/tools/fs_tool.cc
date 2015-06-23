@@ -279,17 +279,17 @@ Status FsTool::ListBlocksForTablet(const string& tablet_id) {
 
 Status FsTool::ListBlocksInRowSet(const Schema& schema,
                                   const RowSetMetadata& rs_meta) {
-
-
-  for (size_t col_idx = 0; col_idx < schema.num_columns(); ++col_idx) {
-
-    if (rs_meta.HasColumnDataBlockForTests(col_idx)) {
-      std::cout << "Column block for column " << schema.column(col_idx).ToString() << ": ";
-      std::cout << rs_meta.column_block(col_idx).ToString() << std::endl;
-    } else {
-      std::cout << "No column data blocks for column "
-                << schema.column(col_idx).ToString() << ". " << std::endl;
+  RowSetMetadata::ColumnIdToBlockIdMap col_blocks = rs_meta.GetColumnBlocksById();
+  BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e, col_blocks) {
+    int col_id = e.first;
+    const BlockId& block_id = e.second;
+    std::cout << "Column block for column ID " << col_id;
+    int col_idx = schema.find_column_by_id(col_id);
+    if (col_idx != -1) {
+      std::cout << " (" << schema.column(col_idx).ToString() << ")";
     }
+    std::cout << ": ";
+    std::cout << block_id.ToString() << std::endl;
   }
 
   BOOST_FOREACH(const BlockId& block, rs_meta.undo_delta_blocks()) {
@@ -374,18 +374,21 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
   std::cout << Indent(indent) << "RowSet metadata: " << pb.DebugString() << std::endl
             << std::endl;
 
-  for (size_t col_idx = 0; col_idx < schema.num_columns(); ++col_idx) {
-    if (rs_meta->HasColumnDataBlockForTests(col_idx)) {
-      BlockId block = rs_meta->column_block(col_idx);
-      std::cout << Indent(indent) << "Dumping column block " << block << " for column "
-                << schema.column(col_idx).ToString() << ":" << std::endl;
-      std::cout << Indent(indent) << kSeparatorLine;
-      if (opts.metadata_only) continue;
-      RETURN_NOT_OK(DumpCFileBlockInternal(block, opts, indent));
-    } else {
-      std::cout << Indent(indent) << "No column data blocks for column "
-                << schema.column(col_idx).ToString() << ". " << std::endl;
+  RowSetMetadata::ColumnIdToBlockIdMap col_blocks = rs_meta->GetColumnBlocksById();
+  BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e, col_blocks) {
+    int col_id = e.first;
+    const BlockId& block_id = e.second;
+
+    std::cout << Indent(indent) << "Dumping column block " << block_id << " for column id "
+              << col_id;
+    int col_idx = schema.find_column_by_id(col_id);
+    if (col_idx != -1) {
+      std::cout << "( " << schema.column(col_idx).ToString() <<  ")";
     }
+    std::cout << ":" << std::endl;
+    std::cout << Indent(indent) << kSeparatorLine;
+    if (opts.metadata_only) continue;
+    RETURN_NOT_OK(DumpCFileBlockInternal(block_id, opts, indent));
     std::cout << std::endl;
   }
 

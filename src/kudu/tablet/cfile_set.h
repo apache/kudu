@@ -5,6 +5,7 @@
 
 #include <gtest/gtest_prod.h>
 #include <tr1/memory>
+#include <tr1/unordered_map>
 #include <string>
 #include <vector>
 
@@ -84,7 +85,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   Status OpenAdHocIndexReader();
   Status LoadMinMaxKeys();
 
-  Status NewColumnIterator(size_t col_idx, CFileReader::CacheControl cache_blocks,
+  Status NewColumnIterator(int col_id, CFileReader::CacheControl cache_blocks,
                            CFileIterator **iter) const;
   Status NewAdHocIndexIterator(CFileIterator **iter) const;
 
@@ -99,7 +100,9 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   std::string min_encoded_key_;
   std::string max_encoded_key_;
 
-  vector<shared_ptr<CFileReader> > readers_;
+  // Map of column ID to reader. These are lazily initialized as needed.
+  typedef std::tr1::unordered_map<int, shared_ptr<CFileReader> > ReaderMap;
+  ReaderMap readers_by_col_id_;
 
   // A file reader for an ad-hoc index, i.e. an index that sits in its own file
   // and is not embedded with the column's data blocks. This is used when the

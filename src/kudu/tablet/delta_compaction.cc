@@ -46,17 +46,17 @@ MajorDeltaCompaction::MajorDeltaCompaction(FsManager* fs_manager,
                                            CFileSet* base_data,
                                            const shared_ptr<DeltaIterator>& delta_iter,
                                            const vector<shared_ptr<DeltaStore> >& included_stores,
-                                           const ColumnIndexes& col_indexes)
+                                           const vector<int>& col_ids)
   : fs_manager_(fs_manager),
     base_schema_(base_schema),
-    column_indexes_(col_indexes),
+    column_ids_(col_ids),
     base_data_(base_data),
     included_stores_(included_stores),
     delta_iter_(delta_iter),
     redo_delta_mutations_written_(0),
     undo_delta_mutations_written_(0),
     state_(kInitialized) {
-  CHECK(!col_indexes.empty());
+  CHECK(!col_ids.empty());
 }
 
 MajorDeltaCompaction::~MajorDeltaCompaction() {
@@ -64,8 +64,8 @@ MajorDeltaCompaction::~MajorDeltaCompaction() {
 
 string MajorDeltaCompaction::ColumnNamesToString() const {
   std::string result;
-  BOOST_FOREACH(size_t col_idx, column_indexes_) {
-    result += base_schema_.column(col_idx).ToString() + " ";
+  BOOST_FOREACH(int col_id, column_ids_) {
+    result += base_schema_.column_by_id(col_id).ToString() + " ";
   }
   return result;
 }
@@ -159,11 +159,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     //    delete mutations.
     arena.Reset();
     vector<DeltaKeyAndUpdate> out;
-    vector<int> col_ids;
-    BOOST_FOREACH(size_t idx, column_indexes_) {
-      col_ids.push_back(base_schema_.column_id(idx));
-    }
-    RETURN_NOT_OK(delta_iter_->FilterColumnIdsAndCollectDeltas(col_ids, &out, &arena));
+    RETURN_NOT_OK(delta_iter_->FilterColumnIdsAndCollectDeltas(column_ids_, &out, &arena));
 
     // We only create a new redo delta file if we need to.
     if (!out.empty() && !new_redo_delta_writer_) {
@@ -237,9 +233,7 @@ Status MajorDeltaCompaction::Compact() {
   CHECK_EQ(state_, kInitialized);
 
   LOG(INFO) << "Starting major delta compaction for columns " << ColumnNamesToString();
-  RETURN_NOT_OK(base_schema_.CreatePartialSchema(column_indexes_,
-                                                 &old_to_new_,
-                                                 &partial_schema_));
+  RETURN_NOT_OK(base_schema_.CreateProjectionByIds(column_ids_, &partial_schema_));
 
   BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, included_stores_) {
     LOG(INFO) << "Preparing to major compact delta file: " << ds->ToString();
@@ -277,11 +271,11 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
   }
 
   // Replace old column blocks with new ones
-  vector<BlockId> new_column_blocks = base_data_writer_->FlushedBlocks();
-  CHECK_EQ(new_column_blocks.size(), column_indexes_.size());
-
-  for (int i = 0; i < column_indexes_.size(); i++) {
-    update->ReplaceColumnBlock(column_indexes_[i], new_column_blocks[i]);
+  RowSetMetadata::ColumnIdToBlockIdMap new_column_blocks;
+  base_data_writer_->GetFlushedBlocksByColumnId(&new_column_blocks);
+  CHECK_EQ(new_column_blocks.size(), column_ids_.size());
+  BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e,  new_column_blocks) {
+    update->ReplaceColumnId(e.first, e.second);
   }
 
   return Status::OK();

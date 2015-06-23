@@ -316,13 +316,12 @@ class Tablet {
   // This method takes a read lock on component_lock_ and is thread-safe.
   int32_t CurrentMrsIdForTests() const;
 
-  // Runs a major delta major compaction on columns at specified
-  // indexes in 'input_rowset'; 'column_indexes' must be sorted.
+  // Runs a major delta major compaction on columns with specified IDs.
   // NOTE: RowSet must presently be a DiskRowSet. (Perhaps the API should be
   // a shared_ptr API for now?)
   //
   // TODO: Handle MVCC to support MemRowSet and handle deltas in DeltaMemStore
-  Status DoMajorDeltaCompaction(const ColumnIndexes& column_indexes,
+  Status DoMajorDeltaCompaction(const std::vector<int>& column_ids,
                                 shared_ptr<RowSet> input_rowset);
 
   // Method used by tests to retrieve all rowsets of this table. This
