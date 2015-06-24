@@ -133,6 +133,9 @@ class ReadableBlock : public Block {
   // Does not modify 'result' on error (but may modify 'scratch').
   virtual Status Read(uint64_t offset, size_t length,
                       Slice* result, uint8_t* scratch) const = 0;
+
+  // Returns the memory usage of this object including the object itself.
+  virtual size_t memory_footprint() const = 0;
 };
 
 // Provides options and hints for block placement.

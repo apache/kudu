@@ -18,6 +18,7 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/malloc.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/oid_generator.h"
@@ -375,17 +376,9 @@ class FileReadableBlock : public ReadableBlock {
   virtual Status Read(uint64_t offset, size_t length,
                       Slice* result, uint8_t* scratch) const OVERRIDE;
 
+  virtual size_t memory_footprint() const OVERRIDE;
+
  private:
-  // Returns the LogBlock's memory usage.
-  int64_t memory_usage() const {
-    DCHECK(reader_);
-
-    return sizeof(this)            // FileReadableBlock and embedded objects.
-        + block_id_.memory_usage() // Memory usage of the BlockId.
-        - sizeof(block_id_)        // Duplicated in sizeof(this) and BlockId memory_usage().
-        + reader_->memory_usage(); // Memory usage of the RandomAccessFile.
-  }
-
   // Back pointer to the owning block manager.
   const FileBlockManager* block_manager_;
 
@@ -413,8 +406,6 @@ FileReadableBlock::FileReadableBlock(const FileBlockManager* block_manager,
     block_manager_->metrics_->blocks_open_reading->Increment();
     block_manager_->metrics_->total_readable_blocks->Increment();
   }
-
-  block_manager_->mem_tracker_->Consume(memory_usage());
 }
 
 FileReadableBlock::~FileReadableBlock() {
@@ -424,12 +415,6 @@ FileReadableBlock::~FileReadableBlock() {
 
 Status FileReadableBlock::Close() {
   if (closed_.CompareAndSet(false, true)) {
-    // Technically, we should release this memory in the destructor. But we
-    // need a live reader_ to do a proper accounting (without resorting to
-    // storing the value locally), so let's just release now knowing that
-    // a closed block is a soon-to-be destructed block.
-    block_manager_->mem_tracker_->Release(memory_usage());
-
     reader_.reset();
     if (block_manager_->metrics_) {
       block_manager_->metrics_->blocks_open_reading->Decrement();
@@ -459,6 +444,11 @@ Status FileReadableBlock::Read(uint64_t offset, size_t length,
   }
 
   return Status::OK();
+}
+
+size_t FileReadableBlock::memory_footprint() const {
+  DCHECK(reader_);
+  return kudu_malloc_usable_size(this) + reader_->memory_footprint();
 }
 
 } // namespace internal

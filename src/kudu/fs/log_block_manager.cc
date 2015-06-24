@@ -17,6 +17,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/malloc.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/path_util.h"
@@ -604,13 +605,6 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
   void Delete();
 
  private:
-  // Returns the LogBlock's memory usage.
-  int64_t memory_usage() const {
-    return sizeof(this)            // LogReadableBlock and embedded objects.
-        + block_id_.memory_usage() // Memory usage of the BlockId.
-        - sizeof(block_id_);       // Duplicated in sizeof(this) and BlockId memory_usage().
-  }
-
   // The owning container. Must outlive the LogBlock.
   LogBlockContainer* container_;
 
@@ -640,7 +634,7 @@ LogBlock::LogBlock(LogBlockContainer* container,
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
 
-  container_->ConsumeMemory(memory_usage());
+  container_->ConsumeMemory(kudu_malloc_usable_size(this));
 }
 
 LogBlock::~LogBlock() {
@@ -652,7 +646,7 @@ LogBlock::~LogBlock() {
     WARN_NOT_OK(container_->DeleteBlock(offset_, length_),
                 Substitute("Could not delete block $0", block_id_.ToString()));
   }
-  container_->ReleaseMemory(memory_usage());
+  container_->ReleaseMemory(kudu_malloc_usable_size(this));
 }
 
 void LogBlock::Delete() {
@@ -903,6 +897,8 @@ class LogReadableBlock : public ReadableBlock {
   virtual Status Read(uint64_t offset, size_t length,
                       Slice* result, uint8_t* scratch) const OVERRIDE;
 
+  virtual size_t memory_footprint() const OVERRIDE;
+
  private:
   // The owning container. Must outlive this block.
   LogBlockContainer* container_;
@@ -926,13 +922,11 @@ LogReadableBlock::LogReadableBlock(LogBlockContainer* container,
     container_->metrics()->generic_metrics.blocks_open_reading->Increment();
     container_->metrics()->generic_metrics.total_readable_blocks->Increment();
   }
-  container_->ConsumeMemory(sizeof(this));
 }
 
 LogReadableBlock::~LogReadableBlock() {
   WARN_NOT_OK(Close(), Substitute("Failed to close block $0",
                                   id().ToString()));
-  container_->ReleaseMemory(sizeof(this));
 }
 
 Status LogReadableBlock::Close() {
@@ -978,6 +972,10 @@ Status LogReadableBlock::Read(uint64_t offset, size_t length,
   return Status::OK();
 }
 
+size_t LogReadableBlock::memory_footprint() const {
+  return kudu_malloc_usable_size(this);
+}
+
 } // namespace internal
 
 ////////////////////////////////////////////////////////////
@@ -991,7 +989,10 @@ LogBlockManager::LogBlockManager(Env* env, const BlockManagerOptions& opts)
                                            "log_block_manager",
                                            opts.parent_mem_tracker)),
     // TODO: C++11 provides a single-arg constructor
-    blocks_by_block_id_(10, BlockIdHash(), BlockIdEqual(), BlockAllocator(mem_tracker_)),
+    blocks_by_block_id_(10,
+                        BlockMap::hasher(),
+                        BlockMap::key_equal(),
+                        BlockAllocator(mem_tracker_)),
     env_(DCHECK_NOTNULL(env)),
     read_only_(opts.read_only),
     root_paths_(opts.root_paths),

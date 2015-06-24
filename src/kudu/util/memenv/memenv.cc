@@ -19,6 +19,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env.h"
+#include "kudu/util/malloc.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/memenv/memenv.h"
 #include "kudu/util/random.h"
@@ -152,11 +153,14 @@ class FileState {
 
   const string& filename() const { return filename_; }
 
-  int64_t memory_usage() const {
-    return sizeof(this)                           // FileState and all embedded objects.
-        + (blocks_.capacity() * sizeof(uint8_t*)) // Pointer array in blocks_.
-        + (blocks_.capacity() * kBlockSize)       // Blocks pointed to by blocks_.
-        + filename_.capacity();                   // Memory (approximate) pointed to by filename_.
+  size_t memory_footprint() const {
+    size_t size = kudu_malloc_usable_size(this);
+    size += kudu_malloc_usable_size(blocks_.data());
+    BOOST_FOREACH(uint8_t* block, blocks_) {
+      size += kudu_malloc_usable_size(block);
+    }
+    size += filename_.capacity();
+    return size;
   }
 
  private:
@@ -249,8 +253,10 @@ class RandomAccessFileImpl : public RandomAccessFile {
     return file_->filename();
   }
 
-  virtual int64_t memory_usage() const OVERRIDE {
-    return sizeof(this) + file_->memory_usage();
+  virtual size_t memory_footprint() const OVERRIDE {
+    // The FileState is actually shared between multiple files, but the double
+    // counting doesn't matter much since MemEnv is only used in tests.
+    return kudu_malloc_usable_size(this) + file_->memory_footprint();
   }
 
  private:

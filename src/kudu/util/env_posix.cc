@@ -38,6 +38,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/malloc.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/slice.h"
@@ -226,8 +227,8 @@ class PosixRandomAccessFile: public RandomAccessFile {
 
   virtual const string& filename() const OVERRIDE { return filename_; }
 
-  virtual int64_t memory_usage() const OVERRIDE {
-    return sizeof(this) + filename_.capacity();
+  virtual size_t memory_footprint() const OVERRIDE {
+    return kudu_malloc_usable_size(this) + filename_.capacity();
   }
 };
 
@@ -266,8 +267,8 @@ class PosixMmapReadableFile: public RandomAccessFile {
 
   virtual const string& filename() const OVERRIDE { return filename_; }
 
-  virtual int64_t memory_usage() const OVERRIDE {
-    return sizeof(this) + filename_.capacity();
+  virtual size_t memory_footprint() const OVERRIDE {
+    return kudu_malloc_usable_size(this) + filename_.capacity();
   }
 };
 

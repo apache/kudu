@@ -50,11 +50,6 @@ class BlockId {
     return id_ != other.id_;
   }
 
-  // Returns the approximate memory usage of the BlockId.
-  int64_t memory_usage() const {
-    return sizeof(this);
-  }
-
   // Join the given block IDs with ','. Useful for debug printouts.
   static std::string JoinStrings(const std::vector<BlockId>& blocks);
 

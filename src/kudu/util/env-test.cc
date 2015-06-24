@@ -22,6 +22,7 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/malloc.h"
 #include "kudu/util/memenv/memenv.h"
 
 // Copied from falloc.h. Useful for older kernels that lack support for
@@ -412,8 +413,8 @@ class ShortReadRandomAccessFile : public RandomAccessFile {
 
   virtual const string& filename() const OVERRIDE { return wrapped_->filename(); }
 
-  virtual int64_t memory_usage() const OVERRIDE {
-    return sizeof(this) + wrapped_->memory_usage();
+  virtual size_t memory_footprint() const OVERRIDE {
+    return wrapped_->memory_footprint();
   }
 
  private:

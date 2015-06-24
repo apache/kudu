@@ -97,6 +97,8 @@ class BlockManagerTest : public KuduTest {
 
   void RunLogContainerPreallocationTest();
 
+  void RunMemTrackerTest();
+
   gscoped_ptr<BlockManager> bm_;
 };
 
@@ -293,6 +295,42 @@ void BlockManagerTest<LogBlockManager>::RunLogContainerPreallocationTest() {
     }
   }
   ASSERT_TRUE(found);
+}
+
+template <>
+void BlockManagerTest<FileBlockManager>::RunMemTrackerTest() {
+  shared_ptr<MemTracker> tracker = MemTracker::CreateTracker(-1, "test tracker");
+  ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                                   tracker,
+                                                   list_of(GetTestDataDirectory()),
+                                                   false));
+
+  // The file block manager does not allocate memory for persistent data.
+  int64_t initial_mem = tracker->consumption();
+  ASSERT_EQ(initial_mem, 0);
+  gscoped_ptr<WritableBlock> writer;
+  ASSERT_OK(this->bm_->CreateBlock(&writer));
+  ASSERT_OK(writer->Close());
+  ASSERT_EQ(tracker->consumption(), initial_mem);
+}
+
+template <>
+void BlockManagerTest<LogBlockManager>::RunMemTrackerTest() {
+  shared_ptr<MemTracker> tracker = MemTracker::CreateTracker(-1, "test tracker");
+  ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
+                                                   tracker,
+                                                   list_of(GetTestDataDirectory()),
+                                                   false));
+
+  // The initial consumption should be non-zero due to the block map.
+  int64_t initial_mem = tracker->consumption();
+  ASSERT_GT(initial_mem, 0);
+
+  // Allocating a persistent block should increase the consumption.
+  gscoped_ptr<WritableBlock> writer;
+  ASSERT_OK(this->bm_->CreateBlock(&writer));
+  ASSERT_OK(writer->Close());
+  ASSERT_GT(tracker->consumption(), initial_mem);
 }
 
 // What kinds of BlockManagers are supported?
@@ -632,28 +670,7 @@ TYPED_TEST(BlockManagerTest, LogContainerPreallocationTest) {
 }
 
 TYPED_TEST(BlockManagerTest, MemTrackerTest) {
-  shared_ptr<MemTracker> tracker = MemTracker::CreateTracker(-1, "test tracker");
-  ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
-                                                   tracker,
-                                                   list_of(GetTestDataDirectory()),
-                                                   false));
-
-  // We can't really assert much about the initial consumption, because some
-  // block managers may have already allocated memory.
-  int64_t initial_mem = tracker->consumption();
-  ASSERT_GE(initial_mem, 0);
-
-  // Likewise, some block managers allocate more memory for a persisted block,
-  // while others do not.
-  gscoped_ptr<WritableBlock> writer;
-  ASSERT_OK(this->bm_->CreateBlock(&writer));
-  ASSERT_OK(writer->Close());
-  ASSERT_GE(tracker->consumption(), initial_mem);
-
-  // But all block managers allocate memory for a ReadableBlock.
-  gscoped_ptr<ReadableBlock> reader;
-  ASSERT_OK(this->bm_->OpenBlock(writer->id(), &reader));
-  ASSERT_GT(tracker->consumption(), initial_mem);
+  ASSERT_NO_FATAL_FAILURE(this->RunMemTrackerTest());
 }
 
 } // namespace fs

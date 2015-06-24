@@ -5,6 +5,7 @@
 #define KUDU_FS_FS_TEST_UTIL_H
 
 #include "kudu/fs/block_manager.h"
+#include "kudu/util/malloc.h"
 
 namespace kudu {
 namespace fs {
@@ -49,6 +50,10 @@ class CountingReadableBlock : public ReadableBlock {
     RETURN_NOT_OK(block_->Read(offset, length, result, scratch));
     *bytes_read_ += length;
     return Status::OK();
+  }
+
+  virtual size_t memory_footprint() const OVERRIDE {
+    return block_->memory_footprint();
   }
 
  private:

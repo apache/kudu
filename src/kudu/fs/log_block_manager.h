@@ -232,7 +232,7 @@ class LogBlockManager : public BlockManager {
   const internal::LogBlockManagerMetrics* metrics() const { return metrics_.get(); }
 
   // Tracks memory consumption of any allocations numerous enough to be
-  // interesting (e.g. ReadableBlocks).
+  // interesting (e.g. LogBlocks).
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
 
   // Protects the block map, container structures, and 'dirty_dirs'.

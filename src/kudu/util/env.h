@@ -315,8 +315,9 @@ class RandomAccessFile {
   // Returns the filename provided when the RandomAccessFile was constructed.
   virtual const std::string& filename() const = 0;
 
-  // Returns the approximate memory usage of the RandomAccessFile.
-  virtual int64_t memory_usage() const = 0;
+  // Returns the approximate memory usage of this RandomAccessFile including
+  // the object itself.
+  virtual size_t memory_footprint() const = 0;
 };
 
 // Creation-time options for WritableFile

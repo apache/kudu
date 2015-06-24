@@ -127,7 +127,7 @@ class FileBlockManager : public BlockManager {
   gscoped_ptr<internal::BlockManagerMetrics> metrics_;
 
   // Tracks memory consumption of any allocations numerous enough to be
-  // interesting (e.g. ReadableBlocks).
+  // interesting.
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(FileBlockManager);
