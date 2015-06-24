@@ -4,6 +4,7 @@
 #define KUDU_COMMON_SCHEMA_H
 
 #include <boost/foreach.hpp>
+#include <functional>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
@@ -15,6 +16,7 @@
 
 #include "kudu/common/id_mapping.h"
 #include "kudu/common/key_encoder.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/util/status.h"
 
 // Check that two schemas are equal, yielding a useful error message in the case that
@@ -229,6 +231,14 @@ class ColumnSchema {
     }
   }
 
+  // Returns the memory usage of this object without the object itself. Should
+  // be used when embedded inside another object.
+  size_t memory_footprint_excluding_this() const;
+
+  // Returns the memory usage of this object including the object itself.
+  // Should be used when allocated on the heap.
+  size_t memory_footprint_including_this() const;
+
  private:
   friend class SchemaBuilder;
 
@@ -262,6 +272,12 @@ class Schema {
  public:
   Schema()
     : num_key_columns_(0),
+      name_to_index_bytes_(0),
+      // TODO: C++11 provides a single-arg constructor
+      name_to_index_(10,
+                     NameToIndexMap::hasher(),
+                     NameToIndexMap::key_equal(),
+                     NameToIndexMapAllocator(&name_to_index_bytes_)),
       has_nullables_(false) {
   }
 
@@ -279,7 +295,13 @@ class Schema {
   // caught. If an invalid schema is passed to this constructor, an
   // assertion will be fired!
   Schema(const vector<ColumnSchema>& cols,
-         int key_columns) {
+         int key_columns)
+    : name_to_index_bytes_(0),
+      // TODO: C++11 provides a single-arg constructor
+      name_to_index_(10,
+                     NameToIndexMap::hasher(),
+                     NameToIndexMap::key_equal(),
+                     NameToIndexMapAllocator(&name_to_index_bytes_)) {
     CHECK_OK(Reset(cols, key_columns));
   }
 
@@ -291,7 +313,13 @@ class Schema {
   // assertion will be fired!
   Schema(const vector<ColumnSchema>& cols,
          const vector<size_t>& ids,
-         int key_columns) {
+         int key_columns)
+    : name_to_index_bytes_(0),
+      // TODO: C++11 provides a single-arg constructor
+      name_to_index_(10,
+                     NameToIndexMap::hasher(),
+                     NameToIndexMap::key_equal(),
+                     NameToIndexMapAllocator(&name_to_index_bytes_)) {
     CHECK_OK(Reset(cols, ids, key_columns));
   }
 
@@ -654,6 +682,14 @@ class Schema {
     kColumnNotFound = -1
   };
 
+  // Returns the memory usage of this object without the object itself. Should
+  // be used when embedded inside another object.
+  size_t memory_footprint_excluding_this() const;
+
+  // Returns the memory usage of this object including the object itself.
+  // Should be used when allocated on the heap.
+  size_t memory_footprint_including_this() const;
+
  private:
 
   // Return a stringified version of the first 'num_columns' columns of the
@@ -685,7 +721,17 @@ class Schema {
   // ColumnSchema objects inside cols_. This avoids an extra copy of those strings,
   // and also allows us to do lookups on the map using StringPiece keys, sometimes
   // avoiding copies.
-  typedef unordered_map<StringPiece, size_t, __gnu_cxx::hash<StringPiece> > NameToIndexMap;
+  //
+  // The map is instrumented with a counting allocator so that we can accurately
+  // measure its memory footprint.
+  int64_t name_to_index_bytes_;
+  typedef STLCountingAllocator<std::pair<StringPiece, size_t> > NameToIndexMapAllocator;
+  typedef unordered_map<
+      StringPiece,
+      size_t,
+      __gnu_cxx::hash<StringPiece>,
+      __gnu_cxx::equal_to<StringPiece>,
+      NameToIndexMapAllocator> NameToIndexMap;
   NameToIndexMap name_to_index_;
 
   IdMapping id_to_index_;

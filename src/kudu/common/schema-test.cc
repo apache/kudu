@@ -44,6 +44,9 @@ static Status CopyRowToArena(const Slice &row,
 
 // Test basic functionality of Schema definition
 TEST(TestSchema, TestSchema) {
+  Schema empty_schema;
+  ASSERT_GT(empty_schema.memory_footprint_excluding_this(), 0);
+
   ColumnSchema col1("key", STRING);
   ColumnSchema col2("uint32val", UINT32, true);
   ColumnSchema col3("int32val", INT32);
@@ -57,6 +60,8 @@ TEST(TestSchema, TestSchema) {
   ASSERT_EQ(3, schema.num_columns());
   ASSERT_EQ(0, schema.column_offset(0));
   ASSERT_EQ(sizeof(Slice), schema.column_offset(1));
+  ASSERT_GT(schema.memory_footprint_excluding_this(),
+            empty_schema.memory_footprint_excluding_this());
 
   EXPECT_EQ("Schema [\n"
             "\tkey[string NOT NULL],\n"
@@ -412,31 +417,6 @@ TEST(TestKeyEncoder, BenchmarkSimpleKey) {
   }
 }
 #endif
-
-// Basic unit test for IdMapping.
-TEST(TestIdMapping, TestSimple) {
-  IdMapping m;
-  ASSERT_EQ(-1, m.get(1));
-  m.set(1, 10);
-  m.set(2, 20);
-  m.set(3, 30);
-  ASSERT_EQ(10, m.get(1));
-  ASSERT_EQ(20, m.get(2));
-  ASSERT_EQ(30, m.get(3));
-}
-
-// Insert enough entries in the mapping so that it is forced to rehash
-// itself.
-TEST(TestIdMapping, TestRehash) {
-  IdMapping m;
-
-  for (int i = 0; i < 1000; i++) {
-    m.set(i, i * 10);
-  }
-  for (int i = 0; i < 1000; i++) {
-    ASSERT_EQ(i * 10, m.get(i));
-  }
-}
 
 } // namespace tablet
 } // namespace kudu

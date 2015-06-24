@@ -22,22 +22,23 @@ target_link_libraries(wire_protocol_proto
   protobuf)
 
 add_library(kudu_common
+  encoded_key.cc
   generic_iterators.cc
+  id_mapping.cc
   iterator_stats.cc
   key_encoder.cc
   partial_row.cc
+  predicate_encoder.cc
   rowblock.cc
   row_changelist.cc
-  row_operations.cc
-  wire_protocol.cc
-  scan_predicate.cc
-  predicate_encoder.cc
-  encoded_key.cc
   row_key-util.cc
+  row_operations.cc
+  scan_predicate.cc
   scan_spec.cc
   schema.cc
   timestamp.cc
   types.cc
+  wire_protocol.cc
 )
 
 # Workaround for clang bug https://llvm.org/bugs/show_bug.cgi?id=23757
@@ -56,6 +57,7 @@ target_link_libraries(kudu_common
 set(KUDU_TEST_LINK_LIBS kudu_common ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(encoded_key-test)
 ADD_KUDU_TEST(generic_iterators-test)
+ADD_KUDU_TEST(id_mapping-test)
 ADD_KUDU_TEST(partial_row-test)
 ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(predicate_encoder-test)

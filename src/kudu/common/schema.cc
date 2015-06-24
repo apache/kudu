@@ -10,6 +10,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/malloc.h"
 #include "kudu/util/status.h"
 #include "kudu/common/row.h"
 
@@ -51,7 +52,22 @@ string ColumnSchema::TypeToString() const {
                              is_nullable_ ? "NULLABLE" : "NOT NULL");
 }
 
-Schema::Schema(const Schema& other) {
+size_t ColumnSchema::memory_footprint_excluding_this() const {
+  // Rough approximation.
+  return name_.capacity();
+}
+
+size_t ColumnSchema::memory_footprint_including_this() const {
+  return kudu_malloc_usable_size(this) + memory_footprint_excluding_this();
+}
+
+Schema::Schema(const Schema& other)
+  : name_to_index_bytes_(0),
+    // TODO: C++11 provides a single-arg constructor
+    name_to_index_(10,
+                   NameToIndexMap::hasher(),
+                   NameToIndexMap::key_equal(),
+                   NameToIndexMapAllocator(&name_to_index_bytes_)) {
   CopyFrom(other);
 }
 
@@ -315,6 +331,24 @@ string Schema::DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) co
   }
   ConstContiguousRow row(this, buf);
   return DebugRowKey(row);
+}
+
+size_t Schema::memory_footprint_excluding_this() const {
+  size_t size = kudu_malloc_usable_size(cols_.data());
+  BOOST_FOREACH(const ColumnSchema& col, cols_) {
+    size += col.memory_footprint_excluding_this();
+  }
+
+  size += kudu_malloc_usable_size(col_ids_.data());
+  size += kudu_malloc_usable_size(col_offsets_.data());
+  size += name_to_index_bytes_;
+  size += id_to_index_.memory_footprint_excluding_this();
+
+  return size;
+}
+
+size_t Schema::memory_footprint_including_this() const {
+  return kudu_malloc_usable_size(this) + memory_footprint_excluding_this();
 }
 
 // ============================================================================
