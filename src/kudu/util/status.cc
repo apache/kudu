@@ -7,7 +7,9 @@
 
 #include <stdio.h>
 #include <stdint.h>
+
 #include "kudu/gutil/strings/fastmem.h"
+#include "kudu/util/malloc.h"
 
 namespace kudu {
 
@@ -151,4 +153,11 @@ Status Status::CloneAndAppend(const Slice& msg) const {
   return Status(code(), message(), msg, posix_code());
 }
 
+size_t Status::memory_footprint_excluding_this() const {
+  return state_ ? kudu_malloc_usable_size(state_) : 0;
+}
+
+size_t Status::memory_footprint_including_this() const {
+  return kudu_malloc_usable_size(this) + memory_footprint_excluding_this();
+}
 }  // namespace kudu

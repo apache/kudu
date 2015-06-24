@@ -41,4 +41,10 @@ TEST(StatusTest, TestCloneAppend) {
             appended.ToString());
 }
 
+TEST(StatusTest, TestMemoryUsage) {
+  ASSERT_EQ(0, Status::OK().memory_footprint_excluding_this());
+  ASSERT_GT(Status::IOError(
+      "file error", "some other thing", ENOTDIR).memory_footprint_excluding_this(), 0);
+}
+
 }  // namespace kudu

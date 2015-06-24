@@ -56,7 +56,9 @@ add_library(kudu_util
   hexdump.cc
   jsonwriter.cc
   kernel_stack_watchdog.cc
+  locks.cc
   logging.cc
+  malloc.cc
   memcmpable_varint.cc
   memory/arena.cc memory/memory.cc
   memenv/memenv.cc
@@ -69,6 +71,7 @@ add_library(kudu_util
   net/sockaddr.cc
   net/socket.cc
   oid_generator.cc
+  once.cc
   os-util.cc
   path_util.cc
   pb_util.cc

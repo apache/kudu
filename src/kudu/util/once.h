@@ -3,6 +3,8 @@
 #ifndef KUDU_UTIL_ONCE_H
 #define KUDU_UTIL_ONCE_H
 
+#include <stddef.h>
+
 #include "kudu/gutil/once.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/status.h"
@@ -69,6 +71,14 @@ class KuduOnceDynamic {
   //
   // Taken together, threads can safely synchronize on initted_.
   bool initted() const { return initted_.Load(kMemOrderAcquire); }
+
+  // Returns the memory usage of this object without the object itself. Should
+  // be used when embedded inside another object.
+  size_t memory_footprint_excluding_this() const;
+
+  // Returns the memory usage of this object including the object itself.
+  // Should be used when allocated on the heap.
+  size_t memory_footprint_including_this() const;
 
  private:
   template<typename T>

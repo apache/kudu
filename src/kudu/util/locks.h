@@ -190,6 +190,14 @@ class percpu_rwlock {
     }
   }
 
+  // Returns the memory usage of this object without the object itself. Should
+  // be used when embedded inside another object.
+  size_t memory_footprint_excluding_this() const;
+
+  // Returns the memory usage of this object including the object itself.
+  // Should be used when allocated on the heap.
+  size_t memory_footprint_including_this() const;
+
  private:
   struct padded_lock {
     rw_spinlock lock;

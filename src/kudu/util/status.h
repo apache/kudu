@@ -264,6 +264,14 @@ class KUDU_EXPORT Status {
   // Same as CloneAndPrepend, but appends to the message instead.
   Status CloneAndAppend(const Slice& msg) const;
 
+  // Returns the memory usage of this object without the object itself. Should
+  // be used when embedded inside another object.
+  size_t memory_footprint_excluding_this() const;
+
+  // Returns the memory usage of this object including the object itself.
+  // Should be used when allocated on the heap.
+  size_t memory_footprint_including_this() const;
+
  private:
   // OK status has a NULL state_.  Otherwise, state_ is a new[] array
   // of the following form:
