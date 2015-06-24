@@ -3,15 +3,13 @@
 = Kudu Documentation
 :author: Kudu Team
 :imagesdir: ./images
+:icons: font
 :toc: left
 :toclevels: 3
 :doctype: book
 :backend: html5
 :sectlinks:
 :experimental:
-
-
-PREAMBLE TEXT HERE
 
 include::introduction.adoc[leveloffset=+1]
 include::quickstart.adoc[leveloffset=+1]
@@ -20,4 +18,5 @@ include::configuration.adoc[leveloffset=+1]
 include::administration.adoc[leveloffset=+1]
 include::troubleshooting.adoc[leveloffset=+1]
 include::contributing.adoc[leveloffset=+1]
+include::style_guide.adoc[leveloffset=+1]
 include::resources.adoc[leveloffset=+1]

@@ -2,6 +2,7 @@
 = Installing Kudu
 :author: Kudu Team
 :imagesdir: ./images
+:icons: font
 :toc: left
 :toclevels: 3
 :doctype: book

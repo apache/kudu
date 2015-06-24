@@ -1,7 +1,8 @@
-[[quickstart]]
+[[documentation_style_guide]]
 = Kudu Documentation Style Guide
 :author: Kudu Team
 :imagesdir: ./images
+:icons: font
 :toc: left
 :toclevels: 3
 :doctype: book
@@ -75,7 +76,7 @@ link:https://hbase.apache.org/book.html#_hbase_reference_guide_style_guide_and_c
 ................
 [source,ruby]
 ----
-include\::path/to/app.rb[]
+\include::path/to/app.rb[]
 ----
 ................
 | Include only part of a separate file | Similar to Javadoc | See link:http://asciidoctor.org/docs/user-manual/#by-tagged-regions
