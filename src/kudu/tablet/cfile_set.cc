@@ -110,7 +110,8 @@ Status CFileSet::OpenBloomReader() {
   gscoped_ptr<ReadableBlock> block;
   RETURN_NOT_OK(fs->OpenBlock(rowset_metadata_->bloom_block(), &block));
 
-  Status s = BloomFileReader::OpenNoInit(block.Pass(), &bloom_reader_);
+  ReaderOptions opts;
+  Status s = BloomFileReader::OpenNoInit(block.Pass(), opts, &bloom_reader_);
   if (!s.ok()) {
     LOG(WARNING) << "Unable to open bloom file in " << rowset_metadata_->ToString() << ": "
                  << s.ToString();

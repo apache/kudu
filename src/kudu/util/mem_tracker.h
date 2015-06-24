@@ -346,7 +346,14 @@ class ScopedTrackedConsumption {
                            int64_t to_consume)
     : tracker_(tracker),
       consumption_(to_consume) {
+    DCHECK(tracker_);
     tracker_->Consume(consumption_);
+  }
+
+  void Reset(int64_t new_consumption) {
+    // Consume(-x) is the same as Release(x).
+    tracker_->Consume(new_consumption - consumption_);
+    consumption_ = new_consumption;
   }
 
   ~ScopedTrackedConsumption() {

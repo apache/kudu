@@ -78,7 +78,7 @@ class BloomFileTestBase : public KuduTest {
     gscoped_ptr<ReadableBlock> source;
     RETURN_NOT_OK(fs_manager_->OpenBlock(block_id_, &source));
 
-    return BloomFileReader::Open(source.Pass(), &bfr_);
+    return BloomFileReader::Open(source.Pass(), ReaderOptions(), &bfr_);
   }
 
   uint64_t ReadBenchmark() {

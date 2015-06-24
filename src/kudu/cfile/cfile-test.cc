@@ -641,25 +641,34 @@ TEST_F(TestCFile, TestLazyInit) {
                   SMALL_BLOCKSIZE | WRITE_VALIDX, &block_id);
   }
 
+  shared_ptr<MemTracker> tracker = MemTracker::CreateTracker(-1, "test");
+  int64_t initial_mem_usage = tracker->consumption();
+
   // Open it using a "counting" readable block.
   gscoped_ptr<ReadableBlock> block;
   ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
   size_t bytes_read = 0;
   gscoped_ptr<ReadableBlock> count_block(
       new CountingReadableBlock(block.Pass(), &bytes_read));
+  ASSERT_EQ(initial_mem_usage, tracker->consumption());
 
   // Lazily opening the cfile should not trigger any reads.
+  ReaderOptions opts;
+  opts.parent_mem_tracker = tracker;
   gscoped_ptr<CFileReader> reader;
-  ASSERT_OK(CFileReader::OpenNoInit(
-      count_block.Pass(), ReaderOptions(), &reader));
+  ASSERT_OK(CFileReader::OpenNoInit(count_block.Pass(), opts, &reader));
   ASSERT_EQ(0, bytes_read);
+  int64_t lazy_mem_usage = tracker->consumption();
+  ASSERT_GT(lazy_mem_usage, initial_mem_usage);
 
-  // But initializing it should (only the first time).
+  // But initializing it should (only the first time), and the reader's
+  // memory usage should increase.
   ASSERT_OK(reader->Init());
   ASSERT_GT(bytes_read, 0);
   size_t bytes_read_after_init = bytes_read;
   ASSERT_OK(reader->Init());
   ASSERT_EQ(bytes_read_after_init, bytes_read);
+  ASSERT_GT(tracker->consumption(), lazy_mem_usage);
 
   // And let's test non-lazy open for good measure; it should yield the
   // same number of bytes read.

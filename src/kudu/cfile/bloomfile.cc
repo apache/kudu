@@ -13,6 +13,7 @@
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/hexdump.h"
+#include "kudu/util/malloc.h"
 #include "kudu/util/pb_util.h"
 
 DECLARE_bool(cfile_lazy_open);
@@ -121,30 +122,36 @@ Status BloomFileWriter::FinishCurrentBloomBlock() {
 ////////////////////////////////////////////////////////////
 
 Status BloomFileReader::Open(gscoped_ptr<ReadableBlock> block,
+                             const ReaderOptions& options,
                              gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<BloomFileReader> bf_reader;
-  RETURN_NOT_OK(OpenNoInit(block.Pass(), &bf_reader));
+  RETURN_NOT_OK(OpenNoInit(block.Pass(), options, &bf_reader));
   RETURN_NOT_OK(bf_reader->Init());
 
-  reader->reset(bf_reader.release());
+  *reader = bf_reader.Pass();
   return Status::OK();
 }
 
 Status BloomFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
+                                   const ReaderOptions& options,
                                    gscoped_ptr<BloomFileReader> *reader) {
   gscoped_ptr<CFileReader> cf_reader;
-  RETURN_NOT_OK(CFileReader::OpenNoInit(block.Pass(), ReaderOptions(), &cf_reader));
-  gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(cf_reader.release()));
+  RETURN_NOT_OK(CFileReader::OpenNoInit(block.Pass(), options, &cf_reader));
+  gscoped_ptr<BloomFileReader> bf_reader(new BloomFileReader(
+      cf_reader.Pass(), options));
   if (!FLAGS_cfile_lazy_open) {
     RETURN_NOT_OK(bf_reader->Init());
   }
 
-  reader->reset(bf_reader.release());
+  *reader = bf_reader.Pass();
   return Status::OK();
 }
 
-BloomFileReader::BloomFileReader(CFileReader *reader)
-  : reader_(reader) {
+BloomFileReader::BloomFileReader(gscoped_ptr<CFileReader> reader,
+                                 const ReaderOptions& options)
+  : reader_(reader.Pass()),
+    mem_consumption_(options.parent_mem_tracker,
+                     memory_footprint_excluding_reader()) {
 }
 
 Status BloomFileReader::Init() {
@@ -177,6 +184,9 @@ Status BloomFileReader::InitOnce() {
       IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
   }
   iter_locks_.reset(new simple_spinlock[n_cpus]);
+
+  // The memory footprint has changed.
+  mem_consumption_.Reset(memory_footprint_excluding_reader());
 
   return Status::OK();
 }
@@ -244,6 +254,28 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
   BloomFilter bf(bloom_data, hdr.num_hash_functions());
   *maybe_present = bf.MayContainKey(probe);
   return Status::OK();
+}
+
+size_t BloomFileReader::memory_footprint_excluding_reader() const {
+  size_t size = kudu_malloc_usable_size(this);
+
+  size += init_once_.memory_footprint_excluding_this();
+
+  // This seems to be the easiest way to get a heap pointer to the ptr_vector.
+  //
+  // TODO: Track the iterators' memory footprint? May change with every seek;
+  // not clear if it's worth doing.
+  size += kudu_malloc_usable_size(
+      const_cast<BloomFileReader*>(this)->index_iters_.c_array());
+  for (int i = 0; i < index_iters_.size(); i++) {
+    size += kudu_malloc_usable_size(&index_iters_[i]);
+  }
+
+  if (iter_locks_) {
+    size += kudu_malloc_usable_size(iter_locks_.get());
+  }
+
+  return size;
 }
 
 } // namespace cfile

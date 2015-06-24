@@ -22,7 +22,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
-#include "kudu/util/memory/arena.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/object_pool.h"
 #include "kudu/util/once.h"
 #include "kudu/util/rle-encoding.h"
@@ -167,10 +167,12 @@ class CFileReader {
   Status ReadAndParseHeader();
   Status ReadAndParseFooter();
 
+  // Returns the memory usage of the object including the object itself.
+  size_t memory_footprint() const;
+
 #ifdef __clang__
   __attribute__((__unused__))
 #endif
-  const ReaderOptions options_;
   const gscoped_ptr<fs::ReadableBlock> block_;
   const uint64_t file_size_;
 
@@ -186,6 +188,8 @@ class CFileReader {
   BlockCache::FileId cache_id_;
 
   KuduOnceDynamic init_once_;
+
+  ScopedTrackedConsumption mem_consumption_;
 };
 
 // Column Iterator interface used by the CFileSet.

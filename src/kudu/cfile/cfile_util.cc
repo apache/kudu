@@ -9,6 +9,7 @@
 
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/util/env.h"
+#include "kudu/util/mem_tracker.h"
 
 namespace kudu {
 namespace cfile {
@@ -67,6 +68,10 @@ Status DumpIterator(const CFileReader& reader,
   VLOG(1) << "Dumped " << count << " rows";
 
   return Status::OK();
+}
+
+ReaderOptions::ReaderOptions()
+  : parent_mem_tracker(MemTracker::GetRootTracker()) {
 }
 
 } // namespace cfile

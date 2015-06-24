@@ -22,6 +22,7 @@
 #include "kudu/util/coding.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/malloc.h"
 #include "kudu/util/object_pool.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/slice.h"
@@ -64,11 +65,11 @@ static Status ParseMagicAndLength(const Slice &data,
 CFileReader::CFileReader(const ReaderOptions &options,
                          const uint64_t file_size,
                          gscoped_ptr<ReadableBlock> block) :
-  options_(options),
   block_(block.Pass()),
   file_size_(file_size),
   cache_(BlockCache::GetSingleton()),
-  cache_id_(cache_->GenerateFileId()) {
+  cache_id_(cache_->GenerateFileId()),
+  mem_consumption_(options.parent_mem_tracker, memory_footprint()) {
 }
 
 Status CFileReader::Open(gscoped_ptr<ReadableBlock> block,
@@ -87,9 +88,8 @@ Status CFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
                                gscoped_ptr<CFileReader> *reader) {
   uint64_t block_size;
   RETURN_NOT_OK(block->Size(&block_size));
-  gscoped_ptr<CFileReader> reader_local(new CFileReader(options,
-                                                        block_size,
-                                                        block.Pass()));
+  gscoped_ptr<CFileReader> reader_local(
+      new CFileReader(options, block_size, block.Pass()));
   if (!FLAGS_cfile_lazy_open) {
     RETURN_NOT_OK(reader_local->Init());
   }
@@ -127,6 +127,9 @@ Status CFileReader::InitOnce() {
           << "Header: " << header_->DebugString()
           << " Footer: " << footer_->DebugString()
           << " Type: " << type_info_->name();
+
+  // The header/footer have been allocated; memory consumption has changed.
+  mem_consumption_.Reset(memory_footprint());
 
   return Status::OK();
 }
@@ -288,6 +291,26 @@ bool CFileReader::GetMetadataEntry(const string &key, string *val) {
 Status CFileReader::NewIterator(CFileIterator **iter, CacheControl cache_control) {
   *iter = new CFileIterator(this, cache_control);
   return Status::OK();
+}
+
+size_t CFileReader::memory_footprint() const {
+  size_t size = kudu_malloc_usable_size(this);
+  size += block_->memory_footprint();
+  size += init_once_.memory_footprint_excluding_this();
+
+  // SpaceUsed() uses sizeof() instead of malloc_usable_size() to account for
+  // the size of base objects (recursively too), thus not accounting for
+  // malloc "slop".
+  if (header_) {
+    size += header_->SpaceUsed();
+  }
+  if (footer_) {
+    size += footer_->SpaceUsed();
+  }
+  if (block_uncompressor_) {
+    size += kudu_malloc_usable_size(block_uncompressor_.get());
+  }
+  return size;
 }
 
 ////////////////////////////////////////////////////////////

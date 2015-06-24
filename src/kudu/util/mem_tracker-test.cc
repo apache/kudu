@@ -217,6 +217,9 @@ TEST(MemTrackerTest, ScopedTrackedConsumption) {
   {
     ScopedTrackedConsumption consumption(m, 1);
     ASSERT_EQ(1, m->consumption());
+
+    consumption.Reset(3);
+    ASSERT_EQ(3, m->consumption());
   }
   ASSERT_EQ(0, m->consumption());
 }
