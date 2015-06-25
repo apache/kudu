@@ -183,8 +183,15 @@ if [ ! -d $LLVM_DIR ]; then
   echo
 fi
 
+LZ4_PATCHLEVEL=1
+delete_if_wrong_patchlevel $LZ4_DIR $LZ4_PATCHLEVEL
 if [ ! -d $LZ4_DIR ]; then
   fetch_and_expand lz4-lz4-$LZ4_VERSION.tar.gz
+  pushd $LZ4_DIR
+  patch -p1 < $TP_DIR/patches/lz4-0001-Fix-cmake-build-to-use-gnu-flags-on-clang.patch
+  touch patchlevel-$LZ4_PATCHLEVEL
+  popd
+  echo
 fi
 
 if [ ! -d $CLANG_TOOLCHAIN_DIR ]; then
