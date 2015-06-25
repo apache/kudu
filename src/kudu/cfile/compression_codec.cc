@@ -152,8 +152,8 @@ class Lz4Codec : public CompressionCodec {
   Status Uncompress(const Slice& compressed,
                     uint8_t *uncompressed,
                     size_t uncompressed_length) OVERRIDE {
-    int n = LZ4_uncompress(reinterpret_cast<const char *>(compressed.data()),
-                           reinterpret_cast<char *>(uncompressed), uncompressed_length);
+    int n = LZ4_decompress_fast(reinterpret_cast<const char *>(compressed.data()),
+                                reinterpret_cast<char *>(uncompressed), uncompressed_length);
     if (n != compressed.size()) {
       return Status::Corruption(
         StringPrintf("unable to uncompress the buffer. error near %d, buffer", -n),

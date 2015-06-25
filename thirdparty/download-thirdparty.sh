@@ -183,6 +183,10 @@ if [ ! -d $LLVM_DIR ]; then
   echo
 fi
 
+if [ ! -d $LZ4_DIR ]; then
+  fetch_and_expand lz4-lz4-$LZ4_VERSION.tar.gz
+fi
+
 if [ ! -d $CLANG_TOOLCHAIN_DIR ]; then
   fetch_and_expand clang-${CLANG_TOOLCHAIN_VERSION}.tgz
 fi

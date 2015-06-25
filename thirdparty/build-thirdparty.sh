@@ -167,7 +167,8 @@ fi
 # build lz4
 if [ -n "$F_ALL" -o -n "$F_LZ4" ]; then
   cd $LZ4_DIR
-  CFLAGS=-fPIC $PREFIX/bin/cmake -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX .
+  CFLAGS=-fno-omit-frame-pointer cmake -DCMAKE_BUILD_TYPE=release \
+    -DBUILD_TOOLS=0 -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX cmake_unofficial/
   make -j$PARALLEL install
 fi
 

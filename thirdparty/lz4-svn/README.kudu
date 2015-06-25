@@ -1,7 +1,0 @@
-Upstream lz4 doesn't seem to do regular releases, so this is
-an export of the code as of r90.
-
-We also have a custom CMakeFile, since they didn't have a
-Makefile which built libraries until very recently. It is an
-open TODO to instead use their Makefile which they now include
-in SVN.
