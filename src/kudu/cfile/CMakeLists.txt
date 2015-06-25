@@ -34,6 +34,7 @@ target_link_libraries(cfile
   gutil
   cfile_proto
   lz4
+  bitshuffle
   snappy
   zlib)
 

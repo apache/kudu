@@ -36,6 +36,7 @@ else
       "gperftools") F_GPERFTOOLS=1 ;;
       "libev")      F_LIBEV=1 ;;
       "lz4")        F_LZ4=1 ;;
+      "bitshuffle") F_BITSHUFFLE=1;;
       "protobuf")   F_PROTOBUF=1 ;;
       "rapidjson")  F_RAPIDJSON=1 ;;
       "snappy")     F_SNAPPY=1 ;;
@@ -172,7 +173,17 @@ if [ -n "$F_ALL" -o -n "$F_LZ4" ]; then
   make -j$PARALLEL install
 fi
 
-## build libev
+# build bitshuffle
+if [ -n "$F_ALL" -o -n "$F_BITSHUFFLE" ]; then
+  cd $BITSHUFFLE_DIR
+  # bitshuffle depends on lz4, therefore set the flag I$PREFIX/include
+  ${CC:-gcc} -fno-omit-frame-pointer -std=c99 -I$PREFIX/include -O3 -DNDEBUG -fPIC -c bitshuffle.c
+  ar rs bitshuffle.a bitshuffle.o
+  cp bitshuffle.a $PREFIX/lib/
+  cp bitshuffle.h $PREFIX/include/
+fi
+
+# build libev
 if [ -n "$F_ALL" -o -n "$F_LIBEV" ]; then
   cd $LIBEV_DIR
   ./configure --with-pic --prefix=$PREFIX
