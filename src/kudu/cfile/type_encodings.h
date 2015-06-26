@@ -6,6 +6,7 @@
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/plain_block.h"
 #include "kudu/cfile/rle_block.h"
+#include "kudu/cfile/bshuf_block.h"
 #include "kudu/cfile/string_dict_block.h"
 #include "kudu/cfile/string_plain_block.h"
 #include "kudu/cfile/string_prefix_block.h"
@@ -80,6 +81,23 @@ struct DataTypeEncodingTraits<Type, PLAIN_ENCODING> {
   static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
                                    CFileIterator *iter) {
     *bd = new PlainBlockDecoder<Type>(slice);
+    return Status::OK();
+  }
+};
+
+// Generic, fallback, partial specialization that should work for all
+// fixed size types.
+template<DataType Type>
+struct DataTypeEncodingTraits<Type, BIT_SHUFFLE> {
+
+  static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
+    *bb = new BShufBlockBuilder<Type>(options);
+    return Status::OK();
+  }
+
+  static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
+                                   CFileIterator *iter) {
+    *bd = new BShufBlockDecoder<Type>(slice);
     return Status::OK();
   }
 };

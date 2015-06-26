@@ -12,11 +12,11 @@
 // to string plain block automatically.
 
 // You can embed any int block builder encoding formats, such as group-varint,
-// bitshuffle. Currently, we use group-varint builder for codewords.
+// bitshuffle. Currently, we use bitshuffle builder for codewords.
 //
 // To use other block builder/decoder, just make sure that BlockDecoder has
 // interface CopyNextValuesToArray(size_t*, uint8_t*). To do that, just replace
-// GVIntBuilder/Decoder is ok.
+// BShufBuilder/Decoder is ok.
 //
 //
 #ifndef KUDU_CFILE_STRING_Dict_BLOCK_H
@@ -29,7 +29,6 @@
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile.pb.h"
-#include "kudu/cfile/gvint_block.h"
 #include "kudu/cfile/string_plain_block.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"

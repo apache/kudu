@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 #include <stdlib.h>
+#include <list>
 
 #include <boost/assign/list_of.hpp>
 #include "kudu/cfile/cfile-test-base.h"
@@ -38,6 +39,7 @@ class TestCFile : public CFileTestBase {
   void TestReadWriteFixedSizeTypes(EncodingType encoding) {
     BlockId block_id;
     DataGeneratorType generator;
+
     WriteTestFile(&generator, encoding, NO_COMPRESSION, 10000, SMALL_BLOCKSIZE, &block_id);
 
     gscoped_ptr<ReadableBlock> block;
@@ -360,20 +362,41 @@ TEST_F(TestCFile, TestWrite1MDuplicateFileStringsDictEncoding) {
   }
 }
 
-TEST_F(TestCFile, TestFixedSizeReadWriteUInt32) {
+TEST_F(TestCFile, TestFixedSizeReadWritePlainEncodingUInt32) {
   TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(GROUP_VARINT);
   TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(PLAIN_ENCODING);
 }
 
-TEST_F(TestCFile, TestFixedSizeReadWriteInt32) {
+TEST_F(TestCFile, TestFixedSizeReadWritePlainEncodingInt32) {
   TestReadWriteFixedSizeTypes<Int32DataGenerator<false> >(PLAIN_ENCODING);
 }
 
-TEST_F(TestCFile, TestFixedSizeReadWriteFloat) {
+TEST_F(TestCFile, TestFixedSizeReadWritePlainEncodingFloat) {
   TestReadWriteFixedSizeTypes<FPDataGenerator<FLOAT, false> >(PLAIN_ENCODING);
 }
-TEST_F(TestCFile, TestFixedSizeReadWriteDouble) {
+TEST_F(TestCFile, TestFixedSizeReadWritePlainEncodingDouble) {
   TestReadWriteFixedSizeTypes<FPDataGenerator<DOUBLE, false> >(PLAIN_ENCODING);
+}
+
+// Test for BitShuffle builder for UINT8, INT8, UINT16, INT16, UINT32, INT32, FLOAT, DOUBLE
+template <typename T>
+class BitShuffleTest : public TestCFile {
+  public:
+    void TestBitShuffle() {
+      TestReadWriteFixedSizeTypes<T>(BIT_SHUFFLE);
+    }
+};
+typedef ::testing::Types<UInt8DataGenerator<false>,
+                         Int8DataGenerator<false>,
+                         UInt16DataGenerator<false>,
+                         Int16DataGenerator<false>,
+                         UInt32DataGenerator<false>,
+                         Int32DataGenerator<false>,
+                         FPDataGenerator<FLOAT, false>,
+                         FPDataGenerator<DOUBLE, false> > MyTypes;
+TYPED_TEST_CASE(BitShuffleTest, MyTypes);
+TYPED_TEST(BitShuffleTest, TestFixedSizeReadWriteBitShuffle) {
+  this->TestBitShuffle();
 }
 
 void EncodeStringKey(const Schema &schema, const Slice& key,

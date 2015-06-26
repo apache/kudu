@@ -16,6 +16,7 @@ add_library(cfile
   block_cache.cc
   block_compression.cc
   bloomfile.cc
+  bshuf_block.cc
   cfile_reader.cc
   cfile_util.cc
   cfile_writer.cc

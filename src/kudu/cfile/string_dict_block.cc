@@ -7,6 +7,7 @@
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/bshuf_block.h"
 #include "kudu/cfile/string_dict_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/casts.h"
@@ -25,7 +26,7 @@ StringDictBlockBuilder::StringDictBlockBuilder(const WriterOptions* options)
     dict_block_(options_),
     dictionary_strings_arena_(1024, 32*1024*1024),
     mode_(kCodeWordMode) {
-  data_builder_.reset(new GVIntBlockBuilder(options_));
+  data_builder_.reset(new BShufBlockBuilder<UINT32>(options_));
   Reset();
 }
 
@@ -177,7 +178,7 @@ Status StringDictBlockDecoder::ParseHeader() {
   Slice content(data_.data() + 4, data_.size() - 4);
 
   if (mode_ == kCodeWordMode) {
-    data_decoder_.reset(new GVIntBlockDecoder(content));
+    data_decoder_.reset(new BShufBlockDecoder<UINT32>(content));
   } else {
     if (mode_ != kPlainStringMode) {
       return Status::Corruption("Unrecognized Dictionary encoded data block header");
@@ -229,7 +230,7 @@ Status StringDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* 
 
   // Copy the codewords into a temporary buffer first.
   // And then Copy the strings corresponding to the codewords to the destination buffer.
-  GVIntBlockDecoder* d_bptr = down_cast<GVIntBlockDecoder*>(data_decoder_.get());
+  BShufBlockDecoder<UINT32>* d_bptr = down_cast<BShufBlockDecoder<UINT32>*>(data_decoder_.get());
   RETURN_NOT_OK(d_bptr->CopyNextValuesToArray(n, codeword_buf_.data()));
 
   for (int i = 0; i < *n; i++) {

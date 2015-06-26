@@ -11,6 +11,7 @@
 
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/cfile_writer.h"
+#include "kudu/cfile/bshuf_block.h"
 #include "kudu/cfile/gvint_block.h"
 #include "kudu/cfile/string_plain_block.h"
 #include "kudu/cfile/string_prefix_block.h"
@@ -342,22 +343,20 @@ class TestEncoding : public ::testing::Test {
     ASSERT_FALSE(bd.HasNext());
   }
 
-  template <DataType Type>
-  void TestEncodeDecodePlainBlockEncoder(typename TypeTraits<Type>::cpp_type* src, uint32_t size) {
-
+  template <DataType Type, class BlockBuilder, class BlockDecoder>
+  void TestEncodeDecodeTemplateBlockEncoder(typename TypeTraits<Type>::cpp_type* src,
+                                            uint32_t size) {
     typedef typename TypeTraits<Type>::cpp_type CppType;
-
     const uint32_t kOrdinalPosBase = 12345;
-
     gscoped_ptr<WriterOptions> opts(new WriterOptions());
-    PlainBlockBuilder<Type> pbb(opts.get());
+    BlockBuilder pbb(opts.get());
 
     pbb.Add(reinterpret_cast<const uint8_t *>(src), size);
     Slice s = pbb.Finish(kOrdinalPosBase);
 
     LOG(INFO)<< "Encoded size for 10k elems: " << s.size();
 
-    PlainBlockDecoder<Type> pbd(s);
+    BlockDecoder pbd(s);
     ASSERT_OK(pbd.ParseHeader());
     ASSERT_EQ(kOrdinalPosBase, pbd.GetFirstRowId());
     ASSERT_EQ(0, pbd.GetCurrentIndex());
@@ -588,7 +587,45 @@ TEST_F(TestEncoding, TestPlainBlockEncoder) {
     ints.get()[i] = random();
   }
 
-  TestEncodeDecodePlainBlockEncoder<INT32>(ints.get(), kSize);
+  TestEncodeDecodeTemplateBlockEncoder<INT32, PlainBlockBuilder<INT32>,
+                                    PlainBlockDecoder<INT32> >(ints.get(), kSize);
+}
+
+// Test for bitshuffle block, for INT32, FLOAT, DOUBLE
+TEST_F(TestEncoding, TestBShufIntBlockEncoder) {
+  const uint32_t kSize = 10000;
+
+  gscoped_ptr<int32_t[]> ints(new int32_t[kSize]);
+  for (int i = 0; i < kSize; i++) {
+    ints.get()[i] = random();
+  }
+
+  TestEncodeDecodeTemplateBlockEncoder<INT32, BShufBlockBuilder<INT32>,
+                                    BShufBlockDecoder<INT32> >(ints.get(), kSize);
+}
+
+TEST_F(TestEncoding, TestBShufFloatBlockEncoder) {
+  const uint32_t kSize = 10000;
+
+  gscoped_ptr<float[]> floats(new float[kSize]);
+  for (int i = 0; i < kSize; i++) {
+    floats.get()[i] = random() + static_cast<float>(random())/INT_MAX;
+  }
+
+  TestEncodeDecodeTemplateBlockEncoder<FLOAT, BShufBlockBuilder<FLOAT>,
+                                    BShufBlockDecoder<FLOAT> >(floats.get(), kSize);
+}
+
+TEST_F(TestEncoding, TestBShufDoubleBlockEncoder) {
+  const uint32_t kSize = 10000;
+
+  gscoped_ptr<double[]> doubles(new double[kSize]);
+  for (int i = 0; i < kSize; i++) {
+    doubles.get()[i] = random() + + static_cast<double>(random())/INT_MAX;
+  }
+
+  TestEncodeDecodeTemplateBlockEncoder<DOUBLE, BShufBlockBuilder<DOUBLE>,
+                                    BShufBlockDecoder<DOUBLE> >(doubles.get(), kSize);
 }
 
 TEST_F(TestEncoding, TestIntBlockEncoder) {
@@ -659,7 +696,7 @@ TEST_F(TestEncoding, TestRleIntBlockRoundTripAllTypes) {
 }
 
 
-TEST_F(TestEncoding, TestIntEmptyBlockEncodeDecode) {
+TEST_F(TestEncoding, TestGVIntEmptyBlockEncodeDecode) {
   TestEmptyBlockEncodeDecode<GVIntBlockBuilder, GVIntBlockDecoder>();
 }
 

@@ -143,6 +143,41 @@ class DataGenerator {
 template<DataType DATA_TYPE, bool HAS_NULLS>
 const DataType DataGenerator<DATA_TYPE, HAS_NULLS>::kDataType = DATA_TYPE;
 
+template<bool HAS_NULLS>
+class UInt8DataGenerator : public DataGenerator<UINT8, HAS_NULLS> {
+ public:
+  UInt8DataGenerator() {}
+  uint8_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+    return (value * 10) % 256;
+  }
+};
+
+template<bool HAS_NULLS>
+class Int8DataGenerator : public DataGenerator<INT8, HAS_NULLS> {
+ public:
+  Int8DataGenerator() {}
+  int8_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+    return ((value * 10) % 128) * (value % 2 == 0 ? -1 : 1);
+  }
+};
+
+template<bool HAS_NULLS>
+class UInt16DataGenerator : public DataGenerator<UINT16, HAS_NULLS> {
+ public:
+  UInt16DataGenerator() {}
+  uint16_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+    return (value * 10) % 65536;
+  }
+};
+
+template<bool HAS_NULLS>
+class Int16DataGenerator : public DataGenerator<INT16, HAS_NULLS> {
+ public:
+  Int16DataGenerator() {}
+  int16_t BuildTestValue(size_t block_index, size_t value) OVERRIDE {
+    return ((value * 10) % 32768) * (value % 2 == 0 ? -1 : 1);
+  }
+};
 
 template<bool HAS_NULLS>
 class UInt32DataGenerator : public DataGenerator<UINT32, HAS_NULLS> {
@@ -220,7 +255,7 @@ class DuplicateStringDataGenerator : public DataGenerator<STRING, HAS_NULLS> {
 
   Slice BuildTestValue(size_t block_index, size_t value) OVERRIDE {
     // random number from 0 ~ num_-1
-    value = rand() % num_;
+    value = random() % num_;
     char *buf = data_buffer_[block_index].data;
     int len = snprintf(buf, kItemBufferSize - 1, format_, value);
     DCHECK_LT(len, kItemBufferSize);
@@ -371,6 +406,26 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
   Arena arena(8192, 8*1024*1024);
   int count = 0;
   switch (reader->data_type()) {
+    case UINT8:
+    {
+      TimeReadFileForDataType<UINT8, uint64_t>(iter, count);
+      break;
+    }
+    case INT8:
+    {
+      TimeReadFileForDataType<INT8, uint64_t>(iter, count);
+      break;
+    }
+    case UINT16:
+    {
+      TimeReadFileForDataType<UINT16, uint64_t>(iter, count);
+      break;
+    }
+    case INT16:
+    {
+      TimeReadFileForDataType<INT16, uint64_t>(iter, count);
+      break;
+    }
     case UINT32:
     {
       TimeReadFileForDataType<UINT32, uint64_t>(iter, count);
