@@ -5,6 +5,7 @@ package kudu.tserver;
 option java_package = "org.kududb.tserver";
 
 import "kudu/common/wire_protocol.proto";
+import "kudu/consensus/metadata.proto";
 import "kudu/fs/fs.proto";
 import "kudu/rpc/rpc_header.proto";
 import "kudu/tablet/metadata.proto";
@@ -94,6 +95,10 @@ message BeginRemoteBootstrapSessionResponsePB {
   // Identifiers for the WAL segments available for download.
   // Each WAL segment is keyed by its sequence number.
   repeated uint64 wal_segment_seqnos = 4;
+
+  // A snapshot of the committed Consensus state at the time that the
+  // remote bootstrap session was started.
+  required consensus.ConsensusStatePB initial_committed_cstate = 5;
 }
 
 message CheckRemoteBootstrapSessionActiveRequestPB {

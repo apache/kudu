@@ -20,7 +20,7 @@ using strings::Substitute;
 Status ConsensusMetadata::Create(FsManager* fs_manager,
                                  const string& tablet_id,
                                  const std::string& peer_uuid,
-                                 RaftConfigPB& config,
+                                 const RaftConfigPB& config,
                                  int64_t current_term,
                                  gscoped_ptr<ConsensusMetadata>* cmeta_out) {
   gscoped_ptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));

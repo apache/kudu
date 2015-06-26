@@ -6,6 +6,7 @@
 #include <glog/logging.h>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
@@ -34,6 +35,7 @@ DEFINE_int32(remote_bootstrap_begin_session_timeout_ms, 10000,
 namespace kudu {
 namespace tserver {
 
+using consensus::ConsensusMetadata;
 using consensus::ConsensusStatePB;
 using consensus::OpId;
 using consensus::RaftConfigPB;
@@ -74,6 +76,7 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
   RETURN_NOT_OK(BeginRemoteBootstrapSession(tablet_id, cstate, status_listener));
   RETURN_NOT_OK(DownloadWALs());
   RETURN_NOT_OK(DownloadBlocks());
+  RETURN_NOT_OK(WriteConsensusMetadata());
 
   // Replace tablet metadata superblock. This will set the tablet metadata state
   // to REMOTE_BOOTSTRAP_DONE, since we checked above that the response
@@ -188,6 +191,7 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
   session_idle_timeout_millis_ = resp.session_idle_timeout_millis();
   superblock_.reset(resp.release_superblock());
   wal_seqnos_.assign(resp.wal_segment_seqnos().begin(), resp.wal_segment_seqnos().end());
+  committed_cstate_.reset(new ConsensusStatePB(resp.initial_committed_cstate()));
 
   state_ = kSessionStarted;
 
@@ -287,6 +291,9 @@ Status RemoteBootstrapClient::DownloadBlocks() {
     }
   }
 
+  // The orphaned physical block ids at the remote have no meaning to us.
+  new_sb->clear_orphaned_blocks();
+
   new_superblock_.swap(new_sb);
   return Status::OK();
 }
@@ -307,6 +314,14 @@ Status RemoteBootstrapClient::DownloadWAL(uint64_t wal_segment_seqno) {
                         Substitute("Unable to download WAL segment with seq. number $0",
                                    wal_segment_seqno));
   return Status::OK();
+}
+
+Status RemoteBootstrapClient::WriteConsensusMetadata() {
+  gscoped_ptr<ConsensusMetadata> cmeta;
+  return ConsensusMetadata::Create(fs_manager_, tablet_id_, fs_manager_->uuid(),
+                                   committed_cstate_->config(),
+                                   committed_cstate_->current_term(),
+                                   &cmeta);
 }
 
 Status RemoteBootstrapClient::DownloadAndRewriteBlock(BlockIdPB* block_id,

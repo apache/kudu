@@ -52,7 +52,7 @@ class ConsensusMetadata {
   static Status Create(FsManager* fs_manager,
                        const std::string& tablet_id,
                        const std::string& peer_uuid,
-                       RaftConfigPB& config,
+                       const RaftConfigPB& config,
                        int64_t current_term,
                        gscoped_ptr<ConsensusMetadata>* cmeta);
 

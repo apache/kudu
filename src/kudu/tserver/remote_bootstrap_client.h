@@ -112,6 +112,10 @@ class RemoteBootstrapClient {
   // WAL file is opened with options so that it will fsync() on close.
   Status DownloadWAL(uint64_t wal_segment_seqno);
 
+  // Write out the Consensus Metadata file based on the ConsensusStatePB
+  // downloaded as part of initiating the remote bootstrap session.
+  Status WriteConsensusMetadata();
+
   // Download all blocks belonging to a tablet sequentially.
   //
   // Blocks are given new IDs upon creation. On success, 'new_superblock_'
@@ -160,6 +164,7 @@ class RemoteBootstrapClient {
   uint64_t session_idle_timeout_millis_;
   gscoped_ptr<tablet::TabletSuperBlockPB> superblock_;
   gscoped_ptr<tablet::TabletSuperBlockPB> new_superblock_;
+  gscoped_ptr<consensus::ConsensusStatePB> committed_cstate_;
   std::vector<uint64_t> wal_seqnos_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapClient);

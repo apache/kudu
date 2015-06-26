@@ -111,6 +111,10 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   const tablet::TabletSuperBlockPB& tablet_superblock() const { return tablet_superblock_; }
 
+  const consensus::ConsensusStatePB& initial_committed_cstate() const {
+    return initial_committed_cstate_;
+  }
+
   const log::SegmentSequence& log_segments() const { return log_segments_; }
 
   // Check if a block is currently open.
@@ -157,6 +161,9 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   ValueDeleter logs_deleter_;
 
   tablet::TabletSuperBlockPB tablet_superblock_;
+
+  consensus::ConsensusStatePB initial_committed_cstate_;
+
   // The sequence of log segments that will be sent in the course of this
   // session.
   log::SegmentSequence log_segments_;

@@ -65,6 +65,9 @@ Status RemoteBootstrapSession::Init() {
   RETURN_NOT_OK_PREPEND(metadata->ToSuperBlock(&tablet_superblock_),
                         Substitute("Unable to access superblock for tablet $0", tablet_id));
 
+  // Look up the committed consensus state.
+  initial_committed_cstate_ = tablet_peer_->consensus()->CommittedConsensusState();
+
   // Anchor the data blocks by opening them and adding them to the cache.
   //
   // All subsequent requests should reuse the opened blocks.

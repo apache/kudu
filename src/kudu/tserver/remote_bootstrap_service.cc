@@ -70,10 +70,10 @@ RemoteBootstrapServiceImpl::RemoteBootstrapServiceImpl(
     FsManager* fs_manager,
     TabletPeerLookupIf* tablet_peer_lookup,
     const scoped_refptr<MetricEntity>& metric_entity)
-  : RemoteBootstrapServiceIf(metric_entity),
-    fs_manager_(CHECK_NOTNULL(fs_manager)),
-    tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
-    shutdown_latch_(1) {
+    : RemoteBootstrapServiceIf(metric_entity),
+      fs_manager_(CHECK_NOTNULL(fs_manager)),
+      tablet_peer_lookup_(CHECK_NOTNULL(tablet_peer_lookup)),
+      shutdown_latch_(1) {
   CHECK_OK(Thread::Create("remote-bootstrap", "rb-session-exp",
                           &RemoteBootstrapServiceImpl::EndExpiredSessions, this,
                           &session_expiration_thread_));
@@ -120,10 +120,9 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
   }
 
   resp->set_session_id(session_id);
-
   resp->set_session_idle_timeout_millis(FLAGS_remote_bootstrap_idle_timeout_ms);
-
   resp->mutable_superblock()->CopyFrom(session->tablet_superblock());
+  resp->mutable_initial_committed_cstate()->CopyFrom(session->initial_committed_cstate());
 
   BOOST_FOREACH(const scoped_refptr<log::ReadableLogSegment>& segment, session->log_segments()) {
     resp->add_wal_segment_seqnos(segment->header().sequence_number());
