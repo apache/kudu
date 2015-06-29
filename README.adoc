@@ -285,6 +285,45 @@ This will scan any file which is dirty in your working tree, or changed since th
 gerrit-integrated upstream change in your git log. If you really want to do a full
 scan of the source tree, you may use the `lint` target instead.
 
+=== Building Kudu documentation
+
+Kudu's documentation is written in asciidoc and lives in the _docs_ subdirectory.
+
+To build the documentation, use the `docs` target:
+
+[source,bash]
+----
+$ make docs
+----
+
+This will invoke `asciidoctor` to process the doc sources and produce the HTML
+documentation, emitted to _build/docs_. The target expects to find `asciidoctor`
+on the system path. To install it, make sure you have Ruby installed first, then
+issue the following command as root:
+
+[source,bash]
+----
+$ gem install asciidoctor
+----
+
+Or, if you'd prefer to install asciidoctor without root, do:
+
+[source,bash]
+----
+$ gem install --user-install asciidoctor
+----
+
+
+If asciidoctor is installed in your user directory, it probably won't be found
+in your `PATH`. You'll need to modify `PATH` when building the docs, using
+something like this (make sure to replace 2.1.0 with your Ruby version):
+
+[source,bash]
+----
+$ PATH=$HOME/.gem/ruby/2.1.0/bin:$PATH make docs
+----
+
+
 == Improving build times
 
 === Caching build output

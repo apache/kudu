@@ -657,6 +657,16 @@ if (UNIX)
 endif (UNIX)
 
 ############################################################
+# "make docs" target
+############################################################
+if (UNIX)
+  add_custom_target(docs asciidoctor
+    -d book
+    ${CMAKE_CURRENT_SOURCE_DIR}/docs/docs.adoc
+    -D ${CMAKE_CURRENT_SOURCE_DIR}/build/docs)
+endif (UNIX)
+
+############################################################
 # Subdirectories
 ############################################################
 

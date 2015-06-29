@@ -23,7 +23,7 @@
 - An operating system and version supported by Cloudera
 
 == Install Using Parcels
-If you use Cloudera Manager, the easiest way to install Kudu is to use parcels. First,
+If you use Cloudera Manager, the easiest way to install Kudu is with parcels. First,
 add the parcel repository to Cloudera Manager. Then distribute Kudu to your cluster.
 Here is the procedure in detail.
 
@@ -31,11 +31,12 @@ Here is the procedure in detail.
 . Obtain the Custom Service Descriptor (CSD) from
 http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/6/artifact/java/kudu-csd/target/KUDU-0.1.0.jar
 and copy it to `/opt/cloudera/csd` on your Cloudera Manager server. // TODO: CHANGE TO EXTERNAL
-. Restart the Cloudera Manager service so that it can detect the CSD, by issuing the
+. Restart the Cloudera Manager Server so that it can detect the CSD, by issuing the
 command `service cloudera-scm-server restart` on the Cloudera Manager Server host.
 . In Cloudera Manager, go to Hosts > Parcels. Find `KUDU` in the list, and click Download.
 . When the download is complete, select your cluster from the *Locations* selector,
 and click *Distribute*.
+. When distribution is complete, click *Activate* to activate the parcel.
 . Go to the cluster where you want to install Kudu. Click *Actions > Add
 a Service*. Select *Kudu* from the list, and click *Continue*.
 . Select a host to be the master and one or more hosts to be tablet servers. A
@@ -63,11 +64,11 @@ the packages on each host using your operating system's package management syste
 .Install On RHEL or SLES Hosts
 . If using a Yum repository, use the following commands to install all Kudu packages or a single Kudu package on a given host.
 ----
-sudo yum install kudu                         # Installs all Kudu packages
-sudo yum install kudu-master                  # Installs the Kudu master
-sudo yum install kudu-tablet-server           # Installs the Kudu tablet server
-sudo yum install kudu-client                  # Installs the Kudu client utilities
-sudo yum install kudu-client-devel            # Installs Kudu client API libraries
+sudo yum install kudu                         # Base Kudu files
+sudo yum install kudu-master                  # Kudu master init.d service script
+sudo yum install kudu-tablet-server           # Kudu tablet server init.d service script
+sudo yum install kudu-client                  # Kudu C++ client shared library
+sudo yum install kudu-client-devel            # Kudu C++ client SDK
 ----
 . If using individual RPMs, first download them, then use the command `sudo rpm -ivh <RPM to install>`, using the list above as a reference of the contents of the different RPMs.
 . To start, stop, or restart services, use commands in the format `sudo service <service_name> <start|stop|restart>`.
@@ -75,12 +76,12 @@ sudo yum install kudu-client-devel            # Installs Kudu client API librari
 .Install On Ubuntu or Debian Hosts
 . If using an Ubuntu or Debian repository, use the following commands to install all Kudu packages or a single Kudu package on a given host.
 ----
-sudo apt-get install kudu                    # Installs all Kudu packages
-sudo apt-get install kudu-dbg                # Installs Kudu debugging information
-sudo apt-get install kudu-master             # Installs the Kudu master
-sudo apt-get install kudu-tablet-server      # Installs the Kudu tablet server
-sudo apt-get install libkuduclient           # Installs the Kudu client
-sudo apt-get install libkuduclient-dev       # Installs Kudu client API libraries
+sudo apt-get install kudu                    # Base Kudu files
+sudo apt-get install kudu-dbg                # Kudu debugging information
+sudo apt-get install kudu-master             # Kudu master init.d service script
+sudo apt-get install kudu-tablet-server      # Kudu tablet server init.d service script
+sudo apt-get install libkuduclient           # Kudu C++ client shared library
+sudo apt-get install libkuduclient-dev       # Kudu C++ client SDK
 ----
 . If using individual DEBs, first download them, then use the command `sudo dpkg -i <DEB to install>`, using the list above as a reference of the contents of the different DEBs.
 . To start, stop, or restart services, use commands in the format `sudo service <service_name> <start|stop|restart>`.

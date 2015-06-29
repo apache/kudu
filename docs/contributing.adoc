@@ -13,7 +13,7 @@
 == Code Style
 
 In general, Kudu follows the
-link:http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml[Google C++ Style Guide],
+link:http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml[Google {cpp} Style Guide],
 with the following exceptions:
 
 === Limitations on `boost` Library Use
@@ -34,16 +34,16 @@ implementations.
 Check that any features from `boost` you use are present in *`boost` 1.46*
 or earlier, for compatibility with RHEL 6.
 
-.`boost` Libraries and the Kudu C++ Client
-Do not use `boost` in any public headers for the Kudu C++ client, because
+.`boost` Libraries and the Kudu {cpp} Client
+Do not use `boost` in any public headers for the Kudu {cpp} client, because
 `boost` commonly breaks backward compatibility, and passing data between two `boost`
 versions (one by the user, one by us) causes serious issues.
 
-In addition, do not create dependencies from  the Kudu C++ client to any `boost`
+In addition, do not create dependencies from the Kudu {cpp} client to any `boost`
 libraries. `libboost_system` is particularly troublesome, as any `boost` code
 that throws exceptions will grow a dependency on it. Among other things, you
 cannot use `boost::{lock_guard,unique_lock,shared_lock}` in any code consumed
-by the C++ client (such as _common/_ and _util/_).
+by the {cpp} client (such as _common/_ and _util/_).
 
 === Line length
 
@@ -57,7 +57,7 @@ keep under 80 where possible, but you can spill over to ~100 or so if necessary.
 Generally, most objects should have clear "single-owner" semantics.
 Most of the time, singly-owned objects can be wrapped in a `gscoped_ptr<>`
 which ensures deletion on scope exit and prevents accidental copying.
-`gscoped_ptr` is similar to C++11's `unique_ptr` in that it has a `release()`
+`gscoped_ptr` is similar to {cpp}11's `unique_ptr` in that it has a `release`
 method and also provides emulated `move` semantics (see _gscoped_ptr.h_ for
 example usage).
 
@@ -101,7 +101,7 @@ The pros and cons are:
 * icon:plus-circle[role="green",alt="pro"] can be used with any type of object, without the
 object deriving from a special base class
 * icon:plus-circle[role="green",alt="pro"] part of the standard library and familiar to most
-C++ developers
+{cpp} developers
 * icon:minus-circle[role="red",alt="con"] creating a new object requires two allocations instead
 of one (one to create the ref count, and one to create the object)
 * icon:minus-circle[role="red",alt="con"] the ref count may not be near the object on the heap,
@@ -129,10 +129,9 @@ referrent to help debug leaks.
 from `RefCounted`
 * icon:minus-circle[con, role="red"] does not support `weak_ptr<>` use cases
 
-Since `scoped_refptr`s are generally faster and smaller, try to use them
-rather than `shared_ptr` in new code. Existing code (as of 12/20/2013) uses `shared_ptr`s
-in many places. When interfacing with that code, continued use of `shared_ptr`
-is fine.
+Since `scoped_refptr` is generally faster and smaller, try to use it
+rather than `shared_ptr` in new code. Existing code (as of 12/20/2013) uses `shared_ptr`
+in many places. When interfacing with that code, continued use of `shared_ptr` is fine.
 
 === Function Binding and Callbacks
 
@@ -141,7 +140,7 @@ function binding and callbacks. For new code, use the `Callback` and `Bind`
 classes in `gutil` instead. While less full-featured (`Bind` doesn't support argument
 place holders, wrapped function pointers, or function objects), they provide
 more options by the way of argument lifecycle management. For example, a
-bound argument whose class extends `RefCounted` will be incremented during `Bind()`
+bound argument whose class extends `RefCounted` will be incremented during `Bind`
 and decremented when the `Callback` goes out of scope.
 
 See the large file comment in _gutil/callback.h_ for more details, and
