@@ -13,9 +13,8 @@ import "kudu/fs/fs.proto";
 
 message ColumnDataPB {
   required BlockIdPB block = 2;
-  // TODO(KUDU-382): don't serialize the whole schema. We only need the id
-  // on the DRS level.
-  optional ColumnSchemaPB schema = 3;
+  // REMOVED: optional ColumnSchemaPB OBSOLETE_schema = 3;
+  optional int32 column_id = 4;
 }
 
 message DeltaDataPB {

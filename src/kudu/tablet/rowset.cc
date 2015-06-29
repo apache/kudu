@@ -23,9 +23,7 @@ namespace kudu { namespace tablet {
 DuplicatingRowSet::DuplicatingRowSet(const RowSetVector &old_rowsets,
                                      const RowSetVector &new_rowsets)
   : old_rowsets_(old_rowsets),
-    new_rowsets_(new_rowsets),
-    schema_(new_rowsets[0]->schema()),
-    key_schema_(schema_.CreateKeyProjection()) {
+    new_rowsets_(new_rowsets) {
   CHECK_GT(old_rowsets_.size(), 0);
   CHECK_GT(new_rowsets_.size(), 0);
 }
@@ -112,7 +110,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
       break;
     } else if (!s.IsNotFound()) {
       LOG(ERROR) << "Unable to update key "
-                 << schema().CreateKeyProjection().DebugRow(probe.row_key())
+                 << probe.schema()->CreateKeyProjection().DebugRow(probe.row_key())
                  << " (failed on rowset " << rowset->ToString() << "): "
                  << s.ToString();
       return s;
@@ -137,14 +135,14 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
       #endif
     } else if (!s.IsNotFound()) {
       LOG(FATAL) << "Unable to mirror update to rowset " << new_rowset->ToString()
-                 << " for key: " << schema().CreateKeyProjection().DebugRow(probe.row_key())
+                 << " for key: " << probe.schema()->CreateKeyProjection().DebugRow(probe.row_key())
                  << ": " << s.ToString();
     }
     // IsNotFound is OK - it might be in a different one.
   }
   CHECK_EQ(mirrored_count, 1)
     << "Updated row in compaction input, but didn't mirror in exactly 1 new rowset: "
-    << schema().CreateKeyProjection().DebugRow(probe.row_key());
+    << probe.schema()->CreateKeyProjection().DebugRow(probe.row_key());
   return Status::OK();
 }
 

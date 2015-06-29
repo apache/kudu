@@ -28,12 +28,8 @@ class MetadataTest : public KuduTest {
   MetadataTest() {
     all_blocks_ = list_of(BlockId(1))(BlockId(2))(BlockId(3))(BlockId(4));
 
-    SchemaBuilder builder;
-    CHECK_OK(builder.AddKeyColumn("key", STRING));
-    CHECK_OK(builder.AddColumn("val", UINT32));
-    schema_ = builder.Build();
-
-    CHECK_OK(RowSetMetadata::CreateNew(NULL, 0, schema_, &meta_));
+    tablet_meta_ = new TabletMetadata(NULL, "fake-tablet");
+    CHECK_OK(RowSetMetadata::CreateNew(tablet_meta_.get(), 0, &meta_));
     for (int i = 0; i < all_blocks_.size(); i++) {
       CHECK_OK(meta_->CommitRedoDeltaDataBlock(i, all_blocks_[i]));
     }
@@ -42,8 +38,8 @@ class MetadataTest : public KuduTest {
 
  protected:
   vector<BlockId> all_blocks_;
+  scoped_refptr<TabletMetadata> tablet_meta_;
   gscoped_ptr<RowSetMetadata> meta_;
-  Schema schema_;
 };
 
 // Swap out some deltas from the middle of the list

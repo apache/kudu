@@ -30,9 +30,8 @@ Status RowSetMetadata::Load(TabletMetadata* tablet_metadata,
 
 Status RowSetMetadata::CreateNew(TabletMetadata* tablet_metadata,
                                  int64_t id,
-                                 const Schema& schema,
                                  gscoped_ptr<RowSetMetadata>* metadata) {
-  metadata->reset(new RowSetMetadata(tablet_metadata, id, schema));
+  metadata->reset(new RowSetMetadata(tablet_metadata, id));
   return Status::OK();
 }
 
@@ -56,17 +55,10 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
   }
 
   // Load Column Files
-  int key_columns = 0;
-  std::vector<size_t> cols_ids;
-  std::vector<ColumnSchema> cols;
   BOOST_FOREACH(const ColumnDataPB& col_pb, pb.columns()) {
-    int col_id = col_pb.schema().id();
+    int col_id = col_pb.column_id();
     blocks_by_col_id_[col_id] = BlockId::FromPB(col_pb.block());
-    cols.push_back(ColumnSchemaFromPB(col_pb.schema()));
-    cols_ids.push_back(col_id);
-    key_columns += !!col_pb.schema().is_key();
   }
-  RETURN_NOT_OK(schema_.Reset(cols, cols_ids, key_columns));
 
   // Load redo delta files
   BOOST_FOREACH(const DeltaDataPB& redo_delta_pb, pb.redo_deltas()) {
@@ -88,22 +80,13 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   pb->set_id(id_);
 
   // Write Column Files
-  // TODO(KUDU-582): currently we have to iterate over our schema
-  // because we rely on generating the schema in column-index order in the PB.
-  // Otherwise, upon load, we can't figure out which column is the key column.
-  // Eventually, we will remove all of the extra schema information here,
-  // just serialize the id -> block mapping, and get the ID of the key
-  // column from the tablet-wide schema.
-  for (int col_idx = 0; col_idx < schema_.num_columns(); col_idx++) {
-    int col_id = schema_.column_id(col_idx);
-    const BlockId& block_id = FindOrDie(blocks_by_col_id_, col_id);
+  BOOST_FOREACH(const ColumnIdToBlockIdMap::value_type& e, blocks_by_col_id_) {
+    int col_id = e.first;
+    const BlockId& block_id = e.second;
 
     ColumnDataPB *col_data = pb->add_columns();
-    ColumnSchemaPB *col_schema = col_data->mutable_schema();
     block_id.CopyToPB(col_data->mutable_block());
-    ColumnSchemaToPB(schema_.column(col_idx), col_schema);
-    col_schema->set_id(col_id);
-    col_schema->set_is_key(col_idx < schema_.num_key_columns());
+    col_data->set_column_id(col_id);
   }
 
   // Write Delta Files

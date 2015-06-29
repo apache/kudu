@@ -342,10 +342,6 @@ class DiskRowSet : public RowSet {
     return rowset_metadata_;
   }
 
-  const Schema& schema() const OVERRIDE {
-    return rowset_metadata_->schema();
-  }
-
   std::string ToString() const OVERRIDE {
     return rowset_metadata_->ToString();
   }

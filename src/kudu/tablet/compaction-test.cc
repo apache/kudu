@@ -105,9 +105,8 @@ class TestCompaction : public KuduRowSetTest {
   void UpdateRows(RowSet *rowset, int n_rows, int delta, int32_t new_val) {
     char keybuf[256];
     faststring update_buf;
-    const Schema& schema = rowset->schema();
-    size_t col_id = schema.column_id(schema.find_column("val"));
-    size_t nullable_col_id = schema.column_id(schema.find_column("nullable_val"));
+    size_t col_id = schema_.column_id(schema_.find_column("val"));
+    size_t nullable_col_id = schema_.column_id(schema_.find_column("nullable_val"));
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
       ScopedTransaction tx(&mvcc_);
@@ -115,16 +114,16 @@ class TestCompaction : public KuduRowSetTest {
 
       update_buf.clear();
       RowChangeListEncoder update(&update_buf);
-      update.AddColumnUpdate(schema.column_by_id(col_id), col_id, &new_val);
+      update.AddColumnUpdate(schema_.column_by_id(col_id), col_id, &new_val);
       if (new_val % 2 == 0) {
-        update.AddColumnUpdate(schema.column_by_id(nullable_col_id),
+        update.AddColumnUpdate(schema_.column_by_id(nullable_col_id),
                                nullable_col_id, NULL);
       } else {
-        update.AddColumnUpdate(schema.column_by_id(nullable_col_id),
+        update.AddColumnUpdate(schema_.column_by_id(nullable_col_id),
                                nullable_col_id, &new_val);
       }
 
-      RowBuilder rb(schema.CreateKeyProjection());
+      RowBuilder rb(schema_.CreateKeyProjection());
       rb.AddString(Slice(keybuf));
       RowSetKeyProbe probe(rb.row());
       ProbeStats stats;
@@ -141,7 +140,6 @@ class TestCompaction : public KuduRowSetTest {
   void DeleteRows(RowSet *rowset, int n_rows, int delta) {
     char keybuf[256];
     faststring update_buf;
-    const Schema& schema = rowset->schema();
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
       ScopedTransaction tx(&mvcc_);
@@ -151,7 +149,7 @@ class TestCompaction : public KuduRowSetTest {
       RowChangeListEncoder update(&update_buf);
       update.SetToDelete();
 
-      RowBuilder rb(schema.CreateKeyProjection());
+      RowBuilder rb(schema_.CreateKeyProjection());
       rb.AddString(Slice(keybuf));
       RowSetKeyProbe probe(rb.row());
       ProbeStats stats;

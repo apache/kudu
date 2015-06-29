@@ -71,9 +71,6 @@ class MockRowSet : public RowSet {
     return shared_ptr<RowSetMetadata>(
       reinterpret_cast<RowSetMetadata *>(NULL));
   }
-  virtual const Schema &schema() const OVERRIDE {
-    LOG(FATAL) << "Unimplemented";
-  }
 
   virtual size_t DeltaMemStoreSize() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";

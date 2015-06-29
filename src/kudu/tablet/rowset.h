@@ -108,9 +108,6 @@ class RowSet {
   // the same rowset.
   virtual boost::mutex *compact_flush_lock() = 0;
 
-  // Return the schema for data in this rowset.
-  virtual const Schema &schema() const = 0;
-
   // Returns the metadata associated with this rowset.
   virtual shared_ptr<RowSetMetadata> metadata() = 0;
 
@@ -285,10 +282,6 @@ class DuplicatingRowSet : public RowSet {
 
   ~DuplicatingRowSet();
 
-  const Schema &schema() const OVERRIDE {
-    return schema_;
-  }
-
   size_t DeltaMemStoreSize() const OVERRIDE { return 0; }
 
   bool DeltaMemStoreEmpty() const OVERRIDE { return true; }
@@ -315,9 +308,6 @@ class DuplicatingRowSet : public RowSet {
 
   RowSetVector old_rowsets_;
   RowSetVector new_rowsets_;
-
-  const Schema schema_;
-  const Schema key_schema_;
 };
 
 

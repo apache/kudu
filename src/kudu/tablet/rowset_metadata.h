@@ -14,6 +14,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/tablet/tablet_metadata.h"
+#include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
 
 namespace kudu {
@@ -56,7 +57,6 @@ class RowSetMetadata {
   // Create a new RowSetMetadata
   static Status CreateNew(TabletMetadata* tablet_metadata,
                           int64_t id,
-                          const Schema& schema,
                           gscoped_ptr<RowSetMetadata>* metadata);
 
   // Load metadata from a protobuf which was previously read from disk.
@@ -70,7 +70,9 @@ class RowSetMetadata {
 
   int64_t id() const { return id_; }
 
-  const Schema& schema() const { return schema_; }
+  const Schema& tablet_schema() const {
+    return tablet_metadata_->schema();
+  }
 
   void set_bloom_block(const BlockId& block_id) {
     DCHECK(bloom_block_.IsNull());
@@ -158,13 +160,11 @@ class RowSetMetadata {
   }
 
   RowSetMetadata(TabletMetadata *tablet_metadata,
-                 int64_t id, const Schema& schema)
+                 int64_t id)
     : initted_(true),
       id_(id),
-      schema_(schema),
-      tablet_metadata_(tablet_metadata),
+      tablet_metadata_(DCHECK_NOTNULL(tablet_metadata)),
       last_durable_redo_dms_id_(kNoDurableMemStore) {
-    CHECK(schema.has_column_ids());
   }
 
   Status InitFromPB(const RowSetDataPB& pb);
@@ -181,7 +181,6 @@ class RowSetMetadata {
   mutable LockType deltas_lock_;
 
   int64_t id_;
-  Schema schema_;
   BlockId bloom_block_;
   BlockId adhoc_index_block_;
 

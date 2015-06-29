@@ -13,6 +13,7 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/algorithm.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/cfile_set.h"
 
@@ -26,6 +27,7 @@ using cfile::ReaderOptions;
 using cfile::DefaultColumnValueIterator;
 using fs::ReadableBlock;
 using std::tr1::shared_ptr;
+using strings::Substitute;
 
 ////////////////////////////////////////////////////////////
 // Utilities
@@ -143,9 +145,10 @@ CFileReader* CFileSet::key_index_reader() const {
   if (ad_hoc_idx_reader_) {
     return ad_hoc_idx_reader_.get();
   }
-  // TODO(KUDU-382): temporary hack: we have to use the schema here since
-  // we don't have another way of finding the key column.
-  int key_col_id = schema().column_id(0);
+  // If there is no special index cfile, then we have a non-compound key
+  // and we can just use the key column.
+  // This is always the first column listed in the tablet schema.
+  int key_col_id = tablet_schema().column_id(0);
   return FindOrDie(readers_by_col_id_, key_col_id).get();
 }
 
@@ -153,11 +156,6 @@ Status CFileSet::NewColumnIterator(int col_id, CFileReader::CacheControl cache_b
                                    CFileIterator **iter) const {
   return FindOrDie(readers_by_col_id_, col_id)->NewIterator(iter, cache_blocks);
 }
-
-Status CFileSet::NewAdHocIndexIterator(CFileIterator **iter) const {
-  return CHECK_NOTNULL(ad_hoc_idx_reader_.get())->NewIterator(iter, CFileReader::CACHE_BLOCK);
-}
-
 
 CFileSet::Iterator *CFileSet::NewIterator(const Schema *projection) const {
   return new CFileSet::Iterator(shared_from_this(), projection);
@@ -236,92 +234,54 @@ Status CFileSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
 }
 
 Status CFileSet::NewKeyIterator(CFileIterator **key_iter) const {
-  if (ad_hoc_idx_reader_) {
-    RETURN_NOT_OK(NewAdHocIndexIterator(*&key_iter));
-  } else {
-    // TODO(KUDU-382): remove dependence on the schema here - instead
-    // we need to know the key column ID as part of metadata, or fetch
-    // it from the tablet schema.
-    RETURN_NOT_OK(NewColumnIterator(schema().column_id(0),
-                                    CFileReader::CACHE_BLOCK, *&key_iter));
-  }
-  return Status::OK();
+  return key_index_reader()->NewIterator(key_iter, CFileReader::CACHE_BLOCK);
 }
-
-
 
 ////////////////////////////////////////////////////////////
 // Iterator
 ////////////////////////////////////////////////////////////
-
-class CFileSetIteratorProjector {
- public:
-  // Used by CFileSet::Iterator::Init() to create the ColumnIterators
-  static Status Project(const CFileSet *base_data, const Schema* projection,
-                        vector<ColumnIterator*>* col_iters,
-                        CFileReader::CacheControl cache_blocks) {
-    CFileSetIteratorProjector projector(base_data, projection, col_iters, cache_blocks);
-    return projector.Run();
-  }
-
- private:
-  CFileSetIteratorProjector(const CFileSet *base_data,
-                            const Schema* projection,
-                            vector<ColumnIterator*>* col_iters,
-                            CFileReader::CacheControl cache_blocks)
-    : projection_(projection),
-      base_data_(base_data),
-      col_iters_(col_iters),
-      cache_blocks_(cache_blocks) {
-  }
-
-  Status Run() {
-    return projection_->GetProjectionMapping(base_data_->schema(), this);
-  }
-
- private:
-  friend class ::kudu::Schema;
-
-  Status ProjectAdaptedColumn(size_t proj_idx, size_t base_idx) {
-    // TODO: Create an iterator to adapt the type of the base data to the one in the projection
-    return Status::NotSupported("Column Value Adaptor not implemented");
-  }
-
-  Status ProjectBaseColumn(size_t proj_col_idx, size_t base_col_idx) {
-    CFileIterator *base_iter;
-    RETURN_NOT_OK(base_data_->NewColumnIterator(projection_->column_id(proj_col_idx),
-                                                cache_blocks_, &base_iter));
-    col_iters_->push_back(base_iter);
-    return Status::OK();
-  }
-
-  Status ProjectDefaultColumn(size_t proj_col_idx) {
-    // Create an iterator with the default column of the projection
-    const ColumnSchema& col_schema = projection_->column(proj_col_idx);
-    col_iters_->push_back(new DefaultColumnValueIterator(
-        col_schema.type_info()->type(), col_schema.read_default_value()));
-    return Status::OK();
-  }
-
-  Status ProjectExtraColumn(size_t proj_col_idx) {
-    return Status::InvalidArgument(
-      "The column '" + projection_->column(proj_col_idx).name() +
-      "' does not exist in the projection, and it does not have a "
-      "default value or a nullable type");
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(CFileSetIteratorProjector);
-
-  const Schema* projection_;
-  const CFileSet *base_data_;
-  vector<ColumnIterator*>* col_iters_;
-  CFileReader::CacheControl cache_blocks_;
-};
-
-
 CFileSet::Iterator::~Iterator() {
   STLDeleteElements(&col_iters_);
+}
+
+Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
+  DCHECK_EQ(0, col_iters_.size());
+  vector<ColumnIterator*> ret_iters;
+  ElementDeleter del(&ret_iters);
+  ret_iters.reserve(projection_->num_columns());
+
+  CFileReader::CacheControl cache_blocks = CFileReader::CACHE_BLOCK;
+  if (spec && !spec->cache_blocks()) {
+    cache_blocks = CFileReader::DONT_CACHE_BLOCK;
+  }
+
+  for (int proj_col_idx = 0;
+       proj_col_idx < projection_->num_columns();
+       proj_col_idx++) {
+    int col_id = projection_->column_id(proj_col_idx);
+
+    if (!ContainsKey(base_data_->readers_by_col_id_, col_id)) {
+      // If we have no data for a column, most likely it was added via an ALTER
+      // operation after this CFileSet was flushed. In that case, we're guaranteed
+      // that it has a "read-default". Otherwise, consider it a corruption.
+      const ColumnSchema& col_schema = projection_->column(proj_col_idx);
+      if (PREDICT_FALSE(!col_schema.has_read_default())) {
+        return Status::Corruption(Substitute("column $0 has no data in rowset $1",
+                                             col_schema.ToString(), base_data_->ToString()));
+      }
+      ret_iters.push_back(new DefaultColumnValueIterator(
+                                col_schema.type_info()->type(), col_schema.read_default_value()));
+      continue;
+    }
+    CFileIterator *iter;
+    RETURN_NOT_OK_PREPEND(base_data_->NewColumnIterator(col_id, cache_blocks, &iter),
+                          Substitute("could not create iterator for column $0",
+                                     projection_->column(proj_col_idx).ToString()));
+    ret_iters.push_back(iter);
+  }
+
+  col_iters_.swap(ret_iters);
+  return Status::OK();
 }
 
 Status CFileSet::Iterator::Init(ScanSpec *spec) {
@@ -332,16 +292,8 @@ Status CFileSet::Iterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(base_data_->NewKeyIterator(&tmp));
   key_iter_.reset(tmp);
 
-  CFileReader::CacheControl cache_blocks = CFileReader::CACHE_BLOCK;
-  if (spec && !spec->cache_blocks()) {
-    cache_blocks = CFileReader::DONT_CACHE_BLOCK;
-  }
-
   // Setup column iterators.
-  RETURN_NOT_OK(CFileSetIteratorProjector::Project(base_data_.get(),
-                                                   projection_,
-                                                   &col_iters_,
-                                                   cache_blocks));
+  RETURN_NOT_OK(CreateColumnIterators(spec));
 
   // If there is a range predicate on the key column, push that down into an
   // ordinal range.
@@ -367,7 +319,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
     return Status::OK();
   }
 
-  Schema key_schema = base_data_->schema().CreateKeyProjection();
+  Schema key_schema = base_data_->tablet_schema().CreateKeyProjection();
   if (spec->lower_bound_key()) {
     bool exact;
     Status s = key_iter_->SeekAtOrAfter(*spec->lower_bound_key(), &exact);

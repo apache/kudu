@@ -9,7 +9,9 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/rowset_metadata.h"
@@ -103,18 +105,20 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     fs_manager_(fs_manager),
     next_rowset_idx_(0),
     last_durable_mrs_id_(kNoDurableMemStore),
-    schema_(schema),
+    schema_(new Schema(schema)),
     schema_version_(0),
     table_name_(table_name),
     remote_bootstrap_state_(remote_bootstrap_state),
     num_flush_pins_(0),
     needs_flush_(false),
     pre_flush_callback_(Bind(DoNothingStatusClosure)) {
-  CHECK(schema_.has_column_ids());
-  CHECK_GT(schema_.num_key_columns(), 0);
+  CHECK(schema_->has_column_ids());
+  CHECK_GT(schema_->num_key_columns(), 0);
 }
 
 TabletMetadata::~TabletMetadata() {
+  STLDeleteElements(&old_schemas_);
+  delete schema_;
 }
 
 TabletMetadata::TabletMetadata(FsManager *fs_manager, const string& tablet_id)
@@ -122,6 +126,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const string& tablet_id)
     tablet_id_(tablet_id),
     fs_manager_(fs_manager),
     next_rowset_idx_(0),
+    schema_(NULL),
     num_flush_pins_(0),
     needs_flush_(false),
     pre_flush_callback_(Bind(DoNothingStatusClosure)) {
@@ -163,10 +168,14 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
 
     table_name_ = superblock.table_name();
     schema_version_ = superblock.schema_version();
-    RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), &schema_),
+
+    gscoped_ptr<Schema> schema(new Schema());
+    RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), schema.get()),
                           "Failed to parse Schema from superblock " +
                           superblock.ShortDebugString());
-    DCHECK(schema_.has_column_ids());
+    DCHECK(schema->has_column_ids());
+    DCHECK(!schema_);
+    schema_ = schema.release();
 
     remote_bootstrap_state_ = superblock.remote_bootstrap_state();
 
@@ -369,8 +378,8 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     meta->ToProtobuf(pb.add_rowsets());
   }
 
-  DCHECK(schema_.has_column_ids());
-  RETURN_NOT_OK_PREPEND(SchemaToPB(schema_, pb.mutable_schema()),
+  DCHECK(schema_->has_column_ids());
+  RETURN_NOT_OK_PREPEND(SchemaToPB(*schema_, pb.mutable_schema()),
                         "Couldn't serialize schema into superblock");
 
   pb.set_remote_bootstrap_state(remote_bootstrap_state_);
@@ -387,7 +396,7 @@ Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata> *rowset,
                                     const Schema& schema) {
   AtomicWord rowset_idx = Barrier_AtomicIncrement(&next_rowset_idx_, 1) - 1;
   gscoped_ptr<RowSetMetadata> scoped_rsm;
-  RETURN_NOT_OK(RowSetMetadata::CreateNew(this, rowset_idx, schema, &scoped_rsm));
+  RETURN_NOT_OK(RowSetMetadata::CreateNew(this, rowset_idx, &scoped_rsm));
   rowset->reset(DCHECK_NOTNULL(scoped_rsm.release()));
   return Status::OK();
 }
@@ -413,8 +422,16 @@ RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
 
 void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
   DCHECK(schema.has_column_ids());
+  gscoped_ptr<Schema> new_schema(new Schema(schema));
+
   boost::lock_guard<LockType> l(data_lock_);
-  schema_ = schema;
+
+  Schema* old_schema = schema_;
+  // "Release" barrier ensures that, when we publish the new Schema object,
+  // all of its initialization is also visible.
+  base::subtle::Release_Store(reinterpret_cast<AtomicWord*>(&schema_),
+                              reinterpret_cast<AtomicWord>(new_schema.release()));
+  old_schemas_.push_back(old_schema);
   schema_version_ = version;
 }
 
@@ -433,11 +450,6 @@ uint32_t TabletMetadata::schema_version() const {
   boost::lock_guard<LockType> l(data_lock_);
   DCHECK_NE(state_, kNotLoadedYet);
   return schema_version_;
-}
-
-Schema TabletMetadata::schema() const {
-  boost::lock_guard<LockType> l(data_lock_);
-  return schema_;
 }
 
 void TabletMetadata::set_remote_bootstrap_state(TabletBootstrapStatePB state) {

@@ -259,7 +259,7 @@ class MemRowSet : public RowSet,
                                     gscoped_ptr<CompactionInput>* out) const OVERRIDE;
 
   // Return the Schema for the rows in this memrowset.
-  virtual const Schema &schema() const OVERRIDE {
+   const Schema &schema() const {
     return schema_;
   }
 

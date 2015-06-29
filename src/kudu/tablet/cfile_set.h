@@ -62,8 +62,6 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   // Determine the index of the given row key.
   Status FindRow(const RowSetKeyProbe &probe, rowid_t *idx, ProbeStats* stats) const;
 
-  const Schema &schema() const { return rowset_metadata_->schema(); }
-
   string ToString() const {
     return string("CFile base data in ") + rowset_metadata_->ToString();
   }
@@ -87,13 +85,13 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 
   Status NewColumnIterator(int col_id, CFileReader::CacheControl cache_blocks,
                            CFileIterator **iter) const;
-  Status NewAdHocIndexIterator(CFileIterator **iter) const;
-
   Status NewKeyIterator(CFileIterator **iter) const;
 
   // Return the CFileReader responsible for reading the key index.
   // (the ad-hoc reader for composite keys, otherwise the key column reader)
   CFileReader* key_index_reader() const;
+
+  const Schema &tablet_schema() const { return rowset_metadata_->tablet_schema(); }
 
   shared_ptr<RowSetMetadata> rowset_metadata_;
 
@@ -170,6 +168,8 @@ class CFileSet::Iterator : public ColumnwiseIterator {
     CHECK_OK(base_data_->CountRows(&row_count_));
   }
 
+  // Fill in col_iters_ for each of the requested columns.
+  Status CreateColumnIterators(const ScanSpec* spec);
 
   // Look for a predicate which can be converted into a range scan using the key
   // column's index. If such a predicate exists, remove it from the scan spec and

@@ -11,6 +11,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/callback.h"
+#include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/metadata.pb.h"
@@ -99,9 +100,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   void SetTableName(const std::string& table_name);
 
-  // Return the current schema of the metadata. Note that this returns
-  // a copy so should not be used in a tight loop.
-  Schema schema() const;
+  const Schema& schema() const {
+    const Schema* s = reinterpret_cast<const Schema*>(
+        base::subtle::Acquire_Load(reinterpret_cast<const AtomicWord*>(&schema_)));
+    return *s;
+  }
 
   // Update the remote bootstrapping state.
   void set_remote_bootstrap_state(TabletBootstrapStatePB state);
@@ -168,6 +171,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
  private:
   friend class RefCountedThreadSafe<TabletMetadata>;
+  friend class MetadataTest;
 
   // Compile time assert that no one deletes TabletMetadata objects.
   ~TabletMetadata();
@@ -247,9 +251,18 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   int64_t last_durable_mrs_id_;
 
-  Schema schema_;
+  // The current schema version. This is owned by this class.
+  // We don't use gscoped_ptr so that we can do an atomic swap.
+  Schema* schema_;
   uint32_t schema_version_;
   std::string table_name_;
+
+  // Previous values of 'schema_'.
+  // These are currently kept alive forever, under the assumption that
+  // a given tablet won't have thousands of "alter table" calls.
+  // They are kept alive so that callers of schema() don't need to
+  // worry about reference counting or locking.
+  std::vector<Schema*> old_schemas_;
 
   // Protected by 'data_lock_'.
   std::vector<BlockId> orphaned_blocks_;
