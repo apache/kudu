@@ -914,13 +914,19 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   return Status::OK();
 }
 
-static Status ApplyAlterSteps(const SchemaPB& current_schema_pb,
+static Status ApplyAlterSteps(const SysTablesEntryPB& current_pb,
                               const AlterTableRequestPB* req,
-                              Schema* new_schema) {
+                              Schema* new_schema,
+                              int32_t* next_col_id) {
+  const SchemaPB& current_schema_pb = current_pb.schema();
   Schema cur_schema;
   RETURN_NOT_OK(SchemaFromPB(current_schema_pb, &cur_schema));
 
   SchemaBuilder builder(cur_schema);
+  if (current_pb.has_next_column_id()) {
+    builder.set_next_column_id(current_pb.next_column_id());
+  }
+
   BOOST_FOREACH(const AlterTableRequestPB::Step& step, req->alter_schema_steps()) {
     switch (step.type()) {
       case AlterTableRequestPB::ADD_COLUMN: {
@@ -930,7 +936,12 @@ static Status ApplyAlterSteps(const SchemaPB& current_schema_pb,
 
         // Verify that encoding is appropriate for the new column's
         // type
-        ColumnSchema new_col = ColumnSchemaFromPB(step.add_column().schema());
+        ColumnSchemaPB new_col_pb = step.add_column().schema();
+        if (new_col_pb.has_id()) {
+          return Status::InvalidArgument("column $0: client should not specify column ID",
+                                         new_col_pb.ShortDebugString());
+        }
+        ColumnSchema new_col = ColumnSchemaFromPB(new_col_pb);
         const TypeEncodingInfo *dummy;
         RETURN_NOT_OK(TypeEncodingInfo::Get(new_col.type_info()->type(),
                                             new_col.attributes().encoding(),
@@ -984,6 +995,7 @@ static Status ApplyAlterSteps(const SchemaPB& current_schema_pb,
     }
   }
   *new_schema = builder.Build();
+  *next_col_id = builder.next_column_id();
   return Status::OK();
 }
 
@@ -1019,14 +1031,17 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 
   // 2. Calculate new schema for the on-disk state, not persisted yet
   Schema new_schema;
+  int32_t next_col_id = 0;
   if (req->alter_schema_steps_size()) {
     TRACE("Apply alter schema");
-    Status s = ApplyAlterSteps(l.data().pb.schema(), req, &new_schema);
+    Status s = ApplyAlterSteps(l.data().pb, req, &new_schema, &next_col_id);
     if (!s.ok()) {
       SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
       return s;
     }
-
+    DCHECK_NE(next_col_id, 0);
+    DCHECK_EQ(new_schema.find_column_by_id(next_col_id),
+              static_cast<int>(Schema::kColumnNotFound));
     has_changes = true;
   }
 
@@ -1064,6 +1079,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
     CHECK_OK(SchemaToPB(new_schema, l.mutable_data()->pb.mutable_schema()));
   }
   l.mutable_data()->pb.set_version(l.mutable_data()->pb.version() + 1);
+  l.mutable_data()->pb.set_next_column_id(next_col_id);
   l.mutable_data()->set_state(SysTablesEntryPB::ALTERING,
                               Substitute("Alter Table version=$0 ts=$1",
                               l.mutable_data()->pb.version(),

@@ -411,7 +411,7 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
 // with the same name. Data should not "reappear" from the old column.
 //
 // This is a regression test for KUDU-461.
-TEST_F(AlterTableTest, DISABLED_TestDropAndAddNewColumn) {
+TEST_F(AlterTableTest, TestDropAndAddNewColumn) {
   // Reduce flush threshold so that we get both on-disk data
   // for the alter as well as in-MRS data.
   // This also increases chances of a race.

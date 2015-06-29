@@ -125,6 +125,10 @@ message SysTablesEntryPB {
   // This is the schema provided to the user on client->GetSchema(tableName).
   optional SchemaPB fully_applied_schema = 4;
 
+  // The next column ID to assign to newly added columns in this table.
+  // This prevents column ID reuse.
+  optional int32 next_column_id = 8;
+
   // Number of TS replicas
   required int32 num_replicas = 5;
 

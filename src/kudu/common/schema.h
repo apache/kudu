@@ -717,6 +717,18 @@ class SchemaBuilder {
 
   bool is_valid() const { return cols_.size() > 0; }
 
+  // Set the next column ID to be assigned to columns added with
+  // AddColumn.
+  void set_next_column_id(int32_t next_id) {
+    DCHECK_GE(next_id, 0);
+    next_id_ = next_id;
+  }
+
+  // Return the next column ID that would be assigned with AddColumn.
+  int32_t next_column_id() const {
+    return next_id_;
+  }
+
   Schema Build() const { return Schema(cols_, col_ids_, num_key_columns_); }
   Schema BuildWithoutIds() const { return Schema(cols_, num_key_columns_); }
 
@@ -744,7 +756,7 @@ class SchemaBuilder {
  private:
   DISALLOW_COPY_AND_ASSIGN(SchemaBuilder);
 
-  uint64_t next_id_;
+  int32_t next_id_;
   vector<size_t> col_ids_;
   vector<ColumnSchema> cols_;
   unordered_set<string> col_names_;
