@@ -1680,6 +1680,62 @@ TEST_F(TabletServerTest, TestAlterSchema) {
                                                (KeyValue(3, 5)));
 }
 
+// Adds a new column with no "write default", and then restarts the tablet
+// server. Inserts that were made before the new column was added should
+// still replay properly during bootstrap.
+//
+// Regression test for KUDU-181.
+// Disabled until it is fixed.
+TEST_F(TabletServerTest, DISABLED_TestAlterSchema_AddColWithoutWriteDefault) {
+  AlterSchemaRequestPB req;
+  AlterSchemaResponsePB resp;
+  RpcController rpc;
+
+  InsertTestRowsRemote(0, 0, 2);
+
+  // Add a column with a read-default but no write-default.
+  const uint32_t c2_read_default = 7;
+  SchemaBuilder builder(schema_);
+  ASSERT_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, NULL));
+  Schema s2 = builder.Build();
+
+  req.set_tablet_id(kTabletId);
+  req.set_schema_version(1);
+  ASSERT_OK(SchemaToPB(s2, req.mutable_schema()));
+
+  // Send the call
+  {
+    SCOPED_TRACE(req.DebugString());
+    ASSERT_OK(admin_proxy_->AlterSchema(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  // Verify that the old data picked up the read default.
+
+  const Schema projection(boost::assign::list_of
+                          (ColumnSchema("key", UINT32))
+                          (ColumnSchema("c2", UINT32)),
+                          1);
+  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7)));
+
+  // Try recovering from the original log
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
+                                               (KeyValue(1, 7))
+                                               (KeyValue(2, 5))
+                                               (KeyValue(3, 5)));
+  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7)));
+
+  // Try recovering from the log generated on recovery
+  ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
+  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
+                                               (KeyValue(1, 7))
+                                               (KeyValue(2, 5))
+                                               (KeyValue(3, 5)));
+  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7)));
+}
+
 TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
   CreateTabletRequestPB req;
   CreateTabletResponsePB resp;
