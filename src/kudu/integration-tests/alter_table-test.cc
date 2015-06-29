@@ -65,6 +65,8 @@ class AlterTableTest : public KuduTest {
       stop_threads_(false),
       inserted_idx_(0) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
+    ANNOTATE_BENIGN_RACE(&FLAGS_flush_threshold_mb,
+                         "safe to change at runtime");
   }
 
   virtual void SetUp() OVERRIDE {
@@ -554,9 +556,7 @@ void AlterTableTest::ScannerThread() {
 
 // Test altering a table while also sending a lot of writes,
 // checking for races between the two.
-//
-// Disabled due to KUDU-382 (lots of concurrency bugs around alter schema)
-TEST_F(AlterTableTest, DISABLED_TestAlterUnderWriteLoad) {
+TEST_F(AlterTableTest, TestAlterUnderWriteLoad) {
   // Increase chances of a race between flush and alter.
   FLAGS_flush_threshold_mb = 3;
 
@@ -630,12 +630,10 @@ TEST_F(AlterTableTest, TestInsertAfterAlterTable) {
   }
 }
 
-// Disabled because, at the time of writing, it fails with:
-//
-// transaction_driver.cc:324] Commit failed in transaction:
-//   AlterSchemaTransaction [state=AlterSchemaTransactionState ...]
-//   with Status: Not implemented: AlterSchema not supported by MemRowSet
-TEST_F(AlterTableTest, DISABLED_TestMultipleAlters) {
+// Issue a bunch of alter tables in quick succession. Regression for a bug
+// seen in an earlier implementation of "alter table" where these could
+// conflict with each other.
+TEST_F(AlterTableTest, TestMultipleAlters) {
   const char *kSplitTableName = "split-table";
   const size_t kNumNewCols = 10;
   const int32_t kDefaultValue = 10;
