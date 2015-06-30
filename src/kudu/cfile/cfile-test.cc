@@ -21,6 +21,10 @@
 
 DECLARE_string(cfile_do_on_finish);
 
+METRIC_DECLARE_counter(block_cache_hits_caching);
+
+METRIC_DECLARE_entity(server);
+
 namespace kudu {
 namespace cfile {
 
@@ -677,6 +681,49 @@ TEST_F(TestCFile, TestLazyInit) {
   count_block.reset(new CountingReadableBlock(block.Pass(), &bytes_read));
   ASSERT_OK(CFileReader::Open(count_block.Pass(), ReaderOptions(), &reader));
   ASSERT_EQ(bytes_read_after_init, bytes_read);
+}
+
+// Tests that the block cache keys used by CFileReaders are stable. That is,
+// different reader instances operating on the same block should use the same
+// block cache keys.
+TEST_F(TestCFile, TestCacheKeysAreStable) {
+  // Set up block cache instrumentation.
+  MetricRegistry registry;
+  scoped_refptr<MetricEntity> entity(METRIC_ENTITY_server.Instantiate(&registry, "test_entity"));
+  BlockCache* cache = BlockCache::GetSingleton();
+  cache->StartInstrumentation(entity);
+
+  // Create a small test file.
+  BlockId block_id;
+  {
+    const int nrows = 1000;
+    StringDataGenerator<false> generator("hello %04d");
+    WriteTestFile(&generator, PREFIX_ENCODING, NO_COMPRESSION, nrows,
+                  SMALL_BLOCKSIZE | WRITE_VALIDX, &block_id);
+  }
+
+  // Open and read from it twice, checking the block cache statistics.
+  for (int i = 0; i < 2; i++) {
+    gscoped_ptr<ReadableBlock> source;
+    ASSERT_OK(fs_manager_->OpenBlock(block_id, &source));
+    gscoped_ptr<CFileReader> reader;
+    ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
+
+    gscoped_ptr<IndexTreeIterator> iter;
+    iter.reset(IndexTreeIterator::Create(reader.get(), UINT32, reader->posidx_root()));
+    ASSERT_OK(iter->SeekToFirst());
+
+    BlockHandle bh;
+    ASSERT_OK(reader->ReadBlock(iter->GetCurrentBlockPointer(),
+                                CFileReader::CACHE_BLOCK,
+                                &bh));
+
+    // The first time through, we miss in the seek and in the ReadBlock().
+    // But the second time through, both are hits, because we've got the same
+    // cache keys as before.
+    ASSERT_EQ(i * 2, down_cast<Counter*>(
+        entity->FindOrNull(METRIC_block_cache_hits_caching).get())->value());
+  }
 }
 
 } // namespace cfile

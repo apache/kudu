@@ -67,8 +67,6 @@ CFileReader::CFileReader(const ReaderOptions &options,
                          gscoped_ptr<ReadableBlock> block) :
   block_(block.Pass()),
   file_size_(file_size),
-  cache_(BlockCache::GetSingleton()),
-  cache_id_(cache_->GenerateFileId()),
   mem_consumption_(options.parent_mem_tracker, memory_footprint()) {
 }
 
@@ -212,7 +210,8 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   BlockCacheHandle bc_handle;
   Cache::CacheBehavior cache_behavior = cache_control == CACHE_BLOCK ?
       Cache::EXPECT_IN_CACHE : Cache::NO_EXPECT_IN_CACHE;
-  if (cache_->Lookup(cache_id_, ptr.offset(), cache_behavior, &bc_handle)) {
+  BlockCache* cache = BlockCache::GetSingleton();
+  if (cache->Lookup(block_->id(), ptr.offset(), cache_behavior, &bc_handle)) {
     *ret = BlockHandle::WithDataFromCache(&bc_handle);
     // Cache hit
     return Status::OK();
@@ -254,7 +253,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   }
 
   if (cache_control == CACHE_BLOCK) {
-    cache_->Insert(cache_id_, ptr.offset(), block, &bc_handle);
+    cache->Insert(block_->id(), ptr.offset(), block, &bc_handle);
     *ret = BlockHandle::WithDataFromCache(&bc_handle);
   } else {
     *ret = BlockHandle::WithOwnedData(block);

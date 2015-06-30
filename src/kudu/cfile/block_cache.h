@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <glog/logging.h>
 
+#include "kudu/fs/block_id.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/singleton.h"
@@ -23,14 +24,16 @@ class BlockCacheHandle;
 // Provides a singleton and LRU cache for CFile blocks.
 class BlockCache {
  public:
-  typedef uint64_t FileId;
+  // BlockId refers to the unique identifier for a Kudu block, that is, for an
+  // entire CFile. This is different than the block cache's notion of a block,
+  // which is just a portion of a CFile.
+  typedef BlockId FileId;
 
-  static BlockCache *GetSingleton();
+  static BlockCache *GetSingleton() {
+    return Singleton<BlockCache>::get();
+  }
 
   explicit BlockCache(size_t capacity);
-
-  // Return a unique ID suitable for use as part of a cache key.
-  FileId GenerateFileId();
 
   // Lookup the given block in the cache.
   //

@@ -20,7 +20,7 @@ TEST(TestBlockCache, TestBasics) {
 
   BlockCache cache(1024);
 
-  BlockCache::FileId id = cache.GenerateFileId();
+  BlockCache::FileId id(1234);
 
   // Lookup something missing from cache
   {

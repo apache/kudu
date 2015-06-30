@@ -184,9 +184,6 @@ class CFileReader {
   const TypeInfo *type_info_;
   const TypeEncodingInfo *type_encoding_info_;
 
-  BlockCache *cache_;
-  BlockCache::FileId cache_id_;
-
   KuduOnceDynamic init_once_;
 
   ScopedTrackedConsumption mem_consumption_;

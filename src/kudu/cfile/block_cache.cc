@@ -5,7 +5,6 @@
 
 #include "kudu/cfile/block_cache.h"
 #include "kudu/gutil/port.h"
-#include "kudu/gutil/singleton.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/slice.h"
@@ -40,14 +39,6 @@ BlockCache::BlockCache()
 
 BlockCache::BlockCache(size_t capacity)
   : cache_(CHECK_NOTNULL(NewLRUCache(capacity, "block_cache"))) {
-}
-
-BlockCache *BlockCache::GetSingleton() {
-  return Singleton<BlockCache>::get();
-}
-
-BlockCache::FileId BlockCache::GenerateFileId() {
-  return cache_->NewId();
 }
 
 bool BlockCache::Lookup(FileId file_id, uint64_t offset, Cache::CacheBehavior behavior,
