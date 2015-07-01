@@ -227,6 +227,7 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
       req.set_scanner_id(resp.scanner_id());
       req.clear_new_scan_request();
     }
+    req.set_call_seq_id(req.call_seq_id() + 1);
     if (!resp.has_more_results()) {
       break;
     }
