@@ -1,0 +1,18 @@
+This example implements a simple Java application which listens on a
+TCP socket for time series data corresponding to the Collectl wire protocol.
+The commonly-available 'collectl' tool can be used to send example data
+to the server.
+
+This tutorial assumes that you are running a Kudu master on localhost.
+
+To start the example server:
+
+$ mvn package
+$ java -jar target/kudu-collectl-example-1.0-SNAPSHOT.jar
+
+To start collecting data, run the following command on one or more machines:
+
+$ collectl --export=graphite,127.0.0.1,p=/
+
+(substituting '127.0.0.1' with the IP address of whichever server is running the
+example program).
