@@ -50,6 +50,10 @@ class BlockId {
     return id_ != other.id_;
   }
 
+  // Returns the raw ID. Use with care; in most cases the BlockId should be
+  // treated as a completely opaque value.
+  uint64_t id() const { return id_; }
+
   // Join the given block IDs with ','. Useful for debug printouts.
   static std::string JoinStrings(const std::vector<BlockId>& blocks);
 
@@ -58,12 +62,6 @@ class BlockId {
   static BlockId FromPB(const BlockIdPB& pb);
 
  private:
-  friend class fs::internal::FileBlockLocation;
-
-  friend struct BlockIdHash;
-  friend struct BlockIdCompare;
-  friend struct BlockIdEqual;
-
   static const uint64_t kInvalidId;
 
   uint64_t id_;
@@ -73,19 +71,19 @@ std::ostream& operator<<(std::ostream& o, const BlockId& block_id);
 
 struct BlockIdHash {
   size_t operator()(const BlockId& block_id) const {
-    return block_id.id_;
+    return block_id.id();
   }
 };
 
 struct BlockIdCompare {
   bool operator()(const BlockId& first, const BlockId& second) const {
-    return first.id_ < second.id_;
+    return first.id() < second.id();
   }
 };
 
 struct BlockIdEqual {
   bool operator()(const BlockId& first, const BlockId& second) const {
-    return first.id_ == second.id_;
+    return first.id() == second.id();
   }
 };
 

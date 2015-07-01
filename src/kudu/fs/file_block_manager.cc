@@ -76,7 +76,7 @@ class FileBlockLocation {
 
   // Get the root path index of a given block ID.
   static uint16_t GetRootPathIdx(const BlockId& block_id) {
-    return block_id.id_ >> 48;
+    return block_id.id() >> 48;
   }
 
   // Returns the full filesystem path for this location.
@@ -109,15 +109,15 @@ class FileBlockLocation {
   // These per-byte accessors yield subdirectories in which blocks are grouped.
   string byte2() const {
     return StringPrintf("%02llx",
-                        (block_id_.id_ & 0x0000FF0000000000ULL) >> 40);
+                        (block_id_.id() & 0x0000FF0000000000ULL) >> 40);
   }
   string byte3() const {
     return StringPrintf("%02llx",
-                        (block_id_.id_ & 0x000000FF00000000ULL) >> 32);
+                        (block_id_.id() & 0x000000FF00000000ULL) >> 32);
   }
   string byte4() const {
     return StringPrintf("%02llx",
-                        (block_id_.id_ & 0x00000000FF000000ULL) >> 24);
+                        (block_id_.id() & 0x00000000FF000000ULL) >> 24);
   }
 
   string root_path_;
@@ -130,7 +130,7 @@ FileBlockLocation FileBlockLocation::FromParts(const string& root_path,
   // The combined ID consists of 'root_path_idx' (top 2 bytes) and 'block_id'
   // (bottom 6 bytes). The top 2 bytes of 'block_id' are dropped.
   uint64_t combined_id = static_cast<uint64_t>(root_path_idx) << 48;
-  combined_id |= block_id.id_ & ((1ULL << 48) - 1);
+  combined_id |= block_id.id() & ((1ULL << 48) - 1);
   return FileBlockLocation(root_path, BlockId(combined_id));
 }
 

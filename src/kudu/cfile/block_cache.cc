@@ -20,7 +20,7 @@ namespace cfile {
 
 struct CacheKey {
   CacheKey(BlockCache::FileId file_id, uint64_t offset) :
-    file_id_(file_id),
+    file_id_(file_id.id()),
     offset_(offset)
   {}
 
@@ -28,7 +28,7 @@ struct CacheKey {
     return Slice(reinterpret_cast<const uint8_t *>(this), sizeof(*this));
   }
 
-  BlockCache::FileId file_id_;
+  uint64_t file_id_;
   uint64_t offset_;
 } PACKED;
 
