@@ -66,10 +66,9 @@ class ConsensusQueueTest : public KuduTest {
   void CloseAndReopenQueue() {
     // Blow away the memtrackers before creating the new queue.
     queue_.reset();
-
     queue_.reset(new PeerMessageQueue(metric_entity_,
                                       log_.get(),
-                                      kLeaderUuid,
+                                      FakeRaftPeerPB(kLeaderUuid),
                                       kTestTablet));
   }
 

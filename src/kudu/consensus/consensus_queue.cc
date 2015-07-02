@@ -70,13 +70,15 @@ PeerMessageQueue::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_ent
 
 PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                                    const scoped_refptr<log::Log>& log,
-                                   const string& local_uuid,
+                                   const RaftPeerPB& local_peer_pb,
                                    const string& tablet_id,
                                    const shared_ptr<MemTracker>& parent_mem_tracker)
-    : local_uuid_(local_uuid),
+    : local_peer_pb_(local_peer_pb),
       tablet_id_(tablet_id),
-      log_cache_(metric_entity, log, local_uuid, tablet_id, parent_mem_tracker),
+      log_cache_(metric_entity, log, local_peer_pb.permanent_uuid(), tablet_id, parent_mem_tracker),
       metrics_(metric_entity) {
+  DCHECK(local_peer_pb_.has_permanent_uuid());
+  DCHECK(local_peer_pb_.has_last_known_addr());
   queue_state_.current_term = MinimumOpId().term();
   queue_state_.committed_index = MinimumOpId();
   queue_state_.all_replicated_opid = MinimumOpId();
@@ -93,7 +95,7 @@ void PeerMessageQueue::Init(const OpId& last_locally_replicated) {
   log_cache_.Init(last_locally_replicated);
   queue_state_.last_appended = last_locally_replicated;
   queue_state_.state = kQueueOpen;
-  TrackPeerUnlocked(local_uuid_);
+  TrackPeerUnlocked(local_peer_pb_.permanent_uuid());
 }
 
 void PeerMessageQueue::SetLeaderMode(const OpId& committed_index,
@@ -164,7 +166,7 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
   // so that we don't need to construct this fake response, but this
   // seems to work for now.
   ConsensusResponsePB fake_response;
-  fake_response.set_responder_uuid(local_uuid_);
+  fake_response.set_responder_uuid(local_peer_pb_.permanent_uuid());
   *fake_response.mutable_status()->mutable_last_received() = id;
   *fake_response.mutable_status()->mutable_last_received_current_leader() = id;
   {
@@ -215,7 +217,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         vector<ReplicateRefPtr>* msg_refs) {
   kudu::unique_lock<simple_spinlock> lock(&queue_lock_);
   DCHECK_EQ(queue_state_.state, kQueueOpen);
-  DCHECK_NE(uuid, local_uuid_);
+  DCHECK_NE(uuid, local_peer_pb_.permanent_uuid());
 
   TrackedPeer* peer = FindPtrOrNull(peers_map_, uuid);
   if (PREDICT_FALSE(peer == NULL || queue_state_.mode == NON_LEADER)) {
@@ -678,7 +680,7 @@ string PeerMessageQueue::LogPrefixUnlocked() const {
   Mode mode = ANNOTATE_UNPROTECTED_READ(queue_state_.mode);
   return Substitute("T $0 P $1 [$2]: ",
                     tablet_id_,
-                    local_uuid_,
+                    local_peer_pb_.permanent_uuid(),
                     mode == LEADER ? "LEADER" : "NON_LEADER");
 }
 

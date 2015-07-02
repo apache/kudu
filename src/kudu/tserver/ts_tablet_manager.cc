@@ -148,6 +148,8 @@ Status TSTabletManager::Init() {
   vector<string> tablet_ids;
   RETURN_NOT_OK(fs_manager_->ListTabletIds(&tablet_ids));
 
+  InitLocalRaftPeerPB();
+
   // Register the tablets and trigger the asynchronous bootstrap
   BOOST_FOREACH(const string& tablet_id, tablet_ids) {
     scoped_refptr<TabletMetadata> meta;
@@ -155,6 +157,7 @@ Status TSTabletManager::Init() {
                           "Failed to open tablet metadata for tablet: " + tablet_id);
     scoped_refptr<TabletPeer> tablet_peer(
         new TabletPeer(meta,
+                       local_peer_pb_,
                        apply_pool_.get(),
                        Bind(&TSTabletManager::MarkTabletDirty, Unretained(this), tablet_id)));
     RegisterTablet(tablet_id, tablet_peer);
@@ -255,6 +258,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   scoped_refptr<TabletPeer> new_peer(
       new TabletPeer(meta,
+                     local_peer_pb_,
                      apply_pool_.get(),
                      Bind(&TSTabletManager::MarkTabletDirty, Unretained(this), tablet_id)));
   RegisterTablet(meta->tablet_id(), new_peer);
@@ -491,6 +495,13 @@ void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
   }
   VLOG(2) << "Will report tablet " << tablet_id << " in report #" << next_report_seq_;
   server_->heartbeater()->TriggerASAP();
+}
+
+void TSTabletManager::InitLocalRaftPeerPB() {
+  DCHECK_EQ(state(), MANAGER_INITIALIZING);
+  local_peer_pb_.set_permanent_uuid(fs_manager_->uuid());
+  Sockaddr addr = server_->first_rpc_address();
+  HostPortToPB(HostPort(addr), local_peer_pb_.mutable_last_known_addr());
 }
 
 void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,

@@ -192,9 +192,17 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
     return state_;
   }
 
+  // Initializes the RaftPeerPB for the local peer.
+  // Guaranteed to include both uuid and last_seen_addr fields.
+  // Crashes with an invariant check if the RPC server is not currently in a
+  // running state.
+  void InitLocalRaftPeerPB();
+
   FsManager* fs_manager_;
 
   TabletServer* server_;
+
+  consensus::RaftPeerPB local_peer_pb_;
 
   typedef std::tr1::unordered_map<std::string, scoped_refptr<tablet::TabletPeer> > TabletMap;
 

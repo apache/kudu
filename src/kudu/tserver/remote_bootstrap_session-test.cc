@@ -84,8 +84,13 @@ class RemoteBootstrapTest : public KuduTabletTest {
     scoped_refptr<MetricEntity> metric_entity =
       METRIC_ENTITY_tablet.Instantiate(&metric_registry_, CURRENT_TEST_NAME());
 
+    RaftPeerPB config_peer;
+    config_peer.set_permanent_uuid(fs_manager()->uuid());
+    config_peer.set_member_type(RaftPeerPB::VOTER);
+
     tablet_peer_.reset(
         new TabletPeer(tablet()->metadata(),
+                       config_peer,
                        apply_pool_.get(),
                        Bind(&RemoteBootstrapTest::TabletPeerStateChangedCallback,
                             Unretained(this),
@@ -94,9 +99,6 @@ class RemoteBootstrapTest : public KuduTabletTest {
     // TODO similar to code in tablet_peer-test, consider refactor.
     RaftConfigPB config;
     config.set_local(true);
-    RaftPeerPB config_peer;
-    config_peer.set_permanent_uuid(fs_manager()->uuid());
-    config_peer.set_member_type(RaftPeerPB::VOTER);
     config.add_peers()->CopyFrom(config_peer);
     config.set_opid_index(consensus::kInvalidOpIdIndex);
 

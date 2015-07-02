@@ -167,7 +167,9 @@ TEST_F(RemoteKsckTest, TestMasterOk) {
 }
 
 TEST_F(RemoteKsckTest, TestTabletServersOk) {
+  LOG(INFO) << "Fetching table and tablet info...";
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+  LOG(INFO) << "Checking tablet servers are running...";
   ASSERT_OK(ksck_->CheckTabletServersRunning());
 }
 

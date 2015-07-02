@@ -52,7 +52,10 @@ class ConsensusPeersTest : public KuduTest {
     ASSERT_OK(clock_->Init());
 
     consensus_.reset(new TestRaftConsensusQueueIface());
-    message_queue_.reset(new PeerMessageQueue(metric_entity_, log_.get(), kLeaderUuid, kTabletId));
+    message_queue_.reset(new PeerMessageQueue(metric_entity_,
+                                              log_.get(),
+                                              FakeRaftPeerPB(kLeaderUuid),
+                                              kTabletId));
     message_queue_->RegisterObserver(consensus_.get());
   }
 

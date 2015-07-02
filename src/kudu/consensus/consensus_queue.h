@@ -102,7 +102,7 @@ class PeerMessageQueue {
 
   PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                    const scoped_refptr<log::Log>& log,
-                   const std::string& local_uuid,
+                   const RaftPeerPB& local_peer_pb,
                    const std::string& tablet_id,
                    const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker =
                        std::tr1::shared_ptr<MemTracker>());
@@ -327,8 +327,8 @@ class PeerMessageQueue {
   // TODO consider reusing a another pool.
   gscoped_ptr<ThreadPool> observers_pool_;
 
-  // The UUID of the local peer.
-  const std::string local_uuid_;
+  // PB containing identifying information about the local peer.
+  const RaftPeerPB local_peer_pb_;
 
   // The id of the tablet.
   const std::string tablet_id_;

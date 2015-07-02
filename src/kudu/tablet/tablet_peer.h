@@ -54,6 +54,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   typedef std::map<int64_t, int64_t> MaxIdxToSegmentSizeMap;
 
   TabletPeer(const scoped_refptr<TabletMetadata>& meta,
+             const consensus::RaftPeerPB& local_peer_pb,
              ThreadPool* apply_pool,
              const Closure& mark_dirty_clbk);
 
@@ -233,6 +234,8 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   scoped_refptr<TabletMetadata> meta_;
 
   const std::string tablet_id_;
+
+  const consensus::RaftPeerPB local_peer_pb_;
 
   TabletStatePB state_;
   Status error_;

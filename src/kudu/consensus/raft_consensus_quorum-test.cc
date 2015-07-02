@@ -15,6 +15,7 @@
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/peer_manager.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/gutil/stl_util.h"
@@ -136,9 +137,11 @@ class RaftConsensusQuorumTest : public KuduTest {
       CHECK_OK(ConsensusMetadata::Create(fs_managers_[i], kTestTablet, peer_uuid, config_,
                                          kMinimumTerm, &cmeta));
 
+      RaftPeerPB local_peer_pb;
+      CHECK_OK(GetRaftConfigMember(config_, peer_uuid, &local_peer_pb));
       gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity_,
                                                                logs_[i],
-                                                               peer_uuid,
+                                                               local_peer_pb,
                                                                kTestTablet,
                                                                parent_mem_trackers_[i]));
 

@@ -207,10 +207,13 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
   shared_ptr<Tablet> tablet;
   scoped_refptr<Log> log;
 
+  InitLocalRaftPeerPB();
+
   // TODO: handle crash mid-creation of tablet? do we ever end up with a
   // partially created tablet here?
   tablet_peer_.reset(new TabletPeer(
       metadata,
+      local_peer_pb_,
       apply_pool_.get(),
       Bind(&SysCatalogTable::SysCatalogStateChanged, Unretained(this), metadata->tablet_id())));
 
@@ -544,6 +547,11 @@ Status SysCatalogTable::VisitTablets(TabletVisitor* visitor) {
   return Status::OK();
 }
 
+void SysCatalogTable::InitLocalRaftPeerPB() {
+  local_peer_pb_.set_permanent_uuid(master_->fs_manager()->uuid());
+  Sockaddr addr = master_->first_rpc_address();
+  HostPortToPB(HostPort(addr), local_peer_pb_.mutable_last_known_addr());
+}
 
 } // namespace master
 } // namespace kudu

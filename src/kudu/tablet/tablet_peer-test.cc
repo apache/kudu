@@ -79,9 +79,14 @@ class TabletPeerTest : public KuduTabletTest {
 
     metric_entity_ = METRIC_ENTITY_tablet.Instantiate(&metric_registry_, "test-tablet");
 
+    RaftPeerPB config_peer;
+    config_peer.set_permanent_uuid(tablet()->metadata()->fs_manager()->uuid());
+    config_peer.set_member_type(RaftPeerPB::VOTER);
+
     // "Bootstrap" and start the TabletPeer.
     tablet_peer_.reset(
       new TabletPeer(make_scoped_refptr(tablet()->metadata()),
+                     config_peer,
                      apply_pool_.get(),
                      Bind(&TabletPeerTest::TabletPeerStateChangedCallback,
                           Unretained(this),
@@ -92,9 +97,6 @@ class TabletPeerTest : public KuduTabletTest {
     // TabletMetadata for consumption by TabletPeer before Tablet is instantiated.
     tablet_peer_->log_anchor_registry_ = tablet()->log_anchor_registry_;
 
-    RaftPeerPB config_peer;
-    config_peer.set_permanent_uuid(tablet()->metadata()->fs_manager()->uuid());
-    config_peer.set_member_type(RaftPeerPB::VOTER);
     RaftConfigPB config;
     config.set_local(true);
     config.add_peers()->CopyFrom(config_peer);

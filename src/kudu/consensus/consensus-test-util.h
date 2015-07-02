@@ -23,6 +23,7 @@
 #include "kudu/server/clock.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/test_macros.h"
 #include "kudu/util/threadpool.h"
 
 #define TOKENPASTE(x, y) x ## y
@@ -54,6 +55,15 @@ static gscoped_ptr<ReplicateMsg> CreateDummyReplicate(int term,
     msg->mutable_noop_request()->mutable_payload_for_tests()->resize(payload_size);
     msg->set_timestamp(timestamp.ToUint64());
     return msg.Pass();
+}
+
+// Returns RaftPeerPB with given UUID and obviously-fake hostname / port combo.
+RaftPeerPB FakeRaftPeerPB(const std::string& uuid) {
+  RaftPeerPB peer_pb;
+  peer_pb.set_permanent_uuid(uuid);
+  peer_pb.mutable_last_known_addr()->set_host(Substitute("$0-fake-hostname", CURRENT_TEST_NAME()));
+  peer_pb.mutable_last_known_addr()->set_port(0);
+  return peer_pb;
 }
 
 // Appends 'count' messages to 'queue' with different terms and indexes.

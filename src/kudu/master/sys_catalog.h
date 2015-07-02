@@ -163,6 +163,10 @@ class SysCatalogTable {
                         RowOperationsPB* ops) const;
   Status VisitTabletFromRow(const RowBlockRow& row, TabletVisitor* visitor);
 
+  // Initializes the RaftPeerPB for the local peer.
+  // Crashes due to an invariant check if the rpc server is not running.
+  void InitLocalRaftPeerPB();
+
   // Table schema, without IDs, used to send messages to the TabletPeer
   Schema schema_;
   Schema key_schema_;
@@ -177,6 +181,8 @@ class SysCatalogTable {
 
   ElectedLeaderCallback leader_cb_;
   consensus::RaftPeerPB::Role old_role_;
+
+  consensus::RaftPeerPB local_peer_pb_;
 };
 
 } // namespace master

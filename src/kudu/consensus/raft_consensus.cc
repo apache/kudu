@@ -70,7 +70,7 @@ static const char* const kTimerId = "election-timer";
 scoped_refptr<RaftConsensus> RaftConsensus::Create(
     const ConsensusOptions& options,
     gscoped_ptr<ConsensusMetadata> cmeta,
-    const string& peer_uuid,
+    const RaftPeerPB& local_peer_pb,
     const scoped_refptr<MetricEntity>& metric_entity,
     const scoped_refptr<server::Clock>& clock,
     ReplicaTransactionFactory* txn_factory,
@@ -84,13 +84,16 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
   // where.
   gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity,
                                                            log,
-                                                           peer_uuid,
+                                                           local_peer_pb,
                                                            options.tablet_id,
                                                            parent_mem_tracker));
 
   gscoped_ptr<ThreadPool> thread_pool;
   CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options.tablet_id.substr(0, 6)))
            .Build(&thread_pool));
+
+  DCHECK(local_peer_pb.has_permanent_uuid());
+  const string& peer_uuid = local_peer_pb.permanent_uuid();
 
   // A manager for the set of peers that actually send the operations both remotely
   // and to the local wal.

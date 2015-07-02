@@ -83,10 +83,12 @@ using tserver::TabletServerErrorPB;
 //  Tablet Peer
 // ============================================================================
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
+                       const consensus::RaftPeerPB& local_peer_pb,
                        ThreadPool* apply_pool,
                        const Closure& mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->tablet_id()),
+    local_peer_pb_(local_peer_pb),
     state_(BOOTSTRAPPING),
     status_listener_(new TabletStatusListener(meta)),
     apply_pool_(apply_pool),
@@ -146,7 +148,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     } else {
       consensus_ = RaftConsensus::Create(options,
                                          cmeta.Pass(),
-                                         meta_->fs_manager()->uuid(),
+                                         local_peer_pb_,
                                          metric_entity,
                                          clock_,
                                          this,

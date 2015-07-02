@@ -50,7 +50,7 @@ class RaftConsensus : public Consensus,
   static scoped_refptr<RaftConsensus> Create(
     const ConsensusOptions& options,
     gscoped_ptr<ConsensusMetadata> cmeta,
-    const std::string& peer_uuid,
+    const RaftPeerPB& local_peer_pb,
     const scoped_refptr<MetricEntity>& metric_entity,
     const scoped_refptr<server::Clock>& clock,
     ReplicaTransactionFactory* txn_factory,
