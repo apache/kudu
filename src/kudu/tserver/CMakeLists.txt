@@ -9,15 +9,16 @@ KRPC_GENERATE(REMOTE_BOOTSTRAP_KRPC_SRCS REMOTE_BOOTSTRAP_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES remote_bootstrap.proto)
-
-add_library(remote_bootstrap_proto ${REMOTE_BOOTSTRAP_KRPC_SRCS} ${REMOTE_BOOTSTRAP_KRPC_HDRS})
-target_link_libraries(remote_bootstrap_proto
+set(REMOTE_BOOTSTRAP_KRPC_LIBS
   protobuf
   krpc
   consensus_proto
   tablet_proto
   rpc_header_proto
   wire_protocol_proto)
+ADD_EXPORTABLE_LIBRARY(remote_bootstrap_proto
+  SRCS ${REMOTE_BOOTSTRAP_KRPC_SRCS}
+  DEPS ${REMOTE_BOOTSTRAP_KRPC_LIBS})
 
 #########################################
 # tserver_proto
@@ -27,13 +28,14 @@ PROTOBUF_GENERATE_CPP(TSERVER_PROTO_SRCS TSERVER_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES tserver.proto)
-
-add_library(tserver_proto ${TSERVER_PROTO_SRCS} ${TSERVER_PROTO_HDRS})
-target_link_libraries(tserver_proto
+set(TSERVER_PROTO_LIBS
   kudu_common_proto
   consensus_metadata_proto
   tablet_proto
   wire_protocol_proto)
+ADD_EXPORTABLE_LIBRARY(tserver_proto
+  SRCS ${TSERVER_PROTO_SRCS}
+  DEPS ${TSERVER_PROTO_LIBS})
 
 #########################################
 # tserver_admin_proto
@@ -43,15 +45,15 @@ KRPC_GENERATE(TSERVER_ADMIN_KRPC_SRCS TSERVER_ADMIN_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES tserver_admin.proto)
-
-add_library(tserver_admin_proto ${TSERVER_ADMIN_KRPC_SRCS}
-${TSERVER_ADMIN_KRPC_HDRS})
-target_link_libraries(tserver_admin_proto
+set(TSERVER_ADMIN_KRPC_LIBS
   protobuf
   krpc
   rpc_header_proto
   tserver_proto
   wire_protocol_proto)
+ADD_EXPORTABLE_LIBRARY(tserver_admin_proto
+  SRCS ${TSERVER_ADMIN_KRPC_SRCS}
+  DEPS ${TSERVER_ADMIN_KRPC_LIBS})
 
 #########################################
 # tserver_service_proto
@@ -61,15 +63,16 @@ KRPC_GENERATE(TSERVER_KRPC_SRCS TSERVER_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES tserver_service.proto)
-
-add_library(tserver_service_proto ${TSERVER_KRPC_SRCS} ${TSERVER_KRPC_HDRS})
-target_link_libraries(tserver_service_proto
+set(TSERVER_KRPC_LIBS
   protobuf
   kudu_common_proto
   krpc
   tserver_proto
   wire_protocol_proto
   remote_bootstrap_proto)
+ADD_EXPORTABLE_LIBRARY(tserver_service_proto
+  SRCS ${TSERVER_KRPC_SRCS}
+  DEPS ${TSERVER_KRPC_LIBS})
 
 #########################################
 # tserver

@@ -5,11 +5,12 @@ PROTOBUF_GENERATE_CPP(CFILE_PROTO_SRCS CFILE_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES cfile.proto)
-
-add_library(cfile_proto ${CFILE_PROTO_SRCS} ${CFILE_PROTO_HDRS})
-target_link_libraries(cfile_proto
+set(CFILE_PROTO_LIBS
   kudu_common_proto
   protobuf)
+ADD_EXPORTABLE_LIBRARY(cfile_proto
+  SRCS ${CFILE_PROTO_SRCS}
+  DEPS ${CFILE_PROTO_LIBS})
 
 add_library(cfile
   block_cache.cc

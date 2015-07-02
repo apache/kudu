@@ -9,25 +9,20 @@ PROTOBUF_GENERATE_CPP(METADATA_PROTO_SRCS METADATA_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES metadata.proto)
-
-add_library(consensus_metadata_proto ${METADATA_PROTO_SRCS} ${METADATA_PROTO_HDRS})
-target_link_libraries(consensus_metadata_proto
+set(METADATA_PROTO_LIBS
   kudu_common_proto
   fs_proto
   protobuf)
+ADD_EXPORTABLE_LIBRARY(consensus_metadata_proto
+  SRCS ${METADATA_PROTO_SRCS}
+  DEPS ${METADATA_PROTO_LIBS})
 
 KRPC_GENERATE(CONSENSUS_KRPC_SRCS CONSENSUS_KRPC_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES consensus.proto)
-
-set(CONSENSUS_KRPC_SRCS
-  ${CONSENSUS_KRPC_SRCS}
-  opid_util.cc
-)
-
-add_library(consensus_proto ${CONSENSUS_KRPC_SRCS} ${CONSENSUS_KRPC_HDRS})
-target_link_libraries(consensus_proto
+list(APPEND CONSENSUS_KRPC_SRCS opid_util.cc)
+set(CONSENSUS_KRPC_LIBS
   tserver_admin_proto
   protobuf
   kudu_common_proto
@@ -36,6 +31,9 @@ target_link_libraries(consensus_proto
   krpc
   wire_protocol_proto
   tablet_proto)
+ADD_EXPORTABLE_LIBRARY(consensus_proto
+  SRCS ${CONSENSUS_KRPC_SRCS}
+  DEPS ${CONSENSUS_KRPC_LIBS})
 
 PROTOBUF_GENERATE_CPP(LOG_PROTO_SRCS LOG_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..

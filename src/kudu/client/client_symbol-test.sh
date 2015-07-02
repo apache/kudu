@@ -14,7 +14,7 @@ else
 fi
 
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE"))/../../..
-LIB=$ROOT/build/latest/libkudu_client.so
+LIB=$ROOT/build/latest/exported/libkudu_client.so
 if [ -r $LIB ]; then
   echo "Found kudu client library: $LIB"
 else
@@ -40,6 +40,12 @@ while read ADDR TYPE SYMBOL; do
   if [[ "$SYMBOL" =~ ^kudu:: ]]; then
     echo "Skipping kudu symbol '$SYMBOL'"
     continue;
+  fi
+
+  # KUDU-455: skip bizarro global symbol that remains when compiling with old gcc.
+  if [ "$SYMBOL" = "__gnu_cxx::hash<StringPiece>::operator()(StringPiece) const" ]; then
+    echo "Skipping KUDU-455 symbol '$SYMBOL'"
+    continue
   fi
 
   # Any left over symbol is bad.

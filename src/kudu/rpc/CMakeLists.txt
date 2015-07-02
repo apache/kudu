@@ -6,21 +6,23 @@ PROTOBUF_GENERATE_CPP(RPC_HEADER_PROTO_SRCS RPC_HEADER_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES rpc_header.proto)
-add_library(rpc_header_proto ${RPC_HEADER_PROTO_SRCS} ${RPC_HEADER_PROTO_HDRS})
-target_link_libraries(rpc_header_proto
-  protobuf)
+ADD_EXPORTABLE_LIBRARY(rpc_header_proto
+  SRCS ${RPC_HEADER_PROTO_SRCS}
+  DEPS protobuf)
 
 PROTOBUF_GENERATE_CPP(RPC_INTROSPECTION_PROTO_SRCS RPC_INTROSPECTION_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES rpc_introspection.proto)
-add_library(rpc_introspection_proto ${RPC_INTROSPECTION_PROTO_SRCS} ${RPC_INTROSPECTION_PROTO_HDRS})
-target_link_libraries(rpc_introspection_proto
+set(RPC_INTROSPECTION_PROTO_LIBS
   rpc_header_proto
   protobuf)
+ADD_EXPORTABLE_LIBRARY(rpc_introspection_proto
+  SRCS ${RPC_INTROSPECTION_PROTO_SRCS}
+  DEPS ${RPC_INTROSPECTION_PROTO_LIBS})
 
 ### RPC library
-add_library(krpc
+set(KRPC_SRCS
     acceptor_pool.cc
     auth_store.cc
     blocking_ops.cc
@@ -46,15 +48,17 @@ add_library(krpc
     transfer.cc
 )
 
-target_link_libraries(krpc
+set(KRPC_LIBS
   rpc_header_proto
   rpc_introspection_proto
   kudu_util
   gutil
   libev
-  cyrus_sasl
-)
-set(RPC_LIBS krpc)
+  cyrus_sasl)
+
+ADD_EXPORTABLE_LIBRARY(krpc
+  SRCS ${KRPC_SRCS}
+  DEPS ${KRPC_LIBS})
 
 ### RPC generator tool
 add_executable(protoc-gen-krpc protoc-gen-krpc.cc)

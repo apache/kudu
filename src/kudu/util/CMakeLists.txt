@@ -9,9 +9,9 @@ PROTOBUF_GENERATE_CPP(HISTOGRAM_PROTO_SRCS HISTOGRAM_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES histogram.proto)
-add_library(histogram_proto ${HISTOGRAM_PROTO_SRCS} ${HISTOGRAM_PROTO_HDRS})
-target_link_libraries(histogram_proto
-  protobuf)
+ADD_EXPORTABLE_LIBRARY(histogram_proto
+  SRCS ${HISTOGRAM_PROTO_SRCS}
+  DEPS protobuf)
 
 #######################################
 # pb_util_proto
@@ -21,15 +21,15 @@ PROTOBUF_GENERATE_CPP(PB_UTIL_PROTO_SRCS PB_UTIL_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES pb_util.proto)
-add_library(pb_util_proto ${PB_UTIL_PROTO_SRCS} ${PB_UTIL_PROTO_HDRS})
-target_link_libraries(pb_util_proto
-  protobuf)
+ADD_EXPORTABLE_LIBRARY(pb_util_proto
+  SRCS ${PB_UTIL_PROTO_SRCS}
+  DEPS protobuf)
 
 #######################################
 # kudu_util
 #######################################
 
-add_library(kudu_util
+set(UTIL_SRCS
   atomic.cc
   bitmap.cc
   bloom_filter.cc
@@ -99,8 +99,9 @@ add_library(kudu_util
   url-coding.cc
 )
 
-target_link_libraries(kudu_util
-  ${Boost_LIBRARIES}
+set(UTIL_LIBS
+  boost_system
+  boost_thread
   crcutil
   glog
   gutil
@@ -110,10 +111,17 @@ target_link_libraries(kudu_util
   rt
   zlib)
 
-# We use MallocExtension and HeapChecker
+# We use MallocExtension and HeapChecker, but not in the exported version of
+# the library.
+set(EXPORTED_UTIL_LIBS ${UTIL_LIBS})
 if(${KUDU_TCMALLOC_AVAILABLE})
-  target_link_libraries(kudu_util tcmalloc)
+  list(APPEND UTIL_LIBS tcmalloc)
 endif()
+
+ADD_EXPORTABLE_LIBRARY(kudu_util
+  SRCS ${UTIL_SRCS}
+  DEPS ${UTIL_LIBS}
+  EXPORTED_DEPS ${EXPORTED_UTIL_LIBS})
 
 #######################################
 # kudu_test_util

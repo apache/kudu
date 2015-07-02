@@ -33,7 +33,7 @@ class clean(_clean):
 
 # TODO: a more portable method for this
 kudu_include_dir = os.path.join(os.environ['KUDU_HOME'], 'src')
-kudu_lib_dir = os.path.join(os.environ['KUDU_HOME'], 'build/latest')
+kudu_lib_dir = os.path.join(os.environ['KUDU_HOME'], 'build/latest/exported')
 
 INCLUDE_PATHS = [kudu_include_dir]
 LIBRARY_DIRS = [kudu_lib_dir]

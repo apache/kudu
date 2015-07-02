@@ -7,7 +7,7 @@
 #
 # Environment variables may be used to customize operation:
 #   BUILD_TYPE: Default: DEBUG
-#     Maybe be one of ASAN|TSAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE|LINT|CLIENT
+#     Maybe be one of ASAN|TSAN|LEAKCHECK|DEBUG|RELEASE|COVERAGE|LINT
 #
 #   KUDU_ALLOW_SLOW_TESTS   Default: 1
 #     Runs the "slow" version of the unit tests. Set to 0 to
@@ -68,9 +68,9 @@ fi
 export KUDU_FLAKY_TEST_ATTEMPTS=${KUDU_FLAKY_TEST_ATTEMPTS:-1}
 export KUDU_ALLOW_SLOW_TESTS=${KUDU_ALLOW_SLOW_TESTS:-$DEFAULT_ALLOW_SLOW_TESTS}
 export KUDU_COMPRESS_TEST_OUTPUT=${KUDU_COMPRESS_TEST_OUTPUT:-1}
-BUILD_JAVA=${BUILD_JAVA:-1}
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
-BUILD_PYTHON=${BUILD_PYTHON:-0}
+BUILD_JAVA=${BUILD_JAVA:-1}
+BUILD_PYTHON=${BUILD_PYTHON:-1}
 
 # Ensure that the test data directory is usable.
 mkdir -p "$TEST_TMPDIR"
@@ -124,15 +124,20 @@ export PPROF_PATH=$(pwd)/thirdparty/installed/bin/pprof
 CLANG=$(pwd)/thirdparty/clang-toolchain/bin/clang
 
 # Configure the build
+#
+# ASAN/TSAN can't build the Python bindings because the exported Kudu client
+# library (which the bindings depend on) is missing ASAN/TSAN symbols.
 if [ "$BUILD_TYPE" = "ASAN" ]; then
   CC=$CLANG CXX=$CLANG++ \
    cmake -DKUDU_USE_ASAN=1 -DKUDU_USE_UBSAN=1 .
   BUILD_TYPE=fastdebug
+  BUILD_PYTHON=0
 elif [ "$BUILD_TYPE" = "TSAN" ]; then
   CC=$CLANG CXX=$CLANG++ \
    cmake -DKUDU_USE_TSAN=1 .
   BUILD_TYPE=fastdebug
   EXTRA_TEST_FLAGS="$EXTRA_TEST_FLAGS -LE no_tsan"
+  BUILD_PYTHON=0
 elif [ "$BUILD_TYPE" = "LEAKCHECK" ]; then
   BUILD_TYPE=release
   export HEAPCHECK=normal
@@ -153,18 +158,11 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   cmake .
   make lint | tee $TEST_LOGDIR/lint.log
   exit $?
-
-
 elif [ "$BUILD_TYPE" = "CLIENT" ]; then
-  # Python is only built when the client libraries are built.
-  BUILD_PYTHON=1
-  BUILD_TYPE=debug
-  # Older versions of gcc suffer from at least one visibility-related bug
-  # such that unexpected symbols are included in the client library.
-  #
-  # See KUDU-455 for details.
-  CC=$CLANG CXX=$CLANG++ \
-    cmake -DKUDU_EXPORTED_CLIENT=1 .
+  # Temporary, remove once kudu-gerrit doesn't build CLIENT anymore.
+  mkdir -p $TEST_LOGDIR
+  touch $TEST_LOGDIR/client_built.log
+  exit 0
 fi
 
 # Only enable test core dumps for certain build types.

@@ -55,15 +55,6 @@ target_link_libraries(codegen
   kudu_util
   gutil)
 
-## Disabling codegen in the KUDU_EXPORTED_CLIENT build.
-# In the exported build, symbol visibility is hidden. Codegen relies on
-# visible symbols for runtime relocation. This #define allows us to compile
-# outward-facing interfaces for code generation which return error statuses
-# instead of crashing.
-if(KUDU_EXPORTED_CLIENT)
-  add_definitions(-DKUDU_DISABLE_CODEGEN)
-endif()
-
 #######################################
 # Precompiling to LLVM bytecode
 #######################################
@@ -174,7 +165,4 @@ set_target_properties(codegen_ir PROPERTIES LINKER_LANGUAGE C)
 
 set(KUDU_TEST_LINK_LIBS codegen ${KUDU_MIN_TEST_LIBS})
 
-# Can't be used with the exported client; it references hidden symbols.
-if (NOT KUDU_EXPORTED_CLIENT)
-  ADD_KUDU_TEST(codegen-test)
-endif()
+ADD_KUDU_TEST(codegen-test)

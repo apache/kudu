@@ -5,23 +5,23 @@ PROTOBUF_GENERATE_CPP(COMMON_PROTO_SRCS COMMON_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES common.proto)
-
-add_library(kudu_common_proto ${COMMON_PROTO_SRCS} ${COMMON_PROTO_HDRS})
-target_link_libraries(kudu_common_proto
-  protobuf)
+ADD_EXPORTABLE_LIBRARY(kudu_common_proto
+  SRCS ${COMMON_PROTO_SRCS}
+  DEPS protobuf)
 
 PROTOBUF_GENERATE_CPP(WIRE_PROTOCOL_PROTO_SRCS WIRE_PROTOCOL_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES wire_protocol.proto)
-
-add_library(wire_protocol_proto ${WIRE_PROTOCOL_PROTO_SRCS} ${WIRE_PROTOCOL_PROTO_HDRS})
-target_link_libraries(wire_protocol_proto
+set(WIRE_PROTOCOL_PROTO_LIBS
   kudu_common_proto
   consensus_metadata_proto
   protobuf)
+ADD_EXPORTABLE_LIBRARY(wire_protocol_proto
+  SRCS ${WIRE_PROTOCOL_PROTO_SRCS}
+  DEPS ${WIRE_PROTOCOL_PROTO_LIBS})
 
-add_library(kudu_common
+set(COMMON_SRCS
   encoded_key.cc
   generic_iterators.cc
   id_mapping.cc
@@ -38,8 +38,7 @@ add_library(kudu_common
   schema.cc
   timestamp.cc
   types.cc
-  wire_protocol.cc
-)
+  wire_protocol.cc)
 
 # Workaround for clang bug https://llvm.org/bugs/show_bug.cgi?id=23757
 # in which it incorrectly optimizes row_key-util.cc and causes incorrect results.
@@ -47,12 +46,16 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
   set_source_files_properties(row_key-util.cc PROPERTIES COMPILE_FLAGS -fwrapv)
 endif()
 
-target_link_libraries(kudu_common
+set(COMMON_LIBS
   kudu_common_proto
   consensus_metadata_proto
   wire_protocol_proto
   kudu_util
   gutil)
+
+ADD_EXPORTABLE_LIBRARY(kudu_common
+  SRCS ${COMMON_SRCS}
+  DEPS ${COMMON_LIBS})
 
 set(KUDU_TEST_LINK_LIBS kudu_common ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(encoded_key-test)

@@ -29,12 +29,9 @@ target_link_libraries(insert-generated-rows
   kudu_tools_util
   ${LINK_LIBS})
 
-# ts-cli uses some internal symbols from the client
-if(NOT KUDU_EXPORTED_CLIENT)
-  add_executable(kudu-ts-cli ts-cli.cc)
-  target_link_libraries(kudu-ts-cli
-    ${LINK_LIBS})
-endif()
+add_executable(kudu-ts-cli ts-cli.cc)
+target_link_libraries(kudu-ts-cli
+  ${LINK_LIBS})
 
 add_library(fs_tool fs_tool.cc)
 target_link_libraries(fs_tool

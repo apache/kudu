@@ -10,17 +10,12 @@ else()
     oauth.cc
     parser.cc
     insert_consumer.cc
-    twitter_streamer.cc
-    )
+    twitter_streamer.cc)
 
-  if (KUDU_EXPORTED_CLIENT)
-    # These dependencies can't be satisfied by the client library; most of
-    # the necessary symbols are hidden.
-    target_link_libraries(twitter_demo
-      gutil
-      kudu_util
-      kudu_test_util)
-  endif()
+  target_link_libraries(twitter_demo
+    gutil
+    kudu_util
+    kudu_test_util)
 
   target_link_libraries(twitter_demo
     kudu_client

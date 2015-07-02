@@ -5,8 +5,9 @@ PROTOBUF_GENERATE_CPP(FS_PROTO_SRCS FS_PROTO_HDRS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES fs.proto)
-
-add_library(fs_proto ${FS_PROTO_SRCS} ${FS_PROTO_HDRS})
+ADD_EXPORTABLE_LIBRARY(fs_proto
+  SRCS ${FS_PROTO_SRCS}
+  DEPS protobuf)
 
 add_library(kudu_fs
   block_id.cc
