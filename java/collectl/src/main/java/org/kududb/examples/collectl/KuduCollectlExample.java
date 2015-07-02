@@ -69,6 +69,9 @@ public class KuduCollectlExample {
       // it seems like it's buffering data too long, and only flushing based on size.
       // Perhaps we should support a time-based buffering as well?
       session.setFlushMode(FlushMode.MANUAL_FLUSH);
+      
+      // Increase the number of mutations that we can buffer
+      session.setMutationBufferSpace(10000);
     }
     
     @Override
