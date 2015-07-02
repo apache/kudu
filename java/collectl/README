@@ -16,3 +16,34 @@ $ collectl --export=graphite,127.0.0.1,p=/
 
 (substituting '127.0.0.1' with the IP address of whichever server is running the
 example program).
+
+----
+
+Exploring the data with Spark
+========
+
+Enter the following commands in the Spark shell to explore the data:
+
+$ spark-shell --jars /path/to/kudu-mapreduce-0.1.0-SNAPSHOT-jar-with-dependencies.jar
+
+import org.kududb.mapreduce._
+import org.apache.hadoop.conf.Configuration
+import org.kududb.client._
+import org.apache.hadoop.io.NullWritable;
+
+val conf = new Configuration
+conf.set("kudu.mapreduce.master.address", "127.0.0.1");
+conf.set("kudu.mapreduce.input.table", "metrics");
+conf.set("kudu.mapreduce.column.projection", "host,metric,timestamp,value");
+val kuduRdd = sc.newAPIHadoopRDD(conf, classOf[KuduTableInputFormat], classOf[NullWritable], classOf[RowResult])
+
+// Print the first five values
+kuduRdd.values.map(r => r.rowToString()).take(5).foreach(x => print(x + "\n"))
+
+// Calculate the average value of every host/metric pair
+(kuduRdd.values.map(r => (r.getString(0) + "/" + r.getString(1), r.getDouble(3))).
+    mapValues(x => (x, 1))
+    .reduceByKey((x, y) => (x._1 + y._1, x._2 + y._2))
+    .mapValues(result => result._1)
+    .take(5))
+
