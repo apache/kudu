@@ -21,6 +21,18 @@ enum RaftConfigState {
 bool IsRaftConfigMember(const std::string& uuid, const RaftConfigPB& config);
 bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config);
 
+// Get the specified member of the config.
+// Returns Status::NotFound if a member with the specified uuid could not be
+// found in the config.
+Status GetRaftConfigMember(const RaftConfigPB& config,
+                           const std::string& uuid,
+                           RaftPeerPB* peer_pb);
+
+// Get the leader of the consensus configuration.
+// Returns Status::NotFound() if the leader RaftPeerPB could not be found in
+// the config, or if there is no leader defined.
+Status GetRaftConfigLeader(const ConsensusStatePB& cstate, RaftPeerPB* peer_pb);
+
 // Modifies 'configuration' remove the peer with the specified 'uuid'.
 // Returns false if the server with 'uuid' is not found in the configuration.
 // Returns true on success.

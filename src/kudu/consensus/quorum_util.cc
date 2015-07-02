@@ -35,6 +35,25 @@ bool IsRaftConfigVoter(const std::string& uuid, const RaftConfigPB& config) {
   return false;
 }
 
+Status GetRaftConfigMember(const RaftConfigPB& config,
+                           const std::string& uuid,
+                           RaftPeerPB* peer_pb) {
+  BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
+    if (peer.permanent_uuid() == uuid) {
+      *peer_pb = peer;
+      return Status::OK();
+    }
+  }
+  return Status::NotFound(Substitute("Peer with uuid $0 not found in consensus config", uuid));
+}
+
+Status GetRaftConfigLeader(const ConsensusStatePB& cstate, RaftPeerPB* peer_pb) {
+  if (!cstate.has_leader_uuid() || cstate.leader_uuid().empty()) {
+    return Status::NotFound("Consensus config has no leader");
+  }
+  return GetRaftConfigMember(cstate.config(), cstate.leader_uuid(), peer_pb);
+}
+
 bool RemoveFromRaftConfig(RaftConfigPB* config, const string& uuid) {
   RepeatedPtrField<RaftPeerPB> modified_peers;
   bool removed = false;
