@@ -218,14 +218,23 @@ cdef class BoolVal(RawValue):
 
 cdef class StringVal(RawValue):
     cdef:
-        object o
-        char* val
+        # Python "str" object that was passed into the constructor.
+        # We hold a reference to this so that the underlying data
+        # doesn't go out of scope.
+        object py_str
+        # Heap-allocated Slice object, owned by this instance,
+        # which points to the data in 'py_str'
+        cdef Slice* val
 
     def __cinit__(self, obj):
-        self.o = obj
-        self.val = <char*> obj
+        self.py_str = obj
+        self.val = new Slice(<char*>self.py_str, len(self.py_str))
+        # The C++ API expects a Slice* to be passed to the range predicate
+        # constructor.
         self.data = self.val
 
+    def __dealloc__(self):
+        del self.val
 
 #----------------------------------------------------------------------
 
@@ -678,10 +687,20 @@ cdef class Scanner:
     cdef:
         Table table
         KuduScanner* scanner
+        # Although the C++ Scanner::AddConjunctPredicate() API copies the
+        # ColumnRangePredicate object, it doesn't deep-copy any data
+        # referenced by the object in its upper/lower bound field. So,
+        # we have to make sure that the original predicate bound values
+        # stay alive for the duration of the scanner. Saving the predicate
+        # objects here ensures it.
+        #
+        # This is a Python list of ColumnRangePredicate objects.
+        cdef object pred_objs
 
     def __cinit__(self, Table table):
         self.table = table
         self.scanner = NULL
+        self.pred_objs = []
 
     def __dealloc__(self):
         # We own this one
@@ -700,6 +719,7 @@ cdef class Scanner:
 
     def add_predicate(self, ColumnRangePredicate pred):
         cdef Status s = self.scanner.AddConjunctPredicate(deref(pred.pred))
+        self.pred_objs.append(pred)
         raise_on_failure(&s)
 
     def open(self):

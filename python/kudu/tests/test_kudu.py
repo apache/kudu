@@ -274,6 +274,18 @@ class TestScanner(KuduBasicsBase, unittest.TestCase):
 
         self.assertEqual(tuples, self.tuples[20:50])
 
+    def test_scan_rows_string_predicate(self):
+        scanner = self.table.scanner()
+
+        # Not the best API for now
+        pred = scanner.range_predicate(2, "hello_20", "hello_25")
+        scanner.add_predicate(pred)
+        scanner.open()
+
+        batch = scanner.read_all()
+        tuples = batch.as_tuples()
+
+        self.assertEqual(tuples, self.tuples[20:26])
 
 if __name__ == '__main__':
     nose.runmodule(argv=[__file__, '-vvs', '-x', '--pdb',
