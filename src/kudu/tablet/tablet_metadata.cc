@@ -197,7 +197,9 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
 
   // Now is a good time to clean up any orphaned blocks that may have been
   // left behind from a crash just after replacing the superblock.
-  DeleteOrphanedBlocks();
+  if (!fs_manager()->read_only()) {
+    DeleteOrphanedBlocks();
+  }
 
   return Status::OK();
 }
