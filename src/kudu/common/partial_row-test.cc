@@ -104,5 +104,50 @@ TEST_F(PartialRowTest, UnitTest) {
   EXPECT_EQ("int32 int_val=99999", row.ToString());
 }
 
+TEST_F(PartialRowTest, TestCopy) {
+  KuduPartialRow row(&schema_);
+
+  // The assignment operator is used in this test because it internally calls
+  // the copy constructor.
+
+  // Check an empty copy.
+  KuduPartialRow copy = row;
+  EXPECT_FALSE(copy.IsColumnSet(0));
+  EXPECT_FALSE(copy.IsColumnSet(1));
+  EXPECT_FALSE(copy.IsColumnSet(2));
+
+  ASSERT_OK(row.SetInt32(0, 42));
+  ASSERT_OK(row.SetInt32(1, 99));
+  ASSERT_OK(row.SetStringCopy(2, "copied-string"));
+
+  int32_t int_val;
+  Slice string_val;
+
+  // Check a copy with values.
+  copy = row;
+  ASSERT_OK(copy.GetInt32(0, &int_val));
+  EXPECT_EQ(42, int_val);
+  ASSERT_OK(copy.GetInt32(1, &int_val));
+  EXPECT_EQ(99, int_val);
+  ASSERT_OK(copy.GetString(2, &string_val));
+  EXPECT_EQ("copied-string", string_val.ToString());
+
+  // Check a copy with a null value.
+  ASSERT_OK(row.SetNull(2));
+  copy = row;
+  EXPECT_TRUE(copy.IsNull(2));
+
+  // Check a copy with a borrowed value.
+  string borrowed = "borrowed-string";
+  ASSERT_OK(row.SetString(2, borrowed));
+
+  copy = row;
+  ASSERT_OK(copy.GetString(2, &string_val));
+  EXPECT_EQ("borrowed-string", string_val.ToString());
+
+  borrowed.replace(0, 8, "mutated-");
+  ASSERT_OK(copy.GetString(2, &string_val));
+  EXPECT_EQ("mutated--string", string_val.ToString());
+}
 
 } // namespace kudu

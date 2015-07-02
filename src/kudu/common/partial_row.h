@@ -38,6 +38,10 @@ class KUDU_EXPORT KuduPartialRow {
   explicit KuduPartialRow(const Schema* schema);
   virtual ~KuduPartialRow();
 
+  KuduPartialRow(const KuduPartialRow& other);
+
+  KuduPartialRow& operator=(KuduPartialRow other);
+
   //------------------------------------------------------------
   // Setters
   //------------------------------------------------------------
@@ -175,7 +179,6 @@ class KUDU_EXPORT KuduPartialRow {
   template<typename T>
   Status Get(int col_idx, typename T::cpp_type* val) const;
 
-
   // If the given column is a string whose memory is owned by this instance,
   // deallocates the value.
   // NOTE: Does not mutate the isset bitmap.
@@ -200,8 +203,6 @@ class KUDU_EXPORT KuduPartialRow {
   // The normal "contiguous row" format row data. Any column whose data is unset
   // or NULL can have undefined bytes.
   uint8_t* row_data_;
-
-  DISALLOW_COPY_AND_ASSIGN(KuduPartialRow);
 };
 
 } // namespace kudu

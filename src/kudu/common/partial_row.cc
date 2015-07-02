@@ -3,6 +3,8 @@
 
 #include "kudu/common/partial_row.h"
 
+#include <algorithm>
+#include <cstring>
 #include <string>
 
 #include "kudu/common/row.h"
@@ -53,6 +55,38 @@ KuduPartialRow::~KuduPartialRow() {
   // Both the row data and bitmap came from the same allocation.
   // The bitmap is at the start of it.
   delete [] isset_bitmap_;
+}
+
+KuduPartialRow::KuduPartialRow(const KuduPartialRow& other)
+    : schema_(other.schema_) {
+  size_t column_bitmap_size = BitmapSize(schema_->num_columns());
+  size_t row_size = ContiguousRowHelper::row_size(*schema_);
+
+  size_t len = 2 * column_bitmap_size + row_size;
+  isset_bitmap_ = new uint8_t[len];
+  owned_strings_bitmap_ = isset_bitmap_ + column_bitmap_size;
+  row_data_ = owned_strings_bitmap_ + column_bitmap_size;
+
+  // Copy all bitmaps and row data.
+  memcpy(isset_bitmap_, other.isset_bitmap_, len);
+
+  // Copy owned strings.
+  for (int col_idx = 0; col_idx < schema_->num_columns(); col_idx++) {
+    if (BitmapTest(owned_strings_bitmap_, col_idx)) {
+      ContiguousRow row(schema_, row_data_);
+      Slice* slice = reinterpret_cast<Slice*>(row.mutable_cell_ptr(col_idx));
+      uint8_t* data = new uint8_t[slice->size()];
+      slice->relocate(data);
+    }
+  }
+}
+
+KuduPartialRow& KuduPartialRow::operator=(KuduPartialRow other) {
+  std::swap(schema_, other.schema_);
+  std::swap(isset_bitmap_, other.isset_bitmap_);
+  std::swap(owned_strings_bitmap_, other.owned_strings_bitmap_);
+  std::swap(row_data_, other.row_data_);
+  return *this;
 }
 
 template<typename T>
