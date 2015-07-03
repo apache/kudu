@@ -3,7 +3,9 @@
 #ifndef KUDU_CLIENT_CLIENT_TEST_UTIL_H
 #define KUDU_CLIENT_CLIENT_TEST_UTIL_H
 
+#include <string>
 #include <tr1/memory>
+#include <vector>
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/macros.h"
@@ -25,6 +27,10 @@ inline void FlushSessionOrDie(const std::tr1::shared_ptr<KuduSession>& session) 
     LogSessionErrorsAndDie(session, s);
   }
 }
+
+void ScanTableToStrings(KuduTable* table, std::vector<std::string>* row_strings);
+
+void ScanToStrings(KuduScanner* scanner, std::vector<std::string>* row_strings);
 
 } // namespace client
 } // namespace kudu

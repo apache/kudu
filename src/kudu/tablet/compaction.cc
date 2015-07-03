@@ -593,20 +593,11 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
                                       RowBlockRow* dst_row,
                                       bool* is_garbage_collected,
                                       uint64_t* num_rows_history_truncated) {
-
-  bool ignore_some_columns = false;
-  const Schema* dst_schema = NULL;
-  if (base_schema->Equals(*dst_row->schema())) {
-    dst_schema = base_schema;
-  } else {
-    DVLOG(2) << "Detecting that we're major compacting row id: " << src_row.row.row_index();
-    ignore_some_columns = true;
-    dst_schema = dst_row->schema();
-  }
-
   // TODO actually perform garbage collection (KUDU-236).
   // Right now we persist all mutations.
   *is_garbage_collected = false;
+
+  const Schema* dst_schema = dst_row->schema();
 
   bool is_deleted = false;
 
@@ -652,7 +643,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
     if (redo_decoder.is_update()) {
       DCHECK(!is_deleted) << "Got UPDATE for deleted row. " << ERROR_LOG_CONTEXT;
 
-      s = redo_decoder.ApplyRowUpdate(ignore_some_columns, dst_row,
+      s = redo_decoder.ApplyRowUpdate(dst_row,
                                       reinterpret_cast<Arena *>(NULL), &undo_encoder);
       if (PREDICT_FALSE(!s.ok())) {
         LOG(ERROR) << "Unable to apply update/create undo: " << s.ToString()
@@ -660,11 +651,9 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
         return s;
       }
 
-      // We're not outputting UNDOs when all the changes were meant for columns that we're not
-      // major compacting. We'll write them back into a REDO file.
+      // If all of the updates were for columns that we aren't projecting, we don't
+      // need to push them into the UNDO file.
       if (undo_encoder.is_empty()) {
-        DCHECK(ignore_some_columns) << "We're not ignoring columns but the undo_encoder "
-                                    << "came back empty. " << ERROR_LOG_CONTEXT;
         continue;
       }
 

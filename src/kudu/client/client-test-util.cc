@@ -2,11 +2,13 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/row_result.h"
 
 #include <boost/foreach.hpp>
 #include <vector>
 
 #include "kudu/gutil/stl_util.h"
+#include "kudu/util/test_util.h"
 
 namespace kudu {
 namespace client {
@@ -24,6 +26,25 @@ void LogSessionErrorsAndDie(const std::tr1::shared_ptr<KuduSession>& session,
               << " had status " << e->status().ToString();
   }
   CHECK_OK(s); // will fail
+}
+
+void ScanTableToStrings(KuduTable* table, vector<string>* row_strings) {
+  row_strings->clear();
+  KuduScanner scanner(table);
+  ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
+  ScanToStrings(&scanner, row_strings);
+}
+
+void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
+  ASSERT_OK(scanner->Open());
+  vector<KuduRowResult> rows;
+  while (scanner->HasMoreRows()) {
+    ASSERT_OK(scanner->NextBatch(&rows));
+    BOOST_FOREACH(const KuduRowResult& row, rows) {
+      row_strings->push_back(row.ToString());
+    }
+    rows.clear();
+  }
 }
 
 } // namespace client

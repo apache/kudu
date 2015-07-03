@@ -1,11 +1,14 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include <boost/assign/list_of.hpp>
+#include <boost/assign.hpp>
+#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <string>
 #include <tr1/memory>
+#include <utility>
+#include <map>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
@@ -13,6 +16,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/master.h"
@@ -34,6 +38,8 @@ DECLARE_int32(flush_threshold_mb);
 
 namespace kudu {
 
+using std::map;
+using std::pair;
 using std::vector;
 using std::tr1::shared_ptr;
 using client::KuduClient;
@@ -168,6 +174,10 @@ class AlterTableTest : public KuduTest {
   void VerifyRows(int start_row, int num_rows, VerifyPattern pattern);
 
   void InsertRows(int start_row, int num_rows);
+
+  void UpdateRow(int32_t row_key, const map<string, int32_t>& updates);
+
+  void ScanToStrings(vector<string>* rows);
 
   void InserterThread();
   void UpdaterThread();
@@ -362,6 +372,30 @@ void AlterTableTest::InsertRows(int start_row, int num_rows) {
   FlushSessionOrDie(session);
 }
 
+void AlterTableTest::UpdateRow(int32_t row_key,
+                               const map<string, int32_t>& updates) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  shared_ptr<KuduTable> table;
+  CHECK_OK(client_->OpenTable(kTableName, &table));
+  CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+  session->SetTimeoutMillis(15 * 1000);
+  gscoped_ptr<KuduUpdate> update(table->NewUpdate());
+  int32_t key = bswap_32(row_key); // endian swap to match 'InsertRows'
+  CHECK_OK(update->mutable_row()->SetInt32(0, key));
+  typedef map<string, int32_t>::value_type entry;
+  BOOST_FOREACH(const entry& e, updates) {
+    CHECK_OK(update->mutable_row()->SetInt32(e.first, e.second));
+  }
+  CHECK_OK(session->Apply(update.release()));
+  FlushSessionOrDie(session);
+}
+
+void AlterTableTest::ScanToStrings(vector<string>* rows) {
+  shared_ptr<KuduTable> table;
+  CHECK_OK(client_->OpenTable(kTableName, &table));
+  ScanTableToStrings(table.get(), rows);
+}
+
 // Verify that the 'num_rows' starting with 'start_row' fit the given pattern.
 // Note that the 'start_row' here is not a row key, but the pre-transformation row
 // key (InsertRows swaps endianness so that we random-write instead of sequential-write)
@@ -458,6 +492,40 @@ TEST_F(AlterTableTest, DISABLED_TestBootstrapAfterColumnRemoved) {
   ASSERT_NO_FATAL_FAILURE(RestartTabletServer());
 
   VerifyRows(0, kNumRows * 2, C1_DOESNT_EXIST);
+}
+
+
+TEST_F(AlterTableTest, TestCompactAfterUpdatingRemovedColumn) {
+  vector<string> rows;
+
+  ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
+  InsertRows(0, 1);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  InsertRows(1, 1);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+
+
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(2, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c1=0, int32 c2=12345)", rows[0]);
+  ASSERT_EQ("(int32 c0=16777216, int32 c1=1, int32 c2=12345)", rows[1]);
+
+  // Add a delta for c1.
+  UpdateRow(0, boost::assign::map_list_of("c1", 54321));
+
+  // Drop c1.
+  LOG(INFO) << "Dropping c1";
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+  ASSERT_OK(table_alterer->table_name(kTableName)
+            .drop_column("c1")
+            .Alter());
+
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(2, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c2=12345)", rows[0]);
+
+  // Compact
+  ASSERT_OK(tablet_peer_->tablet()->Compact(tablet::Tablet::FORCE_COMPACT_ALL));
 }
 
 // Thread which inserts rows into the table.

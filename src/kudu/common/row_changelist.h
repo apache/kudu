@@ -267,11 +267,7 @@ class RowChangeListDecoder {
 
   // Applies changes in this decoder to the specified row and saves the old
   // state of the row into the undo_encoder.
-  //
-  // Setting 'ignore_col_not_found' true means that updates belonging to columns that don't
-  // exist in 'dst_row' will be ignored. Useful when reading delta stores in conjunction with
-  // only a subset of the base data columns, since deltas are stored rowwise.
-  Status ApplyRowUpdate(bool ignore_col_not_found, RowBlockRow *dst_row,
+  Status ApplyRowUpdate(RowBlockRow *dst_row,
                         Arena *arena, RowChangeListEncoder* undo_encoder);
 
   // Apply this UPDATE RowChangeList to row number 'row_idx' in 'dst_col', but only

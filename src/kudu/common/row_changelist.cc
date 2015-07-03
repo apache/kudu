@@ -193,7 +193,7 @@ Status RowChangeListDecoder::ProjectUpdate(const DeltaProjector& projector,
   return Status::OK();
 }
 
-Status RowChangeListDecoder::ApplyRowUpdate(bool ignore_col_not_found, RowBlockRow *dst_row,
+Status RowChangeListDecoder::ApplyRowUpdate(RowBlockRow *dst_row,
                                             Arena *arena, RowChangeListEncoder* undo_encoder) {
   const Schema* dst_schema = dst_row->schema();
 
@@ -204,15 +204,10 @@ Status RowChangeListDecoder::ApplyRowUpdate(bool ignore_col_not_found, RowBlockR
     const void* value;
     RETURN_NOT_OK(dec.Validate(*dst_schema, &col_idx, &value));
 
-    // TODO: This check may be invalid in some alter-table scenarios.
-    // As we expand test coverage for alter-table, it might fail and need some fixing.
+    // If the delta is for a column ID not part of the projection
+    // we're scanning, just skip over it.
     if (col_idx == Schema::kColumnNotFound) {
-      if (ignore_col_not_found) {
         continue;
-      } else {
-        LOG(FATAL) << "Cannot apply update for column " << dec.col_id
-                   << ", verify the row's schema: " << dst_schema->ToString();
-      }
     }
 
     const ColumnSchema& col_schema = dst_schema->column(col_idx);

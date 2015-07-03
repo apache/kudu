@@ -366,25 +366,6 @@ class ClientTest : public KuduTest {
     return count;
   }
 
-  void ScanTableToStrings(KuduTable* table, vector<string>* row_strings) {
-    row_strings->clear();
-    KuduScanner scanner(table);
-    ASSERT_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
-    ScanToStrings(&scanner, row_strings);
-  }
-
-  void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
-    ASSERT_OK(scanner->Open());
-    vector<KuduRowResult> rows;
-    while (scanner->HasMoreRows()) {
-      ASSERT_OK(scanner->NextBatch(&rows));
-      BOOST_FOREACH(const KuduRowResult& row, rows) {
-        row_strings->push_back(row.ToString());
-      }
-      rows.clear();
-    }
-  }
-
   // Creates a table with 'num_replicas', split into tablets based on 'split_keys'
   // (or single tablet if 'split_keys' is empty).
   void CreateTable(const string& table_name,
