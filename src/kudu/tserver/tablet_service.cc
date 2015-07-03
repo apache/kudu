@@ -1083,7 +1083,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   TRACE_EVENT1("tserver", "TabletServiceImpl::HandleNewScanRequest",
                "tablet_id", scan_pb.tablet_id());
 
-  const shared_ptr<Schema> tablet_schema(tablet_peer->tablet()->schema());
+  const Schema* tablet_schema = tablet_peer->tablet()->schema();
 
   SharedScanner scanner;
   server_->scanner_manager()->NewScanner(tablet_peer->tablet_id(),

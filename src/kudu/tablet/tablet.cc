@@ -117,8 +117,7 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
                const shared_ptr<MemTracker>& parent_mem_tracker,
                MetricRegistry* metric_registry,
                const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
-  : schema_(new Schema(metadata->schema())),
-    key_schema_(schema_->CreateKeyProjection()),
+  : key_schema_(metadata->schema().CreateKeyProjection()),
     metadata_(metadata),
     log_anchor_registry_(log_anchor_registry),
     mem_tracker_(MemTracker::CreateTracker(
@@ -131,7 +130,7 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     mvcc_(clock),
     rowsets_flush_sem_(1),
     open_(false) {
-  CHECK(schema_->has_column_ids());
+      CHECK(schema()->has_column_ids());
   compaction_policy_.reset(CreateCompactionPolicy());
 
   if (metric_registry) {
@@ -139,8 +138,8 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     // TODO(KUDU-745): table_id is apparently not set in the metadata.
     attrs["table_id"] = metadata_->table_id();
     attrs["table_name"] = metadata_->table_name();
-    attrs["start_key"] = schema_->DebugEncodedRowKey(metadata_->start_key(), Schema::START_KEY);
-    attrs["end_key"] = schema_->DebugEncodedRowKey(metadata_->end_key(), Schema::END_KEY);
+    attrs["start_key"] = schema()->DebugEncodedRowKey(metadata_->start_key(), Schema::START_KEY);
+    attrs["end_key"] = schema()->DebugEncodedRowKey(metadata_->end_key(), Schema::END_KEY);
     metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry, tablet_id(), attrs);
     metrics_.reset(new TabletMetrics(metric_entity_));
     METRIC_memrowset_size.InstantiateFunctionGauge(
@@ -160,7 +159,7 @@ Status Tablet::Open() {
   TRACE_EVENT0("tablet", "Tablet::Open");
   boost::lock_guard<rw_spinlock> lock(component_lock_);
   CHECK(!open_) << "already open";
-  CHECK(schema_->has_column_ids());
+  CHECK(schema()->has_column_ids());
   // TODO: track a state_ variable, ensure tablet is open, etc.
 
   next_mrs_id_ = metadata_->last_durable_mrs_id() + 1;
@@ -183,7 +182,7 @@ Status Tablet::Open() {
   shared_ptr<RowSetTree> new_rowset_tree(new RowSetTree());
   CHECK_OK(new_rowset_tree->Reset(rowsets_opened));
   // now that the current state is loaded, create the new MemRowSet with the next id
-  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, *schema_.get(),
+  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, *schema(),
                                               log_anchor_registry_.get(),
                                               mem_tracker_));
   components_ = new TabletComponents(new_mrs, new_rowset_tree);
@@ -194,7 +193,7 @@ Status Tablet::Open() {
 
 Status Tablet::GetMappedReadProjection(const Schema& projection,
                                        Schema *mapped_projection) const {
-  shared_ptr<Schema> cur_schema(schema());
+  const Schema* cur_schema = schema();
   return cur_schema->GetMappedReadProjection(projection, mapped_projection);
 }
 
@@ -241,7 +240,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
   // Decode the ops
   RowOperationsPBDecoder dec(&tx_state->request()->row_operations(),
                              client_schema,
-                             schema_.get(),
+                             schema(),
                              tx_state->arena());
   RETURN_NOT_OK(dec.DecodeOperations(&ops));
 
@@ -253,7 +252,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
   }
 
   tx_state->mutable_row_ops()->swap(row_ops);
-  tx_state->set_schema_at_decode_time(schema_.get());
+  tx_state->set_schema_at_decode_time(schema());
 
   return Status::OK();
 }
@@ -275,9 +274,9 @@ Status Tablet::CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const {
     return Status::NotFound(
         Substitute("Row not within tablet range. Tablet start key: '$0', exclusive end key: '$1'."
                    "Probe key: '$2'",
-                   schema_->DebugEncodedRowKey(metadata_->start_key(), Schema::START_KEY),
-                   schema_->DebugEncodedRowKey(metadata_->end_key(), Schema::END_KEY),
-                   schema_->DebugEncodedRowKey(probe.encoded_key().encoded_key(),
+                   schema()->DebugEncodedRowKey(metadata_->start_key(), Schema::START_KEY),
+                   schema()->DebugEncodedRowKey(metadata_->end_key(), Schema::END_KEY),
+                   schema()->DebugEncodedRowKey(probe.encoded_key().encoded_key(),
                                                Schema::START_KEY)));
   }
   return Status::OK();
@@ -326,7 +325,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   // make sure that the WriteTransactionState has the component lock and that
   // there the RowOp has the row lock.
   DCHECK(insert->has_row_lock()) << "RowOp must hold the row lock.";
-  DCHECK_EQ(tx_state->schema_at_decode_time(), schema_.get()) << "Raced against schema change";
+  DCHECK_EQ(tx_state->schema_at_decode_time(), schema()) << "Raced against schema change";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
 
   ProbeStats stats;
@@ -355,7 +354,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
   }
 
   Timestamp ts = tx_state->timestamp();
-  ConstContiguousRow row(schema_.get(), insert->decoded_op.row_data);
+  ConstContiguousRow row(schema(), insert->decoded_op.row_data);
 
   // TODO: the Insert() call below will re-encode the key, which is a
   // waste. Should pass through the KeyProbe structure perhaps.
@@ -378,7 +377,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                                  RowOp* mutate) {
   DCHECK(tx_state != NULL) << "you must have a WriteTransactionState";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
-  DCHECK_EQ(tx_state->schema_at_decode_time(), schema_.get());
+  DCHECK_EQ(tx_state->schema_at_decode_time(), schema());
 
   gscoped_ptr<OperationResultPB> result(new OperationResultPB());
 
@@ -541,12 +540,10 @@ Status Tablet::FlushUnlocked() {
   TRACE_EVENT0("tablet", "Tablet::FlushUnlocked");
   RowSetsInCompaction input;
   shared_ptr<MemRowSet> old_mrs;
-  shared_ptr<Schema> old_schema;
   {
     // Create a new MRS with the latest schema.
     boost::lock_guard<rw_spinlock> lock(component_lock_);
-    old_schema = schema_;
-    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*old_schema.get(), &input, &old_mrs));
+    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(&input, &old_mrs));
   }
 
   // Wait for any in-flight transactions to finish against the old MRS
@@ -554,11 +551,10 @@ Status Tablet::FlushUnlocked() {
   mvcc_.WaitForAllInFlightToCommit();
 
   // Note: "input" should only contain old_mrs.
-  return FlushInternal(input, old_mrs, *old_schema.get());
+  return FlushInternal(input, old_mrs);
 }
 
-Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
-                                        RowSetsInCompaction *compaction,
+Status Tablet::ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
                                         shared_ptr<MemRowSet> *old_ms) {
   *old_ms = components_->memrowset;
   // Mark the memrowset rowset as locked, so compactions won't consider it
@@ -570,7 +566,7 @@ Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
   // Add to compaction.
   compaction->AddRowSet(*old_ms, ms_lock);
 
-  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, schema, log_anchor_registry_.get(),
+  shared_ptr<MemRowSet> new_mrs(new MemRowSet(next_mrs_id_++, *schema(), log_anchor_registry_.get(),
                                 mem_tracker_));
   shared_ptr<RowSetTree> new_rst(new RowSetTree());
   ModifyRowSetTree(*components_->rowsets,
@@ -584,8 +580,7 @@ Status Tablet::ReplaceMemRowSetUnlocked(const Schema& schema,
 }
 
 Status Tablet::FlushInternal(const RowSetsInCompaction& input,
-                             const shared_ptr<MemRowSet>& old_ms,
-                             const Schema& schema) {
+                             const shared_ptr<MemRowSet>& old_ms) {
   CHECK(open_);
 
   // Step 1. Freeze the old memrowset by blocking readers and swapping
@@ -613,7 +608,7 @@ Status Tablet::FlushInternal(const RowSetsInCompaction& input,
   input.DumpToLog();
   LOG(INFO) << "Memstore in-memory size: " << old_ms->memory_footprint() << " bytes";
 
-  RETURN_NOT_OK(DoCompactionOrFlush(schema, input, mrs_being_flushed));
+  RETURN_NOT_OK(DoCompactionOrFlush(input, mrs_being_flushed));
 
   // Sanity check that no insertions happened during our flush.
   CHECK_EQ(start_insert_count, old_ms->debug_insert_count())
@@ -657,20 +652,19 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
   shared_ptr<MemRowSet> old_ms;
   {
     // If the current version >= new version, there is nothing to do.
-    bool same_schema = schema_->Equals(*tx_state->schema());
+    bool same_schema = schema()->Equals(*tx_state->schema());
     if (metadata_->schema_version() >= tx_state->schema_version()) {
       LOG(INFO) << "Already running schema version " << metadata_->schema_version()
                 << " got alter request for version " << tx_state->schema_version();
       return Status::OK();
     }
 
-    LOG(INFO) << "Alter schema from " << schema_->ToString()
+    LOG(INFO) << "Alter schema from " << schema()->ToString()
               << " version " << metadata_->schema_version()
               << " to " << tx_state->schema()->ToString()
               << " version " << tx_state->schema_version();
     DCHECK(schema_lock_.is_locked());
-    schema_.reset(new Schema(*tx_state->schema()));
-    metadata_->SetSchema(*schema_, tx_state->schema_version());
+    metadata_->SetSchema(*tx_state->schema(), tx_state->schema_version());
     if (tx_state->has_new_table_name()) {
       metadata_->SetTableName(tx_state->new_table_name());
       if (metric_entity_) {
@@ -688,13 +682,13 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
   // Replace the MemRowSet
   {
     boost::lock_guard<rw_spinlock> lock(component_lock_);
-    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(*schema_.get(), &input, &old_ms));
+    RETURN_NOT_OK(ReplaceMemRowSetUnlocked(&input, &old_ms));
   }
 
   tx_state->ReleaseSchemaLock();
 
   // Flush the old MemRowSet
-  return FlushInternal(input, old_ms, *tx_state->schema());
+  return FlushInternal(input, old_ms);
 }
 
 void Tablet::SetCompactionHooksForTests(
@@ -1044,8 +1038,7 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
   return metadata_->UpdateAndFlush(to_remove_meta, to_add, mrs_being_flushed);
 }
 
-Status Tablet::DoCompactionOrFlush(const Schema& schema,
-        const RowSetsInCompaction &input, int64_t mrs_being_flushed) {
+Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs_being_flushed) {
   const char *op_name =
         (mrs_being_flushed == TabletMetadata::kNoMrsFlushed) ? "Compaction" : "Flush";
   TRACE_EVENT2("tablet", "Tablet::DoCompactionOrFlush",
@@ -1062,7 +1055,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   }
 
   shared_ptr<CompactionInput> merge;
-  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, &schema, &merge));
+  RETURN_NOT_OK(input.CreateCompactionInput(flush_snap, schema(), &merge));
 
   RollingDiskRowSetWriter drsw(metadata_.get(), merge->schema(), bloom_sizing(),
                                compaction_policy_->target_rowset_size());
@@ -1147,7 +1140,6 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
             << "in new rowsets)";
   shared_ptr<DuplicatingRowSet> inprogress_rowset(
     new DuplicatingRowSet(input.rowsets(), new_disk_rowsets));
-  shared_ptr<Schema> schema2;
 
   // The next step is to swap in the DuplicatingRowSet, and at the same time, determine an
   // MVCC snapshot which includes all of the transactions that saw a pre-DuplicatingRowSet
@@ -1160,7 +1152,6 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
     // can start (or snapshot components_) during this block.
     boost::lock_guard<rw_spinlock> lock(component_lock_);
     AtomicSwapRowSetsUnlocked(input.rowsets(), boost::assign::list_of(inprogress_rowset));
-    schema2 = schema_;
 
     // NOTE: transactions may *commit* in between these two lines.
     // We need to make sure all such transactions end up in the
@@ -1203,7 +1194,7 @@ Status Tablet::DoCompactionOrFlush(const Schema& schema,
   LOG(INFO) << op_name << " Phase 2: carrying over any updates which arrived during Phase 1";
   LOG(INFO) << "Phase 2 snapshot: " << non_duplicated_txns_snap.ToString();
   RETURN_NOT_OK_PREPEND(
-      input.CreateCompactionInput(non_duplicated_txns_snap, schema2.get(), &merge),
+      input.CreateCompactionInput(non_duplicated_txns_snap, schema(), &merge),
           Substitute("Failed to create $0 inputs", op_name).c_str());
 
   // Update the output rowsets with the deltas that came in in phase 1, before we swapped
@@ -1265,8 +1256,7 @@ Status Tablet::Compact(CompactFlags flags) {
 
   input.DumpToLog();
 
-  shared_ptr<Schema> cur_schema(schema());
-  return DoCompactionOrFlush(*cur_schema.get(), input,
+  return DoCompactionOrFlush(input,
                              TabletMetadata::kNoMrsFlushed);
 }
 

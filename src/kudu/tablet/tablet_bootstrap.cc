@@ -1248,7 +1248,7 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
       return Status::Corruption("Operation which previously succeeded failed "
                                 "during log replay",
                                 Substitute("Op: $0\nFailure: $1",
-                                           op->ToString(*tablet_->schema_unlocked()),
+                                           op->ToString(*tablet_->schema()),
                                            op->result->failed_status().ShortDebugString()));
     }
   }
@@ -1301,7 +1301,7 @@ Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
       num_unflushed_stores++;
     } else {
       if (VLOG_IS_ON(1)) {
-        string mutation = op->decoded_op.changelist.ToString(*tablet_->schema_unlocked().get());
+        string mutation = op->decoded_op.changelist.ToString(*tablet_->schema());
         VLOG(1) << "Skipping mutation to " << mutated_store.ShortDebugString()
                 << " that was already flushed. "
                 << "OpId: " << tx_state->op_id().DebugString();

@@ -241,8 +241,8 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
 
   tablet_peer_->RegisterMaintenanceOps(master_->maintenance_manager());
 
-  shared_ptr<Schema> schema(tablet->schema());
-  schema_ = SchemaBuilder(*schema.get()).BuildWithoutIds();
+  const Schema* schema = tablet->schema();
+  schema_ = SchemaBuilder(*schema).BuildWithoutIds();
   key_schema_ = schema_.CreateKeyProjection();
   return Status::OK();
 }

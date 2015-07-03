@@ -100,6 +100,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   void SetTableName(const std::string& table_name);
 
+  // Return a reference to the current schema.
+  // This pointer will be valid until the TabletMetadata is destructed,
+  // even if the schema is changed.
   const Schema& schema() const {
     const Schema* s = reinterpret_cast<const Schema*>(
         base::subtle::Acquire_Load(reinterpret_cast<const AtomicWord*>(&schema_)));

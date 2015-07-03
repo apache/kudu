@@ -60,7 +60,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     CHECK_OK(tablet()->NewRowIterator(client_schema_, &iter));
     uint64_t count;
     CHECK_OK(tablet()->CountRows(&count));
-    shared_ptr<Schema> schema(tablet()->schema());
+    const Schema* schema = tablet()->schema();
     ColumnSchema valcol = schema->column(schema->find_column("val"));
     valcol_projection_ = Schema(boost::assign::list_of(valcol), 0);
     CHECK_OK(tablet()->NewRowIterator(valcol_projection_, &iter));

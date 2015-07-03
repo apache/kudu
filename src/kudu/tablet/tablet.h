@@ -285,14 +285,8 @@ class Tablet {
   // has a very small number of rows.
   Status DebugDump(vector<string> *lines = NULL);
 
-  shared_ptr<Schema> schema_unlocked() const {
-    // TODO: locking on the schema (KUDU-382)
-    return schema_;
-  }
-
-  shared_ptr<Schema> schema() const {
-    boost::shared_lock<rw_semaphore> lock(schema_lock_);
-    return schema_;
+  const Schema* schema() const {
+    return &metadata_->schema();
   }
 
   // Returns a reference to the key projection of the tablet schema.
@@ -381,8 +375,7 @@ class Tablet {
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;
 
-  Status DoCompactionOrFlush(const Schema& schema,
-                             const RowSetsInCompaction &input,
+  Status DoCompactionOrFlush(const RowSetsInCompaction &input,
                              int64_t mrs_being_flushed);
 
   Status FlushMetadata(const RowSetVector& to_remove,
@@ -409,19 +402,17 @@ class Tablet {
     *comps = components_;
   }
 
-  // Create a new MemRowSet with the specified 'schema' and replace the current one.
+  // Create a new MemRowSet, replacing the current one.
   // The 'old_ms' pointer will be set to the current MemRowSet set before the replacement.
   // If the MemRowSet is not empty it will be added to the 'compaction' input
   // and the MemRowSet compaction lock will be taken to prevent the inclusion
   // in any concurrent compactions.
-  Status ReplaceMemRowSetUnlocked(const Schema& schema,
-                                  RowSetsInCompaction *compaction,
+  Status ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
                                   shared_ptr<MemRowSet> *old_ms);
 
   // TODO: Document me.
   Status FlushInternal(const RowSetsInCompaction& input,
-               const shared_ptr<MemRowSet>& old_ms,
-               const Schema& schema);
+                       const shared_ptr<MemRowSet>& old_ms);
 
   BloomFilterSizing bloom_sizing() const;
 
@@ -452,7 +443,6 @@ class Tablet {
   // released after the schema change has been applied.
   mutable rw_semaphore schema_lock_;
 
-  shared_ptr<Schema> schema_;
   const Schema key_schema_;
 
   scoped_refptr<TabletMetadata> metadata_;

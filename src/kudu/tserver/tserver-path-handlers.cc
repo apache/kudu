@@ -299,8 +299,8 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
 
   // Output schema in tabular format.
   *output << "<h2>Schema</h2>\n";
-  shared_ptr<Schema> schema(peer->tablet()->schema());
-  HtmlOutputSchemaTable(*schema.get(), output);
+  const Schema* schema = peer->tablet()->schema();
+  HtmlOutputSchemaTable(*schema, output);
 
   *output << "<h2>Other Tablet Info Pages</h2>" << endl;
 

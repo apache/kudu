@@ -642,7 +642,7 @@ Status LinkedListTester::VerifyLinkedListLocal(const tablet::Tablet* tablet,
                               GenerateSplitInts());
   verifier.StartScanTimer();
 
-  const shared_ptr<Schema>& tablet_schema = tablet->schema();
+  const Schema* tablet_schema = tablet->schema();
   // Cannot use schemas with col indexes in a scan (assertions fire).
   Schema projection(tablet_schema->columns(), tablet_schema->num_key_columns());
   gscoped_ptr<RowwiseIterator> iter;
