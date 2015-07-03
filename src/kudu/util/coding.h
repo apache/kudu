@@ -96,9 +96,9 @@ extern const uint8_t *GetVarint32PtrFallback(const uint8_t *p,
 inline const uint8_t *GetVarint32Ptr(const uint8_t *p,
                                      const uint8_t *limit,
                                      uint32_t* value) {
-  if (p < limit) {
+  if (PREDICT_TRUE(p < limit)) {
     uint32_t result = *p;
-    if ((result & 128) == 0) {
+    if (PREDICT_TRUE((result & 128) == 0)) {
       *value = result;
       return p + 1;
     }
