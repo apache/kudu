@@ -153,7 +153,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   FsManager *fs_manager() const { return fs_manager_; }
 
-  int64_t last_durable_mrs_id() { return last_durable_mrs_id_; }
+  int64_t last_durable_mrs_id() const { return last_durable_mrs_id_; }
 
   void SetLastDurableMrsIdForTests(int64_t mrs_id) { last_durable_mrs_id_ = mrs_id; }
 

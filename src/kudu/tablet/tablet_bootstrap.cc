@@ -81,6 +81,26 @@ using strings::Substitute;
 
 struct ReplayState;
 
+// Information from the tablet metadata which indicates which data was
+// flushed prior to this restart.
+//
+// We take a snapshot of this information at the beginning of the bootstrap
+// process so that we can allow compactions and flushes to run during bootstrap
+// without confusing our tracking of flushed stores.
+class FlushedStoresSnapshot {
+ public:
+  FlushedStoresSnapshot() {}
+  Status InitFrom(const TabletMetadata& meta);
+
+  bool WasStoreAlreadyFlushed(const MemStoreTargetPB& target) const;
+
+ private:
+  int64_t last_durable_mrs_id_;
+  std::tr1::unordered_map<int64_t, int64_t> flushed_dms_by_drs_id_;
+
+  DISALLOW_COPY_AND_ASSIGN(FlushedStoresSnapshot);
+};
+
 // Bootstraps an existing tablet by opening the metadata from disk, and rebuilding soft
 // state by playing log segments. A bootstrapped tablet can then be added to an existing
 // consensus configuration as a LEARNER, which will bring its state up to date with the
@@ -200,8 +220,6 @@ class TabletBootstrap {
   // message that is already flushed.
   bool AreAnyStoresAlreadyFlushed(const CommitMsg& commit);
 
-  bool WasStoreAlreadyFlushed(const MemStoreTargetPB& target);
-
   void DumpReplayStateToLog(const ReplayState& state);
 
   // Handlers for each type of message seen in the log during replay.
@@ -275,6 +293,9 @@ class TabletBootstrap {
     int orphaned_commits;
   };
   Stats stats_;
+
+  // Snapshot of which stores were flushed prior to restart.
+  FlushedStoresSnapshot flushed_stores_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletBootstrap);
 };
@@ -396,6 +417,8 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     RETURN_NOT_OK(meta_->ToSuperBlock(&super_block));
     VLOG(1) << "Tablet Metadata: " << super_block.DebugString();
   }
+
+  RETURN_NOT_OK(flushed_stores_.InitFrom(*meta_.get()));
 
   bool has_blocks;
   RETURN_NOT_OK(OpenTablet(&has_blocks));
@@ -810,7 +833,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
 bool TabletBootstrap::AreAllStoresAlreadyFlushed(const CommitMsg& commit) {
   BOOST_FOREACH(const OperationResultPB& op_result, commit.result().ops()) {
     BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
-      if (!WasStoreAlreadyFlushed(mutated_store)) {
+      if (!flushed_stores_.WasStoreAlreadyFlushed(mutated_store)) {
         return false;
       }
     }
@@ -821,7 +844,7 @@ bool TabletBootstrap::AreAllStoresAlreadyFlushed(const CommitMsg& commit) {
 bool TabletBootstrap::AreAnyStoresAlreadyFlushed(const CommitMsg& commit) {
   BOOST_FOREACH(const OperationResultPB& op_result, commit.result().ops()) {
     BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
-      if (WasStoreAlreadyFlushed(mutated_store)) {
+      if (flushed_stores_.WasStoreAlreadyFlushed(mutated_store)) {
         return true;
       }
     }
@@ -1266,7 +1289,7 @@ Status TabletBootstrap::FilterInsert(WriteTransactionState* tx_state,
                                          op_result.ShortDebugString()));
   }
   // check if the insert is already flushed
-  if (WasStoreAlreadyFlushed(op_result.mutated_stores(0))) {
+  if (flushed_stores_.WasStoreAlreadyFlushed(op_result.mutated_stores(0))) {
     if (VLOG_IS_ON(1)) {
       VLOG(1) << "Skipping insert that was already flushed. OpId: "
               << tx_state->op_id().DebugString()
@@ -1297,7 +1320,7 @@ Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
   // output targets was "unflushed".
   int num_unflushed_stores = 0;
   BOOST_FOREACH(const MemStoreTargetPB& mutated_store, op_result.mutated_stores()) {
-    if (!WasStoreAlreadyFlushed(mutated_store)) {
+    if (!flushed_stores_.WasStoreAlreadyFlushed(mutated_store)) {
       num_unflushed_stores++;
     } else {
       if (VLOG_IS_ON(1)) {
@@ -1330,44 +1353,53 @@ Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
   return Status::OK();
 }
 
-bool TabletBootstrap::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) {
+Status TabletBootstrap::UpdateClock(uint64_t timestamp) {
+  Timestamp ts;
+  RETURN_NOT_OK(ts.FromUint64(timestamp));
+  RETURN_NOT_OK(clock_->Update(ts));
+  return Status::OK();
+}
+
+Status FlushedStoresSnapshot::InitFrom(const TabletMetadata& meta) {
+  CHECK(flushed_dms_by_drs_id_.empty()) << "already initted";
+  last_durable_mrs_id_ = meta.last_durable_mrs_id();
+  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rsmd, meta.rowsets()) {
+    if (!InsertIfNotPresent(&flushed_dms_by_drs_id_, rsmd->id(),
+                            rsmd->last_durable_redo_dms_id())) {
+      return Status::Corruption(Substitute("Duplicate DRS ID $0 in metadata",
+                                           rsmd->id()));
+    }
+  }
+  return Status::OK();
+}
+
+bool FlushedStoresSnapshot::WasStoreAlreadyFlushed(const MemStoreTargetPB& target) const {
   if (target.has_mrs_id()) {
     DCHECK(!target.has_rs_id());
     DCHECK(!target.has_dms_id());
 
     // The original mutation went to the MRS. It is flushed if it went to an MRS
     // with a lower ID than the latest flushed one.
-    return target.mrs_id() <= tablet_->metadata()->last_durable_mrs_id();
+    return target.mrs_id() <= last_durable_mrs_id_;
   } else {
     // The original mutation went to a DRS's delta store.
-
-    // TODO right now this is using GetRowSetForTests which goes through
-    // the rs's every time. Just adding a method that gets row sets by id
-    // is not enough. We really need to take a snapshot of the initial
-    // metadata with regard to which row sets are alive at the time. By
-    // doing this we decouple replaying from the current state of the tablet,
-    // which allows us to do compactions/flushes on replay.
-    const RowSetMetadata* row_set = tablet_->metadata()->GetRowSetForTests(
-      target.rs_id());
-
-    // if we can't find the row_set it was compacted
-    if (row_set == NULL) {
+    int64_t last_durable_dms_id;
+    if (!FindCopy(flushed_dms_by_drs_id_, target.rs_id(), &last_durable_dms_id)) {
+      // if we have no data about this RowSet, then it must have been flushed and
+      // then deleted.
+      // TODO: how do we avoid a race where we get an update on a rowset before
+      // it is persisted? add docs about the ordering of flush.
       return true;
     }
 
-    // if it exists we check if the mutation is already flushed
-    if (target.dms_id() <= row_set->last_durable_redo_dms_id()) {
+    // If the original rowset that we applied the edit to exists, check whether
+    // the edit was in a flushed DMS or a live one.
+    if (target.dms_id() <= last_durable_dms_id) {
       return true;
     }
 
     return false;
   }
-}
-Status TabletBootstrap::UpdateClock(uint64_t timestamp) {
-  Timestamp ts;
-  RETURN_NOT_OK(ts.FromUint64(timestamp));
-  RETURN_NOT_OK(clock_->Update(ts));
-  return Status::OK();
 }
 
 } // namespace tablet
