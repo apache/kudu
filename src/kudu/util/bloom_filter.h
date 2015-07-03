@@ -177,11 +177,9 @@ class BloomFilter {
 
 inline uint32_t BloomFilter::PickBit(uint32_t hash, size_t n_bits) {
   switch (n_bits) {
-    // Fast path for some common powers of two, where we can use bitwise
-    // math instead of the much slower '%' operator
-    case 65536 * 8:
-    case 16384 * 8:
-    case 32768 * 8:
+    // Fast path for the default bloom filter block size. Bitwise math
+    // is much faster than division.
+    case 4096 * 8:
       return hash & (n_bits - 1);
 
     default:
