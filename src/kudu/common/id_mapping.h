@@ -125,17 +125,16 @@ class IdMapping {
 
   void DoubleCapacity() {
     int new_capacity = capacity() * 2;
+    std::vector<value_type> entries(new_capacity);
+    ClearMap(&entries);
     mask_ = new_capacity - 1;
-    std::vector<value_type> new_entries(new_capacity);
-    ClearMap(&new_entries);
-    for (int i = 0; i < entries_.size(); i++) {
-      if (entries_[i].first != kNoEntry) {
-        int s = slot(entries_[i].first);
-        CHECK_EQ(kNoEntry, new_entries[s].first);
-        new_entries[s] = entries_[i];
+    entries.swap(entries_);
+
+    for (int i = 0; i < entries.size(); i++) {
+      if (entries[i].first != kNoEntry) {
+        set(entries[i].first, entries[i].second);
       }
     }
-    entries_.swap(new_entries);
   }
 
   static void ClearMap(std::vector<value_type>* v) {
