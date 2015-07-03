@@ -6,7 +6,9 @@
 #include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/slice.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
 
 namespace kudu {
@@ -230,4 +232,21 @@ TEST_F(EncodedKeyTest, TestConstructFromEncodedString) {
   }
 }
 
+#ifdef NDEBUG
+TEST_F(EncodedKeyTest, BenchmarkStringEncoding) {
+  string data;
+  for (int i = 0; i < 100; i++) {
+    data += "abcdefghijklmnopqrstuvwxyz";
+  }
+
+  for (int size = 0; size < 32; size++) {
+    LOG_TIMING(INFO, strings::Substitute("1M strings: size=$0", size)) {
+      for (int i = 0; i < 1000000; i++) {
+        faststring dst;
+        KeyEncoderTraits<STRING>::EncodeWithSeparators(Slice(data.c_str(), size), false, &dst);
+      }
+    }
+  }
+}
+#endif
 } // namespace kudu

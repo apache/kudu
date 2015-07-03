@@ -121,6 +121,10 @@ struct KeyEncoderTraits<STRING> {
     if (is_last) {
       dst->append(s.data(), s.size());
     } else {
+      int old_size = dst->size();
+      dst->resize(old_size + s.size() * 2 + 2);
+
+      uint8_t* dstp = &(*dst)[old_size];
       // If we're a middle component of a composite key, we need to add a \x00
       // at the end in order to separate this component from the next one. However,
       // if we just did that, we'd have issues where a key that actually has
@@ -128,13 +132,15 @@ struct KeyEncoderTraits<STRING> {
       // encode \x00 as \x00\x01.
       for (int i = 0; i < s.size(); i++) {
         if (PREDICT_FALSE(s[i] == '\0')) {
-          dst->append("\x00\x01", 2);
+          *dstp++ = 0;
+          *dstp++ = 1;
         } else {
-          dst->push_back(s[i]);
+          *dstp++ = s[i];
         }
       }
-      dst->append("\x00\x00", 2);
-
+      *dstp++ = 0;
+      *dstp++ = 0;
+      dst->resize(dstp - &(*dst)[0]);
       // TODO: this implementation isn't as fast as it could be. There was an
       // aborted attempt at an SSE-based implementation here at one point, but
       // it didn't work so got canned. Worth looking into this to improve
