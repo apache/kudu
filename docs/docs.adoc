@@ -5,7 +5,7 @@
 :imagesdir: ./images
 :icons: font
 :toc: left
-:toclevels: 3
+:toclevels: 2
 :doctype: book
 :backend: html5
 :sectlinks:
@@ -19,4 +19,5 @@ include::administration.adoc[leveloffset=+1]
 include::troubleshooting.adoc[leveloffset=+1]
 include::contributing.adoc[leveloffset=+1]
 include::style_guide.adoc[leveloffset=+1]
+include::configuration_reference.adoc[leveloffset=+1]
 include::resources.adoc[leveloffset=+1]

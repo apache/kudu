@@ -828,10 +828,13 @@ endif (UNIX)
 # "make docs" target
 ############################################################
 if (UNIX)
-  add_custom_target(docs asciidoctor
-    -d book
-    ${CMAKE_CURRENT_SOURCE_DIR}/docs/docs.adoc
-    -D ${CMAKE_CURRENT_SOURCE_DIR}/build/docs)
+  set(DOCS_BUILD_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build/docs)
+  add_custom_command(
+    OUTPUT ${DOCS_BUILD_DIRECTORY}
+    # We want the docs output HTML to go in a docs/ subdir of the output dir
+    COMMAND docs/support/scripts/make_docs.sh ${DOCS_BUILD_DIRECTORY}/docs)
+  add_custom_target(docs
+    DEPENDS ${DOCS_BUILD_DIRECTORY})
 endif (UNIX)
 
 ############################################################
