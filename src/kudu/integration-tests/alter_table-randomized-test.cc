@@ -1,0 +1,384 @@
+// Copyright (c) 2015, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
+
+#include <boost/foreach.hpp>
+#include <boost/assign/list_of.hpp>
+
+#include <algorithm>
+#include <map>
+#include <tr1/memory>
+#include <vector>
+
+#include "kudu/client/client-test-util.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
+#include "kudu/util/test_util.h"
+
+namespace kudu {
+
+using client::KuduClient;
+using client::KuduClientBuilder;
+using client::KuduColumnSchema;
+using client::KuduError;
+using client::KuduInsert;
+using client::KuduSchema;
+using client::KuduSession;
+using client::KuduTable;
+using client::KuduTableAlterer;
+using client::KuduTableCreator;
+using client::KuduWriteOperation;
+using std::make_pair;
+using std::map;
+using std::pair;
+using std::tr1::shared_ptr;
+using std::vector;
+using strings::SubstituteAndAppend;
+
+const char* kTableName = "test-table";
+const int kMaxColumns = 30;
+
+class AlterTableRandomized : public KuduTest {
+ public:
+  virtual void SetUp() OVERRIDE {
+    KuduTest::SetUp();
+
+    ExternalMiniClusterOptions opts;
+    // Because this test performs a lot of alter tables, we end up flushing
+    // and rewriting metadata files quite a bit. Globally disabling fsync
+    // speeds the test runtime up dramatically.
+    opts.extra_tserver_flags.push_back("--never_fsync");
+    // This test produces tables with lots of columns. With container preallocation,
+    // we end up using quite a bit of disk space. So, we disable it.
+    opts.extra_tserver_flags.push_back("--log_container_preallocate_bytes=0");
+    cluster_.reset(new ExternalMiniCluster(opts));
+    ASSERT_OK(cluster_->Start());
+
+    KuduClientBuilder builder;
+    ASSERT_OK(cluster_->CreateClient(builder, &client_));
+  }
+
+  virtual void TearDown() OVERRIDE {
+    cluster_->Shutdown();
+    KuduTest::TearDown();
+  }
+
+  void RestartTabletServer() {
+    cluster_->tablet_server(0)->Shutdown();
+    CHECK_OK(cluster_->tablet_server(0)->Restart());
+  }
+
+ protected:
+  gscoped_ptr<ExternalMiniCluster> cluster_;
+  shared_ptr<KuduClient> client_;
+};
+
+struct RowState {
+  vector<pair<string, int32_t> > cols;
+
+  string ToString() const {
+    string ret = "(";
+    typedef pair<string, int32_t> entry;
+    bool first = true;
+    BOOST_FOREACH(const entry& e, cols) {
+      if (!first) {
+        ret.append(", ");
+      }
+      first = false;
+      SubstituteAndAppend(&ret, "int32 $0=$1", e.first, e.second);
+    }
+    ret.push_back(')');
+    return ret;
+  }
+};
+
+struct TableState {
+  TableState() {
+    col_names_.push_back("key");
+  }
+
+  ~TableState() {
+    STLDeleteValues(&rows_);
+  }
+
+  void GenRandomRow(int32_t key, int32_t seed,
+                    vector<pair<string, int32_t> >* row) {
+    row->clear();
+    row->push_back(make_pair("key", key));
+    for (int i = 1; i < col_names_.size(); i++) {
+      row->push_back(make_pair(col_names_[i], seed));
+    }
+  }
+
+  bool Insert(const vector<pair<string, int32_t> >& data) {
+    DCHECK_EQ("key", data[0].first);
+    int32_t key = data[0].second;
+    if (ContainsKey(rows_, key)) return false;
+
+    RowState* r = new RowState;
+    r->cols = data;
+    rows_[key] = r;
+    return true;
+  }
+
+  bool Update(const vector<pair<string, int32_t> >& data) {
+    DCHECK_EQ("key", data[0].first);
+    int32_t key = data[0].second;
+    if (!ContainsKey(rows_, key)) return false;
+
+    RowState* r = rows_[key];
+    r->cols = data;
+    return true;
+  }
+
+  void Delete(int32_t row_key) {
+    RowState* r = EraseKeyReturnValuePtr(&rows_, row_key);
+    CHECK(r) << "row key " << row_key << " not found";
+    delete r;
+  }
+
+  void AddColumnWithDefault(const string& name,
+                            int32_t def) {
+    col_names_.push_back(name);
+    BOOST_FOREACH(entry& e, rows_) {
+      e.second->cols.push_back(make_pair(name, def));
+    }
+  }
+
+  void DropColumn(const string& name) {
+    std::vector<string>::iterator col_it = std::find(col_names_.begin(), col_names_.end(), name);
+    int index = col_it - col_names_.begin();
+    col_names_.erase(col_it);
+    BOOST_FOREACH(entry& e, rows_) {
+      e.second->cols.erase(e.second->cols.begin() + index);
+    }
+  }
+
+  int32_t GetRandomRowKey(int32_t rand) {
+    CHECK(!rows_.empty());
+    int idx = rand % rows_.size();
+    map<int32_t, RowState*>::const_iterator it = rows_.begin();
+    for (int i = 0; i < idx; i++) {
+      ++it;
+    }
+    return it->first;
+  }
+
+  void ToStrings(vector<string>* strs) {
+    strs->clear();
+    BOOST_FOREACH(const entry& e, rows_) {
+      strs->push_back(e.second->ToString());
+    }
+  }
+
+  vector<string> col_names_;
+  typedef pair<const int32_t, RowState*> entry;
+  map<int32_t, RowState*> rows_;
+};
+
+struct MirrorTable {
+  explicit MirrorTable(const shared_ptr<KuduClient>& client)
+    : client_(client) {
+  }
+
+  Status Create() {
+    KuduSchema schema(boost::assign::list_of
+                      (KuduColumnSchema("key", KuduColumnSchema::INT32)),
+                      1);
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    RETURN_NOT_OK(table_creator->table_name(kTableName)
+             .schema(&schema)
+             .num_replicas(1)
+             .Create());
+    return Status::OK();
+  }
+
+  bool TryInsert(int32_t row_key, int32_t rand) {
+    vector<pair<string, int32_t> > row;
+    ts_.GenRandomRow(row_key, rand, &row);
+    Status s = DoRealOp(row, INSERT);
+    if (s.IsAlreadyPresent()) {
+      CHECK(!ts_.Insert(row)) << "real table said already-present, fake table succeeded";
+      return false;
+    }
+    CHECK_OK(s);
+
+    CHECK(ts_.Insert(row));
+    return true;
+  }
+
+  void DeleteRandomRow(uint32_t rand) {
+    if (ts_.rows_.empty()) return;
+    int32_t row_key = ts_.GetRandomRowKey(rand);
+    vector<pair<string, int32_t> > del;
+    del.push_back(make_pair("key", row_key));
+    CHECK_OK(DoRealOp(del, DELETE));
+
+    ts_.Delete(row_key);
+  }
+
+  void UpdateRandomRow(uint32_t rand) {
+    if (ts_.rows_.empty()) return;
+    int32_t row_key = ts_.GetRandomRowKey(rand);
+
+    vector<pair<string, int32_t> > update;
+    update.push_back(make_pair("key", row_key));
+    for (int i = 1; i < num_columns(); i++) {
+      update.push_back(make_pair(ts_.col_names_[i], rand * i));
+    }
+
+    if (update.size() == 1) {
+      // No columns got updated. Just ignore this update.
+      return;
+    }
+
+    Status s = DoRealOp(update, UPDATE);
+    if (s.IsNotFound()) {
+      CHECK(!ts_.Update(update)) << "real table said not-found, fake table succeeded";
+      return;
+    }
+    CHECK_OK(s);
+
+    CHECK(ts_.Update(update));
+  }
+
+  void AddAColumn(const string& name) {
+    int32_t default_value = rand();
+
+    // Add to the real table.
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+    CHECK_OK(table_alterer->table_name(kTableName)
+             .add_column(name, KuduColumnSchema::INT32, &default_value)
+             .Alter());
+
+    // Add to the mirror state.
+    ts_.AddColumnWithDefault(name, default_value);
+  }
+
+  void DropAColumn(const string& name) {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+    CHECK_OK(table_alterer->table_name(kTableName)
+             .drop_column(name)
+             .Alter());
+    ts_.DropColumn(name);
+  }
+
+  void DropRandomColumn(int seed) {
+    if (num_columns() == 1) return;
+
+    string name = ts_.col_names_[1 + (seed % (num_columns() - 1))];
+    DropAColumn(name);
+  }
+
+  int num_columns() const {
+    return ts_.col_names_.size();
+  }
+
+  void Verify() {
+    // First scan the real table
+    vector<string> rows;
+    {
+      shared_ptr<KuduTable> table;
+      CHECK_OK(client_->OpenTable(kTableName, &table));
+      client::ScanTableToStrings(table.get(), &rows);
+    }
+    std::sort(rows.begin(), rows.end());
+
+    // Then get our mock table.
+    vector<string> expected;
+    ts_.ToStrings(&expected);
+
+    // They should look the same.
+    ASSERT_EQ(rows, expected);
+  }
+
+ private:
+  enum OpType {
+    INSERT, UPDATE, DELETE
+  };
+
+  Status DoRealOp(const vector<pair<string, int32_t> >& data,
+                  OpType op_type) {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    shared_ptr<KuduTable> table;
+    RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    session->SetTimeoutMillis(15 * 1000);
+    RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
+    gscoped_ptr<KuduWriteOperation> op;
+    switch (op_type) {
+      case INSERT: op.reset(table->NewInsert()); break;
+      case UPDATE: op.reset(table->NewUpdate()); break;
+      case DELETE: op.reset(table->NewDelete()); break;
+    }
+    for (int i = 0; i < data.size(); i++) {
+      CHECK_OK(op->mutable_row()->SetInt32(data[i].first, data[i].second));
+    }
+    RETURN_NOT_OK(session->Apply(op.release()));
+    Status s = session->Flush();
+    if (s.ok()) {
+      return s;
+    }
+
+    std::vector<KuduError*> errors;
+    ElementDeleter d(&errors);
+    bool overflow;
+    session->GetPendingErrors(&errors, &overflow);
+    CHECK_EQ(errors.size(), 1);
+    return errors[0]->status();
+  }
+
+  shared_ptr<KuduClient> client_;
+  TableState ts_;
+};
+
+// Stress test for various alter table scenarios. This performs a random sequence of:
+//   - insert a row (using the latest schema)
+//   - delete a random row
+//   - update a row (all columns with the latest schema)
+//   - add a new column
+//   - drop a column
+//   - restart the tablet server
+//
+// During the sequence of operations, a "mirror" of the table in memory is kept up to
+// date. We periodically scan the actual table, and ensure that the data in Kudu
+// matches our in-memory "mirror".
+TEST_F(AlterTableRandomized, TestRandomSequence) {
+  MirrorTable t(client_);
+  ASSERT_OK(t.Create());
+
+  Random rng(SeedRandom());
+
+  const int n_iters = AllowSlowTests() ? 2000 : 1000;
+  for (int i = 0; i < n_iters; i++) {
+    // Perform different operations with varying probability.
+    // We mostly insert and update, with occasional deletes,
+    // and more occasional table alterations or restarts.
+    int r = rng.Uniform(1000);
+    if (r < 400) {
+      t.TryInsert(1000000 + rng.Uniform(1000000), rng.Next());
+    } else if (r < 600) {
+      t.UpdateRandomRow(rng.Next());
+    } else if (r < 920) {
+      t.DeleteRandomRow(rng.Next());
+    } else if (r < 970) {
+      if (t.num_columns() < kMaxColumns) {
+        t.AddAColumn(strings::Substitute("c$0", i));
+      }
+    } else if (r < 995) {
+      t.DropRandomColumn(rng.Next());
+    } else {
+      // TODO(KUDU-181): this portion of the test is disabled until
+      // KUDU-181/KUDU-462 is fixed.
+      // RestartTabletServer();
+    }
+
+    if (i % 1000 == 0) {
+      NO_FATALS(t.Verify());
+    }
+  }
+}
+
+} // namespace kudu

@@ -26,6 +26,7 @@ add_dependencies(integration-tests
 # Tests
 set(KUDU_TEST_LINK_LIBS integration-tests ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(alter_table-test)
+ADD_KUDU_TEST(alter_table-randomized-test)
 ADD_KUDU_TEST(registration-test RESOURCE_LOCK "master-web-port")
 ADD_KUDU_TEST(client-stress-test
   RESOURCE_LOCK "master-rpc-ports"

@@ -64,6 +64,12 @@ DEFINE_bool(suicide_on_eio, true,
             "Kill the process if an I/O operation results in EIO");
 TAG_FLAG(suicide_on_eio, advanced);
 
+DEFINE_bool(never_fsync, false,
+            "Never fsync() anything to disk. This is used by certain test cases to "
+            "speed up runtime. This is very unsafe to use in production.");
+TAG_FLAG(never_fsync, advanced);
+TAG_FLAG(never_fsync, unsafe);
+
 using base::subtle::Atomic64;
 using base::subtle::Barrier_AtomicIncrement;
 using std::tr1::unordered_set;
@@ -117,6 +123,7 @@ static Status IOError(const std::string& context, int err_number) {
 
 static Status DoSync(int fd, const string& filename) {
   ThreadRestrictions::AssertIOAllowed();
+  if (FLAGS_never_fsync) return Status::OK();
   if (FLAGS_writable_file_use_fsync) {
     if (fsync(fd) < 0) {
       return IOError(filename, errno);
@@ -516,11 +523,12 @@ class PosixMmapFile : public WritableFile {
       // bytes to be synced.
       size_t p1 = TruncateToPageBoundary(last_sync_ - base_);
       size_t p2 = TruncateToPageBoundary(dst_ - base_ - 1);
-      if (msync(base_ + p1, p2 - p1 + page_size_, MS_SYNC) < 0) {
+      if (!FLAGS_never_fsync &&
+          msync(base_ + p1, p2 - p1 + page_size_, MS_SYNC) < 0) {
         return IOError(filename_, errno);
-      } else {
-        last_sync_ = dst_;
       }
+
+      last_sync_ = dst_;
     }
 
     return Status::OK();
@@ -1042,6 +1050,7 @@ class PosixEnv : public Env {
   virtual Status SyncDir(const std::string& dirname) OVERRIDE {
     TRACE_EVENT1("io", "SyncDir", "path", dirname);
     ThreadRestrictions::AssertIOAllowed();
+    if (FLAGS_never_fsync) return Status::OK();
     int dir_fd;
     if ((dir_fd = open(dirname.c_str(), O_DIRECTORY|O_RDONLY)) == -1) {
       return IOError(dirname, errno);
