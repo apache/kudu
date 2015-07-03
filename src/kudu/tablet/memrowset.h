@@ -142,7 +142,7 @@ struct MSBTreeTraits : public btree::BTreeTraits {
 // plus a single row of the given schema, then constructs an MRSRow object which
 // points into that stack storage.
 #define DEFINE_MRSROW_ON_STACK(memrowset, varname, slice_name) \
-  uint8_t varname##_size = sizeof(MRSRow::Header) + \
+  size_t varname##_size = sizeof(MRSRow::Header) + \
                            ContiguousRowHelper::row_size((memrowset)->schema_nonvirtual()); \
   uint8_t varname##_storage[varname##_size]; \
   Slice slice_name(varname##_storage, varname##_size); \
