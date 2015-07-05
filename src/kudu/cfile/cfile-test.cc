@@ -239,7 +239,7 @@ class TestCFile : public CFileTestBase {
     LOG_TIMING(INFO, "writing 100M strings") {
       LOG(INFO) << "Starting writefile";
       StringDataGenerator<false> generator("hello %zu");
-      WriteTestFile(&generator, PREFIX_ENCODING, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
+      WriteTestFile(&generator, encoding, NO_COMPRESSION, 100000000, NO_FLAGS, &block_id);
       LOG(INFO) << "Done writing";
     }
 
@@ -310,8 +310,12 @@ TEST_F(TestCFile, TestWrite100MFileStringsPrefixEncoding) {
   TestWrite100MFileStrings(PREFIX_ENCODING);
 }
 
-TEST_F(TestCFile, TestWrite100MFileStringsDictncoding) {
+TEST_F(TestCFile, TestWrite100MFileStringsDictEncoding) {
   TestWrite100MFileStrings(DICT_ENCODING);
+}
+
+TEST_F(TestCFile, TestWrite100MFileStringsPlainEncoding) {
+  TestWrite100MFileStrings(PLAIN_ENCODING);
 }
 
 #endif
