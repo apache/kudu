@@ -114,35 +114,51 @@ int StringPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
   DCHECK(!finished_);
   DCHECK_LE(vals_since_restart_, options_->block_restart_interval);
 
-  const Slice &val = *reinterpret_cast<const Slice *>(vals);
+  int added = 0;
+  const Slice* slices = reinterpret_cast<const Slice*>(vals);
+  Slice prev_val(last_val_);
+  // We generate a static call to IsBlockFull() to avoid the vtable lookup
+  // in this hot path.
+  while (!StringPrefixBlockBuilder::IsBlockFull(options_->block_size) &&
+         added < count) {
+    const Slice val = slices[added];
 
-  Slice last_val_piece(last_val_);
-  size_t shared = 0;
-  if (vals_since_restart_ < options_->block_restart_interval) {
-    // See how much sharing to do with previous string
-    shared = CommonPrefixLength(last_val_piece, val);
-  } else {
-    // Restart compression
-    restarts_.push_back(buffer_.size());
-    vals_since_restart_ = 0;
+    int old_size = buffer_.size();
+    buffer_.resize(old_size + 5 * 2 + val.size());
+    uint8_t* dst_p = &buffer_[old_size];
+
+    size_t shared = 0;
+    if (vals_since_restart_ < options_->block_restart_interval) {
+      // See how much sharing to do with previous string
+      shared = CommonPrefixLength(prev_val, val);
+    } else {
+      // Restart compression
+      restarts_.push_back(old_size);
+      vals_since_restart_ = 0;
+    }
+    const size_t non_shared = val.size() - shared;
+
+    // Add "<shared><non_shared>" to buffer_
+    dst_p = InlineEncodeVarint32(dst_p, shared);
+    dst_p = InlineEncodeVarint32(dst_p, non_shared);
+
+    // Add string delta to buffer_
+    memcpy(dst_p, val.data() + shared, non_shared);
+    dst_p += non_shared;
+
+    // Chop off the extra size on the end of the buffer.
+    buffer_.resize(dst_p - &buffer_[0]);
+
+    // Update state
+    prev_val = val;
+    added++;
+    vals_since_restart_++;
   }
-  const size_t non_shared = val.size() - shared;
 
-  // Add "<shared><non_shared>" to buffer_
-  InlinePutVarint32(&buffer_, shared);
-  InlinePutVarint32(&buffer_, non_shared);
+  last_val_.assign_copy(prev_val.data(), prev_val.size());
+  val_count_ += added;
 
-  // Add string delta to buffer_
-  buffer_.append(val.data() + shared, non_shared);
-
-  // Update state
-  last_val_.resize(shared);
-  last_val_.append(val.data() + shared, non_shared);
-  DCHECK(Slice(last_val_) == val);
-  vals_since_restart_++;
-  val_count_++;
-
-  return 1;
+  return added;
 }
 
 size_t StringPrefixBlockBuilder::Count() const {
