@@ -8,6 +8,7 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/string_prefix_block.h"
 #include "kudu/common/columnblock.h"
+#include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
@@ -119,10 +120,7 @@ int StringPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
   size_t shared = 0;
   if (vals_since_restart_ < options_->block_restart_interval) {
     // See how much sharing to do with previous string
-    const size_t min_length = std::min(last_val_piece.size(), val.size());
-    while ((shared < min_length) && (last_val_piece[shared] == val[shared])) {
-      shared++;
-    }
+    shared = CommonPrefixLength(last_val_piece, val);
   } else {
     // Restart compression
     restarts_.push_back(buffer_.size());
@@ -171,6 +169,41 @@ Status StringPrefixBlockBuilder::GetFirstKey(void *key) const {
   return Status::OK();
 }
 
+size_t StringPrefixBlockBuilder::CommonPrefixLength(const Slice& slice_a,
+                                                    const Slice& slice_b) {
+  // This implementation is modeled after strings::fastmemcmp_inlined().
+  int len = std::min(slice_a.size(), slice_b.size());
+  const uint8_t* a = slice_a.data();
+  const uint8_t* b = slice_b.data();
+  const uint8_t* a_limit = a + len;
+
+  const size_t sizeof_uint64 = sizeof(uint64_t);
+  // Move forward 8 bytes at a time until finding an unequal portion.
+  while (a + sizeof_uint64 <= a_limit &&
+         UNALIGNED_LOAD64(a) == UNALIGNED_LOAD64(b)) {
+    a += sizeof_uint64;
+    b += sizeof_uint64;
+  }
+
+  // Same, 4 bytes at a time.
+  const size_t sizeof_uint32 = sizeof(uint32_t);
+  while (a + sizeof_uint32 <= a_limit &&
+         UNALIGNED_LOAD32(a) == UNALIGNED_LOAD32(b)) {
+    a += sizeof_uint32;
+    b += sizeof_uint32;
+  }
+
+  // Now one byte at a time. We could do a 2-bytes-at-a-time loop,
+  // but we're following the example of fastmemcmp_inlined(). The benefit of
+  // 2-at-a-time likely doesn't outweigh the cost of added code size.
+  while (a < a_limit &&
+         *a == *b) {
+    a++;
+    b++;
+  }
+
+  return a - slice_a.data();
+}
 
 ////////////////////////////////////////////////////////////
 // StringPrefixBlockDecoder

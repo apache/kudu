@@ -39,6 +39,9 @@ class StringPrefixBlockBuilder : public BlockBuilder {
   Status GetFirstKey(void *key) const OVERRIDE;
 
  private:
+  // Return the length of the common prefix shared by the two strings.
+  static size_t CommonPrefixLength(const Slice& a, const Slice& b);
+
   faststring buffer_;
   faststring last_val_;
 
