@@ -87,9 +87,15 @@ inline void InlinePutFixed64(StrType *dst, uint64_t value) {
 
 template <class StrType>
 inline void InlinePutVarint32(StrType* dst, uint32_t v) {
-  uint8_t buf[5];
-  uint8_t *ptr = InlineEncodeVarint32(buf, v);
-  dst->append(buf, ptr - buf);
+  // We resize the array and then size it back down as appropriate
+  // rather than using append(), since the generated code ends up
+  // being substantially shorter.
+  int old_size = dst->size();
+  dst->resize(old_size + 5);
+  uint8_t* p = &(*dst)[old_size];
+  uint8_t *ptr = InlineEncodeVarint32(p, v);
+
+  dst->resize(old_size + ptr - p);
 }
 
 } // namespace kudu
