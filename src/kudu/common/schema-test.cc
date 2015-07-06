@@ -299,7 +299,7 @@ TEST(TestKeyEncoder, TestKeyEncoder) {
 
     ASSERT_EQ(0, expected.compare(Slice(fs)))
       << "Failed encoding example " << i << ".\n"
-      << "Expected: " << HexDump(expected)
+      << "Expected: " << HexDump(expected) << "\n"
       << "Got:      " << HexDump(Slice(fs));
     i++;
   }

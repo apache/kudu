@@ -9,6 +9,7 @@
 #include <string.h>
 #include <climits>
 #include <bits/endian.h>
+#include <nmmintrin.h>
 
 #include "kudu/common/types.h"
 #include "kudu/gutil/endian.h"
@@ -116,35 +117,45 @@ struct KeyEncoderTraits<STRING> {
   }
 
   // slice encoding that uses a separator to retain lexicographic
-  // comparability
+  // comparability.
+  //
+  // This implementation is heavily optimized for the case where the input
+  // slice has no '\0' bytes. We assume this is common in most user-generated
+  // compound keys.
   inline static void EncodeWithSeparators(const Slice& s, bool is_last, faststring* dst) {
     if (is_last) {
       dst->append(s.data(), s.size());
     } else {
-      int old_size = dst->size();
-      dst->resize(old_size + s.size() * 2 + 2);
-
-      uint8_t* dstp = &(*dst)[old_size];
       // If we're a middle component of a composite key, we need to add a \x00
       // at the end in order to separate this component from the next one. However,
       // if we just did that, we'd have issues where a key that actually has
       // \x00 in it would compare wrong, so we have to instead add \x00\x00, and
       // encode \x00 as \x00\x01.
-      for (int i = 0; i < s.size(); i++) {
-        if (PREDICT_FALSE(s[i] == '\0')) {
-          *dstp++ = 0;
-          *dstp++ = 1;
-        } else {
-          *dstp++ = s[i];
+      int old_size = dst->size();
+      dst->resize(old_size + s.size() * 2 + 2);
+
+      const uint8_t* srcp = s.data();
+      uint8_t* dstp = &(*dst)[old_size];
+      int rem = s.size();
+
+      while (rem >= 16) {
+        if (!SSEEncodeChunk<16>(&srcp, &dstp)) {
+          goto slow_path;
         }
+        rem -= 16;
       }
+      while (rem >= 8) {
+        if (!SSEEncodeChunk<8>(&srcp, &dstp)) {
+          goto slow_path;
+        }
+        rem -= 8;
+      }
+      slow_path:
+      EncodeChunkLoop(&srcp, &dstp, rem);
+
       *dstp++ = 0;
       *dstp++ = 0;
       dst->resize(dstp - &(*dst)[0]);
-      // TODO: this implementation isn't as fast as it could be. There was an
-      // aborted attempt at an SSE-based implementation here at one point, but
-      // it didn't work so got canned. Worth looking into this to improve
-      // composite key performance in the future.
     }
   }
 
@@ -185,6 +196,70 @@ struct KeyEncoderTraits<STRING> {
     memcpy(cell_ptr, &slice, sizeof(Slice));
     encoded_key->remove_prefix(max_len + 2);
     return Status::OK();
+  }
+
+ private:
+  // Encode a chunk of 'len' bytes from '*srcp' into '*dstp', incrementing
+  // the pointers upon return.
+  //
+  // This uses SSE2 operations to operate in 8 or 16 bytes at a time, fast-pathing
+  // the case where there are no '\x00' bytes in the source.
+  //
+  // Returns true if the chunk was successfully processed, false if there was one
+  // or more '\0' bytes requiring the slow path.
+  //
+  // REQUIRES: len == 16 or 8
+  template<int LEN>
+  static bool SSEEncodeChunk(const uint8_t** srcp, uint8_t** dstp) {
+    COMPILE_ASSERT(LEN == 16 || LEN == 8, invalid_length);
+    __m128i data;
+    if (LEN == 16) {
+      // Load 16 bytes (unaligned) into the XMM register.
+      data = _mm_loadu_si128(reinterpret_cast<const __m128i*>(*srcp));
+    } else if (LEN == 8) {
+      // Load 8 bytes (unaligned) into the XMM register
+      data = reinterpret_cast<__m128i>(_mm_load_sd(reinterpret_cast<const double*>(*srcp)));
+    }
+    // Compare each byte of the input with '\0'. This results in a vector
+    // where each byte is either \x00 or \xFF, depending on whether the
+    // input had a '\x00' in the corresponding position.
+    __m128i zeros = reinterpret_cast<__m128i>(_mm_setzero_pd());
+    __m128i zero_bytes = _mm_cmpeq_epi8(data, zeros);
+
+    // Check whether the resulting vector is all-zero.
+    bool all_zeros;
+    if (LEN == 16) {
+      all_zeros = _mm_testz_si128(zero_bytes, zero_bytes);
+    } else { // LEN == 8
+      all_zeros = _mm_cvtsi128_si64(zero_bytes) == 0;
+    }
+
+    // If it's all zero, we can just store the entire chunk.
+    if (PREDICT_FALSE(!all_zeros)) {
+      return false;
+    }
+
+    if (LEN == 16) {
+      _mm_storeu_si128(reinterpret_cast<__m128i*>(*dstp), data);
+    } else {
+      _mm_storel_epi64(reinterpret_cast<__m128i*>(*dstp), data);  // movq m64, xmm
+    }
+    *dstp += LEN;
+    *srcp += LEN;
+    return true;
+  }
+
+  // Non-SSE loop which encodes 'len' bytes from 'srcp' into 'dst'.
+  static void EncodeChunkLoop(const uint8_t** srcp, uint8_t** dstp, int len) {
+    while (len--) {
+      if (PREDICT_FALSE(**srcp == '\0')) {
+        *(*dstp)++ = 0;
+        *(*dstp)++ = 1;
+      } else {
+        *(*dstp)++ = **srcp;
+      }
+      (*srcp)++;
+    }
   }
 };
 

@@ -9,6 +9,9 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
+#include "kudu/util/test_util.h"
 #include "kudu/util/test_macros.h"
 
 namespace kudu {
@@ -232,6 +235,34 @@ TEST_F(EncodedKeyTest, TestConstructFromEncodedString) {
   }
 }
 
+// Test encoding random strings and ensure that the decoded string
+// matches the input.
+TEST_F(EncodedKeyTest, TestRandomStringEncoding) {
+  Random r(SeedRandom());
+  char buf[80];
+  faststring encoded;
+  Arena arena(1024, 1024);
+  for (int i = 0; i < 10000; i++) {
+    encoded.clear();
+    arena.Reset();
+
+    int len = r.Uniform(sizeof(buf));
+    RandomString(buf, len, &r);
+
+    Slice in_slice(buf, len);
+    KeyEncoderTraits<STRING>::EncodeWithSeparators(&in_slice, false, &encoded);
+
+    Slice to_decode(encoded);
+    Slice decoded_slice;
+    ASSERT_OK(KeyEncoderTraits<STRING>::DecodeKeyPortion(
+                  &to_decode, false, &arena,
+                  reinterpret_cast<uint8_t*>(&decoded_slice)));
+
+    ASSERT_EQ(decoded_slice.ToDebugString(), in_slice.ToDebugString())
+      << "encoded: " << Slice(encoded).ToDebugString();
+  }
+}
+
 #ifdef NDEBUG
 TEST_F(EncodedKeyTest, BenchmarkStringEncoding) {
   string data;
@@ -241,8 +272,9 @@ TEST_F(EncodedKeyTest, BenchmarkStringEncoding) {
 
   for (int size = 0; size < 32; size++) {
     LOG_TIMING(INFO, strings::Substitute("1M strings: size=$0", size)) {
+      faststring dst;
       for (int i = 0; i < 1000000; i++) {
-        faststring dst;
+        dst.clear();
         KeyEncoderTraits<STRING>::EncodeWithSeparators(Slice(data.c_str(), size), false, &dst);
       }
     }
