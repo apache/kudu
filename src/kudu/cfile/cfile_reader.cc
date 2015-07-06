@@ -526,11 +526,10 @@ Status CFileIterator::PrepareForNewSeek() {
     BlockPointer bp(reader_->footer().dict_block_ptr());
 
     // Cache the dictionary for performance
-    BlockHandle handle;
-    RETURN_NOT_OK_PREPEND(reader_->ReadBlock(bp, CFileReader::CACHE_BLOCK, &handle),
+    RETURN_NOT_OK_PREPEND(reader_->ReadBlock(bp, CFileReader::CACHE_BLOCK, &dict_block_handle_),
                           "Couldn't read dictionary block");
 
-    dict_decoder_.reset(new StringPlainBlockDecoder(handle.data()));
+    dict_decoder_.reset(new StringPlainBlockDecoder(dict_block_handle_.data()));
     RETURN_NOT_OK_PREPEND(dict_decoder_->ParseHeader(), "Couldn't parse dictionary block header");
   }
 

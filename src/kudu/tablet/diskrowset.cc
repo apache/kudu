@@ -185,8 +185,12 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   // Save the last encoded (max) key
   if (written_count_ > 0) {
     CHECK_GT(last_encoded_key_.size(), 0);
-    key_index_writer()->AddMetadataPair(DiskRowSet::kMaxKeyMetaEntryName,
-                                        Slice(last_encoded_key_));
+    Slice last_enc_slice(last_encoded_key_);
+    Slice first_enc_slice(key_index_writer()->GetMetaValueOrDie(DiskRowSet::kMinKeyMetaEntryName));
+    CHECK_LE(first_enc_slice.compare(last_enc_slice), 0)
+      << "First Key not <= Last key: first_key=" << first_enc_slice.ToDebugString()
+      << "   last_key=" << last_enc_slice.ToDebugString();
+    key_index_writer()->AddMetadataPair(DiskRowSet::kMaxKeyMetaEntryName, last_enc_slice);
   }
 
   // Finish writing the columns themselves.

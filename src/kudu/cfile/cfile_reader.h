@@ -425,6 +425,7 @@ class CFileIterator : public ColumnIterator {
 
   // Decoder for the dictionary block
   gscoped_ptr<StringPlainBlockDecoder> dict_decoder_;
+  BlockHandle dict_block_handle_;
 
   // The currently in-use index iterator. This is equal to either
   // posidx_iter_.get(), validx_iter_.get(), or NULL if not seeked.

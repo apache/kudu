@@ -238,6 +238,16 @@ void CFileWriter::AddMetadataPair(const Slice &key, const Slice &value) {
   unflushed_metadata_.push_back(make_pair(key.ToString(), value.ToString()));
 }
 
+string CFileWriter::GetMetaValueOrDie(Slice key) const {
+  typedef pair<string, string> ss_pair;
+  BOOST_FOREACH(const ss_pair& entry, unflushed_metadata_) {
+    if (Slice(entry.first) == key) {
+      return entry.second;
+    }
+  }
+  LOG(FATAL) << "Missing metadata entry: " << key.ToDebugString();
+}
+
 void CFileWriter::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field) {
   typedef pair<string, string> ss_pair;
   BOOST_FOREACH(const ss_pair &entry, unflushed_metadata_) {

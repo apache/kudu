@@ -108,6 +108,11 @@ class CFileWriter {
   // the header. Otherwise, the pairs will be added in the footer during Finish().
   void AddMetadataPair(const Slice &key, const Slice &value);
 
+  // Return the metadata value associated with the given key.
+  //
+  // If no such metadata has been added yet, logs a FATAL error.
+  std::string GetMetaValueOrDie(Slice key) const;
+
   // Append a set of values to the file.
   Status AppendEntries(const void *entries, size_t count);
 
