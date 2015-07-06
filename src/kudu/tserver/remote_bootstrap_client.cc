@@ -65,7 +65,7 @@ RemoteBootstrapClient::RemoteBootstrapClient(FsManager* fs_manager,
 }
 
 Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
-                                                 const ConsensusStatePB& cstate,
+                                                 const RaftPeerPB& bootstrap_peer,
                                                  TabletStatusListener* status_listener) {
   DCHECK(meta != NULL);
 
@@ -73,7 +73,7 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
   const string& tablet_id = meta->tablet_id();
 
   // Download all the files (serially, for now, but in parallel in the future).
-  RETURN_NOT_OK(BeginRemoteBootstrapSession(tablet_id, cstate, status_listener));
+  RETURN_NOT_OK(BeginRemoteBootstrapSession(tablet_id, bootstrap_peer, status_listener));
   RETURN_NOT_OK(DownloadWALs());
   RETURN_NOT_OK(DownloadBlocks());
   RETURN_NOT_OK(WriteConsensusMetadata());
@@ -89,18 +89,6 @@ Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
   RETURN_NOT_OK(EndRemoteBootstrapSession());
 
   return Status::OK();
-}
-
-Status RemoteBootstrapClient::ExtractLeaderFromConfig(const ConsensusStatePB& cstate,
-                                                      RaftPeerPB* leader) {
-  BOOST_FOREACH(const RaftPeerPB& peer, cstate.config().peers()) {
-    if (!cstate.has_leader_uuid() || cstate.leader_uuid().empty()) break;
-    if (peer.permanent_uuid() == cstate.leader_uuid()) {
-      leader->CopyFrom(peer);
-      return Status::OK();
-    }
-  }
-  return Status::NotFound("No leader found in config");
 }
 
 // Decode the remote error into a human-readable Status object.
@@ -133,7 +121,7 @@ void RemoteBootstrapClient::UpdateStatusMessage(const string& message) {
 }
 
 Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tablet_id,
-                                                          const ConsensusStatePB& cstate,
+                                                          const RaftPeerPB& bootstrap_peer,
                                                           TabletStatusListener* status_listener) {
   CHECK_EQ(kNoSession, state_);
 
@@ -142,24 +130,24 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
 
   UpdateStatusMessage("Initializing remote bootstrap");
 
-  // Find the consensus leader's address.
-  // TODO: Support looking up consensus configuration info from Master and also redirecting
-  // from follower to consensus leader in the future.
-  RaftPeerPB leader;
-  RETURN_NOT_OK_PREPEND(ExtractLeaderFromConfig(cstate, &leader),
-                        "Cannot find leader tablet in config to remotely bootstrap from: " +
-                        cstate.ShortDebugString());
-  if (!leader.has_last_known_addr()) {
-    return Status::InvalidArgument("Unknown address for config leader", leader.ShortDebugString());
+  if (!bootstrap_peer.has_last_known_addr()) {
+    return Status::InvalidArgument("Unknown address for peer to bootstrap from",
+                                   bootstrap_peer.ShortDebugString());
   }
   HostPort host_port;
-  RETURN_NOT_OK(HostPortFromPB(leader.last_known_addr(), &host_port));
+  RETURN_NOT_OK(HostPortFromPB(bootstrap_peer.last_known_addr(), &host_port));
   Sockaddr addr;
   RETURN_NOT_OK(SockaddrFromHostPort(host_port, &addr));
+  if (addr.IsWildcard()) {
+    return Status::InvalidArgument("Invalid wildcard address to remote bootstrap from",
+                                   Substitute("$0 (resolved to $1)",
+                                              host_port.host(), addr.host()));
+  }
   LOG(INFO) << "Beginning remote bootstrap session on tablet " << tablet_id
-            << " from leader " << host_port.ToString();
+            << " from remote peer at address " << host_port.ToString();
 
-  UpdateStatusMessage("Beginning remote bootstrap session with leader " + host_port.ToString());
+  UpdateStatusMessage("Beginning remote bootstrap session with remote peer "
+                      + host_port.ToString());
 
   // Set up an RPC proxy for the RemoteBootstrapService.
   proxy_.reset(new RemoteBootstrapServiceProxy(messenger_, addr));
@@ -178,10 +166,13 @@ Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tab
                                controller,
                                "Unable to begin remote bootstrap session");
 
-  // TODO: Support retrying based on updated info from Master or consensus configuration.
-  if (resp.superblock().remote_bootstrap_state() != tablet::REMOTE_BOOTSTRAP_DONE) {
-    Status s = Status::IllegalState("Leader of config (" + cstate.ShortDebugString() + ")" +
-                                    " is currently remotely bootstrapping itself!",
+  // TODO: Consider adding support for retrying based on updated info from
+  // Master or consensus configuration?
+  tablet::TabletBootstrapStatePB state = resp.superblock().remote_bootstrap_state();
+  if (state != tablet::REMOTE_BOOTSTRAP_DONE) {
+    Status s = Status::IllegalState(Substitute("Remote peer ($0) data is not ready: $1 ($2)",
+                                    bootstrap_peer.ShortDebugString(),
+                                    TabletBootstrapStatePB_Name(state), state),
                                     resp.superblock().ShortDebugString());
     LOG(WARNING) << s.ToString();
     return s;

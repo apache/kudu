@@ -78,9 +78,7 @@ class RemoteBootstrapTest : public TabletServerTestBase {
 
   // Return the permananent_uuid of the local service.
   const std::string GetLocalUUID() const {
-    // FIXME: fs_manager()->uuid() fails. Problem?
-    //return mini_server_->fs_manager()->uuid();
-    return CURRENT_TEST_NAME();
+    return tablet_peer_->permanent_uuid();
   }
 
   const std::string& GetTabletId() const {

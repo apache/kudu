@@ -59,10 +59,11 @@ class RemoteBootstrapClient {
                         const std::tr1::shared_ptr<rpc::Messenger>& messenger,
                         const std::string& client_permanent_uuid);
 
-  // Runs a "full" remote bootstrap, copying the physical layout of a tablet
-  // from the leader of the specified consensus configuration.
+  // Runs a "full" remote bootstrap, which includes copying the data required
+  // to instantiate a local replica of the specified tablet from the specified
+  // bootstrap peer.
   Status RunRemoteBootstrap(tablet::TabletMetadata* meta,
-                            const consensus::ConsensusStatePB& cstate,
+                            const consensus::RaftPeerPB& bootstrap_peer,
                             tablet::TabletStatusListener* status_listener);
 
  private:
@@ -77,10 +78,6 @@ class RemoteBootstrapClient {
     kNoSession,
     kSessionStarted,
   };
-
-  // Return the leader of the consensus configuration, or Status::NotFound() on error.
-  static Status ExtractLeaderFromConfig(const consensus::ConsensusStatePB& cstate,
-                                        consensus::RaftPeerPB* leader);
 
   // Extract the embedded Status message from the given ErrorStatusPB.
   // The given ErrorStatusPB must extend RemoteBootstrapErrorPB.
@@ -98,7 +95,7 @@ class RemoteBootstrapClient {
   //
   // 'status_listener' may be passed as NULL.
   Status BeginRemoteBootstrapSession(const std::string& tablet_id,
-                                     const consensus::ConsensusStatePB& cstate,
+                                     const consensus::RaftPeerPB& bootstrap_peer,
                                      tablet::TabletStatusListener* status_listener);
 
   // End the remote bootstrap session.

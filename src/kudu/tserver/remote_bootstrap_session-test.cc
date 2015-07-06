@@ -33,6 +33,7 @@ namespace kudu {
 namespace tserver {
 
 using consensus::ConsensusMetadata;
+using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using fs::ReadableBlock;

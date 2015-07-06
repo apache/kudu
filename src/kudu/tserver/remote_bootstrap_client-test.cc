@@ -2,12 +2,16 @@
 // Confidential Cloudera Information: Covered by NDA.
 #include "kudu/tserver/remote_bootstrap-test-base.h"
 
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/tserver/remote_bootstrap_client.h"
 #include "kudu/util/env_util.h"
 
 namespace kudu {
 namespace tserver {
+
+using consensus::GetRaftConfigLeader;
+using consensus::RaftPeerPB;
 
 class RemoteBootstrapClientTest : public RemoteBootstrapTest {
  public:
@@ -22,7 +26,8 @@ class RemoteBootstrapClientTest : public RemoteBootstrapTest {
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
     client_.reset(new RemoteBootstrapClient(fs_manager_.get(),
                                             messenger_,
-                                            GetLocalUUID()));
+                                            fs_manager_->uuid()));
+    ASSERT_OK(GetRaftConfigLeader(tablet_peer_->consensus()->CommittedConsensusState(), &leader_));
   }
 
  protected:
@@ -31,6 +36,7 @@ class RemoteBootstrapClientTest : public RemoteBootstrapTest {
   gscoped_ptr<FsManager> fs_manager_;
   shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<RemoteBootstrapClient> client_;
+  RaftPeerPB leader_;
 };
 
 Status RemoteBootstrapClientTest::CompareFileContents(const string& path1, const string& path2) {
@@ -60,18 +66,14 @@ Status RemoteBootstrapClientTest::CompareFileContents(const string& path1, const
 // Basic begin / end remote bootstrap session.
 TEST_F(RemoteBootstrapClientTest, TestBeginEndSession) {
   ASSERT_OK(client_->
-      BeginRemoteBootstrapSession(GetTabletId(),
-                                  tablet_peer_->consensus()->CommittedConsensusState(),
-                                  NULL));
+      BeginRemoteBootstrapSession(GetTabletId(), leader_, NULL));
   ASSERT_OK(client_->EndRemoteBootstrapSession());
 }
 
 // Basic data block download unit test.
 TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
   ASSERT_OK(client_->
-      BeginRemoteBootstrapSession(GetTabletId(),
-                                  tablet_peer_->consensus()->CommittedConsensusState(),
-                                  NULL));
+      BeginRemoteBootstrapSession(GetTabletId(), leader_, NULL));
   BlockId block_id = FirstColumnBlockId(*client_->superblock_);
   Slice slice;
   faststring scratch;
@@ -96,10 +98,7 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
 TEST_F(RemoteBootstrapClientTest, TestDownloadWalSegment) {
   ASSERT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetTabletWalDir(GetTabletId())));
 
-  ASSERT_OK(client_->
-      BeginRemoteBootstrapSession(GetTabletId(),
-                                  tablet_peer_->consensus()->CommittedConsensusState(),
-                                  NULL));
+  ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(), leader_, NULL));
   uint64_t seqno = client_->wal_seqnos_[0];
   string path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
 
@@ -185,10 +184,7 @@ vector<BlockId> GetAllSortedBlocks(const tablet::TabletSuperBlockPB& sb) {
 
 TEST_F(RemoteBootstrapClientTest, TestDownloadAllBlocks) {
   // Download all the blocks.
-  ASSERT_OK(client_->
-      BeginRemoteBootstrapSession(GetTabletId(),
-                                  tablet_peer_->consensus()->CommittedConsensusState(),
-                                  NULL));
+  ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(), leader_, NULL));
   ASSERT_OK(client_->DownloadBlocks());
   ASSERT_OK(client_->EndRemoteBootstrapSession());
 
