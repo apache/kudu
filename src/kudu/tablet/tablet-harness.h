@@ -61,7 +61,7 @@ class TabletHarness {
                                                          "KuduTableTest",
                                                          server_schema,
                                                          "", "",
-                                                         REMOTE_BOOTSTRAP_DONE,
+                                                         TABLET_DATA_READY,
                                                          &metadata));
     if (options_.enable_metrics) {
       metrics_registry_.reset(new MetricRegistry());

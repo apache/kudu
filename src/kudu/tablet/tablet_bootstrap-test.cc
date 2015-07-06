@@ -59,7 +59,7 @@ class BootstrapTest : public LogTestBase {
                                                SchemaBuilder(schema_).Build(),
                                                "",
                                                "",
-                                               REMOTE_BOOTSTRAP_DONE,
+                                               TABLET_DATA_READY,
                                                meta));
     (*meta)->SetLastDurableMrsIdForTests(mrs_id);
     if ((*meta)->GetRowSetForTests(0) != NULL) {
@@ -68,10 +68,10 @@ class BootstrapTest : public LogTestBase {
     return (*meta)->Flush();
   }
 
-  Status PersistTestTabletMetadataState(TabletBootstrapStatePB state) {
+  Status PersistTestTabletMetadataState(TabletDataState state) {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK(LoadTestTabletMetadata(-1, -1, &meta));
-    meta->set_remote_bootstrap_state(state);
+    meta->set_tablet_data_state(state);
     RETURN_NOT_OK(meta->Flush());
     return Status::OK();
   }
@@ -160,13 +160,13 @@ TEST_F(BootstrapTest, TestBootstrap) {
 TEST_F(BootstrapTest, TestIncompleteRemoteBootstrap) {
   BuildLog();
 
-  ASSERT_OK(PersistTestTabletMetadataState(REMOTE_BOOTSTRAP_COPYING));
+  ASSERT_OK(PersistTestTabletMetadataState(TABLET_DATA_COPYING));
   shared_ptr<Tablet> tablet;
   ConsensusBootstrapInfo boot_info;
   Status s = BootstrapTestTablet(-1, -1, &tablet, &boot_info);
   ASSERT_TRUE(s.IsCorruption()) << "Expected corruption: " << s.ToString();
-  ASSERT_STR_CONTAINS(s.ToString(), "TabletMetadata bootstrap state is REMOTE_BOOTSTRAP_COPYING");
-  LOG(INFO) << "State is still REMOTE_BOOTSTRAP_COPYING, as expected: " << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "TabletMetadata bootstrap state is TABLET_DATA_COPYING");
+  LOG(INFO) << "State is still TABLET_DATA_COPYING, as expected: " << s.ToString();
 }
 
 // Tests the KUDU-141 scenario: bootstrap when there is

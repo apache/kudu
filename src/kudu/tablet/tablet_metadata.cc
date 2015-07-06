@@ -39,7 +39,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const string& table_name,
                                  const Schema& schema,
                                  const string& start_key, const string& end_key,
-                                 const TabletBootstrapStatePB& initial_remote_bootstrap_state,
+                                 const TabletDataState& initial_tablet_data_state,
                                  scoped_refptr<TabletMetadata>* metadata) {
 
   // Verify that no existing tablet exists with the same ID.
@@ -53,7 +53,7 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        schema,
                                                        start_key,
                                                        end_key,
-                                                       initial_remote_bootstrap_state));
+                                                       initial_tablet_data_state));
   RETURN_NOT_OK(ret->Flush());
   metadata->swap(ret);
   return Status::OK();
@@ -73,7 +73,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const string& table_name,
                                     const Schema& schema,
                                     const string& start_key, const string& end_key,
-                                    const TabletBootstrapStatePB& initial_remote_bootstrap_state,
+                                    const TabletDataState& initial_tablet_data_state,
                                     scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, tablet_id, metadata);
   if (s.ok()) {
@@ -85,7 +85,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
     return Status::OK();
   } else if (s.IsNotFound()) {
     return CreateNew(fs_manager, tablet_id, table_name, schema,
-                     start_key, end_key, initial_remote_bootstrap_state,
+                     start_key, end_key, initial_tablet_data_state,
                      metadata);
   } else {
     return s;
@@ -98,7 +98,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
                                const Schema& schema,
                                const string& start_key,
                                const string& end_key,
-                               const TabletBootstrapStatePB& remote_bootstrap_state)
+                               const TabletDataState& tablet_data_state)
   : state_(kNotWrittenYet),
     tablet_id_(tablet_id),
     start_key_(start_key), end_key_(end_key),
@@ -108,7 +108,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     schema_(new Schema(schema)),
     schema_version_(0),
     table_name_(table_name),
-    remote_bootstrap_state_(remote_bootstrap_state),
+    tablet_data_state_(tablet_data_state),
     num_flush_pins_(0),
     needs_flush_(false),
     pre_flush_callback_(Bind(DoNothingStatusClosure)) {
@@ -177,7 +177,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
                           superblock.ShortDebugString());
     SetSchemaUnlocked(schema.Pass(), schema_version);
 
-    remote_bootstrap_state_ = superblock.remote_bootstrap_state();
+    tablet_data_state_ = superblock.tablet_data_state();
 
     BOOST_FOREACH(const RowSetDataPB& rowset_pb, superblock.rowsets()) {
       gscoped_ptr<RowSetMetadata> rowset_meta;
@@ -388,7 +388,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   RETURN_NOT_OK_PREPEND(SchemaToPB(*schema_, pb.mutable_schema()),
                         "Couldn't serialize schema into superblock");
 
-  pb.set_remote_bootstrap_state(remote_bootstrap_state_);
+  pb.set_tablet_data_state(tablet_data_state_);
 
   BOOST_FOREACH(const BlockId& block_id, orphaned_blocks_) {
     block_id.CopyToPB(pb.mutable_orphaned_blocks()->Add());
@@ -463,14 +463,14 @@ uint32_t TabletMetadata::schema_version() const {
   return schema_version_;
 }
 
-void TabletMetadata::set_remote_bootstrap_state(TabletBootstrapStatePB state) {
+void TabletMetadata::set_tablet_data_state(TabletDataState state) {
   boost::lock_guard<LockType> l(data_lock_);
-  remote_bootstrap_state_ = state;
+  tablet_data_state_ = state;
 }
 
-TabletBootstrapStatePB TabletMetadata::remote_bootstrap_state() const {
+TabletDataState TabletMetadata::tablet_data_state() const {
   boost::lock_guard<LockType> l(data_lock_);
-  return remote_bootstrap_state_;
+  return tablet_data_state_;
 }
 
 } // namespace tablet

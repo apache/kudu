@@ -242,7 +242,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               schema,
                               start_key,
                               end_key,
-                              tablet::REMOTE_BOOTSTRAP_DONE,
+                              tablet::TABLET_DATA_READY,
                               &meta),
     "Couldn't create tablet metadata");
 

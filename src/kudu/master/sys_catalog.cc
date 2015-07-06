@@ -116,7 +116,7 @@ Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
                                                   table_name(),
                                                   BuildTableSchema(),
                                                   "", "",
-                                                  tablet::REMOTE_BOOTSTRAP_DONE,
+                                                  tablet::TABLET_DATA_READY,
                                                   &metadata));
 
   RaftConfigPB config;

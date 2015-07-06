@@ -107,7 +107,7 @@ Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
                                controller,
                                "Unable to begin remote bootstrap session");
 
-  if (resp.superblock().remote_bootstrap_state() != tablet::REMOTE_BOOTSTRAP_DONE) {
+  if (resp.superblock().tablet_data_state() != tablet::TABLET_DATA_READY) {
     Status s = Status::IllegalState("Remote peer (" + bootstrap_peer_uuid + ")" +
                                     " is currently remotely bootstrapping itself!",
                                     resp.superblock().ShortDebugString());
@@ -133,7 +133,7 @@ Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
                                           schema,
                                           superblock_->start_key(),
                                           superblock_->end_key(),
-                                          tablet::REMOTE_BOOTSTRAP_COPYING,
+                                          tablet::TABLET_DATA_COPYING,
                                           &meta_));
   started_ = true;
   if (meta) {
@@ -162,7 +162,7 @@ Status RemoteBootstrapClient::Finish() {
   RETURN_NOT_OK(WriteConsensusMetadata()); // TODO: KUDU-868: Merge with existing cmeta.
 
   // Replace tablet metadata superblock. This will set the tablet metadata state
-  // to REMOTE_BOOTSTRAP_DONE, since we checked above that the response
+  // to TABLET_DATA_READY, since we checked above that the response
   // superblock is in a valid state to bootstrap from.
   LOG_WITH_PREFIX(INFO) << "Remote bootstrap complete. Replacing tablet superblock.";
   UpdateStatusMessage("Replacing tablet superblock");

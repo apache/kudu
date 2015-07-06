@@ -401,11 +401,11 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   // Make sure we don't try to locally bootstrap a tablet that was in the middle
   // of a remote bootstrap. It's likely that not all files were copied over
   // successfully.
-  TabletBootstrapStatePB remote_bootstrap_state = meta_->remote_bootstrap_state();
-  if (remote_bootstrap_state != REMOTE_BOOTSTRAP_DONE) {
+  TabletDataState tablet_data_state = meta_->tablet_data_state();
+  if (tablet_data_state != TABLET_DATA_READY) {
     return Status::Corruption("Unable to locally bootstrap tablet " + tablet_id + ": " +
                               "TabletMetadata bootstrap state is " +
-                              TabletBootstrapStatePB_Name(remote_bootstrap_state));
+                              TabletDataState_Name(tablet_data_state));
   }
 
   meta_->PinFlush();

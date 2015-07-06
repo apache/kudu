@@ -50,7 +50,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                           const std::string& table_name,
                           const Schema& schema,
                           const std::string& start_key, const std::string& end_key,
-                          const TabletBootstrapStatePB& initial_remote_bootstrap_state,
+                          const TabletDataState& initial_tablet_data_state,
                           scoped_refptr<TabletMetadata>* metadata);
 
   // Load existing metadata from disk.
@@ -68,7 +68,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                              const std::string& table_name,
                              const Schema& schema,
                              const std::string& start_key, const std::string& end_key,
-                             const TabletBootstrapStatePB& initial_remote_bootstrap_state,
+                             const TabletDataState& initial_tablet_data_state,
                              scoped_refptr<TabletMetadata>* metadata);
 
   const std::string& tablet_id() const {
@@ -110,11 +110,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     return *s;
   }
 
-  // Update the remote bootstrapping state.
-  void set_remote_bootstrap_state(TabletBootstrapStatePB state);
-
-  // Return the remote bootstrapping state.
-  TabletBootstrapStatePB remote_bootstrap_state() const;
+  // Set / get the remote bootstrap / tablet data state.
+  void set_tablet_data_state(TabletDataState state);
+  TabletDataState tablet_data_state() const;
 
   // Increments flush pin count by one: if flush pin count > 0,
   // metadata will _not_ be flushed to disk during Flush().
@@ -194,7 +192,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                  const Schema& schema,
                  const std::string& start_key,
                  const std::string& end_key,
-                 const TabletBootstrapStatePB& remote_bootstrap_state);
+                 const TabletDataState& tablet_data_state);
 
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager *fs_manager, const std::string& tablet_id);
@@ -280,7 +278,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   std::tr1::unordered_set<BlockId, BlockIdHash, BlockIdEqual> orphaned_blocks_;
 
   // The current state of remote bootstrap for the tablet.
-  TabletBootstrapStatePB remote_bootstrap_state_;
+  TabletDataState tablet_data_state_;
 
   // If this counter is > 0 then Flush() will not write any data to
   // disk.
