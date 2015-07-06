@@ -93,9 +93,21 @@ If installing Kudu using parcels or packages does not provide the flexibility yo
 . Install the prerequisite libraries, if they are not installed:
 +
 ----
-$ sudo yum install boost-thread boost-devel liboauth liboauth-devel \
-libgsasl libgsasl-devel libssl-devel
+$ sudo yum install boost-static boost-devel openssl-devel cyrus-sasl-devel
 ----
+
+. Optional: Install `liboauth` and `liboauth-devel` if you plan to build the Twitter demo.
++
+----
+$ sudo yum install liboauth liboauth-devel
+----
+
+. Optional: Install the `asciidoctor` gem if you plan to build documentation.
++
+----
+$ sudo gem install asciidoctor
+----
+
 
 . Clone the Git repository and change to the new `kudu` directory.
 +
@@ -120,26 +132,27 @@ thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
 make -j4
 ----
 
+. Optional: Build the documentation.
++
+----
+$ make docs
+----
+
 .RHEL / Centos Build Script
 ====
 This script provides an overview of the procedure to build Kudu on a
 newly-installed RHEL or Centos host, and can be used as the basis for an
-automated deployment scenario.
+automated deployment scenario. It skips the steps marked *Optional* above.
 
 [source,bash]
 ----
 #!/bin/bash
 
-sudo yum -y install boost-thread boost-devel liboauth liboauth-devel \
-libgsasl libgsasl-devel libssl-devel
-wget http://llvm.org/releases/3.3/clang+llvm-3.3-x86_64-fedora18.tar.bz2
-tar xjvf clang+llvm-3.3-x86_64-fedora18.tar.bz2
-export CC=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang
-export CXX=$(pwd)/clang+llvm-3.3-x86_64-fedora18/bin/clang++
+sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel
 git clone http://github.sf.cloudera.com/CDH/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
-thirdparty/installed/bin/cmake .
+thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
 make -j4
 ----
 ====
@@ -149,8 +162,20 @@ make -j4
 . Install the prerequisite libraries, if they are not installed:
 +
 ----
-$ sudo apt-get install git autoconf automake libboost-thread-dev \
-curl gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
+$ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
+  libssl-dev libsasl2-dev libtool ntp
+----
+
+. Optional: Install `liboauth-dev` if you plan to build the Twitter demo.
++
+----
+$ sudo apt-get -y install liboauth-dev
+----
+
+. Optional: Install the `asciidoctor` gem if you plan to build documentation.
++
+----
+$ sudo gem install asciidoctor
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
@@ -176,21 +201,28 @@ thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
 make -j4
 ----
 
+. Optional: Build the documentation.
++
+----
+$ make docs
+----
+
 .Ubuntu / Debian Build Script
 ====
 This script provides an overview of the procedure to build Kudu on RHEL or
-Centos, and can be used as the basis for an automated deployment scenario.
+Centos, and can be used as the basis for an automated deployment scenario. It skips
+the steps marked *Optional* above.
 
 [source,bash]
 ----
 #!/bin/bash
 
-apt-get -y install git autoconf automake libboost-thread-dev curl \
-gcc g++ liboauth-dev libssl-dev libsasl2-dev libtool ntp
+sudo apt-get -y install git autoconf automake libboost-thread-dev curl \
+  gcc g++ libssl-dev libsasl2-dev libtool ntp
 git clone http://github.sf.cloudera.com/CDH/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
-thirdparty/installed/bin/cmake .
+thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
 make -j4
 ----
 ====
