@@ -80,11 +80,6 @@ class LocalConsensus : public Consensus {
                              VoteResponsePB* response) OVERRIDE;
 
  private:
-  // The initial NO_OP ConsensusRound has finished replication.
-  // If the status is OK, write a Commit message to the local WAL based on the
-  // type of message it is, else crash (since this is LocalConsensus).
-  void NoOpReplicationFinished(ConsensusRound* round, const Status& status);
-
   // Log prefix. Doesn't access any variables that require locking.
   std::string LogPrefix() const;
 

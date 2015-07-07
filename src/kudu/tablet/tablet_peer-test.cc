@@ -120,37 +120,8 @@ class TabletPeerTest : public KuduTabletTest {
                                  shared_ptr<MemTracker>()));
   }
 
-  // Wait until consensus is running and op (0, 1) is in the local tablet
-  // peer's log.
-  Status WaitUntilLoggedFirstOp(const MonoDelta& timeout) {
-    MonoTime start(MonoTime::Now(MonoTime::FINE));
-    RETURN_NOT_OK(tablet_peer_->WaitUntilConsensusRunning(timeout));
-
-    int backoff_exp = 0;
-    const int kMaxBackoffExp = 8;
-    while (true) {
-      OpId opid;
-      Status s = tablet_peer_->log()->GetLatestEntryOpId(&opid);
-      if (s.ok() && OpIdEquals(MakeOpId(0, 1), opid)) {
-        break;
-      }
-      MonoTime now(MonoTime::Now(MonoTime::FINE));
-      MonoDelta elapsed(now.GetDeltaSince(start));
-      if (elapsed.MoreThan(timeout)) {
-        return Status::TimedOut(Substitute("First op not logged after waiting for $0. Last op: $1."
-                                           " Last status: $2",
-                                           elapsed.ToString(), opid.ShortDebugString(),
-                                           s.ToString()));
-      }
-      SleepFor(MonoDelta::FromMilliseconds(1 << backoff_exp));
-      backoff_exp = std::min(backoff_exp + 1, kMaxBackoffExp);
-    }
-    return Status::OK();
-  }
-
   Status StartPeer(const ConsensusBootstrapInfo& info) {
     RETURN_NOT_OK(tablet_peer_->Start(info));
-    RETURN_NOT_OK(WaitUntilLoggedFirstOp(MonoDelta::FromSeconds(10)));
 
     return Status::OK();
   }
@@ -251,7 +222,7 @@ class TabletPeerTest : public KuduTabletTest {
     // entry in the log; if they match there is nothing in flight.
     tablet_peer_->GetEarliestNeededLogIndex(&earliest_index);
     OpId last_log_opid;
-    CHECK_OK(tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid));
+    tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid);
     CHECK_EQ(earliest_index, last_log_opid.index())
       << "Found unexpected anchor: " << earliest_index
       << " Last log entry: " << last_log_opid.ShortDebugString();
@@ -262,7 +233,7 @@ class TabletPeerTest : public KuduTabletTest {
     int64_t earliest_index = -1;
     tablet_peer_->GetEarliestNeededLogIndex(&earliest_index);
     OpId last_log_opid;
-    CHECK_OK(tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid));
+    tablet_peer_->log_->GetLatestEntryOpId(&last_log_opid);
     CHECK_LT(earliest_index, last_log_opid.index())
       << "Expected valid log anchor, got earliest opid: " << earliest_index
       << " (expected any value earlier than last log id: " << last_log_opid.ShortDebugString()

@@ -48,13 +48,11 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   TRACE_EVENT0("consensus", "LocalConsensus::Start");
 
   CHECK_EQ(state_, kInitializing);
-
   CHECK(info.orphaned_replicates.empty())
       << "LocalConsensus does not handle orphaned operations on start.";
 
   LOG_WITH_PREFIX(INFO) << "Starting LocalConsensus...";
 
-  scoped_refptr<ConsensusRound> round;
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
 
@@ -68,26 +66,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
     CHECK(config.peers(0).has_permanent_uuid()) << config.ShortDebugString();
     cmeta_->set_leader_uuid(config.peers(0).permanent_uuid());
 
-    // TODO: This NO_OP is here mostly for unit tests. We should get rid of it.
-    ReplicateMsg* replicate = new ReplicateMsg;
-    replicate->set_op_type(NO_OP);
-    NoOpRequestPB* noop_req = replicate->mutable_noop_request();
-    noop_req->set_payload_for_tests("Starting up LocalConsensus");
-
-    replicate->mutable_id()->set_term(0);
-    replicate->mutable_id()->set_index(next_op_id_index_);
-    replicate->set_timestamp(clock_->Now().ToUint64());
-
-    round.reset(new ConsensusRound(this, make_scoped_refptr_replicate(replicate)));
-    round->SetConsensusReplicatedCallback(
-        Bind(&LocalConsensus::NoOpReplicationFinished,
-             Unretained(this), Unretained(round.get())));
     state_ = kRunning;
-  }
-
-  Status s = Replicate(round);
-  if (!s.ok()) {
-    LOG_WITH_PREFIX(FATAL) << "Unable to replicate initial log entry: " << s.ToString();
   }
 
   TRACE("Consensus started");
@@ -169,16 +148,6 @@ void LocalConsensus::MarkDirty() {
 ConsensusStatePB LocalConsensus::CommittedConsensusState() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   return cmeta_->ToConsensusStatePB(ConsensusMetadata::COMMITTED);
-}
-
-void LocalConsensus::NoOpReplicationFinished(ConsensusRound* round, const Status& status) {
-  CHECK_OK(status); // Replication should never fail for LocalConsensus.
-  DCHECK_EQ(NO_OP, round->replicate_scoped_refptr()->get()->op_type());
-  gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
-  commit_msg->set_op_type(NO_OP);
-  *commit_msg->mutable_commited_op_id() = round->id();
-  WARN_NOT_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(&DoNothingStatusCB)),
-              "Unable to append commit message");
 }
 
 RaftConfigPB LocalConsensus::CommittedConfig() const {

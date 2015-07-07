@@ -1204,14 +1204,7 @@ RaftPeerPB::Role RaftConsensus::GetActiveRole() const {
 
 OpId RaftConsensus::GetLatestOpIdFromLog() {
   OpId id;
-  Status s = log_->GetLatestEntryOpId(&id);
-  if (s.ok()) {
-  } else if (s.IsNotFound()) {
-    id = MinimumOpId();
-  } else {
-    LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Unexpected status from Log::GetLatestEntryOpId(): "
-                                    << s.ToString();
-  }
+  log_->GetLatestEntryOpId(&id);
   return id;
 }
 

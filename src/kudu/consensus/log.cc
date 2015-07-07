@@ -616,13 +616,12 @@ Status Log::WaitUntilAllFlushed() {
   return s.Wait();
 }
 
-Status Log::GetLatestEntryOpId(consensus::OpId* op_id) const {
+void Log::GetLatestEntryOpId(consensus::OpId* op_id) const {
   boost::shared_lock<rw_spinlock> read_lock(last_entry_op_id_lock_);
   if (last_entry_op_id_.IsInitialized()) {
     DCHECK_NOTNULL(op_id)->CopyFrom(last_entry_op_id_);
-    return Status::OK();
   } else {
-    return Status::NotFound("No OpIds have ever been written to the log");
+    *op_id = consensus::MinimumOpId();
   }
 }
 

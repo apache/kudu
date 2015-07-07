@@ -366,15 +366,12 @@ void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
   // segments before we check the anchors.
   {
     OpId last_log_op;
-    Status s = log_->GetLatestEntryOpId(&last_log_op);
-    // First check if we ever wrote to the log.
-    if (s.IsNotFound()) {
-      *min_index = 0;
-      return;
-    }
-    CHECK_OK(s);
+    log_->GetLatestEntryOpId(&last_log_op);
     *min_index = last_log_op.index();
   }
+
+  // If we never have written to the log, no need to proceed.
+  if (*min_index == 0) return;
 
   // Next, we interrogate the anchor registry.
   // Returns OK if minimum known, NotFound if no anchors are registered.
