@@ -382,23 +382,23 @@ It's critical that _CMakeCache.txt_ be removed prior to running the generator,
 otherwise the extra Eclipse generator logic (the CMakeFindEclipseCDT4.make module)
 won't run and standard system includes will be missing from the generated project.
 
-By default, the Eclipse CDT indexer will index everything under the _kudu/_ source tree.
-It tends to choke on certain complicated source files within _thirdparty/llvm_.
-In some versions of CDT, the indexer will generate an error and stop indexing. In
-others, it'll spin forever.
+By default, the Eclipse CDT indexer will index everything under the _kudu/_
+source tree. It tends to choke on certain complicated source files within
+_thirdparty/llvm_. In CDT 8.7.0, the indexer will generate so many errors that
+it'll exit early, causing many spurious syntax errors to be highlighted. In older
+versions of CDT, it'll spin forever.
 
-Either way, _thirdparty/llvm_ must be excluded from indexing. An easy way to do this is
-to exclude all the unnecessary source trees from within _thirdparty/_ (all we need are
-the installed headers). To do this, right click on the project in the Project Explorer
-and select Properties. In the dialog box, select "C/C++ Project Paths", select the
-Source tab, highlight "Exclusion filter: (None)", and click "Edit...". In the new
-dialog box, click "Add Multiple...". In the file chooser, select everything under
-thirdparty except for 'installed'. Click OK all the way out and rebuild the
-project index by right clicking the project in the Project Explorer and selecting
-Index --> Rebuild.
+Either way, _thirdparty/llvm_ must be excluded from indexing. To do this, right
+click on the project in the Project Explorer and select Properties. In the
+dialog box, select "C/C++ Project Paths", select the Source tab, highlight
+"Exclusion filter: (None)", and click "Edit...". In the new dialog box, click
+"Add...". Click "Browse..." and select _thirdparty/llvm-3.4.2.src_. Click OK all
+the way out and rebuild the project index by right clicking the project in the
+Project Explorer and selecting Index --> Rebuild.
 
-With these exclusions, the only false positives (shown as "red squigglies") that CDT
-presents appear to be in atomicops functions (`NoBarrier_CompareAndSwap` for example).
+With this exclusion, the only false positives (shown as "red squigglies") that
+CDT presents appear to be in atomicops functions (`NoBarrier_CompareAndSwap` for
+example) and in VLOG() function calls.
 
 Another Eclipse annoyance stems from the "[Targets]" linked resource that Eclipse
 generates for each unit test. These are probably used for building within Eclipse,
