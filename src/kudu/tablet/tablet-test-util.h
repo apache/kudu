@@ -83,7 +83,7 @@ class KuduTabletTest : public KuduTest {
     tserver::AlterSchemaRequestPB req;
     req.set_schema_version(tablet()->metadata()->schema_version() + 1);
 
-    AlterSchemaTransactionState tx_state(&req);
+    AlterSchemaTransactionState tx_state(NULL, &req, NULL);
     ASSERT_OK(tablet()->CreatePreparedAlterSchema(&tx_state, &schema));
     ASSERT_OK(tablet()->AlterSchema(&tx_state));
     tx_state.Finish();

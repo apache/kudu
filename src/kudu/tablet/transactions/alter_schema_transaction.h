@@ -26,13 +26,6 @@ namespace tablet {
 // Keeps track of the Transaction states (request, result, ...)
 class AlterSchemaTransactionState : public TransactionState {
  public:
-  explicit AlterSchemaTransactionState(const tserver::AlterSchemaRequestPB* request)
-      : TransactionState(NULL),
-        schema_(NULL),
-        request_(request),
-        response_(NULL) {
-  }
-
   ~AlterSchemaTransactionState() {
   }
 

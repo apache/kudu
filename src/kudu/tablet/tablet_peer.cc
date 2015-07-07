@@ -71,7 +71,7 @@ using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using consensus::RaftConsensus;
-using consensus::CHANGE_CONFIG_OP;
+using consensus::ALTER_SCHEMA_OP;
 using consensus::WRITE_OP;
 using log::Log;
 using log::LogAnchorRegistry;
@@ -431,6 +431,16 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
       transaction.reset(new WriteTransaction(
           new WriteTransactionState(this, &replicate_msg->write_request()),
           consensus::REPLICA));
+      break;
+    }
+    case ALTER_SCHEMA_OP:
+    {
+      DCHECK(replicate_msg->has_alter_schema_request()) << "ALTER_SCHEMA_OP replica"
+          " transaction must receive an AlterSchemaRequestPB";
+      transaction.reset(
+          new AlterSchemaTransaction(
+              new AlterSchemaTransactionState(this, &replicate_msg->alter_schema_request(), NULL),
+              consensus::REPLICA));
       break;
     }
     default:

@@ -1146,7 +1146,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
   Schema schema;
   RETURN_NOT_OK(SchemaFromPB(alter_schema->schema(), &schema));
 
-  AlterSchemaTransactionState tx_state(alter_schema);
+  AlterSchemaTransactionState tx_state(NULL, alter_schema, NULL);
 
   // TODO maybe we shouldn't acquire the tablet lock on replay?
   RETURN_NOT_OK(tablet_->CreatePreparedAlterSchema(&tx_state, &schema));
