@@ -81,7 +81,6 @@ DEFINE_string(table_name, "lineitem",
 
 namespace kudu {
 
-using client::KuduColumnRangePredicate;
 using client::KuduColumnSchema;
 using client::KuduRowResult;
 using client::KuduSchema;

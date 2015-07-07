@@ -20,7 +20,6 @@
 
 namespace kudu {
 
-using client::KuduColumnRangePredicate;
 using client::KuduRowResult;
 using client::KuduSchema;
 using std::string;
@@ -85,9 +84,8 @@ class RpcLineItemDAOTest : public KuduTest {
 
   int CountRows() {
     KuduSchema query_schema = schema_.CreateKeyProjection();
-    vector<KuduColumnRangePredicate> preds;
     gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
-    dao_->OpenScanner(query_schema, preds, &scanner);
+    dao_->OpenScanner(query_schema, &scanner);
     vector<KuduRowResult> rows;
     int count = 0;
     while (scanner->HasMore()) {
@@ -140,9 +138,8 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
 
   dao_->MutateLine(boost::bind(UpdateTestRow, 1, 1, 12345, _1));
   dao_->FinishWriting();
-  vector<KuduColumnRangePredicate> preds;
   gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
-  dao_->OpenScanner(schema_, preds, &scanner);
+  dao_->OpenScanner(schema_, &scanner);
   vector<KuduRowResult> rows;
   while (scanner->HasMore()) {
     scanner->GetNext(&rows);

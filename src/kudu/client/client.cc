@@ -18,6 +18,7 @@
 #include "kudu/client/error-internal.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
+#include "kudu/client/scan_predicate-internal.h"
 #include "kudu/client/scanner-internal.h"
 #include "kudu/client/schema-internal.h"
 #include "kudu/client/session-internal.h"
@@ -478,6 +479,25 @@ KuduClient* KuduTable::client() const {
   return data_->client_.get();
 }
 
+KuduPredicate* KuduTable::NewComparisonPredicate(const Slice& col_name,
+                                                 KuduPredicate::ComparisonOp op,
+                                                 KuduValue* value) {
+  StringPiece name_sp(reinterpret_cast<const char*>(col_name.data()), col_name.size());
+  const Schema* s = data_->schema_.schema_;
+  int col_idx = s->find_column(name_sp);
+  if (col_idx == Schema::kColumnNotFound) {
+    // Since this function doesn't return an error, instead we create a special
+    // predicate that just returns the errors when we add it to the scanner.
+    //
+    // This makes the API more "fluent".
+    delete value; // we always take ownership of 'value'.
+    return new KuduPredicate(new ErrorPredicateData(
+                                 Status::NotFound("column not found", col_name)));
+  }
+
+  return new KuduPredicate(new ComparisonPredicateData(s->column(col_idx), op, value));
+}
+
 ////////////////////////////////////////////////////////////
 // Error
 ////////////////////////////////////////////////////////////
@@ -814,12 +834,13 @@ Status KuduScanner::SetTimeoutMillis(int millis) {
   return Status::OK();
 }
 
-Status KuduScanner::AddConjunctPredicate(const KuduColumnRangePredicate& pred) {
+Status KuduScanner::AddConjunctPredicate(KuduPredicate* pred) {
+  // Take ownership even if we return a bad status.
+  data_->pool_.Add(pred);
   if (data_->open_) {
     return Status::IllegalState("Predicate must be set before Open()");
   }
-  data_->spec_.AddPredicate(*pred.pred_);
-  return Status::OK();
+  return pred->data_->AddToScanSpec(&data_->spec_);
 }
 
 Status KuduScanner::AddLowerBound(const KuduPartialRow& key) {

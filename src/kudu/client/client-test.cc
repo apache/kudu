@@ -18,6 +18,7 @@
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.proxy.h"
@@ -252,10 +253,12 @@ class ClientTest : public KuduTest {
 
   void DoTestScanWithStringPredicate() {
     KuduScanner scanner(client_table_.get());
-    Slice lower("hello 2");
-    Slice upper("hello 3");
-    KuduColumnRangePredicate pred(schema_.Column(2), &lower, &upper);
-    ASSERT_OK(scanner.AddConjunctPredicate(pred));
+    ASSERT_OK(scanner.AddConjunctPredicate(
+                  client_table_->NewComparisonPredicate("string_val", KuduPredicate::GREATER_EQUAL,
+                                                        KuduValue::CopyString("hello 2"))));
+    ASSERT_OK(scanner.AddConjunctPredicate(
+                  client_table_->NewComparisonPredicate("string_val", KuduPredicate::LESS_EQUAL,
+                                                        KuduValue::CopyString("hello 3"))));
 
     LOG_TIMING(INFO, "Scanning with string predicate") {
       ASSERT_OK(scanner.Open());
@@ -279,10 +282,12 @@ class ClientTest : public KuduTest {
 
   void DoTestScanWithKeyPredicate() {
     KuduScanner scanner(client_table_.get());
-    int32_t lower = 5;
-    int32_t upper = 10;
-    KuduColumnRangePredicate pred(schema_.Column(0), &lower, &upper);
-    ASSERT_OK(scanner.AddConjunctPredicate(pred));
+    ASSERT_OK(scanner.AddConjunctPredicate(
+                  client_table_->NewComparisonPredicate("key", KuduPredicate::GREATER_EQUAL,
+                                                        KuduValue::FromInt(5))));
+    ASSERT_OK(scanner.AddConjunctPredicate(
+                  client_table_->NewComparisonPredicate("key", KuduPredicate::LESS_EQUAL,
+                                                        KuduValue::FromInt(10))));
 
     LOG_TIMING(INFO, "Scanning with key predicate") {
       ASSERT_OK(scanner.Open());
@@ -318,15 +323,15 @@ class ClientTest : public KuduTest {
     CHECK_OK(scanner.SetSelection(selection));
     KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
     CHECK_OK(scanner.SetProjection(&empty_projection));
-    if (lower_bound != kNoBound && upper_bound != kNoBound) {
-      KuduColumnRangePredicate pred(table->schema().Column(0), &lower_bound, &upper_bound);
-      CHECK_OK(scanner.AddConjunctPredicate(pred));
-    } else if (lower_bound != kNoBound) {
-      KuduColumnRangePredicate pred(table->schema().Column(0), &lower_bound, NULL);
-      CHECK_OK(scanner.AddConjunctPredicate(pred));
-    } else if (upper_bound != kNoBound) {
-      KuduColumnRangePredicate pred(table->schema().Column(0), NULL, &upper_bound);
-      CHECK_OK(scanner.AddConjunctPredicate(pred));
+    if (lower_bound != kNoBound) {
+      CHECK_OK(scanner.AddConjunctPredicate(
+                   client_table_->NewComparisonPredicate("key", KuduPredicate::GREATER_EQUAL,
+                                                         KuduValue::FromInt(lower_bound))));
+    }
+    if (upper_bound != kNoBound) {
+      CHECK_OK(scanner.AddConjunctPredicate(
+                   client_table_->NewComparisonPredicate("key", KuduPredicate::LESS_EQUAL,
+                                                         KuduValue::FromInt(upper_bound))));
     }
 
     // Try a few times before we open the scanner. We're only scanning the leader
@@ -736,13 +741,15 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
   KuduSchema no_key_projection(list_of
                                (schema_.Column(1)), 0);
   ASSERT_OK(scanner.SetProjection(&no_key_projection));
-  int32_t lower = 5;
-  int32_t upper = 10;
-  KuduColumnRangePredicate pred(schema_.Column(0), &lower, &upper);
-  ASSERT_OK(scanner.AddConjunctPredicate(pred));
+  ASSERT_OK(scanner.AddConjunctPredicate(
+                client_table_->NewComparisonPredicate("key", KuduPredicate::GREATER_EQUAL,
+                                                      KuduValue::FromInt(5))));
+  ASSERT_OK(scanner.AddConjunctPredicate(
+                client_table_->NewComparisonPredicate("key", KuduPredicate::LESS_EQUAL,
+                                                      KuduValue::FromInt(10))));
 
   size_t nrows = 0;
-  int32_t curr_key = lower;
+  int32_t curr_key = 5;
   LOG_TIMING(INFO, "Scanning with predicate columns not projected") {
     ASSERT_OK(scanner.Open());
 
@@ -772,13 +779,15 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   KuduScanner scanner(client_table_.get());
   KuduSchema key_projection = schema_.CreateKeyProjection();
 
-  int32_t lower = 10;
-  int32_t upper = 20;
-  KuduColumnRangePredicate pred(schema_.Column(1), &lower, &upper);
-  ASSERT_OK(scanner.AddConjunctPredicate(pred));
+  ASSERT_OK(scanner.AddConjunctPredicate(
+                client_table_->NewComparisonPredicate("int_val", KuduPredicate::GREATER_EQUAL,
+                                                      KuduValue::FromInt(10))));
+  ASSERT_OK(scanner.AddConjunctPredicate(
+                client_table_->NewComparisonPredicate("int_val", KuduPredicate::LESS_EQUAL,
+                                                      KuduValue::FromInt(20))));
 
   size_t nrows = 0;
-  int32_t curr_key = lower;
+  int32_t curr_key = 10;
 
   ASSERT_OK(scanner.SetProjection(&key_projection));
 
@@ -802,6 +811,41 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   }
   ASSERT_EQ(nrows, 6);
 }
+
+// Test adding various sorts of invalid binary predicates.
+TEST_F(ClientTest, TestInvalidPredicates) {
+  KuduScanner scanner(client_table_.get());
+
+  // Predicate on a column that does not exist.
+  Status s = scanner.AddConjunctPredicate(
+      client_table_->NewComparisonPredicate("this-does-not-exist",
+                                            KuduPredicate::EQUAL, KuduValue::FromInt(5)));
+  EXPECT_EQ("Not found: column not found: this-does-not-exist", s.ToString());
+
+  // Int predicate on a string column.
+  s = scanner.AddConjunctPredicate(
+      client_table_->NewComparisonPredicate("string_val",
+                                            KuduPredicate::EQUAL, KuduValue::FromInt(5)));
+  EXPECT_EQ("Invalid argument: non-string predicate on string column: string_val",
+            s.ToString());
+
+  // String predicate on an int column.
+  s = scanner.AddConjunctPredicate(
+      client_table_->NewComparisonPredicate("int_val",
+                                            KuduPredicate::EQUAL, KuduValue::CopyString("x")));
+  EXPECT_EQ("Invalid argument: non-int predicate on int column: int_val",
+            s.ToString());
+
+  // Out-of-range int predicate on an int column.
+  s = scanner.AddConjunctPredicate(
+      client_table_->NewComparisonPredicate(
+          "int_val",
+          KuduPredicate::EQUAL,
+          KuduValue::FromInt(static_cast<int64_t>(MathLimits<int32_t>::kMax) + 10)));
+  EXPECT_EQ("Invalid argument: predicate value 2147483657 out of range for "
+            "32-bit signed integer column 'int_val'", s.ToString());
+}
+
 
 // Check that the tserver proxy is reset on close, even for empty tables.
 TEST_F(ClientTest, TestScanCloseProxy) {

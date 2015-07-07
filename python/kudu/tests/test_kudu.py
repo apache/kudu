@@ -263,10 +263,8 @@ class TestScanner(KuduBasicsBase, unittest.TestCase):
 
     def test_scan_rows_simple_predicate(self):
         scanner = self.table.scanner()
-
-        # Not the best API for now
-        pred = scanner.range_predicate(0, 20, 49)
-        scanner.add_predicate(pred)
+        scanner.add_comparison_predicate("key", kudu.GREATER_EQUAL, 20)
+        scanner.add_comparison_predicate("key", kudu.LESS_EQUAL, 49)
         scanner.open()
 
         batch = scanner.read_all()
@@ -277,15 +275,33 @@ class TestScanner(KuduBasicsBase, unittest.TestCase):
     def test_scan_rows_string_predicate(self):
         scanner = self.table.scanner()
 
-        # Not the best API for now
-        pred = scanner.range_predicate(2, "hello_20", "hello_25")
-        scanner.add_predicate(pred)
+        scanner.add_comparison_predicate("string_val", kudu.GREATER_EQUAL, "hello_20")
+        scanner.add_comparison_predicate("string_val", kudu.LESS_EQUAL, "hello_25")
         scanner.open()
 
         batch = scanner.read_all()
         tuples = batch.as_tuples()
 
         self.assertEqual(tuples, self.tuples[20:26])
+
+    def test_scan_invalid_predicates(self):
+        scanner = self.table.scanner()
+        try:
+            scanner.add_comparison_predicate("foo", kudu.GREATER_EQUAL, "x")
+        except Exception, e:
+            self.assertEqual("Not found: column not found: foo", str(e))
+
+        try:
+            scanner.add_comparison_predicate("string_val", kudu.GREATER_EQUAL, 1)
+        except Exception, e:
+            self.assertEqual("Invalid argument: non-string predicate " +
+                             "on string column: string_val", str(e))
+
+        try:
+            scanner.add_comparison_predicate("string_val", kudu.GREATER_EQUAL, None)
+        except Exception, e:
+            self.assertEqual("unable to convert python type <type 'NoneType'>", str(e))
+
 
 if __name__ == '__main__':
     nose.runmodule(argv=[__file__, '-vvs', '-x', '--pdb',

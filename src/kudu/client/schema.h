@@ -24,7 +24,6 @@ class WriteRpc;
 } // namespace internal
 
 class KuduClient;
-class KuduColumnRangePredicate;
 class KuduWriteOperation;
 
 class KUDU_EXPORT KuduColumnStorageAttributes {
@@ -103,7 +102,6 @@ class KUDU_EXPORT KuduColumnSchema {
   // TODO: Expose default column value and attributes?
 
  private:
-  friend class KuduColumnRangePredicate;
   friend class KuduSchema;
 
   // Owned.
@@ -138,6 +136,7 @@ class KUDU_EXPORT KuduSchema {
  private:
   friend class KuduClient;
   friend class KuduScanner;
+  friend class KuduTable;
   friend class KuduTableCreator;
   friend class KuduWriteOperation;
   friend class internal::GetTableSchemaRpc;

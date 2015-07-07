@@ -18,6 +18,7 @@ set(CLIENT_SRCS
   table_alterer-internal.cc
   table_creator-internal.cc
   tablet_server-internal.cc
+  value.cc
   write_op.cc
 )
 
@@ -81,6 +82,7 @@ install(FILES
   scan_predicate.h
   schema.h
   stubs.h
+  value.h
   write_op.h
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/kudu/client)
 

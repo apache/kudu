@@ -3,31 +3,42 @@
 #ifndef KUDU_CLIENT_SCAN_PREDICATE_H
 #define KUDU_CLIENT_SCAN_PREDICATE_H
 
+#ifdef KUDU_HEADERS_NO_STUBS
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#else
+#include "kudu/client/stubs.h"
+#endif
+
 #include "kudu/client/schema.h"
 #include "kudu/util/kudu_export.h"
 
 namespace kudu {
-
-class ColumnRangePredicate;
-
 namespace client {
 
-class KUDU_EXPORT KuduColumnRangePredicate {
+class KUDU_EXPORT KuduPredicate {
  public:
-  KuduColumnRangePredicate(const KuduColumnSchema &col,
-                           const void* lower_bound,
-                           const void* upper_bound);
-  KuduColumnRangePredicate(const KuduColumnRangePredicate& other);
-  ~KuduColumnRangePredicate();
+  enum ComparisonOp {
+    LESS_EQUAL,
+    GREATER_EQUAL,
+    EQUAL
+  };
 
-  KuduColumnRangePredicate& operator=(const KuduColumnRangePredicate& other);
-  void CopyFrom(const KuduColumnRangePredicate& other);
+  ~KuduPredicate();
 
+  // The PIMPL class has to be public since it's actually just an interface,
+  // and gcc gives an error trying to derive from a private nested class.
+  class KUDU_NO_EXPORT Data;
  private:
   friend class KuduScanner;
+  friend class KuduTable;
+  friend class ComparisonPredicateData;
+  friend class ErrorPredicateData;
 
-  // Owned.
-  ColumnRangePredicate* pred_;
+  explicit KuduPredicate(Data* d);
+
+  Data* data_;
+  DISALLOW_COPY_AND_ASSIGN(KuduPredicate);
 };
 
 } // namespace client

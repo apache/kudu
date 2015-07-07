@@ -10,14 +10,15 @@
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/stubs.h"
+#include "kudu/client/value.h"
 #include "kudu/common/partial_row.h"
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
-using kudu::client::KuduColumnRangePredicate;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduError;
 using kudu::client::KuduInsert;
+using kudu::client::KuduPredicate;
 using kudu::client::KuduRowResult;
 using kudu::client::KuduScanner;
 using kudu::client::KuduSchema;
@@ -26,6 +27,7 @@ using kudu::client::KuduStatusFunctionCallback;
 using kudu::client::KuduTable;
 using kudu::client::KuduTableAlterer;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduValue;
 using kudu::KuduPartialRow;
 using kudu::MonoDelta;
 using kudu::Status;
@@ -148,17 +150,25 @@ static Status InsertRows(const shared_ptr<KuduTable>& table, int num_rows) {
 }
 
 static Status ScanRows(const shared_ptr<KuduTable>& table) {
-  int32_t lower_bound = 5;
-  int32_t upper_bound = 600;
-  KuduColumnRangePredicate pred(table->schema().Column(0),
-                                &lower_bound, &upper_bound);
+  const int kLowerBound = 5;
+  const int kUpperBound = 600;
 
   KuduScanner scanner(table.get());
-  KUDU_RETURN_NOT_OK(scanner.AddConjunctPredicate(pred));
+
+  // Add a predicate: WHERE key >= 5
+  KuduPredicate* p = table->NewComparisonPredicate(
+      "key", KuduPredicate::GREATER_EQUAL, KuduValue::FromInt(kLowerBound));
+  KUDU_RETURN_NOT_OK(scanner.AddConjunctPredicate(p));
+
+  // Add a predicate: WHERE key <= 600
+  p = table->NewComparisonPredicate(
+      "key", KuduPredicate::LESS_EQUAL, KuduValue::FromInt(kUpperBound));
+  KUDU_RETURN_NOT_OK(scanner.AddConjunctPredicate(p));
+
   KUDU_RETURN_NOT_OK(scanner.Open());
   vector<KuduRowResult> results;
 
-  int next_row = lower_bound;
+  int next_row = kLowerBound;
   while (scanner.HasMoreRows()) {
     KUDU_RETURN_NOT_OK(scanner.NextBatch(&results));
     for (vector<KuduRowResult>::iterator iter = results.begin();
@@ -180,10 +190,10 @@ static Status ScanRows(const shared_ptr<KuduTable>& table) {
   // next_row is now one past the last row we read.
   int last_row_seen = next_row - 1;
 
-  if (last_row_seen != upper_bound) {
+  if (last_row_seen != kUpperBound) {
     stringstream out;
     out << "Scan returned the wrong results. Expected last row to be "
-        << upper_bound << " rows but got " << last_row_seen;
+        << kUpperBound << " rows but got " << last_row_seen;
     return Status::IOError(out.str());
   }
   return Status::OK();

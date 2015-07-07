@@ -41,6 +41,7 @@ class KuduTable;
 class KuduTableAlterer;
 class KuduTableCreator;
 class KuduTabletServer;
+class KuduValue;
 class KuduWriteOperation;
 
 namespace internal {
@@ -337,6 +338,25 @@ class KUDU_EXPORT KuduTable : public std::tr1::enable_shared_from_this<KuduTable
   KuduInsert* NewInsert();
   KuduUpdate* NewUpdate();
   KuduDelete* NewDelete();
+
+  // Create a new comparison predicate which can be used for scanners
+  // on this table.
+  //
+  // The type of 'value' must correspond to the type of the column to which
+  // the predicate is to be applied. For example, if the given column is
+  // any type of integer, the KuduValue should also be an integer, with its
+  // value in the valid range for the column type. No attempt is made to cast
+  // between floating point and integer values, or numeric and string values.
+  //
+  // The caller owns the result until it is passed into KuduScanner::AddConjunctPredicate().
+  // The returned predicate takes ownership of 'value'.
+  //
+  // In the case of an error (e.g. an invalid column name), a non-NULL value
+  // is still returned. The error will be returned when attempting to add this
+  // predicate to a KuduScanner.
+  KuduPredicate* NewComparisonPredicate(const Slice& col_name,
+                                        KuduPredicate::ComparisonOp op,
+                                        KuduValue* value);
 
   KuduClient* client() const;
 
@@ -775,9 +795,12 @@ class KUDU_EXPORT KuduScanner {
   Status SetProjection(const KuduSchema* projection) WARN_UNUSED_RESULT;
 
   // Add a predicate to this scanner.
+  //
   // The predicates act as conjunctions -- i.e, they all must pass for
   // a row to be returned.
-  Status AddConjunctPredicate(const KuduColumnRangePredicate& pred) WARN_UNUSED_RESULT;
+  //
+  // The Scanner takes ownership of 'pred', even if a bad Status is returned.
+  Status AddConjunctPredicate(KuduPredicate* pred) WARN_UNUSED_RESULT;
 
   // Add a lower bound (inclusive) for the scan.
   // If any bound is already added, this bound is intersected with that one.

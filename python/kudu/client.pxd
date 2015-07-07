@@ -350,12 +350,23 @@ cdef extern from "kudu/client/write_op.h" namespace "kudu::client" nogil:
 
 
 cdef extern from "kudu/client/scan_predicate.h" namespace "kudu::client" nogil:
+    enum ComparisonOp" kudu::client::KuduPredicate::ComparisonOp":
+        KUDU_LESS_EQUAL    " kudu::client::KuduPredicate::LESS_EQUAL"
+        KUDU_GREATER_EQUAL " kudu::client::KuduPredicate::GREATER_EQUAL"
+        KUDU_EQUAL         " kudu::client::KuduPredicate::EQUAL"
 
-    cdef cppclass KuduColumnRangePredicate:
-        KuduColumnRangePredicate(KuduColumnSchema& col,
-                                 const void* lower_bound,
-                                 const void* upper_bound)
-        void CopyFrom(KuduColumnRangePredicate& other)
+    cdef cppclass KuduPredicate:
+        pass
+
+
+cdef extern from "kudu/client/value.h" namespace "kudu::client" nogil:
+
+    cdef cppclass KuduValue:
+        @staticmethod
+        KuduValue* FromInt(int64_t val);
+
+        @staticmethod
+        KuduValue* CopyString(const Slice& s);
 
 
 cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
@@ -429,6 +440,10 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduUpdate* NewUpdate()
         KuduDelete* NewDelete()
 
+        KuduPredicate* NewComparisonPredicate(const Slice& col_name,
+                                              ComparisonOp op,
+                                              KuduValue* value);
+
         KuduClient* client()
 
     enum FlushMode" kudu::client::KuduSession::FlushMode":
@@ -484,7 +499,7 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
         KuduScanner(KuduTable* table)
 
         Status SetProjection(KuduSchema* projection)
-        Status AddConjunctPredicate(KuduColumnRangePredicate& pred)
+        Status AddConjunctPredicate(KuduPredicate* pred)
 
         Status Open()
         void Close()

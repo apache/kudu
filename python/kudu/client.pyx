@@ -25,6 +25,10 @@ INT64 = KUDU_INT64
 FLOAT = KUDU_FLOAT
 DOUBLE = KUDU_DOUBLE
 
+LESS_EQUAL = KUDU_LESS_EQUAL
+GREATER_EQUAL = KUDU_GREATER_EQUAL
+EQUAL = KUDU_EQUAL
+
 cdef dict _type_names = {
     INT8: 'int8',
     INT16: 'int16',
@@ -285,19 +289,6 @@ cdef class ColumnSchema:
             return StringVal(o)
         else:
             raise TypeError(t)
-
-    def range_predicate(self, lower, upper):
-        cdef:
-            ColumnRangePredicate pred = ColumnRangePredicate()
-            RawValue lb = self.cast_pyvalue(lower)
-            RawValue ub = self.cast_pyvalue(upper)
-
-        pred.pred = new KuduColumnRangePredicate(deref(self.schema),
-                                                 lb.data, ub.data)
-        pred.lb = lb
-        pred.ub = ub
-
-        return pred
 
     property dtype:
         def __get__(self):
@@ -665,61 +656,41 @@ cdef class RowBatch:
 
         return row
 
-
-cdef class Predicate:
-    pass
-
-
-cdef class ColumnRangePredicate(Predicate):
-    cdef:
-        KuduColumnRangePredicate* pred
-        object lb, ub
-
-    def __cinit__(self):
-        self.pred = NULL
-
-    def __dealloc__(self):
-        if self.pred != NULL:
-            del self.pred
-
-
 cdef class Scanner:
     cdef:
         Table table
         KuduScanner* scanner
-        # Although the C++ Scanner::AddConjunctPredicate() API copies the
-        # ColumnRangePredicate object, it doesn't deep-copy any data
-        # referenced by the object in its upper/lower bound field. So,
-        # we have to make sure that the original predicate bound values
-        # stay alive for the duration of the scanner. Saving the predicate
-        # objects here ensures it.
-        #
-        # This is a Python list of ColumnRangePredicate objects.
-        cdef object pred_objs
 
     def __cinit__(self, Table table):
         self.table = table
         self.scanner = NULL
-        self.pred_objs = []
 
     def __dealloc__(self):
         # We own this one
         if self.scanner != NULL:
             del self.scanner
 
-    def range_predicate(self, i, lower, upper):
-        # May wish to come up with a slightly friendlier API for creating range
-        # predicates. The lower and upper bound (Python objects) have to be
-        # coerced to the correct C type for the Kudu type. The Python object
-        # with ownership of the predicate lower/upper bounds must stay alive
-        # for the lifetime of the predicate as the C++ API does not copy the
-        # data from the input void* buffers
-        cdef ColumnSchema schema = self.table.col_schema(i)
-        return schema.range_predicate(lower, upper)
+    def add_comparison_predicate(self, col_name, op, value):
+        cdef:
+            KuduValue* val
+            Slice* slc
+        if type(col_name) != str:
+            raise TypeError("column name must be a string")
 
-    def add_predicate(self, ColumnRangePredicate pred):
-        cdef Status s = self.scanner.AddConjunctPredicate(deref(pred.pred))
-        self.pred_objs.append(pred)
+        if type(value) == str:
+            slc = new Slice(<char*> value, len(value))
+            val = KuduValue.CopyString(deref(slc))
+            del slc
+        elif type(value) == int:
+            val = KuduValue.FromInt(<int64_t> value)
+        else:
+            raise TypeError("unable to convert python type %s" % str(type(value)))
+
+        cdef Slice* col_name_slice = new Slice(<char*> col_name, len(col_name))
+        cdef KuduPredicate* pred = self.table.table.get().NewComparisonPredicate(
+            deref(col_name_slice), op, val)
+        del col_name_slice
+        cdef Status s = self.scanner.AddConjunctPredicate(pred)
         raise_on_failure(&s)
 
     def open(self):
@@ -790,7 +761,6 @@ cdef class KuduError:
 cdef class WriteOperation:
     cdef:
         Table table
-        KuduTable* tp
         KuduPartialRow* row
         bint applied
 
