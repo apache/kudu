@@ -20,6 +20,8 @@
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
@@ -48,6 +50,12 @@ DEFINE_int32(log_inject_latency_ms_mean, 100,
 DEFINE_int32(log_inject_latency_ms_stddev, 100,
              "The standard deviation of latency to inject in the log. "
              "Only takes effect if --log_inject_latency is true");
+
+DEFINE_double(fault_crash_before_append_commit, 0.0,
+              "Fraction of the time when the server will crash just before appending a "
+              "COMMIT message to the log. (For testing only!)");
+TAG_FLAG(fault_crash_before_append_commit, unsafe);
+
 
 static const char kSegmentPlaceholderFileTemplate[] = ".tmp.newsegmentXXXXXX";
 
@@ -395,6 +403,8 @@ Status Log::AsyncAppendReplicates(const vector<ReplicateRefPtr>& msgs,
 
 Status Log::AsyncAppendCommit(gscoped_ptr<consensus::CommitMsg> commit_msg,
                               const StatusCallback& callback) {
+  MAYBE_FAULT(FLAGS_fault_crash_before_append_commit);
+
   gscoped_ptr<LogEntryBatchPB> batch(new LogEntryBatchPB);
   LogEntryPB* entry = batch->add_entry();
   entry->set_type(COMMIT);

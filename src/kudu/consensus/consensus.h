@@ -63,6 +63,8 @@ struct ConsensusBootstrapInfo {
   // REPLICATE messages which were in the log with no accompanying
   // COMMIT. These need to be passed along to consensus init in order
   // to potentially commit them.
+  //
+  // These are owned by the ConsensusBootstrapInfo instance.
   std::vector<ReplicateMsg*> orphaned_replicates;
 
  private:

@@ -207,6 +207,14 @@ class ExternalMiniCluster {
   Status CreateClient(client::KuduClientBuilder& builder,
                       std::tr1::shared_ptr<client::KuduClient>* client);
 
+  // Sets the given flag on the given daemon, which must be running.
+  //
+  // This uses the 'force' flag on the RPC so that, even if the flag
+  // is considered unsafe to change at runtime, it is changed.
+  Status SetFlag(ExternalDaemon* daemon,
+                 const std::string& flag,
+                 const std::string& value);
+
  private:
   FRIEND_TEST(MasterFailoverTest, TestKillAnyMaster);
 

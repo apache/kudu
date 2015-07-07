@@ -37,6 +37,7 @@ if (NOT KUDU_EXPORTED_CLIENT)
   ADD_KUDU_TEST(master_failover-itest RESOURCE_LOCK "master-rpc-ports")
   ADD_KUDU_TEST(raft_consensus-itest RUN_SERIAL true)
   ADD_KUDU_TEST(ts_tablet_manager-itest)
+  ADD_KUDU_TEST(ts_recovery-itest)
 endif()
 
 ADD_KUDU_TEST(create-table-stress-test)

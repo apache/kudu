@@ -48,9 +48,6 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
   TRACE_EVENT0("consensus", "LocalConsensus::Start");
 
   CHECK_EQ(state_, kInitializing);
-  CHECK(info.orphaned_replicates.empty())
-      << "LocalConsensus does not handle orphaned operations on start.";
-
   LOG_WITH_PREFIX(INFO) << "Starting LocalConsensus...";
 
   {
@@ -66,11 +63,30 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
     CHECK(config.peers(0).has_permanent_uuid()) << config.ShortDebugString();
     cmeta_->set_leader_uuid(config.peers(0).permanent_uuid());
 
+    RETURN_NOT_OK_PREPEND(ResubmitOrphanedReplicates(info.orphaned_replicates),
+                          "Could not restart replicated operations");
+
     state_ = kRunning;
   }
 
   TRACE("Consensus started");
   MarkDirty();
+  return Status::OK();
+}
+
+Status LocalConsensus::ResubmitOrphanedReplicates(const std::vector<ReplicateMsg*> replicates) {
+  BOOST_FOREACH(ReplicateMsg* msg, replicates) {
+    DCHECK_LT(msg->id().index(), next_op_id_index_)
+      << "Orphaned replicate " << OpIdToString(msg->id())
+      << " is newer than next op index " << next_op_id_index_;
+
+    LOG_WITH_PREFIX(INFO) << "Resubmitting operation "
+                          << OpIdToString(msg->id()) << " after restart";
+    ReplicateRefPtr replicate_ptr = make_scoped_refptr_replicate(new ReplicateMsg(*msg));
+    scoped_refptr<ConsensusRound> round(new ConsensusRound(this, replicate_ptr));
+    RETURN_NOT_OK(txn_factory_->StartReplicaTransaction(round));
+    round->NotifyReplicationFinished(Status::OK());
+  }
   return Status::OK();
 }
 

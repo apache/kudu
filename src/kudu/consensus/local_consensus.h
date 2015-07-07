@@ -83,6 +83,13 @@ class LocalConsensus : public Consensus {
   // Log prefix. Doesn't access any variables that require locking.
   std::string LogPrefix() const;
 
+  // Resubmit the operations in 'replicates' to be applied immediately to
+  // the tablet.
+  //
+  // This is used to re-apply operations which were found in the WAL at startup,
+  // but did not have associated COMMIT records.
+  Status ResubmitOrphanedReplicates(const std::vector<ReplicateMsg*> replicates);
+
   const std::string peer_uuid_;
   const ConsensusOptions options_;
   const gscoped_ptr<ConsensusMetadata> cmeta_;

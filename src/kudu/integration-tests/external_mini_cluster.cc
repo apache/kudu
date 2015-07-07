@@ -368,6 +368,27 @@ Status ExternalMiniCluster::CreateClient(client::KuduClientBuilder& builder,
   return builder.Build(client);
 }
 
+Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,
+                                    const string& flag,
+                                    const string& value) {
+  server::GenericServiceProxy proxy(messenger_, daemon->bound_rpc_addr());
+
+  rpc::RpcController controller;
+  controller.set_timeout(MonoDelta::FromSeconds(30));
+  server::SetFlagRequestPB req;
+  server::SetFlagResponsePB resp;
+  req.set_flag(flag);
+  req.set_value(value);
+  req.set_force(true);
+  RETURN_NOT_OK_PREPEND(proxy.SetFlag(req, &resp, &controller),
+                        "rpc failed");
+  if (resp.result() != server::SetFlagResponsePB::SUCCESS) {
+    return Status::RemoteError("failed to set flag",
+                               resp.ShortDebugString());
+  }
+  return Status::OK();
+}
+
 //------------------------------------------------------------
 // ExternalDaemon
 //------------------------------------------------------------
