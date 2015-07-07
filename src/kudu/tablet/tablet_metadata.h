@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "kudu/common/schema.h"
+#include "kudu/fs/block_id.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/dynamic_annotations.h"
@@ -139,9 +140,13 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                         const RowSetMetadataVector& to_add,
                         int64_t last_durable_mrs_id);
 
-  // Adds the blocks referenced by 'block_ids' to 'orphaned_blocks'. They
-  // are deleted from disk (and the list cleared) in a call to
-  // DeleteOrphanedBlocks().
+  // Adds the blocks referenced by 'block_ids' to 'orphaned_blocks_'.
+  //
+  // This set will be written to the on-disk metadata in any subsequent
+  // flushes.
+  //
+  // Blocks are removed from this set after they are successfully deleted
+  // in a call to DeleteOrphanedBlocks().
   void AddOrphanedBlocks(const std::vector<BlockId>& block_ids);
 
   // Create a new RowSetMetadata for this tablet.
@@ -217,11 +222,13 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Requires 'data_lock_'.
   void AddOrphanedBlocksUnlocked(const std::vector<BlockId>& block_ids);
 
-  // Deletes all blocks found in 'orphaned_blocks_'. Those deleted (or not
-  // found) will be removed from the list.
+  // Deletes the provided 'blocks' on disk.
+  //
+  // All blocks that are successfully deleted are removed from the
+  // 'orphaned_blocks_' set.
   //
   // Failures are logged, but are not fatal.
-  void DeleteOrphanedBlocks();
+  void DeleteOrphanedBlocks(const std::vector<BlockId>& blocks);
 
   enum State {
     kNotLoadedYet,
@@ -268,7 +275,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   std::vector<Schema*> old_schemas_;
 
   // Protected by 'data_lock_'.
-  std::vector<BlockId> orphaned_blocks_;
+  std::tr1::unordered_set<BlockId, BlockIdHash, BlockIdEqual> orphaned_blocks_;
 
   // The current state of remote bootstrap for the tablet.
   TabletBootstrapStatePB remote_bootstrap_state_;

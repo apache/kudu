@@ -151,6 +151,8 @@ Status TabletMetadata::LoadFromDisk() {
 }
 
 Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) {
+  vector<BlockId> orphaned_blocks;
+
   {
     boost::lock_guard<LockType> l(data_lock_);
 
@@ -187,18 +189,17 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     }
 
     {
-      vector<BlockId> blocks;
       BOOST_FOREACH(const BlockIdPB& block_pb, superblock.orphaned_blocks()) {
-        blocks.push_back(BlockId::FromPB(block_pb));
+        orphaned_blocks.push_back(BlockId::FromPB(block_pb));
       }
-      AddOrphanedBlocksUnlocked(blocks);
+      AddOrphanedBlocksUnlocked(orphaned_blocks);
     }
   }
 
   // Now is a good time to clean up any orphaned blocks that may have been
   // left behind from a crash just after replacing the superblock.
   if (!fs_manager()->read_only()) {
-    DeleteOrphanedBlocks();
+    DeleteOrphanedBlocks(orphaned_blocks);
   }
 
   return Status::OK();
@@ -221,36 +222,30 @@ void TabletMetadata::AddOrphanedBlocks(const vector<BlockId>& blocks) {
 
 void TabletMetadata::AddOrphanedBlocksUnlocked(const vector<BlockId>& blocks) {
   DCHECK(data_lock_.is_locked());
-  orphaned_blocks_.insert(orphaned_blocks_.end(),
-                          blocks.begin(), blocks.end());
+  orphaned_blocks_.insert(blocks.begin(), blocks.end());
 }
 
-void TabletMetadata::DeleteOrphanedBlocks() {
-  vector<BlockId> blocks;
-  {
-    boost::lock_guard<LockType> l(data_lock_);
-    blocks.swap(orphaned_blocks_);
-  }
-  vector<BlockId> failed;
-  Status first_failure;
+void TabletMetadata::DeleteOrphanedBlocks(const vector<BlockId>& blocks) {
+  vector<BlockId> deleted;
   BOOST_FOREACH(const BlockId& b, blocks) {
     Status s = fs_manager()->DeleteBlock(b);
-    if (s.IsNotFound()) {
+    // If we get NotFound, then the block was actually successfully
+    // deleted before. So, we can remove it from our orphaned block list
+    // as if it was a success.
+    if (!s.ok() && !s.IsNotFound()) {
+      WARN_NOT_OK(s, Substitute("Could not delete block $0", b.ToString()));
       continue;
     }
-    WARN_NOT_OK(s, Substitute("Could not delete block $0", b.ToString()));
-    if (!s.ok()) {
-      failed.push_back(b);
-      if (first_failure.ok()) {
-        first_failure = s;
-      }
-    }
+
+    deleted.push_back(b);
   }
 
-  if (!first_failure.ok()) {
-    AddOrphanedBlocks(failed);
-    LOG(WARNING) << "Could not delete " << failed.size() <<
-                    " blocks. First failure: " << first_failure.ToString();
+  // Remove the successfully-deleted blocks from the set.
+  {
+    boost::lock_guard<LockType> l(data_lock_);
+    BOOST_FOREACH(const BlockId& b, deleted) {
+      orphaned_blocks_.erase(b);
+    }
   }
 }
 
@@ -276,7 +271,7 @@ Status TabletMetadata::Flush() {
                "tablet_id", tablet_id_);
 
   MutexLock l_flush(flush_lock_);
-
+  vector<BlockId> orphaned;
   TabletSuperBlockPB pb;
   {
     boost::lock_guard<LockType> l(data_lock_);
@@ -289,10 +284,26 @@ Status TabletMetadata::Flush() {
     needs_flush_ = false;
 
     RETURN_NOT_OK(ToSuperBlockUnlocked(&pb, rowsets_));
+
+    // Make a copy of the orphaned blocks list which corresponds to the superblock
+    // that we're writing. It's important to take this local copy to avoid a race
+    // in which another thread may add new orphaned blocks to the 'orphaned_blocks_'
+    // set while we're in the process of writing the new superblock to disk. We don't
+    // want to accidentally delete those blocks before that next metadata update
+    // is persisted. See KUDU-701 for details.
+    orphaned.assign(orphaned_blocks_.begin(), orphaned_blocks_.end());
   }
   pre_flush_callback_.Run();
   RETURN_NOT_OK(ReplaceSuperBlockUnlocked(pb));
   TRACE("Metadata flushed");
+  l_flush.Unlock();
+
+  // Now that the superblock is written, try to delete the orphaned blocks.
+  //
+  // If we crash just before the deletion, we'll retry when reloading from
+  // disk; the orphaned blocks were persisted as part of the superblock.
+  DeleteOrphanedBlocks(orphaned);
+
   return Status::OK();
 }
 
@@ -347,12 +358,6 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
                             fs_manager_->env(), path, pb,
                             pb_util::OVERWRITE, pb_util::SYNC),
                         Substitute("Failed to write tablet metadata $0", tablet_id_));
-
-  // Now that the superblock is written, try to delete the orphaned blocks.
-  //
-  // If we crash just before the deletion, we'll retry when reloading from
-  // disk; the orphaned blocks were persisted as part of the superblock.
-  DeleteOrphanedBlocks();
 
   return Status::OK();
 }
