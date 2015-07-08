@@ -178,9 +178,19 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
     }
 
     BOOST_FOREACH(const ColumnIdToBlockIdMap::value_type& e, update.cols_to_replace_) {
-      BlockId& old = FindOrDie(blocks_by_col_id_, e.first);
+      // If we are major-compacting deltas into a column which previously had no
+      // base-data (e.g. because it was newly added), then there will be no original
+      // block there to replace.
+      BlockId old_block_id;
+      if (UpdateReturnCopy(&blocks_by_col_id_, e.first, e.second, &old_block_id)) {
+        removed.push_back(old_block_id);
+      }
+    }
+
+    BOOST_FOREACH(int col_id, update.col_ids_to_remove_) {
+      BlockId old = FindOrDie(blocks_by_col_id_, col_id);
+      CHECK_EQ(1, blocks_by_col_id_.erase(col_id));
       removed.push_back(old);
-      old = e.second;
     }
   }
 
@@ -211,13 +221,21 @@ vector<BlockId> RowSetMetadata::GetAllBlocks() {
 
 RowSetMetadataUpdate::RowSetMetadataUpdate() {
 }
+
 RowSetMetadataUpdate::~RowSetMetadataUpdate() {
 }
+
 RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceColumnId(
     int col_id, const BlockId& block_id) {
   InsertOrDie(&cols_to_replace_, col_id, block_id);
   return *this;
 }
+
+RowSetMetadataUpdate& RowSetMetadataUpdate::RemoveColumnId(int col_id) {
+  col_ids_to_remove_.push_back(col_id);
+  return *this;
+}
+
 RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceRedoDeltaBlocks(
     const std::vector<BlockId>& to_remove,
     const std::vector<BlockId>& to_add) {
@@ -231,7 +249,6 @@ RowSetMetadataUpdate& RowSetMetadataUpdate::SetNewUndoBlock(const BlockId& undo_
   new_undo_block_ = undo_block;
   return *this;
 }
-
 
 } // namespace tablet
 } // namespace kudu

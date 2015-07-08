@@ -194,15 +194,15 @@ Status Schema::CreateProjectionByNames(const std::vector<StringPiece>& col_names
   return out->Reset(cols, ids, 0);
 }
 
-Status Schema::CreateProjectionByIds(const std::vector<int>& col_ids,
-                                     Schema* out) const {
+Status Schema::CreateProjectionByIdsIgnoreMissing(const std::vector<int>& col_ids,
+                                                  Schema* out) const {
   vector<ColumnSchema> cols;
   // TODO: this class still uses size_t for col_ids, so we have to convert.
   vector<size_t> col_ids_size_t;
   BOOST_FOREACH(int id, col_ids) {
     int idx = find_column_by_id(id);
     if (idx == -1) {
-      return Status::NotFound("column id not found", strings::Substitute("$0", id));
+      continue;
     }
     cols.push_back(column(idx));
     col_ids_size_t.push_back(id);

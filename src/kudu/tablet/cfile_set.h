@@ -15,6 +15,7 @@
 #include "kudu/common/iterator.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/macros.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/tablet/memrowset.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/env.h"
@@ -70,6 +71,11 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   // row's index.
   Status CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
                          rowid_t *rowid, ProbeStats* stats) const;
+
+  // Return true if there exists a CFile for the given column ID.
+  bool has_data_for_column_id(int col_id) const {
+    return ContainsKey(readers_by_col_id_, col_id);
+  }
 
   virtual ~CFileSet();
 

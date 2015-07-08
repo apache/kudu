@@ -12,6 +12,7 @@
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/algorithm.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/diskrowset.h"
@@ -260,7 +261,7 @@ Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
        proj_col_idx++) {
     int col_id = projection_->column_id(proj_col_idx);
 
-    if (!ContainsKey(base_data_->readers_by_col_id_, col_id)) {
+    if (!base_data_->has_data_for_column_id(col_id)) {
       // If we have no data for a column, most likely it was added via an ALTER
       // operation after this CFileSet was flushed. In that case, we're guaranteed
       // that it has a "read-default". Otherwise, consider it a corruption.

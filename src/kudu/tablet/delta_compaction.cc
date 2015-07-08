@@ -65,7 +65,12 @@ MajorDeltaCompaction::~MajorDeltaCompaction() {
 string MajorDeltaCompaction::ColumnNamesToString() const {
   std::string result;
   BOOST_FOREACH(int col_id, column_ids_) {
-    result += base_schema_.column_by_id(col_id).ToString() + " ";
+    int col_idx = base_schema_.find_column_by_id(col_id);
+    if (col_idx != Schema::kColumnNotFound) {
+      result += base_schema_.column_by_id(col_id).ToString() + " ";
+    } else {
+      result += Substitute("[deleted column id $0]  ", col_id);
+    }
   }
   return result;
 }
@@ -233,7 +238,7 @@ Status MajorDeltaCompaction::Compact() {
   CHECK_EQ(state_, kInitialized);
 
   LOG(INFO) << "Starting major delta compaction for columns " << ColumnNamesToString();
-  RETURN_NOT_OK(base_schema_.CreateProjectionByIds(column_ids_, &partial_schema_));
+  RETURN_NOT_OK(base_schema_.CreateProjectionByIdsIgnoreMissing(column_ids_, &partial_schema_));
 
   BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, included_stores_) {
     LOG(INFO) << "Preparing to major compact delta file: " << ds->ToString();
@@ -273,9 +278,28 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
   // Replace old column blocks with new ones
   RowSetMetadata::ColumnIdToBlockIdMap new_column_blocks;
   base_data_writer_->GetFlushedBlocksByColumnId(&new_column_blocks);
-  CHECK_EQ(new_column_blocks.size(), column_ids_.size());
-  BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e,  new_column_blocks) {
-    update->ReplaceColumnId(e.first, e.second);
+
+  // NOTE: in the case that one of the columns being compacted is deleted,
+  // we may have fewer elements in new_column_blocks compared to 'column_ids'.
+  // For those deleted columns, we just remove the old column data.
+  CHECK_LE(new_column_blocks.size(), column_ids_.size());
+
+  BOOST_FOREACH(int col_id, column_ids_) {
+    BlockId new_block;
+    if (FindCopy(new_column_blocks, col_id, &new_block)) {
+      update->ReplaceColumnId(col_id, new_block);
+    } else {
+      // The column has been deleted.
+      // If the base data has a block for this column, we need to remove it.
+      // NOTE: It's possible that the base data has no data for this column in the
+      // case that the column was added and removed in succession after the base
+      // data was flushed.
+      CHECK_EQ(base_schema_.find_column_by_id(col_id), static_cast<int>(Schema::kColumnNotFound))
+        << "major compaction removing column " << col_id << " but still present in Schema!";
+      if (base_data_->has_data_for_column_id(col_id)) {
+        update->RemoveColumnId(col_id);
+      }
+    }
   }
 
   return Status::OK();

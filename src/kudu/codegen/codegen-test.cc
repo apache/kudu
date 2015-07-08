@@ -212,7 +212,7 @@ Status CodegenTest::CreatePartialSchema(const vector<size_t>& col_indexes,
   BOOST_FOREACH(size_t col_idx, col_indexes) {
     col_ids.push_back(defaults_.column_id(col_idx));
   }
-  return defaults_.CreateProjectionByIds(col_ids, out);
+  return defaults_.CreateProjectionByIdsIgnoreMissing(col_ids, out);
 }
 
 TEST_F(CodegenTest, ObservablesTest) {

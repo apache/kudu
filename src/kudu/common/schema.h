@@ -537,9 +537,14 @@ class Schema {
                                  Schema* out) const;
 
   // Create a new schema containing only the selected column IDs.
+  //
+  // If any column IDs are invalid, then they will be ignored and the
+  // result will have fewer columns than requested.
+  //
   // The resulting schema will have no key columns defined.
-  Status CreateProjectionByIds(const std::vector<int>& col_ids,
-                               Schema* out) const;
+  Status CreateProjectionByIdsIgnoreMissing(
+      const std::vector<int>& col_ids,
+      Schema* out) const;
 
   // Encode the key portion of the given row into a buffer
   // such that the buffer's lexicographic comparison represents

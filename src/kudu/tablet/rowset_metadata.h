@@ -212,7 +212,11 @@ class RowSetMetadataUpdate {
   RowSetMetadataUpdate& ReplaceRedoDeltaBlocks(const std::vector<BlockId>& to_remove,
                                                const std::vector<BlockId>& to_add);
 
+  // Replace the CFile for the given column ID.
   RowSetMetadataUpdate& ReplaceColumnId(int col_id, const BlockId& block_id);
+
+  // Remove the CFile for the given column ID.
+  RowSetMetadataUpdate& RemoveColumnId(int col_id);
 
   // Add a new UNDO delta block to the list of UNDO files.
   // We'll need to replace them instead when we start GCing.
@@ -221,6 +225,7 @@ class RowSetMetadataUpdate {
  private:
   friend class RowSetMetadata;
   RowSetMetadata::ColumnIdToBlockIdMap cols_to_replace_;
+  std::vector<int> col_ids_to_remove_;
   std::vector<BlockId> new_redo_blocks_;
 
   struct ReplaceDeltaBlocks {

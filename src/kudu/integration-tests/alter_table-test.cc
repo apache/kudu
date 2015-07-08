@@ -16,6 +16,7 @@
 #include "kudu/client/schema.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/mini_master.h"
@@ -33,6 +34,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_data_block_fsync);
+DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(flush_threshold_mb);
 
@@ -72,6 +74,8 @@ class AlterTableTest : public KuduTest {
       inserted_idx_(0) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
     ANNOTATE_BENIGN_RACE(&FLAGS_flush_threshold_mb,
+                         "safe to change at runtime");
+    ANNOTATE_BENIGN_RACE(&FLAGS_enable_maintenance_manager,
                          "safe to change at runtime");
   }
 
@@ -394,6 +398,7 @@ void AlterTableTest::ScanToStrings(vector<string>* rows) {
   shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
   ScanTableToStrings(table.get(), rows);
+  std::sort(rows->begin(), rows->end());
 }
 
 // Verify that the 'num_rows' starting with 'start_row' fit the given pattern.
@@ -496,6 +501,10 @@ TEST_F(AlterTableTest, DISABLED_TestBootstrapAfterColumnRemoved) {
 
 
 TEST_F(AlterTableTest, TestCompactAfterUpdatingRemovedColumn) {
+  // Disable maintenance manager, since we manually flush/compact
+  // in this test.
+  FLAGS_enable_maintenance_manager = false;
+
   vector<string> rows;
 
   ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
@@ -526,6 +535,160 @@ TEST_F(AlterTableTest, TestCompactAfterUpdatingRemovedColumn) {
 
   // Compact
   ASSERT_OK(tablet_peer_->tablet()->Compact(tablet::Tablet::FORCE_COMPACT_ALL));
+}
+
+// Test which major-compacts a column for which there are updates in
+// a delta file, but where the column has been removed.
+TEST_F(AlterTableTest, TestMajorCompactDeltasAfterUpdatingRemovedColumn) {
+  // Disable maintenance manager, since we manually flush/compact
+  // in this test.
+  FLAGS_enable_maintenance_manager = false;
+
+  vector<string> rows;
+
+  ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
+  InsertRows(0, 1);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c1=0, int32 c2=12345)", rows[0]);
+
+  // Add a delta for c1.
+  UpdateRow(0, boost::assign::map_list_of("c1", 54321));
+
+  // Make sure the delta is in a delta-file.
+  ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
+
+  // Drop c1.
+  LOG(INFO) << "Dropping c1";
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+  ASSERT_OK(table_alterer->table_name(kTableName)
+            .drop_column("c1")
+            .Alter());
+
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c2=12345)", rows[0]);
+
+  // Major Compact Deltas
+  ASSERT_OK(tablet_peer_->tablet()->CompactWorstDeltas(
+                tablet::RowSet::MAJOR_DELTA_COMPACTION));
+
+  // Check via debug dump that the data was properly compacted, including deltas.
+  // We expect to see neither deltas nor base data for the deleted column.
+  rows.clear();
+  tablet_peer_->tablet()->DebugDump(&rows);
+  ASSERT_EQ("Dumping tablet:\n"
+            "---------------------------\n"
+            "MRS memrowset:\n"
+            "RowSet RowSet(1):\n"
+            "(int32 c0=0, int32 c2=12345) Undos: [@2(DELETE)] Redos: []",
+            JoinStrings(rows, "\n"));
+
+}
+
+// Test which major-compacts a column for which we have updates
+// in a DeltaFile, but for which we didn't originally flush any
+// CFile in the base data (because the the RowSet was flushed
+// prior to the addition of the column).
+TEST_F(AlterTableTest, TestMajorCompactDeltasIntoMissingBaseData) {
+  // Disable maintenance manager, since we manually flush/compact
+  // in this test.
+  FLAGS_enable_maintenance_manager = false;
+
+  vector<string> rows;
+
+  InsertRows(0, 2);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+
+  // Add the new column after the Flush, so it has no base data.
+  ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
+
+  // Add a delta for c2.
+  UpdateRow(0, boost::assign::map_list_of("c2", 54321));
+
+  // Make sure the delta is in a delta-file.
+  ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
+
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(2, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c1=0, int32 c2=54321)", rows[0]);
+  ASSERT_EQ("(int32 c0=16777216, int32 c1=1, int32 c2=12345)", rows[1]);
+
+  // Major Compact Deltas
+  ASSERT_OK(tablet_peer_->tablet()->CompactWorstDeltas(
+                tablet::RowSet::MAJOR_DELTA_COMPACTION));
+
+  // Check via debug dump that the data was properly compacted, including deltas.
+  // We expect to see the updated value materialized into the base data for the first
+  // row, the default value materialized for the second, and a proper UNDO to undo
+  // the update on the first row.
+  rows.clear();
+  tablet_peer_->tablet()->DebugDump(&rows);
+  ASSERT_EQ("Dumping tablet:\n"
+            "---------------------------\n"
+            "MRS memrowset:\n"
+            "RowSet RowSet(0):\n"
+            "(int32 c0=0, int32 c1=0, int32 c2=54321) "
+            "Undos: [@4(SET c2=12345), @1(DELETE)] Redos: []\n"
+            "(int32 c0=16777216, int32 c1=1, int32 c2=12345) Undos: [@2(DELETE)] Redos: []",
+            JoinStrings(rows, "\n"));
+}
+
+// Test which major-compacts a column for which there we have updates
+// in a DeltaFile, but for which there is no corresponding CFile
+// in the base data. Unlike the above test, in this case, we also drop
+// the column again before running the major delta compaction.
+TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
+  // Disable maintenance manager, since we manually flush/compact
+  // in this test.
+  FLAGS_enable_maintenance_manager = false;
+
+  vector<string> rows;
+
+  InsertRows(0, 1);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+
+  // Add the new column after the Flush(), so that no CFile for this
+  // column is present in the base data.
+  ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
+
+  // Add a delta for c2.
+  UpdateRow(0, boost::assign::map_list_of("c2", 54321));
+
+  // Make sure the delta is in a delta-file.
+  ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
+
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c1=0, int32 c2=54321)", rows[0]);
+
+  // Drop c2.
+  LOG(INFO) << "Dropping c2";
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+  ASSERT_OK(table_alterer->table_name(kTableName)
+            .drop_column("c2")
+            .Alter());
+
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(1, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c1=0)", rows[0]);
+
+  // Major Compact Deltas
+  ASSERT_OK(tablet_peer_->tablet()->CompactWorstDeltas(
+                tablet::RowSet::MAJOR_DELTA_COMPACTION));
+
+  // Check via debug dump that the data was properly compacted, including deltas.
+  // We expect to see neither deltas nor base data for the deleted column.
+  rows.clear();
+  tablet_peer_->tablet()->DebugDump(&rows);
+  ASSERT_EQ("Dumping tablet:\n"
+            "---------------------------\n"
+            "MRS memrowset:\n"
+            "RowSet RowSet(0):\n"
+            "(int32 c0=0, int32 c1=0) Undos: [@1(DELETE)] Redos: []",
+            JoinStrings(rows, "\n"));
 }
 
 // Thread which inserts rows into the table.

@@ -383,10 +383,11 @@ TEST(TestSchema, TestCreateProjection) {
   EXPECT_EQ("Not found: column not found: foobar", s.ToString());
 
   // By IDs
-  ASSERT_OK(schema_with_ids.CreateProjectionByIds(
+  ASSERT_OK(schema_with_ids.CreateProjectionByIdsIgnoreMissing(
                 list_of
                 (schema_with_ids.column_id(0))
                 (schema_with_ids.column_id(1))
+                (1000) // missing column
                 (schema_with_ids.column_id(3)),
                 &partial_schema));
   EXPECT_EQ(Substitute("Schema [\n"
