@@ -10,32 +10,60 @@
 :sectlinks:
 :experimental:
 
-Kudu is a ...
+Kudu is a columnar storage manager developed for the Hadoop platform.  Kudu shares
+the common technical properties of Hadoop ecosystem applications:
 
-(describe the gap Kudu fills / problem Kudu solves)
+* Runs on commodity hardware
+* Horizontally scalable
+* Supports highly available operation
 
-== Concepts and Terms
+Kudu's design sets it apart. Some of Kudu's benefits include:
 
-.Columnar Data Store
-
-Kudu is a _columnar data store_. Data is stored in one or more tables, which are
-split into segments called _tablets_. All cluster operations are coordinated by
-a _master_. Kudu relies on the Raft Consensus Algorithm for many of its internal
-operations.
-
-. Kudu Benefits
-- Designed to be fast for OLAP workloads.
+- Fast processing of OLAP workloads.
+- Integration with MapReduce, Spark and other Hadoop ecosystem components.
 - Tight integration with Cloudera Impala, making it a good, mutable alternative
   to using HDFS with Parquet.
 - Strong but flexible consistency model, allowing you to choose consistency
   requirements on a per-request basis, including the option for strict
   serialized consistency.
-- Integration with Apache Hadoop, MapReduce, and Spark
-- Integration with Cloudera Manager
+- Strong performance for running sequential and random workloads simultaneously.
+- Easy to administer and manage with Cloudera Manager.
 - High availability. Tablet Servers and Master use the <<raft>>, which ensures
   availability even if _f_ nodes failing, given _2f+1_ nodes in the cluster.
   Reads can be serviced by read-only follower tablets, even in the event of a
   leader tablet failure.
+
+By combining all of these properties, Kudu targets support for families of
+applications that are difficult or impossible to implement on current generation
+Hadoop storage technologies. A few examples of applications for which Kudu is a great
+solution are:
+
+* Reporting applications where newly-arrived data needs to be immediately available for end users
+* Time-series applications that must simultaneously support:
+  - queries across large amounts of historic data
+  - granular queries about an individual entity that must return very quickly
+* Applications that use predictive models to make real-time decisions with periodic
+refreshes of the predictive model based on all historic data
+
+For more information about these and other scenarios, see <<kudu_use_cases>>.
+
+== Concepts and Terms
+[[kudu_columnar_data_store]]
+.Columnar Data Store
+
+Kudu is a _columnar data store_. A columnar data store stores data in strongly-typed
+columns. With a proper design, it is superior for analytical or data warehousing
+workloads for several reasons.
+
+Read Effiency:: For analytical queries, you can read a single column, or a portion
+of that column, while ignoring other columns. This means you can fulfill your query
+while reading a minimal number of blocks on disk. With a row-based store, you need
+to read the entire row, even if you only return values from a few columns.
+
+Data Compression:: Because a given column contains only one type of data, pattern-based
+compression can be orders of magnitude more efficient than compressing mixed data
+types. Combined with the efficiencies of reading data from columns,  compression allows
+you to fulfill your query while reading even fewer blocks from disk.
 
 [[raft]]
 .Raft Consensus Algorithm
@@ -48,23 +76,31 @@ uses the Raft Consensus Algorithm for the election of masters and leader
 tablets, as well as determining the success or failure of a given write
 operation.
 
-.Table A _table_ is where your data is stored in Kudu. A table has a schema and
+.Table
+
+A _table_ is where your data is stored in Kudu. A table has a schema and
 a totally ordered primary key. A table is split into segments called tablets, by
 primary key.
 
-.Tablet A _tablet_ is a contiguous segment of a table. A given tablet is
+.Tablet
+
+A _tablet_ is a contiguous segment of a table. A given tablet is
 replicated on multiple tablet servers, and one of these replicas is considered
 the leader tablet. Any replica can service reads, and writes require consensus
 among the set of tablet servers serving the tablet.
 
-.Tablet Server A _tablet server_ stores and serves tablets to clients. For a
+.Tablet Server
+
+A _tablet server_ stores and serves tablets to clients. For a
 given tablet, one tablet server serves the lead tablet, and the others serve
 follower replicas of that tablet. Only leaders service write requests, while
 leaders or followers each service read requests. Leaders are elected using
 <<raft>>. One tablet server can serve multiple tablets, and one tablet can be served
 by multiple tablet servers.
 
-.Master The _master_ keeps track of all the tablets, tablet servers, the
+.Master
+
+The _master_ keeps track of all the tablets, tablet servers, the
 <<catalog_table>>, and other metadata related to the cluster. At a given point
 in time, there can only be one acting master (the leader). If the current leader
 disappears, a new master is elected using <<raft>>.
@@ -102,15 +138,18 @@ substantial reduction in network traffic for heavy write scenarios.
 == Architectural Overview
 INSERT DIAGRAM HERE
 
-== Typical Use Cases
-.First Use Case
-The first use case
+== Example Use Cases
+.Streaming Input with Near Real Time Availability
 
-.Second Use Case
-The second use case
+TODO give an example of how Kudu helps here.
 
-.Third Use Case
-The third use case
+.Time-series application with widely varying access patterns
+
+TODO give an example of how Kudu helps here.
+
+.Iterative predictive learning
+
+TODO give an example of how Kudu helps here.
 
 == Next Steps
 - <<quickstart>>
