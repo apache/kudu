@@ -111,7 +111,6 @@ set(UTIL_SRCS
   url-coding.cc
   version_info.cc
 )
-add_dependencies(kudu_util gen_version_info)
 
 set(UTIL_LIBS
   boost_system
@@ -136,6 +135,8 @@ ADD_EXPORTABLE_LIBRARY(kudu_util
   SRCS ${UTIL_SRCS}
   DEPS ${UTIL_LIBS}
   EXPORTED_DEPS ${EXPORTED_UTIL_LIBS})
+
+add_dependencies(kudu_util gen_version_info)
 
 #######################################
 # kudu_test_util
