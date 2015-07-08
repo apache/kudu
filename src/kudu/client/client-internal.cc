@@ -375,7 +375,7 @@ Status KuduClient::Data::WaitForCreateTableToFinish(KuduClient* client,
                                                     const MonoTime& deadline) {
   return RetryFunc(deadline,
                    "Waiting on Create Table to be completed",
-                   "Timeout out waiting for Table Creation",
+                   "Timed out waiting for Table Creation",
                    boost::bind(&KuduClient::Data::IsCreateTableInProgress,
                                this, client, table_name, _1, _2));
 }
@@ -458,7 +458,7 @@ Status KuduClient::Data::WaitForAlterTableToFinish(KuduClient* client,
                                                    const MonoTime& deadline) {
   return RetryFunc(deadline,
                    "Waiting on Alter Table to be completed",
-                   "Timeout out waiting for AlterTable",
+                   "Timed out waiting for AlterTable",
                    boost::bind(&KuduClient::Data::IsAlterTableInProgress,
                                this,
                                client, alter_name, _1, _2));
