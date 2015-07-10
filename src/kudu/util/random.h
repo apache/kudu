@@ -14,14 +14,12 @@
 
 namespace kudu {
 
-namespace random {
-namespace internal {
+namespace random_internal {
 
 static const uint32_t M = 2147483647L;   // 2^31-1
 const double kTwoPi = 6.283185307179586476925286;
 
-} // namespace internal
-} // namespace random
+} // namespace random_internal
 
 // A very simple random number generator.  Not especially good at
 // generating truly random bits, but good enough for our needs in this
@@ -32,7 +30,7 @@ class Random {
  public:
   explicit Random(uint32_t s) : seed_(s & 0x7fffffffu) {
     // Avoid bad seeds.
-    if (seed_ == 0 || seed_ == random::internal::M) {
+    if (seed_ == 0 || seed_ == random_internal::M) {
       seed_ = 1;
     }
   }
@@ -51,12 +49,12 @@ class Random {
     uint64_t product = seed_ * A;
 
     // Compute (product % M) using the fact that ((x << 31) % M) == x.
-    seed_ = static_cast<uint32_t>((product >> 31) + (product & random::internal::M));
+    seed_ = static_cast<uint32_t>((product >> 31) + (product & random_internal::M));
     // The first reduction may overflow by 1 bit, so we may need to
     // repeat.  mod == M is not possible; using > allows the faster
     // sign-bit-based test.
-    if (seed_ > random::internal::M) {
-      seed_ -= random::internal::M;
+    if (seed_ > random_internal::M) {
+      seed_ -= random_internal::M;
     }
     return seed_;
   }
@@ -99,14 +97,14 @@ class Random {
   // Adapted from WebRTC source code at:
   // webrtc/trunk/modules/video_coding/main/test/test_util.cc
   double Normal(double mean, double std_dev) {
-    double uniform1 = (Next() + 1.0) / (random::internal::M + 1.0);
-    double uniform2 = (Next() + 1.0) / (random::internal::M + 1.0);
-    return (mean + std_dev * sqrt(-2 * ::log(uniform1)) * cos(random::internal::kTwoPi * uniform2));
+    double uniform1 = (Next() + 1.0) / (random_internal::M + 1.0);
+    double uniform2 = (Next() + 1.0) / (random_internal::M + 1.0);
+    return (mean + std_dev * sqrt(-2 * ::log(uniform1)) * cos(random_internal::kTwoPi * uniform2));
   }
 
   // Return a random number between 0.0 and 1.0 inclusive.
   double NextDoubleFraction() {
-    return Next() / static_cast<double>(random::internal::M + 1.0);
+    return Next() / static_cast<double>(random_internal::M + 1.0);
   }
 };
 
