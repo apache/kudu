@@ -91,7 +91,7 @@ public class ITImportCsv extends BaseKuduTest {
     assertEquals(1, job.getCounters().findCounter(ImportCsv.Counters.BAD_LINES).getValue());
 
     assertEquals(3, countRowsInScan(
-        client.newScannerBuilder(openTable(TABLE_NAME), schema).build()));
+        client.newScannerBuilder(openTable(TABLE_NAME)).build()));
     // TODO: should verify the actual returned rows, not just the count!
   }
 

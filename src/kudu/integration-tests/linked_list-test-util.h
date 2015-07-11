@@ -67,14 +67,8 @@ class LinkedListTester {
                                           false, &kUpdatedColumnDefault)),
               1),
       verify_projection_(boost::assign::list_of
-                           (client::KuduColumnSchema(kKeyColumnName,
-                                                     client::KuduColumnSchema::INT64))
-                           (client::KuduColumnSchema(kLinkColumnName,
-                                                     client::KuduColumnSchema::INT64))
-                           (client::KuduColumnSchema(kUpdatedColumnName,
-                                                     client::KuduColumnSchema::BOOL,
-                                                     false, &kUpdatedColumnDefault)),
-                         1),
+                         (kKeyColumnName)(kLinkColumnName)(kUpdatedColumnName)
+                         .convert_to_container<vector<string> >()),
       table_name_(table_name),
       num_chains_(num_chains),
       num_tablets_(num_tablets),
@@ -158,7 +152,7 @@ class LinkedListTester {
 
  protected:
   const client::KuduSchema schema_;
-  const client::KuduSchema verify_projection_;
+  const std::vector<std::string> verify_projection_;
   const std::string table_name_;
   const int num_chains_;
   const int num_tablets_;
@@ -573,7 +567,7 @@ Status LinkedListTester::VerifyLinkedListRemote(
   }
 
   client::KuduScanner scanner(table.get());
-  RETURN_NOT_OK_PREPEND(scanner.SetProjection(&verify_projection_), "Bad projection");
+  RETURN_NOT_OK_PREPEND(scanner.SetProjectedColumns(verify_projection_), "Bad projection");
   RETURN_NOT_OK(scanner.SetBatchSizeBytes(0)); // Force at least one NextBatch RPC.
 
   if (snapshot_timestamp != kNoSnapshot) {

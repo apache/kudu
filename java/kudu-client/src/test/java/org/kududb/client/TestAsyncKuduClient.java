@@ -30,13 +30,13 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   public void testDisconnect() throws Exception {
     // Test that we can reconnect to a TS after a disconnection.
     // 1. Warm up the cache.
-    assertEquals(0, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
+    assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
 
     // 2. Disconnect the TabletClient.
     client.getTableClients().get(0).shutdown().join(DEFAULT_SLEEP);
 
     // 3. Count again, it will trigger a re-connection and we should not hang or fail to scan.
-    assertEquals(0, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
+    assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
 
 
     // Test that we can reconnect to a TS while scanning.
@@ -50,7 +50,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     session.flush();
 
     // 2. Start a scanner with a small max num bytes.
-    AsyncKuduScanner scanner = client.newScannerBuilder(table, basicSchema)
+    AsyncKuduScanner scanner = client.newScannerBuilder(table)
         .maxNumBytes(1)
         .build();
     Deferred<RowResultIterator> rri = scanner.nextRows();

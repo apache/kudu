@@ -42,7 +42,7 @@ public class TestTimeouts extends BaseKuduTest {
       // Expected.
     }
 
-    KuduScanner lowTimeoutScanner = lowTimeoutsClient.newScannerBuilder(table, basicSchema).build();
+    KuduScanner lowTimeoutScanner = lowTimeoutsClient.newScannerBuilder(table).build();
     try {
       lowTimeoutScanner.nextRows();
       fail("Should have timed out");

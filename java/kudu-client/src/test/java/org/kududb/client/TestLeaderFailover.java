@@ -43,7 +43,7 @@ public class TestLeaderFailover extends BaseKuduTest {
     }
 
     // Make sure the rows are in there before messing things up.
-    AsyncKuduScanner scanner = client.newScannerBuilder(table, getBasicSchema()).build();
+    AsyncKuduScanner scanner = client.newScannerBuilder(table).build();
     assertEquals(3, countRowsInScan(scanner));
 
     killTabletLeader(table);
@@ -55,7 +55,7 @@ public class TestLeaderFailover extends BaseKuduTest {
       }
     }
 
-    scanner = client.newScannerBuilder(table, getBasicSchema()).build();
+    scanner = client.newScannerBuilder(table).build();
     assertEquals(6, countRowsInScan(scanner));
   }
 }

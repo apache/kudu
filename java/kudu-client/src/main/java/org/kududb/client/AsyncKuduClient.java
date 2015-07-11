@@ -428,10 +428,9 @@ public class AsyncKuduClient {
    * The string is assumed to use the platform's default charset.
    * @return a new scanner builder for this table
    */
-  public AsyncKuduScanner.AsyncKuduScannerBuilder newScannerBuilder(KuduTable table,
-                                                                    Schema schema) {
+  public AsyncKuduScanner.AsyncKuduScannerBuilder newScannerBuilder(KuduTable table) {
     checkIsClosed();
-    return new AsyncKuduScanner.AsyncKuduScannerBuilder(this, table, schema);
+    return new AsyncKuduScanner.AsyncKuduScannerBuilder(this, table);
   }
 
   /**

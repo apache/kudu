@@ -13,8 +13,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -202,7 +204,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     assertEquals(20, countInRange(71, 91));
 
     // Test empty scanner projection
-    AsyncKuduScanner scanner = getScanner(71, 91, new Schema(new ArrayList<ColumnSchema>(0)));
+    AsyncKuduScanner scanner = getScanner(71, 91, Collections.<String>emptyList());
     assertEquals(20, countRowsInScan(scanner));
 
     // Test removing the connection and then do a rapid set of inserts
@@ -418,16 +420,18 @@ public class TestAsyncKuduSession extends BaseKuduTest {
   }
 
   private static AsyncKuduScanner getScanner(int start, int end) {
-    return getScanner(start, end, schema);
+    return getScanner(start, end, null);
   }
 
-  private static AsyncKuduScanner getScanner(int start, int end, Schema querySchema) {
+  private static AsyncKuduScanner getScanner(int start, int end,
+                                             List<String> columnNames) {
 
     ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumn(0));
     predicate.setLowerBound(start);
     predicate.setUpperBound(end);
-    AsyncKuduScanner scanner = client.newScannerBuilder(table, querySchema)
+    AsyncKuduScanner scanner = client.newScannerBuilder(table)
         .addColumnRangePredicate(predicate)
+        .setProjectedColumnNames(columnNames)
         .build();
     return scanner;
   }

@@ -44,12 +44,7 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
 
     // Test getting all the columns back
 
-    RecordReader<NullWritable, RowResult> reader = createRecordReader(
-        schema.getColumn(0).getName() + "," +
-        schema.getColumn(1).getName() + "," +
-        schema.getColumn(2).getName() + "," +
-        schema.getColumn(3).getName() + "," +
-        schema.getColumn(4).getName());
+    RecordReader<NullWritable, RowResult> reader = createRecordReader("*");
     assertTrue(reader.nextKeyValue());
     assertEquals(5, reader.getCurrentValue().getColumnProjection().getColumnCount());
     assertFalse(reader.nextKeyValue());
@@ -81,7 +76,7 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     }
 
     // Test getting empty rows back
-    reader = createRecordReader(null);
+    reader = createRecordReader("");
     assertTrue(reader.nextKeyValue());
     assertEquals(0, reader.getCurrentValue().getColumnProjection().getColumnCount());
     assertFalse(reader.nextKeyValue());

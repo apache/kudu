@@ -85,8 +85,11 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
   /**
    * Job parameter that specifies the column projection as a comma-separated list of column names.
-   * Not specifying this means using an empty projection.
-   * Note: when specifying columns that are keys, they must be at the beginning.
+   *
+   * Not specifying this at all (i.e. setting to null) or setting to the special string
+   * '*' means to project all columns.
+   *
+   * Specifying the empty string means to project no columns (i.e just count the rows).
    */
   static final String COLUMN_PROJECTION_KEY = "kudu.mapreduce.column.projection";
 
@@ -101,8 +104,8 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   private KuduTable table;
   private long operationTimeoutMs;
   private String nameServer;
-  private Schema querySchema;
   private boolean cacheBlocks;
+  private List<String> projectedCols;
 
   @Override
   public List<InputSplit> getSplits(JobContext jobContext)
@@ -232,20 +235,21 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     }
 
     String projectionConfig = conf.get(COLUMN_PROJECTION_KEY);
-    Schema tableSchema = table.getSchema();
-    if (projectionConfig == null || projectionConfig.equals("")) {
-      this.querySchema = new Schema(new ArrayList<ColumnSchema>(0));
+    if (projectionConfig == null || projectionConfig.equals("*")) {
+      this.projectedCols = null; // project the whole table
+    } else if ("".equals(projectionConfig)) {
+      this.projectedCols = new ArrayList<>();
     } else {
-      Iterable<String> columnProjection = Splitter.on(',').split(projectionConfig);
-      List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
-      for (String columnName : columnProjection) {
-        ColumnSchema columnSchema = tableSchema.getColumn(columnName);
-        if (columnSchema == null) {
-          throw new IllegalArgumentException("Unkown column " + columnName);
+      this.projectedCols = Lists.newArrayList(Splitter.on(',').split(projectionConfig));
+
+      // Verify that the column names are valid -- better to fail with an exception
+      // before we submit the job.
+      Schema tableSchema = table.getSchema();
+      for (String columnName : projectedCols) {
+        if (tableSchema.getColumn(columnName) == null) {
+          throw new IllegalArgumentException("Unknown column " + columnName);
         }
-        columns.add(columnSchema);
       }
-      this.querySchema = new Schema(columns);
     }
   }
 
@@ -371,7 +375,8 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
         throw new IllegalArgumentException("TableSplit is the only accepted input split");
       }
       split = (TableSplit) inputSplit;
-      scanner = client.newScannerBuilder(table, querySchema)
+      scanner = client.newScannerBuilder(table)
+          .setProjectedColumnNames(projectedCols)
           .encodedStartKey(split.getStartKey())
           .encodedEndKey(split.getEndKey())
           .cacheBlocks(cacheBlocks)

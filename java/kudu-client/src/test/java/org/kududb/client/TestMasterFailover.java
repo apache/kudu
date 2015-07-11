@@ -36,18 +36,18 @@ public class TestMasterFailover extends BaseKuduTest {
 
     // Test that we can open a previously created table after killing the leader master.
     KuduTable table = openTable(TABLE_NAME);
-    assertEquals(0, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
+    assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
 
     // Test that we can create a new table when one of the masters is down.
     String newTableName = TABLE_NAME + "-afterLeaderIsDead";
     createTable(newTableName, basicSchema, new CreateTableBuilder());
     table = openTable(newTableName);
-    assertEquals(0, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
+    assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
 
     // Test that we can initialize a client when one of the masters specified in the
     // connection string is down.
     AsyncKuduClient newClient = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses).build();
     table = newClient.openTable(newTableName).join(DEFAULT_SLEEP);
-    assertEquals(0, countRowsInScan(newClient.newScannerBuilder(table, basicSchema).build()));
+    assertEquals(0, countRowsInScan(newClient.newScannerBuilder(table).build()));
   }
 }

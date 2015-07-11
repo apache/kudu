@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include <boost/assign/list_of.hpp>
+#include <string>
+#include <vector>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
@@ -220,7 +222,6 @@ void UpdateScanDeltaCompactionTest::UpdateRows(CountDownLatch* stop_latch) {
 void UpdateScanDeltaCompactionTest::ScanRows(CountDownLatch* stop_latch) const {
   while (stop_latch->count() > 0) {
     KuduScanner scanner(table_.get());
-    CHECK_OK(scanner.SetProjection(&schema_));
     LOG_TIMING(INFO, "Scan") {
       CHECK_OK(scanner.Open());
       vector<KuduRowResult> rows;

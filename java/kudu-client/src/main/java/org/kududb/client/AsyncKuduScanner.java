@@ -27,9 +27,13 @@
  */
 package org.kududb.client;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import org.kududb.ColumnSchema;
 import org.kududb.Common;
 import org.kududb.Schema;
 import com.stumbleupon.async.Callback;
@@ -171,7 +175,7 @@ public final class AsyncKuduScanner {
 
   private boolean inFirstTablet = true;
 
-  AsyncKuduScanner(AsyncKuduClient client, KuduTable table, Schema schema,
+  AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedCols,
                    ReadMode readMode, DeadlineTracker deadlineTracker,
                    ColumnRangePredicates columnRangePredicates, long limit, boolean cacheBlocks,
                    boolean prefetching, byte[] startKey, byte[] endKey,
@@ -187,7 +191,6 @@ public final class AsyncKuduScanner {
 
     this.client = client;
     this.table = table;
-    this.schema = schema;
     this.readMode = readMode;
     this.deadlineTracker = deadlineTracker;
     this.columnRangePredicates = columnRangePredicates;
@@ -198,7 +201,24 @@ public final class AsyncKuduScanner {
     this.endKey = endKey;
     this.htTimestamp = htTimestamp;
     this.maxNumBytes = maxNumBytes;
+
+    // Map the column names to actual columns in the table schema.
+    // If the user set this to 'null', we scan all columns.
+    if (projectedCols != null) {
+      List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+      for (String columnName : projectedCols) {
+        ColumnSchema columnSchema = table.getSchema().getColumn(columnName);
+        if (columnSchema == null) {
+          throw new IllegalArgumentException("Unkown column " + columnName);
+        }
+        columns.add(columnSchema);
+      }
+      this.schema = new Schema(columns);
+    } else {
+      this.schema = table.getSchema();
+    }
   }
+
 
   /**
    * Returns the maximum number of rows that this scanner was configured to return.
@@ -664,8 +684,8 @@ public final class AsyncKuduScanner {
   public static class AsyncKuduScannerBuilder
       extends AbstractKuduScannerBuilder<AsyncKuduScannerBuilder, AsyncKuduScanner> {
 
-    AsyncKuduScannerBuilder(AsyncKuduClient client, KuduTable table, Schema schema) {
-      super(client, table, schema);
+    AsyncKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
+      super(client, table);
     }
 
     /**
@@ -674,7 +694,7 @@ public final class AsyncKuduScanner {
      */
     public AsyncKuduScanner build() {
       return new AsyncKuduScanner(
-          nestedClient, nestedTable, nestedSchema, nestedReadMode,
+          nestedClient, nestedTable, nestedProjectedColumnNames, nestedReadMode,
           nestedDeadlineTracker, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
           nestedPrefetching, nestedStartKey, nestedEndKey, nestedHtTimestamp, nestedMaxNumBytes);
     }

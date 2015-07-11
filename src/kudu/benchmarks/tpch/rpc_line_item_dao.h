@@ -34,9 +34,9 @@ class RpcLineItemDAO {
   void Init();
   void FinishWriting();
 
-  // Deletes previous scanner if one is open. 'query_schema' is copied internally and can safely
-  // be discarded after this call.
-  void OpenScanner(const client::KuduSchema& query_schema,
+  // Deletes previous scanner if one is open.
+  // Projects only those column names listed in 'columns'.
+  void OpenScanner(const std::vector<std::string>& columns,
                    gscoped_ptr<Scanner>* scanner);
   // Calls OpenScanner with the tpch1 query parameters.
   void OpenTpch1Scanner(gscoped_ptr<Scanner>* scanner);
@@ -71,7 +71,7 @@ class RpcLineItemDAO {
   static const Slice kScanUpperBound;
 
   void FlushIfBufferFull();
-  void OpenScanner(const client::KuduSchema& query_schema,
+  void OpenScanner(const std::vector<std::string>& columns,
                    const std::vector<client::KuduPredicate*>& preds,
                    gscoped_ptr<Scanner>* scanner);
 

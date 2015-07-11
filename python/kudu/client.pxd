@@ -498,7 +498,6 @@ cdef extern from "kudu/client/client.h" namespace "kudu::client" nogil:
     cdef cppclass KuduScanner:
         KuduScanner(KuduTable* table)
 
-        Status SetProjection(KuduSchema* projection)
         Status AddConjunctPredicate(KuduPredicate* pred)
 
         Status Open()

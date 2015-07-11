@@ -2,7 +2,10 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import java.util.List;
+
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableList;
 import org.kududb.Schema;
 
 /**
@@ -12,7 +15,6 @@ public abstract class AbstractKuduScannerBuilder
     <S extends AbstractKuduScannerBuilder<? super S, T>, T> {
   protected final AsyncKuduClient nestedClient;
   protected final KuduTable nestedTable;
-  protected final Schema nestedSchema;
   protected final DeadlineTracker nestedDeadlineTracker;
   protected final ColumnRangePredicates nestedColumnRangePredicates;
 
@@ -24,11 +26,11 @@ public abstract class AbstractKuduScannerBuilder
   protected long nestedHtTimestamp = AsyncKuduClient.NO_TIMESTAMP;
   protected byte[] nestedStartKey = null;
   protected byte[] nestedEndKey = null;
+  protected List<String> nestedProjectedColumnNames = null;
 
-  AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table, Schema schema) {
+  AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
     this.nestedClient = client;
     this.nestedTable = table;
-    this.nestedSchema = schema;
     this.nestedDeadlineTracker = new DeadlineTracker();
     this.nestedColumnRangePredicates = new ColumnRangePredicates(table.getSchema());
   }
@@ -51,6 +53,20 @@ public abstract class AbstractKuduScannerBuilder
    */
   public S addColumnRangePredicate(ColumnRangePredicate predicate) {
     nestedColumnRangePredicates.addColumnRangePredicate(predicate);
+    return (S) this;
+  }
+
+  /**
+   * Set which columns will be read by the Scanner.
+   * @param columnNames the names of columns to read, or 'null' to read all columns
+   * (the default)
+   */
+  public S setProjectedColumnNames(List<String> columnNames) {
+    if (columnNames != null) {
+      nestedProjectedColumnNames = ImmutableList.copyOf(columnNames);
+    } else {
+      nestedProjectedColumnNames = null;
+    }
     return (S) this;
   }
 

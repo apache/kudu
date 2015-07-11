@@ -764,11 +764,25 @@ KuduScanner::~KuduScanner() {
   delete data_;
 }
 
-Status KuduScanner::SetProjection(const KuduSchema* projection) {
+Status KuduScanner::SetProjectedColumns(const vector<string>& col_names) {
   if (data_->open_) {
     return Status::IllegalState("Projection must be set before Open()");
   }
-  data_->projection_ = projection->schema_;
+
+  const Schema* table_schema = data_->table_->schema().schema_;
+  vector<ColumnSchema> cols;
+  cols.reserve(col_names.size());
+  BOOST_FOREACH(const string& col_name, col_names) {
+    int idx = table_schema->find_column(col_name);
+    if (idx == Schema::kColumnNotFound) {
+      return Status::NotFound("Column not found", col_name);
+    }
+    cols.push_back(table_schema->column(idx));
+  }
+
+  gscoped_ptr<Schema> s(new Schema());
+  RETURN_NOT_OK(s->Reset(cols, 0));
+  data_->projection_ = data_->pool_.Add(s.release());
   return Status::OK();
 }
 

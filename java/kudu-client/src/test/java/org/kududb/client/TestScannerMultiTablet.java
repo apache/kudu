@@ -84,7 +84,7 @@ public class TestScannerMultiTablet extends BaseKuduTest {
   }
 
   private AsyncKuduScanner getScanner(String lowerBound, String upperBound) {
-    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table, schema);
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table);
     ColumnRangePredicate pred = new ColumnRangePredicate(schema.getColumn(0));
     if (lowerBound != null) {
       pred.setLowerBound(lowerBound);

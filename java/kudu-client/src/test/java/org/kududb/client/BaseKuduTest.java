@@ -334,7 +334,7 @@ public class BaseKuduTest {
 
   protected List<String> scanTableToStrings(KuduTable table) throws Exception {
     List<String> rowStrings = Lists.newArrayList();
-    KuduScanner scanner = syncClient.newScannerBuilder(table, table.getSchema()).build();
+    KuduScanner scanner = syncClient.newScannerBuilder(table).build();
     while (scanner.hasMoreRows()) {
       RowResultIterator rows = scanner.nextRows();
       for (RowResult r : rows) {

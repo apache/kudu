@@ -47,7 +47,7 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
     RecordWriter<NullWritable, Operation> rw = output.getRecordWriter(null);
     rw.write(NullWritable.get(), insert);
     rw.close(null);
-    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table, schema);
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table);
     assertEquals(1, countRowsInScan(builder.build()));
   }
 }

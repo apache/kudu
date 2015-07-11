@@ -23,7 +23,7 @@ public class TestKuduSession extends BaseKuduTest {
     for (int i = 0; i < 10; i++) {
       session.apply(createInsert(i));
     }
-    assertEquals(10, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
+    assertEquals(10, countRowsInScan(client.newScannerBuilder(table).build()));
 
     OperationResponse resp = session.apply(createInsert(0));
     assertTrue(resp.hasRowError());
@@ -34,7 +34,7 @@ public class TestKuduSession extends BaseKuduTest {
       session.apply(createInsert(i));
     }
     session.flush();
-    assertEquals(20, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
+    assertEquals(20, countRowsInScan(client.newScannerBuilder(table).build()));
   }
 
   @Test(timeout = 100000)
@@ -66,7 +66,7 @@ public class TestKuduSession extends BaseKuduTest {
         client.emptyTabletsCacheForTable(tableName);
       }
     }
-    assertEquals(0, countRowsInScan(client.newScannerBuilder(table, basicSchema).build()));
+    assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
   }
 
   private Insert createInsert(int key) {

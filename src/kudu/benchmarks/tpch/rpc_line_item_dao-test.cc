@@ -20,6 +20,7 @@
 
 namespace kudu {
 
+using boost::assign::list_of;
 using client::KuduRowResult;
 using client::KuduSchema;
 using std::string;
@@ -28,7 +29,7 @@ using std::vector;
 class RpcLineItemDAOTest : public KuduTest {
 
  public:
-  RpcLineItemDAOTest() : schema_(tpch::CreateLineItemSchema()) {}
+  RpcLineItemDAOTest() {}
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
@@ -53,7 +54,6 @@ class RpcLineItemDAOTest : public KuduTest {
  protected:
   gscoped_ptr<MiniCluster> cluster_;
   gscoped_ptr<RpcLineItemDAO> dao_;
-  KuduSchema schema_;
 
   // Builds a test row to be inserted into the lineitem table.
   // The row's ship_date is set such that it matches the TPCH Q1 predicate.
@@ -83,9 +83,8 @@ class RpcLineItemDAOTest : public KuduTest {
   }
 
   int CountRows() {
-    KuduSchema query_schema = schema_.CreateKeyProjection();
     gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
-    dao_->OpenScanner(query_schema, &scanner);
+    dao_->OpenScanner(vector<string>(), &scanner);
     vector<KuduRowResult> rows;
     int count = 0;
     while (scanner->HasMore()) {
@@ -139,13 +138,13 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
   dao_->MutateLine(boost::bind(UpdateTestRow, 1, 1, 12345, _1));
   dao_->FinishWriting();
   gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
-  dao_->OpenScanner(schema_, &scanner);
+  dao_->OpenScanner(list_of<string>(tpch::kQuantityColName), &scanner);
   vector<KuduRowResult> rows;
   while (scanner->HasMore()) {
     scanner->GetNext(&rows);
     BOOST_FOREACH(const KuduRowResult& row, rows) {
       int32_t l_quantity;
-      ASSERT_OK(row.GetInt32(tpch::kQuantityColIdx, &l_quantity));
+      ASSERT_OK(row.GetInt32(0, &l_quantity));
       ASSERT_EQ(12345, l_quantity);
     }
   }

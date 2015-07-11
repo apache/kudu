@@ -165,7 +165,7 @@ TEST_F(WireProtocolTest, TestBadSchema_DuplicateColumnName) {
 
   Schema schema;
   Status s = ColumnPBsToSchema(pbs, &schema);
-  ASSERT_STR_CONTAINS(s.ToString(), "Duplicate name present");
+  ASSERT_EQ("Invalid argument: Duplicate column name: c0", s.ToString());
 }
 
 // Create a block of rows in columnar layout and ensure that it can be

@@ -4,6 +4,7 @@
 #include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <string>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -30,7 +31,9 @@ using client::KuduColumnSchema;
 using client::KuduScanner;
 using client::KuduSchema;
 using client::KuduTable;
+using std::string;
 using std::tr1::shared_ptr;
+using std::vector;
 
 class MasterFailoverTest : public KuduTest {
  public:
@@ -116,8 +119,7 @@ class MasterFailoverTest : public KuduTest {
     RETURN_NOT_OK_PREPEND(client_->OpenTable(table_name, &table),
                           "Unable to open table " + table_name);
     KuduScanner scanner(table.get());
-    KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
-    RETURN_NOT_OK_PREPEND(scanner.SetProjection(&empty_projection),
+    RETURN_NOT_OK_PREPEND(scanner.SetProjectedColumns(vector<string>()),
                           "Unable to open an empty projection on " + table_name);
     RETURN_NOT_OK_PREPEND(scanner.Open(),
                           "Unable to open scanner on " + table_name);

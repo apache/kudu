@@ -73,7 +73,7 @@ public class TestInputFormatJob extends BaseKuduTest {
 
     assertEquals(9, job.getCounters().findCounter(Counters.ROWS).getValue());
 
-    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table, basicSchema);
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table);
     assertEquals(9, countRowsInScan(builder.build()));
   }
 

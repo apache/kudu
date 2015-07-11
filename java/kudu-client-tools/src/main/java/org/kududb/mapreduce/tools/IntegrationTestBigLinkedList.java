@@ -17,6 +17,7 @@
 package org.kududb.mapreduce.tools;
 
 import com.google.common.base.Joiner;
+import com.google.common.collect.ImmutableList;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
@@ -1029,7 +1030,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       KuduTable table = client.openTable(getTableName(getConf()));
       KuduScanner.KuduScannerBuilder builder =
-          client.newScannerBuilder(table, table.getSchema())
+          client.newScannerBuilder(table)
               .timeoutMs(timeout);
 
 
@@ -1113,7 +1114,14 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       private KuduClient client;
       private KuduTable table;
       private KuduSession session;
-      private Schema scanSchema;
+
+      /**
+       * Schema we use when getting rows from the linked list, we only need the reference and
+       * its update count.
+       */
+      private final List<String> SCAN_COLUMN_NAMES = ImmutableList.of(
+          COLUMN_PREV_ONE, COLUMN_PREV_TWO, COLUMN_UPDATE_COUNT, COLUMN_CLIENT);
+
       private long numUpdatesPerMapper;
 
       /**
@@ -1137,14 +1145,6 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
         Schema tableSchema = table.getSchema();
 
-        // Schema we use when getting rows from the linked list, we only need the reference and
-        // its update count.
-        List<ColumnSchema> scanSchemaList = new ArrayList<ColumnSchema>(4);
-        scanSchemaList.add(tableSchema.getColumn(COLUMN_PREV_ONE));
-        scanSchemaList.add(tableSchema.getColumn(COLUMN_PREV_TWO));
-        scanSchemaList.add(tableSchema.getColumn(COLUMN_UPDATE_COUNT));
-        scanSchemaList.add(tableSchema.getColumn(COLUMN_CLIENT));
-        scanSchema = new Schema(scanSchemaList);
 
         numUpdatesPerMapper = conf.getLong(MAX_LINK_UPDATES_PER_MAPPER, 1);
         headsCache = new ArrayList<Pair<Long, Long>>((int)numUpdatesPerMapper);
@@ -1242,7 +1242,8 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
        * Finds the next node in the linked list.
        */
       private RowResult nextNode(long prevKeyOne, long prevKeyTwo) throws IOException {
-        KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, scanSchema);
+        KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table)
+          .setProjectedColumnNames(SCAN_COLUMN_NAMES);
 
         configureScannerForRandomRead(builder, table, prevKeyOne, prevKeyTwo);
 
@@ -1491,7 +1492,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     }
 
     private RowResult nextNode(long keyOne, long keyTwo) throws Exception {
-      KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table, table.getSchema());
+      KuduScanner.KuduScannerBuilder builder = client.newScannerBuilder(table);
       configureScannerForRandomRead(builder, table, keyOne, keyTwo);
 
       return getOneRowResult(builder.build());

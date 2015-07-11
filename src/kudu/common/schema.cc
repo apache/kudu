@@ -144,14 +144,12 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   name_to_index_.clear();
   BOOST_FOREACH(const ColumnSchema &col, cols_) {
     // The map uses the 'name' string from within the ColumnSchema object.
-    name_to_index_[col.name()] = i++;
+    if (!InsertIfNotPresent(&name_to_index_, col.name(), i++)) {
+      return Status::InvalidArgument("Duplicate column name", col.name());
+    }
+
     col_offsets_.push_back(off);
     off += col.type_info()->size();
-  }
-
-  if (PREDICT_FALSE(cols.size() != name_to_index_.size())) {
-    return Status::InvalidArgument(
-      "Bad schema", "Duplicate name present in schema!");
   }
 
   // Add an extra element on the end for the total

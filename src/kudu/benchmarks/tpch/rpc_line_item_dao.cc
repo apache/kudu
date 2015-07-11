@@ -145,20 +145,19 @@ void RpcLineItemDAO::FinishWriting() {
   cb->Run(s);
 }
 
-void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
+void RpcLineItemDAO::OpenScanner(const vector<string>& columns,
                                  gscoped_ptr<Scanner>* out_scanner) {
   vector<KuduPredicate*> preds;
-  OpenScanner(query_schema, preds, out_scanner);
+  OpenScanner(columns, preds, out_scanner);
 }
 
-void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
+void RpcLineItemDAO::OpenScanner(const vector<string>& columns,
                                  const vector<KuduPredicate*>& preds,
                                  gscoped_ptr<Scanner>* out_scanner) {
   gscoped_ptr<Scanner> ret(new Scanner);
   ret->scanner_.reset(new KuduScanner(client_table_.get()));
   ret->scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
-  ret->projection_.reset(new KuduSchema(query_schema));
-  CHECK_OK(ret->scanner_->SetProjection(ret->projection_.get()));
+  CHECK_OK(ret->scanner_->SetProjectedColumns(columns));
   BOOST_FOREACH(KuduPredicate* pred, preds) {
     CHECK_OK(ret->scanner_->AddConjunctPredicate(pred));
   }
@@ -167,17 +166,15 @@ void RpcLineItemDAO::OpenScanner(const KuduSchema& query_schema,
 }
 
 void RpcLineItemDAO::OpenTpch1Scanner(gscoped_ptr<Scanner>* out_scanner) {
-  KuduSchema schema(tpch::CreateTpch1QuerySchema());
   vector<KuduPredicate*> preds;
   preds.push_back(client_table_->NewComparisonPredicate(
                       tpch::kShipDateColName, KuduPredicate::LESS_EQUAL,
                       KuduValue::CopyString(kScanUpperBound)));
-  OpenScanner(schema, preds, out_scanner);
+  OpenScanner(tpch::GetTpchQ1QueryColumns(), preds, out_scanner);
 }
 
 void RpcLineItemDAO::OpenTpch1ScannerForOrderKeyRange(int64_t min_key, int64_t max_key,
                                                       gscoped_ptr<Scanner>* out_scanner) {
-  KuduSchema schema(tpch::CreateTpch1QuerySchema());
   vector<KuduPredicate*> preds;
   preds.push_back(client_table_->NewComparisonPredicate(
                       tpch::kShipDateColName, KuduPredicate::LESS_EQUAL,
@@ -188,7 +185,7 @@ void RpcLineItemDAO::OpenTpch1ScannerForOrderKeyRange(int64_t min_key, int64_t m
   preds.push_back(client_table_->NewComparisonPredicate(
                       tpch::kOrderKeyColName, KuduPredicate::LESS_EQUAL,
                       KuduValue::FromInt(max_key)));
-  OpenScanner(schema, preds, out_scanner);
+  OpenScanner(tpch::GetTpchQ1QueryColumns(), preds, out_scanner);
 }
 
 bool RpcLineItemDAO::Scanner::HasMore() {

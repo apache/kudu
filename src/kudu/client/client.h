@@ -792,11 +792,10 @@ class KUDU_EXPORT KuduScanner {
   explicit KuduScanner(KuduTable* table);
   ~KuduScanner();
 
-  // Set the projection used for this scanner. The given 'projection' object
-  // must remain valid for the lifetime of this scanner object.
+  // Set the projection used for this scanner by passing the column names to read.
   //
-  // If not called, table schema is used as the projection.
-  Status SetProjection(const KuduSchema* projection) WARN_UNUSED_RESULT;
+  // This overrides any previous call to SetProjectedColumns.
+  Status SetProjectedColumns(const std::vector<std::string>& col_names) WARN_UNUSED_RESULT;
 
   // Add a predicate to this scanner.
   //

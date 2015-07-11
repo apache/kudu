@@ -14,6 +14,7 @@
 #include "kudu/util/test_util.h"
 
 using std::string;
+using std::vector;
 
 namespace kudu {
 
@@ -89,8 +90,7 @@ void ClusterVerifier::CheckRowCount(const std::string& table_name,
   shared_ptr<client::KuduTable> table;
   ASSERT_OK(client->OpenTable(table_name, &table));
   client::KuduScanner scanner(table.get());
-  client::KuduSchema empty_projection(vector<client::KuduColumnSchema>(), 0);
-  ASSERT_OK(scanner.SetProjection(&empty_projection));
+  ASSERT_OK(scanner.SetProjectedColumns(vector<string>()));
   ASSERT_OK(scanner.Open());
   int count = 0;
   vector<client::KuduRowResult> rows;

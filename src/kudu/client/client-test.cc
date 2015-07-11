@@ -224,9 +224,8 @@ class ClientTest : public KuduTest {
   }
 
   void DoTestScanWithoutPredicates() {
-    KuduSchema projection = schema_.CreateKeyProjection();
     KuduScanner scanner(client_table_.get());
-    ASSERT_OK(scanner.SetProjection(&projection));
+    ASSERT_OK(scanner.SetProjectedColumns(list_of<string>("key")));
     LOG_TIMING(INFO, "Scanning with no predicates") {
       ASSERT_OK(scanner.Open());
 
@@ -321,8 +320,7 @@ class ClientTest : public KuduTest {
                           int32_t lower_bound, int32_t upper_bound) {
     KuduScanner scanner(table);
     CHECK_OK(scanner.SetSelection(selection));
-    KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
-    CHECK_OK(scanner.SetProjection(&empty_projection));
+    CHECK_OK(scanner.SetProjectedColumns(vector<string>()));
     if (lower_bound != kNoBound) {
       CHECK_OK(scanner.AddConjunctPredicate(
                    client_table_->NewComparisonPredicate("key", KuduPredicate::GREATER_EQUAL,
@@ -693,8 +691,7 @@ TEST_F(ClientTest, TestScanMultiTablet) {
 
 TEST_F(ClientTest, TestScanEmptyTable) {
   KuduScanner scanner(client_table_.get());
-  KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
-  ASSERT_OK(scanner.SetProjection(&empty_projection));
+  ASSERT_OK(scanner.SetProjectedColumns(vector<string>()));
   ASSERT_OK(scanner.Open());
 
   // There are two tablets in the table, both empty. Until we scan to
@@ -713,9 +710,8 @@ TEST_F(ClientTest, TestScanEmptyTable) {
 TEST_F(ClientTest, TestScanEmptyProjection) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
-  KuduSchema empty_projection(vector<KuduColumnSchema>(), 0);
   KuduScanner scanner(client_table_.get());
-  ASSERT_OK(scanner.SetProjection(&empty_projection));
+  ASSERT_OK(scanner.SetProjectedColumns(vector<string>()));
   LOG_TIMING(INFO, "Scanning with no projected columns") {
     ASSERT_OK(scanner.Open());
 
@@ -731,6 +727,17 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
   }
 }
 
+TEST_F(ClientTest, TestProjectInvalidColumn) {
+  KuduScanner scanner(client_table_.get());
+  Status s = scanner.SetProjectedColumns(list_of<string>("column-doesnt-exist"));
+  ASSERT_EQ("Not found: Column not found: column-doesnt-exist", s.ToString());
+
+  // Test trying to use a projection where a column is used multiple times.
+  // TODO: consider fixing this to support returning the column multiple
+  // times, even though it's not very useful.
+  s = scanner.SetProjectedColumns(list_of<string>("key")("key"));
+  ASSERT_EQ("Invalid argument: Duplicate column name: key", s.ToString());
+}
 
 // Test a scan where we have a predicate on a key column that is not
 // in the projection.
@@ -738,9 +745,7 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
-  KuduSchema no_key_projection(list_of
-                               (schema_.Column(1)), 0);
-  ASSERT_OK(scanner.SetProjection(&no_key_projection));
+  ASSERT_OK(scanner.SetProjectedColumns(list_of<string>("int_val")));
   ASSERT_OK(scanner.AddConjunctPredicate(
                 client_table_->NewComparisonPredicate("key", KuduPredicate::GREATER_EQUAL,
                                                       KuduValue::FromInt(5))));
@@ -777,8 +782,6 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
                                          FLAGS_test_scan_num_rows));
   KuduScanner scanner(client_table_.get());
-  KuduSchema key_projection = schema_.CreateKeyProjection();
-
   ASSERT_OK(scanner.AddConjunctPredicate(
                 client_table_->NewComparisonPredicate("int_val", KuduPredicate::GREATER_EQUAL,
                                                       KuduValue::FromInt(10))));
@@ -789,7 +792,7 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
   size_t nrows = 0;
   int32_t curr_key = 10;
 
-  ASSERT_OK(scanner.SetProjection(&key_projection));
+  ASSERT_OK(scanner.SetProjectedColumns(list_of<string>("key")));
 
   LOG_TIMING(INFO, "Scanning with predicate columns not projected") {
     ASSERT_OK(scanner.Open());

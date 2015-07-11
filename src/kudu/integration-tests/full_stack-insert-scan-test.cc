@@ -173,11 +173,12 @@ class FullStackInsertScanTest : public KuduTest {
 
   // Run a scan from the reader_client_ with the projection schema schema
   // and LOG_TIMING message msg.
-  void ScanProjection(const KuduSchema& schema, const string& msg);
+  void ScanProjection(const vector<string>& cols, const string& msg);
 
-  KuduSchema StringSchema() const;
-  KuduSchema Int32Schema() const;
-  KuduSchema Int64Schema() const;
+  vector<string> AllColumnNames() const;
+  vector<string> StringColumnNames() const;
+  vector<string> Int32ColumnNames() const;
+  vector<string> Int64ColumnNames() const;
 
   static const char* const kTableName;
   static const int kSessionTimeoutMs = 5000;
@@ -301,12 +302,12 @@ void FullStackInsertScanTest::DoTestScans() {
   if (stat) stat->Start();
   if (record) record->Start();
 
-  ScanProjection(KuduSchema(vector<KuduColumnSchema>(), 0), "empty projection, 0 col");
-  ScanProjection(schema_.CreateKeyProjection(), "key scan, 1 col");
-  ScanProjection(schema_, "full schema scan, 10 col");
-  ScanProjection(StringSchema(), "String projection, 1 col");
-  ScanProjection(Int32Schema(), "Int32 projection, 4 col");
-  ScanProjection(Int64Schema(), "Int64 projection, 4 col");
+  ScanProjection(vector<string>(), "empty projection, 0 col");
+  ScanProjection(list_of<string>("key"), "key scan, 1 col");
+  ScanProjection(AllColumnNames(), "full schema scan, 10 col");
+  ScanProjection(StringColumnNames(), "String projection, 1 col");
+  ScanProjection(Int32ColumnNames(), "Int32 projection, 4 col");
+  ScanProjection(Int64ColumnNames(), "Int64 projection, 4 col");
 
   InterruptNotNull(record.Pass());
   InterruptNotNull(stat.Pass());
@@ -369,17 +370,17 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
   CHECK_OK(session->Flush());
 }
 
-void FullStackInsertScanTest::ScanProjection(const KuduSchema& schema,
+void FullStackInsertScanTest::ScanProjection(const vector<string>& cols,
                                              const string& msg) {
   {
     // Warmup codegen cache
     KuduScanner scanner(reader_table_.get());
-    CHECK_OK(scanner.SetProjection(&schema));
+    CHECK_OK(scanner.SetProjectedColumns(cols));
     CHECK_OK(scanner.Open());
     codegen::CompilationManager::GetSingleton()->Wait();
   }
   KuduScanner scanner(reader_table_.get());
-  CHECK_OK(scanner.SetProjection(&schema));
+  CHECK_OK(scanner.SetProjectedColumns(cols));
   uint64_t nrows = 0;
   LOG_TIMING(INFO, msg) {
     ASSERT_OK(scanner.Open());
@@ -414,24 +415,32 @@ void FullStackInsertScanTest::RandomRow(Random* rng, KuduPartialRow* row, char* 
   }
 }
 
-KuduSchema FullStackInsertScanTest::StringSchema() const {
-  return KuduSchema(list_of(schema_.Column(kKeyCol)), 0);
+vector<string> FullStackInsertScanTest::AllColumnNames() const {
+  vector<string> ret;
+  for (int i = 0; i < schema_.num_columns(); i++) {
+    ret.push_back(schema_.Column(i).name());
+  }
+  return ret;
 }
 
-KuduSchema FullStackInsertScanTest::Int32Schema() const {
-  vector<KuduColumnSchema> cols;
-  for (int i = 0; i < kNumIntCols; ++i) {
-    cols.push_back(schema_.Column(kInt32ColBase + i));
-  }
-  return KuduSchema(cols, 0);
+vector<string> FullStackInsertScanTest::StringColumnNames() const {
+  return list_of<string>("string_val");
 }
 
-KuduSchema FullStackInsertScanTest::Int64Schema() const {
-  vector<KuduColumnSchema> cols;
-  for (int i = 0; i < kNumIntCols; ++i) {
-    cols.push_back(schema_.Column(kInt64ColBase + i));
-  }
-  return KuduSchema(cols, 0);
+vector<string> FullStackInsertScanTest::Int32ColumnNames() const {
+  return list_of<string>
+    ("int32_val1")
+    ("int32_val2")
+    ("int32_val3")
+    ("int32_val4");
+}
+
+vector<string> FullStackInsertScanTest::Int64ColumnNames() const {
+  return list_of<string>
+    ("int64_val1")
+    ("int64_val2")
+    ("int64_val3")
+    ("int64_val4");
 }
 
 } // namespace tablet

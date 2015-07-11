@@ -6,6 +6,9 @@
 #define KUDU_BENCHMARKS_TPCH_SCHEMAS_H
 
 #include <boost/assign/list_of.hpp>
+#include <string>
+#include <vector>
+
 #include "kudu/client/schema.h"
 
 namespace kudu {
@@ -88,27 +91,15 @@ inline client::KuduSchema CreateLineItemSchema() {
                 , 2);
 }
 
-inline client::KuduSchema CreateTpch1QuerySchema() {
-  return client::KuduSchema(boost::assign::list_of
-                (client::KuduColumnSchema(kShipDateColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kReturnFlagColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kLineStatusColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kQuantityColName, kInt32))
-                (client::KuduColumnSchema(kExtendedPriceColName, kDouble))
-                (client::KuduColumnSchema(kDiscountColName, kDouble))
-                (client::KuduColumnSchema(kTaxColName, kDouble))
-                , 0);
-}
-
-inline client::KuduSchema CreateMS3DemoQuerySchema() {
-  return client::KuduSchema(boost::assign::list_of
-                (client::KuduColumnSchema(kOrderKeyColName, kInt64))
-                (client::KuduColumnSchema(kLineNumberColName, kInt32))
-                (client::KuduColumnSchema(kQuantityColName, kInt32))
-                , 0);
+inline std::vector<std::string> GetTpchQ1QueryColumns() {
+  return boost::assign::list_of<std::string>
+    (kShipDateColName)
+    (kReturnFlagColName)
+    (kLineStatusColName)
+    (kQuantityColName)
+    (kExtendedPriceColName)
+    (kDiscountColName)
+    (kTaxColName);
 }
 
 } // namespace tpch

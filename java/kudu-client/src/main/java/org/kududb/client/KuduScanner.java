@@ -59,8 +59,8 @@ public class KuduScanner {
 
     private long nestedTimeoutMs;
 
-    KuduScannerBuilder(AsyncKuduClient client, KuduTable table, Schema schema) {
-      super(client, table, schema);
+    KuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
+      super(client, table);
       nestedTimeoutMs = client.getDefaultOperationTimeoutMs();
     }
 
@@ -83,7 +83,7 @@ public class KuduScanner {
      */
     public KuduScanner build() {
       return new KuduScanner(new AsyncKuduScanner(
-          nestedClient, nestedTable, nestedSchema, nestedReadMode,
+          nestedClient, nestedTable, nestedProjectedColumnNames, nestedReadMode,
           nestedDeadlineTracker, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
           nestedPrefetching, nestedStartKey, nestedEndKey, nestedHtTimestamp, nestedMaxNumBytes),
           nestedTimeoutMs);

@@ -184,8 +184,8 @@ public class KuduClient {
    * The string is assumed to use the platform's default charset.
    * @return a new scanner builder for this table
    */
-  public KuduScanner.KuduScannerBuilder newScannerBuilder(KuduTable table, Schema schema) {
-    return new KuduScanner.KuduScannerBuilder(asyncClient, table, schema);
+  public KuduScanner.KuduScannerBuilder newScannerBuilder(KuduTable table) {
+    return new KuduScanner.KuduScannerBuilder(asyncClient, table);
   }
 
   /**
