@@ -125,11 +125,11 @@ Some text.footnote:[The footnote text.]
 ----
 | A note or warning with no title | The admonition image followed by the admonition |
 ----
-NOTE:My note here
+NOTE: My note here
 ----
 
 ----
-WARNING:My warning here
+WARNING: My warning here
 ----
 | A complex note | The note has a title and/or multiple paragraphs and/or code blocks or lists, etc |
 ........
