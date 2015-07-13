@@ -49,8 +49,9 @@ message LogSegmentHeaderPB {
   // The tablet-specific sequence number of this WAL segment.
   required uint64 sequence_number = 6;
 
-  // Schema used when appending entries to this log.
+  // Schema used when appending entries to this log, and its version.
   required SchemaPB schema = 7;
+  optional uint32 schema_version = 8;
 }
 
 // A footer for a log segment.

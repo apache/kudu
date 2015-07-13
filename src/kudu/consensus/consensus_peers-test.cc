@@ -47,6 +47,7 @@ class ConsensusPeersTest : public KuduTest {
                        fs_manager_.get(),
                        kTabletId,
                        schema_,
+                       0, // schema_version
                        NULL,
                        &log_));
 

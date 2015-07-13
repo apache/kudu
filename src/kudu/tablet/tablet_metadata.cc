@@ -257,10 +257,11 @@ void TabletMetadata::PinFlush() {
 }
 
 Status TabletMetadata::UnPinFlush() {
-  boost::lock_guard<LockType> l(data_lock_);
+  boost::unique_lock<LockType> l(data_lock_);
   CHECK_GT(num_flush_pins_, 0);
   num_flush_pins_--;
   if (needs_flush_) {
+    l.unlock();
     RETURN_NOT_OK(Flush());
   }
   return Status::OK();

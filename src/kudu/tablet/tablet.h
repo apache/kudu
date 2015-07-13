@@ -86,7 +86,12 @@ class Tablet {
   ~Tablet();
 
   // Open the tablet.
+  // Upon completion, the tablet enters the kBootstrapping state.
   Status Open();
+
+  // Mark that the tablet has finished bootstrapping.
+  // This transitions from kBootstrapping to kOpen state.
+  void MarkFinishedBootstrapping();
 
   // Decode the Write (insert/mutate) operations from within a user's
   // request.
@@ -197,9 +202,17 @@ class Tablet {
                                    const Schema* schema);
 
   // Apply the Schema of the specified transaction.
-  // This operation will trigger a flush on the current MemRowSet and on
-  // all the DeltaMemStores.
+  // This operation will trigger a flush on the current MemRowSet.
   Status AlterSchema(AlterSchemaTransactionState* tx_state);
+
+  // Rewind the schema to an earlier version than is written in the on-disk
+  // metadata. This is done during bootstrap to roll the schema back to the
+  // point in time where the logs-to-be-replayed begin, so we can then decode
+  // the operations in the log with the correct schema.
+  //
+  // REQUIRES: state_ == kBootstrapping
+  Status RewindSchemaForBootstrap(const Schema& schema,
+                                  int64_t schema_version);
 
   // Prints current RowSet layout, taking a snapshot of the current RowSet interval
   // tree. Also prints the log of the compaction algorithm as evaluated
@@ -501,7 +514,12 @@ class Tablet {
   // started earlier completes after the one started later.
   mutable Semaphore rowsets_flush_sem_;
 
-  bool open_;
+  enum State {
+    kInitialized,
+    kBootstrapping,
+    kOpen
+  };
+  State state_;
 
   // Fault hooks. In production code, these will always be NULL.
   shared_ptr<CompactionFaultHooks> compaction_hooks_;

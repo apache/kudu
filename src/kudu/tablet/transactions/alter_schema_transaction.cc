@@ -95,7 +95,8 @@ Status AlterSchemaTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   Tablet* tablet = state_->tablet_peer()->tablet();
   RETURN_NOT_OK(tablet->AlterSchema(state()));
   state_->tablet_peer()->log()
-      ->SetSchemaForNextLogSegment(*DCHECK_NOTNULL(state_->schema()));
+    ->SetSchemaForNextLogSegment(*DCHECK_NOTNULL(state_->schema()),
+                                                 state_->schema_version());
 
   commit_msg->reset(new CommitMsg());
   (*commit_msg)->set_op_type(ALTER_SCHEMA_OP);

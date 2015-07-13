@@ -1685,8 +1685,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
 // still replay properly during bootstrap.
 //
 // Regression test for KUDU-181.
-// Disabled until it is fixed.
-TEST_F(TabletServerTest, DISABLED_TestAlterSchema_AddColWithoutWriteDefault) {
+TEST_F(TabletServerTest, TestAlterSchema_AddColWithoutWriteDefault) {
   AlterSchemaRequestPB req;
   AlterSchemaResponsePB resp;
   RpcController rpc;
@@ -1696,7 +1695,7 @@ TEST_F(TabletServerTest, DISABLED_TestAlterSchema_AddColWithoutWriteDefault) {
   // Add a column with a read-default but no write-default.
   const uint32_t c2_read_default = 7;
   SchemaBuilder builder(schema_);
-  ASSERT_OK(builder.AddColumn("c2", UINT32, false, &c2_read_default, NULL));
+  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, NULL));
   Schema s2 = builder.Build();
 
   req.set_tablet_id(kTabletId);
@@ -1714,26 +1713,21 @@ TEST_F(TabletServerTest, DISABLED_TestAlterSchema_AddColWithoutWriteDefault) {
   // Verify that the old data picked up the read default.
 
   const Schema projection(boost::assign::list_of
-                          (ColumnSchema("key", UINT32))
-                          (ColumnSchema("c2", UINT32)),
+                          (ColumnSchema("key", INT32))
+                          (ColumnSchema("c2", INT32)),
                           1);
-  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7)));
+  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
+                                               (KeyValue(1, 7)));
 
   // Try recovering from the original log
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
-                                               (KeyValue(1, 7))
-                                               (KeyValue(2, 5))
-                                               (KeyValue(3, 5)));
-  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7)));
+                                               (KeyValue(1, 7)));
 
   // Try recovering from the log generated on recovery
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
-                                               (KeyValue(1, 7))
-                                               (KeyValue(2, 5))
-                                               (KeyValue(3, 5)));
-  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7)));
+                                               (KeyValue(1, 7)));
 }
 
 TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {

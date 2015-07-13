@@ -129,7 +129,7 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     clock_(clock),
     mvcc_(clock),
     rowsets_flush_sem_(1),
-    open_(false) {
+    state_(kInitialized) {
       CHECK(schema()->has_column_ids());
   compaction_policy_.reset(CreateCompactionPolicy());
 
@@ -158,9 +158,8 @@ Tablet::~Tablet() {
 Status Tablet::Open() {
   TRACE_EVENT0("tablet", "Tablet::Open");
   boost::lock_guard<rw_spinlock> lock(component_lock_);
-  CHECK(!open_) << "already open";
+  CHECK_EQ(state_, kInitialized) << "already open";
   CHECK(schema()->has_column_ids());
-  // TODO: track a state_ variable, ensure tablet is open, etc.
 
   next_mrs_id_ = metadata_->last_durable_mrs_id() + 1;
 
@@ -187,8 +186,13 @@ Status Tablet::Open() {
                                               mem_tracker_));
   components_ = new TabletComponents(new_mrs, new_rowset_tree);
 
-  open_ = true;
+  state_ = kBootstrapping;
   return Status::OK();
+}
+
+void Tablet::MarkFinishedBootstrapping() {
+  CHECK_EQ(state_, kBootstrapping);
+  state_ = kOpen;
 }
 
 Status Tablet::GetMappedReadProjection(const Schema& projection,
@@ -214,6 +218,7 @@ Status Tablet::NewRowIterator(const Schema &projection,
                               const MvccSnapshot &snap,
                               const OrderMode order,
                               gscoped_ptr<RowwiseIterator> *iter) const {
+  CHECK_EQ(state_, kOpen);
   if (metrics_) {
     metrics_->scans_started->Increment();
   }
@@ -321,7 +326,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
                               RowOp* insert) {
   const TabletComponents* comps = DCHECK_NOTNULL(tx_state->tablet_components());
 
-  CHECK(open_) << "must Open() first!";
+  CHECK(state_ == kOpen || state_ == kBootstrapping);
   // make sure that the WriteTransactionState has the component lock and that
   // there the RowOp has the row lock.
   DCHECK(insert->has_row_lock()) << "RowOp must hold the row lock.";
@@ -525,6 +530,7 @@ void Tablet::AtomicSwapRowSetsUnlocked(const RowSetVector &to_remove,
 
 Status Tablet::DoMajorDeltaCompaction(const vector<int>& col_ids,
                                       shared_ptr<RowSet> input_rs) {
+  CHECK_EQ(state_, kOpen);
   Status s = down_cast<DiskRowSet*>(input_rs.get())
       ->MajorCompactDeltaStoresWithColumnIds(col_ids);
   return s;
@@ -581,7 +587,7 @@ Status Tablet::ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
 
 Status Tablet::FlushInternal(const RowSetsInCompaction& input,
                              const shared_ptr<MemRowSet>& old_ms) {
-  CHECK(open_);
+  CHECK(state_ == kOpen || state_ == kBootstrapping);
 
   // Step 1. Freeze the old memrowset by blocking readers and swapping
   // it in as a new rowset, replacing it with an empty one.
@@ -689,6 +695,34 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
 
   // Flush the old MemRowSet
   return FlushInternal(input, old_ms);
+}
+
+Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
+                                        int64_t schema_version) {
+  CHECK_EQ(state_, kBootstrapping);
+
+  // We know that the MRS should be empty at this point, because we
+  // rewind the schema before replaying any operations. So, we just
+  // swap in a new one with the correct schema, rather than attempting
+  // to flush.
+  LOG(INFO) << "Rewinding schema during bootstrap to " << new_schema.ToString();
+
+  metadata_->SetSchema(new_schema, schema_version);
+
+  shared_ptr<MemRowSet> old_mrs = components_->memrowset;
+  shared_ptr<RowSetTree> old_rowsets = components_->rowsets;
+  CHECK(old_mrs->empty());
+  int64_t old_mrs_id = old_mrs->mrs_id();
+
+  // We have to reset the components here before creating the new MemRowSet,
+  // or else the new MRS will end up trying to claim the same MemTracker ID
+  // as the old one.
+  components_.reset();
+  old_mrs.reset();
+  shared_ptr<MemRowSet> new_mrs(new MemRowSet(old_mrs_id, new_schema,
+                                              log_anchor_registry_.get(), mem_tracker_));
+  components_ = new TabletComponents(new_mrs, old_rowsets);
+  return Status::OK();
 }
 
 void Tablet::SetCompactionHooksForTests(
@@ -926,6 +960,7 @@ scoped_refptr<AtomicGauge<uint32_t> > MajorDeltaCompactionOp::RunningGauge() con
 
 Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
                                     CompactFlags flags) const {
+  CHECK_EQ(state_, kOpen);
   // Grab a local reference to the current RowSetTree. This is to avoid
   // holding the component_lock_ for too long. See the comment on component_lock_
   // in tablet.h for details on why that would be bad.
@@ -1001,6 +1036,7 @@ void Tablet::GetRowSetsForTests(RowSetVector* out) {
 }
 
 void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
+  CHECK_EQ(state_, kOpen);
   DCHECK(maintenance_ops_.empty());
 
   gscoped_ptr<MaintenanceOp> rs_compact_op(new CompactRowSetsOp(this));
@@ -1237,7 +1273,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
 }
 
 Status Tablet::Compact(CompactFlags flags) {
-  CHECK(open_);
+  CHECK_EQ(state_, kOpen);
 
   RowSetsInCompaction input;
   // Step 1. Capture the rowsets to be merged
@@ -1498,6 +1534,7 @@ int64_t Tablet::GetLogRetentionSizeForIndex(int64_t min_log_index,
 }
 
 Status Tablet::FlushBiggestDMS() {
+  CHECK_EQ(state_, kOpen);
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
 
@@ -1514,6 +1551,7 @@ Status Tablet::FlushBiggestDMS() {
 }
 
 Status Tablet::CompactWorstDeltas(RowSet::DeltaCompactionType type) {
+  CHECK_EQ(state_, kOpen);
   shared_ptr<RowSet> rs;
   // We're required to grab the rowset's compact_flush_lock under the compact_select_lock_.
   shared_ptr<boost::mutex::scoped_try_lock> lock;

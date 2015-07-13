@@ -78,6 +78,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
     scoped_refptr<Log> log;
     CHECK_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
                        *tablet()->schema(),
+                       0, // schema_version
                        NULL, &log));
 
     scoped_refptr<MetricEntity> metric_entity =

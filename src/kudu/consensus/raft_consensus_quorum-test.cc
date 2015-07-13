@@ -113,6 +113,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                               fs_manager.get(),
                               kTestTablet,
                               schema_,
+                              0, // schema_version
                               NULL,
                               &log));
       logs_.push_back(log.get());

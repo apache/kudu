@@ -76,6 +76,7 @@ class Log : public RefCountedThreadSafe<Log> {
                      FsManager *fs_manager,
                      const std::string& tablet_id,
                      const Schema& schema,
+                     uint32_t schema_version,
                      const scoped_refptr<MetricEntity>& metric_entity,
                      scoped_refptr<Log> *log);
 
@@ -206,7 +207,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // Set the schema for the _next_ log segment.
   //
   // This method is thread-safe.
-  void SetSchemaForNextLogSegment(const Schema& schema);
+  void SetSchemaForNextLogSegment(const Schema& schema, uint32_t version);
 
  private:
   friend class LogTest;
@@ -236,6 +237,7 @@ class Log : public RefCountedThreadSafe<Log> {
       const std::string& log_path,
       const std::string& tablet_id,
       const Schema& schema,
+      uint32_t schema_version,
       const scoped_refptr<MetricEntity>& metric_entity);
 
   // Initializes a new one or continues an existing log.
@@ -304,11 +306,13 @@ class Log : public RefCountedThreadSafe<Log> {
   // The ID of the tablet this log is dedicated to.
   std::string tablet_id_;
 
-  // Lock to protect modifications to schema_.
+  // Lock to protect modifications to schema_ and schema_version_.
   mutable rw_spinlock schema_lock_;
 
   // The current schema of the tablet this log is dedicated to.
   Schema schema_;
+  // The schema version
+  uint32_t schema_version_;
 
   // The currently active segment being written.
   gscoped_ptr<WritableLogSegment> active_segment_;

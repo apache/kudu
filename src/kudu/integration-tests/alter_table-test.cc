@@ -128,9 +128,12 @@ class AlterTableTest : public KuduTest {
   }
 
   void RestartTabletServer() {
-    ShutdownTS();
-
-    ASSERT_OK(cluster_->mini_tablet_server(0)->Start());
+    tablet_peer_.reset();
+    if (cluster_->mini_tablet_server(0)->server()) {
+      ASSERT_OK(cluster_->mini_tablet_server(0)->Restart());
+    } else {
+      ASSERT_OK(cluster_->mini_tablet_server(0)->Start());
+    }
     ASSERT_OK(cluster_->mini_tablet_server(0)->WaitStarted());
     tablet_peer_ = LookupTabletPeer();
   }
@@ -270,7 +273,8 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
-// Verify that the alter command is sent to the TS down on restart
+// Verify that, if a tablet server is down when an alter command is issued,
+// it will eventually receive the command when it restarts.
 TEST_F(AlterTableTest, TestAlterOnTSRestart) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 
@@ -476,14 +480,24 @@ TEST_F(AlterTableTest, TestDropAndAddNewColumn) {
   VerifyRows(0, kNumRows, C1_IS_DEADBEEF);
 }
 
-// Test dropping a column and then bootstrapping a tablet.
+// Test restarting a tablet server several times after various
+// schema changes.
 // This is a regression test for KUDU-462.
-TEST_F(AlterTableTest, DISABLED_TestBootstrapAfterColumnRemoved) {
-  FLAGS_flush_threshold_mb = 3;
+TEST_F(AlterTableTest, TestBootstrapAfterAlters) {
+  vector<string> rows;
 
-  const int kNumRows = AllowSlowTests() ? 100000 : 1000;
-  InsertRows(0, kNumRows);
-  VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
+  ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
+  InsertRows(0, 1);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  InsertRows(1, 1);
+
+  UpdateRow(0, boost::assign::map_list_of("c1", 10001));
+  UpdateRow(1, boost::assign::map_list_of("c1", 10002));
+
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(2, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c1=10001, int32 c2=12345)", rows[0]);
+  ASSERT_EQ("(int32 c0=16777216, int32 c1=10002, int32 c2=12345)", rows[1]);
 
   LOG(INFO) << "Dropping c1";
   gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
@@ -491,14 +505,33 @@ TEST_F(AlterTableTest, DISABLED_TestBootstrapAfterColumnRemoved) {
             .drop_column("c1")
             .Alter());
 
-  LOG(INFO) << "Inserting more rows";
-  InsertRows(kNumRows, kNumRows);
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(2, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c2=12345)", rows[0]);
+  ASSERT_EQ("(int32 c0=16777216, int32 c2=12345)", rows[1]);
 
+  // Test that restart doesn't fail when trying to replay updates or inserts
+  // with the dropped column.
   ASSERT_NO_FATAL_FAILURE(RestartTabletServer());
 
-  VerifyRows(0, kNumRows * 2, C1_DOESNT_EXIST);
-}
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(2, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c2=12345)", rows[0]);
+  ASSERT_EQ("(int32 c0=16777216, int32 c2=12345)", rows[1]);
 
+  // Add back a column called 'c2', but should not materialize old data.
+  ASSERT_OK(AddNewI32Column(kTableName, "c1", 20000));
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(2, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c2=12345, int32 c1=20000)", rows[0]);
+  ASSERT_EQ("(int32 c0=16777216, int32 c2=12345, int32 c1=20000)", rows[1]);
+
+  ASSERT_NO_FATAL_FAILURE(RestartTabletServer());
+  NO_FATALS(ScanToStrings(&rows));
+  ASSERT_EQ(2, rows.size());
+  ASSERT_EQ("(int32 c0=0, int32 c2=12345, int32 c1=20000)", rows[0]);
+  ASSERT_EQ("(int32 c0=16777216, int32 c2=12345, int32 c1=20000)", rows[1]);
+}
 
 TEST_F(AlterTableTest, TestCompactAfterUpdatingRemovedColumn) {
   // Disable maintenance manager, since we manually flush/compact

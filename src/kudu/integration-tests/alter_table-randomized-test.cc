@@ -370,9 +370,7 @@ TEST_F(AlterTableRandomized, TestRandomSequence) {
     } else if (r < 995) {
       t.DropRandomColumn(rng.Next());
     } else {
-      // TODO(KUDU-181): this portion of the test is disabled until
-      // KUDU-181/KUDU-462 is fixed.
-      // RestartTabletServer();
+      RestartTabletServer();
     }
 
     if (i % 1000 == 0) {

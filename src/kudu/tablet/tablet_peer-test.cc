@@ -109,7 +109,7 @@ class TabletPeerTest : public KuduTabletTest {
 
     scoped_refptr<Log> log;
     ASSERT_OK(Log::Open(LogOptions(), fs_manager(), tablet()->tablet_id(),
-                               *tablet()->schema(),
+                               *tablet()->schema(), tablet()->metadata()->schema_version(),
                                metric_entity_.get(), &log));
 
     ASSERT_OK(tablet_peer_->Init(tablet(),

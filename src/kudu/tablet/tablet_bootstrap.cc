@@ -478,6 +478,7 @@ Status TabletBootstrap::FinishBootstrap(const std::string& message,
       Bind(&FlushInflightsToLogCallback::WaitForInflightsAndFlushLog,
            make_scoped_refptr(new FlushInflightsToLogCallback(tablet_.get(),
                                                               log_))));
+  tablet_->MarkFinishedBootstrapping();
   RETURN_NOT_OK(tablet_->metadata()->UnPinFlush());
   listener_->StatusMessage(message);
   rebuilt_tablet->reset(tablet_.release());
@@ -617,6 +618,7 @@ Status TabletBootstrap::OpenNewLog() {
                           tablet_->metadata()->fs_manager(),
                           tablet_->tablet_id(),
                           *tablet_->schema(),
+                          tablet_->metadata()->schema_version(),
                           tablet_->GetMetricEntity(),
                           &log_));
   // Disable sync temporarily in order to speed up appends during the
@@ -970,15 +972,31 @@ void TabletBootstrap::DumpReplayStateToLog(const ReplayState& state) {
 }
 
 Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
-  RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
-
   ReplayState state;
   log::SegmentSequence segments;
   RETURN_NOT_OK(log_reader_->GetSegmentsSnapshot(&segments));
 
+  // The first thing to do is to rewind the tablet's schema back to the schema
+  // as of the point in time where the logs begin. We must replay the writes
+  // in the logs with the correct point-in-time schema.
+  if (!segments.empty()) {
+    const scoped_refptr<ReadableLogSegment>& segment = segments[0];
+    // Set the point-in-time schema for the tablet based on the log header.
+    Schema pit_schema;
+    RETURN_NOT_OK_PREPEND(SchemaFromPB(segment->header().schema(), &pit_schema),
+                          "Couldn't decode log segment schema");
+    RETURN_NOT_OK_PREPEND(tablet_->RewindSchemaForBootstrap(
+                              pit_schema, segment->header().schema_version()),
+                          "couldn't set point-in-time schema");
+  }
+
+  // We defer opening the log until here, so that we properly reproduce the
+  // point-in-time schema from the log we're reading into the log we're
+  // writing.
+  RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
+
   int segment_count = 0;
   BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments) {
-
     vector<LogEntryPB*> entries;
     ElementDeleter deleter(&entries);
     // TODO: Optimize this to not read the whole thing into memory?
@@ -1148,11 +1166,18 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
 
   AlterSchemaTransactionState tx_state(NULL, alter_schema, NULL);
 
-  // TODO maybe we shouldn't acquire the tablet lock on replay?
+  // TODO: we should somehow distinguish if an alter table failed on its original
+  // attempt (e.g due to being an invalid request, or a request with a too-early
+  // schema version).
+
   RETURN_NOT_OK(tablet_->CreatePreparedAlterSchema(&tx_state, &schema));
 
-  // apply the alter schema to the tablet
+  // Apply the alter schema to the tablet
   RETURN_NOT_OK_PREPEND(tablet_->AlterSchema(&tx_state), "Failed to AlterSchema:");
+
+  // Also update the log information. Normally, the AlterSchema() call above
+  // takes care of this, but our new log isn't hooked up to the tablet yet.
+  log_->SetSchemaForNextLogSegment(schema, tx_state.schema_version());
 
   return AppendCommitMsg(commit_msg);
 }

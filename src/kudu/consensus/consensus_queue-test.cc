@@ -54,6 +54,7 @@ class ConsensusQueueTest : public KuduTest {
                             fs_manager_.get(),
                             kTestTablet,
                             schema_,
+                            0, // schema_version
                             NULL,
                             &log_));
 
