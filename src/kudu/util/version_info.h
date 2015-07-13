@@ -9,6 +9,8 @@
 
 namespace kudu {
 
+class VersionInfoPB;
+
 // Static functions related to fetching information about the current build.
 class VersionInfo {
  public:
@@ -18,6 +20,8 @@ class VersionInfo {
   // Get a multi-line string including version info, build time, etc.
   static std::string GetAllVersionInfo();
 
+  // Set the version info in 'pb'.
+  static void GetVersionInfoPB(VersionInfoPB* pb);
  private:
   // Get the git hash for this build. If the working directory was dirty when
   // Kudu was built, also appends "-dirty".

@@ -35,6 +35,7 @@ namespace server {
 class Clock;
 
 struct ServerBaseOptions;
+class ServerStatusPB;
 
 // Base class for tablet server and master.
 // Handles starting and stopping the RPC server and web server,
@@ -67,6 +68,9 @@ class ServerBase {
 
   // Returns this server's clock.
   Clock* clock() { return clock_.get(); }
+
+  // Return a PB describing the status of the server (version info, bound ports, etc)
+  void GetStatusPB(ServerStatusPB* status) const;
 
  protected:
   ServerBase(const std::string& name,

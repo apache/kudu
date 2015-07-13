@@ -1,0 +1,17 @@
+// Copyright (c) 2015, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
+package kudu;
+
+option java_package = "org.kududb";
+
+// Information about the build environment, configuration, etc.
+message VersionInfoPB {
+  optional string git_hash = 1;
+  optional string build_hostname = 2;
+  optional string build_timestamp = 3;
+  optional string build_username = 4;
+  optional bool build_clean_repo = 5;
+  optional string build_id = 6;
+  optional string build_type = 7;
+  optional string version_string = 8;
+}

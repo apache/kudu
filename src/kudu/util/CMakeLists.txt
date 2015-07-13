@@ -25,6 +25,18 @@ ADD_EXPORTABLE_LIBRARY(pb_util_proto
   SRCS ${PB_UTIL_PROTO_SRCS}
   DEPS protobuf)
 
+#######################################
+# version_info_proto
+#######################################
+
+PROTOBUF_GENERATE_CPP(VERSION_INFO_PROTO_SRCS VERSION_INFO_PROTO_HDRS
+  SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
+  BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
+  PROTO_FILES version_info.proto)
+ADD_EXPORTABLE_LIBRARY(version_info_proto
+  SRCS ${VERSION_INFO_PROTO_SRCS}
+  DEPS protobuf)
+
 ############################################################
 # Version stamp
 ############################################################
@@ -122,6 +134,7 @@ set(UTIL_LIBS
   pb_util_proto
   protobuf
   rt
+  version_info_proto
   zlib)
 
 # We use MallocExtension and HeapChecker, but not in the exported version of

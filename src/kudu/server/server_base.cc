@@ -36,6 +36,7 @@
 #include "kudu/util/rolling_log.h"
 #include "kudu/util/spinlock_profiling.h"
 #include "kudu/util/thread.h"
+#include "kudu/util/version_info.h"
 
 DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
              " (Advanced option).");
@@ -159,19 +160,16 @@ Status ServerBase::Init() {
   return Status::OK();
 }
 
-Status ServerBase::DumpServerInfo(const string& path,
-                                  const string& format) const {
-  ServerStatusPB status;
-
+void ServerBase::GetStatusPB(ServerStatusPB* status) const {
   // Node instance
-  status.mutable_node_instance()->CopyFrom(*instance_pb_);
+  status->mutable_node_instance()->CopyFrom(*instance_pb_);
 
   // RPC ports
   {
     vector<Sockaddr> addrs;
     rpc_server_->GetBoundAddresses(&addrs);
     BOOST_FOREACH(const Sockaddr& addr, addrs) {
-      HostPortPB* pb = status.add_bound_rpc_addresses();
+      HostPortPB* pb = status->add_bound_rpc_addresses();
       pb->set_host(addr.host());
       pb->set_port(addr.port());
     }
@@ -182,11 +180,19 @@ Status ServerBase::DumpServerInfo(const string& path,
     vector<Sockaddr> addrs;
     web_server_->GetBoundAddresses(&addrs);
     BOOST_FOREACH(const Sockaddr& addr, addrs) {
-      HostPortPB* pb = status.add_bound_http_addresses();
+      HostPortPB* pb = status->add_bound_http_addresses();
       pb->set_host(addr.host());
       pb->set_port(addr.port());
     }
   }
+
+  VersionInfo::GetVersionInfoPB(status->mutable_version_info());
+}
+
+Status ServerBase::DumpServerInfo(const string& path,
+                                  const string& format) const {
+  ServerStatusPB status;
+  GetStatusPB(&status);
 
   if (boost::iequals(format, "json")) {
     string json = JsonWriter::ToJson(status, JsonWriter::PRETTY);

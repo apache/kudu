@@ -27,6 +27,10 @@ class GenericServiceImpl : public GenericServiceIf {
   virtual void ServerClock(const ServerClockRequestPB* req,
                            ServerClockResponsePB* resp,
                            rpc::RpcContext* rpc) OVERRIDE;
+
+  virtual void GetStatus(const GetStatusRequestPB* req,
+                         GetStatusResponsePB* resp,
+                         rpc::RpcContext* rpc) OVERRIDE;
  private:
   ServerBase* server_;
 

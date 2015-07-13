@@ -7,6 +7,7 @@
 
 #include "kudu/generated/version_defines.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/version_info.pb.h"
 
 using std::string;
 
@@ -48,6 +49,17 @@ string VersionInfo::GetAllVersionInfo() {
   ret += "\nTSAN enabled";
 #endif
   return ret;
+}
+
+void VersionInfo::GetVersionInfoPB(VersionInfoPB* pb) {
+  pb->set_git_hash(KUDU_GIT_HASH);
+  pb->set_build_hostname(KUDU_BUILD_HOSTNAME);
+  pb->set_build_timestamp(KUDU_BUILD_TIMESTAMP);
+  pb->set_build_username(KUDU_BUILD_USERNAME);
+  pb->set_build_clean_repo(KUDU_BUILD_CLEAN_REPO);
+  pb->set_build_id(KUDU_BUILD_ID);
+  pb->set_build_type(KUDU_BUILD_TYPE);
+  pb->set_version_string(KUDU_VERSION_STRING);
 }
 
 } // namespace kudu

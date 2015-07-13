@@ -41,6 +41,7 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/url-coding.h"
+#include "kudu/util/version_info.h"
 
 using std::string;
 using std::stringstream;
@@ -77,6 +78,9 @@ void Webserver::RootHandler(const Webserver::WebRequest& args, stringstream* out
       (*output) << "<a href=\"" << handler.first << "\">" << handler.second->alias() << "</a><br/>";
     }
   }
+  (*output) << "<hr/>\n";
+  (*output) << "<h2>Version Info</h2>\n";
+  (*output) << "<pre>" << EscapeForHtmlToString(VersionInfo::GetAllVersionInfo()) << "</pre>";
 }
 
 void Webserver::BuildArgumentMap(const string& args, ArgumentMap* output) {

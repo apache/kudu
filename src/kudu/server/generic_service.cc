@@ -102,5 +102,12 @@ void GenericServiceImpl::ServerClock(const ServerClockRequestPB* req,
   rpc->RespondSuccess();
 }
 
+void GenericServiceImpl::GetStatus(const GetStatusRequestPB* req,
+                                   GetStatusResponsePB* resp,
+                                   rpc::RpcContext* rpc) {
+  server_->GetStatusPB(resp->mutable_status());
+  rpc->RespondSuccess();
+}
+
 } // namespace server
 } // namespace kudu

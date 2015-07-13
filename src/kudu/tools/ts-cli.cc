@@ -44,6 +44,7 @@ using kudu::tserver::ScanResponsePB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using kudu::server::ServerStatusPB;
 using kudu::HostPort;
 using kudu::Sockaddr;
 
@@ -52,6 +53,7 @@ const char* const kAreTabletsRunningOp = "are_tablets_running";
 const char* const kSetFlagOp = "set_flag";
 const char* const kDumpTabletOp = "dump_tablet";
 const char* const kCurrentTimestamp = "current_timestamp";
+const char* const kStatus = "status";
 
 DEFINE_string(tserver_address, "localhost",
                 "Address of tablet server to run against");
@@ -96,6 +98,8 @@ class TsAdminClient {
   // Sets timestamp to the value of the tablet server's current timestamp.
   Status CurrentTimestamp(uint64_t* timestamp);
 
+  // Get the server status
+  Status GetStatus(ServerStatusPB* pb);
  private:
   std::string addr_;
   vector<Sockaddr> addrs_;
@@ -246,6 +250,17 @@ Status TsAdminClient::CurrentTimestamp(uint64_t* timestamp) {
   return Status::OK();
 }
 
+Status TsAdminClient::GetStatus(ServerStatusPB* pb) {
+  server::GetStatusRequestPB req;
+  server::GetStatusResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout_);
+  RETURN_NOT_OK(generic_proxy_->GetStatus(req, &resp, &rpc));
+  CHECK(resp.has_status()) << resp.DebugString();
+  pb->Swap(resp.mutable_status());
+  return Status::OK();
+}
+
 namespace {
 
 void SetUsage(const char* argv0) {
@@ -257,7 +272,8 @@ void SetUsage(const char* argv0) {
       << "  " << kAreTabletsRunningOp << "\n"
       << "  " << kSetFlagOp << " [-force] <flag> <value>\n"
       << "  " << kDumpTabletOp << " <tablet_id>\n"
-      << "  " << kCurrentTimestamp;
+      << "  " << kCurrentTimestamp << "\n"
+      << "  " << kStatus;
   google::SetUsageMessage(str.str());
 }
 
@@ -349,6 +365,10 @@ static int TsCliMain(int argc, char** argv) {
     uint64_t timestamp;
     CHECK_OK(client.CurrentTimestamp(&timestamp));
     std::cout << timestamp << std::endl;
+  } else if (op == kStatus) {
+    ServerStatusPB status;
+    CHECK_OK(client.GetStatus(&status));
+    std::cout << status.DebugString() << std::endl;
   } else {
     std::cerr << "Invalid operation: " << op << std::endl;
     google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);

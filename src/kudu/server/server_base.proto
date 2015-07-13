@@ -6,16 +6,19 @@ option java_package = "org.kududb.server";
 
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
+import "kudu/util/version_info.proto";
 
 // The status information dumped by a server after it starts.
-// This is currently only optionally exposed on the local host
-// in a text file which the server writes out at startup. In the
-// future, we may expose a more generic management API via RPC
-// (hence the use of protobuf)
+//
+// This is optionally exposed on the local host in a text file which the server writes out
+// at startup.
+//
+// Additionally, it is exposed via RPC through the GenericService interface.
 message ServerStatusPB {
   required NodeInstancePB node_instance = 1;
   repeated HostPortPB bound_rpc_addresses = 2;
   repeated HostPortPB bound_http_addresses = 3;
+  optional VersionInfoPB version_info = 4;
 }
 
 // Attempt to set a command line flag.
@@ -75,6 +78,13 @@ message ServerClockResponsePB {
   optional fixed64 timestamp = 1;
 }
 
+// Requests the server's status and version info
+message GetStatusRequestPB {
+}
+message GetStatusResponsePB {
+  required ServerStatusPB status = 1;
+}
+
 service GenericService {
   rpc SetFlag(SetFlagRequestPB)
     returns (SetFlagResponsePB);
@@ -84,4 +94,7 @@ service GenericService {
 
   rpc ServerClock(ServerClockRequestPB)
     returns (ServerClockResponsePB);
+
+  rpc GetStatus(GetStatusRequestPB)
+    returns (GetStatusResponsePB);
 }

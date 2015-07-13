@@ -38,9 +38,10 @@ KRPC_GENERATE(SERVER_BASE_PROTO_SRCS SERVER_BASE_PROTO_HDRS
 
 add_library(server_base_proto ${SERVER_BASE_PROTO_SRCS} ${SERVER_BASE_PROTO_HDRS})
 target_link_libraries(server_base_proto
+  kudu_common_proto
   protobuf
-  wire_protocol_proto
-  kudu_common_proto)
+  version_info_proto
+  wire_protocol_proto)
 
 #########################################
 # server_process
