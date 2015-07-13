@@ -635,11 +635,21 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     return s;
   }
 
-  // Check for empty split keys.
+  // Check that split keys are valid (i.e. non-empty and decodeable)
   for (int i = 0; i < req->pre_split_keys_size(); i++) {
-    if (req->pre_split_keys(i).empty()) {
+    Slice split_key(req->pre_split_keys(i));
+    if (split_key.empty()) {
       Status s = Status::InvalidArgument(
           Substitute("Empty split key at index $0", i));
+      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+      return s;
+    }
+
+    Arena arena(4096, 256 * 1024);
+    gscoped_ptr<EncodedKey> key;
+    Status s = EncodedKey::DecodeEncodedString(schema, &arena, split_key, &key);
+    if (!s.ok()) {
+      s = s.CloneAndPrepend(Substitute("Invalid split key '$0'", split_key.ToDebugString()));
       SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
       return s;
     }

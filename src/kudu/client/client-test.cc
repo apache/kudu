@@ -2381,8 +2381,8 @@ TEST_F(ClientTest, TestCreateDuplicateTable) {
 TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
   FLAGS_max_create_tablets_per_ts = 1;
   vector<string> split_keys;
-  split_keys.push_back("1");
-  split_keys.push_back("2");
+  split_keys.push_back("0001");
+  split_keys.push_back("0002");
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_TRUE(table_creator->table_name("foobar")
               .schema(&schema_)

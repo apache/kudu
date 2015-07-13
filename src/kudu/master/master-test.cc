@@ -190,8 +190,8 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 Status MasterTest::CreateTable(const string& table_name,
                                const Schema& schema) {
   vector<string> split_keys;
-  split_keys.push_back("k1");
-  split_keys.push_back("k2");
+  split_keys.push_back(string("\x00\x00\x00\x10", 4));
+  split_keys.push_back(string("\x00\x00\x00\x20", 4));
   return CreateTable(table_name, schema, split_keys);
 }
 
@@ -322,7 +322,7 @@ TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
   // No duplicate split keys.
   {
     Status s = CreateTable(kTableName, kTableSchema,
-                           list_of("k1")("k1")("k2"));
+                           list_of("0000")("0000")("0002"));
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Duplicate split key");
   }
@@ -330,9 +330,19 @@ TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
   // No empty split keys.
   {
     Status s = CreateTable(kTableName, kTableSchema,
-                           list_of("k1")(""));
+                           list_of("0000")(""));
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "Empty split key");
+  }
+
+  // Check for invalid (non-decodeable) split keys
+  {
+    Status s = CreateTable(kTableName, kTableSchema,
+                           list_of("x"));
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_EQ("Invalid argument: Invalid split key 'x': "
+              "Error decoding composite key component 'key': key too short: x",
+              s.ToString());
   }
 }
 
