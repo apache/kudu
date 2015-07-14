@@ -47,6 +47,8 @@ class RpcLineItemDAO {
                                         gscoped_ptr<Scanner>* scanner);
   bool IsTableEmpty();
 
+  // TODO: this wrapper class is of limited utility now that we only have a single
+  // "DAO" implementation -- we could just return the KuduScanner to users directly.
   class Scanner {
    public:
     ~Scanner() {}
@@ -61,9 +63,6 @@ class RpcLineItemDAO {
     friend class RpcLineItemDAO;
     Scanner() {}
 
-    // Keeps a copy of the KuduSchema provided by OpenScanner() to ensure the schema's
-    // liveness while scanning.
-    gscoped_ptr<client::KuduSchema> projection_;
     gscoped_ptr<client::KuduScanner> scanner_;
   };
 
