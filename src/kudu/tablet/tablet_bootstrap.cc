@@ -1166,7 +1166,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
 
   AlterSchemaTransactionState tx_state(NULL, alter_schema, NULL);
 
-  // TODO: we should somehow distinguish if an alter table failed on its original
+  // TODO(KUDU-860): we should somehow distinguish if an alter table failed on its original
   // attempt (e.g due to being an invalid request, or a request with a too-early
   // schema version).
 

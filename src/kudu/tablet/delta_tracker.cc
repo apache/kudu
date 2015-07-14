@@ -239,7 +239,7 @@ Status DeltaTracker::DoCompactStores(size_t start_idx, size_t end_idx,
          vector<BlockId> *compacted_blocks) {
   shared_ptr<DeltaIterator> inputs_merge;
 
-  // TODO(KUDU-382): currently, DeltaFile iterators ignore the passed-in projection in
+  // Currently, DeltaFile iterators ignore the passed-in projection in
   // FilterColumnIdsAndCollectDeltas(). So, we just pass an empty schema here.
   // If this changes in the future, we'll have to pass in the current tablet
   // schema here.

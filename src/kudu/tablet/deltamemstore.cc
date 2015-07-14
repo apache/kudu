@@ -331,9 +331,6 @@ Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
     RowChangeList changelist(src.val);
     uint32_t rel_idx = key.row_idx() - prepared_idx_;
 
-    // TODO(KUDU-382): at some point we probably want to remove updates that apply to columns
-    // that have been deleted?
-
     Mutation *mutation = Mutation::CreateInArena(arena, key.timestamp(), changelist);
     mutation->AppendToList(&dst->at(rel_idx));
   }

@@ -186,8 +186,5 @@ TEST_F(TestMultiThreadedRowSetDeltaCompaction, TestMTUpdateAndCompact) {
   TestUpdateAndVerify();
 }
 
-// TODO(KUDU-382): add a test where the tablet schema is changing and we
-// update newly-added columns, drop old columns, etc.
-
 } // namespace tablet
 } // namespace kudu

@@ -195,9 +195,6 @@ class Tablet {
   // Prepares the transaction context for the alter schema operation.
   // An error will be returned if the specified schema is invalid (e.g.
   // key mismatch, or missing IDs)
-  //
-  // TODO: need to somehow prevent concurrent operations while an ALTER
-  // is prepared (see KUDU-382).
   Status CreatePreparedAlterSchema(AlterSchemaTransactionState *tx_state,
                                    const Schema* schema);
 
