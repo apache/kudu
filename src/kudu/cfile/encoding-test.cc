@@ -317,19 +317,6 @@ class TestEncoding : public ::testing::Test {
     }
   }
 
-  template <DataType IntType>
-  void DoRleIntSeekTest(int num_ints, int num_queries, bool verify) {
-     gscoped_ptr<RleIntBlockBuilder<IntType> > ibb(new RleIntBlockBuilder<IntType>());
-     DoSeekTest<RleIntBlockBuilder<IntType>, RleIntBlockDecoder<IntType>, IntType>(
-         ibb.get(),  num_ints, num_queries, verify);
-  }
-
-  template <DataType IntType>
-  void DoRleIntSeekTestTinyBlock() {
-    for (int block_size = 1; block_size < 16; block_size++) {
-      DoRleIntSeekTest<IntType>(block_size, 1000, true);
-    }
-  }
 
   template <class BlockBuilderType, class BlockDecoderType>
   void TestEmptyBlockEncodeDecode() {
@@ -756,10 +743,6 @@ TEST_F(TestEncoding, GVIntSeekBenchmark) {
   gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
   DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), 32768, 100000, false);
 }
-
-TEST_F(TestEncoding, RleIntSeekBenchmark) {
-  DoRleIntSeekTest<UINT32>(32768, 10000, false);
-}
 #endif
 
 TEST_F(TestEncoding, GVIntSeekTest) {
@@ -776,23 +759,102 @@ TEST_F(TestEncoding, GVIntSeekTestTinyBlock) {
   }
 }
 
-TEST_F(TestEncoding, RleIntSeekTestAllTypes) {
-  DoRleIntSeekTest<UINT8>(32, 1000, true);
-  DoRleIntSeekTest<INT8>(32, 1000, true);
-  DoRleIntSeekTest<UINT16>(64, 1000, true);
-  DoRleIntSeekTest<INT16>(64, 1000, true);
-  DoRleIntSeekTest<UINT32>(64, 1000, true);
-  DoRleIntSeekTest<INT32>(64, 1000, true);
+
+// We have several different encodings for INT blocks.
+// The following tests use GTest's TypedTest functionality to run the tests
+// for each of the encodings.
+//
+// Beware ugly template magic below.
+struct PlainTestTraits {
+  template<DataType type>
+  struct Classes {
+    typedef PlainBlockBuilder<type> encoder_type;
+    typedef PlainBlockDecoder<type> decoder_type;
+  };
+};
+
+struct RleTestTraits {
+  template<DataType type>
+  struct Classes {
+    typedef RleIntBlockBuilder<type> encoder_type;
+    typedef RleIntBlockDecoder<type> decoder_type;
+  };
+};
+
+struct BitshuffleTestTraits {
+  template<DataType type>
+  struct Classes {
+    typedef BShufBlockBuilder<type> encoder_type;
+    typedef BShufBlockDecoder<type> decoder_type;
+  };
+};
+typedef testing::Types<RleTestTraits, BitshuffleTestTraits, PlainTestTraits> MyTestFixtures;
+TYPED_TEST_CASE(IntEncodingTest, MyTestFixtures);
+
+template<class TestTraits>
+class IntEncodingTest : public TestEncoding {
+ public:
+  template <DataType IntType>
+  void DoIntSeekTest(int num_ints, int num_queries, bool verify) {
+    typedef typename TestTraits::template Classes<IntType>::encoder_type encoder_type;
+    typedef typename TestTraits::template Classes<IntType>::decoder_type decoder_type;
+
+    WriterOptions opts;
+    gscoped_ptr<encoder_type> ibb(new encoder_type(&opts));
+    DoSeekTest<encoder_type, decoder_type, IntType>(ibb.get(), num_ints, num_queries, verify);
+  }
+
+  template <DataType IntType>
+  void DoIntSeekTestTinyBlock() {
+    for (int block_size = 1; block_size < 16; block_size++) {
+      DoIntSeekTest<IntType>(block_size, 1000, true);
+    }
+  }
+
+  template <DataType IntType>
+  void DoIntRoundTripTest() {
+    typedef typename TestTraits::template Classes<IntType>::encoder_type encoder_type;
+    typedef typename TestTraits::template Classes<IntType>::decoder_type decoder_type;
+
+    WriterOptions opts;
+    gscoped_ptr<encoder_type> ibb(new encoder_type(&opts));
+    TestIntBlockRoundTrip<encoder_type, decoder_type, IntType>(ibb.get());
+  }
+};
+
+
+TYPED_TEST(IntEncodingTest, TestSeekAllTypes) {
+  this->template DoIntSeekTest<UINT8>(32, 1000, true);
+  this->template DoIntSeekTest<INT8>(32, 1000, true);
+  this->template DoIntSeekTest<UINT16>(64, 1000, true);
+  this->template DoIntSeekTest<INT16>(64, 1000, true);
+  this->template DoIntSeekTest<UINT32>(64, 1000, true);
+  this->template DoIntSeekTest<INT32>(64, 1000, true);
 }
 
-TEST_F(TestEncoding, RleIntSeekTestTinyBlockAllTypes) {
-  DoRleIntSeekTestTinyBlock<UINT8>();
-  DoRleIntSeekTestTinyBlock<INT8>();
-  DoRleIntSeekTestTinyBlock<UINT16>();
-  DoRleIntSeekTestTinyBlock<INT16>();
-  DoRleIntSeekTestTinyBlock<UINT32>();
-  DoRleIntSeekTestTinyBlock<INT32>();
+TYPED_TEST(IntEncodingTest, IntSeekTestTinyBlockAllTypes) {
+  this->template DoIntSeekTestTinyBlock<UINT8>();
+  this->template DoIntSeekTestTinyBlock<INT8>();
+  this->template DoIntSeekTestTinyBlock<UINT16>();
+  this->template DoIntSeekTestTinyBlock<INT16>();
+  this->template DoIntSeekTestTinyBlock<UINT32>();
+  this->template DoIntSeekTestTinyBlock<INT32>();
 }
+
+TYPED_TEST(IntEncodingTest, TestRoundTrip) {
+  this->template DoIntRoundTripTest<UINT8>();
+  this->template DoIntRoundTripTest<INT8>();
+  this->template DoIntRoundTripTest<UINT16>();
+  this->template DoIntRoundTripTest<INT16>();
+  this->template DoIntRoundTripTest<UINT32>();
+  this->template DoIntRoundTripTest<INT32>();
+}
+
+#ifdef NDEBUG
+TYPED_TEST(IntEncodingTest, IntSeekBenchmark) {
+  this->template DoIntSeekTest<INT32>(32768, 10000, false);
+}
+#endif
 
 } // namespace cfile
 } // namespace kudu

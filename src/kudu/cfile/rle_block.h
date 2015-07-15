@@ -193,7 +193,7 @@ class RleBitMapBlockDecoder : public BlockDecoder {
 template <DataType IntType>
 class RleIntBlockBuilder : public BlockBuilder {
  public:
-  RleIntBlockBuilder()
+  explicit RleIntBlockBuilder(const WriterOptions* opts = NULL)
       : rle_encoder_(&buf_, kCppTypeSize * 8) {
     Reset();
   }
