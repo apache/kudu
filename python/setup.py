@@ -31,9 +31,24 @@ class clean(_clean):
                 pass
 
 
-# TODO: a more portable method for this
-kudu_include_dir = os.path.join(os.environ['KUDU_HOME'], 'src')
-kudu_lib_dir = os.path.join(os.environ['KUDU_HOME'], 'build/latest/exported')
+# If we're in the context of the Kudu git repository, build against the
+# latest in-tree build artifacts
+if 'KUDU_HOME' in os.environ and \
+  os.path.exists(os.path.join(os.environ['KUDU_HOME'], "build/latest")):
+    print >>sys.stderr, "Building from in-tree build artifacts"
+    kudu_include_dir = os.path.join(os.environ['KUDU_HOME'], 'src')
+    kudu_lib_dir = os.path.join(os.environ['KUDU_HOME'], 'build/latest/exported')
+else:
+    if os.path.exists("/usr/local/include/kudu"):
+        prefix="/usr/local"
+    elif os.path.exists("/usr/include/kudu"):
+        prefix="/usr"
+    else:
+        print >>sys.stderr, "Cannot find installed kudu client."
+        sys.exit(1)
+    print >>sys.stderr, "Building from system prefix ", prefix
+    kudu_include_dir = prefix + "/include"
+    kudu_lib_dir = prefix + "/lib"
 
 INCLUDE_PATHS = [kudu_include_dir]
 LIBRARY_DIRS = [kudu_lib_dir]
