@@ -22,6 +22,11 @@ namespace kudu {
 namespace cfile {
 
 struct WriterOptions;
+
+enum {
+  kRleBitmapBlockHeaderSize = 8
+};
+
 //
 // RLE encoder for the BOOL datatype: uses an RLE-encoded bitmap to
 // represent a bool column.
@@ -59,7 +64,7 @@ class RleBitMapBlockBuilder : public BlockBuilder {
   virtual void Reset() OVERRIDE {
     count_ = 0;
     encoder_.Clear();
-    encoder_.Reserve(kHeaderSize, 0);
+    encoder_.Reserve(kRleBitmapBlockHeaderSize, 0);
   }
 
   virtual size_t Count() const OVERRIDE {
@@ -93,7 +98,7 @@ class RleBitMapBlockDecoder : public BlockDecoder {
   virtual Status ParseHeader() OVERRIDE {
     CHECK(!parsed_);
 
-    if (data_.size() < kHeaderSize) {
+    if (data_.size() < kRleBitmapBlockHeaderSize) {
       return Status::Corruption(
           "not enough bytes for header in RleBitMapBlockDecoder");
     }
@@ -103,7 +108,8 @@ class RleBitMapBlockDecoder : public BlockDecoder {
 
     parsed_ = true;
 
-    rle_decoder_ = RleDecoder<bool>(data_.data() + kHeaderSize, data_.size() - kHeaderSize, 1);
+    rle_decoder_ = RleDecoder<bool>(data_.data() + kRleBitmapBlockHeaderSize,
+                                    data_.size() - kRleBitmapBlockHeaderSize, 1);
 
     SeekToPositionInBlock(0);
 
@@ -122,7 +128,8 @@ class RleBitMapBlockDecoder : public BlockDecoder {
     } else {
       // This approach is also used by CFileReader to
       // seek backwards in an RLE encoded block
-      rle_decoder_ = RleDecoder<bool>(data_.data() + kHeaderSize, data_.size() - kHeaderSize, 1);
+      rle_decoder_ = RleDecoder<bool>(data_.data() + kRleBitmapBlockHeaderSize,
+                                      data_.size() - kRleBitmapBlockHeaderSize, 1);
       rle_decoder_.Skip(pos);
     }
     cur_idx_ = pos;
@@ -217,7 +224,7 @@ class RleIntBlockBuilder : public BlockBuilder {
   virtual void Reset() OVERRIDE {
     count_ = 0;
     rle_encoder_.Clear();
-    rle_encoder_.Reserve(kHeaderSize, 0);
+    rle_encoder_.Reserve(kRleBitmapBlockHeaderSize, 0);
   }
 
   virtual size_t Count() const OVERRIDE {
@@ -266,7 +273,7 @@ class RleIntBlockDecoder : public BlockDecoder {
   virtual Status ParseHeader() OVERRIDE {
     CHECK(!parsed_);
 
-    if (data_.size() < kHeaderSize) {
+    if (data_.size() < kRleBitmapBlockHeaderSize) {
       return Status::Corruption(
           "not enough bytes for header in RleIntBlockDecoder");
     }
@@ -276,8 +283,8 @@ class RleIntBlockDecoder : public BlockDecoder {
 
     parsed_ = true;
 
-    rle_decoder_ = RleDecoder<CppType>(data_.data() + kHeaderSize,
-                                       data_.size() - kHeaderSize,
+    rle_decoder_ = RleDecoder<CppType>(data_.data() + kRleBitmapBlockHeaderSize,
+                                       data_.size() - kRleBitmapBlockHeaderSize,
                                        kCppTypeSize * 8);
 
     SeekToPositionInBlock(0);
@@ -298,8 +305,8 @@ class RleIntBlockDecoder : public BlockDecoder {
       uint nskip = pos - cur_idx_;
       rle_decoder_.Skip(nskip);
     } else {
-      rle_decoder_ = RleDecoder<CppType>(data_.data() + kHeaderSize,
-                                         data_.size() - kHeaderSize,
+      rle_decoder_ = RleDecoder<CppType>(data_.data() + kRleBitmapBlockHeaderSize,
+                                         data_.size() - kRleBitmapBlockHeaderSize,
                                          kCppTypeSize * 8);
       rle_decoder_.Skip(pos);
     }

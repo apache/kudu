@@ -179,6 +179,10 @@ class PlainBitMapBlockDecoder : public BlockDecoder {
   virtual rowid_t GetFirstRowId() const OVERRIDE { return ordinal_pos_base_; }
 
  private:
+  enum {
+    kHeaderSize = 8
+  };
+
   Slice data_;
   bool parsed_;
   uint32_t num_elems_;

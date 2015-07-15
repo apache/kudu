@@ -15,7 +15,6 @@
 #include "kudu/cfile/block_compression.h"
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/cfile/cfile_util.h"
-#include "kudu/cfile/string_plain_block.h"
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/common/key_encoder.h"
 #include "kudu/common/types.h"

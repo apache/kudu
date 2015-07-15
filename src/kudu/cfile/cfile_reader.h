@@ -16,7 +16,6 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/index_btree.h"
 #include "kudu/cfile/type_encodings.h"
-#include "kudu/cfile/string_plain_block.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/gscoped_ptr.h"
@@ -39,6 +38,7 @@ class BlockPointer;
 class CFileHeaderPB;
 class CFileFooterPB;
 class CFileIterator;
+class StringPlainBlockDecoder;
 
 class CFileReader {
  public:
@@ -282,6 +282,7 @@ class CFileIterator : public ColumnIterator {
  public:
   CFileIterator(CFileReader* reader,
                 CFileReader::CacheControl cache_control);
+  ~CFileIterator();
 
   // Seek to the first entry in the file. This works for both
   // ordinal-indexed and value-indexed files.

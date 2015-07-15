@@ -10,12 +10,14 @@
 #include <limits>
 
 #include "kudu/cfile/block_encodings.h"
-#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/bshuf_block.h"
+#include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/gvint_block.h"
+#include "kudu/cfile/plain_bitmap_block.h"
+#include "kudu/cfile/plain_block.h"
+#include "kudu/cfile/rle_block.h"
 #include "kudu/cfile/string_plain_block.h"
 #include "kudu/cfile/string_prefix_block.h"
-#include "kudu/cfile/plain_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"

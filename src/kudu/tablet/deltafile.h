@@ -12,7 +12,6 @@
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
-#include "kudu/cfile/string_plain_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/common/schema.h"
 #include "kudu/fs/block_id.h"
@@ -26,6 +25,10 @@
 namespace kudu {
 
 class ScanSpec;
+
+namespace cfile {
+class StringPlainBlockDecoder;
+} // namespace cfile
 
 namespace tablet {
 

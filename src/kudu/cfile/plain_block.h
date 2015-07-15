@@ -23,7 +23,7 @@ inline Type Decode(const uint8_t *ptr) {
   return result;
 }
 
-static const size_t kHeaderSize = sizeof(uint32_t) * 2;
+static const size_t kPlainBlockHeaderSize = sizeof(uint32_t) * 2;
 
 //
 // A plain encoder for generic fixed size data types.
@@ -35,7 +35,7 @@ class PlainBlockBuilder : public BlockBuilder {
       : options_(options) {
     // Reserve enough space for the block, plus a bit of slop since
     // we often overrun the block by a few values.
-    buffer_.reserve(kHeaderSize + options_->block_size + 1024);
+    buffer_.reserve(kPlainBlockHeaderSize + options_->block_size + 1024);
     Reset();
   }
 
@@ -60,7 +60,7 @@ class PlainBlockBuilder : public BlockBuilder {
   virtual void Reset() OVERRIDE {
     count_ = 0;
     buffer_.clear();
-    buffer_.resize(kHeaderSize);
+    buffer_.resize(kPlainBlockHeaderSize);
   }
 
   virtual size_t Count() const OVERRIDE {
@@ -69,7 +69,7 @@ class PlainBlockBuilder : public BlockBuilder {
 
   virtual Status GetFirstKey(void *key) const OVERRIDE {
     DCHECK_GT(count_, 0);
-    *reinterpret_cast<CppType *>(key) = Decode<CppType>(&buffer_[kHeaderSize]);
+    *reinterpret_cast<CppType *>(key) = Decode<CppType>(&buffer_[kPlainBlockHeaderSize]);
     return Status::OK();
   }
 
@@ -101,7 +101,7 @@ class PlainBlockDecoder : public BlockDecoder {
   virtual Status ParseHeader() OVERRIDE {
     CHECK(!parsed_);
 
-    if (data_.size() < kHeaderSize) {
+    if (data_.size() < kPlainBlockHeaderSize) {
       return Status::Corruption(
           "not enough bytes for header in PlainBlockDecoder");
     }
@@ -109,7 +109,7 @@ class PlainBlockDecoder : public BlockDecoder {
     num_elems_ = DecodeFixed32(&data_[0]);
     ordinal_pos_base_ = DecodeFixed32(&data_[4]);
 
-    if (data_.size() != kHeaderSize + num_elems_ * size_of_type) {
+    if (data_.size() != kPlainBlockHeaderSize + num_elems_ * size_of_type) {
       return Status::Corruption(
           string("unexpected data size. ") + "\nFirst 100 bytes: "
               + HexDump(
@@ -146,7 +146,7 @@ class PlainBlockDecoder : public BlockDecoder {
     while (left != right) {
       uint32_t mid = (left + right) / 2;
       CppType mid_key = Decode<CppType>(
-          &data_[kHeaderSize + mid * size_of_type]);
+          &data_[kPlainBlockHeaderSize + mid * size_of_type]);
       // assumes CppType has an implementation of operator<()
       if (mid_key < target) {
         left = mid + 1;
@@ -179,7 +179,9 @@ class PlainBlockDecoder : public BlockDecoder {
     }
 
     size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
-    memcpy(dst->data(), &data_[kHeaderSize + cur_idx_ * size_of_type], max_fetch * size_of_type);
+    memcpy(dst->data(),
+           &data_[kPlainBlockHeaderSize + cur_idx_ * size_of_type],
+           max_fetch * size_of_type);
     cur_idx_ += max_fetch;
     *n = max_fetch;
     return Status::OK();

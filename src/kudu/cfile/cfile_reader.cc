@@ -16,6 +16,7 @@
 #include "kudu/cfile/gvint_block.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
+#include "kudu/cfile/string_plain_block.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -366,6 +367,9 @@ CFileIterator::CFileIterator(CFileReader* reader,
     cache_control_(cache_control),
     last_prepare_idx_(-1),
     last_prepare_count_(-1) {
+}
+
+CFileIterator::~CFileIterator() {
 }
 
 Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
