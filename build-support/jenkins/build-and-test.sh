@@ -158,11 +158,6 @@ elif [ "$BUILD_TYPE" = "LINT" ]; then
   cmake .
   make lint | tee $TEST_LOGDIR/lint.log
   exit $?
-elif [ "$BUILD_TYPE" = "CLIENT" ]; then
-  # Temporary, remove once kudu-gerrit doesn't build CLIENT anymore.
-  mkdir -p $TEST_LOGDIR
-  touch $TEST_LOGDIR/client_built.log
-  exit 0
 fi
 
 # Only enable test core dumps for certain build types.
