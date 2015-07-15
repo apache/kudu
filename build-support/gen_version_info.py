@@ -45,6 +45,8 @@ def main():
                     dest="version", metavar="VERSION")
   parser.add_option("-b", "--build-type", help="Set build type", type="string",
                     dest="build_type", metavar="BUILD_TYPE")
+  parser.add_option("-g", "--git-hash", help="Set git hash", type="string",
+                    dest="git_hash", metavar="GIT_HASH")
   opts, args = parser.parse_args()
 
   if not opts.version:
@@ -61,17 +63,23 @@ def main():
   build_time = "%s %s" % (strftime("%d %b %Y %H:%M:%S", localtime()), time.tzname[0])
   username = os.getenv("USER")
 
-  try:
-    git_hash = check_output("git rev-parse HEAD").strip()
-    clean_repo = subprocess.call("git diff --quiet && git diff --cached --quiet", shell=True) == 0
-    clean_repo = str(clean_repo).lower()
-  except Exception, e:
-    logging.info("Build appears to be outside of a git repository... " +
-                 "continuing without repository information.")
-    # If the git commands failed, we're probably building outside of a git
-    # repository.
-    git_hash = "non-git-build"
-    clean_repo = "false"
+  if opts.git_hash:
+    # Git hash provided on the command line.
+    git_hash = opts.git_hash
+    clean_repo = "true"
+  else:
+    try:
+      # No command line git hash, find it in the local git repository.
+      git_hash = check_output("git rev-parse HEAD").strip()
+      clean_repo = subprocess.call("git diff --quiet && git diff --cached --quiet", shell=True) == 0
+      clean_repo = str(clean_repo).lower()
+    except Exception, e:
+      # If the git commands failed, we're probably building outside of a git
+      # repository.
+      logging.info("Build appears to be outside of a git repository... " +
+                   "continuing without repository information.")
+      git_hash = "non-git-build"
+      clean_repo = "true"
 
   version_string = opts.version
   build_type = opts.build_type

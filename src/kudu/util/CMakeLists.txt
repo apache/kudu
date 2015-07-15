@@ -42,11 +42,16 @@ ADD_EXPORTABLE_LIBRARY(version_info_proto
 ############################################################
 include_directories(${BUILD_OUTPUT_ROOT_DIRECTORY})
 set(VERSION_STAMP_FILE ${BUILD_OUTPUT_ROOT_DIRECTORY}kudu/generated/version_defines.h)
+list(APPEND GEN_VERSION_INFO_COMMAND "${BUILD_SUPPORT_DIR}/gen_version_info.py")
+list(APPEND GEN_VERSION_INFO_COMMAND "--version=${KUDU_VERSION_NUMBER}")
+list(APPEND GEN_VERSION_INFO_COMMAND "--build-type=${CMAKE_BUILD_TYPE}")
+if(KUDU_GIT_HASH)
+  message(STATUS "Provided git hash: ${KUDU_GIT_HASH}")
+  list(APPEND GEN_VERSION_INFO_COMMAND "--git-hash=${KUDU_GIT_HASH}")
+endif()
+list(APPEND GEN_VERSION_INFO_COMMAND "${VERSION_STAMP_FILE}")
 add_custom_target(gen_version_info
-    COMMAND "${BUILD_SUPPORT_DIR}/gen_version_info.py"
-            "--version=${KUDU_VERSION_NUMBER}"
-            "--build-type=${CMAKE_BUILD_TYPE}"
-            "${VERSION_STAMP_FILE}"
+    COMMAND ${GEN_VERSION_INFO_COMMAND}
     BYPRODUCTS "${VERSION_STAMP_FILE}")
 
 #######################################
