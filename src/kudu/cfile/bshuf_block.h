@@ -24,40 +24,9 @@
 namespace kudu {
 namespace cfile {
 
-// Mode information indicating whether UINT32 has been converted to
-// UINT16 or UINT8.
-enum UINT32BShufMode {
-  UINT32BShufMode_min = 1,
-  kBshufUINT8 = 1,
-  kBshufUINT16 = 2,
-  kBshufUINT32 = 3,
-  UINT32BShufMode_max = 3
-};
 
-static inline void AbortWithBitShuffleError(int64_t val) {
-  switch (val) {
-    case -1:
-      LOG(FATAL) << "Failed to allocate memory";
-      break;
-    case -11:
-      LOG(FATAL) << "Missing SSE";
-      break;
-    case -12:
-      LOG(FATAL) << "Missing AVX";
-      break;
-    case -80:
-      LOG(FATAL) << "Input size not a multiple of 8";
-      break;
-    case -81:
-      LOG(FATAL) << "block_size not multiple of 8";
-      break;
-    case -91:
-      LOG(FATAL) << "Decompression error, wrong number of bytes processed";
-      break;
-    default:
-      LOG(FATAL) << "Error internal to compression routine";
-  }
-}
+// Log a FATAL error message and exit.
+void AbortWithBitShuffleError(int64_t val) ATTRIBUTE_NORETURN;
 
 // BshufBlockBuilder bitshuffles and compresses the bits of fixed
 // size type blocks with lz4.
@@ -70,10 +39,10 @@ static inline void AbortWithBitShuffleError(int64_t val) {
 //    by bitshuffle library that the number of element in the block must be
 //    multiple of 8. That means some psudo elements are appended at the end of the
 //    block if necessary (uint32_t, little endian).
-// 5. reserved space, unused except when the template parameter is UINT32, see the comment
-//    around the template specialization of Finish(rowid_t ordinal_pos) for UINT32, and
-//    the mode_ field of BShufBlockDecoder for more information (uint32_t, little endian).
-
+// 5. the size of the elements in bytes, as actually encoded. In the case that all of the
+//    data in a block can fit into a smaller integer type, then we may choose to encode
+//    that smaller type to save CPU costs. This is currently done only for the UINT32
+//    block type.  (uint32_t, little endian).
 template<DataType Type>
 class BShufBlockBuilder : public BlockBuilder {
  public:
@@ -164,11 +133,11 @@ class BShufBlockBuilder : public BlockBuilder {
       // It does not matter what will be returned here,
       // since we have logged fatal in AbortWithBitShuffleError().
       return Slice();
-    } else {
-      InlineEncodeFixed32(&buffer_[8], kMaxHeaderSize + bytes);
-      InlineEncodeFixed32(&buffer_[12], num_elems_after_padding);
-      return Slice(buffer_.data(), kMaxHeaderSize + bytes);
     }
+    InlineEncodeFixed32(&buffer_[8], kMaxHeaderSize + bytes);
+    InlineEncodeFixed32(&buffer_[12], num_elems_after_padding);
+    InlineEncodeFixed32(&buffer_[16], final_size_of_type);
+    return Slice(buffer_.data(), kMaxHeaderSize + bytes);
   }
 
   // Length of a header.
@@ -202,11 +171,11 @@ class BShufBlockDecoder : public BlockDecoder {
 
   Status ParseHeader() OVERRIDE {
     CHECK(!parsed_);
-    if (data_.size() < kMinHeaderSize) {
+    if (data_.size() < kHeaderSize) {
       return Status::Corruption(
         strings::Substitute("not enough bytes for header: bitshuffle block header "
-          "size ($0) less than minimum possible header length ($1)",
-          data_.size(), kMinHeaderSize));
+          "size ($0) less than expected header length ($1)",
+          data_.size(), kHeaderSize));
     }
 
     ordinal_pos_base_  = DecodeFixed32(&data_[0]);
@@ -218,6 +187,26 @@ class BShufBlockDecoder : public BlockDecoder {
     num_elems_after_padding_ = DecodeFixed32(&data_[12]);
     if (num_elems_after_padding_ != num_elems_ + NumOfPaddingNeeded()) {
       return Status::Corruption("num of element information corrupted");
+    }
+    size_of_elem_ = DecodeFixed32(&data_[16]);
+    switch (size_of_elem_) {
+      case 1:
+      case 2:
+      case 4:
+      case 8:
+        break;
+      default:
+        return Status::Corruption(strings::Substitute("invalid size_of_elem: $0", size_of_elem_));
+    }
+
+    // Currently, only the UINT32 block encoder supports expanding size:
+    if (PREDICT_FALSE(Type != UINT32 && size_of_elem_ != size_of_type)) {
+      return Status::Corruption(strings::Substitute("size_of_elem $0 != size_of_type $1",
+                                                    size_of_elem_, size_of_type));
+    }
+    if (PREDICT_FALSE(size_of_elem_ > size_of_type)) {
+      return Status::Corruption(strings::Substitute("size_of_elem $0 > size_of_type $1",
+                                                    size_of_elem_, size_of_type));
     }
 
     RETURN_NOT_OK(Expand());
@@ -315,15 +304,17 @@ class BShufBlockDecoder : public BlockDecoder {
     return result;
   }
 
+  // Return the number of padding elements needed to ensure that the
+  // number of elements is a multiple of 8.
   uint32_t NumOfPaddingNeeded() const {
-    return (num_elems_ % 8 == 0) ? 0 : 8 - (num_elems_ % 8);
+    return KUDU_ALIGN_UP(num_elems_, 8) - num_elems_;
   }
 
   Status Expand() {
     if (num_elems_ > 0) {
       int64_t bytes;
       decoded_.resize(num_elems_after_padding_ * size_of_type);
-      uint8_t* in = const_cast<uint8_t*>(&data_[kMinHeaderSize]);
+      uint8_t* in = const_cast<uint8_t*>(&data_[kHeaderSize]);
       bytes = bshuf_decompress_lz4(in, decoded_.data(), num_elems_after_padding_, size_of_type, 0);
       if (PREDICT_FALSE(bytes < 0)) {
         // Ideally, this should not happen.
@@ -335,7 +326,7 @@ class BShufBlockDecoder : public BlockDecoder {
   }
 
   // Min Length of a header.
-  static const size_t kMinHeaderSize = sizeof(uint32_t) * 5;
+  static const size_t kHeaderSize = sizeof(uint32_t) * 5;
   typedef typename TypeTraits<Type>::cpp_type CppType;
   enum {
     size_of_type = TypeTraits<Type>::size
@@ -349,10 +340,10 @@ class BShufBlockDecoder : public BlockDecoder {
   uint32_t compressed_size_;
   uint32_t num_elems_after_padding_;
 
-  // The mode_ field, will only be used when the template parameter is UINT32,
-  // which is used to indicated whether the encoded data is block of UINT8, UINT16
-  // or UINT32.
-  UINT32BShufMode mode_;
+  // The size of each decoded element. In the case that the input range was
+  // smaller than the type, this may be smaller than 'size_of_type'.
+  // Currently, this is always 1, 2, 4, or 8.
+  int size_of_elem_;
 
   size_t cur_idx_;
   faststring decoded_;
@@ -368,9 +359,4 @@ Status BShufBlockDecoder<UINT32>::CopyNextValuesToArray(size_t* n, uint8_t* arra
 
 } // namespace cfile
 } // namespace kudu
-
-// Defined for tight_enum_test_cast<> -- has to be defined outside of any namespace.
-MAKE_ENUM_LIMITS(kudu::cfile::UINT32BShufMode,
-                 kudu::cfile::UINT32BShufMode_min,
-                 kudu::cfile::UINT32BShufMode_max);
 #endif

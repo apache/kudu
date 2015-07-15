@@ -5,6 +5,31 @@
 namespace kudu {
 namespace cfile {
 
+void AbortWithBitShuffleError(int64_t val) {
+  switch (val) {
+    case -1:
+      LOG(FATAL) << "Failed to allocate memory";
+      break;
+    case -11:
+      LOG(FATAL) << "Missing SSE";
+      break;
+    case -12:
+      LOG(FATAL) << "Missing AVX";
+      break;
+    case -80:
+      LOG(FATAL) << "Input size not a multiple of 8";
+      break;
+    case -81:
+      LOG(FATAL) << "block_size not multiple of 8";
+      break;
+    case -91:
+      LOG(FATAL) << "Decompression error, wrong number of bytes processed";
+      break;
+    default:
+      LOG(FATAL) << "Error internal to compression routine";
+  }
+}
+
 // Template specialization for UINT32, which is used by dictionary encoding.
 // It dynamically switch to block of UINT16 or UINT8 depending on the values
 // in the current block.
@@ -27,7 +52,7 @@ Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
       *reinterpret_cast<uint8_t*>(&data_[i * sizeof(uint8_t)]) = converted_value;
     }
     ret = Finish(ordinal_pos, sizeof(uint8_t));
-    InlineEncodeFixed32(ret.mutable_data() + 16, kBshufUINT8);
+    InlineEncodeFixed32(ret.mutable_data() + 16, sizeof(uint8_t));
   } else if (max_value < 65536) {
     for (int i = 0; i < count_; i++) {
       uint32_t value = *reinterpret_cast<uint32_t*>(&data_[i * sizeof(uint32_t)]);
@@ -35,10 +60,10 @@ Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
       *reinterpret_cast<uint16_t*>(&data_[i * sizeof(uint16_t)]) = converted_value;
     }
     ret = Finish(ordinal_pos, sizeof(uint16_t));
-    InlineEncodeFixed32(ret.mutable_data() + 16, kBshufUINT16);
+    InlineEncodeFixed32(ret.mutable_data() + 16, sizeof(uint16_t));
   } else {
     ret = Finish(ordinal_pos, sizeof(uint32_t));
-    InlineEncodeFixed32(ret.mutable_data() + 16, kBshufUINT32);
+    InlineEncodeFixed32(ret.mutable_data() + 16, sizeof(uint32_t));
   }
   return ret;
 }
@@ -47,26 +72,12 @@ Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos) {
 // bitshuffled UINT16 OR UINT8 to UINT32.
 template<>
 Status BShufBlockDecoder<UINT32>::Expand() {
-  bool valid = tight_enum_test_cast<UINT32BShufMode>(DecodeFixed32(&data_[16]), &mode_);
-  if (PREDICT_FALSE(!valid)) {
-    return Status::Corruption("header bitshuffle mode for UINT32 information corrupted");
-  }
-
   if (num_elems_ > 0) {
-    int size_of_elem;
-    if (mode_ == kBshufUINT8) {
-      size_of_elem = sizeof(uint8_t);
-    } else if (mode_ == kBshufUINT16) {
-      size_of_elem = sizeof(uint16_t);
-    } else {
-      size_of_elem = sizeof(uint32_t);
-    }
-
     int64_t bytes;
-    decoded_.resize(num_elems_after_padding_ * size_of_elem);
-    uint8_t* in = const_cast<uint8_t*>(&data_[kMinHeaderSize]);
+    decoded_.resize(num_elems_after_padding_ * size_of_elem_);
+    uint8_t* in = const_cast<uint8_t*>(&data_[kHeaderSize]);
 
-    bytes = bshuf_decompress_lz4(in, decoded_.data(), num_elems_after_padding_, size_of_elem, 0);
+    bytes = bshuf_decompress_lz4(in, decoded_.data(), num_elems_after_padding_, size_of_elem_, 0);
     if (PREDICT_FALSE(bytes < 0)) {
       // Ideally, this should not happen.
       AbortWithBitShuffleError(bytes);
@@ -83,19 +94,11 @@ Status BShufBlockDecoder<UINT32>::SeekAtOrAfterValue(const void* value_void, boo
   uint32_t target = *reinterpret_cast<const uint32_t*>(value_void);
   int32_t left = 0;
   int32_t right = num_elems_;
-  int size_of_elem;
-  if (mode_ == kBshufUINT8) {
-    size_of_elem = sizeof(uint8_t);
-  } else if (mode_ == kBshufUINT16) {
-    size_of_elem = sizeof(uint16_t);
-  } else {
-    size_of_elem = sizeof(uint32_t);
-  }
 
   while (left != right) {
     uint32_t mid = (left + right) / 2;
     uint32_t mid_key = Decode<CppType>(
-          &decoded_[mid * size_of_elem]);
+          &decoded_[mid * size_of_elem_]);
     if (mid_key == target) {
       cur_idx_ = mid;
       *exact = true;
@@ -124,28 +127,22 @@ Status BShufBlockDecoder<UINT32>::CopyNextValuesToArray(size_t* n, uint8_t* arra
     return Status::OK();
   }
 
-  int size_of_elem;
-  if (mode_ == kBshufUINT8) {
-    size_of_elem = sizeof(uint8_t);
-  } else if (mode_ == kBshufUINT16) {
-    size_of_elem = sizeof(uint16_t);
-  } else {
-    size_of_elem = sizeof(uint32_t);
-  }
-
+  // First, copy it to the destination array without any "expansion".
   size_t max_fetch = std::min(*n, static_cast<size_t>(num_elems_ - cur_idx_));
-  memcpy(array, &decoded_[cur_idx_ * size_of_elem], max_fetch * size_of_elem);
+  memcpy(array, &decoded_[cur_idx_ * size_of_elem_], max_fetch * size_of_elem_);
 
   *n = max_fetch;
   cur_idx_ += max_fetch;
 
-  if (mode_ == kBshufUINT8) {
+  // Then, "expand" it out to the correct output size. We only need to do
+  // the expansion for size = 1 or size = 2.
+  if (size_of_elem_ == 1) {
     for (int i = max_fetch - 1; i >= 0; i--) {
       uint8_t value = *reinterpret_cast<uint8_t*>(&array[i * sizeof(uint8_t)]);
       uint32_t convert_value = (uint32_t)(value);
       *reinterpret_cast<uint32_t*>(&array[i * sizeof(uint32_t)]) = convert_value;
     }
-  } else if (mode_ == kBshufUINT16) {
+  } else if (size_of_elem_ == 2) {
     for (int i = max_fetch - 1; i >= 0; i--) {
       uint16_t value = *reinterpret_cast<uint16_t*>(&array[i * sizeof(uint16_t)]);
       uint32_t convert_value = (uint32_t)(value);
