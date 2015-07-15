@@ -31,6 +31,7 @@ popd
 
 # Start master+ts
 export TEST_TMPDIR=${TEST_TMPDIR:-/tmp/kudutest-$UID}
+mkdir -p $TEST_TMPDIR
 BASE_DIR=$(mktemp -d --tmpdir=$TEST_TMPDIR client_samples-test.XXXXXXXX)
 $ROOT/build/latest/kudu-master \
   --log_dir=$BASE_DIR \

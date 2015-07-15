@@ -12,6 +12,11 @@ include(CMakeParseArguments)
 
 set(BUILD_SUPPORT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/build-support)
 
+# Allow "make install" to not depend on all targets.
+#
+# Must be declared in the top-level CMakeLists.txt.
+set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
+
 # Make sure thirdparty stuff is up-to-date.
 if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
   execute_process(
