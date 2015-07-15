@@ -87,13 +87,10 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     // TODO: we should somehow pass some contextual info about the
     // tablet here.
     WARN_NOT_OK(s, "Falling back to default encoding");
-    encoding_type_ = TypeEncodingInfo::GetDefaultEncoding(type);
     s = TypeEncodingInfo::Get(type,
-                              encoding_type_,
+                              TypeEncodingInfo::GetDefaultEncoding(type),
                               &type_encoding_info_);
     CHECK_OK(s);
-  } else {
-    encoding_type_ = encoding;
   }
 
   compression_ = options_.storage_attributes.compression();
@@ -182,7 +179,7 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
   CFileFooterPB footer;
   footer.set_data_type(datatype_);
   footer.set_is_type_nullable(is_nullable_);
-  footer.set_encoding(options_.storage_attributes.encoding());
+  footer.set_encoding(type_encoding_info_->encoding_type());
   footer.set_num_values(value_count_);
   footer.set_compression(compression_);
 

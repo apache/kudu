@@ -528,8 +528,7 @@ TEST_F(TestCFile, TestMetadata) {
     ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
     block_id = sink->id();
     WriterOptions opts;
-    opts.storage_attributes = ColumnStorageAttributes(GROUP_VARINT);
-    CFileWriter w(opts, UINT32, false, sink.Pass());
+    CFileWriter w(opts, INT32, false, sink.Pass());
 
     w.AddMetadataPair("key_in_header", "header value");
     ASSERT_OK(w.Start());
@@ -553,6 +552,11 @@ TEST_F(TestCFile, TestMetadata) {
     ASSERT_TRUE(reader->GetMetadataEntry("key_in_footer", &val));
     ASSERT_EQ(val, "footer value");
     ASSERT_FALSE(reader->GetMetadataEntry("not a key", &val));
+
+    // Test that, even though we didn't specify an encoding or compression, the
+    // resulting file has them explicitly set.
+    ASSERT_EQ(PLAIN_ENCODING, reader->type_encoding_info()->encoding_type());
+    ASSERT_EQ(NO_COMPRESSION, reader->footer().compression());
   }
 }
 

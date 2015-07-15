@@ -179,7 +179,6 @@ class CFileWriter {
   // Type of data being written
   bool is_nullable_;
   DataType datatype_;
-  EncodingType encoding_type_;
   CompressionType compression_;
   const TypeInfo* typeinfo_;
   const TypeEncodingInfo* type_encoding_info_;
