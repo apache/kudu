@@ -285,6 +285,7 @@ class PeriodicWebUIChecker {
     master_pages.push_back("/jsonmetricz");
     master_pages.push_back("/masterz");
     master_pages.push_back("/tablez");
+    master_pages.push_back("/dump-entities");
     master_pages.push_back("/tablet-servers");
 
     ts_pages.push_back("/jsonmetricz");

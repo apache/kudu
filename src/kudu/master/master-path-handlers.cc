@@ -19,6 +19,7 @@
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/util/string_case.h"
@@ -30,6 +31,7 @@ namespace kudu {
 using consensus::RaftPeerPB;
 using std::vector;
 using std::string;
+using std::stringstream;
 using strings::Substitute;
 
 namespace master {
@@ -38,7 +40,7 @@ MasterPathHandlers::~MasterPathHandlers() {
 }
 
 void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
-                                             std::stringstream* output) {
+                                             stringstream* output) {
   vector<std::tr1::shared_ptr<TSDescriptor> > descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
 
@@ -59,7 +61,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
 }
 
 void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
-                                              std::stringstream* output) {
+                                              stringstream* output) {
   *output << "<h1>Tables</h1>\n";
 
   std::vector<scoped_refptr<TableInfo> > tables;
@@ -82,7 +84,7 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
 }
 
 void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
-                                         std::stringstream *output) {
+                                         stringstream *output) {
   // Parse argument.
   string table_id;
   if (!FindCopy(req.parsed_args, "id", &table_id)) {
@@ -165,7 +167,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 }
 
 void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
-                                       std::stringstream* output) {
+                                       stringstream* output) {
   vector<ServerEntryPB> masters;
   Status s = master_->ListMasters(&masters);
   if (!s.ok()) {
@@ -197,6 +199,131 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
   *output << "</table>";
 }
 
+namespace {
+
+// Visitor for the catalog table which dumps tables and tablets in a JSON format. This
+// dump is interpreted by the CM agent in order to track time series entities in the SMON
+// database.
+//
+// This implementation relies on scanning the catalog table directly instead of using the
+// catalog manager APIs. This allows it to work even on a non-leader master, and avoids
+// any requirement for locking. For the purposes of metrics entity gathering, it's OK to
+// serve a slightly stale snapshot.
+//
+// It is tempting to directly dump the metadata protobufs using JsonWriter::Protobuf(...),
+// but then we would be tying ourselves to textual compatibility of the PB field names in
+// our catalog table. Instead, the implementation specifically dumps the fields that we
+// care about.
+//
+// This should be considered a "stable" protocol -- do not rename, remove, or restructure
+// without consulting with the CM team.
+class JsonDumper : public TableVisitor, public TabletVisitor {
+ public:
+  explicit JsonDumper(JsonWriter* jw) : jw_(jw) {
+  }
+
+  Status VisitTable(const std::string& table_id,
+                    const SysTablesEntryPB& metadata) OVERRIDE {
+    jw_->StartObject();
+    jw_->String("table_id");
+    jw_->String(table_id);
+
+    jw_->String("table_name");
+    jw_->String(metadata.name());
+
+    jw_->String("state");
+    jw_->String(SysTablesEntryPB::State_Name(metadata.state()));
+
+    jw_->EndObject();
+    return Status::OK();
+  }
+
+  Status VisitTablet(const std::string& table_id,
+                     const std::string& tablet_id,
+                     const SysTabletsEntryPB& metadata) OVERRIDE {
+    jw_->StartObject();
+    jw_->String("table_id");
+    jw_->String(table_id);
+
+    jw_->String("tablet_id");
+    jw_->String(tablet_id);
+
+    jw_->String("state");
+    jw_->String(SysTabletsEntryPB::State_Name(metadata.state()));
+
+    // Dump replica UUIDs
+    if (metadata.has_committed_consensus_state()) {
+      const consensus::ConsensusStatePB& cs = metadata.committed_consensus_state();
+      jw_->String("replicas");
+      jw_->StartArray();
+      BOOST_FOREACH(const RaftPeerPB& peer, cs.config().peers()) {
+        jw_->StartObject();
+        jw_->String("type");
+        jw_->String(RaftPeerPB::MemberType_Name(peer.member_type()));
+
+        jw_->String("uuid");
+        jw_->String(peer.permanent_uuid());
+
+        jw_->String("addr");
+        jw_->String(Substitute("$0:$1", peer.last_known_addr().host(),
+                               peer.last_known_addr().port()));
+
+        jw_->EndObject();
+      }
+      jw_->EndArray();
+
+      if (cs.has_leader_uuid()) {
+        jw_->String("leader");
+        jw_->String(cs.leader_uuid());
+      }
+    }
+
+    jw_->EndObject();
+    return Status::OK();
+  }
+
+ private:
+  JsonWriter* jw_;
+};
+
+void JsonError(const Status& s, stringstream* out) {
+  out->str("");
+  JsonWriter jw(out, JsonWriter::COMPACT);
+  jw.StartObject();
+  jw.String("error");
+  jw.String(s.ToString());
+  jw.EndObject();
+}
+} // anonymous namespace
+
+void MasterPathHandlers::HandleDumpEntities(const Webserver::WebRequest& req,
+                                            stringstream* output) {
+  JsonWriter jw(output, JsonWriter::COMPACT);
+  JsonDumper d(&jw);
+
+  jw.StartObject();
+
+  jw.String("tables");
+  jw.StartArray();
+  Status s = master_->catalog_manager()->sys_catalog()->VisitTables(&d);
+  if (!s.ok()) {
+    JsonError(s, output);
+    return;
+  }
+  jw.EndArray();
+
+  jw.String("tablets");
+  jw.StartArray();
+  s = master_->catalog_manager()->sys_catalog()->VisitTablets(&d);
+  if (!s.ok()) {
+    JsonError(s, output);
+    return;
+  }
+  jw.EndArray();
+
+  jw.EndObject();
+}
+
 Status MasterPathHandlers::Register(Webserver* server) {
   bool is_styled = true;
   bool is_on_nav_bar = true;
@@ -212,6 +339,9 @@ Status MasterPathHandlers::Register(Webserver* server) {
   server->RegisterPathHandler("/masterz", "Masters",
                               boost::bind(&MasterPathHandlers::HandleMasters, this, _1, _2),
                               is_styled, is_on_nav_bar);
+  server->RegisterPathHandler("/dump-entities", "Dump Entities",
+                              boost::bind(&MasterPathHandlers::HandleDumpEntities, this, _1, _2),
+                              false, false);
   return Status::OK();
 }
 
@@ -224,7 +354,7 @@ bool CompareByRole(const TabletReplica& a, const TabletReplica& b) {
 } // anonymous namespace
 
 string MasterPathHandlers::RaftConfigToHtml(const std::vector<TabletReplica>& locations) const {
-  std::stringstream html;
+  stringstream html;
   vector<TabletReplica> sorted_locations;
   sorted_locations.assign(locations.begin(), locations.end());
 
