@@ -39,6 +39,20 @@ If no stack-trace-file is specified, it will take input from stdin.
 EOF
 }
 
+# el6 and other older systems don't support the -p flag,
+# so we do our own "pretty" parsing.
+sub parse_addr2line_output($$) {
+  defined(my $output = shift) or die;
+  defined(my $lookup_func_name = shift) or die;
+  my @lines = grep { $_ ne '' } split("\n", $output);
+  my $pretty_str = '';
+  if ($lookup_func_name) {
+    $pretty_str .= ' ' . $lines[0];
+  }
+  $pretty_str .= ' at ' . $lines[1];
+  return $pretty_str;
+}
+
 my $binary = shift @ARGV;
 if (! -x $binary || ! -r $binary) {
   die "Error: Cannot access executable ($binary)";
@@ -52,21 +66,14 @@ $| = 1;
 
 # Reading from <ARGV> is magical in Perl.
 while (defined(my $input = <ARGV>)) {
-  if ($input =~ /^\s+\@\s+(0x[[:xdigit:]]{6,})(?:\s(\S+))?/) {
+  if ($input =~ /^\s+\@\s+(0x[[:xdigit:]]{6,})(?:\s+(\S+))?/) {
     my $addr = $1;
     my $lookup_func_name = (!defined $2);
-    my $key = "$addr-$lookup_func_name"; # Store symbolized / non-symbolized lookups seperately.
-    if (!exists($addr2line_map{$key})) {
-      my $addr2line_opts = '-pi'; # Get line numbers.
-      if ($lookup_func_name) {
-        $addr2line_opts .= 'fC'; # Pull the function name, too.
-      }
-      my $val = `addr2line $addr2line_opts -e $binary $addr | tail -1`;
-      chomp $val;
-      $addr2line_map{$key} = ($lookup_func_name ? " " : " at ") . $val;
+    if (!exists($addr2line_map{$addr})) {
+      $addr2line_map{$addr} = `addr2line -ifC -e $binary $addr`;
     }
     chomp $input;
-    $input .= $addr2line_map{$key} . "\n";
+    $input .= parse_addr2line_output($addr2line_map{$addr}, $lookup_func_name) . "\n";
   }
   print $input;
 }
