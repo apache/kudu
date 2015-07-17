@@ -708,20 +708,22 @@ Status Tablet::RewindSchemaForBootstrap(const Schema& new_schema,
   LOG(INFO) << "Rewinding schema during bootstrap to " << new_schema.ToString();
 
   metadata_->SetSchema(new_schema, schema_version);
+  {
+    boost::lock_guard<rw_spinlock> lock(component_lock_);
 
-  shared_ptr<MemRowSet> old_mrs = components_->memrowset;
-  shared_ptr<RowSetTree> old_rowsets = components_->rowsets;
-  CHECK(old_mrs->empty());
-  int64_t old_mrs_id = old_mrs->mrs_id();
-
-  // We have to reset the components here before creating the new MemRowSet,
-  // or else the new MRS will end up trying to claim the same MemTracker ID
-  // as the old one.
-  components_.reset();
-  old_mrs.reset();
-  shared_ptr<MemRowSet> new_mrs(new MemRowSet(old_mrs_id, new_schema,
-                                              log_anchor_registry_.get(), mem_tracker_));
-  components_ = new TabletComponents(new_mrs, old_rowsets);
+    shared_ptr<MemRowSet> old_mrs = components_->memrowset;
+    shared_ptr<RowSetTree> old_rowsets = components_->rowsets;
+    CHECK(old_mrs->empty());
+    int64_t old_mrs_id = old_mrs->mrs_id();
+    // We have to reset the components here before creating the new MemRowSet,
+    // or else the new MRS will end up trying to claim the same MemTracker ID
+    // as the old one.
+    components_.reset();
+    old_mrs.reset();
+    shared_ptr<MemRowSet> new_mrs(new MemRowSet(old_mrs_id, new_schema,
+                                                log_anchor_registry_.get(), mem_tracker_));
+    components_ = new TabletComponents(new_mrs, old_rowsets);
+  }
   return Status::OK();
 }
 
