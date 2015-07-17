@@ -199,6 +199,10 @@ class ExternalMiniCluster {
   // given timeout.
   Status WaitForTabletServerCount(int count, const MonoDelta& timeout);
 
+  // Wait until all tablets on the given tablet server are in 'RUNNING'
+  // state.
+  Status WaitForTabletsRunning(ExternalTabletServer* ts, const MonoDelta& timeout);
+
   // Create a client configured to talk to this cluster.
   // Builder may contain override options for the client. The master address will
   // be overridden to talk to the running master.

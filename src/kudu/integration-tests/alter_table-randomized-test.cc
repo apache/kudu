@@ -69,6 +69,8 @@ class AlterTableRandomized : public KuduTest {
   void RestartTabletServer() {
     cluster_->tablet_server(0)->Shutdown();
     CHECK_OK(cluster_->tablet_server(0)->Restart());
+    CHECK_OK(cluster_->WaitForTabletsRunning(cluster_->tablet_server(0),
+        MonoDelta::FromSeconds(30)));
   }
 
  protected:

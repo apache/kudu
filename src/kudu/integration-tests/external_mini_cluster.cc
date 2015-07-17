@@ -18,6 +18,7 @@
 #include "kudu/master/master_rpc.h"
 #include "kudu/server/server_base.pb.h"
 #include "kudu/server/server_base.proxy.h"
+#include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/async_util.h"
 #include "kudu/util/env.h"
@@ -34,6 +35,10 @@ using strings::Substitute;
 using kudu::master::GetLeaderMasterRpc;
 using kudu::master::MasterServiceProxy;
 using kudu::server::ServerStatusPB;
+using kudu::tserver::TabletServerServiceProxy;
+using kudu::tserver::ListTabletsRequestPB;
+using kudu::tserver::ListTabletsResponsePB;
+typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 
 namespace kudu {
 
@@ -288,6 +293,39 @@ Status ExternalMiniCluster::WaitForTabletServerCount(int count, const MonoDelta&
     }
     SleepFor(MonoDelta::FromMilliseconds(1));
   }
+}
+
+Status ExternalMiniCluster::WaitForTabletsRunning(ExternalTabletServer* ts,
+                                                  const MonoDelta& timeout) {
+  TabletServerServiceProxy proxy(messenger_, ts->bound_rpc_addr());
+  ListTabletsRequestPB req;
+  ListTabletsResponsePB resp;
+
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+    rpc::RpcController rpc;
+    rpc.set_timeout(MonoDelta::FromSeconds(10));
+    RETURN_NOT_OK(proxy.ListTablets(req, &resp, &rpc));
+    if (resp.has_error()) {
+      return StatusFromPB(resp.error().status());
+    }
+
+    int num_not_running = 0;
+    BOOST_FOREACH(const StatusAndSchemaPB& status, resp.status_and_schema()) {
+      if (status.tablet_status().state() != tablet::RUNNING) {
+        num_not_running++;
+      }
+    }
+
+    if (num_not_running == 0) {
+      return Status::OK();
+    }
+
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  return Status::TimedOut(resp.DebugString());
 }
 
 namespace {
