@@ -93,7 +93,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     return table_id_;
   }
 
-  const std::string& table_name() const;
+  std::string table_name() const;
 
   uint32_t schema_version() const;
 

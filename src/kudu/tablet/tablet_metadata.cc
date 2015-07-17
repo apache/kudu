@@ -448,7 +448,7 @@ void TabletMetadata::SetTableName(const string& table_name) {
   table_name_ = table_name;
 }
 
-const string& TabletMetadata::table_name() const {
+string TabletMetadata::table_name() const {
   boost::lock_guard<LockType> l(data_lock_);
   DCHECK_NE(state_, kNotLoadedYet);
   return table_name_;
