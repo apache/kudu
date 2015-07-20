@@ -113,14 +113,22 @@ def main():
            label="Table ID",
            description="UUID for Kudu Table.",
            valueCaseSensitive=False),
+      dict(name="kuduTableName",
+           label="Table Name",
+           description="Name for Kudu Table.",
+           valueCaseSensitive=True),
+      dict(name="kuduTableState",
+           label="Table State",
+           description="State for Kudu Table.",
+           valueCaseSensitive=False),
       dict(name="kuduTabletId",
            label="Tablet ID",
            description="UUID for Kudu Tablet.",
            valueCaseSensitive=False),
-      dict(name="kuduTableName",
-           label="Table Name",
-           description="Name for Kudu Table.",
-           valueCaseSensitive=True)
+      dict(name="kuduTabletState",
+           label="Tablet State",
+           description="State for Kudu Tablet.",
+           valueCaseSensitive=False)
       # TODO: add the role's persistent UUID after discussing with
       # Chris on how to inject it into their CM entity.
       ],

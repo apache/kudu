@@ -32,7 +32,7 @@
               </arguments>
             </configuration>
             <id>generate-target-descriptor-directory</id>
-            <phase>package</phase>
+            <phase>compile</phase>
             <goals>
               <goal>exec</goal>
             </goals>
@@ -46,14 +46,37 @@
               </arguments>
             </configuration>
             <id>generate-mdl</id>
-            <phase>package</phase>
+            <phase>compile</phase>
             <goals>
               <goal>exec</goal>
             </goals>
           </execution>
         </executions>
+      </plugin> 
+      <plugin>
+        <!-- Validate the SDL/MDL. -->
+        <groupId>com.cloudera.enterprise</groupId>
+        <artifactId>schema-validator-maven-plugin</artifactId>
+        <version>${schema-validator-maven-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>validate-descriptors</id>
+            <phase>test</phase>
+            <goals>
+              <goal>validate</goal>
+            </goals>
+            <configuration>
+              <!-- The directory containing pom.xml. The plugin will recurse
+                   and find both the SDL and MDL from here.
+
+                   TODO: when the SDL becomes generated, this can probably be
+                   narrowed to just the build directory. -->
+              <sourceDirectory>${project.basedir}</sourceDirectory>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
-      <!-- Assemble the CSD. -->
+     <!-- Assemble the CSD. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-assembly-plugin</artifactId>
