@@ -44,7 +44,7 @@ namespace kudu {
 
 static const char* const kMasterBinaryName = "kudu-master";
 static const char* const kTabletServerBinaryName = "kudu-tablet_server";
-static double kProcessStartTimeoutSeconds = 10.0;
+static double kProcessStartTimeoutSeconds = 30.0;
 static double kTabletServerRegistrationTimeoutSeconds = 10.0;
 
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
@@ -509,8 +509,9 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
 
   if (!success) {
     ignore_result(p->Kill(SIGKILL));
-    return Status::TimedOut("Timed out waiting for process to start",
-                            exe_);
+    return Status::TimedOut(
+        Substitute("Timed out after $0s waiting for process ($1) to write info file ($2)",
+                   kProcessStartTimeoutSeconds, exe_, info_path));
   }
 
   status_.reset(new ServerStatusPB());
