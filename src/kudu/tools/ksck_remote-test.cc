@@ -222,7 +222,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshot) {
                  &RemoteKsckTest::GenerateRowWritesLoop, this,
                  &started_writing, boost::cref(continue_writing), &promise,
                  &writer_thread);
-  CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(1)));
+  CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
 
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->ChecksumData(vector<string>(), vector<string>(),
@@ -243,7 +243,7 @@ TEST_F(RemoteKsckTest, TestChecksumSnapshotCurrentTimestamp) {
                  &RemoteKsckTest::GenerateRowWritesLoop, this,
                  &started_writing, boost::cref(continue_writing), &promise,
                  &writer_thread);
-  CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(1)));
+  CHECK(started_writing.WaitFor(MonoDelta::FromSeconds(30)));
 
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
   ASSERT_OK(ksck_->ChecksumData(vector<string>(), vector<string>(),
