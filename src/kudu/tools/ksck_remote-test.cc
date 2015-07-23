@@ -201,7 +201,7 @@ TEST_F(RemoteKsckTest, TestChecksum) {
 }
 
 TEST_F(RemoteKsckTest, TestChecksumTimeout) {
-  uint64_t num_writes = 100;
+  uint64_t num_writes = 10000;
   LOG(INFO) << "Generating row writes...";
   ASSERT_OK(GenerateRowWrites(num_writes));
   ASSERT_OK(ksck_->FetchTableAndTabletInfo());
