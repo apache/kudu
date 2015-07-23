@@ -168,15 +168,16 @@ TEST_F(RemoteKsckTest, TestTabletServersOk) {
 }
 
 TEST_F(RemoteKsckTest, TestTableConsistency) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromSeconds(30));
   Status s;
-  // We may have to sleep and loop because it takes some time for the
-  // tablet leader to be elected and report back to the Master.
-  for (int i = 1; i <= 10; i++) {
-    LOG(INFO) << "Consistency check attempt " << i << "...";
-    SleepFor(MonoDelta::FromMilliseconds(700));
+  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
     ASSERT_OK(ksck_->FetchTableAndTabletInfo());
     s = ksck_->CheckTablesConsistency();
-    if (s.ok()) break;
+    if (s.ok()) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
   }
   ASSERT_OK(s);
 }
@@ -185,17 +186,19 @@ TEST_F(RemoteKsckTest, TestChecksum) {
   uint64_t num_writes = 100;
   LOG(INFO) << "Generating row writes...";
   ASSERT_OK(GenerateRowWrites(num_writes));
-  ASSERT_OK(ksck_->FetchTableAndTabletInfo());
+
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromSeconds(30));
   Status s;
-  // We may have to sleep and loop because it may take a little while for all
-  // followers to sync up with the leader.
-  for (int i = 1; i <= 10; i++) {
-    LOG(INFO) << "Checksum attempt " << i << "...";
-    SleepFor(MonoDelta::FromMilliseconds(700));
+  while (MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+    ASSERT_OK(ksck_->FetchTableAndTabletInfo());
     s = ksck_->ChecksumData(vector<string>(),
                             vector<string>(),
                             ChecksumOptions(MonoDelta::FromSeconds(1), 16, false, 0));
-    if (s.ok()) break;
+    if (s.ok()) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
   }
   ASSERT_OK(s);
 }
