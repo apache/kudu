@@ -253,8 +253,8 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
   void AssertAllReplicasAgree(int expected_result_count) {
     ClusterVerifier v(cluster_.get());
-    v.CheckCluster();
-    v.CheckRowCount(kTableId, ClusterVerifier::EXACTLY, expected_result_count);
+    NO_FATALS(v.CheckCluster());
+    NO_FATALS(v.CheckRowCount(kTableId, ClusterVerifier::EXACTLY, expected_result_count));
   }
 
   void InsertTestRowsRemoteThread(uint64_t first_row,
