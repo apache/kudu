@@ -1265,14 +1265,9 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
     return Status::IllegalState(msg);
   }
 
-  // If it's non-incremental, we need to clear all tablets which we previously
-  // thought were on this server.
-  // TODO: should we also have a map of server->tablet, not just tablet->server,
-  // so this is O(tablets on server) instead of O(total replicas)? Optimization
-  // for later, unless we find some functional reason to add it, I guess.
-  if (!report.is_incremental()) {
-    ClearAllReplicasOnTS(ts_desc);
-  }
+  // TODO: on a full tablet report, we may want to iterate over the tablets we think
+  // the server should have, compare vs the ones being reported, and somehow mark
+  // any that have been "lost" (eg somehow the tablet metadata got corrupted or something).
 
   BOOST_FOREACH(const ReportedTabletPB& reported, report.updated_tablets()) {
     ReportedTabletUpdatesPB *tablet_report = report_update->add_tablets();
@@ -1288,13 +1283,6 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
   }
 
   return Status::OK();
-}
-
-void CatalogManager::ClearAllReplicasOnTS(TSDescriptor* ts_desc) {
-  boost::shared_lock<LockType> l(lock_);
-  BOOST_FOREACH(TabletInfoMap::value_type& e, tablet_map_) {
-    e.second->ClearReplicasOnTS(ts_desc);
-  }
 }
 
 Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
@@ -2555,19 +2543,6 @@ void TabletInfo::ResetReplicas(const std::vector<TabletReplica>& replicas) {
 
   last_update_ts_ = MonoTime::Now(MonoTime::FINE);
   locations_.assign(replicas.begin(), replicas.end());
-}
-
-void TabletInfo::ClearReplicasOnTS(const TSDescriptor* ts) {
-  boost::lock_guard<simple_spinlock> l(lock_);
-
-  std::vector<TabletReplica>::iterator it = locations_.begin();
-  while (it != locations_.end()) {
-    if (it->ts_desc == ts) {
-      it = locations_.erase(it);
-    } else {
-      ++it;
-    }
-  }
 }
 
 void TabletInfo::GetLocations(std::vector<TabletReplica>* locations) const {

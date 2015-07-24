@@ -145,17 +145,9 @@ TEST_F(RegistrationTest, TestTabletReports) {
   ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_1, 1, &locs));
   ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_2, 1, &locs));
 
-  // Restart the TS after clearing its metadata blocks. On restart, it will send
-  // a full tablet report, without any of the tablets. This causes the
-  // master to remove the tablet locations.
-  string meta_dir = ts->server()->fs_manager()->GetTabletMetadataDir();
-  LOG(INFO) << "Shutting down TS, clearing data, and restarting it";
-  ts->Shutdown();
-  ASSERT_OK(env_->DeleteRecursively(meta_dir));
-  ASSERT_OK(env_->CreateDir(meta_dir));
-  ASSERT_OK(ts->Start());
-  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_1, 0, &locs));
-  ASSERT_OK(cluster_->WaitForReplicaCount(tablet_id_2, 0, &locs));
+  // TODO: KUDU-870: once the master supports detecting failed/lost replicas,
+  // we should add a test case here which removes or corrupts metadata, restarts
+  // the TS, and verifies that the master notices the issue.
 }
 
 } // namespace kudu

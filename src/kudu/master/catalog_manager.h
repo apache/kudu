@@ -96,9 +96,6 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
   // Resets the replicas in this tablet info.
   void ResetReplicas(const std::vector<TabletReplica>& replicas);
 
-  // Remove any replicas which were on this server.
-  void ClearReplicasOnTS(const TSDescriptor* ts_desc);
-
   std::string ToString() const;
 
   TableInfo *table() { return table_.get(); }
@@ -492,8 +489,6 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   void AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
                                     const ReportedTabletPB& report,
                                     const scoped_refptr<TabletInfo>& tablet);
-
-  void ClearAllReplicasOnTS(TSDescriptor* ts_desc);
 
   // Extract the set of tablets that can be deleted and the set of tablets
   // that must be processed because not running yet.
