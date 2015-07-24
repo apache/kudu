@@ -1511,15 +1511,53 @@ const NodeInstancePB& CatalogManager::NodeInstance() const {
   return master_->instance_pb();
 }
 
-class AsyncTabletRequestTask : public MonitoredTask {
+// Interface used by RetryingTSRpcTask to pick the tablet server to
+// send the next RPC to.
+class TSPicker {
  public:
-  AsyncTabletRequestTask(Master *master,
-                         ThreadPool* callback_pool,
-                         const string& permanent_uuid,
-                         const scoped_refptr<TableInfo>& table)
+  TSPicker() {}
+  virtual ~TSPicker() {}
+
+  // Sets *ts_desc to the tablet server to contact for the next RPC.
+  virtual Status PickReplica(shared_ptr<TSDescriptor>* ts_desc) = 0;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TSPicker);
+};
+
+// Implementation of TSPicker which sends to a specific tablet server,
+// identified by its UUID.
+class PickSpecificUUID : public TSPicker {
+ public:
+  PickSpecificUUID(Master* master, const string& ts_uuid) :
+    master_(master),
+    ts_uuid_(ts_uuid) {
+  }
+
+  virtual Status PickReplica(shared_ptr<TSDescriptor>* ts_desc) OVERRIDE {
+    return master_->ts_manager()->LookupTSByUUID(ts_uuid_, ts_desc);
+  }
+
+ private:
+  Master* const master_;
+  const string ts_uuid_;
+
+  DISALLOW_COPY_AND_ASSIGN(PickSpecificUUID);
+};
+
+// A background task which continuously retries sending an RPC to a tablet server.
+//
+// The target tablet server is refreshed before each RPC by consulting the provided
+// TSPicker implementation.
+class RetryingTSRpcTask : public MonitoredTask {
+ public:
+  RetryingTSRpcTask(Master *master,
+                    ThreadPool* callback_pool,
+                    gscoped_ptr<TSPicker> replica_picker,
+                    const scoped_refptr<TableInfo>& table)
     : master_(master),
       callback_pool_(callback_pool),
-      permanent_uuid_(permanent_uuid),
+      replica_picker_(replica_picker.Pass()),
       table_(table),
       start_ts_(MonoTime::Now(MonoTime::FINE)),
       attempt_(0),
@@ -1594,7 +1632,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
     // This is necessary because our callbacks often do synchronous writes to
     // the catalog table, and we can't do synchronous IO on the reactor.
     CHECK_OK(callback_pool_->SubmitClosure(
-                 Bind(&AsyncTabletRequestTask::DoRpcCallback,
+                 Bind(&RetryingTSRpcTask::DoRpcCallback,
                       Unretained(this))));
   }
 
@@ -1602,7 +1640,8 @@ class AsyncTabletRequestTask : public MonitoredTask {
   // pool, rather than a reactor thread, so it may do blocking IO operations.
   void DoRpcCallback() {
     if (!rpc_.status().ok()) {
-      LOG(WARNING) << "TS " << permanent_uuid_ << ": " << type_name() << " RPC failed for tablet "
+      LOG(WARNING) << "TS " << target_ts_desc_->permanent_uuid() << ": "
+                   << type_name() << " RPC failed for tablet "
                    << tablet_id() << ": " << rpc_.status().ToString();
     } else if (state() != kStateAborted) {
       HandleResponse(attempt_); // Modifies state_.
@@ -1628,7 +1667,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
         LOG(INFO) << "Scheduling retry of " << description() << " with a delay"
                   << " of " << delay_millis << "ms (attempt = " << attempt_ << ")...";
         master_->messenger()->ScheduleOnReactor(
-            boost::bind(&AsyncTabletRequestTask::RunDelayedTask, this, _1),
+            boost::bind(&RetryingTSRpcTask::RunDelayedTask, this, _1),
             MonoDelta::FromMilliseconds(delay_millis));
         return;
       }
@@ -1639,7 +1678,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
 
   Master * const master_;
   ThreadPool* const callback_pool_;
-  const string permanent_uuid_;
+  const gscoped_ptr<TSPicker> replica_picker_;
   const scoped_refptr<TableInfo> table_;
 
   MonoTime start_ts_;
@@ -1648,6 +1687,7 @@ class AsyncTabletRequestTask : public MonitoredTask {
 
   int attempt_;
   rpc::RpcController rpc_;
+  std::tr1::shared_ptr<TSDescriptor> target_ts_desc_;
   std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy_;
 
  private:
@@ -1682,10 +1722,9 @@ class AsyncTabletRequestTask : public MonitoredTask {
   }
 
   Status ResetTSProxy() {
-    std::tr1::shared_ptr<TSDescriptor> ts_desc;
+    RETURN_NOT_OK(replica_picker_->PickReplica(&target_ts_desc_));
     std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy;
-    RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(permanent_uuid_, &ts_desc));
-    RETURN_NOT_OK(ts_desc->GetProxy(master_->messenger(), &ts_proxy));
+    RETURN_NOT_OK(target_ts_desc_->GetProxy(master_->messenger(), &ts_proxy));
     ts_proxy_.swap(ts_proxy);
     rpc_.Reset();
     return Status::OK();
@@ -1695,16 +1734,35 @@ class AsyncTabletRequestTask : public MonitoredTask {
   AtomicWord state_;
 };
 
+// RetryingTSRpcTask subclass which always retries the same tablet server,
+// identified by its UUID.
+class RetrySpecificTSRpcTask : public RetryingTSRpcTask {
+ public:
+  RetrySpecificTSRpcTask(Master* master,
+                         ThreadPool* callback_pool,
+                         const string& permanent_uuid,
+                         const scoped_refptr<TableInfo>& table)
+    : RetryingTSRpcTask(master,
+                        callback_pool,
+                        gscoped_ptr<TSPicker>(new PickSpecificUUID(master, permanent_uuid)),
+                        table),
+      permanent_uuid_(permanent_uuid) {
+  }
+
+ protected:
+  const string permanent_uuid_;
+};
+
 // Fire off the async create tablet.
 // This requires that the new tablet info is locked for write, and the
 // consensus configuration information has been filled into the 'dirty' data.
-class AsyncCreateTablet : public AsyncTabletRequestTask {
+class AsyncCreateReplica : public RetrySpecificTSRpcTask {
  public:
-  AsyncCreateTablet(Master *master,
-                    ThreadPool *callback_pool,
-                    const string& permanent_uuid,
-                    const scoped_refptr<TabletInfo>& tablet)
-    : AsyncTabletRequestTask(master, callback_pool, permanent_uuid, tablet->table()),
+  AsyncCreateReplica(Master *master,
+                     ThreadPool *callback_pool,
+                     const string& permanent_uuid,
+                     const scoped_refptr<TabletInfo>& tablet)
+    : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, tablet->table()),
       tablet_id_(tablet->tablet_id()) {
     deadline_ = start_ts_;
     deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_assignment_timeout_ms));
@@ -1749,7 +1807,7 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
 
   virtual void SendRequest(int attempt) OVERRIDE {
     ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
-                                 boost::bind(&AsyncCreateTablet::RpcCallback, this));
+                                 boost::bind(&AsyncCreateReplica::RpcCallback, this));
     VLOG(1) << "Send create tablet request to " << permanent_uuid_ << ":\n"
             << " (attempt " << attempt << "):\n"
             << req_.DebugString();
@@ -1762,18 +1820,18 @@ class AsyncCreateTablet : public AsyncTabletRequestTask {
 };
 
 // Send a DeleteTablet() RPC request.
-class AsyncDeleteTablet : public AsyncTabletRequestTask {
+class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
  public:
-  AsyncDeleteTablet(Master *master,
-                    ThreadPool* callback_pool,
-                    const string& permanent_uuid,
-                    const scoped_refptr<TableInfo>& table,
-                    const std::string& tablet_id,
-                    const string& reason)
-    : AsyncTabletRequestTask(master, callback_pool, permanent_uuid, table),
+  AsyncDeleteReplica(Master *master,
+                     ThreadPool* callback_pool,
+                     const string& permanent_uuid,
+                     const scoped_refptr<TableInfo>& table,
+                     const std::string& tablet_id,
+                     const string& reason)
+    : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, table),
       tablet_id_(tablet_id),
       reason_(reason) {
-    }
+  }
 
   virtual string type_name() const OVERRIDE { return "Delete Tablet"; }
 
@@ -1820,7 +1878,7 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
     req.set_reason(reason_);
 
     ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
-                                 boost::bind(&AsyncDeleteTablet::RpcCallback, this));
+                                 boost::bind(&AsyncDeleteReplica::RpcCallback, this));
     VLOG(1) << "Send delete tablet request to " << permanent_uuid_
             << " (attempt " << attempt << "):\n"
             << req.DebugString();
@@ -1836,13 +1894,16 @@ class AsyncDeleteTablet : public AsyncTabletRequestTask {
 //  - Alter completed
 //  - TS has already a newer version
 //    (which may happen in case of 2 alter since we can't abort an in-progress operation)
-class AsyncAlterTable : public AsyncTabletRequestTask {
+//
+// TODO: use a TSPicker implementation which always retries the current leader, rather than
+// creating one of these for each replica.
+class AsyncAlterTable : public RetrySpecificTSRpcTask {
  public:
   AsyncAlterTable(Master *master,
                   ThreadPool* callback_pool,
                   const string& permanent_uuid,
                   const scoped_refptr<TabletInfo>& tablet)
-    : AsyncTabletRequestTask(master, callback_pool, permanent_uuid, tablet->table()),
+    : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, tablet->table()),
       tablet_(tablet) {
   }
 
@@ -1952,9 +2013,9 @@ void CatalogManager::SendDeleteTabletRequest(const std::string& tablet_id,
                                              const scoped_refptr<TableInfo>& table,
                                              TSDescriptor* ts_desc,
                                              const string& reason) {
-  AsyncDeleteTablet *call = new AsyncDeleteTablet(master_, worker_pool_.get(),
-                                                  ts_desc->permanent_uuid(),
-                                                  table, tablet_id, reason);
+  AsyncDeleteReplica* call = new AsyncDeleteReplica(master_, worker_pool_.get(),
+                                                    ts_desc->permanent_uuid(),
+                                                    table, tablet_id, reason);
   if (table != NULL) {
     table->AddTask(call);
   } else {
@@ -2288,8 +2349,8 @@ void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets
         tablet->metadata().dirty().pb.committed_consensus_state().config();
     tablet->set_last_update_ts(MonoTime::Now(MonoTime::FINE));
     BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
-      AsyncCreateTablet *task = new AsyncCreateTablet(master_, worker_pool_.get(),
-                                                      peer.permanent_uuid(), tablet);
+      AsyncCreateReplica* task = new AsyncCreateReplica(master_, worker_pool_.get(),
+                                                        peer.permanent_uuid(), tablet);
       tablet->table()->AddTask(task);
       WARN_NOT_OK(task->Run(), "Failed to send new tablet request");
     }
