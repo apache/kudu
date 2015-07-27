@@ -10,6 +10,7 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/util/hdr_histogram.h"
+#include "kudu/util/jsonreader.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
@@ -154,13 +155,24 @@ TEST_F(MetricsTest, JsonPrintTest) {
   ASSERT_OK(entity_->WriteAsJson(&writer, list_of("*"), MetricJsonOptions()));
 
   // Now parse it back out.
-  rapidjson::Document d;
-  d.Parse<0>(out.str().c_str());
-  // Note: you need to specify 0u instead of just 0 because the rapidjson Value
-  // class overloads both operator[int] and operator[char*] and 0 == NULL.
-  ASSERT_EQ(string("reqs_pending"), string(d["metrics"][0u]["name"].GetString()));
-  ASSERT_EQ(1L, d["metrics"][0u]["value"].GetInt64());
-  ASSERT_EQ(string("attr_val"), string(d["attributes"]["test_attr"].GetString()));
+  JsonReader reader(out.str());
+  ASSERT_OK(reader.Init());
+
+  vector<const rapidjson::Value*> metrics;
+  ASSERT_OK(reader.ExtractObjectArray(reader.root(), "metrics", &metrics));
+  ASSERT_EQ(1, metrics.size());
+  string metric_name;
+  ASSERT_OK(reader.ExtractString(metrics[0], "name", &metric_name));
+  ASSERT_EQ("reqs_pending", metric_name);
+  int64_t metric_value;
+  ASSERT_OK(reader.ExtractInt64(metrics[0], "value", &metric_value));
+  ASSERT_EQ(1L, metric_value);
+
+  const rapidjson::Value* attributes;
+  ASSERT_OK(reader.ExtractObject(reader.root(), "attributes", &attributes));
+  string attr_value;
+  ASSERT_OK(reader.ExtractString(attributes, "test_attr", &attr_value));
+  ASSERT_EQ("attr_val", attr_value);
 }
 
 // Test that metrics are retired when they are no longer referenced.

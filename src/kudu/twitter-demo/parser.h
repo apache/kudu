@@ -20,23 +20,23 @@ enum TwitterEventType {
 
 
 struct TweetEvent {
-  uint64_t tweet_id;
+  int64_t tweet_id;
   std::string text;
   std::string source;
   std::string created_at;
   // TODO: add geolocation
-  uint64_t user_id;
+  int64_t user_id;
   std::string user_name;
   std::string user_description;
   std::string user_location;
-  uint32_t user_followers_count;
-  uint32_t user_friends_count;
+  int32_t user_followers_count;
+  int32_t user_friends_count;
   std::string user_image_url;
 };
 
 struct DeleteTweetEvent {
-  uint64_t tweet_id;
-  uint64_t user_id;
+  int64_t tweet_id;
+  int64_t user_id;
 };
 
 struct TwitterEvent {

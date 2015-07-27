@@ -98,12 +98,6 @@ static void GenerateTraceEvents(int thread_id,
   }
 }
 
-void VerifyValidJson(const string& json) {
-  Document d;
-  d.Parse<0>(json.c_str());
-  ASSERT_TRUE(d.IsObject());
-}
-
 // Parse the dumped trace data and return the number of events
 // found within, including only those with the "test" category.
 int ParseAndReturnEventCount(const string& trace_json) {

@@ -9,7 +9,6 @@
 #include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <rapidjson/prettywriter.h>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/ref_counted.h"

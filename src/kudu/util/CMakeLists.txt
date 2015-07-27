@@ -83,6 +83,7 @@ set(UTIL_SRCS
   pstack_watcher.cc
   hdr_histogram.cc
   hexdump.cc
+  jsonreader.cc
   jsonwriter.cc
   kernel_stack_watchdog.cc
   locks.cc
@@ -214,6 +215,7 @@ ADD_KUDU_TEST(hash_util-test)
 ADD_KUDU_TEST(hdr_histogram-test)
 ADD_KUDU_TEST(inline_slice-test)
 ADD_KUDU_TEST(interval_tree-test)
+ADD_KUDU_TEST(jsonreader-test)
 ADD_KUDU_TEST(knapsack_solver-test)
 ADD_KUDU_TEST(map-util-test)
 ADD_KUDU_TEST(memcmpable_varint-test LABELS no_tsan)
