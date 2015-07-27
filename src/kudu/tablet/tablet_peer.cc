@@ -175,18 +175,12 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
 
   VLOG(2) << "RaftConfig before starting: " << consensus_->CommittedConfig().DebugString();
 
-  // TODO we likely should only change the state after starting consensus
-  // but if we do that a lot of tests fail. We can't include Consensus::Start()
-  // with the lock either or we'd get a deadlock. We should investigate why
-  // this is happening and move the state change to the right place but this
-  // should be good enough for now.
+  RETURN_NOT_OK(consensus_->Start(bootstrap_info));
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
     CHECK_EQ(state_, BOOTSTRAPPING);
     state_ = RUNNING;
   }
-
-  RETURN_NOT_OK(consensus_->Start(bootstrap_info));
 
   return Status::OK();
 }
@@ -415,7 +409,11 @@ Status TabletPeer::GetGCableDataSize(int64_t* retention_size) const {
 }
 
 Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) {
-  RETURN_NOT_OK(CheckRunning());
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    CHECK(state_ == RUNNING || state_ == BOOTSTRAPPING)
+      << "Bad state: " << TabletStatePB_Name(state_);
+  }
 
   consensus::ReplicateMsg* replicate_msg = round->replicate_msg();
   DCHECK(replicate_msg->has_timestamp());
