@@ -5,6 +5,7 @@
 
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
+#include <rapidjson/document.h>
 #include <string>
 #include <tr1/memory>
 
@@ -21,7 +22,10 @@
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/curl_util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/jsonreader.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
@@ -29,6 +33,7 @@
 #include "kudu/util/subprocess.h"
 #include "kudu/util/test_util.h"
 
+using rapidjson::Value;
 using std::string;
 using std::tr1::shared_ptr;
 using strings::Substitute;
@@ -385,6 +390,17 @@ ExternalTabletServer* ExternalMiniCluster::tablet_server_by_uuid(const std::stri
   return NULL;
 }
 
+vector<ExternalDaemon*> ExternalMiniCluster::daemons() const {
+  vector<ExternalDaemon*> results;
+  BOOST_FOREACH(const scoped_refptr<ExternalTabletServer>& ts, tablet_servers_) {
+    results.push_back(ts.get());
+  }
+  BOOST_FOREACH(const scoped_refptr<ExternalMaster>& master, masters_) {
+    results.push_back(master.get());
+  }
+  return results;
+}
+
 shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
   CHECK_EQ(masters_.size(), 1);
   return master_proxy(0);
@@ -627,6 +643,62 @@ HostPort ExternalDaemon::bound_http_hostport() const {
 const NodeInstancePB& ExternalDaemon::instance_id() const {
   CHECK(status_);
   return status_->node_instance();
+}
+
+Status ExternalDaemon::GetInt64Metric(const MetricEntityPrototype* entity_proto,
+                                      const char* entity_id,
+                                      const MetricPrototype* metric_proto,
+                                      int64_t* value) const {
+  // Fetch all the metrics.
+  string url = Substitute(
+      "http://$0/jsonmetricz", bound_http_hostport().ToString());
+  EasyCurl curl;
+  faststring dst;
+  RETURN_NOT_OK(curl.FetchURL(url, &dst));
+
+  // Parse the results, beginning with the top-level entity array.
+  JsonReader r(dst.ToString());
+  RETURN_NOT_OK(r.Init());
+  vector<const Value*> entities;
+  RETURN_NOT_OK(r.ExtractObjectArray(r.root(), NULL, &entities));
+  BOOST_FOREACH(const Value* entity, entities) {
+    // Find the desired entity.
+    string type;
+    RETURN_NOT_OK(r.ExtractString(entity, "type", &type));
+    if (type != entity_proto->name()) {
+      continue;
+    }
+    if (entity_id) {
+      string id;
+      RETURN_NOT_OK(r.ExtractString(entity, "id", &id));
+      if (id != entity_id) {
+        continue;
+      }
+    }
+
+    // Find the desired metric within the entity.
+    vector<const Value*> metrics;
+    RETURN_NOT_OK(r.ExtractObjectArray(entity, "metrics", &metrics));
+    BOOST_FOREACH(const Value* metric, metrics) {
+      string name;
+      RETURN_NOT_OK(r.ExtractString(metric, "name", &name));
+      if (name != metric_proto->name()) {
+        continue;
+      }
+      RETURN_NOT_OK(r.ExtractInt64(metric, "value", value));
+      return Status::OK();
+    }
+  }
+  string msg;
+  if (entity_id) {
+    msg = Substitute("Could not find metric $0.$1 for entity $2",
+                     entity_proto->name(), metric_proto->name(),
+                     entity_id);
+  } else {
+    msg = Substitute("Could not find metric $0.$1",
+                     entity_proto->name(), metric_proto->name());
+  }
+  return Status::NotFound(msg);
 }
 
 //------------------------------------------------------------

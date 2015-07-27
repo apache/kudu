@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <sys/types.h>
@@ -11,8 +12,12 @@
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/test_util.h"
+
+METRIC_DECLARE_entity(server);
+METRIC_DECLARE_gauge_uint64(threads_running);
 
 namespace kudu {
 
@@ -38,7 +43,7 @@ TEST_F(EMCTest, TestBasicOperation) {
   ExternalMiniCluster cluster(opts);
   ASSERT_OK(cluster.Start());
 
-  // Verify that the masters have bound their RPC and HTTP ports.
+  // Verify each of the masters.
   for (int i = 0; i < opts.num_masters; i++) {
     SCOPED_TRACE(i);
     ExternalMaster* master = CHECK_NOTNULL(cluster.master(i));
@@ -47,6 +52,14 @@ TEST_F(EMCTest, TestBasicOperation) {
 
     HostPort master_http = master->bound_http_hostport();
     EXPECT_TRUE(HasPrefixString(master_http.ToString(), "127.0.0.1:")) << master_http.ToString();
+
+    // Retrieve a thread metric, which should always be present on any master.
+    int64_t value;
+    ASSERT_OK(master->GetInt64Metric(&METRIC_ENTITY_server,
+                                     "kudu.master",
+                                     &METRIC_threads_running,
+                                     &value));
+    EXPECT_GT(value, 0);
   }
 
   // Verify each of the tablet servers.
@@ -60,6 +73,14 @@ TEST_F(EMCTest, TestBasicOperation) {
 
     HostPort ts_http = ts->bound_http_hostport();
     EXPECT_TRUE(HasPrefixString(ts_http.ToString(), expected_prefix)) << ts_http.ToString();
+
+    // Retrieve a thread metric, which should always be present on any TS.
+    int64_t value;
+    ASSERT_OK(ts->GetInt64Metric(&METRIC_ENTITY_server,
+                                 "kudu.tabletserver",
+                                 &METRIC_threads_running,
+                                 &value));
+    EXPECT_GT(value, 0);
   }
 
   // Restart a master and a tablet server. Make sure they come back up with the same ports.

@@ -38,14 +38,19 @@ using std::map;
 using std::stringstream;
 using strings::Substitute;
 
+METRIC_DEFINE_gauge_uint64(server, threads_started,
+                           "Threads Started",
+                           kudu::MetricUnit::kThreads,
+                           "Total number of threads started on this server");
+METRIC_DEFINE_gauge_uint64(server, threads_running,
+                           "Threads Running",
+                           kudu::MetricUnit::kThreads,
+                           "Current number of running threads");
+
 namespace kudu {
 
 class ThreadMgr;
 
-METRIC_DEFINE_gauge_uint64(server, threads_started, "Threads Started", MetricUnit::kThreads,
-                           "Total number of threads started on this server");
-METRIC_DEFINE_gauge_uint64(server, threads_running, "Threads Running", MetricUnit::kThreads,
-                           "Current number of running threads");
 __thread Thread* Thread::tls_ = NULL;
 
 // Singleton instance of ThreadMgr. Only visible in this file, used only by Thread.

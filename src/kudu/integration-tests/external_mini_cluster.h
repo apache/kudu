@@ -22,6 +22,8 @@ class ExternalDaemon;
 class ExternalMaster;
 class ExternalTabletServer;
 class HostPort;
+class MetricPrototype;
+class MetricEntityPrototype;
 class NodeInstancePB;
 class Sockaddr;
 class Subprocess;
@@ -177,6 +179,9 @@ class ExternalMiniCluster {
   // Return ExternalTabletServer given its UUID. If not found, returns NULL.
   ExternalTabletServer* tablet_server_by_uuid(const std::string& uuid) const;
 
+  // Return all tablet servers and masters.
+  std::vector<ExternalDaemon*> daemons() const;
+
   int num_tablet_servers() const {
     return tablet_servers_.size();
   }
@@ -284,6 +289,16 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // Return a pointer to the flags used for this server on restart.
   // Modifying these flags will only take effect on the next restart.
   std::vector<std::string>* mutable_flags() { return &extra_flags_; }
+
+  // Retrieve the value of a given metric from this server. The metric must
+  // be of int64_t type.
+  //
+  // 'entity_id' may be NULL, in which case the first entity of the same type
+  // as 'entity_proto' will be matched.
+  Status GetInt64Metric(const MetricEntityPrototype* entity_proto,
+                        const char* entity_id,
+                        const MetricPrototype* metric_proto,
+                        int64_t* value) const;
 
  protected:
   friend class RefCountedThreadSafe<ExternalDaemon>;
