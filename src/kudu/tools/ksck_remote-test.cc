@@ -140,6 +140,10 @@ class RemoteKsckTest : public KuduTest {
       gscoped_ptr<KuduInsert> insert(table->NewInsert());
       GenerateDataForRow(table->schema(), i, &random_, insert->mutable_row());
       RETURN_NOT_OK(session->Apply(insert.release()));
+
+      if (i > 0 && i % 1000 == 0) {
+        RETURN_NOT_OK(session->Flush());
+      }
     }
     RETURN_NOT_OK(session->Flush());
     return Status::OK();
