@@ -18,11 +18,20 @@
 #include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
 
-DEFINE_int64(mem_tracker_memory_limit, 0,
-       "Maximum amount of memory this daemon should use. 0 for "
-       "autosizing based on the total system memory.");
+DEFINE_int64(memory_limit_hard_mb, 0,
+             "Maximum amount of memory this daemon should use, in megabytes. "
+             "A value of 0 autosizes based on the total system memory. "
+             "A value of -1 disables all memory limiting.");
+DEFINE_int32(memory_limit_soft_percentage, 60,
+             "Percentage of the hard memory limit that this daemon may "
+             "consume before memory throttling of writes begins. The greater "
+             "the excess, the higher the chance of throttling. In general, a "
+             "lower soft limit leads to smoother write latencies but "
+             "decreased throughput, and vice versa for a higher soft limit.");
+
 
 namespace kudu {
 
@@ -46,8 +55,20 @@ static GoogleOnceType root_tracker_once = GOOGLE_ONCE_INIT;
 // is greater than GC_RELEASE_SIZE, this will trigger a tcmalloc gc.
 static Atomic64 released_memory_since_gc;
 
+// Validate that soft limit is a percentage.
+static bool ValidateSoftLimit(const char* flagname, int value) {
+  if (value >= 0 && value <= 100) {
+    return true;
+  }
+  LOG(ERROR) << Substitute("$0 must be a percentage, value $1 is invalid",
+                           flagname, value);
+  return false;
+}
+static bool dummy = google::RegisterFlagValidator(
+    &FLAGS_memory_limit_soft_percentage, &ValidateSoftLimit);
+
 void MemTracker::CreateRootTracker() {
-  int64_t limit = FLAGS_mem_tracker_memory_limit;
+  int64_t limit = FLAGS_memory_limit_hard_mb * 1024 * 1024;
   if (limit == 0) {
     // If no limit is provided, we'll use 80% of system RAM.
     int64_t total_ram;
@@ -55,11 +76,14 @@ void MemTracker::CreateRootTracker() {
     limit = total_ram * 4;
     limit /= 5;
   }
-  LOG(INFO) << StringPrintf("MemTracker: targeting memory size of %.6f GB",
-                            (static_cast<float>(limit) / (1024.0 * 1024.0 * 1024.0)));
   root_tracker.reset(new MemTracker(NULL, limit, "root",
                                     shared_ptr<MemTracker>()));
   root_tracker->Init();
+  LOG(INFO) << StringPrintf("MemTracker: hard memory limit is %.6f GB",
+                            (static_cast<float>(limit) / (1024.0 * 1024.0 * 1024.0)));
+  LOG(INFO) << StringPrintf("MemTracker: soft memory limit is %.6f GB",
+                            (static_cast<float>(root_tracker->soft_limit_) /
+                                (1024.0 * 1024.0 * 1024.0)));
 }
 
 shared_ptr<MemTracker> MemTracker::CreateTracker(int64_t byte_limit,
@@ -104,12 +128,15 @@ MemTracker::MemTracker(FunctionGauge<uint64_t>* consumption_metric,
       parent_(parent),
       consumption_(0),
       consumption_metric_(consumption_metric),
+      rand_(GetRandomSeed32()),
       enable_logging_(false),
       log_stack_(false) {
   VLOG(1) << "Creating tracker " << ToString();
   if (consumption_metric_) {
     UpdateConsumption();
   }
+  soft_limit_ = (limit_ == -1)
+      ? -1 : (limit_ * FLAGS_memory_limit_soft_percentage) / 100;
 }
 
 MemTracker::~MemTracker() {
@@ -329,6 +356,39 @@ bool MemTracker::AnyLimitExceeded() {
 bool MemTracker::LimitExceeded() {
   if (PREDICT_FALSE(CheckLimitExceeded())) {
     return GcMemory(limit_);
+  }
+  return false;
+}
+
+bool MemTracker::SoftLimitExceeded(double* current_capacity_pct) {
+  // Did we exceed the actual limit?
+  if (LimitExceeded()) {
+    if (current_capacity_pct) {
+      *current_capacity_pct =
+          static_cast<double>(consumption()) / limit() * 100;
+    }
+    return true;
+  }
+
+  // No soft limit defined.
+  if (!has_limit() || limit_ == soft_limit_) {
+    return false;
+  }
+
+  // Are we under the soft limit threshold?
+  int64_t usage = consumption();
+  if (usage < soft_limit_) {
+    return false;
+  }
+
+  // We're over the threshold; were we randomly chosen to be over the soft limit?
+  if (usage + rand_.Uniform64(limit_ - soft_limit_) > limit_) {
+    bool exceeded = GcMemory(soft_limit_);
+    if (exceeded && current_capacity_pct) {
+      *current_capacity_pct =
+          static_cast<double>(consumption()) / limit() * 100;
+    }
+    return exceeded;
   }
   return false;
 }

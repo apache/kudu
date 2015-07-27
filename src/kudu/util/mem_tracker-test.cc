@@ -11,6 +11,8 @@
 
 #include "kudu/util/test_util.h"
 
+DECLARE_int32(memory_limit_soft_percentage);
+
 namespace kudu {
 
 using std::equal_to;
@@ -223,4 +225,40 @@ TEST(MemTrackerTest, ScopedTrackedConsumption) {
   }
   ASSERT_EQ(0, m->consumption());
 }
+
+TEST(MemTrackerTest, SoftLimitExceeded) {
+  const int kNumIters = 100000;
+  const int kMemLimit = 1000;
+  google::FlagSaver saver;
+  FLAGS_memory_limit_soft_percentage = 0;
+  shared_ptr<MemTracker> m = MemTracker::CreateTracker(kMemLimit, "test");
+
+  // Consumption is 0; the soft limit is never exceeded.
+  for (int i = 0; i < kNumIters; i++) {
+    ASSERT_FALSE(m->SoftLimitExceeded(NULL));
+  }
+
+  // Consumption is half of the actual limit, so we expect to exceed the soft
+  // limit roughly half the time.
+  ScopedTrackedConsumption consumption(m, kMemLimit / 2);
+  int exceeded_count = 0;
+  for (int i = 0; i < kNumIters; i++) {
+    double current_percentage;
+    if (m->SoftLimitExceeded(&current_percentage)) {
+      exceeded_count++;
+      ASSERT_NEAR(50, current_percentage, 0.1);
+    }
+  }
+  double exceeded_pct = static_cast<double>(exceeded_count) / kNumIters * 100;
+  ASSERT_TRUE(exceeded_pct > 47 && exceeded_pct < 52);
+
+  // Consumption is over the limit; the soft limit is always exceeded.
+  consumption.Reset(kMemLimit + 1);
+  for (int i = 0; i < kNumIters; i++) {
+    double current_percentage;
+    ASSERT_TRUE(m->SoftLimitExceeded(&current_percentage));
+    ASSERT_NEAR(100, current_percentage, 0.1);
+  }
+}
+
 } // namespace kudu

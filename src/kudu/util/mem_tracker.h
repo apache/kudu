@@ -16,6 +16,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
+#include "kudu/util/random.h"
 
 namespace kudu {
 
@@ -146,6 +147,13 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
   // exceeded after calling the GC functions. Returns false if there is no limit.
   bool LimitExceeded();
 
+  // Like LimitExceeded() but may also return true if the soft memory limit is exceeded.
+  // The greater the excess, the higher the chance that it returns true.
+  //
+  // If the soft limit is exceeded and 'current_capacity_pct' is not NULL, the percentage
+  // of the hard limit consumed is written to it.
+  bool SoftLimitExceeded(double* current_capacity_pct);
+
   // Returns the maximum consumption that can be made without exceeding the limit on
   // this tracker or any of its parents. Returns int64_t::max() if there are no
   // limits and a negative value if any limit is already exceeded.
@@ -257,6 +265,7 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
   simple_spinlock gc_lock_;
 
   int64_t limit_;
+  int64_t soft_limit_;
   const std::string id_;
   const std::string descr_;
   std::tr1::shared_ptr<MemTracker> parent_;
@@ -282,6 +291,8 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
 
   // Functions to call after the limit is reached to free memory.
   std::vector<GcFunction> gc_functions_;
+
+  ThreadSafeRandom rand_;
 
   // If true, logs to INFO every consume/release called. Used for debugging.
   bool enable_logging_;

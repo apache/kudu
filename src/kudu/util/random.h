@@ -78,7 +78,14 @@ class Random {
 
   // Returns a uniformly distributed value in the range [0..n-1]
   // REQUIRES: n > 0
-  uint32_t Uniform(int n) { return Next() % n; }
+  uint32_t Uniform(uint32_t n) { return Next() % n; }
+
+  // Alias for consistency with Uniform64
+  uint32_t Uniform32(uint32_t n) { return Uniform(n); }
+
+  // Returns a uniformly distributed 64-bit value in the range [0..n-1]
+  // REQUIRES: n > 0
+  uint64_t Uniform64(uint64_t n) { return Next64() % n; }
 
   // Randomly returns true ~"1/n" of the time, and false otherwise.
   // REQUIRES: n > 0
@@ -130,9 +137,19 @@ class ThreadSafeRandom {
     return random_.Next64();
   }
 
-  uint32_t Uniform(int n) {
+  uint32_t Uniform(uint32_t n) {
     lock_guard<simple_spinlock> l(&lock_);
     return random_.Uniform(n);
+  }
+
+  uint32_t Uniform32(uint32_t n) {
+    lock_guard<simple_spinlock> l(&lock_);
+    return random_.Uniform32(n);
+  }
+
+  uint64_t Uniform64(uint64_t n) {
+    lock_guard<simple_spinlock> l(&lock_);
+    return random_.Uniform64(n);
   }
 
   bool OneIn(int n) {

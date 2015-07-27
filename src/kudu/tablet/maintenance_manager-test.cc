@@ -19,7 +19,7 @@ using std::vector;
 using strings::Substitute;
 using kudu::tablet::MaintenanceManagerStatusPB;
 
-DECLARE_int64(mem_tracker_memory_limit);
+DECLARE_int64(memory_limit_hard_mb);
 
 METRIC_DEFINE_entity(test);
 METRIC_DEFINE_gauge_uint32(test, maintenance_ops_running,
@@ -37,7 +37,7 @@ const int kHistorySize = 4;
 class MaintenanceManagerTest : public KuduTest {
  public:
   MaintenanceManagerTest() {
-    FLAGS_mem_tracker_memory_limit = 1000;
+    FLAGS_memory_limit_hard_mb = 1000;
 
     MaintenanceManager::Options options;
     options.num_threads = 2;
@@ -74,7 +74,7 @@ class TestMaintenanceOp : public MaintenanceOp {
     : MaintenanceOp(name, io_usage),
       state_change_cond_(&lock_),
       state_(state),
-      ram_anchored_(500),
+      ram_anchored_(500*1024*1024),
       logs_retained_bytes_(0),
       perf_improvement_(0),
       metric_entity_(METRIC_ENTITY_test.Instantiate(&metric_registry_, "test")),
@@ -144,10 +144,11 @@ class TestMaintenanceOp : public MaintenanceOp {
     }
   }
 
-  void set_ram_anchored(uint64_t ram_anchored) {
+  void set_ram_anchored(uint64_t ram_anchored_mb) {
     lock_guard<Mutex> guard(&lock_);
+    uint64_t new_ram_anchored = ram_anchored_mb * 1024 * 1024;
     MemTracker::GetRootTracker()->Release(ram_anchored_);
-    ram_anchored_ = ram_anchored;
+    ram_anchored_ = new_ram_anchored;
     MemTracker::GetRootTracker()->Consume(ram_anchored_);
   }
 
