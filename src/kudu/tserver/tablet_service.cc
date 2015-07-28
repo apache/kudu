@@ -423,15 +423,15 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
     return;
   }
 
-  AlterSchemaTransactionState *tx_state =
-    new AlterSchemaTransactionState(tablet_peer.get(), req, resp);
+  gscoped_ptr<AlterSchemaTransactionState> tx_state(
+    new AlterSchemaTransactionState(tablet_peer.get(), req, resp));
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
       new RpcTransactionCompletionCallback<AlterSchemaResponsePB>(context,
                                                                   resp)).Pass());
 
   // Submit the alter schema op. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitAlterSchema(tx_state);
+  Status s = tablet_peer->SubmitAlterSchema(tx_state.Pass());
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

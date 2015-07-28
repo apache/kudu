@@ -101,7 +101,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // The AlterSchema operation is taking the tablet component lock in exclusive mode
   // meaning that no other operation on the tablet can be executed while the
   // AlterSchema is in progress.
-  Status SubmitAlterSchema(AlterSchemaTransactionState *tx_state);
+  Status SubmitAlterSchema(gscoped_ptr<AlterSchemaTransactionState> tx_state);
 
   void GetTabletStatusPB(TabletStatusPB* status_pb_out) const;
 

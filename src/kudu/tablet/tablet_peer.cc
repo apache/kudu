@@ -286,11 +286,11 @@ Status TabletPeer::SubmitWrite(WriteTransactionState *state) {
   return driver->ExecuteAsync();
 }
 
-Status TabletPeer::SubmitAlterSchema(AlterSchemaTransactionState *state) {
+Status TabletPeer::SubmitAlterSchema(gscoped_ptr<AlterSchemaTransactionState> state) {
   RETURN_NOT_OK(CheckRunning());
 
   gscoped_ptr<AlterSchemaTransaction> transaction(
-      new AlterSchemaTransaction(state, consensus::LEADER));
+      new AlterSchemaTransaction(state.release(), consensus::LEADER));
   scoped_refptr<TransactionDriver> driver;
   NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver);
   return driver->ExecuteAsync();
