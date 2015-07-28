@@ -72,6 +72,9 @@
                    TODO: when the SDL becomes generated, this can probably be
                    narrowed to just the build directory. -->
               <sourceDirectory>${project.basedir}</sourceDirectory>
+              <!-- Will flag any JSON element that is unrecognized by the
+                   CSD framework. -->
+              <strictMode>true</strictMode>
             </configuration>
           </execution>
         </executions>
