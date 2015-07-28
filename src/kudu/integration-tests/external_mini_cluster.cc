@@ -552,6 +552,10 @@ bool ExternalDaemon::IsProcessAlive() const {
   return s.IsTimedOut();
 }
 
+pid_t ExternalDaemon::pid() const {
+  return process_->pid();
+}
+
 void ExternalDaemon::Shutdown() {
   if (!process_) return;
 

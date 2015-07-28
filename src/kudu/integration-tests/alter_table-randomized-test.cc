@@ -14,6 +14,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/pstack_watcher.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
@@ -62,6 +63,18 @@ class AlterTableRandomized : public KuduTest {
   }
 
   virtual void TearDown() OVERRIDE {
+    // This test has been flaky before with timeouts on scans.
+    // So, if the test failed, dump the stacks of the tablet server so we can
+    // see where it's getting stuck.
+    if (HasFatalFailure()) {
+      if (cluster_->tablet_server(0)->IsProcessAlive()) {
+        LOG(INFO) << "Dumping stacks of TS after test failure:\n"
+                  << "=======================================\n";
+        WARN_NOT_OK(PstackWatcher::DumpStacks(cluster_->tablet_server(0)->pid()),
+                    "Couldn't dump stacks");
+      }
+    }
+
     cluster_->Shutdown();
     KuduTest::TearDown();
   }

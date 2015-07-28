@@ -4,6 +4,7 @@
 #define KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H
 
 #include <string>
+#include <sys/types.h>
 #include <tr1/memory>
 #include <vector>
 
@@ -257,6 +258,10 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   Sockaddr bound_rpc_addr() const;
   HostPort bound_http_hostport() const;
   const NodeInstancePB& instance_id() const;
+
+  // Return the pid of the running process.
+  // Causes a CHECK failure if the process is not running.
+  pid_t pid() const;
 
   // Sends a SIGSTOP signal to the daemon.
   Status Pause();
