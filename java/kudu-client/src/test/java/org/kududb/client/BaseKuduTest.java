@@ -99,9 +99,7 @@ public class BaseKuduTest {
             "--tablet_server_wal_dir=" + dataDirPath,
             "--tablet_server_data_dirs=" + dataDirPath,
             "--tablet_server_master_addrs=" + masterAddresses,
-            "--tablet_server_rpc_bind_addresses=127.0.0.1:" + port,
-            "--use_hybrid_clock=true",
-            "--max_clock_sync_error_usec=10000000"};
+            "--tablet_server_rpc_bind_addresses=127.0.0.1:" + port};
         TABLET_SERVERS.put(port, configureAndStartProcess(tsCmdLine));
         port++;
 
@@ -170,10 +168,8 @@ public class BaseKuduTest {
           "--flagfile=" + flagsPath,
           "--master_wal_dir=" + dataDirPath,
           "--master_data_dirs=" + dataDirPath,
-          "--use_hybrid_clock=true",
           "--master_rpc_bind_addresses=127.0.0.1:" + masterRpcPorts.get(i),
-          "--master_web_port=" + masterWebPorts.get(i),
-          "--max_clock_sync_error_usec=10000000");
+          "--master_web_port=" + masterWebPorts.get(i));
       if (numMasters > 1) {
         masterCmdLine.add("--master_addresses=" + masterAddresses);
       }

@@ -12,8 +12,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_int32(max_clock_sync_error_usec);
-
 namespace kudu {
 namespace tablet {
 
@@ -25,8 +23,6 @@ class MvccTest : public KuduTest {
   MvccTest()
       : clock_(
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp)) {
-    // Increase clock sync tolerance so test doesn't fail on jenkins.
-    FLAGS_max_clock_sync_error_usec = 10 * 1000 * 1000;
   }
 
   void WaitForSnapshotAtTSThread(MvccManager* mgr, Timestamp ts) {

@@ -35,8 +35,6 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/stopwatch.h"
 
-DECLARE_int32(max_clock_sync_error_usec);
-
 METRIC_DECLARE_entity(tablet);
 
 namespace kudu {
@@ -128,7 +126,6 @@ class LogTestBase : public KuduTest {
     ASSERT_OK(fs_manager_->CreateInitialFileSystemLayout());
     ASSERT_OK(fs_manager_->Open());
 
-    FLAGS_max_clock_sync_error_usec = 10000000;
     clock_.reset(new server::HybridClock());
     ASSERT_OK(clock_->Init());
   }

@@ -32,8 +32,6 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 
-DECLARE_int32(max_clock_sync_error_usec);
-
 namespace kudu {
 
 static const char* const kKeyColumnName = "rand_key";
@@ -49,8 +47,6 @@ typedef vector<pair<uint64_t, int64_t> > SnapsAndCounts;
 
 // Provides methods for writing data and reading it back in such a way that
 // facilitates checking for data integrity.
-// NOTE: Users of this class must enable the hybrid clock by setting
-// FLAGS_use_hybrid_clock = true.
 class LinkedListTester {
  public:
   LinkedListTester(const std::tr1::shared_ptr<client::KuduClient>& client,
@@ -436,7 +432,6 @@ Status LinkedListTester::LoadLinkedList(
   // TODO when they become available (KUDU-420), use client-propagated timestamps
   // instead of reading from the clock directly. This will allow to run this test
   // against a "real" cluster and not force the client to be synchronized.
-  FLAGS_max_clock_sync_error_usec = 10000000;
   scoped_refptr<server::Clock> ht_clock(new server::HybridClock());
   RETURN_NOT_OK(ht_clock->Init());
 

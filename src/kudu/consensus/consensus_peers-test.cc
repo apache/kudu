@@ -17,8 +17,6 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_int32(max_clock_sync_error_usec);
-
 METRIC_DECLARE_entity(tablet);
 
 namespace kudu {
@@ -50,8 +48,6 @@ class ConsensusPeersTest : public KuduTest {
                        0, // schema_version
                        NULL,
                        &log_));
-
-    FLAGS_max_clock_sync_error_usec = 10000000;
     clock_.reset(new server::HybridClock());
     ASSERT_OK(clock_->Init());
 

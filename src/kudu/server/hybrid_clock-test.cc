@@ -8,8 +8,6 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_int32(max_clock_sync_error_usec);
-
 namespace kudu {
 namespace server {
 
@@ -21,9 +19,6 @@ class HybridClockTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    // set the synchronization requirement higher since test servers/local dev machines
-    // might be quite unsynchronized.
-    FLAGS_max_clock_sync_error_usec = 5000000;
 
     ASSERT_OK(clock_->Init());
   }

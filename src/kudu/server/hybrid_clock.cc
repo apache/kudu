@@ -15,7 +15,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
-DEFINE_int32(max_clock_sync_error_usec, 1000000,
+DEFINE_int32(max_clock_sync_error_usec, 10 * 1000 * 1000, // 10 secs
              "Maximum possible clock synchronization error before reporting"
              " clock synchronization dependent services as unavailable");
 

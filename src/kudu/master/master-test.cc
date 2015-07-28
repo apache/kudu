@@ -22,9 +22,6 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_bool(use_hybrid_clock);
-DECLARE_int32(max_clock_sync_error_usec);
-
 using boost::assign::list_of;
 using std::string;
 using std::tr1::shared_ptr;
@@ -39,12 +36,6 @@ class MasterTest : public KuduTest {
  protected:
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-
-    // Use the hybrid clock for TS tests
-    FLAGS_use_hybrid_clock = true;
-
-    // Increase the max error tolerance to 10 seconds.
-    FLAGS_max_clock_sync_error_usec = 10000000;
 
     // Start master
     mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master"), 0));

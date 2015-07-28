@@ -36,16 +36,12 @@ BASE_DIR=$(mktemp -d --tmpdir=$TEST_TMPDIR client_samples-test.XXXXXXXX)
 $ROOT/build/latest/kudu-master \
   --log_dir=$BASE_DIR \
   --master_wal_dir=$BASE_DIR/master \
-  --master_data_dirs=$BASE_DIR/master \
-  --use_hybrid_clock=true \
-  --max_clock_sync_error_usec=10000000 &
+  --master_data_dirs=$BASE_DIR/master &
 MASTER_PID=$!
 $ROOT/build/latest/kudu-tablet_server \
   --log_dir=$BASE_DIR \
   --tablet_server_wal_dir=$BASE_DIR/ts \
-  --tablet_server_data_dirs=$BASE_DIR/ts \
-  --use_hybrid_clock=true \
-  --max_clock_sync_error_usec=10000000 &
+  --tablet_server_data_dirs=$BASE_DIR/ts &
 TS_PID=$!
 
 # Let them run for a bit.

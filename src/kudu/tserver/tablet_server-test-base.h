@@ -46,9 +46,7 @@
 
 DEFINE_int32(rpc_timeout, 1000, "Timeout for RPC calls, in seconds");
 DEFINE_int32(num_updater_threads, 1, "Number of updating threads to launch");
-DECLARE_bool(use_hybrid_clock);
 DECLARE_bool(log_force_fsync_all);
-DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_rpc_timeout_ms);
@@ -66,12 +64,6 @@ class TabletServerTestBase : public KuduTest {
     : schema_(GetSimpleTestSchema()),
       ts_test_metric_entity_(METRIC_ENTITY_test.Instantiate(
                                  &ts_test_metric_registry_, "ts_server-test")) {
-
-    // Use the hybrid clock for TS tests
-    FLAGS_use_hybrid_clock = true;
-
-    // Increase the max error tolerance, for tests, to 10 seconds.
-    FLAGS_max_clock_sync_error_usec = 10000000;
 
     // Disable the maintenance ops manager since we want to trigger our own
     // maintenance operations at predetermined times.

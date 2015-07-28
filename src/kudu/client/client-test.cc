@@ -45,8 +45,6 @@
 
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_interval_ms);
-DECLARE_bool(use_hybrid_clock);
-DECLARE_int32(max_clock_sync_error_usec);
 DECLARE_int32(max_create_tablets_per_ts);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
@@ -91,12 +89,6 @@ class ClientTest : public KuduTest {
 
     // Reduce the TS<->Master heartbeat interval
     FLAGS_heartbeat_interval_ms = 10;
-
-    // Use the hybrid clock for client tests
-    FLAGS_use_hybrid_clock = true;
-
-    // Increase the max error tolerance, for tests, to 10 seconds.
-    FLAGS_max_clock_sync_error_usec = 10000000;
 
     // Start minicluster and wait for tablet servers to connect to master.
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));

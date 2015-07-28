@@ -75,8 +75,6 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
 
     common_flags.push_back("--skip_remove_old_recovery_dir");
     common_flags.push_back("--enable_leader_failure_detection=true");
-    common_flags.push_back("--use_hybrid_clock=true");
-    common_flags.push_back("--max_clock_sync_error_usec=10000000");
 
     vector<string> ts_flags(common_flags);
     if (FLAGS_stress_flush_compact) {
