@@ -297,20 +297,18 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 
   // Look at free memory. If it is dangerously low, we must select something
   // that frees memory-- the op with the most anchored memory.
-  shared_ptr<MemTracker> root_tracker = MemTracker::GetRootTracker();
-  int64_t mem_limit = root_tracker->limit();
-  int64_t mem_consumed = root_tracker->consumption();
-  if (mem_consumed > mem_limit) {
+  double capacity_pct;
+  if (MemTracker::GetRootTracker()->SoftLimitExceeded(&capacity_pct)) {
     if (!most_mem_anchored_op) {
-      LOG(INFO) << "we are consuming " << mem_consumed << " bytes but "
-                << "targeting " << mem_limit << " bytes.  However, there are "
-                << "no ops currently runnable which would free memory.";
+      string msg = StringPrintf("we have exceeded our soft memory limit "
+          "(current capacity is %.2f%%).  However, there are no ops currently "
+          "runnable which would free memory.", capacity_pct);
+      LOG(INFO) << msg;
       return NULL;
     }
-    VLOG_AND_TRACE("maintenance", 1) << "we are consuming " << mem_consumed
-            << " bytes but targeting " << mem_limit
-            << " bytes.  Running the op which anchors the most memory: "
-            << most_mem_anchored_op->name();
+    VLOG_AND_TRACE("maintenance", 1) << "we have exceeded our soft memory limit "
+            << "(current capacity is " << capacity_pct << "%).  Running the op "
+            << "which anchors the most memory: " << most_mem_anchored_op->name();
     return most_mem_anchored_op;
   }
 

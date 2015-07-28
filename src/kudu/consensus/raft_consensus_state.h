@@ -257,6 +257,10 @@ class ReplicaState {
   // Returns the id of the last op received from the current leader.
   const OpId& GetLastReceivedOpIdCurLeaderUnlocked() const;
 
+  // Returns the id of the latest pending transaction (i.e. the one with the
+  // latest index). This must be called under the lock.
+  OpId GetLastPendingTransactionOpIdUnlocked() const;
+
   // Updates the last committed operation including removing it from the pending commits.
   //
   // 'commit_op_id' refers to the OpId of the actual commit operation, whereas

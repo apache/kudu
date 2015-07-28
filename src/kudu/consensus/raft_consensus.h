@@ -22,6 +22,7 @@ namespace kudu {
 typedef boost::lock_guard<simple_spinlock> Lock;
 typedef gscoped_ptr<Lock> ScopedLock;
 
+class Counter;
 class FailureDetector;
 class HostPort;
 class ThreadPool;
@@ -398,6 +399,8 @@ class RaftConsensus : public Consensus,
   const Closure mark_dirty_clbk_;
 
   AtomicBool shutdown_;
+
+  scoped_refptr<Counter> memory_pressure_rejections_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };

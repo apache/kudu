@@ -15,6 +15,7 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/rpc/rpc_sidecar.h"
@@ -33,6 +34,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 #include "kudu/util/status_callback.h"
@@ -68,6 +70,7 @@ using google::protobuf::RepeatedPtrField;
 using rpc::RpcContext;
 using std::tr1::shared_ptr;
 using std::vector;
+using strings::Substitute;
 using tablet::AlterSchemaTransactionState;
 using tablet::TabletPeer;
 using tablet::TabletStatusPB;
@@ -529,6 +532,22 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     return;
   }
 
+  // Check for memory pressure; don't bother doing any additional work if we've
+  // exceeded the limit.
+  double capacity_pct;
+  if (MemTracker::GetRootTracker()->SoftLimitExceeded(&capacity_pct)) {
+    tablet_peer->tablet()->metrics()->memory_pressure_rejections->Increment();
+
+    // Clients should handle ERROR_SERVER_TOO_BUSY by retrying the request some
+    // time later.
+    context->RespondRpcFailure(
+        rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY,
+        Status::ServiceUnavailable(StringPrintf(
+            "Soft memory limit exceeded (at %.2f%% of capacity)",
+            capacity_pct)));
+    return;
+  }
+
   if (req->external_consistency_mode() != NO_CONSISTENCY) {
     if (!server_->clock()->SupportsExternalConsistencyMode(req->external_consistency_mode())) {
       Status s = Status::ServiceUnavailable("The configured clock does not support the"
@@ -607,9 +626,13 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
     // in embedded optional messages.
     resp->Clear();
 
-    SetupErrorAndRespond(resp->mutable_error(), s,
-                         TabletServerErrorPB::UNKNOWN_ERROR,
-                         context);
+    if (s.IsServiceUnavailable()) {
+      context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY, s);
+    } else {
+      SetupErrorAndRespond(resp->mutable_error(), s,
+                           TabletServerErrorPB::UNKNOWN_ERROR,
+                           context);
+    }
     return;
   }
   context->RespondSuccess();

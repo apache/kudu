@@ -3,10 +3,17 @@
 
 #include <boost/assign/list_of.hpp>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"
+
+METRIC_DECLARE_entity(tablet);
+METRIC_DECLARE_counter(memory_pressure_rejections);
+
+using strings::Substitute;
 
 namespace kudu {
 
@@ -15,7 +22,7 @@ class ClientStressTest : public KuduTest {
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
 
-    ExternalMiniClusterOptions opts;
+    ExternalMiniClusterOptions opts = default_opts();
     if (multi_master()) {
       opts.num_masters = 3;
       opts.master_rpc_ports = boost::assign::list_of(11010)(11011)(11012);
@@ -34,6 +41,10 @@ class ClientStressTest : public KuduTest {
  protected:
   virtual bool multi_master() const {
     return false;
+  }
+
+  virtual ExternalMiniClusterOptions default_opts() const {
+    return ExternalMiniClusterOptions();
   }
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
@@ -101,6 +112,53 @@ TEST_F(ClientStressTest_MultiMaster, TestLeaderResolutionTimeout) {
   // Also make sure to dump stacks before the alarm goes off.
   PstackWatcher watcher(MonoDelta::FromSeconds(30));
   alarm(60);
+  work.StopAndJoin();
+}
+
+
+// Override the base test to start a cluster with a low memory limit.
+class ClientStressTest_LowMemory : public ClientStressTest {
+ protected:
+  virtual ExternalMiniClusterOptions default_opts() const OVERRIDE {
+    // There's nothing scientific about this number; it must be low enough to
+    // trigger memory pressure request rejection yet high enough for the
+    // servers to make forward progress.
+    const int kMemLimitMB = 8;
+    ExternalMiniClusterOptions opts;
+    opts.extra_tserver_flags.push_back(Substitute(
+        "--memory_limit_hard_mb=$0", kMemLimitMB));
+    return opts;
+  }
+};
+
+// Stress test where, due to absurdly low memory limits, many client requests
+// are rejected, forcing the client to retry repeatedly.
+TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
+  const int64_t minimum_num_rejections = 100;
+
+  TestWorkload work(cluster_.get());
+  work.Setup();
+  work.Start();
+
+  // Wait until we've rejected some number of requests.
+  while (true) {
+    int64_t total_num_rejections = 0;
+
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      int64_t ts_num_rejections;
+      ASSERT_OK(cluster_->tablet_server(i)->GetInt64Metric(
+          &METRIC_ENTITY_tablet,
+          NULL,
+          &METRIC_memory_pressure_rejections,
+          &ts_num_rejections));
+      total_num_rejections += ts_num_rejections;
+    }
+    if (total_num_rejections >= minimum_num_rejections) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(200));
+  }
+
   work.StopAndJoin();
 }
 

@@ -6,6 +6,7 @@
 #include <string>
 
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/rpc/rpc_header.pb.h"
 #include "kudu/rpc/service_if.h"
 #include "kudu/util/status.h"
 
@@ -78,6 +79,15 @@ class RpcContext {
   // After this method returns, this RpcContext object is destroyed. The request
   // and response protobufs are also destroyed.
   void RespondFailure(const Status &status);
+
+  // Respond with an RPC-level error. This typically manifests to the client as
+  // a remote error, one whose handling is agnostic to the particulars of the
+  // sent RPC. For example, ERROR_SERVER_TOO_BUSY usually causes the client to
+  // retry the RPC at a later time.
+  //
+  // After this method returns, this RpcContext object is destroyed. The request
+  // and response protobufs are also destroyed.
+  void RespondRpcFailure(ErrorStatusPB_RpcErrorCodePB err, const Status& status);
 
   // Respond with an application-level error. This causes the caller to get a
   // RemoteError status with the provided string message. Additionally, a

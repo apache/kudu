@@ -585,6 +585,12 @@ const OpId& ReplicaState::GetLastReceivedOpIdCurLeaderUnlocked() const {
   return last_received_op_id_current_leader_;
 }
 
+OpId ReplicaState::GetLastPendingTransactionOpIdUnlocked() const {
+  DCHECK(update_lock_.is_locked());
+  return pending_txns_.empty()
+      ? MinimumOpId() : (--pending_txns_.end())->second->id();
+}
+
 void ReplicaState::NewIdUnlocked(OpId* id) {
   DCHECK(update_lock_.is_locked());
   id->set_term(GetCurrentTermUnlocked());

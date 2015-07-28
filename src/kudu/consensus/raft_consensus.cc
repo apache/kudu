@@ -18,10 +18,13 @@
 #include "kudu/consensus/raft_consensus_state.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/stringprintf.h"
 #include "kudu/server/clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/mem_tracker.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/threadpool.h"
@@ -54,6 +57,8 @@ DEFINE_int32(leader_failure_exp_backoff_max_delta_ms, 20 * 1000,
 DEFINE_bool(enable_leader_failure_detection, true,
             "Whether to enable failure detection of tablet leaders. If enabled, attempts will be "
             "made to fail over to a follower when the leader is detected to have failed.");
+
+METRIC_DECLARE_counter(memory_pressure_rejections);
 
 namespace kudu {
 namespace consensus {
@@ -148,7 +153,9 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
               FLAGS_leader_failure_max_missed_heartbeat_periods))),
       withhold_votes_until_(MonoTime::Min()),
       mark_dirty_clbk_(mark_dirty_clbk),
-      shutdown_(false) {
+      shutdown_(false),
+      memory_pressure_rejections_(metric_entity->FindOrCreateCounter(
+          &METRIC_memory_pressure_rejections)) {
   DCHECK_NOTNULL(log_.get());
   state_.reset(new ReplicaState(options,
                                 peer_uuid,
@@ -779,12 +786,21 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // don't do anything on operations we've already received in a previous call.
   // This essentially makes this method idempotent.
   //
-  // 1 - We enqueue the Prepare of the transactions.
+  // 1 - We mark as many pending transactions as committed as we can.
+  //
+  // We may have some pending transactions that, according to the leader, are now
+  // committed. We Apply them early, because:
+  // - Soon (step 2) we may reject the call due to excessive memory pressure. One
+  //   way to relieve the pressure is by flushing the MRS, and applying these
+  //   transactions may unblock an in-flight Flush().
+  // - The Apply and subsequent Prepares (step 2) can take place concurrently.
+  //
+  // 2 - We enqueue the Prepare of the transactions.
   //
   // The actual prepares are enqueued in order but happen asynchronously so we don't
   // have decoding/acquiring locks on the critical path.
   //
-  // We need to do this first for a number of reasons:
+  // We need to do this now for a number of reasons:
   // - Prepares, by themselves, are inconsequential, i.e. they do not mutate the
   //   state machine so, were we to crash afterwards, having the prepares in-flight
   //   won't hurt.
@@ -799,8 +815,10 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   //   the transactions can be continued (in the abort path).
   // - Failure to enqueue prepares is OK, we can continue and let the leader know that
   //   we only went so far. The leader will re-send the remaining messages.
+  // - Prepares represent new transactions, and transactions consume memory. Thus, if the
+  //   overall memory pressure on the server is too high, we will reject the prepares.
   //
-  // 2 - We enqueue the writes to the WAL.
+  // 3 - We enqueue the writes to the WAL.
   //
   // We enqueue writes to the WAL, but only the operations that were successfully
   // enqueued for prepare (for the reasons introduced above). This means that even
@@ -810,7 +828,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // case, no one will ever know of the transactions we previously prepared so those are
   // inconsequential.
   //
-  // 3 - We mark the transactions as committed
+  // 4 - We mark the transactions as committed.
   //
   // For each transaction which has been committed by the leader, we update the
   // transaction state to reflect that. If the logging has already succeeded for that
@@ -825,7 +843,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // commitIndex way of doing things as we can simply ignore the applies as we know
   // they will be triggered with the next successful batch.
   //
-  // 4 - We wait for the writes to be durable.
+  // 5 - We wait for the writes to be durable.
   //
   // Before replying to the leader we wait for the writes to be durable. We then
   // just update the last replicated watermark and respond.
@@ -862,17 +880,43 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     withhold_votes_until_ = MonoTime::Now(MonoTime::FINE);
     withhold_votes_until_.AddDelta(MinimumElectionTimeout());
 
-    // 1 - Enqueue the prepares
+
+    // 1 - Early commit pending (and committed) transactions
+
+    // What should we commit?
+    // 1. As many pending transactions as we can, except...
+    // 2. ...if we commit beyond the preceding index, we'd regress KUDU-639, and...
+    // 3. ...the leader's committed index is always our upper bound.
+    OpId early_apply_up_to = state_->GetLastPendingTransactionOpIdUnlocked();
+    CopyIfOpIdLessThan(*deduped_req.preceding_opid, &early_apply_up_to);
+    CopyIfOpIdLessThan(request->committed_index(), &early_apply_up_to);
+
+    VLOG_WITH_PREFIX_UNLOCKED(1) << "Early marking committed up to " <<
+        early_apply_up_to.ShortDebugString();
+    TRACE("Early marking committed up to $0",
+          early_apply_up_to.ShortDebugString());
+    CHECK_OK(state_->AdvanceCommittedIndexUnlocked(early_apply_up_to));
+
+    // 2 - Enqueue the prepares
 
     TRACE("Triggering prepare for $0 ops", deduped_req.messages.size());
 
     Status prepare_status;
     std::vector<ReplicateRefPtr>::iterator iter = deduped_req.messages.begin();
 
-    // TODO The below is temporary until the leader explicitly propagates the safe
-    // timestamp.
     if (PREDICT_TRUE(deduped_req.messages.size() > 0)) {
+      // TODO Temporary until the leader explicitly propagates the safe timestamp.
       clock_->Update(Timestamp(deduped_req.messages.back()->get()->timestamp()));
+
+      // This request contains at least one message, and is likely to increase
+      // our memory pressure.
+      double capacity_pct;
+      if (MemTracker::GetRootTracker()->SoftLimitExceeded(&capacity_pct)) {
+        memory_pressure_rejections_->Increment();
+        return Status::ServiceUnavailable(StringPrintf(
+            "Soft memory limit exceeded (at %.2f%% of capacity)",
+            capacity_pct));
+      }
     }
 
     while (iter != deduped_req.messages.end()) {
@@ -897,12 +941,11 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     }
 
     OpId last_from_leader;
-    // 2 - Enqueue the writes.
+    // 3 - Enqueue the writes.
     // Now that we've triggered the prepares enqueue the operations to be written
     // to the WAL.
     if (PREDICT_TRUE(deduped_req.messages.size() > 0)) {
       last_from_leader = deduped_req.messages.back()->get()->id();
-
       // Trigger the log append asap, if fsync() is on this might take a while
       // and we can't reply until this is done.
       //
@@ -913,7 +956,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       last_from_leader = *deduped_req.preceding_opid;
     }
 
-    // 3 - Mark transactions as committed
+    // 4 - Mark transactions as committed
 
     // Choose the last operation to be applied. This will either be 'committed_index', if
     // no prepare enqueuing failed, or the minimum between 'committed_index' and the id of
@@ -965,7 +1008,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
   // Update the last replicated op id
   if (deduped_req.messages.size() > 0) {
 
-    // 4 - We wait for the writes to be durable.
+    // 5 - We wait for the writes to be durable.
 
     // Note that this is safe because dist consensus now only supports a single outstanding
     // request at a time and this way we can allow commits to proceed while we wait.

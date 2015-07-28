@@ -141,6 +141,11 @@ METRIC_DEFINE_histogram(tablet, delta_major_compact_rs_duration,
   kudu::MetricUnit::kSeconds,
   "Seconds spent major delta compacting.", 60000000LU, 2);
 
+METRIC_DEFINE_counter(tablet, memory_pressure_rejections,
+  "Memory Pressure Rejections",
+  kudu::MetricUnit::kRequests,
+  "Number of RPC requests rejected due to memory pressure.");
+
 using strings::Substitute;
 
 namespace kudu {
@@ -176,7 +181,8 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(flush_mrs_duration),
     MINIT(compact_rs_duration),
     MINIT(delta_minor_compact_rs_duration),
-    MINIT(delta_major_compact_rs_duration) {
+    MINIT(delta_major_compact_rs_duration),
+    MINIT(memory_pressure_rejections) {
 }
 #undef MINIT
 #undef GINIT

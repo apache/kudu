@@ -72,7 +72,6 @@ ServerBase::ServerBase(const string& name,
     mem_tracker_(CreateMemTrackerForServer()),
     metric_registry_(new MetricRegistry()),
     metric_entity_(METRIC_ENTITY_server.Instantiate(metric_registry_.get(), metric_namespace)),
-
     rpc_server_(new RpcServer(options.rpc_opts)),
     web_server_(new Webserver(options.webserver_opts)),
     is_first_run_(false),

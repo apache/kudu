@@ -50,6 +50,14 @@ void RpcContext::RespondFailure(const Status &status) {
   delete this;
 }
 
+void RpcContext::RespondRpcFailure(ErrorStatusPB_RpcErrorCodePB err, const Status& status) {
+  call_->RecordHandlingCompleted(metrics_.handler_latency);
+  VLOG(4) << call_->remote_method().service_name() << ": Sending RPC failure response for "
+          << call_->ToString() << ": " << status.ToString();
+  call_->RespondFailure(err, status);
+  delete this;
+}
+
 void RpcContext::RespondApplicationError(int error_ext_id, const std::string& message,
                                          const MessageLite& app_error_pb) {
   call_->RecordHandlingCompleted(metrics_.handler_latency);
