@@ -23,6 +23,7 @@
 #include "kudu/master/master.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master-test-util.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
@@ -37,6 +38,7 @@ DECLARE_bool(enable_data_block_fsync);
 DECLARE_bool(enable_maintenance_manager);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(flush_threshold_mb);
+DECLARE_bool(use_hybrid_clock);
 
 namespace kudu {
 
@@ -73,6 +75,7 @@ class AlterTableTest : public KuduTest {
       stop_threads_(false),
       inserted_idx_(0) {
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
+    FLAGS_use_hybrid_clock = false;
     ANNOTATE_BENIGN_RACE(&FLAGS_flush_threshold_mb,
                          "safe to change at runtime");
     ANNOTATE_BENIGN_RACE(&FLAGS_enable_maintenance_manager,

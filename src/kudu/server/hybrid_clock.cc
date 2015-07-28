@@ -19,10 +19,9 @@ DEFINE_int32(max_clock_sync_error_usec, 1000000,
              "Maximum possible clock synchronization error before reporting"
              " clock synchronization dependent services as unavailable");
 
-DEFINE_bool(use_hybrid_clock, false,
+DEFINE_bool(use_hybrid_clock, true,
             "Whether HybridClock should be used as the default clock"
-            " implementation. This is for testing purposes only, eventually"
-            " the hybrid clock will become the default and only option.");
+            " implementation. This should be disabled for testing purposes only.");
 
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",
