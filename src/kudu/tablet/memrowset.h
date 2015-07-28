@@ -318,9 +318,6 @@ class MemRowSet : public RowSet,
  private:
   friend class Iterator;
 
-  // Temporary hack to slow down mutators when the memrowset is over 1GB.
-  void SlowMutators();
-
   // Perform a "Reinsert" -- handle an insertion into a row which was previously
   // inserted and deleted, but still has an entry in the MemRowSet.
   Status Reinsert(Timestamp timestamp,

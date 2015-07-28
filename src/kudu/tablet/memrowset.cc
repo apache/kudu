@@ -1,7 +1,8 @@
 // Copyright (c) 2012, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
-#include <boost/thread/thread.hpp>
+#include "kudu/tablet/memrowset.h"
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <string>
@@ -14,14 +15,10 @@
 #include "kudu/common/row.h"
 #include "kudu/consensus/consensus.pb.h"
 #include "kudu/consensus/log_anchor_registry.h"
-#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
-#include "kudu/tablet/memrowset.h"
 #include "kudu/tablet/compaction.h"
 #include "kudu/util/mem_tracker.h"
 
-DEFINE_int32(memrowset_throttle_mb, 0,
-             "number of MB of RAM beyond which memrowset inserts will be throttled");
 DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
             "generation for iteration");
 
@@ -151,9 +148,6 @@ Status MemRowSet::Insert(Timestamp timestamp,
   anchorer_.AnchorIfMinimum(op_id.index());
 
   debug_insert_count_++;
-
-  // Done outside of the lock so we don't slow down readers.
-  SlowMutators();
   return Status::OK();
 }
 
@@ -224,9 +218,6 @@ Status MemRowSet::MutateRow(Timestamp timestamp,
 
   anchorer_.AnchorIfMinimum(op_id.index());
   debug_update_count_++;
-
-  // Done outside of the lock so we don't slow down readers.
-  SlowMutators();
   return Status::OK();
 }
 
@@ -257,22 +248,6 @@ Status MemRowSet::CheckRowPresent(const RowSetKeyProbe &probe, bool *present,
   // NotFound.
   *present = !row.IsGhost();
   return Status::OK();
-}
-
-void MemRowSet::SlowMutators() {
-  if (FLAGS_memrowset_throttle_mb == 0) return;
-
-  ssize_t over_mem = static_cast<int64_t>(memory_footprint()) -
-    static_cast<int64_t>(FLAGS_memrowset_throttle_mb) * 1024 * 1024;
-  if (over_mem > 0) {
-    if (!has_logged_throttling_ &&
-        base::subtle::NoBarrier_AtomicExchange(&has_logged_throttling_, 1) == 0) {
-      LOG(WARNING) << "Throttling memrowset insert rate";
-    }
-
-    size_t us_to_sleep = over_mem / 1024 / 512;
-    boost::this_thread::sleep(boost::posix_time::microseconds(us_to_sleep));
-  }
 }
 
 MemRowSet::Iterator *MemRowSet::NewIterator(const Schema *projection,
