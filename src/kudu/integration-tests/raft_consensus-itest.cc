@@ -916,7 +916,7 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
   // But, we should have at least as many as we got confirmation for.
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
-  NO_FATALS(v.CheckRowCount("test-workload", ClusterVerifier::AT_LEAST,
+  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
                             workload.rows_inserted()));
 }
 
@@ -960,7 +960,7 @@ TEST_F(RaftConsensusITest, TestChurnyElections) {
   // But, we should have at least as many as we got confirmation for.
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
-  NO_FATALS(v.CheckRowCount("test-workload", ClusterVerifier::AT_LEAST,
+  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
                             workload.rows_inserted()));
 }
 

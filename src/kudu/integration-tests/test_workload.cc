@@ -33,7 +33,7 @@ using client::KuduTable;
 using client::KuduTableCreator;
 using std::tr1::shared_ptr;
 
-static const char* kTableName = "test-workload";
+static const char* kDefaultTableName = "test-workload";
 
 TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
   : cluster_(cluster),
@@ -42,9 +42,11 @@ TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
     write_timeout_millis_(20000),
     timeout_allowed_(false),
     num_replicas_(3),
+    table_name_(kDefaultTableName),
     start_latch_(0),
     should_run_(false),
-    rows_inserted_(0) {
+    rows_inserted_(0),
+    batches_completed_(0) {
 }
 
 TestWorkload::~TestWorkload() {
@@ -58,7 +60,7 @@ void TestWorkload::WriteThread() {
   // low RPC timeouts to test those behaviors, so this might fail and
   // need retrying.
   while (should_run_.Load()) {
-    Status s = client_->OpenTable(kTableName, &table);
+    Status s = client_->OpenTable(table_name_, &table);
     if (s.ok()) {
       break;
     }
@@ -117,6 +119,9 @@ void TestWorkload::WriteThread() {
     }
 
     rows_inserted_.IncrementBy(inserted);
+    if (inserted > 0) {
+      batches_completed_.Increment();
+    }
   }
 }
 
@@ -139,15 +144,23 @@ KuduSchema GetClientSchema(const Schema& server_schema) {
   }
   return KuduSchema(client_cols, server_schema.num_key_columns());
 }
-} // anonymous namespace
 
+} // anonymous namespace
 
 void TestWorkload::Setup() {
   CHECK_OK(cluster_->CreateClient(client_builder_, &client_));
 
+  bool exists;
+  CHECK_OK(client_->TableExists(table_name_, &exists));
+  if (exists) {
+    LOG(INFO) << "TestWorkload: Skipping table creation because table "
+              << table_name_ << " already exists";
+    return;
+  }
+
   KuduSchema client_schema(GetClientSchema(GetSimpleTestSchema()));
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  CHECK_OK(table_creator->table_name(kTableName)
+  CHECK_OK(table_creator->table_name(table_name_)
            .schema(&client_schema)
            .num_replicas(num_replicas_)
            // NOTE: this is quite high as a timeout, but the default (5 sec) does not

@@ -61,7 +61,7 @@ TEST_F(TsRecoveryITest, TestLookupTimeouts) {
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
   ClusterVerifier v(cluster_.get());
-  NO_FATALS(v.CheckRowCount("test-workload", ClusterVerifier::AT_LEAST,
+  NO_FATALS(v.CheckRowCount(work.table_name(), ClusterVerifier::AT_LEAST,
                             work.rows_inserted()));
 }
 

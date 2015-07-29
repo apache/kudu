@@ -3,6 +3,7 @@
 #ifndef KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H
 #define KUDU_INTEGRATION_TESTS_TEST_WORKLOAD_H
 
+#include <string>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -51,8 +52,16 @@ class TestWorkload {
     num_replicas_ = r;
   }
 
-  // Creates the internal client, and the table which will be used
-  // for writing.
+  void set_table_name(const std::string& table_name) {
+    table_name_ = table_name;
+  }
+
+  const std::string& table_name() const {
+    return table_name_;
+  }
+
+  // Sets up the internal client and creates the table which will be used for
+  // writing, if it doesn't already exist.
   void Setup();
 
   // Start the write workload.
@@ -65,6 +74,12 @@ class TestWorkload {
   // during or after the write workload.
   int64_t rows_inserted() const {
     return rows_inserted_.Load();
+  }
+
+  // Return the number of batches in which we have successfully inserted at
+  // least one row.
+  int64_t batches_completed() const {
+    return batches_completed_.Load();
   }
 
  private:
@@ -80,10 +95,12 @@ class TestWorkload {
   bool timeout_allowed_;
 
   int num_replicas_;
+  std::string table_name_;
 
   CountDownLatch start_latch_;
   AtomicBool should_run_;
   AtomicInt<int64_t> rows_inserted_;
+  AtomicInt<int64_t> batches_completed_;
 
   std::vector<scoped_refptr<Thread> > threads_;
 
