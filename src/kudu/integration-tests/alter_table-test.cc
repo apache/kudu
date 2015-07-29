@@ -276,6 +276,28 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
 }
 
+// Adding a nullable column with no default value should be equivalent
+// to a NULL default.
+TEST_F(AlterTableTest, TestAddNullableColumnWithoutDefault) {
+  InsertRows(0, 1);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+
+  {
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+    ASSERT_OK(table_alterer->table_name(kTableName)
+              .add_nullable_column("new", KuduColumnSchema::INT32)
+              .Alter());
+  }
+
+  InsertRows(1, 1);
+
+  vector<string> rows;
+  ScanToStrings(&rows);
+  ASSERT_EQ(2, rows.size());
+  EXPECT_EQ("(int32 c0=0, int32 c1=0, int32 new=NULL)", rows[0]);
+  EXPECT_EQ("(int32 c0=16777216, int32 c1=1, int32 new=NULL)", rows[1]);
+}
+
 // Verify that, if a tablet server is down when an alter command is issued,
 // it will eventually receive the command when it restarts.
 TEST_F(AlterTableTest, TestAlterOnTSRestart) {

@@ -92,6 +92,10 @@ class AlterTableRandomized : public KuduTest {
 };
 
 struct RowState {
+  // We use this special value to denote NULL values.
+  // We ensure that we never insert or update to this value except in the case of
+  // NULLable columns.
+  static const int32_t kNullValue = 0xdeadbeef;
   vector<pair<string, int32_t> > cols;
 
   string ToString() const {
@@ -103,7 +107,11 @@ struct RowState {
         ret.append(", ");
       }
       first = false;
-      SubstituteAndAppend(&ret, "int32 $0=$1", e.first, e.second);
+      if (e.second == kNullValue) {
+        SubstituteAndAppend(&ret, "int32 $0=$1", e.first, "NULL");
+      } else {
+        SubstituteAndAppend(&ret, "int32 $0=$1", e.first, e.second);
+      }
     }
     ret.push_back(')');
     return ret;
@@ -113,6 +121,7 @@ struct RowState {
 struct TableState {
   TableState() {
     col_names_.push_back("key");
+    col_nullable_.push_back(false);
   }
 
   ~TableState() {
@@ -121,10 +130,19 @@ struct TableState {
 
   void GenRandomRow(int32_t key, int32_t seed,
                     vector<pair<string, int32_t> >* row) {
+    if (seed == RowState::kNullValue) {
+      seed++;
+    }
     row->clear();
     row->push_back(make_pair("key", key));
     for (int i = 1; i < col_names_.size(); i++) {
-      row->push_back(make_pair(col_names_[i], seed));
+      int32_t val;
+      if (col_nullable_[i] && seed % 2 == 1) {
+        val = RowState::kNullValue;
+      } else {
+        val = seed;
+      }
+      row->push_back(make_pair(col_names_[i], val));
     }
   }
 
@@ -155,9 +173,9 @@ struct TableState {
     delete r;
   }
 
-  void AddColumnWithDefault(const string& name,
-                            int32_t def) {
+  void AddColumnWithDefault(const string& name, int32_t def, bool nullable) {
     col_names_.push_back(name);
+    col_nullable_.push_back(nullable);
     BOOST_FOREACH(entry& e, rows_) {
       e.second->cols.push_back(make_pair(name, def));
     }
@@ -167,6 +185,7 @@ struct TableState {
     std::vector<string>::iterator col_it = std::find(col_names_.begin(), col_names_.end(), name);
     int index = col_it - col_names_.begin();
     col_names_.erase(col_it);
+    col_nullable_.erase(col_nullable_.begin() + index);
     BOOST_FOREACH(entry& e, rows_) {
       e.second->cols.erase(e.second->cols.begin() + index);
     }
@@ -189,7 +208,13 @@ struct TableState {
     }
   }
 
+  // The name of each column.
   vector<string> col_names_;
+
+  // For each column, whether it is NULLable.
+  // Has the same length as col_names_.
+  vector<bool> col_nullable_;
+
   typedef pair<const int32_t, RowState*> entry;
   map<int32_t, RowState*> rows_;
 };
@@ -242,7 +267,12 @@ struct MirrorTable {
     vector<pair<string, int32_t> > update;
     update.push_back(make_pair("key", row_key));
     for (int i = 1; i < num_columns(); i++) {
-      update.push_back(make_pair(ts_.col_names_[i], rand * i));
+      int32_t val = rand * i;
+      if (val == RowState::kNullValue) val++;
+      if (ts_.col_nullable_[i] && val % 2 == 1) {
+        val = RowState::kNullValue;
+      }
+      update.push_back(make_pair(ts_.col_names_[i], val));
     }
 
     if (update.size() == 1) {
@@ -262,15 +292,22 @@ struct MirrorTable {
 
   void AddAColumn(const string& name) {
     int32_t default_value = rand();
+    bool nullable = rand() % 2 == 1;
 
     // Add to the real table.
     gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-    CHECK_OK(table_alterer->table_name(kTableName)
-             .add_column(name, KuduColumnSchema::INT32, &default_value)
-             .Alter());
+    table_alterer->table_name(kTableName);
+
+    if (nullable) {
+      default_value = RowState::kNullValue;
+      table_alterer->add_nullable_column(name, KuduColumnSchema::INT32);
+    } else {
+      table_alterer->add_column(name, KuduColumnSchema::INT32, &default_value);
+    }
+    ASSERT_OK(table_alterer->Alter());
 
     // Add to the mirror state.
-    ts_.AddColumnWithDefault(name, default_value);
+    ts_.AddColumnWithDefault(name, default_value, nullable);
   }
 
   void DropAColumn(const string& name) {
@@ -329,7 +366,11 @@ struct MirrorTable {
       case DELETE: op.reset(table->NewDelete()); break;
     }
     for (int i = 0; i < data.size(); i++) {
-      CHECK_OK(op->mutable_row()->SetInt32(data[i].first, data[i].second));
+      if (data[i].second == RowState::kNullValue) {
+        CHECK_OK(op->mutable_row()->SetNull(data[i].first));
+      } else {
+        CHECK_OK(op->mutable_row()->SetInt32(data[i].first, data[i].second));
+      }
     }
     RETURN_NOT_OK(session->Apply(op.release()));
     Status s = session->Flush();
@@ -392,6 +433,7 @@ TEST_F(AlterTableRandomized, TestRandomSequence) {
       NO_FATALS(t.Verify());
     }
   }
+  NO_FATALS(t.Verify());
 }
 
 } // namespace kudu

@@ -264,9 +264,9 @@ Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
     if (!base_data_->has_data_for_column_id(col_id)) {
       // If we have no data for a column, most likely it was added via an ALTER
       // operation after this CFileSet was flushed. In that case, we're guaranteed
-      // that it has a "read-default". Otherwise, consider it a corruption.
+      // that it is either NULLable, or has a "read-default". Otherwise, consider it a corruption.
       const ColumnSchema& col_schema = projection_->column(proj_col_idx);
-      if (PREDICT_FALSE(!col_schema.has_read_default())) {
+      if (PREDICT_FALSE(!col_schema.is_nullable() && !col_schema.has_read_default())) {
         return Status::Corruption(Substitute("column $0 has no data in rowset $1",
                                              col_schema.ToString(), base_data_->ToString()));
       }
