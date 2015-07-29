@@ -158,6 +158,10 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   // Return stringified representation of the list of replicas for this tablet.
   std::string ReplicasAsString() const;
 
+  // Invalidate the current set of replicas. This will result in a new lookup of the
+  // replicas from the master on the next access.
+  void InvalidateCachedReplicas();
+
  private:
   // Same as ReplicasAsString(), except that the caller must hold lock_.
   std::string ReplicasAsStringUnlocked() const;

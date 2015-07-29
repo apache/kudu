@@ -155,6 +155,11 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
   }
 }
 
+void RemoteTablet::InvalidateCachedReplicas() {
+  lock_guard<simple_spinlock> l(&lock_);
+  replicas_.clear();
+}
+
 bool RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
                                      const Status& status) {
   bool found = false;

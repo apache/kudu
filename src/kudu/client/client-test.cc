@@ -1001,14 +1001,26 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
                                       GenerateSplitKeys(),
                                       &table));
   InsertTestRows(table.get(), 1, 0);
-  // Find the tablet.
-  Synchronizer sync;
+
+  // Look up the tablet and its replicas into the metadata cache.
+  // We have to loop since some replicas may have been created slowly.
   scoped_refptr<internal::RemoteTablet> rt;
-  client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(), MonoTime::Max(), &rt,
-                                                sync.AsStatusCallback());
-  // Get the leader replica of the tablet.
-  ASSERT_OK(sync.Wait());
-  ASSERT_TRUE(rt.get() != NULL);
+  while (true) {
+    Synchronizer sync;
+    client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(), MonoTime::Max(), &rt,
+                                                  sync.AsStatusCallback());
+    ASSERT_OK(sync.Wait());
+    ASSERT_TRUE(rt.get() != NULL);
+    vector<internal::RemoteTabletServer*> tservers;
+    rt->GetRemoteTabletServers(&tservers);
+    if (tservers.size() == 3) {
+      break;
+    }
+    rt->InvalidateCachedReplicas();
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  // Get the Leader.
   internal::RemoteTabletServer *rts;
   set<string> blacklist;
   vector<internal::RemoteTabletServer*> candidates;
