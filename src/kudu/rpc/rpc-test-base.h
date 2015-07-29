@@ -374,7 +374,8 @@ class RpcTestBase : public KuduTest {
   void DoStartTestServer(Sockaddr *server_addr) {
     server_messenger_ = CreateMessenger("TestServer", n_server_reactor_threads_);
     shared_ptr<AcceptorPool> pool;
-    ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), 2, &pool));
+    ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), &pool));
+    ASSERT_OK(pool->Start(2));
     *server_addr = pool->bind_address();
 
     gscoped_ptr<ServiceIf> service(new ServiceClass(metric_entity_));

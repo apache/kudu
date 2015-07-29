@@ -196,28 +196,29 @@ Status Socket::SetRecvTimeout(const MonoDelta& timeout) {
   return SetTimeout(SO_RCVTIMEO, "SO_RCVTIMEO", timeout);
 }
 
-Status Socket::BindAndListen(const Sockaddr &sockaddr,
-                             int listenQueueSize) {
+Status Socket::SetReuseAddr(bool flag) {
   int err;
-  int yes = 1;
-  if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+  int int_flag = flag ? 1 : 0;
+  if (setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR, &int_flag, sizeof(int_flag)) == -1) {
     err = errno;
     return Status::NetworkError(std::string("failed to set SO_REUSEADDR: ") +
                                 ErrnoToString(err), Slice(), err);
   }
+  return Status::OK();
+}
 
-  Status s = Bind(sockaddr);
-  if (s.IsNetworkError() && s.posix_code() == EADDRINUSE && sockaddr.port() != 0) {
-    TryRunLsof(sockaddr);
-  }
-  RETURN_NOT_OK(s);
+Status Socket::BindAndListen(const Sockaddr &sockaddr,
+                             int listenQueueSize) {
+  RETURN_NOT_OK(SetReuseAddr(true));
+  RETURN_NOT_OK(Bind(sockaddr));
+  RETURN_NOT_OK(Listen(listenQueueSize));
+  return Status::OK();
+}
 
-  if (listen(fd_, listenQueueSize)) {
-    err = errno;
-    return Status::NetworkError(
-        StringPrintf("error listening on %s: %s",
-            sockaddr.ToString().c_str(), ErrnoToString(err).c_str()),
-        Slice(), err);
+Status Socket::Listen(int listen_queue_size) {
+  if (listen(fd_, listen_queue_size)) {
+    int err = errno;
+    return Status::NetworkError("listen() error", ErrnoToString(err));
   }
   return Status::OK();
 }
@@ -254,10 +255,15 @@ Status Socket::Bind(const Sockaddr& bind_addr) {
   DCHECK_GE(fd_, 0);
   if (PREDICT_FALSE(bind(fd_, (struct sockaddr*) &addr, sizeof(addr)))) {
     int err = errno;
-    return Status::NetworkError(
-      strings::Substitute("error binding socket to $0: $1",
-                          bind_addr.ToString(), ErrnoToString(err)),
-      Slice(), err);
+    Status s = Status::NetworkError(
+        strings::Substitute("error binding socket to $0: $1",
+                            bind_addr.ToString(), ErrnoToString(err)),
+        Slice(), err);
+
+    if (s.IsNetworkError() && s.posix_code() == EADDRINUSE && bind_addr.port() != 0) {
+      TryRunLsof(bind_addr);
+    }
+    return s;
   }
 
   return Status::OK();

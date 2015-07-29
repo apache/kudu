@@ -4,6 +4,7 @@
 #include "kudu/rpc/acceptor_pool.h"
 
 #include <boost/foreach.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <inttypes.h>
 #include <stdint.h>
@@ -31,6 +32,8 @@ METRIC_DEFINE_counter(server, rpc_connections_accepted,
                       kudu::MetricUnit::kConnections,
                       "Number of incoming TCP connections made to the RPC server");
 
+DEFINE_int32(accept_backlog, 128, "backlog parameter to use for accept");
+
 namespace kudu {
 namespace rpc {
 
@@ -48,7 +51,9 @@ AcceptorPool::~AcceptorPool() {
   Shutdown();
 }
 
-Status AcceptorPool::Init(int num_threads) {
+Status AcceptorPool::Start(int num_threads) {
+  RETURN_NOT_OK(socket_.Listen(FLAGS_accept_backlog));
+
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;
     Status s = kudu::Thread::Create("acceptor pool", "acceptor",

@@ -161,7 +161,8 @@ void Master::Shutdown() {
 
 Status Master::GetMasterRegistration(ServerRegistrationPB* reg) const {
   vector<Sockaddr> rpc_addrs;
-  rpc_server()->GetBoundAddresses(&rpc_addrs);
+  RETURN_NOT_OK_PREPEND(rpc_server()->GetBoundAddresses(&rpc_addrs),
+                        "Couldn't get RPC addresses");
   RETURN_NOT_OK(AddHostPortPBs(rpc_addrs, reg->mutable_rpc_addresses()));
   vector<Sockaddr> http_addrs;
   web_server()->GetBoundAddresses(&http_addrs);

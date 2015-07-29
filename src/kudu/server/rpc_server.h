@@ -40,6 +40,7 @@ class RpcServer {
   // Services need to be registered after Init'ing, but before Start'ing.
   // The service's ownership will be given to a ServicePool.
   Status RegisterService(gscoped_ptr<rpc::ServiceIf> service);
+  Status Bind();
   Status Start();
   void Shutdown();
 
@@ -47,7 +48,7 @@ class RpcServer {
 
   // Return the addresses that this server has successfully
   // bound to. Requires that the server has been Start()ed.
-  Status GetBoundAddresses(std::vector<Sockaddr>* addresses) const;
+  Status GetBoundAddresses(std::vector<Sockaddr>* addresses) const WARN_UNUSED_RESULT;
 
   const rpc::ServicePool* service_pool(const std::string& service_name) const;
 
@@ -57,6 +58,8 @@ class RpcServer {
     UNINITIALIZED,
     // State after Init() was called.
     INITIALIZED,
+    // State after Bind().
+    BOUND,
     // State after Start() was called.
     STARTED
   };

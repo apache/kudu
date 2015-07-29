@@ -29,10 +29,13 @@ class AcceptorPool {
  public:
   // Create a new acceptor pool.  Calls socket::Release to take ownership of the
   // socket.
+  // 'socket' must be already bound, but should not yet be listening.
   AcceptorPool(Messenger *messenger,
                Socket *socket, const Sockaddr &bind_address);
   ~AcceptorPool();
-  Status Init(int num_threads);
+
+  // Start listening and accepting connections.
+  Status Start(int num_threads);
   void Shutdown();
 
   // Return the address that the pool is bound to. If the port is specified as

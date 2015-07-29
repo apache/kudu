@@ -74,7 +74,8 @@ Status RpcServer::Init(const std::tr1::shared_ptr<Messenger>& messenger) {
 }
 
 Status RpcServer::RegisterService(gscoped_ptr<rpc::ServiceIf> service) {
-  CHECK_EQ(server_state_, INITIALIZED);
+  CHECK(server_state_ == INITIALIZED ||
+        server_state_ == BOUND) << "bad state: " << server_state_;
   const scoped_refptr<MetricEntity>& metric_entity = messenger_->metric_entity();
   string service_name = service->service_name();
   scoped_refptr<rpc::ServicePool> service_pool =
@@ -84,7 +85,7 @@ Status RpcServer::RegisterService(gscoped_ptr<rpc::ServiceIf> service) {
   return Status::OK();
 }
 
-Status RpcServer::Start() {
+Status RpcServer::Bind() {
   CHECK_EQ(server_state_, INITIALIZED);
 
   // Create the Acceptor pools (one per bind address)
@@ -93,12 +94,26 @@ Status RpcServer::Start() {
   BOOST_FOREACH(const Sockaddr& bind_addr, rpc_bind_addresses_) {
     shared_ptr<rpc::AcceptorPool> pool;
     RETURN_NOT_OK(messenger_->AddAcceptorPool(
-                    bind_addr, options_.num_acceptors_per_address,
+                    bind_addr,
                     &pool));
     new_acceptor_pools.push_back(pool);
   }
   acceptor_pools_.swap(new_acceptor_pools);
+
+  server_state_ = BOUND;
+  return Status::OK();
+}
+
+Status RpcServer::Start() {
+  if (server_state_ == INITIALIZED) {
+    RETURN_NOT_OK(Bind());
+  }
+  CHECK_EQ(server_state_, BOUND);
   server_state_ = STARTED;
+
+  BOOST_FOREACH(const shared_ptr<AcceptorPool>& pool, acceptor_pools_) {
+    RETURN_NOT_OK(pool->Start(options_.num_acceptors_per_address));
+  }
 
   vector<Sockaddr> bound_addrs;
   RETURN_NOT_OK(GetBoundAddresses(&bound_addrs));
@@ -124,11 +139,12 @@ void RpcServer::Shutdown() {
 }
 
 Status RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
-  CHECK_EQ(server_state_, STARTED);
+  CHECK(server_state_ == BOUND ||
+        server_state_ == STARTED) << "bad state: " << server_state_;
   BOOST_FOREACH(const shared_ptr<AcceptorPool>& pool, acceptor_pools_) {
     Sockaddr bound_addr;
     RETURN_NOT_OK_PREPEND(pool->GetBoundAddress(&bound_addr),
-        "Unable to get bound address from AcceptorPool");
+                          "Unable to get bound address from AcceptorPool");
     addresses->push_back(bound_addr);
   }
   return Status::OK();

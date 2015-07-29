@@ -38,8 +38,6 @@ using std::string;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 
-DEFINE_int32(accept_backlog, 128, "backlog parameter to use for accept");
-
 namespace kudu {
 namespace rpc {
 
@@ -139,15 +137,15 @@ void Messenger::Shutdown() {
 }
 
 Status Messenger::AddAcceptorPool(const Sockaddr &accept_addr,
-                                  int num_threads,
                                   shared_ptr<AcceptorPool>* pool) {
   Socket sock;
   RETURN_NOT_OK(sock.Init(0));
-  RETURN_NOT_OK(sock.BindAndListen(accept_addr, FLAGS_accept_backlog));
+  RETURN_NOT_OK(sock.SetReuseAddr(true));
+  RETURN_NOT_OK(sock.Bind(accept_addr));
   Sockaddr remote;
   RETURN_NOT_OK(sock.GetSocketAddress(&remote));
   shared_ptr<AcceptorPool> acceptor_pool(new AcceptorPool(this, &sock, remote));
-  RETURN_NOT_OK(acceptor_pool->Init(num_threads));
+
   lock_guard<percpu_rwlock> guard(&lock_);
   acceptor_pools_.push_back(acceptor_pool);
   *pool = acceptor_pool;

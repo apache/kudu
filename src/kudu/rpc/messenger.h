@@ -122,8 +122,11 @@ class Messenger {
   //
   // The created pool is returned in *pool. The Messenger also retains
   // a reference to the pool, so the caller may safely drop this reference
-  // and the pool will remain running.
-  Status AddAcceptorPool(const Sockaddr &accept_addr, int num_threads,
+  // and the pool will remain live.
+  //
+  // NOTE: the returned pool is not initially started. You must call
+  // pool->Start(...) to begin accepting connections.
+  Status AddAcceptorPool(const Sockaddr &accept_addr,
                          std::tr1::shared_ptr<AcceptorPool>* pool);
 
   // Register a new RpcService to handle inbound requests.

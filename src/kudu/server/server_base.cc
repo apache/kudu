@@ -102,7 +102,8 @@ ServerBase::~ServerBase() {
 
 Sockaddr ServerBase::first_rpc_address() const {
   vector<Sockaddr> addrs;
-  rpc_server_->GetBoundAddresses(&addrs);
+  WARN_NOT_OK(rpc_server_->GetBoundAddresses(&addrs),
+              "Couldn't get bound RPC address");
   CHECK(!addrs.empty()) << "Not bound";
   return addrs[0];
 }
@@ -152,6 +153,7 @@ Status ServerBase::Init() {
   RETURN_NOT_OK(builder.Build(&messenger_));
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));
+  RETURN_NOT_OK(rpc_server_->Bind());
   RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
   clock_->RegisterMetrics(metric_entity_);
 
@@ -167,7 +169,7 @@ void ServerBase::GetStatusPB(ServerStatusPB* status) const {
   // RPC ports
   {
     vector<Sockaddr> addrs;
-    rpc_server_->GetBoundAddresses(&addrs);
+    CHECK_OK(rpc_server_->GetBoundAddresses(&addrs));
     BOOST_FOREACH(const Sockaddr& addr, addrs) {
       HostPortPB* pb = status->add_bound_rpc_addresses();
       pb->set_host(addr.host());
@@ -178,7 +180,7 @@ void ServerBase::GetStatusPB(ServerStatusPB* status) const {
   // HTTP ports
   {
     vector<Sockaddr> addrs;
-    web_server_->GetBoundAddresses(&addrs);
+    CHECK_OK(web_server_->GetBoundAddresses(&addrs));
     BOOST_FOREACH(const Sockaddr& addr, addrs) {
       HostPortPB* pb = status->add_bound_http_addresses();
       pb->set_host(addr.host());

@@ -63,8 +63,18 @@ class Socket {
   // Set SO_RCVTIMEO to the specified value. Should only be used for blocking sockets.
   Status SetRecvTimeout(const MonoDelta& timeout);
 
-  // Calls bind(2) followed by listen(2).
+  // Sets SO_REUSEADDR to 'flag'. Should be used prior to Bind().
+  Status SetReuseAddr(bool flag);
+
+  // Convenience method to invoke the common sequence:
+  // 1) SetReuseAddr(true)
+  // 2) Bind()
+  // 3) Listen()
   Status BindAndListen(const Sockaddr &sockaddr, int listen_queue_size);
+
+  // Start listening for new connections, with the given backlog size.
+  // Requires that the socket has already been bound using Bind().
+  Status Listen(int listen_queue_size);
 
   // Call getsockname to get the address of this socket.
   Status GetSocketAddress(Sockaddr *cur_addr) const;
@@ -73,6 +83,8 @@ class Socket {
   Status GetPeerAddress(Sockaddr *cur_addr) const;
 
   // Call bind() to bind the socket to a given address.
+  // If bind() fails and indicates that the requested port is already in use,
+  // generates an informative log message by calling 'lsof' if available.
   Status Bind(const Sockaddr& bind_addr);
 
   // Call accept(2) to get a new connection.

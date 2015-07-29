@@ -60,7 +60,11 @@ TEST_F(TestRpc, TestAcceptorPoolStartStop) {
   for (int i = 0; i < n_iters; i++) {
     shared_ptr<Messenger> messenger(CreateMessenger("TestAcceptorPoolStartStop"));
     shared_ptr<AcceptorPool> pool;
-    ASSERT_OK(messenger->AddAcceptorPool(Sockaddr(), 2, &pool));
+    ASSERT_OK(messenger->AddAcceptorPool(Sockaddr(), &pool));
+    Sockaddr bound_addr;
+    ASSERT_OK(pool->GetBoundAddress(&bound_addr));
+    ASSERT_NE(0, bound_addr.port());
+    ASSERT_OK(pool->Start(2));
     messenger->Shutdown();
   }
 }
