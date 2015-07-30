@@ -169,15 +169,13 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     last_durable_mrs_id_ = superblock.last_durable_mrs_id();
 
     table_name_ = superblock.table_name();
-    schema_version_ = superblock.schema_version();
 
+    uint32_t schema_version = superblock.schema_version();
     gscoped_ptr<Schema> schema(new Schema());
     RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock.schema(), schema.get()),
                           "Failed to parse Schema from superblock " +
                           superblock.ShortDebugString());
-    DCHECK(schema->has_column_ids());
-    DCHECK(!schema_);
-    schema_ = schema.release();
+    SetSchemaUnlocked(schema.Pass(), schema_version);
 
     remote_bootstrap_state_ = superblock.remote_bootstrap_state();
 
@@ -429,17 +427,22 @@ RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
 }
 
 void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {
-  DCHECK(schema.has_column_ids());
   gscoped_ptr<Schema> new_schema(new Schema(schema));
-
   boost::lock_guard<LockType> l(data_lock_);
+  SetSchemaUnlocked(new_schema.Pass(), version);
+}
+
+void TabletMetadata::SetSchemaUnlocked(gscoped_ptr<Schema> new_schema, uint32_t version) {
+  DCHECK(new_schema->has_column_ids());
 
   Schema* old_schema = schema_;
   // "Release" barrier ensures that, when we publish the new Schema object,
   // all of its initialization is also visible.
   base::subtle::Release_Store(reinterpret_cast<AtomicWord*>(&schema_),
                               reinterpret_cast<AtomicWord>(new_schema.release()));
-  old_schemas_.push_back(old_schema);
+  if (PREDICT_TRUE(old_schema)) {
+    old_schemas_.push_back(old_schema);
+  }
   schema_version_ = version;
 }
 

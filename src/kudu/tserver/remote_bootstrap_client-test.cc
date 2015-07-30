@@ -4,6 +4,7 @@
 
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/strings/fastmem.h"
+#include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tserver/remote_bootstrap_client.h"
 #include "kudu/util/env_util.h"
 
@@ -12,6 +13,8 @@ namespace tserver {
 
 using consensus::GetRaftConfigLeader;
 using consensus::RaftPeerPB;
+using tablet::TabletMetadata;
+using tablet::TabletStatusListener;
 
 class RemoteBootstrapClientTest : public RemoteBootstrapTest {
  public:
@@ -24,10 +27,15 @@ class RemoteBootstrapClientTest : public RemoteBootstrapTest {
 
     tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10.0));
     rpc::MessengerBuilder(CURRENT_TEST_NAME()).Build(&messenger_);
-    client_.reset(new RemoteBootstrapClient(fs_manager_.get(),
+    client_.reset(new RemoteBootstrapClient(GetTabletId(),
+                                            fs_manager_.get(),
                                             messenger_,
                                             fs_manager_->uuid()));
     ASSERT_OK(GetRaftConfigLeader(tablet_peer_->consensus()->CommittedConsensusState(), &leader_));
+
+    HostPort host_port;
+    HostPortFromPB(leader_.last_known_addr(), &host_port);
+    ASSERT_OK(client_->Start(leader_.permanent_uuid(), host_port, &meta_));
   }
 
  protected:
@@ -36,6 +44,7 @@ class RemoteBootstrapClientTest : public RemoteBootstrapTest {
   gscoped_ptr<FsManager> fs_manager_;
   shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<RemoteBootstrapClient> client_;
+  scoped_refptr<TabletMetadata> meta_;
   RaftPeerPB leader_;
 };
 
@@ -65,15 +74,14 @@ Status RemoteBootstrapClientTest::CompareFileContents(const string& path1, const
 
 // Basic begin / end remote bootstrap session.
 TEST_F(RemoteBootstrapClientTest, TestBeginEndSession) {
-  ASSERT_OK(client_->
-      BeginRemoteBootstrapSession(GetTabletId(), leader_, NULL));
-  ASSERT_OK(client_->EndRemoteBootstrapSession());
+  TabletStatusListener listener(meta_);
+  ASSERT_OK(client_->FetchAll(&listener));
+  ASSERT_OK(client_->Finish());
 }
 
 // Basic data block download unit test.
 TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
-  ASSERT_OK(client_->
-      BeginRemoteBootstrapSession(GetTabletId(), leader_, NULL));
+  TabletStatusListener listener(meta_);
   BlockId block_id = FirstColumnBlockId(*client_->superblock_);
   Slice slice;
   faststring scratch;
@@ -91,14 +99,12 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadBlock) {
   s = ReadLocalBlockFile(fs_manager_.get(), block_id, &scratch, &slice);
   ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
   ASSERT_OK(ReadLocalBlockFile(fs_manager_.get(), new_block_id, &scratch, &slice));
-  ASSERT_OK(client_->EndRemoteBootstrapSession());
 }
 
 // Basic WAL segment download unit test.
 TEST_F(RemoteBootstrapClientTest, TestDownloadWalSegment) {
   ASSERT_OK(fs_manager_->CreateDirIfMissing(fs_manager_->GetTabletWalDir(GetTabletId())));
 
-  ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(), leader_, NULL));
   uint64_t seqno = client_->wal_seqnos_[0];
   string path = fs_manager_->GetWalSegmentFileName(GetTabletId(), seqno);
 
@@ -113,8 +119,6 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadWalSegment) {
 
   // Compare the downloaded file with the source file.
   ASSERT_OK(CompareFileContents(path, server_path));
-
-  ASSERT_OK(client_->EndRemoteBootstrapSession());
 }
 
 // Ensure that we detect data corruption at the per-transfer level.
@@ -184,9 +188,7 @@ vector<BlockId> GetAllSortedBlocks(const tablet::TabletSuperBlockPB& sb) {
 
 TEST_F(RemoteBootstrapClientTest, TestDownloadAllBlocks) {
   // Download all the blocks.
-  ASSERT_OK(client_->BeginRemoteBootstrapSession(GetTabletId(), leader_, NULL));
   ASSERT_OK(client_->DownloadBlocks());
-  ASSERT_OK(client_->EndRemoteBootstrapSession());
 
   // Verify that the new superblock reflects the changes in block IDs.
   //

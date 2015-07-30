@@ -19,6 +19,7 @@ namespace kudu {
 class BlockId;
 class BlockIdPB;
 class FsManager;
+class HostPort;
 
 namespace consensus {
 class ConsensusStatePB;
@@ -34,6 +35,7 @@ class RpcController;
 
 namespace tablet {
 class TabletMetadata;
+class TabletPeer;
 class TabletStatusListener;
 class TabletSuperBlockPB;
 } // namespace tablet
@@ -55,16 +57,32 @@ class RemoteBootstrapClient {
   // Construct the remote bootstrap client.
   // 'fs_manager' and 'messenger' must remain valid until this object is destroyed.
   // 'client_permanent_uuid' is the permanent UUID of the caller server.
-  RemoteBootstrapClient(FsManager* fs_manager,
+  RemoteBootstrapClient(const std::string& tablet_id,
+                        FsManager* fs_manager,
                         const std::tr1::shared_ptr<rpc::Messenger>& messenger,
                         const std::string& client_permanent_uuid);
 
-  // Runs a "full" remote bootstrap, which includes copying the data required
-  // to instantiate a local replica of the specified tablet from the specified
-  // bootstrap peer.
-  Status RunRemoteBootstrap(tablet::TabletMetadata* meta,
-                            const consensus::RaftPeerPB& bootstrap_peer,
-                            tablet::TabletStatusListener* status_listener);
+  // Attempt to clean up resources on the remote end by sending an
+  // EndRemoteBootstrapSession() RPC
+  ~RemoteBootstrapClient();
+
+  // Start up a remote bootstrap session to bootstrap from the specified
+  // bootstrap peer. Place a new superblock indicating that remote bootstrap is
+  // in progress. If the 'metadata' pointer is passed as NULL, it is ignored,
+  // otherwise the TabletMetadata object resulting from the initial remote
+  // bootstrap response is returned.
+  // TODO: Rename these parameters to bootstrap_source_*.
+  Status Start(const std::string& bootstrap_peer_uuid,
+               const HostPort& bootstrap_peer_addr,
+               scoped_refptr<tablet::TabletMetadata>* metadata);
+
+  // Runs a "full" remote bootstrap, copying the physical layout of a tablet
+  // from the leader of the specified consensus configuration.
+  Status FetchAll(tablet::TabletStatusListener* status_listener);
+
+  // After downloading all files successfully, write out the completed
+  // replacement superblock.
+  Status Finish();
 
  private:
   FRIEND_TEST(RemoteBootstrapClientTest, TestBeginEndSession);
@@ -72,12 +90,6 @@ class RemoteBootstrapClient {
   FRIEND_TEST(RemoteBootstrapClientTest, TestVerifyData);
   FRIEND_TEST(RemoteBootstrapClientTest, TestDownloadWalSegment);
   FRIEND_TEST(RemoteBootstrapClientTest, TestDownloadAllBlocks);
-
-  // Whether a remote boostrap session has been started or not.
-  enum State {
-    kNoSession,
-    kSessionStarted,
-  };
 
   // Extract the embedded Status message from the given ErrorStatusPB.
   // The given ErrorStatusPB must extend RemoteBootstrapErrorPB.
@@ -89,17 +101,8 @@ class RemoteBootstrapClient {
   // The string "RemoteBootstrap: " will be prepended to each message.
   void UpdateStatusMessage(const std::string& message);
 
-  // Start up a new bootstrap session with the remote leader.
-  // This is a one-time-use object, and calling BeginRemoteBootstrapSession()
-  // twice is an error.
-  //
-  // 'status_listener' may be passed as NULL.
-  Status BeginRemoteBootstrapSession(const std::string& tablet_id,
-                                     const consensus::RaftPeerPB& bootstrap_peer,
-                                     tablet::TabletStatusListener* status_listener);
-
   // End the remote bootstrap session.
-  Status EndRemoteBootstrapSession();
+  Status EndRemoteSession();
 
   // Download all WAL files sequentially.
   Status DownloadWALs();
@@ -145,16 +148,22 @@ class RemoteBootstrapClient {
 
   Status VerifyData(uint64_t offset, const DataChunkPB& resp);
 
+  // Return standard log prefix.
+  std::string LogPrefix();
+
   // Set-once members.
+  const std::string tablet_id_;
   FsManager* const fs_manager_;
   const std::tr1::shared_ptr<rpc::Messenger> messenger_;
   const std::string permanent_uuid_;
 
-  // Whether a session is active.
-  State state_;
+  // State flags that enforce the progress of remote bootstrap.
+  bool started_;            // Session started.
+  bool downloaded_wal_;     // WAL segments downloaded.
+  bool downloaded_blocks_;  // Data blocks downloaded.
 
   // Session-specific data items.
-  std::string tablet_id_;
+  scoped_refptr<tablet::TabletMetadata> meta_;
   tablet::TabletStatusListener* status_listener_;
   std::tr1::shared_ptr<RemoteBootstrapServiceProxy> proxy_;
   std::string session_id_;

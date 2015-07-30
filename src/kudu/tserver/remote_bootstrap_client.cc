@@ -23,10 +23,12 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 
-DEFINE_int32(remote_bootstrap_begin_session_timeout_ms, 10000,
-             "Tablet server RPC client timeout for BeginRemoteBootstrapSession calls.");
+DEFINE_int32(remote_bootstrap_begin_session_timeout_ms, 3000,
+             "Tablet server RPC client timeout for BeginRemoteBootstrapSession calls. "
+             "Also used for EndRemoteBootstrapSession calls.");
 
 // RETURN_NOT_OK_PREPEND() with a remote-error unwinding step.
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \
@@ -53,42 +55,118 @@ using tablet::TabletMetadata;
 using tablet::TabletStatusListener;
 using tablet::TabletSuperBlockPB;
 
-RemoteBootstrapClient::RemoteBootstrapClient(FsManager* fs_manager,
+RemoteBootstrapClient::RemoteBootstrapClient(const std::string& tablet_id,
+                                             FsManager* fs_manager,
                                              const shared_ptr<Messenger>& messenger,
                                              const string& client_permanent_uuid)
-  : fs_manager_(fs_manager),
+  : tablet_id_(tablet_id),
+    fs_manager_(fs_manager),
     messenger_(messenger),
     permanent_uuid_(client_permanent_uuid),
-    state_(kNoSession),
+    started_(false),
+    downloaded_wal_(false),
+    downloaded_blocks_(false),
     status_listener_(NULL),
     session_idle_timeout_millis_(0) {
 }
 
-Status RemoteBootstrapClient::RunRemoteBootstrap(TabletMetadata* meta,
-                                                 const RaftPeerPB& bootstrap_peer,
-                                                 TabletStatusListener* status_listener) {
-  DCHECK(meta != NULL);
+RemoteBootstrapClient::~RemoteBootstrapClient() {
+  // Note: Ending the remote bootstrap session releases anchors on the remote.
+  WARN_NOT_OK(EndRemoteSession(), "Unable to close remote bootstrap session");
+}
 
-  CHECK_EQ(tablet::REMOTE_BOOTSTRAP_COPYING, meta->remote_bootstrap_state());
-  const string& tablet_id = meta->tablet_id();
+Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
+                                    const HostPort& bootstrap_peer_addr,
+                                    scoped_refptr<TabletMetadata>* meta) {
+  CHECK(!started_);
+
+  Sockaddr addr;
+  RETURN_NOT_OK(SockaddrFromHostPort(bootstrap_peer_addr, &addr));
+  if (addr.IsWildcard()) {
+    return Status::InvalidArgument("Invalid wildcard address to remote bootstrap from",
+                                   Substitute("$0 (resolved to $1)",
+                                              bootstrap_peer_addr.host(), addr.host()));
+  }
+  LOG_WITH_PREFIX(INFO) << "Beginning remote bootstrap session"
+                        << " from remote peer at address " << bootstrap_peer_addr.ToString();
+
+  // Set up an RPC proxy for the RemoteBootstrapService.
+  proxy_.reset(new RemoteBootstrapServiceProxy(messenger_, addr));
+
+  BeginRemoteBootstrapSessionRequestPB req;
+  req.set_requestor_uuid(permanent_uuid_);
+  req.set_tablet_id(tablet_id_);
+
+  rpc::RpcController controller;
+  controller.set_timeout(MonoDelta::FromMilliseconds(
+      FLAGS_remote_bootstrap_begin_session_timeout_ms));
+
+  // Begin the remote bootstrap session with the remote peer.
+  BeginRemoteBootstrapSessionResponsePB resp;
+  RETURN_NOT_OK_UNWIND_PREPEND(proxy_->BeginRemoteBootstrapSession(req, &resp, &controller),
+                               controller,
+                               "Unable to begin remote bootstrap session");
+
+  if (resp.superblock().remote_bootstrap_state() != tablet::REMOTE_BOOTSTRAP_DONE) {
+    Status s = Status::IllegalState("Remote peer (" + bootstrap_peer_uuid + ")" +
+                                    " is currently remotely bootstrapping itself!",
+                                    resp.superblock().ShortDebugString());
+    LOG_WITH_PREFIX(WARNING) << s.ToString();
+    return s;
+  }
+
+  session_id_ = resp.session_id();
+  session_idle_timeout_millis_ = resp.session_idle_timeout_millis();
+  superblock_.reset(resp.release_superblock());
+  wal_seqnos_.assign(resp.wal_segment_seqnos().begin(), resp.wal_segment_seqnos().end());
+  committed_cstate_.reset(resp.release_initial_committed_cstate());
+
+  Schema schema;
+  RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock_->schema(), &schema),
+                        "Cannot deserialize schema from remote superblock");
+
+  // Create the superblock on disk.
+  // TODO: Once we support tablet delete, if the superblock exists, retain its
+  // latest_log_opid. See KUDU-868.
+  RETURN_NOT_OK(TabletMetadata::CreateNew(fs_manager_, tablet_id_,
+                                          superblock_->table_name(),
+                                          schema,
+                                          superblock_->start_key(),
+                                          superblock_->end_key(),
+                                          tablet::REMOTE_BOOTSTRAP_COPYING,
+                                          &meta_));
+  started_ = true;
+  if (meta) {
+    *meta = meta_;
+  }
+  return Status::OK();
+}
+
+Status RemoteBootstrapClient::FetchAll(TabletStatusListener* status_listener) {
+  CHECK(started_);
+  status_listener_ = CHECK_NOTNULL(status_listener);
 
   // Download all the files (serially, for now, but in parallel in the future).
-  RETURN_NOT_OK(BeginRemoteBootstrapSession(tablet_id, bootstrap_peer, status_listener));
-  RETURN_NOT_OK(DownloadWALs());
   RETURN_NOT_OK(DownloadBlocks());
-  RETURN_NOT_OK(WriteConsensusMetadata());
+  RETURN_NOT_OK(DownloadWALs());
+
+  return Status::OK();
+}
+
+Status RemoteBootstrapClient::Finish() {
+  CHECK(meta_);
+  CHECK(started_);
+  CHECK(downloaded_wal_);
+  CHECK(downloaded_blocks_);
+
+  RETURN_NOT_OK(WriteConsensusMetadata()); // TODO: KUDU-868: Merge with existing cmeta.
 
   // Replace tablet metadata superblock. This will set the tablet metadata state
   // to REMOTE_BOOTSTRAP_DONE, since we checked above that the response
   // superblock is in a valid state to bootstrap from.
-  LOG(INFO) << "Tablet " << tablet_id_ << " remote bootstrap complete. Replacing superblock.";
+  LOG_WITH_PREFIX(INFO) << "Remote bootstrap complete. Replacing tablet superblock.";
   UpdateStatusMessage("Replacing tablet superblock");
-  RETURN_NOT_OK(meta->ReplaceSuperBlock(*new_superblock_));
-
-  // Note: Ending the remote bootstrap session releases anchors on the remote.
-  RETURN_NOT_OK(EndRemoteBootstrapSession());
-
-  return Status::OK();
+  return meta_->ReplaceSuperBlock(*new_superblock_);
 }
 
 // Decode the remote error into a human-readable Status object.
@@ -120,79 +198,10 @@ void RemoteBootstrapClient::UpdateStatusMessage(const string& message) {
   }
 }
 
-Status RemoteBootstrapClient::BeginRemoteBootstrapSession(const std::string& tablet_id,
-                                                          const RaftPeerPB& bootstrap_peer,
-                                                          TabletStatusListener* status_listener) {
-  CHECK_EQ(kNoSession, state_);
-
-  tablet_id_ = tablet_id;
-  status_listener_ = status_listener;
-
-  UpdateStatusMessage("Initializing remote bootstrap");
-
-  if (!bootstrap_peer.has_last_known_addr()) {
-    return Status::InvalidArgument("Unknown address for peer to bootstrap from",
-                                   bootstrap_peer.ShortDebugString());
+Status RemoteBootstrapClient::EndRemoteSession() {
+  if (!started_) {
+    return Status::OK();
   }
-  HostPort host_port;
-  RETURN_NOT_OK(HostPortFromPB(bootstrap_peer.last_known_addr(), &host_port));
-  Sockaddr addr;
-  RETURN_NOT_OK(SockaddrFromHostPort(host_port, &addr));
-  if (addr.IsWildcard()) {
-    return Status::InvalidArgument("Invalid wildcard address to remote bootstrap from",
-                                   Substitute("$0 (resolved to $1)",
-                                              host_port.host(), addr.host()));
-  }
-  LOG(INFO) << "Beginning remote bootstrap session on tablet " << tablet_id
-            << " from remote peer at address " << host_port.ToString();
-
-  UpdateStatusMessage("Beginning remote bootstrap session with remote peer "
-                      + host_port.ToString());
-
-  // Set up an RPC proxy for the RemoteBootstrapService.
-  proxy_.reset(new RemoteBootstrapServiceProxy(messenger_, addr));
-
-  BeginRemoteBootstrapSessionRequestPB req;
-  req.set_requestor_uuid(permanent_uuid_);
-  req.set_tablet_id(tablet_id);
-
-  rpc::RpcController controller;
-  controller.set_timeout(MonoDelta::FromMilliseconds(
-      FLAGS_remote_bootstrap_begin_session_timeout_ms));
-
-  // Begin the remote bootstrap session.
-  BeginRemoteBootstrapSessionResponsePB resp;
-  RETURN_NOT_OK_UNWIND_PREPEND(proxy_->BeginRemoteBootstrapSession(req, &resp, &controller),
-                               controller,
-                               "Unable to begin remote bootstrap session");
-
-  // TODO: Consider adding support for retrying based on updated info from
-  // Master or consensus configuration?
-  tablet::TabletBootstrapStatePB state = resp.superblock().remote_bootstrap_state();
-  if (state != tablet::REMOTE_BOOTSTRAP_DONE) {
-    Status s = Status::IllegalState(Substitute("Remote peer ($0) data is not ready: $1 ($2)",
-                                    bootstrap_peer.ShortDebugString(),
-                                    TabletBootstrapStatePB_Name(state), state),
-                                    resp.superblock().ShortDebugString());
-    LOG(WARNING) << s.ToString();
-    return s;
-  }
-
-  session_id_ = resp.session_id();
-  session_idle_timeout_millis_ = resp.session_idle_timeout_millis();
-  superblock_.reset(resp.release_superblock());
-  wal_seqnos_.assign(resp.wal_segment_seqnos().begin(), resp.wal_segment_seqnos().end());
-  committed_cstate_.reset(new ConsensusStatePB(resp.initial_committed_cstate()));
-
-  state_ = kSessionStarted;
-
-  return Status::OK();
-}
-
-Status RemoteBootstrapClient::EndRemoteBootstrapSession() {
-  CHECK_EQ(kSessionStarted, state_);
-
-  UpdateStatusMessage("Ending remote bootstrap session");
 
   rpc::RpcController controller;
   controller.set_timeout(MonoDelta::FromMilliseconds(
@@ -206,13 +215,11 @@ Status RemoteBootstrapClient::EndRemoteBootstrapSession() {
                                controller,
                                "Failure ending remote bootstrap session");
 
-  UpdateStatusMessage("Remote bootstrap complete");
-
   return Status::OK();
 }
 
 Status RemoteBootstrapClient::DownloadWALs() {
-  CHECK_EQ(kSessionStarted, state_);
+  CHECK(started_);
 
   // Delete and recreate WAL dir if it already exists, to ensure stray files are
   // not kept from previous bootstraps and runs.
@@ -225,7 +232,7 @@ Status RemoteBootstrapClient::DownloadWALs() {
 
   // Download the WAL segments.
   int num_segments = wal_seqnos_.size();
-  LOG(INFO) << "Starting download of " << num_segments << " WAL segments...";
+  LOG_WITH_PREFIX(INFO) << "Starting download of " << num_segments << " WAL segments...";
   uint64_t counter = 0;
   BOOST_FOREACH(uint64_t seg_seqno, wal_seqnos_) {
     UpdateStatusMessage(Substitute("Downloading WAL segment with seq. number $0 ($1/$2)",
@@ -233,11 +240,13 @@ Status RemoteBootstrapClient::DownloadWALs() {
     RETURN_NOT_OK(DownloadWAL(seg_seqno));
     ++counter;
   }
+
+  downloaded_wal_ = true;
   return Status::OK();
 }
 
 Status RemoteBootstrapClient::DownloadBlocks() {
-  CHECK_EQ(kSessionStarted, state_);
+  CHECK(started_);
 
   // Count up the total number of blocks to download.
   int num_blocks = 0;
@@ -258,7 +267,7 @@ Status RemoteBootstrapClient::DownloadBlocks() {
   gscoped_ptr<TabletSuperBlockPB> new_sb(new TabletSuperBlockPB());
   new_sb->CopyFrom(*superblock_);
   int block_count = 0;
-  LOG(INFO) << "Starting download of " << num_blocks << " data blocks...";
+  LOG_WITH_PREFIX(INFO) << "Starting download of " << num_blocks << " data blocks...";
   BOOST_FOREACH(RowSetDataPB& rowset, *new_sb->mutable_rowsets()) {
     BOOST_FOREACH(ColumnDataPB& col, *rowset.mutable_columns()) {
       RETURN_NOT_OK(DownloadAndRewriteBlock(col.mutable_block(),
@@ -284,13 +293,15 @@ Status RemoteBootstrapClient::DownloadBlocks() {
 
   // The orphaned physical block ids at the remote have no meaning to us.
   new_sb->clear_orphaned_blocks();
-
   new_superblock_.swap(new_sb);
+
+  downloaded_blocks_ = true;
+
   return Status::OK();
 }
 
 Status RemoteBootstrapClient::DownloadWAL(uint64_t wal_segment_seqno) {
-  VLOG(1) << "Downloading WAL segment with seqno " << wal_segment_seqno;
+  VLOG_WITH_PREFIX(1) << "Downloading WAL segment with seqno " << wal_segment_seqno;
   DataIdPB data_id;
   data_id.set_type(DataIdPB::LOG_SEGMENT);
   data_id.set_wal_segment_seqno(wal_segment_seqno);
@@ -332,7 +343,7 @@ Status RemoteBootstrapClient::DownloadAndRewriteBlock(BlockIdPB* block_id,
 
 Status RemoteBootstrapClient::DownloadBlock(const BlockId& old_block_id,
                                             BlockId* new_block_id) {
-  VLOG(1) << "Downloading block with block_id " << old_block_id.ToString();
+  VLOG_WITH_PREFIX(1) << "Downloading block with block_id " << old_block_id.ToString();
 
   gscoped_ptr<WritableBlock> block;
   RETURN_NOT_OK_PREPEND(fs_manager_->CreateNewBlock(&block),
@@ -403,6 +414,10 @@ Status RemoteBootstrapClient::VerifyData(uint64_t offset, const DataChunkPB& chu
           offset, chunk.data().size(), crc32, chunk.crc32()));
   }
   return Status::OK();
+}
+
+string RemoteBootstrapClient::LogPrefix() {
+  return Substitute("T $0 P $1: Remote bootstrap client: ", tablet_id_, permanent_uuid_);
 }
 
 } // namespace tserver

@@ -199,6 +199,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Constructor for loading an existing tablet.
   TabletMetadata(FsManager *fs_manager, const std::string& tablet_id);
 
+  void SetSchemaUnlocked(gscoped_ptr<Schema> schema, uint32_t version);
+
   Status LoadFromDisk();
 
   // Update state of metadata to that of the given superblock PB.
