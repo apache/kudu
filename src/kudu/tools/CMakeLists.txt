@@ -29,6 +29,10 @@ target_link_libraries(insert-generated-rows
   kudu_tools_util
   ${LINK_LIBS})
 
+add_executable(kudu-admin kudu-admin.cc)
+target_link_libraries(kudu-admin
+  ${LINK_LIBS})
+
 add_executable(kudu-ts-cli ts-cli.cc)
 target_link_libraries(kudu-ts-cli
   ${LINK_LIBS})
@@ -80,3 +84,7 @@ set(KUDU_TEST_LINK_LIBS
   ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(ksck-test)
 ADD_KUDU_TEST(ksck_remote-test)
+ADD_KUDU_TEST(kudu-admin-test)
+add_dependencies(kudu-admin-test
+  kudu-admin)
+

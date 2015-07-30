@@ -31,14 +31,15 @@ cp -r docs/*.adoc docs/images "$BUILD_DIR/"
 
 # Create config flag references for each of the binaries below
 binaries=("cfile-dump" \
-  "kudu-fs_list" \
-  "kudu-pbc-dump" \
-  "log-dump" \
-  "kudu-fs_dump" \
-  "kudu-ksck" \
-  "kudu-ts-cli" \
-  "kudu-master" \
-  "kudu-tablet_server")
+          "kudu-admin" \
+          "kudu-fs_dump" \
+          "kudu-fs_list" \
+          "kudu-ksck" \
+          "kudu-master" \
+          "kudu-pbc-dump" \
+          "kudu-tablet_server" \
+          "kudu-ts-cli" \
+          "log-dump")
 
 for binary in ${binaries[@]}; do
   echo "Running $(basename $binary) --helpxml"
