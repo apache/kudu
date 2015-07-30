@@ -128,6 +128,10 @@ def main():
       dict(name="kuduTabletState",
            label="Tablet State",
            description="State for Kudu Tablet.",
+           valueCaseSensitive=False),
+      dict(name="kuduReplicaId",
+           label="Replica ID",
+           description="Identifier for Kudu Replica.",
            valueCaseSensitive=False)
       # TODO: add the role's persistent UUID after discussing with
       # Chris on how to inject it into their CM entity.
@@ -155,7 +159,7 @@ def main():
            metricDefinitions=[]),
       dict(name="KUDU_REPLICA",
            nameForCrossEntityAggregateMetrics="kudu_replicas",
-           immutableAttributeNames=["kuduTabletId", "serviceName", "roleName"],
+           immutableAttributeNames=["kuduReplicaId", "kuduTabletId", "serviceName", "roleName"],
            entityNameFormat=["roleName","kuduTabletId"],
            description="A Kudu replica.",
            label="Kudu Replica",
