@@ -4,6 +4,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 
 #include <algorithm>
+#include <boost/thread/locks.hpp>
 #include <string>
 
 #include "kudu/common/wire_protocol.h"
