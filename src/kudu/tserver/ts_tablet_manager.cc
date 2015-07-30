@@ -29,6 +29,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/heartbeater.h"
+#include "kudu/tserver/remote_bootstrap_client.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
@@ -70,6 +71,7 @@ METRIC_DEFINE_histogram(server, op_apply_run_time, "Operation Apply Run Time",
 
 using consensus::ConsensusMetadata;
 using consensus::ConsensusStatePB;
+using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
 using log::Log;
@@ -84,6 +86,7 @@ using tablet::TabletMetadata;
 using tablet::TabletPeer;
 using tablet::TabletStatusListener;
 using tablet::TabletStatusPB;
+using tserver::RemoteBootstrapClient;
 
 namespace {
 // helper to delete the creation-in-progress entry from the corresponding
@@ -155,12 +158,7 @@ Status TSTabletManager::Init() {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet_id, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet_id);
-    scoped_refptr<TabletPeer> tablet_peer(
-        new TabletPeer(meta,
-                       local_peer_pb_,
-                       apply_pool_.get(),
-                       Bind(&TSTabletManager::MarkTabletDirty, Unretained(this), tablet_id)));
-    RegisterTablet(tablet_id, tablet_peer);
+    scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta);
 
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                                 this,
@@ -248,20 +246,14 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               &meta),
     "Couldn't create tablet metadata");
 
-
   // We must persist the consensus metadata to disk before starting a new
   // tablet's TabletPeer and Consensus implementation.
   gscoped_ptr<ConsensusMetadata> cmeta;
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
                                                   config, consensus::kMinimumTerm, &cmeta),
                         "Unable to create new ConsensusMeta for tablet " + tablet_id);
+  scoped_refptr<TabletPeer> new_peer = CreateAndRegisterTabletPeer(meta);
 
-  scoped_refptr<TabletPeer> new_peer(
-      new TabletPeer(meta,
-                     local_peer_pb_,
-                     apply_pool_.get(),
-                     Bind(&TSTabletManager::MarkTabletDirty, Unretained(this), tablet_id)));
-  RegisterTablet(meta->tablet_id(), new_peer);
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                               this,
@@ -271,6 +263,78 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     *tablet_peer = new_peer;
   }
   return Status::OK();
+}
+
+// TODO: KUDU-921: Run this procedure on a background thread.
+Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
+                                             const std::string& bootstrap_peer_uuid,
+                                             const HostPort& bootstrap_peer_addr) {
+  const string kLogPrefix = "T " + tablet_id + " P " + fs_manager_->uuid() + ": ";
+
+  {
+    boost::lock_guard<rw_spinlock> lock(lock_);
+    scoped_refptr<TabletPeer> tablet_peer;
+    if (LookupTabletUnlocked(tablet_id, &tablet_peer)) {
+      return Status::AlreadyPresent("Remote bootstrap of existing tablet not yet supported",
+                                    tablet_id);
+    } else if (ContainsKey(creates_in_progress_, tablet_id)) {
+      return Status::AlreadyPresent("Tablet already under construction", tablet_id);
+    }
+    InsertOrDie(&creates_in_progress_, tablet_id);
+  }
+
+  CreatesInProgressDeleter deleter(&creates_in_progress_, &lock_, tablet_id);
+
+  string init_msg = kLogPrefix + Substitute("Initiating remote bootstrap from Peer $0 ($1)",
+                                            bootstrap_peer_uuid, bootstrap_peer_addr.ToString());
+  LOG(INFO) << init_msg;
+  TRACE(init_msg);
+
+  gscoped_ptr<RemoteBootstrapClient> rb_client(
+      new RemoteBootstrapClient(tablet_id, fs_manager_, server_->messenger(),
+                                fs_manager_->uuid()));
+
+  scoped_refptr<TabletMetadata> meta;
+  RETURN_NOT_OK(rb_client->Start(bootstrap_peer_uuid, bootstrap_peer_addr, &meta));
+
+  // Registering a non-initialized TabletPeer offers visibility through the Web UI.
+  scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta);
+
+  // Download all of the remote files.
+  Status s = rb_client->FetchAll(tablet_peer->status_listener());
+  if (!s.ok()) {
+    // TODO: If the remote bootstrap fails, attempt to delete the tablet.
+    // TODO: Implement tablet delete. See KUDU-967.
+    // TODO: We should not leave a broken tablet in tablet_map. See KUDU-922.
+    LOG(WARNING) << kLogPrefix << "Error during remote bootstrap: " << s.ToString();
+    tablet_peer->SetFailed(s);
+    return s;
+  }
+
+  // Write out the last files to make the new replica visible. Also update the
+  // TabletBootstrapStatePB in the TabletMetadata to REMOTE_BOOTSTRAP_DONE.
+  s = rb_client->Finish();
+  if (!s.ok()) {
+    // TODO: We should not leave a broken tablet in tablet_map. See KUDU-922.
+    LOG(WARNING) << kLogPrefix << "Error finishing remote bootstrap: " << s.ToString();
+    tablet_peer->SetFailed(s);
+    return s;
+  }
+
+  OpenTablet(meta);
+  return Status::OK();
+}
+
+// Create and register a new TabletPeer, given tablet metadata.
+scoped_refptr<TabletPeer> TSTabletManager::CreateAndRegisterTabletPeer(
+    const scoped_refptr<TabletMetadata>& meta) {
+  scoped_refptr<TabletPeer> tablet_peer(
+      new TabletPeer(meta,
+                     local_peer_pb_,
+                     apply_pool_.get(),
+                     Bind(&TSTabletManager::MarkTabletDirty, Unretained(this), meta->tablet_id())));
+  RegisterTablet(meta->tablet_id(), tablet_peer);
+  return tablet_peer;
 }
 
 Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_peer) {
@@ -465,12 +529,6 @@ Status TSTabletManager::GetTabletPeer(const string& tablet_id,
 
 const NodeInstancePB& TSTabletManager::NodeInstance() const {
   return server_->instance_pb();
-}
-
-Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
-                                             const std::string& bootstrap_peer_uuid,
-                                             const HostPort& bootstrap_peer_addr) {
-  return Status::NotSupported("Remote bootstrap is not yet implemented on the tablet server");
 }
 
 void TSTabletManager::GetTabletPeers(vector<scoped_refptr<TabletPeer> >* tablet_peers) const {

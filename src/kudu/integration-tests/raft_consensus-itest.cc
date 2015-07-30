@@ -1737,6 +1737,95 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   WaitForRowCount(replica_ts->tserver_proxy.get(), kNumOps, &rows);
 }
 
+// Test that we can create (vivify) a new tablet via remote bootstrap.
+TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 2;
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  flags.push_back("--log_cache_size_limit_mb=1");
+  flags.push_back("--log_segment_size_mb=1");
+  flags.push_back("--log_async_preallocate_segments=false");
+  flags.push_back("--flush_threshold_mb=1");
+  flags.push_back("--maintenance_manager_polling_interval_ms=300");
+  BuildAndStart(flags);
+
+  // 100K is just enough to cause flushes & log rolls.
+  int num_rows_to_write = 100000;
+  if (AllowSlowTests()) {
+    num_rows_to_write = 300000;
+  }
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+
+  TabletServerMap active_tablet_servers;
+  TabletServerMap::const_iterator iter = tablet_replicas_.find(tablet_id_);
+  TServerDetails* leader = iter->second;
+  TServerDetails* follower = (++iter)->second;
+  InsertOrDie(&active_tablet_servers, leader->uuid(), leader);
+  InsertOrDie(&active_tablet_servers, follower->uuid(), follower);
+
+  TServerDetails* new_node = NULL;
+  BOOST_FOREACH(TServerDetails* ts, tservers) {
+    if (!ContainsKey(active_tablet_servers, ts->uuid())) {
+      new_node = ts;
+      break;
+    }
+  }
+  ASSERT_TRUE(new_node != NULL);
+
+  // Elect the leader (still only a consensus config size of 2).
+  ASSERT_OK(StartElection(leader, tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(30), active_tablet_servers,
+                                  tablet_id_, 1));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_num_replicas(FLAGS_num_replicas);
+  workload.set_num_write_threads(10);
+  workload.set_write_batch_size(100);
+  workload.Setup();
+
+  LOG(INFO) << "Starting write workload...";
+  workload.Start();
+
+  while (true) {
+    int rows_inserted = workload.rows_inserted();
+    if (rows_inserted >= num_rows_to_write) {
+      break;
+    }
+    LOG(INFO) << "Only inserted " << rows_inserted << " rows so far, sleeping for 100ms";
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+
+  LOG(INFO) << "Adding tserver with uuid " << new_node->uuid() << " as VOTER...";
+  ASSERT_OK(AddServer(leader, tablet_id_, new_node, RaftPeerPB::VOTER,
+                      MonoDelta::FromSeconds(10)));
+  InsertOrDie(&active_tablet_servers, new_node->uuid(), new_node);
+  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
+                                                leader, tablet_id_,
+                                                MonoDelta::FromSeconds(10)));
+
+  workload.StopAndJoin();
+  int num_batches = workload.batches_completed();
+
+  LOG(INFO) << "Waiting for replicas to agree...";
+  // Wait for all servers to replicate everything up through the last write op.
+  // Since we don't batch, there should be at least # rows inserted log entries,
+  // plus the initial leader's no-op, plus 1 for
+  // the added replica for a total == #rows + 2.
+  int min_log_index = num_batches + 2;
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(30),
+                                  active_tablet_servers, tablet_id_,
+                                  min_log_index));
+
+  int rows_inserted = workload.rows_inserted();
+  LOG(INFO) << "Number of rows inserted: " << rows_inserted;
+  ASSERT_ALL_REPLICAS_AGREE(rows_inserted);
+}
+
 }  // namespace tserver
 }  // namespace kudu
 

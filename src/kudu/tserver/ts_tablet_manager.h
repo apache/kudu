@@ -23,6 +23,7 @@
 
 namespace kudu {
 
+class HostPort;
 class FsManager;
 class Schema;
 
@@ -111,6 +112,12 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   virtual const NodeInstancePB& NodeInstance() const OVERRIDE;
 
+  // Initiate remote bootstrap of the specified tablet.
+  // At the time of writing, the tablet replica must not exist on this node.
+  // Remote bootstrap is started on a thread pool and this method returns
+  // immediately.
+  // TODO: Support replacement of existing tablets, either running or
+  // tombstoned. See KUDU-868.
   virtual Status StartRemoteBootstrap(const std::string& tablet_id,
                                       const std::string& bootstrap_peer_uuid,
                                       const HostPort& bootstrap_peer_addr) OVERRIDE;
@@ -179,6 +186,10 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Add the tablet to the tablet map.
   void RegisterTablet(const std::string& tablet_id,
                       const scoped_refptr<tablet::TabletPeer>& tablet_peer);
+
+  // Create and register a new TabletPeer, given tablet metadata.
+  scoped_refptr<tablet::TabletPeer> CreateAndRegisterTabletPeer(
+      const scoped_refptr<tablet::TabletMetadata>& meta);
 
   // Helper to generate the report for a single tablet.
   void CreateReportedTabletPB(const std::string& tablet_id,

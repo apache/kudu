@@ -94,7 +94,6 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
     apply_pool_(apply_pool),
     log_anchor_registry_(new LogAnchorRegistry()),
     mark_dirty_clbk_(mark_dirty_clbk) {
-  CHECK_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
 }
 
 TabletPeer::~TabletPeer() {
@@ -113,6 +112,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
   DCHECK(tablet) << "A TabletPeer must be provided with a Tablet";
   DCHECK(log) << "A TabletPeer must be provided with a Log";
 
+  RETURN_NOT_OK(ThreadPoolBuilder("prepare").set_max_threads(1).Build(&prepare_pool_));
   prepare_pool_->SetQueueLengthHistogram(
       METRIC_op_prepare_queue_length.Instantiate(metric_entity));
   prepare_pool_->SetQueueTimeMicrosHistogram(
@@ -216,7 +216,9 @@ TabletStatePB TabletPeer::Shutdown() {
     txn_tracker_.WaitForAllToFinish();
   }
 
-  prepare_pool_->Shutdown();
+  if (prepare_pool_) {
+    prepare_pool_->Shutdown();
+  }
 
   if (log_) {
     WARN_NOT_OK(log_->Close(), "Error closing the Log.");

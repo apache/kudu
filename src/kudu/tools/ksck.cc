@@ -455,9 +455,12 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
   vector<shared_ptr<KsckTabletReplica> > replicas = tablet->replicas();
   bool good_tablet = true;
   if (replicas.size() != table_num_replicas) {
-    Warn() << Substitute("Tablet $0 is missing $1 replicas",
-                         tablet->id(), table_num_replicas - replicas.size()) << endl;
-    good_tablet = false;
+    Warn() << Substitute("Tablet $0 has $1 instead of $2 replicas",
+                         tablet->id(), replicas.size(), table_num_replicas) << endl;
+    // We only fail the "goodness" check if the tablet is under-replicated.
+    if (replicas.size() < table_num_replicas) {
+      good_tablet = false;
+    }
   }
   int leaders_count = 0;
   int followers_count = 0;
