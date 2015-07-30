@@ -544,15 +544,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // CREATING to ensure coherent state after Master failover.
   void SendCreateTabletRequests(const std::vector<TabletInfo*>& tablets);
 
-  // Send the "alter table request" to all TS that have tablet of the specified table
+  // Send the "alter table request" to all tablets of the specified table.
   void SendAlterTableRequest(const scoped_refptr<TableInfo>& table);
 
-  // Send the "alter table request" to all the TS running the specified tablet
+  // Start the background task to send the AlterTable() RPC to the leader for this
+  // tablet.
   void SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet);
-
-  // Send the "alter table request" to the specified TS/tablet
-  void SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet,
-                              TSDescriptor* ts_desc);
 
   // Send the "delete tablet request" to all TS that have tablet of the specified table
   void SendDeleteTabletRequestsForTable(const scoped_refptr<TableInfo>& table);

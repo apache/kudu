@@ -110,6 +110,13 @@ void AlterSchemaTransaction::Finish(TransactionResult result) {
     return;
   }
 
+  // The schema lock was acquired by Tablet::CreatePreparedAlterSchema.
+  // Normally, we would release it in tablet.cc after applying the operation,
+  // but currently we need to wait until after the COMMIT message is logged
+  // to release this lock as a workaround for KUDU-915. See the TODO in
+  // Tablet::AlterSchema().
+  state()->ReleaseSchemaLock();
+
   DCHECK_EQ(result, Transaction::COMMITTED);
   // Now that all of the changes have been applied and the commit is durable
   // make the changes visible to readers.

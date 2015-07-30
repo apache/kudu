@@ -88,9 +88,11 @@ class AlterTableTest : public KuduTest {
 
     KuduTest::SetUp();
 
-    cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
+    MiniClusterOptions opts;
+    opts.num_tablet_servers = num_replicas();
+    cluster_.reset(new MiniCluster(env_.get(), opts));
     ASSERT_OK(cluster_->Start());
-    ASSERT_OK(cluster_->WaitForTabletServerCount(1));
+    ASSERT_OK(cluster_->WaitForTabletServerCount(num_replicas()));
 
     CHECK_OK(KuduClientBuilder()
              .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())
@@ -100,10 +102,12 @@ class AlterTableTest : public KuduTest {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     CHECK_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
-             .num_replicas(1)
+             .num_replicas(num_replicas())
              .Create());
 
-    tablet_peer_ = LookupTabletPeer();
+    if (num_replicas() == 1) {
+      tablet_peer_ = LookupTabletPeer();
+    }
     LOG(INFO) << "Tablet successfully located";
   }
 
@@ -130,15 +134,18 @@ class AlterTableTest : public KuduTest {
     }
   }
 
-  void RestartTabletServer() {
+  void RestartTabletServer(int idx = 0) {
     tablet_peer_.reset();
-    if (cluster_->mini_tablet_server(0)->server()) {
-      ASSERT_OK(cluster_->mini_tablet_server(0)->Restart());
+    if (cluster_->mini_tablet_server(idx)->server()) {
+      ASSERT_OK(cluster_->mini_tablet_server(idx)->Restart());
     } else {
-      ASSERT_OK(cluster_->mini_tablet_server(0)->Start());
+      ASSERT_OK(cluster_->mini_tablet_server(idx)->Start());
     }
-    ASSERT_OK(cluster_->mini_tablet_server(0)->WaitStarted());
-    tablet_peer_ = LookupTabletPeer();
+
+    ASSERT_OK(cluster_->mini_tablet_server(idx)->WaitStarted());
+    if (idx == 0) {
+      tablet_peer_ = LookupTabletPeer();
+    }
   }
 
   Status WaitAlterTableCompletion(const std::string& table_name, int attempts) {
@@ -203,12 +210,14 @@ class AlterTableTest : public KuduTest {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     return table_creator->table_name(table_name)
         .schema(&schema_)
-        .num_replicas(1)
+        .num_replicas(num_replicas())
         .split_keys(keys)
         .Create();
   }
 
  protected:
+  virtual int num_replicas() const { return 1; }
+
   static const char *kTableName;
 
   gscoped_ptr<MiniCluster> cluster_;
@@ -224,6 +233,12 @@ class AlterTableTest : public KuduTest {
   // UpdaterThread uses this to figure out which rows can be
   // safely updated.
   AtomicInt<int32_t> inserted_idx_;
+};
+
+// Subclass which creates three servers and a replicated cluster.
+class ReplicatedAlterTableTest : public AlterTableTest {
+ protected:
+  virtual int num_replicas() const OVERRIDE { return 3; }
 };
 
 const char *AlterTableTest::kTableName = "fake-table";
@@ -437,6 +452,7 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
   shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
   KuduScanner scanner(table.get());
+  CHECK_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
   CHECK_OK(scanner.Open());
 
   int verified = 0;
@@ -950,6 +966,29 @@ TEST_F(AlterTableTest, TestMultipleAlters) {
   KuduSchema new_schema;
   ASSERT_OK(client_->GetTableSchema(kSplitTableName, &new_schema));
   ASSERT_EQ(kNumNewCols + schema_.num_columns(), new_schema.num_columns());
+}
+
+TEST_F(ReplicatedAlterTableTest, TestReplicatedAlter) {
+  const int kNumRows = 100;
+  InsertRows(0, kNumRows);
+
+  LOG(INFO) << "Verifying initial pattern";
+  VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
+
+  LOG(INFO) << "Dropping and adding back c1";
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
+  ASSERT_OK(table_alterer->table_name(kTableName)
+            .drop_column("c1")
+            .Alter());
+
+  ASSERT_OK(AddNewI32Column(kTableName, "c1", 0xdeadbeef));
+
+  bool alter_in_progress;
+  ASSERT_OK(client_->IsAlterTableInProgress(kTableName, &alter_in_progress))
+  ASSERT_FALSE(alter_in_progress);
+
+  LOG(INFO) << "Verifying that the new default shows up";
+  VerifyRows(0, kNumRows, C1_IS_DEADBEEF);
 }
 
 } // namespace kudu

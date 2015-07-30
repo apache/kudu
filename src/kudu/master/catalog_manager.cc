@@ -1336,7 +1336,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   }
 
   // Check if the tablet requires an "alter table" call
-  bool alter_requested = false;
+  bool tablet_needs_alter = false;
   if (report.has_schema_version() &&
       table_lock.data().pb.version() != report.schema_version()) {
     if (report.schema_version() > table_lock.data().pb.version()) {
@@ -1347,13 +1347,15 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                  << " got " << report.schema_version()
                  << " (corruption)";
     } else {
-      VLOG(1) << "TS " << ts_desc->permanent_uuid()
+      LOG(INFO) << "TS " << ts_desc->permanent_uuid()
             << " does not have the latest schema for tablet " << tablet->ToString()
             << ". Expected version " << table_lock.data().pb.version()
             << " got " << report.schema_version();
     }
-    SendAlterTabletRequest(tablet, ts_desc);
-    alter_requested = true;
+    // It's possible that the tablet being reported is a laggy replica, and in fact
+    // the leader has already received an AlterTable RPC. That's OK, though --
+    // it'll safely ignore it if we send another.
+    tablet_needs_alter = true;
   }
 
 
@@ -1368,7 +1370,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     return Status::OK();
   }
 
-  if (report.has_schema_version() && !alter_requested) {
+  if (report.has_schema_version() && !tablet_needs_alter) {
     HandleTabletSchemaVersionReport(tablet.get(), report.schema_version());
   }
 
@@ -1437,6 +1439,13 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     return s;
   }
   tablet_lock.Commit();
+
+  // Need to defer the AlterTable command to after we've committed the new tablet data,
+  // since the tablet report may also be updating the raft config, and the Alter Table
+  // request needs to know who the most recent leader is.
+  if (tablet_needs_alter) {
+    SendAlterTabletRequest(tablet);
+  }
   return Status::OK();
 }
 
@@ -1525,7 +1534,10 @@ class TSPicker {
   virtual ~TSPicker() {}
 
   // Sets *ts_desc to the tablet server to contact for the next RPC.
-  virtual Status PickReplica(shared_ptr<TSDescriptor>* ts_desc) = 0;
+  //
+  // This assumes that TSDescriptors are never deleted by the master,
+  // so the caller does not take ownership of the returned pointer.
+  virtual Status PickReplica(TSDescriptor** ts_desc) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TSPicker);
@@ -1540,8 +1552,11 @@ class PickSpecificUUID : public TSPicker {
     ts_uuid_(ts_uuid) {
   }
 
-  virtual Status PickReplica(shared_ptr<TSDescriptor>* ts_desc) OVERRIDE {
-    return master_->ts_manager()->LookupTSByUUID(ts_uuid_, ts_desc);
+  virtual Status PickReplica(TSDescriptor** ts_desc) OVERRIDE {
+    shared_ptr<TSDescriptor> ts;
+    RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(ts_uuid_, &ts));
+    *ts_desc = ts.get();
+    return Status::OK();
   }
 
  private:
@@ -1549,6 +1564,30 @@ class PickSpecificUUID : public TSPicker {
   const string ts_uuid_;
 
   DISALLOW_COPY_AND_ASSIGN(PickSpecificUUID);
+};
+
+// Implementation of TSPicker which locates the current leader replica,
+// and sends the RPC to that server.
+class PickLeaderReplica : public TSPicker {
+ public:
+  explicit PickLeaderReplica(const scoped_refptr<TabletInfo>& tablet) :
+    tablet_(tablet) {
+  }
+
+  virtual Status PickReplica(TSDescriptor** ts_desc) OVERRIDE {
+    vector<TabletReplica> locs;
+    tablet_->GetLocations(&locs);
+    BOOST_FOREACH(const TabletReplica& loc, locs) {
+      if (loc.role == consensus::RaftPeerPB::LEADER) {
+        *ts_desc = loc.ts_desc;
+        return Status::OK();
+      }
+    }
+    return Status::NotFound("no leader");
+  }
+
+ private:
+  const scoped_refptr<TabletInfo> tablet_;
 };
 
 // A background task which continuously retries sending an RPC to a tablet server.
@@ -1693,7 +1732,7 @@ class RetryingTSRpcTask : public MonitoredTask {
 
   int attempt_;
   rpc::RpcController rpc_;
-  std::tr1::shared_ptr<TSDescriptor> target_ts_desc_;
+  TSDescriptor* target_ts_desc_;
   std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy_;
 
  private:
@@ -1728,6 +1767,7 @@ class RetryingTSRpcTask : public MonitoredTask {
   }
 
   Status ResetTSProxy() {
+    // TODO: if there is no replica available, should we still keep the task running?
     RETURN_NOT_OK(replica_picker_->PickReplica(&target_ts_desc_));
     std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy;
     RETURN_NOT_OK(target_ts_desc_->GetProxy(master_->messenger(), &ts_proxy));
@@ -1895,32 +1935,36 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
   tserver::DeleteTabletResponsePB resp_;
 };
 
-// Send the "Alter Table" with latest table schema
-// keeps retrying until we get an "ok" response.
+// Send the "Alter Table" with the latest table schema to the leader replica
+// for the tablet.
+// Keeps retrying until we get an "ok" response.
 //  - Alter completed
-//  - TS has already a newer version
-//    (which may happen in case of 2 alter since we can't abort an in-progress operation)
-//
-// TODO: use a TSPicker implementation which always retries the current leader, rather than
-// creating one of these for each replica.
-class AsyncAlterTable : public RetrySpecificTSRpcTask {
+//  - Tablet has already a newer version
+//    (which may happen in case of concurrent alters, or in case a previous attempt timed
+//     out but was actually applied).
+class AsyncAlterTable : public RetryingTSRpcTask {
  public:
   AsyncAlterTable(Master *master,
                   ThreadPool* callback_pool,
-                  const string& permanent_uuid,
                   const scoped_refptr<TabletInfo>& tablet)
-    : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, tablet->table()),
+    : RetryingTSRpcTask(master,
+                        callback_pool,
+                        gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
+                        tablet->table()),
       tablet_(tablet) {
   }
 
   virtual string type_name() const OVERRIDE { return "Alter Table"; }
 
   virtual string description() const OVERRIDE {
-    return tablet_->ToString() + " Alter Table RPC for TS=" + permanent_uuid_;
+    return tablet_->ToString() + " Alter Table RPC";
   }
 
  private:
   virtual string tablet_id() const OVERRIDE { return tablet_->tablet_id(); }
+  string permanent_uuid() const {
+    return target_ts_desc_->permanent_uuid();
+  }
 
   virtual void HandleResponse(int attempt) OVERRIDE {
     if (resp_.has_error()) {
@@ -1931,18 +1975,18 @@ class AsyncAlterTable : public RetrySpecificTSRpcTask {
         case TabletServerErrorPB::TABLET_NOT_FOUND:
         case TabletServerErrorPB::MISMATCHED_SCHEMA:
         case TabletServerErrorPB::TABLET_HAS_A_NEWER_SCHEMA:
-          LOG(WARNING) << "TS " << permanent_uuid_ << ": alter failed for tablet "
+          LOG(WARNING) << "TS " << permanent_uuid() << ": alter failed for tablet "
                        << tablet_->ToString() << " no further retry: " << status.ToString();
           MarkComplete();
           break;
         default:
-          LOG(WARNING) << "TS " << permanent_uuid_ << ": alter failed for tablet "
+          LOG(WARNING) << "TS " << permanent_uuid() << ": alter failed for tablet "
                        << tablet_->ToString() << ": " << status.ToString();
           break;
       }
     } else {
       MarkComplete();
-      VLOG(1) << "TS " << permanent_uuid_ << ": alter complete on tablet " << tablet_->ToString();
+      VLOG(1) << "TS " << permanent_uuid() << ": alter complete on tablet " << tablet_->ToString();
     }
 
     if (state() == kStateComplete) {
@@ -1966,7 +2010,7 @@ class AsyncAlterTable : public RetrySpecificTSRpcTask {
 
     ts_proxy_->AlterSchemaAsync(req, &resp_, &rpc_,
                                 boost::bind(&AsyncAlterTable::RpcCallback, this));
-    VLOG(1) << "Send alter table request to " << permanent_uuid_
+    VLOG(1) << "Send alter table request to " << permanent_uuid()
             << " (attempt " << attempt << "):\n"
             << req.DebugString();
   }
@@ -1986,17 +2030,7 @@ void CatalogManager::SendAlterTableRequest(const scoped_refptr<TableInfo>& table
 }
 
 void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet) {
-  std::vector<TabletReplica> locations;
-  tablet->GetLocations(&locations);
-  BOOST_FOREACH(const TabletReplica& replica, locations) {
-    SendAlterTabletRequest(tablet, replica.ts_desc);
-  }
-}
-
-void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet,
-                                            TSDescriptor* ts_desc) {
-  AsyncAlterTable *call = new AsyncAlterTable(master_, worker_pool_.get(),
-                                              ts_desc->permanent_uuid(), tablet);
+  AsyncAlterTable* call = new AsyncAlterTable(master_, worker_pool_.get(), tablet);
   tablet->table()->AddTask(call);
   WARN_NOT_OK(call->Run(), "Failed to send alter table request");
 }

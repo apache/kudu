@@ -10,11 +10,11 @@
 #include <vector>
 
 #include "kudu/client/client-test-util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/pstack_watcher.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
@@ -48,6 +48,7 @@ class AlterTableRandomized : public KuduTest {
     KuduTest::SetUp();
 
     ExternalMiniClusterOptions opts;
+    opts.num_tablet_servers = 3;
     // Because this test performs a lot of alter tables, we end up flushing
     // and rewriting metadata files quite a bit. Globally disabling fsync
     // speeds the test runtime up dramatically.
@@ -63,26 +64,15 @@ class AlterTableRandomized : public KuduTest {
   }
 
   virtual void TearDown() OVERRIDE {
-    // This test has been flaky before with timeouts on scans.
-    // So, if the test failed, dump the stacks of the tablet server so we can
-    // see where it's getting stuck.
-    if (HasFatalFailure()) {
-      if (cluster_->tablet_server(0)->IsProcessAlive()) {
-        LOG(INFO) << "Dumping stacks of TS after test failure:\n"
-                  << "=======================================\n";
-        WARN_NOT_OK(PstackWatcher::DumpStacks(cluster_->tablet_server(0)->pid()),
-                    "Couldn't dump stacks");
-      }
-    }
-
     cluster_->Shutdown();
     KuduTest::TearDown();
   }
 
-  void RestartTabletServer() {
-    cluster_->tablet_server(0)->Shutdown();
-    CHECK_OK(cluster_->tablet_server(0)->Restart());
-    CHECK_OK(cluster_->WaitForTabletsRunning(cluster_->tablet_server(0),
+  void RestartTabletServer(int idx) {
+    LOG(INFO) << "Restarting TS " << idx;
+    cluster_->tablet_server(idx)->Shutdown();
+    CHECK_OK(cluster_->tablet_server(idx)->Restart());
+    CHECK_OK(cluster_->WaitForTabletsRunning(cluster_->tablet_server(idx),
         MonoDelta::FromSeconds(30)));
   }
 
@@ -231,7 +221,7 @@ struct MirrorTable {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     RETURN_NOT_OK(table_creator->table_name(kTableName)
              .schema(&schema)
-             .num_replicas(1)
+             .num_replicas(3)
              .Create());
     return Status::OK();
   }
@@ -426,14 +416,20 @@ TEST_F(AlterTableRandomized, TestRandomSequence) {
     } else if (r < 995) {
       t.DropRandomColumn(rng.Next());
     } else {
-      RestartTabletServer();
+      RestartTabletServer(rng.Uniform(cluster_->num_tablet_servers()));
     }
 
     if (i % 1000 == 0) {
       NO_FATALS(t.Verify());
     }
   }
+
   NO_FATALS(t.Verify());
+
+  // Not only should the data returned by a scanner match what we expect,
+  // we also expect all of the replicas to agree with each other.
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
 }
 
 } // namespace kudu

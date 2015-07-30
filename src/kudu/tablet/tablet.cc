@@ -691,7 +691,12 @@ Status Tablet::AlterSchema(AlterSchemaTransactionState *tx_state) {
     RETURN_NOT_OK(ReplaceMemRowSetUnlocked(&input, &old_ms));
   }
 
-  tx_state->ReleaseSchemaLock();
+  // TODO(KUDU-915): ideally we would release the schema_lock here so that
+  // we don't block access to the tablet while we flush the MRS.
+  // However, doing so opens up some subtle issues with the ordering of
+  // the alter's COMMIT message against the COMMIT messages of other
+  // writes. A "big hammer" fix has been applied here to hold the lock
+  // all the way until the COMMIT message has been appended to the WAL.
 
   // Flush the old MemRowSet
   return FlushInternal(input, old_ms);
