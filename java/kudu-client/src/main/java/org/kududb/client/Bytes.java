@@ -62,9 +62,9 @@ public final class Bytes {
   private Bytes() {  // Can't instantiate.
   }
 
-  // ------------------------------ //
-  // Byte array conversion utilies. //
-  // ------------------------------ //
+  // -------------------------------- //
+  // Byte array conversion utilities. //
+  // -------------------------------- //
 
   /**
    * Reads a boolean from the beginning of the given array.
@@ -74,6 +74,18 @@ public final class Bytes {
    */
   public static boolean getBoolean(final byte[] b) {
     byte v = getByte(b, 0);
+    return v == 1;
+  }
+
+  /**
+   * Reads a boolean from an offset in the given array.
+   * @param b The array to read from.
+   * @param offset The offset into the array.
+   * @return A boolean
+   * @throws IndexOutOfBoundsException if the byte array is too small.
+   */
+  public static boolean getBoolean(final byte[] b, final int offset) {
+    byte v = getByte(b, offset);
     return v == 1;
   }
 

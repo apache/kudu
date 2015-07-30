@@ -77,20 +77,19 @@ static Status CreateTable(const shared_ptr<KuduClient>& client,
                           const KuduSchema& schema,
                           int num_tablets) {
   // Generate the split keys for the table.
-  KuduPartialRow* key = schema.NewRow();
-  vector<string> splits;
+  vector<const KuduPartialRow*> splits;
   int32_t increment = 1000 / num_tablets;
   for (int32_t i = 1; i < num_tablets; i++) {
-    KUDU_CHECK_OK(key->SetInt32(0, i * increment));
-    splits.push_back(key->ToEncodedRowKeyOrDie());
+    KuduPartialRow* row = schema.NewRow();
+    KUDU_CHECK_OK(row->SetInt32(0, i * increment));
+    splits.push_back(row);
   }
-  delete key;
 
   // Create the table.
   KuduTableCreator* table_creator = client->NewTableCreator();
   Status s = table_creator->table_name(table_name)
       .schema(&schema)
-      .split_keys(splits)
+      .split_rows(splits)
       .Create();
   delete table_creator;
   return s;

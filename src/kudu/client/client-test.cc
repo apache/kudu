@@ -20,6 +20,7 @@
 #include "kudu/client/scanner-internal.h"
 #include "kudu/client/value.h"
 #include "kudu/client/write_op.h"
+#include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/stl_util.h"
@@ -98,17 +99,18 @@ class ClientTest : public KuduTest {
                      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr().ToString())
                      .Build(&client_));
 
-    ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitKeys(), &client_table_));
-    ASSERT_NO_FATAL_FAILURE(CreateTable(kTable2Name, 1, vector<string>(), &client_table2_));
+    ASSERT_NO_FATAL_FAILURE(CreateTable(kTableName, 1, GenerateSplitRows(), &client_table_));
+    ASSERT_NO_FATAL_FAILURE(CreateTable(kTable2Name, 1, vector<const KuduPartialRow*>(),
+                                        &client_table2_));
   }
 
-  // Generate a set of split keys for tablets used in this test.
-  vector<string> GenerateSplitKeys() {
-    vector<string> keys;
-    gscoped_ptr<KuduPartialRow> row(schema_.NewRow());
+  // Generate a set of split rows for tablets used in this test.
+  vector<const KuduPartialRow*> GenerateSplitRows() {
+    vector<const KuduPartialRow*> rows;
+    KuduPartialRow* row = schema_.NewRow();
     CHECK_OK(row->SetInt32(0, 9));
-    keys.push_back(row->ToEncodedRowKeyOrDie());
-    return keys;
+    rows.push_back(row);
+    return rows;
   }
 
   virtual void TearDown() OVERRIDE {
@@ -335,11 +337,11 @@ class ClientTest : public KuduTest {
     return count;
   }
 
-  // Creates a table with 'num_replicas', split into tablets based on 'split_keys'
-  // (or single tablet if 'split_keys' is empty).
+  // Creates a table with 'num_replicas', split into tablets based on 'split_rows'
+  // (or single tablet if 'split_rows' is empty).
   void CreateTable(const string& table_name,
                    int num_replicas,
-                   const vector<string>& split_keys,
+                   const vector<const KuduPartialRow*>& split_rows,
                    shared_ptr<KuduTable>* table) {
 
     bool added_replicas = false;
@@ -357,7 +359,7 @@ class ClientTest : public KuduTest {
     ASSERT_OK(table_creator->table_name(table_name)
               .schema(&schema_)
               .num_replicas(num_replicas)
-              .split_keys(split_keys)
+              .split_rows(split_rows)
               .Create());
 
     ASSERT_OK(client_->OpenTable(table_name, table));
@@ -544,15 +546,16 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
 TEST_F(ClientTest, TestScanMultiTablet) {
   // 5 tablets, each with 10 rows worth of space.
   gscoped_ptr<KuduPartialRow> row(schema_.NewRow());
-  vector<string> keys;
+  vector<const KuduPartialRow*> rows;
   for (int i = 1; i < 5; i++) {
+    KuduPartialRow* row = schema_.NewRow();
     CHECK_OK(row->SetInt32(0, i * 10));
-    keys.push_back(row->ToEncodedRowKeyOrDie());
+    rows.push_back(row);
   }
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name("TestScanMultiTablet")
             .schema(&schema_)
-            .split_keys(keys)
+            .split_rows(rows)
             .Create());
 
   shared_ptr<KuduTable> table;
@@ -820,7 +823,7 @@ TEST_F(ClientTest, TestInvalidPredicates) {
 TEST_F(ClientTest, TestScanCloseProxy) {
   const string kEmptyTable = "TestScanCloseProxy";
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kEmptyTable, 3, GenerateSplitKeys(), &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kEmptyTable, 3, GenerateSplitRows(), &table));
 
   {
     // Open and close an empty scanner.
@@ -907,7 +910,7 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
   // Create test table and insert test rows.
   const string kScanTable = "TestScanFaultTolerance";
   shared_ptr<KuduTable> table;
-  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, 3, vector<string>(), &table));
+  ASSERT_NO_FATAL_FAILURE(CreateTable(kScanTable, 3, vector<const KuduPartialRow*>(), &table));
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), FLAGS_test_scan_num_rows));
 
   // Do an initial scan to determine the expected rows for later verification.
@@ -972,7 +975,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable("blacklist",
                                       3,
-                                      GenerateSplitKeys(),
+                                      GenerateSplitRows(),
                                       &table));
   InsertTestRows(table.get(), 1, 0);
 
@@ -1051,7 +1054,7 @@ TEST_F(ClientTest, TestScanWithEncodedRangePredicate) {
   shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable("split-table",
                                       1, /* replicas */
-                                      GenerateSplitKeys(),
+                                      GenerateSplitRows(),
                                       &table));
 
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(table.get(), 100));
@@ -1867,7 +1870,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTable) {
   shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
                                       kNumReplicas,
-                                      GenerateSplitKeys(),
+                                      GenerateSplitRows(),
                                       &table));
 
   // Should have no rows to begin with.
@@ -1892,7 +1895,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
                                       kNumReplicas,
-                                      GenerateSplitKeys(),
+                                      GenerateSplitRows(),
                                       &table));
 
   // Insert some data.
@@ -1943,7 +1946,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   shared_ptr<KuduTable> table;
   ASSERT_NO_FATAL_FAILURE(CreateTable(kReplicatedTable,
                                       kNumReplicas,
-                                      vector<string>(),
+                                      vector<const KuduPartialRow*>(),
                                       &table));
 
   // Insert some data.
@@ -2363,13 +2366,17 @@ TEST_F(ClientTest, TestCreateDuplicateTable) {
 
 TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
   FLAGS_max_create_tablets_per_ts = 1;
-  vector<string> split_keys;
-  split_keys.push_back("0001");
-  split_keys.push_back("0002");
+
+  KuduPartialRow* split1 = schema_.NewRow();
+  ASSERT_OK(split1->SetInt32("key", 1));
+
+  KuduPartialRow* split2 = schema_.NewRow();
+  ASSERT_OK(split1->SetInt32("key", 2));
+
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_TRUE(table_creator->table_name("foobar")
               .schema(&schema_)
-              .split_keys(split_keys)
+              .split_rows(list_of(split1)(split2))
               .num_replicas(3)
               .Create().IsInvalidArgument());
 }

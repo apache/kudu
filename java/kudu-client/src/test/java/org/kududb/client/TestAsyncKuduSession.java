@@ -2,7 +2,6 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
@@ -12,7 +11,6 @@ import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -430,10 +428,10 @@ public class TestAsyncKuduSession extends BaseKuduTest {
   private static AsyncKuduScanner getScanner(int start, int exclusiveEnd,
                                              List<String> columnNames) {
 
-    PartialRow lowerBound = table.newPartialRow();
+    PartialRow lowerBound = schema.newPartialRow();
     lowerBound.addInt(schema.getColumn(0).getName(), start);
 
-    PartialRow upperBound = table.newPartialRow();
+    PartialRow upperBound = schema.newPartialRow();
     upperBound.addInt(schema.getColumn(0).getName(), exclusiveEnd);
 
     AsyncKuduScanner scanner = client.newScannerBuilder(table)

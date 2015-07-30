@@ -100,7 +100,7 @@ void RpcLineItemDAO::Init() {
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     CHECK_OK(table_creator->table_name(table_name_)
              .schema(&schema)
-             .split_keys(tablet_splits_)
+             .split_rows(tablet_splits_)
              .Create());
     CHECK_OK(client_->OpenTable(table_name_, &client_table_));
   } else {
@@ -215,7 +215,7 @@ RpcLineItemDAO::RpcLineItemDAO(const string& master_address,
                                const string& table_name,
                                int batch_size,
                                int mstimeout,
-                               const vector<string>& tablet_splits)
+                               const vector<const KuduPartialRow*>& tablet_splits)
   : master_address_(master_address),
     table_name_(table_name),
     timeout_(MonoDelta::FromMilliseconds(mstimeout)),

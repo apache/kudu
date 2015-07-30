@@ -345,9 +345,10 @@ public class BaseKuduTest {
   protected static KuduTable createFourTabletsTableWithNineRows(String tableName) throws
       Exception {
     CreateTableBuilder builder = new CreateTableBuilder();
-    KeyBuilder keyBuilder = new KeyBuilder(basicSchema);
+    PartialRow splitRow = basicSchema.newPartialRow();
     for (int i : KEYS) {
-      builder.addSplitKey(keyBuilder.addInt(i));
+      splitRow.addInt(0, i);
+      builder.addSplitRow(splitRow);
     }
     createTable(tableName, basicSchema, builder);
     AsyncKuduSession session = client.newSession();

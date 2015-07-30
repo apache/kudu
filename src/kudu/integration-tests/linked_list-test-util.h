@@ -140,7 +140,7 @@ class LinkedListTester {
 
   // Generates a vector of keys for the table such that each tablet is
   // responsible for an equal fraction of the int64 key space.
-  std::vector<std::string> GenerateSplitKeys(const client::KuduSchema& schema);
+  std::vector<const KuduPartialRow*> GenerateSplitRows(const client::KuduSchema& schema);
 
   // Generate a vector of ints which form the split keys.
   std::vector<int64_t> GenerateSplitInts();
@@ -389,13 +389,13 @@ class LinkedListVerifier {
 // LinkedListTester
 /////////////////////////////////////////////////////////////
 
-std::vector<string> LinkedListTester::GenerateSplitKeys(const client::KuduSchema& schema) {
-  gscoped_ptr<KuduPartialRow> key(schema.NewRow());
-  std::vector<int64_t> split_ints = GenerateSplitInts();
-  std::vector<string> split_keys;
-  BOOST_FOREACH(int64_t val, split_ints) {
-    CHECK_OK(key->SetInt64(0, val));
-    split_keys.push_back(key->ToEncodedRowKeyOrDie());
+std::vector<const KuduPartialRow*> LinkedListTester::GenerateSplitRows(
+    const client::KuduSchema& schema) {
+  std::vector<const KuduPartialRow*> split_keys;
+  BOOST_FOREACH(int64_t val, GenerateSplitInts()) {
+    KuduPartialRow* row = schema.NewRow();
+    CHECK_OK(row->SetInt64(kKeyColumnName, val));
+    split_keys.push_back(row);
   }
   return split_keys;
 }
@@ -414,7 +414,7 @@ Status LinkedListTester::CreateLinkedListTable() {
   gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
   RETURN_NOT_OK_PREPEND(table_creator->table_name(table_name_)
                         .schema(&schema_)
-                        .split_keys(GenerateSplitKeys(schema_))
+                        .split_rows(GenerateSplitRows(schema_))
                         .num_replicas(num_replicas_)
                         .Create(),
                         "Failed to create table");

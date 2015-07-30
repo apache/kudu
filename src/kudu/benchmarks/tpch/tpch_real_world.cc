@@ -229,19 +229,19 @@ gscoped_ptr<RpcLineItemDAO> TpchRealWorld::GetInittedDAO() {
       FLAGS_tpch_num_inserters;
 
   KuduSchema schema(tpch::CreateLineItemSchema());
-  gscoped_ptr<KuduPartialRow> key(schema.NewRow());
-  vector<string> split_keys;
+  vector<const KuduPartialRow*> split_rows;
   for (int64_t i = 1; i < FLAGS_tpch_num_inserters; i++) {
-    CHECK_OK(key->SetInt64(tpch::kOrderKeyColName, i * increment));
-    CHECK_OK(key->SetInt32(tpch::kLineNumberColName, 0));
-    split_keys.push_back(key->ToEncodedRowKeyOrDie());
+    KuduPartialRow* row = schema.NewRow();
+    CHECK_OK(row->SetInt64(tpch::kOrderKeyColName, i * increment));
+    CHECK_OK(row->SetInt32(tpch::kLineNumberColName, 0));
+    split_rows.push_back(row);
   }
 
   gscoped_ptr<RpcLineItemDAO> dao(new RpcLineItemDAO(master_addresses_,
                                                      FLAGS_tpch_table_name,
                                                      FLAGS_tpch_max_batch_size,
                                                      FLAGS_tpch_test_client_timeout_msec,
-                                                     split_keys));
+                                                     split_rows));
   dao->Init();
   return dao.Pass();
 }

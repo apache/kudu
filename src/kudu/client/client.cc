@@ -377,8 +377,8 @@ KuduTableCreator& KuduTableCreator::schema(const KuduSchema* schema) {
   return *this;
 }
 
-KuduTableCreator& KuduTableCreator::split_keys(const vector<string>& keys) {
-  data_->split_keys_ = keys;
+KuduTableCreator& KuduTableCreator::split_rows(const vector<const KuduPartialRow*>& rows) {
+  data_->split_rows_ = rows;
   return *this;
 }
 
@@ -413,8 +413,8 @@ Status KuduTableCreator::Create() {
   }
   RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema()),
                         "Invalid schema");
-  BOOST_FOREACH(const string& key, data_->split_keys_) {
-    req.add_pre_split_keys(key);
+  BOOST_FOREACH(const KuduPartialRow* row, data_->split_rows_) {
+    RETURN_NOT_OK(row->ToPB(req.add_split_rows()));
   }
 
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);

@@ -84,17 +84,19 @@ class CreateTableStressTest : public KuduTest {
 };
 
 void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tablets) {
-  vector<string> keys;
+  vector<const KuduPartialRow*> split_rows;
   int num_splits = num_tablets - 1; // 4 tablets == 3 splits.
-  // Let the "k_0" keys end up in the first split; start splitting at 1.
+  // Let the "\x8\0\0\0" keys end up in the first split; start splitting at 1.
   for (int i = 1; i <= num_splits; i++) {
-    keys.push_back(StringPrintf("k_%05d", i));
+    KuduPartialRow* row = schema_.NewRow();
+    CHECK_OK(row->SetInt32(0, i));
+    split_rows.push_back(row);
   }
 
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(table_name)
             .schema(&schema_)
-            .split_keys(keys)
+            .split_rows(split_rows)
             .wait(false)
             .Create());
 }
@@ -204,7 +206,7 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     ASSERT_EQ(resp.tablet_locations_size(), 1);
     // empty since it's the first
     ASSERT_EQ(resp.tablet_locations(0).start_key(), "");
-    ASSERT_EQ(resp.tablet_locations(0).end_key(), "k_00001");
+    ASSERT_EQ(resp.tablet_locations(0).end_key(), string("\x80\0\0\1", 4));
   }
 
   int half_tablets = FLAGS_num_test_tablets / 2;
@@ -254,7 +256,12 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
   LOG(INFO) << "========================================================";
 
   // Get a single tablet in the middle, make sure we get that one back
-  string start_key_middle = StringPrintf("k_%05d", half_tablets - 1);
+
+  gscoped_ptr<KuduPartialRow> row(schema_.NewRow());
+  ASSERT_OK(row->SetInt32(0, half_tablets - 1));
+  string start_key_middle;
+  ASSERT_OK(row->EncodeRowKey(&start_key_middle));
+
   LOG(INFO) << "Start key middle: " << start_key_middle;
   LOG(INFO) << CURRENT_TEST_NAME() << ": Step 7. Asking for single middle tablet...";
   LOG_TIMING(INFO, "asking for single middle tablet") {

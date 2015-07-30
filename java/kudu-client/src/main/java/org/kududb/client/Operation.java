@@ -2,7 +2,6 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import com.google.common.collect.Lists;
 import com.google.common.primitives.Longs;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
@@ -20,8 +19,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
-import java.util.BitSet;
-import java.util.List;
 
 /**
  * Base class for the RPCs that related to WriteRequestPB. It contains almost all the logic
@@ -60,7 +57,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    */
   Operation(KuduTable table) {
     super(table);
-    this.row = new PartialRow(table);
+    this.row = table.getSchema().newPartialRow();
   }
 
   /**

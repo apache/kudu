@@ -3,6 +3,7 @@
 package org.kududb;
 
 import org.kududb.client.Bytes;
+import org.kududb.client.PartialRow;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -180,5 +181,9 @@ public class Schema {
       totalSize += Bytes.getBitSetSize(schema.getColumnCount());
     }
     return totalSize;
+  }
+
+  public PartialRow newPartialRow() {
+    return new PartialRow(this);
   }
 }

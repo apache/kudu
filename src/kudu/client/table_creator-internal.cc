@@ -3,6 +3,10 @@
 
 #include "kudu/client/table_creator-internal.h"
 
+#include <boost/foreach.hpp>
+
+#include "kudu/gutil/stl_util.h"
+
 namespace kudu {
 
 namespace client {
@@ -15,6 +19,7 @@ KuduTableCreator::Data::Data(KuduClient* client)
 }
 
 KuduTableCreator::Data::~Data() {
+  STLDeleteElements(&split_rows_);
 }
 
 } // namespace client

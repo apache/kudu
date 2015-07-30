@@ -9,6 +9,7 @@
 #include <tr1/memory>
 #include <vector>
 
+#include "kudu/common/partial_row.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.proxy.h"
@@ -60,7 +61,7 @@ class MasterTest : public KuduTest {
                      const Schema& schema);
   Status CreateTable(const string& table_name,
                      const Schema& schema,
-                     const vector<string>& split_keys);
+                     const vector<KuduPartialRow>& split_rows);
 
   shared_ptr<Messenger> client_messenger_;
   gscoped_ptr<MiniMaster> mini_master_;
@@ -180,15 +181,18 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
 
 Status MasterTest::CreateTable(const string& table_name,
                                const Schema& schema) {
-  vector<string> split_keys;
-  split_keys.push_back(string("\x00\x00\x00\x10", 4));
-  split_keys.push_back(string("\x00\x00\x00\x20", 4));
-  return CreateTable(table_name, schema, split_keys);
+  KuduPartialRow split1(&schema);
+  RETURN_NOT_OK(split1.SetInt32("key", 10));
+
+  KuduPartialRow split2(&schema);
+  RETURN_NOT_OK(split2.SetInt32("key", 20));
+
+  return CreateTable(table_name, schema, list_of(split1)(split2));
 }
 
 Status MasterTest::CreateTable(const string& table_name,
                                const Schema& schema,
-                               const vector<string>& split_keys) {
+                               const vector<KuduPartialRow>& split_rows) {
 
   CreateTableRequestPB req;
   CreateTableResponsePB resp;
@@ -196,8 +200,8 @@ Status MasterTest::CreateTable(const string& table_name,
 
   req.set_name(table_name);
   RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
-  BOOST_FOREACH(const string& sk, split_keys) {
-    req.add_pre_split_keys(sk);
+  BOOST_FOREACH(const KuduPartialRow& row, split_rows) {
+    RETURN_NOT_OK(row.ToPB(req.add_split_rows()));
   }
 
   RETURN_NOT_OK(proxy_->CreateTable(req, &resp, &controller));
@@ -222,10 +226,9 @@ void MasterTest::DoListAllTables(ListTablesResponsePB* resp) {
 TEST_F(MasterTest, TestCatalog) {
   const char *kTableName = "testtb";
   const char *kOtherTableName = "tbtest";
-  const Schema kTableSchema(boost::assign::list_of
-                            (ColumnSchema("key", UINT32))
-                            (ColumnSchema("v1", UINT64))
-                            (ColumnSchema("v2", STRING)),
+  const Schema kTableSchema(list_of(ColumnSchema("key", INT32))
+                                   (ColumnSchema("v1", UINT64))
+                                   (ColumnSchema("v2", STRING)),
                             1);
 
   ASSERT_OK(CreateTable(kTableName, kTableSchema));
@@ -306,34 +309,27 @@ TEST_F(MasterTest, TestCatalog) {
 
 TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
   const char *kTableName = "testtb";
-  const Schema kTableSchema(boost::assign::list_of
-                            (ColumnSchema("key", UINT32)),
-                            1);
+  const Schema kTableSchema(list_of(ColumnSchema("key", INT32)), 1);
 
-  // No duplicate split keys.
+  // No duplicate split rows.
   {
-    Status s = CreateTable(kTableName, kTableSchema,
-                           list_of("0000")("0000")("0002"));
+    KuduPartialRow split1 = KuduPartialRow(&kTableSchema);
+    ASSERT_OK(split1.SetInt32("key", 1));
+    KuduPartialRow split2(&kTableSchema);
+    ASSERT_OK(split2.SetInt32("key", 2));
+    Status s = CreateTable(kTableName, kTableSchema, list_of(split1)(split1)(split2));
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Duplicate split key");
   }
 
-  // No empty split keys.
+  // No empty split rows.
   {
-    Status s = CreateTable(kTableName, kTableSchema,
-                           list_of("0000")(""));
+    KuduPartialRow split1 = KuduPartialRow(&kTableSchema);
+    ASSERT_OK(split1.SetInt32("key", 1));
+    KuduPartialRow split2(&kTableSchema);
+    Status s = CreateTable(kTableName, kTableSchema, list_of(split1)(split2));
     ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "Empty split key");
-  }
-
-  // Check for invalid (non-decodeable) split keys
-  {
-    Status s = CreateTable(kTableName, kTableSchema,
-                           list_of("x"));
-    ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_EQ("Invalid argument: Invalid split key 'x': "
-              "Error decoding composite key component 'key': key too short: x",
-              s.ToString());
+    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: All key columns must be set: key");
   }
 }
 
@@ -341,27 +337,24 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
   const char *kTableName = "testtb";
 
   {
-    const Schema kTableSchema(boost::assign::list_of(ColumnSchema("key", BOOL)),
-                              1);
-    Status s = CreateTable(kTableName, kTableSchema);
+    const Schema kTableSchema(list_of(ColumnSchema("key", BOOL)), 1);
+    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
         "Key column may not have type of BOOL, FLOAT, or DOUBLE");
   }
 
   {
-    const Schema kTableSchema(boost::assign::list_of(ColumnSchema("key", FLOAT)),
-                              1);
-    Status s = CreateTable(kTableName, kTableSchema);
+    const Schema kTableSchema(list_of(ColumnSchema("key", FLOAT)), 1);
+    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
         "Key column may not have type of BOOL, FLOAT, or DOUBLE");
   }
 
   {
-    const Schema kTableSchema(boost::assign::list_of(ColumnSchema("key", DOUBLE)),
-                              1);
-    Status s = CreateTable(kTableName, kTableSchema);
+    const Schema kTableSchema(list_of(ColumnSchema("key", DOUBLE)), 1);
+    Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
         "Key column may not have type of BOOL, FLOAT, or DOUBLE");

@@ -274,15 +274,13 @@ class KUDU_EXPORT KuduTableCreator {
   // the lifetime of the builder. Required.
   KuduTableCreator& schema(const KuduSchema* schema);
 
-  // Sets the keys on which to pre-split the table.
-  // These keys must be properly encoded primary key values for
-  // the table, typically obtained from KuduPartialRow::EncodeRowKey().
-  // The vector is copied.
+  // Sets the rows on which to pre-split the table.
+  // The table creator takes ownership of the rows.
   //
-  // If not provided, no pre-splitting is performed.
+  // If not provided, no range-based pre-splitting is performed.
   //
   // Optional.
-  KuduTableCreator& split_keys(const std::vector<std::string>& keys);
+  KuduTableCreator& split_rows(const std::vector<const KuduPartialRow*>& split_rows);
 
   // Sets the number of replicas for each tablet in the table.
   // This should be an odd number. Optional.

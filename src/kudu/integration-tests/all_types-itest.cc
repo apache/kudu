@@ -36,21 +36,21 @@ struct SliceKeysTestSetup {
   // Split points are calculated by equally partitioning the int64_t key space and then
   // using the stringified hexadecimal representation to create the split keys (with
   // zero padding).
-  vector<string> GenerateSplitKeys(const KuduSchema& schema) const {
+  vector<const KuduPartialRow*> GenerateSplitRows(const KuduSchema& schema) const {
     vector<string> splits;
     splits.reserve(kNumTablets - 1);
     for (int i = 1; i < kNumTablets; i++) {
       int split = i * increment_;
       splits.push_back(StringPrintf("%08x", split));
     }
-    gscoped_ptr<KuduPartialRow> key(schema.NewRow());
-    vector<string> split_keys;
+    vector<const KuduPartialRow*> rows;
     BOOST_FOREACH(string val, splits) {
       Slice slice(val);
-      CHECK_OK(key->SetSliceCopy<TypeTraits<KeyTypeWrapper::type> >(0, slice));
-      split_keys.push_back(key->ToEncodedRowKeyOrDie());
+      KuduPartialRow* row = schema.NewRow();
+      CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::type> >(0, slice));
+      rows.push_back(row);
     }
-    return split_keys;
+    return rows;
   }
 
   Status GenerateRowKey(KuduInsert* insert, int split_idx, int row_idx) const {
@@ -114,19 +114,19 @@ struct IntKeysTestSetup {
         client::FromInternalDataType(KeyTypeWrapper::type))->NotNull()->PrimaryKey();
   }
 
-  vector<string> GenerateSplitKeys(const KuduSchema& schema) const {
+  vector<const KuduPartialRow*> GenerateSplitRows(const KuduSchema& schema) const {
     vector<CppType> splits;
     splits.reserve(kNumTablets - 1);
     for (int64_t i = 1; i < kNumTablets; i++) {
       splits.push_back(i * increment_);
     }
-    gscoped_ptr<KuduPartialRow> key(schema.NewRow());
-    vector<string> split_keys;
+    vector<const KuduPartialRow*> rows;
     BOOST_FOREACH(CppType val, splits) {
-      CHECK_OK(key->Set<TypeTraits<KeyTypeWrapper::type> >(0, val));
-      split_keys.push_back(key->ToEncodedRowKeyOrDie());
+      KuduPartialRow* row = schema.NewRow();
+      CHECK_OK(row->Set<TypeTraits<KeyTypeWrapper::type> >(0, val));
+      rows.push_back(row);
     }
-    return split_keys;
+    return rows;
   }
 
   Status GenerateRowKey(KuduInsert* insert, int split_idx, int row_idx) const {
@@ -215,11 +215,16 @@ class AllTypesItest : public KuduTest {
 
   Status CreateTable() {
     CreateAllTypesSchema();
-    key_splits_ = setup_.GenerateSplitKeys(schema_);
+    vector<const KuduPartialRow*> split_rows = setup_.GenerateSplitRows(schema_);
     gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+
+    BOOST_FOREACH(const KuduPartialRow* row, split_rows) {
+      split_rows_.push_back(*row);
+    }
+
     RETURN_NOT_OK(table_creator->table_name("all-types-table")
                   .schema(&schema_)
-                  .split_keys(key_splits_)
+                  .split_rows(split_rows)
                   .num_replicas(kNumTabletServers)
                   .Create());
     return client_->OpenTable("all-types-table", &table_);
@@ -337,15 +342,17 @@ class AllTypesItest : public KuduTest {
     // expect.
     for (int i = 0; i < kNumTablets; ++i) {
       KuduScanner scanner(table_.get());
-      Slice low_split;
-      Slice high_split;
+      string low_split;
+      string high_split;
       if (i != 0) {
-        low_split = key_splits_[i - 1];
-        RETURN_NOT_OK(scanner.AddLowerBoundRaw(low_split));
+        const KuduPartialRow& split = split_rows_[i - 1];
+        RETURN_NOT_OK(scanner.AddLowerBound(split));
+        low_split = split.ToString();
       }
       if (i != kNumTablets - 1) {
-        high_split = key_splits_[i];
-        RETURN_NOT_OK(scanner.AddExclusiveUpperBoundRaw(high_split));
+        const KuduPartialRow& split = split_rows_[i];
+        RETURN_NOT_OK(scanner.AddExclusiveUpperBound(split));
+        high_split = split.ToString();
       }
 
       RETURN_NOT_OK(scanner.SetProjectedColumns(projection));
@@ -354,8 +361,7 @@ class AllTypesItest : public KuduTest {
       RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
       RETURN_NOT_OK(scanner.SetTimeoutMillis(5000));
       RETURN_NOT_OK(scanner.Open());
-      LOG(INFO) << "Scanning tablet: [" << low_split.ToDebugString()
-          << ", " << high_split.ToDebugString() << ")";
+      LOG(INFO) << "Scanning tablet: [" << low_split << ", " << high_split << ")";
 
       int total_rows_in_tablet = 0;
       while (scanner.HasMoreRows()) {
@@ -390,7 +396,7 @@ class AllTypesItest : public KuduTest {
  protected:
   TestSetup setup_;
   KuduSchema schema_;
-  vector<string> key_splits_;
+  vector<KuduPartialRow> split_rows_;
   std::tr1::shared_ptr<KuduClient> client_;
   gscoped_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduTable> table_;

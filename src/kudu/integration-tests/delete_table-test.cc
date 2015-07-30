@@ -615,15 +615,15 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   // injecting any faults, then we delete the second tablet while exercising
   // several fault injection points.
   const int kNumTablets = 2;
-  vector<string> split_keys;
+  vector<const KuduPartialRow*> split_rows;
   Schema schema(GetSimpleTestSchema());
   client::KuduSchema client_schema(client::KuduSchemaFromSchema(schema));
-  gscoped_ptr<KuduPartialRow> split_key(client_schema.NewRow());
-  ASSERT_OK(split_key->SetInt32(0, numeric_limits<int32_t>::max() / kNumTablets));
-  split_keys.push_back(split_key->ToEncodedRowKeyOrDie());
+  KuduPartialRow* split_row = client_schema.NewRow();
+  ASSERT_OK(split_row->SetInt32(0, numeric_limits<int32_t>::max() / kNumTablets));
+  split_rows.push_back(split_row);
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(TestWorkload::kDefaultTableName)
-                          .split_keys(split_keys)
+                          .split_rows(split_rows)
                           .schema(&client_schema)
                           .num_replicas(3)
                           .Create());

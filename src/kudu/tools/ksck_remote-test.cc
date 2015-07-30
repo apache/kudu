@@ -64,7 +64,7 @@ class RemoteKsckTest : public KuduTest {
     ASSERT_OK(table_creator->table_name(kTableName)
                      .schema(&schema_)
                      .num_replicas(3)
-                     .split_keys(GenerateSplitKeys())
+                     .split_rows(GenerateSplitRows())
                      .Create());
     // Make sure we can open the table.
     ASSERT_OK(client_->OpenTable(kTableName, &client_table_));
@@ -118,16 +118,16 @@ class RemoteKsckTest : public KuduTest {
   }
 
  protected:
-  // Generate a set of split keys for tablets used in this test.
-  vector<string> GenerateSplitKeys() {
-    vector<string> keys;
+  // Generate a set of split rows for tablets used in this test.
+  vector<const KuduPartialRow*> GenerateSplitRows() {
+    vector<const KuduPartialRow*> split_rows;
     vector<int> split_nums = boost::assign::list_of(33)(66);
     BOOST_FOREACH(int i, split_nums) {
-      gscoped_ptr<KuduPartialRow> key(schema_.NewRow());
-      CHECK_OK(key->SetInt32(0, i));
-      keys.push_back(key->ToEncodedRowKeyOrDie());
+      KuduPartialRow* row = schema_.NewRow();
+      CHECK_OK(row->SetInt32(0, i));
+      split_rows.push_back(row);
     }
-    return keys;
+    return split_rows;
   }
 
   Status GenerateRowWrites(uint64_t num_rows) {

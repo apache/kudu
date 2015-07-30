@@ -204,17 +204,17 @@ class AlterTableTest : public KuduTest {
   void ScannerThread();
 
   Status CreateSplitTable(const string& table_name) {
-    vector<string> keys;
-    gscoped_ptr<KuduPartialRow> key(schema_.NewRow());
+    vector<const KuduPartialRow*> split_rows;
     for (int32_t i = 1; i < 10; i++) {
-      CHECK_OK(key->SetInt32(0, i * 100));
-      keys.push_back(key->ToEncodedRowKeyOrDie());
+      KuduPartialRow* row = schema_.NewRow();
+      CHECK_OK(row->SetInt32(0, i * 100));
+      split_rows.push_back(row);
     }
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     return table_creator->table_name(table_name)
         .schema(&schema_)
         .num_replicas(num_replicas())
-        .split_keys(keys)
+        .split_rows(split_rows)
         .Create();
   }
 

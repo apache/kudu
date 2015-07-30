@@ -617,11 +617,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
           LOG.info(min.longValue());
           LOG.info(max.longValue());
           LOG.info(step.longValue());
-          KeyBuilder keyBuilder = new KeyBuilder(schema);
+          PartialRow splitRow = schema.newPartialRow();
+          splitRow.addLong("key2", Long.MIN_VALUE);
           for (int i = 1; i < numTablets; i++) {
             long key = min.add(step.multiply(BigInteger.valueOf(i))).longValue();
             LOG.info("key " + key);
-            builder.addSplitKey(keyBuilder.addLong(key));
+            splitRow.addLong("key1", key);
+            builder.addSplitRow(splitRow);
           }
         }
 
@@ -1037,13 +1039,13 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
 
       if (cmd.hasOption("s")) {
-        PartialRow row = table.newPartialRow();
+        PartialRow row = table.getSchema().newPartialRow();
         row.addLong(table.getSchema().getColumn(0).getName(),
             Long.parseLong(cmd.getOptionValue("s")));
         builder.lowerBound(row);
       }
       if (cmd.hasOption("e")) {
-        PartialRow row = table.newPartialRow();
+        PartialRow row = table.getSchema().newPartialRow();
         row.addLong(table.getSchema().getColumn(0).getName(),
             Long.parseLong(cmd.getOptionValue("e")));
         builder.exclusiveUpperBound(row);
@@ -1508,12 +1510,12 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
                                                     KuduTable table,
                                                     long keyOne,
                                                     long keyTwo) {
-    PartialRow lowerBound = table.newPartialRow();
+    PartialRow lowerBound = table.getSchema().newPartialRow();
     lowerBound.addLong(table.getSchema().getColumn(0).getName(), keyOne);
     lowerBound.addLong(table.getSchema().getColumn(1).getName(), keyTwo);
     builder.lowerBound(lowerBound);
 
-    PartialRow upperBound = table.newPartialRow();
+    PartialRow upperBound = table.getSchema().newPartialRow();
     // Adding 1 since we want a single row, and the upper bound is exclusive.
     upperBound.addLong(table.getSchema().getColumn(0).getName(), keyOne + 1);
     upperBound.addLong(table.getSchema().getColumn(1).getName(), keyTwo + 1);

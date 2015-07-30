@@ -23,7 +23,7 @@ class KuduTableCreator::Data {
 
   const KuduSchema* schema_;
 
-  std::vector<std::string> split_keys_;
+  std::vector<const KuduPartialRow*> split_rows_;
 
   int num_replicas_;
 

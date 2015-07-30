@@ -3,7 +3,6 @@
 package org.kududb.client;
 
 import org.kududb.Schema;
-import org.kududb.util.Slice;
 
 import java.util.List;
 
@@ -81,14 +80,6 @@ public class KuduTable {
    */
   public Delete newDelete() {
     return new Delete(this);
-  }
-
-  /**
-   * Get a new partial row configured with this table's schema.
-   * @return a partial row with this table's schema
-   */
-  public PartialRow newPartialRow() {
-    return new PartialRow(this);
   }
 
   /**

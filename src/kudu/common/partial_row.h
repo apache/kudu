@@ -28,6 +28,7 @@ template<typename KeyTypeWrapper> struct IntKeysTestSetup;
 } // namespace client
 
 class Schema;
+class PartialRowPB;
 
 // A row which may only contain values for a subset of the columns.
 // This type contains a normal contiguous row, plus a bitfield indicating
@@ -116,6 +117,8 @@ class KUDU_EXPORT KuduPartialRow {
   Status GetInt16(const Slice& col_name, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(const Slice& col_name, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(const Slice& col_name, int64_t* val) const WARN_UNUSED_RESULT;
+  Status GetTimestamp(const Slice& col_name,
+                      int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
 
   Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(const Slice& col_name, double* val) const WARN_UNUSED_RESULT;
@@ -129,6 +132,7 @@ class KUDU_EXPORT KuduPartialRow {
   Status GetInt16(int col_idx, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(int col_idx, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(int col_idx, int64_t* val) const WARN_UNUSED_RESULT;
+  Status GetTimestamp(int col_idx, int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
 
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
@@ -169,6 +173,14 @@ class KUDU_EXPORT KuduPartialRow {
   std::string ToString() const;
 
   const Schema* schema() const { return schema_; }
+
+  // Initializes the provided message with column values from this row.
+  Status ToPB(PartialRowPB* pb) const WARN_UNUSED_RESULT;
+
+  // Sets the column values for this row to the values in the message.
+  static Status FromPB(const PartialRowPB& pb,
+                       KuduPartialRow* row) WARN_UNUSED_RESULT;
+
  private:
   friend class RowKeyUtilTest;
   friend class RowOperationsPBEncoder;

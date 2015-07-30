@@ -8,7 +8,10 @@ import java.util.List;
 
 import com.google.common.collect.Lists;
 import com.google.common.primitives.Longs;
+import com.google.protobuf.ByteString;
+import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
+import org.kududb.Common.PartialRowPB;
 import org.kududb.Schema;
 import org.kududb.Type;
 
@@ -23,22 +26,21 @@ public class PartialRow {
   private final Schema schema;
   // Variable length data. If string, will be UTF-8 encoded.
   private final List<byte[]> varLengthData;
-  private final int rowSize;
   private final byte[] rowAlloc;
   private final BitSet columnsBitSet;
   private final BitSet nullsBitSet;
 
   /**
-   * Package-private constructor, use {@link KuduTable#newPartialRow()} to get a new partial row.
-   * @param table table with the schema to use for this row
+   * This is not a stable API, prefer using {@link Schema#newPartialRow()}
+   * to create a new partial row.
+   * @param schema the schema to use for this row
    */
-  PartialRow(KuduTable table) {
-    this.schema = table.getSchema();
+  public PartialRow(Schema schema) {
+    this.schema = schema;
     this.columnsBitSet = new BitSet(this.schema.getColumnCount());
     this.nullsBitSet = schema.hasNullableColumns() ?
         new BitSet(this.schema.getColumnCount()) : null;
-    this.rowSize = schema.getRowSize();
-    this.rowAlloc = new byte[this.rowSize];
+    this.rowAlloc = new byte[schema.getRowSize()];
     this.varLengthData = Lists.newArrayListWithCapacity(schema.getVarLengthColumnCount());
   }
 
@@ -361,6 +363,15 @@ public class PartialRow {
     setNull(this.schema.getColumn(columnName));
   }
 
+  /**
+   * Removes all column values from the row.
+   */
+  public void reset() {
+    this.varLengthData.clear();
+    this.columnsBitSet.clear();
+    this.nullsBitSet.clear();
+  }
+
   private void setNull(ColumnSchema column) {
     assert nullsBitSet != null;
     checkColumnExists(column);
@@ -438,6 +449,9 @@ public class PartialRow {
     KeyEncoder keyEncoder = new KeyEncoder(this.schema);
     for (int i = 0; i < this.schema.getKeysCount(); i++) {
       ColumnSchema column = this.schema.getColumn(i);
+      if (!isSet(i)) {
+        throw new IllegalStateException(String.format("Key column %s is not set", column));
+      }
       if (column.getType() == Type.STRING || column.getType() == Type.BINARY) {
         byte[] data = this.varLengthData.get(seenVarLengthCols);
         seenVarLengthCols++;
@@ -449,6 +463,77 @@ public class PartialRow {
     }
     // TODO we might want to cache the key
     return keyEncoder.extractByteArray();
+  }
+
+  /**
+   * Serializes this partial row to a protobuf message.
+   * @return The partial row as a protobuf message.
+   */
+  PartialRowPB toPB() {
+    PartialRowPB.Builder builder = PartialRowPB.newBuilder();
+    for (int idx = columnsBitSet.nextSetBit(0); idx >= 0; idx = columnsBitSet.nextSetBit(idx+1)) {
+
+      if (isSetToNull(idx)) {
+        // Leave the value field unset for null.
+        builder.addColumnsBuilder().setIndex(idx);
+        continue;
+      }
+
+      switch (this.schema.getColumn(idx).getType()) {
+        case BOOL: {
+          boolean val = Bytes.getBoolean(this.rowAlloc, this.schema.getColumnOffset(idx));
+          builder.addColumnsBuilder().setIndex(idx).setBoolVal(val);
+          break;
+        }
+        case INT8: {
+          byte val = Bytes.getByte(this.rowAlloc, this.schema.getColumnOffset(idx));
+          builder.addColumnsBuilder().setIndex(idx).setInt8Val(val);
+          break;
+        }
+        case INT16: {
+          short val = Bytes.getShort(this.rowAlloc, this.schema.getColumnOffset(idx));
+          builder.addColumnsBuilder().setIndex(idx).setInt16Val(val);
+          break;
+        }
+        case INT32: {
+          short val = Bytes.getShort(this.rowAlloc, this.schema.getColumnOffset(idx));
+          builder.addColumnsBuilder().setIndex(idx).setInt32Val(val);
+          break;
+        }
+        case INT64: {
+          short val = Bytes.getShort(this.rowAlloc, this.schema.getColumnOffset(idx));
+          builder.addColumnsBuilder().setIndex(idx).setInt64Val(val);
+          break;
+        }
+        case FLOAT: {
+          float val = Bytes.getFloat(this.rowAlloc, this.schema.getColumnOffset(idx));
+          builder.addColumnsBuilder().setIndex(idx).setFloatVal(val);
+          break;
+        }
+        case DOUBLE: {
+          double val = Bytes.getDouble(this.rowAlloc, this.schema.getColumnOffset(idx));
+          builder.addColumnsBuilder().setIndex(idx).setDoubleVal(val);
+          break;
+        }
+        case STRING: {
+          int varLengthDataIdx = (int) Bytes.getLong(this.rowAlloc, this.schema.getColumnOffset(idx));
+          final ByteString val = ZeroCopyLiteralByteString.wrap(this.varLengthData.get(varLengthDataIdx));
+          builder.addColumnsBuilder().setIndex(idx).setStringValBytes(val);
+          break;
+        }
+        case BINARY: {
+          int varLengthDataIdx = (int) Bytes.getLong(this.rowAlloc, this.schema.getColumnOffset(idx));
+          final ByteString val = ZeroCopyLiteralByteString.wrap(this.varLengthData.get(varLengthDataIdx));
+          builder.addColumnsBuilder().setIndex(idx).setBinaryVal(val);
+          break;
+        }
+        default: {
+          throw new RuntimeException(String.format("Unknown column type: %s",
+                                                   this.schema.getColumn(idx)));
+        }
+      }
+    }
+    return builder.build();
   }
 
   /**

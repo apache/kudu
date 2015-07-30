@@ -27,7 +27,8 @@ class RpcLineItemDAO {
                  const std::string& table_name,
                  int batch_size,
                  int mstimeout = 5000,
-                 const std::vector<std::string>& tablet_splits = std::vector<std::string>());
+                 const std::vector<const KuduPartialRow*>& tablet_splits =
+                    std::vector<const KuduPartialRow*>());
   ~RpcLineItemDAO();
   void WriteLine(boost::function<void(KuduPartialRow*)> f);
   void MutateLine(boost::function<void(KuduPartialRow*)> f);
@@ -82,7 +83,7 @@ class RpcLineItemDAO {
   const std::string table_name_;
   const MonoDelta timeout_;
   const int batch_max_;
-  const std::vector<std::string> tablet_splits_;
+  const std::vector<const KuduPartialRow*> tablet_splits_;
   int batch_size_;
 
   // Semaphore which restricts us to one batch at a time.

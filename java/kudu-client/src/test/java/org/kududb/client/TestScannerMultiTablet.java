@@ -27,10 +27,18 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     BaseKuduTest.setUpBeforeClass();
     // create a 4-tablets table for scanning
     CreateTableBuilder builder = new CreateTableBuilder();
-    KeyBuilder keyBuilder = new KeyBuilder(schema);
-    builder.addSplitKey(keyBuilder.addString("1"));
-    builder.addSplitKey(keyBuilder.addString("2"));
-    builder.addSplitKey(keyBuilder.addString("3"));
+    PartialRow splitRow = schema.newPartialRow();
+    splitRow.addString("key2", "");
+
+    splitRow.addString("key1", "1");
+    builder.addSplitRow(splitRow);
+
+    splitRow.addString("key1", "2");
+    builder.addSplitRow(splitRow);
+
+    splitRow.addString("key1", "3");
+    builder.addSplitRow(splitRow);
+
     createTable(TABLE_NAME, schema, builder);
 
     table = openTable(TABLE_NAME);
@@ -140,14 +148,14 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table);
 
     if (lowerBoundKeyOne != null) {
-      PartialRow lowerBoundRow = table.newPartialRow();
+      PartialRow lowerBoundRow = schema.newPartialRow();
       lowerBoundRow.addString(schema.getColumn(0).getName(), lowerBoundKeyOne);
       lowerBoundRow.addString(schema.getColumn(1).getName(), lowerBoundKeyTwo);
       builder.lowerBound(lowerBoundRow);
     }
 
     if (exclusiveUpperBoundKeyOne != null) {
-      PartialRow upperBoundRow = table.newPartialRow();
+      PartialRow upperBoundRow = schema.newPartialRow();
       upperBoundRow.addString(schema.getColumn(0).getName(), exclusiveUpperBoundKeyOne);
       upperBoundRow.addString(schema.getColumn(1).getName(), exclusiveUpperBoundKeyTwo);
       builder.exclusiveUpperBound(upperBoundRow);

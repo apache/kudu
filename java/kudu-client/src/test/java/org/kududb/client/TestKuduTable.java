@@ -19,8 +19,6 @@ public class TestKuduTable extends BaseKuduTest {
 
   private static Schema schema = getBasicSchema();
 
-  private static KeyBuilder keyBuilder = new KeyBuilder(schema);
-
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
@@ -133,7 +131,9 @@ public class TestKuduTable extends BaseKuduTest {
   }
 
   public byte[] getKeyInBytes(int i) {
-    return keyBuilder.addUnsignedInt(i).extractByteArray();
+    PartialRow row = schema.newPartialRow();
+    row.addInt(0, i);
+    return row.key();
   }
 
   public KuduTable createTableWithSplitsAndTest(int splitsCount) throws Exception {
@@ -141,8 +141,10 @@ public class TestKuduTable extends BaseKuduTest {
     CreateTableBuilder builder = new CreateTableBuilder();
 
     if (splitsCount != 0) {
+      PartialRow row = schema.newPartialRow();
       for (int i = 1; i <= splitsCount; i++) {
-        builder.addSplitKey(keyBuilder.addInt(i));
+        row.addInt(0, i);
+        builder.addSplitRow(row);
       }
     }
     createTable(tableName, schema, builder);

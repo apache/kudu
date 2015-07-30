@@ -2,7 +2,6 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.master.Master;
 
 /**
@@ -13,12 +12,12 @@ public class CreateTableBuilder {
   Master.CreateTableRequestPB.Builder pb = Master.CreateTableRequestPB.newBuilder();
 
   /**
-   * Add a split point for the table. The table in the end will have splits + 1 tablets. The builder
-   * is reset as part of this operation and can be reused.
-   * @param builder a key builder for the split point
+   * Add a split point for the table. The table in the end will have splits + 1 tablets.
+   * The row may be reused or modified safely after this call without changing the split point.
+   * @param row a key row for the split point
    */
-  public void addSplitKey(KeyBuilder builder) {
-    pb.addPreSplitKeys(ZeroCopyLiteralByteString.wrap(builder.extractByteArray()));
+  public void addSplitRow(PartialRow row) {
+    pb.addSplitRows(row.toPB());
   }
 
   /**

@@ -33,6 +33,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/atomicops.h"
@@ -626,46 +627,30 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   }
   schema = schema.CopyWithColumnIds();
 
+  vector<string> split_keys;
+  BOOST_FOREACH(const PartialRowPB& row_pb, req->split_rows()) {
+    KuduPartialRow row(&schema);
+    RETURN_NOT_OK(KuduPartialRow::FromPB(row_pb, &row));
+    string row_key;
+    RETURN_NOT_OK(row.EncodeRowKey(&row_key));
+    split_keys.push_back(row_key);
+  }
+
   int max_tablets = FLAGS_max_create_tablets_per_ts * master_->ts_manager()->GetCount();
-  if (req->num_replicas() > 1 && max_tablets > 0 && req->pre_split_keys_size() > max_tablets) {
+  if (req->num_replicas() > 1 && max_tablets > 0 && split_keys.size() > max_tablets) {
     Status s = Status::InvalidArgument(Substitute("The number of tablets requested is over the "
                                                   "permitted maximum ($0)", max_tablets));
     SetupError(resp->mutable_error(), MasterErrorPB::TOO_MANY_TABLETS, s);
     return s;
   }
 
-  // Check that split keys are valid (i.e. non-empty and decodeable)
-  for (int i = 0; i < req->pre_split_keys_size(); i++) {
-    Slice split_key(req->pre_split_keys(i));
-    if (split_key.empty()) {
-      Status s = Status::InvalidArgument(
-          Substitute("Empty split key at index $0", i));
-      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-      return s;
-    }
-
-    Arena arena(4096, 256 * 1024);
-    gscoped_ptr<EncodedKey> key;
-    Status s = EncodedKey::DecodeEncodedString(schema, &arena, split_key, &key);
-    if (!s.ok()) {
-      s = s.CloneAndPrepend(Substitute("Invalid split key '$0'", split_key.ToDebugString()));
-      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-      return s;
-    }
-  }
-
   // Check for duplicate split keys.
-  vector<string> sorted_split_keys(req->pre_split_keys_size());
-  std::copy(req->pre_split_keys().begin(),
-            req->pre_split_keys().end(), sorted_split_keys.begin());
-  std::sort(sorted_split_keys.begin(), sorted_split_keys.end());
-  for (int i = 1; i < sorted_split_keys.size(); i++) {
-    if (sorted_split_keys[i - 1] == sorted_split_keys[i]) {
-      // START_KEY or END_KEY doesn't matter here; if the key were actually
-      // empty, it'd be caught in the previous check.
+  std::sort(split_keys.begin(), split_keys.end());
+  for (int i = 1; i < split_keys.size(); i++) {
+    if (split_keys[i - 1] == split_keys[i]) {
       Status s = Status::InvalidArgument(
           Substitute("Duplicate split key: $0", schema.DebugEncodedRowKey(
-              sorted_split_keys[i], Schema::START_KEY)));
+              split_keys[i], Schema::START_KEY)));
       SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
       return s;
     }
@@ -694,7 +679,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     table_names_map_[req->name()] = table;
 
     // d. Create the TabletInfo objects in state PREPARING.
-    CreateTablets(sorted_split_keys, table.get(), &tablets);
+    CreateTablets(split_keys, table.get(), &tablets);
 
     // Add the table/tablets to the in-memory map for the assignment.
     resp->set_table_id(table->id());
