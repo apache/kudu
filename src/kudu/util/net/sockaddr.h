@@ -48,8 +48,14 @@ class Sockaddr {
   const struct sockaddr_in& addr() const;
   std::string ToString() const;
 
+  // Returns true if the address is 0.0.0.0
   bool IsWildcard() const;
+
+  // Returns true if the address is 127.*.*.*
   bool IsAnyLocalAddress() const;
+
+  // Does reverse DNS lookup of the address and stores it in hostname.
+  Status LookupHostname(std::string* hostname) const;
 
   // the default auto-generated copy constructor is fine here
  private:

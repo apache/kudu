@@ -22,6 +22,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/faststring.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/subprocess.h"
@@ -185,6 +186,32 @@ Status GetFQDN(string* hostname) {
 
   *hostname = result->ai_canonname;
   freeaddrinfo(result);
+  return Status::OK();
+}
+
+Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr) {
+  vector<Sockaddr> addrs;
+  RETURN_NOT_OK(host_port.ResolveAddresses(&addrs));
+  if (addrs.empty()) {
+    return Status::NetworkError("Unable to resolve address", host_port.ToString());
+  }
+  *addr = addrs[0];
+  if (addrs.size() > 1) {
+    VLOG(1) << "Hostname " << host_port.host() << " resolved to more than one address. "
+            << "Using address: " << addr->ToString();
+  }
+  return Status::OK();
+}
+
+Status HostPortFromSockaddrReverseLookup(const Sockaddr& addr, HostPort* hp) {
+  string host;
+  if (addr.IsWildcard()) {
+    RETURN_NOT_OK(GetFQDN(&host));
+  } else {
+    RETURN_NOT_OK(addr.LookupHostname(&host));
+  }
+  hp->set_host(host);
+  hp->set_port(addr.port());
   return Status::OK();
 }
 

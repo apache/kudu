@@ -550,7 +550,9 @@ Status SysCatalogTable::VisitTablets(TabletVisitor* visitor) {
 void SysCatalogTable::InitLocalRaftPeerPB() {
   local_peer_pb_.set_permanent_uuid(master_->fs_manager()->uuid());
   Sockaddr addr = master_->first_rpc_address();
-  HostPortToPB(HostPort(addr), local_peer_pb_.mutable_last_known_addr());
+  HostPort hp;
+  CHECK_OK(HostPortFromSockaddrReverseLookup(addr, &hp));
+  CHECK_OK(HostPortToPB(hp, local_peer_pb_.mutable_last_known_addr()));
 }
 
 } // namespace master

@@ -4,6 +4,8 @@
 #include "kudu/util/net/sockaddr.h"
 
 #include <arpa/inet.h>
+#include <errno.h>
+#include <netdb.h>
 #include <stdio.h>
 #include <string.h>
 #include <string>
@@ -11,9 +13,12 @@
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/net/net_util.h"
 
 namespace kudu {
+
+using strings::Substitute;
 
 ///
 /// Sockaddr
@@ -88,6 +93,24 @@ bool Sockaddr::IsWildcard() const {
 
 bool Sockaddr::IsAnyLocalAddress() const {
   return (NetworkByteOrder::FromHost32(addr_.sin_addr.s_addr) >> 24) == 127;
+}
+
+Status Sockaddr::LookupHostname(string* hostname) const {
+  char host[NI_MAXHOST];
+  int flags = 0;
+  int rc = getnameinfo((struct sockaddr *) &addr_, sizeof(sockaddr_in),
+                       host, NI_MAXHOST,
+                       NULL, 0, flags);
+  if (PREDICT_FALSE(rc != 0)) {
+    if (rc == EAI_SYSTEM) {
+      int errno_saved = errno;
+      return Status::NetworkError(Substitute("getnameinfo: $0", gai_strerror(rc)),
+                                  strerror(errno_saved), errno_saved);
+    }
+    return Status::NetworkError("getnameinfo", gai_strerror(rc), rc);
+  }
+  *hostname = host;
+  return Status::OK();
 }
 
 } // namespace kudu

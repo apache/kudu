@@ -148,20 +148,6 @@ Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port) {
   return Status::OK();
 }
 
-Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr) {
-  vector<Sockaddr> addrs;
-  RETURN_NOT_OK(host_port.ResolveAddresses(&addrs));
-  if (addrs.empty()) {
-    return Status::NetworkError("Unable to resolve address", host_port.ToString());
-  }
-  *addr = addrs[0];
-  if (addrs.size() > 1) {
-    VLOG(1) << "Hostname " << host_port.host() << " resolved to more than one address. "
-            << "Using address: " << addr->ToString();
-  }
-  return Status::OK();
-}
-
 Status AddHostPortPBs(const vector<Sockaddr>& addrs,
                       RepeatedPtrField<HostPortPB>* pbs) {
   BOOST_FOREACH(const Sockaddr& addr, addrs) {

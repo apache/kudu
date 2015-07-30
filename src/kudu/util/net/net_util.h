@@ -74,6 +74,18 @@ Status GetHostname(std::string* hostname);
 // Return the local machine's FQDN.
 Status GetFQDN(std::string* fqdn);
 
+// Returns a single socket address from a HostPort.
+// If the hostname resolves to multiple addresses, returns the first in the
+// list and logs a message in verbose mode.
+Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr);
+
+// Does a reverse lookup on addr and fills hp with the mapping.
+// If addr is a wildcard address, such as "0.0.0.0", attempts to resolve
+// using the machine's FQDN.
+// If there is no reverse mapping, you get a Status::OK() and a HostPort that
+// contains the numeric IP.
+Status HostPortFromSockaddrReverseLookup(const Sockaddr& addr, HostPort* hp);
+
 // Try to run 'lsof' to determine which process is preventing binding to
 // the given 'addr'. If pids can be determined, outputs full 'ps' and 'pstree'
 // output for that process.

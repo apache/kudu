@@ -35,11 +35,6 @@ Status HostPortToPB(const HostPort& host_port, HostPortPB* host_port_pb);
 // Returns the HostPort created from the specified protobuf.
 Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port);
 
-// Returns a single socket address from a HostPort.
-// If the hostname resolves to multiple addresses, returns the first in the
-// list and logs a message in verbose mode.
-Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr);
-
 // Adds addresses in 'addrs' to 'pbs'. If an address is a wildcard
 // (e.g., "0.0.0.0"), then the local machine's hostname is used in
 // its place.
