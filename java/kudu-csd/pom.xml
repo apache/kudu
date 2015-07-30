@@ -53,33 +53,7 @@
           </execution>
         </executions>
       </plugin> 
-      <plugin>
-        <!-- Validate the SDL/MDL. -->
-        <groupId>com.cloudera.enterprise</groupId>
-        <artifactId>schema-validator-maven-plugin</artifactId>
-        <version>${schema-validator-maven-plugin.version}</version>
-        <executions>
-          <execution>
-            <id>validate-descriptors</id>
-            <phase>test</phase>
-            <goals>
-              <goal>validate</goal>
-            </goals>
-            <configuration>
-              <!-- The directory containing pom.xml. The plugin will recurse
-                   and find both the SDL and MDL from here.
-
-                   TODO: when the SDL becomes generated, this can probably be
-                   narrowed to just the build directory. -->
-              <sourceDirectory>${project.basedir}</sourceDirectory>
-              <!-- Will flag any JSON element that is unrecognized by the
-                   CSD framework. -->
-              <strictMode>true</strictMode>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-     <!-- Assemble the CSD. -->
+      <!-- Assemble the CSD. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-assembly-plugin</artifactId>
@@ -101,4 +75,42 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <!-- Validate the SDL/MDL.
+
+         Disabled by default; add -PvalidateCSD to the maven command line. -->
+    <profile>
+      <id>validateCSD</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>com.cloudera.enterprise</groupId>
+            <artifactId>schema-validator-maven-plugin</artifactId>
+            <version>${schema-validator-maven-plugin.version}</version>
+            <executions>
+              <execution>
+                <id>validate-descriptors</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>validate</goal>
+                </goals>
+                <configuration>
+                  <!-- The directory containing pom.xml. The plugin will recurse
+                       and find both the SDL and MDL from here.
+
+                       TODO: when the SDL becomes generated, this can probably be
+                       narrowed to just the build directory. -->
+                  <sourceDirectory>${project.basedir}</sourceDirectory>
+                  <!-- Will flag any JSON element that is unrecognized by the
+                       CSD framework. -->
+                  <strictMode>true</strictMode>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

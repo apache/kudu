@@ -22,13 +22,21 @@ The client jar will can then be found at kudu-client/target.
 Building the Kudu CSD
 ------------------------------------------------------------
 
-By default, the Kudu CSD will be built along with the rest of
-the client. It requires access to the Kudu binaries which may
-not be available. For example, when building on OSX.
+By default, the Kudu CSD will not be built with the client.
+It requires access to the Kudu binaries which may not be
+available. For example, when building on OSX.
 
-Here's how to skip building the kudu-csd module:
+Here's how to build the kudu-csd module:
 
-$ mvn package -DskipTests -DskipCSD
+$ mvn package -DskipTests -PbuildCSD
+
+Also by default, building the CSD does not validate it,
+because (for the moment) this requires access to an internal
+Cloudera repository containing the validator maven plugin.
+
+Here's how to build the kudu-csd module with validation:
+
+$ mvn package -DskipTests -PbuildCSD -PvalidateCSD
 
 
 Running the Tests

@@ -262,7 +262,11 @@ if [ "$BUILD_JAVA" == "1" ]; then
   pushd java
   export TSAN_OPTIONS="$TSAN_OPTIONS suppressions=$ROOT/build-support/tsan-suppressions.txt history_size=7"
   set -x
-  mvn clean -Dsurefire.rerunFailingTestsCount=3 -Dfailsafe.rerunFailingTestsCount=3 verify || EXIT_STATUS=$?
+  mvn -PbuildCSD \
+      -PvalidateCSD \
+      -Dsurefire.rerunFailingTestsCount=3 \
+      -Dfailsafe.rerunFailingTestsCount=3 \
+      clean verify || EXIT_STATUS=$?
   set +x
   popd
 fi
