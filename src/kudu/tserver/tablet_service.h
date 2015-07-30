@@ -135,6 +135,10 @@ class ConsensusServiceImpl : public consensus::ConsensusServiceIf {
                                  consensus::GetConsensusStateResponsePB *resp,
                                  rpc::RpcContext *context) OVERRIDE;
 
+  virtual void StartRemoteBootstrap(const consensus::StartRemoteBootstrapRequestPB* req,
+                                    consensus::StartRemoteBootstrapResponsePB* resp,
+                                    rpc::RpcContext* context) OVERRIDE;
+
  private:
   TabletPeerLookupIf* tablet_manager_;
 };

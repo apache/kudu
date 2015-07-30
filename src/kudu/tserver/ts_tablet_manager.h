@@ -111,6 +111,10 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
   virtual const NodeInstancePB& NodeInstance() const OVERRIDE;
 
+  virtual Status StartRemoteBootstrap(const std::string& tablet_id,
+                                      const std::string& bootstrap_peer_uuid,
+                                      const HostPort& bootstrap_peer_addr) OVERRIDE;
+
   // Generate an incremental tablet report.
   //
   // This will report any tablets which have changed since the last acknowleged

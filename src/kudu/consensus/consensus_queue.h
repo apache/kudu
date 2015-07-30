@@ -61,6 +61,7 @@ class PeerMessageQueue {
         last_received(MinimumOpId()),
         last_known_committed_idx(MinimumOpId().index()),
         is_last_exchange_successful(false),
+        needs_remote_bootstrap(false),
         last_seen_term_(0) {
     }
 
@@ -92,6 +93,9 @@ class PeerMessageQueue {
 
     // Whether the last exchange with this peer was successful.
     bool is_last_exchange_successful;
+
+    // Whether the follower was detected to need remote bootstrap.
+    bool needs_remote_bootstrap;
 
    private:
     // The last term we saw from a given peer.
@@ -170,11 +174,19 @@ class PeerMessageQueue {
   // ones if they are still required.
   virtual Status RequestForPeer(const std::string& uuid,
                                 ConsensusRequestPB* request,
-                                std::vector<ReplicateRefPtr>* msg_refs) WARN_UNUSED_RESULT;
+                                std::vector<ReplicateRefPtr>* msg_refs,
+                                bool* needs_remote_bootstrap);
+
+  // Fill in a StartRemoteBootstrapRequest for the specified peer.
+  // If that peer should not remotely bootstrap, returns a non-OK status.
+  // On success, also internally resets peer->needs_remote_bootstrap to false.
+  virtual Status GetRemoteBootstrapRequestForPeer(const std::string& uuid,
+                                                  StartRemoteBootstrapRequestPB* req);
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.
-  virtual void ResponseFromPeer(const ConsensusResponsePB& response,
+  virtual void ResponseFromPeer(const std::string& peer_uuid,
+                                const ConsensusResponsePB& response,
                                 bool* more_pending);
 
   // Closes the queue, peers are still allowed to call UntrackPeer() and

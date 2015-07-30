@@ -125,15 +125,23 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
 }
 
 void Peer::SendNextRequest(bool even_if_queue_empty) {
-  // the peer has no pending request nor is sending: send the request
+  // The peer has no pending request nor is sending: send the request.
+  bool needs_remote_bootstrap = false;
   Status s = queue_->RequestForPeer(peer_pb_.permanent_uuid(), &request_,
-                                    &replicate_msg_refs_);
+                                    &replicate_msg_refs_, &needs_remote_bootstrap);
+
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Could not obtain request from queue for peer: "
         << peer_pb_.permanent_uuid() << ". Status: " << s.ToString();
     sem_.Release();
     return;
   }
+
+  if (PREDICT_FALSE(needs_remote_bootstrap)) {
+    SendRemoteBootstrapRequest();
+    return;
+  }
+
   request_.set_tablet_id(tablet_id_);
   request_.set_caller_uuid(leader_uuid_);
 
@@ -175,7 +183,10 @@ void Peer::ProcessResponse() {
     return;
   }
 
-  if (response_.has_error()) {
+  // Pass through errors we can respond to, like not found, since in that case
+  // we will need to remotely bootstrap. TODO: Handle DELETED response once implemented.
+  if (response_.has_error() &&
+      response_.error().code() != tserver::TabletServerErrorPB::TABLET_NOT_FOUND) {
     ProcessResponseError(StatusFromPB(response_.error().status()));
     return;
   }
@@ -196,19 +207,39 @@ void Peer::ProcessResponse() {
 void Peer::DoProcessResponse() {
   failed_attempts_ = 0;
 
-  DCHECK(response_.status().IsInitialized()) << "Error: Uninitialized: "
-      << response_.InitializationErrorString() << ". Response: " << response_.ShortDebugString();
   VLOG_WITH_PREFIX_UNLOCKED(2) << "Response from peer " << peer_pb().permanent_uuid() << ": "
       << response_.ShortDebugString();
 
   bool more_pending;
-  queue_->ResponseFromPeer(response_, &more_pending);
+  queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), response_, &more_pending);
   state_ = kPeerIdle;
   if (more_pending && state_ != kPeerClosed) {
     SendNextRequest(true);
   } else {
     sem_.Release();
   }
+}
+
+void Peer::SendRemoteBootstrapRequest() {
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Sending request to remotely bootstrap";
+  Status s = queue_->GetRemoteBootstrapRequestForPeer(peer_pb_.permanent_uuid(), &rb_request_);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate remote bootstrap request for peer: "
+                                      << s.ToString();
+    return;
+  }
+  controller_.Reset();
+  proxy_->StartRemoteBootstrap(&rb_request_, &rb_response_, &controller_,
+                               boost::bind(&Peer::ProcessRemoteBootstrapResponse, this));
+}
+
+void Peer::ProcessRemoteBootstrapResponse() {
+  // We treat remote bootstrap as fire-and-forget.
+  if (rb_response_.has_error()) {
+    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to begin remote bootstrap on peer: "
+                                      << rb_response_.ShortDebugString();
+  }
+  sem_.Release();
 }
 
 void Peer::ProcessResponseError(const Status& status) {
@@ -222,7 +253,9 @@ void Peer::ProcessResponseError(const Status& status) {
 }
 
 string Peer::LogPrefixUnlocked() const {
-  return Substitute("T $0 P $1: ", tablet_id_, leader_uuid_);
+  return Substitute("T $0 P $1 -> Peer $2 ($3:$4): ",
+                    tablet_id_, leader_uuid_, peer_pb_.permanent_uuid(),
+                    peer_pb_.last_known_addr().host(), peer_pb_.last_known_addr().port());
 }
 
 void Peer::Close() {
@@ -266,6 +299,13 @@ void RpcPeerProxy::RequestConsensusVoteAsync(const VoteRequestPB* request,
                                              rpc::RpcController* controller,
                                              const rpc::ResponseCallback& callback) {
   consensus_proxy_->RequestConsensusVoteAsync(*request, response, controller, callback);
+}
+
+void RpcPeerProxy::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* request,
+                                        StartRemoteBootstrapResponsePB* response,
+                                        rpc::RpcController* controller,
+                                        const rpc::ResponseCallback& callback) {
+  consensus_proxy_->StartRemoteBootstrapAsync(*request, response, controller, callback);
 }
 
 RpcPeerProxy::~RpcPeerProxy() {}

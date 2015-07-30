@@ -11,6 +11,7 @@
 
 namespace kudu {
 
+class HostPort;
 class NodeInstancePB;
 
 namespace tablet {
@@ -19,15 +20,20 @@ class TabletPeer;
 
 namespace tserver {
 
-// Pure virtual interface that provides a uniform accessor for TabletPeer
-// instances. This can be used to provide remote_bootstrap services on a TabletServer
-// or a Master server, provided they implement the interface.
+// Pure virtual interface that provides an abstraction for something that
+// contains and manages TabletPeers. This interface is implemented on both
+// tablet servers and master servers.
+// TODO: Rename this interface.
 class TabletPeerLookupIf {
  public:
   virtual Status GetTabletPeer(const std::string& tablet_id,
                                scoped_refptr<tablet::TabletPeer>* tablet_peer) const = 0;
 
   virtual const NodeInstancePB& NodeInstance() const = 0;
+
+  virtual Status StartRemoteBootstrap(const std::string& tablet_id,
+                                      const std::string& bootstrap_peer_uuid,
+                                      const HostPort& bootstrap_peer_addr) = 0;
 };
 
 } // namespace tserver

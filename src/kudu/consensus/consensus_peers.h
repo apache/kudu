@@ -149,6 +149,13 @@ class Peer {
   // Run on 'thread_pool'. Does response handling that requires IO or may block.
   void DoProcessResponse();
 
+  // Fetch the desired remote bootstrap request from the queue and send it
+  // to the peer. The callback goes to ProcessRemoteBootstrapResponse().
+  void SendRemoteBootstrapRequest();
+
+  // Handle RPC callback from initiating remote bootstrap.
+  void ProcessRemoteBootstrapResponse();
+
   // Signals there was an error sending the request to the peer.
   void ProcessResponseError(const Status& status);
 
@@ -166,10 +173,13 @@ class Peer {
   PeerMessageQueue* queue_;
   uint64_t failed_attempts_;
 
-  // The last request sent.
+  // The latest consensus update request and response.
   ConsensusRequestPB request_;
-  // The last response received.
   ConsensusResponsePB response_;
+
+  // The latest remote bootstrap request and response.
+  StartRemoteBootstrapRequestPB rb_request_;
+  StartRemoteBootstrapResponsePB rb_response_;
 
   // Reference-counted pointers to any ReplicateMsgs which are in-flight to the peer. We
   // may have loaded these messages from the LogCache, in which case we are potentially
@@ -225,6 +235,14 @@ class PeerProxy {
                                          rpc::RpcController* controller,
                                          const rpc::ResponseCallback& callback) = 0;
 
+  // Instructs a peer to begin a remote bootstrap session.
+  virtual void StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* request,
+                                    StartRemoteBootstrapResponsePB* response,
+                                    rpc::RpcController* controller,
+                                    const rpc::ResponseCallback& callback) {
+    LOG(DFATAL) << "Not implemented";
+  }
+
   virtual ~PeerProxy() {}
 };
 
@@ -255,8 +273,14 @@ class RpcPeerProxy : public PeerProxy {
                                          rpc::RpcController* controller,
                                          const rpc::ResponseCallback& callback) OVERRIDE;
 
+  virtual void StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* request,
+                                    StartRemoteBootstrapResponsePB* response,
+                                    rpc::RpcController* controller,
+                                    const rpc::ResponseCallback& callback) OVERRIDE;
+
   virtual ~RpcPeerProxy();
- public:
+
+ private:
   gscoped_ptr<HostPort> hostport_;
   gscoped_ptr<ConsensusServiceProxy> consensus_proxy_;
 };

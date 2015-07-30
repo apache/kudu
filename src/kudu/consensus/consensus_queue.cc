@@ -25,6 +25,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/human_readable.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
@@ -35,11 +36,20 @@
 DEFINE_int32(consensus_max_batch_size_bytes, 1024 * 1024,
              "The maximum per-tablet RPC batch size when updating peers.");
 
+// Allow for disabling remote bootstrap in unit tests where we want to test
+// certain scenarios without triggering bootstrap of a remote peer.
+DEFINE_bool(enable_remote_bootstrap, true,
+            "Whether remote bootstrap will be initiated by the leader when it "
+            "detects that a follower is out of date or does not have a tablet "
+            "replica. For testing purposes only.");
+TAG_FLAG(enable_remote_bootstrap, unsafe);
+
 namespace kudu {
 namespace consensus {
 
 using log::AsyncLogReader;
 using log::Log;
+using rpc::Messenger;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using strings::Substitute;
@@ -55,9 +65,12 @@ METRIC_DEFINE_gauge_int64(tablet, in_progress_ops, "Leader Operations in Progres
 
 std::string PeerMessageQueue::TrackedPeer::ToString() const {
   return Substitute("Peer: $0, Is new: $1, Last received: $2, Next index: $3, "
-                    "Last known committed idx: $4, Last exchange result: $5",
+                    "Last known committed idx: $4, Last exchange result: $5, "
+                    "Needs remote bootstrap: $6",
                     uuid, is_new, OpIdToString(last_received), next_index,
-                    last_known_committed_idx, is_last_exchange_successful ? "SUCCESS" : "ERROR");
+                    last_known_committed_idx,
+                    is_last_exchange_successful ? "SUCCESS" : "ERROR",
+                    needs_remote_bootstrap);
 }
 
 #define INSTANTIATE_METRIC(x) \
@@ -174,7 +187,7 @@ void PeerMessageQueue::LocalPeerAppendFinished(const OpId& id,
     fake_response.mutable_status()->set_last_committed_idx(queue_state_.committed_index.index());
   }
   bool junk;
-  ResponseFromPeer(fake_response, &junk);
+  ResponseFromPeer(local_peer_pb_.permanent_uuid(), fake_response, &junk);
 
   callback.Run(status);
 }
@@ -214,25 +227,36 @@ Status PeerMessageQueue::AppendOperations(const vector<ReplicateRefPtr>& msgs,
 
 Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request,
-                                        vector<ReplicateRefPtr>* msg_refs) {
-  kudu::unique_lock<simple_spinlock> lock(&queue_lock_);
-  DCHECK_EQ(queue_state_.state, kQueueOpen);
-  DCHECK_NE(uuid, local_peer_pb_.permanent_uuid());
+                                        vector<ReplicateRefPtr>* msg_refs,
+                                        bool* needs_remote_bootstrap) {
+  TrackedPeer* peer = NULL;
+  OpId preceding_id;
+  {
+    lock_guard<simple_spinlock> lock(&queue_lock_);
+    DCHECK_EQ(queue_state_.state, kQueueOpen);
+    DCHECK_NE(uuid, local_peer_pb_.permanent_uuid());
 
-  TrackedPeer* peer = FindPtrOrNull(peers_map_, uuid);
-  if (PREDICT_FALSE(peer == NULL || queue_state_.mode == NON_LEADER)) {
-    return Status::NotFound("Peer not tracked or queue not in leader mode.");
+    peer = FindPtrOrNull(peers_map_, uuid);
+    if (PREDICT_FALSE(peer == NULL || queue_state_.mode == NON_LEADER)) {
+      return Status::NotFound("Peer not tracked or queue not in leader mode.");
+    }
+
+    // Clear the requests without deleting the entries, as they may be in use by other peers.
+    request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
+
+    // This is initialized to the queue's last appended op but gets set to the id of the
+    // log entry preceding the first one in 'messages' if messages are found for the peer.
+    preceding_id = queue_state_.last_appended;
+    request->mutable_committed_index()->CopyFrom(queue_state_.committed_index);
+    request->set_caller_term(queue_state_.current_term);
   }
 
-  // Clear the requests without deleting the entries, as they may be in use by other peers.
-  request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
-
-  // This is initialized to the queue's last appended op but gets set to the id of the
-  // log entry preceding the first one in 'messages' if messages are found for the peer.
-  OpId preceding_id = queue_state_.last_appended;
-  request->mutable_committed_index()->CopyFrom(queue_state_.committed_index);
-  request->set_caller_term(queue_state_.current_term);
-  lock.unlock();
+  if (PREDICT_FALSE(FLAGS_enable_remote_bootstrap && peer->needs_remote_bootstrap)) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Peer needs remote bootstrap: " << peer->ToString();
+    *needs_remote_bootstrap = true;
+    return Status::OK();
+  }
+  *needs_remote_bootstrap = false;
 
   // If we've never communicated with the peer, we don't know what messages to
   // send, so we'll send a status-only request. Otherwise, we grab requests
@@ -251,14 +275,17 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     if (PREDICT_FALSE(!s.ok())) {
       // It's normal to have a NotFound() here if a follower falls behind where
       // the leader has GCed its logs.
-      if (s.IsNotFound()) {
-        LOG_WITH_PREFIX_UNLOCKED(WARNING)
-          << "The logs necessary to catch up peer " << uuid << " have been "
-          << "garbage collected. The follower will never be able to catch up ("
-          << s.ToString() << ")";
-        return s;
+      if (PREDICT_FALSE(!s.IsNotFound())) {
+        LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error while reading the log: " << s.ToString();
       }
-      LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error while reading the log: " << s.ToString();
+      LOG_WITH_PREFIX_UNLOCKED(WARNING)
+        << "The logs necessary to catch up peer " << uuid << " have been "
+        << "garbage collected. The follower will never be able to catch up ("
+        << s.ToString() << "). Instructing remote peer to remotely bootstrap.";
+      return s;
+      // TODO: Record that the peer requires a "catch-up" remote bootstrap after
+      // tablet delete is working.
+      // peer->needs_remote_bootstrap = true;
     }
 
     // We use AddAllocated rather than copy, because we pin the log cache at the
@@ -287,6 +314,30 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     }
   }
 
+  return Status::OK();
+}
+
+Status PeerMessageQueue::GetRemoteBootstrapRequestForPeer(const string& uuid,
+                                                          StartRemoteBootstrapRequestPB* req) {
+  TrackedPeer* peer = NULL;
+  {
+    lock_guard<simple_spinlock> lock(&queue_lock_);
+    DCHECK_EQ(queue_state_.state, kQueueOpen);
+    DCHECK_NE(uuid, local_peer_pb_.permanent_uuid());
+    peer = FindPtrOrNull(peers_map_, uuid);
+    if (PREDICT_FALSE(peer == NULL || queue_state_.mode == NON_LEADER)) {
+      return Status::NotFound("Peer not tracked or queue not in leader mode.");
+    }
+  }
+
+  if (PREDICT_FALSE(!peer->needs_remote_bootstrap)) {
+    return Status::IllegalState("Peer does not need to remotely bootstrap", uuid);
+  }
+  req->Clear();
+  req->set_tablet_id(tablet_id_);
+  req->set_bootstrap_peer_uuid(local_peer_pb_.permanent_uuid());
+  *req->mutable_bootstrap_peer_addr() = local_peer_pb_.last_known_addr();
+  peer->needs_remote_bootstrap = false; // Now reset the flag.
   return Status::OK();
 }
 
@@ -341,10 +392,9 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
-void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
+void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
+                                        const ConsensusResponsePB& response,
                                         bool* more_pending) {
-  CHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
-      << "Got response from peer with empty UUID";
   DCHECK(response.IsInitialized()) << "Error: Uninitialized: "
       << response.InitializationErrorString() << ". Response: " << response.ShortDebugString();
 
@@ -354,7 +404,7 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
     unique_lock<simple_spinlock> scoped_lock(&queue_lock_);
     DCHECK_NE(kQueueConstructed, queue_state_.state);
 
-    TrackedPeer* peer = FindPtrOrNull(peers_map_, response.responder_uuid());
+    TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
     if (PREDICT_FALSE(queue_state_.state != kQueueOpen || peer == NULL)) {
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Queue is closed or peer was untracked, disregarding "
           "peer response. Response: " << response.ShortDebugString();
@@ -362,8 +412,26 @@ void PeerMessageQueue::ResponseFromPeer(const ConsensusResponsePB& response,
       return;
     }
 
+    // Remotely bootstrap the peer if the tablet is not found or deleted.
+    // TODO: Support DELETED. See KUDU-867.
+    if (response.has_error()) {
+      // We only let special types of errors through to this point from the peer.
+      CHECK_EQ(tserver::TabletServerErrorPB::TABLET_NOT_FOUND, response.error().code())
+          << response.ShortDebugString();
+      peer->needs_remote_bootstrap = true;
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Marked peer as needing remote bootstrap: "
+                                     << peer->ToString();
+      *more_pending = true;
+      return;
+    }
+
     // Sanity checks.
     // Some of these can be eventually removed, but they are handy for now.
+    DCHECK(response.status().IsInitialized()) << "Error: Uninitialized: "
+        << response.InitializationErrorString() << ". Response: " << response.ShortDebugString();
+    // TODO: Include uuid in error messages as well.
+    DCHECK(response.has_responder_uuid() && !response.responder_uuid().empty())
+        << "Got response from peer with empty UUID";
 
     // Application level errors should be handled elsewhere
     DCHECK(!response.has_error());

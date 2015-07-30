@@ -21,6 +21,7 @@
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tserver/remote_bootstrap_service.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
@@ -58,6 +59,8 @@ using consensus::LeaderStepDownRequestPB;
 using consensus::LeaderStepDownResponsePB;
 using consensus::RunLeaderElectionRequestPB;
 using consensus::RunLeaderElectionResponsePB;
+using consensus::StartRemoteBootstrapRequestPB;
+using consensus::StartRemoteBootstrapResponsePB;
 using consensus::VoteRequestPB;
 using consensus::VoteResponsePB;
 
@@ -744,6 +747,25 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
   }
 
   *resp->mutable_cstate() = tablet_peer->consensus()->CommittedConsensusState();
+  context->RespondSuccess();
+}
+
+void ConsensusServiceImpl::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* req,
+                                                StartRemoteBootstrapResponsePB* resp,
+                                                rpc::RpcContext* context) {
+  HostPort host_port;
+  Status s = HostPortFromPB(req->bootstrap_peer_addr(), &host_port);
+  if (s.ok()) {
+    s = tablet_manager_->StartRemoteBootstrap(req->tablet_id(),
+                                              req->bootstrap_peer_uuid(),
+                                              host_port);
+  }
+  if (!s.ok()) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
+  }
   context->RespondSuccess();
 }
 

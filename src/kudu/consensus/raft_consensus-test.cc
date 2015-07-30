@@ -61,10 +61,12 @@ class MockQueue : public PeerMessageQueue {
                                             const StatusCallback& callback));
   MOCK_METHOD1(TrackPeer, void(const string&));
   MOCK_METHOD1(UntrackPeer, void(const string&));
-  MOCK_METHOD3(RequestForPeer, Status(const std::string& uuid,
+  MOCK_METHOD4(RequestForPeer, Status(const std::string& uuid,
                                       ConsensusRequestPB* request,
-                                      vector<ReplicateRefPtr>* refs));
-  MOCK_METHOD2(ResponseFromPeer, void(const ConsensusResponsePB& response,
+                                      std::vector<ReplicateRefPtr>* msg_refs,
+                                      bool* needs_remote_bootstrap));
+  MOCK_METHOD3(ResponseFromPeer, void(const std::string& peer_uuid,
+                                      const ConsensusResponsePB& response,
                                       bool* more_pending));
   MOCK_METHOD0(Close, void());
 };

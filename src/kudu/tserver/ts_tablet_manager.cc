@@ -467,6 +467,12 @@ const NodeInstancePB& TSTabletManager::NodeInstance() const {
   return server_->instance_pb();
 }
 
+Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
+                                             const std::string& bootstrap_peer_uuid,
+                                             const HostPort& bootstrap_peer_addr) {
+  return Status::NotSupported("Remote bootstrap is not yet implemented on the tablet server");
+}
+
 void TSTabletManager::GetTabletPeers(vector<scoped_refptr<TabletPeer> >* tablet_peers) const {
   boost::shared_lock<rw_spinlock> shared_lock(lock_);
   AppendValuesFromMap(tablet_map_, tablet_peers);

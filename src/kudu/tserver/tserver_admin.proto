@@ -79,10 +79,13 @@ enum TSTabletManagerStatePB {
 }
 
 service TabletServerAdminService {
-
+  // Create a new, empty tablet with the specified parameters. Only used for
+  // brand-new tablets, not for "moves".
   rpc CreateTablet(CreateTabletRequestPB) returns (CreateTabletResponsePB);
 
+  // Delete a tablet replica.
   rpc DeleteTablet(DeleteTabletRequestPB) returns (DeleteTabletResponsePB);
 
+  // Alter a tablet's schema.
   rpc AlterSchema(AlterSchemaRequestPB) returns (AlterSchemaResponsePB);
 }

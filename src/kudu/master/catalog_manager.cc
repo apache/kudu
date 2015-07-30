@@ -1511,6 +1511,12 @@ const NodeInstancePB& CatalogManager::NodeInstance() const {
   return master_->instance_pb();
 }
 
+Status CatalogManager::StartRemoteBootstrap(const std::string& tablet_id,
+                                            const std::string& bootstrap_peer_uuid,
+                                            const HostPort& bootstrap_peer_addr) {
+  return Status::NotSupported("Remote bootstrap not yet implemented for the master tablet");
+}
+
 // Interface used by RetryingTSRpcTask to pick the tablet server to
 // send the next RPC to.
 class TSPicker {

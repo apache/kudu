@@ -7,6 +7,7 @@ option java_package = "org.kududb.consensus";
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/metadata.proto";
+import "kudu/tablet/metadata.proto";
 import "kudu/tablet/tablet.proto";
 import "kudu/tserver/tserver_admin.proto";
 import "kudu/tserver/tserver.proto";
@@ -395,6 +396,23 @@ message GetConsensusStateResponsePB {
   optional tserver.TabletServerErrorPB error = 2;
 }
 
+message StartRemoteBootstrapRequestPB {
+  required bytes tablet_id = 1;
+
+  // Identification for the host we are bootstrapping from.
+  // TODO: Consider renaming these to bootstrap_source_*.
+  required bytes bootstrap_peer_uuid = 2;
+  required HostPortPB bootstrap_peer_addr = 3;
+
+  // TODO: In order to re-bootstrap a replica in a READY or DELETED (tombstoned)
+  // state, additional fields must be passed to make the request idempotent.
+  // Add those to the request here. See KUDU-868.
+}
+
+message StartRemoteBootstrapResponsePB {
+  optional tserver.TabletServerErrorPB error = 1;
+}
+
 // A Raft implementation.
 service ConsensusService {
   // Analogous to AppendEntries in Raft, but only used for followers.
@@ -421,4 +439,7 @@ service ConsensusService {
 
   // Returns the committed Consensus state.
   rpc GetConsensusState(GetConsensusStateRequestPB) returns (GetConsensusStateResponsePB);
+
+  // Instruct this server to remotely bootstrap a tablet from another host.
+  rpc StartRemoteBootstrap(StartRemoteBootstrapRequestPB) returns (StartRemoteBootstrapResponsePB);
 }
