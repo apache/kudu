@@ -11,7 +11,6 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
-#include "kudu/client/schema-internal.h"
 #include "kudu/client/write_op.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/common/schema.h"
@@ -36,9 +35,6 @@ DEFINE_int64(client_num_batches_per_thread, 5,
              "In how many batches to group the rows, for each client");
 DECLARE_int32(consensus_rpc_timeout_ms);
 
-#define ASSERT_ALL_REPLICAS_AGREE(count) \
-  NO_FATALS(AssertAllReplicasAgree(count))
-
 namespace kudu {
 namespace tserver {
 
@@ -55,18 +51,9 @@ using consensus::RaftPeerPB;
 using consensus::ADD_SERVER;
 using consensus::REMOVE_SERVER;
 using consensus::ReplicateMsg;
-using client::FromInternalCompressionType;
-using client::FromInternalDataType;
-using client::FromInternalEncodingType;
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduColumnStorageAttributes;
 using client::KuduInsert;
-using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
-using client::KuduTableCreator;
 using itest::AddServer;
 using itest::GetReplicaStatusAndCheckIfLeader;
 using itest::LeaderStepDown;
@@ -101,61 +88,6 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   virtual void SetUp() OVERRIDE {
     TabletServerIntegrationTestBase::SetUp();
     FLAGS_consensus_rpc_timeout_ms = kConsensusRpcTimeoutForTests;
-  }
-
-  // Starts an external cluster with a single tablet and a number of replicas equal
-  // to 'FLAGS_num_replicas'. The caller can pass 'ts_flags' to specify non-default
-  // flags to pass to the tablet servers.
-  void BuildAndStart(const vector<string>& ts_flags,
-                     const vector<string>& master_flags = vector<string>()) {
-    CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
-    CreateClient(&client_);
-    CreateTable();
-    WaitForTSAndReplicas();
-    CHECK_GT(tablet_replicas_.size(), 0);
-    tablet_id_ = (*tablet_replicas_.begin()).first;
-  }
-
-  void CreateClient(shared_ptr<KuduClient>* client) {
-    // Connect to the cluster.
-    ASSERT_OK(KuduClientBuilder()
-                     .add_master_server_addr(cluster_->master()->bound_rpc_addr().ToString())
-                     .Build(client));
-  }
-
-  // Create a table with a single tablet, with 'num_replicas'.
-  void CreateTable() {
-    // The tests here make extensive use of server schemas, but we need
-    // a client schema to create the table.
-    KuduSchema client_schema(GetClientSchema(schema_));
-    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-    ASSERT_OK(table_creator->table_name(kTableId)
-             .schema(&client_schema)
-             .num_replicas(FLAGS_num_replicas)
-             // NOTE: this is quite high as a timeout, but the default (5 sec) does not
-             // seem to be high enough in some cases (see KUDU-550). We should remove
-             // this once that ticket is addressed.
-             .timeout(MonoDelta::FromSeconds(20))
-             .Create());
-    ASSERT_OK(client_->OpenTable(kTableId, &table_));
-  }
-
-  KuduSchema GetClientSchema(const Schema& server_schema) const {
-    std::vector<KuduColumnSchema> client_cols;
-    BOOST_FOREACH(const ColumnSchema& col, server_schema.columns()) {
-      CHECK_EQ(col.has_read_default(), col.has_write_default());
-      if (col.has_read_default()) {
-        CHECK_EQ(col.read_default_value(), col.write_default_value());
-      }
-      KuduColumnStorageAttributes client_attrs(
-          FromInternalEncodingType(col.attributes().encoding()),
-          FromInternalCompressionType(col.attributes().compression()));
-      KuduColumnSchema client_col(col.name(), FromInternalDataType(col.type_info()->type()),
-                                  col.is_nullable(), col.read_default_value(),
-                                  client_attrs);
-      client_cols.push_back(client_col);
-    }
-    return KuduSchema(client_cols, server_schema.num_key_columns());
   }
 
   void ScanReplica(TabletServerServiceProxy* replica_proxy,
@@ -249,12 +181,6 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     }
 
     return ret;
-  }
-
-  void AssertAllReplicasAgree(int expected_result_count) {
-    ClusterVerifier v(cluster_.get());
-    NO_FATALS(v.CheckCluster());
-    NO_FATALS(v.CheckRowCount(kTableId, ClusterVerifier::EXACTLY, expected_result_count));
   }
 
   void InsertTestRowsRemoteThread(uint64_t first_row,
@@ -420,11 +346,9 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
                                                    const string& leader_uuid);
 
  protected:
-  shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> table_;
   std::vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch inserters_;
-  string tablet_id_;
 };
 
 // Test that we can retrieve the permanent uuid of a server running

@@ -10,8 +10,10 @@
 #include <vector>
 
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/client/schema-internal.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/tserver/tablet_server-test-base.h"
@@ -25,6 +27,9 @@ DEFINE_string(master_flags, "", "Flags to pass through to masters");
 
 DEFINE_int32(num_tablet_servers, 3, "Number of tablet servers to start");
 DEFINE_int32(num_replicas, 3, "Number of replicas per tablet server");
+
+#define ASSERT_ALL_REPLICAS_AGREE(count) \
+  NO_FATALS(AssertAllReplicasAgree(count))
 
 namespace kudu {
 namespace tserver {
@@ -377,6 +382,68 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     STLDeleteValues(&tablet_servers_);
   }
 
+  void CreateClient(shared_ptr<client::KuduClient>* client) {
+    // Connect to the cluster.
+    ASSERT_OK(client::KuduClientBuilder()
+                     .add_master_server_addr(cluster_->master()->bound_rpc_addr().ToString())
+                     .Build(client));
+  }
+
+  // Create a table with a single tablet, with 'num_replicas'.
+  void CreateTable() {
+    // The tests here make extensive use of server schemas, but we need
+    // a client schema to create the table.
+    client::KuduSchema client_schema(GetClientSchema(schema_));
+    gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
+    ASSERT_OK(table_creator->table_name(kTableId)
+             .schema(&client_schema)
+             .num_replicas(FLAGS_num_replicas)
+             // NOTE: this is quite high as a timeout, but the default (5 sec) does not
+             // seem to be high enough in some cases (see KUDU-550). We should remove
+             // this once that ticket is addressed.
+             .timeout(MonoDelta::FromSeconds(20))
+             .Create());
+    ASSERT_OK(client_->OpenTable(kTableId, &table_));
+  }
+
+  client::KuduSchema GetClientSchema(const Schema& server_schema) const {
+    std::vector<client::KuduColumnSchema> client_cols;
+    BOOST_FOREACH(const ColumnSchema& col, server_schema.columns()) {
+      CHECK_EQ(col.has_read_default(), col.has_write_default());
+      if (col.has_read_default()) {
+        CHECK_EQ(col.read_default_value(), col.write_default_value());
+      }
+      client::KuduColumnStorageAttributes client_attrs(
+          client::FromInternalEncodingType(col.attributes().encoding()),
+          client::FromInternalCompressionType(col.attributes().compression()));
+      client::KuduColumnSchema client_col(
+          col.name(),
+          client::FromInternalDataType(col.type_info()->type()),
+          col.is_nullable(), col.read_default_value(),
+          client_attrs);
+      client_cols.push_back(client_col);
+    }
+    return client::KuduSchema(client_cols, server_schema.num_key_columns());
+  }
+
+  // Starts an external cluster with a single tablet and a number of replicas equal
+  // to 'FLAGS_num_replicas'. The caller can pass 'ts_flags' to specify non-default
+  // flags to pass to the tablet servers.
+  void BuildAndStart(const vector<string>& ts_flags,
+                     const vector<string>& master_flags = vector<string>()) {
+    CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
+    CreateClient(&client_);
+    CreateTable();
+    WaitForTSAndReplicas();
+    CHECK_GT(tablet_replicas_.size(), 0);
+    tablet_id_ = (*tablet_replicas_.begin()).first;
+  }
+
+  void AssertAllReplicasAgree(int expected_result_count) {
+    ClusterVerifier v(cluster_.get());
+    NO_FATALS(v.CheckCluster());
+    NO_FATALS(v.CheckRowCount(kTableId, ClusterVerifier::EXACTLY, expected_result_count));
+  }
 
  protected:
   gscoped_ptr<ExternalMiniCluster> cluster_;
@@ -384,6 +451,10 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   TabletServerMap tablet_servers_;
   // Maps tablet to all replicas.
   TabletReplicaMap tablet_replicas_;
+
+  shared_ptr<client::KuduClient> client_;
+  shared_ptr<client::KuduTable> table_;
+  string tablet_id_;
 
   ThreadSafeRandom random_;
 };
