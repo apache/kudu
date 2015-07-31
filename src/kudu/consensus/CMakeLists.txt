@@ -23,14 +23,16 @@ KRPC_GENERATE(CONSENSUS_KRPC_SRCS CONSENSUS_KRPC_HDRS
   PROTO_FILES consensus.proto)
 list(APPEND CONSENSUS_KRPC_SRCS opid_util.cc)
 set(CONSENSUS_KRPC_LIBS
-  tserver_admin_proto
-  protobuf
-  kudu_common_proto
   cfile_proto
   consensus_metadata_proto
   krpc
-  wire_protocol_proto
-  tablet_proto)
+  kudu_common_proto
+  rpc_header_proto
+  protobuf
+  tablet_proto
+  tserver_admin_proto
+  wire_protocol_proto)
+
 ADD_EXPORTABLE_LIBRARY(consensus_proto
   SRCS ${CONSENSUS_KRPC_SRCS}
   DEPS ${CONSENSUS_KRPC_LIBS})

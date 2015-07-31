@@ -7,11 +7,11 @@ KRPC_GENERATE(MASTER_KRPC_SRCS MASTER_KRPC_HDRS
   PROTO_FILES master.proto)
 set(MASTER_KRPC_LIBS
   consensus_metadata_proto
-  tablet_proto
-  wire_protocol_proto
-  protobuf
   krpc
-  rpc_header_proto)
+  protobuf
+  rpc_header_proto
+  tablet_proto
+  wire_protocol_proto)
 ADD_EXPORTABLE_LIBRARY(master_proto
   SRCS ${MASTER_KRPC_SRCS}
   DEPS ${MASTER_KRPC_LIBS})

@@ -83,6 +83,8 @@ KRPC_GENERATE(RTEST_KRPC_SRCS RTEST_KRPC_HDRS
   PROTO_FILES rtest.proto)
 add_library(rtest_krpc ${RTEST_KRPC_SRCS} ${RTEST_KRPC_HDRS})
 target_link_libraries(rtest_krpc
+  krpc
+  rpc_header_proto
   rtest_diff_package_proto)
 
 # Tests
