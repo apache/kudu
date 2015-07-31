@@ -148,15 +148,6 @@ Status KuduScanner::Data::OpenTablet(const Slice& key,
                                      const MonoTime& deadline,
                                      set<string>* blacklist) {
 
-  Synchronizer sync;
-  table_->client()->data_->meta_cache_->LookupTabletByKey(table_,
-                                                          key,
-                                                          deadline,
-                                                          &remote_,
-                                                          sync.AsStatusCallback());
-  RETURN_NOT_OK(sync.Wait());
-
-  // Scan it.
   PrepareRequest(KuduScanner::Data::NEW);
   next_req_.clear_scanner_id();
   NewScanRequestPB* scan = next_req_.mutable_new_scan_request();
@@ -220,33 +211,52 @@ Status KuduScanner::Data::OpenTablet(const Slice& key,
   } else {
     scan->clear_encoded_stop_key();
   }
-
-  scan->set_tablet_id(remote_->tablet_id());
   RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns()));
 
-  for (;;) {
-    // Recalculate the deadlines.
-    MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
-    rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
-    MonoTime actual_deadline = MonoTime::Earliest(rpc_deadline, deadline);
+  for (int attempt = 1;; attempt++) {
+    Synchronizer sync;
+    table_->client()->data_->meta_cache_->LookupTabletByKey(table_,
+                                                            key,
+                                                            deadline,
+                                                            &remote_,
+                                                            sync.AsStatusCallback());
+    RETURN_NOT_OK(sync.Wait());
 
-    controller_.Reset();
-    controller_.set_deadline(actual_deadline);
+    scan->set_tablet_id(remote_->tablet_id());
+
     RemoteTabletServer *ts;
     vector<RemoteTabletServer*> candidates;
-    // TODO: Add retry logic for GetTabletServer too. A leader could be mark as failed, but
-    // then come back up within the operation timeout. Refreshing liveness information involves
-    // another LookupTabletByKey.
-    RETURN_NOT_OK(table_->client()->data_->GetTabletServer(
+    Status lookup_status = table_->client()->data_->GetTabletServer(
         table_->client(),
         remote_->tablet_id(),
         selection_,
         *blacklist,
         &candidates,
-        &ts));
-    CHECK(ts);
+        &ts);
+    // If we get ServiceUnavailable, this indicates that the tablet doesn't
+    // currently have any known leader. We should sleep and retry, since
+    // it's likely that the tablet is undergoing a leader election and will
+    // soon have one.
+    if (lookup_status.IsServiceUnavailable() &&
+        MonoTime::Now(MonoTime::FINE).ComesBefore(deadline)) {
+      int sleep_ms = attempt * 100;
+      VLOG(1) << "Tablet " << remote_->tablet_id() << " current unavailable: "
+              << lookup_status.ToString() << ". Sleeping for " << sleep_ms << "ms "
+              << "and retrying...";
+      SleepFor(MonoDelta::FromMilliseconds(sleep_ms));
+      continue;
+    }
+    RETURN_NOT_OK(lookup_status);
+
+    // Recalculate the deadlines.
+    MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
+    rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
+    MonoTime actual_deadline = MonoTime::Earliest(rpc_deadline, deadline);
+    controller_.Reset();
+    controller_.set_deadline(actual_deadline);
+
     CHECK(ts->proxy());
-    ts_ = ts;
+    ts_ = CHECK_NOTNULL(ts);
     proxy_ = ts->proxy();
     const Status rpc_status = proxy_->Scan(next_req_, &last_response_, &controller_);
     const Status server_status = CheckForErrors();

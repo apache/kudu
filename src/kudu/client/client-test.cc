@@ -324,37 +324,12 @@ class ClientTest : public KuduTest {
                                                          KuduValue::FromInt(upper_bound))));
     }
 
-    // Try a few times before we open the scanner. We're only scanning the leader
-    // but we might not know who that is yet.
-    int attempts = 0;
-    Status s;
-    do {
-      s = scanner.Open();
-      if (s.IsServiceUnavailable()) {
-        attempts++;
-        int64_t sleep_usec = 10000 * attempts;
-        LOG(INFO) << "Waiting " << (sleep_usec/1000) << "ms for service availability...";
-        SleepFor(MonoDelta::FromMicroseconds(sleep_usec));
-      }
-    } while (s.IsServiceUnavailable() && attempts < 100);
-    CHECK_OK(s);
+    CHECK_OK(scanner.Open());
 
-    attempts = 0;
     int count = 0;
     vector<KuduRowResult> rows;
     while (scanner.HasMoreRows()) {
-      Status s = scanner.NextBatch(&rows);
-      // If we got service unavailable maybe we changed tablets and we don't know who is the
-      // leader for this one yet.
-      // When we make the scanner more fault tolerant (KUDU-547) we should be able to remove
-      // this retry logic.
-      if (s.IsServiceUnavailable() && attempts < 20) {
-        attempts++;
-        SleepFor(MonoDelta::FromMilliseconds(100));
-        continue;
-      }
-      CHECK_OK(s);
-      attempts = 0;
+      CHECK_OK(scanner.NextBatch(&rows));
       count += rows.size();
       rows.clear();
     }
@@ -1237,13 +1212,15 @@ TEST_F(ClientTest, TestScanTimeout) {
     ASSERT_EQ(0, scanner.data_->remote_->GetNumFailedReplicas());
   }
 
-  // Every RPC timed out; all replicas failed.
+  // If we set the RPC timeout to be low, we'll time out in the GetTableLocations
+  // code path and mark the tablet bad.
   {
     client_->data_->default_rpc_timeout_ = MonoDelta::FromSeconds(0);
     KuduScanner scanner(client_table_.get());
-    ASSERT_TRUE(scanner.Open().IsServiceUnavailable());
-    ASSERT_TRUE(scanner.data_->remote_);
-    ASSERT_EQ(1, scanner.data_->remote_->GetNumFailedReplicas());
+    Status s = scanner.Open();
+    EXPECT_TRUE(s.IsTimedOut()) << s.ToString();
+    EXPECT_TRUE(scanner.data_->remote_);
+    EXPECT_EQ(1, scanner.data_->remote_->GetNumFailedReplicas());
   }
 }
 
