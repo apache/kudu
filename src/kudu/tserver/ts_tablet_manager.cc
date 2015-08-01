@@ -621,7 +621,7 @@ void TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
 }
 
 void TSTabletManager::MarkTabletReportAcknowledged(const TabletReportPB& report) {
-  boost::shared_lock<rw_spinlock> shared_lock(lock_);
+  boost::lock_guard<rw_spinlock> l(lock_);
 
   int32_t acked_seq = report.sequence_number();
   CHECK_LT(acked_seq, next_report_seq_);

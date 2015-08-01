@@ -30,15 +30,13 @@ LocalConsensus::LocalConsensus(const ConsensusOptions& options,
                                const string& peer_uuid,
                                const scoped_refptr<server::Clock>& clock,
                                ReplicaTransactionFactory* txn_factory,
-                               Log* log,
-                               const Closure& mark_dirty_clbk)
+                               Log* log)
     : peer_uuid_(peer_uuid),
       options_(options),
       cmeta_(cmeta.Pass()),
       txn_factory_(DCHECK_NOTNULL(txn_factory)),
       log_(DCHECK_NOTNULL(log)),
       clock_(clock),
-      mark_dirty_clbk_(mark_dirty_clbk),
       state_(kInitializing),
       next_op_id_index_(-1) {
   CHECK(cmeta_) << "Passed ConsensusMetadata object is NULL";
@@ -68,9 +66,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
 
     state_ = kRunning;
   }
-
   TRACE("Consensus started");
-  MarkDirty();
   return Status::OK();
 }
 
@@ -155,10 +151,6 @@ Status LocalConsensus::Update(const ConsensusRequestPB* request,
 Status LocalConsensus::RequestVote(const VoteRequestPB* request,
                                    VoteResponsePB* response) {
   return Status::NotSupported("LocalConsensus does not support RequestVote() calls.");
-}
-
-void LocalConsensus::MarkDirty() {
-  mark_dirty_clbk_.Run();
 }
 
 ConsensusStatePB LocalConsensus::CommittedConsensusState() const {

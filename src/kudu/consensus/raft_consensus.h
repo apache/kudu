@@ -143,8 +143,6 @@ class RaftConsensus : public Consensus,
 
   virtual Status GetLastReceivedOpId(OpId* id) OVERRIDE;
 
-  virtual void MarkDirty() OVERRIDE;
-
  protected:
   // Trigger that a non-Transaction ConsensusRound has finished replication.
   // If the replication was successful, an status will be OK. Otherwise, it
@@ -361,6 +359,10 @@ class RaftConsensus : public Consensus,
 
   // Handle when the term has advanced beyond the current term.
   Status HandleTermAdvanceUnlocked(ConsensusTerm new_term);
+
+  // Asynchronously (on thread_pool_) notify the tablet peer that the consensus configuration
+  // has changed, thus reporting it back to the master.
+  void MarkDirty();
 
   // Threadpool for constructing requests to peers, handling RPC callbacks,
   // etc.

@@ -37,8 +37,7 @@ class LocalConsensus : public Consensus {
                           const std::string& peer_uuid,
                           const scoped_refptr<server::Clock>& clock,
                           ReplicaTransactionFactory* txn_factory,
-                          log::Log* log,
-                          const Closure& mark_dirty_clbk);
+                          log::Log* log);
 
   virtual Status Start(const ConsensusBootstrapInfo& info) OVERRIDE;
 
@@ -68,8 +67,6 @@ class LocalConsensus : public Consensus {
 
   virtual void DumpStatusHtml(std::ostream& out) const OVERRIDE;
 
-  virtual void MarkDirty() OVERRIDE;
-
   //
   //  NOT IMPLEMENTED IN LOCAL CONSENSUS
   //
@@ -96,7 +93,6 @@ class LocalConsensus : public Consensus {
   ReplicaTransactionFactory* const txn_factory_;
   log::Log* const log_;
   const scoped_refptr<server::Clock> clock_;
-  const Closure mark_dirty_clbk_;
 
   // Protects 'state_' and 'next_op_id_index_'.
   mutable simple_spinlock lock_;

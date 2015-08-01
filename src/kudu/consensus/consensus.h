@@ -234,10 +234,6 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   // TODO Remove once we have solid election.
   virtual Status GetLastReceivedOpId(OpId* id) { return Status::NotFound("Not implemented."); }
 
-  // Marks the configuration as dirty.
-  // TODO: Make this private if possible.
-  virtual void MarkDirty() = 0;
-
  protected:
   friend class RefCountedThreadSafe<Consensus>;
   friend class tablet::TabletPeer;

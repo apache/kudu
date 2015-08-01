@@ -143,8 +143,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
                                           meta_->fs_manager()->uuid(),
                                           clock_,
                                           this,
-                                          log_.get(),
-                                          mark_dirty_clbk_));
+                                          log_.get()));
     } else {
       consensus_ = RaftConsensus::Create(options,
                                          cmeta.Pass(),
@@ -183,6 +182,9 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
     CHECK_EQ(state_, BOOTSTRAPPING);
     state_ = RUNNING;
   }
+
+  // Because we changed the tablet state, we need to re-report the tablet to the master.
+  mark_dirty_clbk_.Run();
 
   return Status::OK();
 }
