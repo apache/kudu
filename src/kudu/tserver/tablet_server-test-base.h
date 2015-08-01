@@ -114,7 +114,7 @@ class TabletServerTestBase : public KuduTest {
   Status WaitForTabletRunning(const char *tablet_id) {
     scoped_refptr<tablet::TabletPeer> tablet_peer;
     RETURN_NOT_OK(mini_server_->server()->tablet_manager()->GetTabletPeer(tablet_id, &tablet_peer));
-    return tablet_peer->WaitUntilConsensusRunning(MonoDelta::FromMilliseconds(2000));
+    return tablet_peer->WaitUntilConsensusRunning(MonoDelta::FromSeconds(10));
   }
 
   void UpdateTestRowRemote(int tid,
