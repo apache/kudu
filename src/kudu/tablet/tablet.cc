@@ -256,7 +256,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
     row_ops.push_back(new RowOp(op));
   }
 
-  tx_state->mutable_row_ops()->swap(row_ops);
+  tx_state->swap_row_ops(&row_ops);
   tx_state->set_schema_at_decode_time(schema());
 
   return Status::OK();
@@ -266,7 +266,7 @@ Status Tablet::AcquireRowLocks(WriteTransactionState* tx_state) {
   TRACE_EVENT1("tablet", "Tablet::AcquireRowLocks",
                "num_locks", tx_state->row_ops().size());
   TRACE("PREPARE: Acquiring locks for $0 operations", tx_state->row_ops().size());
-  BOOST_FOREACH(RowOp* op, *tx_state->mutable_row_ops()) {
+  BOOST_FOREACH(RowOp* op, tx_state->row_ops()) {
     RETURN_NOT_OK(AcquireLockForOp(tx_state, op));
   }
   TRACE("PREPARE: locks acquired");
@@ -454,7 +454,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
 }
 
 void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
-  BOOST_FOREACH(RowOp* row_op, *tx_state->mutable_row_ops()) {
+  BOOST_FOREACH(RowOp* row_op, tx_state->row_ops()) {
     ApplyRowOperation(tx_state, row_op);
   }
 }

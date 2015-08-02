@@ -1237,7 +1237,7 @@ Status TabletBootstrap::PlayRowOperations(WriteTransactionState* tx_state,
 Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state,
                                                  const TxResultPB& orig_result) {
   int32_t op_idx = 0;
-  BOOST_FOREACH(RowOp* op, *tx_state->mutable_row_ops()) {
+  BOOST_FOREACH(RowOp* op, tx_state->row_ops()) {
     const OperationResultPB& orig_op_result = orig_result.ops(op_idx++);
 
     // check if the operation failed in the original transaction

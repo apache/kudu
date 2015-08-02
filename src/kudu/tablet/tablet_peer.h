@@ -110,7 +110,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   virtual Status StartReplicaTransaction(
       const scoped_refptr<consensus::ConsensusRound>& round) OVERRIDE;
 
-  consensus::Consensus* consensus() { return consensus_.get(); }
+  consensus::Consensus* consensus() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return consensus_.get();
+  }
 
   Tablet* tablet() const {
     boost::lock_guard<simple_spinlock> lock(lock_);

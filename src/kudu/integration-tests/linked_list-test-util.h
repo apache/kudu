@@ -272,7 +272,9 @@ class ScopedRowUpdater {
 class PeriodicWebUIChecker {
  public:
 
-  PeriodicWebUIChecker(const ExternalMiniCluster& cluster, const MonoDelta& period)
+  PeriodicWebUIChecker(const ExternalMiniCluster& cluster,
+                       const std::string& tablet_id,
+                       const MonoDelta& period)
     : period_(period),
       is_running_(true) {
     // List of master and ts web pages to fetch
@@ -286,6 +288,7 @@ class PeriodicWebUIChecker {
 
     ts_pages.push_back("/jsonmetricz");
     ts_pages.push_back("/tablets");
+    ts_pages.push_back(strings::Substitute("/transactionz?tablet_id=$0", tablet_id));
 
     // Generate list of urls for each master and tablet server
     for (int i = 0; i < cluster.num_masters(); i++) {

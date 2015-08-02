@@ -50,7 +50,6 @@ void WriteTransaction::NewReplicateMsg(gscoped_ptr<ReplicateMsg>* replicate_msg)
 Status WriteTransaction::Prepare() {
   TRACE_EVENT0("txn", "WriteTransaction::Prepare");
   TRACE("PREPARE: Starting");
-
   // Decode everything first so that we give up if something major is wrong.
   Schema client_schema;
   RETURN_NOT_OK_PREPEND(SchemaFromPB(state_->request()->schema(), &client_schema),
@@ -312,18 +311,21 @@ string WriteTransactionState::ToString() const {
   // Stringify the actual row operations (eg INSERT/UPDATE/etc)
   // NOTE: we'll eventually need to gate this by some flag if we want to avoid
   // user data escaping into the log. See KUDU-387.
-  const size_t kMaxToStringify = 3;
   string row_ops_str = "[";
-  for (int i = 0; i < std::min(row_ops_.size(), kMaxToStringify); i++) {
-    if (i > 0) {
-      row_ops_str.append(", ");
+  {
+    lock_guard<simple_spinlock> l(&txn_state_lock_);
+    const size_t kMaxToStringify = 3;
+    for (int i = 0; i < std::min(row_ops_.size(), kMaxToStringify); i++) {
+      if (i > 0) {
+        row_ops_str.append(", ");
+      }
+      row_ops_str.append(row_ops_[i]->ToString(*DCHECK_NOTNULL(schema_at_decode_time_)));
     }
-    row_ops_str.append(row_ops_[i]->ToString(*DCHECK_NOTNULL(schema_at_decode_time_)));
+    if (row_ops_.size() > kMaxToStringify) {
+      row_ops_str.append(", ...");
+    }
+    row_ops_str.append("]");
   }
-  if (row_ops_.size() > kMaxToStringify) {
-    row_ops_str.append(", ...");
-  }
-  row_ops_str.append("]");
 
   return Substitute("WriteTransactionState $0 [op_id=($1), ts=$2, rows=$3]",
                     this,

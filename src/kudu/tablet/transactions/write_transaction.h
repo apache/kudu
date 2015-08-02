@@ -102,10 +102,12 @@ class WriteTransactionState : public TransactionState {
 
 
   void set_schema_at_decode_time(const Schema* schema) {
+    lock_guard<simple_spinlock> l(&txn_state_lock_);
     schema_at_decode_time_ = schema;
   }
 
   const Schema* schema_at_decode_time() const {
+    lock_guard<simple_spinlock> l(&txn_state_lock_);
     return schema_at_decode_time_;
   }
 
@@ -131,8 +133,9 @@ class WriteTransactionState : public TransactionState {
     return row_ops_;
   }
 
-  std::vector<RowOp*>* mutable_row_ops() {
-    return &row_ops_;
+  void swap_row_ops(std::vector<RowOp*>* new_ops) {
+    lock_guard<simple_spinlock> l(&txn_state_lock_);
+    row_ops_.swap(*new_ops);
   }
 
   void UpdateMetricsForOp(const RowOp& op);
@@ -157,6 +160,7 @@ class WriteTransactionState : public TransactionState {
   tserver::WriteResponsePB* response_;
 
   // The row operations which are decoded from the request during PREPARE
+  // Protected by superclass's txn_state_lock_.
   std::vector<RowOp*> row_ops_;
 
   // The MVCC transaction, set up during PREPARE phase
@@ -172,6 +176,7 @@ class WriteTransactionState : public TransactionState {
   // The Schema of the tablet when the transaction was first decoded.
   // This is verified at APPLY time to ensure we don't have races against
   // schema change.
+  // Protected by superclass's txn_state_lock_.
   const Schema* schema_at_decode_time_;
 };
 

@@ -41,7 +41,7 @@ using kudu::client::KuduSchema;
 using kudu::itest::TServerDetails;
 using std::tr1::shared_ptr;
 
-DEFINE_int32(seconds_to_run, 1, "Number of seconds for which to run the test");
+DEFINE_int32(seconds_to_run, 5, "Number of seconds for which to run the test");
 
 DEFINE_int32(num_chains, 50, "Number of parallel chains to generate");
 DEFINE_int32(num_tablets, 3, "Number of tablets over which to split the data");
@@ -137,7 +137,19 @@ TEST_F(LinkedListTest, TestLoadAndVerify) {
   OverrideFlagForSlowTests("stress_wal_gc", "true");
   ASSERT_NO_FATAL_FAILURE(BuildAndStart());
 
-  PeriodicWebUIChecker checker(*cluster_.get(), MonoDelta::FromSeconds(1));
+  string tablet_id = tablet_replicas_.begin()->first;
+
+  // In TSAN builds, we hit the web UIs more often, so we have a better chance
+  // of seeing a thread error. We don't do this in normal builds since we
+  // also use this test as a benchmark and it soaks up a lot of CPU.
+#ifdef THREAD_SANITIZER
+  MonoDelta check_freq = MonoDelta::FromMilliseconds(10);
+#else
+  MonoDelta check_freq = MonoDelta::FromSeconds(1);
+#endif
+
+  PeriodicWebUIChecker checker(*cluster_.get(), tablet_id,
+                               check_freq);
 
   bool can_kill_ts = FLAGS_num_tablet_servers > 1 && FLAGS_num_replicas > 2;
 
