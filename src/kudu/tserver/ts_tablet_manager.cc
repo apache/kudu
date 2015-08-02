@@ -566,7 +566,7 @@ void TSTabletManager::InitLocalRaftPeerPB() {
   local_peer_pb_.set_permanent_uuid(fs_manager_->uuid());
   Sockaddr addr = server_->first_rpc_address();
   HostPort hp;
-  CHECK_OK(HostPortFromSockaddrReverseLookup(addr, &hp));
+  CHECK_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
   CHECK_OK(HostPortToPB(hp, local_peer_pb_.mutable_last_known_addr()));
 }
 

@@ -203,12 +203,12 @@ Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr) {
   return Status::OK();
 }
 
-Status HostPortFromSockaddrReverseLookup(const Sockaddr& addr, HostPort* hp) {
+Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp) {
   string host;
   if (addr.IsWildcard()) {
     RETURN_NOT_OK(GetFQDN(&host));
   } else {
-    RETURN_NOT_OK(addr.LookupHostname(&host));
+    host = addr.host();
   }
   hp->set_host(host);
   hp->set_port(addr.port());

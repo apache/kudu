@@ -79,33 +79,23 @@ TEST_F(NetUtilTest, TestResolveAddresses) {
   ASSERT_OK(hp.ResolveAddresses(NULL));
 }
 
-// Perform a reverse lookup on the host in host_in after first converting it
-// to numeric form, if necessary. Return the looked-up name in host_out, if it
-// is not NULL.
-static void TestReverseLookupHelper(const string& host_in,
-                                    const string& label,
-                                    string* host_out) {
-  HostPort hp(host_in, 0);
-  Sockaddr addr;
-  ASSERT_OK(SockaddrFromHostPort(hp, &addr));
-  LOG(INFO) << label << " Sockaddr: " << addr.ToString();
-  ASSERT_OK(HostPortFromSockaddrReverseLookup(addr, &hp));
-  LOG(INFO) << label << " HostPort: " << hp.ToString();
-  ASSERT_FALSE(hp.host().empty()) << hp.ToString();
-  if (host_out) {
-    *host_out = hp.host();
-  }
-}
-
 // Ensure that we are able to do a reverse DNS lookup on various IP addresses.
 // The reverse lookups should never fail, but may return numeric strings.
 TEST_F(NetUtilTest, TestReverseLookup) {
   string host;
-  NO_FATALS(TestReverseLookupHelper("0.0.0.0", "wildcard", &host));
-  ASSERT_NE("0.0.0.0", host);
-  NO_FATALS(TestReverseLookupHelper("127.0.0.1", "common localhost", NULL));
-  NO_FATALS(TestReverseLookupHelper("127.2.3.4", "uncommon localhost", NULL));
-  NO_FATALS(TestReverseLookupHelper("255.255.255.255", "broadcast", NULL));
+  Sockaddr addr;
+  HostPort hp;
+  ASSERT_OK(addr.ParseString("0.0.0.0:12345", 0));
+  EXPECT_EQ(12345, addr.port());
+  ASSERT_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
+  EXPECT_NE("0.0.0.0", hp.host());
+  EXPECT_NE("", hp.host());
+  EXPECT_EQ(12345, hp.port());
+
+  ASSERT_OK(addr.ParseString("127.0.0.1:12345", 0));
+  ASSERT_OK(HostPortFromSockaddrReplaceWildcard(addr, &hp));
+  EXPECT_EQ("127.0.0.1", hp.host());
+  EXPECT_EQ(12345, hp.port());
 }
 
 TEST_F(NetUtilTest, TestLsof) {

@@ -79,12 +79,12 @@ Status GetFQDN(std::string* fqdn);
 // list and logs a message in verbose mode.
 Status SockaddrFromHostPort(const HostPort& host_port, Sockaddr* addr);
 
-// Does a reverse lookup on addr and fills hp with the mapping.
-// If addr is a wildcard address, such as "0.0.0.0", attempts to resolve
-// using the machine's FQDN.
-// If there is no reverse mapping, you get a Status::OK() and a HostPort that
-// contains the numeric IP.
-Status HostPortFromSockaddrReverseLookup(const Sockaddr& addr, HostPort* hp);
+// Converts the given Sockaddr into a HostPort, substituting the FQDN
+// in the case that the provided address is the wildcard.
+//
+// In the case of other addresses, the returned HostPort will contain just the
+// stringified form of the IP.
+Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp);
 
 // Try to run 'lsof' to determine which process is preventing binding to
 // the given 'addr'. If pids can be determined, outputs full 'ps' and 'pstree'
