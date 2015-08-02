@@ -40,7 +40,7 @@ Status Sockaddr::ParseString(const std::string& s, uint16_t default_port) {
   if (inet_pton(AF_INET, hp.host().c_str(), &addr_.sin_addr) != 1) {
     return Status::InvalidArgument("Invalid IP address", hp.host());
   }
-  addr_.sin_port = hp.port();
+  set_port(hp.port());
   return Status::OK();
 }
 

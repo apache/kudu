@@ -36,6 +36,12 @@ class NetUtilTest : public KuduTest {
   static const uint16_t kDefaultPort = 7150;
 };
 
+TEST(SockaddrTest, Test) {
+  Sockaddr addr;
+  ASSERT_OK(addr.ParseString("1.1.1.1:12345", 12345));
+  ASSERT_EQ(12345, addr.port());
+}
+
 TEST_F(NetUtilTest, TestParseAddresses) {
   string ret;
   ASSERT_OK(DoParseBindAddresses("0.0.0.0:12345", &ret));
