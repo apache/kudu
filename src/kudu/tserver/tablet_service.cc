@@ -536,7 +536,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   // exceeded the limit.
   double capacity_pct;
   if (MemTracker::GetRootTracker()->SoftLimitExceeded(&capacity_pct)) {
-    tablet_peer->tablet()->metrics()->memory_pressure_rejections->Increment();
+    tablet_peer->tablet()->metrics()->leader_memory_pressure_rejections->Increment();
 
     // Clients should handle ERROR_SERVER_TOO_BUSY by retrying the request some
     // time later.

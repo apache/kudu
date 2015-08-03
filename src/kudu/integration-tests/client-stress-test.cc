@@ -11,7 +11,8 @@
 #include "kudu/util/test_util.h"
 
 METRIC_DECLARE_entity(tablet);
-METRIC_DECLARE_counter(memory_pressure_rejections);
+METRIC_DECLARE_counter(leader_memory_pressure_rejections);
+METRIC_DECLARE_counter(follower_memory_pressure_rejections);
 
 using strings::Substitute;
 
@@ -145,13 +146,20 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
     int64_t total_num_rejections = 0;
 
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      int64_t ts_num_rejections;
+      int64_t num_leader_rejections;
       ASSERT_OK(cluster_->tablet_server(i)->GetInt64Metric(
           &METRIC_ENTITY_tablet,
           NULL,
-          &METRIC_memory_pressure_rejections,
-          &ts_num_rejections));
-      total_num_rejections += ts_num_rejections;
+          &METRIC_leader_memory_pressure_rejections,
+          &num_leader_rejections));
+      total_num_rejections += num_leader_rejections;
+      int64_t num_follower_rejections;
+      ASSERT_OK(cluster_->tablet_server(i)->GetInt64Metric(
+          &METRIC_ENTITY_tablet,
+          NULL,
+          &METRIC_follower_memory_pressure_rejections,
+          &num_follower_rejections));
+      total_num_rejections += num_follower_rejections;
     }
     if (total_num_rejections >= minimum_num_rejections) {
       break;

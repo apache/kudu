@@ -402,7 +402,7 @@ class RaftConsensus : public Consensus,
 
   AtomicBool shutdown_;
 
-  scoped_refptr<Counter> memory_pressure_rejections_;
+  scoped_refptr<Counter> follower_memory_pressure_rejections_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };

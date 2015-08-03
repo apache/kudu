@@ -58,7 +58,11 @@ DEFINE_bool(enable_leader_failure_detection, true,
             "Whether to enable failure detection of tablet leaders. If enabled, attempts will be "
             "made to fail over to a follower when the leader is detected to have failed.");
 
-METRIC_DECLARE_counter(memory_pressure_rejections);
+METRIC_DEFINE_counter(tablet, follower_memory_pressure_rejections,
+                      "Follower Memory Pressure Rejections",
+                      kudu::MetricUnit::kRequests,
+                      "Number of RPC requests rejected due to "
+                      "memory pressure while FOLLOWER.");
 
 namespace kudu {
 namespace consensus {
@@ -154,8 +158,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
       withhold_votes_until_(MonoTime::Min()),
       mark_dirty_clbk_(mark_dirty_clbk),
       shutdown_(false),
-      memory_pressure_rejections_(metric_entity->FindOrCreateCounter(
-          &METRIC_memory_pressure_rejections)) {
+      follower_memory_pressure_rejections_(metric_entity->FindOrCreateCounter(
+          &METRIC_follower_memory_pressure_rejections)) {
   DCHECK_NOTNULL(log_.get());
   state_.reset(new ReplicaState(options,
                                 peer_uuid,
@@ -912,7 +916,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // our memory pressure.
       double capacity_pct;
       if (MemTracker::GetRootTracker()->SoftLimitExceeded(&capacity_pct)) {
-        memory_pressure_rejections_->Increment();
+        follower_memory_pressure_rejections_->Increment();
         return Status::ServiceUnavailable(StringPrintf(
             "Soft memory limit exceeded (at %.2f%% of capacity)",
             capacity_pct));
