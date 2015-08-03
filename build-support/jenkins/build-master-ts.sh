@@ -24,14 +24,6 @@ export PATH=$(pwd)/thirdparty/installed/bin:$PATH
 
 rm -rf CMakeCache.txt CMakeFiles src/kudu/*/CMakeFiles
 
-cmake . -DCMAKE_BUILD_TYPE=release -DKUDU_LINK=dynamic
+cmake . -DNO_TESTS=1 -DCMAKE_BUILD_TYPE=release
 make clean
-
-NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
-
-make -j$NUM_PROCS kudu-master 2>&1 | tee build.log
-make -j$NUM_PROCS kudu-tablet_server 2>&1 | tee -a build.log
-make -j$NUM_PROCS kudu-ts-cli 2>&1 | tee -a build.log
-make -j$NUM_PROCS log-dump 2>&1 | tee -a build.log
-make -j$NUM_PROCS kudu-fs_dump 2>&1 | tee -a build.log
-make -j$NUM_PROCS kudu-ksck 2>&1 | tee -a build.log
+make -j$(nproc) 2>&1 | tee build.log
