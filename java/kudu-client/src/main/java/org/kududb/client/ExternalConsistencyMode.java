@@ -10,7 +10,6 @@ import org.kududb.Common;
  *      meaning and implications of each mode.
  */
 public enum ExternalConsistencyMode {
-  NO_CONSISTENCY(Common.ExternalConsistencyMode.NO_CONSISTENCY),
   CLIENT_PROPAGATED(Common.ExternalConsistencyMode.CLIENT_PROPAGATED),
   COMMIT_WAIT(Common.ExternalConsistencyMode.COMMIT_WAIT);
 

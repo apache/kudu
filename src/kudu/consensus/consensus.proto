@@ -153,10 +153,7 @@ message ReplicateMsg {
   required OpId id = 1;
   // The (hybrid or logical) timestamp assigned to this message.
   required fixed64 timestamp = 2;
-  // The consistency mode assigned to this message. Only when HybridTime is enabled are consistency
-  // modes other than NO_CONSISTENCY allowed. Moreover, even when HybridTime is enabled, only Write
-  // transactions may choose a consistency mode, all other transaction type default to COMMIT_WAIT.
-  optional ExternalConsistencyMode external_consistency_mode = 3 [default = NO_CONSISTENCY];
+  // optional ExternalConsistencyMode external_consistency_mode = 3 [default = NO_CONSISTENCY];
   required OperationType op_type = 4;
   optional tserver.WriteRequestPB write_request = 5;
   optional tserver.AlterSchemaRequestPB alter_schema_request = 6;

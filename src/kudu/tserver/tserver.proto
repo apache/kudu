@@ -95,11 +95,10 @@ message WriteRequestPB {
   // Operations to perform (insert/update/delete)
   optional RowOperationsPB row_operations = 3;
 
-  // The required consistency mode for this write, defaults to NO_CONSISTENCY.
-  optional ExternalConsistencyMode external_consistency_mode = 4 [default = NO_CONSISTENCY];
+  // The required consistency mode for this write.
+  optional ExternalConsistencyMode external_consistency_mode = 4 [default = CLIENT_PROPAGATED];
 
   // A timestamp obtained by the client from a previous request.
-  // This is ignored unless external_consistency_mode = CLIENT_PROPAGATED.
   // TODO crypto sign this and propagate the signature along with
   // the timestamp.
   optional fixed64 propagated_timestamp = 5;

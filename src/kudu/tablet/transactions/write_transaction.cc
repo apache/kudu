@@ -157,9 +157,6 @@ void WriteTransaction::Finish(TransactionResult result) {
       uint64_t op_duration_usec =
           MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time_).ToMicroseconds();
       switch (state()->external_consistency_mode()) {
-        case NO_CONSISTENCY:
-          metrics->write_op_duration_no_consistency->Increment(op_duration_usec);
-          break;
         case CLIENT_PROPAGATED:
           metrics->write_op_duration_client_propagated_consistency->Increment(op_duration_usec);
           break;
@@ -194,7 +191,7 @@ WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
   if (request) {
     external_consistency_mode_ = request->external_consistency_mode();
   } else {
-    external_consistency_mode_ = NO_CONSISTENCY;
+    external_consistency_mode_ = CLIENT_PROPAGATED;
   }
 }
 

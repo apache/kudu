@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 
-import static org.kududb.client.ExternalConsistencyMode.NO_CONSISTENCY;
+import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 /**
  * A AsyncKuduSession belongs to a specific AsyncKuduClient, and represents a context in
@@ -124,7 +124,7 @@ public class AsyncKuduSession implements SessionConfiguration {
   AsyncKuduSession(AsyncKuduClient client) {
     this.client = client;
     this.flushMode = FlushMode.AUTO_FLUSH_SYNC;
-    this.consistencyMode = NO_CONSISTENCY;
+    this.consistencyMode = CLIENT_PROPAGATED;
     this.timeoutMs = client.getDefaultOperationTimeoutMs();
     setMutationBufferLowWatermark(this.mutationBufferLowWatermarkPercentage);
   }

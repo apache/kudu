@@ -210,14 +210,6 @@ class TransactionState {
     return external_consistency_mode_;
   }
 
-  void set_client_propagated_timestamp(const Timestamp& timestamp) {
-    client_propagated_timestamp_ = timestamp;
-  }
-
-  Timestamp client_propagated_timestamp() const {
-    return client_propagated_timestamp_;
-  }
-
  protected:
   explicit TransactionState(TabletPeer* tablet_peer);
   virtual ~TransactionState();
@@ -247,10 +239,6 @@ class TransactionState {
 
   // The defined consistency mode for this transaction.
   ExternalConsistencyMode external_consistency_mode_;
-
-  // The timestamp that was propagated by the client in the request
-  // Only set if ExternalConsistencyMode = CLIENT_PROPAGATED
-  Timestamp client_propagated_timestamp_;
 
   // Lock that protects access to transaction state.
   mutable simple_spinlock txn_state_lock_;

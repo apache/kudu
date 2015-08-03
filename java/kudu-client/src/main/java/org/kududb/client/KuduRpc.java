@@ -38,7 +38,7 @@ import org.jboss.netty.buffer.ChannelBuffers;
 
 import java.io.IOException;
 
-import static org.kududb.client.ExternalConsistencyMode.NO_CONSISTENCY;
+import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
 /**
  * Abstract base class for all RPC requests going out to Kudu.
@@ -87,7 +87,7 @@ public abstract class KuduRpc<R> {
   final DeadlineTracker deadlineTracker;
 
   protected long propagatedTimestamp = -1;
-  protected ExternalConsistencyMode externalConsistencyMode = NO_CONSISTENCY;
+  protected ExternalConsistencyMode externalConsistencyMode = CLIENT_PROPAGATED;
 
   /**
    * How many times have we retried this RPC?.

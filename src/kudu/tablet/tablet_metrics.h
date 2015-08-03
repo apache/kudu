@@ -44,7 +44,6 @@ struct TabletMetrics {
 
   scoped_refptr<Histogram> commit_wait_duration;
   scoped_refptr<Histogram> snapshot_read_inflight_wait_duration;
-  scoped_refptr<Histogram> write_op_duration_no_consistency;
   scoped_refptr<Histogram> write_op_duration_client_propagated_consistency;
   scoped_refptr<Histogram> write_op_duration_commit_wait_consistency;
 

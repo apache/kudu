@@ -61,12 +61,6 @@ METRIC_DEFINE_histogram(tablet, delta_file_lookups_per_op, "Delta File Lookups p
                         "lookups if the tablet is not fully compacted. High frequency of "
                         "high values may indicate that compaction is falling behind.", 20, 2);
 
-METRIC_DEFINE_histogram(tablet, write_op_duration_no_consistency,
-  "Write Op Duration with No Consistency",
-  kudu::MetricUnit::kMicroseconds,
-  "Duration of writes to this tablet with external consistency set to NO_CONSISTENCY.",
-  60000000LU, 2);
-
 METRIC_DEFINE_histogram(tablet, write_op_duration_client_propagated_consistency,
   "Write Op Duration with Propagated Consistency",
   kudu::MetricUnit::kMicroseconds,
@@ -169,7 +163,6 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(delta_file_lookups_per_op),
     MINIT(commit_wait_duration),
     MINIT(snapshot_read_inflight_wait_duration),
-    MINIT(write_op_duration_no_consistency),
     MINIT(write_op_duration_client_propagated_consistency),
     MINIT(write_op_duration_commit_wait_consistency),
     GINIT(flush_dms_running),

@@ -548,40 +548,30 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     return;
   }
 
-  if (req->external_consistency_mode() != NO_CONSISTENCY) {
-    if (!server_->clock()->SupportsExternalConsistencyMode(req->external_consistency_mode())) {
-      Status s = Status::ServiceUnavailable("The configured clock does not support the"
-          " required consistency mode.");
-      SetupErrorAndRespond(resp->mutable_error(), s,
-                           TabletServerErrorPB::UNKNOWN_ERROR,
-                           context);
-      return;
-    }
+  if (!server_->clock()->SupportsExternalConsistencyMode(req->external_consistency_mode())) {
+    Status s = Status::ServiceUnavailable("The configured clock does not support the"
+        " required consistency mode.");
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
   }
 
   WriteTransactionState *tx_state =
     new WriteTransactionState(tablet_peer.get(), req, resp);
 
-  // If the consistency mode is set to CLIENT_PROPAGATED and the client
-  // sent us a timestamp, decode it and set it in the transaction context.
-  // Also update the clock so that all future timestamps are greater than
-  // the passed timestamp.
-  if (req->external_consistency_mode() == CLIENT_PROPAGATED) {
-    Status s;
-    if (req->has_propagated_timestamp()) {
-      Timestamp ts(req->propagated_timestamp());
-      if (PREDICT_TRUE(s.ok())) {
-        tx_state->set_client_propagated_timestamp(ts);
-        // update the clock with the client's timestamp
-        s = server_->clock()->Update(ts);
-      }
-    }
-    if (PREDICT_FALSE(!s.ok())) {
-      SetupErrorAndRespond(resp->mutable_error(), s,
-                           TabletServerErrorPB::UNKNOWN_ERROR,
-                           context);
-      return;
-    }
+  // If the client sent us a timestamp, decode it and update the clock so that all future
+  // timestamps are greater than the passed timestamp.
+  Status s;
+  if (req->has_propagated_timestamp()) {
+    Timestamp ts(req->propagated_timestamp());
+    s = server_->clock()->Update(ts);
+  }
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
+    return;
   }
 
   tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
@@ -589,7 +579,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
                                                             resp)).Pass());
 
   // Submit the write. The RPC will be responded to asynchronously.
-  Status s = tablet_peer->SubmitWrite(tx_state);
+  s = tablet_peer->SubmitWrite(tx_state);
 
   // Check that we could submit the write
   if (PREDICT_FALSE(!s.ok())) {
