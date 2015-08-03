@@ -524,6 +524,16 @@ function(ADD_KUDU_TEST REL_TEST_NAME)
   endif()
 endfunction()
 
+# A wrapper for add_dependencies() that is compatible with NO_TESTS.
+function(ADD_KUDU_TEST_DEPENDENCIES REL_TEST_NAME)
+  if(NO_TESTS)
+    return()
+  endif()
+  get_filename_component(TEST_NAME ${REL_TEST_NAME} NAME_WE)
+
+  add_dependencies(${TEST_NAME} ${ARGN})
+endfunction()
+
 enable_testing()
 
 ############################################################

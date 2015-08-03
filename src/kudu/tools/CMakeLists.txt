@@ -85,6 +85,6 @@ set(KUDU_TEST_LINK_LIBS
 ADD_KUDU_TEST(ksck-test)
 ADD_KUDU_TEST(ksck_remote-test)
 ADD_KUDU_TEST(kudu-admin-test)
-add_dependencies(kudu-admin-test
+ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
   kudu-admin)
 
