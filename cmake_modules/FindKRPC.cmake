@@ -7,7 +7,7 @@ find_package( Protobuf REQUIRED )
 #
 # Generate the KRPC files for a given .proto file.
 #
-function(KRPC_GENERATE SRCS HDRS)
+function(KRPC_GENERATE SRCS HDRS TGTS)
   if(NOT ARGN)
     message(SEND_ERROR "Error: KRPC_GENERATE() called without protobuf files")
     return()
@@ -22,6 +22,7 @@ function(KRPC_GENERATE SRCS HDRS)
   endif()
   set(${SRCS})
   set(${HDRS})
+  set(${TGTS})
 
   set(EXTRA_PROTO_PATH_ARGS)
   foreach(PP ${ARG_EXTRA_PROTO_PATHS})
@@ -79,11 +80,23 @@ function(KRPC_GENERATE SRCS HDRS)
            --proto_path ${PROTOBUF_INCLUDE_DIR}
            ${EXTRA_PROTO_PATH_ARGS} ${ABS_FIL}
       DEPENDS ${ABS_FIL} protoc-gen-krpc protoc-gen-insertions
-      COMMENT "Running protocol buffer compiler with KRPC plugin on ${FIL}"
+      COMMENT "Running C++ protocol buffer compiler with KRPC plugin on ${FIL}"
       VERBATIM)
+
+    # This custom target enforces that there's just one invocation of protoc
+    # when there are multiple consumers of the generated files. The target name
+    # must be unique; adding parts of the filename helps ensure this.
+    set(TGT_NAME ${REL_DIR}${FIL})
+    string(REPLACE "/" "-" TGT_NAME ${TGT_NAME})
+    add_custom_target(${TGT_NAME}
+      DEPENDS "${SERVICE_CC}" "${SERVICE_H}"
+      "${PROXY_CC}" "${PROXY_H}"
+      "${PROTO_CC_OUT}" "${PROTO_H_OUT}")
+    list(APPEND ${TGTS} "${TGT_NAME}")
   endforeach()
 
   set_source_files_properties(${${SRCS}} ${${HDRS}} PROPERTIES GENERATED TRUE)
   set(${SRCS} ${${SRCS}} PARENT_SCOPE)
   set(${HDRS} ${${HDRS}} PARENT_SCOPE)
+  set(${TGTS} ${${TGTS}} PARENT_SCOPE)
 endfunction()

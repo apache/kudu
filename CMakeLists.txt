@@ -387,6 +387,9 @@ include(GenerateExportHeader)
 #
 # DEPS is the list of targets that both library variants depend on. Required.
 #
+# NONLINK_DEPS is the list of (non-linked) targets that both library variants
+# depend on. Optional.
+#
 # COMPILE_FLAGS is a string containing any additional compilation flags that
 # should be added to both library variants. Optional.
 #
@@ -406,7 +409,7 @@ function(ADD_EXPORTABLE_LIBRARY LIB_NAME)
   # Parse the arguments.
   set(options EXPORTED_SHARED)
   set(one_value_args COMPILE_FLAGS EXPORTED_OUTPUT_NAME EXPORTED_OUTPUT_DIRECTORY)
-  set(multi_value_args SRCS DEPS EXPORTED_DEPS)
+  set(multi_value_args SRCS DEPS EXPORTED_DEPS NONLINK_DEPS)
   cmake_parse_arguments(ARG "${options}" "${one_value_args}" "${multi_value_args}" ${ARGN})
   if(ARG_UNPARSED_ARGUMENTS)
     message(SEND_ERROR "Error: unrecognized arguments: ${ARG_UNPARSED_ARGUMENTS}")
@@ -420,6 +423,9 @@ function(ADD_EXPORTABLE_LIBRARY LIB_NAME)
       PROPERTIES COMPILE_FLAGS ${ARG_COMPILE_FLAGS})
   endif()
   target_link_libraries(${LIB_NAME} ${ARG_DEPS})
+  if(ARG_NONLINK_DEPS)
+    add_dependencies(${LIB_NAME} ${ARG_NONLINK_DEPS})
+  endif()
 
   # Now start setting up the exported variant.
   set(EXPORTED_LIB_NAME ${LIB_NAME}_exported)
@@ -475,7 +481,7 @@ function(ADD_EXPORTABLE_LIBRARY LIB_NAME)
 
   # Set up exported variant dependent targets.
   #
-  # Every single dependency is suffixed with "_exported". This is fine; the
+  # Every linked dependency is suffixed with "_exported". This is fine; the
   # exported target graph is expected to be complete, and ADD_THIRDPARTY_LIB
   # will provide an "exported variant" for each third party target.
   if(ARG_EXPORTED_DEPS)
@@ -487,6 +493,9 @@ function(ADD_EXPORTABLE_LIBRARY LIB_NAME)
     list(APPEND EXPORTED_SUFFIXED_DEPS "${DEP}_exported")
   endforeach()
   target_link_libraries(${EXPORTED_LIB_NAME} ${EXPORTED_LINK_PRIVATE} ${EXPORTED_SUFFIXED_DEPS})
+  if(ARG_NONLINK_DEPS)
+    add_dependencies(${EXPORTED_LIB_NAME} ${ARG_NONLINK_DEPS})
+  endif()
 endfunction()
 
 ############################################################

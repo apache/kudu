@@ -1,13 +1,15 @@
 # Copyright (c) 2014, Cloudera, inc.
 # Confidential Cloudera Information: Covered by NDA.
 
-PROTOBUF_GENERATE_CPP(FS_PROTO_SRCS FS_PROTO_HDRS
+PROTOBUF_GENERATE_CPP(
+  FS_PROTO_SRCS FS_PROTO_HDRS FS_PROTO_TGTS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
   PROTO_FILES fs.proto)
 ADD_EXPORTABLE_LIBRARY(fs_proto
   SRCS ${FS_PROTO_SRCS}
-  DEPS protobuf)
+  DEPS protobuf
+  NONLINK_DEPS ${FS_PROTO_TGTS})
 
 add_library(kudu_fs
   block_id.cc
