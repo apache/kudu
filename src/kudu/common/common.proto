@@ -30,6 +30,7 @@ enum DataType {
   BOOL = 9;
   FLOAT = 10;
   DOUBLE = 11;
+  BINARY = 12;
 }
 
 enum EncodingType {

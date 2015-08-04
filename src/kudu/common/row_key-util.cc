@@ -67,7 +67,9 @@ bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena) {
     case DOUBLE:
       LOG(FATAL) << "Unable to handle type " << type << " in row keys";
     case STRING:
+    case BINARY:
       return IncrementStringCell(cell_ptr, arena);
+    default: CHECK(false) << "Unknown data type: " << type;
   }
   return false; // unreachable
 #undef HANDLE_TYPE

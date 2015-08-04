@@ -244,10 +244,10 @@ struct DataTypeTraits<DOUBLE> {
 };
 
 template<>
-struct DataTypeTraits<STRING> {
+struct DataTypeTraits<BINARY> {
   typedef Slice cpp_type;
   static const char *name() {
-    return "string";
+    return "binary";
   }
   static void AppendDebugStringForValue(const void *val, string *str) {
     const Slice *s = reinterpret_cast<const Slice *>(val);
@@ -284,6 +284,32 @@ struct DataTypeTraits<BOOL> {
   }
 };
 
+// Base class for types that are derived, that is that have some other type as the
+// physical representation.
+template<DataType PhysicalType>
+struct DerivedTypeTraits {
+  typedef typename DataTypeTraits<PhysicalType>::cpp_type cpp_type;
+
+  static void AppendDebugStringForValue(const void *val, string *str) {
+    DataTypeTraits<PhysicalType>::AppendDebugStringForValue(val, str);
+  }
+
+  static int Compare(const void *lhs, const void *rhs) {
+    return DataTypeTraits<PhysicalType>::Compare(lhs, rhs);
+  }
+
+  static const cpp_type* min_value() {
+    return DataTypeTraits<PhysicalType>::min_value();
+  }
+};
+
+template<>
+struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
+  static const char* name() {
+    return "string";
+  }
+};
+
 // Instantiate this template to get static access to the type traits.
 template<DataType datatype>
 struct TypeTraits : public DataTypeTraits<datatype> {
@@ -295,8 +321,7 @@ struct TypeTraits : public DataTypeTraits<datatype> {
 
 class Variant {
  public:
-  Variant(DataType type, const void *value)
-    : type_(STRING) {
+  Variant(DataType type, const void *value) {
     Reset(type, value);
   }
 
@@ -359,7 +384,8 @@ class Variant {
       case DOUBLE:
         numeric_.double_val = *static_cast<const double *>(value);
         break;
-      case STRING:
+      case STRING: // Fallthrough intended.
+      case BINARY:
         {
           const Slice *str = static_cast<const Slice *>(value);
           if (str->size() > 0) {
@@ -369,6 +395,7 @@ class Variant {
           }
         }
         break;
+      default: LOG(FATAL) << "Unknown data type: " << type_;
     }
   }
 
@@ -414,7 +441,9 @@ class Variant {
       case UINT64:       return &(numeric_.u64);
       case FLOAT:        return (&numeric_.float_val);
       case DOUBLE:       return (&numeric_.double_val);
-      case STRING:       return &vstr_;
+      case STRING:
+      case BINARY:       return &vstr_;
+      default: LOG(FATAL) << "Unknown data type: " << type_;
     }
     CHECK(false) << "not reached!";
     return NULL;
@@ -430,7 +459,7 @@ class Variant {
   DISALLOW_COPY_AND_ASSIGN(Variant);
 
   void Clear() {
-    if (type_ == STRING && vstr_.size() > 0) {
+    if (vstr_.size() > 0) {
       delete[] vstr_.mutable_data();
       vstr_.clear();
     }
