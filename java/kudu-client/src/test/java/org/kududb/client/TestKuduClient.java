@@ -70,16 +70,17 @@ public class TestKuduClient extends BaseKuduTest {
     KuduTable table = syncClient.openTable(tableName);
     for (int i = 0; i < 100; i++) {
       Insert insert = table.newInsert();
-      insert.addString("key", String.format("key_%02d", i));
-      insert.addString("c2", "c2_" + i);
+      PartialRow row = insert.getRow();
+      row.addString("key", String.format("key_%02d", i));
+      row.addString("c2", "c2_" + i);
       if (i % 2 == 1) {
-        insert.addString("c3", "c3_" + i);
+        row.addString("c3", "c3_" + i);
       }
-      insert.addString("c4", "c4_" + i);
+      row.addString("c4", "c4_" + i);
       // NOTE: we purposefully add the strings in a non-left-to-right
       // order to verify that we still place them in the right position in
       // the row.
-      insert.addString("c1", "c1_" + i);
+      row.addString("c1", "c1_" + i);
       session.apply(insert);
       if (i % 50 == 0) {
         session.flush();
@@ -108,10 +109,11 @@ public class TestKuduClient extends BaseKuduTest {
     KuduSession session = syncClient.newSession();
     KuduTable table = syncClient.openTable(tableName);
     Insert insert = table.newInsert();
-    insert.addString("key", "กขฃคฅฆง"); // some thai
-    insert.addString("c1", "✁✂✃✄✆"); // some icons
-    insert.addString("c2", "hello"); // some normal chars
-    insert.addString("c4", "🐱"); // supplemental plane
+    PartialRow row = insert.getRow();
+    row.addString("key", "กขฃคฅฆง"); // some thai
+    row.addString("c1", "✁✂✃✄✆"); // some icons
+    row.addString("c2", "hello"); // some normal chars
+    row.addString("c4", "🐱"); // supplemental plane
     session.apply(insert);
     session.flush();
 

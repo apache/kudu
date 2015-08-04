@@ -357,11 +357,12 @@ public class BaseKuduTest {
     for (int key1 : KEYS) {
       for (int key2 = 1; key2 <= 3; key2++) {
         Insert insert = table.newInsert();
-        insert.addInt(basicSchema.getColumn(0).getName(), key1 + key2);
-        insert.addInt(basicSchema.getColumn(1).getName(), 1);
-        insert.addInt(basicSchema.getColumn(2).getName(), 2);
-        insert.addString(basicSchema.getColumn(3).getName(), "a string");
-        insert.addBoolean(basicSchema.getColumn(4).getName(), true);
+        PartialRow row = insert.getRow();
+        row.addInt(basicSchema.getColumn(0).getName(), key1 + key2);
+        row.addInt(basicSchema.getColumn(1).getName(), 1);
+        row.addInt(basicSchema.getColumn(2).getName(), 2);
+        row.addString(basicSchema.getColumn(3).getName(), "a string");
+        row.addBoolean(basicSchema.getColumn(4).getName(), true);
         session.apply(insert).join(DEFAULT_SLEEP);
       }
     }
@@ -383,11 +384,12 @@ public class BaseKuduTest {
 
   protected Insert createBasicSchemaInsert(KuduTable table, int key) {
     Insert insert = table.newInsert();
-    insert.addInt(basicSchema.getColumn(0).getName(), key);
-    insert.addInt(basicSchema.getColumn(1).getName(), 2);
-    insert.addInt(basicSchema.getColumn(2).getName(), 3);
-    insert.addString(basicSchema.getColumn(3).getName(), "a string");
-    insert.addBoolean(basicSchema.getColumn(4).getName(), true);
+    PartialRow row = insert.getRow();
+    row.addInt(basicSchema.getColumn(0).getName(), key);
+    row.addInt(basicSchema.getColumn(1).getName(), 2);
+    row.addInt(basicSchema.getColumn(2).getName(), 3);
+    row.addString(basicSchema.getColumn(3).getName(), "a string");
+    row.addBoolean(basicSchema.getColumn(4).getName(), true);
     return insert;
   }
 

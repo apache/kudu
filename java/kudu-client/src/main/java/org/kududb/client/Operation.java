@@ -26,8 +26,6 @@ import java.util.List;
 /**
  * Base class for the RPCs that related to WriteRequestPB. It contains almost all the logic
  * and knows how to serialize its child classes.
- * Each Operation is backed by an Arena where all the cells (except strings) are written. The
- * strings are kept in a List.
  */
 public abstract class Operation extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
 
@@ -53,14 +51,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   }
 
   static final String METHOD = "Write";
-  final Schema schema;
 
-  // String data, post UTF8-encoding.
-  final List<byte[]> strings;
-  final int rowSize;
-  final byte[] rowAlloc;
-  final BitSet columnsBitSet;
-  final BitSet nullsBitSet;
+  private final PartialRow row;
 
   /**
    * Package-private constructor. Subclasses need to be instantiated via AsyncKuduSession
@@ -68,13 +60,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    */
   Operation(KuduTable table) {
     super(table);
-    this.schema = table.getSchema();
-    this.columnsBitSet = new BitSet(this.schema.getColumnCount());
-    this.nullsBitSet = schema.hasNullableColumns() ?
-        new BitSet(this.schema.getColumnCount()) : null;
-    this.rowSize = schema.getRowSize();
-    this.rowAlloc = new byte[this.rowSize];
-    strings = Lists.newArrayListWithCapacity(schema.getStringCount());
+    this.row = new PartialRow(table);
   }
 
   /**
@@ -83,200 +69,6 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    */
   abstract ChangeType getChangeType();
 
-  /**
-   * Add a boolean for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addBoolean(String columnName, boolean val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.BOOL);
-    rowAlloc[getPositionInRowAllocAndSetBitSet(col)] = (byte) (val ? 1 : 0);
-  }
-
-  /**
-   * Add a byte for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addByte(String columnName, byte val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.INT8);
-    rowAlloc[getPositionInRowAllocAndSetBitSet(col)] = val;
-  }
-
-  /**
-   * Add a short for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addShort(String columnName, short val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.INT16);
-    Bytes.setShort(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
-  }
-
-  /**
-   * Add an int for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addInt(String columnName, int val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.INT32);
-    Bytes.setInt(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
-  }
-
-  /**
-   * Add an long for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addLong(String columnName, long val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.INT64);
-    Bytes.setLong(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
-  }
-
-  /**
-   * Add an float for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addFloat(String columnName, float val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.FLOAT);
-    Bytes.setFloat(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
-  }
-
-  /**
-   * Add an double for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addDouble(String columnName, double val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.DOUBLE);
-    Bytes.setDouble(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
-  }
-
-  /**
-   * Add a String for the specified column.
-   * @param columnName Name of the column
-   * @param val value to add
-   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
-   * the column's type
-   */
-  public void addString(String columnName, String val) {
-    addStringUtf8(columnName, Bytes.fromString(val));
-  }
-
-  /**
-   * Add a String for the specified value, encoded as UTF8.
-   * Note that the provided value must not be mutated after this.
-   */
-  public void addStringUtf8(String columnName, byte[] val) {
-    // TODO: use Utf8.isWellFormed from Guava 16 to verify that
-    // the user isn't putting in any garbage data.
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.STRING);
-    int stringsIdx = strings.size();
-    strings.add(val);
-    // Set the bit and set the usage bit
-    int pos = getPositionInRowAllocAndSetBitSet(col);
-
-    // For now, just store the index of the string.
-    // Later, we'll replace this with the offset within the wire buffer
-    // before we send it.
-    Bytes.setLong(rowAlloc, stringsIdx, pos);
-    Bytes.setLong(rowAlloc, val.length, pos + Longs.BYTES);
-  }
-
-  /**
-   * Set the specified column to null
-   * @param columnName Name of the column
-   * @throws IllegalArgumentException if the column doesn't exist or cannot be set to null
-   */
-  public void setNull(String columnName) {
-    assert nullsBitSet != null;
-    ColumnSchema col = schema.getColumn(columnName);
-    checkColumnExists(col);
-    if (!col.isNullable()) {
-      throw new IllegalArgumentException(col.getName() + " cannot be set to null");
-    }
-    int idx = schema.getColumns().indexOf(col);
-    columnsBitSet.set(idx);
-    nullsBitSet.set(idx);
-  }
-
-  /**
-   * Verifies if the column exists and belongs to the specified type
-   * It also does some internal accounting
-   * @param column column the user wants to set
-   * @param type type we expect
-   * @throws IllegalArgumentException if the column or type was invalid
-   */
-  void checkColumn(ColumnSchema column, Type type) {
-    checkColumnExists(column);
-    if (!column.getType().equals(type))
-      throw new IllegalArgumentException(column.getName() +
-          " isn't " + type.getName() + ", it's " + column.getType().getName());
-  }
-
-  /**
-   * @param column column the user wants to set
-   * @throws IllegalArgumentException if the column doesn't exist
-   */
-  void checkColumnExists(ColumnSchema column) {
-    if (column == null)
-      throw new IllegalArgumentException("Column name isn't present in the table's schema");
-  }
-
-  /**
-   * Gives the column's location in the byte array and marks it as set
-   * @param column column to get the position for and mark as set
-   * @return the offset in rowAlloc for the column
-   */
-  int getPositionInRowAllocAndSetBitSet(ColumnSchema column) {
-    int idx = schema.getColumns().indexOf(column);
-    columnsBitSet.set(idx);
-    return schema.getColumnOffset(idx);
-  }
-
-  /**
-   * Tells if the specified column was set by the user
-   * @param column column's index in the schema
-   * @return true if it was set, else false
-   */
-  boolean isSet(int column) {
-    return this.columnsBitSet.get(column);
-  }
-
-  /**
-   * Tells if the specified column was set to null by the user
-   * @param column column's index in the schema
-   * @return true if it was set, else false
-   */
-  boolean isSetToNull(int column) {
-    if (this.nullsBitSet == null) {
-      return false;
-    }
-    return this.nullsBitSet.get(column);
-  }
 
   /**
    * Sets the sequence number used when batching operations. Should only be called once.
@@ -332,21 +124,15 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
 
   @Override
   public byte[] key() {
-    int seenStrings = 0;
-    KeyEncoder keyEncoder = new KeyEncoder(this.schema);
-    for (int i = 0; i < this.schema.getKeysCount(); i++) {
-      ColumnSchema column = this.schema.getColumn(i);
-      if (column.getType() == Type.STRING) {
-        byte[] string = this.strings.get(seenStrings);
-        seenStrings++;
-        keyEncoder.addKey(string, 0, string.length, column, i);
-      } else {
-        keyEncoder.addKey(this.rowAlloc, this.schema.getColumnOffset(i), column.getType().getSize(),
-            column, i);
-      }
-    }
-    // TODO we might want to cache the key
-    return keyEncoder.extractByteArray();
+   return this.row.key();
+  }
+
+  /**
+   * Get the underlying row to modify.
+   * @return a partial row that will be sent with this Operation
+   */
+  public PartialRow getRow() {
+    return this.row;
   }
 
   /**
@@ -358,7 +144,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   static Tserver.WriteRequestPB.Builder createAndFillWriteRequestPB(Operation... operations) {
     if (operations == null || operations.length == 0) return null;
 
-    Schema schema = operations[0].schema;
+    Schema schema = operations[0].table.getSchema();
 
 
     // Set up the encoded data.
@@ -378,22 +164,23 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
     ByteArrayOutputStream indirect = new ByteArrayOutputStream();
 
     for (Operation operation : operations) {
-      assert operation.schema == schema;
+      PartialRow row = operation.getRow();
+      assert row.getSchema() == schema;
 
       rows.put(operation.getChangeType().toEncodedByte());
-      rows.put(Bytes.fromBitSet(operation.columnsBitSet, schema.getColumnCount()));
+      rows.put(Bytes.fromBitSet(row.getColumnsBitSet(), schema.getColumnCount()));
       if (schema.hasNullableColumns()) {
-        rows.put(Bytes.fromBitSet(operation.nullsBitSet, schema.getColumnCount()));
+        rows.put(Bytes.fromBitSet(row.getNullsBitSet(), schema.getColumnCount()));
       }
       int colIdx = 0;
-      byte[] rowData = operation.rowAlloc;
+      byte[] rowData = row.getRowAlloc();
       int currentRowOffset = 0;
-      for (ColumnSchema col : operation.schema.getColumns()) {
+      for (ColumnSchema col : row.getSchema().getColumns()) {
         // Keys should always be specified, maybe check?
-        if (operation.isSet(colIdx) && !operation.isSetToNull(colIdx)) {
+        if (row.isSet(colIdx) && !row.isSetToNull(colIdx)) {
           if (col.getType() == Type.STRING) {
             int stringIndex = (int)Bytes.getLong(rowData, currentRowOffset);
-            byte[] string = operation.strings.get(stringIndex);
+            byte[] string = row.getStrings().get(stringIndex);
             assert string.length == Bytes.getLong(rowData, currentRowOffset + Longs.BYTES);
             rows.putLong(indirect.size());
             rows.putLong(string.length);

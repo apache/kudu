@@ -45,7 +45,8 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     for (String key1 : keys) {
       for (String key2 : keys) {
         Insert insert = table.newInsert();
-        insert.addString(schema.getColumn(0).getName(), key1 + key2);
+        PartialRow row = insert.getRow();
+        row.addString(schema.getColumn(0).getName(), key1 + key2);
         Deferred<OperationResponse> d = session.apply(insert);
         d.join(DEFAULT_SLEEP);
       }

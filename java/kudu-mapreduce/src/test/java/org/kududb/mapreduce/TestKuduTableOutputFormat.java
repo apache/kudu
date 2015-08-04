@@ -38,11 +38,12 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
     Schema schema = table.getSchema();
 
     Insert insert = table.newInsert();
-    insert.addInt(schema.getColumn(0).getName(), 1);
-    insert.addInt(schema.getColumn(1).getName(), 2);
-    insert.addInt(schema.getColumn(2).getName(), 3);
-    insert.addString(schema.getColumn(3).getName(), "a string");
-    insert.addBoolean(schema.getColumn(4).getName(), true);
+    PartialRow row = insert.getRow();
+    row.addInt(schema.getColumn(0).getName(), 1);
+    row.addInt(schema.getColumn(1).getName(), 2);
+    row.addInt(schema.getColumn(2).getName(), 3);
+    row.addString(schema.getColumn(3).getName(), "a string");
+    row.addBoolean(schema.getColumn(4).getName(), true);
 
     RecordWriter<NullWritable, Operation> rw = output.getRecordWriter(null);
     rw.write(NullWritable.get(), insert);

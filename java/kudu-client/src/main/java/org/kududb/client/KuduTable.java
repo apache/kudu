@@ -13,7 +13,7 @@ import java.util.List;
  * instance.
  *
  * Upon construction, the table is looked up in the catalog (or catalog cache),
- * and the schema fetched for introspection.
+ * and the schema fetched for introspection. The schema is not kept in sync with the master.
  *
  * This class is thread-safe.
  */
@@ -22,41 +22,73 @@ public class KuduTable {
   private final Schema schema;
   private final AsyncKuduClient client;
   private final String name;
-  private final Slice nameAsSlice;
 
+  /**
+   * Package-private constructor, use {@link KuduClient#openTable(String)} to get an instance.
+   * @param client the client this instance belongs to
+   * @param name this table's name
+   * @param schema this table's schema
+   */
   KuduTable(AsyncKuduClient client, String name, Schema schema) {
     this.schema = schema;
     this.client = client;
     this.name = name;
-    this.nameAsSlice = new Slice(this.name.getBytes());
   }
 
+  /**
+   * Get this table's schema, as of the moment this instance was created.
+   * @return this table's schema
+   */
   public Schema getSchema() {
     return this.schema;
   }
 
+  /**
+   * Get this table's name.
+   * @return this table's name
+   */
   public String getName() {
     return this.name;
   }
 
+  /**
+   * Get the async client that created this instance.
+   * @return an async kudu client
+   */
   public AsyncKuduClient getClient() {
     return this.client;
   }
 
-  public Slice getNameAsSlice() {
-    return this.nameAsSlice;
-  }
-
+  /**
+   * Get a new insert configured with this table's schema.
+   * @return an insert with this table's schema
+   */
   public Insert newInsert() {
     return new Insert(this);
   }
 
+  /**
+   * Get a new update configured with this table's schema.
+   * @return an update with this table's schema
+   */
   public Update newUpdate() {
     return new Update(this);
   }
 
+  /**
+   * Get a new delete configured with this table's schema.
+   * @return a delete with this table's schema
+   */
   public Delete newDelete() {
     return new Delete(this);
+  }
+
+  /**
+   * Get a new partial row configured with this table's schema.
+   * @return a partial row with this table's schema
+   */
+  public PartialRow newPartialRow() {
+    return new PartialRow(this);
   }
 
   /**

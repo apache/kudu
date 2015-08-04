@@ -54,12 +54,14 @@ public class TestKuduSession extends BaseKuduTest {
       session.apply(createInsert(i));
       for (int j = 0; j < 50; j++) {
         Update update = table.newUpdate();
-        update.addInt(basicSchema.getColumn(0).getName(), i);
-        update.addInt(basicSchema.getColumn(1).getName(), 1000);
+        PartialRow row = update.getRow();
+        row.addInt(basicSchema.getColumn(0).getName(), i);
+        row.addInt(basicSchema.getColumn(1).getName(), 1000);
         session.apply(update);
       }
       Delete del = table.newDelete();
-      del.addInt(basicSchema.getColumn(0).getName(), i);
+      PartialRow row = del.getRow();
+      row.addInt(basicSchema.getColumn(0).getName(), i);
       session.apply(del);
       session.flush();
       if (i % 2 == 0) {

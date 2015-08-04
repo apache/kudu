@@ -19,12 +19,4 @@ public class Delete extends Operation {
   ChangeType getChangeType() {
     return ChangeType.DELETE;
   }
-
-  @Override
-  void checkColumn(ColumnSchema column, Type type) {
-    super.checkColumn(column, type);
-    if (!column.isKey())
-      throw new IllegalArgumentException("Delete only accepts columns that arepart of the key");
-
-  }
 }

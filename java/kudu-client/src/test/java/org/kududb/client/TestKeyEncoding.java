@@ -23,12 +23,14 @@ public class TestKeyEncoding {
     Schema schema = new Schema(cols1);
     KuduTable table = new KuduTable(null, "one", schema);
     Insert oneKeyInsert = new Insert(table);
-    oneKeyInsert.addBoolean("key", true);
+    PartialRow row = oneKeyInsert.getRow();
+    row.addBoolean("key", true);
     assertTrue(Bytes.pretty(oneKeyInsert.key()) + " isn't foo",
-            Bytes.equals(new byte[] {1}, oneKeyInsert.key()));
+        Bytes.equals(new byte[]{1}, oneKeyInsert.key()));
 
     oneKeyInsert = new Insert(table);
-    oneKeyInsert.addBoolean("key", false);
+    row = oneKeyInsert.getRow();
+    row.addBoolean("key", false);
     assertTrue(Bytes.pretty(oneKeyInsert.key()) + " isn't foo",
             Bytes.equals(new byte[] {0}, oneKeyInsert.key()));
 
@@ -43,7 +45,8 @@ public class TestKeyEncoding {
     Schema schemaOneString = new Schema(cols1);
     KuduTable table = new KuduTable(null, "one", schemaOneString);
     Insert oneKeyInsert = new Insert(table);
-    oneKeyInsert.addString("key", "foo");
+    PartialRow row = oneKeyInsert.getRow();
+    row.addString("key", "foo");
     assertTrue(Bytes.pretty(oneKeyInsert.key()) + " isn't foo", Bytes.equals(new byte[] {'f', 'o',
         'o'}, oneKeyInsert.key()));
 
@@ -57,15 +60,17 @@ public class TestKeyEncoding {
     Schema schemaTwoString = new Schema(cols2);
     KuduTable table2 = new KuduTable(null, "two", schemaTwoString);
     Insert twoKeyInsert = new Insert(table2);
-    twoKeyInsert.addString("key", "foo");
-    twoKeyInsert.addString("key2", "bar");
+    row = twoKeyInsert.getRow();
+    row.addString("key", "foo");
+    row.addString("key2", "bar");
     assertTrue(Bytes.pretty(twoKeyInsert.key()) + " isn't foo0x000x00bar",
         Bytes.equals(new byte[] {'f',
         'o', 'o', 0x00, 0x00, 'b', 'a', 'r'}, twoKeyInsert.key()));
 
     Insert twoKeyInsertWithNull = new Insert(table2);
-    twoKeyInsertWithNull.addString("key", "xxx\0yyy");
-    twoKeyInsertWithNull.addString("key2", "bar");
+    row = twoKeyInsertWithNull.getRow();
+    row.addString("key", "xxx\0yyy");
+    row.addString("key2", "bar");
     assertTrue(Bytes.pretty(twoKeyInsertWithNull.key()) + " isn't " +
         "xxx0x000x01yyy0x000x00bar",
         Bytes.equals(new byte[] {'x', 'x', 'x', 0x00, 0x01, 'y', 'y', 'y', 0x00, 0x00, 'b', 'a',
@@ -83,13 +88,15 @@ public class TestKeyEncoding {
     Schema schemaIntString = new Schema(cols3);
     KuduTable table3 = new KuduTable(null, "three", schemaIntString);
     Insert small = new Insert(table3);
-    small.addInt("key", 20);
-    small.addString("key2", "data");
+    row = small.getRow();
+    row.addInt("key", 20);
+    row.addString("key2", "data");
     assertEquals(0, Bytes.memcmp(small.key(), small.key()));
 
     Insert big = new Insert(table3);
-    big.addInt("key", 10000);
-    big.addString("key2", "data");
+    row = big.getRow();
+    row.addInt("key", 10000);
+    row.addString("key2", "data");
     assertTrue(Bytes.memcmp(small.key(), big.key()) < 0);
     assertTrue(Bytes.memcmp(big.key(), small.key()) > 0);
 

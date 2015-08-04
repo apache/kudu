@@ -18,11 +18,8 @@ package org.kududb.mapreduce.tools;
 
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
+import org.kududb.client.*;
 import org.kududb.mapreduce.KuduTableMapReduceUtil;
-import org.kududb.client.Bytes;
-import org.kududb.client.Insert;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.NullWritable;
@@ -85,6 +82,7 @@ public class ImportCsvMapper extends Mapper<LongWritable, Text, NullWritable, Op
       CsvParser.ParsedLine parsed = this.parser.parse(lineBytes, value.getLength());
 
       Insert insert = this.table.newInsert();
+      PartialRow row = insert.getRow();
       for (int i = 0; i < parsed.getColumnCount(); i++) {
         String colName = parsed.getColumnName(i);
         ColumnSchema col = this.schema.getColumn(colName);
@@ -92,28 +90,28 @@ public class ImportCsvMapper extends Mapper<LongWritable, Text, NullWritable, Op
             parsed.getColumnLength(i));
         switch (col.getType()) {
           case BOOL:
-            insert.addBoolean(colName, Boolean.parseBoolean(colValue));
+            row.addBoolean(colName, Boolean.parseBoolean(colValue));
             break;
           case INT8:
-            insert.addByte(colName, Byte.parseByte(colValue));
+            row.addByte(colName, Byte.parseByte(colValue));
             break;
           case INT16:
-            insert.addShort(colName, Short.parseShort(colValue));
+            row.addShort(colName, Short.parseShort(colValue));
             break;
           case INT32:
-            insert.addInt(colName, Integer.parseInt(colValue));
+            row.addInt(colName, Integer.parseInt(colValue));
             break;
           case INT64:
-            insert.addLong(colName, Long.parseLong(colValue));
+            row.addLong(colName, Long.parseLong(colValue));
             break;
           case STRING:
-            insert.addString(colName, colValue);
+            row.addString(colName, colValue);
             break;
           case FLOAT:
-            insert.addFloat(colName, Float.parseFloat(colValue));
+            row.addFloat(colName, Float.parseFloat(colValue));
             break;
           case DOUBLE:
-            insert.addDouble(colName, Double.parseDouble(colValue));
+            row.addDouble(colName, Double.parseDouble(colValue));
             break;
           default:
             throw new IllegalArgumentException("Type " + col.getType() + " not recognized");

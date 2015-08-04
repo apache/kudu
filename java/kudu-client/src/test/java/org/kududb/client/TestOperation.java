@@ -37,11 +37,12 @@ public class TestOperation {
     KuduTable table = Mockito.mock(KuduTable.class);
     Mockito.doReturn(createManyStringsSchema()).when(table).getSchema();
     Insert insert = new Insert(table);
-    insert.addString("c0", "c0_val");
-    insert.addString("c2", "c2_val");
-    insert.addString("c1", "c1_val");
-    insert.addString("c3", "c3_val");
-    insert.addString("c4", "c4_val");
+    PartialRow row = insert.getRow();
+    row.addString("c0", "c0_val");
+    row.addString("c2", "c2_val");
+    row.addString("c1", "c1_val");
+    row.addString("c3", "c3_val");
+    row.addString("c4", "c4_val");
 
     {
       WriteRequestPBOrBuilder pb = Operation.createAndFillWriteRequestPB(insert);
@@ -72,7 +73,7 @@ public class TestOperation {
 
     // Setting a field to NULL should add to the null bitmap and remove
     // the old value from the indirect buffer.
-    insert.setNull("c3");
+    row.setNull("c3");
     {
       WriteRequestPBOrBuilder pb = Operation.createAndFillWriteRequestPB(insert);
       RowOperationsPB rowOps = pb.getRowOperations();

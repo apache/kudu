@@ -503,8 +503,9 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
             persist(output, first, true);
 
             Operation insert = headsTable.newInsert();
-            insert.addLong(COLUMN_KEY_ONE,  Bytes.getLong(first[0]));
-            insert.addLong(COLUMN_KEY_TWO, Bytes.getLong(first[0], 8));
+            PartialRow row = insert.getRow();
+            row.addLong(COLUMN_KEY_ONE,  Bytes.getLong(first[0]));
+            row.addLong(COLUMN_KEY_TWO, Bytes.getLong(first[0], 8));
             try {
               session.apply(insert);
               session.flush();
@@ -530,27 +531,28 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
         try {
           for (int i = 0; i < data.length; i++) {
             Operation put = update ? table.newUpdate() : table.newInsert();
+            PartialRow row = put.getRow();
 
             long keyOne = Bytes.getLong(data[i]);
             long keyTwo = Bytes.getLong(data[i], 8);
 
-            put.addLong(COLUMN_KEY_ONE, keyOne);
-            put.addLong(COLUMN_KEY_TWO, keyTwo);
+            row.addLong(COLUMN_KEY_ONE, keyOne);
+            row.addLong(COLUMN_KEY_TWO, keyTwo);
 
             // prev is null for the first line, we'll update it at the end.
             if (prev == null) {
-              put.setNull(COLUMN_PREV_ONE);
-              put.setNull(COLUMN_PREV_TWO);
+              row.setNull(COLUMN_PREV_ONE);
+              row.setNull(COLUMN_PREV_TWO);
             } else {
-              put.addLong(COLUMN_PREV_ONE, Bytes.getLong(prev[i]));
-              put.addLong(COLUMN_PREV_TWO, Bytes.getLong(prev[i], 8));
+              row.addLong(COLUMN_PREV_ONE, Bytes.getLong(prev[i]));
+              row.addLong(COLUMN_PREV_TWO, Bytes.getLong(prev[i], 8));
             }
 
             if (!update) {
               // We only add those for new inserts, we don't update the heads with a new row, etc.
-              put.addLong(COLUMN_ROW_ID, rowId + i);
-              put.addString(COLUMN_CLIENT, id);
-              put.addInt(COLUMN_UPDATE_COUNT, 0);
+              row.addLong(COLUMN_ROW_ID, rowId + i);
+              row.addString(COLUMN_CLIENT, id);
+              row.addInt(COLUMN_UPDATE_COUNT, 0);
             }
             session.apply(put);
 
@@ -1258,9 +1260,10 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       private void updateRow(long keyOne, long keyTwo, int newCount) throws IOException {
         Update update = table.newUpdate();
-        update.addLong(COLUMN_KEY_ONE, keyOne);
-        update.addLong(COLUMN_KEY_TWO, keyTwo);
-        update.addInt(COLUMN_UPDATE_COUNT, newCount);
+        PartialRow row = update.getRow();
+        row.addLong(COLUMN_KEY_ONE, keyOne);
+        row.addLong(COLUMN_KEY_TWO, keyTwo);
+        row.addInt(COLUMN_UPDATE_COUNT, newCount);
         try {
           session.apply(update);
         } catch (Exception e) {

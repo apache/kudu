@@ -93,11 +93,12 @@ public class TestOutputFormatJob extends BaseKuduTest {
     protected void map(LongWritable key, Text value, Context context) throws IOException,
         InterruptedException {
       Insert insert = table.newInsert();
-      insert.addInt(table.getSchema().getColumn(0).getName(), (int) key.get());
-      insert.addInt(table.getSchema().getColumn(1).getName(), 1);
-      insert.addInt(table.getSchema().getColumn(2).getName(), 2);
-      insert.addString(table.getSchema().getColumn(3).getName(), value.toString());
-      insert.addBoolean(table.getSchema().getColumn(4).getName(), true);
+      PartialRow row = insert.getRow();
+      row.addInt(table.getSchema().getColumn(0).getName(), (int) key.get());
+      row.addInt(table.getSchema().getColumn(1).getName(), 1);
+      row.addInt(table.getSchema().getColumn(2).getName(), 2);
+      row.addString(table.getSchema().getColumn(3).getName(), value.toString());
+      row.addBoolean(table.getSchema().getColumn(4).getName(), true);
       context.write(NullWritable.get(), insert);
     }
 
