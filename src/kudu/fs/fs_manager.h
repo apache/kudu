@@ -180,6 +180,7 @@ class FsManager {
 
  private:
   FRIEND_TEST(FsManagerTestBase, TestDuplicatePaths);
+  friend class DeleteTableTest; // for access to directory names
 
   // Initializes, sanitizes, and canonicalizes the filesystem roots.
   Status Init();

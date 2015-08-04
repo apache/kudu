@@ -352,7 +352,7 @@ Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_pee
     CHECK_EQ(1, tablet_map_.erase(tablet_peer->tablet()->tablet_id()));
   }
 
-  WARN_NOT_OK(tablet_peer->tablet()->DeleteOnDiskData(),
+  WARN_NOT_OK(tablet_peer->DeleteOnDiskData(),
               Substitute("Unable to delete on-disk data from tablet $0",
                          tablet_peer->tablet_id()));
 

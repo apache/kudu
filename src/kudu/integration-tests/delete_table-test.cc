@@ -48,7 +48,11 @@ class DeleteTableTest : public KuduTest {
   }
 
  protected:
+  int CountFilesInDir(const string& path);
+
   int CountReplicasInMetadataDirs();
+  Status CheckNoData();
+  void WaitForNoData();
   void WaitForReplicaCount(int expected);
 
   // Delete the given table. If the operation times out, dumps the master stacks
@@ -59,6 +63,18 @@ class DeleteTableTest : public KuduTest {
   shared_ptr<KuduClient> client_;
 };
 
+int DeleteTableTest::CountFilesInDir(const string& path) {
+  int count = 0;
+  vector<string> entries;
+  CHECK_OK(env_->GetChildren(path, &entries));
+  BOOST_FOREACH(const string& e, entries) {
+    if (e != "." && e != "..") {
+      count++;
+    }
+  }
+  return count;
+}
+
 int DeleteTableTest::CountReplicasInMetadataDirs() {
   // Rather than using FsManager's functionality for listing blocks, we just manually
   // list the contents of the metadata directory. This is because we're using an
@@ -66,25 +82,42 @@ int DeleteTableTest::CountReplicasInMetadataDirs() {
   // tablet servers isn't easy.
   int count = 0;
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    string path = JoinPathSegments(cluster_->tablet_server(i)->data_dir(),
-                                   "tablet-meta");
-    vector<string> entries;
-    CHECK_OK(env_->GetChildren(path, &entries));
-    BOOST_FOREACH(const string& e, entries) {
-      if (e[0] != '.') {
-        count++;
-      }
-    }
+    string data_dir = cluster_->tablet_server(i)->data_dir();
+    count += CountFilesInDir(JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName));
   }
   return count;
 }
 
+Status DeleteTableTest::CheckNoData() {
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    string data_dir = cluster_->tablet_server(i)->data_dir();
+    if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName)) > 0) {
+      return Status::IllegalState("tablet metadata blocks still exist", data_dir);
+    }
+    if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kWalDirName)) > 0) {
+      return Status::IllegalState("wals still exist", data_dir);
+    }
+  }
+  return Status::OK();;
+}
+
+void DeleteTableTest::WaitForNoData() {
+  Status s;
+  for (int i = 0; i < 1000; i++) {
+    s = CheckNoData();
+    if (s.ok()) return;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  ASSERT_OK(s);
+}
+
 void DeleteTableTest::WaitForReplicaCount(int expected) {
+  Status s;
   for (int i = 0; i < 1000; i++) {
     if (CountReplicasInMetadataDirs() == expected) return;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-
   ASSERT_EQ(expected, CountReplicasInMetadataDirs());
 }
 
@@ -107,11 +140,11 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
 
   // Delete it and wait for the replicas to get deleted.
   NO_FATALS(DeleteTable(TestWorkload::kDefaultTableName));
-  NO_FATALS(WaitForReplicaCount(0));
+  NO_FATALS(WaitForNoData());
 }
 
 TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
-  int n_iters = AllowSlowTests() ? 1 : 20;
+  int n_iters = AllowSlowTests() ? 20 : 1;
   for (int i = 0; i < n_iters; i++) {
     TestWorkload workload(cluster_.get());
     workload.set_table_name(Substitute("table-$0", i));
@@ -129,7 +162,7 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
 
     // Delete it and wait for the replicas to get deleted.
     NO_FATALS(DeleteTable(workload.table_name()));
-    NO_FATALS(WaitForReplicaCount(0));
+    NO_FATALS(WaitForNoData());
 
     // Sleep just a little longer to make sure client threads send
     // requests to the missing tablets.

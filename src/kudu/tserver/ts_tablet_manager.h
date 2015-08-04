@@ -94,7 +94,6 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                          scoped_refptr<tablet::TabletPeer>* tablet_peer);
 
   // Delete the specified tablet.
-  // TODO: Remove it from disk
   Status DeleteTablet(const scoped_refptr<tablet::TabletPeer>& tablet_peer);
 
   // Lookup the given tablet peer by its ID.

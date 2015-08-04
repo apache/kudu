@@ -132,6 +132,10 @@ class Log : public RefCountedThreadSafe<Log> {
   // Syncs all state and closes the log.
   Status Close();
 
+  // Delete all data from this log.
+  // REQUIRES: the log must be closed.
+  Status DeleteOnDiskData();
+
   // Returns a reader that is able to read through the previous
   // segments. The reader pointer is guaranteed to be live as long
   // as the log itself is initialized and live.

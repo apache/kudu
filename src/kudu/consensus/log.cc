@@ -757,6 +757,15 @@ Status Log::Close() {
   return Status::OK();
 }
 
+Status Log::DeleteOnDiskData() {
+  boost::lock_guard<percpu_rwlock> l(state_lock_);
+  if (log_state_ != kLogClosed) {
+    return Status::IllegalState(Substitute("Bad state for DeleteOnDiskData() $0", log_state_));
+  }
+
+  return fs_manager_->env()->DeleteRecursively(log_dir_);
+}
+
 Status Log::PreAllocateNewSegment() {
   TRACE_EVENT1("log", "PreAllocateNewSegment", "file", next_segment_path_);
   CHECK_EQ(allocation_state(), kAllocationInProgress);

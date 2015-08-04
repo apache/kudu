@@ -78,6 +78,9 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // was QUIESCING or SHUTDOWN.
   TabletStatePB Shutdown();
 
+  // Delete all data for this tablet peer, including WALs, etc.
+  Status DeleteOnDiskData();
+
   // Check that the tablet is in a RUNNING state.
   Status CheckRunning() const;
 

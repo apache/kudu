@@ -247,6 +247,22 @@ TabletStatePB TabletPeer::Shutdown() {
   return prev_state;
 }
 
+Status TabletPeer::DeleteOnDiskData() {
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    if (state_ != SHUTDOWN) {
+      return Status::IllegalState("cannot delete tablet peer in state",
+                                  TabletStatePB_Name(state_));
+    }
+  }
+  // Delete the tablet data before the WAL, since this also has the effect of changing
+  // the tablet state to a tombstone. If we crash before deleting the WAL, then we would
+  // roll-forward the deletion on restart.
+  RETURN_NOT_OK_PREPEND(tablet_->DeleteOnDiskData(), "Unable to delete tablet");
+  RETURN_NOT_OK_PREPEND(log_->DeleteOnDiskData(), "Unable to delete WAL");
+  return Status::OK();
+}
+
 Status TabletPeer::CheckRunning() const {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
