@@ -256,8 +256,10 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
     row_ops.push_back(new RowOp(op));
   }
 
-  tx_state->swap_row_ops(&row_ops);
+  // Important to set the schema before the ops -- we need the
+  // schema in order to stringify the ops.
   tx_state->set_schema_at_decode_time(schema());
+  tx_state->swap_row_ops(&row_ops);
 
   return Status::OK();
 }
