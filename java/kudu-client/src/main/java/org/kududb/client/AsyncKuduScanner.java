@@ -38,6 +38,7 @@ import org.kududb.Common;
 import org.kududb.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
@@ -100,7 +101,7 @@ public final class AsyncKuduScanner {
   private final AsyncKuduClient client;
   private final KuduTable table;
   private final Schema schema;
-  private final ColumnRangePredicates columnRangePredicates;
+  private final List<Tserver.ColumnRangePredicatePB> columnRangePredicates;
 
   /**
    * Maximum number of bytes to fetch at a time.
@@ -113,18 +114,14 @@ public final class AsyncKuduScanner {
   private final long limit;
 
   /**
-   * Set by {@link AsyncKuduScannerBuilder#encodedStartKey(byte[])} when an encoded key is available or
-   * in {@link#getOpenRequest()} if the key was specified with column predicates. If it's not set
-   * by the user, it will default to EMPTY_ARRAY.
+   * Set in the builder. If it's not set by the user, it will default to EMPTY_ARRAY.
    * It is then reset to the new start key of each tablet we open a scanner on as the scan moves
    * from one tablet to the next.
    */
   private byte[] startKey;
 
   /**
-   * Set by {@link AsyncKuduScannerBuilder#encodedEndKey(byte[])} when an encoded key is available or in
-   * {@link #getOpenRequest()} if the key was specified with column predicates. If it's not set
-   * by the user, it will default to EMPTY_ARRAY.
+   * Set in the builder. If it's not set by the user, it will default to EMPTY_ARRAY.
    * It's never modified after that.
    */
   private byte[] endKey;
@@ -177,8 +174,8 @@ public final class AsyncKuduScanner {
 
   AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedCols,
                    ReadMode readMode, DeadlineTracker deadlineTracker,
-                   ColumnRangePredicates columnRangePredicates, long limit, boolean cacheBlocks,
-                   boolean prefetching, byte[] startKey, byte[] endKey,
+                   List<Tserver.ColumnRangePredicatePB> columnRangePredicates, long limit,
+                   boolean cacheBlocks, boolean prefetching, byte[] startKey, byte[] endKey,
                    long htTimestamp, int maxNumBytes) {
     Preconditions.checkArgument(maxNumBytes > 0, "Need a strictly positive number of bytes, " +
         "got %s", maxNumBytes);
@@ -473,22 +470,6 @@ public final class AsyncKuduScanner {
     // should be fully configured
     if (this.inFirstTablet) {
       this.inFirstTablet = false;
-
-      String errorMessage = "The encoded %s key cannot be specified when using column range " +
-          "predicates on key columns";
-      if (this.columnRangePredicates.hasStartKey()) {
-        Preconditions.checkState(this.startKey == null, errorMessage, "start");
-        this.startKey = this.columnRangePredicates.getStartKey();
-      } else if (this.startKey == null) {
-        this.startKey = AsyncKuduClient.EMPTY_ARRAY;
-      }
-
-      if (this.columnRangePredicates.hasEndKey()) {
-        Preconditions.checkState(this.endKey == null, errorMessage, "end");
-        this.endKey = this.columnRangePredicates.getEndKey();
-      } else if (this.endKey == null) {
-        this.endKey = AsyncKuduClient.EMPTY_ARRAY;
-      }
     }
     return new ScanRequest(table, State.OPENING);
   }
@@ -606,8 +587,18 @@ public final class AsyncKuduScanner {
             newBuilder.setSnapTimestamp(AsyncKuduScanner.this.getSnapshotTimestamp());
           }
 
-          if (!columnRangePredicates.predicates.isEmpty()) {
-            newBuilder.addAllRangePredicates(columnRangePredicates.predicates);
+          if (AsyncKuduScanner.this.startKey != AsyncKuduClient.EMPTY_ARRAY &&
+              AsyncKuduScanner.this.startKey.length > 0) {
+            newBuilder.setEncodedStartKey(ZeroCopyLiteralByteString.copyFrom(startKey));
+          }
+
+          if (AsyncKuduScanner.this.endKey != AsyncKuduClient.EMPTY_ARRAY &&
+              AsyncKuduScanner.this.endKey.length > 0) {
+            newBuilder.setEncodedStopKey(ZeroCopyLiteralByteString.copyFrom(endKey));
+          }
+
+          if (!columnRangePredicates.isEmpty()) {
+            newBuilder.addAllRangePredicates(columnRangePredicates);
           }
           builder.setNewScanRequest(newBuilder.build())
                  .setBatchSizeBytes(maxNumBytes);
@@ -696,7 +687,7 @@ public final class AsyncKuduScanner {
       return new AsyncKuduScanner(
           nestedClient, nestedTable, nestedProjectedColumnNames, nestedReadMode,
           nestedDeadlineTracker, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
-          nestedPrefetching, nestedStartKey, nestedEndKey, nestedHtTimestamp, nestedMaxNumBytes);
+          nestedPrefetching, nestedLowerBound, nestedUpperBound, nestedHtTimestamp, nestedMaxNumBytes);
     }
   }
 }

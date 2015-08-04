@@ -1008,7 +1008,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
     public int run(String[] args) throws Exception {
       Options options = new Options();
       options.addOption("s", "start", true, "start key, only the first component");
-      options.addOption("e", "end", true, "end key, only the first component");
+      options.addOption("e", "end", true, "end key (exclusive), only the first component");
       options.addOption("l", "limit", true, "number to print");
 
       GnuParser parser = new GnuParser();
@@ -1036,15 +1036,17 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
               .timeoutMs(timeout);
 
 
-      if (cmd.hasOption("s") || cmd.hasOption("e") ) {
-        ColumnRangePredicate crpOne = new ColumnRangePredicate(table.getSchema().getColumn(0));
-        if (cmd.hasOption("s")) {
-          crpOne.setLowerBound(Long.parseLong(cmd.getOptionValue("s")));
-        }
-        if (cmd.hasOption("e")) {
-          crpOne.setUpperBound(Long.parseLong(cmd.getOptionValue("e")));
-        }
-        builder.addColumnRangePredicate(crpOne);
+      if (cmd.hasOption("s")) {
+        PartialRow row = table.newPartialRow();
+        row.addLong(table.getSchema().getColumn(0).getName(),
+            Long.parseLong(cmd.getOptionValue("s")));
+        builder.lowerBound(row);
+      }
+      if (cmd.hasOption("e")) {
+        PartialRow row = table.newPartialRow();
+        row.addLong(table.getSchema().getColumn(0).getName(),
+            Long.parseLong(cmd.getOptionValue("e")));
+        builder.exclusiveUpperBound(row);
       }
 
       int limit = cmd.hasOption("l") ? Integer.parseInt(cmd.getOptionValue("l")) : 100;
@@ -1506,15 +1508,16 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
                                                     KuduTable table,
                                                     long keyOne,
                                                     long keyTwo) {
-    ColumnRangePredicate crpOne = new ColumnRangePredicate(table.getSchema().getColumn(0));
-    crpOne.setLowerBound(keyOne);
-    crpOne.setUpperBound(keyOne);
-    builder.addColumnRangePredicate(crpOne);
+    PartialRow lowerBound = table.newPartialRow();
+    lowerBound.addLong(table.getSchema().getColumn(0).getName(), keyOne);
+    lowerBound.addLong(table.getSchema().getColumn(1).getName(), keyTwo);
+    builder.lowerBound(lowerBound);
 
-    ColumnRangePredicate crpTwo = new ColumnRangePredicate(table.getSchema().getColumn(1));
-    crpTwo.setLowerBound(keyTwo);
-    crpTwo.setUpperBound(keyTwo);
-    builder.addColumnRangePredicate(crpTwo);
+    PartialRow upperBound = table.newPartialRow();
+    // Adding 1 since we want a single row, and the upper bound is exclusive.
+    upperBound.addLong(table.getSchema().getColumn(0).getName(), keyOne + 1);
+    upperBound.addLong(table.getSchema().getColumn(1).getName(), keyTwo + 1);
+    builder.exclusiveUpperBound(upperBound);
   }
 
   private static String getTableName(Configuration conf) {

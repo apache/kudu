@@ -2,11 +2,12 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
-import org.kududb.Schema;
+import org.kududb.tserver.Tserver;
 
 /**
  * Abstract class to extend in order to create builders for scanners.
@@ -16,7 +17,7 @@ public abstract class AbstractKuduScannerBuilder
   protected final AsyncKuduClient nestedClient;
   protected final KuduTable nestedTable;
   protected final DeadlineTracker nestedDeadlineTracker;
-  protected final ColumnRangePredicates nestedColumnRangePredicates;
+  protected final List<Tserver.ColumnRangePredicatePB> nestedColumnRangePredicates;
 
   protected AsyncKuduScanner.ReadMode nestedReadMode = AsyncKuduScanner.ReadMode.READ_LATEST;
   protected int nestedMaxNumBytes = 1024*1024;
@@ -24,15 +25,15 @@ public abstract class AbstractKuduScannerBuilder
   protected boolean nestedPrefetching = false;
   protected boolean nestedCacheBlocks = true;
   protected long nestedHtTimestamp = AsyncKuduClient.NO_TIMESTAMP;
-  protected byte[] nestedStartKey = null;
-  protected byte[] nestedEndKey = null;
+  protected byte[] nestedLowerBound = AsyncKuduClient.EMPTY_ARRAY;
+  protected byte[] nestedUpperBound = AsyncKuduClient.EMPTY_ARRAY;
   protected List<String> nestedProjectedColumnNames = null;
 
   AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
     this.nestedClient = client;
     this.nestedTable = table;
     this.nestedDeadlineTracker = new DeadlineTracker();
-    this.nestedColumnRangePredicates = new ColumnRangePredicates(table.getSchema());
+    this.nestedColumnRangePredicates = new ArrayList<>();
   }
 
   /**
@@ -52,7 +53,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S addColumnRangePredicate(ColumnRangePredicate predicate) {
-    nestedColumnRangePredicates.addColumnRangePredicate(predicate);
+    nestedColumnRangePredicates.add(predicate.pb.build());
     return (S) this;
   }
 
@@ -140,26 +141,48 @@ public abstract class AbstractKuduScannerBuilder
   }
 
   /**
-   * Sets the start key in its encoded format, bypassing the need to add column predicates. By
-   * default, none is set.
-   * If you don't what that means then don't use this.
+   * Add a lower bound (inclusive) for the scan.
+   * If any bound is already added, this bound is intersected with that one.
+   * @param partialRow a partial row with specified key columns
+   * @return this instance
+   */
+  public S lowerBound(PartialRow partialRow) {
+    return lowerBoundRaw(partialRow.key());
+  }
+
+  /**
+   * Like lowerBound() but the encoded key is an opaque byte array obtained elsewhere.
    * @param encodedStartKey bytes containing an encoded start key
    * @return this instance
    */
-  public S encodedStartKey(byte[] encodedStartKey) {
-    this.nestedStartKey = encodedStartKey;
+  public S lowerBoundRaw(byte[] encodedStartKey) {
+    if (nestedLowerBound == AsyncKuduClient.EMPTY_ARRAY ||
+        Bytes.memcmp(encodedStartKey, nestedLowerBound) > 0) {
+      this.nestedLowerBound = encodedStartKey;
+    }
     return (S) this;
   }
 
   /**
-   * Sets the end key in its encoded format, bypassing the need to add column predicates. By
-   * default, none is set.
-   * If you don't what that means then don't use this.
+   * Add an upper bound (exclusive) for the scan.
+   * If any bound is already added, this bound is intersected with that one.
+   * @param partialRow a partial row with specified key columns
+   * @return this instance
+   */
+  public S exclusiveUpperBound(PartialRow partialRow) {
+    return exclusiveUpperBoundRaw(partialRow.key());
+  }
+
+  /**
+   * Like exclusiveUpperBound() but the encoded key is an opaque byte array obtained elsewhere.
    * @param encodedEndKey bytes containing an encoded end key
    * @return this instance
    */
-  public S encodedEndKey(byte[] encodedEndKey) {
-    this.nestedEndKey = encodedEndKey;
+  public S exclusiveUpperBoundRaw(byte[] encodedEndKey) {
+    if (nestedUpperBound == AsyncKuduClient.EMPTY_ARRAY ||
+        Bytes.memcmp(encodedEndKey, nestedUpperBound) < 0) {
+      this.nestedUpperBound = encodedEndKey;
+    }
     return (S) this;
   }
 

@@ -356,7 +356,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
 
   public static boolean exists(final int key) throws Exception {
 
-    AsyncKuduScanner scanner = getScanner(key, key);
+    AsyncKuduScanner scanner = getScanner(key, key + 1);
     final AtomicBoolean exists = new AtomicBoolean(false);
 
     Callback<Object, RowResultIterator> cb =
@@ -417,24 +417,28 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     return ai.get();
   }
 
-  public static int countInRange(final int startOrder, final int endOrder) throws Exception {
+  public static int countInRange(final int start, final int exclusiveEnd) throws Exception {
 
-    AsyncKuduScanner scanner = getScanner(startOrder, endOrder);
+    AsyncKuduScanner scanner = getScanner(start, exclusiveEnd);
     return countRowsInScan(scanner);
   }
 
-  private static AsyncKuduScanner getScanner(int start, int end) {
-    return getScanner(start, end, null);
+  private static AsyncKuduScanner getScanner(int start, int exclusiveEnd) {
+    return getScanner(start, exclusiveEnd, null);
   }
 
-  private static AsyncKuduScanner getScanner(int start, int end,
+  private static AsyncKuduScanner getScanner(int start, int exclusiveEnd,
                                              List<String> columnNames) {
 
-    ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumn(0));
-    predicate.setLowerBound(start);
-    predicate.setUpperBound(end);
+    PartialRow lowerBound = table.newPartialRow();
+    lowerBound.addInt(schema.getColumn(0).getName(), start);
+
+    PartialRow upperBound = table.newPartialRow();
+    upperBound.addInt(schema.getColumn(0).getName(), exclusiveEnd);
+
     AsyncKuduScanner scanner = client.newScannerBuilder(table)
-        .addColumnRangePredicate(predicate)
+        .lowerBound(lowerBound)
+        .exclusiveUpperBound(upperBound)
         .setProjectedColumnNames(columnNames)
         .build();
     return scanner;

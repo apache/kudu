@@ -34,48 +34,56 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     createTable(TABLE_NAME, schema, builder);
 
     table = openTable(TABLE_NAME);
-  }
 
-  @Test(timeout = 100000)
-  public void test() throws Exception {
     AsyncKuduSession session = client.newSession();
     session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_SYNC);
 
+    // The data layout ends up like this:
+    // tablet '', '1': no rows
+    // tablet '1', '2': '111', '122', '133'
+    // tablet '2', '3': '211', '222', '233'
+    // tablet '3', '': '311', '322', '333'
     String[] keys = new String[] {"1", "2", "3"};
     for (String key1 : keys) {
       for (String key2 : keys) {
         Insert insert = table.newInsert();
         PartialRow row = insert.getRow();
-        row.addString(schema.getColumn(0).getName(), key1 + key2);
+        row.addString(schema.getColumn(0).getName(), key1);
+        row.addString(schema.getColumn(1).getName(), key2);
+        row.addString(schema.getColumn(2).getName(), key2);
         Deferred<OperationResponse> d = session.apply(insert);
         d.join(DEFAULT_SLEEP);
       }
     }
+  }
 
-    // The data layout ends up like this:
-    // tablet '', '1': no rows
-    // tablet '1', '2': '11', '12', '13'
-    // tablet '2', '3': '21', '22', '23'
-    // tablet '3', '': '31', '32', '33'
+  // Test various combinations of start/end row keys.
+  @Test(timeout = 100000)
+  public void testKeyStartEnd() throws Exception {
+    assertEquals(0,
+        countRowsInScan(getScanner("", "", "1", ""))); // There's nothing in the 1st tablet
+    assertEquals(1, countRowsInScan(getScanner("", "", "1", "2"))); // Grab the very first row
+    assertEquals(3, countRowsInScan(getScanner("1", "1", "1", "4"))); // Grab the whole 2nd tablet
+    assertEquals(3, countRowsInScan(getScanner("1", "1", "2", ""))); // Same, and peek at the 3rd
+    assertEquals(3, countRowsInScan(getScanner("1", "1", "2", "0"))); // Same, different peek
+    assertEquals(4,
+        countRowsInScan(getScanner("1", "2", "2", "3"))); // Middle of 2nd to middle of 3rd
+    assertEquals(3,
+        countRowsInScan(getScanner("1", "4", "2", "4"))); // Peek at the 2nd then whole 3rd
+    assertEquals(6, countRowsInScan(getScanner("1", "5", "3", "4"))); // Whole 3rd and 4th
+    assertEquals(9, countRowsInScan(getScanner("", "", "4", ""))); // Full table scan
 
-    assertEquals(0, countRowsInScan(getScanner("", "1"))); // There's nothing in the 1st tablet
-    assertEquals(1, countRowsInScan(getScanner("", "11"))); // Grab the very first row
-    assertEquals(3, countRowsInScan(getScanner("11", "13"))); // Grab the whole 2nd tablet
-    assertEquals(3, countRowsInScan(getScanner("11", "2"))); // Same, and peek at the 3rd
-    assertEquals(3, countRowsInScan(getScanner("11", "20"))); // Same, different peek
-    assertEquals(4, countRowsInScan(getScanner("12", "22"))); // Middle of 2nd to middle of 3rd
-    assertEquals(3, countRowsInScan(getScanner("14", "24"))); // Peek at the 2nd then whole 3rd
-    assertEquals(6, countRowsInScan(getScanner("14", "34"))); // Middle of 2nd to middle of 4th
-    assertEquals(9, countRowsInScan(getScanner("", "4"))); // Full table scan
-
-    assertEquals(9, countRowsInScan(getScanner("", null))); // Full table scan with empty upper
-    assertEquals(9, countRowsInScan(getScanner(null, "4"))); // Full table scan with empty lower
-    assertEquals(9, countRowsInScan(getScanner(null, null))); // Full table scan with empty bounds
+    assertEquals(9,
+        countRowsInScan(getScanner("", "", null, null))); // Full table scan with empty upper
+    assertEquals(9,
+        countRowsInScan(getScanner(null, null, "4", ""))); // Full table scan with empty lower
+    assertEquals(9,
+        countRowsInScan(getScanner(null, null, null, null))); // Full table scan with empty bounds
 
     // Test that we can close a scanner while in between two tablets. We start on the second
     // tablet and our first nextRows() will get 3 rows. At that moment we want to close the scanner
     // before getting on the 3rd tablet.
-    AsyncKuduScanner scanner = getScanner("1", null);
+    AsyncKuduScanner scanner = getScanner("1", "", null, null);
     Deferred<RowResultIterator> d = scanner.nextRows();
     RowResultIterator rri = d.join(DEFAULT_SLEEP);
     assertEquals(3, rri.getNumRows());
@@ -84,25 +92,83 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     assertNull(rri);
   }
 
-  private AsyncKuduScanner getScanner(String lowerBound, String upperBound) {
+  // Test mixing start/end row keys with predicates.
+  @Test(timeout = 100000)
+  public void testKeysAndPredicates() throws Exception {
+    // First row from the 2nd tablet.
+    ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumn(2));
+    predicate.setLowerBound("1");
+    predicate.setUpperBound("1");
+    assertEquals(1, countRowsInScan(getScanner("1", "", "2", "", predicate)));
+
+    // All the 2nd tablet.
+    predicate = new ColumnRangePredicate(schema.getColumn(2));
+    predicate.setLowerBound("1");
+    predicate.setUpperBound("3");
+    assertEquals(3, countRowsInScan(getScanner("1", "", "2", "", predicate)));
+
+    // Value that doesn't exist.
+    predicate = new ColumnRangePredicate(schema.getColumn(2));
+    predicate.setLowerBound("4");
+    assertEquals(0, countRowsInScan(getScanner("1", "", "2", "", predicate)));
+
+    // First row from every tablet.
+    predicate = new ColumnRangePredicate(schema.getColumn(2));
+    predicate.setLowerBound("1");
+    predicate.setUpperBound("1");
+    assertEquals(3, countRowsInScan(getScanner(null, null, null, null, predicate)));
+
+    // All the rows.
+    predicate = new ColumnRangePredicate(schema.getColumn(2));
+    predicate.setLowerBound("1");
+    assertEquals(9, countRowsInScan(getScanner(null, null, null, null, predicate)));
+  }
+
+  private AsyncKuduScanner getScanner(String lowerBoundKeyOne,
+                                      String lowerBoundKeyTwo,
+                                      String exclusiveUpperBoundKeyOne,
+                                      String exclusiveUpperBoundKeyTwo) {
+    return getScanner(lowerBoundKeyOne, lowerBoundKeyTwo,
+        exclusiveUpperBoundKeyOne, exclusiveUpperBoundKeyTwo, null);
+  }
+
+  private AsyncKuduScanner getScanner(String lowerBoundKeyOne,
+                                      String lowerBoundKeyTwo,
+                                      String exclusiveUpperBoundKeyOne,
+                                      String exclusiveUpperBoundKeyTwo,
+                                      ColumnRangePredicate predicate) {
     AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table);
-    ColumnRangePredicate pred = new ColumnRangePredicate(schema.getColumn(0));
-    if (lowerBound != null) {
-      pred.setLowerBound(lowerBound);
+
+    if (lowerBoundKeyOne != null) {
+      PartialRow lowerBoundRow = table.newPartialRow();
+      lowerBoundRow.addString(schema.getColumn(0).getName(), lowerBoundKeyOne);
+      lowerBoundRow.addString(schema.getColumn(1).getName(), lowerBoundKeyTwo);
+      builder.lowerBound(lowerBoundRow);
     }
-    if (upperBound != null) {
-      pred.setUpperBound(upperBound);
+
+    if (exclusiveUpperBoundKeyOne != null) {
+      PartialRow upperBoundRow = table.newPartialRow();
+      upperBoundRow.addString(schema.getColumn(0).getName(), exclusiveUpperBoundKeyOne);
+      upperBoundRow.addString(schema.getColumn(1).getName(), exclusiveUpperBoundKeyTwo);
+      builder.exclusiveUpperBound(upperBoundRow);
     }
-    if (lowerBound != null || upperBound != null) {
-      builder.addColumnRangePredicate(pred);
+
+    if (predicate != null) {
+      builder.addColumnRangePredicate(predicate);
     }
+
     return builder.build();
   }
 
   private static Schema getSchema() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(1);
-    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", STRING)
+    ArrayList<ColumnSchema> columns = new ArrayList<>(3);
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key1", STRING)
         .key(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key2", STRING)
+        .key(true)
+        .build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("val", STRING)
         .build());
     return new Schema(columns);
   }

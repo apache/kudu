@@ -3,7 +3,6 @@
 package org.kududb.client;
 
 import com.stumbleupon.async.Deferred;
-import org.kududb.Schema;
 
 /**
  * Synchronous version of {@link AsyncKuduScanner}. Offers the same API but with blocking methods.
@@ -85,7 +84,7 @@ public class KuduScanner {
       return new KuduScanner(new AsyncKuduScanner(
           nestedClient, nestedTable, nestedProjectedColumnNames, nestedReadMode,
           nestedDeadlineTracker, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
-          nestedPrefetching, nestedStartKey, nestedEndKey, nestedHtTimestamp, nestedMaxNumBytes),
+          nestedPrefetching, nestedLowerBound, nestedUpperBound, nestedHtTimestamp, nestedMaxNumBytes),
           nestedTimeoutMs);
     }
   }
