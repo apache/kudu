@@ -51,14 +51,16 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
                             std::stringstream* output) {
   *output << "<code><pre>\n";
 
-  *output << "CREATE EXTERNAL TABLE " << EscapeForHtmlToString(table_name) << " (\n";
+  // Escape table and column names with ` to avoid conflicts with Impala reserved words.
+  *output << "CREATE EXTERNAL TABLE " << EscapeForHtmlToString("`" + table_name + "`")
+          << " (\n";
 
   vector<string> key_columns;
 
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
 
-    *output << EscapeForHtmlToString(col.name()) << " ";
+    *output << EscapeForHtmlToString("`" + col.name() + "`") << " ";
     switch (col.type_info()->type()) {
       case STRING:
         *output << "STRING";
