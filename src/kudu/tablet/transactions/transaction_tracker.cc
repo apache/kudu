@@ -124,11 +124,7 @@ Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
     if (txns.empty()) {
       break;
     }
-    LOG(INFO) << "Dumping currently running transactions: ";
-    BOOST_FOREACH(scoped_refptr<TransactionDriver> driver, txns) {
-      LOG(INFO) << driver->ToString();
-    }
-    SleepFor(MonoDelta::FromMicroseconds(wait_time));
+
     MonoDelta diff = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start_time);
     if (diff.MoreThan(timeout)) {
       return Status::TimedOut(Substitute("Timed out waiting for all transactions to finish. "
@@ -138,10 +134,16 @@ Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
     int64_t waited_ms = diff.ToMilliseconds();
     if (waited_ms / complain_ms > num_complaints) {
       LOG(WARNING) << Substitute("TransactionTracker waiting for $0 outstanding transactions to"
-                                 " complete now for $1 ms", pending_txns_.size(), waited_ms);
+                                 " complete now for $1 ms", txns.size(), waited_ms);
       num_complaints++;
     }
     wait_time = std::min(wait_time * 5 / 4, 1000000);
+
+    LOG(INFO) << "Dumping currently running transactions: ";
+    BOOST_FOREACH(scoped_refptr<TransactionDriver> driver, txns) {
+      LOG(INFO) << driver->ToString();
+    }
+    SleepFor(MonoDelta::FromMicroseconds(wait_time));
   }
   return Status::OK();
 }
