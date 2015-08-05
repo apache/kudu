@@ -125,8 +125,8 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_SYNC);
     Update update = createUpdate(30);
     PartialRow row = update.getRow();
-    row.addInt(schema.getColumn(2).getName(), 999);
-    row.addString(schema.getColumn(3).getName(), "updated data");
+    row.addInt(2, 999);
+    row.addString(3, "updated data");
     d = session.apply(update);
     d.addErrback(defaultErrorCB);
     d.join(DEFAULT_SLEEP);
@@ -332,25 +332,25 @@ public class TestAsyncKuduSession extends BaseKuduTest {
   private Insert createInsertWithNull(int key) {
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
-    row.addInt(schema.getColumn(0).getName(), key);
-    row.addInt(schema.getColumn(1).getName(), 2);
-    row.addInt(schema.getColumn(2).getName(), 3);
-    row.setNull(schema.getColumn(3).getName());
-    row.addBoolean(schema.getColumn(4).getName(), false);
+    row.addInt(0, key);
+    row.addInt(1, 2);
+    row.addInt(2, 3);
+    row.setNull(3);
+    row.addBoolean(4, false);
     return insert;
   }
 
   private Update createUpdate(int key) {
     Update update = table.newUpdate();
     PartialRow row = update.getRow();
-    row.addInt(schema.getColumn(0).getName(), key);
+    row.addInt(0, key);
     return update;
   }
 
   private Delete createDelete(int key) {
     Delete delete = table.newDelete();
     PartialRow row = delete.getRow();
-    row.addInt(schema.getColumn(0).getName(), key);
+    row.addInt(0, key);
     return delete;
   }
 

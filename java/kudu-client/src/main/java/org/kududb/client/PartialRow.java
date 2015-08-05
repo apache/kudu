@@ -41,6 +41,16 @@ public class PartialRow {
     strings = Lists.newArrayListWithCapacity(schema.getStringCount());
   }
 
+  /**
+   * Add a boolean for the specified column.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addBoolean(int columnIndex, boolean val) {
+    addBoolean(this.schema.getColumn(columnIndex), val);
+  }
 
   /**
    * Add a boolean for the specified column.
@@ -50,9 +60,23 @@ public class PartialRow {
    * the column's type
    */
   public void addBoolean(String columnName, boolean val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.BOOL);
-    rowAlloc[getPositionInRowAllocAndSetBitSet(col)] = (byte) (val ? 1 : 0);
+    addBoolean(this.schema.getColumn(columnName), val);
+  }
+
+  private void addBoolean(ColumnSchema column, boolean val) {
+    checkColumn(column, Type.BOOL);
+    rowAlloc[getPositionInRowAllocAndSetBitSet(column)] = (byte) (val ? 1 : 0);
+  }
+
+  /**
+   * Add a byte for the specified column.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addByte(int columnIndex, byte val) {
+    addByte(this.schema.getColumn(columnIndex), val);
   }
 
   /**
@@ -63,9 +87,23 @@ public class PartialRow {
    * the column's type
    */
   public void addByte(String columnName, byte val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.INT8);
-    rowAlloc[getPositionInRowAllocAndSetBitSet(col)] = val;
+    addByte(this.schema.getColumn(columnName), val);
+  }
+
+  void addByte(ColumnSchema column, byte val) {
+    checkColumn(column, Type.INT8);
+    rowAlloc[getPositionInRowAllocAndSetBitSet(column)] = val;
+  }
+
+  /**
+   * Add a short for the specified column.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addShort(int columnIndex, short val) {
+    addShort(this.schema.getColumn(columnIndex), val);
   }
 
   /**
@@ -76,9 +114,23 @@ public class PartialRow {
    * the column's type
    */
   public void addShort(String columnName, short val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.INT16);
-    Bytes.setShort(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
+    addShort(this.schema.getColumn(columnName), val);
+  }
+
+  private void addShort(ColumnSchema column, short val) {
+    checkColumn(column, Type.INT16);
+    Bytes.setShort(rowAlloc, val, getPositionInRowAllocAndSetBitSet(column));
+  }
+
+  /**
+   * Add an int for the specified column.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addInt(int columnIndex, int val) {
+    addInt(this.schema.getColumn(columnIndex), val);
   }
 
   /**
@@ -89,9 +141,23 @@ public class PartialRow {
    * the column's type
    */
   public void addInt(String columnName, int val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.INT32);
-    Bytes.setInt(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
+    addInt(this.schema.getColumn(columnName), val);
+  }
+
+  private void addInt(ColumnSchema column, int val) {
+    checkColumn(column, Type.INT32);
+    Bytes.setInt(rowAlloc, val, getPositionInRowAllocAndSetBitSet(column));
+  }
+
+  /**
+   * Add an long for the specified column.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addLong(int columnIndex, long val) {
+    addLong(this.schema.getColumn(columnIndex), val);
   }
 
   /**
@@ -102,9 +168,23 @@ public class PartialRow {
    * the column's type
    */
   public void addLong(String columnName, long val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.INT64);
-    Bytes.setLong(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
+    addLong(this.schema.getColumn(columnName), val);
+  }
+
+  private void addLong(ColumnSchema column, long val) {
+    checkColumn(column, Type.INT64);
+    Bytes.setLong(rowAlloc, val, getPositionInRowAllocAndSetBitSet(column));
+  }
+
+  /**
+   * Add an float for the specified column.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addFloat(int columnIndex, float val) {
+    addFloat(this.schema.getColumn(columnIndex), val);
   }
 
   /**
@@ -115,9 +195,23 @@ public class PartialRow {
    * the column's type
    */
   public void addFloat(String columnName, float val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.FLOAT);
-    Bytes.setFloat(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
+    addFloat(this.schema.getColumn(columnName), val);
+  }
+
+  private void addFloat(ColumnSchema column, float val) {
+    checkColumn(column, Type.FLOAT);
+    Bytes.setFloat(rowAlloc, val, getPositionInRowAllocAndSetBitSet(column));
+  }
+
+  /**
+   * Add an double for the specified column.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addDouble(int columnIndex, double val) {
+    addDouble(this.schema.getColumn(columnIndex), val);
   }
 
   /**
@@ -128,9 +222,23 @@ public class PartialRow {
    * the column's type
    */
   public void addDouble(String columnName, double val) {
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.DOUBLE);
-    Bytes.setDouble(rowAlloc, val, getPositionInRowAllocAndSetBitSet(col));
+    addDouble(this.schema.getColumn(columnName), val);
+  }
+
+  private void addDouble(ColumnSchema column, double val) {
+    checkColumn(column, Type.DOUBLE);
+    Bytes.setDouble(rowAlloc, val, getPositionInRowAllocAndSetBitSet(column));
+  }
+
+  /**
+   * Add a String for the specified column.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addString(int columnIndex, String val) {
+    addStringUtf8(columnIndex, Bytes.fromString(val));
   }
 
   /**
@@ -147,16 +255,39 @@ public class PartialRow {
   /**
    * Add a String for the specified value, encoded as UTF8.
    * Note that the provided value must not be mutated after this.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
+   */
+  public void addStringUtf8(int columnIndex, byte[] val) {
+    addStringUtf8(this.schema.getColumn(columnIndex), val);
+  }
+
+  /**
+   * Add a String for the specified value, encoded as UTF8.
+   * Note that the provided value must not be mutated after this.
+   * @param columnName Name of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
+   * the column's type
    */
   public void addStringUtf8(String columnName, byte[] val) {
+    addStringUtf8(this.schema.getColumn(columnName), val);
+  }
+
+  /**
+   * Add a String for the specified value, encoded as UTF8.
+   * Note that the provided value must not be mutated after this.
+   */
+  public void addStringUtf8(ColumnSchema column, byte[] val) {
     // TODO: use Utf8.isWellFormed from Guava 16 to verify that
     // the user isn't putting in any garbage data.
-    ColumnSchema col = this.schema.getColumn(columnName);
-    checkColumn(col, Type.STRING);
+    checkColumn(column, Type.STRING);
     int stringsIdx = strings.size();
     strings.add(val);
     // Set the bit and set the usage bit
-    int pos = getPositionInRowAllocAndSetBitSet(col);
+    int pos = getPositionInRowAllocAndSetBitSet(column);
 
     // For now, just store the index of the string.
     // Later, we'll replace this with the offset within the wire buffer
@@ -170,17 +301,29 @@ public class PartialRow {
 
   /**
    * Set the specified column to null
+   * @param columnIndex the column's index in the schema
+   * @throws IllegalArgumentException if the column doesn't exist or cannot be set to null
+   */
+  public void setNull(int columnIndex) {
+    setNull(this.schema.getColumn(columnIndex));
+  }
+
+  /**
+   * Set the specified column to null
    * @param columnName Name of the column
    * @throws IllegalArgumentException if the column doesn't exist or cannot be set to null
    */
   public void setNull(String columnName) {
+    setNull(this.schema.getColumn(columnName));
+  }
+
+  private void setNull(ColumnSchema column) {
     assert nullsBitSet != null;
-    ColumnSchema col = schema.getColumn(columnName);
-    checkColumnExists(col);
-    if (!col.isNullable()) {
-      throw new IllegalArgumentException(col.getName() + " cannot be set to null");
+    checkColumnExists(column);
+    if (!column.isNullable()) {
+      throw new IllegalArgumentException(column.getName() + " cannot be set to null");
     }
-    int idx = schema.getColumns().indexOf(col);
+    int idx = schema.getColumns().indexOf(column);
     columnsBitSet.set(idx);
     nullsBitSet.set(idx);
   }
