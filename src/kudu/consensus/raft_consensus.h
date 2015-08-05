@@ -71,6 +71,7 @@ class RaftConsensus : public Consensus,
                 const scoped_refptr<server::Clock>& clock,
                 ReplicaTransactionFactory* txn_factory,
                 const scoped_refptr<log::Log>& log,
+                const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
                 const Closure& mark_dirty_clbk);
 
   virtual ~RaftConsensus();
@@ -403,6 +404,8 @@ class RaftConsensus : public Consensus,
   AtomicBool shutdown_;
 
   scoped_refptr<Counter> follower_memory_pressure_rejections_;
+
+  std::tr1::shared_ptr<MemTracker> parent_mem_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };

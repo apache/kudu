@@ -23,10 +23,11 @@
 
 namespace kudu {
 
-class MaintenanceManager;
-class Histogram;
 template<class T>
 class AtomicGauge;
+class Histogram;
+class MaintenanceManager;
+class MemTracker;
 
 class MaintenanceOpStats {
  public:
@@ -209,6 +210,7 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
     int32_t num_threads;
     int32_t polling_interval_ms;
     uint32_t history_size;
+    std::tr1::shared_ptr<MemTracker> parent_mem_tracker;
   };
 
   explicit MaintenanceManager(const Options& options);
@@ -254,6 +256,7 @@ class MaintenanceManager : public std::tr1::enable_shared_from_this<MaintenanceM
   // the completed_ops_count_ % the vector's size and then the count needs to be incremented.
   std::vector<CompletedOp> completed_ops_;
   int64_t completed_ops_count_;
+  std::tr1::shared_ptr<MemTracker> parent_mem_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(MaintenanceManager);
 };

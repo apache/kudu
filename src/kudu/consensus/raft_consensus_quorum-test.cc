@@ -169,6 +169,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                             clock_,
                             txn_factory,
                             logs_[i],
+                            parent_mem_trackers_[i],
                             Bind(&DoNothing)));
 
       txn_factory->SetConsensus(peer.get());

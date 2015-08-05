@@ -154,6 +154,13 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
   // of the hard limit consumed is written to it.
   bool SoftLimitExceeded(double* current_capacity_pct);
 
+  // Combines the semantics of AnyLimitExceeded() and SoftLimitExceeded().
+  //
+  // Note: if there's more than one soft limit defined, the probability of it being
+  // exceeded in at least one tracker is much higher (as each soft limit check is an
+  // independent event).
+  bool AnySoftLimitExceeded(double* current_capacity_pct);
+
   // Returns the maximum consumption that can be made without exceeding the limit on
   // this tracker or any of its parents. Returns int64_t::max() if there are no
   // limits and a negative value if any limit is already exceeded.
@@ -370,6 +377,8 @@ class ScopedTrackedConsumption {
   ~ScopedTrackedConsumption() {
     tracker_->Release(consumption_);
   }
+
+  int64_t consumption() const { return consumption_; }
 
  private:
   std::tr1::shared_ptr<MemTracker> tracker_;

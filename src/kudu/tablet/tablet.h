@@ -355,6 +355,9 @@ class Tablet {
   // Return handle to the metric entity of this tablet.
   const scoped_refptr<MetricEntity>& GetMetricEntity() const { return metric_entity_; }
 
+  // Returns a reference to this tablet's memory tracker.
+  const std::tr1::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
+
   static const char* kDMSMemTrackerId;
  private:
   friend class Iterator;

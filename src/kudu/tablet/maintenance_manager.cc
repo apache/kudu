@@ -74,6 +74,7 @@ const MaintenanceManager::Options MaintenanceManager::DEFAULT_OPTIONS = {
   0,
   0,
   0,
+  shared_ptr<MemTracker>(),
 };
 
 MaintenanceManager::MaintenanceManager(const Options& options)
@@ -85,7 +86,9 @@ MaintenanceManager::MaintenanceManager(const Options& options)
     polling_interval_ms_(options.polling_interval_ms <= 0 ?
           FLAGS_maintenance_manager_polling_interval_ms :
           options.polling_interval_ms),
-    completed_ops_count_(0) {
+    completed_ops_count_(0),
+    parent_mem_tracker_(!options.parent_mem_tracker ?
+        MemTracker::GetRootTracker() : options.parent_mem_tracker) {
   CHECK_OK(ThreadPoolBuilder("MaintenanceMgr").set_min_threads(num_threads_)
                .set_max_threads(num_threads_).Build(&thread_pool_));
   uint32_t history_size = options.history_size == 0 ?
@@ -298,7 +301,7 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
   // Look at free memory. If it is dangerously low, we must select something
   // that frees memory-- the op with the most anchored memory.
   double capacity_pct;
-  if (MemTracker::GetRootTracker()->SoftLimitExceeded(&capacity_pct)) {
+  if (parent_mem_tracker_->AnySoftLimitExceeded(&capacity_pct)) {
     if (!most_mem_anchored_op) {
       string msg = StringPrintf("we have exceeded our soft memory limit "
           "(current capacity is %.2f%%).  However, there are no ops currently "

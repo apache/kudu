@@ -393,6 +393,15 @@ bool MemTracker::SoftLimitExceeded(double* current_capacity_pct) {
   return false;
 }
 
+bool MemTracker::AnySoftLimitExceeded(double* current_capacity_pct) {
+  BOOST_FOREACH(MemTracker* t, limit_trackers_) {
+    if (t->SoftLimitExceeded(current_capacity_pct)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 int64_t MemTracker::SpareCapacity() const {
   int64_t result = std::numeric_limits<int64_t>::max();
   for (vector<MemTracker*>::const_iterator tracker = limit_trackers_.begin();

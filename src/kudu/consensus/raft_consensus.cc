@@ -126,6 +126,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                               clock,
                               txn_factory,
                               log,
+                              parent_mem_tracker,
                               mark_dirty_clbk));
 }
 
@@ -140,6 +141,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              const scoped_refptr<server::Clock>& clock,
                              ReplicaTransactionFactory* txn_factory,
                              const scoped_refptr<log::Log>& log,
+                             const shared_ptr<MemTracker>& parent_mem_tracker,
                              const Closure& mark_dirty_clbk)
     : thread_pool_(thread_pool.Pass()),
       log_(log),
@@ -159,7 +161,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
       mark_dirty_clbk_(mark_dirty_clbk),
       shutdown_(false),
       follower_memory_pressure_rejections_(metric_entity->FindOrCreateCounter(
-          &METRIC_follower_memory_pressure_rejections)) {
+          &METRIC_follower_memory_pressure_rejections)),
+      parent_mem_tracker_(parent_mem_tracker) {
   DCHECK_NOTNULL(log_.get());
   state_.reset(new ReplicaState(options,
                                 peer_uuid,
@@ -915,7 +918,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       // This request contains at least one message, and is likely to increase
       // our memory pressure.
       double capacity_pct;
-      if (MemTracker::GetRootTracker()->SoftLimitExceeded(&capacity_pct)) {
+      if (parent_mem_tracker_->AnySoftLimitExceeded(&capacity_pct)) {
         follower_memory_pressure_rejections_->Increment();
         return Status::ServiceUnavailable(StringPrintf(
             "Soft memory limit exceeded (at %.2f%% of capacity)",

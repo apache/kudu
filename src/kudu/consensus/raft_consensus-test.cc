@@ -14,6 +14,7 @@
 #include "kudu/gutil/stl_util.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
@@ -94,6 +95,7 @@ class RaftConsensusSpy : public RaftConsensus {
                    const scoped_refptr<server::Clock>& clock,
                    ReplicaTransactionFactory* txn_factory,
                    const scoped_refptr<log::Log>& log,
+                   const shared_ptr<MemTracker>& parent_mem_tracker,
                    const Closure& mark_dirty_clbk)
     : RaftConsensus(options,
                     cmeta.Pass(),
@@ -106,6 +108,7 @@ class RaftConsensusSpy : public RaftConsensus {
                     clock,
                     txn_factory,
                     log,
+                    parent_mem_tracker,
                     mark_dirty_clbk) {
     // These "aliases" allow us to count invocations and assert on them.
     ON_CALL(*this, StartConsensusOnlyRoundUnlocked(_))
@@ -204,6 +207,7 @@ class RaftConsensusTest : public KuduTest {
                                           clock_,
                                           txn_factory_.get(),
                                           log_.get(),
+                                          MemTracker::GetRootTracker(),
                                           Bind(&DoNothing)));
 
     ON_CALL(*consensus_.get(), AppendNewRoundToQueueUnlocked(_))

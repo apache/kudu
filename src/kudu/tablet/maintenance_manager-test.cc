@@ -19,8 +19,6 @@ using std::vector;
 using strings::Substitute;
 using kudu::tablet::MaintenanceManagerStatusPB;
 
-DECLARE_int64(memory_limit_hard_mb);
-
 METRIC_DEFINE_entity(test);
 METRIC_DEFINE_gauge_uint32(test, maintenance_ops_running,
                            "Number of Maintenance Operations Running",
@@ -37,12 +35,12 @@ const int kHistorySize = 4;
 class MaintenanceManagerTest : public KuduTest {
  public:
   MaintenanceManagerTest() {
-    FLAGS_memory_limit_hard_mb = 1000;
-
+    test_tracker_ = MemTracker::CreateTracker(1000, "test");
     MaintenanceManager::Options options;
     options.num_threads = 2;
     options.polling_interval_ms = 1;
     options.history_size = kHistorySize;
+    options.parent_mem_tracker = test_tracker_;
     manager_.reset(new MaintenanceManager(options));
     manager_->Init();
   }
@@ -51,6 +49,7 @@ class MaintenanceManagerTest : public KuduTest {
   }
 
  protected:
+  shared_ptr<MemTracker> test_tracker_;
   shared_ptr<MaintenanceManager> manager_;
 };
 
@@ -70,22 +69,20 @@ class TestMaintenanceOp : public MaintenanceOp {
  public:
   TestMaintenanceOp(const std::string& name,
                     IOUsage io_usage,
-                    TestMaintenanceOpState state)
+                    TestMaintenanceOpState state,
+                    const shared_ptr<MemTracker>& tracker)
     : MaintenanceOp(name, io_usage),
       state_change_cond_(&lock_),
       state_(state),
-      ram_anchored_(500*1024*1024),
+      consumption_(tracker, 500),
       logs_retained_bytes_(0),
       perf_improvement_(0),
       metric_entity_(METRIC_ENTITY_test.Instantiate(&metric_registry_, "test")),
       maintenance_op_duration_(METRIC_maintenance_op_duration.Instantiate(metric_entity_)),
       maintenance_ops_running_(METRIC_maintenance_ops_running.Instantiate(metric_entity_, 0)) {
-    MemTracker::GetRootTracker()->Consume(ram_anchored_);
   }
 
-  virtual ~TestMaintenanceOp() {
-    MemTracker::GetRootTracker()->Release(ram_anchored_);
-  }
+  virtual ~TestMaintenanceOp() {}
 
   virtual bool Prepare() OVERRIDE {
     lock_guard<Mutex> guard(&lock_);
@@ -109,7 +106,7 @@ class TestMaintenanceOp : public MaintenanceOp {
   virtual void UpdateStats(MaintenanceOpStats* stats) OVERRIDE {
     lock_guard<Mutex> guard(&lock_);
     stats->set_runnable(state_ == OP_RUNNABLE);
-    stats->set_ram_anchored(ram_anchored_);
+    stats->set_ram_anchored(consumption_.consumption());
     stats->set_logs_retained_bytes(logs_retained_bytes_);
     stats->set_perf_improvement(perf_improvement_);
   }
@@ -144,12 +141,9 @@ class TestMaintenanceOp : public MaintenanceOp {
     }
   }
 
-  void set_ram_anchored(uint64_t ram_anchored_mb) {
+  void set_ram_anchored(uint64_t ram_anchored) {
     lock_guard<Mutex> guard(&lock_);
-    uint64_t new_ram_anchored = ram_anchored_mb * 1024 * 1024;
-    MemTracker::GetRootTracker()->Release(ram_anchored_);
-    ram_anchored_ = new_ram_anchored;
-    MemTracker::GetRootTracker()->Consume(ram_anchored_);
+    consumption_.Reset(ram_anchored);
   }
 
   void set_logs_retained_bytes(uint64_t logs_retained_bytes) {
@@ -174,7 +168,7 @@ class TestMaintenanceOp : public MaintenanceOp {
   Mutex lock_;
   ConditionVariable state_change_cond_;
   enum TestMaintenanceOpState state_;
-  uint64_t ram_anchored_;
+  ScopedTrackedConsumption consumption_;
   uint64_t logs_retained_bytes_;
   uint64_t perf_improvement_;
   MetricRegistry metric_registry_;
@@ -187,7 +181,7 @@ class TestMaintenanceOp : public MaintenanceOp {
 // running and verify that UnregisterOp waits for it to finish before
 // proceeding.
 TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
-  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE, OP_DISABLED);
+  TestMaintenanceOp op1("1", MaintenanceOp::HIGH_IO_USAGE, OP_DISABLED, test_tracker_);
   op1.set_ram_anchored(1001);
   manager_->RegisterOp(&op1);
   scoped_refptr<kudu::Thread> thread;
@@ -201,7 +195,7 @@ TEST_F(MaintenanceManagerTest, TestRegisterUnregister) {
 // Test that we'll run an operation that doesn't improve performance when memory
 // pressure gets high.
 TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
-  TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE);
+  TestMaintenanceOp op("op", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE, test_tracker_);
   op.set_ram_anchored(100);
   manager_->RegisterOp(&op);
 
@@ -221,15 +215,15 @@ TEST_F(MaintenanceManagerTest, TestMemoryPressure) {
 TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
   manager_->Shutdown();
 
-  TestMaintenanceOp op1("op1", MaintenanceOp::LOW_IO_USAGE, OP_RUNNABLE);
+  TestMaintenanceOp op1("op1", MaintenanceOp::LOW_IO_USAGE, OP_RUNNABLE, test_tracker_);
   op1.set_ram_anchored(0);
   op1.set_logs_retained_bytes(100);
 
-  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE);
+  TestMaintenanceOp op2("op2", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE, test_tracker_);
   op2.set_ram_anchored(100);
   op2.set_logs_retained_bytes(100);
 
-  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE);
+  TestMaintenanceOp op3("op3", MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE, test_tracker_);
   op3.set_ram_anchored(200);
   op3.set_logs_retained_bytes(100);
 
@@ -257,7 +251,7 @@ TEST_F(MaintenanceManagerTest, TestLogRetentionPrioritization) {
 TEST_F(MaintenanceManagerTest, TestCompletedOpsHistory) {
   for (int i = 0; i < 5; i++) {
     string name = Substitute("op$0", i);
-    TestMaintenanceOp op(name, MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE);
+    TestMaintenanceOp op(name, MaintenanceOp::HIGH_IO_USAGE, OP_RUNNABLE, test_tracker_);
     op.set_perf_improvement(1);
     op.set_ram_anchored(100);
     manager_->RegisterOp(&op);
