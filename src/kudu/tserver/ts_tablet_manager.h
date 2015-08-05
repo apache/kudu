@@ -116,14 +116,10 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   virtual const NodeInstancePB& NodeInstance() const OVERRIDE;
 
   // Initiate remote bootstrap of the specified tablet.
-  // At the time of writing, the tablet replica must not exist on this node.
-  // Remote bootstrap is started on a thread pool and this method returns
-  // immediately.
-  // TODO: Support replacement of existing tablets, either running or
-  // tombstoned. See KUDU-868.
-  virtual Status StartRemoteBootstrap(const std::string& tablet_id,
-                                      const std::string& bootstrap_peer_uuid,
-                                      const HostPort& bootstrap_peer_addr) OVERRIDE;
+  // See the StartRemoteBootstrap() RPC declaration in consensus.proto for details.
+  // Currently this runs the entire procedure synchronously.
+  // TODO: KUDU-921: Run this procedure on a background thread.
+  virtual Status StartRemoteBootstrap(const consensus::StartRemoteBootstrapRequestPB& req) OVERRIDE;
 
   // Generate an incremental tablet report.
   //
@@ -160,6 +156,12 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 
  private:
   FRIEND_TEST(TsTabletManagerTest, TestPersistBlocks);
+
+  // Flag specified when registering a TabletPeer.
+  enum RegisterTabletPeerMode {
+    NEW_PEER,
+    REPLACEMENT_PEER
+  };
 
   // Each tablet report is assigned a sequence number, so that subsequent
   // tablet reports only need to re-report those tablets which have
@@ -199,12 +201,23 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                               scoped_refptr<tablet::TabletPeer>* peer);
 
   // Add the tablet to the tablet map.
+  // 'mode' specifies whether to expect an existing tablet to exist in the map.
+  // If mode == NEW_PEER but a tablet with the same name is already registered,
+  // or if mode == REPLACEMENT_PEER but a tablet with the same name is not
+  // registered, a FATAL message is logged, causing a process crash.
+  // Calls to this method are expected to be externally synchronized, typically
+  // using the transition_in_progress_ map.
   void RegisterTablet(const std::string& tablet_id,
-                      const scoped_refptr<tablet::TabletPeer>& tablet_peer);
+                      const scoped_refptr<tablet::TabletPeer>& tablet_peer,
+                      RegisterTabletPeerMode mode);
 
   // Create and register a new TabletPeer, given tablet metadata.
+  // Calls RegisterTablet() with the given 'mode' parameter after constructing
+  // the TablerPeer object. See RegisterTablet() for details about the
+  // semantics of 'mode' and the locking requirements.
   scoped_refptr<tablet::TabletPeer> CreateAndRegisterTabletPeer(
-      const scoped_refptr<tablet::TabletMetadata>& meta);
+      const scoped_refptr<tablet::TabletMetadata>& meta,
+      RegisterTabletPeerMode mode);
 
   // Helper to generate the report for a single tablet.
   void CreateReportedTabletPB(const std::string& tablet_id,

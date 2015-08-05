@@ -51,6 +51,8 @@ using strings::Substitute;
 using tablet::ColumnDataPB;
 using tablet::DeltaDataPB;
 using tablet::RowSetDataPB;
+using tablet::TabletDataState;
+using tablet::TabletDataState_Name;
 using tablet::TabletMetadata;
 using tablet::TabletStatusListener;
 using tablet::TabletSuperBlockPB;
@@ -66,6 +68,7 @@ RemoteBootstrapClient::RemoteBootstrapClient(const std::string& tablet_id,
     started_(false),
     downloaded_wal_(false),
     downloaded_blocks_(false),
+    replace_tombstoned_tablet_(false),
     status_listener_(NULL),
     session_idle_timeout_millis_(0) {
 }
@@ -73,6 +76,40 @@ RemoteBootstrapClient::RemoteBootstrapClient(const std::string& tablet_id,
 RemoteBootstrapClient::~RemoteBootstrapClient() {
   // Note: Ending the remote bootstrap session releases anchors on the remote.
   WARN_NOT_OK(EndRemoteSession(), "Unable to close remote bootstrap session");
+}
+
+Status RemoteBootstrapClient::SetTabletToReplace(const scoped_refptr<TabletMetadata>& meta,
+                                                 int64_t caller_term) {
+  CHECK_EQ(tablet_id_, meta->tablet_id());
+  TabletDataState data_state = meta->tablet_data_state();
+  if (data_state != tablet::TABLET_DATA_TOMBSTONED) {
+    return Status::IllegalState(Substitute("Tablet $0 not in tombstoned state: $1 ($2)",
+                                           tablet_id_,
+                                           TabletDataState_Name(data_state),
+                                           data_state));
+  }
+
+  replace_tombstoned_tablet_ = true;
+  meta_ = meta;
+
+  gscoped_ptr<ConsensusMetadata> cmeta;
+  Status s = ConsensusMetadata::Load(fs_manager_, tablet_id_,
+                                     fs_manager_->uuid(), &cmeta);
+  if (s.IsNotFound()) {
+    // The consensus metadata was not written to disk, possibly due to a failed
+    // remote bootstrap.
+    return Status::OK();
+  }
+  RETURN_NOT_OK(s);
+
+  if (cmeta->current_term() > caller_term) {
+    return Status::InvalidArgument(
+        Substitute("Caller has term $0 but tombstoned replica for tablet $1 has higher term $2. "
+                   "Refusing remote bootstrap from caller",
+                   caller_term, tablet_id_, cmeta->current_term()));
+  }
+  cmeta_.swap(cmeta);
+  return Status::OK();
 }
 
 Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
@@ -118,23 +155,51 @@ Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
   session_id_ = resp.session_id();
   session_idle_timeout_millis_ = resp.session_idle_timeout_millis();
   superblock_.reset(resp.release_superblock());
+  superblock_->set_tablet_data_state(tablet::TABLET_DATA_COPYING);
   wal_seqnos_.assign(resp.wal_segment_seqnos().begin(), resp.wal_segment_seqnos().end());
-  committed_cstate_.reset(resp.release_initial_committed_cstate());
+  remote_committed_cstate_.reset(resp.release_initial_committed_cstate());
 
   Schema schema;
   RETURN_NOT_OK_PREPEND(SchemaFromPB(superblock_->schema(), &schema),
                         "Cannot deserialize schema from remote superblock");
 
-  // Create the superblock on disk.
-  // TODO: Once we support tablet delete, if the superblock exists, retain its
-  // latest_log_opid. See KUDU-868.
-  RETURN_NOT_OK(TabletMetadata::CreateNew(fs_manager_, tablet_id_,
-                                          superblock_->table_name(),
-                                          schema,
-                                          superblock_->start_key(),
-                                          superblock_->end_key(),
-                                          tablet::TABLET_DATA_COPYING,
-                                          &meta_));
+  if (replace_tombstoned_tablet_) {
+    // Also validate the term of the bootstrap source peer, in case they are
+    // different. This is a sanity check that protects us in case a bug or
+    // misconfiguration causes us to attempt to bootstrap from an out-of-date
+    // source peer, even after passing the term check from the caller in
+    // SetTabletToReplace().
+    if (cmeta_ && cmeta_->current_term() > remote_committed_cstate_->current_term()) {
+      return Status::InvalidArgument(
+          Substitute("Tablet $0: Bootstrap source has term $1 but "
+                     "tombstoned replica has higher term $2. "
+                      "Refusing remote bootstrap from source peer $3",
+                      tablet_id_,
+                      remote_committed_cstate_->current_term(),
+                      cmeta_->current_term(),
+                      bootstrap_peer_uuid));
+    }
+
+    // TODO: Once we support voting by tombstoned replicas, we will need some
+    // way to retain the latest log opid, and if it's kept in the superblock,
+    // we would need to copy it from the old superblock before replacing it
+    // here. See KUDU-871.
+
+    // This will flush to disk, but we set the data state to COPYING above.
+    RETURN_NOT_OK_PREPEND(meta_->ReplaceSuperBlock(*superblock_),
+                          "Remote bootstrap unable to replace superblock on tablet " +
+                          tablet_id_);
+  } else {
+    // Create the superblock on disk.
+    RETURN_NOT_OK(TabletMetadata::CreateNew(fs_manager_, tablet_id_,
+                                            superblock_->table_name(),
+                                            schema,
+                                            superblock_->start_key(),
+                                            superblock_->end_key(),
+                                            tablet::TABLET_DATA_COPYING,
+                                            &meta_));
+  }
+
   started_ = true;
   if (meta) {
     *meta = meta_;
@@ -159,13 +224,14 @@ Status RemoteBootstrapClient::Finish() {
   CHECK(downloaded_wal_);
   CHECK(downloaded_blocks_);
 
-  RETURN_NOT_OK(WriteConsensusMetadata()); // TODO: KUDU-868: Merge with existing cmeta.
+  RETURN_NOT_OK(WriteConsensusMetadata());
 
   // Replace tablet metadata superblock. This will set the tablet metadata state
   // to TABLET_DATA_READY, since we checked above that the response
   // superblock is in a valid state to bootstrap from.
   LOG_WITH_PREFIX(INFO) << "Remote bootstrap complete. Replacing tablet superblock.";
   UpdateStatusMessage("Replacing tablet superblock");
+  new_superblock_->set_tablet_data_state(tablet::TABLET_DATA_READY);
   return meta_->ReplaceSuperBlock(*new_superblock_);
 }
 
@@ -319,11 +385,19 @@ Status RemoteBootstrapClient::DownloadWAL(uint64_t wal_segment_seqno) {
 }
 
 Status RemoteBootstrapClient::WriteConsensusMetadata() {
-  gscoped_ptr<ConsensusMetadata> cmeta;
-  return ConsensusMetadata::Create(fs_manager_, tablet_id_, fs_manager_->uuid(),
-                                   committed_cstate_->config(),
-                                   committed_cstate_->current_term(),
-                                   &cmeta);
+  // If we didn't find a previous consensus meta file, create one.
+  if (!cmeta_) {
+    gscoped_ptr<ConsensusMetadata> cmeta;
+    return ConsensusMetadata::Create(fs_manager_, tablet_id_, fs_manager_->uuid(),
+                                     remote_committed_cstate_->config(),
+                                     remote_committed_cstate_->current_term(),
+                                     &cmeta);
+  }
+
+  // Otherwise, update the consensus metadata to reflect the config and term
+  // sent by the remote bootstrap source.
+  cmeta_->MergeCommittedConsensusStatePB(*remote_committed_cstate_);
+  return cmeta_->Flush();
 }
 
 Status RemoteBootstrapClient::DownloadAndRewriteBlock(BlockIdPB* block_id,

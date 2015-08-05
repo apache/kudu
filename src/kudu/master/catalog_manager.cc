@@ -102,6 +102,7 @@ using consensus::ConsensusStatePB;
 using consensus::GetConsensusRole;
 using consensus::OpId;
 using consensus::RaftPeerPB;
+using consensus::StartRemoteBootstrapRequestPB;
 using rpc::RpcContext;
 using std::string;
 using std::vector;
@@ -1509,9 +1510,7 @@ const NodeInstancePB& CatalogManager::NodeInstance() const {
   return master_->instance_pb();
 }
 
-Status CatalogManager::StartRemoteBootstrap(const std::string& tablet_id,
-                                            const std::string& bootstrap_peer_uuid,
-                                            const HostPort& bootstrap_peer_addr) {
+Status CatalogManager::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB& req) {
   return Status::NotSupported("Remote bootstrap not yet implemented for the master tablet");
 }
 

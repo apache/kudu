@@ -17,6 +17,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -29,6 +30,7 @@
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduTableCreator;
+using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::TabletServerMap;
@@ -39,6 +41,7 @@ using kudu::rpc::MessengerBuilder;
 using kudu::tablet::TabletDataState;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
+using kudu::tablet::TABLET_DATA_READY;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletSuperBlockPB;
 using kudu::tserver::ListTabletsResponsePB;
@@ -77,11 +80,16 @@ class DeleteTableTest : public KuduTest {
 
   void StartCluster(const vector<string>& extra_tserver_flags = vector<string>());
 
+  // Get the UUID of the leader of the specified tablet, as seen by the TS with
+  // the given 'ts_uuid'.
+  string GetLeaderUUID(const string& ts_uuid, const string& tablet_id);
+
   Status ListFilesInDir(const string& path, vector<string>* entries);
   int CountFilesInDir(const string& path);
   int CountWALSegmentsOnTS(int index);
   vector<string> ListTabletsOnTS(int index);
   int CountWALSegmentsForTabletOnTS(int index, const string& tablet_id);
+  Status GetConsensusMetadata(int index, const string& tablet_id, ConsensusMetadataPB* cmeta_pb);
   bool DoesConsensusMetaExistForTabletOnTS(int index, const string& tablet_id);
 
   int CountReplicasInMetadataDirs();
@@ -103,10 +111,14 @@ class DeleteTableTest : public KuduTest {
   void WaitForTabletTombstonedOnTS(int index,
                                    const string& tablet_id,
                                    IsCMetaExpected is_cmeta_expected);
+  void WaitForTabletDataStateOnTS(int index,
+                                  const string& tablet_id,
+                                  TabletDataState data_state);
 
   void WaitForReplicaCount(int expected);
   void WaitForTSToCrash(int index);
   void WaitForAllTSToCrash();
+  void WaitUntilTabletRunning(int index, const std::string& tablet_id);
 
   // Delete the given table. If the operation times out, dumps the master stacks
   // to help debug master-side deadlocks.
@@ -134,6 +146,13 @@ void DeleteTableTest::StartCluster(const vector<string>& extra_tserver_flags) {
                                           &ts_map_));
   KuduClientBuilder builder;
   ASSERT_OK(cluster_->CreateClient(builder, &client_));
+}
+
+string DeleteTableTest::GetLeaderUUID(const string& ts_uuid, const string& tablet_id) {
+  ConsensusStatePB cstate;
+  CHECK_OK(itest::GetCommittedConsensusState(ts_map_[ts_uuid], tablet_id,
+                                             MonoDelta::FromSeconds(10), &cstate));
+  return cstate.leader_uuid();
 }
 
 Status DeleteTableTest::ListFilesInDir(const string& path, vector<string>* entries) {
@@ -187,11 +206,22 @@ int DeleteTableTest::CountWALSegmentsForTabletOnTS(int index, const string& tabl
   return CountFilesInDir(tablet_wal_dir);
 }
 
-bool DeleteTableTest::DoesConsensusMetaExistForTabletOnTS(int index, const string& tablet_id) {
+Status DeleteTableTest::GetConsensusMetadata(int index,
+                                             const string& tablet_id,
+                                             ConsensusMetadataPB* cmeta_pb) {
   string data_dir = cluster_->tablet_server(index)->data_dir();
-  string path = JoinPathSegments(
-      JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName), tablet_id);
-  return env_->FileExists(path);
+  string cmeta_dir = JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName);
+  string cmeta_file = JoinPathSegments(cmeta_dir, tablet_id);
+  if (!env_->FileExists(cmeta_file)) {
+    return Status::NotFound("Consensus metadata file not found", cmeta_file);
+  }
+  return pb_util::ReadPBContainerFromPath(env_.get(), cmeta_file, cmeta_pb);
+}
+
+bool DeleteTableTest::DoesConsensusMetaExistForTabletOnTS(int index, const string& tablet_id) {
+  ConsensusMetadataPB cmeta_pb;
+  Status s = GetConsensusMetadata(index, tablet_id, &cmeta_pb);
+  return s.ok();
 }
 
 int DeleteTableTest::CountReplicasInMetadataDirs() {
@@ -310,6 +340,22 @@ void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
   ASSERT_OK(s);
 }
 
+void DeleteTableTest::WaitForTabletDataStateOnTS(int index,
+                                                 const string& tablet_id,
+                                                 TabletDataState data_state) {
+  Status s;
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  for (int i = 0; i < 3000; i++) {
+    s = CheckTabletDataStateOnTS(index, tablet_id, data_state);
+    if (s.ok()) return;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  s = s.CloneAndPrepend("Timed out after " +
+                        MonoTime::Now(MonoTime::FINE)
+                        .GetDeltaSince(start).ToString());
+  ASSERT_OK(s);
+}
+
 void DeleteTableTest::WaitForReplicaCount(int expected) {
   Status s;
   for (int i = 0; i < 1000; i++) {
@@ -341,6 +387,11 @@ void DeleteTableTest::WaitForAllTSToCrash() {
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
     NO_FATALS(WaitForTSToCrash(i));
   }
+}
+
+void DeleteTableTest::WaitUntilTabletRunning(int index, const std::string& tablet_id) {
+  ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(index)->uuid()],
+                                          tablet_id, MonoDelta::FromSeconds(30)));
 }
 
 void DeleteTableTest::DeleteTabletWithRetries(const TServerDetails* ts,
@@ -448,11 +499,9 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
   const string& tablet_id = tablets[0];
 
   // Add our TS 0 to the config and wait for it to crash.
-  ConsensusStatePB cstate;
-  ASSERT_OK(itest::GetCommittedConsensusState(ts_map_[cluster_->tablet_server(1)->uuid()],
-                                              tablet_id, timeout, &cstate));
-  TServerDetails* leader = DCHECK_NOTNULL(ts_map_[cstate.leader_uuid()]);
-  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  string leader_uuid = GetLeaderUUID(cluster_->tablet_server(1)->uuid(), tablet_id);
+  TServerDetails* leader = DCHECK_NOTNULL(ts_map_[leader_uuid]);
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
   ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, timeout));
   NO_FATALS(WaitForTSToCrash(kTsIndex));
 
@@ -474,6 +523,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
 
 // Test that a tablet replica automatically tombstones itself if the remote
 // bootstrap source server fails in the middle of the remote bootstrap process.
+// Also test that we can remotely bootstrap a tombstoned tablet.
 TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   vector<string> flags;
   flags.push_back("--log_segment_size_mb=1"); // Faster log rolls.
@@ -507,19 +557,14 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
 
-  // Determine the leader replica.
-  ConsensusStatePB cstate;
-  ASSERT_OK(itest::GetCommittedConsensusState(ts_map_[cluster_->tablet_server(1)->uuid()],
-                                              tablet_id, timeout, &cstate));
-  TServerDetails* leader = DCHECK_NOTNULL(ts_map_[cstate.leader_uuid()]);
-  int leader_index = cluster_->tablet_server_index_by_uuid(leader->uuid());
-  ASSERT_NE(-1, leader_index);
-
   // Remote bootstrap doesn't see the active WAL segment, and we need to
   // download a file to trigger the fault in this test. Due to the log index
   // chunks, that means 3 files minimum: One in-flight WAL segment, one index
   // chunk file (these files grow much more slowly than the WAL segments), and
   // one completed WAL segment.
+  string leader_uuid = GetLeaderUUID(cluster_->tablet_server(1)->uuid(), tablet_id);
+  int leader_index = cluster_->tablet_server_index_by_uuid(leader_uuid);
+  ASSERT_NE(-1, leader_index);
   NO_FATALS(WaitForMinFilesInTabletWalDirOnTS(leader_index, tablet_id, 3));
   workload.StopAndJoin();
 
@@ -529,6 +574,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
 
   // Add our TS 0 to the config and wait for the leader to crash.
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
+  TServerDetails* leader = ts_map_[leader_uuid];
   TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
   ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, timeout));
   NO_FATALS(WaitForTSToCrash(leader_index));
@@ -539,6 +585,140 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   cluster_->tablet_server(1)->Shutdown();
   cluster_->tablet_server(2)->Shutdown();
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
+
+  // Now bring the other replicas back, and wait for the leader to remote
+  // bootstrap the tombstoned replica. This will have replaced a tablet with no
+  // consensus metadata.
+  ASSERT_OK(cluster_->tablet_server(1)->Restart());
+  ASSERT_OK(cluster_->tablet_server(2)->Restart());
+  NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
+                            workload.rows_inserted()));
+
+  // Now pause the other replicas and tombstone our replica again.
+  ASSERT_OK(cluster_->tablet_server(1)->Pause());
+  ASSERT_OK(cluster_->tablet_server(2)->Pause());
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
+
+  // Bring them back again, let them yet again bootstrap our tombstoned replica.
+  // This time, the leader will have replaced a tablet with consensus metadata.
+  ASSERT_OK(cluster_->tablet_server(1)->Resume());
+  ASSERT_OK(cluster_->tablet_server(2)->Resume());
+  NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
+
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
+                            workload.rows_inserted()));
+}
+
+// Test for correct remote bootstrap merge of consensus metadata.
+TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false"); // Manual leader selection.
+  NO_FATALS(StartCluster(flags));
+  const MonoDelta timeout = MonoDelta::FromSeconds(10);
+  const int kTsIndex = 0;
+
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+  NO_FATALS(WaitForReplicaCount(3));
+
+  // Figure out the tablet id to remote bootstrap.
+  vector<string> tablets = ListTabletsOnTS(1);
+  ASSERT_EQ(1, tablets.size());
+  const string& tablet_id = tablets[0];
+
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    NO_FATALS(WaitUntilTabletRunning(i, tablet_id));
+  }
+
+  // Elect a leader and run some data through the cluster.
+  int leader_index = 1;
+  string leader_uuid = cluster_->tablet_server(leader_index)->uuid();
+  ASSERT_OK(itest::StartElection(ts_map_[leader_uuid], tablet_id, timeout));
+  workload.Start();
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
+
+  // Verify that TS 0 voted for the chosen leader.
+  ConsensusMetadataPB cmeta_pb;
+  ASSERT_OK(GetConsensusMetadata(kTsIndex, tablet_id, &cmeta_pb));
+  ASSERT_EQ(1, cmeta_pb.current_term());
+  ASSERT_EQ(leader_uuid, cmeta_pb.voted_for());
+
+  // Shut down all but TS 0 and try to elect TS 0. The election will fail but
+  // the TS will record a vote for itself as well as a new term (term 2).
+  cluster_->tablet_server(1)->Shutdown();
+  cluster_->tablet_server(2)->Shutdown();
+  NO_FATALS(WaitUntilTabletRunning(kTsIndex, tablet_id));
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  ASSERT_OK(itest::StartElection(ts, tablet_id, timeout));
+  for (int i = 0; i < 1000; i++) {
+    Status s = GetConsensusMetadata(kTsIndex, tablet_id, &cmeta_pb);
+    if (s.ok() &&
+        cmeta_pb.current_term() == 2 &&
+        cmeta_pb.voted_for() == ts->uuid()) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  ASSERT_EQ(2, cmeta_pb.current_term());
+  ASSERT_EQ(ts->uuid(), cmeta_pb.voted_for());
+
+  // Tombstone our special little guy, then shut him down.
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+
+  // Restart the other dudes and re-elect the same leader.
+  ASSERT_OK(cluster_->tablet_server(1)->Restart());
+  ASSERT_OK(cluster_->tablet_server(2)->Restart());
+  TServerDetails* leader = ts_map_[leader_uuid];
+  NO_FATALS(WaitUntilTabletRunning(1, tablet_id));
+  NO_FATALS(WaitUntilTabletRunning(2, tablet_id));
+  ASSERT_OK(itest::StartElection(leader, tablet_id, timeout));
+  ASSERT_OK(itest::WaitUntilLeader(leader, tablet_id, timeout));
+
+  // Bring our special little guy back up.
+  // Wait until he gets remote bootstrapped.
+  LOG(INFO) << "Bringing TS " << cluster_->tablet_server(kTsIndex)->uuid()
+            << " back up...";
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
+  NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
+
+  // Assert that the election history is retained (voted for self).
+  ASSERT_OK(GetConsensusMetadata(kTsIndex, tablet_id, &cmeta_pb));
+  ASSERT_EQ(2, cmeta_pb.current_term());
+  ASSERT_EQ(ts->uuid(), cmeta_pb.voted_for());
+
+  // Now do the same thing as above, where we tombstone TS 0 then trigger a new
+  // term (term 3) on the other machines. TS 0 will get remotely bootstrapped
+  // again, but this time the vote record on TS 0 for term 2 should not be
+  // retained after remote bootstrap occurs.
+  cluster_->tablet_server(1)->Shutdown();
+  cluster_->tablet_server(2)->Shutdown();
+
+  // Delete with retries because the tablet might still be bootstrapping.
+  NO_FATALS(DeleteTabletWithRetries(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
+
+  ASSERT_OK(cluster_->tablet_server(1)->Restart());
+  ASSERT_OK(cluster_->tablet_server(2)->Restart());
+  NO_FATALS(WaitUntilTabletRunning(1, tablet_id));
+  NO_FATALS(WaitUntilTabletRunning(2, tablet_id));
+  ASSERT_OK(itest::StartElection(leader, tablet_id, timeout));
+  NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
+
+  // The election history should have been wiped out.
+  ASSERT_OK(GetConsensusMetadata(kTsIndex, tablet_id, &cmeta_pb));
+  ASSERT_EQ(3, cmeta_pb.current_term());
+  ASSERT_TRUE(!cmeta_pb.has_voted_for()) << cmeta_pb.ShortDebugString();
 }
 
 // Parameterized test case for TABLET_DATA_DELETED deletions.
@@ -636,12 +816,11 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   NO_FATALS(WaitForReplicaCount(6));
 
   // Set up the proxies so we can easily send DeleteTablet() RPCs.
-  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->instance_id().permanent_uuid()];
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
 
   // Ensure the tablet server is reporting 2 tablets.
   vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
-  ASSERT_OK(itest::ListTablets(ts, timeout, &tablets));
-  ASSERT_EQ(2, tablets.size());
+  ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 2, timeout, &tablets));
 
   // Run the workload against whoever the leader is until WALs appear on TS 0
   // for the tablets we created.
@@ -684,8 +863,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
 
   // The tombstoned tablets will still show up in ListTablets(),
   // just with their data state set as TOMBSTONED.
-  ASSERT_OK(itest::ListTablets(ts, timeout, &tablets));
-  ASSERT_EQ(2, tablets.size());
+  ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 2, timeout, &tablets));
   BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
     ASSERT_EQ(TABLET_DATA_TOMBSTONED, t.tablet_status().tablet_data_state())
         << t.tablet_status().tablet_id() << " not tombstoned";

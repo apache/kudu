@@ -765,13 +765,7 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
 void ConsensusServiceImpl::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* req,
                                                 StartRemoteBootstrapResponsePB* resp,
                                                 rpc::RpcContext* context) {
-  HostPort host_port;
-  Status s = HostPortFromPB(req->bootstrap_peer_addr(), &host_port);
-  if (s.ok()) {
-    s = tablet_manager_->StartRemoteBootstrap(req->tablet_id(),
-                                              req->bootstrap_peer_uuid(),
-                                              host_port);
-  }
+  Status s = tablet_manager_->StartRemoteBootstrap(*req);
   if (!s.ok()) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,

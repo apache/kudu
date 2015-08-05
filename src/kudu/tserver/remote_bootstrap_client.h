@@ -22,6 +22,7 @@ class FsManager;
 class HostPort;
 
 namespace consensus {
+class ConsensusMetadata;
 class ConsensusStatePB;
 class RaftConfigPB;
 class RaftPeerPB;
@@ -65,6 +66,17 @@ class RemoteBootstrapClient {
   // Attempt to clean up resources on the remote end by sending an
   // EndRemoteBootstrapSession() RPC
   ~RemoteBootstrapClient();
+
+  // Pass in the existing metadata for a tombstoned tablet, which will be
+  // replaced if validation checks pass in Start().
+  // 'meta' is the metadata for the tombstoned tablet and 'caller_term' is the
+  // term provided by the caller (assumed to be the current leader of the
+  // consensus config) for validation purposes.
+  // If the consensus metadata exists on disk for this tablet, and if
+  // 'caller_term' is lower than the current term stored in that consensus
+  // metadata, then this method will fail with a Status::InvalidArgument error.
+  Status SetTabletToReplace(const scoped_refptr<tablet::TabletMetadata>& meta,
+                            int64_t caller_term);
 
   // Start up a remote bootstrap session to bootstrap from the specified
   // bootstrap peer. Place a new superblock indicating that remote bootstrap is
@@ -163,14 +175,22 @@ class RemoteBootstrapClient {
   bool downloaded_blocks_;  // Data blocks downloaded.
 
   // Session-specific data items.
+  bool replace_tombstoned_tablet_;
+
+  // Local tablet metadata file.
   scoped_refptr<tablet::TabletMetadata> meta_;
+
+  // Local Consensus metadata file. This may initially be NULL if this is
+  // bootstrapping a new replica (rather than replacing an old one).
+  gscoped_ptr<consensus::ConsensusMetadata> cmeta_;
+
   tablet::TabletStatusListener* status_listener_;
   std::tr1::shared_ptr<RemoteBootstrapServiceProxy> proxy_;
   std::string session_id_;
   uint64_t session_idle_timeout_millis_;
   gscoped_ptr<tablet::TabletSuperBlockPB> superblock_;
   gscoped_ptr<tablet::TabletSuperBlockPB> new_superblock_;
-  gscoped_ptr<consensus::ConsensusStatePB> committed_cstate_;
+  gscoped_ptr<consensus::ConsensusStatePB> remote_committed_cstate_;
   std::vector<uint64_t> wal_seqnos_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapClient);

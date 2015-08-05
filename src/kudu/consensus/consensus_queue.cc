@@ -336,6 +336,7 @@ Status PeerMessageQueue::GetRemoteBootstrapRequestForPeer(const string& uuid,
   req->set_tablet_id(tablet_id_);
   req->set_bootstrap_peer_uuid(local_peer_pb_.permanent_uuid());
   *req->mutable_bootstrap_peer_addr() = local_peer_pb_.last_known_addr();
+  req->set_caller_term(queue_state_.current_term);
   peer->needs_remote_bootstrap = false; // Now reset the flag.
   return Status::OK();
 }

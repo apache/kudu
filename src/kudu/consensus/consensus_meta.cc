@@ -37,8 +37,8 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
                                gscoped_ptr<ConsensusMetadata>* cmeta_out) {
   gscoped_ptr<ConsensusMetadata> cmeta(new ConsensusMetadata(fs_manager, tablet_id, peer_uuid));
   RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(fs_manager->env(),
-                                        fs_manager->GetConsensusMetadataPath(tablet_id),
-                                        &cmeta->pb_));
+                                                 fs_manager->GetConsensusMetadataPath(tablet_id),
+                                                 &cmeta->pb_));
   cmeta->UpdateActiveRole(); // Needs to happen here as we sidestep the accessor APIs.
   cmeta_out->swap(cmeta);
   return Status::OK();
@@ -151,6 +151,17 @@ ConsensusStatePB ConsensusMetadata::ToConsensusStatePB(ConfigType type) const {
     }
   }
   return cstate;
+}
+
+void ConsensusMetadata::MergeCommittedConsensusStatePB(const ConsensusStatePB& committed_cstate) {
+  if (committed_cstate.current_term() > current_term()) {
+    set_current_term(committed_cstate.current_term());
+    clear_voted_for();
+  }
+
+  set_leader_uuid("");
+  set_committed_config(committed_cstate.config());
+  clear_pending_config();
 }
 
 Status ConsensusMetadata::Flush() {

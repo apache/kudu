@@ -101,6 +101,7 @@ using consensus::ConsensusStatePB;
 using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
+using consensus::StartRemoteBootstrapRequestPB;
 using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
@@ -178,7 +179,7 @@ Status TSTabletManager::Init() {
       RETURN_NOT_OK(HandleNonReadyTabletOnStartup(meta));
       continue;
     }
-    scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta);
+    scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta, NEW_PEER);
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                                 this, meta, deleter)));
   }
@@ -271,7 +272,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   RETURN_NOT_OK_PREPEND(ConsensusMetadata::Create(fs_manager_, tablet_id, fs_manager_->uuid(),
                                                   config, consensus::kMinimumTerm, &cmeta),
                         "Unable to create new ConsensusMeta for tablet " + tablet_id);
-  scoped_refptr<TabletPeer> new_peer = CreateAndRegisterTabletPeer(meta);
+  scoped_refptr<TabletPeer> new_peer = CreateAndRegisterTabletPeer(meta, NEW_PEER);
 
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
@@ -294,18 +295,23 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     } \
   } while (0)
 
-// TODO: KUDU-921: Run this procedure on a background thread.
-Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
-                                             const std::string& bootstrap_peer_uuid,
-                                             const HostPort& bootstrap_peer_addr) {
+Status TSTabletManager::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB& req) {
+  const string& tablet_id = req.tablet_id();
+  const string& bootstrap_peer_uuid = req.bootstrap_peer_uuid();
+  HostPort bootstrap_peer_addr;
+  RETURN_NOT_OK(HostPortFromPB(req.bootstrap_peer_addr(), &bootstrap_peer_addr));
+  int64_t caller_term = req.caller_term();
+
   const string kLogPrefix = LogPrefix(tablet_id);
 
+  scoped_refptr<TabletPeer> old_tablet_peer;
+  scoped_refptr<TabletMetadata> meta;
+  bool replacing_tablet = false;
   {
     boost::lock_guard<rw_spinlock> lock(lock_);
-    scoped_refptr<TabletPeer> tablet_peer;
-    if (LookupTabletUnlocked(tablet_id, &tablet_peer)) {
-      return Status::AlreadyPresent("Remote bootstrap of existing tablet not yet supported",
-                                    tablet_id);
+    if (LookupTabletUnlocked(tablet_id, &old_tablet_peer)) {
+      meta = old_tablet_peer->tablet_metadata();
+      replacing_tablet = true;
     }
     if (!InsertIfNotPresent(&transition_in_progress_, tablet_id)) {
       return Status::AlreadyPresent("Maintenance of tablet already in progress",
@@ -315,6 +321,42 @@ Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
 
   scoped_refptr<TransitionInProgressDeleter> deleter(
       new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
+
+  if (replacing_tablet) {
+    // Make sure the existing tablet peer is shut down and tombstoned.
+    TabletDataState data_state = meta->tablet_data_state();
+    switch (data_state) {
+      case TABLET_DATA_COPYING:
+        // This should not be possible due to the transition_in_progress_ "lock".
+        LOG(FATAL) << LogPrefix(tablet_id) << " Remote bootstrap: "
+                   << "Found tablet in TABLET_DATA_COPYING state during StartRemoteBootstrap()";
+      case TABLET_DATA_TOMBSTONED:
+        break;
+      case TABLET_DATA_READY: {
+        int64_t term = old_tablet_peer->consensus()->CommittedConsensusState().current_term();
+        if (caller_term < term) {
+          Status s = Status::InvalidArgument(
+              Substitute("Caller has replica of tablet $0 with term $1 "
+                         "lower than term $2 of local replica. Rejecting "
+                         "remote bootstrap request",
+                         tablet_id,
+                         caller_term, term));
+          LOG(WARNING) << LogPrefix(tablet_id) << "Remote boostrap: " << s.ToString();
+          return s;
+        }
+        // Tombstone the tablet.
+        old_tablet_peer->Shutdown();
+        RETURN_NOT_OK_PREPEND(DeleteTabletData(meta, TABLET_DATA_TOMBSTONED),
+                              Substitute("Unable to delete on-disk data from tablet $0",
+                                         tablet_id));
+      }
+      default:
+        return Status::IllegalState(
+            Substitute("Found tablet in unsupported state for remote bootstrap. "
+                        "Tablet: $0, tablet data state: $1",
+                        tablet_id, TabletDataState_Name(data_state)));
+    }
+  }
 
   string init_msg = kLogPrefix + Substitute("Initiating remote bootstrap from Peer $0 ($1)",
                                             bootstrap_peer_uuid, bootstrap_peer_addr.ToString());
@@ -326,7 +368,9 @@ Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
                                 fs_manager_->uuid()));
 
   // Download and persist the remote superblock in TABLET_DATA_COPYING state.
-  scoped_refptr<TabletMetadata> meta;
+  if (replacing_tablet) {
+    RETURN_NOT_OK(rb_client->SetTabletToReplace(meta, caller_term));
+  }
   RETURN_NOT_OK(rb_client->Start(bootstrap_peer_uuid, bootstrap_peer_addr, &meta));
 
   // From this point onward, the superblock is persisted in TABLET_DATA_COPYING
@@ -334,7 +378,8 @@ Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
   // getting to a TABLET_DATA_READY state fail.
 
   // Registering a non-initialized TabletPeer offers visibility through the Web UI.
-  scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta);
+  RegisterTabletPeerMode mode = replacing_tablet ? REPLACEMENT_PEER : NEW_PEER;
+  scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta, mode);
   string peer_str = bootstrap_peer_uuid + " (" + bootstrap_peer_addr.ToString() + ")";
 
   // Download all of the remote files.
@@ -348,7 +393,9 @@ Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
   // TabletDataState in the superblock to TABLET_DATA_READY.
   TOMBSTONE_NOT_OK(rb_client->Finish(), meta, "Remote bootstrap: Failure calling Finish()");
 
-  // We run this asynchronously.
+  // We run this asynchronously. We don't tombstone the tablet if this fails,
+  // because if we were to fail to open the tablet, on next startup, it's in a
+  // valid fully-copied state.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                               this, meta, deleter)));
   return Status::OK();
@@ -356,13 +403,13 @@ Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
 
 // Create and register a new TabletPeer, given tablet metadata.
 scoped_refptr<TabletPeer> TSTabletManager::CreateAndRegisterTabletPeer(
-    const scoped_refptr<TabletMetadata>& meta) {
+    const scoped_refptr<TabletMetadata>& meta, RegisterTabletPeerMode mode) {
   scoped_refptr<TabletPeer> tablet_peer(
       new TabletPeer(meta,
                      local_peer_pb_,
                      apply_pool_.get(),
                      Bind(&TSTabletManager::MarkTabletDirty, Unretained(this), meta->tablet_id())));
-  RegisterTablet(meta->tablet_id(), tablet_peer);
+  RegisterTablet(meta->tablet_id(), tablet_peer, mode);
   return tablet_peer;
 }
 
@@ -570,8 +617,13 @@ void TSTabletManager::Shutdown() {
 }
 
 void TSTabletManager::RegisterTablet(const std::string& tablet_id,
-                                     const scoped_refptr<TabletPeer>& tablet_peer) {
+                                     const scoped_refptr<TabletPeer>& tablet_peer,
+                                     RegisterTabletPeerMode mode) {
   boost::lock_guard<rw_spinlock> lock(lock_);
+  // If we are replacing a tablet peer, we delete the existing one first.
+  if (mode == REPLACEMENT_PEER && tablet_map_.erase(tablet_id) != 1) {
+    LOG(FATAL) << "Unable to remove previous tablet peer " << tablet_id << ": not registered!";
+  }
   if (!InsertIfNotPresent(&tablet_map_, tablet_id, tablet_peer)) {
     LOG(FATAL) << "Unable to register tablet peer " << tablet_id << ": already registered!";
   }
@@ -597,11 +649,16 @@ bool TSTabletManager::LookupTabletUnlocked(const string& tablet_id,
 
 Status TSTabletManager::GetTabletPeer(const string& tablet_id,
                                       scoped_refptr<tablet::TabletPeer>* tablet_peer) const {
-  if (LookupTablet(tablet_id, tablet_peer)) {
-    return Status::OK();
-  } else {
+  if (!LookupTablet(tablet_id, tablet_peer)) {
     return Status::NotFound("Tablet not found", tablet_id);
   }
+  TabletDataState data_state = (*tablet_peer)->tablet_metadata()->tablet_data_state();
+  if (data_state != TABLET_DATA_READY) {
+    return Status::IllegalState("Tablet data state not TABLET_DATA_READY: " +
+                                TabletDataState_Name(data_state),
+                                tablet_id);
+  }
+  return Status::OK();
 }
 
 const NodeInstancePB& TSTabletManager::NodeInstance() const {
@@ -743,7 +800,7 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
   // allows us to permanently delete replica tombstones when a table gets
   // deleted.
   if (data_state == TABLET_DATA_TOMBSTONED) {
-    CreateAndRegisterTabletPeer(meta);
+    CreateAndRegisterTabletPeer(meta, NEW_PEER);
   }
 
   return Status::OK();

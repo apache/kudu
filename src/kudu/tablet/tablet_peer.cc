@@ -98,7 +98,11 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
 
 TabletPeer::~TabletPeer() {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  CHECK_EQ(state_, SHUTDOWN);
+  // We should either have called Shutdown(), or we should have never called
+  // Init().
+  CHECK(!tablet_)
+      << "TabletPeer not fully shut down. State: "
+      << TabletStatePB_Name(state_);
 }
 
 Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
@@ -120,7 +124,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
 
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    CHECK_EQ(state_, BOOTSTRAPPING);
+    CHECK_EQ(BOOTSTRAPPING, state_);
     tablet_ = tablet;
     clock_ = clock;
     messenger_ = messenger;
@@ -241,6 +245,9 @@ void TabletPeer::Shutdown() {
   // Only mark the peer as SHUTDOWN when all other components have shut down.
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
+    // Release mem tracker resources.
+    consensus_.reset();
+    tablet_.reset();
     state_ = SHUTDOWN;
   }
 }

@@ -277,6 +277,8 @@ class ReadablePBContainerFile {
 // Convenience functions for protobuf containers holding just one record.
 
 // Load a "containerized" protobuf from the given path.
+// If the file does not exist, returns Status::NotFound(). Otherwise, may
+// return other Status error codes such as Status::IOError.
 Status ReadPBContainerFromPath(Env* env, const std::string& path,
                                google::protobuf::Message* msg);
 

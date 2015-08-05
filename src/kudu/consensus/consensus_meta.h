@@ -57,6 +57,8 @@ class ConsensusMetadata {
                        gscoped_ptr<ConsensusMetadata>* cmeta);
 
   // Load a ConsensusMetadata object from disk.
+  // Returns Status::NotFound if the file could not be found. May return other
+  // Status codes if unable to read the file.
   static Status Load(FsManager* fs_manager,
                      const std::string& tablet_id,
                      const std::string& peer_uuid,
@@ -108,6 +110,21 @@ class ConsensusMetadata {
   // current leader is not a member of the committed configuration, then the
   // leader_uuid field of the returned ConsensusStatePB will be cleared.
   ConsensusStatePB ToConsensusStatePB(ConfigType type) const;
+
+  // Merge the committed consensus state from the source node during remote
+  // bootstrap.
+  //
+  // This method will clear any pending config change, replace the committed
+  // consensus config with the one in 'committed_cstate', and clear the
+  // currently tracked leader.
+  //
+  // It will also check whether the current term passed in 'committed_cstate'
+  // is greater than the currently recorded one. If so, it will update the
+  // local current term to match the passed one and it will clear the voting
+  // record for this node. If the current term in 'committed_cstate' is less
+  // than the locally recorded term, the locally recorded term and voting
+  // record are not changed.
+  void MergeCommittedConsensusStatePB(const ConsensusStatePB& committed_cstate);
 
   // Persist current state of the protobuf to disk.
   Status Flush();

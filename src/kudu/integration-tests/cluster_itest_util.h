@@ -29,6 +29,7 @@
 #include "kudu/tserver/tserver_service.proxy.h"
 
 namespace kudu {
+class HostPort;
 class MonoDelta;
 class Schema;
 class Sockaddr;
@@ -190,11 +191,33 @@ Status ListTablets(const TServerDetails* ts,
                    const MonoDelta& timeout,
                    std::vector<tserver::ListTabletsResponsePB_StatusAndSchemaPB>* tablets);
 
+// Repeatedly invoke ListTablets(), waiting for up to 'timeout' time for the
+// specified 'count' number of replicas.
+Status WaitForNumTabletsOnTS(
+    TServerDetails* ts,
+    int count,
+    const MonoDelta& timeout,
+    std::vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets);
+
+// Wait until the specified tablet is in RUNNING state.
+Status WaitUntilTabletRunning(TServerDetails* ts,
+                              const std::string& tablet_id,
+                              const MonoDelta& timeout);
+
 // Send a DeleteTablet() to the server at 'ts' of the specified 'delete_type'.
 Status DeleteTablet(const TServerDetails* ts,
                     const std::string& tablet_id,
                     const tablet::TabletDataState delete_type,
                     const MonoDelta& timeout);
+
+// Cause the remote to initiate remote bootstrap using the specified host as a
+// source.
+Status StartRemoteBootstrap(const TServerDetails* ts,
+                            const std::string& tablet_id,
+                            const std::string& bootstrap_source_uuid,
+                            const HostPort& bootstrap_source_addr,
+                            int64_t caller_term,
+                            const MonoDelta& timeout);
 
 } // namespace itest
 } // namespace kudu

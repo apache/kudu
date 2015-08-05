@@ -14,6 +14,10 @@ namespace kudu {
 class HostPort;
 class NodeInstancePB;
 
+namespace consensus {
+class StartRemoteBootstrapRequestPB;
+} // namespace consensus
+
 namespace tablet {
 class TabletPeer;
 } // namespace tablet
@@ -31,9 +35,7 @@ class TabletPeerLookupIf {
 
   virtual const NodeInstancePB& NodeInstance() const = 0;
 
-  virtual Status StartRemoteBootstrap(const std::string& tablet_id,
-                                      const std::string& bootstrap_peer_uuid,
-                                      const HostPort& bootstrap_peer_addr) = 0;
+  virtual Status StartRemoteBootstrap(const consensus::StartRemoteBootstrapRequestPB& req) = 0;
 };
 
 } // namespace tserver

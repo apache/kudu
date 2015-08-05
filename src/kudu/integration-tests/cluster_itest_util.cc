@@ -13,6 +13,7 @@
 #include "kudu/consensus/opid_util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/master/master.proxy.h"
@@ -57,6 +58,7 @@ using std::tr1::unordered_map;
 using std::vector;
 using strings::Substitute;
 using tserver::CreateTsClientProxies;
+using tserver::ListTabletsResponsePB;
 using tserver::DeleteTabletRequestPB;
 using tserver::DeleteTabletResponsePB;
 using tserver::TabletServerAdminServiceProxy;
@@ -443,7 +445,7 @@ Status RemoveServer(const TServerDetails* leader,
 
 Status ListTablets(const TServerDetails* ts,
                    const MonoDelta& timeout,
-                   vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets) {
+                   vector<ListTabletsResponsePB::StatusAndSchemaPB>* tablets) {
   tserver::ListTabletsRequestPB req;
   tserver::ListTabletsResponsePB resp;
   RpcController rpc;
@@ -456,6 +458,60 @@ Status ListTablets(const TServerDetails* ts,
 
   tablets->assign(resp.status_and_schema().begin(), resp.status_and_schema().end());
   return Status::OK();
+}
+
+Status WaitForNumTabletsOnTS(TServerDetails* ts,
+                             int count,
+                             const MonoDelta& timeout,
+                             vector<ListTabletsResponsePB::StatusAndSchemaPB>* tablets) {
+  Status s;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  while (true) {
+    s = ListTablets(ts, MonoDelta::FromSeconds(10), tablets);
+    if (s.ok() && tablets->size() == count) break;
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) break;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  RETURN_NOT_OK(s);
+  if (tablets->size() != count) {
+    return Status::IllegalState(
+        Substitute("Did not find exactly $0 tablets, found $1 tablets",
+                   count, tablets->size()));
+  }
+  return Status::OK();
+}
+
+// Wait until the specified tablet is in RUNNING state.
+Status WaitUntilTabletRunning(TServerDetails* ts,
+                              const std::string& tablet_id,
+                              const MonoDelta& timeout) {
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = start;
+  deadline.AddDelta(timeout);
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  Status s;
+  tablet::TabletStatePB last_state = tablet::UNKNOWN;
+  while (true) {
+    Status s = ListTablets(ts, MonoDelta::FromSeconds(10), &tablets);
+    if (s.ok()) {
+      BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+        if (t.tablet_status().tablet_id() == tablet_id) {
+          last_state = t.tablet_status().state();
+          if (last_state == tablet::RUNNING) {
+            return Status::OK();
+          }
+        }
+      }
+    }
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  return Status::TimedOut("Tablet " + tablet_id + " not RUNNING after " +
+                          MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
+                          tablet::TabletStatePB_Name(last_state));
 }
 
 Status DeleteTablet(const TServerDetails* ts,
@@ -471,6 +527,29 @@ Status DeleteTablet(const TServerDetails* ts,
   req.set_delete_type(delete_type);
 
   RETURN_NOT_OK(ts->tserver_admin_proxy->DeleteTablet(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status StartRemoteBootstrap(const TServerDetails* ts,
+                            const string& tablet_id,
+                            const string& bootstrap_source_uuid,
+                            const HostPort& bootstrap_source_addr,
+                            int64_t caller_term,
+                            const MonoDelta& timeout) {
+  consensus::StartRemoteBootstrapRequestPB req;
+  consensus::StartRemoteBootstrapResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+
+  req.set_tablet_id(tablet_id);
+  req.set_bootstrap_peer_uuid(bootstrap_source_uuid);
+  RETURN_NOT_OK(HostPortToPB(bootstrap_source_addr, req.mutable_bootstrap_peer_addr()));
+  req.set_caller_term(caller_term);
+
+  RETURN_NOT_OK(ts->consensus_proxy->StartRemoteBootstrap(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }

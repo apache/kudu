@@ -216,5 +216,60 @@ TEST_F(ConsensusMetadataTest, TestToConsensusStatePB) {
   ASSERT_OK(VerifyConsensusState(new_committed_cstate, COMMITTED_QUORUM));
 }
 
+// Helper for TestMergeCommittedConsensusStatePB.
+static void AssertConsensusMergeExpected(const gscoped_ptr<ConsensusMetadata>& cmeta,
+                                         const ConsensusStatePB& cstate,
+                                         int64_t expected_term,
+                                         const string& expected_voted_for) {
+  // See header docs for ConsensusMetadata::MergeCommittedConsensusStatePB() for
+  // a "spec" of these assertions.
+  ASSERT_TRUE(!cmeta->has_pending_config());
+  ASSERT_EQ(cmeta->committed_config().ShortDebugString(), cstate.config().ShortDebugString());
+  ASSERT_EQ("", cmeta->leader_uuid());
+  ASSERT_EQ(expected_term, cmeta->current_term());
+  if (expected_voted_for.empty()) {
+    ASSERT_FALSE(cmeta->has_voted_for());
+  } else {
+    ASSERT_EQ(expected_voted_for, cmeta->voted_for());
+  }
+}
+
+// Ensure that MergeCommittedConsensusStatePB() works as advertised.
+TEST_F(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB) {
+  vector<string> uuids = list_of("a")("b")("c")("d");
+
+  RaftConfigPB committed_config = BuildConfig(uuids); // We aren't a member of this config...
+  committed_config.set_opid_index(1);
+  gscoped_ptr<ConsensusMetadata> cmeta;
+  ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, "e",
+                                      committed_config, 1, &cmeta));
+
+  uuids.push_back("e");
+  RaftConfigPB pending_config = BuildConfig(uuids);
+  cmeta->set_pending_config(pending_config);
+  cmeta->set_leader_uuid("e");
+  cmeta->set_voted_for("e");
+
+  // Keep the term and votes because the merged term is lower.
+  ConsensusStatePB remote_state;
+  remote_state.set_current_term(0);
+  *remote_state.mutable_config() = BuildConfig(list_of("x")("y")("z"));
+  cmeta->MergeCommittedConsensusStatePB(remote_state);
+  NO_FATALS(AssertConsensusMergeExpected(cmeta, remote_state, 1, "e"));
+
+  // Same as above because the merged term is the same as the cmeta term.
+  remote_state.set_current_term(1);
+  *remote_state.mutable_config() = BuildConfig(list_of("f")("g")("h"));
+  cmeta->MergeCommittedConsensusStatePB(remote_state);
+  NO_FATALS(AssertConsensusMergeExpected(cmeta, remote_state, 1, "e"));
+
+  // Higher term, so wipe out the prior state.
+  remote_state.set_current_term(2);
+  *remote_state.mutable_config() = BuildConfig(list_of("i")("j")("k"));
+  cmeta->set_pending_config(pending_config);
+  cmeta->MergeCommittedConsensusStatePB(remote_state);
+  NO_FATALS(AssertConsensusMergeExpected(cmeta, remote_state, 2, ""));
+}
+
 } // namespace consensus
 } // namespace kudu

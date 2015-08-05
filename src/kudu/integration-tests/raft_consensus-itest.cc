@@ -651,6 +651,7 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   extra_flags.push_back("--log_cache_size_limit_mb=1");
   extra_flags.push_back("--log_segment_size_mb=1");
   extra_flags.push_back("--log_async_preallocate_segments=false");
+  extra_flags.push_back("--enable_remote_bootstrap=false");
   BuildAndStart(extra_flags);
 
   // Wait for all of the replicas to have acknowledged the elected
