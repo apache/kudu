@@ -179,7 +179,7 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
   pb->set_encoding(col_schema.attributes().encoding());
   pb->set_compression(col_schema.attributes().compression());
   if (col_schema.has_read_default()) {
-    if (col_schema.type_info()->type() == STRING) {
+    if (col_schema.type_info()->physical_type() == STRING) {
       const Slice *read_slice = static_cast<const Slice *>(col_schema.read_default_value());
       pb->set_read_default_value(read_slice->data(), read_slice->size());
     } else {
@@ -188,7 +188,7 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
     }
   }
   if (col_schema.has_write_default()) {
-    if (col_schema.type_info()->type() == STRING) {
+    if (col_schema.type_info()->physical_type() == STRING) {
       const Slice *write_slice = static_cast<const Slice *>(col_schema.write_default_value());
       pb->set_write_default_value(write_slice->data(), write_slice->size());
     } else {
@@ -310,7 +310,7 @@ Status RewriteRowBlockPointers(const Schema& schema, const RowwiseRowBlockPB& ro
 
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
-    if (col.type_info()->type() != STRING) {
+    if (col.type_info()->physical_type() != STRING) {
       continue;
     }
 
@@ -518,16 +518,16 @@ void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
     // TODO: Using LLVM to build a specialized CopyColumn on the fly should have
     // even bigger gains, since we could inline the constant cell sizes and column
     // offsets.
-    if (col.is_nullable() && col.type_info()->type() == STRING) {
+    if (col.is_nullable() && col.type_info()->physical_type() == STRING) {
       CopyColumn<true, true>(block, i, dst_idx, base, indirect_data,
                              project_schema);
-    } else if (col.is_nullable() && col.type_info()->type() != STRING) {
+    } else if (col.is_nullable() && col.type_info()->physical_type() != STRING) {
       CopyColumn<true, false>(block, i, dst_idx, base, indirect_data,
                               project_schema);
-    } else if (!col.is_nullable() && col.type_info()->type() == STRING) {
+    } else if (!col.is_nullable() && col.type_info()->physical_type() == STRING) {
       CopyColumn<false, true>(block, i, dst_idx, base, indirect_data,
                               project_schema);
-    } else if (!col.is_nullable() && col.type_info()->type() != STRING) {
+    } else if (!col.is_nullable() && col.type_info()->physical_type() != STRING) {
       CopyColumn<false, false>(block, i, dst_idx, base, indirect_data,
                                project_schema);
     } else {

@@ -219,7 +219,7 @@ Status StringDictBlockDecoder::SeekAtOrAfterValue(const void* value_void, bool* 
 
 Status StringDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* dst) {
   DCHECK(parsed_);
-  CHECK_EQ(dst->type_info()->type(), STRING);
+  CHECK_EQ(dst->type_info()->physical_type(), STRING);
   DCHECK_LE(*n, dst->nrows());
   DCHECK_EQ(dst->stride(), sizeof(Slice));
 

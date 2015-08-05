@@ -233,7 +233,7 @@ Status KuduPartialRow::SetNull(int col_idx) {
     return Status::InvalidArgument("column not nullable", col.ToString());
   }
 
-  if (col.type_info()->type() == STRING) DeallocateStringIfSet(col_idx);
+  if (col.type_info()->physical_type() == STRING) DeallocateStringIfSet(col_idx);
 
   ContiguousRow row(schema_, row_data_);
   row.set_null(col_idx, true);
@@ -251,7 +251,7 @@ Status KuduPartialRow::Unset(const Slice& col_name) {
 
 Status KuduPartialRow::Unset(int col_idx) {
   const ColumnSchema& col = schema_->column(col_idx);
-  if (col.type_info()->type() == STRING) DeallocateStringIfSet(col_idx);
+  if (col.type_info()->physical_type() == STRING) DeallocateStringIfSet(col_idx);
   BitmapClear(isset_bitmap_, col_idx);
   return Status::OK();
 }

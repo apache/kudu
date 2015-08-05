@@ -58,7 +58,7 @@ class VectorIterator : public ColumnwiseIterator {
   }
 
   virtual Status MaterializeColumn(size_t col, ColumnBlock *dst) OVERRIDE {
-    CHECK_EQ(UINT32, dst->type_info()->type());
+    CHECK_EQ(UINT32, dst->type_info()->physical_type());
     DCHECK_LE(prepared_, dst->nrows());
 
     for (size_t i = 0; i < prepared_; i++) {

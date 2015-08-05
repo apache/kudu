@@ -332,7 +332,7 @@ Status DefaultColumnValueIterator::Scan(ColumnBlock *dst)  {
     dst_view.SetNullBits(dst->nrows(), value_ != NULL);
   }
   if (value_ != NULL) {
-    if (typeinfo_->type() == STRING) {
+    if (typeinfo_->physical_type() == STRING) {
       const Slice *src_slice = reinterpret_cast<const Slice *>(value_);
       Slice dst_slice;
       if (PREDICT_FALSE(!dst->arena()->RelocateSlice(*src_slice, &dst_slice))) {

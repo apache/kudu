@@ -16,6 +16,7 @@ using boost::shared_ptr;
 template<typename TypeTraitsClass>
 TypeInfo::TypeInfo(TypeTraitsClass t)
   : type_(TypeTraitsClass::type),
+    physical_type_(TypeTraitsClass::physical_type),
     name_(TypeTraitsClass::name()),
     size_(TypeTraitsClass::size),
     min_value_(TypeTraitsClass::min_value()),

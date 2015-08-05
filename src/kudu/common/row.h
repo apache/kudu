@@ -47,7 +47,7 @@ template <class SrcCellType, class DstCellType, class ArenaType>
 Status CopyCellData(const SrcCellType &src, DstCellType* dst, ArenaType *dst_arena) {
   DCHECK_EQ(src.typeinfo()->type(), dst->typeinfo()->type());
 
-  if (src.typeinfo()->type() == STRING) {
+  if (src.typeinfo()->physical_type() == STRING) {
     // If it's a Slice column, need to relocate the referred-to data
     // as well as the slice itself.
     // TODO: potential optimization here: if the new value is smaller than
@@ -370,7 +370,7 @@ inline Status RelocateIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
   // and update the pointers
   for (int i = 0; i < schema->num_columns(); i++) {
     typename RowType::Cell cell = row->cell(i);
-    if (cell.typeinfo()->type() == STRING) {
+    if (cell.typeinfo()->physical_type() == STRING) {
       if (cell.is_nullable() && cell.is_null()) {
         continue;
       }

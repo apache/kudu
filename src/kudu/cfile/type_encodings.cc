@@ -303,13 +303,13 @@ class TypeEncodingResolver {
 Status TypeEncodingInfo::Get(const TypeInfo* typeinfo,
                              EncodingType encoding,
                              const TypeEncodingInfo** out) {
-  return Singleton<TypeEncodingResolver>::get()->GetTypeEncodingInfo(typeinfo->type(),
+  return Singleton<TypeEncodingResolver>::get()->GetTypeEncodingInfo(typeinfo->physical_type(),
                                                                      encoding,
                                                                      out);
 }
 
 const EncodingType TypeEncodingInfo::GetDefaultEncoding(const TypeInfo* typeinfo) {
-  return Singleton<TypeEncodingResolver>::get()->GetDefaultEncoding(typeinfo->type());
+  return Singleton<TypeEncodingResolver>::get()->GetDefaultEncoding(typeinfo->physical_type());
 }
 
 }  // namespace cfile

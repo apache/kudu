@@ -47,12 +47,12 @@ class EncoderResolver {
 };
 
 const KeyEncoder &GetKeyEncoder(const TypeInfo* typeinfo) {
-  return Singleton<EncoderResolver>::get()->GetKeyEncoder(typeinfo->type());
+  return Singleton<EncoderResolver>::get()->GetKeyEncoder(typeinfo->physical_type());
 }
 
 // Returns true if the type is allowed in keys.
 const bool IsTypeAllowableInKey(const TypeInfo* typeinfo) {
-  return Singleton<EncoderResolver>::get()->HasKeyEncoderForType(typeinfo->type());
+  return Singleton<EncoderResolver>::get()->HasKeyEncoderForType(typeinfo->physical_type());
 }
 
 }  // namespace kudu

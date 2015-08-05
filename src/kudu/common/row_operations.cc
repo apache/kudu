@@ -76,7 +76,7 @@ void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const KuduPartia
 
     if (col.is_nullable() && row.is_null(i)) continue;
 
-    if (col.type_info()->type() == STRING) {
+    if (col.type_info()->physical_type() == STRING) {
       const Slice* val = reinterpret_cast<const Slice*>(row.cell_ptr(i));
       size_t indirect_offset = pb_->mutable_indirect_data()->size();
       pb_->mutable_indirect_data()->append(reinterpret_cast<const char*>(val->data()),
@@ -153,7 +153,7 @@ Status RowOperationsPBDecoder::ReadColumn(const ColumnSchema& col, uint8_t* dst)
     return Status::Corruption("Not enough data for column", col.ToString());
   }
   // Copy the data
-  if (col.type_info()->type() == STRING) {
+  if (col.type_info()->physical_type() == STRING) {
     // The Slice in the protobuf has a pointer relative to the indirect data,
     // not a real pointer. Need to fix that.
     const Slice* slice = reinterpret_cast<const Slice*>(src_.data());

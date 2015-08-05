@@ -176,7 +176,7 @@ llvm::Function* MakeProjection(const string& name,
     Value* src_cell = builder->CreateConstGEP1_64(src, src_offset);
     src_cell->setName(StrCat("src_cell_base_", base_idx));
     Value* col_idx = builder->getInt64(proj_idx);
-    ConstantInt* is_string = builder->getInt1(col.type_info()->type() == STRING);
+    ConstantInt* is_string = builder->getInt1(col.type_info()->physical_type() == STRING);
     vector<Value*> args = list_of<Value*>
       (size)(src_cell)(rbrow)(col_idx)(is_string)(arena);
 
@@ -210,7 +210,7 @@ llvm::Function* MakeProjection(const string& name,
     Value* size = builder->getInt64(col.type_info()->size());
     Value* src_cell = mbuilder->GetPointerValue(const_cast<void*>(dfl));
     Value* col_idx = builder->getInt64(dfl_idx);
-    ConstantInt* is_string = builder->getInt1(col.type_info()->type() == STRING);
+    ConstantInt* is_string = builder->getInt1(col.type_info()->physical_type() == STRING);
 
     // Handle default columns that are nullable
     if (col.is_nullable()) {
@@ -336,12 +336,12 @@ Status RowProjectorFunctions::EncodeKey(const Schema& base, const Schema& proj,
   AddNext(out, JITWrapper::ROW_PROJECTOR);
   AddNext(out, base.num_columns());
   BOOST_FOREACH(const ColumnSchema& col, base.columns()) {
-    AddNext(out, col.type_info()->type());
+    AddNext(out, col.type_info()->physical_type());
     AddNext(out, col.is_nullable());
   }
   AddNext(out, proj.num_columns());
   BOOST_FOREACH(const ColumnSchema& col, proj.columns()) {
-    AddNext(out, col.type_info()->type());
+    AddNext(out, col.type_info()->physical_type());
     AddNext(out, col.is_nullable());
   }
   AddNext(out, projector.base_cols_mapping().size());

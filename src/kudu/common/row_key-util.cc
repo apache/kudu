@@ -50,7 +50,7 @@ bool IncrementStringCell(void* cell_ptr, Arena* arena) {
 }
 
 bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena) {
-  DataType type = col.type_info()->type();
+  DataType type = col.type_info()->physical_type();
   switch (type) {
 #define HANDLE_TYPE(t) case t: return IncrementIntCell<t>(cell_ptr);
     HANDLE_TYPE(UINT8);

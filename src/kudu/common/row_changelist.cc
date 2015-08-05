@@ -104,7 +104,7 @@ void RowChangeListEncoder::AddColumnUpdate(const ColumnSchema& col_schema,
                                            const void* cell_ptr) {
   Slice val_slice;
   if (cell_ptr != NULL) {
-    if (col_schema.type_info()->type() == STRING) {
+    if (col_schema.type_info()->physical_type() == STRING) {
       memcpy(&val_slice, cell_ptr, sizeof(val_slice));
     } else {
       val_slice = Slice(reinterpret_cast<const uint8_t*>(cell_ptr),
@@ -327,7 +327,7 @@ Status RowChangeListDecoder::DecodedUpdate::Validate(const Schema& schema,
     return Status::OK();
   }
 
-  if (col.type_info()->type() == STRING) {
+  if (col.type_info()->physical_type() == STRING) {
     *value = &this->raw_value;
     return Status::OK();
   }

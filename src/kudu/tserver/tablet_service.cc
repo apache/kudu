@@ -324,7 +324,7 @@ class ScanResultChecksummer : public ScanResultCollector {
         tmp_buf_.append(&is_defined, sizeof(is_defined));
         if (!is_defined) continue;
       }
-      if (cell.typeinfo()->type() == STRING) {
+      if (cell.typeinfo()->physical_type() == STRING) {
         const Slice* data = reinterpret_cast<const Slice *>(cell.ptr());
         tmp_buf_.append(data->data(), data->size());
       } else {
@@ -974,7 +974,7 @@ static Status ExtractPredicateValue(const ColumnSchema& schema,
   // If the type is a STRING, then we need to return a pointer to a Slice
   // element pointing to the string. Otherwise, just verify that the provided
   // value was the right size.
-  if (schema.type_info()->type() == STRING) {
+  if (schema.type_info()->physical_type() == STRING) {
     *result = arena->NewObject<Slice>(data_copy, pb_value.size());
   } else {
     // TODO: add test case for this invalid request

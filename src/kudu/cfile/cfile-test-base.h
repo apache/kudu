@@ -405,7 +405,7 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
 
   Arena arena(8192, 8*1024*1024);
   int count = 0;
-  switch (reader->type_info()->type()) {
+  switch (reader->type_info()->physical_type()) {
     case UINT8:
     {
       TimeReadFileForDataType<UINT8, uint64_t>(iter, count);
@@ -464,7 +464,7 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
       break;
     }
     default:
-      FAIL() << "Unknown type: " << reader->type_info()->type();
+      FAIL() << "Unknown type: " << reader->type_info()->physical_type();
   }
   *count_ret = count;
 }

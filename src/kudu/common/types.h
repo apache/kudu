@@ -32,7 +32,10 @@ extern const TypeInfo* GetTypeInfo(DataType type);
 // This is a runtime equivalent of the TypeTraits template below.
 class TypeInfo {
  public:
+  // Returns the type mentioned in the schema.
   DataType type() const { return type_; }
+  // Returns the type used to actually store the data.
+  DataType physical_type() const { return physical_type_; }
   const string& name() const { return name_; }
   const size_t size() const { return size_; }
   void AppendDebugStringForValue(const void *ptr, string *str) const;
@@ -46,6 +49,7 @@ class TypeInfo {
   template<typename Type> TypeInfo(Type t);
 
   const DataType type_;
+  const DataType physical_type_;
   const string name_;
   const size_t size_;
   const void* const min_value_;
@@ -75,6 +79,7 @@ static int GenericCompare(const void *lhs, const void *rhs) {
 
 template<>
 struct DataTypeTraits<UINT8> {
+  static const DataType physical_type = UINT8;
   typedef uint8_t cpp_type;
   static const char *name() {
     return "uint8";
@@ -92,6 +97,7 @@ struct DataTypeTraits<UINT8> {
 
 template<>
 struct DataTypeTraits<INT8> {
+  static const DataType physical_type = INT8;
   typedef int8_t cpp_type;
   static const char *name() {
     return "int8";
@@ -109,6 +115,7 @@ struct DataTypeTraits<INT8> {
 
 template<>
 struct DataTypeTraits<UINT16> {
+  static const DataType physical_type = UINT16;
   typedef uint16_t cpp_type;
   static const char *name() {
     return "uint16";
@@ -126,6 +133,7 @@ struct DataTypeTraits<UINT16> {
 
 template<>
 struct DataTypeTraits<INT16> {
+  static const DataType physical_type = INT16;
   typedef int16_t cpp_type;
   static const char *name() {
     return "int16";
@@ -143,6 +151,7 @@ struct DataTypeTraits<INT16> {
 
 template<>
 struct DataTypeTraits<UINT32> {
+  static const DataType physical_type = UINT32;
   typedef uint32_t cpp_type;
   static const char *name() {
     return "uint32";
@@ -160,6 +169,7 @@ struct DataTypeTraits<UINT32> {
 
 template<>
 struct DataTypeTraits<INT32> {
+  static const DataType physical_type = INT32;
   typedef int32_t cpp_type;
   static const char *name() {
     return "int32";
@@ -177,6 +187,7 @@ struct DataTypeTraits<INT32> {
 
 template<>
 struct DataTypeTraits<UINT64> {
+  static const DataType physical_type = UINT64;
   typedef uint64_t cpp_type;
   static const char *name() {
     return "uint64";
@@ -194,6 +205,7 @@ struct DataTypeTraits<UINT64> {
 
 template<>
 struct DataTypeTraits<INT64> {
+  static const DataType physical_type = INT64;
   typedef int64_t cpp_type;
   static const char *name() {
     return "int64";
@@ -211,6 +223,7 @@ struct DataTypeTraits<INT64> {
 
 template<>
 struct DataTypeTraits<FLOAT> {
+  static const DataType physical_type = FLOAT;
   typedef float cpp_type;
   static const char *name() {
     return "float";
@@ -228,6 +241,7 @@ struct DataTypeTraits<FLOAT> {
 
 template<>
 struct DataTypeTraits<DOUBLE> {
+  static const DataType physical_type = DOUBLE;
   typedef double cpp_type;
   static const char *name() {
     return "double";
@@ -245,6 +259,7 @@ struct DataTypeTraits<DOUBLE> {
 
 template<>
 struct DataTypeTraits<BINARY> {
+  static const DataType physical_type = BINARY;
   typedef Slice cpp_type;
   static const char *name() {
     return "binary";
@@ -267,6 +282,7 @@ struct DataTypeTraits<BINARY> {
 
 template<>
 struct DataTypeTraits<BOOL> {
+  static const DataType physical_type = BOOL;
   typedef bool cpp_type;
   static const char* name() {
     return "bool";
@@ -289,6 +305,7 @@ struct DataTypeTraits<BOOL> {
 template<DataType PhysicalType>
 struct DerivedTypeTraits {
   typedef typename DataTypeTraits<PhysicalType>::cpp_type cpp_type;
+  static const DataType physical_type = PhysicalType;
 
   static void AppendDebugStringForValue(const void *val, string *str) {
     DataTypeTraits<PhysicalType>::AppendDebugStringForValue(val, str);
@@ -305,6 +322,9 @@ struct DerivedTypeTraits {
 
 template<>
 struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
+  // TODO Temporary hack to avoid having to change all the tests to use BINARY instead
+  // of strings (to be done in a follow up patch when encoding is dealt with).
+  static const DataType physical_type = STRING;
   static const char* name() {
     return "string";
   }

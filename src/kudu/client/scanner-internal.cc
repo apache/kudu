@@ -64,7 +64,7 @@ void KuduScanner::Data::CopyPredicateBound(const ColumnSchema& col,
                                            string* bound_dst) {
   const void* src;
   size_t size;
-  if (col.type_info()->type() == STRING) {
+  if (col.type_info()->physical_type() == STRING) {
     // Copying a string involves an extra level of indirection through its
     // owning slice.
     const Slice* s = reinterpret_cast<const Slice*>(bound_src);
