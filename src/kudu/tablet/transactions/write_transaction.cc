@@ -233,12 +233,10 @@ void WriteTransactionState::Abort() {
   release_row_locks();
   ReleaseSchemaLock();
 
-  // Make the request NULL since after this transaction commits
-  // the request may be deleted at any moment.
-  request_ = NULL;
-  response_ = NULL;
+  // After commiting, we may respond to the RPC and delete the
+  // original request, so null them out here.
+  ResetRpcFields();
 }
-
 void WriteTransactionState::Commit() {
   if (mvcc_tx_.get() != NULL) {
     // Commit the transaction.
@@ -246,10 +244,9 @@ void WriteTransactionState::Commit() {
   }
   mvcc_tx_.reset();
 
-  // Make the request NULL since after this transaction commits
-  // the request may be deleted at any moment.
-  request_ = NULL;
-  response_ = NULL;
+  // After commiting, we may respond to the RPC and delete the
+  // original request, so null them out here.
+  ResetRpcFields();
 }
 
 void WriteTransactionState::ReleaseTxResultPB(TxResultPB* result) const {
@@ -293,11 +290,17 @@ WriteTransactionState::~WriteTransactionState() {
 void WriteTransactionState::Reset() {
   // We likely shouldn't Commit() here. See KUDU-625.
   Commit();
-  STLDeleteElements(&row_ops_);
   tx_metrics_.Reset();
   timestamp_ = Timestamp::kInvalidTimestamp;
   tablet_components_ = NULL;
   schema_at_decode_time_ = NULL;
+}
+
+void WriteTransactionState::ResetRpcFields() {
+  lock_guard<simple_spinlock> l(&txn_state_lock_);
+  request_ = NULL;
+  response_ = NULL;
+  STLDeleteElements(&row_ops_);
 }
 
 string WriteTransactionState::ToString() const {

@@ -151,7 +151,9 @@ class WriteTransactionState : public TransactionState {
   virtual std::string ToString() const OVERRIDE;
 
  private:
-  DISALLOW_COPY_AND_ASSIGN(WriteTransactionState);
+  // Reset the RPC request, response, and row_ops_ (which refers to data
+  // from the request).
+  void ResetRpcFields();
 
   // pointers to the rpc context, request and response, lifecyle
   // is managed by the rpc subsystem. These pointers maybe NULL if the
@@ -178,6 +180,8 @@ class WriteTransactionState : public TransactionState {
   // schema change.
   // Protected by superclass's txn_state_lock_.
   const Schema* schema_at_decode_time_;
+
+  DISALLOW_COPY_AND_ASSIGN(WriteTransactionState);
 };
 
 // Executes a write transaction.

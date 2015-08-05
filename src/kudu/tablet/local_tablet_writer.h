@@ -6,6 +6,7 @@
 #include <boost/foreach.hpp>
 #include <vector>
 
+#include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
@@ -84,36 +85,35 @@ class LocalTabletWriter {
     tx_state_->mutable_op_id()->CopyFrom(consensus::MaximumOpId());
     tablet_->ApplyRowOperations(tx_state_.get());
 
+    tx_state_->ReleaseTxResultPB(&result_);
     tx_state_->Commit();
-
-    Status ret;
-    // Return the status of first failed op.
-    // We have to stringify the ops based on the tablet's schema, and so
-    // we have to do this before letting go of the schema lock.
-    BOOST_FOREACH(const RowOp* op, tx_state_->row_ops()) {
-      if (op->result->has_failed_status()) {
-        ret = StatusFromPB(op->result->failed_status())
-          .CloneAndPrepend(op->ToString(*tablet_->schema()));
-        break;
-      }
-    }
-
     tx_state_->release_row_locks();
     tx_state_->ReleaseSchemaLock();
 
-    return ret;
+    // Return the status of first failed op.
+    int op_idx = 0;
+    BOOST_FOREACH(const OperationResultPB& result, result_.ops()) {
+      if (result.has_failed_status()) {
+        return StatusFromPB(result.failed_status())
+          .CloneAndPrepend(ops[op_idx].row->ToString());
+        break;
+      }
+      op_idx++;
+    }
+    return Status::OK();
   }
 
   // Return the result of the last row operation run against the tablet.
   const OperationResultPB& last_op_result() {
-    CHECK_GE(tx_state_->row_ops().size(), 1);
-    return *CHECK_NOTNULL(tx_state_->row_ops().back()->result.get());
+    CHECK_GE(result_.ops_size(), 1);
+    return result_.ops(result_.ops_size() - 1);
   }
 
  private:
   Tablet* const tablet_;
   const Schema* client_schema_;
 
+  TxResultPB result_;
   tserver::WriteRequestPB req_;
   gscoped_ptr<WriteTransactionState> tx_state_;
 
