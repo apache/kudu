@@ -62,7 +62,7 @@ Status MultiColumnWriter::Open() {
     // Create the CFile writer itself.
     gscoped_ptr<CFileWriter> writer(new CFileWriter(
         opts,
-        col.type_info()->type(),
+        col.type_info(),
         col.is_nullable(),
         block.Pass()));
     RETURN_NOT_OK_PREPEND(writer->Start(),

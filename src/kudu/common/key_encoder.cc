@@ -46,13 +46,13 @@ class EncoderResolver {
   vector<boost::shared_ptr<KeyEncoder> > encoders_;
 };
 
-const KeyEncoder &GetKeyEncoder(DataType type) {
-  return Singleton<EncoderResolver>::get()->GetKeyEncoder(type);
+const KeyEncoder &GetKeyEncoder(const TypeInfo* typeinfo) {
+  return Singleton<EncoderResolver>::get()->GetKeyEncoder(typeinfo->type());
 }
 
 // Returns true if the type is allowed in keys.
-const bool IsTypeAllowableInKey(DataType type) {
-  return Singleton<EncoderResolver>::get()->HasKeyEncoderForType(type);
+const bool IsTypeAllowableInKey(const TypeInfo* typeinfo) {
+  return Singleton<EncoderResolver>::get()->HasKeyEncoderForType(typeinfo->type());
 }
 
 }  // namespace kudu

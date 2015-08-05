@@ -118,7 +118,7 @@ Status CFileReader::InitOnce() {
 
   type_info_ = GetTypeInfo(footer_->data_type());
 
-  RETURN_NOT_OK(TypeEncodingInfo::Get(footer_->data_type(),
+  RETURN_NOT_OK(TypeEncodingInfo::Get(type_info_,
                                       footer_->encoding(),
                                       &type_encoding_info_));
 
@@ -332,7 +332,7 @@ Status DefaultColumnValueIterator::Scan(ColumnBlock *dst)  {
     dst_view.SetNullBits(dst->nrows(), value_ != NULL);
   }
   if (value_ != NULL) {
-    if (type_ == STRING) {
+    if (typeinfo_->type() == STRING) {
       const Slice *src_slice = reinterpret_cast<const Slice *>(value_);
       Slice dst_slice;
       if (PREDICT_FALSE(!dst->arena()->RelocateSlice(*src_slice, &dst_slice))) {
@@ -516,12 +516,11 @@ Status CFileIterator::PrepareForNewSeek() {
   // Create the index tree iterators if we haven't already done so.
   if (!posidx_iter_ && reader_->footer().has_posidx_info()) {
     BlockPointer bp(reader_->footer().posidx_info().root_block());
-    posidx_iter_.reset(IndexTreeIterator::Create(reader_, UINT32, bp));
+    posidx_iter_.reset(IndexTreeIterator::Create(reader_, bp));
   }
   if (!validx_iter_ && reader_->footer().has_validx_info()) {
     BlockPointer bp(reader_->footer().validx_info().root_block());
-    validx_iter_.reset(IndexTreeIterator::Create(reader_,
-                                                 reader_->type_info()->type(), bp));
+    validx_iter_.reset(IndexTreeIterator::Create(reader_, bp));
   }
 
   // Initialize the decoder for the dictionary block

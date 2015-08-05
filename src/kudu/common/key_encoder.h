@@ -323,9 +323,9 @@ class KeyEncoder {
   DISALLOW_COPY_AND_ASSIGN(KeyEncoder);
 };
 
-extern const KeyEncoder &GetKeyEncoder(DataType type);
+extern const KeyEncoder &GetKeyEncoder(const TypeInfo* typeinfo);
 
-extern const bool IsTypeAllowableInKey(DataType type);
+extern const bool IsTypeAllowableInKey(const TypeInfo* typeinfo);
 
 } // namespace kudu
 

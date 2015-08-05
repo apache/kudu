@@ -38,7 +38,7 @@ BloomFileWriter::BloomFileWriter(gscoped_ptr<WritableBlock> block,
   // Never use compression, regardless of the default settings, since
   // bloom filters are high-entropy data structures by their nature.
   opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, NO_COMPRESSION);
-  writer_.reset(new cfile::CFileWriter(opts, STRING, false, block.Pass()));
+  writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(STRING), false, block.Pass()));
 }
 
 Status BloomFileWriter::Start() {
@@ -181,7 +181,7 @@ Status BloomFileReader::InitOnce() {
   int n_cpus = base::NumCPUs();
   for (int i = 0; i < n_cpus; i++) {
     index_iters_.push_back(
-      IndexTreeIterator::Create(reader_.get(), STRING, validx_root));
+      IndexTreeIterator::Create(reader_.get(), validx_root));
   }
   iter_locks_.reset(new simple_spinlock[n_cpus]);
 

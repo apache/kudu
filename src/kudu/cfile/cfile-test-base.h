@@ -320,7 +320,7 @@ class CFileTestBase : public KuduTest {
     }
 
     opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
-    CFileWriter w(opts, DataGeneratorType::kDataType,
+    CFileWriter w(opts, GetTypeInfo(DataGeneratorType::kDataType),
                   DataGeneratorType::has_nulls(), sink.Pass());
 
     ASSERT_OK(w.Start());
@@ -405,7 +405,7 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
 
   Arena arena(8192, 8*1024*1024);
   int count = 0;
-  switch (reader->data_type()) {
+  switch (reader->type_info()->type()) {
     case UINT8:
     {
       TimeReadFileForDataType<UINT8, uint64_t>(iter, count);
@@ -464,7 +464,7 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
       break;
     }
     default:
-      FAIL() << "Unknown type: " << reader->data_type();
+      FAIL() << "Unknown type: " << reader->type_info()->type();
   }
   *count_ret = count;
 }

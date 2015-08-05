@@ -393,7 +393,7 @@ Status KuduPartialRow::EncodeRowKey(string* encoded_key) const {
   for (int i = 0; i < schema_->num_key_columns(); i++) {
     bool is_last = i == schema_->num_key_columns() - 1;
     const TypeInfo* ti = schema_->column(i).type_info();
-    GetKeyEncoder(ti->type()).Encode(row.cell_ptr(i), is_last, &buf);
+    GetKeyEncoder(ti).Encode(row.cell_ptr(i), is_last, &buf);
   }
 
   *encoded_key = buf.ToString();

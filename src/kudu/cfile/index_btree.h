@@ -72,7 +72,6 @@ class IndexTreeIterator {
 
   static IndexTreeIterator *Create(
     const CFileReader *reader,
-    DataType type,
     const BlockPointer &idx_root);
 
  private:

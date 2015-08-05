@@ -53,7 +53,7 @@ DeltaFileWriter::DeltaFileWriter(gscoped_ptr<WritableBlock> block)
   opts.write_validx = true;
   opts.block_size = FLAGS_deltafile_block_size;
   opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING);
-  writer_.reset(new cfile::CFileWriter(opts, STRING, false, block.Pass()));
+  writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(STRING), false, block.Pass()));
 }
 
 
@@ -346,7 +346,7 @@ Status DeltaFileIterator::SeekToOrdinal(rowid_t idx) {
   RETURN_NOT_OK(dfr_->Init());
   if (!index_iter_) {
     index_iter_.reset(IndexTreeIterator::Create(
-        dfr_->cfile_reader().get(), STRING,
+        dfr_->cfile_reader().get(),
         dfr_->cfile_reader()->validx_root()));
   }
 

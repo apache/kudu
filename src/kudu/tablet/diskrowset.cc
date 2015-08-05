@@ -115,7 +115,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
   // Create the CFile writer for the ad-hoc index.
   ad_hoc_index_writer_.reset(new cfile::CFileWriter(
       opts,
-      STRING,
+      GetTypeInfo(STRING),
       false,
       block.Pass()));
   return ad_hoc_index_writer_->Start();

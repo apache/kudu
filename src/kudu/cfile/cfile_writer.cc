@@ -69,7 +69,7 @@ WriterOptions::WriterOptions()
 
 
 CFileWriter::CFileWriter(const WriterOptions &options,
-                         DataType type,
+                         const TypeInfo* typeinfo,
                          bool is_nullable,
                          gscoped_ptr<WritableBlock> block)
   : block_(block.Pass()),
@@ -77,18 +77,17 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     value_count_(0),
     options_(options),
     is_nullable_(is_nullable),
-    datatype_(type),
-    typeinfo_(GetTypeInfo(type)),
+    typeinfo_(typeinfo),
     key_encoder_(NULL),
     state_(kWriterInitialized) {
   EncodingType encoding = options_.storage_attributes.encoding();
-  Status s = TypeEncodingInfo::Get(type, encoding, &type_encoding_info_);
+  Status s = TypeEncodingInfo::Get(typeinfo_, encoding, &type_encoding_info_);
   if (!s.ok()) {
     // TODO: we should somehow pass some contextual info about the
     // tablet here.
     WARN_NOT_OK(s, "Falling back to default encoding");
-    s = TypeEncodingInfo::Get(type,
-                              TypeEncodingInfo::GetDefaultEncoding(type),
+    s = TypeEncodingInfo::Get(typeinfo,
+                              TypeEncodingInfo::GetDefaultEncoding(typeinfo_),
                               &type_encoding_info_);
     CHECK_OK(s);
   }
@@ -104,7 +103,7 @@ CFileWriter::CFileWriter(const WriterOptions &options,
   }
 
   if (options.write_validx) {
-    key_encoder_ = &GetKeyEncoder(type);
+    key_encoder_ = &GetKeyEncoder(typeinfo_);
     validx_builder_.reset(new IndexTreeBuilder(&options_,
                                                this));
   }
@@ -177,7 +176,7 @@ Status CFileWriter::FinishAndReleaseBlock(ScopedWritableBlockCloser* closer) {
 
   // Start preparing the footer.
   CFileFooterPB footer;
-  footer.set_data_type(datatype_);
+  footer.set_data_type(typeinfo_->type());
   footer.set_is_type_nullable(is_nullable_);
   footer.set_encoding(type_encoding_info_->encoding_type());
   footer.set_num_values(value_count_);

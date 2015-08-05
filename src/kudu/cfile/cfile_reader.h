@@ -101,10 +101,6 @@ class CFileReader {
     return file_size_;
   }
 
-  DataType data_type() const {
-    return footer().data_type();
-  }
-
   const TypeInfo *type_info() const {
     DCHECK(init_once_.initted());
     return type_info_;
@@ -252,8 +248,8 @@ class ColumnIterator {
 //    iter.Scan(&column_block);
 class DefaultColumnValueIterator : public ColumnIterator {
  public:
-  DefaultColumnValueIterator(DataType type, const void *value)
-    : type_(type), value_(value), ordinal_(0) {
+  DefaultColumnValueIterator(const TypeInfo* typeinfo, const void *value)
+    : typeinfo_(typeinfo), value_(value), ordinal_(0) {
   }
 
   Status SeekToOrdinal(rowid_t ord_idx) OVERRIDE;
@@ -269,7 +265,7 @@ class DefaultColumnValueIterator : public ColumnIterator {
   const IteratorStats& io_statistics() const OVERRIDE { return io_stats_; }
 
  private:
-  const DataType type_;
+  const TypeInfo* typeinfo_;
   const void *value_;
 
   size_t batch_;

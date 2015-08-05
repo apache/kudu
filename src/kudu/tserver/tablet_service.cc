@@ -324,7 +324,7 @@ class ScanResultChecksummer : public ScanResultCollector {
         tmp_buf_.append(&is_defined, sizeof(is_defined));
         if (!is_defined) continue;
       }
-      if (cell.type() == STRING) {
+      if (cell.typeinfo()->type() == STRING) {
         const Slice* data = reinterpret_cast<const Slice *>(cell.ptr());
         tmp_buf_.append(data->data(), data->size());
       } else {

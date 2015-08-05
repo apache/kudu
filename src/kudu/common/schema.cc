@@ -301,7 +301,7 @@ Status Schema::DecodeRowKey(Slice encoded_key,
 
   for (size_t col_idx = 0; col_idx < num_key_columns(); ++col_idx) {
     const ColumnSchema& col = column(col_idx);
-    const KeyEncoder& key_encoder = GetKeyEncoder(col.type_info()->type());
+    const KeyEncoder& key_encoder = GetKeyEncoder(col.type_info());
     bool is_last = col_idx == (num_key_columns() - 1);
     RETURN_NOT_OK_PREPEND(key_encoder.Decode(&encoded_key,
                                              is_last,

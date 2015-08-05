@@ -83,7 +83,7 @@ class NullBitmapBuilder {
 class CFileWriter {
  public:
   explicit CFileWriter(const WriterOptions &options,
-                       DataType type,
+                       const TypeInfo* typeinfo,
                        bool is_nullable,
                        gscoped_ptr<fs::WritableBlock> block);
   ~CFileWriter();
@@ -177,7 +177,6 @@ class CFileWriter {
 
   // Type of data being written
   bool is_nullable_;
-  DataType datatype_;
   CompressionType compression_;
   const TypeInfo* typeinfo_;
   const TypeEncodingInfo* type_encoding_info_;

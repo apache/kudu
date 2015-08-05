@@ -270,8 +270,8 @@ Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
         return Status::Corruption(Substitute("column $0 has no data in rowset $1",
                                              col_schema.ToString(), base_data_->ToString()));
       }
-      ret_iters.push_back(new DefaultColumnValueIterator(
-                                col_schema.type_info()->type(), col_schema.read_default_value()));
+      ret_iters.push_back(new DefaultColumnValueIterator(col_schema.type_info(),
+                                                         col_schema.read_default_value()));
       continue;
     }
     CFileIterator *iter;

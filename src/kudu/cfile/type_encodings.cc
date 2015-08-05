@@ -16,6 +16,7 @@
 #include "kudu/cfile/string_dict_block.h"
 #include "kudu/cfile/string_plain_block.h"
 #include "kudu/cfile/string_prefix_block.h"
+#include "kudu/common/types.h"
 #include "kudu/gutil/strings/substitute.h"
 
 namespace kudu {
@@ -188,8 +189,7 @@ struct DataTypeEncodingTraits<IntType, RLE> {
 
 template<typename TypeEncodingTraitsClass>
 TypeEncodingInfo::TypeEncodingInfo(TypeEncodingTraitsClass t)
-    : type_(TypeEncodingTraitsClass::type),
-      encoding_type_(TypeEncodingTraitsClass::encoding_type),
+    : encoding_type_(TypeEncodingTraitsClass::encoding_type),
       create_builder_func_(TypeEncodingTraitsClass::CreateBlockBuilder),
       create_decoder_func_(TypeEncodingTraitsClass::CreateBlockDecoder) {
 }
@@ -300,16 +300,16 @@ class TypeEncodingResolver {
   DISALLOW_COPY_AND_ASSIGN(TypeEncodingResolver);
 };
 
-Status TypeEncodingInfo::Get(DataType type,
+Status TypeEncodingInfo::Get(const TypeInfo* typeinfo,
                              EncodingType encoding,
                              const TypeEncodingInfo** out) {
-  return Singleton<TypeEncodingResolver>::get()->GetTypeEncodingInfo(type,
+  return Singleton<TypeEncodingResolver>::get()->GetTypeEncodingInfo(typeinfo->type(),
                                                                      encoding,
                                                                      out);
 }
 
-const EncodingType TypeEncodingInfo::GetDefaultEncoding(DataType type) {
-  return Singleton<TypeEncodingResolver>::get()->GetDefaultEncoding(type);
+const EncodingType TypeEncodingInfo::GetDefaultEncoding(const TypeInfo* typeinfo) {
+  return Singleton<TypeEncodingResolver>::get()->GetDefaultEncoding(typeinfo->type());
 }
 
 }  // namespace cfile

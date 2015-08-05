@@ -304,7 +304,6 @@ Status IndexTreeIterator::SeekToFirstDownward(const BlockPointer &in_block, int 
 
 IndexTreeIterator *IndexTreeIterator::IndexTreeIterator::Create(
     const CFileReader *reader,
-    DataType type,
     const BlockPointer &root_blockptr) {
   return new IndexTreeIterator(reader, root_blockptr);
 }

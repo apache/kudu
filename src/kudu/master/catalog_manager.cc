@@ -617,8 +617,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
         return s;
   }
   for (int i = 0; i < schema.num_key_columns(); i++) {
-    const DataType type = schema.column(i).type_info()->type();
-    if (!IsTypeAllowableInKey(type)) {
+    if (!IsTypeAllowableInKey(schema.column(i).type_info())) {
         Status s = Status::InvalidArgument(
             "Key column may not have type of BOOL, FLOAT, or DOUBLE");
         SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
@@ -953,7 +952,7 @@ static Status ApplyAlterSteps(const SysTablesEntryPB& current_pb,
         }
         ColumnSchema new_col = ColumnSchemaFromPB(new_col_pb);
         const TypeEncodingInfo *dummy;
-        RETURN_NOT_OK(TypeEncodingInfo::Get(new_col.type_info()->type(),
+        RETURN_NOT_OK(TypeEncodingInfo::Get(new_col.type_info(),
                                             new_col.attributes().encoding(),
                                             &dummy));
 

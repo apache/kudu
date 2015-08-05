@@ -6,8 +6,10 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/util/status.h"
 
-namespace kudu { namespace cfile {
+namespace kudu {
+class TypeInfo;
 
+namespace cfile {
 class BlockBuilder;
 class BlockDecoder;
 class CFileReader;
@@ -21,11 +23,10 @@ struct WriterOptions;
 class TypeEncodingInfo {
  public:
 
-  static Status Get(DataType type, EncodingType encoding, const TypeEncodingInfo** out);
+  static Status Get(const TypeInfo* typeinfo, EncodingType encoding, const TypeEncodingInfo** out);
 
-  static const EncodingType GetDefaultEncoding(DataType type);
+  static const EncodingType GetDefaultEncoding(const TypeInfo* typeinfo);
 
-  DataType type() const { return type_; }
   EncodingType encoding_type() const { return encoding_type_; }
 
   Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) const;
@@ -39,9 +40,8 @@ class TypeEncodingInfo {
  private:
 
   friend class TypeEncodingResolver;
-  template<typename Type> TypeEncodingInfo(Type t);
+  template<typename TypeEncodingTraitsClass> TypeEncodingInfo(TypeEncodingTraitsClass t);
 
-  DataType type_;
   EncodingType encoding_type_;
 
   typedef Status (*CreateBlockBuilderFunc)(BlockBuilder **, const WriterOptions *);

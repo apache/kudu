@@ -116,7 +116,7 @@ class ColumnBlockCell {
     : block_(block), row_idx_(row_idx) {
   }
 
-  DataType type() const { return block_.type_info()->type(); }
+  const TypeInfo* typeinfo() const { return block_.type_info(); }
   size_t size() const { return block_.type_info()->size(); }
   const void* ptr() const {
     return is_nullable() ? block_.nullable_cell_ptr(row_idx_)

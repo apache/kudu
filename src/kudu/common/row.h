@@ -28,7 +28,7 @@ struct SimpleConstCell {
       value_(value) {
   }
 
-  DataType type() const { return col_schema_->type_info()->type(); }
+  const TypeInfo* typeinfo() const { return col_schema_->type_info(); }
   size_t size() const { return col_schema_->type_info()->size(); }
   bool is_nullable() const { return col_schema_->is_nullable(); }
   const void* ptr() const { return value_; }
@@ -45,9 +45,9 @@ struct SimpleConstCell {
 // If dst_arena is non-NULL, relocates the data into the given arena.
 template <class SrcCellType, class DstCellType, class ArenaType>
 Status CopyCellData(const SrcCellType &src, DstCellType* dst, ArenaType *dst_arena) {
-  DCHECK_EQ(src.type(), dst->type());
+  DCHECK_EQ(src.typeinfo()->type(), dst->typeinfo()->type());
 
-  if (src.type() == STRING) {
+  if (src.typeinfo()->type() == STRING) {
     // If it's a Slice column, need to relocate the referred-to data
     // as well as the slice itself.
     // TODO: potential optimization here: if the new value is smaller than
@@ -370,7 +370,7 @@ inline Status RelocateIndirectDataToArena(RowType *row, ArenaType *dst_arena) {
   // and update the pointers
   for (int i = 0; i < schema->num_columns(); i++) {
     typename RowType::Cell cell = row->cell(i);
-    if (cell.type() == STRING) {
+    if (cell.typeinfo()->type() == STRING) {
       if (cell.is_nullable() && cell.is_null()) {
         continue;
       }
@@ -438,7 +438,7 @@ class ContiguousRowCell {
     : row_(row), col_idx_(idx) {
   }
 
-  DataType type() const { return type_info()->type(); }
+  const TypeInfo* typeinfo() const { return type_info(); }
   size_t size() const { return type_info()->size(); }
   const void* ptr() const { return row_->cell_ptr(col_idx_); }
   void* mutable_ptr() const { return row_->mutable_cell_ptr(col_idx_); }

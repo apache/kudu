@@ -139,7 +139,7 @@ void EncodedKeyBuilder::AddColumnKey(const void *raw_key) {
 
   const TypeInfo* ti = col.type_info();
   bool is_last = idx_ == num_key_cols_ - 1;
-  GetKeyEncoder(ti->type()).Encode(raw_key, is_last, &encoded_key_);
+  GetKeyEncoder(ti).Encode(raw_key, is_last, &encoded_key_);
   raw_keys_.push_back(raw_key);
 
   ++idx_;

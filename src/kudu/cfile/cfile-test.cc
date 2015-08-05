@@ -127,7 +127,7 @@ class TestCFile : public CFileTestBase {
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
     gscoped_ptr<CFileReader> reader;
     ASSERT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
-    ASSERT_EQ(DataGeneratorType::kDataType, reader->data_type());
+    ASSERT_EQ(DataGeneratorType::kDataType, reader->type_info()->type());
 
     gscoped_ptr<CFileIterator> iter;
     ASSERT_OK(reader->NewIterator(&iter, CFileReader::CACHE_BLOCK));
@@ -193,7 +193,7 @@ class TestCFile : public CFileTestBase {
     opts.write_validx = false;
     opts.block_size = FLAGS_cfile_test_block_size;
     opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, compression);
-    CFileWriter w(opts, STRING, false, sink.Pass());
+    CFileWriter w(opts, GetTypeInfo(STRING), false, sink.Pass());
     ASSERT_OK(w.Start());
     for (uint32_t i = 0; i < num_entries; i++) {
       vector<Slice> slices;
@@ -212,7 +212,7 @@ class TestCFile : public CFileTestBase {
     ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
 
     gscoped_ptr<IndexTreeIterator> iter;
-    iter.reset(IndexTreeIterator::Create(reader.get(), UINT32, reader->posidx_root()));
+    iter.reset(IndexTreeIterator::Create(reader.get(), reader->posidx_root()));
     ASSERT_OK(iter->SeekToFirst());
 
     uint8_t data[16];
@@ -528,7 +528,7 @@ TEST_F(TestCFile, TestMetadata) {
     ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
     block_id = sink->id();
     WriterOptions opts;
-    CFileWriter w(opts, INT32, false, sink.Pass());
+    CFileWriter w(opts, GetTypeInfo(INT32), false, sink.Pass());
 
     w.AddMetadataPair("key_in_header", "header value");
     ASSERT_OK(w.Start());
@@ -567,7 +567,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
 
   // Test Int Default Value
   uint32_t int_value = 15;
-  DefaultColumnValueIterator iter(UINT32, &int_value);
+  DefaultColumnValueIterator iter(GetTypeInfo(UINT32), &int_value);
   ColumnBlock int_col(GetTypeInfo(UINT32), NULL, data, kNumItems, NULL);
   ASSERT_OK(iter.Scan(&int_col));
   for (size_t i = 0; i < int_col.nrows(); ++i) {
@@ -576,7 +576,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
 
   // Test Int Nullable Default Value
   int_value = 321;
-  DefaultColumnValueIterator nullable_iter(UINT32, &int_value);
+  DefaultColumnValueIterator nullable_iter(GetTypeInfo(UINT32), &int_value);
   ColumnBlock nullable_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, NULL);
   ASSERT_OK(nullable_iter.Scan(&nullable_col));
   for (size_t i = 0; i < nullable_col.nrows(); ++i) {
@@ -585,7 +585,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   }
 
   // Test NULL Default Value
-  DefaultColumnValueIterator null_iter(UINT32,  NULL);
+  DefaultColumnValueIterator null_iter(GetTypeInfo(UINT32),  NULL);
   ColumnBlock null_col(GetTypeInfo(UINT32), null_bitmap, data, kNumItems, NULL);
   ASSERT_OK(null_iter.Scan(&null_col));
   for (size_t i = 0; i < null_col.nrows(); ++i) {
@@ -596,7 +596,7 @@ TEST_F(TestCFile, TestDefaultColumnIter) {
   Slice str_data[kNumItems];
   Slice str_value("Hello");
   Arena arena(32*1024, 256*1024);
-  DefaultColumnValueIterator str_iter(STRING, &str_value);
+  DefaultColumnValueIterator str_iter(GetTypeInfo(STRING), &str_value);
   ColumnBlock str_col(GetTypeInfo(STRING), NULL, str_data, kNumItems, &arena);
   ASSERT_OK(str_iter.Scan(&str_col));
   for (size_t i = 0; i < str_col.nrows(); ++i) {
@@ -646,7 +646,7 @@ TEST_F(TestCFile, TestReleaseBlock) {
   ASSERT_OK(fs_manager_->CreateNewBlock(&sink));
   ASSERT_EQ(WritableBlock::CLEAN, sink->state());
   WriterOptions opts;
-  CFileWriter w(opts, STRING, false, sink.Pass());
+  CFileWriter w(opts, GetTypeInfo(STRING), false, sink.Pass());
   ASSERT_OK(w.Start());
   fs::ScopedWritableBlockCloser closer;
   ASSERT_OK(w.FinishAndReleaseBlock(&closer));
@@ -741,7 +741,7 @@ TEST_F(TestCFile, TestCacheKeysAreStable) {
     ASSERT_OK(CFileReader::Open(source.Pass(), ReaderOptions(), &reader));
 
     gscoped_ptr<IndexTreeIterator> iter;
-    iter.reset(IndexTreeIterator::Create(reader.get(), UINT32, reader->posidx_root()));
+    iter.reset(IndexTreeIterator::Create(reader.get(), reader->posidx_root()));
     ASSERT_OK(iter->SeekToFirst());
 
     BlockHandle bh;
