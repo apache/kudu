@@ -391,6 +391,23 @@ static void TimeReadFileForDataType(gscoped_ptr<CFileIterator> &iter, int &count
   LOG(INFO)<< "Count: " << count;
 }
 
+template<DataType Type>
+static void ReadBinaryFile(CFileIterator* iter, int* count) {
+  ScopedColumnBlock<Type> cb(100);
+  uint64_t sum_lens = 0;
+  while (iter->HasNext()) {
+    size_t n = cb.nrows();
+    ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
+    for (int i = 0; i < n; i++) {
+      sum_lens += cb[i].size();
+    }
+    *count += n;
+    cb.arena()->Reset();
+  }
+  LOG(INFO) << "Sum of value lengths: " << sum_lens;
+  LOG(INFO) << "Count: " << *count;
+}
+
 static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t *count_ret) {
   Status s;
 
@@ -448,19 +465,12 @@ static void TimeReadFile(FsManager* fs_manager, const BlockId& block_id, size_t 
     }
     case STRING:
     {
-      ScopedColumnBlock<STRING> cb(100);
-      uint64_t sum_lens = 0;
-      while (iter->HasNext()) {
-        size_t n = cb.nrows();
-        ASSERT_OK_FAST(iter->CopyNextValues(&n, &cb));
-        for (int i = 0; i < n; i++) {
-          sum_lens += cb[i].size();
-        }
-        count += n;
-        cb.arena()->Reset();
-      }
-      LOG(INFO) << "Sum of value lengths: " << sum_lens;
-      LOG(INFO) << "Count: " << count;
+      ReadBinaryFile<STRING>(iter.get(), &count);
+      break;
+    }
+    case BINARY:
+    {
+      ReadBinaryFile<BINARY>(iter.get(), &count);
       break;
     }
     default:

@@ -100,9 +100,9 @@ struct KeyEncoderTraits<Type, typename base::enable_if<
 };
 
 template<>
-struct KeyEncoderTraits<STRING> {
+struct KeyEncoderTraits<BINARY> {
 
-  static const DataType key_type = STRING;
+  static const DataType key_type = BINARY;
 
   static void Encode(const void* key, faststring* dst) {
     Encode(*reinterpret_cast<const Slice*>(key), dst);
@@ -320,8 +320,7 @@ class KeyEncoder {
   explicit KeyEncoder(EncoderTraitsClass t)
     : encode_func_(EncoderTraitsClass::Encode),
       encode_with_separators_func_(EncoderTraitsClass::EncodeWithSeparators),
-      decode_key_portion_func_(EncoderTraitsClass::DecodeKeyPortion),
-      key_type_(EncoderTraitsClass::key_type) {
+      decode_key_portion_func_(EncoderTraitsClass::DecodeKeyPortion) {
   }
 
   typedef void (*EncodeFunc)(const void* key, faststring* dst);
@@ -333,8 +332,6 @@ class KeyEncoder {
   typedef Status (*DecodeKeyPortionFunc)(Slice* enc_key, bool is_last,
                                        Arena* arena, uint8_t* cell_ptr);
   const DecodeKeyPortionFunc decode_key_portion_func_;
-
-  const DataType key_type_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(KeyEncoder);

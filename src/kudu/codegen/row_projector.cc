@@ -115,7 +115,7 @@ llvm::Function* MakeProjection(const string& name,
   //     %src_cell = getelementptr i8* %src, i64 <base offset>
   //     %result = call i1 @CopyCellToRowBlock(
   //       i64 <type size>, i8* %src_cell, RowBlockRow* %rbrow,
-  //       i64 <column index>, i1 <is string>, Arena* %arena)**
+  //       i64 <column index>, i1 <is binary>, Arena* %arena)**
   //   %success = and %success, %result***
   //   <end implicit for each>
   //   <for each projection column that needs defaults>
@@ -127,7 +127,7 @@ llvm::Function* MakeProjection(const string& name,
   //       %src_cell = inttoptr i64 <default value location> to i8*
   //       %result = call i1 @CopyCellToRowBlock(
   //         i64 <type size>, i8* %src_cell, RowBlockRow* %rbrow,
-  //         i64 <column index>, i1 <is string>, Arena* %arena)
+  //         i64 <column index>, i1 <is_binary>, Arena* %arena)
   //       %success = and %success, %result***
   //     <end implicit if>
   //   <end implicit for each>
@@ -136,7 +136,7 @@ llvm::Function* MakeProjection(const string& name,
   // **If the column is nullable, then the call is replaced with
   // call i1 @CopyCellToRowBlockNullable(
   //   i64 <type size>, i8* %src_cell, RowBlockRow* %rbrow, i64 <column index>,
-  //   i1 <is_string>, Arena* %arena, i8* src_bitmap, i64 <bitmap_idx>)
+  //   i1 <is_binary>, Arena* %arena, i8* src_bitmap, i64 <bitmap_idx>)
   // ***If the column is nullable and the default value is NULL, then the
   // call is replaced with
   // call void @CopyCellToRowBlockSetNull(
@@ -176,9 +176,9 @@ llvm::Function* MakeProjection(const string& name,
     Value* src_cell = builder->CreateConstGEP1_64(src, src_offset);
     src_cell->setName(StrCat("src_cell_base_", base_idx));
     Value* col_idx = builder->getInt64(proj_idx);
-    ConstantInt* is_string = builder->getInt1(col.type_info()->physical_type() == STRING);
+    ConstantInt* is_binary = builder->getInt1(col.type_info()->physical_type() == BINARY);
     vector<Value*> args = list_of<Value*>
-      (size)(src_cell)(rbrow)(col_idx)(is_string)(arena);
+      (size)(src_cell)(rbrow)(col_idx)(is_binary)(arena);
 
     // Add additional arguments if nullable
     Function* to_call = copy_cell_not_null;
@@ -210,7 +210,7 @@ llvm::Function* MakeProjection(const string& name,
     Value* size = builder->getInt64(col.type_info()->size());
     Value* src_cell = mbuilder->GetPointerValue(const_cast<void*>(dfl));
     Value* col_idx = builder->getInt64(dfl_idx);
-    ConstantInt* is_string = builder->getInt1(col.type_info()->physical_type() == STRING);
+    ConstantInt* is_binary = builder->getInt1(col.type_info()->physical_type() == BINARY);
 
     // Handle default columns that are nullable
     if (col.is_nullable()) {
@@ -223,7 +223,7 @@ llvm::Function* MakeProjection(const string& name,
 
     // Make the copy cell call and check the return value
     vector<Value*> args = list_of
-      (size)(src_cell)(rbrow)(col_idx)(is_string)(arena);
+      (size)(src_cell)(rbrow)(col_idx)(is_binary)(arena);
     Value* result = builder->CreateCall(copy_cell_not_null, args);
     result->setName(StrCat("result_dfl", dfl_idx));
     success = builder->CreateAnd(success, result);

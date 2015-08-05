@@ -324,7 +324,7 @@ class ScanResultChecksummer : public ScanResultCollector {
         tmp_buf_.append(&is_defined, sizeof(is_defined));
         if (!is_defined) continue;
       }
-      if (cell.typeinfo()->physical_type() == STRING) {
+      if (cell.typeinfo()->physical_type() == BINARY) {
         const Slice* data = reinterpret_cast<const Slice *>(cell.ptr());
         tmp_buf_.append(data->data(), data->size());
       } else {
@@ -971,10 +971,10 @@ static Status ExtractPredicateValue(const ColumnSchema& schema,
   uint8_t* data_copy = static_cast<uint8_t*>(arena->AllocateBytes(pb_value.size()));
   memcpy(data_copy, &pb_value[0], pb_value.size());
 
-  // If the type is a STRING, then we need to return a pointer to a Slice
+  // If the type is of variable length, then we need to return a pointer to a Slice
   // element pointing to the string. Otherwise, just verify that the provided
   // value was the right size.
-  if (schema.type_info()->physical_type() == STRING) {
+  if (schema.type_info()->physical_type() == BINARY) {
     *result = arena->NewObject<Slice>(data_copy, pb_value.size());
   } else {
     // TODO: add test case for this invalid request

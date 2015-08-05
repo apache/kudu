@@ -3,8 +3,10 @@
 
 #include <boost/noncopyable.hpp>
 #include <boost/shared_ptr.hpp>
+#include <tr1/unordered_map>
 #include <vector>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/singleton.h"
 
 #include "kudu/common/common.pb.h"
@@ -12,16 +14,17 @@
 
 namespace kudu {
 
+using std::tr1::unordered_map;
+
 // A resolver for Encoders
 class EncoderResolver {
  public:
   const KeyEncoder &GetKeyEncoder(DataType t) {
-    CHECK_LT(t, encoders_.size()) << "Unsupported DataType";
-    return *encoders_[t];
+    return *FindOrDie(encoders_, t);
   }
 
   const bool HasKeyEncoderForType(DataType t) {
-    return t < encoders_.size();
+    return ContainsKey(encoders_, t);
   }
 
  private:
@@ -34,16 +37,18 @@ class EncoderResolver {
     AddMapping<INT32>();
     AddMapping<UINT64>();
     AddMapping<INT64>();
-    AddMapping<STRING>();
+    AddMapping<BINARY>();
   }
 
   template<DataType Type> void AddMapping() {
     KeyEncoderTraits<Type> traits;
-    encoders_.push_back(boost::shared_ptr<KeyEncoder>(new KeyEncoder(traits)));
+    InsertOrDie(&encoders_, Type, boost::shared_ptr<KeyEncoder>(new KeyEncoder(traits)));
   }
 
   friend class Singleton<EncoderResolver>;
-  vector<boost::shared_ptr<KeyEncoder> > encoders_;
+  unordered_map<DataType,
+                boost::shared_ptr<KeyEncoder>,
+                std::tr1::hash<size_t> > encoders_;
 };
 
 const KeyEncoder &GetKeyEncoder(const TypeInfo* typeinfo) {

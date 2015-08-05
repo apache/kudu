@@ -36,7 +36,7 @@ void StringDictBlockBuilder::Reset() {
   buffer_.reserve(options_->block_size);
 
   if ((mode_ == kCodeWordMode) && dict_block_.IsBlockFull(options_->block_size)) {
-    mode_ = kPlainStringMode;
+    mode_ = kPlainBinaryMode;
     data_builder_.reset(new StringPlainBlockBuilder(options_));
   } else {
     data_builder_->Reset();
@@ -114,7 +114,7 @@ int StringDictBlockBuilder::Add(const uint8_t* vals, size_t count) {
   if (mode_ == kCodeWordMode) {
     return AddCodeWords(vals, count);
   } else {
-    DCHECK_EQ(mode_, kPlainStringMode);
+    DCHECK_EQ(mode_, kPlainBinaryMode);
     return data_builder_->Add(vals, count);
   }
 }
@@ -146,7 +146,7 @@ Status StringDictBlockBuilder::GetFirstKey(void* key_void) const {
     *slice = Slice(first_key_);
     return Status::OK();
   } else {
-    DCHECK_EQ(mode_, kPlainStringMode);
+    DCHECK_EQ(mode_, kPlainBinaryMode);
     return data_builder_->GetFirstKey(key_void);
   }
 }
@@ -180,7 +180,7 @@ Status StringDictBlockDecoder::ParseHeader() {
   if (mode_ == kCodeWordMode) {
     data_decoder_.reset(new BShufBlockDecoder<UINT32>(content));
   } else {
-    if (mode_ != kPlainStringMode) {
+    if (mode_ != kPlainBinaryMode) {
       return Status::Corruption("Unrecognized Dictionary encoded data block header");
     }
     data_decoder_.reset(new StringPlainBlockDecoder(content));
@@ -212,14 +212,14 @@ Status StringDictBlockDecoder::SeekAtOrAfterValue(const void* value_void, bool* 
     bool tmp;
     return data_decoder_->SeekAtOrAfterValue(&index, &tmp);
   } else {
-    DCHECK_EQ(mode_, kPlainStringMode);
+    DCHECK_EQ(mode_, kPlainBinaryMode);
     return data_decoder_->SeekAtOrAfterValue(value_void, exact);
   }
 }
 
 Status StringDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* dst) {
   DCHECK(parsed_);
-  CHECK_EQ(dst->type_info()->physical_type(), STRING);
+  CHECK_EQ(dst->type_info()->physical_type(), BINARY);
   DCHECK_LE(*n, dst->nrows());
   DCHECK_EQ(dst->stride(), sizeof(Slice));
 
@@ -246,7 +246,7 @@ Status StringDictBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
   if (mode_ == kCodeWordMode) {
     return CopyNextDecodeStrings(n, dst);
   } else {
-    DCHECK_EQ(mode_, kPlainStringMode);
+    DCHECK_EQ(mode_, kPlainBinaryMode);
     return data_decoder_->CopyNextValues(n, dst);
   }
 }

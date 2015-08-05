@@ -398,7 +398,7 @@ Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
 
 Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
   DCHECK(parsed_);
-  CHECK_EQ(dst->type_info()->physical_type(), STRING);
+  CHECK_EQ(dst->type_info()->physical_type(), BINARY);
 
   DCHECK_EQ(dst->stride(), sizeof(Slice));
   DCHECK_LE(*n, dst->nrows());

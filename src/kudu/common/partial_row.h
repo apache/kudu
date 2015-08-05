@@ -20,7 +20,7 @@
 #include "kudu/util/slice.h"
 
 namespace kudu {
-
+class ColumnSchema;
 namespace client {
 class KuduWriteOperation;
 } // namespace client
@@ -30,7 +30,7 @@ class Schema;
 // A row which may only contain values for a subset of the columns.
 // This type contains a normal contiguous row, plus a bitfield indicating
 // which columns have been set. Additionally, this type may optionally own
-// copies of indirect data (eg STRING values).
+// copies of indirect data for variable length columns.
 class KUDU_EXPORT KuduPartialRow {
  public:
   // The given Schema object must remain valid for the lifetime of this
@@ -159,7 +159,6 @@ class KUDU_EXPORT KuduPartialRow {
   std::string ToString() const;
 
   const Schema* schema() const { return schema_; }
-
  private:
   friend class RowKeyUtilTest;
   friend class RowOperationsPBEncoder;
@@ -179,13 +178,13 @@ class KUDU_EXPORT KuduPartialRow {
   template<typename T>
   Status Get(int col_idx, typename T::cpp_type* val) const;
 
-  // If the given column is a string whose memory is owned by this instance,
+  // If the given column is a variable length column whose memory is owned by this instance,
   // deallocates the value.
   // NOTE: Does not mutate the isset bitmap.
-  // REQUIRES: col_idx must be a string column.
-  void DeallocateStringIfSet(int col_idx);
+  // REQUIRES: col_idx must be a variable length column.
+  void DeallocateStringIfSet(int col_idx, const ColumnSchema& col);
 
-  // Deallocate any strings whose memory is managed by this object.
+  // Deallocate any string/binary values whose memory is managed by this object.
   void DeallocateOwnedStrings();
 
   const Schema* schema_;
@@ -195,7 +194,7 @@ class KUDU_EXPORT KuduPartialRow {
   // whereas a field explicitly set to NULL will override the default.
   uint8_t* isset_bitmap_;
 
-  // 1-bit set for any strings whose memory is managed by this instance.
+  // 1-bit set for any variable length columns whose memory is managed by this instance.
   // These strings need to be deallocated whenever the value is reset,
   // or when the instance is destructed.
   uint8_t* owned_strings_bitmap_;

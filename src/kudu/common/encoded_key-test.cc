@@ -250,11 +250,11 @@ TEST_F(EncodedKeyTest, TestRandomStringEncoding) {
     RandomString(buf, len, &r);
 
     Slice in_slice(buf, len);
-    KeyEncoderTraits<STRING>::EncodeWithSeparators(&in_slice, false, &encoded);
+    KeyEncoderTraits<BINARY>::EncodeWithSeparators(&in_slice, false, &encoded);
 
     Slice to_decode(encoded);
     Slice decoded_slice;
-    ASSERT_OK(KeyEncoderTraits<STRING>::DecodeKeyPortion(
+    ASSERT_OK(KeyEncoderTraits<BINARY>::DecodeKeyPortion(
                   &to_decode, false, &arena,
                   reinterpret_cast<uint8_t*>(&decoded_slice)));
 
@@ -270,7 +270,7 @@ TEST_F(EncodedKeyTest, TestRandomStringEncoding) {
 // inline the function under test, making the benchmark unreliable.
 ATTRIBUTE_NOINLINE
 static void NoInlineDoEncode(Slice s, bool is_last, faststring* dst)  {
-  KeyEncoderTraits<STRING>::EncodeWithSeparators(s, is_last, dst);
+  KeyEncoderTraits<BINARY>::EncodeWithSeparators(s, is_last, dst);
 }
 
 TEST_F(EncodedKeyTest, BenchmarkStringEncoding) {

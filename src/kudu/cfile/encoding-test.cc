@@ -54,9 +54,9 @@ class TestEncoding : public ::testing::Test {
   }
 
   // Insert a given number of strings into the provided
-  // StringPrefixBlockBuilder.
+  // BinaryPrefixBlockBuilder.
   template<class BuilderType>
-  static Slice CreateStringBlock(BuilderType *sbb,
+  static Slice CreateBinaryBlock(BuilderType *sbb,
                                  int num_items,
                                  const char *fmt_str) {
     boost::ptr_vector<string> to_insert;
@@ -84,12 +84,12 @@ class TestEncoding : public ::testing::Test {
   }
 
   template<class BuilderType, class DecoderType>
-  void TestStringSeekByValueSmallBlock() {
+  void TestBinarySeekByValueSmallBlock() {
     WriterOptions opts;
     BuilderType sbb(&opts);
     // Insert "hello 0" through "hello 9"
     const uint kCount = 10;
-    Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
+    Slice s = CreateBinaryBlock(&sbb, kCount, "hello %d");
     DecoderType sbd(s);
     ASSERT_OK(sbd.ParseHeader());
 
@@ -143,7 +143,7 @@ class TestEncoding : public ::testing::Test {
     StringPrefixBlockBuilder sbb(&opts);
     const uint kCount = 1000;
     // Insert 'hello 000' through 'hello 999'
-    Slice s = CreateStringBlock(&sbb, kCount, "hello %03d");
+    Slice s = CreateBinaryBlock(&sbb, kCount, "hello %03d");
     StringPrefixBlockDecoder sbd(s);
     ASSERT_OK(sbd.ParseHeader());
 
@@ -215,11 +215,11 @@ class TestEncoding : public ::testing::Test {
   }
 
   template<class BuilderType, class DecoderType>
-  void TestStringBlockRoundTrip() {
+  void TestBinaryBlockRoundTrip() {
     WriterOptions opts;
     BuilderType sbb(&opts);
     const uint kCount = 10;
-    Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
+    Slice s = CreateBinaryBlock(&sbb, kCount, "hello %d");
 
     LOG(INFO) << "Block: " << HexDump(s);
 
@@ -391,13 +391,13 @@ class TestEncoding : public ::testing::Test {
 
   // Test truncation of blocks
   template<class BuilderType, class DecoderType>
-  void TestStringBlockTruncation() {
+  void TestBinaryBlockTruncation() {
     WriterOptions opts;
     BuilderType sbb(&opts);
     const uint kCount = 10;
     size_t sbsize;
 
-    Slice s = CreateStringBlock(&sbb, kCount, "hello %d");
+    Slice s = CreateBinaryBlock(&sbb, kCount, "hello %d");
     do {
       sbsize = s.size();
 
@@ -692,49 +692,49 @@ TEST_F(TestEncoding, TestGVIntEmptyBlockEncodeDecode) {
 // Test seeking to a value in a small block.
 // Regression test for a bug seen in development where this would
 // infinite loop when there are no 'restarts' in a given block.
-TEST_F(TestEncoding, TestStringPrefixBlockBuilderSeekByValueSmallBlock) {
-  TestStringSeekByValueSmallBlock<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderSeekByValueSmallBlock) {
+  TestBinarySeekByValueSmallBlock<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
-TEST_F(TestEncoding, TestStringPlainBlockBuilderSeekByValueSmallBlock) {
-  TestStringSeekByValueSmallBlock<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+TEST_F(TestEncoding, TestBinaryPlainBlockBuilderSeekByValueSmallBlock) {
+  TestBinarySeekByValueSmallBlock<StringPlainBlockBuilder, StringPlainBlockDecoder>();
 }
 
 // Test seeking to a value in a large block which contains
 // many 'restarts'
-TEST_F(TestEncoding, TestStringPrefixBlockBuilderSeekByValueLargeBlock) {
+TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderSeekByValueLargeBlock) {
   TestStringSeekByValueLargeBlock<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
-TEST_F(TestEncoding, TestStringPlainBlockBuilderSeekByValueLargeBlock) {
+TEST_F(TestEncoding, TestBinaryPlainBlockBuilderSeekByValueLargeBlock) {
   TestStringSeekByValueLargeBlock<StringPlainBlockBuilder, StringPlainBlockDecoder>();
 }
 
-// Test round-trip encode/decode of a string block.
-TEST_F(TestEncoding, TestStringPrefixBlockBuilderRoundTrip) {
-  TestStringBlockRoundTrip<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+// Test round-trip encode/decode of a binary block.
+TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderRoundTrip) {
+  TestBinaryBlockRoundTrip<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
-TEST_F(TestEncoding, TestStringPlainBlockBuilderRoundTrip) {
-  TestStringBlockRoundTrip<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+TEST_F(TestEncoding, TestBinaryPlainBlockBuilderRoundTrip) {
+  TestBinaryBlockRoundTrip<StringPlainBlockBuilder, StringPlainBlockDecoder>();
 }
 
 // Test empty block encode/decode
-TEST_F(TestEncoding, TestStringPlainEmptyBlockEncodeDecode) {
+TEST_F(TestEncoding, TestBinaryPlainEmptyBlockEncodeDecode) {
   TestEmptyBlockEncodeDecode<StringPlainBlockBuilder, StringPlainBlockDecoder>();
 }
 
-TEST_F(TestEncoding, TestStringPrefixEmptyBlockEncodeDecode) {
+TEST_F(TestEncoding, TestBinaryPrefixEmptyBlockEncodeDecode) {
   TestEmptyBlockEncodeDecode<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
-// Test encode/decode of a string block with various-sized truncations.
-TEST_F(TestEncoding, TestStringPlainBlockBuilderTruncation) {
-  TestStringBlockTruncation<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+// Test encode/decode of a binary block with various-sized truncations.
+TEST_F(TestEncoding, TestBinaryPlainBlockBuilderTruncation) {
+  TestBinaryBlockTruncation<StringPlainBlockBuilder, StringPlainBlockDecoder>();
 }
 
-TEST_F(TestEncoding, TestStringPrefixBlockBuilderTruncation) {
-  TestStringBlockTruncation<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderTruncation) {
+  TestBinaryBlockTruncation<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
 }
 
 #ifdef NDEBUG

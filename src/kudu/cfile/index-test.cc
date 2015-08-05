@@ -19,7 +19,7 @@ Status SearchInReaderString(const IndexBlockReader &reader,
 
   gscoped_ptr<IndexBlockIterator> iter(reader.NewIterator());
   dst.clear();
-  KeyEncoderTraits<STRING>::Encode(search_key, &dst);
+  KeyEncoderTraits<BINARY>::Encode(search_key, &dst);
   Status s = iter->SeekAtOrBefore(Slice(dst));
   RETURN_NOT_OK(s);
 

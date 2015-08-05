@@ -113,8 +113,8 @@ Status KuduPartialRow::Set(int col_idx,
 
   ContiguousRow row(schema_, row_data_);
 
-  // If we're replacing an existing STRING value, deallocate the old value.
-  if (T::type == STRING) DeallocateStringIfSet(col_idx);
+  // If we're replacing an existing STRING/BINARY value, deallocate the old value.
+  if (T::physical_type == BINARY) DeallocateStringIfSet(col_idx, col);
 
   // Mark the column as set.
   BitmapSet(isset_bitmap_, col_idx);
@@ -131,17 +131,24 @@ Status KuduPartialRow::Set(int col_idx,
   return Status::OK();
 }
 
-void KuduPartialRow::DeallocateStringIfSet(int col_idx) {
+void KuduPartialRow::DeallocateStringIfSet(int col_idx, const ColumnSchema& col) {
   if (BitmapTest(owned_strings_bitmap_, col_idx)) {
     ContiguousRow row(schema_, row_data_);
-    const Slice* dst = schema_->ExtractColumnFromRow<STRING>(row, col_idx);
+    const Slice* dst;
+    if (col.type_info()->type() == BINARY) {
+      dst = schema_->ExtractColumnFromRow<BINARY>(row, col_idx);
+    } else {
+      CHECK(col.type_info()->type() == STRING);
+      dst = schema_->ExtractColumnFromRow<STRING>(row, col_idx);
+    }
     delete [] dst->data();
     BitmapClear(owned_strings_bitmap_, col_idx);
   }
 }
+
 void KuduPartialRow::DeallocateOwnedStrings() {
   for (int i = 0; i < schema_->num_columns(); i++) {
-    DeallocateStringIfSet(i);
+    DeallocateStringIfSet(i, schema_->column(i));
   }
 }
 
@@ -233,7 +240,7 @@ Status KuduPartialRow::SetNull(int col_idx) {
     return Status::InvalidArgument("column not nullable", col.ToString());
   }
 
-  if (col.type_info()->physical_type() == STRING) DeallocateStringIfSet(col_idx);
+  if (col.type_info()->physical_type() == BINARY) DeallocateStringIfSet(col_idx, col);
 
   ContiguousRow row(schema_, row_data_);
   row.set_null(col_idx, true);
@@ -251,7 +258,7 @@ Status KuduPartialRow::Unset(const Slice& col_name) {
 
 Status KuduPartialRow::Unset(int col_idx) {
   const ColumnSchema& col = schema_->column(col_idx);
-  if (col.type_info()->physical_type() == STRING) DeallocateStringIfSet(col_idx);
+  if (col.type_info()->physical_type() == BINARY) DeallocateStringIfSet(col_idx, col);
   BitmapClear(isset_bitmap_, col_idx);
   return Status::OK();
 }

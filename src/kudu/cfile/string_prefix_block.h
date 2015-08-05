@@ -13,7 +13,7 @@ class Arena;
 
 namespace cfile {
 
-// Encoding for data blocks of strings.
+// Encoding for data blocks of binary data that have common prefixes.
 // This encodes in a manner similar to LevelDB (prefix coding)
 class StringPrefixBlockBuilder : public BlockBuilder {
  public:
@@ -64,7 +64,7 @@ class StringPrefixBlockBuilder : public BlockBuilder {
 
 
 
-// Decoder for STRING type, PREFIX encoding
+// Decoder for BINARY type, PREFIX encoding
 class StringPrefixBlockDecoder : public BlockDecoder {
  public:
   explicit StringPrefixBlockDecoder(const Slice &slice);

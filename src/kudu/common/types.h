@@ -322,9 +322,6 @@ struct DerivedTypeTraits {
 
 template<>
 struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
-  // TODO Temporary hack to avoid having to change all the tests to use BINARY instead
-  // of strings (to be done in a follow up patch when encoding is dealt with).
-  static const DataType physical_type = STRING;
   static const char* name() {
     return "string";
   }

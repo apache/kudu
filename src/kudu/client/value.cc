@@ -107,7 +107,7 @@ Status KuduValue::Data::CheckTypeAndGetPointer(const string& col_name,
       *val_void = &double_val_;
       break;
 
-    case kudu::STRING:
+    case kudu::BINARY:
       RETURN_NOT_OK(CheckAndPointToString(col_name, val_void));
       break;
 

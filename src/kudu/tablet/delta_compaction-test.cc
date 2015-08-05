@@ -132,7 +132,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
               update.AddColumnUpdate(col_schema, col_id, &u32_val);
             }
             break;
-          case STRING:
+          case BINARY:
             {
               string s = boost::lexical_cast<string>(update_value);
               Slice str_val(s);

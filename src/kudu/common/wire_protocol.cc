@@ -179,7 +179,7 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
   pb->set_encoding(col_schema.attributes().encoding());
   pb->set_compression(col_schema.attributes().compression());
   if (col_schema.has_read_default()) {
-    if (col_schema.type_info()->physical_type() == STRING) {
+    if (col_schema.type_info()->physical_type() == BINARY) {
       const Slice *read_slice = static_cast<const Slice *>(col_schema.read_default_value());
       pb->set_read_default_value(read_slice->data(), read_slice->size());
     } else {
@@ -188,7 +188,7 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
     }
   }
   if (col_schema.has_write_default()) {
-    if (col_schema.type_info()->physical_type() == STRING) {
+    if (col_schema.type_info()->physical_type() == BINARY) {
       const Slice *write_slice = static_cast<const Slice *>(col_schema.write_default_value());
       pb->set_write_default_value(write_slice->data(), write_slice->size());
     } else {
@@ -203,9 +203,10 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
   const void *read_default_ptr = NULL;
   Slice write_default;
   Slice read_default;
+  const TypeInfo* typeinfo = GetTypeInfo(pb.type());
   if (pb.has_read_default_value()) {
     read_default = Slice(pb.read_default_value());
-    if (pb.type() == STRING) {
+    if (typeinfo->physical_type() == BINARY) {
       read_default_ptr = &read_default;
     } else {
       read_default_ptr = read_default.data();
@@ -213,7 +214,7 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
   }
   if (pb.has_write_default_value()) {
     write_default = Slice(pb.write_default_value());
-    if (pb.type() == STRING) {
+    if (typeinfo->physical_type() == BINARY) {
       write_default_ptr = &write_default;
     } else {
       write_default_ptr = write_default.data();
@@ -310,7 +311,7 @@ Status RewriteRowBlockPointers(const Schema& schema, const RowwiseRowBlockPB& ro
 
   for (int i = 0; i < schema.num_columns(); i++) {
     const ColumnSchema& col = schema.column(i);
-    if (col.type_info()->physical_type() != STRING) {
+    if (col.type_info()->physical_type() != BINARY) {
       continue;
     }
 
@@ -419,7 +420,7 @@ void AppendRowToString<RowBlockRow>(const RowBlockRow& row, string* buf) {
 // protobuf.
 //
 // IS_NULLABLE: true if the column is nullable
-// IS_STRING: true if the column is STRING typed
+// IS_VARLEN: true if the column is of variable length
 //
 // These are template parameters rather than normal function arguments
 // so that there are fewer branches inside the loop.
@@ -428,7 +429,7 @@ void AppendRowToString<RowBlockRow>(const RowBlockRow& row, string* buf) {
 // RowBlock's schema. If not NULL, then column at 'col_idx' in 'block' will
 // be copied to column 'dst_col_idx' in the output protobuf; otherwise,
 // dst_col_idx must be equal to col_idx.
-template<bool IS_NULLABLE, bool IS_STRING>
+template<bool IS_NULLABLE, bool IS_VARLEN>
 static void CopyColumn(const RowBlock& block, int col_idx,
                        int dst_col_idx, uint8_t* dst_base,
                        faststring* indirect_data, const Schema* dst_schema) {
@@ -463,7 +464,7 @@ static void CopyColumn(const RowBlock& block, int col_idx,
       if (IS_NULLABLE && cblock.is_null(row_idx)) {
         memset(dst, 0, cell_size);
         BitmapChange(dst + offset_to_null_bitmap, dst_col_idx, true);
-      } else if (IS_STRING) {
+      } else if (IS_VARLEN) {
         const Slice *slice = reinterpret_cast<const Slice *>(src);
         size_t offset_in_indirect = indirect_data->size();
         indirect_data->append(reinterpret_cast<const char*>(slice->data()),
@@ -518,16 +519,16 @@ void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
     // TODO: Using LLVM to build a specialized CopyColumn on the fly should have
     // even bigger gains, since we could inline the constant cell sizes and column
     // offsets.
-    if (col.is_nullable() && col.type_info()->physical_type() == STRING) {
+    if (col.is_nullable() && col.type_info()->physical_type() == BINARY) {
       CopyColumn<true, true>(block, i, dst_idx, base, indirect_data,
                              project_schema);
-    } else if (col.is_nullable() && col.type_info()->physical_type() != STRING) {
+    } else if (col.is_nullable() && col.type_info()->physical_type() != BINARY) {
       CopyColumn<true, false>(block, i, dst_idx, base, indirect_data,
                               project_schema);
-    } else if (!col.is_nullable() && col.type_info()->physical_type() == STRING) {
+    } else if (!col.is_nullable() && col.type_info()->physical_type() == BINARY) {
       CopyColumn<false, true>(block, i, dst_idx, base, indirect_data,
                               project_schema);
-    } else if (!col.is_nullable() && col.type_info()->physical_type() != STRING) {
+    } else if (!col.is_nullable() && col.type_info()->physical_type() != BINARY) {
       CopyColumn<false, false>(block, i, dst_idx, base, indirect_data,
                                project_schema);
     } else {

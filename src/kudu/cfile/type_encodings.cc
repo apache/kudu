@@ -74,7 +74,7 @@ struct DataTypeEncodingTraits<Type, BIT_SHUFFLE> {
 // Template specialization for plain encoded string as they require a
 // specific encoder/decoder.
 template<>
-struct DataTypeEncodingTraits<STRING, PLAIN_ENCODING> {
+struct DataTypeEncodingTraits<BINARY, PLAIN_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
     *bb = new StringPlainBlockBuilder(options);
@@ -124,7 +124,7 @@ struct DataTypeEncodingTraits<BOOL, RLE> {
 // Template specialization for plain encoded string as they require a
 // specific encoder \/decoder.
 template<>
-struct DataTypeEncodingTraits<STRING, PREFIX_ENCODING> {
+struct DataTypeEncodingTraits<BINARY, PREFIX_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
     *bb = new StringPrefixBlockBuilder(options);
@@ -140,7 +140,7 @@ struct DataTypeEncodingTraits<STRING, PREFIX_ENCODING> {
 
 // Template for dictionary encoding
 template<>
-struct DataTypeEncodingTraits<STRING, DICT_ENCODING> {
+struct DataTypeEncodingTraits<BINARY, DICT_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
     *bb = new StringDictBlockBuilder(options);
@@ -272,9 +272,9 @@ class TypeEncodingResolver {
     AddMapping<FLOAT, BIT_SHUFFLE>();
     AddMapping<DOUBLE, PLAIN_ENCODING>();
     AddMapping<DOUBLE, BIT_SHUFFLE>();
-    AddMapping<STRING, PLAIN_ENCODING>();
-    AddMapping<STRING, PREFIX_ENCODING>();
-    AddMapping<STRING, DICT_ENCODING>();
+    AddMapping<BINARY, PLAIN_ENCODING>();
+    AddMapping<BINARY, PREFIX_ENCODING>();
+    AddMapping<BINARY, DICT_ENCODING>();
     AddMapping<BOOL, RLE>();
     AddMapping<BOOL, PLAIN_ENCODING>();
   }

@@ -46,7 +46,7 @@ struct WriterOptions;
 enum DictEncodingMode {
     DictEncodingMode_min = 1,
     kCodeWordMode = 1,
-    kPlainStringMode = 2,
+    kPlainBinaryMode = 2,
     DictEncodingMode_max = 2
 };
 
