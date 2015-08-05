@@ -16,7 +16,6 @@ public abstract class AbstractKuduScannerBuilder
     <S extends AbstractKuduScannerBuilder<? super S, T>, T> {
   protected final AsyncKuduClient nestedClient;
   protected final KuduTable nestedTable;
-  protected final DeadlineTracker nestedDeadlineTracker;
   protected final List<Tserver.ColumnRangePredicatePB> nestedColumnRangePredicates;
 
   protected AsyncKuduScanner.ReadMode nestedReadMode = AsyncKuduScanner.ReadMode.READ_LATEST;
@@ -28,12 +27,13 @@ public abstract class AbstractKuduScannerBuilder
   protected byte[] nestedLowerBound = AsyncKuduClient.EMPTY_ARRAY;
   protected byte[] nestedUpperBound = AsyncKuduClient.EMPTY_ARRAY;
   protected List<String> nestedProjectedColumnNames = null;
+  protected long nestedScanRequestTimeout;
 
   AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
     this.nestedClient = client;
     this.nestedTable = table;
-    this.nestedDeadlineTracker = new DeadlineTracker();
     this.nestedColumnRangePredicates = new ArrayList<>();
+    this.nestedScanRequestTimeout = client.getDefaultOperationTimeoutMs();
   }
 
   /**
@@ -130,13 +130,13 @@ public abstract class AbstractKuduScannerBuilder
   }
 
   /**
-   * Sets how long the scanner can run for before it expires. The deadline check is triggered
-   * only when more rows must be fetched from a server. There's no timeout by default.
-   * @param deadlineMillis a long representing time in milliseconds that the scanner can run for
+   * Sets how long each scan request to a server can last.
+   * Defaults to {@link KuduClient#getDefaultOperationTimeoutMs()}.
+   * @param scanRequestTimeout a long representing time in milliseconds
    * @return this instance
    */
-  public S deadlineMillis(long deadlineMillis) {
-    this.nestedDeadlineTracker.setDeadline(deadlineMillis);
+  public S scanRequestTimeout(long scanRequestTimeout) {
+    this.nestedScanRequestTimeout = scanRequestTimeout;
     return (S) this;
   }
 

@@ -146,6 +146,9 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
   }
 
   <R> void sendRpc(KuduRpc<R> rpc) {
+    if (!rpc.deadlineTracker.hasDeadline()) {
+      LOG.warn(getPeerUuidLoggingString() + " sending an rpc without a timeout " + rpc);
+    }
     if (chan != null) {
       final ChannelBuffer serialized = encode(rpc);
       if (serialized == null) {  // Error during encoding.

@@ -1033,7 +1033,7 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
       KuduTable table = client.openTable(getTableName(getConf()));
       KuduScanner.KuduScannerBuilder builder =
           client.newScannerBuilder(table)
-              .timeoutMs(timeout);
+              .scanRequestTimeout(timeout);
 
 
       if (cmd.hasOption("s")) {

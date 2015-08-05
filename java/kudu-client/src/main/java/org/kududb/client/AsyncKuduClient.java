@@ -336,7 +336,9 @@ public class AsyncKuduClient {
   }
 
   Deferred<GetTableSchemaResponse> getTableSchema(String name) {
-    return sendRpcToTablet(new GetTableSchemaRequest(this.masterTableHack, name));
+    GetTableSchemaRequest rpc = new GetTableSchemaRequest(this.masterTableHack, name);
+    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+    return sendRpcToTablet(rpc);
   }
 
   /**
@@ -486,10 +488,6 @@ public class AsyncKuduClient {
    * @return A deferred row.
    */
   Deferred<AsyncKuduScanner.Response> scanNextRows(final AsyncKuduScanner scanner) {
-    if (scanner.timedOut()) {
-      Exception e = new NonRecoverableException("Time out:" + scanner);
-      return Deferred.fromError(e);
-    }
     final RemoteTablet tablet = scanner.currentTablet();
     final TabletClient client = clientFor(tablet);
     final KuduRpc<AsyncKuduScanner.Response> next_request = scanner.getNextRowsRequest();
@@ -693,6 +691,7 @@ public class AsyncKuduClient {
           }
         }
         IsCreateTableDoneRequest rpc = new IsCreateTableDoneRequest(masterTableHack, tableName);
+        rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
         final Deferred<Master.IsCreateTableDoneResponsePB> d =
             sendRpcToTablet(rpc).addCallback(new IsCreateTableDoneCB(tableName));
         if (has_permit) {
@@ -861,6 +860,7 @@ public class AsyncKuduClient {
     }
     GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTableHack, rowkey,
         rowkey, table);
+    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     final Deferred<Master.GetTableLocationsResponsePB> d;
 
     // If we know this is going to the master, check the master consensus configuration (as specified by
@@ -936,6 +936,7 @@ public class AsyncKuduClient {
       }
       GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTableHack, startKey,
           endKey, table);
+      rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
       final Deferred<Master.GetTableLocationsResponsePB> d = sendRpcToTablet(rpc);
       Master.GetTableLocationsResponsePB response =
           d.join(deadlineTracker.getMillisBeforeDeadline());
@@ -1173,6 +1174,7 @@ public class AsyncKuduClient {
    */
   Deferred<GetMasterRegistrationResponse> getMasterRegistration(TabletClient masterClient) {
     GetMasterRegistrationRequest rpc = new GetMasterRegistrationRequest(masterTableHack);
+    rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     Deferred<GetMasterRegistrationResponse> d = rpc.getDeferred();
     masterClient.sendRpc(rpc);
     return d;

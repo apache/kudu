@@ -10,11 +10,9 @@ import com.stumbleupon.async.Deferred;
 public class KuduScanner {
 
   private final AsyncKuduScanner asyncScanner;
-  private final long timeoutMs;
 
-  KuduScanner(AsyncKuduScanner asyncScanner, long timeoutMs) {
+  KuduScanner(AsyncKuduScanner asyncScanner) {
     this.asyncScanner = asyncScanner;
-    this.timeoutMs = timeoutMs;
   }
 
   /**
@@ -35,7 +33,7 @@ public class KuduScanner {
    */
   public RowResultIterator nextRows() throws Exception {
     Deferred<RowResultIterator> d = asyncScanner.nextRows();
-    return d.join(timeoutMs);
+    return d.join(asyncScanner.scanRequestTimeout);
   }
 
   /**
@@ -46,7 +44,7 @@ public class KuduScanner {
    */
   public RowResultIterator close() throws Exception {
     Deferred<RowResultIterator> d = asyncScanner.close();
-    return d.join(timeoutMs);
+    return d.join(asyncScanner.scanRequestTimeout);
   }
 
   /**
@@ -56,24 +54,8 @@ public class KuduScanner {
   public static class KuduScannerBuilder
       extends AbstractKuduScannerBuilder<KuduScannerBuilder, KuduScanner> {
 
-    private long nestedTimeoutMs;
-
     KuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
       super(client, table);
-      nestedTimeoutMs = client.getDefaultOperationTimeoutMs();
-    }
-
-    /**
-     * Sets the timeout used to wait when calling {@link KuduScanner#nextRows()} and
-     * {@link KuduScanner#close()}.
-     * If not specified, this timeout will be used:
-     * {@link KuduClient#getDefaultOperationTimeoutMs()}.
-     * A value of 0 disables the timeout functionality.
-     * @param timeoutMs timeout in milliseconds
-     */
-    public KuduScannerBuilder timeoutMs(long timeoutMs) {
-      this.nestedTimeoutMs = timeoutMs;
-      return this;
     }
 
     /**
@@ -83,9 +65,9 @@ public class KuduScanner {
     public KuduScanner build() {
       return new KuduScanner(new AsyncKuduScanner(
           nestedClient, nestedTable, nestedProjectedColumnNames, nestedReadMode,
-          nestedDeadlineTracker, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
-          nestedPrefetching, nestedLowerBound, nestedUpperBound, nestedHtTimestamp, nestedMaxNumBytes),
-          nestedTimeoutMs);
+          nestedScanRequestTimeout, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
+          nestedPrefetching, nestedLowerBound, nestedUpperBound,
+          nestedHtTimestamp, nestedMaxNumBytes));
     }
   }
 }

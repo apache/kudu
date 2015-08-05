@@ -130,8 +130,6 @@ public final class AsyncKuduScanner {
 
   private final boolean cacheBlocks;
 
-  private final DeadlineTracker deadlineTracker;
-
   private final ReadMode readMode;
 
   private final long htTimestamp;
@@ -172,8 +170,10 @@ public final class AsyncKuduScanner {
 
   private boolean inFirstTablet = true;
 
+  final long scanRequestTimeout;
+
   AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedCols,
-                   ReadMode readMode, DeadlineTracker deadlineTracker,
+                   ReadMode readMode, long scanRequestTimeout,
                    List<Tserver.ColumnRangePredicatePB> columnRangePredicates, long limit,
                    boolean cacheBlocks, boolean prefetching, byte[] startKey, byte[] endKey,
                    long htTimestamp, int maxNumBytes) {
@@ -189,7 +189,7 @@ public final class AsyncKuduScanner {
     this.client = client;
     this.table = table;
     this.readMode = readMode;
-    this.deadlineTracker = deadlineTracker;
+    this.scanRequestTimeout = scanRequestTimeout;
     this.columnRangePredicates = columnRangePredicates;
     this.limit = limit;
     this.cacheBlocks = cacheBlocks;
@@ -423,7 +423,7 @@ public final class AsyncKuduScanner {
     buf.append(table.getName());
     buf.append(", tablet=").append(tablet);
     buf.append(", scannerId=").append(Bytes.pretty(scannerId));
-    buf.append(", ").append(deadlineTracker);
+    buf.append(", scanRequestTimeout=").append(scanRequestTimeout);
     buf.append(')');
     return buf.toString();
   }
@@ -498,10 +498,6 @@ public final class AsyncKuduScanner {
     }
   }
 
-  boolean timedOut() {
-    return deadlineTracker.timedOut();
-  }
-
   /**
    *  Helper object that contains all the info sent by a TS afer a Scan request
    */
@@ -548,9 +544,7 @@ public final class AsyncKuduScanner {
     ScanRequest(KuduTable table, State state) {
       super(table);
       this.state = state;
-      if (deadlineTracker.hasDeadline()) {
-        this.setTimeoutMillis(deadlineTracker.getMillisBeforeDeadline());
-      }
+      this.setTimeoutMillis(scanRequestTimeout);
     }
 
     @Override
@@ -686,7 +680,7 @@ public final class AsyncKuduScanner {
     public AsyncKuduScanner build() {
       return new AsyncKuduScanner(
           nestedClient, nestedTable, nestedProjectedColumnNames, nestedReadMode,
-          nestedDeadlineTracker, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
+          nestedScanRequestTimeout, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
           nestedPrefetching, nestedLowerBound, nestedUpperBound, nestedHtTimestamp, nestedMaxNumBytes);
     }
   }
