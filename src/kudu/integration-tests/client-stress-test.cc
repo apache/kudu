@@ -135,34 +135,48 @@ class ClientStressTest_LowMemory : public ClientStressTest {
 // Stress test where, due to absurdly low memory limits, many client requests
 // are rejected, forcing the client to retry repeatedly.
 TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
-  const int64_t minimum_num_rejections = 100;
+  const int64_t kMinRejections = 100;
+  const MonoDelta kMaxWaitTime = MonoDelta::FromSeconds(60);
 
   TestWorkload work(cluster_.get());
   work.Setup();
   work.Start();
 
   // Wait until we've rejected some number of requests.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(kMaxWaitTime);
   while (true) {
     int64_t total_num_rejections = 0;
 
+    // It can take some time for the tablets (and their metric entities) to
+    // appear on every server. Rather than explicitly wait for that above,
+    // we'll just treat the lack of a metric as non-fatal. If the entity
+    // or metric is truly missing, we'll eventually timeout and fail.
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-      int64_t num_leader_rejections;
-      ASSERT_OK(cluster_->tablet_server(i)->GetInt64Metric(
+      int64_t value;
+      Status s = cluster_->tablet_server(i)->GetInt64Metric(
           &METRIC_ENTITY_tablet,
           NULL,
           &METRIC_leader_memory_pressure_rejections,
-          &num_leader_rejections));
-      total_num_rejections += num_leader_rejections;
-      int64_t num_follower_rejections;
-      ASSERT_OK(cluster_->tablet_server(i)->GetInt64Metric(
+          &value);
+      if (!s.IsNotFound()) {
+        ASSERT_OK(s);
+        total_num_rejections += value;
+      }
+      s = cluster_->tablet_server(i)->GetInt64Metric(
           &METRIC_ENTITY_tablet,
           NULL,
           &METRIC_follower_memory_pressure_rejections,
-          &num_follower_rejections));
-      total_num_rejections += num_follower_rejections;
+          &value);
+      if (!s.IsNotFound()) {
+        ASSERT_OK(s);
+        total_num_rejections += value;
+      }
     }
-    if (total_num_rejections >= minimum_num_rejections) {
+    if (total_num_rejections >= kMinRejections) {
       break;
+    } else if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      FAIL() << "Ran for " << kMaxWaitTime.ToString() << ", deadline expired";
     }
     SleepFor(MonoDelta::FromMilliseconds(200));
   }
