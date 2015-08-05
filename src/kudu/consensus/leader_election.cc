@@ -37,9 +37,9 @@ VoteCounter::VoteCounter(int num_voters, int majority_size)
     majority_size_(majority_size),
     yes_votes_(0),
     no_votes_(0) {
-  DCHECK_LE(majority_size, num_voters);
-  DCHECK_GT(num_voters_, 0);
-  DCHECK_GT(majority_size_, 0);
+  CHECK_LE(majority_size, num_voters);
+  CHECK_GT(num_voters_, 0);
+  CHECK_GT(majority_size_, 0);
 }
 
 Status VoteCounter::RegisterVote(const std::string& voter_uuid, ElectionVote vote,
@@ -87,7 +87,8 @@ Status VoteCounter::RegisterVote(const std::string& voter_uuid, ElectionVote vot
 }
 
 bool VoteCounter::IsDecided() const {
-  return (yes_votes_ >= majority_size_ || no_votes_ >= majority_size_);
+  return yes_votes_ >= majority_size_ ||
+         no_votes_ > num_voters_ - majority_size_;
 }
 
 Status VoteCounter::GetDecision(ElectionVote* decision) const {
@@ -95,7 +96,7 @@ Status VoteCounter::GetDecision(ElectionVote* decision) const {
     *decision = VOTE_GRANTED;
     return Status::OK();
   }
-  if (no_votes_ >= majority_size_) {
+  if (no_votes_ > num_voters_ - majority_size_) {
     *decision = VOTE_DENIED;
     return Status::OK();
   }

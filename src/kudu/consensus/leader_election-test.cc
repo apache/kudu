@@ -535,5 +535,58 @@ TEST_F(VoteCounterTest, TestVoteCounter_LateDecision) {
   ASSERT_TRUE(counter.AreAllVotesIn());
 }
 
+// Test vote counting with an even number of voters.
+TEST_F(VoteCounterTest, TestVoteCounter_EvenVoters) {
+  const int kNumVoters = 2;
+  const int kMajoritySize = 2;
+  vector<string> voter_uuids = GenVoterUUIDs(kNumVoters);
+
+  // "Yes" decision.
+  {
+    VoteCounter counter(kNumVoters, kMajoritySize);
+    NO_FATALS(AssertUndecided(counter));
+    NO_FATALS(AssertVoteCount(counter, 0, 0));
+    ASSERT_FALSE(counter.AreAllVotesIn());
+
+    // Initial yes vote.
+    bool duplicate;
+    ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_GRANTED, &duplicate));
+    ASSERT_FALSE(duplicate);
+    NO_FATALS(AssertUndecided(counter));
+    NO_FATALS(AssertVoteCount(counter, 1, 0));
+    ASSERT_FALSE(counter.AreAllVotesIn());
+
+    // Second yes vote wins it.
+    ASSERT_OK(counter.RegisterVote(voter_uuids[1], VOTE_GRANTED, &duplicate));
+    ASSERT_FALSE(duplicate);
+    ASSERT_TRUE(counter.IsDecided());
+    ElectionVote decision;
+    ASSERT_OK(counter.GetDecision(&decision));
+    ASSERT_TRUE(decision == VOTE_GRANTED);
+    NO_FATALS(AssertVoteCount(counter, 2, 0));
+    ASSERT_TRUE(counter.AreAllVotesIn());
+  }
+
+  // "No" decision.
+  {
+    VoteCounter counter(kNumVoters, kMajoritySize);
+    NO_FATALS(AssertUndecided(counter));
+    NO_FATALS(AssertVoteCount(counter, 0, 0));
+    ASSERT_FALSE(counter.AreAllVotesIn());
+
+    // The first "no" vote guarantees a failed election when num voters == 2.
+    bool duplicate;
+    ASSERT_OK(counter.RegisterVote(voter_uuids[0], VOTE_DENIED, &duplicate));
+    ASSERT_FALSE(duplicate);
+    ASSERT_TRUE(counter.IsDecided());
+    ElectionVote decision;
+    ASSERT_OK(counter.GetDecision(&decision));
+    ASSERT_TRUE(decision == VOTE_DENIED);
+    NO_FATALS(AssertVoteCount(counter, 0, 1));
+    ASSERT_FALSE(counter.AreAllVotesIn());
+  }
+}
+
+
 }  // namespace consensus
 }  // namespace kudu
