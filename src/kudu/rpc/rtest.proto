@@ -31,6 +31,10 @@ message SleepRequestPB {
 
   // If set, returns a CalculatorError response.
   optional bool return_app_error = 3 [ default = false ];
+
+  // Used in rpc-test: if this is set to true and no client timeout is set,
+  // the service will respond to the client with an error.
+  optional bool client_timeout_defined = 4 [ default = false ];
 }
 
 message SleepResponsePB {

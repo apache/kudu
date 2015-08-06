@@ -88,6 +88,10 @@ std::string RpcContext::requestor_string() const {
     call_->remote_address().ToString();
 }
 
+MonoTime RpcContext::GetClientDeadline() const {
+  return call_->GetClientDeadline();
+}
+
 Trace* RpcContext::trace() {
   return call_->trace();
 }

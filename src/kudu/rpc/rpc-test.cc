@@ -464,5 +464,32 @@ TEST_F(TestRpc, TestRpcCallbackDestroysMessenger) {
   latch.Wait();
 }
 
+// Test that setting the client timeout / deadline gets propagated to RPC
+// services.
+TEST_F(TestRpc, TestRpcContextClientDeadline) {
+  const uint64_t sleep_micros = 20 * 1000;
+
+  // Set up server.
+  Sockaddr server_addr;
+  StartTestServerWithGeneratedCode(&server_addr);
+
+  // Set up client.
+  shared_ptr<Messenger> client_messenger(CreateMessenger("Client"));
+  Proxy p(client_messenger, server_addr, CalculatorService::static_service_name());
+
+  SleepRequestPB req;
+  req.set_sleep_micros(sleep_micros);
+  req.set_client_timeout_defined(true);
+  SleepResponsePB resp;
+  RpcController controller;
+  Status s = p.SyncRequest("Sleep", req, &resp, &controller);
+  ASSERT_TRUE(s.IsRemoteError());
+  ASSERT_STR_CONTAINS(s.ToString(), "Missing required timeout");
+
+  controller.Reset();
+  controller.set_timeout(MonoDelta::FromMilliseconds(1000));
+  ASSERT_OK(p.SyncRequest("Sleep", req, &resp, &controller));
+}
+
 } // namespace rpc
 } // namespace kudu

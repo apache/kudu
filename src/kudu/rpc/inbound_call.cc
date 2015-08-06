@@ -250,5 +250,14 @@ bool InboundCall::ClientTimedOut() const {
   return total_time > header_.timeout_millis();
 }
 
+MonoTime InboundCall::GetClientDeadline() const {
+  if (!header_.has_timeout_millis() || header_.timeout_millis() == 0) {
+    return MonoTime::Max();
+  }
+  MonoTime deadline = timing_.time_received;
+  deadline.AddDelta(MonoDelta::FromMilliseconds(header_.timeout_millis()));
+  return deadline;
+}
+
 } // namespace rpc
 } // namespace kudu

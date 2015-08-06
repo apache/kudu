@@ -149,6 +149,11 @@ class RpcContext {
   const google::protobuf::Message *request_pb() const { return request_pb_.get(); }
   google::protobuf::Message *response_pb() const { return response_pb_.get(); }
 
+  // Return an upper bound on the client timeout deadline. This does not
+  // account for transmission delays between the client and the server.
+  // If the client did not specify a deadline, returns MonoTime::Max().
+  MonoTime GetClientDeadline() const;
+
   // Panic the server. This logs a fatal error with the given message, and
   // also includes the current RPC request, requestor, trace information, etc,
   // to make it easier to debug.
@@ -158,7 +163,7 @@ class RpcContext {
     __attribute__((noreturn));
 
  private:
-  InboundCall *call_;
+  InboundCall* const call_;
   const gscoped_ptr<const google::protobuf::Message> request_pb_;
   const gscoped_ptr<google::protobuf::Message> response_pb_;
   RpcMethodMetrics metrics_;

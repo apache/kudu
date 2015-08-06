@@ -141,6 +141,11 @@ class InboundCall {
   // call response will be ignored anyway.
   bool ClientTimedOut() const;
 
+  // Return an upper bound on the client timeout deadline. This does not
+  // account for transmission delays between the client and the server.
+  // If the client did not specify a deadline, returns MonoTime::Max().
+  MonoTime GetClientDeadline() const;
+
  private:
   // Serialize and queue the response.
   void Respond(const google::protobuf::MessageLite& response,

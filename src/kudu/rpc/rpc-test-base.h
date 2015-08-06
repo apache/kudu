@@ -170,6 +170,19 @@ class CalculatorService : public CalculatorServiceIf {
       return;
     }
 
+    // Respond w/ error if the RPC specifies that the client deadline is set,
+    // but it isn't.
+    if (req->client_timeout_defined()) {
+      MonoTime deadline = context->GetClientDeadline();
+      if (deadline.Equals(MonoTime::Max())) {
+        CalculatorError my_error;
+        my_error.set_extra_error_data("Timeout not set");
+        context->RespondApplicationError(CalculatorError::app_error_ext.number(),
+                                        "Missing required timeout", my_error);
+        return;
+      }
+    }
+
     if (req->deferred()) {
       // Spawn a new thread which does the sleep and responds later.
       scoped_refptr<Thread> thread;
