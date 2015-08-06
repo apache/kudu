@@ -72,6 +72,7 @@ message TabletStatusPB {
   required string tablet_id = 1;
   required string table_name = 2;
   required TabletStatePB state = 3;
+  optional tablet.TabletDataState tablet_data_state = 8 [ default = TABLET_DATA_UNKNOWN ];
   required string last_status = 4;
   // The encoded start key of the tablet.
   required bytes start_key = 5;

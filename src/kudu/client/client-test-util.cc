@@ -48,5 +48,9 @@ void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
   }
 }
 
+KuduSchema KuduSchemaFromSchema(const Schema& schema) {
+  return KuduSchema(schema);
+}
+
 } // namespace client
 } // namespace kudu

@@ -15,11 +15,6 @@ namespace kudu {
 class ColumnSchema;
 class KuduPartialRow;
 class Schema;
-class TestWorkload;
-
-namespace tserver {
-class TabletServerIntegrationTestBase;
-} // namespace tserver
 
 namespace client {
 
@@ -283,8 +278,8 @@ class KUDU_EXPORT KuduSchema {
   friend class internal::LookupRpc;
   friend class internal::WriteRpc;
 
-  friend class kudu::TestWorkload;
-  friend class tserver::TabletServerIntegrationTestBase;
+  friend KuduSchema KuduSchemaFromSchema(const Schema& schema);
+
 
   // For use by kudu tests.
   explicit KuduSchema(const Schema& schema);

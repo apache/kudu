@@ -1457,6 +1457,8 @@ size_t Tablet::EstimateOnDiskSize() const {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
 
+  if (!comps) return 0;
+
   size_t ret = 0;
   BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
     ret += rowset->EstimateOnDiskSize();

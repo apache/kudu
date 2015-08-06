@@ -6,6 +6,7 @@ option java_package = "org.kududb.tserver";
 
 import "kudu/common/common.proto";
 import "kudu/consensus/metadata.proto";
+import "kudu/tablet/metadata.proto";
 import "kudu/tserver/tserver.proto";
 
 message AlterSchemaRequestPB {
@@ -52,6 +53,10 @@ message DeleteTabletRequestPB {
 
   // Reason the tablet is being deleted (for logging purposes)
   optional string reason = 2;
+
+  // Must be one of TABLET_DATA_DELETED (for table deletes) or
+  // TABLET_DATA_TOMBSTONED (for replica retirement).
+  optional tablet.TabletDataState delete_type = 3 [ default = TABLET_DATA_TOMBSTONED ];
 }
 
 message DeleteTabletResponsePB {

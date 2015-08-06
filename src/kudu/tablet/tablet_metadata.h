@@ -152,7 +152,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Mark the superblock to be in state 'delete_type', sync it to disk, and
   // then delete all of the rowsets in this tablet.
-  // 'delete_type' must be TABLET_DATA_DELETED.
+  // 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED.
   // Returns only once all data has been removed.
   // The metadata (superblock) is not deleted. For that, call DeleteSuperBlock().
   Status DeleteTabletData(TabletDataState delete_type);

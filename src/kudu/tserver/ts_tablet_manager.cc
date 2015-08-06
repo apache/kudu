@@ -104,6 +104,7 @@ using strings::Substitute;
 using tablet::TABLET_DATA_COPYING;
 using tablet::TABLET_DATA_DELETED;
 using tablet::TABLET_DATA_READY;
+using tablet::TABLET_DATA_TOMBSTONED;
 using tablet::Tablet;
 using tablet::TabletDataState;
 using tablet::TabletMetadata;
@@ -351,12 +352,18 @@ scoped_refptr<TabletPeer> TSTabletManager::CreateAndRegisterTabletPeer(
   return tablet_peer;
 }
 
-Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_peer) {
-  TRACE("Deleting tablet $0 (table=$1 [id=$2])", tablet_peer->tablet()->tablet_id(),
-        tablet_peer->tablet()->metadata()->table_name(),
-        tablet_peer->tablet()->metadata()->table_id());
+Status TSTabletManager::DeleteTablet(const string& tablet_id,
+                                     TabletDataState delete_type) {
+  if (delete_type != TABLET_DATA_DELETED && delete_type != TABLET_DATA_TOMBSTONED) {
+    return Status::InvalidArgument("DeleteTablet() requires an argument that is one of "
+                                   "TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED",
+                                   Substitute("Given: $0 ($1)",
+                                              TabletDataState_Name(delete_type), delete_type));
+  }
 
-  const string& tablet_id = tablet_peer->tablet_id();
+  TRACE("Deleting tablet $0", tablet_id);
+
+  scoped_refptr<TabletPeer> tablet_peer;
   {
     // Acquire the lock in exclusive mode as we'll add a entry to the
     // transition_in_progress_ set.
@@ -364,6 +371,9 @@ Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_pee
     TRACE("Acquired tablet manager lock");
     RETURN_NOT_OK(CheckRunningUnlocked());
 
+    if (!LookupTabletUnlocked(tablet_id, &tablet_peer)) {
+      return Status::NotFound("Tablet not found", tablet_id);
+    }
     // Sanity check that the tablet's creation isn't already in progress
     if (!InsertIfNotPresent(&transition_in_progress_, tablet_id)) {
       return Status::AlreadyPresent("Maintenance of tablet already in progress",
@@ -375,7 +385,7 @@ Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_pee
 
   tablet_peer->Shutdown();
 
-  Status s = DeleteTabletData(tablet_peer->tablet_metadata(), TABLET_DATA_DELETED);
+  Status s = DeleteTabletData(tablet_peer->tablet_metadata(), delete_type);
   if (PREDICT_FALSE(!s.ok())) {
     s = s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
                                      tablet_id));
@@ -383,7 +393,8 @@ Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_pee
     return s;
   }
 
-  {
+  // We only remove DELETED tablets from the tablet map.
+  if (delete_type == TABLET_DATA_DELETED) {
     boost::lock_guard<rw_spinlock> lock(lock_);
     RETURN_NOT_OK(CheckRunningUnlocked());
     CHECK_EQ(1, tablet_map_.erase(tablet_id)) << tablet_id;
@@ -628,6 +639,7 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
                                              ReportedTabletPB* reported_tablet) {
   reported_tablet->set_tablet_id(tablet_id);
   reported_tablet->set_state(tablet_peer->state());
+  reported_tablet->set_tablet_data_state(tablet_peer->tablet_metadata()->tablet_data_state());
   if (tablet_peer->state() == tablet::FAILED) {
     AppStatusPB* error_status = reported_tablet->mutable_error();
     StatusToPB(tablet_peer->error(), error_status);
@@ -696,28 +708,41 @@ void TSTabletManager::MarkTabletReportAcknowledged(const TabletReportPB& report)
 }
 
 Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<TabletMetadata>& meta) {
+  const string& tablet_id = meta->tablet_id();
   TabletDataState data_state = meta->tablet_data_state();
   CHECK(data_state == TABLET_DATA_DELETED ||
+        data_state == TABLET_DATA_TOMBSTONED ||
         data_state == TABLET_DATA_COPYING)
-      << "Unexpected TabletDataState in tablet " << meta->tablet_id() << ": "
+      << "Unexpected TabletDataState in tablet " << tablet_id << ": "
       << TabletDataState_Name(data_state) << " (" << data_state << ")";
 
-  const string& tablet_id = meta->tablet_id();
   if (data_state == TABLET_DATA_COPYING) {
-    LOG(FATAL) << LogPrefix(tablet_id) << "TODO: KUDU-867: Tombsone tablets "
-                                       << "that fail to remotely bootstrap";
+    // We tombstone tablets that failed to remotely bootstrap.
+    data_state = TABLET_DATA_TOMBSTONED;
   }
 
   // Roll forward deletions, as needed.
   LOG(INFO) << LogPrefix(tablet_id) << "Tablet Manager startup: Rolling forward tablet deletion "
                                     << "of type " << TabletDataState_Name(data_state);
   RETURN_NOT_OK(DeleteTabletData(meta, data_state));
+
+  // Register TOMBSTONED tablets so that they get reported to the Master, which
+  // allows us to permanently delete replica tombstones when a table gets
+  // deleted.
+  if (data_state == TABLET_DATA_TOMBSTONED) {
+    CreateAndRegisterTabletPeer(meta);
+  }
+
   return Status::OK();
 }
 
 Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& meta,
                                          TabletDataState data_state) {
-  CHECK(data_state == TABLET_DATA_DELETED)
+  const string& tablet_id = meta->tablet_id();
+  LOG(INFO) << LogPrefix(tablet_id) << "Deleting tablet data with delete state "
+            << TabletDataState_Name(data_state);
+  CHECK(data_state == TABLET_DATA_DELETED ||
+        data_state == TABLET_DATA_TOMBSTONED)
       << "Unexpected data_state to delete tablet " << meta->tablet_id() << ": "
       << TabletDataState_Name(data_state) << " (" << data_state << ")";
 
@@ -729,6 +754,13 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
   RETURN_NOT_OK(Log::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));
   MAYBE_FAULT(FLAGS_fault_crash_after_wal_deleted);
 
+  // We do not delete the superblock or the consensus metadata when tombstoning
+  // a tablet.
+  if (data_state == TABLET_DATA_TOMBSTONED) {
+    return Status::OK();
+  }
+
+  // Only TABLET_DATA_DELETED tablets get this far.
   RETURN_NOT_OK(ConsensusMetadata::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));
   MAYBE_FAULT(FLAGS_fault_crash_after_cmeta_deleted);
 

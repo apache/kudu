@@ -20,6 +20,7 @@
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tablet_server_test_util.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
+#include "kudu/tserver/tserver_service.pb.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/net/net_util.h"
 
@@ -56,6 +57,8 @@ using std::tr1::unordered_map;
 using std::vector;
 using strings::Substitute;
 using tserver::CreateTsClientProxies;
+using tserver::DeleteTabletRequestPB;
+using tserver::DeleteTabletResponsePB;
 using tserver::TabletServerAdminServiceProxy;
 using tserver::TabletServerErrorPB;
 using tserver::TabletServerServiceProxy;
@@ -432,6 +435,42 @@ Status RemoveServer(const TServerDetails* leader,
   peer->set_permanent_uuid(replica_to_remove->uuid());
 
   RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  return Status::OK();
+}
+
+Status ListTablets(const TServerDetails* ts,
+                   const MonoDelta& timeout,
+                   vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB>* tablets) {
+  tserver::ListTabletsRequestPB req;
+  tserver::ListTabletsResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+
+  RETURN_NOT_OK(ts->tserver_proxy->ListTablets(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+
+  tablets->assign(resp.status_and_schema().begin(), resp.status_and_schema().end());
+  return Status::OK();
+}
+
+Status DeleteTablet(const TServerDetails* ts,
+                    const std::string& tablet_id,
+                    const tablet::TabletDataState delete_type,
+                    const MonoDelta& timeout) {
+  DeleteTabletRequestPB req;
+  DeleteTabletResponsePB resp;
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+
+  req.set_tablet_id(tablet_id);
+  req.set_delete_type(delete_type);
+
+  RETURN_NOT_OK(ts->tserver_admin_proxy->DeleteTablet(req, &resp, &rpc));
   if (resp.has_error()) {
     return StatusFromPB(resp.error().status());
   }

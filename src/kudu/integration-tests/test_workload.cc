@@ -28,6 +28,7 @@ using client::KuduColumnSchema;;
 using client::KuduInsert;
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
+using client::KuduSchemaFromSchema;
 using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
@@ -139,7 +140,7 @@ void TestWorkload::Setup() {
               << table_name_ << " already exists";
     return;
   }
-  KuduSchema client_schema(GetSimpleTestSchema());
+  KuduSchema client_schema(KuduSchemaFromSchema(GetSimpleTestSchema()));
 
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   CHECK_OK(table_creator->table_name(table_name_)

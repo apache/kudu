@@ -409,6 +409,10 @@ vector<ExternalDaemon*> ExternalMiniCluster::daemons() const {
   return results;
 }
 
+shared_ptr<rpc::Messenger> ExternalMiniCluster::messenger() {
+  return messenger_;
+}
+
 shared_ptr<MasterServiceProxy> ExternalMiniCluster::master_proxy() {
   CHECK_EQ(masters_.size(), 1);
   return master_proxy(0);

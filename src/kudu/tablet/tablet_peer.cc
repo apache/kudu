@@ -199,7 +199,7 @@ void TabletPeer::Shutdown() {
 
   {
     unique_lock<simple_spinlock> lock(&lock_);
-    if (state_ == QUIESCING | state_ == SHUTDOWN) {
+    if (state_ == QUIESCING || state_ == SHUTDOWN) {
       lock.unlock();
       WaitUntilShutdown();
       return;
@@ -333,6 +333,7 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   status_pb_out->set_start_key(status_listener_->start_key());
   status_pb_out->set_end_key(status_listener_->end_key());
   status_pb_out->set_state(state_);
+  status_pb_out->set_tablet_data_state(meta_->tablet_data_state());
   if (tablet_) {
     status_pb_out->set_estimated_on_disk_size(tablet_->EstimateOnDiskSize());
   }

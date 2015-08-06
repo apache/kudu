@@ -1926,6 +1926,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
     tserver::DeleteTabletRequestPB req;
     req.set_tablet_id(tablet_id_);
     req.set_reason(reason_);
+    req.set_delete_type(tablet::TABLET_DATA_DELETED);
 
     ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
                                  boost::bind(&AsyncDeleteReplica::RpcCallback, this));

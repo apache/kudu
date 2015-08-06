@@ -20,8 +20,13 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/master/master.pb.h"
+#include "kudu/master/master.proxy.h"
 #include "kudu/server/server_base.pb.h"
+#include "kudu/server/server_base.proxy.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
+#include "kudu/tserver/tserver_service.proxy.h"
 
 namespace kudu {
 class MonoDelta;
@@ -36,12 +41,7 @@ class KuduTable;
 }
 
 namespace consensus {
-class ConsensusServiceProxy;
 class OpId;
-}
-
-namespace master {
-class MasterServiceProxy;
 }
 
 namespace rpc {
@@ -49,13 +49,8 @@ class Messenger;
 }
 
 namespace tserver {
+class ListTabletsResponsePB_StatusAndSchemaPB;
 class TabletServerErrorPB;
-class TabletServerAdminServiceProxy;
-class TabletServerServiceProxy;
-}
-
-namespace server {
-class GenericServiceProxy;
 }
 
 namespace itest {
@@ -188,6 +183,17 @@ Status AddServer(const TServerDetails* leader,
 Status RemoveServer(const TServerDetails* leader,
                     const std::string& tablet_id,
                     const TServerDetails* replica_to_remove,
+                    const MonoDelta& timeout);
+
+// Get the list of tablets from the remote server.
+Status ListTablets(const TServerDetails* ts,
+                   const MonoDelta& timeout,
+                   std::vector<tserver::ListTabletsResponsePB_StatusAndSchemaPB>* tablets);
+
+// Send a DeleteTablet() to the server at 'ts' of the specified 'delete_type'.
+Status DeleteTablet(const TServerDetails* ts,
+                    const std::string& tablet_id,
+                    const tablet::TabletDataState delete_type,
                     const MonoDelta& timeout);
 
 } // namespace itest

@@ -190,6 +190,9 @@ class ExternalMiniCluster {
     return masters_.size();
   }
 
+  // Return the client messenger used by the ExternalMiniCluster.
+  std::tr1::shared_ptr<rpc::Messenger> messenger();
+
   // If the cluster is configured for a single non-distributed master,
   // return a proxy to that master. Requires that the single master is
   // running.

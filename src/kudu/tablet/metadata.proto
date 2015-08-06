@@ -50,8 +50,10 @@ enum TabletDataState {
   // This tablet is in the process of being deleted.
   // The tablet server should "roll forward" the deletion during boot,
   // rather than trying to load the tablet.
-  // TODO: we also need to incorporate "tombstoning" a tablet.
   TABLET_DATA_DELETED = 2;
+
+  // The tablet has been deleted, and now just consists of a "tombstone".
+  TABLET_DATA_TOMBSTONED = 3;
 }
 
 // The super-block keeps track of the tablet data blocks.

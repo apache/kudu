@@ -492,18 +492,17 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
 void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
                                           DeleteTabletResponsePB* resp,
                                           rpc::RpcContext* context) {
+  tablet::TabletDataState delete_type = tablet::TABLET_DATA_UNKNOWN;
+  if (req->has_delete_type()) {
+    delete_type = req->delete_type();
+  }
   LOG(INFO) << "Processing DeleteTablet for tablet " << req->tablet_id()
+            << " with delete_type " << TabletDataState_Name(delete_type)
             << (req->has_reason() ? (" (" + req->reason() + ")") : "")
             << " from " << context->requestor_string();
   VLOG(1) << "Full request: " << req->DebugString();
 
-  scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
-                             &tablet_peer)) {
-    return;
-  }
-
-  Status s = server_->tablet_manager()->DeleteTablet(tablet_peer);
+  Status s = server_->tablet_manager()->DeleteTablet(req->tablet_id(), delete_type);
   if (PREDICT_FALSE(!s.ok())) {
     TabletServerErrorPB::Code code;
     if (s.IsNotFound()) {

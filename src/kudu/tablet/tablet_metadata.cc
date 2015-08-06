@@ -114,7 +114,8 @@ void TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& superblock,
 }
 
 Status TabletMetadata::DeleteTabletData(TabletDataState delete_type) {
-  CHECK(delete_type == TABLET_DATA_DELETED)
+  CHECK(delete_type == TABLET_DATA_DELETED ||
+        delete_type == TABLET_DATA_TOMBSTONED)
       << "DeleteTabletData() called with unsupported delete_type on tablet "
       << tablet_id_ << ": " << TabletDataState_Name(delete_type)
       << " (" << delete_type << ")";

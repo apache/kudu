@@ -1794,6 +1794,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
   RpcController rpc;
 
   req.set_tablet_id(kTabletId);
+  req.set_delete_type(tablet::TABLET_DATA_DELETED);
 
   // Send the call
   {
@@ -1833,6 +1834,7 @@ TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
   RpcController rpc;
 
   req.set_tablet_id("NotPresentTabletId");
+  req.set_delete_type(tablet::TABLET_DATA_DELETED);
 
   // Send the call
   {
@@ -1858,6 +1860,7 @@ TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
 
   DeleteTabletRequestPB req;
   req.set_tablet_id(kTabletId);
+  req.set_delete_type(tablet::TABLET_DATA_DELETED);
 
   for (int i = 0; i < kNumDeletes; i++) {
     SCOPED_TRACE(req.DebugString());

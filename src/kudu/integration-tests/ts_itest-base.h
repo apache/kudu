@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "kudu/client/client-test-util.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/client/schema-internal.h"
 #include "kudu/gutil/strings/split.h"
@@ -34,6 +35,7 @@ DEFINE_int32(num_replicas, 3, "Number of replicas per tablet server");
 namespace kudu {
 namespace tserver {
 
+using client::KuduSchemaFromSchema;
 using consensus::OpId;
 using consensus::RaftPeerPB;
 using itest::GetReplicaStatusAndCheckIfLeader;
@@ -393,7 +395,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   void CreateTable() {
     // The tests here make extensive use of server schemas, but we need
     // a client schema to create the table.
-    client::KuduSchema client_schema(schema_);
+    client::KuduSchema client_schema(KuduSchemaFromSchema(schema_));
     gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(kTableId)
              .schema(&client_schema)

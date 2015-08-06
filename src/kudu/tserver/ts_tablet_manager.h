@@ -96,9 +96,9 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                          scoped_refptr<tablet::TabletPeer>* tablet_peer);
 
   // Delete the specified tablet.
-  // 'client_deadline' specifies the deadline provided by the client for the
-  // corresponding RPC call.
-  Status DeleteTablet(const scoped_refptr<tablet::TabletPeer>& tablet_peer);
+  // 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED
+  // or else returns Status::IllegalArgument.
+  Status DeleteTablet(const std::string& tablet_id, tablet::TabletDataState delete_type);
 
   // Lookup the given tablet peer by its ID.
   // Returns true if the tablet is found successfully.
