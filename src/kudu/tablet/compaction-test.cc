@@ -11,6 +11,7 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/tablet/compaction.h"
@@ -36,6 +37,7 @@ namespace tablet {
 
 using consensus::OpId;
 using log::LogAnchorRegistry;
+using strings::Substitute;
 
 static const char *kRowKeyFormat = "hello %08d";
 static const size_t kLargeRollThreshold = 1024 * 1024 * 1024; // 1GB
@@ -743,7 +745,7 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
     for (int i = 0; i < 3; i++) {
       for (int j = 0; j < 10; j++) {
         int val = (i * 10) + j;
-        ASSERT_OK(row.SetStringCopy("key", strings::Substitute("hello $0", val)));
+        ASSERT_OK(row.SetStringCopy("key", Substitute("hello $0", val)));
         ASSERT_OK(row.SetInt32("val", val));
         ASSERT_OK(writer.Insert(row));
       }
@@ -756,13 +758,23 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
 
   ASSERT_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
 
-  uint64_t bytes_after;
-  ASSERT_NO_FATAL_FAILURE(GetDataDiskSpace(&bytes_after));
-
-  LOG(INFO) << "Data disk space before compaction: " << bytes_before;
-  LOG(INFO) << "Data disk space after compaction: " << bytes_after;
-  ASSERT_GT(bytes_before, bytes_after) <<
-      "Compaction did not reduce data block disk space usage";
+  // Block deletion may happen asynchronously, so let's loop for a bit until
+  // the space becomes free.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromSeconds(30));
+  while (true) {
+    uint64_t bytes_after;
+    ASSERT_NO_FATAL_FAILURE(GetDataDiskSpace(&bytes_after));
+    LOG(INFO) << Substitute("Data disk space: $0 (before), $1 (after) ",
+                            bytes_before, bytes_after);
+    if (bytes_after < bytes_before) {
+      break;
+    } else if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      FAIL() << "Timed out waiting for compaction to reduce data block disk "
+             << "space usage";
+    }
+    SleepFor(MonoDelta::FromMilliseconds(200));
+  }
 }
 
 } // namespace tablet

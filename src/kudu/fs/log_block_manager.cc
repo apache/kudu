@@ -7,6 +7,7 @@
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
+#include "kudu/gutil/callback.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/strip.h"
@@ -23,6 +24,7 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random_util.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 
 // TODO: How should this be configured? Should provide some guidance.
@@ -32,10 +34,6 @@ DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
 DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
               "Number of bytes to preallocate in a log container when "
               "creating new blocks. Set to 0 to disable preallocation");
-
-DEFINE_bool(log_block_manager_parallel_open, true,
-            "Open all log block manager paths in parallel");
-TAG_FLAG(log_block_manager_parallel_open, hidden);
 
 DEFINE_bool(log_block_manager_test_hole_punching, true,
             "Ensure hole punching is supported by the underlying filesystem");
@@ -222,6 +220,12 @@ class LogBlockContainer {
   //
   // This function is thread unsafe.
   void UpdateBytesWritten(int64_t more_bytes);
+
+  // Run a task on this container's root path thread pool.
+  //
+  // Normally the task is performed asynchronously. However, if submission to
+  // the pool fails, it runs synchronously on the current thread.
+  void ExecClosure(const Closure& task);
 
   // Simple accessors.
   std::string dir() const { return DirName(path_); }
@@ -573,6 +577,17 @@ void LogBlockContainer::UpdateBytesWritten(int64_t more_bytes) {
   }
 }
 
+void LogBlockContainer::ExecClosure(const Closure& task) {
+  ThreadPool* pool = FindOrDie(block_manager()->thread_pools_by_root_path_,
+                               dir());
+  Status s = pool->SubmitClosure(task);
+  if (!s.ok()) {
+    WARN_NOT_OK(
+        s, "Could not submit task to thread pool, running it synchronously");
+    task.Run();
+  }
+}
+
 ////////////////////////////////////////////////////////////
 // LogBlock
 ////////////////////////////////////////////////////////////
@@ -637,14 +652,22 @@ LogBlock::LogBlock(LogBlockContainer* container,
   container_->ConsumeMemory(kudu_malloc_usable_size(this));
 }
 
+static void DeleteBlockAsync(LogBlockContainer* container,
+                             BlockId block_id,
+                             int64_t offset,
+                             int64_t length) {
+  // We don't call SyncData() to synchronize the deletion because it's
+  // expensive, and in the worst case, we'll just leave orphaned data
+  // behind to be cleaned up in the next GC.
+  VLOG(3) << "Freeing space belonging to block " << block_id;
+  WARN_NOT_OK(container->DeleteBlock(offset, length),
+              Substitute("Could not delete block $0", block_id.ToString()));
+}
+
 LogBlock::~LogBlock() {
   if (deleted_) {
-    // We don't call SyncData() to synchronize the deletion because it's
-    // expensive, and in the worst case, we'll just leave orphaned data
-    // behind to be cleaned up in the next GC.
-    VLOG(3) << "Freeing space belonging to block " << block_id_;
-    WARN_NOT_OK(container_->DeleteBlock(offset_, length_),
-                Substitute("Could not delete block $0", block_id_.ToString()));
+    container_->ExecClosure(Bind(&DeleteBlockAsync, container_, block_id_,
+                                 offset_, length_));
   }
   container_->ReleaseMemory(kudu_malloc_usable_size(this));
 }
@@ -1009,12 +1032,28 @@ LogBlockManager::~LogBlockManager() {
   // destroyed before their containers.
   blocks_by_block_id_.clear();
 
+  // As LogBlock destructors run, some blocks may be deleted, so we might be
+  // waiting here for a little while.
+  LOG_SLOW_EXECUTION(INFO, 1000,
+                     Substitute("waiting on $0 log block manager thread pools",
+                                thread_pools_by_root_path_.size())) {
+    BOOST_FOREACH(const ThreadPoolMap::value_type& e,
+                  thread_pools_by_root_path_) {
+      ThreadPool* p = e.second;
+      p->Wait();
+      p->Shutdown();
+    }
+  }
+
   STLDeleteElements(&all_containers_);
+  STLDeleteValues(&thread_pools_by_root_path_);
   STLDeleteValues(&instances_by_root_path_);
 }
 
 Status LogBlockManager::Create() {
   CHECK(!read_only_);
+
+  RETURN_NOT_OK(Init());
 
   deque<ScopedFileDeleter*> delete_on_failure;
   ElementDeleter d(&delete_on_failure);
@@ -1067,15 +1106,7 @@ Status LogBlockManager::Create() {
 }
 
 Status LogBlockManager::Open() {
-  // Use a thread pool to parallelize the work of opening the block manager. We
-  // expect a 1-1 relationship between root path and disk, thus each path gets
-  // its own thread.
-  int num_threads = FLAGS_log_block_manager_parallel_open ? root_paths_.size() : 1;
-  gscoped_ptr<ThreadPool> open_pool;
-  RETURN_NOT_OK_PREPEND(ThreadPoolBuilder("open_pool")
-                        .set_max_threads(num_threads)
-                        .Build(&open_pool),
-                        "Could not create thread pool");
+  RETURN_NOT_OK(Init());
 
   vector<Status> statuses(root_paths_.size());
   unordered_map<string, PathInstanceMetadataFile*> metadata_files;
@@ -1084,9 +1115,11 @@ Status LogBlockManager::Open() {
     InsertOrDie(&metadata_files, root_path, NULL);
   }
 
+  // Submit each open to its own thread pool and wait for them to complete.
   int i = 0;
   BOOST_FOREACH(const string& root_path, root_paths_) {
-    RETURN_NOT_OK_PREPEND(open_pool->SubmitClosure(
+    ThreadPool* pool = FindOrDie(thread_pools_by_root_path_, root_path);
+    RETURN_NOT_OK_PREPEND(pool->SubmitClosure(
         Bind(&LogBlockManager::OpenRootPath,
              Unretained(this),
              root_path,
@@ -1095,8 +1128,12 @@ Status LogBlockManager::Open() {
                           Substitute("Could not open root path $0", root_path));
     i++;
   }
-  open_pool->Wait();
+  BOOST_FOREACH(const ThreadPoolMap::value_type& e,
+                thread_pools_by_root_path_) {
+    e.second->Wait();
+  }
 
+  // Ensure that no tasks failed.
   BOOST_FOREACH(const Status& s, statuses) {
     if (!s.ok()) {
       return s;
@@ -1501,6 +1538,24 @@ Status LogBlockManager::CheckHolePunch(const string& path) {
         "Unexpected post-punch file size for $0: expected $1 but got $2",
         filename, kPunchedFileSize, sz));
   }
+
+  return Status::OK();
+}
+
+Status LogBlockManager::Init() {
+  // Initialize thread pools.
+  ThreadPoolMap pools;
+  ValueDeleter d(&pools);
+  int i = 0;
+  BOOST_FOREACH(const string& root, root_paths_) {
+    gscoped_ptr<ThreadPool> p;
+    RETURN_NOT_OK_PREPEND(ThreadPoolBuilder(Substitute("lbm root $0", i++))
+                          .set_max_threads(1)
+                          .Build(&p),
+                          "Could not build thread pool");
+    InsertOrDie(&pools, root, p.release());
+  }
+  thread_pools_by_root_path_.swap(pools);
 
   return Status::OK();
 }

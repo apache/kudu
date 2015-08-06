@@ -25,6 +25,7 @@
 namespace kudu {
 class Env;
 class MetricEntity;
+class ThreadPool;
 
 namespace fs {
 class PathInstanceMetadataFile;
@@ -225,6 +226,9 @@ class LogBlockManager : public BlockManager {
   // Test for hole punching support at 'path'.
   Status CheckHolePunch(const std::string& path);
 
+  // Perform basic initialization.
+  Status Init();
+
   ObjectIdGenerator* oid_generator() { return &oid_generator_; }
 
   Env* env() const { return env_; }
@@ -287,6 +291,11 @@ class LogBlockManager : public BlockManager {
   // Maps root paths to instance metadata files found in each root path.
   typedef std::tr1::unordered_map<std::string, PathInstanceMetadataFile*> InstanceMap;
   InstanceMap instances_by_root_path_;
+
+  // Maps root paths to thread pools. Each pool runs at most one thread, and
+  // so serves as a "work queue" for that particular disk.
+  typedef std::tr1::unordered_map<std::string, ThreadPool*> ThreadPoolMap;
+  ThreadPoolMap thread_pools_by_root_path_;
 
   // For generating container names.
   ObjectIdGenerator oid_generator_;
