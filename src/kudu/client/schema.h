@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/client/value.h"
 #include "kudu/util/kudu_export.h"
 
 namespace kudu {
@@ -24,6 +25,8 @@ class WriteRpc;
 } // namespace internal
 
 class KuduClient;
+class KuduSchema;
+class KuduSchemaBuilder;
 class KuduWriteOperation;
 
 class KUDU_EXPORT KuduColumnStorageAttributes {
@@ -81,6 +84,8 @@ class KUDU_EXPORT KuduColumnSchema {
 
   static std::string DataTypeToString(DataType type);
 
+  // TODO: make this hard-to-use constructor private. Clients should use
+  // the Builder API.
   KuduColumnSchema(const std::string &name,
                    DataType type,
                    bool is_nullable = false,
@@ -104,27 +109,156 @@ class KUDU_EXPORT KuduColumnSchema {
 
  private:
   friend class KuduSchema;
+  friend class std::vector<KuduColumnSchema>;
+
+  KuduColumnSchema();
 
   // Owned.
   ColumnSchema* col_;
 };
 
+// Builder API for specifying or altering a column within a table schema.
+// This cannot be constructed directly, but rather is returned from
+// KuduSchemaBuilder::AddColumn() to specify a column within a Schema.
+//
+// TODO(KUDU-861): this API will also be used for an improved AlterTable API.
+class KUDU_EXPORT KuduColumnSpec {
+ public:
+  // Set the default value for this column.
+  //
+  // When adding a new column to a table, this default value will be used to
+  // fill the new column in all existing rows.
+  //
+  // When a user inserts data, if the user does not specify any value for
+  // this column, the default will also be used.
+  //
+  // The KuduColumnSpec takes ownership over 'value'.
+  KuduColumnSpec* Default(KuduValue* value);
+
+  // Set the preferred compression for this column.
+  KuduColumnSpec* Compression(KuduColumnStorageAttributes::CompressionType compression);
+
+  // Set the preferred encoding for this column.
+  // Note that not all encodings are supported for all column types.
+  KuduColumnSpec* Encoding(KuduColumnStorageAttributes::EncodingType encoding);
+
+
+  // Operations only relevant for Create Table
+  // ------------------------------------------------------------
+
+  // Set this column to be the primary key of the table.
+  //
+  // This may only be used to set non-composite primary keys. If a composite
+  // key is desired, use KuduSchemaBuilder::SetPrimaryKey(). This may not be
+  // used in conjunction with KuduSchemaBuilder::SetPrimaryKey().
+  //
+  // Only relevant for a CreateTable operation. Primary keys may not be changed
+  // after a table is created.
+  KuduColumnSpec* PrimaryKey();
+
+  // Set this column to be not nullable.
+  // Column nullability may not be changed once a table is created.
+  KuduColumnSpec* NotNull();
+
+  // Set this column to be nullable (the default).
+  // Column nullability may not be changed once a table is created.
+  KuduColumnSpec* Nullable();
+
+  // Set the type of this column.
+  // Column types may not be changed once a table is created.
+  KuduColumnSpec* Type(KuduColumnSchema::DataType type);
+
+  // Operations only relevant for Alter Table
+  // ------------------------------------------------------------
+
+  // Remove the default value for this column. Without a default, clients must
+  // always specify a value for this column when inserting data.
+  KuduColumnSpec* RemoveDefault();
+
+  // Rename this column.
+  KuduColumnSpec* RenameTo(const std::string& new_name);
+
+ private:
+  class KUDU_NO_EXPORT Data;
+  friend class KuduSchemaBuilder;
+
+  // This class should always be owned and deleted by one of its friends,
+  // not the user.
+  ~KuduColumnSpec();
+
+  explicit KuduColumnSpec(const std::string& col_name);
+
+  Status ToColumnSchema(KuduColumnSchema* col) const;
+
+  // Owned.
+  Data* data_;
+};
+
+// Builder API for constructing a KuduSchema object.
+// The API here is a "fluent" style of programming, such that the resulting code
+// looks somewhat like a SQL "CREATE TABLE" statement. For example:
+//
+// SQL:
+//   CREATE TABLE t (
+//     my_key int not null primary key,
+//     a float default 1.5
+//   );
+//
+// is represented as:
+//
+//   KuduSchemaBuilder t;
+//   t.AddColumn("my_key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+//   t.AddColumn("a")->Type(KuduColumnSchema::FLOAT)->Default(KuduValue::FromFloat(1.5));
+//   KuduSchema schema;
+//   t.Build(&schema);
+//
+class KUDU_EXPORT KuduSchemaBuilder {
+ public:
+  KuduSchemaBuilder();
+  ~KuduSchemaBuilder();
+
+  // Return a KuduColumnSpec for a new column within the Schema.
+  // The returned object is owned by the KuduSchemaBuilder.
+  KuduColumnSpec* AddColumn(const std::string& name);
+
+  // Set the primary key of the new Schema based on the given column names.
+  // This may be used to specify a compound primary key.
+  KuduSchemaBuilder* SetPrimaryKey(const std::vector<std::string>& key_col_names);
+
+  // Resets 'schema' to the result of this builder.
+  //
+  // If the Schema is invalid for any reason (eg missing types, duplicate column names, etc)
+  // a bad Status will be returned.
+  Status Build(KuduSchema* schema);
+
+ private:
+  class KUDU_NO_EXPORT Data;
+  // Owned.
+  Data* data_;
+};
+
+
 class KUDU_EXPORT KuduSchema {
  public:
   KuduSchema();
+
+  // DEPRECATED: use KuduSchemaBuilder. This constructor will soon be
+  // removed.
   KuduSchema(const std::vector<KuduColumnSchema>& columns, int key_columns);
+
   KuduSchema(const KuduSchema& other);
   ~KuduSchema();
 
   KuduSchema& operator=(const KuduSchema& other);
   void CopyFrom(const KuduSchema& other);
-  void Reset(const std::vector<KuduColumnSchema>& columns, int key_columns);
+
+  // DEPRECATED: will be removed soon.
+  Status Reset(const std::vector<KuduColumnSchema>& columns, int key_columns)
+    WARN_UNUSED_RESULT;
 
   bool Equals(const KuduSchema& other) const;
   KuduColumnSchema Column(size_t idx) const;
-  KuduSchema CreateKeyProjection() const;
   size_t num_columns() const;
-  size_t num_key_columns() const;
 
   // Create a new row corresponding to this schema.
   //
@@ -137,12 +271,17 @@ class KUDU_EXPORT KuduSchema {
  private:
   friend class KuduClient;
   friend class KuduScanner;
+  friend class KuduSchemaBuilder;
   friend class KuduTable;
   friend class KuduTableCreator;
   friend class KuduWriteOperation;
   friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
   friend class internal::WriteRpc;
+
+  // Private since we don't want users to rely on the first N columns
+  // being the keys.
+  size_t num_key_columns() const;
 
   // Owned.
   Schema* schema_;

@@ -342,7 +342,9 @@ cdef class Schema:
             vcols.push_back(deref(col.schema))
 
         result.num_key_columns = num_key_columns
-        result.schema.Reset(vcols, num_key_columns)
+        # TODO: don't use KuduSchema::Reset (deprecated)
+        cdef Status s = result.schema.Reset(vcols, num_key_columns)
+        raise_on_failure(&s)
 
         return result
 

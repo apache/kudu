@@ -5,10 +5,14 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <tr1/unordered_map>
 
 #include "kudu/client/schema-internal.h"
+#include "kudu/client/value-internal.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/common/schema.h"
+#include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/substitute.h"
 
 MAKE_ENUM_LIMITS(kudu::client::KuduColumnStorageAttributes::EncodingType,
                  kudu::client::KuduColumnStorageAttributes::AUTO_ENCODING,
@@ -22,11 +26,12 @@ MAKE_ENUM_LIMITS(kudu::client::KuduColumnSchema::DataType,
                  kudu::client::KuduColumnSchema::INT8,
                  kudu::client::KuduColumnSchema::BOOL);
 
-namespace kudu {
-
-namespace client {
-
+using std::tr1::unordered_map;
 using std::vector;
+using strings::Substitute;
+
+namespace kudu {
+namespace client {
 
 kudu::EncodingType ToInternalEncodingType(KuduColumnStorageAttributes::EncodingType type) {
   switch (type) {
@@ -105,6 +110,299 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
   }
 }
 
+////////////////////////////////////////////////////////////
+// KuduColumnSpec
+////////////////////////////////////////////////////////////
+
+class KuduColumnSpec::Data {
+ public:
+  explicit Data(const std::string& name)
+    : name(name),
+      has_type(false),
+      has_encoding(false),
+      has_compression(false),
+      has_nullable(false),
+      primary_key(false),
+      has_default(false),
+      default_val(NULL),
+      remove_default(false),
+      has_rename_to(false) {
+  }
+
+  ~Data() {
+    delete default_val;
+  }
+
+  const string name;
+
+  bool has_type;
+  KuduColumnSchema::DataType type;
+
+  bool has_encoding;
+  KuduColumnStorageAttributes::EncodingType encoding;
+
+  bool has_compression;
+  KuduColumnStorageAttributes::CompressionType compression;
+
+  bool has_nullable;
+  bool nullable;
+
+  bool primary_key;
+
+  bool has_default;
+  KuduValue* default_val; // Owned.
+
+  // For ALTER
+  bool remove_default;
+
+  // For ALTER
+  bool has_rename_to;
+  string rename_to;
+};
+
+KuduColumnSpec::KuduColumnSpec(const std::string& name)
+  : data_(new Data(name)) {
+}
+
+KuduColumnSpec::~KuduColumnSpec() {
+  delete data_;
+}
+
+KuduColumnSpec* KuduColumnSpec::Type(KuduColumnSchema::DataType type) {
+  data_->has_type = true;
+  data_->type = type;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::Default(KuduValue* v) {
+  data_->has_default = true;
+  delete data_->default_val;
+  data_->default_val = v;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::Compression(
+    KuduColumnStorageAttributes::CompressionType compression) {
+  data_->has_compression = true;
+  data_->compression = compression;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::Encoding(
+    KuduColumnStorageAttributes::EncodingType encoding) {
+  data_->has_encoding = true;
+  data_->encoding = encoding;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::PrimaryKey() {
+  data_->primary_key = true;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::NotNull() {
+  data_->has_nullable = true;
+  data_->nullable = false;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::Nullable() {
+  data_->has_nullable = true;
+  data_->nullable = true;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::RemoveDefault() {
+  data_->remove_default = true;
+  return this;
+}
+
+KuduColumnSpec* KuduColumnSpec::RenameTo(const std::string& new_name) {
+  data_->has_rename_to = true;
+  data_->rename_to = new_name;
+  return this;
+}
+
+Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
+  // Verify that the user isn't trying to use any methods that
+  // don't make sense for CREATE.
+  if (data_->has_rename_to) {
+    return Status::NotSupported("cannot rename a column during CreateTable",
+                                data_->name);
+  }
+  if (data_->remove_default) {
+    return Status::NotSupported("cannot remove default during CreateTable",
+                                data_->name);
+  }
+
+  if (!data_->has_type) {
+    return Status::InvalidArgument("no type provided for column", data_->name);
+  }
+  DataType internal_type = ToInternalDataType(data_->type);
+
+  bool nullable = data_->has_nullable ? data_->nullable : true;
+
+  void* default_val = NULL;
+  // TODO: distinguish between DEFAULT NULL and no default?
+  if (data_->has_default) {
+    RETURN_NOT_OK(data_->default_val->data_->CheckTypeAndGetPointer(
+                      data_->name, internal_type, &default_val));
+  }
+
+
+  // Encoding and compression
+  KuduColumnStorageAttributes::EncodingType encoding =
+    KuduColumnStorageAttributes::AUTO_ENCODING;
+  if (data_->has_encoding) {
+    encoding = data_->encoding;
+  }
+
+  KuduColumnStorageAttributes::CompressionType compression =
+    KuduColumnStorageAttributes::DEFAULT_COMPRESSION;
+  if (data_->has_compression) {
+    compression = data_->compression;
+  }
+
+  *col = KuduColumnSchema(data_->name, data_->type, nullable,
+                          default_val,
+                          KuduColumnStorageAttributes(encoding, compression));
+
+  return Status::OK();
+}
+
+
+////////////////////////////////////////////////////////////
+// KuduSchemaBuilder
+////////////////////////////////////////////////////////////
+
+class KUDU_NO_EXPORT KuduSchemaBuilder::Data {
+ public:
+  Data() : has_key_col_names(false) {
+  }
+
+  ~Data() {
+    // Rather than delete the specs here, we have to do it in
+    // ~KuduSchemaBuilder(), to avoid a circular dependency in the
+    // headers declaring friend classes with nested classes.
+  }
+
+  bool has_key_col_names;
+  vector<string> key_col_names;
+
+  vector<KuduColumnSpec*> specs;
+};
+
+KuduSchemaBuilder::KuduSchemaBuilder()
+  : data_(new Data()) {
+}
+
+KuduSchemaBuilder::~KuduSchemaBuilder() {
+  BOOST_FOREACH(KuduColumnSpec* spec, data_->specs) {
+    // Can't use STLDeleteElements because KuduSchemaBuilder
+    // is a friend of KuduColumnSpec in order to access its destructor.
+    // STLDeleteElements is a free function and therefore can't access it.
+    delete spec;
+  }
+  delete data_;
+}
+
+KuduColumnSpec* KuduSchemaBuilder::AddColumn(const std::string& name) {
+  KuduColumnSpec* c = new KuduColumnSpec(name);
+  data_->specs.push_back(c);
+  return c;
+}
+
+KuduSchemaBuilder* KuduSchemaBuilder::SetPrimaryKey(
+    const std::vector<std::string>& key_col_names) {
+  data_->has_key_col_names = true;
+  data_->key_col_names = key_col_names;
+  return this;
+}
+
+Status KuduSchemaBuilder::Build(KuduSchema* schema) {
+  vector<KuduColumnSchema> cols;
+  cols.resize(data_->specs.size());
+  for (int i = 0; i < cols.size(); i++) {
+    RETURN_NOT_OK(data_->specs[i]->ToColumnSchema(&cols[i]));
+  }
+
+  int num_key_cols;
+
+  if (!data_->has_key_col_names) {
+    // If they didn't explicitly pass the column names for key,
+    // then they should have set it on exactly one column.
+    int single_key_col_idx = -1;
+    for (int i = 0; i < cols.size(); i++) {
+      if (data_->specs[i]->data_->primary_key) {
+        if (single_key_col_idx != -1) {
+          return Status::InvalidArgument("multiple columns specified for primary key",
+                                         Substitute("$0, $1",
+                                                    cols[single_key_col_idx].name(),
+                                                    cols[i].name()));
+        }
+        single_key_col_idx = i;
+      }
+    }
+
+    if (single_key_col_idx == -1) {
+      return Status::InvalidArgument("no primary key specified");
+    }
+
+    // TODO: eventually allow primary keys which aren't the first column
+    if (single_key_col_idx != 0) {
+      return Status::InvalidArgument("primary key column must be the first column");
+    }
+
+    num_key_cols = 1;
+  } else {
+    // Build a map from name to index of all of the columns.
+    unordered_map<string, int> name_to_idx_map;
+    int i = 0;
+    BOOST_FOREACH(KuduColumnSpec* spec, data_->specs) {
+      // If they did pass the key column names, then we should not have explicitly
+      // set it on any columns.
+      if (spec->data_->primary_key) {
+        return Status::InvalidArgument("primary key specified by both SetPrimaryKey() and on a "
+                                       "specific column", spec->data_->name);
+      }
+      // If we have a duplicate column name, the Schema::Reset() will catch it later,
+      // anyway.
+      name_to_idx_map[spec->data_->name] = i++;
+    }
+
+    // Convert the key column names to a set of indexes.
+    vector<int> key_col_indexes;
+    BOOST_FOREACH(const string& key_col_name, data_->key_col_names) {
+      int idx;
+      if (!FindCopy(name_to_idx_map, key_col_name, &idx)) {
+        return Status::InvalidArgument("primary key column not defined", key_col_name);
+      }
+      key_col_indexes.push_back(idx);
+    }
+
+    // Currently we require that the key columns be contiguous at the front
+    // of the schema. We'll lift this restriction later -- hence the more
+    // flexible user-facing API.
+    for (int i = 0; i < key_col_indexes.size(); i++) {
+      if (key_col_indexes[i] != i) {
+        return Status::InvalidArgument("primary key columns must be listed first in the schema",
+                                       data_->key_col_names[i]);
+      }
+    }
+
+    num_key_cols = key_col_indexes.size();
+  }
+
+  RETURN_NOT_OK(schema->Reset(cols, num_key_cols));
+
+  return Status::OK();
+}
+
+
+////////////////////////////////////////////////////////////
+// KuduColumnSchema
+////////////////////////////////////////////////////////////
+
 std::string KuduColumnSchema::DataTypeToString(DataType type) {
   return DataType_Name(ToInternalDataType(type));
 }
@@ -125,6 +423,9 @@ KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other)
   CopyFrom(other);
 }
 
+KuduColumnSchema::KuduColumnSchema() : col_(NULL) {
+}
+
 KuduColumnSchema::~KuduColumnSchema() {
   delete col_;
 }
@@ -138,25 +439,35 @@ KuduColumnSchema& KuduColumnSchema::operator=(const KuduColumnSchema& other) {
 
 void KuduColumnSchema::CopyFrom(const KuduColumnSchema& other) {
   delete col_;
-  col_ = new ColumnSchema(*other.col_);
+  if (other.col_) {
+    col_ = new ColumnSchema(*other.col_);
+  } else {
+    col_ = NULL;
+  }
 }
 
 bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
-  return this == &other || col_->Equals(*other.col_, true);
+  return this == &other ||
+    col_ == other.col_ ||
+    (col_ != NULL && col_->Equals(*other.col_, true));
 }
 
 const std::string& KuduColumnSchema::name() const {
-  return col_->name();
+  return DCHECK_NOTNULL(col_)->name();
 }
 
 bool KuduColumnSchema::is_nullable() const {
-  return col_->is_nullable();
+  return DCHECK_NOTNULL(col_)->is_nullable();
 }
 
 KuduColumnSchema::DataType KuduColumnSchema::type() const {
-  return FromInternalDataType(col_->type_info()->type());
+  return FromInternalDataType(DCHECK_NOTNULL(col_)->type_info()->type());
 }
 
+
+////////////////////////////////////////////////////////////
+// KuduSchema
+////////////////////////////////////////////////////////////
 
 KuduSchema::KuduSchema()
   : schema_(NULL) {
@@ -164,7 +475,7 @@ KuduSchema::KuduSchema()
 
 KuduSchema::KuduSchema(const vector<KuduColumnSchema>& columns, int key_columns)
   : schema_(NULL) {
-  Reset(columns, key_columns);
+  CHECK_OK(Reset(columns, key_columns));
 }
 
 KuduSchema::KuduSchema(const KuduSchema& other)
@@ -188,13 +499,17 @@ void KuduSchema::CopyFrom(const KuduSchema& other) {
   schema_ = new Schema(*other.schema_);
 }
 
-void KuduSchema::Reset(const vector<KuduColumnSchema>& columns, int key_columns) {
+Status KuduSchema::Reset(const vector<KuduColumnSchema>& columns, int key_columns) {
   vector<ColumnSchema> cols_private;
   BOOST_FOREACH(const KuduColumnSchema& col, columns) {
     cols_private.push_back(*col.col_);
   }
+  gscoped_ptr<Schema> new_schema(new Schema());
+  RETURN_NOT_OK(new_schema->Reset(cols_private, key_columns));
+
   delete schema_;
-  schema_ = new Schema(cols_private, key_columns);
+  schema_ = new_schema.release();
+  return Status::OK();
 }
 
 bool KuduSchema::Equals(const KuduSchema& other) const {
@@ -209,12 +524,6 @@ KuduColumnSchema KuduSchema::Column(size_t idx) const {
   return KuduColumnSchema(col.name(), FromInternalDataType(col.type_info()->type()),
                           col.is_nullable(), col.read_default_value(),
                           attrs);
-}
-
-KuduSchema KuduSchema::CreateKeyProjection() const {
-  KuduSchema projection;
-  projection.schema_ = new Schema(schema_->CreateKeyProjection());
-  return projection;
 }
 
 KuduPartialRow* KuduSchema::NewRow() const {

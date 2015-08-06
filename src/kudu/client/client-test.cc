@@ -69,18 +69,17 @@ using master::TabletLocationsPB;
 using tablet::TabletPeer;
 using tserver::MiniTabletServer;
 
-const int32_t kNonNullDefault = 12345;
-
 class ClientTest : public KuduTest {
  public:
-  ClientTest()
-    : schema_(list_of
-              (KuduColumnSchema("key", KuduColumnSchema::INT32))
-              (KuduColumnSchema("int_val", KuduColumnSchema::INT32))
-              (KuduColumnSchema("string_val", KuduColumnSchema::STRING, true))
-              (KuduColumnSchema("non_null_with_default", KuduColumnSchema::INT32, false,
-                                &kNonNullDefault)),
-              1) {
+  ClientTest() {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->Nullable();
+    b.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
+      ->Default(KuduValue::FromInt(12345));
+    CHECK_OK(b.Build(&schema_));
+
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
   }
 

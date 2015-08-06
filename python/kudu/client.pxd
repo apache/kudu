@@ -115,7 +115,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         KuduSchema()
         KuduSchema(vector[KuduColumnSchema]& columns, int key_columns)
 
-        void Reset(vector[KuduColumnSchema]& columns, int key_columns)
+        Status Reset(vector[KuduColumnSchema]& columns, int key_columns)
 
         bool Equals(KuduSchema& other)
         KuduColumnSchema Column(size_t idx)
