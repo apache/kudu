@@ -1,12 +1,13 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include "kudu/cfile/binary_plain_block.h"
+
 #include <glog/logging.h>
 #include <algorithm>
 
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/string_plain_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/util/coding.h"
@@ -18,14 +19,14 @@
 namespace kudu {
 namespace cfile {
 
-StringPlainBlockBuilder::StringPlainBlockBuilder(const WriterOptions *options)
+BinaryPlainBlockBuilder::BinaryPlainBlockBuilder(const WriterOptions *options)
   : end_of_data_offset_(0),
     size_estimate_(0),
     options_(options) {
   Reset();
 }
 
-void StringPlainBlockBuilder::Reset() {
+void BinaryPlainBlockBuilder::Reset() {
   offsets_.clear();
   buffer_.clear();
   buffer_.resize(kMaxHeaderSize);
@@ -36,11 +37,11 @@ void StringPlainBlockBuilder::Reset() {
   finished_ = false;
 }
 
-bool StringPlainBlockBuilder::IsBlockFull(size_t limit) const {
+bool BinaryPlainBlockBuilder::IsBlockFull(size_t limit) const {
   return size_estimate_ > limit;
 }
 
-Slice StringPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
+Slice BinaryPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
   finished_ = true;
 
   size_t offsets_pos = buffer_.size();
@@ -58,7 +59,7 @@ Slice StringPlainBlockBuilder::Finish(rowid_t ordinal_pos) {
   return Slice(buffer_);
 }
 
-int StringPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
+int BinaryPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
   DCHECK(!finished_);
   DCHECK_GT(count, 0);
   size_t i = 0;
@@ -91,11 +92,11 @@ int StringPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
 }
 
 
-uint64_t StringPlainBlockBuilder::Count() const {
+uint64_t BinaryPlainBlockBuilder::Count() const {
   return offsets_.size();
 }
 
-Status StringPlainBlockBuilder::GetFirstKey(void *key_void) const {
+Status BinaryPlainBlockBuilder::GetFirstKey(void *key_void) const {
   CHECK(finished_);
 
   Slice *slice = reinterpret_cast<Slice *>(key_void);
@@ -118,7 +119,7 @@ Status StringPlainBlockBuilder::GetFirstKey(void *key_void) const {
 // Decoding
 ////////////////////////////////////////////////////////////
 
-StringPlainBlockDecoder::StringPlainBlockDecoder(const Slice &slice)
+BinaryPlainBlockDecoder::BinaryPlainBlockDecoder(const Slice &slice)
   : data_(slice),
     parsed_(false),
     num_elems_(0),
@@ -126,7 +127,7 @@ StringPlainBlockDecoder::StringPlainBlockDecoder(const Slice &slice)
     cur_idx_(0) {
 }
 
-Status StringPlainBlockDecoder::ParseHeader() {
+Status BinaryPlainBlockDecoder::ParseHeader() {
   CHECK(!parsed_);
 
   if (data_.size() < kMinHeaderSize) {
@@ -198,7 +199,7 @@ Status StringPlainBlockDecoder::ParseHeader() {
   return Status::OK();
 }
 
-void StringPlainBlockDecoder::SeekToPositionInBlock(uint pos) {
+void BinaryPlainBlockDecoder::SeekToPositionInBlock(uint pos) {
   if (PREDICT_FALSE(num_elems_ == 0)) {
     DCHECK_EQ(0, pos);
     return;
@@ -208,7 +209,7 @@ void StringPlainBlockDecoder::SeekToPositionInBlock(uint pos) {
   cur_idx_ = pos;
 }
 
-Status StringPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool *exact) {
+Status BinaryPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool *exact) {
   DCHECK(value_void != NULL);
 
   const Slice &target = *reinterpret_cast<const Slice *>(value_void);
@@ -240,7 +241,7 @@ Status StringPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool 
   return Status::OK();
 }
 
-Status StringPlainBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
+Status BinaryPlainBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info()->physical_type(), BINARY);
   DCHECK_LE(*n, dst->nrows());

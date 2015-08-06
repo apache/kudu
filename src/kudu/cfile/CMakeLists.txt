@@ -15,6 +15,9 @@ ADD_EXPORTABLE_LIBRARY(cfile_proto
   NONLINK_DEPS ${CFILE_PROTO_TGTS})
 
 add_library(cfile
+  binary_dict_block.cc
+  binary_plain_block.cc
+  binary_prefix_block.cc
   block_cache.cc
   block_compression.cc
   bloomfile.cc
@@ -26,9 +29,6 @@ add_library(cfile
   gvint_block.cc
   index_block.cc
   index_btree.cc
-  string_dict_block.cc
-  string_plain_block.cc
-  string_prefix_block.cc
   type_encodings.cc)
 
 target_link_libraries(cfile

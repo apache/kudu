@@ -16,8 +16,8 @@
 #include "kudu/cfile/plain_bitmap_block.h"
 #include "kudu/cfile/plain_block.h"
 #include "kudu/cfile/rle_block.h"
-#include "kudu/cfile/string_plain_block.h"
-#include "kudu/cfile/string_prefix_block.h"
+#include "kudu/cfile/binary_plain_block.h"
+#include "kudu/cfile/binary_prefix_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
@@ -140,11 +140,11 @@ class TestEncoding : public ::testing::Test {
   void TestStringSeekByValueLargeBlock() {
     Arena arena(1024, 1024*1024); // TODO: move to fixture?
     WriterOptions opts;
-    StringPrefixBlockBuilder sbb(&opts);
+    BinaryPrefixBlockBuilder sbb(&opts);
     const uint kCount = 1000;
     // Insert 'hello 000' through 'hello 999'
     Slice s = CreateBinaryBlock(&sbb, kCount, "hello %03d");
-    StringPrefixBlockDecoder sbd(s);
+    BinaryPrefixBlockDecoder sbd(s);
     ASSERT_OK(sbd.ParseHeader());
 
     // Seeking to just after a key should return the
@@ -693,48 +693,48 @@ TEST_F(TestEncoding, TestGVIntEmptyBlockEncodeDecode) {
 // Regression test for a bug seen in development where this would
 // infinite loop when there are no 'restarts' in a given block.
 TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderSeekByValueSmallBlock) {
-  TestBinarySeekByValueSmallBlock<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+  TestBinarySeekByValueSmallBlock<BinaryPrefixBlockBuilder, BinaryPrefixBlockDecoder>();
 }
 
 TEST_F(TestEncoding, TestBinaryPlainBlockBuilderSeekByValueSmallBlock) {
-  TestBinarySeekByValueSmallBlock<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+  TestBinarySeekByValueSmallBlock<BinaryPlainBlockBuilder, BinaryPlainBlockDecoder>();
 }
 
 // Test seeking to a value in a large block which contains
 // many 'restarts'
 TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderSeekByValueLargeBlock) {
-  TestStringSeekByValueLargeBlock<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+  TestStringSeekByValueLargeBlock<BinaryPrefixBlockBuilder, BinaryPrefixBlockDecoder>();
 }
 
 TEST_F(TestEncoding, TestBinaryPlainBlockBuilderSeekByValueLargeBlock) {
-  TestStringSeekByValueLargeBlock<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+  TestStringSeekByValueLargeBlock<BinaryPlainBlockBuilder, BinaryPlainBlockDecoder>();
 }
 
 // Test round-trip encode/decode of a binary block.
 TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderRoundTrip) {
-  TestBinaryBlockRoundTrip<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+  TestBinaryBlockRoundTrip<BinaryPrefixBlockBuilder, BinaryPrefixBlockDecoder>();
 }
 
 TEST_F(TestEncoding, TestBinaryPlainBlockBuilderRoundTrip) {
-  TestBinaryBlockRoundTrip<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+  TestBinaryBlockRoundTrip<BinaryPlainBlockBuilder, BinaryPlainBlockDecoder>();
 }
 
 // Test empty block encode/decode
 TEST_F(TestEncoding, TestBinaryPlainEmptyBlockEncodeDecode) {
-  TestEmptyBlockEncodeDecode<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+  TestEmptyBlockEncodeDecode<BinaryPlainBlockBuilder, BinaryPlainBlockDecoder>();
 }
 
 TEST_F(TestEncoding, TestBinaryPrefixEmptyBlockEncodeDecode) {
-  TestEmptyBlockEncodeDecode<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+  TestEmptyBlockEncodeDecode<BinaryPrefixBlockBuilder, BinaryPrefixBlockDecoder>();
 }
 
 // Test encode/decode of a binary block with various-sized truncations.
 TEST_F(TestEncoding, TestBinaryPlainBlockBuilderTruncation) {
-  TestBinaryBlockTruncation<StringPlainBlockBuilder, StringPlainBlockDecoder>();
+  TestBinaryBlockTruncation<BinaryPlainBlockBuilder, BinaryPlainBlockDecoder>();
 }
 
 TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderTruncation) {
-  TestBinaryBlockTruncation<StringPrefixBlockBuilder, StringPrefixBlockDecoder>();
+  TestBinaryBlockTruncation<BinaryPrefixBlockBuilder, BinaryPrefixBlockDecoder>();
 }
 
 #ifdef NDEBUG

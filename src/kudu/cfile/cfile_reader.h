@@ -38,7 +38,7 @@ class BlockPointer;
 class CFileHeaderPB;
 class CFileFooterPB;
 class CFileIterator;
-class StringPlainBlockDecoder;
+class BinaryPlainBlockDecoder;
 
 class CFileReader {
  public:
@@ -352,7 +352,7 @@ class CFileIterator : public ColumnIterator {
   // It the column is dictionary-coded, returns the decoder
   // for the cfile's dictionary block. This is called by the
   // StringDictBlockDecoder.
-  StringPlainBlockDecoder* GetDictDecoder() { return dict_decoder_.get();}
+  BinaryPlainBlockDecoder* GetDictDecoder() { return dict_decoder_.get();}
 
  private:
   DISALLOW_COPY_AND_ASSIGN(CFileIterator);
@@ -421,7 +421,7 @@ class CFileIterator : public ColumnIterator {
   gscoped_ptr<IndexTreeIterator> validx_iter_;
 
   // Decoder for the dictionary block
-  gscoped_ptr<StringPlainBlockDecoder> dict_decoder_;
+  gscoped_ptr<BinaryPlainBlockDecoder> dict_decoder_;
   BlockHandle dict_block_handle_;
 
   // The currently in-use index iterator. This is equal to either

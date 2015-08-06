@@ -12,8 +12,8 @@
 //   raw strings that were written
 // Offsets:  [pointed to by offsets_pos]
 //   gvint-encoded offsets pointing to the beginning of each string
-#ifndef KUDU_CFILE_STRING_PLAIN_BLOCK_H
-#define KUDU_CFILE_STRING_PLAIN_BLOCK_H
+#ifndef KUDU_CFILE_BINARY_PLAIN_BLOCK_H
+#define KUDU_CFILE_BINARY_PLAIN_BLOCK_H
 
 #include <vector>
 
@@ -25,9 +25,9 @@ namespace cfile {
 
 struct WriterOptions;
 
-class StringPlainBlockBuilder : public BlockBuilder {
+class BinaryPlainBlockBuilder : public BlockBuilder {
  public:
-  explicit StringPlainBlockBuilder(const WriterOptions *options);
+  explicit BinaryPlainBlockBuilder(const WriterOptions *options);
 
   bool IsBlockFull(size_t limit) const OVERRIDE;
 
@@ -66,10 +66,9 @@ class StringPlainBlockBuilder : public BlockBuilder {
 
 };
 
-
-class StringPlainBlockDecoder : public BlockDecoder {
+class BinaryPlainBlockDecoder : public BlockDecoder {
  public:
-  explicit StringPlainBlockDecoder(const Slice &slice);
+  explicit BinaryPlainBlockDecoder(const Slice &slice);
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
@@ -124,4 +123,4 @@ class StringPlainBlockDecoder : public BlockDecoder {
 } // namespace cfile
 } // namespace kudu
 
-#endif
+#endif // KUDU_CFILE_BINARY_PREFIX_BLOCK_H

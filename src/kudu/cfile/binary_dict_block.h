@@ -19,8 +19,8 @@
 // BShufBuilder/Decoder is ok.
 //
 //
-#ifndef KUDU_CFILE_STRING_Dict_BLOCK_H
-#define KUDU_CFILE_STRING_Dict_BLOCK_H
+#ifndef KUDU_CFILE_BINARY_DICT_BLOCK_H
+#define KUDU_CFILE_BINARY_DICT_BLOCK_H
 
 #include <string>
 #include <tr1/unordered_map>
@@ -29,7 +29,7 @@
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/cfile.pb.h"
-#include "kudu/cfile/string_plain_block.h"
+#include "kudu/cfile/binary_plain_block.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/stringpiece.h"
@@ -44,15 +44,15 @@ struct WriterOptions;
 
 // Header Mode type
 enum DictEncodingMode {
-    DictEncodingMode_min = 1,
-    kCodeWordMode = 1,
-    kPlainBinaryMode = 2,
-    DictEncodingMode_max = 2
+  DictEncodingMode_min = 1,
+  kCodeWordMode = 1,
+  kPlainBinaryMode = 2,
+  DictEncodingMode_max = 2
 };
 
-class StringDictBlockBuilder : public BlockBuilder {
+class BinaryDictBlockBuilder : public BlockBuilder {
  public:
-  explicit StringDictBlockBuilder(const WriterOptions* options);
+  explicit BinaryDictBlockBuilder(const WriterOptions* options);
 
   bool IsBlockFull(size_t limit) const OVERRIDE;
 
@@ -84,7 +84,7 @@ class StringDictBlockBuilder : public BlockBuilder {
   // dict_block_, dictionary_, dictionary_strings_arena_
   // is related to the dictionary block (one per cfile).
   // They should NOT be clear in the Reset() method.
-  StringPlainBlockBuilder dict_block_;
+  BinaryPlainBlockBuilder dict_block_;
 
   std::tr1::unordered_map<StringPiece, uint32_t, GoodFastHash<StringPiece> > dictionary_;
   // Memory to hold the actual content for strings in the dictionary_.
@@ -103,14 +103,13 @@ class StringDictBlockBuilder : public BlockBuilder {
 
 class CFileIterator;
 
-class StringDictBlockDecoder : public BlockDecoder {
+class BinaryDictBlockDecoder : public BlockDecoder {
  public:
-  explicit StringDictBlockDecoder(const Slice& slice, CFileIterator* iter);
+  explicit BinaryDictBlockDecoder(const Slice& slice, CFileIterator* iter);
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
-  virtual Status SeekAtOrAfterValue(const void* value,
-                                    bool* exact_match) OVERRIDE;
+  virtual Status SeekAtOrAfterValue(const void* value, bool* exact_match) OVERRIDE;
   Status CopyNextValues(size_t* n, ColumnDataView* dst) OVERRIDE;
 
   virtual bool HasNext() const OVERRIDE {
@@ -138,7 +137,7 @@ class StringDictBlockDecoder : public BlockDecoder {
   bool parsed_;
 
   // Dictionary block decoder
-  StringPlainBlockDecoder* dict_decoder_;
+  BinaryPlainBlockDecoder* dict_decoder_;
 
   gscoped_ptr<BlockDecoder> data_decoder_;
 
@@ -153,8 +152,7 @@ class StringDictBlockDecoder : public BlockDecoder {
 } // namespace kudu
 
 // Defined for tight_enum_test_cast<> -- has to be defined outside of any namespace.
-MAKE_ENUM_LIMITS(kudu::cfile::DictEncodingMode,
-                 kudu::cfile::DictEncodingMode_min,
+MAKE_ENUM_LIMITS(kudu::cfile::DictEncodingMode, kudu::cfile::DictEncodingMode_min,
                  kudu::cfile::DictEncodingMode_max);
 
-#endif
+#endif // KUDU_CFILE_BINARY_DICT_BLOCK_H

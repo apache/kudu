@@ -1,12 +1,13 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include "kudu/cfile/binary_prefix_block.h"
+
 #include <boost/foreach.hpp>
 #include <algorithm>
 #include <string>
 
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/string_prefix_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -39,13 +40,11 @@ static const uint8_t *DecodeEntryLengths(
   return ptr;
 }
 
-
-
 ////////////////////////////////////////////////////////////
 // StringPrefixBlockBuilder encoding
 ////////////////////////////////////////////////////////////
 
-StringPrefixBlockBuilder::StringPrefixBlockBuilder(const WriterOptions *options)
+BinaryPrefixBlockBuilder::BinaryPrefixBlockBuilder(const WriterOptions *options)
   : val_count_(0),
     vals_since_restart_(0),
     finished_(false),
@@ -53,7 +52,7 @@ StringPrefixBlockBuilder::StringPrefixBlockBuilder(const WriterOptions *options)
   Reset();
 }
 
-void StringPrefixBlockBuilder::Reset() {
+void BinaryPrefixBlockBuilder::Reset() {
   finished_ = false;
   val_count_ = 0;
   vals_since_restart_ = 0;
@@ -66,12 +65,12 @@ void StringPrefixBlockBuilder::Reset() {
   last_val_.clear();
 }
 
-bool StringPrefixBlockBuilder::IsBlockFull(size_t limit) const {
+bool BinaryPrefixBlockBuilder::IsBlockFull(size_t limit) const {
   // TODO: take restarts size into account
   return buffer_.size() > limit;
 }
 
-Slice StringPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
+Slice BinaryPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
   CHECK(!finished_) << "already finished";
   DCHECK_GE(buffer_.size(), kHeaderReservedLength);
 
@@ -109,7 +108,7 @@ Slice StringPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
   return Slice(&buffer_[header_offset], buffer_.size() - header_offset);
 }
 
-int StringPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
+int BinaryPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
   DCHECK_GT(count, 0);
   DCHECK(!finished_);
   DCHECK_LE(vals_since_restart_, options_->block_restart_interval);
@@ -119,7 +118,7 @@ int StringPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
   Slice prev_val(last_val_);
   // We generate a static call to IsBlockFull() to avoid the vtable lookup
   // in this hot path.
-  while (!StringPrefixBlockBuilder::IsBlockFull(options_->block_size) &&
+  while (!BinaryPrefixBlockBuilder::IsBlockFull(options_->block_size) &&
          added < count) {
     const Slice val = slices[added];
 
@@ -161,12 +160,12 @@ int StringPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
   return added;
 }
 
-size_t StringPrefixBlockBuilder::Count() const {
+size_t BinaryPrefixBlockBuilder::Count() const {
   return val_count_;
 }
 
 
-Status StringPrefixBlockBuilder::GetFirstKey(void *key) const {
+Status BinaryPrefixBlockBuilder::GetFirstKey(void *key) const {
   if (val_count_ == 0) {
     return Status::NotFound("no keys in data block");
   }
@@ -185,7 +184,7 @@ Status StringPrefixBlockBuilder::GetFirstKey(void *key) const {
   return Status::OK();
 }
 
-size_t StringPrefixBlockBuilder::CommonPrefixLength(const Slice& slice_a,
+size_t BinaryPrefixBlockBuilder::CommonPrefixLength(const Slice& slice_a,
                                                     const Slice& slice_b) {
   // This implementation is modeled after strings::fastmemcmp_inlined().
   int len = std::min(slice_a.size(), slice_b.size());
@@ -225,7 +224,7 @@ size_t StringPrefixBlockBuilder::CommonPrefixLength(const Slice& slice_a,
 // StringPrefixBlockDecoder
 ////////////////////////////////////////////////////////////
 
-StringPrefixBlockDecoder::StringPrefixBlockDecoder(const Slice &slice)
+BinaryPrefixBlockDecoder::BinaryPrefixBlockDecoder(const Slice &slice)
   : data_(slice),
     parsed_(false),
     num_elems_(0),
@@ -237,7 +236,7 @@ StringPrefixBlockDecoder::StringPrefixBlockDecoder(const Slice &slice)
     next_ptr_(NULL) {
 }
 
-Status StringPrefixBlockDecoder::ParseHeader() {
+Status BinaryPrefixBlockDecoder::ParseHeader() {
   // First parse the actual header.
   uint32_t unused;
 
@@ -294,11 +293,11 @@ Status StringPrefixBlockDecoder::ParseHeader() {
   return Status::OK();
 }
 
-void StringPrefixBlockDecoder::SeekToStart() {
+void BinaryPrefixBlockDecoder::SeekToStart() {
   SeekToRestartPoint(0);
 }
 
-void StringPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
+void BinaryPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
   if (PREDICT_FALSE(num_elems_ == 0)) {
     DCHECK_EQ(0, pos);
     return;
@@ -321,7 +320,7 @@ void StringPrefixBlockDecoder::SeekToPositionInBlock(uint pos) {
 // the '0' restart point, since that is simply the beginning of
 // the data and hence a waste of space. So, 'idx' may range from
 // 0 (first record) through num_restarts_ (last recorded restart point)
-const uint8_t * StringPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
+const uint8_t * BinaryPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
   DCHECK_LE(idx, num_restarts_);
 
   if (PREDICT_TRUE(idx > 0)) {
@@ -332,7 +331,7 @@ const uint8_t * StringPrefixBlockDecoder::GetRestartPoint(uint32_t idx) const {
 }
 
 // Note: see GetRestartPoint() for 'idx' semantics
-void StringPrefixBlockDecoder::SeekToRestartPoint(uint32_t idx) {
+void BinaryPrefixBlockDecoder::SeekToRestartPoint(uint32_t idx) {
   if (PREDICT_FALSE(num_elems_ == 0)) {
     DCHECK_EQ(0, idx);
     return;
@@ -343,7 +342,7 @@ void StringPrefixBlockDecoder::SeekToRestartPoint(uint32_t idx) {
   CHECK_OK(ParseNextValue()); // TODO: handle corrupted blocks
 }
 
-Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
+Status BinaryPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
                                               bool *exact_match) {
   DCHECK(value_void != NULL);
 
@@ -396,7 +395,7 @@ Status StringPrefixBlockDecoder::SeekAtOrAfterValue(const void *value_void,
   }
 }
 
-Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
+Status BinaryPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info()->physical_type(), BINARY);
 
@@ -462,7 +461,7 @@ Status StringPrefixBlockDecoder::CopyNextValues(size_t *n, ColumnDataView *dst) 
 // Returns a pointer to where the value itself starts.
 // Returns NULL if the varints themselves, or the value that
 // they prefix extend past the end of the block data.
-const uint8_t *StringPrefixBlockDecoder::DecodeEntryLengths(
+const uint8_t *BinaryPrefixBlockDecoder::DecodeEntryLengths(
   const uint8_t *ptr, uint32_t *shared, uint32_t *non_shared) const {
 
   // data ends where the restart info begins
@@ -470,7 +469,7 @@ const uint8_t *StringPrefixBlockDecoder::DecodeEntryLengths(
   return kudu::cfile::DecodeEntryLengths(ptr, limit, shared, non_shared);
 }
 
-Status StringPrefixBlockDecoder::SkipForward(int n) {
+Status BinaryPrefixBlockDecoder::SkipForward(int n) {
   DCHECK_LE(cur_idx_ + n, num_elems_) <<
     "skip(" << n << ") curidx=" << cur_idx_
             << " num_elems=" << num_elems_;
@@ -491,7 +490,7 @@ Status StringPrefixBlockDecoder::SkipForward(int n) {
   return Status::OK();
 }
 
-Status StringPrefixBlockDecoder::CheckNextPtr() {
+Status BinaryPrefixBlockDecoder::CheckNextPtr() {
   DCHECK(next_ptr_ != NULL);
 
   if (PREDICT_FALSE(next_ptr_ == reinterpret_cast<const uint8_t *>(restarts_))) {
@@ -501,7 +500,7 @@ Status StringPrefixBlockDecoder::CheckNextPtr() {
   return Status::OK();
 }
 
-inline Status StringPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val,
+inline Status BinaryPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val,
                                                            Arena *dst,
                                                            Slice *copied) {
   RETURN_NOT_OK(CheckNextPtr());
@@ -528,7 +527,7 @@ inline Status StringPrefixBlockDecoder::ParseNextIntoArena(Slice prev_val,
 // Parses the data pointed to by next_ptr_ and stores it in cur_val_
 // Advances next_ptr_ to point to the following values.
 // Does not modify cur_idx_
-inline Status StringPrefixBlockDecoder::ParseNextValue() {
+inline Status BinaryPrefixBlockDecoder::ParseNextValue() {
   RETURN_NOT_OK(CheckNextPtr());
 
   uint32_t shared, non_shared;

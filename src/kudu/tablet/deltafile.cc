@@ -7,11 +7,11 @@
 #include <string>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/cfile/binary_plain_block.h"
 #include "kudu/cfile/block_encodings.h"
 #include "kudu/cfile/block_handle.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
-#include "kudu/cfile/string_plain_block.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/tablet/mutation.h"
@@ -30,7 +30,7 @@ namespace kudu {
 using cfile::BlockHandle;
 using cfile::BlockPointer;
 using cfile::IndexTreeIterator;
-using cfile::StringPlainBlockDecoder;
+using cfile::BinaryPlainBlockDecoder;
 using cfile::CFileReader;
 using fs::ReadableBlock;
 using fs::ScopedWritableBlockCloser;
@@ -387,7 +387,7 @@ Status DeltaFileIterator::ReadCurrentBlockOntoQueue() {
   pdb->block_ptr_ = dblk_ptr;
 
   // Decode the block.
-  pdb->decoder_.reset(new StringPlainBlockDecoder(pdb->block_.data()));
+  pdb->decoder_.reset(new BinaryPlainBlockDecoder(pdb->block_.data()));
   RETURN_NOT_OK(pdb->decoder_->ParseHeader());
 
   RETURN_NOT_OK(GetFirstRowIndexInCurrentBlock(&pdb->first_updated_idx_));
@@ -413,7 +413,7 @@ Status DeltaFileIterator::GetFirstRowIndexInCurrentBlock(rowid_t *idx) {
   return Status::OK();
 }
 
-Status DeltaFileIterator::GetLastRowIndexInDecodedBlock(const StringPlainBlockDecoder &dec,
+Status DeltaFileIterator::GetLastRowIndexInDecodedBlock(const BinaryPlainBlockDecoder &dec,
                                                         rowid_t *idx) {
   DCHECK_GT(dec.Count(), 0);
   Slice s(dec.string_at_index(dec.Count() - 1));
@@ -495,7 +495,7 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
   rowid_t start_row = prepared_idx_;
 
   BOOST_FOREACH(PreparedDeltaBlock &block, delta_blocks_) {
-    StringPlainBlockDecoder &sbd = *block.decoder_;
+    BinaryPlainBlockDecoder &bpd = *block.decoder_;
     DVLOG(2) << "Visiting delta block " << block.first_updated_idx_ << "-"
       << block.last_updated_idx_ << " for row block starting at " << start_row;
 
@@ -511,8 +511,8 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
 
     rowid_t previous_rowidx = MathLimits<rowid_t>::kMax;
     bool continue_visit = true;
-    for (int i = block.prepared_block_start_idx_; i < sbd.Count(); i++) {
-      Slice slice = sbd.string_at_index(i);
+    for (int i = block.prepared_block_start_idx_; i < bpd.Count(); i++) {
+      Slice slice = bpd.string_at_index(i);
 
       // Decode and check the ID of the row we're going to update.
       DeltaKey key;

@@ -1,6 +1,8 @@
 // Copyright (c) 2015, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include "kudu/cfile/binary_dict_block.h"
+
 #include <glog/logging.h>
 #include <algorithm>
 
@@ -8,7 +10,6 @@
 #include "kudu/cfile/cfile_util.h"
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/bshuf_block.h"
-#include "kudu/cfile/string_dict_block.h"
 #include "kudu/common/columnblock.h"
 #include "kudu/gutil/casts.h"
 #include "kudu/gutil/stringprintf.h"
@@ -21,7 +22,7 @@
 namespace kudu {
 namespace cfile {
 
-StringDictBlockBuilder::StringDictBlockBuilder(const WriterOptions* options)
+BinaryDictBlockBuilder::BinaryDictBlockBuilder(const WriterOptions* options)
   : options_(options),
     dict_block_(options_),
     dictionary_strings_arena_(1024, 32*1024*1024),
@@ -30,14 +31,14 @@ StringDictBlockBuilder::StringDictBlockBuilder(const WriterOptions* options)
   Reset();
 }
 
-void StringDictBlockBuilder::Reset() {
+void BinaryDictBlockBuilder::Reset() {
   buffer_.clear();
   buffer_.resize(kMaxHeaderSize);
   buffer_.reserve(options_->block_size);
 
   if ((mode_ == kCodeWordMode) && dict_block_.IsBlockFull(options_->block_size)) {
     mode_ = kPlainBinaryMode;
-    data_builder_.reset(new StringPlainBlockBuilder(options_));
+    data_builder_.reset(new BinaryPlainBlockBuilder(options_));
   } else {
     data_builder_->Reset();
   }
@@ -45,7 +46,7 @@ void StringDictBlockBuilder::Reset() {
   finished_ = false;
 }
 
-Slice StringDictBlockBuilder::Finish(rowid_t ordinal_pos) {
+Slice BinaryDictBlockBuilder::Finish(rowid_t ordinal_pos) {
   finished_ = true;
 
   InlineEncodeFixed32(&buffer_[0], mode_);
@@ -63,13 +64,13 @@ Slice StringDictBlockBuilder::Finish(rowid_t ordinal_pos) {
 //
 // If it is the latter case, all the subsequent data blocks will switch to
 // StringPlainBlock automatically.
-bool StringDictBlockBuilder::IsBlockFull(size_t limit) const {
+bool BinaryDictBlockBuilder::IsBlockFull(size_t limit) const {
   if (data_builder_->IsBlockFull(options_->block_size)) return true;
   if (dict_block_.IsBlockFull(options_->block_size) && (mode_ == kCodeWordMode)) return true;
   return false;
 }
 
-int StringDictBlockBuilder::AddCodeWords(const uint8_t* vals, size_t count) {
+int BinaryDictBlockBuilder::AddCodeWords(const uint8_t* vals, size_t count) {
   DCHECK(!finished_);
   DCHECK_GT(count, 0);
   size_t i;
@@ -110,7 +111,7 @@ int StringDictBlockBuilder::AddCodeWords(const uint8_t* vals, size_t count) {
   return i;
 }
 
-int StringDictBlockBuilder::Add(const uint8_t* vals, size_t count) {
+int BinaryDictBlockBuilder::Add(const uint8_t* vals, size_t count) {
   if (mode_ == kCodeWordMode) {
     return AddCodeWords(vals, count);
   } else {
@@ -119,7 +120,7 @@ int StringDictBlockBuilder::Add(const uint8_t* vals, size_t count) {
   }
 }
 
-Status StringDictBlockBuilder::AppendExtraInfo(CFileWriter* c_writer, CFileFooterPB* footer) {
+Status BinaryDictBlockBuilder::AppendExtraInfo(CFileWriter* c_writer, CFileFooterPB* footer) {
   Slice dict_slice = dict_block_.Finish(0);
 
   std::vector<Slice> dict_v;
@@ -135,11 +136,11 @@ Status StringDictBlockBuilder::AppendExtraInfo(CFileWriter* c_writer, CFileFoote
   return Status::OK();
 }
 
-uint64_t StringDictBlockBuilder::Count() const {
+uint64_t BinaryDictBlockBuilder::Count() const {
   return data_builder_->Count();
 }
 
-Status StringDictBlockBuilder::GetFirstKey(void* key_void) const {
+Status BinaryDictBlockBuilder::GetFirstKey(void* key_void) const {
   if (mode_ == kCodeWordMode) {
     CHECK(finished_);
     Slice* slice = reinterpret_cast<Slice*>(key_void);
@@ -155,13 +156,13 @@ Status StringDictBlockBuilder::GetFirstKey(void* key_void) const {
 // Decoding
 ////////////////////////////////////////////////////////////
 
-StringDictBlockDecoder::StringDictBlockDecoder(const Slice& slice, CFileIterator* iter)
+BinaryDictBlockDecoder::BinaryDictBlockDecoder(const Slice& slice, CFileIterator* iter)
   : data_(slice),
     parsed_(false) {
   dict_decoder_ = iter->GetDictDecoder();
 }
 
-Status StringDictBlockDecoder::ParseHeader() {
+Status BinaryDictBlockDecoder::ParseHeader() {
   CHECK(!parsed_);
 
   if (data_.size() < kMinHeaderSize) {
@@ -183,7 +184,7 @@ Status StringDictBlockDecoder::ParseHeader() {
     if (mode_ != kPlainBinaryMode) {
       return Status::Corruption("Unrecognized Dictionary encoded data block header");
     }
-    data_decoder_.reset(new StringPlainBlockDecoder(content));
+    data_decoder_.reset(new BinaryPlainBlockDecoder(content));
   }
 
   RETURN_NOT_OK(data_decoder_->ParseHeader());
@@ -191,11 +192,11 @@ Status StringDictBlockDecoder::ParseHeader() {
   return Status::OK();
 }
 
-void StringDictBlockDecoder::SeekToPositionInBlock(uint pos) {
+void BinaryDictBlockDecoder::SeekToPositionInBlock(uint pos) {
   data_decoder_->SeekToPositionInBlock(pos);
 }
 
-Status StringDictBlockDecoder::SeekAtOrAfterValue(const void* value_void, bool* exact) {
+Status BinaryDictBlockDecoder::SeekAtOrAfterValue(const void* value_void, bool* exact) {
   if (mode_ == kCodeWordMode) {
     DCHECK(value_void != NULL);
     Status s = dict_decoder_->SeekAtOrAfterValue(value_void, exact);
@@ -217,7 +218,7 @@ Status StringDictBlockDecoder::SeekAtOrAfterValue(const void* value_void, bool* 
   }
 }
 
-Status StringDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* dst) {
+Status BinaryDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* dst) {
   DCHECK(parsed_);
   CHECK_EQ(dst->type_info()->physical_type(), BINARY);
   DCHECK_LE(*n, dst->nrows());
@@ -242,7 +243,7 @@ Status StringDictBlockDecoder::CopyNextDecodeStrings(size_t* n, ColumnDataView* 
   return Status::OK();
 }
 
-Status StringDictBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
+Status BinaryDictBlockDecoder::CopyNextValues(size_t* n, ColumnDataView* dst) {
   if (mode_ == kCodeWordMode) {
     return CopyNextDecodeStrings(n, dst);
   } else {

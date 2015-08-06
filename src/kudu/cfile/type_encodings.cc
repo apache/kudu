@@ -13,9 +13,9 @@
 #include "kudu/cfile/plain_bitmap_block.h"
 #include "kudu/cfile/plain_block.h"
 #include "kudu/cfile/rle_block.h"
-#include "kudu/cfile/string_dict_block.h"
-#include "kudu/cfile/string_plain_block.h"
-#include "kudu/cfile/string_prefix_block.h"
+#include "kudu/cfile/binary_dict_block.h"
+#include "kudu/cfile/binary_plain_block.h"
+#include "kudu/cfile/binary_prefix_block.h"
 #include "kudu/common/types.h"
 #include "kudu/gutil/strings/substitute.h"
 
@@ -77,13 +77,13 @@ template<>
 struct DataTypeEncodingTraits<BINARY, PLAIN_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new StringPlainBlockBuilder(options);
+    *bb = new BinaryPlainBlockBuilder(options);
     return Status::OK();
   }
 
   static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
                                    CFileIterator *iter) {
-    *bd = new StringPlainBlockDecoder(slice);
+    *bd = new BinaryPlainBlockDecoder(slice);
     return Status::OK();
   }
 };
@@ -127,13 +127,13 @@ template<>
 struct DataTypeEncodingTraits<BINARY, PREFIX_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new StringPrefixBlockBuilder(options);
+    *bb = new BinaryPrefixBlockBuilder(options);
     return Status::OK();
   }
 
   static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
                                    CFileIterator *iter) {
-    *bd = new StringPrefixBlockDecoder(slice);
+    *bd = new BinaryPrefixBlockDecoder(slice);
     return Status::OK();
   }
 };
@@ -143,13 +143,13 @@ template<>
 struct DataTypeEncodingTraits<BINARY, DICT_ENCODING> {
 
   static Status CreateBlockBuilder(BlockBuilder **bb, const WriterOptions *options) {
-    *bb = new StringDictBlockBuilder(options);
+    *bb = new BinaryDictBlockBuilder(options);
     return Status::OK();
   }
 
   static Status CreateBlockDecoder(BlockDecoder **bd, const Slice &slice,
                                    CFileIterator *iter) {
-    *bd = new StringDictBlockDecoder(slice, iter);
+    *bd = new BinaryDictBlockDecoder(slice, iter);
     return Status::OK();
   }
 };

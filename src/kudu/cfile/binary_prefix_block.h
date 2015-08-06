@@ -1,23 +1,27 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
-#ifndef KUDU_CFILE_STRING_PREFIX_BLOCK_H
-#define KUDU_CFILE_STRING_PREFIX_BLOCK_H
+#ifndef KUDU_CFILE_BINARY_PREFIX_BLOCK_H
+#define KUDU_CFILE_BINARY_PREFIX_BLOCK_H
 
 #include <vector>
 
+#include "kudu/cfile/block_encodings.h"
 #include "kudu/common/rowid.h"
 
 namespace kudu {
 
 class Arena;
+class ColumnDataView;
 
 namespace cfile {
 
+struct WriterOptions;
+
 // Encoding for data blocks of binary data that have common prefixes.
 // This encodes in a manner similar to LevelDB (prefix coding)
-class StringPrefixBlockBuilder : public BlockBuilder {
+class BinaryPrefixBlockBuilder : public BlockBuilder {
  public:
-  explicit StringPrefixBlockBuilder(const WriterOptions *options);
+  explicit BinaryPrefixBlockBuilder(const WriterOptions *options);
 
   bool IsBlockFull(size_t limit) const OVERRIDE;
 
@@ -62,12 +66,10 @@ class StringPrefixBlockBuilder : public BlockBuilder {
   static const size_t kHeaderReservedLength = 20;
 };
 
-
-
 // Decoder for BINARY type, PREFIX encoding
-class StringPrefixBlockDecoder : public BlockDecoder {
+class BinaryPrefixBlockDecoder : public BlockDecoder {
  public:
-  explicit StringPrefixBlockDecoder(const Slice &slice);
+  explicit BinaryPrefixBlockDecoder(const Slice &slice);
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;
@@ -143,4 +145,5 @@ class StringPrefixBlockDecoder : public BlockDecoder {
 
 } // namespace cfile
 } // namespace kudu
-#endif
+
+#endif // KUDU_CFILE_BINARY_PREFIX_BLOCK_H

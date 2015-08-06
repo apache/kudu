@@ -36,7 +36,7 @@ using std::tr1::unordered_map;
 class BlockPointer;
 class BTreeInfoPB;
 class GVIntBlockBuilder;
-class StringPrefixBlockBuilder;
+class BinaryPrefixBlockBuilder;
 class IndexTreeBuilder;
 
 // Magic used in header/footer

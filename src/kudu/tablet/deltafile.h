@@ -27,7 +27,7 @@ namespace kudu {
 class ScanSpec;
 
 namespace cfile {
-class StringPlainBlockDecoder;
+class BinaryPlainBlockDecoder;
 } // namespace cfile
 
 namespace tablet {
@@ -214,7 +214,7 @@ class DeltaFileIterator : public DeltaIterator {
 
     // The block decoder, to avoid having to re-parse the block header
     // on every ApplyUpdates() call
-    gscoped_ptr<cfile::StringPlainBlockDecoder> decoder_;
+    gscoped_ptr<cfile::BinaryPlainBlockDecoder> decoder_;
 
     // The first row index for which there is an update in this delta block.
     rowid_t first_updated_idx_;
@@ -250,7 +250,7 @@ class DeltaFileIterator : public DeltaIterator {
 
   // Determine the last updated row index contained in the given decoded block.
   static Status GetLastRowIndexInDecodedBlock(
-    const cfile::StringPlainBlockDecoder &dec, rowid_t *idx);
+    const cfile::BinaryPlainBlockDecoder &dec, rowid_t *idx);
 
   // Read the current block of data from the current position in the file
   // onto the end of the delta_blocks_ queue.

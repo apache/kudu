@@ -16,7 +16,7 @@
 #include "kudu/cfile/gvint_block.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
-#include "kudu/cfile/string_plain_block.h"
+#include "kudu/cfile/binary_plain_block.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -532,7 +532,7 @@ Status CFileIterator::PrepareForNewSeek() {
     RETURN_NOT_OK_PREPEND(reader_->ReadBlock(bp, CFileReader::CACHE_BLOCK, &dict_block_handle_),
                           "Couldn't read dictionary block");
 
-    dict_decoder_.reset(new StringPlainBlockDecoder(dict_block_handle_.data()));
+    dict_decoder_.reset(new BinaryPlainBlockDecoder(dict_block_handle_.data()));
     RETURN_NOT_OK_PREPEND(dict_decoder_->ParseHeader(), "Couldn't parse dictionary block header");
   }
 
