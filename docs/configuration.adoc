@@ -101,19 +101,19 @@ For the full list of flags for masters, see the link:configuration_reference.htm
 Master Configuration Reference].
 
 === Configuring Tablet Servers
-To see all available configuration options for the `kudu-tablet_server` executable,
+To see all available configuration options for the `kudu-tserver` executable,
 run it with the `--help` option:
 ----
-$ kudu-tablet_server --help
+$ kudu-tserver --help
 ----
 
 .Supported Configuration Flags for Kudu Tablet Servers
 |===
 | Flag      | Valid Options     | Default     | Description
 
-|--tablet_server_data_dirs | string | `/tmp/demo-tablets` | Comma-separated list
+|--tserver_data_dirs | string | `/tmp/demo-tablets` | Comma-separated list
 of directories where the Tablet Server will place its data blocks.
-|--tablet_server_master_addrs | string | `127.0.0.1:7051` |  Comma separated
+|--tserver_master_addrs | string | `127.0.0.1:7051` |  Comma separated
 addresses of the masters which the tablet server should connect to. The masters
 do not read this flag.
 |===

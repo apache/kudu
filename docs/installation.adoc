@@ -10,84 +10,236 @@
 :sectlinks:
 :experimental:
 
+You can deploy Kudu on a CDH cluster using packages or parcels, or you can build Kudu
+from source. To run Kudu without installing anything, use the <<quickstart_vm, Cloudera
+Kudu Quickstart VM>>.
+// TODO Quickstart VM does not exist yet
+
 == Prerequisites and Requirements
 .Hardware
-- Either the Cloudera Live image (for a proof of concept or testing), *OR*
 - A Cloudera Manager or CDH cluster which meets these requirements:
   - A host to run the Kudu master. // TODO multi-master
   - One or more hosts to run Kudu tablet servers. Production clusters need at least
   three tablet servers.
-  - Adequate storage to hold your data.
 
 .Operating System
-- An operating system and version supported by Cloudera
+- An operating system and version supported by Cloudera.
+- OSX is not supported, even for building from source.
+
+.Storage
+- If solid state storage is available, storing Kudu WALs on such high-performance
+media may significantly improve latency when Kudu is configured for its highest
+durability levels.
+- An EXT4 or XFS filesystem to store Kudu data and write-ahead logs (WALs).
 
 == Install Using Parcels
+
 If you use Cloudera Manager, the easiest way to install Kudu is with parcels. First,
 add the parcel repository to Cloudera Manager. Then distribute Kudu to your cluster.
 Here is the procedure in detail.
 
 //  tag::quickstart_parcels[]
-. Obtain the Custom Service Descriptor (CSD) from
-http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/6/artifact/java/kudu-csd/target/KUDU-0.1.0.jar
-and copy it to `/opt/cloudera/csd` on your Cloudera Manager server. // TODO: CHANGE TO EXTERNAL
-. Restart the Cloudera Manager Server so that it can detect the CSD, by issuing the
-command `service cloudera-scm-server restart` on the Cloudera Manager Server host.
-. In Cloudera Manager, go to Hosts > Parcels. Find `KUDU` in the list, and click Download.
+
+//  tag::install_csd[]
+
+. Download the Custom Service Descriptor (CSD) JAR to the `/opt/cloudera/csd` directory.
++
+----
+$ cd /opt/cloudera/csd
+$ wget http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/lastSuccessfulBuild/artifact/java/kudu-csd/target/KUDU-0.1.0.jar
+----
+// TODO: CHANGE TO EXTERNAL
+
+. Restart the Cloudera Manager server to detect the CSD.
++
+----
+$ sudo service cloudera-scm-server restart
+----
++
+// end::install_csd[]
+// tag::add_service[]
+
+. In Cloudera Manager, go to *Hosts > Parcels*. Find `KUDU` in the list, and click *Download*.
+
 . When the download is complete, select your cluster from the *Locations* selector,
-and click *Distribute*.
-. When distribution is complete, click *Activate* to activate the parcel.
-. Go to the cluster where you want to install Kudu. Click *Actions > Add
-a Service*. Select *Kudu* from the list, and click *Continue*.
+and click *Distribute*. If you only have one cluster, it is selected automatically.
+
+. When distribution is complete, click *Activate* to activate the parcel. Restart
+the cluster when prompted. This may take several minutes.
+
+. Install the Kudu service on your cluster. Go to the cluster where you want to install Kudu.
+Click *Actions > Add a Service*. Select *Kudu* from the list, and click *Continue*.
+
 . Select a host to be the master and one or more hosts to be tablet servers. A
 host can act as both a master and a tablet server, but this may cause performance
-problems on a large cluster.
-. After selecting hosts, click *Continue*. The Kudu service is started.
-. Go to the Kudu service to monitor its status and administer it.
+problems on a large cluster. The Kudu master process is not resource-intensive and
+can be collocated with other similar processes such as the HDFS Namenode or YARN
+ResourceManager.
++
+After selecting hosts, click *Continue*.
+
+. Configure the storage locations for Kudu data and WAL files on masters and tablet
+servers. Cloudera Manager will create the directories.
+  - You can use the same directory to store data and WALs.
+  - You cannot store WALs in a subdirectory of the data directory.
+  - If any host is both a master and tablet server, configure different directories
+  for master and tablet server. For instance, `/data/kudu/master` and `/data/kudu/tserver`.
+
+. Click *Continue*. Kudu masters and tablet servers are started.
+
++
+// tag::verify_install[]
+. Verify that services are running using one of the following methods:
+  - Examine the output of the `ps` command on servers to verify one or both of `kudu-master`
+  or `kudu-tserver` processes is running.
+  - Access the Master or Tablet Server web UI by opening `\http://<_host_name_>:8051/`
+  for masters
+  or `\http://<_host_name_>:8050/` for tablet servers.
++
+// end::verify_install[]
+
+. To manage services, go to the Kudu service and use the *Actions* menu to stop, start, restart, or
+otherwise manage the service.
+// end::add_service[]
+
 // end::quickstart_parcels[]
 
 == Install Using Packages
-To install Kudu using packages, first install the appropriate repository for your
-operating system or download the individual packages you want to install, then install
-the packages on each host using your operating system's package management system.
+If you prefer, you can install Kudu using packages managed by the operating system instead of Cloudera
+Manager parcels. After installing Kudu using packages, Cloudera recommends managing the Kudu service
+using Cloudera Manager, but you can manage it manually via operating system utilities.
 
+[[kudu_package_locations]]
 .Kudu Package Locations
 |===
 | OS  | Repository  | Individual Packages
-
 | RHEL | link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/cloudera-kudu.repo[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6] |  link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/0.1.0/RPMS/x86_64/[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/0.1.0/RPMS/x86_64/[RHEL 6]
 | SLES | link:http://repos.jenkins.cloudera.com/kudu-nightly/sles/11/x86_64/kudu/cloudera-kudu.repo[SLES 11]  |   TBD
 | Ubuntu | link:http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/precise/amd64/kudu/cloudera.list[Precise] or link:http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/trusty/amd64/kudu/cloudera.list[Trusty] |  TBD
 | Debian | link:http://repos.jenkins.cloudera.com/kudu-nightly/debian/wheezy/amd64/kudu/cloudera.list[Wheezy] | TBD
 |===
 
-.Install On RHEL or SLES Hosts
-. If using a Yum repository, use the following commands to install all Kudu packages or a single Kudu package on a given host.
+=== Install On RHEL or SLES Hosts
+
+. Download and configure the Kudu repositories for your operating system, or manually
+download individual RPMs, the appropriate link from <<kudu_package_locations>>.
+
+. If using a Yum repository, use the following commands to install Kudu packages on
+each host.
++
 ----
 sudo yum install kudu                         # Base Kudu files
-sudo yum install kudu-master                  # Kudu master init.d service script
-sudo yum install kudu-tablet-server           # Kudu tablet server init.d service script
-sudo yum install kudu-client                  # Kudu C++ client shared library
-sudo yum install kudu-client-devel            # Kudu C++ client SDK
-----
-. If using individual RPMs, first download them, then use the command `sudo rpm -ivh <RPM to install>`, using the list above as a reference of the contents of the different RPMs.
-. To start, stop, or restart services, use commands in the format `sudo service <service_name> <start|stop|restart>`.
 
-.Install On Ubuntu or Debian Hosts
-. If using an Ubuntu or Debian repository, use the following commands to install all Kudu packages or a single Kudu package on a given host.
+sudo yum install kudu-master                  # Service scripts for managing kudu-master
+                                              # Use ONLY if you do not use Cloudera Manager
+
+sudo yum install kudu-tserver                 # Service scripts for managing kudu-tserver
+                                              # Use ONLY if you do not use Cloudera Manager
 ----
-sudo apt-get install kudu                    # Base Kudu files
-sudo apt-get install kudu-dbg                # Kudu debugging information
-sudo apt-get install kudu-master             # Kudu master init.d service script
-sudo apt-get install kudu-tablet-server      # Kudu tablet server init.d service script
-sudo apt-get install libkuduclient           # Kudu C++ client shared library
-sudo apt-get install libkuduclient-dev       # Kudu C++ client SDK
+
+. To manually install the Kudu RPMs, first download them, then use the command
+`sudo rpm -ivh <RPM to install>`. If you do not use Cloudera Manager, install the
+`kudu-master` and `kudu-tserver` packages on the appropriate hosts. These packages
+provide the operating system commands to start and stop Kudu. Do not attempt to
+use operating system commands to start or stop Kudu if you use Cloudera Manager.
+
+include::installation.adoc[tags=install_csd]
+
+include::installation.adoc[tags=add_service]
+
+. To manage Kudu without using Cloudera Manager, continue to <<required_config_without_cm>>.
+Cloudera recommends using Cloudera Manager.
+
+=== Install On Ubuntu or Debian Hosts
+
+. If using an Ubuntu or Debian repository, use the following commands to install Kudu
+packages on each host.
++
 ----
-. If using individual DEBs, first download them, then use the command `sudo dpkg -i <DEB to install>`, using the list above as a reference of the contents of the different DEBs.
-. To start, stop, or restart services, use commands in the format `sudo service <service_name> <start|stop|restart>`.
+sudo apt-get install kudu                     # Base Kudu files
+
+sudo apt-get install kudu-master              # Service scripts for managing kudu-master
+                                              # Use ONLY if you do not use Cloudera Manager
+
+sudo apt-get install kudu-tserver             # Service scripts for managing kudu-tserver
+                                              # Use ONLY if you do not use Cloudera Manager
+----
+
+. To manually install individual DEBs, first download them, then use the command
+`sudo dpkg -i <DEB to install>`. If you do not use Cloudera Manager, install the
+`kudu-master` and `kudu-tserver` packages on the appropriate hosts. These packages
+provide the operating system commands to start and stop Kudu. Do not attempt to
+use operating system commands to start or stop Kudu if you use Cloudera Manager.
+
+include::installation.adoc[tags=install_csd]
+
+include::installation.adoc[tags=add_service]
+
+. To manage Kudu without using Cloudera Manager, continue to <<required_config_without_cm>>.
+Cloudera recommends using Cloudera Manager.
+
+[[required_config_without_cm]]
+=== Required Configuration Without Cloudera Manager
+
+If you install Kudu from packages and choose not to use Cloudera Manager, additional
+configuration steps are required on each host before you can start Kudu services.
+
+. Create a flagfile in `/etc/kudu/conf/gflagfile` with at least the following contents,
+modified to match your environment. It should be world-readable.
++
+----
+# Minimum configuration for masters
+--master_data_dirs=/data/kudu
+--master_wal_dir=/data/kudu
+# Minimum configuration for tablet servers
+--tserver_data_dirs=/data/kudu
+--tserver_wal_dir=/data/kudu
+--tserver_master_addrs=kudu_master.example.com
+----
+// TODO probably change this to 'review and edit' later
+
+. Adjust the Kudu default settings to use this flagfile. Edit `/etc/default/kudu`
+and add the following argument to the list of arguments for `KUDU_MASTER_ARGS` and
+`KUDU_TSERVER_ARGS`: `--flagfile=/etc/kudu/conf/gflagfile`
+// TODO probably take this step out later
+
+. Start Kudu services using the following commands:
++
+[source,bash]
+----
+$ sudo service kudu-master start
+$ sudo service kudu-tserver start
+----
+
+. To stop Kudu services, use the following commands:
++
+[source,bash]
+----
+$ sudo service kudu-master stop
+$ sudo service kudu-tserver stop
+----
+
+. Configure the Kudu services to start automatically when the server starts, by adding
+them to the default runlevel.
++
+[source,bash]
+----
+$ sudo chkconfig kudu-master on                # RHEL / CentOS
+$ sudo chkconfig kudu-tserver on         # RHEL / CentOS
+
+$ sudo update-rc.d kudu-master defaults        # Debian / Ubuntu
+$ sudo update-rc.d kudu-tserver defaults # Debian / Ubuntu
+----
+
+. For additional configuration of Kudu services, see link:configuration.html[Configuring
+Kudu].
 
 == Build From Source
-If installing Kudu using parcels or packages does not provide the flexibility you need, you can build Kudu from source.
+If installing Kudu using parcels or packages does not provide the flexibility you
+need, you can build Kudu from source. You can build from source on any operating system
+supported by Cloudera.
+
+NOTE: It is not possible to build Kudu on OSX.
 
 === RHEL or CentOS
 . Install the prerequisite libraries, if they are not installed:
@@ -117,14 +269,14 @@ $ git clone http://github.mtv.cloudera.com/CDH/kudu
 $ cd kudu
 ----
 
-. Run the script to build any missing third-party requirements.
+. Build any missing third-party requirements using the `build-if-necessary.sh` script.
 +
 [source,bash]
 ----
 $ thirdparty/build-if-necessary.sh
 ----
 
-. Build Kudu, using the utilities installed in the previous step.
+. Build Kudu.
 +
 [source,bash]
 ----
@@ -186,14 +338,14 @@ $ git clone http://github.mtv.cloudera.com/CDH/kudu
 $ cd kudu
 ----
 
-. Run the script to build any missing third-party requirements.
+. Build any missing third-party requirements using the `build-if-necessary.sh` script.
 +
 [source,bash]
 ----
 $ thirdparty/build-if-necessary.sh
 ----
 
-. Build Kudu, using the utilities installed in the previous step.
+. Build Kudu.
 +
 [source,bash]
 ----
