@@ -23,6 +23,8 @@ namespace kudu {
 class ColumnSchema;
 namespace client {
 class KuduWriteOperation;
+template<typename KeyTypeWrapper> struct SliceKeysTestSetup;
+template<typename KeyTypeWrapper> struct IntKeysTestSetup;
 } // namespace client
 
 class Schema;
@@ -169,6 +171,8 @@ class KUDU_EXPORT KuduPartialRow {
   friend class RowKeyUtilTest;
   friend class RowOperationsPBEncoder;
   friend class client::KuduWriteOperation;   // for row_data_.
+  template<typename KeyTypeWrapper> friend struct client::SliceKeysTestSetup;
+  template<typename KeyTypeWrapper> friend struct client::IntKeysTestSetup;
 
   template<typename T>
   Status Set(const Slice& col_name, const typename T::cpp_type& val,

@@ -40,6 +40,7 @@ ADD_KUDU_TEST(create-table-stress-test)
 ADD_KUDU_TEST(delete_table-test)
 ADD_KUDU_TEST(external_mini_cluster-test RESOURCE_LOCK "master-rpc-ports")
 ADD_KUDU_TEST(linked_list-test RESOURCE_LOCK "master-rpc-ports")
+ADD_KUDU_TEST(all_types-itest RESOURCE_LOCK "master-rpc-ports")
 
 # Some tests have additional dependencies
 set(KUDU_TEST_LINK_LIBS kudu_client ${KUDU_TEST_LINK_LIBS})

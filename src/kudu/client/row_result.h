@@ -69,6 +69,8 @@ class KUDU_EXPORT KuduRowResult {
 
  private:
   friend class KuduScanner;
+  template<typename KeyTypeWrapper> friend struct SliceKeysTestSetup;
+  template<typename KeyTypeWrapper> friend struct IntKeysTestSetup;
 
   // Only invoked by KuduScanner.
   //
