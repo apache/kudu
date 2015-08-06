@@ -46,7 +46,9 @@ class TabletStatusListener;
 namespace tserver {
 class TabletServer;
 
-typedef std::tr1::unordered_set<std::string> CreatesInProgressSet;
+typedef std::tr1::unordered_set<std::string> TransitionInProgressSet;
+
+class TransitionInProgressDeleter;
 
 // Keeps track of the tablets hosted on the tablet server side.
 //
@@ -94,6 +96,8 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
                          scoped_refptr<tablet::TabletPeer>* tablet_peer);
 
   // Delete the specified tablet.
+  // 'client_deadline' specifies the deadline provided by the client for the
+  // corresponding RPC call.
   Status DeleteTablet(const scoped_refptr<tablet::TabletPeer>& tablet_peer);
 
   // Lookup the given tablet peer by its ID.
@@ -166,6 +170,12 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   };
   typedef std::tr1::unordered_map<std::string, TabletReportState> DirtyMap;
 
+  // Standard log prefix, given a tablet id.
+  std::string LogPrefix(const std::string& tablet_id) const;
+
+  // Returns Status::OK() iff state_ == MANAGER_RUNNING.
+  Status CheckRunningUnlocked() const;
+
   // Open a tablet meta from the local file system by loading its superblock.
   Status OpenTabletMeta(const std::string& tablet_id,
                         scoped_refptr<tablet::TabletMetadata>* metadata);
@@ -175,8 +185,14 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Upon completion of this method the tablet should be initialized and running.
   // If something wrong happened on bootstrap/initialization the relevant error
   // will be set on TabletPeer along with the state set to FAILED.
-  // NOTE: The tablet must be registered prior to calling this method.
-  void OpenTablet(const scoped_refptr<tablet::TabletMetadata>& meta);
+  //
+  // The tablet must be registered and an entry corresponding to this tablet
+  // must be put into the transition_in_progress_ map before calling this
+  // method. A TransitionInProgressDeleter must be passed as 'deleter' into
+  // this method in order to remove that transition-in-progress entry when
+  // opening the tablet is complete (in either a success or a failure case).
+  void OpenTablet(const scoped_refptr<tablet::TabletMetadata>& meta,
+                  const scoped_refptr<TransitionInProgressDeleter>& deleter);
 
   // Open a tablet whose metadata has already been loaded.
   void BootstrapAndInitTablet(const scoped_refptr<tablet::TabletMetadata>& meta,
@@ -201,6 +217,15 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // NOTE: requires that the caller holds the lock.
   void MarkDirtyUnlocked(const std::string& tablet_id);
 
+  // Handle the case on startup where we find a tablet that is not in
+  // TABLET_DATA_READY state. Generally, we tombstone the replica.
+  Status HandleNonReadyTabletOnStartup(const scoped_refptr<tablet::TabletMetadata>& meta);
+
+  // Delete the tablet using the specified delete_type as the final metadata
+  // state. Deletes the on-disk data, as well as all WAL segments.
+  Status DeleteTabletData(const scoped_refptr<tablet::TabletMetadata>& meta,
+                          tablet::TabletDataState delete_type);
+
   TSTabletManagerStatePB state() const {
     boost::shared_lock<rw_spinlock> lock(lock_);
     return state_;
@@ -212,7 +237,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // running state.
   void InitLocalRaftPeerPB();
 
-  FsManager* fs_manager_;
+  FsManager* const fs_manager_;
 
   TabletServer* server_;
 
@@ -221,14 +246,14 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   typedef std::tr1::unordered_map<std::string, scoped_refptr<tablet::TabletPeer> > TabletMap;
 
   // Lock protecting tablet_map_, dirty_tablets_, state_, and
-  // creates_in_progress_.
+  // transition_in_progress_.
   mutable rw_spinlock lock_;
 
   // Map from tablet ID to tablet
   TabletMap tablet_map_;
 
-  // Set of tablet ids whose creation is in-progress
-  CreatesInProgressSet creates_in_progress_;
+  // Set of tablet ids whose bootstrap, creation, or deletion is in-progress
+  TransitionInProgressSet transition_in_progress_;
 
   // Tablets to include in the next incremental tablet report.
   // When a tablet is added/removed/added locally and needs to be
@@ -249,6 +274,23 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   gscoped_ptr<ThreadPool> apply_pool_;
 
   DISALLOW_COPY_AND_ASSIGN(TSTabletManager);
+};
+
+// Helper to delete the transition-in-progress entry from the corresponding set
+// when tablet boostrap, create, and delete operations complete.
+class TransitionInProgressDeleter : public RefCountedThreadSafe<TransitionInProgressDeleter> {
+ public:
+  TransitionInProgressDeleter(TransitionInProgressSet* set,
+                              rw_spinlock* lock,
+                              const string& entry);
+
+ private:
+  friend class RefCountedThreadSafe<TransitionInProgressDeleter>;
+  ~TransitionInProgressDeleter();
+
+  TransitionInProgressSet* const set_;
+  rw_spinlock* const lock_;
+  const std::string entry_;
 };
 
 } // namespace tserver

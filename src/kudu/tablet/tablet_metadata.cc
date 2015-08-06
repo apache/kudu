@@ -113,7 +113,12 @@ void TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& superblock,
   }
 }
 
-Status TabletMetadata::DeleteTablet() {
+Status TabletMetadata::DeleteTabletData(TabletDataState delete_type) {
+  CHECK(delete_type == TABLET_DATA_DELETED)
+      << "DeleteTabletData() called with unsupported delete_type on tablet "
+      << tablet_id_ << ": " << TabletDataState_Name(delete_type)
+      << " (" << delete_type << ")";
+
   // First add all of our blocks to the orphan list
   // and clear our rowsets. This serves to erase all the data.
   //
@@ -127,28 +132,34 @@ Status TabletMetadata::DeleteTablet() {
       AddOrphanedBlocksUnlocked(rsmd->GetAllBlocks());
     }
     rowsets_.clear();
-    tablet_data_state_ = TABLET_DATA_DELETED;
+    tablet_data_state_ = delete_type;
   }
 
-  // Flushing should now also delete all the data.
-  RETURN_NOT_OK(Flush());
+  // Flushing will sync the new tablet_data_state_ to disk and will now also
+  // delete all the data.
+  return Flush();
+}
 
-  // If we've deleted all of the data successfully, we can go ahead
-  // and delete the actual superblock.
-  // TODO: in the case of deleting a replica where the tablet still
-  // exists on other machines, we may need to keep the tombstone around.
-  // Otherwise a leader from an old term could come back to life and re-create
-  // this tablet, causing an "amnesia" situation.
-  {
-    boost::lock_guard<LockType> l(data_lock_);
-    if (orphaned_blocks_.empty()) {
-      // We successfully deleted all data. We can remove the metadata now too.
-      string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
-      RETURN_NOT_OK_PREPEND(fs_manager_->env()->DeleteFile(path),
-                            "Unable to delete tablet superblock");
-    }
+Status TabletMetadata::DeleteSuperBlock() {
+  boost::lock_guard<LockType> l(data_lock_);
+  if (!orphaned_blocks_.empty()) {
+    return Status::InvalidArgument("The metadata for tablet " + tablet_id_ +
+                                   " still references orphaned blocks. "
+                                   "Call DeleteTabletData() first");
+  }
+  if (tablet_data_state_ != TABLET_DATA_DELETED) {
+    return Status::IllegalState(
+        Substitute("Tablet $0 is not in TABLET_DATA_DELETED state. "
+                   "Call DeleteTabletData(TABLET_DATA_DELETED) first. "
+                   "Tablet data state: $1 ($2)",
+                   tablet_id_,
+                   TabletDataState_Name(tablet_data_state_),
+                   tablet_data_state_));
   }
 
+  string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
+  RETURN_NOT_OK_PREPEND(fs_manager_->env()->DeleteFile(path),
+                        "Unable to delete superblock for tablet " + tablet_id_);
   return Status::OK();
 }
 

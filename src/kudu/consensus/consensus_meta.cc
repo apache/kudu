@@ -44,6 +44,17 @@ Status ConsensusMetadata::Load(FsManager* fs_manager,
   return Status::OK();
 }
 
+Status ConsensusMetadata::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {
+  string cmeta_path = fs_manager->GetConsensusMetadataPath(tablet_id);
+  Env* env = fs_manager->env();
+  if (!env->FileExists(cmeta_path)) {
+    return Status::OK();
+  }
+  RETURN_NOT_OK_PREPEND(env->DeleteFile(cmeta_path),
+                        "Unable to delete consensus metadata file for tablet " + tablet_id);
+  return Status::OK();
+}
+
 const int64_t ConsensusMetadata::current_term() const {
   DCHECK(pb_.has_current_term());
   return pb_.current_term();

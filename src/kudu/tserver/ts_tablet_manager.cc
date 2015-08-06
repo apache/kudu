@@ -34,6 +34,8 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/stopwatch.h"
@@ -44,6 +46,24 @@ DEFINE_int32(num_tablets_to_open_simultaneously, 50,
 DEFINE_int32(tablet_start_warn_threshold_ms, 500,
              "If a tablet takes more than this number of millis to start, issue "
              "a warning with a trace.");
+
+DEFINE_double(fault_crash_after_blocks_deleted, 0.0,
+              "Fraction of the time when the tablet will crash immediately "
+              "after deleting the data blocks during tablet deletion. "
+              "(For testing only!)");
+TAG_FLAG(fault_crash_after_blocks_deleted, unsafe);
+
+DEFINE_double(fault_crash_after_wal_deleted, 0.0,
+              "Fraction of the time when the tablet will crash immediately "
+              "after deleting the WAL segments during tablet deletion. "
+              "(For testing only!)");
+TAG_FLAG(fault_crash_after_wal_deleted, unsafe);
+
+DEFINE_double(fault_crash_after_cmeta_deleted, 0.0,
+              "Fraction of the time when the tablet will crash immediately "
+              "after deleting the consensus metadata during tablet deletion. "
+              "(For testing only!)");
+TAG_FLAG(fault_crash_after_cmeta_deleted, unsafe);
 
 namespace kudu {
 namespace tserver {
@@ -81,35 +101,16 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
+using tablet::TABLET_DATA_COPYING;
+using tablet::TABLET_DATA_DELETED;
+using tablet::TABLET_DATA_READY;
 using tablet::Tablet;
+using tablet::TabletDataState;
 using tablet::TabletMetadata;
 using tablet::TabletPeer;
 using tablet::TabletStatusListener;
 using tablet::TabletStatusPB;
 using tserver::RemoteBootstrapClient;
-
-namespace {
-// helper to delete the creation-in-progress entry from the corresponding
-// set when the CreateNewTablet method completes.
-struct CreatesInProgressDeleter {
-  CreatesInProgressDeleter(CreatesInProgressSet* set,
-                           rw_spinlock* lock,
-                           const string& entry)
-      : set_(set),
-        lock_(lock),
-        entry_(entry) {
-  }
-
-  ~CreatesInProgressDeleter() {
-    boost::lock_guard<rw_spinlock> lock(*lock_);
-    CHECK(set_->erase(entry_));
-  }
-
-  CreatesInProgressSet* set_;
-  rw_spinlock* lock_;
-  string entry_;
-};
-} // anonymous namespace
 
 TSTabletManager::TSTabletManager(FsManager* fs_manager,
                                  TabletServer* server,
@@ -155,14 +156,23 @@ Status TSTabletManager::Init() {
 
   // Register the tablets and trigger the asynchronous bootstrap
   BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+    {
+      boost::lock_guard<rw_spinlock> lock(lock_);
+      InsertOrDie(&transition_in_progress_, tablet_id);
+    }
+    scoped_refptr<TransitionInProgressDeleter> deleter(
+        new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
+
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet_id, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet_id);
+    if (PREDICT_FALSE(meta->tablet_data_state() != TABLET_DATA_READY)) {
+      RETURN_NOT_OK(HandleNonReadyTabletOnStartup(meta));
+      continue;
+    }
     scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta);
-
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
-                                                this,
-                                                meta)));
+                                                this, meta, deleter)));
   }
 
   {
@@ -213,7 +223,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   {
     // acquire the lock in exclusive mode as we'll add a entry to the
-    // creates_in_progress_ set if the lookup fails.
+    // transition_in_progress_ set if the lookup fails.
     boost::lock_guard<rw_spinlock> lock(lock_);
     TRACE("Acquired tablet manager lock");
 
@@ -224,13 +234,14 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     }
 
     // Sanity check that the tablet's creation isn't already in progress
-    if (!InsertIfNotPresent(&creates_in_progress_, tablet_id)) {
-      return Status::AlreadyPresent("Creation of tablet already in progress",
+    if (!InsertIfNotPresent(&transition_in_progress_, tablet_id)) {
+      return Status::AlreadyPresent("Maintenance of tablet already in progress",
                                     tablet_id);
     }
   }
 
-  CreatesInProgressDeleter deleter(&creates_in_progress_, &lock_, tablet_id);
+  scoped_refptr<TransitionInProgressDeleter> deleter(
+      new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
 
   // Create the metadata.
   TRACE("Creating new metadata...");
@@ -242,7 +253,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               schema,
                               start_key,
                               end_key,
-                              tablet::TABLET_DATA_READY,
+                              TABLET_DATA_READY,
                               &meta),
     "Couldn't create tablet metadata");
 
@@ -256,8 +267,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 
   // We can run this synchronously since there is nothing to bootstrap.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
-                                              this,
-                                              meta)));
+                                              this, meta, deleter)));
 
   if (tablet_peer) {
     *tablet_peer = new_peer;
@@ -269,7 +279,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
 Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
                                              const std::string& bootstrap_peer_uuid,
                                              const HostPort& bootstrap_peer_addr) {
-  const string kLogPrefix = "T " + tablet_id + " P " + fs_manager_->uuid() + ": ";
+  const string kLogPrefix = LogPrefix(tablet_id);
 
   {
     boost::lock_guard<rw_spinlock> lock(lock_);
@@ -277,13 +287,15 @@ Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
     if (LookupTabletUnlocked(tablet_id, &tablet_peer)) {
       return Status::AlreadyPresent("Remote bootstrap of existing tablet not yet supported",
                                     tablet_id);
-    } else if (ContainsKey(creates_in_progress_, tablet_id)) {
-      return Status::AlreadyPresent("Tablet already under construction", tablet_id);
+    } else if (ContainsKey(transition_in_progress_, tablet_id)) {
+      return Status::AlreadyPresent("Maintenance of tablet already in progress",
+                                    tablet_id);
     }
-    InsertOrDie(&creates_in_progress_, tablet_id);
+    InsertOrDie(&transition_in_progress_, tablet_id);
   }
 
-  CreatesInProgressDeleter deleter(&creates_in_progress_, &lock_, tablet_id);
+  scoped_refptr<TransitionInProgressDeleter> deleter(
+      new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
 
   string init_msg = kLogPrefix + Substitute("Initiating remote bootstrap from Peer $0 ($1)",
                                             bootstrap_peer_uuid, bootstrap_peer_addr.ToString());
@@ -321,7 +333,9 @@ Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
     return s;
   }
 
-  OpenTablet(meta);
+  // We can run this synchronously since there is nothing to bootstrap.
+  RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
+                                              this, meta, deleter)));
   return Status::OK();
 }
 
@@ -341,22 +355,53 @@ Status TSTabletManager::DeleteTablet(const scoped_refptr<TabletPeer>& tablet_pee
   TRACE("Deleting tablet $0 (table=$1 [id=$2])", tablet_peer->tablet()->tablet_id(),
         tablet_peer->tablet()->metadata()->table_name(),
         tablet_peer->tablet()->metadata()->table_id());
-  tablet::TabletStatePB prev_state = tablet_peer->Shutdown();
-  if (prev_state == tablet::QUIESCING || prev_state == tablet::SHUTDOWN) {
-    return Status::ServiceUnavailable("Tablet Peer not in RUNNING state",
-                                      tablet::TabletStatePB_Name(prev_state));
+
+  const string& tablet_id = tablet_peer->tablet_id();
+  {
+    // Acquire the lock in exclusive mode as we'll add a entry to the
+    // transition_in_progress_ set.
+    boost::lock_guard<rw_spinlock> lock(lock_);
+    TRACE("Acquired tablet manager lock");
+    RETURN_NOT_OK(CheckRunningUnlocked());
+
+    // Sanity check that the tablet's creation isn't already in progress
+    if (!InsertIfNotPresent(&transition_in_progress_, tablet_id)) {
+      return Status::AlreadyPresent("Maintenance of tablet already in progress",
+                                    tablet_id);
+    }
+  }
+  scoped_refptr<TransitionInProgressDeleter> deleter(
+      new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
+
+  tablet_peer->Shutdown();
+
+  Status s = DeleteTabletData(tablet_peer->tablet_metadata(), TABLET_DATA_DELETED);
+  if (PREDICT_FALSE(!s.ok())) {
+    s = s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
+                                     tablet_id));
+    LOG(WARNING) << s.ToString();
+    return s;
   }
 
   {
     boost::lock_guard<rw_spinlock> lock(lock_);
-    CHECK_EQ(1, tablet_map_.erase(tablet_peer->tablet()->tablet_id()));
+    RETURN_NOT_OK(CheckRunningUnlocked());
+    CHECK_EQ(1, tablet_map_.erase(tablet_id)) << tablet_id;
   }
 
-  WARN_NOT_OK(tablet_peer->DeleteOnDiskData(),
-              Substitute("Unable to delete on-disk data from tablet $0",
-                         tablet_peer->tablet_id()));
-
   return Status::OK();
+}
+
+string TSTabletManager::LogPrefix(const string& tablet_id) const {
+  return "T " + tablet_id + " P " + fs_manager_->uuid() + ": ";
+}
+
+Status TSTabletManager::CheckRunningUnlocked() const {
+  if (state_ == MANAGER_RUNNING) {
+    return Status::OK();
+  }
+  return Status::IllegalState(Substitute("Tablet Manager is not running: $0",
+                                         TSTabletManagerStatePB_Name(state_)));
 }
 
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
@@ -372,7 +417,8 @@ Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
   return Status::OK();
 }
 
-void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta) {
+void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
+                                 const scoped_refptr<TransitionInProgressDeleter>& deleter) {
   string tablet_id = meta->tablet_id();
   TRACE_EVENT1("tserver", "TSTabletManager::OpenTablet",
                "tablet_id", tablet_id);
@@ -648,5 +694,61 @@ void TSTabletManager::MarkTabletReportAcknowledged(const TabletReportPB& report)
     }
   }
 }
+
+Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<TabletMetadata>& meta) {
+  TabletDataState data_state = meta->tablet_data_state();
+  CHECK(data_state == TABLET_DATA_DELETED ||
+        data_state == TABLET_DATA_COPYING)
+      << "Unexpected TabletDataState in tablet " << meta->tablet_id() << ": "
+      << TabletDataState_Name(data_state) << " (" << data_state << ")";
+
+  const string& tablet_id = meta->tablet_id();
+  if (data_state == TABLET_DATA_COPYING) {
+    LOG(FATAL) << LogPrefix(tablet_id) << "TODO: KUDU-867: Tombsone tablets "
+                                       << "that fail to remotely bootstrap";
+  }
+
+  // Roll forward deletions, as needed.
+  LOG(INFO) << LogPrefix(tablet_id) << "Tablet Manager startup: Rolling forward tablet deletion "
+                                    << "of type " << TabletDataState_Name(data_state);
+  RETURN_NOT_OK(DeleteTabletData(meta, data_state));
+  return Status::OK();
+}
+
+Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& meta,
+                                         TabletDataState data_state) {
+  CHECK(data_state == TABLET_DATA_DELETED)
+      << "Unexpected data_state to delete tablet " << meta->tablet_id() << ": "
+      << TabletDataState_Name(data_state) << " (" << data_state << ")";
+
+  RETURN_NOT_OK(meta->DeleteTabletData(data_state));
+  MAYBE_FAULT(FLAGS_fault_crash_after_blocks_deleted);
+
+  // TODO: Need to remember last log opid in order to allow tombstoned tablets
+  // to vote. See KUDU-871.
+  RETURN_NOT_OK(Log::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));
+  MAYBE_FAULT(FLAGS_fault_crash_after_wal_deleted);
+
+  RETURN_NOT_OK(ConsensusMetadata::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));
+  MAYBE_FAULT(FLAGS_fault_crash_after_cmeta_deleted);
+
+  // TODO: Delete the superblock after some delay, or on startup. See KUDU-941.
+  RETURN_NOT_OK(meta->DeleteSuperBlock());
+  return Status::OK();
+}
+
+TransitionInProgressDeleter::TransitionInProgressDeleter(TransitionInProgressSet* set,
+                                                         rw_spinlock* lock,
+                                                         const string& entry)
+    : set_(set),
+      lock_(lock),
+      entry_(entry) {
+}
+
+TransitionInProgressDeleter::~TransitionInProgressDeleter() {
+  boost::lock_guard<rw_spinlock> lock(*lock_);
+  CHECK(set_->erase(entry_));
+}
+
 } // namespace tserver
 } // namespace kudu

@@ -62,6 +62,10 @@ class ConsensusMetadata {
                      const std::string& peer_uuid,
                      gscoped_ptr<ConsensusMetadata>* cmeta);
 
+  // Delete the ConsensusMetadata file associated with the given tablet from
+  // disk.
+  static Status DeleteOnDiskData(FsManager* fs_manager, const std::string& tablet_id);
+
   // Accessors for current term.
   const int64_t current_term() const;
   void set_current_term(int64_t term);

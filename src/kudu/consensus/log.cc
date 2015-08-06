@@ -757,13 +757,15 @@ Status Log::Close() {
   return Status::OK();
 }
 
-Status Log::DeleteOnDiskData() {
-  boost::lock_guard<percpu_rwlock> l(state_lock_);
-  if (log_state_ != kLogClosed) {
-    return Status::IllegalState(Substitute("Bad state for DeleteOnDiskData() $0", log_state_));
+Status Log::DeleteOnDiskData(FsManager* fs_manager, const string& tablet_id) {
+  string wal_dir = fs_manager->GetTabletWalDir(tablet_id);
+  Env* env = fs_manager->env();
+  if (!env->FileExists(wal_dir)) {
+    return Status::OK();
   }
-
-  return fs_manager_->env()->DeleteRecursively(log_dir_);
+  RETURN_NOT_OK_PREPEND(env->DeleteRecursively(wal_dir),
+                        "Unable to recursively delete WAL dir for tablet " + tablet_id);
+  return Status::OK();
 }
 
 Status Log::PreAllocateNewSegment() {

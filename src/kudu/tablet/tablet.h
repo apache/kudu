@@ -95,10 +95,6 @@ class Tablet {
 
   void Shutdown();
 
-  // Delete all on-disk data and metadata for this tablet. Should be used only
-  // after the tablet has been shut down.
-  Status DeleteOnDiskData();
-
   // Decode the Write (insert/mutate) operations from within a user's
   // request.
   Status DecodeWriteOperations(const Schema* client_schema,

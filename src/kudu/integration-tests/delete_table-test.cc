@@ -54,6 +54,7 @@ class DeleteTableTest : public KuduTest {
   Status CheckNoData();
   void WaitForNoData();
   void WaitForReplicaCount(int expected);
+  void WaitForAllTSToCrash();
 
   // Delete the given table. If the operation times out, dumps the master stacks
   // to help debug master-side deadlocks.
@@ -97,6 +98,9 @@ Status DeleteTableTest::CheckNoData() {
     if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kWalDirName)) > 0) {
       return Status::IllegalState("wals still exist", data_dir);
     }
+    if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName)) > 0) {
+      return Status::IllegalState("consensus metadata still exists", data_dir);
+    }
   }
   return Status::OK();;
 }
@@ -128,6 +132,20 @@ void DeleteTableTest::DeleteTable(const string& table_name) {
                         "Couldn't dump stacks");
   }
   ASSERT_OK(s);
+}
+
+void DeleteTableTest::WaitForAllTSToCrash() {
+  for (int i = 0; i < 1000; i++) {
+    bool any_alive = false;
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      if (cluster_->tablet_server(i)->IsProcessAlive()) {
+        any_alive = true;
+      }
+    }
+    if (!any_alive) return;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  FAIL() << "Not all tablet servers crashed!";
 }
 
 TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
@@ -173,5 +191,51 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
   }
 }
 
+class DeleteTableParameterizedTest : public DeleteTableTest,
+                                     public ::testing::WithParamInterface<const char*> {
+};
+
+// Test that if a server crashes mid-delete that the delete will be rolled
+// forward on startup. Parameterized by different fault flags that cause a
+// crash at various points.
+TEST_P(DeleteTableParameterizedTest, TestRollForwardDelete) {
+  const string fault_flag = GetParam();
+  LOG(INFO) << "Running with fault flag: " << fault_flag;
+
+  // Dynamically set the fault flag so they crash when DeleteTablet() is called
+  // by the Master.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(i), fault_flag, "1.0"));
+  }
+
+  // Create a table on the cluster. We're just using TestWorkload
+  // as a convenient way to create it.
+  TestWorkload(cluster_.get()).Setup();
+
+  // The table should have replicas on all three tservers.
+  WaitForReplicaCount(3);
+
+  // Delete it and wait for the tablet servers to crash.
+  NO_FATALS(DeleteTable(TestWorkload::kDefaultTableName));
+  NO_FATALS(WaitForAllTSToCrash());
+
+  // There should still be data left on disk.
+  Status s = CheckNoData();
+  ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
+
+  // Now restart the tablet servers. They should roll forward their deletes.
+  // We don't have to reset the fault flag here because it was set dynamically.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->tablet_server(i)->Shutdown();
+    ASSERT_OK(cluster_->tablet_server(i)->Restart());
+  }
+  NO_FATALS(WaitForNoData());
+}
+
+const char* flags[] = {"fault_crash_after_blocks_deleted",
+                       "fault_crash_after_wal_deleted",
+                       "fault_crash_after_cmeta_deleted"};
+
+INSTANTIATE_TEST_CASE_P(FaultFlags, DeleteTableParameterizedTest, ::testing::ValuesIn(flags));
 
 } // namespace kudu

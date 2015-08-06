@@ -132,9 +132,9 @@ class Log : public RefCountedThreadSafe<Log> {
   // Syncs all state and closes the log.
   Status Close();
 
-  // Delete all data from this log.
-  // REQUIRES: the log must be closed.
-  Status DeleteOnDiskData();
+  // Delete all WAL data from the log associated with this tablet.
+  // REQUIRES: The Log must be closed.
+  static Status DeleteOnDiskData(FsManager* fs_manager, const std::string& tablet_id);
 
   // Returns a reader that is able to read through the previous
   // segments. The reader pointer is guaranteed to be live as long

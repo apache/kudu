@@ -205,11 +205,6 @@ void Tablet::Shutdown() {
   metadata_->SetPreFlushCallback(Bind(DoNothingStatusClosure));
 }
 
-Status Tablet::DeleteOnDiskData() {
-  RETURN_NOT_OK(metadata_->DeleteTablet());
-  return Status::OK();
-}
-
 Status Tablet::GetMappedReadProjection(const Schema& projection,
                                        Schema *mapped_projection) const {
   const Schema* cur_schema = schema();

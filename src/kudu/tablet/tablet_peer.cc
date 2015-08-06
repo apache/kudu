@@ -193,17 +193,17 @@ const consensus::RaftConfigPB TabletPeer::RaftConfig() const {
   return consensus_->CommittedConfig();
 }
 
-TabletStatePB TabletPeer::Shutdown() {
+void TabletPeer::Shutdown() {
 
   LOG(INFO) << "Initiating TabletPeer shutdown for tablet: " << tablet_id_;
 
-  TabletStatePB prev_state;
   {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    if (state_ == QUIESCING || state_ == SHUTDOWN) {
-      return state_;
+    unique_lock<simple_spinlock> lock(&lock_);
+    if (state_ == QUIESCING | state_ == SHUTDOWN) {
+      lock.unlock();
+      WaitUntilShutdown();
+      return;
     }
-    prev_state = state_;
     state_ = QUIESCING;
   }
 
@@ -235,32 +235,27 @@ TabletStatePB TabletPeer::Shutdown() {
     VLOG(1) << "TabletPeer: tablet " << tablet_id() << " shut down!";
   }
 
-  {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    state_ = SHUTDOWN;
-  }
-
   if (tablet_) {
     tablet_->Shutdown();
   }
 
-  return prev_state;
-}
-
-Status TabletPeer::DeleteOnDiskData() {
+  // Only mark the peer as SHUTDOWN when all other components have shut down.
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    if (state_ != SHUTDOWN) {
-      return Status::IllegalState("cannot delete tablet peer in state",
-                                  TabletStatePB_Name(state_));
-    }
+    state_ = SHUTDOWN;
   }
-  // Delete the tablet data before the WAL, since this also has the effect of changing
-  // the tablet state to a tombstone. If we crash before deleting the WAL, then we would
-  // roll-forward the deletion on restart.
-  RETURN_NOT_OK_PREPEND(tablet_->DeleteOnDiskData(), "Unable to delete tablet");
-  RETURN_NOT_OK_PREPEND(log_->DeleteOnDiskData(), "Unable to delete WAL");
-  return Status::OK();
+}
+
+void TabletPeer::WaitUntilShutdown() {
+  while (true) {
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      if (state_ == SHUTDOWN) {
+        return;
+      }
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
 }
 
 Status TabletPeer::CheckRunning() const {

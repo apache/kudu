@@ -73,13 +73,8 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   Status Start(const consensus::ConsensusBootstrapInfo& info);
 
   // Shutdown this tablet peer.
-  // Returns the previous state value.
-  // This function is a no-op and makes no state change if the previous state
-  // was QUIESCING or SHUTDOWN.
-  TabletStatePB Shutdown();
-
-  // Delete all data for this tablet peer, including WALs, etc.
-  Status DeleteOnDiskData();
+  // If a shutdown is already in progress, blocks until that shutdown is complete.
+  void Shutdown();
 
   // Check that the tablet is in a RUNNING state.
   Status CheckRunning() const;
@@ -222,6 +217,10 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Return pointer to the transaction tracker for this peer.
   const TransactionTracker* transaction_tracker() const { return &txn_tracker_; }
 
+  const scoped_refptr<TabletMetadata>& tablet_metadata() const {
+    return meta_;
+  }
+
  private:
   friend class RefCountedThreadSafe<TabletPeer>;
   friend class TabletPeerTest;
@@ -231,13 +230,16 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
 
   ~TabletPeer();
 
+  // Wait until the TabletPeer is fully in SHUTDOWN state.
+  void WaitUntilShutdown();
+
   // After bootstrap is complete and consensus is setup this initiates the transactions
   // that were not complete on bootstrap.
   // Not implemented yet. See .cc file.
   Status StartPendingTransactions(consensus::RaftPeerPB::Role my_role,
                                   const consensus::ConsensusBootstrapInfo& bootstrap_info);
 
-  scoped_refptr<TabletMetadata> meta_;
+  const scoped_refptr<TabletMetadata> meta_;
 
   const std::string tablet_id_;
 

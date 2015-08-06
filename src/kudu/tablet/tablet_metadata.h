@@ -150,9 +150,19 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // in a call to DeleteOrphanedBlocks().
   void AddOrphanedBlocks(const std::vector<BlockId>& block_ids);
 
-  // Delete all of the rowsets in this tablet, as well as the metadata.
-  // Returns only once all data and metadata has been removed.
-  Status DeleteTablet();
+  // Mark the superblock to be in state 'delete_type', sync it to disk, and
+  // then delete all of the rowsets in this tablet.
+  // 'delete_type' must be TABLET_DATA_DELETED.
+  // Returns only once all data has been removed.
+  // The metadata (superblock) is not deleted. For that, call DeleteSuperBlock().
+  Status DeleteTabletData(TabletDataState delete_type);
+
+  // Permanently deletes the superblock from the disk.
+  // DeleteTabletData() must first be called and the tablet data state must be
+  // TABLET_DATA_DELETED.
+  // Returns Status::InvalidArgument if the list of orphaned blocks is not empty.
+  // Returns Status::IllegalState if the tablet data state is not TABLET_DATA_DELETED.
+  Status DeleteSuperBlock();
 
   // Create a new RowSetMetadata for this tablet.
   // Does not add the new rowset to the list of rowsets. Use one of the Update()
