@@ -136,7 +136,8 @@ struct KeyEncoderTraits<STRING> {
 
       const uint8_t* srcp = s.data();
       uint8_t* dstp = &(*dst)[old_size];
-      int rem = s.size();
+      int len = s.size();
+      int rem = len;
 
       while (rem >= 16) {
         if (!SSEEncodeChunk<16>(&srcp, &dstp)) {
@@ -150,9 +151,25 @@ struct KeyEncoderTraits<STRING> {
         }
         rem -= 8;
       }
+      // Roll back to operate in 8 bytes at a time.
+      if (len > 8 && rem > 0) {
+        dstp -= 8 - rem;
+        srcp -= 8 - rem;
+        if (!SSEEncodeChunk<8>(&srcp, &dstp)) {
+          // TODO: optimize for the case where the input slice has '\0'
+          // bytes. (e.g. move the pointer to the first zero byte.)
+          dstp += 8 - rem;
+          srcp += 8 - rem;
+          goto slow_path;
+        }
+        rem = 0;
+        goto done;
+      }
+
       slow_path:
       EncodeChunkLoop(&srcp, &dstp, rem);
 
+      done:
       *dstp++ = 0;
       *dstp++ = 0;
       dst->resize(dstp - &(*dst)[0]);
