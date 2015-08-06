@@ -96,6 +96,10 @@ Status KuduRowResult::GetString(const Slice& col_name, Slice* val) const {
   return Get<TypeTraits<STRING> >(col_name, val);
 }
 
+Status KuduRowResult::GetBinary(const Slice& col_name, Slice* val) const {
+  return Get<TypeTraits<BINARY> >(col_name, val);
+}
+
 Status KuduRowResult::GetBool(int col_idx, bool* val) const {
   return Get<TypeTraits<BOOL> >(col_idx, val);
 }
@@ -126,6 +130,10 @@ Status KuduRowResult::GetDouble(int col_idx, double* val) const {
 
 Status KuduRowResult::GetString(int col_idx, Slice* val) const {
   return Get<TypeTraits<STRING> >(col_idx, val);
+}
+
+Status KuduRowResult::GetBinary(int col_idx, Slice* val) const {
+  return Get<TypeTraits<BINARY> >(col_idx, val);
 }
 
 template<typename T>

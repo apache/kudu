@@ -65,6 +65,9 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
       case STRING:
         *output << "STRING";
         break;
+      case BINARY:
+        *output << "BINARY";
+        break;
       case UINT8:
       case INT8:
         *output << "TINYINT";

@@ -84,7 +84,8 @@ class KUDU_EXPORT KuduColumnSchema {
     STRING = 4,
     BOOL = 5,
     FLOAT = 6,
-    DOUBLE = 7
+    DOUBLE = 7,
+    BINARY = 8
   };
 
   static std::string DataTypeToString(DataType type);

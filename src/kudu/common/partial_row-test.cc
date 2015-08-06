@@ -17,7 +17,8 @@ class PartialRowTest : public KuduTest {
     : schema_(boost::assign::list_of
               (ColumnSchema("key", INT32))
               (ColumnSchema("int_val", INT32))
-              (ColumnSchema("string_val", STRING, true)),
+              (ColumnSchema("string_val", STRING, true))
+              (ColumnSchema("binary_val", BINARY, true)),
               1) {
     SeedRandom();
   }
@@ -102,6 +103,19 @@ TEST_F(PartialRowTest, UnitTest) {
   // Set the column by index
   EXPECT_OK(row.SetInt32(1, 99999));
   EXPECT_EQ("int32 int_val=99999", row.ToString());
+
+  // Set the binary column as a copy.
+  EXPECT_OK(row.SetBinaryCopy("binary_val", "hello_world"));
+  EXPECT_EQ("int32 int_val=99999, binary binary_val=hello_world",
+              row.ToString());
+  // Unset the binary column.
+  EXPECT_OK(row.Unset("binary_val"));
+  EXPECT_EQ("int32 int_val=99999", row.ToString());
+
+  // Even though the storage is actually the same at the moment, we shouldn't be
+  // able to set string columns with SetBinary and vice versa.
+  EXPECT_FALSE(row.SetBinaryCopy("string_val", "oops").ok());
+  EXPECT_FALSE(row.SetStringCopy("binary_val", "oops").ok());
 }
 
 TEST_F(PartialRowTest, TestCopy) {
@@ -122,6 +136,7 @@ TEST_F(PartialRowTest, TestCopy) {
 
   int32_t int_val;
   Slice string_val;
+  Slice binary_val;
 
   // Check a copy with values.
   copy = row;
@@ -138,16 +153,23 @@ TEST_F(PartialRowTest, TestCopy) {
   EXPECT_TRUE(copy.IsNull(2));
 
   // Check a copy with a borrowed value.
-  string borrowed = "borrowed-string";
-  ASSERT_OK(row.SetString(2, borrowed));
+  string borrowed_string = "borrowed-string";
+  string borrowed_binary = "borrowed-binary";
+  ASSERT_OK(row.SetString(2, borrowed_string));
+  ASSERT_OK(row.SetBinary(3, borrowed_binary));
 
   copy = row;
   ASSERT_OK(copy.GetString(2, &string_val));
   EXPECT_EQ("borrowed-string", string_val.ToString());
+  ASSERT_OK(copy.GetBinary(3, &binary_val));
+  EXPECT_EQ("borrowed-binary", binary_val.ToString());
 
-  borrowed.replace(0, 8, "mutated-");
+  borrowed_string.replace(0, 8, "mutated-");
+  borrowed_binary.replace(0, 8, "mutated-");
   ASSERT_OK(copy.GetString(2, &string_val));
   EXPECT_EQ("mutated--string", string_val.ToString());
+  ASSERT_OK(copy.GetBinary(3, &string_val));
+  EXPECT_EQ("mutated--binary", string_val.ToString());
 }
 
 } // namespace kudu

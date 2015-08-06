@@ -55,10 +55,12 @@ class KUDU_EXPORT KuduRowResult {
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
 
-  // Gets the string but does not copy the value. Callers should
+  // Gets the string/binary value but does not copy the value. Callers should
   // copy the resulting Slice if necessary.
   Status GetString(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   Status GetString(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetBinary(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetBinary(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
 
   // Raw cell access. Should be avoided unless absolutely necessary.
   const void* cell(int col_idx) const;

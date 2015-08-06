@@ -91,6 +91,7 @@ kudu::DataType ToInternalDataType(KuduColumnSchema::DataType type) {
     case KuduColumnSchema::FLOAT: return kudu::FLOAT;
     case KuduColumnSchema::DOUBLE: return kudu::DOUBLE;
     case KuduColumnSchema::STRING: return kudu::STRING;
+    case KuduColumnSchema::BINARY: return kudu::BINARY;
     case KuduColumnSchema::BOOL: return kudu::BOOL;
     default: LOG(FATAL) << "Unexpected data type: " << type;
   }
@@ -105,6 +106,7 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
     case kudu::FLOAT: return KuduColumnSchema::FLOAT;
     case kudu::DOUBLE: return KuduColumnSchema::DOUBLE;
     case kudu::STRING: return KuduColumnSchema::STRING;
+    case kudu::BINARY: return KuduColumnSchema::BINARY;
     case kudu::BOOL: return KuduColumnSchema::BOOL;
     default: LOG(FATAL) << "Unexpected internal data type: " << type;
   }

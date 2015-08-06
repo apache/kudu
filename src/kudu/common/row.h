@@ -594,23 +594,22 @@ class RowBuilder {
 
   void AddString(const Slice &slice) {
     CheckNextType(STRING);
-
-    Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);
-    CHECK(arena_.RelocateSlice(slice, ptr)) << "could not allocate space in arena";
-
-    Advance();
+    AddSlice(slice);
   }
 
   void AddString(const string &str) {
     CheckNextType(STRING);
+    AddSlice(str);
+  }
 
-    uint8_t *in_arena = arena_.AddSlice(str);
-    CHECK(in_arena) << "could not allocate space in arena";
+  void AddBinary(const Slice &slice) {
+    CheckNextType(BINARY);
+    AddSlice(slice);
+  }
 
-    Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);
-    *ptr = Slice(in_arena, str.size());
-
-    Advance();
+  void AddBinary(const string &str) {
+    CheckNextType(BINARY);
+    AddSlice(str);
   }
 
   void AddInt8(int8_t val) {
@@ -705,6 +704,23 @@ class RowBuilder {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RowBuilder);
+
+  void AddSlice(const Slice &slice) {
+    Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);
+    CHECK(arena_.RelocateSlice(slice, ptr)) << "could not allocate space in arena";
+
+    Advance();
+  }
+
+  void AddSlice(const string &str) {
+    uint8_t *in_arena = arena_.AddSlice(str);
+    CHECK(in_arena) << "could not allocate space in arena";
+
+    Slice *ptr = reinterpret_cast<Slice *>(buf_ + byte_idx_);
+    *ptr = Slice(in_arena, str.size());
+
+    Advance();
+  }
 
   void CheckNextType(DataType type) {
     CHECK_EQ(schema_.column(col_idx_).type_info()->type(),

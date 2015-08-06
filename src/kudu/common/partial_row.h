@@ -69,14 +69,18 @@ class KUDU_EXPORT KuduPartialRow {
   Status SetFloat(int col_idx, float val) WARN_UNUSED_RESULT;
   Status SetDouble(int col_idx, double val) WARN_UNUSED_RESULT;
 
-  // Sets the string but does not copy the value. The string
+  // Sets the string/binary value but does not copy the value. The slice
   // must remain valid until the call to AppendToPB().
   Status SetString(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   Status SetString(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetBinary(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetBinary(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
 
   // Copies 'val' immediately.
   Status SetStringCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
   Status SetStringCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetBinaryCopy(const Slice& col_name, const Slice& val) WARN_UNUSED_RESULT;
+  Status SetBinaryCopy(int col_idx, const Slice& val) WARN_UNUSED_RESULT;
 
   // Set the given column to NULL. This will only succeed on nullable
   // columns. Use Unset(...) to restore a column to its default.
@@ -125,10 +129,12 @@ class KUDU_EXPORT KuduPartialRow {
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;
 
-  // Gets the string but does not copy the value. Callers should
+  // Gets the string/binary value but does not copy the value. Callers should
   // copy the resulting Slice if necessary.
   Status GetString(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
   Status GetString(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetBinary(const Slice& col_name, Slice* val) const WARN_UNUSED_RESULT;
+  Status GetBinary(int col_idx, Slice* val) const WARN_UNUSED_RESULT;
 
   //------------------------------------------------------------
   // Key-encoding related functions
@@ -177,6 +183,12 @@ class KUDU_EXPORT KuduPartialRow {
 
   template<typename T>
   Status Get(int col_idx, typename T::cpp_type* val) const;
+
+  template<typename T>
+  Status SetSliceCopy(const Slice& col_name, const Slice& val);
+
+  template<typename T>
+  Status SetSliceCopy(int col_idx, const Slice& val);
 
   // If the given column is a variable length column whose memory is owned by this instance,
   // deallocates the value.
