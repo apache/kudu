@@ -21,6 +21,7 @@ namespace tools {
 using client::KuduColumnSchema;
 using client::KuduInsert;
 using client::KuduSession;
+using client::KuduSchemaBuilder;
 using client::KuduTable;
 using client::KuduTableCreator;
 using std::tr1::static_pointer_cast;
@@ -33,11 +34,11 @@ static const char *kTableName = "ksck-test-table";
 class RemoteKsckTest : public KuduTest {
  public:
   RemoteKsckTest()
-      : schema_(boost::assign::list_of
-                (KuduColumnSchema("key", KuduColumnSchema::INT32))
-                (KuduColumnSchema("int_val", KuduColumnSchema::INT32)),
-                1),
-        random_(SeedRandom()) {
+    : random_(SeedRandom()) {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+    CHECK_OK(b.Build(&schema_));
   }
 
   virtual void SetUp() OVERRIDE {

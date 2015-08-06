@@ -24,10 +24,10 @@ using client::FromInternalDataType;
 using client::FromInternalEncodingType;
 using client::KuduClient;
 using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduColumnStorageAttributes;
+using client::KuduColumnSchema;;
 using client::KuduInsert;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
 using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
@@ -129,28 +129,6 @@ void TestWorkload::WriteThread() {
   }
 }
 
-namespace {
-
-KuduSchema GetClientSchema(const Schema& server_schema) {
-  std::vector<KuduColumnSchema> client_cols;
-  BOOST_FOREACH(const ColumnSchema& col, server_schema.columns()) {
-    CHECK_EQ(col.has_read_default(), col.has_write_default());
-    if (col.has_read_default()) {
-      CHECK_EQ(col.read_default_value(), col.write_default_value());
-    }
-    KuduColumnStorageAttributes client_attrs(
-      FromInternalEncodingType(col.attributes().encoding()),
-      FromInternalCompressionType(col.attributes().compression()));
-    KuduColumnSchema client_col(col.name(), FromInternalDataType(col.type_info()->type()),
-                                col.is_nullable(), col.read_default_value(),
-                                client_attrs);
-    client_cols.push_back(client_col);
-  }
-  return KuduSchema(client_cols, server_schema.num_key_columns());
-}
-
-} // anonymous namespace
-
 void TestWorkload::Setup() {
   CHECK_OK(cluster_->CreateClient(client_builder_, &client_));
 
@@ -161,8 +139,8 @@ void TestWorkload::Setup() {
               << table_name_ << " already exists";
     return;
   }
+  KuduSchema client_schema(GetSimpleTestSchema());
 
-  KuduSchema client_schema(GetClientSchema(GetSimpleTestSchema()));
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   CHECK_OK(table_creator->table_name(table_name_)
            .schema(&client_schema)

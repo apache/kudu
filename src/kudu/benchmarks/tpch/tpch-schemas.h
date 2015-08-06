@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "kudu/client/schema.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 namespace tpch {
@@ -31,8 +32,8 @@ static const char* const kShipInstructColName = "l_shipinstruct";
 static const char* const kShipModeColName = "l_shipmode";
 static const char* const kCommentColName = "l_comment";
 
-static const client::KuduColumnStorageAttributes kPlainEncoding =
-    client::KuduColumnStorageAttributes(client::KuduColumnStorageAttributes::PLAIN_ENCODING);
+static const client::KuduColumnStorageAttributes::EncodingType kPlainEncoding =
+  client::KuduColumnStorageAttributes::PLAIN_ENCODING;
 
 static const client::KuduColumnSchema::DataType kInt64 =
     client::KuduColumnSchema::INT64;
@@ -63,32 +64,30 @@ enum {
 };
 
 inline client::KuduSchema CreateLineItemSchema() {
-  return client::KuduSchema(boost::assign::list_of
-                (client::KuduColumnSchema(kOrderKeyColName, kInt64))
-                (client::KuduColumnSchema(kLineNumberColName, kInt32))
-                (client::KuduColumnSchema(kPartKeyColName, kInt32))
-                (client::KuduColumnSchema(kSuppKeyColName, kInt32))
-                (client::KuduColumnSchema(kQuantityColName, kInt32)) // decimal??
-                (client::KuduColumnSchema(kExtendedPriceColName, kDouble))
-                (client::KuduColumnSchema(kDiscountColName, kDouble))
-                (client::KuduColumnSchema(kTaxColName, kDouble))
-                (client::KuduColumnSchema(kReturnFlagColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kLineStatusColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kShipDateColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kCommitDateColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kReceiptDateColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kShipInstructColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kShipModeColName, kString,
-                                          false, NULL, kPlainEncoding))
-                (client::KuduColumnSchema(kCommentColName, kString,
-                                          false, NULL, kPlainEncoding))
-                , 2);
+  client::KuduSchemaBuilder b;
+  client::KuduSchema s;
+
+  b.AddColumn(kOrderKeyColName)->Type(kInt64)->NotNull();
+  b.AddColumn(kLineNumberColName)->Type(kInt32)->NotNull();
+  b.AddColumn(kPartKeyColName)->Type(kInt32)->NotNull();
+  b.AddColumn(kSuppKeyColName)->Type(kInt32)->NotNull();
+  b.AddColumn(kQuantityColName)->Type(kInt32)->NotNull(); // decimal?
+  b.AddColumn(kExtendedPriceColName)->Type(kDouble)->NotNull();
+  b.AddColumn(kDiscountColName)->Type(kDouble)->NotNull();
+  b.AddColumn(kTaxColName)->Type(kDouble)->NotNull();
+  b.AddColumn(kReturnFlagColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
+  b.AddColumn(kLineStatusColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
+  b.AddColumn(kShipDateColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
+  b.AddColumn(kCommitDateColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
+  b.AddColumn(kReceiptDateColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
+  b.AddColumn(kShipInstructColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
+  b.AddColumn(kShipModeColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
+  b.AddColumn(kCommentColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
+
+  b.SetPrimaryKey(boost::assign::list_of<std::string>(kOrderKeyColName)(kLineNumberColName));
+
+  CHECK_OK(b.Build(&s));
+  return s;
 }
 
 inline std::vector<std::string> GetTpchQ1QueryColumns() {

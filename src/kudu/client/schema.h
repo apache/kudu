@@ -15,6 +15,11 @@ namespace kudu {
 class ColumnSchema;
 class KuduPartialRow;
 class Schema;
+class TestWorkload;
+
+namespace tserver {
+class TabletServerIntegrationTestBase;
+} // namespace tserver
 
 namespace client {
 
@@ -84,8 +89,9 @@ class KUDU_EXPORT KuduColumnSchema {
 
   static std::string DataTypeToString(DataType type);
 
-  // TODO: make this hard-to-use constructor private. Clients should use
-  // the Builder API.
+  // DEPRECATED: use KuduSchemaBuilder instead.
+  // TODO(KUDU-809): make this hard-to-use constructor private. Clients should use
+  // the Builder API. Currently only the Python API uses this old API.
   KuduColumnSchema(const std::string &name,
                    DataType type,
                    bool is_nullable = false,
@@ -108,6 +114,7 @@ class KUDU_EXPORT KuduColumnSchema {
   // TODO: Expose default column value and attributes?
 
  private:
+  friend class KuduColumnSpec;
   friend class KuduSchema;
   friend class std::vector<KuduColumnSchema>;
 
@@ -242,10 +249,6 @@ class KUDU_EXPORT KuduSchema {
  public:
   KuduSchema();
 
-  // DEPRECATED: use KuduSchemaBuilder. This constructor will soon be
-  // removed.
-  KuduSchema(const std::vector<KuduColumnSchema>& columns, int key_columns);
-
   KuduSchema(const KuduSchema& other);
   ~KuduSchema();
 
@@ -278,6 +281,12 @@ class KUDU_EXPORT KuduSchema {
   friend class internal::GetTableSchemaRpc;
   friend class internal::LookupRpc;
   friend class internal::WriteRpc;
+
+  friend class kudu::TestWorkload;
+  friend class tserver::TabletServerIntegrationTestBase;
+
+  // For use by kudu tests.
+  explicit KuduSchema(const Schema& schema);
 
   // Private since we don't want users to rely on the first N columns
   // being the keys.

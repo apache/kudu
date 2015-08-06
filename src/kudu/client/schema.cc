@@ -473,14 +473,13 @@ KuduSchema::KuduSchema()
   : schema_(NULL) {
 }
 
-KuduSchema::KuduSchema(const vector<KuduColumnSchema>& columns, int key_columns)
-  : schema_(NULL) {
-  CHECK_OK(Reset(columns, key_columns));
-}
-
 KuduSchema::KuduSchema(const KuduSchema& other)
   : schema_(NULL) {
   CopyFrom(other);
+}
+
+KuduSchema::KuduSchema(const Schema& schema)
+  : schema_(new Schema(schema)) {
 }
 
 KuduSchema::~KuduSchema() {

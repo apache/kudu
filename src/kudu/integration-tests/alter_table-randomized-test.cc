@@ -27,6 +27,7 @@ using client::KuduColumnSchema;
 using client::KuduError;
 using client::KuduInsert;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
 using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableAlterer;
@@ -215,9 +216,10 @@ struct MirrorTable {
   }
 
   Status Create() {
-    KuduSchema schema(boost::assign::list_of
-                      (KuduColumnSchema("key", KuduColumnSchema::INT32)),
-                      1);
+    KuduSchema schema;
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    CHECK_OK(b.Build(&schema));
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     RETURN_NOT_OK(table_creator->table_name(kTableName)
              .schema(&schema)

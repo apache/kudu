@@ -38,7 +38,6 @@ static const char* const kKeyColumnName = "rand_key";
 static const char* const kLinkColumnName = "link_to";
 static const char* const kInsertTsColumnName = "insert_ts";
 static const char* const kUpdatedColumnName = "updated";
-static const bool kUpdatedColumnDefault = false;
 static const int64_t kNoSnapshot = -1;
 static const int64_t kNoParticularCountExpected = -1;
 
@@ -55,14 +54,7 @@ class LinkedListTester {
                    int num_tablets,
                    int num_replicas,
                    bool enable_mutation)
-    : schema_(boost::assign::list_of
-                (client::KuduColumnSchema(kKeyColumnName, client::KuduColumnSchema::INT64))
-                (client::KuduColumnSchema(kLinkColumnName, client::KuduColumnSchema::INT64))
-                (client::KuduColumnSchema(kInsertTsColumnName, client::KuduColumnSchema::INT64))
-                (client::KuduColumnSchema(kUpdatedColumnName, client::KuduColumnSchema::BOOL,
-                                          false, &kUpdatedColumnDefault)),
-              1),
-      verify_projection_(boost::assign::list_of
+    : verify_projection_(boost::assign::list_of
                          (kKeyColumnName)(kLinkColumnName)(kUpdatedColumnName)
                          .convert_to_container<vector<string> >()),
       table_name_(table_name),
@@ -72,6 +64,15 @@ class LinkedListTester {
       enable_mutation_(enable_mutation),
       latency_histogram_(1000000, 3),
       client_(client) {
+
+    client::KuduSchemaBuilder b;
+
+    b.AddColumn(kKeyColumnName)->Type(client::KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
+    b.AddColumn(kLinkColumnName)->Type(client::KuduColumnSchema::INT64)->NotNull();
+    b.AddColumn(kInsertTsColumnName)->Type(client::KuduColumnSchema::INT64)->NotNull();
+    b.AddColumn(kUpdatedColumnName)->Type(client::KuduColumnSchema::BOOL)->NotNull()
+      ->Default(client::KuduValue::FromBool(false));
+    CHECK_OK(b.Build(&schema_));
   }
 
   // Create the table.
@@ -147,7 +148,7 @@ class LinkedListTester {
   void DumpInsertHistogram(bool print_flags);
 
  protected:
-  const client::KuduSchema schema_;
+  client::KuduSchema schema_;
   const std::vector<std::string> verify_projection_;
   const std::string table_name_;
   const int num_chains_;

@@ -24,6 +24,7 @@ using client::KuduClientBuilder;
 using client::KuduColumnSchema;
 using client::KuduScanner;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
 using client::KuduTable;
 using client::KuduTableCreator;
 using std::vector;
@@ -95,14 +96,15 @@ class MasterReplicationTest : public KuduTest {
 
   Status CreateTable(const shared_ptr<KuduClient>& client,
                      const std::string& table_name) {
-    KuduSchema client_schema(boost::assign::list_of
-                             (KuduColumnSchema("key", KuduColumnSchema::INT32))
-                             (KuduColumnSchema("int_val", KuduColumnSchema::INT32))
-                             (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
-                             , 1);
+    KuduSchema schema;
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
+    CHECK_OK(b.Build(&schema));
     gscoped_ptr<KuduTableCreator> table_creator(client->NewTableCreator());
     return table_creator->table_name(table_name)
-        .schema(&client_schema)
+        .schema(&schema)
         .Create();
   }
 

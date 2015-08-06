@@ -74,6 +74,7 @@ using client::KuduColumnSchema;
 using client::KuduRowResult;
 using client::KuduScanner;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
 using client::KuduSession;
 using client::KuduStatusMemberCallback;
 using client::KuduTable;
@@ -90,20 +91,22 @@ class FullStackInsertScanTest : public KuduTest {
     kNumRows(kNumInsertClients * kNumInsertsPerClient),
     kFlushEveryN(DefaultFlag(FLAGS_rows_per_batch, 125, 5000)),
     random_(SeedRandom()),
-    // schema has kNumIntCols contiguous columns of Int32 and Int64, in order.
-    schema_(list_of
-            (KuduColumnSchema("key", KuduColumnSchema::INT64))
-            (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
-            (KuduColumnSchema("int32_val1", KuduColumnSchema::INT32))
-            (KuduColumnSchema("int32_val2", KuduColumnSchema::INT32))
-            (KuduColumnSchema("int32_val3", KuduColumnSchema::INT32))
-            (KuduColumnSchema("int32_val4", KuduColumnSchema::INT32))
-            (KuduColumnSchema("int64_val1", KuduColumnSchema::INT64))
-            (KuduColumnSchema("int64_val2", KuduColumnSchema::INT64))
-            (KuduColumnSchema("int64_val3", KuduColumnSchema::INT64))
-            (KuduColumnSchema("int64_val4", KuduColumnSchema::INT64)), 1),
     sessions_(kNumInsertClients),
     tables_(kNumInsertClients) {
+
+    // schema has kNumIntCols contiguous columns of Int32 and Int64, in order.
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
+    b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
+    b.AddColumn("int32_val1")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("int32_val2")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("int32_val3")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("int32_val4")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("int64_val1")->Type(KuduColumnSchema::INT64)->NotNull();
+    b.AddColumn("int64_val2")->Type(KuduColumnSchema::INT64)->NotNull();
+    b.AddColumn("int64_val3")->Type(KuduColumnSchema::INT64)->NotNull();
+    b.AddColumn("int64_val4")->Type(KuduColumnSchema::INT64)->NotNull();
+    CHECK_OK(b.Build(&schema_));
   }
 
   const int kNumInsertClients;

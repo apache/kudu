@@ -2,7 +2,6 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include <algorithm>
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <glog/stl_logging.h>
 
@@ -27,10 +26,9 @@
 namespace kudu {
 namespace itest {
 
-using boost::assign::list_of;
-using client::KuduColumnSchema;
 using client::KuduClient;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
 using client::KuduTable;
 using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
@@ -75,7 +73,11 @@ string TServerDetails::ToString() const {
 }
 
 client::KuduSchema SimpleIntKeyKuduSchema() {
-  return KuduSchema(list_of(KuduColumnSchema("key", KuduColumnSchema::INT32)), 1);
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(client::KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  CHECK_OK(b.Build(&s));
+  return s;
 }
 
 Status GetLastOpIdForEachReplica(const string& tablet_id,

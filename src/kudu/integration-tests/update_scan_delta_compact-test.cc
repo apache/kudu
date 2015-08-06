@@ -39,6 +39,7 @@ using client::KuduColumnSchema;
 using client::KuduRowResult;
 using client::KuduScanner;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
 using client::KuduSession;
 using client::KuduStatusCallback;
 using client::KuduStatusMemberCallback;
@@ -53,12 +54,12 @@ using client::KuduUpdate;
 // FATALs.
 class UpdateScanDeltaCompactionTest : public KuduTest {
  protected:
-  UpdateScanDeltaCompactionTest()
-      :
-      schema_(list_of
-             (KuduColumnSchema("key", KuduColumnSchema::INT64))
-             (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
-             (KuduColumnSchema("int64", KuduColumnSchema::INT64)), 1) {
+  UpdateScanDeltaCompactionTest() {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
+    b.AddColumn("string")->Type(KuduColumnSchema::STRING)->NotNull();
+    b.AddColumn("int64")->Type(KuduColumnSchema::INT64)->NotNull();
+    CHECK_OK(b.Build(&schema_));
   }
 
   virtual void SetUp() OVERRIDE {

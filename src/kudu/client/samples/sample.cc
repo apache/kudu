@@ -22,6 +22,7 @@ using kudu::client::KuduPredicate;
 using kudu::client::KuduRowResult;
 using kudu::client::KuduScanner;
 using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduSession;
 using kudu::client::KuduStatusFunctionCallback;
 using kudu::client::KuduTable;
@@ -46,14 +47,15 @@ static Status CreateClient(const string& addr,
 }
 
 static KuduSchema CreateSchema() {
-  const int32_t kNonNullDefault = 12345;
-  vector<KuduColumnSchema> columns;
-  columns.push_back(KuduColumnSchema("key", KuduColumnSchema::INT32));
-  columns.push_back(KuduColumnSchema("int_val", KuduColumnSchema::INT32));
-  columns.push_back(KuduColumnSchema("string_val", KuduColumnSchema::STRING));
-  columns.push_back(KuduColumnSchema("non_null_with_default", KuduColumnSchema::INT32, false,
-                                     &kNonNullDefault));
-  return KuduSchema(columns, 1);
+  KuduSchema schema;
+  KuduSchemaBuilder b;
+  b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("non_null_with_default")->Type(KuduColumnSchema::INT32)->NotNull()
+    ->Default(KuduValue::FromInt(12345));
+  KUDU_CHECK_OK(b.Build(&schema));
+  return schema;
 }
 
 static Status DoesTableExist(const shared_ptr<KuduClient>& client,

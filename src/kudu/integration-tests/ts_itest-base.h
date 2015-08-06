@@ -393,7 +393,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   void CreateTable() {
     // The tests here make extensive use of server schemas, but we need
     // a client schema to create the table.
-    client::KuduSchema client_schema(GetClientSchema(schema_));
+    client::KuduSchema client_schema(schema_);
     gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(kTableId)
              .schema(&client_schema)
@@ -404,26 +404,6 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
              .timeout(MonoDelta::FromSeconds(20))
              .Create());
     ASSERT_OK(client_->OpenTable(kTableId, &table_));
-  }
-
-  client::KuduSchema GetClientSchema(const Schema& server_schema) const {
-    std::vector<client::KuduColumnSchema> client_cols;
-    BOOST_FOREACH(const ColumnSchema& col, server_schema.columns()) {
-      CHECK_EQ(col.has_read_default(), col.has_write_default());
-      if (col.has_read_default()) {
-        CHECK_EQ(col.read_default_value(), col.write_default_value());
-      }
-      client::KuduColumnStorageAttributes client_attrs(
-          client::FromInternalEncodingType(col.attributes().encoding()),
-          client::FromInternalCompressionType(col.attributes().compression()));
-      client::KuduColumnSchema client_col(
-          col.name(),
-          client::FromInternalDataType(col.type_info()->type()),
-          col.is_nullable(), col.read_default_value(),
-          client_attrs);
-      client_cols.push_back(client_col);
-    }
-    return client::KuduSchema(client_cols, server_schema.num_key_columns());
   }
 
   // Starts an external cluster with a single tablet and a number of replicas equal

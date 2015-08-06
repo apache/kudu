@@ -14,21 +14,24 @@ namespace twitter_demo {
 
 using client::KuduColumnSchema;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
 
 inline KuduSchema CreateTwitterSchema() {
-  return KuduSchema(boost::assign::list_of
-                (KuduColumnSchema("tweet_id", KuduColumnSchema::INT64))
-                (KuduColumnSchema("text", KuduColumnSchema::STRING))
-                (KuduColumnSchema("source", KuduColumnSchema::STRING))
-                (KuduColumnSchema("created_at", KuduColumnSchema::STRING))
-                (KuduColumnSchema("user_id", KuduColumnSchema::INT64))
-                (KuduColumnSchema("user_name", KuduColumnSchema::STRING))
-                (KuduColumnSchema("user_description", KuduColumnSchema::STRING))
-                (KuduColumnSchema("user_location", KuduColumnSchema::STRING))
-                (KuduColumnSchema("user_followers_count", KuduColumnSchema::INT32))
-                (KuduColumnSchema("user_friends_count", KuduColumnSchema::INT32))
-                (KuduColumnSchema("user_image_url", KuduColumnSchema::STRING)),
-                1);
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("tweet_id")->Type(KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
+  b.AddColumn("text")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("source")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("created_at")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("user_id")->Type(KuduColumnSchema::INT64)->NotNull();
+  b.AddColumn("user_name")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("user_description")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("user_location")->Type(KuduColumnSchema::STRING)->NotNull();
+  b.AddColumn("user_followers_count")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("user_friends_count")->Type(KuduColumnSchema::INT32)->NotNull();
+  b.AddColumn("user_image_url")->Type(KuduColumnSchema::STRING)->NotNull();
+  CHECK_OK(b.Build(&s));
+  return s;
 }
 
 } // namespace twitter_demo

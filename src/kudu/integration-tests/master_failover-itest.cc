@@ -30,6 +30,7 @@ using client::KuduClientBuilder;
 using client::KuduColumnSchema;
 using client::KuduScanner;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
 using client::KuduTable;
 using std::string;
 using std::tr1::shared_ptr;
@@ -87,14 +88,15 @@ class MasterFailoverTest : public KuduTest {
   }
 
   Status CreateTable(const std::string& table_name, CreateTableMode mode) {
-    KuduSchema client_schema(boost::assign::list_of
-                             (KuduColumnSchema("key", KuduColumnSchema::INT32))
-                             (KuduColumnSchema("int_val", KuduColumnSchema::INT32))
-                             (KuduColumnSchema("string_val", KuduColumnSchema::STRING))
-                             , 1);
+    KuduSchema schema;
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("int_val")->Type(KuduColumnSchema::INT32)->NotNull();
+    b.AddColumn("string_val")->Type(KuduColumnSchema::STRING)->NotNull();
+    CHECK_OK(b.Build(&schema));
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     return table_creator->table_name(table_name)
-        .schema(&client_schema)
+        .schema(&schema)
         .timeout(MonoDelta::FromSeconds(90))
         .wait(mode == kWaitForCreate)
         .Create();

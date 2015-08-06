@@ -26,6 +26,7 @@ using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTableCreator;
 using kudu::rpc::RpcController;
 using kudu::master::MasterServiceProxy;
@@ -41,12 +42,12 @@ const char* kTableName = "test_table";
 // Temporarily disabled while working on KUDU-234.
 class CreateTableStressTest : public KuduTest {
  public:
-  CreateTableStressTest()
-    : schema_(boost::assign::list_of
-              (KuduColumnSchema("key", KuduColumnSchema::INT32))
-              (KuduColumnSchema("v1", KuduColumnSchema::INT64))
-              (KuduColumnSchema("v2", KuduColumnSchema::STRING)),
-              1) {
+  CreateTableStressTest() {
+    KuduSchemaBuilder b;
+    b.AddColumn("key")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("v1")->Type(KuduColumnSchema::INT64)->NotNull();
+    b.AddColumn("v2")->Type(KuduColumnSchema::STRING)->NotNull();
+    CHECK_OK(b.Build(&schema_));
   }
 
   virtual void SetUp() OVERRIDE {

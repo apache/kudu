@@ -14,19 +14,22 @@ static const client::KuduColumnSchema::DataType kString =
     client::KuduColumnSchema::STRING;
 
 inline client::KuduSchema CreateYCSBSchema() {
-  return client::KuduSchema(boost::assign::list_of
-                (client::KuduColumnSchema("key", kString))
-                (client::KuduColumnSchema("field0", kString))
-                (client::KuduColumnSchema("field1", kString))
-                (client::KuduColumnSchema("field2", kString))
-                (client::KuduColumnSchema("field3", kString))
-                (client::KuduColumnSchema("field4", kString))
-                (client::KuduColumnSchema("field5", kString))
-                (client::KuduColumnSchema("field6", kString))
-                (client::KuduColumnSchema("field7", kString))
-                (client::KuduColumnSchema("field8", kString))
-                (client::KuduColumnSchema("field9", kString))
-                , 1);
+  client::KuduSchema s;
+  client::KuduSchemaBuilder b;
+
+  b.AddColumn("key")->Type(kString)->NotNull()->PrimaryKey();
+  b.AddColumn("field0")->Type(kString)->NotNull();
+  b.AddColumn("field1")->Type(kString)->NotNull();
+  b.AddColumn("field2")->Type(kString)->NotNull();
+  b.AddColumn("field3")->Type(kString)->NotNull();
+  b.AddColumn("field4")->Type(kString)->NotNull();
+  b.AddColumn("field5")->Type(kString)->NotNull();
+  b.AddColumn("field6")->Type(kString)->NotNull();
+  b.AddColumn("field7")->Type(kString)->NotNull();
+  b.AddColumn("field8")->Type(kString)->NotNull();
+  b.AddColumn("field9")->Type(kString)->NotNull();
+  CHECK_OK(b.Build(&s));
+  return s;
 }
 
 } // namespace kudu

@@ -54,6 +54,7 @@ using client::KuduInsert;
 using client::KuduRowResult;
 using client::KuduScanner;
 using client::KuduSchema;
+using client::KuduSchemaBuilder;
 using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableAlterer;
@@ -68,12 +69,14 @@ using tserver::MiniTabletServer;
 class AlterTableTest : public KuduTest {
  public:
   AlterTableTest()
-    : schema_(boost::assign::list_of
-              (KuduColumnSchema("c0", KuduColumnSchema::INT32))
-              (KuduColumnSchema("c1", KuduColumnSchema::INT32)),
-              1),
-      stop_threads_(false),
+    : stop_threads_(false),
       inserted_idx_(0) {
+
+    KuduSchemaBuilder b;
+    b.AddColumn("c0")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+    b.AddColumn("c1")->Type(KuduColumnSchema::INT32)->NotNull();
+    CHECK_OK(b.Build(&schema_));
+
     FLAGS_enable_data_block_fsync = false; // Keep unit tests fast.
     FLAGS_use_hybrid_clock = false;
     ANNOTATE_BENIGN_RACE(&FLAGS_flush_threshold_mb,
