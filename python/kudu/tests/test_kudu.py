@@ -294,8 +294,8 @@ class TestScanner(KuduBasicsBase, unittest.TestCase):
         try:
             scanner.add_comparison_predicate("string_val", kudu.GREATER_EQUAL, 1)
         except Exception, e:
-            self.assertEqual("Invalid argument: non-string predicate " +
-                             "on string column: string_val", str(e))
+            self.assertEqual("Invalid argument: non-string value " +
+                             "for string column string_val", str(e))
 
         try:
             scanner.add_comparison_predicate("string_val", kudu.GREATER_EQUAL, None)

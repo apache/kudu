@@ -58,23 +58,6 @@ class ComparisonPredicateData : public KuduPredicate::Data {
  private:
   friend class KuduScanner;
 
-  // Check that 'val_' has the expected type 'type', returning
-  // a nice error Status if not.
-  Status CheckValType(KuduValue::Data::Type type,
-                      const char* type_str) const;
-
-  // Check that 'val_' is a boolean constant, and set *val_void to
-  // point to it if so.
-  Status CheckAndPointToBool(void** val_void);
-
-  // Check that 'val_' is an integer constant within the valid range,
-  // and set *val_void to point to it if so.
-  Status CheckAndPointToInt(size_t int_size, void** val_void);
-
-  // Check that 'val_' is a string constant, and set *val_void to
-  // point to it if so.
-  Status CheckAndPointToString(void** val_void);
-
   ColumnSchema col_;
   KuduPredicate::ComparisonOp op_;
   gscoped_ptr<KuduValue> val_;

@@ -796,14 +796,14 @@ TEST_F(ClientTest, TestInvalidPredicates) {
   s = scanner.AddConjunctPredicate(
       client_table_->NewComparisonPredicate("string_val",
                                             KuduPredicate::EQUAL, KuduValue::FromInt(5)));
-  EXPECT_EQ("Invalid argument: non-string predicate on string column: string_val",
+  EXPECT_EQ("Invalid argument: non-string value for string column string_val",
             s.ToString());
 
   // String predicate on an int column.
   s = scanner.AddConjunctPredicate(
       client_table_->NewComparisonPredicate("int_val",
                                             KuduPredicate::EQUAL, KuduValue::CopyString("x")));
-  EXPECT_EQ("Invalid argument: non-int predicate on int column: int_val",
+  EXPECT_EQ("Invalid argument: non-int value for int column int_val",
             s.ToString());
 
   // Out-of-range int predicate on an int column.
@@ -812,7 +812,7 @@ TEST_F(ClientTest, TestInvalidPredicates) {
           "int_val",
           KuduPredicate::EQUAL,
           KuduValue::FromInt(static_cast<int64_t>(MathLimits<int32_t>::kMax) + 10)));
-  EXPECT_EQ("Invalid argument: predicate value 2147483657 out of range for "
+  EXPECT_EQ("Invalid argument: value 2147483657 out of range for "
             "32-bit signed integer column 'int_val'", s.ToString());
 }
 
