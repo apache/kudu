@@ -1677,7 +1677,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   // manipulate it directly via RPC.
   vector<string> flags;
   flags.push_back("--enable_leader_failure_detection=false");
-  flags.push_back("--memory_limit_hard_mb=1");
+  flags.push_back("--memory_limit_hard_mb=8");
   BuildAndStart(flags);
 
   // Elect server 2 as leader, then kill it and server 1, leaving behind

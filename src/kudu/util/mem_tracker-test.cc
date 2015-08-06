@@ -8,6 +8,7 @@
 
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
+#include <gperftools/malloc_extension.h>
 
 #include "kudu/util/test_util.h"
 
@@ -260,5 +261,29 @@ TEST(MemTrackerTest, SoftLimitExceeded) {
     ASSERT_NEAR(100, current_percentage, 0.1);
   }
 }
+
+#ifdef TCMALLOC_ENABLED
+TEST(MemTrackerTest, TcMallocRootTracker) {
+  shared_ptr<MemTracker> root = MemTracker::GetRootTracker();
+
+  // The root tracker's consumption and tcmalloc should agree.
+  size_t value;
+  root->UpdateConsumption();
+  ASSERT_TRUE(MallocExtension::instance()->GetNumericProperty(
+      "generic.current_allocated_bytes", &value));
+  ASSERT_EQ(value, root->consumption());
+
+  // Explicit Consume() and Release() have no effect.
+  root->Consume(100);
+  ASSERT_EQ(value, root->consumption());
+  root->Release(3);
+  ASSERT_EQ(value, root->consumption());
+
+  // But if we allocate something really big, we should see a change.
+  gscoped_ptr<char[]> big_alloc(new char[4*1024*1024]);
+  root->UpdateConsumption();
+  ASSERT_GT(root->consumption(), value);
+}
+#endif
 
 } // namespace kudu

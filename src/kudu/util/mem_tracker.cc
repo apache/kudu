@@ -67,6 +67,17 @@ static bool ValidateSoftLimit(const char* flagname, int value) {
 static bool dummy = google::RegisterFlagValidator(
     &FLAGS_memory_limit_soft_percentage, &ValidateSoftLimit);
 
+#ifdef TCMALLOC_ENABLED
+static uint64_t GetTCMallocCurrentAllocatedBytes() {
+  size_t value;
+  if (!MallocExtension::instance()->GetNumericProperty(
+      "generic.current_allocated_bytes", &value)) {
+    LOG(DFATAL) << "Failed to get tcmalloc current allocated bytes";
+  }
+  return value;
+}
+#endif
+
 void MemTracker::CreateRootTracker() {
   int64_t limit = FLAGS_memory_limit_hard_mb * 1024 * 1024;
   if (limit == 0) {
@@ -76,7 +87,12 @@ void MemTracker::CreateRootTracker() {
     limit = total_ram * 4;
     limit /= 5;
   }
-  root_tracker.reset(new MemTracker(NULL, limit, "root",
+
+  ConsumptionFunction f;
+#ifdef TCMALLOC_ENABLED
+  f = &GetTCMallocCurrentAllocatedBytes;
+#endif
+  root_tracker.reset(new MemTracker(f, limit, "root",
                                     shared_ptr<MemTracker>()));
   root_tracker->Init();
   LOG(INFO) << StringPrintf("MemTracker: hard memory limit is %.6f GB",
@@ -98,27 +114,14 @@ shared_ptr<MemTracker> MemTracker::CreateTrackerUnlocked(int64_t byte_limit,
                                                          const string& id,
                                                          const shared_ptr<MemTracker>& parent) {
   DCHECK(parent);
-  shared_ptr<MemTracker> tracker(new MemTracker(NULL, byte_limit, id, parent));
+  shared_ptr<MemTracker> tracker(new MemTracker(ConsumptionFunction(), byte_limit, id, parent));
   parent->AddChildTrackerUnlocked(tracker.get());
   tracker->Init();
 
   return tracker;
 }
 
-shared_ptr<MemTracker> MemTracker::CreateTracker(FunctionGauge<uint64_t>* consumption_metric,
-                                                 int64_t byte_limit,
-                                                 const string& id) {
-  shared_ptr<MemTracker> parent(GetRootTracker());
-  shared_ptr<MemTracker> tracker(
-      new MemTracker(consumption_metric, byte_limit, id, parent));
-  MutexLock l(parent->child_trackers_lock_);
-  parent->AddChildTrackerUnlocked(tracker.get());
-  tracker->Init();
-
-  return tracker;
-}
-
-MemTracker::MemTracker(FunctionGauge<uint64_t>* consumption_metric,
+MemTracker::MemTracker(const ConsumptionFunction& consumption_func,
                        int64_t byte_limit,
                        const string& id,
                        const shared_ptr<MemTracker>& parent)
@@ -127,12 +130,12 @@ MemTracker::MemTracker(FunctionGauge<uint64_t>* consumption_metric,
       descr_(Substitute("memory consumption for $0", id)),
       parent_(parent),
       consumption_(0),
-      consumption_metric_(consumption_metric),
+      consumption_func_(consumption_func),
       rand_(GetRandomSeed32()),
       enable_logging_(false),
       log_stack_(false) {
   VLOG(1) << "Creating tracker " << ToString();
-  if (consumption_metric_) {
+  if (consumption_func_) {
     UpdateConsumption();
   }
   soft_limit_ = (limit_ == -1)
@@ -218,21 +221,18 @@ void MemTracker::ListTrackers(vector<shared_ptr<MemTracker> >* trackers) {
 }
 
 void MemTracker::UpdateConsumption() {
-  DCHECK(consumption_metric_ != NULL);
+  DCHECK(!consumption_func_.empty());
   DCHECK(parent_.get() == NULL);
-  consumption_.set_value(consumption_metric_->value());
+  consumption_.set_value(consumption_func_());
 }
 
-// TODO Use HighWaterMark for 'consumption_metric', then if
-// 'consumption_metric' is not null, simply make calls to
-// consumption() forward to consumption_metric_ instead.
 void MemTracker::Consume(int64_t bytes) {
   if (bytes < 0) {
     Release(-bytes);
     return;
   }
 
-  if (consumption_metric_ != NULL) {
+  if (!consumption_func_.empty()) {
     UpdateConsumption();
     return;
   }
@@ -245,14 +245,14 @@ void MemTracker::Consume(int64_t bytes) {
   for (vector<MemTracker*>::iterator tracker = all_trackers_.begin();
        tracker != all_trackers_.end(); ++tracker) {
     (*tracker)->consumption_.IncrementBy(bytes);
-    if ((*tracker)->consumption_metric_ == NULL) {
+    if (!(*tracker)->consumption_func_.empty()) {
       DCHECK_GE((*tracker)->consumption_.current_value(), 0);
     }
   }
 }
 
 bool MemTracker::TryConsume(int64_t bytes) {
-  if (consumption_metric_ != NULL) {
+  if (!consumption_func_.empty()) {
     UpdateConsumption();
   }
   if (bytes <= 0) {
@@ -316,7 +316,7 @@ void MemTracker::Release(int64_t bytes) {
     GcTcmalloc();
   }
 
-  if (consumption_metric_ != NULL) {
+  if (!consumption_func_.empty()) {
     UpdateConsumption();
     return;
   }
@@ -337,7 +337,7 @@ void MemTracker::Release(int64_t bytes) {
     // metric. Don't blow up in this case. (Note that this doesn't affect non-process
     // trackers since we can enforce that the reported memory usage is internally
     // consistent.)
-    if ((*tracker)->consumption_metric_ == NULL) {
+    if (!(*tracker)->consumption_func_.empty()) {
       DCHECK_GE((*tracker)->consumption_.current_value(), 0);
     }
   }
@@ -419,7 +419,7 @@ bool MemTracker::GcMemory(int64_t max_consumption) {
   }
 
   lock_guard<simple_spinlock> l(&gc_lock_);
-  if (consumption_metric_ != NULL) {
+  if (!consumption_func_.empty()) {
     UpdateConsumption();
   }
   uint64_t pre_gc_consumption = consumption();
@@ -431,7 +431,7 @@ bool MemTracker::GcMemory(int64_t max_consumption) {
   // Try to free up some memory
   for (int i = 0; i < gc_functions_.size(); ++i) {
     gc_functions_[i]();
-    if (consumption_metric_ != NULL) {
+    if (!consumption_func_.empty()) {
       UpdateConsumption();
     }
     if (consumption() <= max_consumption) {

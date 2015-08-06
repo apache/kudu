@@ -17,6 +17,7 @@
 #include "kudu/fs/fs-test-util.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/test_macros.h"
 #include "kudu/util/stopwatch.h"
 

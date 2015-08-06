@@ -14,7 +14,6 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/high_water_mark.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/random.h"
 
@@ -28,9 +27,9 @@ class MemTracker;
 // by a MemTracker is also tracked by its ancestors.
 //
 // By default, memory consumption is tracked via calls to Consume()/Release(), either to
-// the tracker itself or to one of its descendents. Alternatively, a consumption metric
-// can specified, and then the metric's value is used as the consumption rather than the
-// tally maintained by Consume() and Release(). A tcmalloc metric is used to track process
+// the tracker itself or to one of its descendents. Alternatively, a consumption function
+// can specified, and then the function's value is used as the consumption rather than the
+// tally maintained by Consume() and Release(). A tcmalloc function is used to track process
 // memory consumption, since the process memory usage may be higher than the computed
 // total memory (tcmalloc does not release deallocated memory immediately).
 //
@@ -78,21 +77,6 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
       const std::string& id,
       const std::tr1::shared_ptr<MemTracker>& parent = std::tr1::shared_ptr<MemTracker>());
 
-  // Factory method for tracker that uses consumption_metric as the
-  // consumption value.  Consume()/Release() can still be called.
-  // Adds the tracker to the tree so that it can be retrieved with
-  // FindTracker/FindOrCreateTracker.
-  //
-  // TODO Gauge-based memtrackers can't have parents (but can have
-  // children). In the future, however, it may be very convenient to
-  // use FunctionGauges to monitor memory consumed by e.g., various
-  // per-tablet in-memory structures -- where it is logical to have an
-  // umbrella per-tablet tracker as a parent.
-  static std::tr1::shared_ptr<MemTracker> CreateTracker(
-      FunctionGauge<uint64_t>* consumption_metric,
-      int64_t byte_limit,
-      const std::string& id);
-
   // If a tracker with the specified 'id' and 'parent' exists in the tree, sets
   // 'tracker' to reference that instance. Use the two-argument form if there
   // is no parent. Returns false if no such tracker exists.
@@ -116,8 +100,8 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
   // Gets a shared_ptr to the "root" tracker, creating it if necessary.
   static std::tr1::shared_ptr<MemTracker> GetRootTracker();
 
-  // Updates consumption from the consumption metric specified in the constructor.
-  // NOTE: this method will crash if 'consumption_metric_' is not set.
+  // Updates consumption from the consumption function specified in the constructor.
+  // NOTE: this method will crash if 'consumption_func_' is not set.
   void UpdateConsumption();
 
   // Increases consumption of this tracker and its ancestors by 'bytes'.
@@ -176,9 +160,9 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
     return consumption_.current_value();
   }
 
-  // Note that if consumption_ is based on consumption_metric_, this
+  // Note that if consumption_ is based on consumption_func_, this
   // will be the max value we've recorded in consumption(), not
-  // necessarily the highest value consumption_metric_ has ever
+  // necessarily the highest value consumption_func_ has ever
   // reached.
   int64_t peak_consumption() const { return consumption_.max_value(); }
 
@@ -205,11 +189,17 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
   std::string ToString() const;
 
  private:
-  // If consumption_metric is not null, uses it as the consumption value.
+  // Function signatures for gauge-style memory trackers (where consumption is
+  // periodically observed rather than explicitly tracked).
+  //
+  // Currently only used by the root tracker.
+  typedef boost::function<uint64_t ()> ConsumptionFunction;
+
+  // If consumption_func is not empty, uses it as the consumption value.
   // Consume()/Release() can still be called.
   // byte_limit < 0 means no limit
   // 'id' is the label for LogUsage() and web UI.
-  MemTracker(FunctionGauge<uint64_t>* consumption_metric,
+  MemTracker(const ConsumptionFunction& consumption_func,
              int64_t byte_limit,
              const std::string& id,
              const std::tr1::shared_ptr<MemTracker>& parent);
@@ -279,7 +269,7 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
 
   HighWaterMark consumption_;
 
-  FunctionGauge<uint64_t>* consumption_metric_;
+  ConsumptionFunction consumption_func_;
 
   // this tracker plus all of its ancestors
   std::vector<MemTracker*> all_trackers_;

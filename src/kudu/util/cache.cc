@@ -21,6 +21,7 @@
 #include "kudu/util/cache_metrics.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
+#include "kudu/util/metrics.h"
 
 namespace kudu {
 
