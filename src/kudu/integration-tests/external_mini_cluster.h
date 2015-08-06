@@ -179,6 +179,10 @@ class ExternalMiniCluster {
   // Return ExternalTabletServer given its UUID. If not found, returns NULL.
   ExternalTabletServer* tablet_server_by_uuid(const std::string& uuid) const;
 
+  // Return the index of the ExternalTabletServer that has the given 'uuid', or
+  // -1 if no such UUID can be found.
+  int tablet_server_index_by_uuid(const std::string& uuid) const;
+
   // Return all tablet servers and masters.
   std::vector<ExternalDaemon*> daemons() const;
 
@@ -269,6 +273,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   Sockaddr bound_rpc_addr() const;
   HostPort bound_http_hostport() const;
   const NodeInstancePB& instance_id() const;
+  const std::string& uuid() const;
 
   // Return the pid of the running process.
   // Causes a CHECK failure if the process is not running.

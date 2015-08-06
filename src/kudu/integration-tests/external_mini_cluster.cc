@@ -398,6 +398,15 @@ ExternalTabletServer* ExternalMiniCluster::tablet_server_by_uuid(const std::stri
   return NULL;
 }
 
+int ExternalMiniCluster::tablet_server_index_by_uuid(const std::string& uuid) const {
+  for (int i = 0; i < tablet_servers_.size(); i++) {
+    if (tablet_servers_[i]->uuid() == uuid) {
+      return i;
+    }
+  }
+  return -1;
+}
+
 vector<ExternalDaemon*> ExternalMiniCluster::daemons() const {
   vector<ExternalDaemon*> results;
   BOOST_FOREACH(const scoped_refptr<ExternalTabletServer>& ts, tablet_servers_) {
@@ -657,6 +666,11 @@ const NodeInstancePB& ExternalDaemon::instance_id() const {
   return status_->node_instance();
 }
 
+const string& ExternalDaemon::uuid() const {
+  CHECK(status_);
+  return status_->node_instance().permanent_uuid();
+}
+
 Status ExternalDaemon::GetInt64Metric(const MetricEntityPrototype* entity_proto,
                                       const char* entity_id,
                                       const MetricPrototype* metric_proto,
@@ -768,7 +782,7 @@ Status ExternalMaster::Restart() {
   vector<string> flags;
   flags.push_back("--fs_wal_dir=" + data_dir_);
   flags.push_back("--fs_data_dirs=" + data_dir_);
-  flags.push_back("--rpc_bind_addresses=" + rpc_bind_address_);
+  flags.push_back("--rpc_bind_addresses=" + bound_rpc_.ToString());
   flags.push_back("--webserver_interface=localhost");
   flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
   RETURN_NOT_OK(StartProcess(flags));

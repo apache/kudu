@@ -21,6 +21,8 @@
 #include "kudu/tserver/tablet_peer_lookup.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/crc.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
 
 // Note, this macro assumes the existence of a local var named 'context'.
 #define RPC_RETURN_APP_ERROR(app_err, message, s) \
@@ -44,6 +46,12 @@ DEFINE_uint64(remote_bootstrap_idle_timeout_ms, 180000,
 DEFINE_uint64(remote_bootstrap_timeout_poll_period_ms, 10000,
               "How often the remote_bootstrap service polls for expired "
               "remote bootstrap sessions, in millis");
+
+DEFINE_double(fault_crash_on_handle_rb_fetch_data, 0.0,
+              "Fraction of the time when the tablet will crash while "
+              "servicing a RemoteBootstrapService FetchData() RPC call. "
+              "(For testing only!)");
+TAG_FLAG(fault_crash_on_handle_rb_fetch_data, unsafe);
 
 namespace kudu {
 namespace tserver {
@@ -173,6 +181,9 @@ void RemoteBootstrapServiceImpl::FetchData(const FetchDataRequestPB* req,
                       app_error, "No such session");
     ResetSessionExpirationUnlocked(session_id);
   }
+
+  MAYBE_FAULT(FLAGS_fault_crash_on_handle_rb_fetch_data);
+
   uint64_t offset = req->offset();
   int64_t client_maxlen = req->max_length();
 

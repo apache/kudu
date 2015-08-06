@@ -65,6 +65,13 @@ DEFINE_double(fault_crash_after_cmeta_deleted, 0.0,
               "(For testing only!)");
 TAG_FLAG(fault_crash_after_cmeta_deleted, unsafe);
 
+DEFINE_double(fault_crash_after_rb_files_fetched, 0.0,
+              "Fraction of the time when the tablet will crash immediately "
+              "after fetching the files during a remote bootstrap but before "
+              "marking the superblock as TABLET_DATA_READY. "
+              "(For testing only!)");
+TAG_FLAG(fault_crash_after_rb_files_fetched, unsafe);
+
 namespace kudu {
 namespace tserver {
 
@@ -276,6 +283,17 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   return Status::OK();
 }
 
+// If 'expr' fails, log a message, tombstone the given tablet, and return the
+// error status.
+#define TOMBSTONE_NOT_OK(expr, meta, msg) \
+  do { \
+    Status _s = (expr); \
+    if (PREDICT_FALSE(!_s.ok())) { \
+      LogAndTombstone((meta), (msg), _s); \
+      return _s; \
+    } \
+  } while (0)
+
 // TODO: KUDU-921: Run this procedure on a background thread.
 Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
                                              const std::string& bootstrap_peer_uuid,
@@ -288,11 +306,11 @@ Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
     if (LookupTabletUnlocked(tablet_id, &tablet_peer)) {
       return Status::AlreadyPresent("Remote bootstrap of existing tablet not yet supported",
                                     tablet_id);
-    } else if (ContainsKey(transition_in_progress_, tablet_id)) {
+    }
+    if (!InsertIfNotPresent(&transition_in_progress_, tablet_id)) {
       return Status::AlreadyPresent("Maintenance of tablet already in progress",
                                     tablet_id);
     }
-    InsertOrDie(&transition_in_progress_, tablet_id);
   }
 
   scoped_refptr<TransitionInProgressDeleter> deleter(
@@ -307,34 +325,30 @@ Status TSTabletManager::StartRemoteBootstrap(const std::string& tablet_id,
       new RemoteBootstrapClient(tablet_id, fs_manager_, server_->messenger(),
                                 fs_manager_->uuid()));
 
+  // Download and persist the remote superblock in TABLET_DATA_COPYING state.
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(rb_client->Start(bootstrap_peer_uuid, bootstrap_peer_addr, &meta));
 
+  // From this point onward, the superblock is persisted in TABLET_DATA_COPYING
+  // state, and we need to tombtone the tablet if additional steps prior to
+  // getting to a TABLET_DATA_READY state fail.
+
   // Registering a non-initialized TabletPeer offers visibility through the Web UI.
   scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta);
+  string peer_str = bootstrap_peer_uuid + " (" + bootstrap_peer_addr.ToString() + ")";
 
   // Download all of the remote files.
-  Status s = rb_client->FetchAll(tablet_peer->status_listener());
-  if (!s.ok()) {
-    // TODO: If the remote bootstrap fails, attempt to delete the tablet.
-    // TODO: Implement tablet delete. See KUDU-967.
-    // TODO: We should not leave a broken tablet in tablet_map. See KUDU-922.
-    LOG(WARNING) << kLogPrefix << "Error during remote bootstrap: " << s.ToString();
-    tablet_peer->SetFailed(s);
-    return s;
-  }
+  TOMBSTONE_NOT_OK(rb_client->FetchAll(tablet_peer->status_listener()), meta,
+                   "Remote bootstrap: Unable to fetch data from remote peer " +
+                   bootstrap_peer_uuid + " (" + bootstrap_peer_addr.ToString() + ")");
 
-  // Write out the last files to make the new replica visible. Also update the
-  // TabletBootstrapStatePB in the TabletMetadata to REMOTE_BOOTSTRAP_DONE.
-  s = rb_client->Finish();
-  if (!s.ok()) {
-    // TODO: We should not leave a broken tablet in tablet_map. See KUDU-922.
-    LOG(WARNING) << kLogPrefix << "Error finishing remote bootstrap: " << s.ToString();
-    tablet_peer->SetFailed(s);
-    return s;
-  }
+  MAYBE_FAULT(FLAGS_fault_crash_after_rb_files_fetched);
 
-  // We can run this synchronously since there is nothing to bootstrap.
+  // Write out the last files to make the new replica visible and update the
+  // TabletDataState in the superblock to TABLET_DATA_READY.
+  TOMBSTONE_NOT_OK(rb_client->Finish(), meta, "Remote bootstrap: Failure calling Finish()");
+
+  // We run this asynchronously.
   RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                               this, meta, deleter)));
   return Status::OK();
@@ -767,6 +781,23 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
   // TODO: Delete the superblock after some delay, or on startup. See KUDU-941.
   RETURN_NOT_OK(meta->DeleteSuperBlock());
   return Status::OK();
+}
+
+void TSTabletManager::LogAndTombstone(const scoped_refptr<TabletMetadata>& meta,
+                                      const std::string& msg,
+                                      const Status& s) {
+  const string& tablet_id = meta->tablet_id();
+  const string kLogPrefix = "T " + tablet_id + " P " + fs_manager_->uuid() + ": ";
+  LOG(WARNING) << kLogPrefix << msg << ": " << s.ToString();
+
+  // Tombstone the tablet when remote bootstrap fails.
+  LOG(INFO) << kLogPrefix << "Tombstoning tablet after failed remote bootstrap";
+  Status delete_status = DeleteTabletData(meta, TABLET_DATA_TOMBSTONED);
+  if (PREDICT_FALSE(!delete_status.ok())) {
+    // This failure should only either indicate a bug or an IO error.
+    LOG(FATAL) << kLogPrefix << "Failed to tombstone tablet after remote bootstrap: "
+               << delete_status.ToString();
+  }
 }
 
 TransitionInProgressDeleter::TransitionInProgressDeleter(TransitionInProgressSet* set,

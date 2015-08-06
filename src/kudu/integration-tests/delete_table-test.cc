@@ -29,11 +29,15 @@
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduTableCreator;
+using kudu::consensus::ConsensusStatePB;
+using kudu::consensus::RaftPeerPB;
 using kudu::itest::TabletServerMap;
 using kudu::itest::TServerDetails;
 using kudu::master::MasterServiceProxy;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
+using kudu::tablet::TabletDataState;
+using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletSuperBlockPB;
@@ -49,17 +53,6 @@ namespace kudu {
 
 class DeleteTableTest : public KuduTest {
  public:
-  virtual void SetUp() OVERRIDE {
-    KuduTest::SetUp();
-
-    ExternalMiniClusterOptions opts;
-    opts.num_tablet_servers = 3;
-    cluster_.reset(new ExternalMiniCluster(opts));
-    ASSERT_OK(cluster_->Start());
-    KuduClientBuilder builder;
-    ASSERT_OK(cluster_->CreateClient(builder, &client_));
-  }
-
   virtual void TearDown() OVERRIDE {
     if (HasFatalFailure()) {
       for (int i = 0; i < 3; i++) {
@@ -71,14 +64,23 @@ class DeleteTableTest : public KuduTest {
                     "Couldn't dump stacks");
       }
     }
-    cluster_->Shutdown();
+    if (cluster_) cluster_->Shutdown();
     KuduTest::TearDown();
+    STLDeleteValues(&ts_map_);
   }
 
  protected:
+  enum IsCMetaExpected {
+    CMETA_NOT_EXPECTED = 0,
+    CMETA_EXPECTED = 1
+  };
+
+  void StartCluster(const vector<string>& extra_tserver_flags = vector<string>());
+
   Status ListFilesInDir(const string& path, vector<string>* entries);
   int CountFilesInDir(const string& path);
   int CountWALSegmentsOnTS(int index);
+  vector<string> ListTabletsOnTS(int index);
   int CountWALSegmentsForTabletOnTS(int index, const string& tablet_id);
   bool DoesConsensusMetaExistForTabletOnTS(int index, const string& tablet_id);
 
@@ -88,12 +90,19 @@ class DeleteTableTest : public KuduTest {
 
   Status ReadTabletSuperBlockOnTS(int index, const string& tablet_id,
                                   TabletSuperBlockPB* sb);
-  Status CheckTabletTombstonedOnTS(int index, const string& tablet_id);
+  Status CheckTabletDataStateOnTS(int index,
+                                  const string& tablet_id,
+                                  TabletDataState state);
+  Status CheckTabletTombstonedOnTS(int index,
+                                   const string& tablet_id,
+                                   IsCMetaExpected is_cmeta_expected);
 
   void WaitForNoData();
   void WaitForNoDataOnTS(int index);
-  void WaitForWALSegmentsForTabletOnTS(int index, const string& tablet_id);
-  void WaitForTabletTombstonedOnTS(int index, const string& tablet_id);
+  void WaitForMinFilesInTabletWalDirOnTS(int index, const string& tablet_id, int count);
+  void WaitForTabletTombstonedOnTS(int index,
+                                   const string& tablet_id,
+                                   IsCMetaExpected is_cmeta_expected);
 
   void WaitForReplicaCount(int expected);
   void WaitForTSToCrash(int index);
@@ -107,11 +116,25 @@ class DeleteTableTest : public KuduTest {
   // specified timeout. Deletion can fail when other operations, such as
   // bootstrap, are running.
   void DeleteTabletWithRetries(const TServerDetails* ts, const string& tablet_id,
-                               tablet::TabletDataState delete_type, const MonoDelta& timeout);
+                               TabletDataState delete_type, const MonoDelta& timeout);
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
   shared_ptr<KuduClient> client_;
+  unordered_map<string, TServerDetails*> ts_map_;
 };
+
+void DeleteTableTest::StartCluster(const vector<string>& extra_tserver_flags) {
+  ExternalMiniClusterOptions opts;
+  opts.num_tablet_servers = 3;
+  opts.extra_tserver_flags = extra_tserver_flags;
+  cluster_.reset(new ExternalMiniCluster(opts));
+  ASSERT_OK(cluster_->Start());
+  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
+                                          cluster_->messenger(),
+                                          &ts_map_));
+  KuduClientBuilder builder;
+  ASSERT_OK(cluster_->CreateClient(builder, &client_));
+}
 
 Status DeleteTableTest::ListFilesInDir(const string& path, vector<string>* entries) {
   RETURN_NOT_OK(env_->GetChildren(path, entries));
@@ -146,14 +169,22 @@ int DeleteTableTest::CountWALSegmentsOnTS(int index) {
   return total_segments;
 }
 
+vector<string> DeleteTableTest::ListTabletsOnTS(int index) {
+  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
+  vector<string> tablets;
+  CHECK_OK(ListFilesInDir(meta_dir, &tablets));
+  return tablets;
+}
+
 int DeleteTableTest::CountWALSegmentsForTabletOnTS(int index, const string& tablet_id) {
   string data_dir = cluster_->tablet_server(index)->data_dir();
-  string wal_dir =
-      JoinPathSegments(JoinPathSegments(data_dir, FsManager::kWalDirName), tablet_id);
-  if (!env_->FileExists(wal_dir)) {
+  string wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
+  string tablet_wal_dir = JoinPathSegments(wal_dir, tablet_id);
+  if (!env_->FileExists(tablet_wal_dir)) {
     return 0;
   }
-  return CountFilesInDir(wal_dir);
+  return CountFilesInDir(tablet_wal_dir);
 }
 
 bool DeleteTableTest::DoesConsensusMetaExistForTabletOnTS(int index, const string& tablet_id) {
@@ -206,19 +237,29 @@ Status DeleteTableTest::ReadTabletSuperBlockOnTS(int index,
   return pb_util::ReadPBContainerFromPath(env_.get(), superblock_path, sb);
 }
 
-Status DeleteTableTest::CheckTabletTombstonedOnTS(int index, const string& tablet_id) {
-  // We simply check that no WALs exist and that the superblock indicates
-  // TOMBSTONED.
+Status DeleteTableTest::CheckTabletDataStateOnTS(int index,
+                                                 const string& tablet_id,
+                                                 TabletDataState state) {
   TabletSuperBlockPB sb;
   RETURN_NOT_OK(ReadTabletSuperBlockOnTS(index, tablet_id, &sb));
-  if (sb.tablet_data_state() != TABLET_DATA_TOMBSTONED) {
-    return Status::IllegalState("Tablet metadata not not TOMBSTONED",
+  if (PREDICT_FALSE(sb.tablet_data_state() != state)) {
+    return Status::IllegalState("Tablet data state != " + TabletDataState_Name(state),
                                 TabletDataState_Name(sb.tablet_data_state()));
   }
+  return Status::OK();
+}
+
+Status DeleteTableTest::CheckTabletTombstonedOnTS(int index,
+                                                  const string& tablet_id,
+                                                  IsCMetaExpected is_cmeta_expected) {
+  // We simply check that no WALs exist and that the superblock indicates
+  // TOMBSTONED.
+  RETURN_NOT_OK(CheckTabletDataStateOnTS(index, tablet_id, TABLET_DATA_TOMBSTONED));
   if (CountWALSegmentsForTabletOnTS(index, tablet_id) > 0) {
     return Status::IllegalState("WAL segments exist for tablet", tablet_id);
   }
-  if (!DeleteTableTest::DoesConsensusMetaExistForTabletOnTS(index, tablet_id)) {
+  if (is_cmeta_expected == CMETA_EXPECTED &&
+      !DeleteTableTest::DoesConsensusMetaExistForTabletOnTS(index, tablet_id)) {
     return Status::IllegalState("Expected cmeta for tablet " + tablet_id + " but it doesn't exist");
   }
   return Status::OK();
@@ -244,18 +285,25 @@ void DeleteTableTest::WaitForNoDataOnTS(int index) {
   ASSERT_OK(s);
 }
 
-void DeleteTableTest::WaitForWALSegmentsForTabletOnTS(int index, const string& tablet_id) {
+void DeleteTableTest::WaitForMinFilesInTabletWalDirOnTS(int index,
+                                                        const string& tablet_id,
+                                                        int count) {
+  int seen = 0;
   for (int i = 0; i < 3000; i++) {
-    if (CountWALSegmentsForTabletOnTS(index, tablet_id) > 0) return;
+    seen = CountWALSegmentsForTabletOnTS(index, tablet_id);
+    if (seen >= count) return;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  FAIL() << "No WALs appeared for TS " << index << " in tablet " << tablet_id;
+  FAIL() << "Number of WAL segments found for TS " << index << " in tablet "
+         << tablet_id << ": " << seen;
 }
 
-void DeleteTableTest::WaitForTabletTombstonedOnTS(int index, const string& tablet_id) {
+void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
+                                                  const string& tablet_id,
+                                                  IsCMetaExpected is_cmeta_expected) {
   Status s;
   for (int i = 0; i < 3000; i++) {
-    s = CheckTabletTombstonedOnTS(index, tablet_id);
+    s = CheckTabletTombstonedOnTS(index, tablet_id, is_cmeta_expected);
     if (s.ok()) return;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
@@ -297,7 +345,7 @@ void DeleteTableTest::WaitForAllTSToCrash() {
 
 void DeleteTableTest::DeleteTabletWithRetries(const TServerDetails* ts,
                                               const string& tablet_id,
-                                              tablet::TabletDataState delete_type,
+                                              TabletDataState delete_type,
                                               const MonoDelta& timeout) {
   MonoTime start(MonoTime::Now(MonoTime::FINE));
   MonoTime deadline = start;
@@ -315,6 +363,7 @@ void DeleteTableTest::DeleteTabletWithRetries(const TServerDetails* ts,
 }
 
 TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
+  NO_FATALS(StartCluster());
   // Create a table on the cluster. We're just using TestWorkload
   // as a convenient way to create it.
   TestWorkload(cluster_.get()).Setup();
@@ -328,6 +377,7 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
 }
 
 TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
+  NO_FATALS(StartCluster());
   int n_iters = AllowSlowTests() ? 20 : 1;
   for (int i = 0; i < n_iters; i++) {
     TestWorkload workload(cluster_.get());
@@ -357,6 +407,140 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
   }
 }
 
+// Test that a tablet replica is automatically tombstoned on startup if a local
+// crash occurs in the middle of remote bootstrap.
+TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
+  NO_FATALS(StartCluster());
+  const MonoDelta timeout = MonoDelta::FromSeconds(10);
+  const int kTsIndex = 0; // We'll test with the first TS.
+
+  // We'll do a config change to remote bootstrap a replica here later. For
+  // now, shut it down.
+  LOG(INFO) << "Shutting down TS " << cluster_->tablet_server(kTsIndex)->uuid();
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+
+  // Bounce the Master so it gets new tablet reports and doesn't try to assign
+  // a replica to the dead TS.
+  cluster_->master()->Shutdown();
+  ASSERT_OK(cluster_->master()->Restart());
+  cluster_->WaitForTabletServerCount(2, timeout);
+
+  // Start a workload on the cluster, and run it for a little while.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(2);
+  workload.Setup();
+  NO_FATALS(WaitForReplicaCount(2));
+
+  workload.Start();
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  // Enable a fault crash when remote bootstrap occurs on TS 0.
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
+  const string& kFaultFlag = "fault_crash_after_rb_files_fetched";
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex), kFaultFlag, "1.0"));
+
+  // Figure out the tablet id to remote bootstrap.
+  vector<string> tablets = ListTabletsOnTS(1);
+  ASSERT_EQ(1, tablets.size());
+  const string& tablet_id = tablets[0];
+
+  // Add our TS 0 to the config and wait for it to crash.
+  ConsensusStatePB cstate;
+  ASSERT_OK(itest::GetCommittedConsensusState(ts_map_[cluster_->tablet_server(1)->uuid()],
+                                              tablet_id, timeout, &cstate));
+  TServerDetails* leader = DCHECK_NOTNULL(ts_map_[cstate.leader_uuid()]);
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, timeout));
+  NO_FATALS(WaitForTSToCrash(kTsIndex));
+
+  // The superblock should be in TABLET_DATA_COPYING state on disk.
+  NO_FATALS(CheckTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_COPYING));
+
+  // Kill the other tablet servers so the leader doesn't try to remote
+  // bootstrap it again during our verification here.
+  cluster_->tablet_server(1)->Shutdown();
+  cluster_->tablet_server(2)->Shutdown();
+
+  // Now we restart the TS. It will clean up the failed remote bootstrap and
+  // convert it to TABLET_DATA_TOMBSTONED. It crashed, so we have to call
+  // Shutdown() then Restart() to bring it back up.
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
+  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
+}
+
+// Test that a tablet replica automatically tombstones itself if the remote
+// bootstrap source server fails in the middle of the remote bootstrap process.
+TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
+  vector<string> flags;
+  flags.push_back("--log_segment_size_mb=1"); // Faster log rolls.
+  NO_FATALS(StartCluster(flags));
+  const MonoDelta timeout = MonoDelta::FromSeconds(10);
+  const int kTsIndex = 0; // We'll test with the first TS.
+
+  // We'll do a config change to remote bootstrap a replica here later. For
+  // now, shut it down.
+  LOG(INFO) << "Shutting down TS " << cluster_->tablet_server(kTsIndex)->uuid();
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+
+  // Bounce the Master so it gets new tablet reports and doesn't try to assign
+  // a replica to the dead TS.
+  cluster_->master()->Shutdown();
+  ASSERT_OK(cluster_->master()->Restart());
+  cluster_->WaitForTabletServerCount(2, timeout);
+
+  // Start a workload on the cluster, and run it for a little while.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(2);
+  workload.Setup();
+  NO_FATALS(WaitForReplicaCount(2));
+
+  vector<string> tablets = ListTabletsOnTS(1);
+  ASSERT_EQ(1, tablets.size());
+  const string& tablet_id = tablets[0];
+
+  workload.Start();
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  // Determine the leader replica.
+  ConsensusStatePB cstate;
+  ASSERT_OK(itest::GetCommittedConsensusState(ts_map_[cluster_->tablet_server(1)->uuid()],
+                                              tablet_id, timeout, &cstate));
+  TServerDetails* leader = DCHECK_NOTNULL(ts_map_[cstate.leader_uuid()]);
+  int leader_index = cluster_->tablet_server_index_by_uuid(leader->uuid());
+  ASSERT_NE(-1, leader_index);
+
+  // Remote bootstrap doesn't see the active WAL segment, and we need to
+  // download a file to trigger the fault in this test. Due to the log index
+  // chunks, that means 3 files minimum: One in-flight WAL segment, one index
+  // chunk file (these files grow much more slowly than the WAL segments), and
+  // one completed WAL segment.
+  NO_FATALS(WaitForMinFilesInTabletWalDirOnTS(leader_index, tablet_id, 3));
+  workload.StopAndJoin();
+
+  // Cause the leader to crash when a follower tries to remotely bootstrap from it.
+  const string& fault_flag = "fault_crash_on_handle_rb_fetch_data";
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(leader_index), fault_flag, "1.0"));
+
+  // Add our TS 0 to the config and wait for the leader to crash.
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, timeout));
+  NO_FATALS(WaitForTSToCrash(leader_index));
+
+  // The tablet server will detect that the leader failed, and automatically
+  // tombstone its replica. Shut down the other non-leader replica to avoid
+  // interference while we wait for this to happen.
+  cluster_->tablet_server(1)->Shutdown();
+  cluster_->tablet_server(2)->Shutdown();
+  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
+}
+
 // Parameterized test case for TABLET_DATA_DELETED deletions.
 class DeleteTableDeletedParamTest : public DeleteTableTest,
                                     public ::testing::WithParamInterface<const char*> {
@@ -366,6 +550,7 @@ class DeleteTableDeletedParamTest : public DeleteTableTest,
 // forward on startup. Parameterized by different fault flags that cause a
 // crash at various points.
 TEST_P(DeleteTableDeletedParamTest, TestRollForwardDelete) {
+  NO_FATALS(StartCluster());
   const string fault_flag = GetParam();
   LOG(INFO) << "Running with fault flag: " << fault_flag;
 
@@ -418,6 +603,9 @@ class DeleteTableTombstonedParamTest : public DeleteTableTest,
 // 3. permanent deletion of a TOMBSTONED tablet
 //    (transition from TABLET_DATA_TOMBSTONED to TABLET_DATA_DELETED).
 TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
+  vector<string> flags;
+  flags.push_back("--log_segment_size_mb=1"); // Faster log rolls.
+  NO_FATALS(StartCluster(flags));
   const string fault_flag = GetParam();
   LOG(INFO) << "Running with fault flag: " << fault_flag;
 
@@ -448,11 +636,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   NO_FATALS(WaitForReplicaCount(6));
 
   // Set up the proxies so we can easily send DeleteTablet() RPCs.
-  unordered_map<string, TServerDetails*> ts_map;
-  ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
-                                         cluster_->messenger(),
-                                         &ts_map));
-  TServerDetails* ts = ts_map[cluster_->tablet_server(0)->instance_id().permanent_uuid()];
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->instance_id().permanent_uuid()];
 
   // Ensure the tablet server is reporting 2 tablets.
   vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
@@ -463,8 +647,11 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   // for the tablets we created.
   const int kTsIndex = 0; // Index of the tablet server we'll use for the test.
   workload.Start();
-  NO_FATALS(WaitForWALSegmentsForTabletOnTS(kTsIndex, tablets[0].tablet_status().tablet_id()));
-  NO_FATALS(WaitForWALSegmentsForTabletOnTS(kTsIndex, tablets[1].tablet_status().tablet_id()));
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  NO_FATALS(WaitForMinFilesInTabletWalDirOnTS(kTsIndex, tablets[0].tablet_status().tablet_id(), 3));
+  NO_FATALS(WaitForMinFilesInTabletWalDirOnTS(kTsIndex, tablets[1].tablet_status().tablet_id(), 3));
   workload.StopAndJoin();
 
   // Shut down the master and the other tablet servers so they don't interfere
@@ -479,7 +666,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   ASSERT_TRUE(DoesConsensusMetaExistForTabletOnTS(kTsIndex, tablet_id)) << tablet_id;
   ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
   LOG(INFO) << "Waiting for first tablet to be tombstoned...";
-  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id));
+  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
 
   // Now tombstone the 2nd tablet, causing a fault.
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex), fault_flag, "1.0"));
@@ -493,7 +680,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   cluster_->tablet_server(kTsIndex)->Shutdown();
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
   LOG(INFO) << "Waiting for second tablet to be tombstoned...";
-  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id));
+  NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
 
   // The tombstoned tablets will still show up in ListTablets(),
   // just with their data state set as TOMBSTONED.
@@ -513,7 +700,6 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
     NO_FATALS(DeleteTabletWithRetries(ts, tablet_id, TABLET_DATA_DELETED, timeout));
   }
   NO_FATALS(WaitForNoDataOnTS(kTsIndex));
-  STLDeleteValues(&ts_map);
 }
 
 // Faults appropriate for the TABLET_DATA_TOMBSTONED case.
