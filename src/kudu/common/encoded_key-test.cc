@@ -264,6 +264,15 @@ TEST_F(EncodedKeyTest, TestRandomStringEncoding) {
 }
 
 #ifdef NDEBUG
+
+// Without this wrapper function, small changes to the code size of
+// EncodeWithSeparators would cause the benchmark to either inline or not
+// inline the function under test, making the benchmark unreliable.
+ATTRIBUTE_NOINLINE
+static void NoInlineDoEncode(Slice s, bool is_last, faststring* dst)  {
+  KeyEncoderTraits<STRING>::EncodeWithSeparators(s, is_last, dst);
+}
+
 TEST_F(EncodedKeyTest, BenchmarkStringEncoding) {
   string data;
   for (int i = 0; i < 100; i++) {
@@ -275,7 +284,7 @@ TEST_F(EncodedKeyTest, BenchmarkStringEncoding) {
       faststring dst;
       for (int i = 0; i < 1000000; i++) {
         dst.clear();
-        KeyEncoderTraits<STRING>::EncodeWithSeparators(Slice(data.c_str(), size), false, &dst);
+        NoInlineDoEncode(Slice(data.c_str(), size), false, &dst);
       }
     }
   }
