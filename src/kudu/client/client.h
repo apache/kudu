@@ -165,7 +165,7 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   Status DeleteTable(const std::string& table_name);
 
   // Creates a KuduTableAlterer; it is the caller's responsibility to free it.
-  KuduTableAlterer* NewTableAlterer();
+  KuduTableAlterer* NewTableAlterer(const std::string& table_name);
 
   // set 'alter_in_progress' to true if an AlterTable operation is in-progress
   Status IsAlterTableInProgress(const std::string& table_name,
@@ -380,52 +380,40 @@ class KUDU_EXPORT KuduTable : public std::tr1::enable_shared_from_this<KuduTable
 // Alters an existing table based on the provided steps.
 //
 // Sample usage:
-//   gscoped_ptr<KuduTableAlterer> alterer(client->NewTableAlterer());
-//   alterer->table_name("table-name");
-//   alterer->add_nullable_column("col1", UINT32);
-//   alterer->Alter();
+//   KuduTableAlterer* alterer = client->NewTableAlterer("table-name");
+//   alterer->AddColumn("foo")->Type(KuduColumnSchema::INT32)->NotNull();
+//   alterer->AlterColumn("bar")->Compression(KuduColumnStorageAttributes::LZ4);
+//   Status s = alterer->Alter();
+//   delete alterer;
 class KUDU_EXPORT KuduTableAlterer {
  public:
   ~KuduTableAlterer();
 
-  // Sets the table to alter. Required.
-  KuduTableAlterer& table_name(const std::string& name);
+  // Renames the table.
+  KuduTableAlterer* RenameTo(const std::string& new_name);
 
-  // Renames the table. Optional.
-  KuduTableAlterer& rename_table(const std::string& new_name);
+  // Adds a new column to the table.
+  //
+  // When adding a column, you must specify the default value of the new
+  // column using KuduColumnSpec::DefaultValue(...).
+  KuduColumnSpec* AddColumn(const std::string& name);
 
-  // Adds a new column to the table. The default value must be provided.
-  // Optional.
-  KuduTableAlterer& add_column(const std::string& name,
-                               KuduColumnSchema::DataType type,
-                               const void *default_value,
-                               KuduColumnStorageAttributes attributes =
-                                   KuduColumnStorageAttributes());
+  // Alter an existing column.
+  KuduColumnSpec* AlterColumn(const std::string& name);
 
-  // Adds a new nullable column to the table. Optional.
-  KuduTableAlterer& add_nullable_column(const std::string& name,
-                                        KuduColumnSchema::DataType type,
-                                        KuduColumnStorageAttributes attributes =
-                                            KuduColumnStorageAttributes());
-
-  // Drops an existing column from the table. Optional.
-  KuduTableAlterer& drop_column(const std::string& name);
-
-  // Renames an existing column in the table. Optional.
-  KuduTableAlterer& rename_column(const std::string& old_name,
-                                  const std::string& new_name);
+  // Drops an existing column from the table.
+  KuduTableAlterer* DropColumn(const std::string& name);
 
   // Set the timeout for the operation. This includes any waiting
   // after the alter has been submitted (i.e if the alter is slow
   // to be performed on a large table, it may time out and then
   // later be successful).
-  KuduTableAlterer& timeout(const MonoDelta& timeout);
+  KuduTableAlterer* timeout(const MonoDelta& timeout);
 
   // Wait for the table to be fully altered before returning.
-  // Optional.
   //
   // If not provided, defaults to true.
-  KuduTableAlterer& wait(bool wait);
+  KuduTableAlterer* wait(bool wait);
 
   // Alters the table.
   //
@@ -434,14 +422,12 @@ class KUDU_EXPORT KuduTableAlterer {
   // the latter case, only the last error is returned.
   Status Alter();
 
-  // TODO: Add Edit column
-
  private:
   class KUDU_NO_EXPORT Data;
-
   friend class KuduClient;
 
-  explicit KuduTableAlterer(KuduClient* client);
+  KuduTableAlterer(KuduClient* client,
+                   const std::string& name);
 
   // Owned.
   Data* data_;

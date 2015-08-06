@@ -103,12 +103,12 @@ class MasterFailoverTest : public KuduTest {
   }
 
   Status RenameTable(const std::string& table_name_orig, const std::string& table_name_new) {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-    return table_alterer->table_name(table_name_orig)
-        .rename_table(table_name_new)
-        .timeout(MonoDelta::FromSeconds(90))
-        .wait(true)
-        .Alter();
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name_orig));
+    return table_alterer
+      ->RenameTo(table_name_new)
+      ->timeout(MonoDelta::FromSeconds(90))
+      ->wait(true)
+      ->Alter();
   }
 
   // Test that we can get the table location information from the

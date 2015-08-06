@@ -380,6 +380,10 @@ message AlterTableRequestPB {
     ADD_COLUMN = 1;
     DROP_COLUMN = 2;
     RENAME_COLUMN = 3;
+
+    // TODO(KUDU-861): this will subsume RENAME_COLUMN, but not yet implemented
+    // on the master side.
+    ALTER_COLUMN = 4;
   }
   message AddColumn {
     // The schema to add.

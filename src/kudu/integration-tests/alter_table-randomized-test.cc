@@ -32,6 +32,7 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableAlterer;
 using client::KuduTableCreator;
+using client::KuduValue;
 using client::KuduWriteOperation;
 using std::make_pair;
 using std::map;
@@ -287,14 +288,14 @@ struct MirrorTable {
     bool nullable = rand() % 2 == 1;
 
     // Add to the real table.
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-    table_alterer->table_name(kTableName);
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
 
     if (nullable) {
       default_value = RowState::kNullValue;
-      table_alterer->add_nullable_column(name, KuduColumnSchema::INT32);
+      table_alterer->AddColumn(name)->Type(KuduColumnSchema::INT32);
     } else {
-      table_alterer->add_column(name, KuduColumnSchema::INT32, &default_value);
+      table_alterer->AddColumn(name)->Type(KuduColumnSchema::INT32)->NotNull()
+        ->Default(KuduValue::FromInt(default_value));
     }
     ASSERT_OK(table_alterer->Alter());
 
@@ -303,10 +304,8 @@ struct MirrorTable {
   }
 
   void DropAColumn(const string& name) {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-    CHECK_OK(table_alterer->table_name(kTableName)
-             .drop_column(name)
-             .Alter());
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    CHECK_OK(table_alterer->DropColumn(name)->Alter());
     ts_.DropColumn(name);
   }
 

@@ -118,52 +118,6 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
 // KuduColumnSpec
 ////////////////////////////////////////////////////////////
 
-class KuduColumnSpec::Data {
- public:
-  explicit Data(const std::string& name)
-    : name(name),
-      has_type(false),
-      has_encoding(false),
-      has_compression(false),
-      has_nullable(false),
-      primary_key(false),
-      has_default(false),
-      default_val(NULL),
-      remove_default(false),
-      has_rename_to(false) {
-  }
-
-  ~Data() {
-    delete default_val;
-  }
-
-  const string name;
-
-  bool has_type;
-  KuduColumnSchema::DataType type;
-
-  bool has_encoding;
-  KuduColumnStorageAttributes::EncodingType encoding;
-
-  bool has_compression;
-  KuduColumnStorageAttributes::CompressionType compression;
-
-  bool has_nullable;
-  bool nullable;
-
-  bool primary_key;
-
-  bool has_default;
-  KuduValue* default_val; // Owned.
-
-  // For ALTER
-  bool remove_default;
-
-  // For ALTER
-  bool has_rename_to;
-  string rename_to;
-};
-
 KuduColumnSpec::KuduColumnSpec(const std::string& name)
   : data_(new Data(name)) {
 }
@@ -231,6 +185,8 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
   // Verify that the user isn't trying to use any methods that
   // don't make sense for CREATE.
   if (data_->has_rename_to) {
+    // TODO(KUDU-861): adjust these errors as this method will also be used for
+    // ALTER TABLE ADD COLUMN support.
     return Status::NotSupported("cannot rename a column during CreateTable",
                                 data_->name);
   }

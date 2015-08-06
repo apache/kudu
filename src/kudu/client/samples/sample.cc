@@ -97,12 +97,11 @@ static Status CreateTable(const shared_ptr<KuduClient>& client,
 
 static Status AlterTable(const shared_ptr<KuduClient>& client,
                          const string& table_name) {
-  KuduTableAlterer* table_alterer = client->NewTableAlterer();
-  Status s = table_alterer->table_name(table_name)
-      .rename_column("int_val", "integer_val")
-      .add_nullable_column("another_val", KuduColumnSchema::BOOL)
-      .drop_column("string_val")
-      .Alter();
+  KuduTableAlterer* table_alterer = client->NewTableAlterer(table_name);
+  table_alterer->AlterColumn("int_val")->RenameTo("integer_val");
+  table_alterer->AddColumn("another_val")->Type(KuduColumnSchema::BOOL);
+  table_alterer->DropColumn("string_val");
+  Status s = table_alterer->Alter();
   delete table_alterer;
   return s;
 }

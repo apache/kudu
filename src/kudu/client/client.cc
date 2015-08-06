@@ -227,8 +227,8 @@ Status KuduClient::DeleteTable(const string& table_name) {
   return data_->DeleteTable(this, table_name, deadline);
 }
 
-KuduTableAlterer* KuduClient::NewTableAlterer() {
-  return new KuduTableAlterer(this);
+KuduTableAlterer* KuduClient::NewTableAlterer(const string& name) {
+  return new KuduTableAlterer(this, name);
 }
 
 Status KuduClient::IsAlterTableInProgress(const string& table_name,
@@ -645,105 +645,62 @@ KuduClient* KuduSession::client() const {
 ////////////////////////////////////////////////////////////
 // KuduTableAlterer
 ////////////////////////////////////////////////////////////
-KuduTableAlterer::KuduTableAlterer(KuduClient* client)
-  : data_(new KuduTableAlterer::Data(client)) {
+KuduTableAlterer::KuduTableAlterer(KuduClient* client, const string& name)
+  : data_(new Data(client, name)) {
 }
 
 KuduTableAlterer::~KuduTableAlterer() {
   delete data_;
 }
 
-KuduTableAlterer& KuduTableAlterer::table_name(const string& name) {
-  data_->alter_steps_.mutable_table()->set_table_name(name);
-  return *this;
+KuduTableAlterer* KuduTableAlterer::RenameTo(const string& new_name) {
+  data_->rename_to_ = new_name;
+  return this;
 }
 
-KuduTableAlterer& KuduTableAlterer::rename_table(const string& new_name) {
-  data_->alter_steps_.set_new_table_name(new_name);
-  return *this;
+KuduColumnSpec* KuduTableAlterer::AddColumn(const string& name) {
+  Data::Step s = {AlterTableRequestPB::ADD_COLUMN,
+                  new KuduColumnSpec(name)};
+  data_->steps_.push_back(s);
+  return s.spec;
 }
 
-KuduTableAlterer& KuduTableAlterer::add_column(const string& name,
-                                               KuduColumnSchema::DataType type,
-                                               const void *default_value,
-                                               KuduColumnStorageAttributes attributes) {
-  if (default_value == NULL) {
-    data_->status_ = Status::InvalidArgument("A new column must have a default value",
-                                             "Use AddNullableColumn() to add a NULLABLE column");
-  }
-
-  AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
-  step->set_type(AlterTableRequestPB::ADD_COLUMN);
-  ColumnStorageAttributes attr_priv(ToInternalEncodingType(attributes.encoding()),
-                                    ToInternalCompressionType(attributes.compression()));
-  ColumnSchemaToPB(ColumnSchema(name, ToInternalDataType(type), false,
-                                default_value, default_value, attr_priv),
-                   step->mutable_add_column()->mutable_schema());
-  return *this;
+KuduColumnSpec* KuduTableAlterer::AlterColumn(const string& name) {
+  Data::Step s = {AlterTableRequestPB::ALTER_COLUMN,
+                  new KuduColumnSpec(name)};
+  data_->steps_.push_back(s);
+  return s.spec;
 }
 
-KuduTableAlterer& KuduTableAlterer::add_nullable_column(const string& name,
-                                                        KuduColumnSchema::DataType type,
-                                                        KuduColumnStorageAttributes attributes) {
-  AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
-  step->set_type(AlterTableRequestPB::ADD_COLUMN);
-  ColumnStorageAttributes attr_priv(ToInternalEncodingType(attributes.encoding()),
-                                    ToInternalCompressionType(attributes.compression()));
-  ColumnSchemaToPB(ColumnSchema(name, ToInternalDataType(type), true,
-                                NULL, NULL, attr_priv),
-                   step->mutable_add_column()->mutable_schema());
-  return *this;
+KuduTableAlterer* KuduTableAlterer::DropColumn(const string& name) {
+  Data::Step s = {AlterTableRequestPB::DROP_COLUMN,
+                  new KuduColumnSpec(name)};
+  data_->steps_.push_back(s);
+  return this;
 }
 
-KuduTableAlterer& KuduTableAlterer::drop_column(const string& name) {
-  AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
-  step->set_type(AlterTableRequestPB::DROP_COLUMN);
-  step->mutable_drop_column()->set_name(name);
-  return *this;
-}
-
-KuduTableAlterer& KuduTableAlterer::rename_column(const string& old_name,
-                                                  const string& new_name) {
-  AlterTableRequestPB::Step* step = data_->alter_steps_.add_alter_schema_steps();
-  step->set_type(AlterTableRequestPB::RENAME_COLUMN);
-  step->mutable_rename_column()->set_old_name(old_name);
-  step->mutable_rename_column()->set_new_name(new_name);
-  return *this;
-}
-
-KuduTableAlterer& KuduTableAlterer::timeout(const MonoDelta& timeout) {
+KuduTableAlterer* KuduTableAlterer::timeout(const MonoDelta& timeout) {
   data_->timeout_ = timeout;
-  return *this;
+  return this;
 }
 
-KuduTableAlterer& KuduTableAlterer::wait(bool wait) {
+KuduTableAlterer* KuduTableAlterer::wait(bool wait) {
   data_->wait_ = wait;
-  return *this;
+  return this;
 }
 
 Status KuduTableAlterer::Alter() {
-  if (!data_->alter_steps_.table().has_table_name()) {
-    return Status::InvalidArgument("Missing table name");
-  }
-
-  if (!data_->alter_steps_.has_new_table_name() &&
-      data_->alter_steps_.alter_schema_steps_size() == 0) {
-    return Status::InvalidArgument("No alter steps provided");
-  }
-
-  if (!data_->status_.ok()) {
-    return data_->status_;
-  }
+  AlterTableRequestPB req;
+  RETURN_NOT_OK(data_->ToRequest(&req));
 
   MonoDelta timeout = data_->timeout_.Initialized() ?
     data_->timeout_ :
     data_->client_->default_admin_operation_timeout();
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(timeout);
-  RETURN_NOT_OK(data_->client_->data_->AlterTable(data_->client_, data_->alter_steps_, deadline));
+  RETURN_NOT_OK(data_->client_->data_->AlterTable(data_->client_, req, deadline));
   if (data_->wait_) {
-    string alter_name = data_->alter_steps_.has_new_table_name() ?
-        data_->alter_steps_.new_table_name() : data_->alter_steps_.table().table_name();
+    string alter_name = data_->rename_to_.get_value_or(data_->table_name_);
     RETURN_NOT_OK(data_->client_->data_->WaitForAlterTableToFinish(
         data_->client_, alter_name, deadline));
   }

@@ -60,6 +60,7 @@ using client::KuduTable;
 using client::KuduTableAlterer;
 using client::KuduTableCreator;
 using client::KuduUpdate;
+using client::KuduValue;
 using master::MiniMaster;
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
@@ -178,11 +179,10 @@ class AlterTableTest : public KuduTest {
                          const string& column_name,
                          int32_t default_value,
                          const MonoDelta& timeout) {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-    return table_alterer->table_name(table_name)
-        .add_column(column_name, KuduColumnSchema::INT32, &default_value)
-        .timeout(timeout)
-        .Alter();
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(table_name));
+    table_alterer->AddColumn(column_name)->Type(KuduColumnSchema::INT32)->
+      NotNull()->Default(KuduValue::FromInt(default_value));
+    return table_alterer->timeout(timeout)->Alter();
   }
 
   enum VerifyPattern {
@@ -288,7 +288,7 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
     Status s = cluster_->mini_master()->master()->catalog_manager()->AlterTable(
       &req, &resp, NULL);
     ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "c2 is NOT NULL but does not have a default");
+    ASSERT_STR_CONTAINS(s.ToString(), "column `c2`: NOT NULL columns must have a default");
   }
 
   ASSERT_EQ(0, tablet_peer_->tablet()->metadata()->schema_version());
@@ -301,10 +301,9 @@ TEST_F(AlterTableTest, TestAddNullableColumnWithoutDefault) {
   ASSERT_OK(tablet_peer_->tablet()->Flush());
 
   {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-    ASSERT_OK(table_alterer->table_name(kTableName)
-              .add_nullable_column("new", KuduColumnSchema::INT32)
-              .Alter());
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+    table_alterer->AddColumn("new")->Type(KuduColumnSchema::INT32);
+    ASSERT_OK(table_alterer->Alter());
   }
 
   InsertRows(1, 1);
@@ -513,10 +512,9 @@ TEST_F(AlterTableTest, TestDropAndAddNewColumn) {
   VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
 
   LOG(INFO) << "Dropping and adding back c1";
-  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-  ASSERT_OK(table_alterer->table_name(kTableName)
-            .drop_column("c1")
-            .Alter());
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  ASSERT_OK(table_alterer->DropColumn("c1")
+            ->Alter());
 
   ASSERT_OK(AddNewI32Column(kTableName, "c1", 0xdeadbeef));
 
@@ -544,10 +542,8 @@ TEST_F(AlterTableTest, TestBootstrapAfterAlters) {
   ASSERT_EQ("(int32 c0=16777216, int32 c1=10002, int32 c2=12345)", rows[1]);
 
   LOG(INFO) << "Dropping c1";
-  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-  ASSERT_OK(table_alterer->table_name(kTableName)
-            .drop_column("c1")
-            .Alter());
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  ASSERT_OK(table_alterer->DropColumn("c1")->Alter());
 
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(2, rows.size());
@@ -601,10 +597,8 @@ TEST_F(AlterTableTest, TestCompactAfterUpdatingRemovedColumn) {
 
   // Drop c1.
   LOG(INFO) << "Dropping c1";
-  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-  ASSERT_OK(table_alterer->table_name(kTableName)
-            .drop_column("c1")
-            .Alter());
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  ASSERT_OK(table_alterer->DropColumn("c1")->Alter());
 
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(2, rows.size());
@@ -639,10 +633,8 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterUpdatingRemovedColumn) {
 
   // Drop c1.
   LOG(INFO) << "Dropping c1";
-  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-  ASSERT_OK(table_alterer->table_name(kTableName)
-            .drop_column("c1")
-            .Alter());
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  ASSERT_OK(table_alterer->DropColumn("c1") ->Alter());
 
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(1, rows.size());
@@ -743,10 +735,8 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
 
   // Drop c2.
   LOG(INFO) << "Dropping c2";
-  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-  ASSERT_OK(table_alterer->table_name(kTableName)
-            .drop_column("c2")
-            .Alter());
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  ASSERT_OK(table_alterer->DropColumn("c2")->Alter());
 
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(1, rows.size());
@@ -954,12 +944,11 @@ TEST_F(AlterTableTest, TestMultipleAlters) {
 
   // Issue a bunch of new alters without waiting for them to finish.
   for (int i = 0; i < kNumNewCols; i++) {
-    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-    ASSERT_OK(table_alterer->table_name(kSplitTableName)
-              .add_column(strings::Substitute("new_col$0", i),
-                          KuduColumnSchema::INT32, &kDefaultValue)
-              .wait(false)
-              .Alter());
+    gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kSplitTableName));
+    table_alterer->AddColumn(strings::Substitute("new_col$0", i))
+      ->Type(KuduColumnSchema::INT32)->NotNull()
+      ->Default(KuduValue::FromInt(kDefaultValue));
+    ASSERT_OK(table_alterer->wait(false)->Alter());
   }
 
   // Now wait. This should block on all of them.
@@ -979,10 +968,8 @@ TEST_F(ReplicatedAlterTableTest, TestReplicatedAlter) {
   VerifyRows(0, kNumRows, C1_MATCHES_INDEX);
 
   LOG(INFO) << "Dropping and adding back c1";
-  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer());
-  ASSERT_OK(table_alterer->table_name(kTableName)
-            .drop_column("c1")
-            .Alter());
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  ASSERT_OK(table_alterer->DropColumn("c1")->Alter());
 
   ASSERT_OK(AddNewI32Column(kTableName, "c1", 0xdeadbeef));
 

@@ -414,14 +414,14 @@ Status KuduClient::Data::DeleteTable(KuduClient* client,
 }
 
 Status KuduClient::Data::AlterTable(KuduClient* client,
-                                    const AlterTableRequestPB& alter_steps,
+                                    const AlterTableRequestPB& req,
                                     const MonoTime& deadline) {
   AlterTableResponsePB resp;
   Status s =
       SyncLeaderMasterRpc<AlterTableRequestPB, AlterTableResponsePB>(
           deadline,
           client,
-          alter_steps,
+          req,
           &resp,
           NULL,
           &MasterServiceProxy::AlterTable);

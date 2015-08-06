@@ -945,7 +945,7 @@ static Status ApplyAlterSteps(const SysTablesEntryPB& current_pb,
         // can't accept a NOT NULL column without read default
         if (!new_col.is_nullable() && !new_col.has_read_default()) {
           return Status::InvalidArgument(
-              Substitute("$0 is NOT NULL but does not have a default", new_col.name()));
+              Substitute("column `$0`: NOT NULL columns must have a default", new_col.name()));
         }
 
         RETURN_NOT_OK(builder.AddColumn(new_col, false));

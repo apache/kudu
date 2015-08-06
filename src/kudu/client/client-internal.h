@@ -71,7 +71,7 @@ class KuduClient::Data {
                      const MonoTime& deadline);
 
   Status AlterTable(KuduClient* client,
-                    const master::AlterTableRequestPB& alter_steps,
+                    const master::AlterTableRequestPB& req,
                     const MonoTime& deadline);
 
   Status IsAlterTableInProgress(KuduClient* client,
