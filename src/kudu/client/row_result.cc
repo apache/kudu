@@ -84,6 +84,10 @@ Status KuduRowResult::GetInt64(const Slice& col_name, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_name, val);
 }
 
+Status KuduRowResult::GetTimestamp(const Slice& col_name, int64_t* val) const {
+  return Get<TypeTraits<TIMESTAMP> >(col_name, val);
+}
+
 Status KuduRowResult::GetFloat(const Slice& col_name, float* val) const {
   return Get<TypeTraits<FLOAT> >(col_name, val);
 }
@@ -118,6 +122,10 @@ Status KuduRowResult::GetInt32(int col_idx, int32_t* val) const {
 
 Status KuduRowResult::GetInt64(int col_idx, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_idx, val);
+}
+
+Status KuduRowResult::GetTimestamp(int col_idx, int64_t* val) const {
+  return Get<TypeTraits<TIMESTAMP> >(col_idx, val);
 }
 
 Status KuduRowResult::GetFloat(int col_idx, float* val) const {

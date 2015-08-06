@@ -51,6 +51,7 @@ class TypeInfoResolver {
     AddMapping<INT32>();
     AddMapping<UINT64>();
     AddMapping<INT64>();
+    AddMapping<TIMESTAMP>();
     AddMapping<STRING>();
     AddMapping<BOOL>();
     AddMapping<FLOAT>();

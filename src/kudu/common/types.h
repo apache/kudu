@@ -327,6 +327,22 @@ struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
   }
 };
 
+template<>
+struct DataTypeTraits<TIMESTAMP> : public DerivedTypeTraits<INT64>{
+  static const char* name() {
+    return "timestamp";
+  }
+
+  static void AppendDebugStringForValue(const void* val, string* str) {
+    // TODO KUDU-980 - This only stringifies down to seconds,
+    // we should also print the micros.
+    time_t time = *reinterpret_cast<const int64_t *>(val);
+    char time_as_string[kFastToBufferSize];
+    FastTimeToBuffer(time, &time_as_string[0]);
+    str->append(time_as_string);
+  }
+};
+
 // Instantiate this template to get static access to the type traits.
 template<DataType datatype>
 struct TypeTraits : public DataTypeTraits<datatype> {
@@ -389,6 +405,7 @@ class Variant {
       case UINT32:
         numeric_.u32 = *static_cast<const uint32_t *>(value);
         break;
+      case TIMESTAMP:
       case INT64:
         numeric_.i64 = *static_cast<const int64_t *>(value);
         break;

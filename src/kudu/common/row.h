@@ -654,6 +654,12 @@ class RowBuilder {
     Advance();
   }
 
+  void AddTimestamp(int64_t micros_utc_since_epoch) {
+    CheckNextType(TIMESTAMP);
+    *reinterpret_cast<int64_t *>(&buf_[byte_idx_]) = micros_utc_since_epoch;
+    Advance();
+  }
+
   void AddUint64(uint64_t val) {
     CheckNextType(UINT64);
     *reinterpret_cast<uint64_t *>(&buf_[byte_idx_]) = val;

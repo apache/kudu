@@ -171,6 +171,9 @@ Status KuduPartialRow::SetInt32(const Slice& col_name, int32_t val) {
 Status KuduPartialRow::SetInt64(const Slice& col_name, int64_t val) {
   return Set<TypeTraits<INT64> >(col_name, val);
 }
+Status KuduPartialRow::SetTimestamp(const Slice& col_name, int64_t val) {
+  return Set<TypeTraits<TIMESTAMP> >(col_name, val);
+}
 Status KuduPartialRow::SetFloat(const Slice& col_name, float val) {
   return Set<TypeTraits<FLOAT> >(col_name, val);
 }
@@ -197,6 +200,9 @@ Status KuduPartialRow::SetInt32(int col_idx, int32_t val) {
 }
 Status KuduPartialRow::SetInt64(int col_idx, int64_t val) {
   return Set<TypeTraits<INT64> >(col_idx, val);
+}
+Status KuduPartialRow::SetTimestamp(int col_idx, int64_t val) {
+  return Set<TypeTraits<TIMESTAMP> >(col_idx, val);
 }
 Status KuduPartialRow::SetString(int col_idx, const Slice& val) {
   return Set<TypeTraits<STRING> >(col_idx, val, false);
@@ -322,6 +328,12 @@ Status KuduPartialRow::Set<TypeTraits<INT64> >(int col_idx,
                                                bool owned);
 
 template
+Status KuduPartialRow::Set<TypeTraits<TIMESTAMP> >(
+    int col_idx,
+    const TypeTraits<TIMESTAMP>::cpp_type& val,
+    bool owned);
+
+template
 Status KuduPartialRow::Set<TypeTraits<STRING> >(int col_idx,
                                                 const TypeTraits<STRING>::cpp_type& val,
                                                 bool owned);
@@ -365,6 +377,12 @@ template
 Status KuduPartialRow::Set<TypeTraits<INT64> >(const Slice& col_name,
                                                const TypeTraits<INT64>::cpp_type& val,
                                                bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<TIMESTAMP> >(
+    const Slice& col_name,
+    const TypeTraits<TIMESTAMP>::cpp_type& val,
+    bool owned);
 
 template
 Status KuduPartialRow::Set<TypeTraits<FLOAT> >(const Slice& col_name,

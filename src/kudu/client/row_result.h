@@ -38,6 +38,8 @@ class KUDU_EXPORT KuduRowResult {
   Status GetInt16(const Slice& col_name, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(const Slice& col_name, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(const Slice& col_name, int64_t* val) const WARN_UNUSED_RESULT;
+  Status GetTimestamp(const Slice& col_name, int64_t* micros_since_utc_epoch)
+    const WARN_UNUSED_RESULT;
 
   Status GetFloat(const Slice& col_name, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(const Slice& col_name, double* val) const WARN_UNUSED_RESULT;
@@ -51,6 +53,7 @@ class KUDU_EXPORT KuduRowResult {
   Status GetInt16(int col_idx, int16_t* val) const WARN_UNUSED_RESULT;
   Status GetInt32(int col_idx, int32_t* val) const WARN_UNUSED_RESULT;
   Status GetInt64(int col_idx, int64_t* val) const WARN_UNUSED_RESULT;
+  Status GetTimestamp(int col_idx, int64_t* micros_since_utc_epoch) const WARN_UNUSED_RESULT;
 
   Status GetFloat(int col_idx, float* val) const WARN_UNUSED_RESULT;
   Status GetDouble(int col_idx, double* val) const WARN_UNUSED_RESULT;

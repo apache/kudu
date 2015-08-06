@@ -80,7 +80,8 @@ class KUDU_EXPORT KuduColumnSchema {
     BOOL = 5,
     FLOAT = 6,
     DOUBLE = 7,
-    BINARY = 8
+    BINARY = 8,
+    TIMESTAMP = 9
   };
 
   static std::string DataTypeToString(DataType type);

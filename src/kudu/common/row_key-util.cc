@@ -60,6 +60,7 @@ bool IncrementCell(const ColumnSchema& col, void* cell_ptr, Arena* arena) {
     HANDLE_TYPE(INT8);
     HANDLE_TYPE(INT16);
     HANDLE_TYPE(INT32);
+    HANDLE_TYPE(TIMESTAMP);
     HANDLE_TYPE(INT64);
     case UNKNOWN_DATA:
     case BOOL:

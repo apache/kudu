@@ -88,6 +88,7 @@ kudu::DataType ToInternalDataType(KuduColumnSchema::DataType type) {
     case KuduColumnSchema::INT16: return kudu::INT16;
     case KuduColumnSchema::INT32: return kudu::INT32;
     case KuduColumnSchema::INT64: return kudu::INT64;
+    case KuduColumnSchema::TIMESTAMP: return kudu::TIMESTAMP;
     case KuduColumnSchema::FLOAT: return kudu::FLOAT;
     case KuduColumnSchema::DOUBLE: return kudu::DOUBLE;
     case KuduColumnSchema::STRING: return kudu::STRING;
@@ -103,6 +104,7 @@ KuduColumnSchema::DataType FromInternalDataType(kudu::DataType type) {
     case kudu::INT16: return KuduColumnSchema::INT16;
     case kudu::INT32: return KuduColumnSchema::INT32;
     case kudu::INT64: return KuduColumnSchema::INT64;
+    case kudu::TIMESTAMP: return KuduColumnSchema::TIMESTAMP;
     case kudu::FLOAT: return KuduColumnSchema::FLOAT;
     case kudu::DOUBLE: return KuduColumnSchema::DOUBLE;
     case kudu::STRING: return KuduColumnSchema::STRING;
