@@ -13,7 +13,7 @@
 This quickstart guides you through getting, installing, and starting a three-
 node Kudu cluster in CDH using Cloudera Manager, putting some data into it, and
 reading some data from it, without going into details. For more in-depth information, see
-<<installation>>.
+link:installation.html[Kudu Installation].
 
 == Prerequisites
 * A Cloudera Manager cluster with the <<how_many_hosts,right number of hosts>>.
@@ -85,7 +85,6 @@ happens when a new master or tablet server joins the cluster.
 
 
 == Next Steps
-- Read about <<installation>>.
-- Read about <<configuration>>.
-- Read about querying data and the structure of data in Kudu.
+- link:quickstart.html[Get Started With Kudu]
+- link:installation.html[Kudu Installation Guide]
 

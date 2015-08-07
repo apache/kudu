@@ -138,6 +138,7 @@ substantial reduction in network traffic for heavy write scenarios.
 == Architectural Overview
 INSERT DIAGRAM HERE
 
+[[kudu_use_cases]]
 == Example Use Cases
 .Streaming Input with Near Real Time Availability
 
@@ -152,5 +153,5 @@ TODO give an example of how Kudu helps here.
 TODO give an example of how Kudu helps here.
 
 == Next Steps
-- <<quickstart>>
-- <<installation>>
+- link:quickstart.html[Get Started With Kudu]
+- link:installation.html[Kudu Installation Guide]

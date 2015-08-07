@@ -69,7 +69,7 @@ done
 # Add the includes to the configuration reference files, replacing the template lines
 sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_SUPPORTED}#" ${BUILD_DIR}/configuration_reference.adoc
 sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_UNSUPPORTED}#" ${BUILD_DIR}/configuration_reference_unsupported.adoc
-asciidoctor -d book ${BUILD_DIR}/docs.adoc -D "$OUTPUT_DIR"
+asciidoctor -d book ${BUILD_DIR}/*.adoc -D "$OUTPUT_DIR"
 RESULT=$?
 if [ $RESULT -eq 0 ]; then
   echo "Docs built in $OUTPUT_DIR."

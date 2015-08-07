@@ -13,6 +13,7 @@
 == TBD Administration Tasks
 
 == Next Steps
-- Read about <<configuration>>.
+- link:configuration.html[Configuring Kudu]
+- link:configuration_reference.html[Kudu Configuration Reference]
 
 

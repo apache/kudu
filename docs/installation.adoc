@@ -228,6 +228,6 @@ make -j4
 ====
 
 == Next Steps
-- Read about <<configuration>>.
-- Read about <<administration>>.
+- link:configuration.html[Configuring Kudu]
+- link:administration.html[Kudu Administration]
 

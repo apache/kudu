@@ -193,4 +193,4 @@ Commits which may affect performance should include before/after `perf-stat(1)` 
 
 
 == Documentation
-See <<documentation_style_guide>>.
+See link:documentation.html[Documentation Style Guide].
