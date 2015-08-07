@@ -24,6 +24,7 @@
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/thread_restrictions.h"
 
 using std::set;
 using std::string;
@@ -213,6 +214,14 @@ KuduClient::Data::Data()
 }
 
 KuduClient::Data::~Data() {
+  // Workaround for KUDU-956: the user may close a KuduClient while a flush
+  // is still outstanding. In that case, the flush's callback will be the last
+  // holder of the client reference, causing it to shut down on the reactor
+  // thread. This triggers a ThreadRestrictions crash. It's not critical to
+  // fix urgently, because typically once a client is shutting down, latency
+  // jitter on the reactor is not a big deal (and DNS resolutions are not in flight).
+  ThreadRestrictions::ScopedAllowWait allow_wait;
+  dns_resolver_.reset();
 }
 
 RemoteTabletServer* KuduClient::Data::SelectTServer(const scoped_refptr<RemoteTablet>& rt,
