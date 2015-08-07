@@ -34,7 +34,7 @@ DEFINE_int32(single_threaded_insert_latency_bench_insert_rows, 1000,
              "Number of rows to insert in the testing phase of the single threaded"
              " tablet server insert latency micro-benchmark");
 
-DECLARE_int32(tablet_server_scan_batch_size_rows);
+DECLARE_int32(scanner_batch_size_rows);
 DECLARE_int32(metrics_retirement_age_ms);
 DECLARE_string(block_manager);
 
@@ -1150,7 +1150,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
   // Set the internal batching within the tserver to be small. Otherwise,
   // even though we use a small batch size in our request, we'd end up reading
   // many rows at a time.
-  FLAGS_tablet_server_scan_batch_size_rows = 5;
+  FLAGS_scanner_batch_size_rows = 5;
   const int num_rows = AllowSlowTests() ? 1000 : 100;
   const int num_batches = AllowSlowTests() ? 10 : 5;
   const int batch_size = num_rows / num_batches;
@@ -2055,7 +2055,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
   ASSERT_FALSE(resp.has_more_results());
 
   // Now test the same thing, but with a scan requiring 2 passes (one per row).
-  FLAGS_tablet_server_scan_batch_size_rows = 1;
+  FLAGS_scanner_batch_size_rows = 1;
   req.set_batch_size_bytes(1);
   controller.Reset();
   ASSERT_OK(proxy_->Checksum(req, &resp, &controller));
@@ -2075,7 +2075,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
 
   // Finally, delete row 2, so we're back to the row 1 checksum.
   ASSERT_NO_FATAL_FAILURE(DeleteTestRowsRemote(key, 1));
-  FLAGS_tablet_server_scan_batch_size_rows = 100;
+  FLAGS_scanner_batch_size_rows = 100;
   req = new_req;
   controller.Reset();
   ASSERT_OK(proxy_->Checksum(req, &resp, &controller));

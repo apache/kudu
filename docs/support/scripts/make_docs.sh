@@ -37,7 +37,7 @@ binaries=("cfile-dump" \
           "kudu-ksck" \
           "kudu-master" \
           "kudu-pbc-dump" \
-          "kudu-tablet_server" \
+          "kudu-tserver" \
           "kudu-ts-cli" \
           "log-dump")
 

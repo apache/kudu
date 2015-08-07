@@ -91,7 +91,7 @@ public class TestUtils {
   }
 
   /**
-   * @param binName the binary to look for (eg 'kudu-tablet_server')
+   * @param binName the binary to look for (eg 'kudu-tserver')
    * @return the absolute path of that binary
    * @throws FileNotFoundException if no such binary is found
    */

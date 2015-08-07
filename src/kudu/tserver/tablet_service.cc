@@ -40,12 +40,12 @@
 #include "kudu/util/status_callback.h"
 #include "kudu/util/trace.h"
 
-DEFINE_int32(tablet_server_default_scan_batch_size_bytes, 1024 * 1024,
+DEFINE_int32(scanner_default_batch_size_bytes, 1024 * 1024,
              "The default size for batches of scan results");
-DEFINE_int32(tablet_server_max_scan_batch_size_bytes, 8 * 1024 * 1024,
+DEFINE_int32(scanner_max_batch_size_bytes, 8 * 1024 * 1024,
              "The maximum batch size that a client may request for "
              "scan results.");
-DEFINE_int32(tablet_server_scan_batch_size_rows, 100,
+DEFINE_int32(scanner_batch_size_rows, 100,
              "The number of rows to batch for servicing scan requests.");
 
 namespace kudu {
@@ -353,11 +353,11 @@ class ScanResultChecksummer : public ScanResultCollector {
 // may exceed this limit, but hopefully only by a little bit.
 static size_t GetMaxBatchSizeBytesHint(const ScanRequestPB* req) {
   if (!req->has_batch_size_bytes()) {
-    return FLAGS_tablet_server_default_scan_batch_size_bytes;
+    return FLAGS_scanner_default_batch_size_bytes;
   }
 
   return std::min(req->batch_size_bytes(),
-                  implicit_cast<uint32_t>(FLAGS_tablet_server_max_scan_batch_size_bytes));
+                  implicit_cast<uint32_t>(FLAGS_scanner_max_batch_size_bytes));
 }
 
 TabletServiceImpl::TabletServiceImpl(TabletServer* server)
@@ -1302,7 +1302,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   // their requested batch size by a lot.
   Arena arena(32 * 1024, 1 * 1024 * 1024);
   RowBlock block(scanner->iter()->schema(),
-                 FLAGS_tablet_server_scan_batch_size_rows, &arena);
+                 FLAGS_scanner_batch_size_rows, &arena);
 
   // TODO: in the future, use the client timeout to set a budget. For now,
   // just use a half second, which should be plenty to amortize call overhead.

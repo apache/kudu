@@ -94,12 +94,12 @@ public class BaseKuduTest {
         String dataDirPath = baseDirPath + "/ts-" + i + "-" + now;
         String flagsPath = TestUtils.getFlagsPath();
         String[] tsCmdLine = {
-            TestUtils.findBinary("kudu-tablet_server"),
+            TestUtils.findBinary("kudu-tserver"),
             "--flagfile=" + flagsPath,
-            "--tablet_server_wal_dir=" + dataDirPath,
-            "--tablet_server_data_dirs=" + dataDirPath,
-            "--tablet_server_master_addrs=" + masterAddresses,
-            "--tablet_server_rpc_bind_addresses=127.0.0.1:" + port};
+            "--tserver_wal_dir=" + dataDirPath,
+            "--tserver_data_dirs=" + dataDirPath,
+            "--tserver_master_addrs=" + masterAddresses,
+            "--tserver_rpc_bind_addresses=127.0.0.1:" + port};
         TABLET_SERVERS.put(port, configureAndStartProcess(tsCmdLine));
         port++;
 

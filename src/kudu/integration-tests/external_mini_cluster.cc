@@ -48,7 +48,7 @@ typedef ListTabletsResponsePB::StatusAndSchemaPB StatusAndSchemaPB;
 namespace kudu {
 
 static const char* const kMasterBinaryName = "kudu-master";
-static const char* const kTabletServerBinaryName = "kudu-tablet_server";
+static const char* const kTabletServerBinaryName = "kudu-tserver";
 static double kProcessStartTimeoutSeconds = 30.0;
 static double kTabletServerRegistrationTimeoutSeconds = 10.0;
 
@@ -796,16 +796,16 @@ ExternalTabletServer::~ExternalTabletServer() {
 
 Status ExternalTabletServer::Start() {
   vector<string> flags;
-  flags.push_back("--tablet_server_wal_dir=" + data_dir_);
-  flags.push_back("--tablet_server_data_dirs=" + data_dir_);
-  flags.push_back(Substitute("--tablet_server_rpc_bind_addresses=$0:0",
+  flags.push_back("--tserver_wal_dir=" + data_dir_);
+  flags.push_back("--tserver_data_dirs=" + data_dir_);
+  flags.push_back(Substitute("--tserver_rpc_bind_addresses=$0:0",
                              bind_host_));
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
                              bind_host_));
   flags.push_back(Substitute("--webserver_interface=$0",
                              bind_host_));
-  flags.push_back("--tablet_server_web_port=0");
-  flags.push_back("--tablet_server_master_addrs=" + master_addrs_);
+  flags.push_back("--tserver_web_port=0");
+  flags.push_back("--tserver_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
 }
@@ -816,15 +816,15 @@ Status ExternalTabletServer::Restart() {
     return Status::IllegalState("Tablet server cannot be restarted. Must call Shutdown() first.");
   }
   vector<string> flags;
-  flags.push_back("--tablet_server_wal_dir=" + data_dir_);
-  flags.push_back("--tablet_server_data_dirs=" + data_dir_);
-  flags.push_back("--tablet_server_rpc_bind_addresses=" + bound_rpc_.ToString());
+  flags.push_back("--tserver_wal_dir=" + data_dir_);
+  flags.push_back("--tserver_data_dirs=" + data_dir_);
+  flags.push_back("--tserver_rpc_bind_addresses=" + bound_rpc_.ToString());
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
                              bind_host_));
-  flags.push_back(Substitute("--tablet_server_web_port=$0", bound_http_.port()));
+  flags.push_back(Substitute("--tserver_web_port=$0", bound_http_.port()));
   flags.push_back(Substitute("--webserver_interface=$0",
                              bind_host_));
-  flags.push_back("--tablet_server_master_addrs=" + master_addrs_);
+  flags.push_back("--tserver_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
 }

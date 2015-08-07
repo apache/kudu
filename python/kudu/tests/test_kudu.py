@@ -67,17 +67,17 @@ class KuduBasicsBase(object):
             os.makedirs("{0}/ts/{1}".format(local_path, m))
             os.makedirs("{0}/ts/{1}/logs".format(local_path, m))
 
-            path = ["{0}/kudu-tablet_server".format(bin_path),
-                    "-tablet_server_rpc_bind_addresses=0.0.0.0:0",
-                    "-tablet_server_master_addrs=127.0.0.1:{0}".format(master_port),
-                    "-tablet_server_web_port=0",
+            path = ["{0}/kudu-tserver".format(bin_path),
+                    "-tserver_rpc_bind_addresses=0.0.0.0:0",
+                    "-tserver_master_addrs=127.0.0.1:{0}".format(master_port),
+                    "-tserver_web_port=0",
                     "-log_dir={0}/master/logs".format(local_path),
                     "-logtostderr",
-                    "-tablet_server_data_dirs={0}/ts/{1}/data".format(local_path, m),
-                    "-tablet_server_wal_dir={0}/ts/{1}/data".format(local_path, m),
+                    "-tserver_data_dirs={0}/ts/{1}/data".format(local_path, m),
+                    "-tserver_wal_dir={0}/ts/{1}/data".format(local_path, m),
                   ]
             p = subprocess.Popen(path, shell=False)
-            fid = open("{0}/ts/{1}/kudu-tablet_server.pid".format(local_path, m), "w+")
+            fid = open("{0}/ts/{1}/kudu-tserver.pid".format(local_path, m), "w+")
             fid.write("{0}".format(p.pid))
             fid.close()
 

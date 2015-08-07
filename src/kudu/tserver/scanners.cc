@@ -15,7 +15,7 @@
 #include "kudu/util/thread.h"
 #include "kudu/util/metrics.h"
 
-DEFINE_int32(tablet_server_scanner_ttl_millis, 60000,
+DEFINE_int32(scanner_ttl_millis, 60000,
              "Number of milliseconds of inactivity allowed for a scanner"
              "before it may be expired");
 
@@ -34,7 +34,7 @@ static const uint64_t kRemovalThreadIntervalUs = 5000000;
 
 ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
   : scanner_ttl_(MonoDelta::FromMilliseconds(
-                   FLAGS_tablet_server_scanner_ttl_millis)),
+                   FLAGS_scanner_ttl_millis)),
     shutdown_(false) {
   if (metric_entity) {
     metrics_.reset(new ScannerMetrics(metric_entity));

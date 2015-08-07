@@ -95,8 +95,8 @@ if [ "$CMD" = "master" ]; then
     $MASTER_ADDRESSES \
     --flagfile="$GFLAG_FILE"
 elif [ "$CMD" = "tserver" ]; then
-  exec "$KUDU_HOME/sbin/kudu-tablet_server" \
-    --tablet_server_master_addrs="$MASTER_IPS" \
+  exec "$KUDU_HOME/sbin/kudu-tserver" \
+    --tserver_master_addrs="$MASTER_IPS" \
     --flagfile="$GFLAG_FILE"
 else
   log "Unknown command: $CMD"

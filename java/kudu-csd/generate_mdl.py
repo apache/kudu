@@ -20,7 +20,7 @@ import os
 import subprocess
 import sys
 
-BINARIES=["kudu-master", "kudu-tablet_server"]
+BINARIES=["kudu-master", "kudu-tserver"]
 
 RELATIVE_BUILD_DIR="../../build/latest"
 

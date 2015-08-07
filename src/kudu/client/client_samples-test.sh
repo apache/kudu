@@ -38,10 +38,10 @@ $ROOT/build/latest/kudu-master \
   --master_wal_dir=$BASE_DIR/master \
   --master_data_dirs=$BASE_DIR/master &
 MASTER_PID=$!
-$ROOT/build/latest/kudu-tablet_server \
+$ROOT/build/latest/kudu-tserver \
   --log_dir=$BASE_DIR \
-  --tablet_server_wal_dir=$BASE_DIR/ts \
-  --tablet_server_data_dirs=$BASE_DIR/ts &
+  --tserver_wal_dir=$BASE_DIR/ts \
+  --tserver_data_dirs=$BASE_DIR/ts &
 TS_PID=$!
 
 # Let them run for a bit.

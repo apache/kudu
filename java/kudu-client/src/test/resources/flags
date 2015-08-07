@@ -1,4 +1,4 @@
---tablet_server_web_port=0
+--tserver_web_port=0
 --max_message_size=67108864
 
 --minloglevel=0

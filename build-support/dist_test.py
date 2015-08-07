@@ -47,7 +47,7 @@ DEPS_FOR_ALL = \
 
      # Tests that use the external minicluster require these.
      # TODO: declare these dependencies per-test.
-     "build/latest/kudu-tablet_server",
+     "build/latest/kudu-tserver",
      "build/latest/kudu-master",
 
      # parser-test requires these data files.

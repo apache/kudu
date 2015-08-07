@@ -3,7 +3,7 @@
 # Confidential Cloudera Information: Covered by NDA.
 #
 # This script is invoked from the Jenkins builds to build the kudu-master
-# and kudu-tablet_server binaries with the release build type.
+# and kudu-tserver binaries with the release build type.
 #
 
 set -e

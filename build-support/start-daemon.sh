@@ -15,7 +15,7 @@ FLAG_FILE=tests/5nodes_test/$PROC_NAME.flags
 echo 16777216 | sudo tee /proc/sys/vm/max_map_count
 ulimit -c unlimited
 
-# The data dirs all need to be modified to append either kudu-master or kudu-tablet_server.
+# The data dirs all need to be modified to append either kudu-master or kudu-tserver.
 # We then append "data" since one of those folders might be the same as $4 below.
 DATA_DIRS_LIST=""
 while IFS=',' read -ra PATHS; do
@@ -39,9 +39,9 @@ kudu-master)
   DATA_DIR_OPTION="--master_wal_dir=$WAL_DIR --master_data_dirs=$DATA_DIRS_LIST"
   MASTER_ADDRESS_OPT=--master_rpc_bind_addresses
   ;;
-kudu-tablet_server)
-  DATA_DIR_OPTION="--tablet_server_wal_dir=$WAL_DIR --tablet_server_data_dirs=$DATA_DIRS_LIST"
-  MASTER_ADDRESS_OPT=--tablet_server_master_addrs
+kudu-tserver)
+  DATA_DIR_OPTION="--tserver_wal_dir=$WAL_DIR --tserver_data_dirs=$DATA_DIRS_LIST"
+  MASTER_ADDRESS_OPT=--tserver_master_addrs
   ;;
 *)
   echo "Wrong process name"

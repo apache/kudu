@@ -121,11 +121,11 @@ target_link_libraries(tserver
   tablet)
 
 #########################################
-# kudu-tablet_server
+# kudu-tserver
 #########################################
 
-add_executable(kudu-tablet_server tablet_server_main.cc)
-target_link_libraries(kudu-tablet_server
+add_executable(kudu-tserver tablet_server_main.cc)
+target_link_libraries(kudu-tserver
   tserver
   ${KUDU_BASE_LIBS})
 
