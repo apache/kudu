@@ -11,9 +11,8 @@
 :experimental:
 
 You can deploy Kudu on a CDH cluster using packages or parcels, or you can build Kudu
-from source. To run Kudu without installing anything, use the <<quickstart_vm, Cloudera
-Kudu Quickstart VM>>.
-// TODO Quickstart VM does not exist yet
+from source. To run Kudu without installing anything, use the link:quickstart.html#quickstart_vm
+[Kudu Quickstart VM].
 
 == Prerequisites and Requirements
 .Hardware
@@ -104,6 +103,7 @@ otherwise manage the service.
 
 // end::quickstart_parcels[]
 
+[[install_packages]]
 == Install Using Packages
 If you prefer, you can install Kudu using packages managed by the operating system instead of Cloudera
 Manager parcels. After installing Kudu using packages, Cloudera recommends managing the Kudu service
@@ -129,12 +129,10 @@ each host.
 +
 ----
 sudo yum install kudu                         # Base Kudu files
-
-sudo yum install kudu-master                  # Service scripts for managing kudu-master
-                                              # Use ONLY if you do not use Cloudera Manager
-
-sudo yum install kudu-tserver                 # Service scripts for managing kudu-tserver
-                                              # Use ONLY if you do not use Cloudera Manager
+sudo yum install kudu-master                  # Kudu master init.d service script and default configuration
+sudo yum install kudu-tserver                 # Kudu tablet server init.d service script and default configuration
+sudo yum install kudu-client                  # Kudu C++ client shared library
+sudo yum install kudu-client-devel            # Kudu C++ client SDK
 ----
 
 . To manually install the Kudu RPMs, first download them, then use the command
@@ -163,6 +161,10 @@ sudo apt-get install kudu-master              # Service scripts for managing kud
 
 sudo apt-get install kudu-tserver             # Service scripts for managing kudu-tserver
                                               # Use ONLY if you do not use Cloudera Manager
+
+sudo apt-get install libkuduclient0           # Kudu C++ client shared library
+
+sudo apt-get install  libkuduclient-dev       # Kudu C++ client SDK
 ----
 
 . To manually install individual DEBs, first download them, then use the command
@@ -260,7 +262,6 @@ $ sudo yum install liboauth liboauth-devel
 $ sudo gem install asciidoctor
 ----
 
-
 . Clone the Git repository and change to the new `kudu` directory.
 +
 [source,bash]
@@ -276,12 +277,23 @@ $ cd kudu
 $ thirdparty/build-if-necessary.sh
 ----
 
-. Build Kudu.
+. Build Kudu, using the utilities installed in the previous step. Edit the install
+prefix to the location where you would like the Kudu binaries, libraries, and headers
+installed during the `make install` step. The default value is `/usr/local/`.
 +
 [source,bash]
 ----
-thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release -DCMAKE_INSTALL_PREFIX=/opt/kudu
 make -j4
+----
+
+[[build_install_kudu]]
+. Optional: Install Kudu binaries, libraries, and headers.
+If you do not specify a `DESTDIR`, `/usr/local/` is the default.
++
+[source,bash]
+----
+sudo make DESTDIR=/opt/kudu install
 ----
 
 . Optional: Build the documentation.
@@ -306,6 +318,7 @@ cd kudu
 thirdparty/build-if-necessary.sh
 thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
 make -j4
+make install
 ----
 ====
 
@@ -376,8 +389,67 @@ cd kudu
 thirdparty/build-if-necessary.sh
 thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
 make -j4
+make install
 ----
 ====
+
+[[build_cpp_client]]
+== Installing the C++ Client Libraries
+
+If you use Cloudera Manager with parcels, and need the Kudu client libraries to be
+available for local development, install the `kudu-client` and `kudu-client-devel`
+package for your platform. See <<install_packages>>.
+
+WARNING: Only build against the client libraries and headers (`kudu_client.so` and `client.h`).
+Other libraries and headers are internal to Kudu and have no stability guarantees.
+
+[[build_java_client]]
+== Build the Java Client
+
+.Requirements
+- JDK 7
+- Apache Maven 3.x
+- `protoc` 2.6 or newer installed in your path, or built from the `thirdparty/` directory.
+You can run the following commands to build `protoc` from the third-party dependencies:
+[source,bash]
+----
+$ thirdparty/download-thirdparty.sh
+$ thirdparty/build-thirdparty.sh protobuf
+----
+
+To build the Java client, clone the Kudu Git
+repository, change to the `java` directory, and issue the following command:
+
+[source,bash]
+----
+$ mvn install -DskipTests
+----
+
+For more information about building the Java API, as well as Eclipse integration,
+see `java/README.md`.
+
+[[view_api]]
+== View API Documentation
+
+.C++ API Documentation
+The documentation for the C++ client APIs is included in the header files in
+`/usr/include/kudu/` if you installed Kudu using packages or subdirectories
+of `src/kudu/client/` if you built Kudu from source. If you installed Kudu using parcels,
+no headers are included in your installation. and you will need to <<build_kudu,build
+Kudu from source>> in order to have access to the headers and shared libraries.
+
+The following command is a naive approach to finding relevant header files. Use
+of any APIs other than the client APIs is unsupported.
+
+[source,bash]
+----
+$ find /usr/include/kudu -type f -name *.h
+----
+
+.Java API Documentation
+You can view the link:../apidocs/index.html[Java API documentation] online. Alternatively,
+after <<build_java_client,building the Java client>>, Java API documentation is available
+in `java/kudu-client/target/apidocs/index.html`.
 
 == Next Steps
 - link:configuration.html[Configuring Kudu]

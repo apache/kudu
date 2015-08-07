@@ -15,6 +15,11 @@ node Kudu cluster in CDH using Cloudera Manager, putting some data into it, and
 reading some data from it, without going into details. For more in-depth information, see
 link:installation.html[Kudu Installation].
 
+[[quickstart_vm]]
+== Kudu Quickstart VM
+You can get started even quicker! Check out the Quickstart VM  at
+https://github.com/cloudera/kudu-examples/ and start using Kudu in minutes.
+
 == Prerequisites
 * A Cloudera Manager cluster with the <<how_many_hosts,right number of hosts>>.
 * Write access to the `/opt/cloudera/csd` directory on the Cloudera Manager server.
