@@ -35,12 +35,12 @@ class KuduBasicsBase(object):
         os.makedirs("{0}/master/logs".format(local_path))
 
         path = ["{0}/kudu-master".format(bin_path),
-                "-master_rpc_bind_addresses=0.0.0.0:0",
-                "-master_wal_dir={0}/master/data".format(local_path),
-                "-master_data_dirs={0}/master/data".format(local_path),
+                "-rpc_bind_addresses=0.0.0.0:0",
+                "-fs_wal_dir={0}/master/data".format(local_path),
+                "-fs_data_dirs={0}/master/data".format(local_path),
                 "-log_dir={0}/master/logs".format(local_path),
                 "-logtostderr",
-                "-master_web_port=0",
+                "-webserver_port=0",
                 "-server_dump_info_path={0}/master/config.json".format(local_path)
               ]
 
@@ -68,13 +68,13 @@ class KuduBasicsBase(object):
             os.makedirs("{0}/ts/{1}/logs".format(local_path, m))
 
             path = ["{0}/kudu-tserver".format(bin_path),
-                    "-tserver_rpc_bind_addresses=0.0.0.0:0",
+                    "-rpc_bind_addresses=0.0.0.0:0",
                     "-tserver_master_addrs=127.0.0.1:{0}".format(master_port),
-                    "-tserver_web_port=0",
+                    "-webserver_port=0",
                     "-log_dir={0}/master/logs".format(local_path),
                     "-logtostderr",
-                    "-tserver_data_dirs={0}/ts/{1}/data".format(local_path, m),
-                    "-tserver_wal_dir={0}/ts/{1}/data".format(local_path, m),
+                    "-fs_data_dirs={0}/ts/{1}/data".format(local_path, m),
+                    "-fs_wal_dir={0}/ts/{1}/data".format(local_path, m),
                   ]
             p = subprocess.Popen(path, shell=False)
             fid = open("{0}/ts/{1}/kudu-tserver.pid".format(local_path, m), "w+")

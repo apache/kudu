@@ -36,11 +36,11 @@ mkdir -p $LOG_DIR
 
 case $PROC_NAME in
 kudu-master)
-  DATA_DIR_OPTION="--master_wal_dir=$WAL_DIR --master_data_dirs=$DATA_DIRS_LIST"
-  MASTER_ADDRESS_OPT=--master_rpc_bind_addresses
+  DATA_DIR_OPTION="--fs_wal_dir=$WAL_DIR --fs_data_dirs=$DATA_DIRS_LIST"
+  MASTER_ADDRESS_OPT=--rpc_bind_addresses
   ;;
 kudu-tserver)
-  DATA_DIR_OPTION="--tserver_wal_dir=$WAL_DIR --tserver_data_dirs=$DATA_DIRS_LIST"
+  DATA_DIR_OPTION="--fs_wal_dir=$WAL_DIR --fs_data_dirs=$DATA_DIRS_LIST"
   MASTER_ADDRESS_OPT=--tserver_master_addrs
   ;;
 *)

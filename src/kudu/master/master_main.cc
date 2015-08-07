@@ -4,17 +4,25 @@
 #include <glog/logging.h>
 #include <iostream>
 
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
-#include "kudu/server/rpc_server.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 
 using kudu::master::Master;
 
+DECLARE_string(rpc_bind_addresses);
+DECLARE_int32(webserver_port);
+
 namespace kudu {
 namespace master {
 
 static int MasterMain(int argc, char** argv) {
+  // Reset some default values before parsing gflags.
+  FLAGS_rpc_bind_addresses = strings::Substitute("0.0.0.0:$0",
+                                                 Master::kDefaultPort);
+  FLAGS_webserver_port = Master::kDefaultWebPort;
+
   ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;

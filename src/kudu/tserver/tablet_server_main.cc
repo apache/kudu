@@ -4,28 +4,27 @@
 #include <glog/logging.h>
 #include <iostream>
 
-#include "kudu/common/schema.h"
-#include "kudu/server/metadata.h"
-#include "kudu/server/rpc_server.h"
-#include "kudu/tablet/tablet.h"
-#include "kudu/consensus/log.h"
-#include "kudu/consensus/consensus.h"
-#include "kudu/consensus/local_consensus.h"
-#include "kudu/tablet/tablet_peer.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/tablet_server.h"
-#include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
-#include "kudu/util/thread.h"
 
-using kudu::tablet::Tablet;
-using kudu::tablet::TabletPeer;
 using kudu::tserver::TabletServer;
+
+DECLARE_string(rpc_bind_addresses);
+DECLARE_int32(rpc_num_service_threads);
+DECLARE_int32(webserver_port);
 
 namespace kudu {
 namespace tserver {
 
 static int TabletServerMain(int argc, char** argv) {
+  // Reset some default values before parsing gflags.
+  FLAGS_rpc_bind_addresses = strings::Substitute("0.0.0.0:$0",
+                                                 TabletServer::kDefaultPort);
+  FLAGS_rpc_num_service_threads = 20;
+  FLAGS_webserver_port = TabletServer::kDefaultWebPort;
+
   ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {
     std::cerr << "usage: " << argv[0] << std::endl;

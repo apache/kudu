@@ -88,11 +88,11 @@ $ kudu-master --help
 
 // TODO commented out for the beta|--master_addresses | string | localhost |  Comma-separated list of all the RPC
 // addresses for Master quorum. If not specified, assumes a standalone Master.
-|--master_data_dirs | string | /tmp/kudu-master | Comma-separated list of
+|--fs_data_dirs | string | | Comma-separated list of
 directories where the Master will place its data blocks.
-|--master_wal_dir | string | /tmp/kudu-master | The directory where the Master will
+|--fs_wal_dir | string | | The directory where the Master will
 place its write-ahead logs. May be the same as _one of_ the directories listed in
-`--master_data_dirs`.
+`--fs_data_dirs`.
 |--block_cache_capacity_mb | integer | 512 | block cache capacity in MB
 |===
 
@@ -111,8 +111,11 @@ $ kudu-tserver --help
 |===
 | Flag      | Valid Options     | Default     | Description
 
-|--tserver_data_dirs | string | `/tmp/demo-tablets` | Comma-separated list
+|--fs_data_dirs | string |  | Comma-separated list
 of directories where the Tablet Server will place its data blocks.
+|--fs_wal_dir | string | | The directory where the Tablet Server will
+place its write-ahead logs. May be the same as _one of_ the directories listed in
+`--fs_data_dirs`.
 |--tserver_master_addrs | string | `127.0.0.1:7051` |  Comma separated
 addresses of the masters which the tablet server should connect to. The masters
 do not read this flag.

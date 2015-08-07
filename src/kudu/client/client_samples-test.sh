@@ -35,13 +35,13 @@ mkdir -p $TEST_TMPDIR
 BASE_DIR=$(mktemp -d --tmpdir=$TEST_TMPDIR client_samples-test.XXXXXXXX)
 $ROOT/build/latest/kudu-master \
   --log_dir=$BASE_DIR \
-  --master_wal_dir=$BASE_DIR/master \
-  --master_data_dirs=$BASE_DIR/master &
+  --fs_wal_dir=$BASE_DIR/master \
+  --fs_data_dirs=$BASE_DIR/master &
 MASTER_PID=$!
 $ROOT/build/latest/kudu-tserver \
   --log_dir=$BASE_DIR \
-  --tserver_wal_dir=$BASE_DIR/ts \
-  --tserver_data_dirs=$BASE_DIR/ts &
+  --fs_wal_dir=$BASE_DIR/ts \
+  --fs_data_dirs=$BASE_DIR/ts &
 TS_PID=$!
 
 # Let them run for a bit.

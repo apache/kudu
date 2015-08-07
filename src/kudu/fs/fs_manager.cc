@@ -22,6 +22,7 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
@@ -40,6 +41,14 @@ DEFINE_bool(enable_data_block_fsync, true,
 
 DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
               "Valid options are 'file' and 'log'.");
+
+
+DEFINE_string(fs_wal_dir, "",
+              "Directory with write-ahead logs. If this is not specified, the "
+              "program will not start. May be the same as --fs_data_dirs");
+DEFINE_string(fs_data_dirs, "",
+              "Comma-separated list of directories with data blocks. If this "
+              "is not specified, the program will not start.");
 
 using boost::assign::list_of;
 using google::protobuf::Message;
@@ -72,7 +81,9 @@ const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 static const char* const kTmpInfix = ".tmp";
 
 FsManagerOpts::FsManagerOpts()
-  : read_only(false) {
+  : read_only(false),
+    wal_path(FLAGS_fs_wal_dir) {
+  data_paths = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
 }
 
 FsManagerOpts::~FsManagerOpts() {

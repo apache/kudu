@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "kudu/fs/fs_manager.h"
 #include "kudu/server/webserver_options.h"
 #include "kudu/server/rpc_server.h"
 
@@ -21,8 +22,7 @@ namespace server {
 struct ServerBaseOptions {
   Env* env;
 
-  std::string wal_dir;
-  std::vector<std::string> data_dirs;
+  FsManagerOpts fs_opts;
   RpcServerOptions rpc_opts;
   WebserverOptions webserver_opts;
 

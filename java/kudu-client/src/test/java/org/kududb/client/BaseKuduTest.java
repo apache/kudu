@@ -96,10 +96,10 @@ public class BaseKuduTest {
         String[] tsCmdLine = {
             TestUtils.findBinary("kudu-tserver"),
             "--flagfile=" + flagsPath,
-            "--tserver_wal_dir=" + dataDirPath,
-            "--tserver_data_dirs=" + dataDirPath,
+            "--fs_wal_dir=" + dataDirPath,
+            "--fs_data_dirs=" + dataDirPath,
             "--tserver_master_addrs=" + masterAddresses,
-            "--tserver_rpc_bind_addresses=127.0.0.1:" + port};
+            "--rpc_bind_addresses=127.0.0.1:" + port};
         TABLET_SERVERS.put(port, configureAndStartProcess(tsCmdLine));
         port++;
 
@@ -166,10 +166,10 @@ public class BaseKuduTest {
       List<String> masterCmdLine = Lists.newArrayList(
           TestUtils.findBinary("kudu-master"),
           "--flagfile=" + flagsPath,
-          "--master_wal_dir=" + dataDirPath,
-          "--master_data_dirs=" + dataDirPath,
-          "--master_rpc_bind_addresses=127.0.0.1:" + masterRpcPorts.get(i),
-          "--master_web_port=" + masterWebPorts.get(i));
+          "--fs_wal_dir=" + dataDirPath,
+          "--fs_data_dirs=" + dataDirPath,
+          "--rpc_bind_addresses=127.0.0.1:" + masterRpcPorts.get(i),
+          "--webserver_port=" + masterWebPorts.get(i));
       if (numMasters > 1) {
         masterCmdLine.add("--master_addresses=" + masterAddresses);
       }

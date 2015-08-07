@@ -28,15 +28,21 @@ using kudu::rpc::Messenger;
 using kudu::rpc::ServiceIf;
 using strings::Substitute;
 
+DEFINE_string(rpc_bind_addresses, "0.0.0.0:0",
+              "Comma-separated list of addresses to bind to for RPC connections");
+DEFINE_int32(rpc_num_acceptors_per_address, 1,
+             "Number of RPC acceptor threads for each bound address");
+DEFINE_int32(rpc_num_service_threads, 10,
+             "Number of RPC worker threads to run");
 DEFINE_int32(rpc_service_queue_length, 50,
              "Default length of queue for incoming RPC requests");
 
 namespace kudu {
 
 RpcServerOptions::RpcServerOptions()
-  : rpc_bind_addresses("0.0.0.0:0"),
-    num_acceptors_per_address(1),
-    num_service_threads(10),
+  : rpc_bind_addresses(FLAGS_rpc_bind_addresses),
+    num_acceptors_per_address(FLAGS_rpc_num_acceptors_per_address),
+    num_service_threads(FLAGS_rpc_num_service_threads),
     default_port(0),
     service_queue_length(FLAGS_rpc_service_queue_length) {
 }

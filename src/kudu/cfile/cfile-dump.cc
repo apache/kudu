@@ -13,8 +13,6 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/flags.h"
 
-DECLARE_bool(block_manager_lock_dirs);
-
 DEFINE_bool(print_meta, true, "print the header and footer from the file");
 DEFINE_bool(iterate_rows, true, "iterate each row in the file");
 DEFINE_bool(print_rows, true, "print each row in the file");
@@ -27,21 +25,21 @@ using std::string;
 using std::cout;
 using std::endl;
 
-void DumpFile(const string& root_path, const string& block_id_str) {
+Status DumpFile(const string& block_id_str) {
   // Allow read-only access to live blocks.
-  google::FlagSaver saver;
-  FLAGS_block_manager_lock_dirs = false;
-  FsManager fs_manager(Env::Default(), root_path);
-  CHECK_OK(fs_manager.Open());
+  FsManagerOpts fs_opts;
+  fs_opts.read_only = true;
+  FsManager fs_manager(Env::Default(), fs_opts);
+  RETURN_NOT_OK(fs_manager.Open());
 
   uint64_t numeric_id;
   CHECK(safe_strtou64_base(block_id_str, &numeric_id, 16));
   BlockId block_id(numeric_id);
   gscoped_ptr<fs::ReadableBlock> block;
-  CHECK_OK(fs_manager.OpenBlock(block_id, &block));
+  RETURN_NOT_OK(fs_manager.OpenBlock(block_id, &block));
 
   gscoped_ptr<CFileReader> reader;
-  CHECK_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
+  RETURN_NOT_OK(CFileReader::Open(block.Pass(), ReaderOptions(), &reader));
 
   if (FLAGS_print_meta) {
     cout << "Header:\n" << reader->header().DebugString() << endl;
@@ -50,15 +48,17 @@ void DumpFile(const string& root_path, const string& block_id_str) {
 
   if (FLAGS_iterate_rows) {
     gscoped_ptr<CFileIterator> it;
-    CHECK_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK));
+    RETURN_NOT_OK(reader->NewIterator(&it, CFileReader::DONT_CACHE_BLOCK));
 
     DumpIteratorOptions opts;
     opts.print_rows = FLAGS_print_rows;
     for (int i = 0; i < FLAGS_num_iterations; i++) {
-      CHECK_OK(it->SeekToFirst());
-      CHECK_OK(DumpIterator(*reader, it.get(), &cout, opts, 0));
+      RETURN_NOT_OK(it->SeekToFirst());
+      RETURN_NOT_OK(DumpIterator(*reader, it.get(), &cout, opts, 0));
     }
   }
+
+  return Status::OK();
 }
 
 } // namespace cfile
@@ -67,8 +67,9 @@ void DumpFile(const string& root_path, const string& block_id_str) {
 int main(int argc, char **argv) {
   kudu::ParseCommandLineFlags(&argc, &argv, true);
   kudu::InitGoogleLoggingSafe(argv[0]);
-  if (argc != 3) {
-    std::cerr << "usage: " << argv[0] << " <root path> <block id>" << std::endl;
+  if (argc != 2) {
+    std::cerr << "usage: " << argv[0]
+              << " -fs_wal_dir <dir> -fs_data_dirs <dirs> <block id>" << std::endl;
     return 1;
   }
 
@@ -76,7 +77,11 @@ int main(int argc, char **argv) {
     FLAGS_print_rows = false;
   }
 
-  kudu::cfile::DumpFile(argv[1], argv[2]);
+  kudu::Status s = kudu::cfile::DumpFile(argv[1]);
+  if (!s.ok()) {
+    std::cerr << "Error: " << s.ToString() << std::endl;
+    return 1;
+  }
 
   return 0;
 }

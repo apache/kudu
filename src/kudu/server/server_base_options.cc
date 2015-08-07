@@ -25,7 +25,8 @@ DEFINE_int32(metrics_log_interval_ms, 0,
 TAG_FLAG(metrics_log_interval_ms, advanced);
 
 ServerBaseOptions::ServerBaseOptions()
-  : dump_info_path(FLAGS_server_dump_info_path),
+  : env(Env::Default()),
+    dump_info_path(FLAGS_server_dump_info_path),
     dump_info_format(FLAGS_server_dump_info_format),
     metrics_log_interval_ms(FLAGS_metrics_log_interval_ms) {
 }

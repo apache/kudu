@@ -50,12 +50,12 @@
       "externalLink" : {
         "name" : "kudu_master_web_ui",
         "label" : "Kudu Master Web UI",
-        "url" : "http://${host}:${master_web_port}"
+        "url" : "http://${host}:${webserver_port}"
       },
       "topology" : { "minInstances" : 1 },
       "parameters" : [
         {
-          "name" : "master_web_port",
+          "name" : "webserver_port",
           "label" : "Kudu Master Web UI Port",
           "description" : "The port of the Kudu Master Web UI.",
           "type" : "port",
@@ -63,7 +63,7 @@
           "default" : 8051
         },
         {
-          "name" : "master_web_interface",
+          "name" : "webserver_interface",
           "label" : "Kudu Master Web UI Interface",
           "description" : "The interface of the Kudu Master Web UI. If blank, binds to 0.0.0.0.",
           "type" : "string"
@@ -88,7 +88,7 @@
           "default" : "3"
         },
         {
-          "name" : "master_wal_dir",
+          "name" : "fs_wal_dir",
           "label" : "Kudu Master WAL directory",
           "description" : "Directory where Kudu masters will store write-ahead logs.",
           "required" : "true",
@@ -97,7 +97,7 @@
           "pathType" : "localDataDir"
         },
         {
-          "name" : "master_data_dirs",
+          "name" : "fs_data_dirs",
           "label" : "Kudu Master data directories",
           "description" : "Directories where Kudu masters will store data blocks.",
           "required" : "true",
@@ -119,8 +119,8 @@
             "filename" : "kudu-monitoring.properties",
             "configFormat" : "properties",
             "includedParams" : [
-              "master_web_interface",
-              "master_web_port"
+              "webserver_interface",
+              "webserver_port"
             ]
           }
         ],
@@ -152,18 +152,18 @@
       "externalLink" : {
         "name" : "kudu_ts_web_ui",
         "label" : "Kudu Tablet Server Web UI",
-        "url" : "http://${host}:${tserver_web_port}"
+        "url" : "http://${host}:${webserver_port}"
       },
       "topology" : { "minInstances" : 1 },
       "parameters" : [
         {
-          "name" : "tserver_web_interface",
+          "name" : "webserver_interface",
           "label" : "Kudu Tablet Server Web UI Interface",
           "description" : "The interface of the Kudu Tablet Server Web UI. If blank, binds to 0.0.0.0.",
           "type" : "string"
         },
         {
-          "name" : "tserver_web_port",
+          "name" : "webserver_port",
           "label" : "Kudu Tablet Server Web UI Port",
           "description" : "The port of the Kudu Tablet Server Web UI.",
           "type" : "port",
@@ -171,7 +171,7 @@
           "default" : 8050
         },
         {
-          "name" : "tserver_wal_dir",
+          "name" : "fs_wal_dir",
           "label" : "Kudu Tablet Server WAL directory",
           "description" : "Directory where Kudu tablet servers will store write-ahead logs.",
           "required" : "true",
@@ -180,7 +180,7 @@
           "pathType" : "localDataDir"
         },
         {
-          "name" : "tserver_data_dirs",
+          "name" : "fs_data_dirs",
           "label" : "Kudu Tablet Server data directories",
           "description" : "Directories where Kudu tablet servers will store data blocks.",
           "required" : "true",
@@ -199,8 +199,8 @@
             "filename" : "kudu-monitoring.properties",
             "configFormat" : "properties",
             "includedParams" : [
-              "tserver_web_interface",
-              "tserver_web_port"
+              "webserver_interface",
+              "webserver_port"
             ]
           }
         ],

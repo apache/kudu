@@ -586,8 +586,18 @@ Status FileBlockManager::Open() {
     RETURN_NOT_OK_PREPEND(metadata->LoadFromDisk(),
                           Substitute("Could not open $0", instance_filename));
     if (FLAGS_block_manager_lock_dirs) {
-      RETURN_NOT_OK_PREPEND(metadata->Lock(),
-                            Substitute("Could not lock $0", instance_filename));
+      Status s = metadata->Lock();
+      if (!s.ok()) {
+        Status new_status = s.CloneAndPrepend(Substitute(
+            "Could not lock $0", instance_filename));
+        if (read_only_) {
+          // Not fatal in read-only mode.
+          LOG(WARNING) << new_status.ToString();
+          LOG(WARNING) << "Proceeding without lock";
+        } else {
+          return new_status;
+        }
+      }
     }
 
     instances.push_back(metadata.release());

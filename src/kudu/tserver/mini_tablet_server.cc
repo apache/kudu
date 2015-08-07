@@ -45,8 +45,8 @@ MiniTabletServer::MiniTabletServer(const string& fs_root,
   // Start RPC server on loopback.
   opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
   opts_.webserver_opts.port = 0;
-  opts_.wal_dir = fs_root;
-  opts_.data_dirs = boost::assign::list_of(fs_root);
+  opts_.fs_opts.wal_path = fs_root;
+  opts_.fs_opts.data_paths = boost::assign::list_of(fs_root);
 }
 
 MiniTabletServer::~MiniTabletServer() {

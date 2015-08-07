@@ -31,8 +31,6 @@
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 
-DECLARE_bool(block_manager_lock_dirs);
-
 namespace kudu {
 namespace tools {
 
@@ -71,12 +69,8 @@ string IndentString(const string& s, int indent) {
 }
 } // anonymous namespace
 
-FsTool::FsTool(const string& wal_dir,
-               const vector<string>& data_dirs,
-               DetailLevel detail_level)
+FsTool::FsTool(DetailLevel detail_level)
     : initialized_(false),
-      wal_dir_(wal_dir),
-      data_dirs_(data_dirs),
       detail_level_(detail_level) {
 }
 
@@ -86,11 +80,7 @@ FsTool::~FsTool() {
 Status FsTool::Init() {
   CHECK(!initialized_) << "Already initialized";
   // Allow read-only access to live blocks.
-  google::FlagSaver saver;
-  FLAGS_block_manager_lock_dirs = false;
   FsManagerOpts opts;
-  opts.wal_path = wal_dir_;
-  opts.data_paths = data_dirs_;
   opts.read_only = true;
   fs_manager_.reset(new FsManager(Env::Default(), opts));
   RETURN_NOT_OK(fs_manager_->Open());
@@ -113,8 +103,8 @@ Status FsTool::ListAllLogSegments() {
 
   string wals_dir = fs_manager_->GetWalsRootDir();
   if (!fs_manager_->Exists(wals_dir)) {
-    return Status::Corruption(Substitute("root log directory '$0' does not exist under '$1'",
-                                         wals_dir, wal_dir_));
+    return Status::Corruption(Substitute(
+        "root log directory '$0' does not exist", wals_dir));
   }
 
   std::cout << "Root log directory: " << wals_dir << std::endl;
@@ -145,7 +135,7 @@ Status FsTool::ListLogSegmentsForTablet(const string& tablet_id) {
   string tablet_wal_dir = fs_manager_->GetTabletWalDir(tablet_id);
   if (!fs_manager_->Exists(tablet_wal_dir)) {
     return Status::NotFound(Substitute("tablet '$0' has no logs in wals dir '$1'",
-                                       tablet_id, wal_dir_));
+                                       tablet_id, tablet_wal_dir));
   }
   std::cout << "Tablet WAL dir found: " << tablet_wal_dir << std::endl;
   RETURN_NOT_OK(ListSegmentsInDir(tablet_wal_dir));

@@ -80,8 +80,8 @@ ServerBase::ServerBase(const string& name,
   FsManagerOpts fs_opts;
   fs_opts.metric_entity = metric_entity_;
   fs_opts.parent_mem_tracker = mem_tracker_;
-  fs_opts.wal_path = options.wal_dir;
-  fs_opts.data_paths = options.data_dirs;
+  fs_opts.wal_path = options.fs_opts.wal_path;
+  fs_opts.data_paths = options.fs_opts.data_paths;
   fs_manager_.reset(new FsManager(options.env, fs_opts));
 
   if (FLAGS_use_hybrid_clock) {

@@ -751,11 +751,11 @@ ExternalMaster::~ExternalMaster() {
 
 Status ExternalMaster::Start() {
   vector<string> flags;
-  flags.push_back("--master_wal_dir=" + data_dir_);
-  flags.push_back("--master_data_dirs=" + data_dir_);
-  flags.push_back("--master_rpc_bind_addresses=" + rpc_bind_address_);
+  flags.push_back("--fs_wal_dir=" + data_dir_);
+  flags.push_back("--fs_data_dirs=" + data_dir_);
+  flags.push_back("--rpc_bind_addresses=" + rpc_bind_address_);
   flags.push_back("--webserver_interface=localhost");
-  flags.push_back("--master_web_port=0");
+  flags.push_back("--webserver_port=0");
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
 }
@@ -766,11 +766,11 @@ Status ExternalMaster::Restart() {
     return Status::IllegalState("Master cannot be restarted. Must call Shutdown() first.");
   }
   vector<string> flags;
-  flags.push_back("--master_wal_dir=" + data_dir_);
-  flags.push_back("--master_data_dirs=" + data_dir_);
-  flags.push_back("--master_rpc_bind_addresses=" + rpc_bind_address_);
+  flags.push_back("--fs_wal_dir=" + data_dir_);
+  flags.push_back("--fs_data_dirs=" + data_dir_);
+  flags.push_back("--rpc_bind_addresses=" + rpc_bind_address_);
   flags.push_back("--webserver_interface=localhost");
-  flags.push_back(Substitute("--master_web_port=$0", bound_http_.port()));
+  flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
 }
@@ -796,15 +796,15 @@ ExternalTabletServer::~ExternalTabletServer() {
 
 Status ExternalTabletServer::Start() {
   vector<string> flags;
-  flags.push_back("--tserver_wal_dir=" + data_dir_);
-  flags.push_back("--tserver_data_dirs=" + data_dir_);
-  flags.push_back(Substitute("--tserver_rpc_bind_addresses=$0:0",
+  flags.push_back("--fs_wal_dir=" + data_dir_);
+  flags.push_back("--fs_data_dirs=" + data_dir_);
+  flags.push_back(Substitute("--rpc_bind_addresses=$0:0",
                              bind_host_));
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
                              bind_host_));
   flags.push_back(Substitute("--webserver_interface=$0",
                              bind_host_));
-  flags.push_back("--tserver_web_port=0");
+  flags.push_back("--webserver_port=0");
   flags.push_back("--tserver_master_addrs=" + master_addrs_);
   RETURN_NOT_OK(StartProcess(flags));
   return Status::OK();
@@ -816,12 +816,12 @@ Status ExternalTabletServer::Restart() {
     return Status::IllegalState("Tablet server cannot be restarted. Must call Shutdown() first.");
   }
   vector<string> flags;
-  flags.push_back("--tserver_wal_dir=" + data_dir_);
-  flags.push_back("--tserver_data_dirs=" + data_dir_);
-  flags.push_back("--tserver_rpc_bind_addresses=" + bound_rpc_.ToString());
+  flags.push_back("--fs_wal_dir=" + data_dir_);
+  flags.push_back("--fs_data_dirs=" + data_dir_);
+  flags.push_back("--rpc_bind_addresses=" + bound_rpc_.ToString());
   flags.push_back(Substitute("--local_ip_for_outbound_sockets=$0",
                              bind_host_));
-  flags.push_back(Substitute("--tserver_web_port=$0", bound_http_.port()));
+  flags.push_back(Substitute("--webserver_port=$0", bound_http_.port()));
   flags.push_back(Substitute("--webserver_interface=$0",
                              bind_host_));
   flags.push_back("--tserver_master_addrs=" + master_addrs_);

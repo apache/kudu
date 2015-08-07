@@ -41,6 +41,8 @@ DEFINE_string(webserver_password_file, "",
     " debug webserver authentication");
 DEFINE_int32(webserver_num_worker_threads, 50,
              "Number of threads to start for handling web server requests");
+DEFINE_int32(webserver_port, 0,
+             "Port to bind to for the web server");
 
 namespace kudu {
 
@@ -53,7 +55,7 @@ static string GetDefaultDocumentRoot() {
 
 WebserverOptions::WebserverOptions()
   : bind_interface(FLAGS_webserver_interface),
-    port(0),
+    port(FLAGS_webserver_port),
     doc_root(FLAGS_webserver_doc_root),
     enable_doc_root(FLAGS_enable_webserver_doc_root),
     certificate_file(FLAGS_webserver_certificate_file),

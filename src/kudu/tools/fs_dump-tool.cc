@@ -16,15 +16,10 @@
 #include <glog/logging.h>
 
 #include "kudu/gutil/strings/numbers.h"
-#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 
-DEFINE_string(wal_dir, "/tmp/demo-tablets",
-              "Directory of log segments");
-DEFINE_string(data_dirs, "/tmp/demo-tablets",
-              "Comma-separated list of directories for data blocks");
 DEFINE_int32(nrows, 0, "Number of rows to dump");
 DEFINE_bool(metadata_only, false, "Whether just to dump the block metadata, "
                                   "when printing blocks.");
@@ -85,7 +80,7 @@ const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
 void PrintUsageToStream(const std::string& prog_name, std::ostream* out) {
   *out << "Usage: " << prog_name
        << " [-headers_only] [-nrows <num rows>] "
-       << "-wal_dir <dir> -data_dirs <dirs> <command> <options> "
+       << "-fs_wal_dir <dir> -fs_data_dirs <dirs> <command> <options> "
        << std::endl << std::endl;
   *out << "Commands: " << std::endl;
   BOOST_FOREACH(const CommandHandler& handler, kCommandHandlers) {
@@ -122,19 +117,12 @@ static int FsDumpToolMain(int argc, char** argv) {
   ParseCommandLineFlags(&argc, &argv, true);
   InitGoogleLoggingSafe(argv[0]);
 
-  if (FLAGS_wal_dir.empty() || FLAGS_data_dirs.empty()) {
-    Usage(argv[0], "'-wal_dir' and '-data_dirs' are required");
-    return 2;
-  }
-
   CommandType cmd;
   if (!ValidateCommand(argc, argv, &cmd)) {
     return 2;
   }
 
-  FsTool fs_tool(FLAGS_wal_dir,
-                 strings::Split(FLAGS_data_dirs, ",", strings::SkipEmpty()),
-                 FLAGS_headers_only ? FsTool::HEADERS_ONLY : FsTool::MAXIMUM);
+  FsTool fs_tool(FLAGS_headers_only ? FsTool::HEADERS_ONLY : FsTool::MAXIMUM);
   CHECK_OK(fs_tool.Init());
 
   DumpOptions opts;
@@ -150,7 +138,7 @@ static int FsDumpToolMain(int argc, char** argv) {
       if (argc < 3) {
         Usage(argv[0],
               Substitute("dump_tablet requires tablet id: $0 "
-                         " -base_dir /kudu dump_tablet <tablet_id>",
+                         "dump_tablet <tablet_id>",
                          argv[0]));
         return 2;
       }
@@ -166,7 +154,7 @@ static int FsDumpToolMain(int argc, char** argv) {
       if (argc < 4) {
         Usage(argv[0],
               Substitute("dump_rowset requires tablet id and rowset index: $0"
-                         " -base_dir /kudu dump_rowset <tablet_id> <rowset_index>",
+                         "dump_rowset <tablet_id> <rowset_index>",
                          argv[0]));
         return 2;
       }
@@ -180,7 +168,7 @@ static int FsDumpToolMain(int argc, char** argv) {
       if (argc < 3) {
         Usage(argv[0],
               Substitute("dump_block requires a block id: $0"
-                         " -base_dir /kudu dump_block <block_id>", argv[0]));
+                         "dump_block <block_id>", argv[0]));
         return 2;
       }
       CHECK_OK(fs_tool.DumpCFileBlock(argv[2], opts, 0));
@@ -189,7 +177,7 @@ static int FsDumpToolMain(int argc, char** argv) {
     case PRINT_TABLET_META: {
       if (argc < 3) {
         Usage(argv[0], Substitute("print_meta requires a tablet id: $0"
-                                  " -base_dir /kudu print_meta <tablet_id>", argv[0]));
+                                  "print_meta <tablet_id>", argv[0]));
         return 2;
       }
       CHECK_OK(fs_tool.PrintTabletMeta(argv[2], 0));
@@ -197,7 +185,7 @@ static int FsDumpToolMain(int argc, char** argv) {
     }
     case PRINT_UUID: {
       if (argc < 2) {
-        Usage(argv[0], Substitute("$0 -base_dir /kudu print_uuid", argv[0]));
+        Usage(argv[0], Substitute("$0 print_uuid", argv[0]));
         return 2;
       }
       CHECK_OK(fs_tool.PrintUUID(0));

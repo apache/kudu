@@ -87,16 +87,16 @@ void PrintIdOnly(const LogEntryPB& entry) {
   cout << endl;
 }
 
-void PrintDecodedWriteRequestPB(const string& indent,
-                                const Schema& tablet_schema,
-                                const WriteRequestPB& write) {
+Status PrintDecodedWriteRequestPB(const string& indent,
+                                  const Schema& tablet_schema,
+                                  const WriteRequestPB& write) {
   Schema request_schema;
-  CHECK_OK(SchemaFromPB(write.schema(), &request_schema));
+  RETURN_NOT_OK(SchemaFromPB(write.schema(), &request_schema));
 
   Arena arena(32 * 1024, 1024 * 1024);
   RowOperationsPBDecoder dec(&write.row_operations(), &request_schema, &tablet_schema, &arena);
   vector<DecodedRowOperation> ops;
-  CHECK_OK(dec.DecodeOperations(&ops));
+  RETURN_NOT_OK(dec.DecodeOperations(&ops));
 
   cout << indent << "Tablet: " << write.tablet_id() << endl;
   cout << indent << "Consistency: "
@@ -111,9 +111,11 @@ void PrintDecodedWriteRequestPB(const string& indent,
     // mid-segment.
     cout << indent << "op " << (i++) << ": " << op.ToString(tablet_schema) << endl;
   }
+
+  return Status::OK();
 }
 
-void PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
+Status PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
   PrintIdOnly(entry);
 
   const string indent = "\t";
@@ -122,7 +124,7 @@ void PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
 
     const ReplicateMsg& replicate = entry.replicate();
     if (replicate.op_type() == consensus::WRITE_OP) {
-      PrintDecodedWriteRequestPB(indent, tablet_schema, replicate.write_request());
+      RETURN_NOT_OK(PrintDecodedWriteRequestPB(indent, tablet_schema, replicate.write_request()));
     } else {
       cout << indent << replicate.ShortDebugString() << endl;
     }
@@ -130,20 +132,22 @@ void PrintDecoded(const LogEntryPB& entry, const Schema& tablet_schema) {
     // For COMMIT we'll just dump the PB
     cout << indent << entry.commit().ShortDebugString() << endl;
   }
+
+  return Status::OK();
 }
 
-void PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
+Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   PrintEntryType print_type = ParsePrintType();
   if (FLAGS_print_headers) {
     cout << "Header:\n" << segment->header().DebugString();
   }
   vector<LogEntryPB*> entries;
-  CHECK_OK(segment->ReadEntries(&entries));
+  RETURN_NOT_OK(segment->ReadEntries(&entries));
 
-  if (print_type == DONT_PRINT) return;
+  if (print_type == DONT_PRINT) return Status::OK();
 
   Schema tablet_schema;
-  CHECK_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
+  RETURN_NOT_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
 
   BOOST_FOREACH(LogEntryPB* entry, entries) {
 
@@ -154,7 +158,7 @@ void PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
 
       cout << "Entry:\n" << entry->DebugString();
     } else if (print_type == PRINT_DECODED) {
-      PrintDecoded(*entry, tablet_schema);
+      RETURN_NOT_OK(PrintDecoded(*entry, tablet_schema));
     } else if (print_type == PRINT_ID) {
       PrintIdOnly(*entry);
     }
@@ -164,28 +168,36 @@ void PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   }
 }
 
-void DumpLog(const string &tserver_root_path, const string& tablet_oid) {
+Status DumpLog(const string& tablet_oid) {
   Env *env = Env::Default();
   gscoped_ptr<LogReader> reader;
-  FsManager fs_manager(env, tserver_root_path);
-  CHECK_OK(LogReader::Open(&fs_manager, scoped_refptr<LogIndex>(), tablet_oid,
-                           scoped_refptr<MetricEntity>(), &reader));
+  FsManagerOpts fs_opts;
+  fs_opts.read_only = true;
+  FsManager fs_manager(env, fs_opts);
+  RETURN_NOT_OK(fs_manager.Open());
+  RETURN_NOT_OK(LogReader::Open(&fs_manager,
+                                scoped_refptr<LogIndex>(),
+                                tablet_oid,
+                                scoped_refptr<MetricEntity>(),
+                                &reader));
 
   SegmentSequence segments;
-  CHECK_OK(reader->GetSegmentsSnapshot(&segments));
+  RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segments));
 
   BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments) {
-    PrintSegment(segment);
+    RETURN_NOT_OK(PrintSegment(segment));
   }
+
+  return Status::OK();
 }
 
-void DumpSegment(const string &segment_path) {
+Status DumpSegment(const string &segment_path) {
   Env *env = Env::Default();
-  gscoped_ptr<LogReader> reader;
   scoped_refptr<ReadableLogSegment> segment;
-  CHECK_OK(ReadableLogSegment::Open(env, segment_path, &segment));
-  CHECK(segment);
-  PrintSegment(segment);
+  RETURN_NOT_OK(ReadableLogSegment::Open(env, segment_path, &segment));
+  RETURN_NOT_OK(PrintSegment(segment));
+
+  return Status::OK();
 }
 
 } // namespace log
@@ -193,22 +205,23 @@ void DumpSegment(const string &segment_path) {
 
 int main(int argc, char **argv) {
   kudu::ParseCommandLineFlags(&argc, &argv, true);
-  if (argc < 2 || argc > 3) {
-    std::cerr << "usage: " << argv[0] << " <tserver root path> <tablet_name>"
-        " | <log segment path> " << std::endl;
+  if (argc != 2) {
+    std::cerr << "usage: " << argv[0]
+              << " -fs_wal_dir <dir> -fs_data_dirs <dirs>"
+              << " <tablet_name> | <log segment path>"
+              << std::endl;
     return 1;
   }
   kudu::InitGoogleLoggingSafe(argv[0]);
-  if (argc == 2) {
-    if (!kudu::Env::Default()->FileExists(argv[1])) {
-      std::cerr << "Specified file \"" << argv[1] << "\" does not exist"
-          << std::endl;
-      return 1;
-    }
-    kudu::log::DumpSegment(argv[1]);
-  } else {
-    kudu::log::DumpLog(argv[1], argv[2]);
+  kudu::Status s = kudu::log::DumpSegment(argv[1]);
+  if (s.ok()) {
+    return 0;
+  } else if (s.IsNotFound()) {
+    s = kudu::log::DumpLog(argv[1]);
   }
-
+  if (!s.ok()) {
+    std::cerr << "Error: " << s.ToString() << std::endl;
+    return 1;
+  }
   return 0;
 }

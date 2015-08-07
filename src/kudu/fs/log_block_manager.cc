@@ -1370,9 +1370,16 @@ void LogBlockManager::OpenRootPath(const string& root_path,
   if (FLAGS_block_manager_lock_dirs) {
     s = metadata->Lock();
     if (!s.ok()) {
-      *result_status = s.CloneAndPrepend(Substitute(
+      Status new_status = s.CloneAndPrepend(Substitute(
           "Could not lock $0", instance_filename));
-      return;
+      if (read_only_) {
+        // Not fatal in read-only mode.
+        LOG(WARNING) << new_status.ToString();
+        LOG(WARNING) << "Proceeding without lock";
+      } else {
+        *result_status = new_status;
+        return;
+      }
     }
   }
 

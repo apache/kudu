@@ -15,14 +15,9 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/gutil/strings/split.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/logging.h"
 
-DEFINE_string(wal_dir, "/tmp/demo-tablets",
-              "Directory of log segments");
-DEFINE_string(data_dirs, "/tmp/demo-tablets",
-              "Comma-separated list of directories for data blocks");
 DEFINE_bool(verbose, false,
             "Print additional information (e.g., log segment headers)");
 
@@ -66,7 +61,7 @@ const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
 
 void PrintUsageToStream(const string& prog_name, std::ostream* out) {
   *out << "Usage: " << prog_name << " [-verbose] "
-       << "-wal_dir <dir> -data_dirs <dirs> <command> [option] "
+       << "-fs_wal_dir <dir> -fs_data_dirs <dirs> <command> [option] "
        << std::endl << std::endl
        << "Commands: " << std::endl;
   BOOST_FOREACH(const CommandHandler& handler, kCommandHandlers) {
@@ -105,19 +100,12 @@ static int FsListToolMain(int argc, char** argv) {
   ParseCommandLineFlags(&argc, &argv, true);
   InitGoogleLoggingSafe(argv[0]);
 
-  if (FLAGS_wal_dir.empty() || FLAGS_data_dirs.empty()) {
-    Usage(argv[0], "'-wal_dir' and '-data_dirs' are required");
-    return 2;
-  }
-
   CommandType cmd;
   if (!ValidateCommand(argc, argv, &cmd)) {
     return 2;
   }
 
-  FsTool fs_tool(FLAGS_wal_dir,
-                 strings::Split(FLAGS_data_dirs, ",", strings::SkipEmpty()),
-                 FLAGS_verbose ? FsTool::HEADERS_ONLY : FsTool::MINIMUM);
+  FsTool fs_tool(FLAGS_verbose ? FsTool::HEADERS_ONLY : FsTool::MINIMUM);
   CHECK_OK_PREPEND(fs_tool.Init(), "Error initializing file system tool");
 
   switch (cmd) {
