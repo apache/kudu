@@ -74,7 +74,6 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
     vector<string> common_flags;
 
     common_flags.push_back("--skip_remove_old_recovery_dir");
-    common_flags.push_back("--enable_leader_failure_detection=true");
 
     vector<string> ts_flags(common_flags);
     if (FLAGS_stress_flush_compact) {
