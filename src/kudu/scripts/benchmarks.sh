@@ -182,7 +182,6 @@ run_benchmarks() {
     --gtest_filter=\*DoTestAllAtOnce\* \
     --num_counter_threads=0 \
     --tablet_test_flush_threshold_mb=32 \
-    --memrowset_throttle_mb=256 \
     --num_slowreader_threads=0 \
     --flusher_backoff=1.0 \
     --flusher_initial_frequency_ms=1000 \
