@@ -1750,10 +1750,10 @@ TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
   flags.push_back("--maintenance_manager_polling_interval_ms=300");
   BuildAndStart(flags);
 
-  // 100K is just enough to cause flushes & log rolls.
-  int num_rows_to_write = 100000;
+  // 50K is enough to cause flushes & log rolls.
+  int num_rows_to_write = 50000;
   if (AllowSlowTests()) {
-    num_rows_to_write = 300000;
+    num_rows_to_write = 150000;
   }
 
   vector<TServerDetails*> tservers;
@@ -1817,7 +1817,7 @@ TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
   // plus the initial leader's no-op, plus 1 for
   // the added replica for a total == #rows + 2.
   int min_log_index = num_batches + 2;
-  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(30),
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(120),
                                   active_tablet_servers, tablet_id_,
                                   min_log_index));
 
