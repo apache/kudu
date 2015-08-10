@@ -51,6 +51,8 @@
 
 DEFINE_bool(tpch_use_mini_cluster, true,
             "Create a mini cluster for the work to be performed against");
+DEFINE_bool(tpch_load_data, true,
+            "Load dbgen data");
 DEFINE_bool(tpch_run_queries, true,
             "Query dbgen data as it is inserted");
 DEFINE_int32(tpch_max_batch_size, 1000,
@@ -156,8 +158,10 @@ Status TpchRealWorld::Init() {
   // Create the table before any other DAOs are constructed.
   GetInittedDAO();
 
-  RETURN_NOT_OK(CreateFifos());
-  RETURN_NOT_OK(StartDbgens());
+  if (FLAGS_tpch_load_data) {
+    RETURN_NOT_OK(CreateFifos());
+    RETURN_NOT_OK(StartDbgens());
+  }
 
   return Status::OK();
 }
@@ -281,7 +285,13 @@ void TpchRealWorld::MonitorDbgenThread(int i) {
 void TpchRealWorld::RunQueriesThread() {
   gscoped_ptr<RpcLineItemDAO> dao = GetInittedDAO();
   while (!stop_threads_.Load()) {
-    LOG_TIMING(INFO, StringPrintf("querying %ld rows", rows_inserted_.Load())) {
+    string log;
+    if (FLAGS_tpch_load_data) {
+      log = StringPrintf("querying %ld rows", rows_inserted_.Load());
+    } else {
+      log = "querying data in cluster";
+    }
+    LOG_TIMING(INFO, log) {
       gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
       dao->OpenTpch1Scanner(&scanner);
       vector<KuduRowResult> rows;
@@ -302,21 +312,23 @@ void TpchRealWorld::WaitForRowCount(int64_t row_count) {
 
 Status TpchRealWorld::Run() {
   vector<scoped_refptr<Thread> > threads;
-  for (int i = 0; i < FLAGS_tpch_num_inserters; i++) {
-    scoped_refptr<kudu::Thread> thr;
-    RETURN_NOT_OK(kudu::Thread::Create("test", Substitute("lineitem-gen$0", i),
-                                       &TpchRealWorld::MonitorDbgenThread, this, i,
-                                       &thr));
-    threads.push_back(thr);
-    RETURN_NOT_OK(kudu::Thread::Create("test", Substitute("lineitem-load$0", i),
-                                       &TpchRealWorld::LoadLineItemsThread, this, i,
-                                       &thr));
-    threads.push_back(thr);
-  }
+  if (FLAGS_tpch_load_data) {
+    for (int i = 0; i < FLAGS_tpch_num_inserters; i++) {
+      scoped_refptr<kudu::Thread> thr;
+      RETURN_NOT_OK(kudu::Thread::Create("test", Substitute("lineitem-gen$0", i),
+                                         &TpchRealWorld::MonitorDbgenThread, this, i,
+                                         &thr));
+      threads.push_back(thr);
+      RETURN_NOT_OK(kudu::Thread::Create("test", Substitute("lineitem-load$0", i),
+                                         &TpchRealWorld::LoadLineItemsThread, this, i,
+                                         &thr));
+      threads.push_back(thr);
+    }
 
-  // It takes some time for dbgen to start outputting rows so there's no need to query yet.
-  LOG(INFO) << "Waiting for dbgen to start...";
-  WaitForRowCount(10000);
+    // It takes some time for dbgen to start outputting rows so there's no need to query yet.
+    LOG(INFO) << "Waiting for dbgen to start...";
+    WaitForRowCount(10000);
+  }
 
   if (FLAGS_tpch_run_queries) {
     scoped_refptr<kudu::Thread> thr;
@@ -336,6 +348,10 @@ Status TpchRealWorld::Run() {
     }
   } else {
     dbgen_processes_finished_.Wait();
+  }
+
+  if (!FLAGS_tpch_load_data) {
+    SleepFor(MonoDelta::FromSeconds(100));
   }
 
   stop_threads_.Store(true);
