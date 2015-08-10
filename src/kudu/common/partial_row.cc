@@ -284,6 +284,114 @@ Status KuduPartialRow::Unset(int col_idx) {
 }
 
 //------------------------------------------------------------
+// Template instantiations: We instantiate all possible templates to avoid linker issues.
+// see: https://isocpp.org/wiki/faq/templates#separate-template-fn-defn-from-decl
+// TODO We can probably remove this when we move to c++11 and can use "extern template"
+//------------------------------------------------------------
+
+template
+Status KuduPartialRow::SetSliceCopy<TypeTraits<STRING> >(int col_idx, const Slice& val);
+
+template
+Status KuduPartialRow::SetSliceCopy<TypeTraits<BINARY> >(int col_idx, const Slice& val);
+
+template
+Status KuduPartialRow::SetSliceCopy<TypeTraits<STRING> >(const Slice& col_name, const Slice& val);
+
+template
+Status KuduPartialRow::SetSliceCopy<TypeTraits<BINARY> >(const Slice& col_name, const Slice& val);
+
+template
+Status KuduPartialRow::Set<TypeTraits<INT8> >(int col_idx,
+                                              const TypeTraits<INT8>::cpp_type& val,
+                                              bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<INT16> >(int col_idx,
+                                               const TypeTraits<INT16>::cpp_type& val,
+                                               bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<INT32> >(int col_idx,
+                                               const TypeTraits<INT32>::cpp_type& val,
+                                               bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<INT64> >(int col_idx,
+                                               const TypeTraits<INT64>::cpp_type& val,
+                                               bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<STRING> >(int col_idx,
+                                                const TypeTraits<STRING>::cpp_type& val,
+                                                bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<BINARY> >(int col_idx,
+                                                const TypeTraits<BINARY>::cpp_type& val,
+                                                bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<FLOAT> >(int col_idx,
+                                               const TypeTraits<FLOAT>::cpp_type& val,
+                                               bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<DOUBLE> >(int col_idx,
+                                                const TypeTraits<DOUBLE>::cpp_type& val,
+                                                bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<BOOL> >(int col_idx,
+                                              const TypeTraits<BOOL>::cpp_type& val,
+                                              bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<INT8> >(const Slice& col_name,
+                                              const TypeTraits<INT8>::cpp_type& val,
+                                              bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<INT16> >(const Slice& col_name,
+                                               const TypeTraits<INT16>::cpp_type& val,
+                                               bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<INT32> >(const Slice& col_name,
+                                               const TypeTraits<INT32>::cpp_type& val,
+                                               bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<INT64> >(const Slice& col_name,
+                                               const TypeTraits<INT64>::cpp_type& val,
+                                               bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<FLOAT> >(const Slice& col_name,
+                                               const TypeTraits<FLOAT>::cpp_type& val,
+                                               bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<DOUBLE> >(const Slice& col_name,
+                                                const TypeTraits<DOUBLE>::cpp_type& val,
+                                                bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<BOOL> >(const Slice& col_name,
+                                              const TypeTraits<BOOL>::cpp_type& val,
+                                              bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<STRING> >(const Slice& col_name,
+                                                const TypeTraits<STRING>::cpp_type& val,
+                                                bool owned);
+
+template
+Status KuduPartialRow::Set<TypeTraits<BINARY> >(const Slice& col_name,
+                                                const TypeTraits<BINARY>::cpp_type& val,
+                                                bool owned);
+
+//------------------------------------------------------------
 // Getters
 //------------------------------------------------------------
 bool KuduPartialRow::IsColumnSet(int col_idx) const {
