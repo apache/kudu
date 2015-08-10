@@ -178,14 +178,14 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       for (ColumnSchema col : row.getSchema().getColumns()) {
         // Keys should always be specified, maybe check?
         if (row.isSet(colIdx) && !row.isSetToNull(colIdx)) {
-          if (col.getType() == Type.STRING) {
+          if (col.getType() == Type.STRING || col.getType() == Type.BINARY) {
             int stringIndex = (int)Bytes.getLong(rowData, currentRowOffset);
-            byte[] string = row.getStrings().get(stringIndex);
-            assert string.length == Bytes.getLong(rowData, currentRowOffset + Longs.BYTES);
+            byte[] varLengthData = row.getVarLengthData().get(stringIndex);
+            assert varLengthData.length == Bytes.getLong(rowData, currentRowOffset + Longs.BYTES);
             rows.putLong(indirect.size());
-            rows.putLong(string.length);
+            rows.putLong(varLengthData.length);
             try {
-              indirect.write(string);
+              indirect.write(varLengthData);
             } catch (IOException e) {
               throw new AssertionError(e); // cannot occur
             }

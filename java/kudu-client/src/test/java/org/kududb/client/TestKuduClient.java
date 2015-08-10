@@ -33,6 +33,15 @@ public class TestKuduClient extends BaseKuduTest {
     return new Schema(columns);
   }
 
+  private Schema createSchemaWithBinaryColumns() {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.BINARY).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.STRING).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c2", Type.DOUBLE).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c3", Type.BINARY).nullable(true).build());
+    return new Schema(columns);
+  }
+
   /**
    * Test creating and deleting a table through a KuduClient.
    */
@@ -112,6 +121,7 @@ public class TestKuduClient extends BaseKuduTest {
     PartialRow row = insert.getRow();
     row.addString("key", "กขฃคฅฆง"); // some thai
     row.addString("c1", "✁✂✃✄✆"); // some icons
+
     row.addString("c2", "hello"); // some normal chars
     row.addString("c4", "🐱"); // supplemental plane
     session.apply(insert);
@@ -122,6 +132,49 @@ public class TestKuduClient extends BaseKuduTest {
     assertEquals(
         "STRING key=กขฃคฅฆง, STRING c1=✁✂✃✄✆, STRING c2=hello, STRING c3=NULL, STRING c4=🐱",
         rowStrings.get(0));
+  }
+
+  /**
+   * Test inserting and retrieving binary columns.
+   */
+  @Test(timeout = 100000)
+  public void testBinaryColumns() throws Exception {
+    Schema schema = createSchemaWithBinaryColumns();
+    syncClient.createTable(tableName, schema);
+
+    byte[] testArray = new byte[] {1, 2, 3, 4, 5, 6 ,7, 8, 9};
+
+    KuduSession session = syncClient.newSession();
+    KuduTable table = syncClient.openTable(tableName);
+    for (int i = 0; i < 100; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      row.addBinary("key", String.format("key_%02d", i).getBytes());
+      row.addString("c1", "✁✂✃✄✆");
+      row.addDouble("c2", i);
+      if (i % 2 == 1) {
+        row.addBinary("c3", testArray);
+      }
+      session.apply(insert);
+      if (i % 50 == 0) {
+        session.flush();
+      }
+    }
+    session.flush();
+
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(100, rowStrings.size());
+    for (int i = 0; i < rowStrings.size(); i++) {
+      StringBuilder expectedRow = new StringBuilder();
+      expectedRow.append(String.format("BINARY key=\"key_%02d\", STRING c1=✁✂✃✄✆, DOUBLE c2=%.1f,"
+          + " BINARY c3=", i, (double) i));
+      if (i % 2 == 1) {
+        expectedRow.append(Bytes.pretty(testArray));
+      } else {
+        expectedRow.append("NULL");
+      }
+      assertEquals(expectedRow.toString(), rowStrings.get(i));
+    }
   }
 
 }

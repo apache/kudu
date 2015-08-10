@@ -18,7 +18,7 @@ public class Schema {
   private final List<ColumnSchema> columns;
   private final Map<String, ColumnSchema> columnsMap;
   private final int[] columnOffsets;
-  private final int stringCount;
+  private final int varLengthColumnCount;
   private final int rowSize;
   private final int keysCount;
   private final boolean hasNullableColumns;
@@ -31,7 +31,7 @@ public class Schema {
    */
   public Schema(List<ColumnSchema> columns) {
     this.columns = columns;
-    int strcnt = 0;
+    int varlencnt = 0;
     int keycnt = 0;
     this.columnOffsets = new int[columns.size()];
     this.columnsMap = new HashMap<String, ColumnSchema>(columns.size());
@@ -55,13 +55,13 @@ public class Schema {
       this.columnsMap.put(col.getName(), col);
       columnOffsets[i] = pos;
       pos += col.getType().getSize();
-      if (col.getType() == Type.STRING) {
-        strcnt++;
+      if (col.getType() == Type.STRING || col.getType() == Type.BINARY) {
+        varlencnt++;
       }
       i++;
     }
     this.hasNullableColumns = hasNulls;
-    this.stringCount = strcnt;
+    this.varLengthColumnCount = varlencnt;
     this.keysCount = keycnt;
     this.rowSize = getRowSize(this);
   }
@@ -75,11 +75,12 @@ public class Schema {
   }
 
   /**
-   * Get the count of Strings in this schema
+   * Get the count of columns with variable length (BINARY/STRING) in
+   * this schema.
    * @return strings count
    */
-  public int getStringCount() {
-    return this.stringCount;
+  public int getVarLengthColumnCount() {
+    return this.varLengthColumnCount;
   }
 
   /**

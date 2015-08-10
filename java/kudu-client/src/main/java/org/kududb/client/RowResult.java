@@ -8,6 +8,7 @@ import org.kududb.Type;
 import org.kududb.util.Slice;
 
 import java.math.BigInteger;
+import java.nio.ByteBuffer;
 import java.util.BitSet;
 
 /**
@@ -253,7 +254,7 @@ public class RowResult {
   }
 
   /**
-   * Get the specified column's string. Read from the indirect data
+   * Get the specified column's string.
    * @param columnIndex Column index in the schema
    * @return A string
    * @throws IllegalArgumentException if the column is null
@@ -270,6 +271,52 @@ public class RowResult {
     return Bytes.getString(indirectData.getRawArray(),
                            indirectData.getRawOffset() + (int)offset,
                            (int)length);
+  }
+
+  /**
+   * Get a copy of the specified column's binary data.
+   * @param columnIndex Column index in the schema
+   * @return a byte[] with the binary data.
+   * @throws IllegalArgumentException if the column is null
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public byte[] getBinaryCopy(int columnIndex) {
+    checkValidColumn(columnIndex);
+    checkNull(columnIndex);
+    // C++ puts a Slice in rowData which is 16 bytes long for simplicity,
+    // but we only support ints
+    long offset = getLong(columnIndex);
+    long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
+    assert offset < Integer.MAX_VALUE;
+    assert length < Integer.MAX_VALUE;
+    byte[] ret = new byte[(int)length];
+    System.arraycopy(indirectData.getRawArray(), indirectData.getRawOffset() + (int) offset,
+                     ret, 0, (int) length);
+    return ret;
+  }
+
+  /**
+   * Get the specified column's binary data.
+   *
+   * This doesn't copy the data and instead returns a ByteBuffer that wraps it. The ByteBuffer
+   * is backed by 'indirectData' in this RowResult.
+   *
+   * @param columnIndex Column index in the schema
+   * @return a byte[] with the binary data.
+   * @throws IllegalArgumentException if the column is null
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public ByteBuffer getBinary(int columnIndex) {
+    checkValidColumn(columnIndex);
+    checkNull(columnIndex);
+    // C++ puts a Slice in rowData which is 16 bytes long for simplicity,
+    // but we only support ints
+    long offset = getLong(columnIndex);
+    long length = rowData.getLong(getCurrentRowDataOffsetForColumn(columnIndex) + 8);
+    assert offset < Integer.MAX_VALUE;
+    assert length < Integer.MAX_VALUE;
+    return ByteBuffer.wrap(indirectData.getRawArray(), indirectData.getRawOffset() + (int) offset,
+        (int) length);
   }
 
   /**
@@ -341,6 +388,8 @@ public class RowResult {
         buf.append(getLong(i));
       } else if (col.getType().equals(Type.STRING)) {
         buf.append(getString(i));
+      } else if (col.getType().equals(Type.BINARY)) {
+        buf.append(Bytes.pretty(getBinaryCopy(i)));
       } else if (col.getType().equals(Type.FLOAT)) {
         buf.append(getFloat(i));
       } else if (col.getType().equals(Type.DOUBLE)) {

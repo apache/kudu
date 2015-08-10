@@ -28,12 +28,12 @@ public class ColumnRangePredicate {
     this.pb.setColumn(ProtobufHelper.columnToPb(column));
   }
 
-  private void setLowerBound(byte[] value) {
+  private void setLowerBoundInternal(byte[] value) {
     this.lowerBound = value;
     pb.setLowerBound(ZeroCopyLiteralByteString.wrap(this.lowerBound));
   }
 
-  private void setUpperBound(byte[] value) {
+  private void setUpperBoundInternal(byte[] value) {
     this.upperBound = value;
     pb.setUpperBound(ZeroCopyLiteralByteString.wrap(this.upperBound));
   }
@@ -44,7 +44,7 @@ public class ColumnRangePredicate {
    */
   public void setLowerBound(boolean lowerBound) {
     checkColumn(Type.BOOL);
-    setLowerBound(Bytes.fromBoolean(lowerBound));
+    setLowerBoundInternal(Bytes.fromBoolean(lowerBound));
   }
 
   /**
@@ -53,7 +53,7 @@ public class ColumnRangePredicate {
    */
   public void setLowerBound(byte lowerBound) {
     checkColumn(Type.INT8);
-    setLowerBound(new byte[] { lowerBound });
+    setLowerBoundInternal(new byte[] {lowerBound});
   }
 
   /**
@@ -62,7 +62,7 @@ public class ColumnRangePredicate {
    */
   public void setLowerBound(short lowerBound) {
     checkColumn(Type.INT16);
-    setLowerBound(Bytes.fromShort(lowerBound));
+    setLowerBoundInternal(Bytes.fromShort(lowerBound));
   }
 
   /**
@@ -71,7 +71,7 @@ public class ColumnRangePredicate {
    */
   public void setLowerBound(int lowerBound) {
     checkColumn(Type.INT32);
-    setLowerBound(Bytes.fromInt(lowerBound));
+    setLowerBoundInternal(Bytes.fromInt(lowerBound));
   }
 
   /**
@@ -80,7 +80,7 @@ public class ColumnRangePredicate {
    */
   public void setLowerBound(long lowerBound) {
     checkColumn(Type.INT64);
-    setLowerBound(Bytes.fromLong(lowerBound));
+    setLowerBoundInternal(Bytes.fromLong(lowerBound));
   }
 
   /**
@@ -89,7 +89,16 @@ public class ColumnRangePredicate {
    */
   public void setLowerBound(String lowerBound) {
     checkColumn(Type.STRING);
-    setLowerBound(lowerBound.getBytes());
+    setLowerBoundInternal(lowerBound.getBytes());
+  }
+
+  /**
+   * Set a binary value for the lower bound
+   * @param lowerBound value for the lower bound
+   */
+  public void setLowerBound(byte[] lowerBound) {
+    checkColumn(Type.BINARY);
+    setLowerBoundInternal(lowerBound);
   }
 
   /**
@@ -98,7 +107,7 @@ public class ColumnRangePredicate {
    */
   public void setLowerBound(float lowerBound) {
     checkColumn(Type.FLOAT);
-    setLowerBound(Bytes.fromFloat(lowerBound));
+    setLowerBoundInternal(Bytes.fromFloat(lowerBound));
   }
 
   /**
@@ -107,7 +116,7 @@ public class ColumnRangePredicate {
    */
   public void setLowerBound(double lowerBound) {
     checkColumn(Type.DOUBLE);
-    setLowerBound(Bytes.fromDouble(lowerBound));
+    setLowerBoundInternal(Bytes.fromDouble(lowerBound));
   }
 
   /**
@@ -116,7 +125,7 @@ public class ColumnRangePredicate {
    */
   public void setUpperBound(boolean upperBound) {
     checkColumn(Type.BOOL);
-    setUpperBound(Bytes.fromBoolean(upperBound));
+    setUpperBoundInternal(Bytes.fromBoolean(upperBound));
   }
 
   /**
@@ -125,7 +134,7 @@ public class ColumnRangePredicate {
    */
   public void setUpperBound(byte upperBound) {
     checkColumn(Type.INT8);
-    setUpperBound(new byte[] { upperBound });
+    setUpperBoundInternal(new byte[] {upperBound});
   }
 
   /**
@@ -134,7 +143,7 @@ public class ColumnRangePredicate {
    */
   public void setUpperBound(short upperBound) {
     checkColumn(Type.INT16);
-    setUpperBound(Bytes.fromShort(upperBound));
+    setUpperBoundInternal(Bytes.fromShort(upperBound));
   }
 
   /**
@@ -143,7 +152,7 @@ public class ColumnRangePredicate {
    */
   public void setUpperBound(int upperBound) {
     checkColumn(Type.INT32);
-    setUpperBound(Bytes.fromInt(upperBound));
+    setUpperBoundInternal(Bytes.fromInt(upperBound));
   }
 
   /**
@@ -152,7 +161,7 @@ public class ColumnRangePredicate {
    */
   public void setUpperBound(long upperBound) {
     checkColumn(Type.INT64);
-    setUpperBound(Bytes.fromLong(upperBound));
+    setUpperBoundInternal(Bytes.fromLong(upperBound));
   }
 
   /**
@@ -161,7 +170,16 @@ public class ColumnRangePredicate {
    */
   public void setUpperBound(String upperBound) {
     checkColumn(Type.STRING);
-    setUpperBound(upperBound.getBytes());
+    setUpperBoundInternal(upperBound.getBytes());
+  }
+
+  /**
+   * Set a binary value for the upper bound
+   * @param upperBound value for the upper bound
+   */
+  public void setUpperBound(byte[] upperBound) {
+    checkColumn(Type.BINARY);
+    setUpperBoundInternal(upperBound);
   }
 
   /**
@@ -170,7 +188,7 @@ public class ColumnRangePredicate {
    */
   public void setUpperBound(float upperBound) {
     checkColumn(Type.FLOAT);
-    setUpperBound(Bytes.fromFloat(upperBound));
+    setUpperBoundInternal(Bytes.fromFloat(upperBound));
   }
 
   /**
@@ -179,7 +197,7 @@ public class ColumnRangePredicate {
    */
   public void setUpperBound(double upperBound) {
     checkColumn(Type.DOUBLE);
-    setUpperBound(Bytes.fromDouble(upperBound));
+    setUpperBoundInternal(Bytes.fromDouble(upperBound));
   }
 
   /**

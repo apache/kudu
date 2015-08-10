@@ -51,6 +51,7 @@ class KeyEncoder {
           }
         }
         break;
+      case BINARY:
       case STRING:
         // if this is the last component, just add
         if (columnIndex + 1 == this.schema.getKeysCount()) {

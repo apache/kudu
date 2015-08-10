@@ -17,6 +17,7 @@ public enum Type {
   INT16 (DataType.INT16, "int16"),
   INT32 (DataType.INT32, "int32"),
   INT64 (DataType.INT64, "int64"),
+  BINARY (DataType.BINARY, "binary"),
   STRING (DataType.STRING, "string"),
   BOOL (DataType.BOOL, "bool"),
   FLOAT (DataType.FLOAT, "float"),
@@ -74,7 +75,7 @@ public enum Type {
    */
   static int getTypeSize(DataType type) {
 
-    if (type == DataType.STRING) {
+    if (type == DataType.STRING || type == DataType.BINARY) {
       return 8 + 8; // offset then string length
     } else if (type == DataType.BOOL) {
       return 1;
@@ -100,6 +101,7 @@ public enum Type {
   public static Type getTypeForDataType(DataType type) {
     switch (type) {
       case STRING: return STRING;
+      case BINARY: return BINARY;
       case BOOL: return BOOL;
       case INT8: return INT8;
       case INT16: return INT16;

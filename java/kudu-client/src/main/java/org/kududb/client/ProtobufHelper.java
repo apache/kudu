@@ -82,6 +82,8 @@ public class ProtobufHelper {
         return Bytes.fromLong((Long) value);
       case STRING:
         return ((String)value).getBytes(Charset.forName("UTF-8"));
+      case BINARY:
+        return (byte[]) value;
       case FLOAT:
         return Bytes.fromFloat((Float)value);
       case DOUBLE:
@@ -111,6 +113,8 @@ public class ProtobufHelper {
         return Bytes.getDouble(buf);
       case STRING:
         return new String(buf, Charset.forName("UTF-8"));
+      case BINARY:
+        return buf;
       default:
         throw new IllegalArgumentException("This type is unknown: " + type);
     }

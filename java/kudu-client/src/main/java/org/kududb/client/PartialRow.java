@@ -20,8 +20,8 @@ import org.kududb.Type;
 public class PartialRow {
 
   private final Schema schema;
-  // String data, post UTF8-encoding.
-  private final List<byte[]> strings;
+  // Variable length data. If string, will be UTF-8 encoded.
+  private final List<byte[]> varLengthData;
   private final int rowSize;
   private final byte[] rowAlloc;
   private final BitSet columnsBitSet;
@@ -38,7 +38,7 @@ public class PartialRow {
         new BitSet(this.schema.getColumnCount()) : null;
     this.rowSize = schema.getRowSize();
     this.rowAlloc = new byte[this.rowSize];
-    strings = Lists.newArrayListWithCapacity(schema.getStringCount());
+    this.varLengthData = Lists.newArrayListWithCapacity(schema.getVarLengthColumnCount());
   }
 
   /**
@@ -284,8 +284,46 @@ public class PartialRow {
     // TODO: use Utf8.isWellFormed from Guava 16 to verify that
     // the user isn't putting in any garbage data.
     checkColumn(column, Type.STRING);
-    int stringsIdx = strings.size();
-    strings.add(val);
+    addVarLengthData(column, val);
+  }
+
+  /**
+   * Add binary data with the specified value.
+   * Note that the provided value must not be mutated after this.
+   * @param columnIndex the column's index in the schema
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist
+   */
+  public void addBinary(int columnIndex, byte[] val) {
+    addBinary(this.schema.getColumn(columnIndex), val);
+  }
+
+  /**
+   * Add binary data with the specified value.
+   * Note that the provided value must not be mutated after this.
+   * @param columnName Name of the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist
+   */
+  public void addBinary(String columnName, byte[] val) {
+    addBinary(this.schema.getColumn(columnName), val);
+  }
+
+  /**
+   * Add binary data with the specified value.
+   * Note that the provided value must not be mutated after this.
+   * @param column the column
+   * @param val value to add
+   * @throws IllegalArgumentException if the column doesn't exist
+   */
+  public void addBinary(ColumnSchema column, byte[] val) {
+    checkColumn(column, Type.BINARY);
+    addVarLengthData(column, val);
+  }
+
+  private void addVarLengthData(ColumnSchema column, byte[] val) {
+    int index = varLengthData.size();
+    varLengthData.add(val);
     // Set the bit and set the usage bit
     int pos = getPositionInRowAllocAndSetBitSet(column);
 
@@ -295,7 +333,7 @@ public class PartialRow {
     // TODO We don't need to write the length, we could do one of the following:
     // - Remove the string lengths from rowAlloc, or
     // - Modify Operation to single copy rowAlloc instead of copying column by column.
-    Bytes.setLong(rowAlloc, stringsIdx, pos);
+    Bytes.setLong(rowAlloc, index, pos);
     Bytes.setLong(rowAlloc, val.length, pos + Longs.BYTES);
   }
 
@@ -388,14 +426,14 @@ public class PartialRow {
    * @return a byte array containing an encoded row key
    */
   public byte[] key() {
-    int seenStrings = 0;
+    int seenVarLengthCols = 0;
     KeyEncoder keyEncoder = new KeyEncoder(this.schema);
     for (int i = 0; i < this.schema.getKeysCount(); i++) {
       ColumnSchema column = this.schema.getColumn(i);
-      if (column.getType() == Type.STRING) {
-        byte[] string = this.strings.get(seenStrings);
-        seenStrings++;
-        keyEncoder.addKey(string, 0, string.length, column, i);
+      if (column.getType() == Type.STRING || column.getType() == Type.BINARY) {
+        byte[] data = this.varLengthData.get(seenVarLengthCols);
+        seenVarLengthCols++;
+        keyEncoder.addKey(data, 0, data.length, column, i);
       } else {
         keyEncoder.addKey(this.rowAlloc, this.schema.getColumnOffset(i), column.getType().getSize(),
             column, i);
@@ -414,17 +452,17 @@ public class PartialRow {
   }
 
   /**
-   * Get the list of UTF-8 encoded Strings that were added to this row.
-   * @return a list of strings, may be empty
+   * Get the list variable length data cells that were added to this row.
+   * @return a list of binary data, may be empty
    */
-  List<byte[]> getStrings() {
-    return strings;
+  List<byte[]> getVarLengthData() {
+    return varLengthData;
   }
 
   /**
-   * Get the byte array that contains all the data added to this partial row. Strings are contained
-   * separately, see {@link #getStrings()}. In their place you'll find their index in that list and
-   * their size.
+   * Get the byte array that contains all the data added to this partial row. Variable length data
+   * is contained separately, see {@link #getVarLengthData()}. In their place you'll find their
+   * index in that list and their size.
    * @return a byte array containing the data for this row, except strings
    */
   byte[] getRowAlloc() {
