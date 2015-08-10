@@ -27,6 +27,9 @@ link:administration.html[Administering Kudu]::
 link:troubleshooting.html[Troubleshooting Kudu]::
   Guidelines for solving problems with your Kudu cluster.
 
+link:developing.html[Developing Applications With Kudu]::
+  Information about Kudu APIs and links to working example code.
+
 link:contributing.html[Contributing to Kudu]::
   Get involved in the Kudu community.
 

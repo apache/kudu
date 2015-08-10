@@ -1,0 +1,28 @@
+[[developing]]
+= Developing Applications With Kudu
+:author: Kudu Team
+:imagesdir: ./images
+:icons: font
+:toc: left
+:toclevels: 3
+:doctype: book
+:backend: html5
+:sectlinks:
+:experimental:
+
+Kudu provides C++ and Java client APIs, as well as reference examples to illustrate
+their use. A Python API is included, but it is currently considered experimental,
+unstable, and is subject to change at any time.
+
+WARNING: Use of server-side or private interfaces is not supported, and interfaces
+which are not part of public APIs have no stability guarantees.
+
+== Viewing the API Documentation
+include::installation.adoc[tags=view_api]
+
+== Working Examples
+Working example applications are provided in a separate Git repository, at
+https://github.com/cloudera/kudu-examples. Each example includes
+a `README` which includes how to build and run it. You are welcome to submit
+examples of your own. See link:contributing.html [Contributing to Kudu] for guidelines,
+and model the structure of your examples upon the structure of existing examples.

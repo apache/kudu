@@ -131,5 +131,4 @@ at port 8050.
 
 == Next Steps
 - link:administration.html[Get Started With Kudu]
-- link:api.html[Kudu API]
-// TBD this does not exist yet
+- link:developing.html[Developing Applications With Kudu]
