@@ -15,6 +15,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/net/net_util.h"
+#include "kudu/util/stopwatch.h"
 
 namespace kudu {
 
@@ -98,9 +99,14 @@ bool Sockaddr::IsAnyLocalAddress() const {
 Status Sockaddr::LookupHostname(string* hostname) const {
   char host[NI_MAXHOST];
   int flags = 0;
-  int rc = getnameinfo((struct sockaddr *) &addr_, sizeof(sockaddr_in),
-                       host, NI_MAXHOST,
-                       NULL, 0, flags);
+
+  int rc;
+  LOG_SLOW_EXECUTION(WARNING, 200,
+                     Substitute("DNS reverse-lookup for $0", ToString())) {
+    rc = getnameinfo((struct sockaddr *) &addr_, sizeof(sockaddr_in),
+                     host, NI_MAXHOST,
+                     NULL, 0, flags);
+  }
   if (PREDICT_FALSE(rc != 0)) {
     if (rc == EAI_SYSTEM) {
       int errno_saved = errno;

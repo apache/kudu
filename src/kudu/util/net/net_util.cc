@@ -25,6 +25,7 @@
 #include "kudu/util/faststring.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
 
 using std::tr1::unordered_set;
@@ -83,7 +84,11 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
   struct addrinfo* res = NULL;
-  int rc = getaddrinfo(host_.c_str(), NULL, &hints, &res);
+  int rc;
+  LOG_SLOW_EXECUTION(WARNING, 200,
+                     Substitute("resolving address for $0", host_)) {
+    rc = getaddrinfo(host_.c_str(), NULL, &hints, &res);
+  }
   if (rc != 0) {
     return Status::NetworkError(
       StringPrintf("Unable to resolve address '%s'", host_.c_str()),
