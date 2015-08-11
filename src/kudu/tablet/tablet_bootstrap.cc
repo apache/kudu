@@ -1392,8 +1392,13 @@ Status FlushedStoresSnapshot::InitFrom(const TabletMetadata& meta) {
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rsmd, meta.rowsets()) {
     if (!InsertIfNotPresent(&flushed_dms_by_drs_id_, rsmd->id(),
                             rsmd->last_durable_redo_dms_id())) {
-      return Status::Corruption(Substitute("Duplicate DRS ID $0 in metadata",
-                                           rsmd->id()));
+      return Status::Corruption(Substitute(
+          "Duplicate DRS ID $0 in tablet metadata. "
+          "Found DRS $0 with last durable redo DMS ID $1 while trying to "
+          "initialize DRS $0 with last durable redo DMS ID $2",
+          rsmd->id(),
+          flushed_dms_by_drs_id_[rsmd->id()],
+          rsmd->last_durable_redo_dms_id()));
     }
   }
   return Status::OK();

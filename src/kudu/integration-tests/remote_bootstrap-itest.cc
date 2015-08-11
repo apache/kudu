@@ -7,10 +7,15 @@
 #include <string>
 
 #include "kudu/client/client.h"
+#include "kudu/client/client-test-util.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
@@ -20,6 +25,9 @@
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaFromSchema;
+using kudu::client::KuduTableCreator;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
@@ -28,6 +36,7 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 
@@ -40,6 +49,9 @@ class RemoteBootstrapITest : public KuduTest {
           LOG(INFO) << "Tablet server " << i << " is not running. Cannot dump its stacks.";
           continue;
         }
+        LOG(INFO) << "Attempting to dump stacks of TS " << i
+                  << " with UUID " << cluster_->tablet_server(i)->uuid()
+                  << " and pid " << cluster_->tablet_server(i)->pid();
         WARN_NOT_OK(PstackWatcher::DumpPidStacks(cluster_->tablet_server(i)->pid()),
                     "Couldn't dump stacks");
       }
@@ -248,6 +260,110 @@ TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
   rb_client.reset();
   SleepFor(MonoDelta::FromMilliseconds(50));  // Give a little time for a crash (KUDU-1009).
   ASSERT_TRUE(cluster_->tablet_server(kTsIndex)->IsProcessAlive());
+}
+
+// Test that multiple concurrent remote bootstraps do not cause problems.
+// This is a regression test for KUDU-951, in which concurrent sessions on
+// multiple tablets between the same remote bootstrap client host and remote
+// bootstrap source host could corrupt each other.
+TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipping test in fast-test mode.";
+    return;
+  }
+
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  flags.push_back("--log_cache_size_limit_mb=1");
+  flags.push_back("--log_segment_size_mb=1");
+  flags.push_back("--log_async_preallocate_segments=false");
+  flags.push_back("--log_min_segments_to_retain=100");
+  flags.push_back("--flush_threshold_mb=0"); // Constantly flush.
+  flags.push_back("--maintenance_manager_polling_interval_ms=10");
+  NO_FATALS(StartCluster(flags));
+
+  const MonoDelta timeout = MonoDelta::FromSeconds(60);
+
+  // Create a table with several tablets. These will all be simultaneously
+  // remotely bootstrapped to a single target node from the same leader host.
+  const int kNumTablets = 10;
+  KuduSchema client_schema(KuduSchemaFromSchema(GetSimpleTestSchema()));
+  vector<const KuduPartialRow*> splits;
+  for (int i = 0; i < kNumTablets - 1; i++) {
+    KuduPartialRow* row = client_schema.NewRow();
+    ASSERT_OK(row->SetInt32(0, numeric_limits<int32_t>::max() / kNumTablets * (i + 1)));
+    splits.push_back(row);
+  }
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  ASSERT_OK(table_creator->table_name(TestWorkload::kDefaultTableName)
+                          .split_rows(splits)
+                          .schema(&client_schema)
+                          .num_replicas(3)
+                          .Create());
+
+  const int kTsIndex = 0; // We'll test with the first TS.
+  TServerDetails* target_ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+
+  // Figure out the tablet ids of the created tablets.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(target_ts, kNumTablets, timeout, &tablets));
+
+  vector<string> tablet_ids;
+  BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+    tablet_ids.push_back(t.tablet_status().tablet_id());
+  }
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+      ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                              tablet_id, timeout));
+    }
+  }
+
+  // Elect leaders on each tablet for term 1. All leaders will be on TS 1.
+  const int kLeaderIndex = 1;
+  const string kLeaderUuid = cluster_->tablet_server(kLeaderIndex)->uuid();
+  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+    ASSERT_OK(itest::StartElection(ts_map_[kLeaderUuid], tablet_id, timeout));
+  }
+
+  TestWorkload workload(cluster_.get());
+  workload.set_write_timeout_millis(10000);
+  workload.set_timeout_allowed(true);
+  workload.set_write_batch_size(10);
+  workload.set_num_write_threads(10);
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 20000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+    ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));
+  }
+
+  // Now pause the leader so we can tombstone the tablets.
+  ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Pause());
+
+  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+    LOG(INFO) << "Tombstoning tablet " << tablet_id << " on TS " << target_ts->uuid();
+    ASSERT_OK(itest::DeleteTablet(target_ts, tablet_id, TABLET_DATA_TOMBSTONED,
+              MonoDelta::FromSeconds(10)));
+  }
+
+  // Unpause the leader TS and wait for it to remotely bootstrap the tombstoned
+  // tablets, in parallel.
+  ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Resume());
+  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(target_ts, tablet_id, timeout));
+  }
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
+                            workload.rows_inserted()));
 }
 
 } // namespace kudu

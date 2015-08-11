@@ -184,8 +184,8 @@ TEST_F(RemoteBootstrapServiceTest, TestSimpleBeginEndSession) {
   ASSERT_FALSE(session_id.empty());
   ASSERT_EQ(FLAGS_remote_bootstrap_idle_timeout_ms, idle_timeout_millis);
   ASSERT_TRUE(superblock.IsInitialized());
-  // We should have number of segments = number of rolls
-  ASSERT_EQ(static_cast<int>(kNumLogRolls), segment_seqnos.size());
+  // We should have number of segments = number of rolls + 1 (due to the active segment).
+  ASSERT_EQ(kNumLogRolls + 1, segment_seqnos.size());
 
   EndRemoteBootstrapSessionResponsePB resp;
   RpcController controller;
@@ -386,7 +386,7 @@ TEST_F(RemoteBootstrapServiceTest, TestFetchLog) {
                                                &idle_timeout_millis,
                                                &segment_seqnos));
 
-  ASSERT_EQ(static_cast<int>(kNumLogRolls), segment_seqnos.size());
+  ASSERT_EQ(kNumLogRolls + 1, segment_seqnos.size());
   uint64_t seg_seqno = *segment_seqnos.begin();
 
   // Fetch the remote data.

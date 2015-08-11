@@ -22,6 +22,9 @@ namespace tserver {
 
 using consensus::MinimumOpId;
 
+// Number of times to roll the log.
+static const int kNumLogRolls = 2;
+
 class RemoteBootstrapTest : public TabletServerTestBase {
  public:
   virtual void SetUp() OVERRIDE {
@@ -42,11 +45,6 @@ class RemoteBootstrapTest : public TabletServerTestBase {
   }
 
  protected:
-  enum {
-    // Number of times to roll the log.
-    kNumLogRolls = 2
-  };
-
   // Grab the first column block we find in the SuperBlock.
   static BlockId FirstColumnBlockId(const tablet::TabletSuperBlockPB& superblock) {
     const tablet::RowSetDataPB& rowset = superblock.rowsets(0);

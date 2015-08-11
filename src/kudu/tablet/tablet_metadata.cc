@@ -211,11 +211,7 @@ Status TabletMetadata::LoadFromDisk() {
   CHECK_EQ(state_, kNotLoadedYet);
 
   TabletSuperBlockPB superblock;
-  string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
-  RETURN_NOT_OK_PREPEND(pb_util::ReadPBContainerFromPath(
-                            fs_manager_->env(), path, &superblock),
-                        Substitute("Could not load tablet metadata from $0", path));
-
+  RETURN_NOT_OK(ReadSuperBlockFromDisk(&superblock));
   RETURN_NOT_OK_PREPEND(LoadFromSuperBlock(superblock),
                         "Failed to load data from superblock protobuf");
   state_ = kInitialized;
@@ -434,6 +430,14 @@ Status TabletMetadata::ReplaceSuperBlockUnlocked(const TabletSuperBlockPB &pb) {
                             pb_util::OVERWRITE, pb_util::SYNC),
                         Substitute("Failed to write tablet metadata $0", tablet_id_));
 
+  return Status::OK();
+}
+
+Status TabletMetadata::ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) const {
+  string path = fs_manager_->GetTabletMetadataPath(tablet_id_);
+  RETURN_NOT_OK_PREPEND(
+      pb_util::ReadPBContainerFromPath(fs_manager_->env(), path, superblock),
+      Substitute("Could not load tablet metadata from $0", path));
   return Status::OK();
 }
 

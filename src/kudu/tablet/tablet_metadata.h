@@ -179,6 +179,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   void SetPreFlushCallback(StatusClosure callback) { pre_flush_callback_ = callback; }
 
+  // Loads the currently-flushed superblock from disk into the given protobuf.
+  Status ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) const;
+
   // Sets *super_block to the serialized form of the current metadata.
   Status ToSuperBlock(TabletSuperBlockPB* super_block) const;
 

@@ -60,10 +60,16 @@ Status RemoteBootstrapSession::Init() {
 
   const string& tablet_id = tablet_peer_->tablet_id();
 
-  // Look up the metadata.
-  scoped_refptr<TabletMetadata> metadata = tablet_peer_->tablet_metadata();
-  RETURN_NOT_OK_PREPEND(metadata->ToSuperBlock(&tablet_superblock_),
-                        Substitute("Unable to access superblock for tablet $0", tablet_id));
+  // Prevent log GC while we grab log segments and Tablet metadata.
+  string anchor_owner_token = Substitute("RemoteBootstrap-$0", session_id_);
+  tablet_peer_->log_anchor_registry()->Register(
+      MinimumOpId().index(), anchor_owner_token, &log_anchor_);
+
+  // Read the SuperBlock from disk.
+  const TabletMetadata* metadata = tablet_peer_->shared_tablet()->metadata();
+  RETURN_NOT_OK_PREPEND(metadata->ReadSuperBlockFromDisk(&tablet_superblock_),
+                        Substitute("Unable to access superblock for tablet $0",
+                                   tablet_id));
 
   // Look up the committed consensus state.
   scoped_refptr<consensus::Consensus> consensus = tablet_peer_->shared_consensus();
@@ -89,40 +95,22 @@ Status RemoteBootstrapSession::Init() {
         BlockId::FromPB(block_id), &block_info, &code));
   }
 
-  // Look up the log segments. To avoid races, we do a 2-phase thing where we
-  // first anchor all the logs, get a list of the logs available, and then
-  // atomically re-anchor on the minimum OpId in that set.
-  // TODO: Implement one-shot anchoring through the Log API. See KUDU-284.
-  string anchor_owner_token = Substitute("RemoteBootstrap-$0", session_id_);
-  tablet_peer_->log_anchor_registry()->Register(
-      MinimumOpId().index(), anchor_owner_token, &log_anchor_);
+  // Get the latest opid in the log at this point in time so we can re-anchor.
+  OpId last_logged_opid;
+  tablet_peer_->log()->GetLatestEntryOpId(&last_logged_opid);
 
-  // Get the current segments from the log.
+  // Get the current segments from the log, including the active segment.
+  // The Log doesn't add the active segment to the log reader's list until
+  // a header has been written to it (but it will not have a footer).
   RETURN_NOT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&log_segments_));
 
-  // Remove the last one if it doesn't have a footer, i.e. if its currently being
-  // written to.
-  if (!log_segments_.empty() && !log_segments_.back()->HasFooter()) {
-    log_segments_.pop_back();
-  }
-
-  // Re-anchor on the earliest OpId that we actually need.
-  if (!log_segments_.empty()) {
-    // Look for the first operation in the segments and anchor it.
-    // The first segment in the sequence must have a REPLICATE message.
-    // TODO The first segment should always have an operation with id, but it
-    // might not if we crashed in the middle of doing log GC and didn't cleanup
-    // properly. See KUDU-254.
-    CHECK(log_segments_[0]->HasFooter());
-    int64_t min_repl_index = log_segments_[0]->footer().min_replicate_index();
-    CHECK_GT(min_repl_index, 0);
-    // Anchor on the earliest id found in the segments
-    RETURN_NOT_OK(tablet_peer_->log_anchor_registry()->UpdateRegistration(
-        min_repl_index, anchor_owner_token, &log_anchor_));
-  } else {
-    // No log segments returned, so no log anchors needed.
-    RETURN_NOT_OK(tablet_peer_->log_anchor_registry()->Unregister(&log_anchor_));
-  }
+  // Re-anchor on the highest OpId that was in the log right before we
+  // snapshotted the log segments. This helps ensure that we don't end up in a
+  // remote bootstrap loop due to a follower falling too far behind the
+  // leader's log when remote bootstrap is slow. The remote controls when
+  // this anchor is released by ending the remote bootstrap session.
+  RETURN_NOT_OK(tablet_peer_->log_anchor_registry()->UpdateRegistration(
+      last_logged_opid.index(), anchor_owner_token, &log_anchor_));
 
   return Status::OK();
 }

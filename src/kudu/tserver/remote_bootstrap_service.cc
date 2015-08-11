@@ -94,9 +94,9 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
   const string& requestor_uuid = req->requestor_uuid();
   const string& tablet_id = req->tablet_id();
 
-  // For now, we use the requestor_uuid as the session id, but we make no
-  // guarantee this will not change in the future.
-  const string& session_id = requestor_uuid;
+  // For now, we use the requestor_uuid with the tablet id as the session id,
+  // but there is no guarantee this will not change in the future.
+  const string session_id = Substitute("$0-$1", requestor_uuid, tablet_id);
 
   scoped_refptr<TabletPeer> tablet_peer;
   RPC_RETURN_NOT_OK(tablet_peer_lookup_->GetTabletPeer(tablet_id, &tablet_peer),
@@ -108,7 +108,8 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
     boost::lock_guard<simple_spinlock> l(sessions_lock_);
     if (!FindCopy(sessions_, session_id, &session)) {
       LOG(INFO) << "Beginning new remote bootstrap session on tablet " << tablet_id
-                << " from peer " << requestor_uuid << " at " << context->requestor_string();
+                << " from peer " << requestor_uuid << " at " << context->requestor_string()
+                << ": session id = " << session_id;
       session.reset(new RemoteBootstrapSession(tablet_peer, session_id,
                                                requestor_uuid, fs_manager_));
       RPC_RETURN_NOT_OK(session->Init(),
@@ -118,7 +119,8 @@ void RemoteBootstrapServiceImpl::BeginRemoteBootstrapSession(
       InsertOrDie(&sessions_, session_id, session);
     } else {
       LOG(INFO) << "Re-initializing existing remote bootstrap session on tablet " << tablet_id
-                << " from peer " << requestor_uuid << " at " << context->requestor_string();
+                << " from peer " << requestor_uuid << " at " << context->requestor_string()
+                << ": session id = " << session_id;
       RPC_RETURN_NOT_OK(session->Init(),
                         RemoteBootstrapErrorPB::UNKNOWN_ERROR,
                         Substitute("Error initializing remote bootstrap session for tablet $0",
@@ -335,7 +337,7 @@ void RemoteBootstrapServiceImpl::EndExpiredSessions() {
       CHECK_OK(DoEndRemoteBootstrapSessionUnlocked(session_id, &app_error));
     }
   } while (!shutdown_latch_.WaitFor(MonoDelta::FromMilliseconds(
-                                        FLAGS_remote_bootstrap_timeout_poll_period_ms)));
+                                    FLAGS_remote_bootstrap_timeout_poll_period_ms)));
 }
 
 } // namespace tserver
