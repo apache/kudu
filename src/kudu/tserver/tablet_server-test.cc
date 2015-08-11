@@ -54,6 +54,8 @@ class TabletServerTest : public TabletServerTestBase {
     TabletServerTestBase::SetUp();
     StartTabletServer();
   }
+
+  void DoOrderedScanTest(const Schema& projection, const string& expected_rows_as_string);
 };
 
 TEST_F(TabletServerTest, TestPingServer) {
@@ -1627,6 +1629,81 @@ TEST_F(TabletServerTest, TestScan_InvalidScanSeqId) {
     ASSERT_TRUE(resp.has_error());
     ASSERT_EQ(TabletServerErrorPB::INVALID_SCAN_CALL_SEQ_ID, resp.error().code());
   }
+}
+
+void TabletServerTest::DoOrderedScanTest(const Schema& projection,
+                                         const string& expected_rows_as_string) {
+  InsertTestRowsDirect(0, 10);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  InsertTestRowsDirect(10, 10);
+  ASSERT_OK(tablet_peer_->tablet()->Flush());
+  InsertTestRowsDirect(20, 10);
+
+  ScanResponsePB resp;
+  ScanRequestPB req;
+  RpcController rpc;
+
+  // Set up a new snapshot scan without a specified timestamp.
+  NewScanRequestPB* scan = req.mutable_new_scan_request();
+  scan->set_tablet_id(kTabletId);
+  ASSERT_OK(SchemaToColumnPBs(projection, scan->mutable_projected_columns()));
+  req.set_call_seq_id(0);
+  scan->set_read_mode(READ_AT_SNAPSHOT);
+  scan->set_order_mode(ORDERED);
+
+  {
+    SCOPED_TRACE(req.DebugString());
+    req.set_batch_size_bytes(0); // so it won't return data right away
+    ASSERT_OK(proxy_->Scan(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_FALSE(resp.has_error());
+  }
+
+  vector<string> results;
+  ASSERT_NO_FATAL_FAILURE(
+    DrainScannerToStrings(resp.scanner_id(), projection, &results));
+
+  ASSERT_EQ(30, results.size());
+
+  for (int i = 0; i < results.size(); ++i) {
+    ASSERT_EQ(results[i], Substitute(expected_rows_as_string, i, i * 2));
+  }
+}
+
+// Tests for KUDU-967. This test creates multiple row sets and then performs an ordered
+// scan including the key columns in the projection but without marking them as keys.
+// Without a fix for KUDU-967 the scan will often return out-of-order results.
+// DISABLED until the fix gets in.
+TEST_F(TabletServerTest, DISABLED_TestOrderedScan_ProjectionWithKeyColumnsInOrder) {
+  // Build a projection with all the columns, but don't mark the key columns as such.
+  SchemaBuilder sb;
+  for (int i = 0; i < schema_.num_columns(); i++) {
+    sb.AddColumn(schema_.column(i), false);
+  }
+  const Schema& projection = sb.BuildWithoutIds();
+  DoOrderedScanTest(projection, "(int32 key=$0, int32 int_val=$1, string string_val=hello $0)");
+}
+
+// Same as above but doesn't add the key columns to the projection.
+TEST_F(TabletServerTest, DISABLED_TestOrderedScan_ProjectionWithoutKeyColumns) {
+  // Build a projection without the key columns.
+  SchemaBuilder sb;
+  for (int i = schema_.num_key_columns(); i < schema_.num_columns(); i++) {
+    sb.AddColumn(schema_.column(i), false);
+  }
+  const Schema& projection = sb.BuildWithoutIds();
+  DoOrderedScanTest(projection, "(int32 int_val=$1, string string_val=hello $0)");
+}
+
+// Same as above but creates a projection with the order of columns reversed.
+TEST_F(TabletServerTest, DISABLED_TestOrderedScan_ProjectionWithKeyColumnsOutOfOrder) {
+  // Build a projection with the order of the columns reversed.
+  SchemaBuilder sb;
+  for (int i = schema_.num_columns() - 1; i >= 0; i--) {
+    sb.AddColumn(schema_.column(i), false);
+  }
+  const Schema& projection = sb.BuildWithoutIds();
+  DoOrderedScanTest(projection, "(string string_val=hello $0, int32 int_val=$1, int32 key=$0)");
 }
 
 TEST_F(TabletServerTest, TestAlterSchema) {

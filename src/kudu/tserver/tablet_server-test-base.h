@@ -282,6 +282,9 @@ class TabletServerTestBase : public KuduTest {
     ScanResponsePB resp;
     req.set_scanner_id(scanner_id);
 
+    // NOTE: we do not sort the results here, since this function is used
+    // by test cases which are verifying the server side's ability to
+    // do ordered scans.
     do {
       rpc.Reset();
       req.set_batch_size_bytes(10000);
