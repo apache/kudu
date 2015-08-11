@@ -92,6 +92,15 @@ Status RemoteBootstrapClient::SetTabletToReplace(const scoped_refptr<TabletMetad
   replace_tombstoned_tablet_ = true;
   meta_ = meta;
 
+  int64_t last_logged_term = meta->tombstone_last_logged_opid().term();
+  if (last_logged_term > caller_term) {
+    return Status::InvalidArgument(
+        Substitute("Leader has term $0 but the last log entry written by the tombstoned replica "
+                   "for tablet $1 has higher term $2. Refusing remote bootstrap from leader",
+                   caller_term, tablet_id_, last_logged_term));
+  }
+
+  // Load the old consensus metadata, if it exists.
   gscoped_ptr<ConsensusMetadata> cmeta;
   Status s = ConsensusMetadata::Load(fs_manager_, tablet_id_,
                                      fs_manager_->uuid(), &cmeta);
@@ -101,13 +110,6 @@ Status RemoteBootstrapClient::SetTabletToReplace(const scoped_refptr<TabletMetad
     return Status::OK();
   }
   RETURN_NOT_OK(s);
-
-  if (cmeta->current_term() > caller_term) {
-    return Status::InvalidArgument(
-        Substitute("Caller has term $0 but tombstoned replica for tablet $1 has higher term $2. "
-                   "Refusing remote bootstrap from caller",
-                   caller_term, tablet_id_, cmeta->current_term()));
-  }
   cmeta_.swap(cmeta);
   return Status::OK();
 }
@@ -169,21 +171,17 @@ Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
     // misconfiguration causes us to attempt to bootstrap from an out-of-date
     // source peer, even after passing the term check from the caller in
     // SetTabletToReplace().
-    if (cmeta_ && cmeta_->current_term() > remote_committed_cstate_->current_term()) {
+    int64_t last_logged_term = meta_->tombstone_last_logged_opid().term();
+    if (last_logged_term > remote_committed_cstate_->current_term()) {
       return Status::InvalidArgument(
           Substitute("Tablet $0: Bootstrap source has term $1 but "
-                     "tombstoned replica has higher term $2. "
+                     "tombstoned replica has last-logged opid with higher term $2. "
                       "Refusing remote bootstrap from source peer $3",
                       tablet_id_,
                       remote_committed_cstate_->current_term(),
-                      cmeta_->current_term(),
+                      last_logged_term,
                       bootstrap_peer_uuid));
     }
-
-    // TODO: Once we support voting by tombstoned replicas, we will need some
-    // way to retain the latest log opid, and if it's kept in the superblock,
-    // we would need to copy it from the old superblock before replacing it
-    // here. See KUDU-871.
 
     // This will flush to disk, but we set the data state to COPYING above.
     RETURN_NOT_OK_PREPEND(meta_->ReplaceSuperBlock(*superblock_),

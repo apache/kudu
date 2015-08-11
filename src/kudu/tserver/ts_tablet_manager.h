@@ -3,6 +3,7 @@
 #ifndef KUDU_TSERVER_TS_TABLET_MANAGER_H
 #define KUDU_TSERVER_TS_TABLET_MANAGER_H
 
+#include <boost/optional/optional_fwd.hpp>
 #include <boost/thread/locks.hpp>
 #include <gtest/gtest_prod.h>
 #include <string>
@@ -237,7 +238,14 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Delete the tablet using the specified delete_type as the final metadata
   // state. Deletes the on-disk data, as well as all WAL segments.
   Status DeleteTabletData(const scoped_refptr<tablet::TabletMetadata>& meta,
-                          tablet::TabletDataState delete_type);
+                          tablet::TabletDataState delete_type,
+                          const boost::optional<consensus::OpId>& last_logged_opid);
+
+  // Return Status::IllegalState if leader_term < last_logged_term.
+  // Helper function for use with remote bootstrap.
+  Status CheckLeaderTermNotLower(const std::string& tablet_id,
+                                 int64_t leader_term,
+                                 int64_t last_logged_term);
 
   // Print a log message using the given info and tombstone the specified
   // tablet. If tombstoning the tablet fails, a FATAL error is logged, resulting

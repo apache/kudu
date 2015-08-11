@@ -4,10 +4,13 @@
 #include "kudu/tablet/tablet_metadata.h"
 
 #include <algorithm>
+#include <boost/optional.hpp>
 #include <boost/thread/locks.hpp>
 #include <string>
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/opid.pb.h"
+#include "kudu/consensus/opid_util.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/dynamic_annotations.h"
@@ -24,6 +27,8 @@
 using base::subtle::Barrier_AtomicIncrement;
 using strings::Substitute;
 
+using kudu::consensus::MinimumOpId;
+using kudu::consensus::OpId;
 using kudu::consensus::RaftConfigPB;
 
 namespace kudu {
@@ -114,7 +119,8 @@ void TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& superblock,
   }
 }
 
-Status TabletMetadata::DeleteTabletData(TabletDataState delete_type) {
+Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
+                                        const boost::optional<OpId>& last_logged_opid) {
   CHECK(delete_type == TABLET_DATA_DELETED ||
         delete_type == TABLET_DATA_TOMBSTONED)
       << "DeleteTabletData() called with unsupported delete_type on tablet "
@@ -135,6 +141,9 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type) {
     }
     rowsets_.clear();
     tablet_data_state_ = delete_type;
+    if (last_logged_opid) {
+      tombstone_last_logged_opid_ = *last_logged_opid;
+    }
   }
 
   // Flushing will sync the new tablet_data_state_ to disk and will now also
@@ -182,6 +191,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
     schema_version_(0),
     table_name_(table_name),
     tablet_data_state_(tablet_data_state),
+    tombstone_last_logged_opid_(MinimumOpId()),
     num_flush_pins_(0),
     needs_flush_(false),
     pre_flush_callback_(Bind(DoNothingStatusClosure)) {
@@ -200,6 +210,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const string& tablet_id)
     fs_manager_(fs_manager),
     next_rowset_idx_(0),
     schema_(NULL),
+    tombstone_last_logged_opid_(MinimumOpId()),
     num_flush_pins_(0),
     needs_flush_(false),
     pre_flush_callback_(Bind(DoNothingStatusClosure)) {
@@ -259,11 +270,15 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
       rowsets_.push_back(shared_ptr<RowSetMetadata>(rowset_meta.release()));
     }
 
-    {
-      BOOST_FOREACH(const BlockIdPB& block_pb, superblock.orphaned_blocks()) {
-        orphaned_blocks.push_back(BlockId::FromPB(block_pb));
-      }
-      AddOrphanedBlocksUnlocked(orphaned_blocks);
+    BOOST_FOREACH(const BlockIdPB& block_pb, superblock.orphaned_blocks()) {
+      orphaned_blocks.push_back(BlockId::FromPB(block_pb));
+    }
+    AddOrphanedBlocksUnlocked(orphaned_blocks);
+
+    if (superblock.has_tombstone_last_logged_opid()) {
+      tombstone_last_logged_opid_ = superblock.tombstone_last_logged_opid();
+    } else {
+      tombstone_last_logged_opid_ = MinimumOpId();
     }
   }
 
@@ -470,6 +485,9 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
                         "Couldn't serialize schema into superblock");
 
   pb.set_tablet_data_state(tablet_data_state_);
+  if (!OpIdEquals(tombstone_last_logged_opid_, MinimumOpId())) {
+    *pb.mutable_tombstone_last_logged_opid() = tombstone_last_logged_opid_;
+  }
 
   BOOST_FOREACH(const BlockId& block_id, orphaned_blocks_) {
     block_id.CopyToPB(pb.mutable_orphaned_blocks()->Add());

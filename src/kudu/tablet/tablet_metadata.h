@@ -3,12 +3,14 @@
 #ifndef KUDU_TABLET_TABLET_METADATA_H
 #define KUDU_TABLET_TABLET_METADATA_H
 
+#include <boost/optional/optional_fwd.hpp>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_set>
 #include <vector>
 
 #include "kudu/common/schema.h"
+#include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_id.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/callback.h"
@@ -152,10 +154,17 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // Mark the superblock to be in state 'delete_type', sync it to disk, and
   // then delete all of the rowsets in this tablet.
-  // 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED.
-  // Returns only once all data has been removed.
   // The metadata (superblock) is not deleted. For that, call DeleteSuperBlock().
-  Status DeleteTabletData(TabletDataState delete_type);
+  //
+  // 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED.
+  // 'last_logged_opid' should be set to the last opid in the log, if any is known.
+  // If 'last_logged_opid' is not set, then the current value of
+  // last_logged_opid is not modified. This is important for roll-forward of
+  // partially-tombstoned tablets during crash recovery.
+  //
+  // Returns only once all data has been removed.
+  Status DeleteTabletData(TabletDataState delete_type,
+                          const boost::optional<consensus::OpId>& last_logged_opid);
 
   // Permanently deletes the superblock from the disk.
   // DeleteTabletData() must first be called and the tablet data state must be
@@ -178,6 +187,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   void SetLastDurableMrsIdForTests(int64_t mrs_id) { last_durable_mrs_id_ = mrs_id; }
 
   void SetPreFlushCallback(StatusClosure callback) { pre_flush_callback_ = callback; }
+
+  consensus::OpId tombstone_last_logged_opid() const { return tombstone_last_logged_opid_; }
 
   // Loads the currently-flushed superblock from disk into the given protobuf.
   Status ReadSuperBlockFromDisk(TabletSuperBlockPB* superblock) const;
@@ -299,6 +310,10 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   // The current state of remote bootstrap for the tablet.
   TabletDataState tablet_data_state_;
+
+  // Record of the last opid logged by the tablet before it was last
+  // tombstoned. Has no meaning for non-tombstoned tablets.
+  consensus::OpId tombstone_last_logged_opid_;
 
   // If this counter is > 0 then Flush() will not write any data to
   // disk.

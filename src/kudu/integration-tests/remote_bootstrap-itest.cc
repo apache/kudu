@@ -162,7 +162,7 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
                                          0, // Say I'm from term 0.
                                          timeout);
   ASSERT_TRUE(s.IsInvalidArgument());
-  ASSERT_STR_CONTAINS(s.ToString(), "term 0 lower than term 1");
+  ASSERT_STR_CONTAINS(s.ToString(), "term 0 lower than last logged term 1");
 
   // Now pause the actual leader so we can bring him back as a zombie later.
   ASSERT_OK(cluster_->tablet_server(zombie_leader_index)->Pause());
@@ -172,11 +172,16 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
   string new_leader_uuid = cluster_->tablet_server(new_leader_index)->uuid();
   ASSERT_OK(itest::StartElection(ts_map_[new_leader_uuid], tablet_id, timeout));
   ASSERT_OK(itest::WaitUntilLeader(ts_map_[new_leader_uuid], tablet_id, timeout));
-  workload.Start();
-  while (workload.rows_inserted() < 200) {
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  workload.StopAndJoin();
+
+  unordered_map<string, TServerDetails*> active_ts_map = ts_map_;
+  ASSERT_EQ(1, active_ts_map.erase(zombie_leader_uuid));
+
+  // Wait for the NO_OP entry from the term 2 election to propagate to the
+  // remaining nodes' logs so that we are guaranteed to reject the rogue
+  // leader's remote bootstrap request when we bring it back online.
+  int log_index = workload.batches_completed() + 2; // 2 terms == 2 additional NO_OP entries.
+  ASSERT_OK(WaitForServersToAgree(timeout, active_ts_map, tablet_id, log_index));
+  // TODO: Write more rows to the new leader once KUDU-1034 is fixed.
 
   // Now kill the new leader and tombstone the replica on TS 0.
   cluster_->tablet_server(new_leader_index)->Shutdown();
@@ -283,6 +288,79 @@ TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
   rb_client.reset();
   SleepFor(MonoDelta::FromMilliseconds(50));  // Give a little time for a crash (KUDU-1009).
   ASSERT_TRUE(cluster_->tablet_server(kTsIndex)->IsProcessAlive());
+}
+
+// This test ensures that a leader can remote-bootstrap a tombstoned replica
+// that has a higher term recorded in the replica's consensus metadata if the
+// replica's last-logged opid has the same term (or less) as the leader serving
+// as the remote bootstrap source. When a tablet is tombstoned, its last-logged
+// opid is stored in a field its on-disk superblock.
+TEST_F(RemoteBootstrapITest, TestRemoteBootstrapFollowerWithHigherTerm) {
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  const int kNumTabletServers = 2;
+  NO_FATALS(StartCluster(flags, kNumTabletServers));
+
+  const MonoDelta timeout = MonoDelta::FromSeconds(30);
+  const int kFollowerIndex = 0;
+  TServerDetails* follower_ts = ts_map_[cluster_->tablet_server(kFollowerIndex)->uuid()];
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(2);
+  workload.Setup();
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(follower_ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, timeout));
+  }
+
+  // Elect a leader for term 1, then run some data through the cluster.
+  const int kLeaderIndex = 1;
+  TServerDetails* leader_ts = ts_map_[cluster_->tablet_server(kLeaderIndex)->uuid()];
+  ASSERT_OK(itest::StartElection(leader_ts, tablet_id, timeout));
+  workload.Start();
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
+
+  ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
+
+  // Pause the leader and increment the term on the follower by starting an
+  // election on the follower. The election will fail asynchronously but we
+  // just wait until we see that its term has incremented.
+  ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Pause());
+  ASSERT_OK(itest::StartElection(follower_ts, tablet_id, timeout));
+  int64_t term = 0;
+  for (int i = 0; i < 1000; i++) {
+    consensus::ConsensusStatePB cstate;
+    ASSERT_OK(itest::GetCommittedConsensusState(follower_ts, tablet_id, timeout, &cstate));
+    term = cstate.current_term();
+    if (term == 2) break;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  ASSERT_EQ(2, term);
+
+  // Now tombstone the follower.
+  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+
+  // Restart the follower's TS so that the leader's TS won't get its queued
+  // vote request messages. This is a hack but seems to work.
+  cluster_->tablet_server(kFollowerIndex)->Shutdown();
+  ASSERT_OK(cluster_->tablet_server(kFollowerIndex)->Restart());
+
+  // Now wake the leader. It should detect that the follower needs to be
+  // remotely bootstrapped and proceed to bring it back up to date.
+  ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Resume());
+
+  // Wait for the follower to come back up.
+  ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
 }
 
 // Test that multiple concurrent remote bootstraps do not cause problems.

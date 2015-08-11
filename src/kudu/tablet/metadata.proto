@@ -5,6 +5,7 @@ package kudu.tablet;
 option java_package = "org.kududb.tablet";
 
 import "kudu/common/common.proto";
+import "kudu/consensus/opid.proto";
 import "kudu/fs/fs.proto";
 
 // ============================================================================
@@ -96,6 +97,11 @@ message TabletSuperBlockPB {
   //
   // It's always safe to delete the blocks found here.
   repeated BlockIdPB orphaned_blocks = 11;
+
+  // For tablets that have been tombstoned, stores the last OpId stored in the
+  // WAL before tombstoning.
+  // Only relevant for TOMBSTONED tablets.
+  optional consensus.OpId tombstone_last_logged_opid = 12;
 }
 
 // The enum of tablet states.
