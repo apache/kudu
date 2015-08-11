@@ -1,0 +1,14 @@
+// Copyright (c) 2015, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
+package kudu.consensus;
+
+option java_package = "org.kududb.consensus";
+
+// An id for a generic state machine operation. Composed of the leaders' term
+// plus the index of the operation in that term, e.g., the <index>th operation
+// of the <term>th leader.
+message OpId {
+  // The term of an operation or the leader's sequence id.
+  required int64 term = 1;
+  required int64 index = 2;
+}

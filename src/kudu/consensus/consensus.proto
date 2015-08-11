@@ -7,6 +7,7 @@ option java_package = "org.kududb.consensus";
 import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/consensus/metadata.proto";
+import "kudu/consensus/opid.proto";
 import "kudu/tablet/metadata.proto";
 import "kudu/tablet/tablet.proto";
 import "kudu/tserver/tserver_admin.proto";
@@ -55,20 +56,6 @@ message ConsensusErrorPB {
   // message that may be more useful to present in log messages, etc,
   // though its error code is less specific.
   required AppStatusPB status = 2;
-}
-
-
-// ===========================================================================
-//  Generic/Meta- Messages
-// ===========================================================================
-
-// An id for a generic state machine operation. Composed of the leaders' term
-// plus the index of the operation in that term, e.g., the <index>th operation
-// of the <term>th leader.
-message OpId {
-  // The term of an operation or the leader's sequence id.
-  required int64 term = 1;
-  required int64 index = 2;
 }
 
 // ===========================================================================

@@ -9,7 +9,9 @@ PROTOBUF_GENERATE_CPP(
   METADATA_PROTO_SRCS METADATA_PROTO_HDRS METADATA_PROTO_TGTS
   SOURCE_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/../..
   BINARY_ROOT ${CMAKE_CURRENT_BINARY_DIR}/../..
-  PROTO_FILES metadata.proto)
+  PROTO_FILES
+    metadata.proto
+    opid.proto)
 set(METADATA_PROTO_LIBS
   kudu_common_proto
   fs_proto
@@ -18,6 +20,10 @@ ADD_EXPORTABLE_LIBRARY(consensus_metadata_proto
   SRCS ${METADATA_PROTO_SRCS}
   DEPS ${METADATA_PROTO_LIBS}
   NONLINK_DEPS ${METADATA_PROTO_TGTS})
+
+#########################################
+# consensus_proto
+#########################################
 
 KRPC_GENERATE(
   CONSENSUS_KRPC_SRCS CONSENSUS_KRPC_HDRS CONSENSUS_KRPC_TGTS
@@ -40,6 +46,10 @@ ADD_EXPORTABLE_LIBRARY(consensus_proto
   SRCS ${CONSENSUS_KRPC_SRCS}
   DEPS ${CONSENSUS_KRPC_LIBS}
   NONLINK_DEPS ${CONSENSUS_KRPC_TGTS})
+
+#########################################
+# log_proto
+#########################################
 
 PROTOBUF_GENERATE_CPP(
   LOG_PROTO_SRCS LOG_PROTO_HDRS LOG_PROTO_TGTS
