@@ -6,6 +6,8 @@
 
 package kudu.rpc;
 
+option java_package = "org.kududb";
+
 import "kudu/rpc/rpc_header.proto";
 
 message RpcCallInProgressPB {
