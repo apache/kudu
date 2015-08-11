@@ -250,13 +250,14 @@ TEST_F(EncodedKeyTest, TestRandomStringEncoding) {
     RandomString(buf, len, &r);
 
     Slice in_slice(buf, len);
-    KeyEncoderTraits<BINARY>::EncodeWithSeparators(&in_slice, false, &encoded);
+    KeyEncoderTraits<BINARY, faststring>::EncodeWithSeparators(&in_slice, false, &encoded);
 
     Slice to_decode(encoded);
     Slice decoded_slice;
-    ASSERT_OK(KeyEncoderTraits<BINARY>::DecodeKeyPortion(
+    // C++ does not allow commas in macro invocations without being wrapped in parenthesis.
+    ASSERT_OK((KeyEncoderTraits<BINARY,string>::DecodeKeyPortion(
                   &to_decode, false, &arena,
-                  reinterpret_cast<uint8_t*>(&decoded_slice)));
+                  reinterpret_cast<uint8_t*>(&decoded_slice))));
 
     ASSERT_EQ(decoded_slice.ToDebugString(), in_slice.ToDebugString())
       << "encoded: " << Slice(encoded).ToDebugString();
@@ -270,7 +271,7 @@ TEST_F(EncodedKeyTest, TestRandomStringEncoding) {
 // inline the function under test, making the benchmark unreliable.
 ATTRIBUTE_NOINLINE
 static void NoInlineDoEncode(Slice s, bool is_last, faststring* dst)  {
-  KeyEncoderTraits<BINARY>::EncodeWithSeparators(s, is_last, dst);
+  KeyEncoderTraits<BINARY, faststring>::EncodeWithSeparators(s, is_last, dst);
 }
 
 TEST_F(EncodedKeyTest, BenchmarkStringEncoding) {

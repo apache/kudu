@@ -17,7 +17,6 @@
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/memutil.h"
 #include "kudu/gutil/type_traits.h"
-#include "kudu/util/faststring.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
 
@@ -26,7 +25,7 @@
 
 namespace kudu {
 
-template<DataType Type, class Enable = void>
+template<DataType Type, typename Buffer, class Enable = void>
 struct KeyEncoderTraits {
 };
 
@@ -34,13 +33,15 @@ struct KeyEncoderTraits {
 // This complicated-looking template magic defines a specialization of the
 // KeyEncoderTraits struct for any integral type. This avoids a bunch of
 // code duplication for all of our different size/signed-ness variants.
-template<DataType Type>
-struct KeyEncoderTraits<Type, typename base::enable_if<
-                                base::is_integral<
-                                  typename DataTypeTraits<Type>::cpp_type
-                                  >::value
-                                  >::type
-                        > {
+template<DataType Type, typename Buffer>
+struct KeyEncoderTraits<Type,
+                        Buffer,
+                        typename base::enable_if<
+                          base::is_integral<
+                            typename DataTypeTraits<Type>::cpp_type
+                          >::value
+                        >::type
+                       > {
   static const DataType key_type = Type;
 
  private:
@@ -59,11 +60,11 @@ struct KeyEncoderTraits<Type, typename base::enable_if<
   }
 
  public:
-  static void Encode(cpp_type key, faststring* dst) {
+  static void Encode(cpp_type key, Buffer* dst) {
     Encode(&key, dst);
   }
 
-  static void Encode(const void* key_ptr, faststring* dst) {
+  static void Encode(const void* key_ptr, Buffer* dst) {
     unsigned_cpp_type key_unsigned;
     memcpy(&key_unsigned, key_ptr, sizeof(key_unsigned));
 
@@ -72,10 +73,10 @@ struct KeyEncoderTraits<Type, typename base::enable_if<
       key_unsigned ^= 1UL << (sizeof(key_unsigned) * CHAR_BIT - 1);
     }
     key_unsigned = SwapEndian(key_unsigned);
-    dst->append(&key_unsigned, sizeof(key_unsigned));
+    dst->append(reinterpret_cast<const char*>(&key_unsigned), sizeof(key_unsigned));
   }
 
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
+  static void EncodeWithSeparators(const void* key, bool is_last, Buffer* dst) {
     Encode(key, dst);
   }
 
@@ -99,20 +100,20 @@ struct KeyEncoderTraits<Type, typename base::enable_if<
   }
 };
 
-template<>
-struct KeyEncoderTraits<BINARY> {
+template<typename Buffer>
+struct KeyEncoderTraits<BINARY, Buffer> {
 
   static const DataType key_type = BINARY;
 
-  static void Encode(const void* key, faststring* dst) {
+  static void Encode(const void* key, Buffer* dst) {
     Encode(*reinterpret_cast<const Slice*>(key), dst);
   }
 
   // simple slice encoding that just adds to the buffer
-  inline static void Encode(const Slice& s, faststring* dst) {
-    dst->append(s.data(),s.size());
+  inline static void Encode(const Slice& s, Buffer* dst) {
+    dst->append(reinterpret_cast<const char*>(s.data()),s.size());
   }
-  static void EncodeWithSeparators(const void* key, bool is_last, faststring* dst) {
+  static void EncodeWithSeparators(const void* key, bool is_last, Buffer* dst) {
     EncodeWithSeparators(*reinterpret_cast<const Slice*>(key), is_last, dst);
   }
 
@@ -122,9 +123,9 @@ struct KeyEncoderTraits<BINARY> {
   // This implementation is heavily optimized for the case where the input
   // slice has no '\0' bytes. We assume this is common in most user-generated
   // compound keys.
-  inline static void EncodeWithSeparators(const Slice& s, bool is_last, faststring* dst) {
+  inline static void EncodeWithSeparators(const Slice& s, bool is_last, Buffer* dst) {
     if (is_last) {
-      dst->append(s.data(), s.size());
+      dst->append(reinterpret_cast<const char*>(s.data()), s.size());
     } else {
       // If we're a middle component of a composite key, we need to add a \x00
       // at the end in order to separate this component from the next one. However,
@@ -135,7 +136,7 @@ struct KeyEncoderTraits<BINARY> {
       dst->resize(old_size + s.size() * 2 + 2);
 
       const uint8_t* srcp = s.data();
-      uint8_t* dstp = &(*dst)[old_size];
+      uint8_t* dstp = reinterpret_cast<uint8_t*>(&(*dst)[old_size]);
       int len = s.size();
       int rem = len;
 
@@ -172,14 +173,14 @@ struct KeyEncoderTraits<BINARY> {
       done:
       *dstp++ = 0;
       *dstp++ = 0;
-      dst->resize(dstp - &(*dst)[0]);
+      dst->resize(dstp - reinterpret_cast<uint8_t*>(&(*dst)[0]));
     }
   }
 
   static Status DecodeKeyPortion(Slice* encoded_key,
-                               bool is_last,
-                               Arena* arena,
-                               uint8_t* cell_ptr) {
+                                 bool is_last,
+                                 Arena* arena,
+                                 uint8_t* cell_ptr) {
     if (is_last) {
       Slice* dst_slice = reinterpret_cast<Slice *>(cell_ptr);
       if (PREDICT_FALSE(!arena->RelocateSlice(*encoded_key, dst_slice))) {
@@ -280,25 +281,29 @@ struct KeyEncoderTraits<BINARY> {
   }
 };
 
+// Forward declaration is necessary for friend declaration in KeyEncoder.
+template<typename Buffer>
+class EncoderResolver;
+
 // The runtime version of the key encoder
+template <typename Buffer>
 class KeyEncoder {
  public:
 
-  // Encodes the provided key to the provided faststring
-  void Encode(const void* key, faststring* dst) const {
+  // Encodes the provided key to the provided buffer
+  void Encode(const void* key, Buffer* dst) const {
     encode_func_(key, dst);
   }
 
   // Special encoding for composite keys.
-  void Encode(const void* key, bool is_last, faststring* dst) const {
+  void Encode(const void* key, bool is_last, Buffer* dst) const {
     encode_with_separators_func_(key, is_last, dst);
   }
 
-  void ResetAndEncode(const void* key, faststring* dst) const {
+  void ResetAndEncode(const void* key, Buffer* dst) const {
     dst->clear();
     Encode(key, dst);
   }
-
 
   // Decode the next component out of the composite key pointed to by '*encoded_key'
   // into *cell_ptr.
@@ -315,7 +320,7 @@ class KeyEncoder {
   }
 
  private:
-  friend class EncoderResolver;
+  friend class EncoderResolver<Buffer>;
   template<typename EncoderTraitsClass>
   explicit KeyEncoder(EncoderTraitsClass t)
     : encode_func_(EncoderTraitsClass::Encode),
@@ -323,10 +328,9 @@ class KeyEncoder {
       decode_key_portion_func_(EncoderTraitsClass::DecodeKeyPortion) {
   }
 
-  typedef void (*EncodeFunc)(const void* key, faststring* dst);
+  typedef void (*EncodeFunc)(const void* key, Buffer* dst);
   const EncodeFunc encode_func_;
-  typedef void (*EncodeWithSeparatorsFunc)(const void* key, bool is_last,
-                                           faststring* dst);
+  typedef void (*EncodeWithSeparatorsFunc)(const void* key, bool is_last, Buffer* dst);
   const EncodeWithSeparatorsFunc encode_with_separators_func_;
 
   typedef Status (*DecodeKeyPortionFunc)(Slice* enc_key, bool is_last,
@@ -337,7 +341,8 @@ class KeyEncoder {
   DISALLOW_COPY_AND_ASSIGN(KeyEncoder);
 };
 
-extern const KeyEncoder &GetKeyEncoder(const TypeInfo* typeinfo);
+template <typename Buffer>
+extern const KeyEncoder<Buffer>& GetKeyEncoder(const TypeInfo* typeinfo);
 
 extern const bool IsTypeAllowableInKey(const TypeInfo* typeinfo);
 

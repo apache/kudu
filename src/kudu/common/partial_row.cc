@@ -526,18 +526,15 @@ Status KuduPartialRow::EncodeRowKey(string* encoded_key) const {
     }
   }
 
+  encoded_key->clear();
   ContiguousRow row(schema_, row_data_);
 
-  // TODO: we pay an extra copy since we encode into a faststring, but the caller
-  // needs a string.
-  faststring buf;
   for (int i = 0; i < schema_->num_key_columns(); i++) {
     bool is_last = i == schema_->num_key_columns() - 1;
     const TypeInfo* ti = schema_->column(i).type_info();
-    GetKeyEncoder(ti).Encode(row.cell_ptr(i), is_last, &buf);
+    GetKeyEncoder<string>(ti).Encode(row.cell_ptr(i), is_last, encoded_key);
   }
 
-  *encoded_key = buf.ToString();
   return Status::OK();
 }
 

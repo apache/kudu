@@ -183,7 +183,7 @@ class CFileWriter {
 
   // The key-encoder. Only set if the writer is writing an embedded
   // value index.
-  const KeyEncoder* key_encoder_;
+  const KeyEncoder<faststring>* key_encoder_;
 
   // a temporary buffer for encoding
   faststring tmp_buf_;

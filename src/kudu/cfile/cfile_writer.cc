@@ -103,7 +103,7 @@ CFileWriter::CFileWriter(const WriterOptions &options,
   }
 
   if (options.write_validx) {
-    key_encoder_ = &GetKeyEncoder(typeinfo_);
+    key_encoder_ = &GetKeyEncoder<faststring>(typeinfo_);
     validx_builder_.reset(new IndexTreeBuilder(&options_,
                                                this));
   }
@@ -382,7 +382,7 @@ Status CFileWriter::AppendRawBlock(const vector<Slice> &data_slices,
   // Now add to the index blocks
   if (posidx_builder_ != NULL) {
     tmp_buf_.clear();
-    KeyEncoderTraits<UINT32>::Encode(ordinal_pos, &tmp_buf_);
+    KeyEncoderTraits<UINT32, faststring>::Encode(ordinal_pos, &tmp_buf_);
     RETURN_NOT_OK(posidx_builder_->Append(Slice(tmp_buf_), ptr));
   }
 

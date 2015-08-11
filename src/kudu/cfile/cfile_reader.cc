@@ -379,7 +379,7 @@ Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
   }
 
   tmp_buf_.clear();
-  KeyEncoderTraits<UINT32>::Encode(ord_idx, &tmp_buf_);
+  KeyEncoderTraits<UINT32, faststring>::Encode(ord_idx, &tmp_buf_);
   RETURN_NOT_OK(posidx_iter_->SeekAtOrBefore(Slice(tmp_buf_)));
 
   // TODO: fast seek within block (without reseeking index)

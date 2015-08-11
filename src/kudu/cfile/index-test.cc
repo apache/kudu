@@ -19,7 +19,7 @@ Status SearchInReaderString(const IndexBlockReader &reader,
 
   gscoped_ptr<IndexBlockIterator> iter(reader.NewIterator());
   dst.clear();
-  KeyEncoderTraits<BINARY>::Encode(search_key, &dst);
+  KeyEncoderTraits<BINARY, faststring>::Encode(search_key, &dst);
   Status s = iter->SeekAtOrBefore(Slice(dst));
   RETURN_NOT_OK(s);
 
@@ -37,7 +37,7 @@ Status SearchInReaderUint32(const IndexBlockReader &reader,
 
   gscoped_ptr<IndexBlockIterator> iter(reader.NewIterator());
   dst.clear();
-  KeyEncoderTraits<UINT32>::Encode(search_key, &dst);
+  KeyEncoderTraits<UINT32, faststring>::Encode(search_key, &dst);
   Status s = iter->SeekAtOrBefore(Slice(dst));
   RETURN_NOT_OK(s);
 
@@ -60,7 +60,7 @@ static void AddToIndex(IndexBlockBuilder *idx, uint32_t val,
 
   static faststring dst;
   dst.clear();
-  KeyEncoderTraits<UINT32>::Encode(val, &dst);
+  KeyEncoderTraits<UINT32, faststring>::Encode(val, &dst);
   idx->Add(Slice(dst), block_pointer);
 }
 

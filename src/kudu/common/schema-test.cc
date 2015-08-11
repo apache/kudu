@@ -268,7 +268,7 @@ TEST(TestSchema, TestRowOperations) {
 
 TEST(TestKeyEncoder, TestKeyEncoder) {
   faststring fs;
-  const KeyEncoder& encoder = GetKeyEncoder(GetTypeInfo(STRING));
+  const KeyEncoder<faststring>& encoder = GetKeyEncoder<faststring>(GetTypeInfo(STRING));
 
   typedef boost::tuple<vector<Slice>, Slice> test_pair;
   using boost::assign::list_of;
