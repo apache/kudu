@@ -63,18 +63,19 @@ CompressedBlockDecoder::CompressedBlockDecoder(const CompressionCodec* codec,
     uncompressed_size_limit_(size_limit) {
 }
 
-Status CompressedBlockDecoder::Uncompress(const Slice& data, Slice *result) {
-  // Check if the on-disk data is large enough to hold the header
+Status CompressedBlockDecoder::ValidateHeader(const Slice& data, uint32_t *uncompressed_size) {
+  // Check if the on-disk size is correct.
   if (data.size() < CompressedBlockBuilder::kHeaderReservedLength) {
     return Status::Corruption(
-      StringPrintf("data size %lu is not enough to contains the header. required %lu, buffer",
+      StringPrintf("data size %lu is not enough to contains the header. "
+        "required %lu, buffer",
         data.size(), CompressedBlockBuilder::kHeaderReservedLength),
         data.ToDebugString(50));
   }
 
   // Decode the header
   uint32_t compressed_size = DecodeFixed32(data.data());
-  uint32_t uncompressed_size = DecodeFixed32(data.data() + 4);
+  *uncompressed_size = DecodeFixed32(data.data() + 4);
 
   // Check if the on-disk data size matches with the buffer
   if (data.size() != (CompressedBlockBuilder::kHeaderReservedLength + compressed_size)) {
@@ -85,17 +86,32 @@ Status CompressedBlockDecoder::Uncompress(const Slice& data, Slice *result) {
   }
 
   // Check if uncompressed size seems to be reasonable
-  if (uncompressed_size > uncompressed_size_limit_) {
+  if (*uncompressed_size > uncompressed_size_limit_) {
     return Status::Corruption(
       StringPrintf("uncompressed size %u overflows the maximum length %lu, buffer",
         compressed_size, uncompressed_size_limit_), data.ToDebugString(50));
   }
 
-  Slice compressed(data.data() + CompressedBlockBuilder::kHeaderReservedLength, compressed_size);
+  return Status::OK();
+}
+
+Status CompressedBlockDecoder::UncompressIntoBuffer(const Slice& data, uint8_t* dst,
+                                                    uint32_t uncompressed_size) {
+  Slice compressed = data;
+  compressed.remove_prefix(CompressedBlockBuilder::kHeaderReservedLength);
+  RETURN_NOT_OK(codec_->Uncompress(compressed, dst, uncompressed_size));
+
+  return Status::OK();
+}
+
+Status CompressedBlockDecoder::Uncompress(const Slice& data, Slice *result) {
+  // Decode the header
+  uint32_t uncompressed_size;
+  RETURN_NOT_OK(ValidateHeader(data, &uncompressed_size));
 
   // Allocate the buffer for the uncompressed data and uncompress
   ::gscoped_array<uint8_t> buffer(new uint8_t[uncompressed_size]);
-  RETURN_NOT_OK(codec_->Uncompress(compressed, buffer.get(), uncompressed_size));
+  RETURN_NOT_OK(UncompressIntoBuffer(data, buffer.get(), uncompressed_size));
   *result = Slice(buffer.release(), uncompressed_size);
 
   return Status::OK();

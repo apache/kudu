@@ -1,14 +1,33 @@
-// Copyright (c) 2013, Cloudera, inc.
+// Copyright (c) 2015, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 //
 // Some portions copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
+//
+// ------------------------------------------------------------
+// This file implements a cache based on the NVML library (http://pmem.io),
+// specifically its "libvmem" component. This library makes it easy to program
+// against persistent memory hardware by exposing an API which parallels
+// malloc/free, but allocates from persistent memory instead of DRAM.
+//
+// We use this API to implement a cache which treats persistent memory or
+// non-volatile memory as if it were a larger cheaper bank of volatile memory. We
+// currently make no use of its persistence properties.
+//
+// Currently, we only store key/value in NVM. All other data structures such as the
+// ShardedLRUCache instances, hash table, etc are in DRAM. The assumption is that
+// the ratio of data stored vs overhead is quite high.
+
+#include "kudu/util/nvm_cache.h"
 
 #include <boost/foreach.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <libvmem.h>
 #include <stdlib.h>
 #include <string>
+#include <iostream>
 #include <tr1/memory>
 #include <vector>
 
@@ -19,16 +38,30 @@
 #include "kudu/util/atomic.h"
 #include "kudu/util/cache.h"
 #include "kudu/util/cache_metrics.h"
+#include "kudu/util/flags.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
-#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+
+DEFINE_string(nvm_cache_path, "/vmem",
+              "The path at which the NVM cache will try to allocate its memory. "
+              "This can be a tmpfs or ramfs for testing purposes.");
+
+DEFINE_int32(nvm_cache_allocation_retry_count, 10,
+             "The number of times that the NVM cache will retry attempts to allocate "
+             "memory for new entries. In between attempts, a cache entry will be "
+             "evicted.");
+TAG_FLAG(nvm_cache_allocation_retry_count, advanced);
+
+DEFINE_bool(nvm_cache_simulate_allocation_failure, false,
+            "If true, the NVM cache will inject failures in calls to vmem_malloc "
+            "for testing.");
+TAG_FLAG(nvm_cache_simulate_allocation_failure, unsafe);
+
 
 namespace kudu {
 
 class MetricEntity;
-
-Cache::~Cache() {
-}
 
 namespace {
 
@@ -151,10 +184,10 @@ class HandleTable {
 };
 
 // A single shard of sharded cache.
-class LRUCache {
+class NvmLRUCache {
  public:
-  explicit LRUCache(MemTracker* tracker);
-  ~LRUCache();
+  explicit NvmLRUCache(VMEM *vmp);
+  ~NvmLRUCache();
 
   // Separate from constructor so caller can easily make an array of LRUCache
   void SetCapacity(size_t capacity) { capacity_ = capacity; }
@@ -168,15 +201,26 @@ class LRUCache {
   Cache::Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
+  void* AllocateAndRetry(size_t size);
 
  private:
-  void LRU_Remove(LRUHandle* e);
-  void LRU_Append(LRUHandle* e);
+  void NvmLRU_Remove(LRUHandle* e);
+  void NvmLRU_Append(LRUHandle* e);
   // Just reduce the reference count by 1.
   // Return true if last reference
   bool Unref(LRUHandle* e);
-  // Call deleter and free
   void FreeEntry(LRUHandle* e);
+
+  // Evict the LRU item in the cache, adding it to the linked list
+  // pointed to by 'to_remove_head'.
+  void EvictOldestUnlocked(LRUHandle** to_remove_head);
+
+  // Free all of the entries in the linked list that has to_free_head
+  // as its head.
+  void FreeLRUEntries(LRUHandle* to_free_head);
+
+  // Wrapper around vmem_malloc which injects failures based on a flag.
+  void* VmemMalloc(size_t size);
 
   // Initialized before use.
   size_t capacity_;
@@ -191,21 +235,21 @@ class LRUCache {
 
   HandleTable table_;
 
-  MemTracker* mem_tracker_;
+  VMEM* vmp_;
 
   CacheMetrics* metrics_;
 };
 
-LRUCache::LRUCache(MemTracker* tracker)
- : usage_(0),
-   mem_tracker_(tracker),
-   metrics_(NULL) {
+NvmLRUCache::NvmLRUCache(VMEM* vmp)
+  : usage_(0),
+  vmp_(vmp),
+  metrics_(NULL) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;
 }
 
-LRUCache::~LRUCache() {
+NvmLRUCache::~NvmLRUCache() {
   for (LRUHandle* e = lru_.next; e != &lru_; ) {
     LRUHandle* next = e->next;
     DCHECK_EQ(e->refs, 1);  // Error if caller has an unreleased handle
@@ -216,15 +260,21 @@ LRUCache::~LRUCache() {
   }
 }
 
-bool LRUCache::Unref(LRUHandle* e) {
+void* NvmLRUCache::VmemMalloc(size_t size) {
+  if (PREDICT_FALSE(FLAGS_nvm_cache_simulate_allocation_failure)) {
+    return NULL;
+  }
+  return vmem_malloc(vmp_, size);
+}
+
+bool NvmLRUCache::Unref(LRUHandle* e) {
   DCHECK_GT(ANNOTATE_UNPROTECTED_READ(e->refs), 0);
   return !base::RefCountDec(&e->refs);
 }
 
-void LRUCache::FreeEntry(LRUHandle* e) {
+void NvmLRUCache::FreeEntry(LRUHandle* e) {
   DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(e->refs), 0);
   e->deleter->Delete(e->key(), e->value);
-  mem_tracker_->Release(e->charge);
   if (PREDICT_TRUE(metrics_)) {
     metrics_->cache_usage->DecrementBy(e->charge);
     metrics_->evictions->Increment();
@@ -232,13 +282,46 @@ void LRUCache::FreeEntry(LRUHandle* e) {
   free(e);
 }
 
-void LRUCache::LRU_Remove(LRUHandle* e) {
+// Allocate nvm memory. Try until successful or FLAGS_nvm_cache_allocation_retry_count
+// has been exceeded.
+void *NvmLRUCache::AllocateAndRetry(size_t size) {
+  void *tmp;
+  // There may be times that an allocation fails. With NVM we have
+  // a fixed size to allocate from. If we cannot allocate the size
+  // that was asked for, we will remove entries from the cache and
+  // retry up to the configured number of retries. If this fails, we
+  // return NULL, which will cause the caller to not insert anything
+  // into the cache.
+  LRUHandle *to_remove_head = NULL;
+  tmp = VmemMalloc(size);
+
+  if (tmp == NULL) {
+    unique_lock<MutexType> l(&mutex_);
+
+    int retries_remaining = FLAGS_nvm_cache_allocation_retry_count;
+    while (tmp == NULL && retries_remaining-- > 0 && lru_.next != &lru_) {
+      EvictOldestUnlocked(&to_remove_head);
+
+      // Unlock while allocating memory.
+      l.unlock();
+      tmp = VmemMalloc(size);
+      l.lock();
+    }
+  }
+
+  // we free the entries here outside of mutex for
+  // performance reasons
+  FreeLRUEntries(to_remove_head);
+  return tmp;
+}
+
+void NvmLRUCache::NvmLRU_Remove(LRUHandle* e) {
   e->next->prev = e->prev;
   e->prev->next = e->next;
   usage_ -= e->charge;
 }
 
-void LRUCache::LRU_Append(LRUHandle* e) {
+void NvmLRUCache::NvmLRU_Append(LRUHandle* e) {
   // Make "e" newest entry by inserting just before lru_
   e->next = &lru_;
   e->prev = lru_.prev;
@@ -247,15 +330,17 @@ void LRUCache::LRU_Append(LRUHandle* e) {
   usage_ += e->charge;
 }
 
-Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
-  LRUHandle* e;
+Cache::Handle* NvmLRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
+ LRUHandle* e;
   {
     lock_guard<MutexType> l(&mutex_);
     e = table_.Lookup(key, hash);
     if (e != NULL) {
+      // If an entry exists, remove the old entry from the cache
+      // and re-add to the end of the linked list.
       base::RefCountInc(&e->refs);
-      LRU_Remove(e);
-      LRU_Append(e);
+      NvmLRU_Remove(e);
+      NvmLRU_Append(e);
     }
   }
 
@@ -281,7 +366,7 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
-void LRUCache::Release(Cache::Handle* handle) {
+void NvmLRUCache::Release(Cache::Handle* handle) {
   LRUHandle* e = reinterpret_cast<LRUHandle*>(handle);
   bool last_reference = Unref(e);
   if (last_reference) {
@@ -289,35 +374,56 @@ void LRUCache::Release(Cache::Handle* handle) {
   }
 }
 
-Cache::Handle* LRUCache::Insert(
-    const Slice& key, uint32_t hash, void* value, size_t charge,
-    CacheDeleter *deleter) {
+void NvmLRUCache::EvictOldestUnlocked(LRUHandle** to_remove_head) {
+  LRUHandle* old = lru_.next;
+  NvmLRU_Remove(old);
+  table_.Remove(old->key(), old->hash);
+  if (Unref(old)) {
+    old->next = *to_remove_head;
+    *to_remove_head = old;
+  }
+}
 
+void NvmLRUCache::FreeLRUEntries(LRUHandle* to_free_head) {
+  while (to_free_head != NULL) {
+    LRUHandle* next = to_free_head->next;
+    FreeEntry(to_free_head);
+    to_free_head = next;
+  }
+}
+
+Cache::Handle* NvmLRUCache::Insert(const Slice& key, uint32_t hash,
+                                   void* value, size_t charge,
+                                   CacheDeleter* deleter) {
+  // Account for nvm key memory.
   LRUHandle* e = reinterpret_cast<LRUHandle*>(
-      malloc(sizeof(LRUHandle)-1 + key.size()));
+      malloc(sizeof(LRUHandle) - 1 /* sizeof(LRUHandle::key_data) */ + key.size()));
   LRUHandle* to_remove_head = NULL;
 
   e->value = value;
-  e->deleter = deleter;
-  e->charge = charge;
-  e->key_length = key.size();
+  memcpy(e->key_data, key.data(), key.size());
+
+  // Modify the charge to the nvm cache to account for all allocations
+  // done from the nvm address space. In this case we allocated the value
+  // slice object, the key slice and the key_data structure from nvm.
+  e->charge = charge + key.size();
   e->hash = hash;
   e->refs = 2;  // One from LRUCache, one for the returned handle
-  memcpy(e->key_data, key.data(), key.size());
-  mem_tracker_->Consume(charge);
+  e->key_length = key.size();
+  e->deleter = deleter;
   if (PREDICT_TRUE(metrics_)) {
-    metrics_->cache_usage->IncrementBy(charge);
+    metrics_->cache_usage->IncrementBy(e->charge);
     metrics_->inserts->Increment();
   }
 
   {
     lock_guard<MutexType> l(&mutex_);
 
-    LRU_Append(e);
+    NvmLRU_Append(e);
 
     LRUHandle* old = table_.Insert(e);
     if (old != NULL) {
-      LRU_Remove(old);
+      NvmLRU_Remove(old);
       if (Unref(old)) {
         old->next = to_remove_head;
         to_remove_head = old;
@@ -325,35 +431,25 @@ Cache::Handle* LRUCache::Insert(
     }
 
     while (usage_ > capacity_ && lru_.next != &lru_) {
-      LRUHandle* old = lru_.next;
-      LRU_Remove(old);
-      table_.Remove(old->key(), old->hash);
-      if (Unref(old)) {
-        old->next = to_remove_head;
-        to_remove_head = old;
-      }
+      EvictOldestUnlocked(&to_remove_head);
     }
   }
 
   // we free the entries here outside of mutex for
   // performance reasons
-  while (to_remove_head != NULL) {
-    LRUHandle* next = to_remove_head->next;
-    FreeEntry(to_remove_head);
-    to_remove_head = next;
-  }
+  FreeLRUEntries(to_remove_head);
 
   return reinterpret_cast<Cache::Handle*>(e);
 }
 
-void LRUCache::Erase(const Slice& key, uint32_t hash) {
+void NvmLRUCache::Erase(const Slice& key, uint32_t hash) {
   LRUHandle* e;
   bool last_reference = false;
   {
     lock_guard<MutexType> l(&mutex_);
     e = table_.Remove(key, hash);
     if (e != NULL) {
-      LRU_Remove(e);
+      NvmLRU_Remove(e);
       last_reference = Unref(e);
     }
   }
@@ -363,17 +459,16 @@ void LRUCache::Erase(const Slice& key, uint32_t hash) {
     FreeEntry(e);
   }
 }
-
 static const int kNumShardBits = 4;
 static const int kNumShards = 1 << kNumShardBits;
 
 class ShardedLRUCache : public Cache {
  private:
-  shared_ptr<MemTracker> mem_tracker_;
   gscoped_ptr<CacheMetrics> metrics_;
-  vector<LRUCache*> shards_;
+  vector<NvmLRUCache*> shards_;
   MutexType id_mutex_;
   uint64_t last_id_;
+  VMEM* vmp_;
 
   static inline uint32_t HashSlice(const Slice& s) {
     return util_hash::CityHash64(
@@ -385,17 +480,13 @@ class ShardedLRUCache : public Cache {
   }
 
  public:
-  explicit ShardedLRUCache(size_t capacity, const string& id)
-      : last_id_(0) {
-    // A cache is often a singleton, so:
-    // 1. We reuse its MemTracker if one already exists, and
-    // 2. It is directly parented to the root MemTracker.
-    mem_tracker_ = MemTracker::FindOrCreateTracker(
-        -1, strings::Substitute("$0-sharded_lru_cache", id));
+  explicit ShardedLRUCache(size_t capacity, const string& id, VMEM* vmp)
+        : last_id_(0),
+          vmp_(vmp) {
 
     const size_t per_shard = (capacity + (kNumShards - 1)) / kNumShards;
     for (int s = 0; s < kNumShards; s++) {
-      gscoped_ptr<LRUCache> shard(new LRUCache(mem_tracker_.get()));
+      gscoped_ptr<NvmLRUCache> shard(new NvmLRUCache(vmp_));
       shard->SetCapacity(per_shard);
       shards_.push_back(shard.release());
     }
@@ -403,6 +494,10 @@ class ShardedLRUCache : public Cache {
 
   virtual ~ShardedLRUCache() {
     STLDeleteElements(&shards_);
+    // Per the note at the top of this file, our cache is entirely volatile.
+    // Hence, when the cache is destructed, we delete the underlying
+    // VMEM pool.
+    vmem_delete(vmp_);
   }
 
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
@@ -429,19 +524,50 @@ class ShardedLRUCache : public Cache {
     lock_guard<MutexType> l(&id_mutex_);
     return ++(last_id_);
   }
-
   virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) OVERRIDE {
     metrics_.reset(new CacheMetrics(entity));
-    BOOST_FOREACH(LRUCache* cache, shards_) {
+    BOOST_FOREACH(NvmLRUCache* cache, shards_) {
       cache->SetMetrics(metrics_.get());
     }
   }
+  virtual uint8_t* Allocate(int size) OVERRIDE {
+    // Try allocating from each of the shards -- if vmem is tight,
+    // this can cause eviction, so we might have better luck in different
+    // shards.
+    BOOST_FOREACH(NvmLRUCache* cache, shards_) {
+      uint8_t* ptr = reinterpret_cast<uint8_t*>(cache->AllocateAndRetry(size));
+      if (ptr) return ptr;
+    }
+    // TODO: increment a metric here on allocation failure.
+    return NULL;
+  }
+  virtual void Free(uint8_t *ptr) OVERRIDE {
+    vmem_free(vmp_, ptr);
+  }
+  virtual uint8_t* MoveToHeap(uint8_t* ptr, int size) OVERRIDE {
+    uint8_t* ret = new uint8_t[size];
+    memcpy(ret, ptr, size);
+    vmem_free(vmp_, ptr);
+    return ret;
+  }
+
 };
 
-}  // end anonymous namespace
+} // end anonymous namespace
 
-Cache* NewLRUCache(size_t capacity, const string& id) {
-  return new ShardedLRUCache(capacity, id);
+Cache* NewLRUNvmCache(size_t capacity, const std::string& id) {
+  // vmem_create() will fail if the capacity is too small, but with
+  // an inscrutable error. So, we'll check ourselves.
+  CHECK_GE(capacity, VMEM_MIN_POOL)
+    << "configured capacity " << capacity << " bytes is less than "
+    << "the minimum capacity for an NVM cache: " << VMEM_MIN_POOL;
+
+  VMEM* vmp = vmem_create(FLAGS_nvm_cache_path.c_str(), capacity);
+  // If we cannot create the cache pool we should not retry.
+  PLOG_IF(FATAL, vmp == NULL) << "Could not initialize NVM cache library in path "
+                              << FLAGS_nvm_cache_path.c_str();
+
+  return new ShardedLRUCache(capacity, id, vmp);
 }
 
 }  // namespace kudu

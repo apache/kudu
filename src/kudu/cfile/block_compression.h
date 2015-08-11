@@ -51,6 +51,23 @@ class CompressedBlockDecoder {
   // If an error was encountered, returns a non-OK status.
   Status Uncompress(const Slice& data, Slice *result);
 
+  // Validates the header in the data block 'data'.
+  // Sets '*uncompressed_size' to the uncompressed size of the data block
+  // (i.e. the size of buffer that's required for a later call for UncompressIntoBuffer()).
+  //
+  // Returns Corruption if the data block header indicates a compressed size
+  // that is different than the amount of remaining data in the block, or if the
+  // uncompressed size is greater than the 'size_limit' provided in this class's constructor.
+  //
+  // In the case that this doesn't return OK, the output parameter may still
+  // be modified.
+  Status ValidateHeader(const Slice& data, uint32_t *uncompressed_size);
+
+  // Uncompress into the provided 'dst' buffer, which must be at least as
+  // large as 'uncompressed_size'. It's assumed that this length has already
+  // been determined by calling Uncompress_Validate().
+  Status UncompressIntoBuffer(const Slice& data, uint8_t* dst,
+                              uint32_t uncompressed_size);
  private:
   DISALLOW_COPY_AND_ASSIGN(CompressedBlockDecoder);
   const CompressionCodec* codec_;

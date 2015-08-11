@@ -12,6 +12,8 @@
 #include "kudu/gutil/singleton.h"
 #include "kudu/util/cache.h"
 
+DECLARE_string(block_cache_type);
+
 namespace kudu {
 
 class MetricRegistry;
@@ -47,12 +49,12 @@ class BlockCache {
 
   // Insert the given block into the cache.
   //
-  // The data pointed to by Slice should have been allocated with malloc.
+  // The data pointed to by Slice should have been allocated using Allocate().
   // After insertion, the block cache owns this pointer and will free it upon
   // eviction.
   //
   // The inserted entry is returned in *inserted.
-  void Insert(FileId file_id, uint64_t offset, const Slice &block_data,
+  bool Insert(FileId file_id, uint64_t offset, const Slice &block_data,
               BlockCacheHandle *inserted);
 
   // Pass a metric entity to the cache to start recording metrics.
@@ -60,6 +62,23 @@ class BlockCache {
   // Not calling StartInstrumentation will simply result in no block cache-related metrics.
   // Calling StartInstrumentation multiple times will reset the metrics each time.
   void StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity);
+
+  // Allocate a chunk of memory to hold a value in this cache.
+  //
+  // Some cache implementations may allocate the buffer outside of the normal
+  // heap area.
+  //
+  // NOTE: The returned pointer may either be passed to Insert(), MoveToHeap(), or
+  // Free(). It must NOT be freed using free() or delete[].
+  uint8_t* Allocate(size_t size);
+
+  // Move a pointer previously allocated using Allocate() onto the normal heap.
+  // This is a no-op for a DRAM-based cache, but in other cases may relocate the
+  // data.
+  uint8_t* MoveToHeap(uint8_t* p, size_t size);
+
+  // Free a pointer previously allocated using Allocate().
+  void Free(uint8_t *p);
 
  private:
   friend class Singleton<BlockCache>;

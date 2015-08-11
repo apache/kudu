@@ -152,7 +152,6 @@ Status CFileReader::ReadAndParseHeader() {
   uint8_t header_space[header_size];
   Slice header_slice;
   header_.reset(new CFileHeaderPB());
-
   RETURN_NOT_OK(block_->Read(kMagicAndLengthSize, header_size,
                              &header_slice, header_space));
   if (!header_->ParseFromArray(header_slice.data(), header_size)) {
@@ -201,6 +200,95 @@ Status CFileReader::ReadAndParseFooter() {
   return Status::OK();
 }
 
+namespace {
+
+// ScratchMemory owns a memory buffer which could either be allocated on-heap
+// or allocated by a Cache instance. In the case of the default DRAM-based cache,
+// these two are equivalent, but we still make a distinction between "cache-managed"
+// memory and "on-heap" memory. In the case of the NVM-based cache, this is a more
+// important distinction: we would like to read (or decompress) blocks directly into NVM.
+//
+// This class tracks the block of memory, its size, and whether it came from the heap
+// or the cache. In its destructor, the memory is freed, either via 'delete[]', if
+// it's heap memory, or via Cache::Free(), if it came from the cache. Alternatively,
+// the memory can be released using 'release()'.
+class ScratchMemory {
+ public:
+  ScratchMemory() : cache_(NULL), ptr_(NULL), size_(-1) {}
+  ~ScratchMemory() {
+    if (!ptr_) return;
+    if (cache_) {
+      cache_->Free(ptr_);
+    } else {
+      delete[] ptr_;
+    }
+  }
+
+  // Try to allocate 'size' bytes from the cache. If the cache has
+  // no capacity and cannot evict to make room, this will fall back
+  // to allocating from the heap. In that case, IsFromCache() will
+  // return false.
+  void TryAllocateFromCache(BlockCache* cache, int size) {
+    DCHECK(!ptr_);
+    cache_ = DCHECK_NOTNULL(cache);
+    ptr_ = cache->Allocate(size);
+    if (!ptr_) {
+      AllocateFromHeap(size);
+      return;
+    }
+    size_ = size;
+  }
+
+  void AllocateFromHeap(int size) {
+    DCHECK(!ptr_);
+    cache_ = NULL;
+    ptr_ = new uint8_t[size];
+    size_ = size;
+  }
+
+  // If the current memory was allocated by the cache, this moves it to normal
+  // heap memory. In the case of the DRAM cache, the cache implements this as
+  // a no-op. In the case of NVM, we actually allocate on-heap memory and
+  // memcpy the data.
+  void EnsureOnHeap() {
+    DCHECK(ptr_);
+    if (cache_) {
+      ptr_ = cache_->MoveToHeap(ptr_, size_);
+    }
+    cache_ = NULL;
+  }
+
+  // Return true if the current scratch memory was allocated from the cache.
+  bool IsFromCache() const {
+    return cache_ != NULL;
+  }
+
+  uint8_t* get() {
+    return DCHECK_NOTNULL(ptr_);
+  }
+
+  uint8_t* release() {
+    uint8_t* ret = ptr_;
+    ptr_ = NULL;
+    size_ = -1;
+    return ret;
+  }
+
+  // Swap the contents of this instance with another.
+  void Swap(ScratchMemory* other) {
+    std::swap(cache_, other->cache_);
+    std::swap(ptr_, other->ptr_);
+    std::swap(size_, other->size_);
+  }
+
+ private:
+  BlockCache* cache_;
+  uint8_t* ptr_;
+  int size_;
+  DISALLOW_COPY_AND_ASSIGN(ScratchMemory);
+};
+} // anonymous namespace
+
 Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_control,
                               BlockHandle *ret) const {
   DCHECK(init_once_.initted());
@@ -224,43 +312,91 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   // from the Linux cache).
   TRACE_EVENT1("io", "CFileReader::ReadBlock(cache miss)",
                "cfile", ToString());
-  gscoped_array<uint8_t> scratch(new uint8_t[ptr.size()]);
   Slice block;
-  RETURN_NOT_OK(block_->Read(ptr.offset(), ptr.size(),
-                             &block, scratch.get()));
+
+  // If we are reading uncompressed data and plan to cache the result,
+  // then we should allocate our scratch memory directly from the cache.
+  // This avoids an extra memory copy in the case of an NVM cache.
+  ScratchMemory scratch;
+  if (block_uncompressor_ == NULL && cache_control == CACHE_BLOCK) {
+    scratch.TryAllocateFromCache(cache, ptr.size());
+  } else {
+    scratch.AllocateFromHeap(ptr.size());
+  }
+
+  RETURN_NOT_OK(block_->Read(ptr.offset(), ptr.size(), &block, scratch.get()));
+
   if (block.size() != ptr.size()) {
     return Status::IOError("Could not read full block length");
   }
 
   // Decompress the block
   if (block_uncompressor_ != NULL) {
-    Slice ublock;
-    Status s = block_uncompressor_->Uncompress(block, &ublock);
+    // Get the size required for the uncompressed buffer
+    uint32_t uncompressed_size;
+    Status s = block_uncompressor_->ValidateHeader(block, &uncompressed_size);
+    if (!s.ok()) {
+      LOG(WARNING) << "Unable to get uncompressed size at "
+                   << ptr.offset() << " of size " << ptr.size() << ": "
+                   << s.ToString();
+      return s;
+    }
+
+    // If we plan to put the uncompressed block in the cache, we should
+    // decompress directly into the cache's memory (to avoid a memcpy for NVM).
+    ScratchMemory decompressed_scratch;
+    if (cache_control == CACHE_BLOCK) {
+      decompressed_scratch.TryAllocateFromCache(cache, uncompressed_size);
+    } else {
+      decompressed_scratch.AllocateFromHeap(uncompressed_size);
+    }
+
+    s = block_uncompressor_->UncompressIntoBuffer(block, decompressed_scratch.get(),
+                                                  uncompressed_size);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to uncompress block at " << ptr.offset()
                    << " of size " << ptr.size() << ": " << s.ToString();
       return s;
     }
 
-    // free scratch, now that we have the uncompressed block
-    block = ublock;
-    scratch.reset(NULL);
+    // Now that we've decompressed, we don't need to keep holding onto the original
+    // scratch buffer. Instead, we have to start holding onto our decompression
+    // output buffer.
+    scratch.Swap(&decompressed_scratch);
+
+    // Set the result block to our decompressed data.
+    block = Slice(scratch.get(), uncompressed_size);
   } else {
     // Some of the File implementations from LevelDB attempt to be tricky
     // and just return a Slice into an mmapped region (or in-memory region).
     // But, this is hard to program against in terms of cache management, etc,
-    // and in practice won't be useful in a libhdfs context.
+    // so we memcpy into our scratch buffer if necessary.
     block.relocate(scratch.get());
   }
 
-  if (cache_control == CACHE_BLOCK) {
-    cache->Insert(block_->id(), ptr.offset(), block, &bc_handle);
-    *ret = BlockHandle::WithDataFromCache(&bc_handle);
+  // It's possible that one of the TryAllocateFromCache() calls above
+  // failed, in which case we don't insert it into the cache regardless
+  // of what the user requested.
+  if (cache_control == CACHE_BLOCK && scratch.IsFromCache()) {
+    if (cache->Insert(block_->id(), ptr.offset(), block, &bc_handle)) {
+      *ret = BlockHandle::WithDataFromCache(&bc_handle);
+    } else {
+      // If we failed to insert in the cache, but we'd already read into
+      // cache-managed memory, we need to ensure that we end up with a
+      // heap-allocated block in the BlockHandle.
+      scratch.EnsureOnHeap();
+      block = Slice(scratch.get(), block.size());
+      *ret = BlockHandle::WithOwnedData(block);
+    }
   } else {
+    // If we never intended to cache the block, then the scratch space
+    // should not be owned by the cache.
+    DCHECK_EQ(block.data(), scratch.get());
+    DCHECK(!scratch.IsFromCache());
     *ret = BlockHandle::WithOwnedData(block);
   }
 
-  // The cache now has ownership over the memory, so release
+  // The cache or the BlockHandle now has ownership over the memory, so release
   // the scoped pointer.
   ignore_result(scratch.release());
 

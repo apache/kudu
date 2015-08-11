@@ -106,6 +106,7 @@ set(UTIL_SRCS
   net/net_util.cc
   net/sockaddr.cc
   net/socket.cc
+  nvm_cache.cc
   oid_generator.cc
   once.cc
   os-util.cc
@@ -145,6 +146,7 @@ set(UTIL_LIBS
   histogram_proto
   pb_util_proto
   protobuf
+  vmem
   rt
   version_info_proto
   zlib)
@@ -175,7 +177,8 @@ target_link_libraries(kudu_test_util
   gflags
   glog
   gmock
-  kudu_util)
+  kudu_util
+  vmem)
 
 #######################################
 # kudu_test_main

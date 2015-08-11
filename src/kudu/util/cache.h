@@ -32,9 +32,14 @@ class Cache;
 struct CacheMetrics;
 class MetricEntity;
 
+enum CacheType {
+  DRAM_CACHE,
+  NVM_CACHE
+};
+
 // Create a new cache with a fixed size capacity.  This implementation
 // of Cache uses a least-recently-used eviction policy.
-extern Cache* NewLRUCache(size_t capacity, const std::string& id);
+Cache* NewLRUCache(CacheType type, size_t capacity, const std::string& id);
 
 // Callback interface for deleting a value stored in the cache.
 // This is called when an inserted entry is no longer needed.
@@ -116,6 +121,27 @@ class Cache {
 
   // Pass a metric entity in order to start recoding metrics.
   virtual void SetMetrics(const scoped_refptr<MetricEntity>& metric_entity) = 0;
+
+  // Allocate 'bytes' bytes from the cache's memory pool.
+  //
+  // It is possible that this will return NULL if the cache is above its capacity
+  // and eviction fails to free up enough space for the requested allocation.
+  //
+  // NOTE: the returned memory is not automatically freed by the cache: the
+  // caller must either free it using Free(), or MoveToHeap() followed by
+  // delete[].
+  virtual uint8_t* Allocate(int bytes) = 0;
+
+  // Free 'ptr', which must have been previously allocated using 'Allocate'.
+  virtual void Free(uint8_t* ptr) = 0;
+
+  // Moves 'ptr' to the normal C++ heap, if it is not already there.
+  // 'ptr' must have previously been allocated using Allocate(bytes).
+  // If 'ptr' is already on the C++ heap, then returns the same value.
+  //
+  // The returned value should be freed by the caller using the 'delete[]'
+  // operator.
+  virtual uint8_t* MoveToHeap(uint8_t* ptr, int bytes) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(Cache);

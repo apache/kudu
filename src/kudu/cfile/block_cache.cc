@@ -6,11 +6,19 @@
 #include "kudu/cfile/block_cache.h"
 #include "kudu/gutil/port.h"
 #include "kudu/util/cache.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/slice.h"
-
+#include "kudu/util/string_case.h"
 
 DEFINE_int64(block_cache_capacity_mb, 512, "block cache capacity in MB");
+
+DEFINE_string(block_cache_type, "DRAM",
+              "Which type of block cache to use for caching data. "
+              "Valid choices are 'DRAM' or 'NVM'. DRAM, the default, "
+              "caches data in regular memory. 'NVM' caches data "
+              "in a memory-mapped file using the NVML library.");
+TAG_FLAG(block_cache_type, experimental);
 
 namespace kudu {
 
@@ -35,28 +43,57 @@ struct CacheKey {
 namespace {
 class Deleter : public CacheDeleter {
  public:
-  Deleter() {}
+  explicit Deleter(Cache* cache) : cache_(cache) {
+  }
   virtual void Delete(const Slice& slice, void* value) OVERRIDE {
     Slice *value_slice = reinterpret_cast<Slice *>(value);
 
-    delete[] value_slice->data();
+    // The actual data was allocated from the cache's memory
+    // (i.e. it may be in nvm)
+    cache_->Free(value_slice->mutable_data());
     delete value_slice;
   }
  private:
+  Cache* cache_;
   DISALLOW_COPY_AND_ASSIGN(Deleter);
 };
+
+Cache* CreateCache(int64_t capacity) {
+  CacheType t;
+  ToUpperCase(FLAGS_block_cache_type, &FLAGS_block_cache_type);
+  if (FLAGS_block_cache_type == "NVM") {
+    t = NVM_CACHE;
+  } else if (FLAGS_block_cache_type == "DRAM") {
+    t = DRAM_CACHE;
+  } else {
+    LOG(FATAL) << "Unknown block cache type: '" << FLAGS_block_cache_type
+               << "' (expected 'DRAM' or 'NVM')";
+  }
+  return NewLRUCache(t, capacity, "block_cache");
+}
 
 } // anonymous namespace
 
 BlockCache::BlockCache()
-  : cache_(CHECK_NOTNULL(NewLRUCache(FLAGS_block_cache_capacity_mb * 1024 * 1024,
-                                     "block_cache"))) {
-  deleter_.reset(new Deleter());
+  : cache_(CreateCache(FLAGS_block_cache_capacity_mb * 1024 * 1024)) {
+  deleter_.reset(new Deleter(cache_.get()));
 }
 
 BlockCache::BlockCache(size_t capacity)
-  : cache_(CHECK_NOTNULL(NewLRUCache(capacity, "block_cache"))) {
-  deleter_.reset(new Deleter());
+  : cache_(CreateCache(capacity)) {
+  deleter_.reset(new Deleter(cache_.get()));
+}
+
+uint8_t* BlockCache::Allocate(size_t size) {
+  return cache_->Allocate(size);
+}
+
+void BlockCache::Free(uint8_t* p) {
+  cache_->Free(p);
+}
+
+uint8_t* BlockCache::MoveToHeap(uint8_t* p, size_t size) {
+  return cache_->MoveToHeap(p, size);
 }
 
 bool BlockCache::Lookup(FileId file_id, uint64_t offset, Cache::CacheBehavior behavior,
@@ -69,17 +106,19 @@ bool BlockCache::Lookup(FileId file_id, uint64_t offset, Cache::CacheBehavior be
   return h != NULL;
 }
 
-void BlockCache::Insert(FileId file_id, uint64_t offset, const Slice &block_data,
+bool BlockCache::Insert(FileId file_id, uint64_t offset, const Slice &block_data,
                         BlockCacheHandle *inserted) {
   CacheKey key(file_id, offset);
-
   // Allocate a copy of the value Slice (not the referred-to-data!)
   // for insertion in the cache.
-  Slice *value = new Slice(block_data);
-
-  Cache::Handle *h = cache_->Insert(key.slice(), value, value->size(),
+  gscoped_ptr<Slice> value(new Slice(block_data));
+  Cache::Handle *h = cache_->Insert(key.slice(), value.get(), value->size(),
                                     deleter_.get());
-  inserted->SetHandle(cache_.get(), h);
+  if (h != NULL) {
+    inserted->SetHandle(cache_.get(), h);
+    ignore_result(value.release());
+  }
+  return h != NULL;
 }
 
 void BlockCache::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {

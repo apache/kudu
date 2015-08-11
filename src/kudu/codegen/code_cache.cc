@@ -32,7 +32,7 @@ class Deleter : public CacheDeleter {
 } // anonymous namespace
 
 CodeCache::CodeCache(size_t capacity)
-  : cache_(NewLRUCache(capacity, "code_cache")) {
+  : cache_(NewLRUCache(DRAM_CACHE, capacity, "code_cache")) {
   deleter_.reset(new Deleter());
 }
 
@@ -47,8 +47,10 @@ Status CodeCache::AddEntry(const scoped_refptr<JITWrapper>& value) {
   // and increase its ref count.
   value->AddRef();
 
-  // Insert into cache and release the handle (we have a local copy of a refptr)
-  Cache::Handle* inserted = cache_->Insert(key, value.get(), 1, deleter_.get());
+  // Insert into cache and release the handle (we have a local copy of a refptr).
+  // We CHECK_NOTNULL because this is always a DRAM-based cache, and if allocation
+  // failed, we'd just crash the process.
+  Cache::Handle* inserted = CHECK_NOTNULL(cache_->Insert(key, value.get(), 1, deleter_.get()));
   cache_->Release(inserted);
   return Status::OK();
 }

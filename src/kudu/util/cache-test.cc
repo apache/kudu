@@ -6,6 +6,7 @@
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
 #include <glog/logging.h>
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
 #include <vector>
@@ -13,6 +14,9 @@
 #include "kudu/util/coding.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/test_util.h"
+
+DECLARE_string(nvm_cache_path);
 
 namespace kudu {
 
@@ -29,7 +33,9 @@ static int DecodeKey(const Slice& k) {
 static void* EncodeValue(uintptr_t v) { return reinterpret_cast<void*>(v); }
 static int DecodeValue(void* v) { return reinterpret_cast<uintptr_t>(v); }
 
-class CacheTest : public ::testing::Test, public CacheDeleter {
+class CacheTest : public KuduTest,
+                  public ::testing::WithParamInterface<CacheType>,
+                  public CacheDeleter {
  public:
 
   // Implementation of the CacheDeleter interface
@@ -37,24 +43,32 @@ class CacheTest : public ::testing::Test, public CacheDeleter {
     deleted_keys_.push_back(DecodeKey(key));
     deleted_values_.push_back(DecodeValue(v));
   }
-
-  static const int kCacheSize = 1000;
   std::vector<int> deleted_keys_;
   std::vector<int> deleted_values_;
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
-  Cache* cache_;
+  gscoped_ptr<Cache> cache_;
   MetricRegistry metric_registry_;
 
-  CacheTest()
-    : cache_(NewLRUCache(kCacheSize, "cache_test")) {
-    CHECK(MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_));
+  static const int kCacheSize = 14*1024*1024;
+
+  virtual void SetUp() OVERRIDE {
+    if (google::GetCommandLineFlagInfoOrDie("nvm_cache_path").is_default) {
+      FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
+      ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
+    }
+
+    cache_.reset(NewLRUCache(GetParam(), kCacheSize, "cache_test"));
+
+    MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_);
+    // Since nvm cache does not have memtracker due to the use of
+    // tcmalloc for this we only check for it in the DRAM case.
+    if (GetParam() == DRAM_CACHE) {
+      ASSERT_TRUE(mem_tracker_);
+    }
+
     scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
         &metric_registry_, "test");
     cache_->SetMetrics(entity);
-  }
-
-  ~CacheTest() {
-    delete cache_;
   }
 
   int Lookup(int key) {
@@ -75,17 +89,19 @@ class CacheTest : public ::testing::Test, public CacheDeleter {
     cache_->Erase(EncodeKey(key));
   }
 };
+INSTANTIATE_TEST_CASE_P(CacheTypes, CacheTest, ::testing::Values(DRAM_CACHE, NVM_CACHE));
 
-
-TEST_F(CacheTest, TrackMemory) {
-  Insert(100, 100, 1);
-  ASSERT_EQ(1, mem_tracker_->consumption());
-  Erase(100);
-  ASSERT_EQ(0, mem_tracker_->consumption());
-  ASSERT_EQ(1, mem_tracker_->peak_consumption());
+TEST_P(CacheTest, TrackMemory) {
+  if (mem_tracker_) {
+    Insert(100, 100, 1);
+    ASSERT_EQ(1, mem_tracker_->consumption());
+    Erase(100);
+    ASSERT_EQ(0, mem_tracker_->consumption());
+    ASSERT_EQ(1, mem_tracker_->peak_consumption());
+  }
 }
 
-TEST_F(CacheTest, HitAndMiss) {
+TEST_P(CacheTest, HitAndMiss) {
   ASSERT_EQ(-1, Lookup(100));
 
   Insert(100, 101);
@@ -108,7 +124,7 @@ TEST_F(CacheTest, HitAndMiss) {
   ASSERT_EQ(101, deleted_values_[0]);
 }
 
-TEST_F(CacheTest, Erase) {
+TEST_P(CacheTest, Erase) {
   Erase(200);
   ASSERT_EQ(0, deleted_keys_.size());
 
@@ -127,7 +143,7 @@ TEST_F(CacheTest, Erase) {
   ASSERT_EQ(1, deleted_keys_.size());
 }
 
-TEST_F(CacheTest, EntriesArePinned) {
+TEST_P(CacheTest, EntriesArePinned) {
   Insert(100, 101);
   Cache::Handle* h1 = cache_->Lookup(EncodeKey(100), Cache::EXPECT_IN_CACHE);
   ASSERT_EQ(101, DecodeValue(cache_->Value(h1)));
@@ -152,13 +168,16 @@ TEST_F(CacheTest, EntriesArePinned) {
   ASSERT_EQ(102, deleted_values_[1]);
 }
 
-TEST_F(CacheTest, EvictionPolicy) {
+TEST_P(CacheTest, EvictionPolicy) {
   Insert(100, 101);
   Insert(200, 201);
 
+  const int kNumElems = 1000;
+  const int kSizePerElem = kCacheSize / kNumElems;
+
   // Frequently used entry must be kept around
-  for (int i = 0; i < kCacheSize + 100; i++) {
-    Insert(1000+i, 2000+i);
+  for (int i = 0; i < kNumElems + 100; i++) {
+    Insert(1000+i, 2000+i, kSizePerElem);
     ASSERT_EQ(2000+i, Lookup(1000+i));
     ASSERT_EQ(101, Lookup(100));
   }
@@ -166,12 +185,12 @@ TEST_F(CacheTest, EvictionPolicy) {
   ASSERT_EQ(-1, Lookup(200));
 }
 
-TEST_F(CacheTest, HeavyEntries) {
+TEST_P(CacheTest, HeavyEntries) {
   // Add a bunch of light and heavy entries and then count the combined
   // size of items still in the cache, which must be approximately the
   // same as the total capacity.
-  const int kLight = 1;
-  const int kHeavy = 10;
+  const int kLight = kCacheSize/1000;
+  const int kHeavy = kCacheSize/100;
   int added = 0;
   int index = 0;
   while (added < 2*kCacheSize) {
@@ -193,7 +212,7 @@ TEST_F(CacheTest, HeavyEntries) {
   ASSERT_LE(cached_weight, kCacheSize + kCacheSize/10);
 }
 
-TEST_F(CacheTest, NewId) {
+TEST_P(CacheTest, NewId) {
   uint64_t a = cache_->NewId();
   uint64_t b = cache_->NewId();
   ASSERT_NE(a, b);

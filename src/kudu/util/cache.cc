@@ -22,6 +22,7 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/nvm_cache.h"
 
 namespace kudu {
 
@@ -436,12 +437,32 @@ class ShardedLRUCache : public Cache {
       cache->SetMetrics(metrics_.get());
     }
   }
+
+  virtual uint8_t* Allocate(int bytes) OVERRIDE {
+    DCHECK_GE(bytes, 0);
+    return new uint8_t[bytes];
+  }
+
+  virtual void Free(uint8_t* ptr) OVERRIDE {
+    delete[] ptr;
+  }
+
+  virtual uint8_t* MoveToHeap(uint8_t* ptr, int size) OVERRIDE {
+    // Our allocated pointers are always on the heap.
+    return ptr;
+  }
+
 };
 
 }  // end anonymous namespace
 
-Cache* NewLRUCache(size_t capacity, const string& id) {
-  return new ShardedLRUCache(capacity, id);
+Cache* NewLRUCache(CacheType type, size_t capacity, const string& id) {
+  switch (type) {
+    case DRAM_CACHE:
+      return new ShardedLRUCache(capacity, id);
+    case NVM_CACHE:
+      return NewLRUNvmCache(capacity, id);
+  }
 }
 
 }  // namespace kudu
