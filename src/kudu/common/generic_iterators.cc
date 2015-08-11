@@ -133,6 +133,7 @@ MergeIterator::MergeIterator(
   : schema_(schema),
     initted_(false) {
   CHECK_GT(iters.size(), 0);
+  CHECK_GT(schema.num_key_columns(), 0);
   orig_iters_.assign(iters.begin(), iters.end());
 }
 

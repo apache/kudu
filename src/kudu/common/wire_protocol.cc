@@ -433,14 +433,7 @@ template<bool IS_NULLABLE, bool IS_VARLEN>
 static void CopyColumn(const RowBlock& block, int col_idx,
                        int dst_col_idx, uint8_t* dst_base,
                        faststring* indirect_data, const Schema* dst_schema) {
-  const Schema& schema = block.schema();
-  if (dst_schema == NULL) {
-    dst_schema = &schema;
-    DCHECK(dst_col_idx == col_idx)
-        << strings::Substitute("output schema same as source schema, but"
-                               "dst_col_idx != col_idx ($0 vs. $1)",
-                               dst_col_idx, col_idx);
-  }
+  DCHECK_NOTNULL(dst_schema);
   ColumnBlock cblock = block.column_block(col_idx);
   size_t row_stride = ContiguousRowHelper::row_size(*dst_schema);
   uint8_t* dst = dst_base + dst_schema->column_offset(dst_col_idx);
@@ -493,24 +486,27 @@ static void CopyColumn(const RowBlock& block, int col_idx,
 // with the extra verifications.
 ATTRIBUTE_NO_ADDRESS_SAFETY_ANALYSIS
 void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
-                       const Schema* project_schema,
+                       const Schema* projection_schema,
                        faststring* data_buf, faststring* indirect_data) {
   DCHECK_GT(block.nrows(), 0);
-  const Schema& schema = block.schema();
+  const Schema& tablet_schema = block.schema();
+
+  if (projection_schema == NULL) {
+    projection_schema = &tablet_schema;
+  }
+
   size_t old_size = data_buf->size();
-  size_t row_stride =
-      ContiguousRowHelper::row_size(project_schema != NULL ? *project_schema : schema);
+  size_t row_stride = ContiguousRowHelper::row_size(*projection_schema);
   int num_rows = block.selection_vector()->CountSelected();
   data_buf->resize(old_size + row_stride * num_rows);
   uint8_t* base = reinterpret_cast<uint8_t*>(&(*data_buf)[old_size]);
-  size_t dst_idx = 0;
-  for (int i = 0; i < schema.num_columns(); i++) {
-    const ColumnSchema& col = schema.column(i);
 
-    if (project_schema != NULL) {
-      if (project_schema->find_column(col.name()) == -1) {
-        continue;
-      }
+  size_t proj_schema_idx = 0;
+  for (int t_schema_idx = 0; t_schema_idx < tablet_schema.num_columns(); t_schema_idx++) {
+    const ColumnSchema& col = tablet_schema.column(t_schema_idx);
+    proj_schema_idx = projection_schema->find_column(col.name());
+    if (proj_schema_idx == -1) {
+      continue;
     }
 
     // Generating different functions for each of these cases makes them much less
@@ -520,22 +516,20 @@ void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
     // even bigger gains, since we could inline the constant cell sizes and column
     // offsets.
     if (col.is_nullable() && col.type_info()->physical_type() == BINARY) {
-      CopyColumn<true, true>(block, i, dst_idx, base, indirect_data,
-                             project_schema);
+      CopyColumn<true, true>(block, t_schema_idx, proj_schema_idx, base, indirect_data,
+                             projection_schema);
     } else if (col.is_nullable() && col.type_info()->physical_type() != BINARY) {
-      CopyColumn<true, false>(block, i, dst_idx, base, indirect_data,
-                              project_schema);
+      CopyColumn<true, false>(block, t_schema_idx, proj_schema_idx, base, indirect_data,
+                              projection_schema);
     } else if (!col.is_nullable() && col.type_info()->physical_type() == BINARY) {
-      CopyColumn<false, true>(block, i, dst_idx, base, indirect_data,
-                              project_schema);
+      CopyColumn<false, true>(block, t_schema_idx, proj_schema_idx, base, indirect_data,
+                              projection_schema);
     } else if (!col.is_nullable() && col.type_info()->physical_type() != BINARY) {
-      CopyColumn<false, false>(block, i, dst_idx, base, indirect_data,
-                               project_schema);
+      CopyColumn<false, false>(block, t_schema_idx, proj_schema_idx, base, indirect_data,
+                               projection_schema);
     } else {
       LOG(FATAL) << "cannot reach here";
     }
-
-    ++dst_idx;
   }
   rowblock_pb->set_num_rows(rowblock_pb->num_rows() + num_rows);
 }

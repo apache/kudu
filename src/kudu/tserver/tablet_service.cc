@@ -1043,6 +1043,8 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   gscoped_ptr<ScanSpec> ret(new ScanSpec);
   ret->set_cache_blocks(scan_pb.cache_blocks());
 
+  unordered_set<string> missing_col_names;
+
   // First the column range predicates.
   BOOST_FOREACH(const ColumnRangePredicatePB& pred_pb, scan_pb.range_predicates()) {
     if (!pred_pb.has_lower_bound() && !pred_pb.has_upper_bound()) {
@@ -1051,8 +1053,10 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
         ": has no lower or upper bound.");
     }
     ColumnSchema col(ColumnSchemaFromPB(pred_pb.column()));
-    if (projection.find_column(col.name()) == -1) {
+    if (projection.find_column(col.name()) == -1 &&
+        !ContainsKey(missing_col_names, col.name())) {
       missing_cols->push_back(col);
+      InsertOrDie(&missing_col_names, col.name());
     }
 
     const void* lower_bound = NULL;
@@ -1089,8 +1093,10 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
       projection.num_key_columns() != tablet_schema.num_key_columns()) {
     for (int i = 0; i < tablet_schema.num_key_columns(); i++) {
       const ColumnSchema &col = tablet_schema.column(i);
-      if (projection.find_column(col.name()) == -1) {
+      if (projection.find_column(col.name()) == -1 &&
+          !ContainsKey(missing_col_names, col.name())) {
         missing_cols->push_back(col);
+        InsertOrDie(&missing_col_names, col.name());
       }
     }
   }
@@ -1152,6 +1158,10 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   }
 
   gscoped_ptr<ScanSpec> spec(new ScanSpec);
+
+  // Missing columns will contain the columns that are not mentioned in the client
+  // projection but are actually needed for the scan, such as columns referred to by
+  // predicates or key columns (if this is an ORDERED scan).
   vector<ColumnSchema> missing_cols;
   s = SetupScanSpec(scan_pb, *tablet_schema, projection, &missing_cols, &spec, scanner);
   if (PREDICT_FALSE(!s.ok())) {
@@ -1159,19 +1169,21 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     return s;
   }
 
-  // Fix for KUDU-15: if predicate columns are missing from the projection,
-  // add to them projection before passing the projection to the iterator and
-  // save the original projection (in order to trim the missing predicate columns
-  // from the reply to the client).
-  if (missing_cols.size() > 0) {
-    gscoped_ptr<Schema> orig_projection(new Schema(projection));
-    SchemaBuilder projection_builder(projection);
-    BOOST_FOREACH(const ColumnSchema& col, missing_cols) {
-      projection_builder.AddColumn(col, tablet_schema->is_key_column(col.name()));
-    }
-    projection = projection_builder.BuildWithoutIds();
-    scanner->set_client_projection_schema(orig_projection.Pass());
+  // Store the original projection.
+  gscoped_ptr<Schema> orig_projection(new Schema(projection));
+  scanner->set_client_projection_schema(orig_projection.Pass());
+
+  // Build a new projection with the projection columns and the missing columns. Make
+  // sure to set whether the column is a key column appropriately.
+  SchemaBuilder projection_builder;
+  vector<ColumnSchema> projection_columns = projection.columns();
+  BOOST_FOREACH(const ColumnSchema& col, missing_cols) {
+    projection_columns.push_back(col);
   }
+  BOOST_FOREACH(const ColumnSchema& col, projection_columns) {
+    CHECK_OK(projection_builder.AddColumn(col, tablet_schema->is_key_column(col.name())));
+  }
+  projection = projection_builder.BuildWithoutIds();
 
   gscoped_ptr<RowwiseIterator> iter;
   // Preset the error code for when creating the iterator on the tablet fails

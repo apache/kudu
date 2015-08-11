@@ -1673,8 +1673,7 @@ void TabletServerTest::DoOrderedScanTest(const Schema& projection,
 // Tests for KUDU-967. This test creates multiple row sets and then performs an ordered
 // scan including the key columns in the projection but without marking them as keys.
 // Without a fix for KUDU-967 the scan will often return out-of-order results.
-// DISABLED until the fix gets in.
-TEST_F(TabletServerTest, DISABLED_TestOrderedScan_ProjectionWithKeyColumnsInOrder) {
+TEST_F(TabletServerTest, TestOrderedScan_ProjectionWithKeyColumnsInOrder) {
   // Build a projection with all the columns, but don't mark the key columns as such.
   SchemaBuilder sb;
   for (int i = 0; i < schema_.num_columns(); i++) {
@@ -1685,7 +1684,7 @@ TEST_F(TabletServerTest, DISABLED_TestOrderedScan_ProjectionWithKeyColumnsInOrde
 }
 
 // Same as above but doesn't add the key columns to the projection.
-TEST_F(TabletServerTest, DISABLED_TestOrderedScan_ProjectionWithoutKeyColumns) {
+TEST_F(TabletServerTest, TestOrderedScan_ProjectionWithoutKeyColumns) {
   // Build a projection without the key columns.
   SchemaBuilder sb;
   for (int i = schema_.num_key_columns(); i < schema_.num_columns(); i++) {
@@ -1696,7 +1695,7 @@ TEST_F(TabletServerTest, DISABLED_TestOrderedScan_ProjectionWithoutKeyColumns) {
 }
 
 // Same as above but creates a projection with the order of columns reversed.
-TEST_F(TabletServerTest, DISABLED_TestOrderedScan_ProjectionWithKeyColumnsOutOfOrder) {
+TEST_F(TabletServerTest, TestOrderedScan_ProjectionWithKeyColumnsOutOfOrder) {
   // Build a projection with the order of the columns reversed.
   SchemaBuilder sb;
   for (int i = schema_.num_columns() - 1; i >= 0; i--) {
