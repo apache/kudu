@@ -81,8 +81,8 @@ const char *FsManager::kConsensusMetadataDirName = "consensus-meta";
 static const char* const kTmpInfix = ".tmp";
 
 FsManagerOpts::FsManagerOpts()
-  : read_only(false),
-    wal_path(FLAGS_fs_wal_dir) {
+  : wal_path(FLAGS_fs_wal_dir),
+    read_only(false) {
   data_paths = strings::Split(FLAGS_fs_data_dirs, ",", strings::SkipEmpty());
 }
 
