@@ -166,6 +166,8 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   if (FLAGS_print_headers && segment->HasFooter()) {
     cout << "Footer:\n" << segment->footer().DebugString();
   }
+
+  return Status::OK();
 }
 
 Status DumpLog(const string& tablet_oid) {
