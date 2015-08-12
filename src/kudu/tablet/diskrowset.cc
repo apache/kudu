@@ -50,6 +50,10 @@ DEFINE_double(tablet_delta_store_major_compact_min_ratio, 0.1f,
              "can run (Advanced option)");
 TAG_FLAG(tablet_delta_store_major_compact_min_ratio, experimental);
 
+DEFINE_int32(default_composite_key_index_block_size_bytes, 4096,
+             "Block size used for composite key indexes.");
+TAG_FLAG(default_composite_key_index_block_size_bytes, experimental);
+
 namespace kudu {
 namespace tablet {
 
@@ -128,6 +132,8 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
   opts.write_posidx = false;
 
   opts.storage_attributes.encoding = PREFIX_ENCODING;
+  opts.storage_attributes.compression = LZ4;
+  opts.storage_attributes.cfile_block_size = FLAGS_default_composite_key_index_block_size_bytes;
 
   // Create the CFile writer for the ad-hoc index.
   ad_hoc_index_writer_.reset(new cfile::CFileWriter(
