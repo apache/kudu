@@ -119,6 +119,10 @@ class Transaction {
 class TransactionState {
  public:
 
+  // Returns the request PB associated with this transaction. May be NULL if
+  // the transaction's state has been reset.
+  virtual const google::protobuf::Message* request() const { return NULL; }
+
   // Returns the response PB associated with this transaction, or NULL.
   // This will only return a non-null object for leader-side transactions.
   virtual google::protobuf::Message* response() { return NULL; }

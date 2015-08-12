@@ -196,11 +196,11 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Convenience method to return the permanent_uuid of this peer.
   std::string permanent_uuid() const { return tablet_->metadata()->fs_manager()->uuid(); }
 
-  void NewLeaderTransactionDriver(gscoped_ptr<Transaction> transaction,
-                                  scoped_refptr<TransactionDriver>* driver);
+  Status NewLeaderTransactionDriver(gscoped_ptr<Transaction> transaction,
+                                    scoped_refptr<TransactionDriver>* driver);
 
-  void NewReplicaTransactionDriver(gscoped_ptr<Transaction> transaction,
-                                   scoped_refptr<TransactionDriver>* driver);
+  Status NewReplicaTransactionDriver(gscoped_ptr<Transaction> transaction,
+                                     scoped_refptr<TransactionDriver>* driver);
 
   // Tells the tablet's log to garbage collect.
   Status RunLogGC();

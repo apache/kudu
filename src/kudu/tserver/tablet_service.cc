@@ -143,22 +143,18 @@ static void SetupErrorAndRespond(TabletServerErrorPB* error,
                                  const Status& s,
                                  TabletServerErrorPB::Code code,
                                  rpc::RpcContext* context) {
+  // Generic "service unavailable" errors will cause the client to retry later.
+  if (code == TabletServerErrorPB::UNKNOWN_ERROR && s.IsServiceUnavailable()) {
+    context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY, s);
+    return;
+  }
+
   StatusToPB(s, error->mutable_status());
   error->set_code(code);
   // TODO: rename RespondSuccess() to just "Respond" or
   // "SendResponse" since we use it for application-level error
   // responses, and this just looks confusing!
   context->RespondSuccess();
-}
-
-static void RespondGenericError(const string& doing_what,
-                                TabletServerErrorPB* error,
-                                const Status& s,
-                                rpc::RpcContext* context) {
-  LOG(WARNING) << "Generic error " << doing_what << " for request "
-               << context->request_pb()->ShortDebugString()
-               << ": " << s.ToString();
-  SetupErrorAndRespond(error, s, TabletServerErrorPB::UNKNOWN_ERROR, context);
 }
 
 // A transaction completion callback that responds to the client when transactions
@@ -536,19 +532,17 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   double capacity_pct;
   if (tablet_peer->tablet()->mem_tracker()->AnySoftLimitExceeded(&capacity_pct)) {
     tablet_peer->tablet()->metrics()->leader_memory_pressure_rejections->Increment();
-
-    // Clients should handle ERROR_SERVER_TOO_BUSY by retrying the request some
-    // time later.
-    context->RespondRpcFailure(
-        rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY,
-        Status::ServiceUnavailable(StringPrintf(
-            "Soft memory limit exceeded (at %.2f%% of capacity)",
-            capacity_pct)));
+    Status s = Status::ServiceUnavailable(StringPrintf(
+        "Soft memory limit exceeded (at %.2f%% of capacity)",
+        capacity_pct));
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
     return;
   }
 
   if (!server_->clock()->SupportsExternalConsistencyMode(req->external_consistency_mode())) {
-    Status s = Status::ServiceUnavailable("The configured clock does not support the"
+    Status s = Status::NotSupported("The configured clock does not support the"
         " required consistency mode.");
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -583,8 +577,8 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   // Check that we could submit the write
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
-                               TabletServerErrorPB::UNKNOWN_ERROR,
-                               context);
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
   }
   return;
 }
@@ -615,13 +609,9 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
     // in embedded optional messages.
     resp->Clear();
 
-    if (s.IsServiceUnavailable()) {
-      context->RespondRpcFailure(rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY, s);
-    } else {
-      SetupErrorAndRespond(resp->mutable_error(), s,
-                           TabletServerErrorPB::UNKNOWN_ERROR,
-                           context);
-    }
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::UNKNOWN_ERROR,
+                         context);
     return;
   }
   context->RespondSuccess();
@@ -835,23 +825,15 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
 
     // Add sidecar data to context and record the returned indices.
     int rows_idx;
-    Status s = context->AddRpcSidecar(make_gscoped_ptr(
-        new rpc::RpcSidecar(rows_data.Pass())), &rows_idx);
-    if (!s.ok()) {
-      RespondGenericError("Scan request main row data issue", resp->mutable_error(), s, context);
-      return;
-    }
+    CHECK_OK(context->AddRpcSidecar(make_gscoped_ptr(
+        new rpc::RpcSidecar(rows_data.Pass())), &rows_idx));
     resp->mutable_data()->set_rows_sidecar(rows_idx);
 
     // Add indirect data as a sidecar, if applicable.
     if (indirect_data->size() > 0) {
       int indirect_idx;
-      s = context->AddRpcSidecar(make_gscoped_ptr(
-          new rpc::RpcSidecar(indirect_data.Pass())), &indirect_idx);
-      if (!s.ok()) {
-        RespondGenericError("Scan request indirect data issue", resp->mutable_error(), s, context);
-        return;
-      }
+      CHECK_OK(context->AddRpcSidecar(make_gscoped_ptr(
+          new rpc::RpcSidecar(indirect_data.Pass())), &indirect_idx));
       resp->mutable_data()->set_indirect_data_sidecar(indirect_idx);
     }
 

@@ -90,13 +90,13 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   // Perform any non-constructor initialization. Sets the transaction
   // that will be executed.
-  virtual void Init(gscoped_ptr<Transaction> transaction,
-                    consensus::DriverType driver);
+  Status Init(gscoped_ptr<Transaction> transaction,
+              consensus::DriverType driver);
 
   // Returns the OpId of the transaction being executed or an uninitialized
   // OpId if none has been assigned. Returns a copy and thus should not
   // be used in tight loops.
-  virtual consensus::OpId GetOpId();
+  consensus::OpId GetOpId();
 
   // Submits the transaction for execution.
   // The returned status acknowledges any error on the submission process.
@@ -107,7 +107,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // multiple stages by multiple executors it might not be possible to stop
   // the transaction immediately, but this will make sure it is aborted
   // at the next synchronization point.
-  virtual void Abort(const Status& status);
+  void Abort(const Status& status);
 
   // Callback from Consensus when replication is complete, and thus the operation
   // is considered "committed" from the consensus perspective (ie it will be
@@ -117,7 +117,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
   // see comment in the interface for an important TODO.
   void ReplicationFinished(const Status& status);
 
-  virtual std::string ToString() const;
+  std::string ToString() const;
 
   virtual std::string ToStringUnlocked() const;
 

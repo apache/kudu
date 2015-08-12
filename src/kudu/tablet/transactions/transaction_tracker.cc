@@ -8,102 +8,165 @@
 #include <vector>
 
 #include <boost/foreach.hpp>
-#include <boost/thread/locks.hpp>
-#include <boost/thread/mutex.hpp>
 
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
+#include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 
-namespace kudu {
-namespace tablet {
+DEFINE_int64(tablet_transaction_memory_limit_mb, 16,
+             "Maximum amount of memory that may be consumed by all in-flight "
+             "transactions belonging to a particular tablet. When this limit "
+             "is reached, new transactions will be rejected and clients will "
+             "be forced to retry them. If -1, transaction memory tracking is "
+             "disabled.");
 
 METRIC_DEFINE_gauge_uint64(tablet, all_transactions_inflight,
                            "Transactions In Flight",
                            kudu::MetricUnit::kTransactions,
                            "Number of transactions currently in-flight, including any type.");
 METRIC_DEFINE_gauge_uint64(tablet, write_transactions_inflight,
-                           "Write Transctions In Flight",
+                           "Write Transactions In Flight",
                            kudu::MetricUnit::kTransactions,
                            "Number of write transactions currently in-flight");
 METRIC_DEFINE_gauge_uint64(tablet, alter_schema_transactions_inflight,
                            "Alter Schema Transactions In Flight",
                            kudu::MetricUnit::kTransactions,
                            "Number of alter schema transactions currently in-flight");
-using boost::bind;
+
+METRIC_DEFINE_counter(tablet, transaction_memory_pressure_rejections,
+                      "Transaction Memory Pressure Rejections",
+                      kudu::MetricUnit::kTransactions,
+                      "Number of transactions rejected because the tablet's "
+                      "transaction memory limit was reached.");
+
+namespace kudu {
+namespace tablet {
+
 using std::vector;
 using strings::Substitute;
 
-TransactionsInFlight::TransactionsInFlight()
-    : all_transactions_inflight(0),
-      write_transactions_inflight(0),
-      alter_schema_transactions_inflight(0) {
+#define MINIT(x) x(METRIC_##x.Instantiate(entity))
+#define GINIT(x) x(METRIC_##x.Instantiate(entity, 0))
+TransactionTracker::Metrics::Metrics(const scoped_refptr<MetricEntity>& entity)
+    : GINIT(all_transactions_inflight),
+      GINIT(write_transactions_inflight),
+      GINIT(alter_schema_transactions_inflight),
+      MINIT(transaction_memory_pressure_rejections) {
+}
+#undef GINIT
+#undef MINIT
+
+TransactionTracker::State::State()
+  : memory_footprint(0) {
 }
 
 TransactionTracker::TransactionTracker() {
 }
 
 TransactionTracker::~TransactionTracker() {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   CHECK_EQ(pending_txns_.size(), 0);
 }
 
-void TransactionTracker::Add(TransactionDriver *driver) {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  IncrementCounters(driver->tx_type());
-  pending_txns_.insert(driver);
+Status TransactionTracker::Add(TransactionDriver* driver) {
+  int64_t driver_mem_footprint = driver->state()->request()->SpaceUsed();
+  if (mem_tracker_ && !mem_tracker_->TryConsume(driver_mem_footprint)) {
+    if (metrics_) {
+      metrics_->transaction_memory_pressure_rejections->Increment();
+    }
+
+    // May be null in unit tests.
+    TabletPeer* peer = driver->state()->tablet_peer();
+
+    return Status::ServiceUnavailable(Substitute(
+        "Transaction failed, tablet $0 transaction memory consumption ($1) "
+        "has exceeded its limit ($2) or the limit of an ancestral tracker",
+        peer ? peer->tablet()->tablet_id() : "(unknown)",
+            mem_tracker_->consumption(), mem_tracker_->limit()));
+  }
+
+  IncrementCounters(*driver);
+
+  // Cache the transaction memory footprint so we needn't refer to the request
+  // again, as it may disappear between now and then.
+  State st;
+  st.memory_footprint = driver_mem_footprint;
+  lock_guard<simple_spinlock> l(&lock_);
+  InsertOrDie(&pending_txns_, driver, st);
+  return Status::OK();
 }
 
-void TransactionTracker::IncrementCounters(Transaction::TransactionType tx_type) {
-  ++txns_in_flight_.all_transactions_inflight;
-  switch (tx_type) {
+void TransactionTracker::IncrementCounters(const TransactionDriver& driver) const {
+  if (!metrics_) {
+    return;
+  }
+
+  metrics_->all_transactions_inflight->Increment();
+  switch (driver.tx_type()) {
     case Transaction::WRITE_TXN:
-      ++txns_in_flight_.write_transactions_inflight;
+      metrics_->write_transactions_inflight->Increment();
       break;
     case Transaction::ALTER_SCHEMA_TXN:
-      ++txns_in_flight_.alter_schema_transactions_inflight;
+      metrics_->alter_schema_transactions_inflight->Increment();
       break;
   }
 }
 
-void TransactionTracker::DecrementCounters(Transaction::TransactionType tx_type) {
-  DCHECK_GT(txns_in_flight_.all_transactions_inflight, 0);
-  --txns_in_flight_.all_transactions_inflight;
-  switch (tx_type) {
+void TransactionTracker::DecrementCounters(const TransactionDriver& driver) const {
+  if (!metrics_) {
+    return;
+  }
+
+  DCHECK_GT(metrics_->all_transactions_inflight->value(), 0);
+  metrics_->all_transactions_inflight->Decrement();
+  switch (driver.tx_type()) {
     case Transaction::WRITE_TXN:
-      DCHECK_GT(txns_in_flight_.write_transactions_inflight, 0);
-      --txns_in_flight_.write_transactions_inflight;
+      DCHECK_GT(metrics_->write_transactions_inflight->value(), 0);
+      metrics_->write_transactions_inflight->Decrement();
       break;
     case Transaction::ALTER_SCHEMA_TXN:
-      DCHECK_GT(txns_in_flight_.alter_schema_transactions_inflight, 0);
-      --txns_in_flight_.alter_schema_transactions_inflight;
+      DCHECK_GT(metrics_->alter_schema_transactions_inflight->value(), 0);
+      metrics_->alter_schema_transactions_inflight->Decrement();
       break;
   }
 }
 
-void TransactionTracker::Release(TransactionDriver *driver) {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  DecrementCounters(driver->tx_type());
+void TransactionTracker::Release(TransactionDriver* driver) {
+  DecrementCounters(*driver);
 
-  if (PREDICT_FALSE(pending_txns_.erase(driver) != 1)) {
-    LOG(FATAL) << "Could not remove pending transaction from map: "
-        << driver->ToStringUnlocked();
+  State st;
+  {
+    // Remove the transaction from the map, retaining the state for use
+    // below.
+    lock_guard<simple_spinlock> l(&lock_);
+    st = FindOrDie(pending_txns_, driver);
+    if (PREDICT_FALSE(pending_txns_.erase(driver) != 1)) {
+      LOG(FATAL) << "Could not remove pending transaction from map: "
+          << driver->ToStringUnlocked();
+    }
+  }
+
+  if (mem_tracker_) {
+    mem_tracker_->Release(st.memory_footprint);
   }
 }
 
 void TransactionTracker::GetPendingTransactions(
     vector<scoped_refptr<TransactionDriver> >* pending_out) const {
   DCHECK(pending_out->empty());
-  boost::lock_guard<simple_spinlock> l(lock_);
-  BOOST_FOREACH(const scoped_refptr<TransactionDriver>& tx, pending_txns_) {
+  lock_guard<simple_spinlock> l(&lock_);
+  BOOST_FOREACH(const TxnMap::value_type& e, pending_txns_) {
     // Increments refcount of each transaction.
-    pending_out->push_back(tx);
+    pending_out->push_back(e.first);
   }
 }
 
 int TransactionTracker::GetNumPendingForTests() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
+  lock_guard<simple_spinlock> l(&lock_);
   return pending_txns_.size();
 }
 
@@ -148,34 +211,19 @@ Status TransactionTracker::WaitForAllToFinish(const MonoDelta& timeout) const {
   return Status::OK();
 }
 
-void TransactionTracker::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {
-  METRIC_all_transactions_inflight.InstantiateFunctionGauge(
-    metric_entity, Bind(&TransactionTracker::NumAllTransactionsInFlight,
-                         Unretained(this)))
-    ->AutoDetach(&metric_detacher_);
-  METRIC_write_transactions_inflight.InstantiateFunctionGauge(
-    metric_entity, Bind(&TransactionTracker::NumWriteTransactionsInFlight,
-                         Unretained(this)))
-    ->AutoDetach(&metric_detacher_);
-  METRIC_alter_schema_transactions_inflight.InstantiateFunctionGauge(
-    metric_entity, Bind(&TransactionTracker::NumAlterSchemaTransactionsInFlight,
-                         Unretained(this)))
-    ->AutoDetach(&metric_detacher_);
+void TransactionTracker::StartInstrumentation(
+    const scoped_refptr<MetricEntity>& metric_entity) {
+  metrics_.reset(new Metrics(metric_entity));
 }
 
-uint64_t TransactionTracker::NumAllTransactionsInFlight() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  return txns_in_flight_.all_transactions_inflight;
-}
-
-uint64_t TransactionTracker::NumWriteTransactionsInFlight() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  return txns_in_flight_.write_transactions_inflight;
-}
-
-uint64_t TransactionTracker::NumAlterSchemaTransactionsInFlight() const {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  return txns_in_flight_.alter_schema_transactions_inflight;
+void TransactionTracker::StartMemoryTracking(
+    const shared_ptr<MemTracker>& parent_mem_tracker) {
+  if (FLAGS_tablet_transaction_memory_limit_mb != -1) {
+    mem_tracker_ = MemTracker::CreateTracker(
+        FLAGS_tablet_transaction_memory_limit_mb * 1024 * 1024,
+        "txn_tracker",
+        parent_mem_tracker);
+  }
 }
 
 }  // namespace tablet

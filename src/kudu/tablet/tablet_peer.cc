@@ -164,6 +164,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     TRACE("Starting instrumentation");
     txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
   }
+  txn_tracker_.StartMemoryTracking(tablet_->mem_tracker());
 
   TRACE("TabletPeer::Init() finished");
   VLOG(2) << "T " << tablet_id() << " P " << consensus_->peer_uuid() << ": Peer Initted";
@@ -315,7 +316,7 @@ Status TabletPeer::SubmitWrite(WriteTransactionState *state) {
 
   gscoped_ptr<WriteTransaction> transaction(new WriteTransaction(state, consensus::LEADER));
   scoped_refptr<TransactionDriver> driver;
-  NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver);
+  RETURN_NOT_OK(NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver));
   return driver->ExecuteAsync();
 }
 
@@ -325,7 +326,7 @@ Status TabletPeer::SubmitAlterSchema(gscoped_ptr<AlterSchemaTransactionState> st
   gscoped_ptr<AlterSchemaTransaction> transaction(
       new AlterSchemaTransaction(state.release(), consensus::LEADER));
   scoped_refptr<TransactionDriver> driver;
-  NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver);
+  RETURN_NOT_OK(NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver));
   return driver->ExecuteAsync();
 }
 
@@ -485,7 +486,7 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
   clock_->Update(ts);
 
   scoped_refptr<TransactionDriver> driver;
-  NewReplicaTransactionDriver(transaction.Pass(), &driver);
+  RETURN_NOT_OK(NewReplicaTransactionDriver(transaction.Pass(), &driver));
 
   // Unretained is required to avoid a refcount cycle.
   state->consensus_round()->SetConsensusReplicatedCallback(
@@ -495,8 +496,8 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
   return Status::OK();
 }
 
-void TabletPeer::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transaction,
-                                            scoped_refptr<TransactionDriver>* driver) {
+Status TabletPeer::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transaction,
+                                              scoped_refptr<TransactionDriver>* driver) {
   scoped_refptr<TransactionDriver> tx_driver = new TransactionDriver(
     &txn_tracker_,
     consensus_.get(),
@@ -504,12 +505,14 @@ void TabletPeer::NewLeaderTransactionDriver(gscoped_ptr<Transaction> transaction
     prepare_pool_.get(),
     apply_pool_,
     &txn_order_verifier_);
-  tx_driver->Init(transaction.Pass(), consensus::LEADER);
+  RETURN_NOT_OK(tx_driver->Init(transaction.Pass(), consensus::LEADER));
   driver->swap(tx_driver);
+
+  return Status::OK();
 }
 
-void TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transaction,
-                                             scoped_refptr<TransactionDriver>* driver) {
+Status TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transaction,
+                                               scoped_refptr<TransactionDriver>* driver) {
   scoped_refptr<TransactionDriver> tx_driver = new TransactionDriver(
     &txn_tracker_,
     consensus_.get(),
@@ -517,8 +520,10 @@ void TabletPeer::NewReplicaTransactionDriver(gscoped_ptr<Transaction> transactio
     prepare_pool_.get(),
     apply_pool_,
     &txn_order_verifier_);
-  tx_driver->Init(transaction.Pass(), consensus::REPLICA);
+  RETURN_NOT_OK(tx_driver->Init(transaction.Pass(), consensus::REPLICA));
   driver->swap(tx_driver);
+
+  return Status::OK();
 }
 
 void TabletPeer::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {

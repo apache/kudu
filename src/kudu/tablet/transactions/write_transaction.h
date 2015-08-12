@@ -73,7 +73,7 @@ class WriteTransactionState : public TransactionState {
 
   // Returns the original client request for this transaction, if there was
   // one.
-  const tserver::WriteRequestPB *request() const {
+  const tserver::WriteRequestPB *request() const OVERRIDE {
     return request_;
   }
 

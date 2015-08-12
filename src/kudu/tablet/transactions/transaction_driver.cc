@@ -53,9 +53,8 @@ TransactionDriver::TransactionDriver(TransactionTracker *txn_tracker,
   }
 }
 
-void TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
-                             DriverType type) {
-  boost::lock_guard<simple_spinlock> lock(lock_);
+Status TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
+                               DriverType type) {
   transaction_ = transaction.Pass();
 
   if (type == consensus::REPLICA) {
@@ -75,7 +74,9 @@ void TransactionDriver::Init(gscoped_ptr<Transaction> transaction,
     }
   }
 
-  txn_tracker_->Add(this);
+  RETURN_NOT_OK(txn_tracker_->Add(this));
+
+  return Status::OK();
 }
 
 consensus::OpId TransactionDriver::GetOpId() {

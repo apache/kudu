@@ -432,9 +432,9 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   CountDownLatch rpc_latch(1);
   CountDownLatch apply_started(1);
   CountDownLatch apply_continue(1);
+  gscoped_ptr<WriteRequestPB> req(new WriteRequestPB());
   gscoped_ptr<WriteResponsePB> resp(new WriteResponsePB());
   {
-    gscoped_ptr<WriteRequestPB> req(new WriteRequestPB());
     // Long-running mutation.
     ASSERT_OK(GenerateSequentialDeleteRequest(req.get()));
     WriteTransactionState* tx_state =
@@ -448,7 +448,8 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
                                                                                  tx_state));
 
     scoped_refptr<TransactionDriver> driver;
-    tablet_peer_->NewLeaderTransactionDriver(transaction.PassAs<Transaction>(), &driver);
+    ASSERT_OK(tablet_peer_->NewLeaderTransactionDriver(transaction.PassAs<Transaction>(),
+                                                       &driver));
 
     ASSERT_OK(driver->ExecuteAsync());
     apply_started.Wait();

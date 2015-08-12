@@ -35,6 +35,9 @@ DEFINE_int64(client_num_batches_per_thread, 5,
              "In how many batches to group the rows, for each client");
 DECLARE_int32(consensus_rpc_timeout_ms);
 
+METRIC_DECLARE_entity(tablet);
+METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
+
 namespace kudu {
 namespace tserver {
 
@@ -1825,6 +1828,63 @@ TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
   int rows_inserted = workload.rows_inserted();
   LOG(INFO) << "Number of rows inserted: " << rows_inserted;
   ASSERT_ALL_REPLICAS_AGREE(rows_inserted);
+}
+
+TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
+  const int64_t kMinRejections = 100;
+  const MonoDelta kMaxWaitTime = MonoDelta::FromSeconds(60);
+
+  // Start the cluster with a low per-tablet transaction memory limit, so that
+  // the test can complete faster.
+  vector<string> flags;
+  flags.push_back("--tablet_transaction_memory_limit_mb=2");
+  BuildAndStart(flags);
+
+  // Kill both followers.
+  TServerDetails* details;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &details));
+  int num_shutdown = 0;
+  int leader_ts_idx = -1;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
+    if (ts->instance_id().permanent_uuid() != details->uuid()) {
+      ts->Shutdown();
+      num_shutdown++;
+    } else {
+      leader_ts_idx = i;
+    }
+  }
+  ASSERT_EQ(2, num_shutdown);
+  ASSERT_NE(-1, leader_ts_idx);
+
+  // Because the majority of the cluster is dead and because of this workload's
+  // timeout behavior, more and more wedged transactions will accumulate in the
+  // leader. To prevent memory usage from skyrocketing, the leader will
+  // eventually reject new transactions. That's what we're testing for here.
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_timeout_allowed(true);
+  workload.set_write_timeout_millis(10);
+  workload.Setup();
+  workload.Start();
+
+  // Run until the leader has rejected several transactions.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(kMaxWaitTime);
+  while (true) {
+    int64_t num_rejections = 0;
+    ASSERT_OK(cluster_->tablet_server(leader_ts_idx)->GetInt64Metric(
+        &METRIC_ENTITY_tablet,
+        NULL,
+        &METRIC_transaction_memory_pressure_rejections,
+        &num_rejections));
+    if (num_rejections >= kMinRejections) {
+      break;
+    } else if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      FAIL() << "Ran for " << kMaxWaitTime.ToString() << ", deadline expired";
+    }
+    SleepFor(MonoDelta::FromMilliseconds(200));
+  }
 }
 
 }  // namespace tserver
