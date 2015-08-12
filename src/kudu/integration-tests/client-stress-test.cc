@@ -64,7 +64,6 @@ TEST_F(ClientStressTest, TestLookupTimeouts) {
   work.Setup();
   work.Start();
   SleepFor(MonoDelta::FromMilliseconds(kSleepMillis));
-  work.StopAndJoin();
 }
 
 // Override the base test to run in multi-master mode.
@@ -113,7 +112,6 @@ TEST_F(ClientStressTest_MultiMaster, TestLeaderResolutionTimeout) {
   // Also make sure to dump stacks before the alarm goes off.
   PstackWatcher watcher(MonoDelta::FromSeconds(30));
   alarm(60);
-  work.StopAndJoin();
 }
 
 
@@ -182,8 +180,6 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
     }
     SleepFor(MonoDelta::FromMilliseconds(200));
   }
-
-  work.StopAndJoin();
 }
 
 } // namespace kudu

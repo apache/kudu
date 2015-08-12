@@ -52,6 +52,7 @@ TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
 }
 
 TestWorkload::~TestWorkload() {
+  StopAndJoin();
 }
 
 void TestWorkload::WriteThread() {
