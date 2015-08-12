@@ -74,21 +74,17 @@ public enum Type {
    * @return size in bytes
    */
   static int getTypeSize(DataType type) {
-
-    if (type == DataType.STRING || type == DataType.BINARY) {
-      return 8 + 8; // offset then string length
-    } else if (type == DataType.BOOL) {
-      return 1;
-    } else if (type == DataType.INT8) {
-      return 1;
-    } else if (type == DataType.INT16) {
-      return Shorts.BYTES;
-    } else if (type == DataType.INT32 || type == DataType.FLOAT) {
-      return Ints.BYTES;
-    } else if (type == DataType.INT64 || type == DataType.DOUBLE) {
-      return Longs.BYTES;
-    } else {
-      throw new IllegalArgumentException("The provided data type doesn't map" +
+    switch (type) {
+      case STRING:
+      case BINARY: return 8 + 8; // offset then string length
+      case BOOL:
+      case INT8: return 1;
+      case INT16: return Shorts.BYTES;
+      case INT32:
+      case FLOAT: return Ints.BYTES;
+      case INT64:
+      case DOUBLE: return Longs.BYTES;
+      default: throw new IllegalArgumentException("The provided data type doesn't map" +
           " to know any known one.");
     }
   }

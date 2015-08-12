@@ -4,7 +4,6 @@ package org.kududb.client;
 
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
-import org.kududb.Type;
 import org.kududb.util.Slice;
 
 import java.math.BigInteger;
@@ -86,21 +85,6 @@ public class RowResult {
   }
 
   /**
-   * Get the specified column's positive integer
-   * @param columnIndex Column index in the schema
-   * @return A positive integer
-   * @throws IllegalArgumentException if the column is null
-   * @throws IndexOutOfBoundsException if the column doesn't exist
-   */
-  public long getUnsignedInt(int columnIndex) {
-    checkValidColumn(columnIndex);
-    checkNull(columnIndex);
-    return Bytes.getUnsignedInt(this.rowData.getRawArray(),
-                                this.rowData.getRawOffset()
-                                + getCurrentRowDataOffsetForColumn(columnIndex));
-  }
-
-  /**
    * Get the specified column's integer
    * @param columnIndex Column index in the schema
    * @return An integer
@@ -111,23 +95,7 @@ public class RowResult {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
     return Bytes.getInt(this.rowData.getRawArray(),
-                        this.rowData.getRawOffset()
-                        + getCurrentRowDataOffsetForColumn(columnIndex));
-  }
-
-  /**
-   * Get the specified column's positive short
-   * @param columnIndex Column index in the schema
-   * @return A positive short
-   * @throws IllegalArgumentException if the column is null
-   * @throws IndexOutOfBoundsException if the column doesn't exist
-   */
-  public int getUnsignedShort(int columnIndex) {
-    checkValidColumn(columnIndex);
-    checkNull(columnIndex);
-    return Bytes.getUnsignedShort(this.rowData.getRawArray(),
-                                  this.rowData.getRawOffset()
-                                  + getCurrentRowDataOffsetForColumn(columnIndex));
+        this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -141,23 +109,7 @@ public class RowResult {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
     return Bytes.getShort(this.rowData.getRawArray(),
-                          this.rowData.getRawOffset()
-                          + getCurrentRowDataOffsetForColumn(columnIndex));
-  }
-
-  /**
-   * Get the specified column's positive byte
-   * @param columnIndex Column index in the schema
-   * @return A positive byte
-   * @throws IllegalArgumentException if the column is null
-   * @throws IndexOutOfBoundsException if the column doesn't exist
-   */
-  public short getUnsignedByte(int columnIndex) {
-    checkValidColumn(columnIndex);
-    checkNull(columnIndex);
-    return Bytes.getUnsignedByte(this.rowData.getRawArray(),
-                                 this.rowData.getRawOffset()
-                                 + getCurrentRowDataOffsetForColumn(columnIndex));
+        this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -204,19 +156,6 @@ public class RowResult {
     return Bytes.getLong(this.rowData.getRawArray(),
                          this.rowData.getRawOffset()
                          + getCurrentRowDataOffsetForColumn(columnIndex));
-  }
-
-  /**
-   * Get the specified column's long
-   * @param columnIndex Column index in the schema
-   * @return A positive long
-   */
-  public BigInteger getUnsignedLong(int columnIndex) {
-    checkValidColumn(columnIndex);
-    checkNull(columnIndex);
-    return Bytes.getUnsignedLong(this.rowData.getRawArray(),
-                                 this.rowData.getRawOffset()
-                                 + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
@@ -378,24 +317,19 @@ public class RowResult {
       buf.append(" ").append(col.getName()).append("=");
       if (isNull(i)) {
         buf.append("NULL");
-      } else if (col.getType().equals(Type.INT8)) {
-        buf.append(getByte(i));
-      } else if (col.getType().equals(Type.INT16)) {
-        buf.append(getShort(i));
-      } else if (col.getType().equals(Type.INT32)) {
-        buf.append(getInt(i));
-      } else if (col.getType().equals(Type.INT64)) {
-        buf.append(getLong(i));
-      } else if (col.getType().equals(Type.STRING)) {
-        buf.append(getString(i));
-      } else if (col.getType().equals(Type.BINARY)) {
-        buf.append(Bytes.pretty(getBinaryCopy(i)));
-      } else if (col.getType().equals(Type.FLOAT)) {
-        buf.append(getFloat(i));
-      } else if (col.getType().equals(Type.DOUBLE)) {
-        buf.append(getDouble(i));
       } else {
-        buf.append("<unknown type!>");
+        switch (col.getType()) {
+          case INT8: buf.append(getByte(i)); break;
+          case INT16: buf.append(getShort(i));
+            break;
+          case INT32: buf.append(getInt(i)); break;
+          case INT64: buf.append(getLong(i)); break;
+          case STRING: buf.append(getString(i)); break;
+          case BINARY: buf.append(Bytes.pretty(getBinaryCopy(i))); break;
+          case FLOAT: buf.append(getFloat(i)); break;
+          case DOUBLE: buf.append(getDouble(i)); break;
+          default: buf.append("<unknown type!>"); break;
+        }
       }
     }
     return buf.toString();
