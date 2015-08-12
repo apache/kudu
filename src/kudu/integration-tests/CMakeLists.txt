@@ -5,6 +5,7 @@ set(INTEGRATION_TESTS_SRCS
   cluster_itest_util.cc
   cluster_verifier.cc
   external_mini_cluster.cc
+  external_mini_cluster_fs_inspector.cc
   mini_cluster.cc
   test_workload.cc
 )

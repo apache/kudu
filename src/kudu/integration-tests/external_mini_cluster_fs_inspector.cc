@@ -1,0 +1,221 @@
+// Copyright (c) 2015, Cloudera, inc.
+// Confidential Cloudera Information: Covered by NDA.
+
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
+
+#include <boost/foreach.hpp>
+
+#include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/strings/substitute.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/tablet/metadata.pb.h"
+#include "kudu/util/env.h"
+#include "kudu/util/monotime.h"
+#include "kudu/util/pb_util.h"
+#include "kudu/util/status.h"
+
+namespace kudu {
+namespace itest {
+
+using std::string;
+using std::vector;
+
+using consensus::ConsensusMetadataPB;
+using strings::Substitute;
+using tablet::TabletSuperBlockPB;
+
+ExternalMiniClusterFsInspector::ExternalMiniClusterFsInspector(ExternalMiniCluster* cluster)
+    : env_(Env::Default()),
+      cluster_(cluster) {
+}
+
+ExternalMiniClusterFsInspector::~ExternalMiniClusterFsInspector() {}
+
+Status ExternalMiniClusterFsInspector::ListFilesInDir(const string& path,
+                                                      vector<string>* entries) {
+  RETURN_NOT_OK(env_->GetChildren(path, entries));
+  vector<string>::iterator iter = entries->begin();
+  while (iter != entries->end()) {
+    if (*iter == "." || *iter == "..") {
+      iter = entries->erase(iter);
+      continue;
+    }
+    ++iter;
+  }
+  return Status::OK();
+}
+
+int ExternalMiniClusterFsInspector::CountFilesInDir(const string& path) {
+  vector<string> entries;
+  Status s = ListFilesInDir(path, &entries);
+  if (!s.ok()) return 0;
+  return entries.size();
+}
+
+int ExternalMiniClusterFsInspector::CountWALSegmentsOnTS(int index) {
+  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string ts_wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
+  vector<string> tablets;
+  CHECK_OK(ListFilesInDir(ts_wal_dir, &tablets));
+  int total_segments = 0;
+  BOOST_FOREACH(const string& tablet, tablets) {
+    string tablet_wal_dir = JoinPathSegments(ts_wal_dir, tablet);
+    total_segments += CountFilesInDir(tablet_wal_dir);
+  }
+  return total_segments;
+}
+
+vector<string> ExternalMiniClusterFsInspector::ListTabletsOnTS(int index) {
+  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
+  vector<string> tablets;
+  CHECK_OK(ListFilesInDir(meta_dir, &tablets));
+  return tablets;
+}
+
+int ExternalMiniClusterFsInspector::CountWALSegmentsForTabletOnTS(int index,
+                                                                  const string& tablet_id) {
+  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
+  string tablet_wal_dir = JoinPathSegments(wal_dir, tablet_id);
+  if (!env_->FileExists(tablet_wal_dir)) {
+    return 0;
+  }
+  return CountFilesInDir(tablet_wal_dir);
+}
+
+bool ExternalMiniClusterFsInspector::DoesConsensusMetaExistForTabletOnTS(int index,
+                                                                         const string& tablet_id) {
+  ConsensusMetadataPB cmeta_pb;
+  Status s = ReadConsensusMetadataOnTS(index, tablet_id, &cmeta_pb);
+  return s.ok();
+}
+
+int ExternalMiniClusterFsInspector::CountReplicasInMetadataDirs() {
+  // Rather than using FsManager's functionality for listing blocks, we just manually
+  // list the contents of the metadata directory. This is because we're using an
+  // external minicluster, and initializing a new FsManager to point at the running
+  // tablet servers isn't easy.
+  int count = 0;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    string data_dir = cluster_->tablet_server(i)->data_dir();
+    count += CountFilesInDir(JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName));
+  }
+  return count;
+}
+
+Status ExternalMiniClusterFsInspector::CheckNoDataOnTS(int index) {
+  string data_dir = cluster_->tablet_server(index)->data_dir();
+  if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName)) > 0) {
+    return Status::IllegalState("tablet metadata blocks still exist", data_dir);
+  }
+  if (CountWALSegmentsOnTS(index) > 0) {
+    return Status::IllegalState("wals still exist", data_dir);
+  }
+  if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName)) > 0) {
+    return Status::IllegalState("consensus metadata still exists", data_dir);
+  }
+  return Status::OK();;
+}
+
+Status ExternalMiniClusterFsInspector::CheckNoData() {
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    RETURN_NOT_OK(CheckNoDataOnTS(i));
+  }
+  return Status::OK();;
+}
+
+Status ExternalMiniClusterFsInspector::ReadTabletSuperBlockOnTS(int index,
+                                                                const string& tablet_id,
+                                                                TabletSuperBlockPB* sb) {
+  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
+  string superblock_path = JoinPathSegments(meta_dir, tablet_id);
+  return pb_util::ReadPBContainerFromPath(env_, superblock_path, sb);
+}
+
+Status ExternalMiniClusterFsInspector::ReadConsensusMetadataOnTS(int index,
+                                                                 const string& tablet_id,
+                                                                 ConsensusMetadataPB* cmeta_pb) {
+  string data_dir = cluster_->tablet_server(index)->data_dir();
+  string cmeta_dir = JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName);
+  string cmeta_file = JoinPathSegments(cmeta_dir, tablet_id);
+  if (!env_->FileExists(cmeta_file)) {
+    return Status::NotFound("Consensus metadata file not found", cmeta_file);
+  }
+  return pb_util::ReadPBContainerFromPath(env_, cmeta_file, cmeta_pb);
+}
+
+Status ExternalMiniClusterFsInspector::WaitForNoData(const MonoDelta& timeout) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  Status s;
+  while (true) {
+    s = CheckNoData();
+    if (s.ok()) return Status::OK();
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  return Status::TimedOut("Timed out waiting for no data", s.ToString());
+}
+
+Status ExternalMiniClusterFsInspector::WaitForNoDataOnTS(int index, const MonoDelta& timeout) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  Status s;
+  while (true) {
+    s = CheckNoDataOnTS(index);
+    if (s.ok()) return Status::OK();
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  return Status::TimedOut("Timed out waiting for no data", s.ToString());
+}
+
+Status ExternalMiniClusterFsInspector::WaitForMinFilesInTabletWalDirOnTS(int index,
+                                                                         const string& tablet_id,
+                                                                         int count,
+                                                                         const MonoDelta& timeout) {
+  int seen = 0;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  while (true) {
+    seen = CountWALSegmentsForTabletOnTS(index, tablet_id);
+    if (seen >= count) return Status::OK();
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  return Status::TimedOut(Substitute("Timed out waiting for number of WAL segments on tablet $0 "
+                                     "on TS $1 to be $2. Found $3",
+                                     tablet_id, index, count, seen));
+}
+
+Status ExternalMiniClusterFsInspector::WaitForReplicaCount(int expected, const MonoDelta& timeout) {
+  Status s;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  int found;
+  while (true) {
+    found = CountReplicasInMetadataDirs();
+    if (found == expected) return Status::OK();
+    if (CountReplicasInMetadataDirs() == expected) return Status::OK();
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  return Status::TimedOut(Substitute("Timed out waiting for a total eplica count of $0. "
+                                     "Found $2 replicas",
+                                     expected, found));
+}
+
+} // namespace itest
+} // namespace kudu
+

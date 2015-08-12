@@ -10,20 +10,16 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
-#include "kudu/common/wire_protocol.pb.h"
 #include "kudu/common/wire_protocol-test-util.h"
-#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/master.proxy.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
-#include "kudu/rpc/messenger.h"
-#include "kudu/util/pb_util.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"
 
@@ -33,11 +29,7 @@ using kudu::client::KuduTableCreator;
 using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
-using kudu::itest::TabletServerMap;
 using kudu::itest::TServerDetails;
-using kudu::master::MasterServiceProxy;
-using kudu::rpc::Messenger;
-using kudu::rpc::MessengerBuilder;
 using kudu::tablet::TabletDataState;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
@@ -84,20 +76,6 @@ class DeleteTableTest : public KuduTest {
   // the given 'ts_uuid'.
   string GetLeaderUUID(const string& ts_uuid, const string& tablet_id);
 
-  Status ListFilesInDir(const string& path, vector<string>* entries);
-  int CountFilesInDir(const string& path);
-  int CountWALSegmentsOnTS(int index);
-  vector<string> ListTabletsOnTS(int index);
-  int CountWALSegmentsForTabletOnTS(int index, const string& tablet_id);
-  Status GetConsensusMetadata(int index, const string& tablet_id, ConsensusMetadataPB* cmeta_pb);
-  bool DoesConsensusMetaExistForTabletOnTS(int index, const string& tablet_id);
-
-  int CountReplicasInMetadataDirs();
-  Status CheckNoDataOnTS(int index);
-  Status CheckNoData();
-
-  Status ReadTabletSuperBlockOnTS(int index, const string& tablet_id,
-                                  TabletSuperBlockPB* sb);
   Status CheckTabletDataStateOnTS(int index,
                                   const string& tablet_id,
                                   TabletDataState state);
@@ -105,9 +83,6 @@ class DeleteTableTest : public KuduTest {
                                    const string& tablet_id,
                                    IsCMetaExpected is_cmeta_expected);
 
-  void WaitForNoData();
-  void WaitForNoDataOnTS(int index);
-  void WaitForMinFilesInTabletWalDirOnTS(int index, const string& tablet_id, int count);
   void WaitForTabletTombstonedOnTS(int index,
                                    const string& tablet_id,
                                    IsCMetaExpected is_cmeta_expected);
@@ -115,7 +90,6 @@ class DeleteTableTest : public KuduTest {
                                   const string& tablet_id,
                                   TabletDataState data_state);
 
-  void WaitForReplicaCount(int expected);
   void WaitForTSToCrash(int index);
   void WaitForAllTSToCrash();
   void WaitUntilTabletRunning(int index, const std::string& tablet_id);
@@ -131,6 +105,7 @@ class DeleteTableTest : public KuduTest {
                                TabletDataState delete_type, const MonoDelta& timeout);
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
+  gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
   shared_ptr<KuduClient> client_;
   unordered_map<string, TServerDetails*> ts_map_;
 };
@@ -141,6 +116,7 @@ void DeleteTableTest::StartCluster(const vector<string>& extra_tserver_flags) {
   opts.extra_tserver_flags = extra_tserver_flags;
   cluster_.reset(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster_->Start());
+  inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
   ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
                                           cluster_->messenger(),
                                           &ts_map_));
@@ -155,123 +131,11 @@ string DeleteTableTest::GetLeaderUUID(const string& ts_uuid, const string& table
   return cstate.leader_uuid();
 }
 
-Status DeleteTableTest::ListFilesInDir(const string& path, vector<string>* entries) {
-  RETURN_NOT_OK(env_->GetChildren(path, entries));
-  vector<string>::iterator iter = entries->begin();
-  while (iter != entries->end()) {
-    if (*iter == "." || *iter == "..") {
-      iter = entries->erase(iter);
-      continue;
-    }
-    ++iter;
-  }
-  return Status::OK();
-}
-
-int DeleteTableTest::CountFilesInDir(const string& path) {
-  vector<string> entries;
-  Status s = ListFilesInDir(path, &entries);
-  if (!s.ok()) return 0;
-  return entries.size();
-}
-
-int DeleteTableTest::CountWALSegmentsOnTS(int index) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  string ts_wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
-  vector<string> tablets;
-  CHECK_OK(ListFilesInDir(ts_wal_dir, &tablets));
-  int total_segments = 0;
-  BOOST_FOREACH(const string& tablet, tablets) {
-    string tablet_wal_dir = JoinPathSegments(ts_wal_dir, tablet);
-    total_segments += CountFilesInDir(tablet_wal_dir);
-  }
-  return total_segments;
-}
-
-vector<string> DeleteTableTest::ListTabletsOnTS(int index) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
-  vector<string> tablets;
-  CHECK_OK(ListFilesInDir(meta_dir, &tablets));
-  return tablets;
-}
-
-int DeleteTableTest::CountWALSegmentsForTabletOnTS(int index, const string& tablet_id) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  string wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
-  string tablet_wal_dir = JoinPathSegments(wal_dir, tablet_id);
-  if (!env_->FileExists(tablet_wal_dir)) {
-    return 0;
-  }
-  return CountFilesInDir(tablet_wal_dir);
-}
-
-Status DeleteTableTest::GetConsensusMetadata(int index,
-                                             const string& tablet_id,
-                                             ConsensusMetadataPB* cmeta_pb) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  string cmeta_dir = JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName);
-  string cmeta_file = JoinPathSegments(cmeta_dir, tablet_id);
-  if (!env_->FileExists(cmeta_file)) {
-    return Status::NotFound("Consensus metadata file not found", cmeta_file);
-  }
-  return pb_util::ReadPBContainerFromPath(env_.get(), cmeta_file, cmeta_pb);
-}
-
-bool DeleteTableTest::DoesConsensusMetaExistForTabletOnTS(int index, const string& tablet_id) {
-  ConsensusMetadataPB cmeta_pb;
-  Status s = GetConsensusMetadata(index, tablet_id, &cmeta_pb);
-  return s.ok();
-}
-
-int DeleteTableTest::CountReplicasInMetadataDirs() {
-  // Rather than using FsManager's functionality for listing blocks, we just manually
-  // list the contents of the metadata directory. This is because we're using an
-  // external minicluster, and initializing a new FsManager to point at the running
-  // tablet servers isn't easy.
-  int count = 0;
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    string data_dir = cluster_->tablet_server(i)->data_dir();
-    count += CountFilesInDir(JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName));
-  }
-  return count;
-}
-
-Status DeleteTableTest::CheckNoDataOnTS(int index) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName)) > 0) {
-    return Status::IllegalState("tablet metadata blocks still exist", data_dir);
-  }
-  if (CountWALSegmentsOnTS(index) > 0) {
-    return Status::IllegalState("wals still exist", data_dir);
-  }
-  if (CountFilesInDir(JoinPathSegments(data_dir, FsManager::kConsensusMetadataDirName)) > 0) {
-    return Status::IllegalState("consensus metadata still exists", data_dir);
-  }
-  return Status::OK();;
-}
-
-Status DeleteTableTest::CheckNoData() {
-  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    RETURN_NOT_OK(CheckNoDataOnTS(i));
-  }
-  return Status::OK();;
-}
-
-Status DeleteTableTest::ReadTabletSuperBlockOnTS(int index,
-                                                 const string& tablet_id,
-                                                 TabletSuperBlockPB* sb) {
-  string data_dir = cluster_->tablet_server(index)->data_dir();
-  string meta_dir = JoinPathSegments(data_dir, FsManager::kTabletMetadataDirName);
-  string superblock_path = JoinPathSegments(meta_dir, tablet_id);
-  return pb_util::ReadPBContainerFromPath(env_.get(), superblock_path, sb);
-}
-
 Status DeleteTableTest::CheckTabletDataStateOnTS(int index,
                                                  const string& tablet_id,
                                                  TabletDataState state) {
   TabletSuperBlockPB sb;
-  RETURN_NOT_OK(ReadTabletSuperBlockOnTS(index, tablet_id, &sb));
+  RETURN_NOT_OK(inspect_->ReadTabletSuperBlockOnTS(index, tablet_id, &sb));
   if (PREDICT_FALSE(sb.tablet_data_state() != state)) {
     return Status::IllegalState("Tablet data state != " + TabletDataState_Name(state),
                                 TabletDataState_Name(sb.tablet_data_state()));
@@ -285,47 +149,14 @@ Status DeleteTableTest::CheckTabletTombstonedOnTS(int index,
   // We simply check that no WALs exist and that the superblock indicates
   // TOMBSTONED.
   RETURN_NOT_OK(CheckTabletDataStateOnTS(index, tablet_id, TABLET_DATA_TOMBSTONED));
-  if (CountWALSegmentsForTabletOnTS(index, tablet_id) > 0) {
+  if (inspect_->CountWALSegmentsForTabletOnTS(index, tablet_id) > 0) {
     return Status::IllegalState("WAL segments exist for tablet", tablet_id);
   }
   if (is_cmeta_expected == CMETA_EXPECTED &&
-      !DeleteTableTest::DoesConsensusMetaExistForTabletOnTS(index, tablet_id)) {
+      !inspect_->DoesConsensusMetaExistForTabletOnTS(index, tablet_id)) {
     return Status::IllegalState("Expected cmeta for tablet " + tablet_id + " but it doesn't exist");
   }
   return Status::OK();
-}
-
-void DeleteTableTest::WaitForNoData() {
-  Status s;
-  for (int i = 0; i < 1000; i++) {
-    s = CheckNoData();
-    if (s.ok()) return;
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  ASSERT_OK(s);
-}
-
-void DeleteTableTest::WaitForNoDataOnTS(int index) {
-  Status s;
-  for (int i = 0; i < 1000; i++) {
-    s = CheckNoDataOnTS(index);
-    if (s.ok()) return;
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  ASSERT_OK(s);
-}
-
-void DeleteTableTest::WaitForMinFilesInTabletWalDirOnTS(int index,
-                                                        const string& tablet_id,
-                                                        int count) {
-  int seen = 0;
-  for (int i = 0; i < 3000; i++) {
-    seen = CountWALSegmentsForTabletOnTS(index, tablet_id);
-    if (seen >= count) return;
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  FAIL() << "Number of WAL segments found for TS " << index << " in tablet "
-         << tablet_id << ": " << seen;
 }
 
 void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
@@ -356,24 +187,6 @@ void DeleteTableTest::WaitForTabletDataStateOnTS(int index,
   ASSERT_OK(s);
 }
 
-void DeleteTableTest::WaitForReplicaCount(int expected) {
-  Status s;
-  for (int i = 0; i < 1000; i++) {
-    if (CountReplicasInMetadataDirs() == expected) return;
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  ASSERT_EQ(expected, CountReplicasInMetadataDirs());
-}
-
-void DeleteTableTest::DeleteTable(const string& table_name) {
-  Status s = client_->DeleteTable(table_name);
-  if (s.IsTimedOut()) {
-    WARN_NOT_OK(PstackWatcher::DumpPidStacks(cluster_->master()->pid()),
-                        "Couldn't dump stacks");
-  }
-  ASSERT_OK(s);
-}
-
 void DeleteTableTest::WaitForTSToCrash(int index) {
   ExternalTabletServer* ts = cluster_->tablet_server(index);
   for (int i = 0; i < 1000; i++) {
@@ -392,6 +205,15 @@ void DeleteTableTest::WaitForAllTSToCrash() {
 void DeleteTableTest::WaitUntilTabletRunning(int index, const std::string& tablet_id) {
   ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(index)->uuid()],
                                           tablet_id, MonoDelta::FromSeconds(30)));
+}
+
+void DeleteTableTest::DeleteTable(const string& table_name) {
+  Status s = client_->DeleteTable(table_name);
+  if (s.IsTimedOut()) {
+    WARN_NOT_OK(PstackWatcher::DumpPidStacks(cluster_->master()->pid()),
+                        "Couldn't dump stacks");
+  }
+  ASSERT_OK(s);
 }
 
 void DeleteTableTest::DeleteTabletWithRetries(const TServerDetails* ts,
@@ -420,11 +242,11 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
   TestWorkload(cluster_.get()).Setup();
 
   // The table should have replicas on all three tservers.
-  NO_FATALS(WaitForReplicaCount(3));
+  ASSERT_OK(inspect_->WaitForReplicaCount(3));
 
   // Delete it and wait for the replicas to get deleted.
   NO_FATALS(DeleteTable(TestWorkload::kDefaultTableName));
-  NO_FATALS(WaitForNoData());
+  ASSERT_OK(inspect_->WaitForNoData());
 }
 
 TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
@@ -447,7 +269,7 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
 
     // Delete it and wait for the replicas to get deleted.
     NO_FATALS(DeleteTable(workload.table_name()));
-    NO_FATALS(WaitForNoData());
+    ASSERT_OK(inspect_->WaitForNoData());
 
     // Sleep just a little longer to make sure client threads send
     // requests to the missing tablets.
@@ -480,7 +302,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(2);
   workload.Setup();
-  NO_FATALS(WaitForReplicaCount(2));
+  ASSERT_OK(inspect_->WaitForReplicaCount(2));
 
   workload.Start();
   while (workload.rows_inserted() < 100) {
@@ -494,7 +316,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex), kFaultFlag, "1.0"));
 
   // Figure out the tablet id to remote bootstrap.
-  vector<string> tablets = ListTabletsOnTS(1);
+  vector<string> tablets = inspect_->ListTabletsOnTS(1);
   ASSERT_EQ(1, tablets.size());
   const string& tablet_id = tablets[0];
 
@@ -546,9 +368,9 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(2);
   workload.Setup();
-  NO_FATALS(WaitForReplicaCount(2));
+  ASSERT_OK(inspect_->WaitForReplicaCount(2));
 
-  vector<string> tablets = ListTabletsOnTS(1);
+  vector<string> tablets = inspect_->ListTabletsOnTS(1);
   ASSERT_EQ(1, tablets.size());
   const string& tablet_id = tablets[0];
 
@@ -565,7 +387,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   string leader_uuid = GetLeaderUUID(cluster_->tablet_server(1)->uuid(), tablet_id);
   int leader_index = cluster_->tablet_server_index_by_uuid(leader_uuid);
   ASSERT_NE(-1, leader_index);
-  NO_FATALS(WaitForMinFilesInTabletWalDirOnTS(leader_index, tablet_id, 3));
+  ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(leader_index, tablet_id, 3));
   workload.StopAndJoin();
 
   // Cause the leader to crash when a follower tries to remotely bootstrap from it.
@@ -624,10 +446,10 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
 
   TestWorkload workload(cluster_.get());
   workload.Setup();
-  NO_FATALS(WaitForReplicaCount(3));
+  ASSERT_OK(inspect_->WaitForReplicaCount(3));
 
   // Figure out the tablet id to remote bootstrap.
-  vector<string> tablets = ListTabletsOnTS(1);
+  vector<string> tablets = inspect_->ListTabletsOnTS(1);
   ASSERT_EQ(1, tablets.size());
   const string& tablet_id = tablets[0];
 
@@ -648,7 +470,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
 
   // Verify that TS 0 voted for the chosen leader.
   ConsensusMetadataPB cmeta_pb;
-  ASSERT_OK(GetConsensusMetadata(kTsIndex, tablet_id, &cmeta_pb));
+  ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb));
   ASSERT_EQ(1, cmeta_pb.current_term());
   ASSERT_EQ(leader_uuid, cmeta_pb.voted_for());
 
@@ -660,7 +482,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
   ASSERT_OK(itest::StartElection(ts, tablet_id, timeout));
   for (int i = 0; i < 1000; i++) {
-    Status s = GetConsensusMetadata(kTsIndex, tablet_id, &cmeta_pb);
+    Status s = inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb);
     if (s.ok() &&
         cmeta_pb.current_term() == 2 &&
         cmeta_pb.voted_for() == ts->uuid()) {
@@ -693,7 +515,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
 
   // Assert that the election history is retained (voted for self).
-  ASSERT_OK(GetConsensusMetadata(kTsIndex, tablet_id, &cmeta_pb));
+  ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb));
   ASSERT_EQ(2, cmeta_pb.current_term());
   ASSERT_EQ(ts->uuid(), cmeta_pb.voted_for());
 
@@ -716,7 +538,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
 
   // The election history should have been wiped out.
-  ASSERT_OK(GetConsensusMetadata(kTsIndex, tablet_id, &cmeta_pb));
+  ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb));
   ASSERT_EQ(3, cmeta_pb.current_term());
   ASSERT_TRUE(!cmeta_pb.has_voted_for()) << cmeta_pb.ShortDebugString();
 }
@@ -745,14 +567,14 @@ TEST_P(DeleteTableDeletedParamTest, TestRollForwardDelete) {
   TestWorkload(cluster_.get()).Setup();
 
   // The table should have replicas on all three tservers.
-  NO_FATALS(WaitForReplicaCount(3));
+  ASSERT_OK(inspect_->WaitForReplicaCount(3));
 
   // Delete it and wait for the tablet servers to crash.
   NO_FATALS(DeleteTable(TestWorkload::kDefaultTableName));
   NO_FATALS(WaitForAllTSToCrash());
 
   // There should still be data left on disk.
-  Status s = CheckNoData();
+  Status s = inspect_->CheckNoData();
   ASSERT_TRUE(s.IsIllegalState()) << s.ToString();
 
   // Now restart the tablet servers. They should roll forward their deletes.
@@ -761,7 +583,7 @@ TEST_P(DeleteTableDeletedParamTest, TestRollForwardDelete) {
     cluster_->tablet_server(i)->Shutdown();
     ASSERT_OK(cluster_->tablet_server(i)->Restart());
   }
-  NO_FATALS(WaitForNoData());
+  ASSERT_OK(inspect_->WaitForNoData());
 }
 
 // Faults appropriate for the TABLET_DATA_DELETED case.
@@ -813,7 +635,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   workload.Setup();
 
   // The table should have 2 tablets (1 split) on all 3 tservers (for a total of 6).
-  NO_FATALS(WaitForReplicaCount(6));
+  ASSERT_OK(inspect_->WaitForReplicaCount(6));
 
   // Set up the proxies so we can easily send DeleteTablet() RPCs.
   TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
@@ -829,8 +651,10 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   while (workload.rows_inserted() < 100) {
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  NO_FATALS(WaitForMinFilesInTabletWalDirOnTS(kTsIndex, tablets[0].tablet_status().tablet_id(), 3));
-  NO_FATALS(WaitForMinFilesInTabletWalDirOnTS(kTsIndex, tablets[1].tablet_status().tablet_id(), 3));
+  ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(kTsIndex,
+            tablets[0].tablet_status().tablet_id(), 3));
+  ASSERT_OK(inspect_->WaitForMinFilesInTabletWalDirOnTS(kTsIndex,
+            tablets[1].tablet_status().tablet_id(), 3));
   workload.StopAndJoin();
 
   // Shut down the master and the other tablet servers so they don't interfere
@@ -842,7 +666,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   // Tombstone the first tablet.
   string tablet_id = tablets[0].tablet_status().tablet_id();
   LOG(INFO) << "Tombstoning first tablet " << tablet_id << "...";
-  ASSERT_TRUE(DoesConsensusMetaExistForTabletOnTS(kTsIndex, tablet_id)) << tablet_id;
+  ASSERT_TRUE(inspect_->DoesConsensusMetaExistForTabletOnTS(kTsIndex, tablet_id)) << tablet_id;
   ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
   LOG(INFO) << "Waiting for first tablet to be tombstoned...";
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
@@ -877,7 +701,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
     // bootstrapping after being restarted above.
     NO_FATALS(DeleteTabletWithRetries(ts, tablet_id, TABLET_DATA_DELETED, timeout));
   }
-  NO_FATALS(WaitForNoDataOnTS(kTsIndex));
+  ASSERT_OK(inspect_->WaitForNoDataOnTS(kTsIndex));
 }
 
 // Faults appropriate for the TABLET_DATA_TOMBSTONED case.

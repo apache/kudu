@@ -36,6 +36,10 @@ class ReadableBlock;
 class WritableBlock;
 } // namespace fs
 
+namespace itest {
+class ExternalMiniClusterFsInspector;
+}
+
 class BlockId;
 class InstanceMetadataPB;
 
@@ -180,7 +184,7 @@ class FsManager {
 
  private:
   FRIEND_TEST(FsManagerTestBase, TestDuplicatePaths);
-  friend class DeleteTableTest; // for access to directory names
+  friend class itest::ExternalMiniClusterFsInspector; // for access to directory names
 
   // Initializes, sanitizes, and canonicalizes the filesystem roots.
   Status Init();
