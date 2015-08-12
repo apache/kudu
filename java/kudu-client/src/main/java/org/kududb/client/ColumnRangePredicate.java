@@ -7,6 +7,8 @@ import org.kududb.ColumnSchema;
 import org.kududb.Type;
 import org.kududb.tserver.Tserver;
 
+import java.util.Arrays;
+
 /**
  * A range predicate on one of the columns in the underlying data
  * The both boundaries are inclusive
@@ -76,10 +78,14 @@ public class ColumnRangePredicate {
 
   /**
    * Set a long for the lower bound
+   *
+   * If 'lowerBound' is a timestamp see {@link PartialRow#addLong(String, long)} for the
+   * format.
+   *
    * @param lowerBound value for the lower bound
    */
   public void setLowerBound(long lowerBound) {
-    checkColumn(Type.INT64);
+    checkColumn(Type.INT64, Type.TIMESTAMP);
     setLowerBoundInternal(Bytes.fromLong(lowerBound));
   }
 
@@ -157,10 +163,14 @@ public class ColumnRangePredicate {
 
   /**
    * Set a long for the upper bound
+   *
+   * If 'upperBound' is a timestamp see {@link PartialRow#addLong(String, long)} for the
+   * format.
+   *
    * @param upperBound value for the upper bound
    */
   public void setUpperBound(long upperBound) {
-    checkColumn(Type.INT64);
+    checkColumn(Type.INT64, Type.TIMESTAMP);
     setUpperBoundInternal(Bytes.fromLong(upperBound));
   }
 
@@ -224,10 +234,11 @@ public class ColumnRangePredicate {
     return upperBound;
   }
 
-  private void checkColumn(Type passedType) {
-    if (!this.column.getType().equals(passedType)) {
-      throw new IllegalArgumentException(column.getName() +
-          "'s type isn't " + passedType.getName() + ", it's " + column.getType().getName());
+  private void checkColumn(Type... passedTypes) {
+    for (Type type : passedTypes) {
+      if (this.column.getType().equals(type)) return;
     }
+    throw new IllegalArgumentException(String.format("%s's type isn't %s, it's %s",
+        column.getName(), Arrays.toString(passedTypes), column.getType().getName()));
   }
 }

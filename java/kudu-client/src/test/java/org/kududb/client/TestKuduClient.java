@@ -42,6 +42,13 @@ public class TestKuduClient extends BaseKuduTest {
     return new Schema(columns);
   }
 
+  private Schema createSchemaWithTimestampColumns() {
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.TIMESTAMP).key(true).build());
+    columns.add(new ColumnSchema.ColumnSchemaBuilder("c1", Type.TIMESTAMP).nullable(true).build());
+    return new Schema(columns);
+  }
+
   /**
    * Test creating and deleting a table through a KuduClient.
    */
@@ -170,6 +177,48 @@ public class TestKuduClient extends BaseKuduTest {
           + " BINARY c3=", i, (double) i));
       if (i % 2 == 1) {
         expectedRow.append(Bytes.pretty(testArray));
+      } else {
+        expectedRow.append("NULL");
+      }
+      assertEquals(expectedRow.toString(), rowStrings.get(i));
+    }
+  }
+
+  /**
+   * Test inserting and retrieving timestamp columns.
+   */
+  @Test(timeout = 100000)
+  public void testTimestampColumns() throws Exception {
+    Schema schema = createSchemaWithTimestampColumns();
+    syncClient.createTable(tableName, schema);
+
+    List<Long> timestamps = new ArrayList<>();
+
+    KuduSession session = syncClient.newSession();
+    KuduTable table = syncClient.openTable(tableName);
+    for (int i = 0; i < 100; i++) {
+      Insert insert = table.newInsert();
+      PartialRow row = insert.getRow();
+      long timestamp = System.currentTimeMillis() * 1000;
+      timestamps.add(timestamp);
+      row.addLong("key", timestamp);
+      if (i % 2 == 1) {
+        row.addLong("c1", timestamp);
+      }
+      session.apply(insert);
+      if (i % 50 == 0) {
+        session.flush();
+      }
+    }
+    session.flush();
+
+    List<String> rowStrings = scanTableToStrings(table);
+    assertEquals(100, rowStrings.size());
+    for (int i = 0; i < rowStrings.size(); i++) {
+      StringBuilder expectedRow = new StringBuilder();
+      expectedRow.append(String.format("TIMESTAMP key=%d, TIMESTAMP c1=", timestamps.get(i)));
+      if (i % 2 == 1) {
+        expectedRow.append(timestamps.get(i));
       } else {
         expectedRow.append("NULL");
       }

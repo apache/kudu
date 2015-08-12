@@ -139,12 +139,15 @@ public class RowResult {
     checkValidColumn(columnIndex);
     checkNull(columnIndex);
     return Bytes.getByte(this.rowData.getRawArray(),
-                         this.rowData.getRawOffset()
-                         + getCurrentRowDataOffsetForColumn(columnIndex));
+        this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex));
   }
 
   /**
    * Get the specified column's long
+   *
+   * If this is a TIMESTAMP column, the long value corresponds to a number of microseconds
+   * since midnight, January 1, 1970 UTC.
+   *
    * @param columnIndex Column index in the schema
    * @return A positive long
    * @throws IllegalArgumentException if the column is null
@@ -324,6 +327,7 @@ public class RowResult {
             break;
           case INT32: buf.append(getInt(i)); break;
           case INT64: buf.append(getLong(i)); break;
+          case TIMESTAMP: buf.append(getLong(i)); break;
           case STRING: buf.append(getString(i)); break;
           case BINARY: buf.append(Bytes.pretty(getBinaryCopy(i))); break;
           case FLOAT: buf.append(getFloat(i)); break;

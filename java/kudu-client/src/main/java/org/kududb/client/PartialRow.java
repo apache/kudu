@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import java.util.Arrays;
 import java.util.BitSet;
 import java.util.List;
 
@@ -162,6 +163,11 @@ public class PartialRow {
 
   /**
    * Add an long for the specified column.
+   *
+   * If this is a TIMESTAMP column, the long value provided should be the number of microseconds
+   * between a given time and January 1, 1970 UTC.
+   * For example, to encode the current time, use setLong(System.currentTimeMillis() * 1000);
+   *
    * @param columnName Name of the column
    * @param val value to add
    * @throws IllegalArgumentException if the column doesn't exist or the value doesn't match
@@ -172,7 +178,7 @@ public class PartialRow {
   }
 
   private void addLong(ColumnSchema column, long val) {
-    checkColumn(column, Type.INT64);
+    checkColumn(column, Type.INT64, Type.TIMESTAMP);
     Bytes.setLong(rowAlloc, val, getPositionInRowAllocAndSetBitSet(column));
   }
 
@@ -367,17 +373,19 @@ public class PartialRow {
   }
 
   /**
-   * Verifies if the column exists and belongs to the specified type
+   * Verifies if the column exists and belongs to one of the specified types
    * It also does some internal accounting
    * @param column column the user wants to set
-   * @param type type we expect
+   * @param types types we expect
    * @throws IllegalArgumentException if the column or type was invalid
    */
-  private void checkColumn(ColumnSchema column, Type type) {
+  private void checkColumn(ColumnSchema column, Type... types) {
     checkColumnExists(column);
-    if (!column.getType().equals(type))
-      throw new IllegalArgumentException(column.getName() +
-          " isn't " + type.getName() + ", it's " + column.getType().getName());
+    for(Type type : types) {
+      if (column.getType().equals(type)) return;
+    }
+    throw new IllegalArgumentException(String.format("%s isn't %s, it's %s", column.getName(),
+        Arrays.toString(types), column.getType().getName()));
   }
 
   /**

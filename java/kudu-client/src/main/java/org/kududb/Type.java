@@ -21,7 +21,8 @@ public enum Type {
   STRING (DataType.STRING, "string"),
   BOOL (DataType.BOOL, "bool"),
   FLOAT (DataType.FLOAT, "float"),
-  DOUBLE (DataType.DOUBLE, "double");
+  DOUBLE (DataType.DOUBLE, "double"),
+  TIMESTAMP (DataType.TIMESTAMP, "timestamp");
 
 
   private final DataType dataType;
@@ -83,7 +84,8 @@ public enum Type {
       case INT32:
       case FLOAT: return Ints.BYTES;
       case INT64:
-      case DOUBLE: return Longs.BYTES;
+      case DOUBLE:
+      case TIMESTAMP: return Longs.BYTES;
       default: throw new IllegalArgumentException("The provided data type doesn't map" +
           " to know any known one.");
     }
@@ -103,6 +105,7 @@ public enum Type {
       case INT16: return INT16;
       case INT32: return INT32;
       case INT64: return INT64;
+      case TIMESTAMP: return TIMESTAMP;
       case FLOAT: return FLOAT;
       case DOUBLE: return DOUBLE;
       default:

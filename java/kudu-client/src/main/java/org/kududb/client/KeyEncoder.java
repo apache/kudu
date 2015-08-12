@@ -41,6 +41,7 @@ class KeyEncoder {
       case INT16:
       case INT32:
       case INT64:
+      case TIMESTAMP:
         // picking the first byte because big endian
         byte lastByte = bytes[offset + (size - 1)];
         lastByte = Bytes.xorLeftMostBit(lastByte);
