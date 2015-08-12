@@ -84,11 +84,10 @@ PeerMessageQueue::Metrics::Metrics(const scoped_refptr<MetricEntity>& metric_ent
 PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                                    const scoped_refptr<log::Log>& log,
                                    const RaftPeerPB& local_peer_pb,
-                                   const string& tablet_id,
-                                   const shared_ptr<MemTracker>& parent_mem_tracker)
+                                   const string& tablet_id)
     : local_peer_pb_(local_peer_pb),
       tablet_id_(tablet_id),
-      log_cache_(metric_entity, log, local_peer_pb.permanent_uuid(), tablet_id, parent_mem_tracker),
+      log_cache_(metric_entity, log, local_peer_pb.permanent_uuid(), tablet_id),
       metrics_(metric_entity) {
   DCHECK(local_peer_pb_.has_permanent_uuid());
   DCHECK(local_peer_pb_.has_last_known_addr());

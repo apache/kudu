@@ -46,15 +46,14 @@ METRIC_DEFINE_gauge_int64(tablet, log_cache_size, "Log Cache Memory Usage",
                           MetricUnit::kBytes,
                           "Amount of memory in use for caching the local log.");
 
-static const char kConsensusQueueParentTrackerId[] = "consensus_queue_parent";
+static const char kParentMemTrackerId[] = "log_cache";
 
 typedef vector<const ReplicateMsg*>::const_iterator MsgIter;
 
 LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
                    const scoped_refptr<log::Log>& log,
                    const string& local_uuid,
-                   const string& tablet_id,
-                   const shared_ptr<MemTracker>& parent_mem_tracker)
+                   const string& tablet_id)
   : log_(log),
     local_uuid_(local_uuid),
     tablet_id_(tablet_id),
@@ -66,18 +65,16 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
   const int64_t max_ops_size_bytes = FLAGS_log_cache_size_limit_mb * 1024 * 1024;
   const int64_t global_max_ops_size_bytes = FLAGS_global_log_cache_size_limit_mb * 1024 * 1024;
 
-  // Set up (or reuse) a tracker with the global limit.
-  //
-  // Note: by using the server-wide tracker as the parent, this tracker isn't
-  // global in a minicluster environment. That's acceptable.
+  // Set up (or reuse) a tracker with the global limit. It is parented directly
+  // to the root tracker so that it's always global.
   parent_tracker_ = MemTracker::FindOrCreateTracker(global_max_ops_size_bytes,
-                                                    kConsensusQueueParentTrackerId,
-                                                    parent_mem_tracker);
+                                                    kParentMemTrackerId);
 
   // And create a child tracker with the per-tablet limit.
-  tracker_ = MemTracker::CreateTracker(max_ops_size_bytes,
-                                       tablet_id,
-                                       parent_tracker_);
+  tracker_ = MemTracker::CreateTracker(
+      max_ops_size_bytes, Substitute("$0:$1:$2", kParentMemTrackerId,
+                                     local_uuid, tablet_id),
+      parent_tracker_);
 
   // Put a fake message at index 0, since this simplifies a lot of our
   // code paths elsewhere.

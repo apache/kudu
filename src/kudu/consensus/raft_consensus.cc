@@ -94,8 +94,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
   gscoped_ptr<PeerMessageQueue> queue(new PeerMessageQueue(metric_entity,
                                                            log,
                                                            local_peer_pb,
-                                                           options.tablet_id,
-                                                           parent_mem_tracker));
+                                                           options.tablet_id));
 
   gscoped_ptr<ThreadPool> thread_pool;
   CHECK_OK(ThreadPoolBuilder(Substitute("$0-raft", options.tablet_id.substr(0, 6)))

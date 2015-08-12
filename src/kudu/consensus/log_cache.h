@@ -43,8 +43,7 @@ class LogCache {
   LogCache(const scoped_refptr<MetricEntity>& metric_entity,
            const scoped_refptr<log::Log>& log,
            const std::string& local_uuid,
-           const std::string& tablet_id,
-           const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker);
+           const std::string& tablet_id);
   ~LogCache();
 
   // Initialize the cache.

@@ -107,9 +107,7 @@ class PeerMessageQueue {
   PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
                    const scoped_refptr<log::Log>& log,
                    const RaftPeerPB& local_peer_pb,
-                   const std::string& tablet_id,
-                   const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker =
-                       std::tr1::shared_ptr<MemTracker>());
+                   const std::string& tablet_id);
 
   // Initialize the queue.
   virtual void Init(const OpId& last_locally_replicated);

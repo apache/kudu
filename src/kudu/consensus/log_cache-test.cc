@@ -65,8 +65,7 @@ class LogCacheTest : public KuduTest {
     cache_.reset(new LogCache(metric_entity_,
                               log_.get(),
                               kPeerUuid,
-                              kTestTablet,
-                              shared_ptr<MemTracker>()));
+                              kTestTablet));
     cache_->Init(preceding_id);
   }
 

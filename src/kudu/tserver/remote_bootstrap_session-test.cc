@@ -117,8 +117,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
                                 clock(),
                                 messenger,
                                 log,
-                                metric_entity,
-                                shared_ptr<MemTracker>()));
+                                metric_entity));
     consensus::ConsensusBootstrapInfo boot_info;
     CHECK_OK(tablet_peer_->Start(boot_info));
 

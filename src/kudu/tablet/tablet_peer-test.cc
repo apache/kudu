@@ -118,8 +118,7 @@ class TabletPeerTest : public KuduTabletTest {
                                  clock(),
                                  messenger_,
                                  log,
-                                 metric_entity_,
-                                 shared_ptr<MemTracker>()));
+                                 metric_entity_));
   }
 
   Status StartPeer(const ConsensusBootstrapInfo& info) {

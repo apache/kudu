@@ -487,8 +487,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
                            scoped_refptr<server::Clock>(server_->clock()),
                            server_->messenger(),
                            log,
-                           tablet->GetMetricEntity(),
-                           server_->mem_tracker());
+                           tablet->GetMetricEntity());
 
     if (!s.ok()) {
       LOG(ERROR) << "Tablet failed to init: "
