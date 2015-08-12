@@ -49,7 +49,7 @@ static void SetPerfImprovementForFlush(MaintenanceOpStats* stats,
     // there is an MRS over threshold, a flush will almost always be selected instead of
     // a compaction.  That's not necessarily a good thing, but in the absense of better
     // heuristics, it will do for now.
-    int extra_mb = stats->ram_anchored() / 1024 / 1024;
+    double extra_mb = static_cast<double>(stats->ram_anchored()) / (1024 * 1024);
     stats->set_perf_improvement(extra_mb);
   } else if (!is_empty && elapsed_ms > kFlushDueToTimeMs) {
     // Even if we aren't over the threshold, consider flushing if we haven't flushed
