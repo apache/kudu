@@ -1680,13 +1680,21 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   // Set up a 3-node configuration with only one live follower so that we can
   // manipulate it directly via RPC.
   vector<string> flags;
+
+  // If failure detection were on, a follower could be elected as leader after
+  // we kill the leader below.
   flags.push_back("--enable_leader_failure_detection=false");
-  flags.push_back("--memory_limit_hard_mb=8");
+
+  // Very low memory limit to ease testing.
+  flags.push_back("--memory_limit_hard_mb=4");
+
+  // Don't let transaction memory tracking get in the way.
+  flags.push_back("--tablet_transaction_memory_limit_mb=-1");
+
   BuildAndStart(flags);
 
   // Elect server 2 as leader, then kill it and server 1, leaving behind
-  // server 0 as the sole follower. We've disabled leader election so server 0
-  // should remain a follower forever.
+  // server 0 as the sole follower.
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
   ASSERT_EQ(3, tservers.size());
@@ -1716,6 +1724,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   ASSERT_FALSE(resp.has_error()) << resp.DebugString();
   ASSERT_TRUE(resp.has_status());
   ASSERT_TRUE(resp.status().has_last_committed_idx());
+  ASSERT_EQ(last_opid.index(), resp.status().last_received().index());
   ASSERT_EQ(1, resp.status().last_committed_idx());
 
   // But no operations have been applied yet; there should be no data.
