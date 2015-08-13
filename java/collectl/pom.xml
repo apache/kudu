@@ -40,6 +40,13 @@
       </plugin>
     </plugins>
   </build>
+  <repositories>
+    <repository>
+      <id>kudu-internal</id>
+      <name>Kudu client on Cloudera network</name>
+      <url>http://d2106.halxg.cloudera.com/kudu-2015-08-13-1/</url>
+    </repository>
+  </repositories>
         
   <dependencies>
     <dependency>
