@@ -1,5 +1,5 @@
 #!/bin/bash
-set +eux
+set -eux
 
 # http://stackoverflow.com/questions/7126580/expand-a-possible-relative-path-in-bash
 dir_resolve()
@@ -16,18 +16,22 @@ dir_resolve()
 : ${VM_NUM_CPUS:=2}
 : ${VM_MEM_MB:=6144}
 
-if [[ -e "${VIRTUALBOX_NAME}/${VIRTUALBOX_NAME}.ova" ]]; then
-  echo "Virtualbox image already exists: ${VIRTUALBOX_NAME}/${VIRTUALBOX_NAME}.ova"
-  echo "Remove file to able to proceed."
+if ! which VBoxManage >/dev/null ; then
+  echo "It appears that virtualbox is not installed. VBoxManage is not"
+  echo "on the path. If running on Ubuntu, run apt-get -y install virtualbox"
   exit 1
 fi
 
 # Download quickstart VM
-echo "Downloading Virtualbox Image file: ${VIRTUALBOX_URL}"
-curl -O ${VIRTUALBOX_URL}
-# Unzip
-unzip ${VIRTUALBOX_NAME}.zip
-rm -f ${VIRTUALBOX_NAME}.zip
+if [ -d ${VIRTUALBOX_NAME} ]; then
+  echo Using previously downloaded image
+else
+  echo "Downloading Virtualbox Image file: ${VIRTUALBOX_URL}"
+  curl -O ${VIRTUALBOX_URL}
+  # Unzip
+  unzip ${VIRTUALBOX_NAME}.zip
+  rm -f ${VIRTUALBOX_NAME}.zip
+fi
 
 OVF=${VIRTUALBOX_NAME}/${VIRTUALBOX_NAME}.ova
 
@@ -41,7 +45,7 @@ host_ip=`VBoxManage list -l hostonlyifs | grep "^IPAddress:" | tail -n 1 | tr " 
 lower_ip=`echo $host_ip | sed 's/\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\)\.[0-9]\{1,3\}/\1/g'`
 
 VBoxManage hostonlyif ipconfig $last_if --ip $host_ip
-VBoxManage dhcpserver add --ifname $last_if --ip $host_ip --netmask 255.255.255.0 --lowerip $lower_ip.100 --upperip $lower_ip.200
+VBoxManage dhcpserver add --ifname $last_if --ip $host_ip --netmask 255.255.255.0 --lowerip $lower_ip.100 --upperip $lower_ip.200 || :
 VBoxManage dhcpserver modify --ifname $last_if --enable
 
 # Import the ovf
@@ -64,7 +68,7 @@ while true; do
     val=`VBoxManage guestproperty get $VM_NAME "/VirtualBox/GuestInfo/Net/0/V4/IP"`
     if [[ $val != "No value set!" ]]; then
 	ip=`echo $val | awk '{ print $2 }'`
-	curl http://$ip:50070/ &> /dev/null
+	curl http://$ip:50070/ &> /dev/null || :
 	if [[ $? -eq 0 ]]; then
 	    break
 	fi
