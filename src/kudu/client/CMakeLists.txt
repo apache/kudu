@@ -53,10 +53,66 @@ ADD_EXPORTABLE_LIBRARY(kudu_client
   EXPORTED_OUTPUT_DIRECTORY "${BUILD_OUTPUT_ROOT_DIRECTORY}/exported"
   EXPORTED_DEPS ${EXPORTED_CLIENT_LIBS})
 
-# Localize thirdparty symbols using a linker version script. This hides them
-# from the client application.
+################################################################################
+# LIBRARY VERSIONS
+################################################################################
+#
+# The external version of the exported Kudu client library. It is a separate
+# entity from the main Kudu version so that the library and backends can evolve
+# independently.
+#
+# Library versions affect packaging and control how the runtime linker finds the
+# actual library file. The library's SOVERSION (i.e. major version) is typically
+# appended to its package name and to the library filename, which means:
+#
+# 1. Multiple packages of the different major versions may be installed.
+# 2. An application must link against a specific major version of the library.
+#
+# The minor and patch versions are purely informational; changes to them have no
+# effect on runtime linking or on packages.
+#
+# The major version should only be incremented when an incompatible change is
+# made to the library's ABI (i.e. interface to the application). It is not to be
+# taken lightly because it has far reaching effects. Besides forcing an
+# application to recompile (or worse, rewrite some code), it also affects
+# packages. For example, package names typically change after a major version
+# bump (e.g. libkuduclient0 becomes libkuduclient1).
+#
+# The minor and patch versions can be incremented freely, and should be
+# incremented when significant (but not incompatible) or insignificant changes
+# are made respectively.
+#
+# For a detailed explanation of the kinds of C++ changes that would break ABI
+# compatibility, see:
+#
+#   https://techbase.kde.org/Policies/Binary_Compatibility_Issues_With_C++
+#
+# For more background on library versions, see:
+#
+#   https://autotools.io/libtool/version.html
+set(CLIENT_VERSION_MAJOR 0)
+set(CLIENT_VERSION_MINOR 1)
+set(CLIENT_VERSION_PATCH 0)
+
 set_target_properties(kudu_client_exported
-  PROPERTIES LINK_FLAGS -Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map)
+  PROPERTIES
+  # Localize thirdparty symbols using a linker version script. This hides them
+  # from the client application.
+  LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map"
+  # This version is appended to the filename.
+  #
+  # For example: libkudu_client.so.1.2.3
+  VERSION "${CLIENT_VERSION_MAJOR}.${CLIENT_VERSION_MINOR}.${CLIENT_VERSION_PATCH}"
+  # This version is used to create two library symlinks.
+  #
+  # For example: libkudu_client.so -> libkudu_client.so.1
+  #              libkudu_client.so.1 -> libkudu_client.so.1.2.3
+  #
+  # The runtime linker is expected to look up a library by name and SOVERSION.
+  # In the previous example, that means it'll look up a file with name
+  # libkudu_client.so.1. If the library is installed, that file should be a
+  # symlink to the actual library file libkudu_client.so.1.2.3.
+  SOVERSION "${CLIENT_VERSION_MAJOR}")
 
 # Generate kudu_export.h.
 generate_export_header(kudu_client_exported

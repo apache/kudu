@@ -5,8 +5,26 @@
 # Tests that the Kudu client sample code can be built out-of-tree and runs
 # properly.
 
+set -e
+
+# Clean up after the test. Must be idempotent.
+cleanup() {
+  if [ -n "$TS_PID" ]; then
+      kill -9 "$TS_PID" || :
+  fi
+  if [ -n "$MASTER_PID" ]; then
+      kill -9 "$MASTER_PID" || :
+  fi
+  if [ -n "$BASE_DIR" -a -d "$BASE_DIR" ]; then
+      rm -rf "$BASE_DIR"
+  fi
+  if [ -n "$LIBRARY_DIR" -a -d "$LIBRARY_DIR" ]; then
+      rm -rf "$LIBRARY_DIR"
+  fi
+}
+trap cleanup EXIT
+
 ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../../..)
-NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
 
 # Install the client library to a temporary directory.
 # Try to detect whether we're building using Ninja or Make.
@@ -16,9 +34,9 @@ SAMPLES_DIR=$PREFIX_DIR/share/doc/kuduClient/samples
 pushd $ROOT
 NINJA=$(which ninja 2>/dev/null) || NINJA=""
 if [ -r build.ninja -a -n "$NINJA" ]; then
-  DESTDIR=$LIBRARY_DIR ninja -j$NUM_PROCS install
+  DESTDIR=$LIBRARY_DIR ninja -j$(nproc) install
 else
-  make -j$NUM_PROCS DESTDIR=$LIBRARY_DIR install
+  make -j$(nproc) DESTDIR=$LIBRARY_DIR install
 fi
 popd
 
@@ -26,7 +44,7 @@ popd
 # We can just always use Make here, since we're calling cmake ourselves.
 pushd $SAMPLES_DIR
 CMAKE_PREFIX_PATH=$PREFIX_DIR cmake .
-make -j$NUM_PROCS
+make -j$(nproc)
 popd
 
 # Start master+ts
@@ -47,19 +65,5 @@ TS_PID=$!
 # Let them run for a bit.
 sleep 5
 
-# Run the samples (temporarily disabling exit-on-error).
-set +e
+# Run the samples.
 $SAMPLES_DIR/sample
-RESULT=$?
-set -e
-
-# Clean up.
-kill -9 $TS_PID || :
-kill -9 $MASTER_PID || :
-rm -rf $BASE_DIR
-rm -rf $LIBRARY_DIR
-
-if [ $RESULT != 0 ]; then
-  echo "Sample test failed!"
-  exit $RESULT
-fi
