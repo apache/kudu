@@ -1,0 +1,4 @@
+#!/bin/bash
+HOST=quickstart.cloudera
+USER=cloudera
+ssh $USER@$HOST -t python
