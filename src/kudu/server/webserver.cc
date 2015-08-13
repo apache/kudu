@@ -56,9 +56,6 @@ TAG_FLAG(webserver_max_post_length_bytes, runtime);
 
 namespace kudu {
 
-static const char* DOC_FOLDER = "/www/";
-static const int DOC_FOLDER_LEN = strlen(DOC_FOLDER);
-
 Webserver::Webserver(const WebserverOptions& opts)
   : opts_(opts),
     context_(NULL) {
