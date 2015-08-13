@@ -76,6 +76,10 @@ class TestWorkload {
     return table_name_;
   }
 
+  void set_pathological_one_row_enabled(bool enabled) {
+    pathological_one_row_enabled_ = enabled;
+  }
+
   // Sets up the internal client and creates the table which will be used for
   // writing, if it doesn't already exist.
   void Setup();
@@ -111,6 +115,7 @@ class TestWorkload {
   int write_timeout_millis_;
   bool timeout_allowed_;
   bool not_found_allowed_;
+  bool pathological_one_row_enabled_;
 
   int num_replicas_;
   std::string table_name_;

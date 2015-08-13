@@ -32,6 +32,7 @@ using client::KuduSchemaFromSchema;
 using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
+using client::KuduUpdate;
 using std::tr1::shared_ptr;
 
 const char* const TestWorkload::kDefaultTableName = "test-workload";
@@ -44,6 +45,7 @@ TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
     write_timeout_millis_(20000),
     timeout_allowed_(false),
     not_found_allowed_(false),
+    pathological_one_row_enabled_(false),
     num_replicas_(3),
     table_name_(kDefaultTableName),
     start_latch_(0),
@@ -90,17 +92,25 @@ void TestWorkload::WriteThread() {
 
   while (should_run_.Load()) {
     for (int i = 0; i < write_batch_size_; i++) {
-      gscoped_ptr<KuduInsert> insert(table->NewInsert());
-      KuduPartialRow* row = insert->mutable_row();
-      CHECK_OK(row->SetInt32(0, r.Next()));
-      CHECK_OK(row->SetInt32(1, r.Next()));
-      string test_payload("hello world");
-      if (payload_bytes_ != 11) {
-        // We fill with zeros if you change the default.
-        test_payload.assign(payload_bytes_, '0');
+      if (pathological_one_row_enabled_) {
+        gscoped_ptr<KuduUpdate> update(table->NewUpdate());
+        KuduPartialRow* row = update->mutable_row();
+        CHECK_OK(row->SetInt32(0, 0));
+        CHECK_OK(row->SetInt32(1, r.Next()));
+        CHECK_OK(session->Apply(update.release()));
+      } else {
+        gscoped_ptr<KuduInsert> insert(table->NewInsert());
+        KuduPartialRow* row = insert->mutable_row();
+        CHECK_OK(row->SetInt32(0, r.Next()));
+        CHECK_OK(row->SetInt32(1, r.Next()));
+        string test_payload("hello world");
+        if (payload_bytes_ != 11) {
+          // We fill with zeros if you change the default.
+          test_payload.assign(payload_bytes_, '0');
+        }
+        CHECK_OK(row->SetStringCopy(2, test_payload));
+        CHECK_OK(session->Apply(insert.release()));
       }
-      CHECK_OK(row->SetStringCopy(2, test_payload));
-      CHECK_OK(session->Apply(insert.release()));
     }
 
     int inserted = write_batch_size_;
@@ -154,22 +164,38 @@ void TestWorkload::Setup() {
   }
   CHECK_OK(s);
 
-  if (table_exists) {
+  if (!table_exists) {
+    KuduSchema client_schema(KuduSchemaFromSchema(GetSimpleTestSchema()));
+
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+    CHECK_OK(table_creator->table_name(table_name_)
+             .schema(&client_schema)
+             .num_replicas(num_replicas_)
+             // NOTE: this is quite high as a timeout, but the default (5 sec) does not
+             // seem to be high enough in some cases (see KUDU-550). We should remove
+             // this once that ticket is addressed.
+             .timeout(MonoDelta::FromSeconds(20))
+             .Create());
+  } else {
     LOG(INFO) << "TestWorkload: Skipping table creation because table "
               << table_name_ << " already exists";
-    return;
   }
-  KuduSchema client_schema(KuduSchemaFromSchema(GetSimpleTestSchema()));
 
-  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  CHECK_OK(table_creator->table_name(table_name_)
-           .schema(&client_schema)
-           .num_replicas(num_replicas_)
-           // NOTE: this is quite high as a timeout, but the default (5 sec) does not
-           // seem to be high enough in some cases (see KUDU-550). We should remove
-           // this once that ticket is addressed.
-           .timeout(MonoDelta::FromSeconds(20))
-           .Create());
+
+  if (pathological_one_row_enabled_) {
+    shared_ptr<KuduSession> session = client_->NewSession();
+    session->SetTimeoutMillis(20000);
+    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    shared_ptr<KuduTable> table;
+    CHECK_OK(client_->OpenTable(table_name_, &table));
+    gscoped_ptr<KuduInsert> insert(table->NewInsert());
+    KuduPartialRow* row = insert->mutable_row();
+    CHECK_OK(row->SetInt32(0, 0));
+    CHECK_OK(row->SetInt32(1, 0));
+    CHECK_OK(row->SetStringCopy(2, "hello world"));
+    CHECK_OK(session->Apply(insert.release()));
+    CHECK_OK(session->Flush());
+  }
 }
 
 void TestWorkload::Start() {

@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
+#include <tr1/unordered_map>
 #include <tr1/unordered_set>
 
 #include "kudu/client/client.h"
@@ -19,11 +20,13 @@
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/consensus/quorum_util.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
+#include "kudu/server/server_base.pb.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
@@ -72,8 +75,11 @@ using master::TableIdentifierPB;
 using master::TabletLocationsPB;
 using master::TSInfoPB;
 using rpc::RpcController;
+using server::SetFlagRequestPB;
+using server::SetFlagResponsePB;
 using std::vector;
 using std::tr1::shared_ptr;
+using std::tr1::unordered_map;
 using std::tr1::unordered_set;
 using strings::Substitute;
 using tablet::TabletPeer;
@@ -2046,6 +2052,88 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
     }
     SleepFor(MonoDelta::FromMilliseconds(200));
   }
+}
+
+static void EnableLogLatency(server::GenericServiceProxy* proxy) {
+  typedef unordered_map<string, string> FlagMap;
+  FlagMap flags;
+  InsertOrDie(&flags, "log_inject_latency", "true");
+  InsertOrDie(&flags, "log_inject_latency_ms_mean", "1000");
+  BOOST_FOREACH(const FlagMap::value_type& e, flags) {
+    SetFlagRequestPB req;
+    SetFlagResponsePB resp;
+    RpcController rpc;
+    req.set_flag(e.first);
+    req.set_value(e.second);
+    ASSERT_OK(proxy->SetFlag(req, &resp, &rpc));
+  }
+}
+
+// Run a regular workload with a leader that's writing to its WAL slowly.
+TEST_F(RaftConsensusITest, TestSlowLeader) {
+  if (!AllowSlowTests()) return;
+  BuildAndStart(vector<string>());
+
+  TServerDetails* leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+  NO_FATALS(EnableLogLatency(leader->generic_proxy.get()));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.Setup();
+  workload.Start();
+  SleepFor(MonoDelta::FromSeconds(60));
+}
+
+// Run a regular workload with one follower that's writing to its WAL slowly.
+TEST_F(RaftConsensusITest, TestSlowFollower) {
+  if (!AllowSlowTests()) return;
+  BuildAndStart(vector<string>());
+
+  TServerDetails* leader;
+  ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
+  int num_reconfigured = 0;
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
+    if (ts->instance_id().permanent_uuid() != leader->uuid()) {
+      TServerDetails* follower;
+      follower = GetReplicaWithUuidOrNull(tablet_id_, ts->instance_id().permanent_uuid());
+      ASSERT_TRUE(follower);
+      NO_FATALS(EnableLogLatency(follower->generic_proxy.get()));
+      num_reconfigured++;
+      break;
+    }
+  }
+  ASSERT_EQ(1, num_reconfigured);
+
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.Setup();
+  workload.Start();
+  SleepFor(MonoDelta::FromSeconds(60));
+}
+
+// Run a special workload that constantly updates a single row on a cluster
+// where every replica is writing to its WAL slowly.
+TEST_F(RaftConsensusITest, TestHammerOneRow) {
+  if (!AllowSlowTests()) return;
+  BuildAndStart(vector<string>());
+
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ExternalTabletServer* ts = cluster_->tablet_server(i);
+    TServerDetails* follower;
+    follower = GetReplicaWithUuidOrNull(tablet_id_, ts->instance_id().permanent_uuid());
+    ASSERT_TRUE(follower);
+    NO_FATALS(EnableLogLatency(follower->generic_proxy.get()));
+  }
+
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_pathological_one_row_enabled(true);
+  workload.set_num_write_threads(20);
+  workload.Setup();
+  workload.Start();
+  SleepFor(MonoDelta::FromSeconds(60));
 }
 
 }  // namespace tserver
