@@ -7,7 +7,7 @@ import com.google.common.base.Stopwatch;
 /**
  * This is a wrapper class around {@link com.google.common.base.Stopwatch} used to track a relative
  * deadline in the future.
- * <p/>
+ * <p>
  * The watch starts as soon as this object is created with a deadline of 0,
  * meaning that there's no deadline.
  * The deadline has been reached once the stopwatch's elapsed time is equal or greater than the
@@ -51,12 +51,12 @@ public class DeadlineTracker {
 
   /**
    * Get the number of milliseconds before the deadline is reached.
-   * <p/>
+   * <p>
    * This method is used to pass down the remaining deadline to the RPCs, so has special semantics.
    * A deadline of 0 is used to indicate an infinite deadline, and negative deadlines are invalid.
-   * Thus, if the deadline has passed (i.e. <tt>deadline - stopwatch.elapsedMillis() <= 0</tt>),
+   * Thus, if the deadline has passed (i.e. <tt>deadline - stopwatch.elapsedMillis() &lt;= 0</tt>),
    * the returned value is floored at <tt>1</tt>.
-   * <p/>
+   * <p>
    * Callers who care about this behavior should first check {@link #timedOut()}.
    *
    * @return the remaining millis before the deadline is reached, or 1 if the remaining time is

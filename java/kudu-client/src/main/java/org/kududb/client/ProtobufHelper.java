@@ -123,7 +123,7 @@ public class ProtobufHelper {
   }
 
   /**
-   * Convert a {@link com.google.common.net.HostAndPort} to {@link kudu.Common.HostPortPB}
+   * Convert a {@link com.google.common.net.HostAndPort} to {@link org.kududb.Common.HostPortPB}
    * protobuf message for serialization.
    * @param hostAndPort The host and port object. Both host and port must be specified.
    * @return An initialized HostPortPB object.
@@ -136,7 +136,7 @@ public class ProtobufHelper {
   }
 
   /**
-   * Convert a {@link kudu.Common.HostPortPB} to {@link com.google.common.net.HostAndPort}.
+   * Convert a {@link org.kududb.Common.HostPortPB} to {@link com.google.common.net.HostAndPort}.
    * @param hostPortPB The fully initialized HostPortPB object. Must have both host and port
    *                   specified.
    * @return An initialized initialized HostAndPort object.

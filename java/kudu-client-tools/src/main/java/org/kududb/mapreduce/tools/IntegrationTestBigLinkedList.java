@@ -78,6 +78,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * This is an integration test borrowed from goraci, written by Keith Turner,
  * which is in turn inspired by the Accumulo test called continous ingest (ci).
  * The original source code can be found here:
+ * </p>
  * <ul>
  * <li>
  * <a href="https://github.com/keith-turner/goraci">https://github.com/keith-turner/goraci</a>
@@ -86,7 +87,6 @@ import java.util.concurrent.atomic.AtomicInteger;
  * <a href="https://github.com/enis/goraci/">https://github.com/enis/goraci/</a>
  * </li>
  * </ul>
- * </p>
  *
  * <p>
  * Apache Accumulo has a simple test suite that verifies that data is not
@@ -167,7 +167,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  *
  * <h3>
  * Below is a description of the Java programs
- * <h3>
+ * </h3>
  *
  * <ul>
  * <li>
@@ -195,6 +195,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * KUDU-SPECIFIC CHANGES
  * </h3>
  *
+ * <ul>
  * <li>
  * The 16 bytes row key is divided into two 8 byte long since we don't have a "bytes" type in
  * Kudu. Note that the C++ client can store bytes directly in string columns. Using longs

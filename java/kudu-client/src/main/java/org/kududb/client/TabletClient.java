@@ -539,7 +539,7 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
    * without synchronization needed.
    * @return {@code false} if this handler is known to have been disconnected
    * from the server and sending an RPC (via {@link #sendRpc} or any other
-   * indirect mean such as {@link #getTableLocations}) will fail immediately
+   * indirect means such as {@code GetTableLocations()}) will fail immediately
    * by having the RPC's {@link Deferred} called back immediately with a
    * {@link ConnectionResetException}.  This typically means that you got a
    * stale reference (or that the reference to this instance is just about to

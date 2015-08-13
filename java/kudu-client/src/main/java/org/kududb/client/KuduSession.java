@@ -11,7 +11,7 @@ import org.slf4j.LoggerFactory;
  * Synchronous version of {@link AsyncKuduSession}. Offers the same API but with blocking methods.
  *
  * A major difference with {@link AsyncKuduSession} is that the time spent waiting on operations is
- * defined by {@link this#setTimeoutMillis(long)} which defaults to getting it from
+ * defined by {@link #setTimeoutMillis(long)} which defaults to getting it from
  * {@link KuduClient#getDefaultOperationTimeoutMs()}.
  */
 public class KuduSession implements SessionConfiguration {
@@ -78,7 +78,7 @@ public class KuduSession implements SessionConfiguration {
   }
 
   /**
-   * Blocking call that flushes the buffers (see {@link this#flush()} and closes the sessions.
+   * Blocking call that flushes the buffers (see {@link #flush()} and closes the sessions.
    * @return List of BatchResponse, one per tablet for which a batch was flushed.
    * @throws Exception if anything went wrong. If it's an issue with some or all batches,
    * it will be of type DeferredGroupException.

@@ -78,8 +78,9 @@ public final class AsyncKuduScanner {
 
   /**
    * The possible read modes for scanners.
-   * @see src/kudu/common/common.proto for a detailed explanations on the
-   *      meaning and implications of each mode.
+   *
+   * See {@code src/kudu/common/common.proto} for a detailed explanations on
+   * the meaning and implications of each mode.
    */
   public enum ReadMode {
     READ_LATEST(Common.ReadMode.READ_LATEST),

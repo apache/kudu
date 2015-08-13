@@ -28,7 +28,8 @@ public class Schema {
    * Constructs a schema using the specified columns and does some internal accounting
    * @param columns
    * @throws IllegalArgumentException If the key columns aren't specified first
-   * @see src/kudu/common/wire_protocol.cc in ColumnPBsToSchema()
+   *
+   * See {@code ColumnPBsToSchema()} in {@code src/kudu/common/wire_protocol.cc}
    */
   public Schema(List<ColumnSchema> columns) {
     this.columns = columns;
