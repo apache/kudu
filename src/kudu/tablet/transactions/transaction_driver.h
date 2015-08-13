@@ -119,7 +119,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
 
   std::string ToString() const;
 
-  virtual std::string ToStringUnlocked() const;
+  std::string ToStringUnlocked() const;
 
   std::string LogPrefix() const;
 
@@ -157,7 +157,7 @@ class TransactionDriver : public RefCountedThreadSafe<TransactionDriver> {
     PREPARED
   };
 
-  virtual ~TransactionDriver() {}
+  ~TransactionDriver() {}
 
   // The task submitted to the prepare threadpool to prepare and start
   // the transaction. If PrepareAndStart() fails, calls HandleFailure.
