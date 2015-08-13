@@ -1050,6 +1050,14 @@ LogBlockManager::~LogBlockManager() {
   STLDeleteValues(&instances_by_root_path_);
 }
 
+static const char kHolePunchErrorMsg[] =
+    "Error during hole punch test. The log block manager requires a "
+    "filesystem with hole punching support such as ext4 or xfs. On el6, "
+    "kernel version 2.6.32-358 or newer is required. To run without hole "
+    "punching (at the cost of some efficiency and scalability), reconfigure "
+    "Kudu with --block_manager=file. Refer to the Kudu documentation for more "
+    "details. Raw error message follows";
+
 Status LogBlockManager::Create() {
   CHECK(!read_only_);
 
@@ -1077,8 +1085,7 @@ Status LogBlockManager::Create() {
     }
 
     if (FLAGS_log_block_manager_test_hole_punching) {
-      RETURN_NOT_OK_PREPEND(CheckHolePunch(root_path),
-                            "Error during hole punch test");
+      RETURN_NOT_OK_PREPEND(CheckHolePunch(root_path), kHolePunchErrorMsg);
     }
 
     string instance_filename = JoinPathSegments(
