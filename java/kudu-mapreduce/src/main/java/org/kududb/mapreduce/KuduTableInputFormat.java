@@ -19,7 +19,6 @@ package org.kududb.mapreduce;
 import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
-import org.kududb.Common;
 import org.kududb.Schema;
 import org.kududb.client.*;
 import org.apache.commons.logging.Log;
@@ -154,7 +153,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
               continue retryloop;
             }
           }
-          addresses.add(reverseDNS(replica.getRpcHostPort()));
+          addresses.add(reverseDNS(replica.getRpcHost(), replica.getRpcPort()));
           String[] addressesArray = addresses.toArray(new String[addresses.size()]);
           TableSplit split = new TableSplit(locatedTablet.getStartKey(),
               locatedTablet.getEndKey(),
@@ -179,17 +178,17 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   /**
    * This method might seem alien, but we do this in order to resolve the hostnames the same way
    * Hadoop does. This ensures we get locality if Kudu is running along MR/YARN.
-   * @param address Address we got from the master
+   * @param host hostname we got from the master
+   * @param port port we got from the master
    * @return reverse DNS'd address
    */
-  private String reverseDNS(Common.HostPortPB address) {
-    String host = address.getHost();
+  private String reverseDNS(String host, Integer port) {
     String location = this.reverseDNSCacheMap.get(host);
     if (location != null) {
       return location;
     }
     // The below InetSocketAddress creation does a name resolution.
-    InetSocketAddress isa = new InetSocketAddress(host, address.getPort());
+    InetSocketAddress isa = new InetSocketAddress(host, port);
     if (isa.isUnresolved()) {
       LOG.warn("Failed address resolve for: " + isa);
     }
@@ -200,7 +199,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       this.reverseDNSCacheMap.put(host, location);
     } catch (NamingException e) {
       LOG.warn("Cannot resolve the host name for " + tabletInetAddress + " because of " + e);
-      location = address.getHost();
+      location = host;
     }
     return location;
   }

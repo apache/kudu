@@ -2,9 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
-import com.google.common.net.HostAndPort;
 import com.stumbleupon.async.Deferred;
-import org.jboss.netty.channel.socket.ClientSocketChannelFactory;
 import org.kududb.Schema;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -230,9 +228,21 @@ public class KuduClient {
 
     /**
      * Creates a new builder for a client that will connect to the specified masters.
+     *
+     * <p>Here are some examples of recognized formats:
+     * <ul>
+     *   <li>example.com
+     *   <li>example.com:80
+     *   <li>192.0.2.1
+     *   <li>192.0.2.1:80
+     *   <li>[2001:db8::1]
+     *   <li>[2001:db8::1]:80
+     *   <li>2001:db8::1
+     * </ul>
+     *
      * @param masterAddresses list of master addresses
      */
-    public KuduClientBuilder(List<HostAndPort> masterAddresses) {
+    public KuduClientBuilder(List<String> masterAddresses) {
       clientBuilder = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses);
     }
 
@@ -273,17 +283,6 @@ public class KuduClient {
      */
     public KuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
       clientBuilder.defaultSocketReadTimeoutMs(timeoutMs);
-      return this;
-    }
-
-    /**
-     * Sets the channel factory to be used by the client.
-     * Optional.
-     * @param channelFactory a socket channel factory for this client
-     * @return this builder
-     */
-    public KuduClientBuilder channelFactory(ClientSocketChannelFactory channelFactory) {
-      clientBuilder.channelFactory(channelFactory);
       return this;
     }
 

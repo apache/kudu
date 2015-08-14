@@ -18,7 +18,7 @@ public class TestTimeouts extends BaseKuduTest {
    */
   @Test(timeout = 100000)
   public void testLowTimeouts() throws Exception {
-    KuduClient lowTimeoutsClient = new KuduClient.KuduClientBuilder(masterHostPorts)
+    KuduClient lowTimeoutsClient = new KuduClient.KuduClientBuilder(masterAddresses)
         .defaultAdminOperationTimeoutMs(1)
         .defaultOperationTimeoutMs(1)
         .build();

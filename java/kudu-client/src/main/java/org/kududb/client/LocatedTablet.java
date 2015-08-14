@@ -8,7 +8,6 @@ import java.util.List;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.ImmutableList;
-import org.kududb.Common.HostPortPB;
 import org.kududb.consensus.Metadata.RaftPeerPB.Role;
 import org.kududb.master.Master.TabletLocationsPB;
 import org.kududb.master.Master.TabletLocationsPB.ReplicaPB;
@@ -65,7 +64,7 @@ public class LocatedTablet {
    */
   private Replica getOneOfRoleOrNull(Role role) {
     for (Replica r : replicas) {
-      if (r.getRole() == role) return r;
+      if (r.getRole() == role.toString()) return r;
     }
     return null;
   }
@@ -87,15 +86,22 @@ public class LocatedTablet {
       this.pb = pb;
     }
 
-    public HostPortPB getRpcHostPort() {
+    public String getRpcHost() {
       if (pb.getTsInfo().getRpcAddressesList().isEmpty()) {
         return null;
       }
-      return pb.getTsInfo().getRpcAddressesList().get(0);
+      return pb.getTsInfo().getRpcAddressesList().get(0).getHost();
     }
 
-    public Role getRole() {
-      return pb.getRole();
+    public Integer getRpcPort() {
+      if (pb.getTsInfo().getRpcAddressesList().isEmpty()) {
+        return null;
+      }
+      return pb.getTsInfo().getRpcAddressesList().get(0).getPort();
+    }
+
+    public String getRole() {
+      return pb.getRole().toString();
     }
 
     public String toString() {

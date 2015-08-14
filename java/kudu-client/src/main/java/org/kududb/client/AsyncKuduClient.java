@@ -221,11 +221,10 @@ public class AsyncKuduClient {
   private volatile boolean closed;
 
   private AsyncKuduClient(List<HostAndPort> masterAddresses,
-                          ClientSocketChannelFactory channelFactory,
                           long defaultOperationTimeoutMs,
                           long defaultAdminOperationTimeoutMs,
                           long defaultSocketReadTimeoutMs) {
-    this.channelFactory = channelFactory;
+    this.channelFactory = defaultChannelFactory();
     this.masterAddresses = masterAddresses;
     this.masterTableHack = new KuduTable(this, MASTER_TABLE_HACK,
        new Schema(new ArrayList<ColumnSchema>(0)));
@@ -1872,26 +1871,45 @@ public class AsyncKuduClient {
    * All the parameters beyond those in the constructors are optional.
    */
   public final static class AsyncKuduClientBuilder {
+    private static final int DEFAULT_MASTER_PORT = 7051;
+
     private final List<HostAndPort> nestedMasterAddresses;
     private long nestedDefaultAdminOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
     private long nestedDefaultOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
     private long nestedDefaultSocketReadTimeoutMs = DEFAULT_SOCKET_READ_TIMEOUT_MS;
-    private ClientSocketChannelFactory nestedChannelFactory = defaultChannelFactory();
 
     /**
      * Creates a new builder for a client that will connect to the specified masters.
      * @param masterAddresses comma-separated list of "host:port" pairs of the masters
      */
     public AsyncKuduClientBuilder(String masterAddresses) {
-      this(NetUtil.parseStrings(masterAddresses, 7051));
+      this.nestedMasterAddresses =
+          NetUtil.parseStrings(masterAddresses, DEFAULT_MASTER_PORT);
     }
 
     /**
      * Creates a new builder for a client that will connect to the specified masters.
+     *
+     * <p>Here are some examples of recognized formats:
+     * <ul>
+     *   <li>example.com
+     *   <li>example.com:80
+     *   <li>192.0.2.1
+     *   <li>192.0.2.1:80
+     *   <li>[2001:db8::1]
+     *   <li>[2001:db8::1]:80
+     *   <li>2001:db8::1
+     * </ul>
+     *
      * @param masterAddresses list of master addresses
      */
-    public AsyncKuduClientBuilder(List<HostAndPort> masterAddresses) {
-      this.nestedMasterAddresses = masterAddresses;
+    public AsyncKuduClientBuilder(List<String> masterAddresses) {
+      this.nestedMasterAddresses =
+          Lists.newArrayListWithCapacity(masterAddresses.size());
+      for (String address : masterAddresses) {
+        this.nestedMasterAddresses.add(
+            NetUtil.parseString(address, DEFAULT_MASTER_PORT));
+      }
     }
 
     /**
@@ -1935,24 +1953,12 @@ public class AsyncKuduClient {
     }
 
     /**
-     * Sets the channel factory to be used by the client.
-     * Optional.
-     * @param channelFactory a socket channel factory for this client
-     * @return this builder
-     */
-    public AsyncKuduClientBuilder channelFactory(ClientSocketChannelFactory channelFactory) {
-      this.nestedChannelFactory = channelFactory;
-      return this;
-    }
-
-    /**
      * Creates a new client that connects to the masters.
      * Doesn't block and won't throw an exception if the masters don't exist.
      * @return a new asynchronous Kudu client
      */
     public AsyncKuduClient build() {
       return new AsyncKuduClient(nestedMasterAddresses,
-          nestedChannelFactory,
           nestedDefaultOperationTimeoutMs,
           nestedDefaultAdminOperationTimeoutMs,
           nestedDefaultSocketReadTimeoutMs);

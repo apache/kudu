@@ -17,7 +17,6 @@
 package org.kududb.mapreduce;
 
 import org.kududb.client.AsyncKuduClient;
-import org.kududb.client.KuduClient;
 import org.kududb.client.KuduTable;
 import org.kududb.client.Operation;
 import org.apache.commons.logging.Log;
@@ -395,9 +394,6 @@ public class KuduTableMapReduceUtil {
         Operation.class,                      // kudu-client
         KuduTableMapReduceUtil.class,   // kudu-mapreduce
         // pull necessary dependencies
-        org.jboss.netty.channel.ChannelFactory.class,
-        com.google.protobuf.Message.class,
-        com.google.common.collect.Lists.class,
         com.stumbleupon.async.Deferred.class);
   }
 

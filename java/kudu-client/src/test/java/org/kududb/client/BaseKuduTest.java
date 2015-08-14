@@ -114,7 +114,7 @@ public class BaseKuduTest {
       masterHostPorts = NetUtil.parseStrings(masterAddresses, DEFAULT_MASTER_RPC_PORT);
     }
     LOG.info("Creating new Kudu client...");
-    client = new AsyncKuduClient.AsyncKuduClientBuilder(masterHostPorts).build();
+    client = new AsyncKuduClient.AsyncKuduClientBuilder(masterAddresses).build();
     syncClient = new KuduClient(client);
     LOG.info("Waiting for tablet servers...");
     if (!waitForTabletServers(NUM_TABLET_SERVERS)) {
@@ -452,7 +452,7 @@ public class BaseKuduTest {
       }
     }
 
-    Integer port = leader.getRpcHostPort().getPort();
+    Integer port = leader.getRpcPort();
     Process ts = TABLET_SERVERS.get(port);
     if (ts == null) {
       // The TS is already dead, good.
