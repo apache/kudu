@@ -3,6 +3,7 @@
 
 #include "kudu/util/mem_tracker.h"
 
+#include <string>
 #include <tr1/unordered_map>
 #include <vector>
 
@@ -17,6 +18,7 @@ DECLARE_int32(memory_limit_soft_percentage);
 namespace kudu {
 
 using std::equal_to;
+using std::string;
 using std::tr1::hash;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
@@ -285,5 +287,35 @@ TEST(MemTrackerTest, TcMallocRootTracker) {
   ASSERT_GT(root->consumption(), value);
 }
 #endif
+
+TEST(MemTrackerTest, UnregisterFromParent) {
+  shared_ptr<MemTracker> p = MemTracker::CreateTracker(-1, "parent");
+  shared_ptr<MemTracker> c = MemTracker::CreateTracker(-1, "child", p);
+  vector<shared_ptr<MemTracker> > all;
+
+  // Three trackers: root, parent, and child.
+  MemTracker::ListTrackers(&all);
+  ASSERT_EQ(3, all.size());
+
+  c->UnregisterFromParent();
+
+  // Now only two because the child cannot be found from the root, though it is
+  // still alive.
+  MemTracker::ListTrackers(&all);
+  ASSERT_EQ(2, all.size());
+  shared_ptr<MemTracker> not_found;
+  ASSERT_FALSE(MemTracker::FindTracker("child", &not_found, p));
+
+  // We can also recreate the child with the same name without colliding
+  // with the old one.
+  shared_ptr<MemTracker> c2 = MemTracker::CreateTracker(-1, "child", p);
+
+  // We should still able to walk up to the root from the unregistered child
+  // without crashing.
+  LOG(INFO) << c->ToString();
+
+  // And this should no-op.
+  c->UnregisterFromParent();
+}
 
 } // namespace kudu

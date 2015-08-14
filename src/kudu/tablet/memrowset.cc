@@ -85,6 +85,10 @@ MemRowSet::MemRowSet(int64_t id,
   ANNOTATE_BENIGN_RACE(&debug_update_count_, "update count isnt accurate");
 }
 
+MemRowSet::~MemRowSet() {
+  mem_tracker_->UnregisterFromParent();
+}
+
 Status MemRowSet::DebugDump(vector<string> *lines) {
   gscoped_ptr<Iterator> iter(NewIterator());
   RETURN_NOT_OK(iter->Init(NULL));

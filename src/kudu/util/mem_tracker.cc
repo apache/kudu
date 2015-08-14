@@ -148,11 +148,16 @@ MemTracker::~MemTracker() {
     DCHECK(consumption() == 0) << "Memory tracker " << ToString()
         << " has unreleased consumption " << consumption();
     parent_->Release(consumption());
-    {
-      MutexLock l(parent_->child_trackers_lock_);
-      parent_->child_trackers_.erase(child_tracker_it_);
-      child_tracker_it_ = parent_->child_trackers_.end();
-    }
+    UnregisterFromParent();
+  }
+}
+
+void MemTracker::UnregisterFromParent() {
+  DCHECK(parent_);
+  MutexLock l(parent_->child_trackers_lock_);
+  if (child_tracker_it_ != parent_->child_trackers_.end()) {
+    parent_->child_trackers_.erase(child_tracker_it_);
+    child_tracker_it_ = parent_->child_trackers_.end();
   }
 }
 
@@ -204,6 +209,7 @@ shared_ptr<MemTracker> MemTracker::FindOrCreateTracker(int64_t byte_limit,
 }
 
 void MemTracker::ListTrackers(vector<shared_ptr<MemTracker> >* trackers) {
+  trackers->clear();
   deque<shared_ptr<MemTracker> > to_process;
   to_process.push_front(GetRootTracker());
   while (!to_process.empty()) {

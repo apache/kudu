@@ -22,9 +22,25 @@ namespace kudu {
 class Status;
 class MemTracker;
 
-// A MemTracker tracks memory consumption; it contains an optional limit
-// and can be arranged into a tree structure such that the consumption tracked
-// by a MemTracker is also tracked by its ancestors.
+// A MemTracker tracks memory consumption; it contains an optional limit and is
+// arranged into a tree structure such that the consumption tracked by a
+// MemTracker is also tracked by its ancestors.
+//
+// The MemTracker hierarchy is rooted in a single static MemTracker whose limit
+// is set via gflag. The root MemTracker always exists, and it is the common
+// ancestor to all MemTrackers. All operations that discover MemTrackers begin
+// at the root and work their way down the tree, while operations that deal
+// with adjusting memory consumption begin at a particular MemTracker and work
+// their way up the tree to the root. The tree structure is strictly enforced:
+// all MemTrackers (except the root) must have a parent, and all children
+// belonging to a parent must have unique ids.
+//
+// When a MemTracker begins its life, it has a strong reference to its parent
+// and the parent has a weak reference to it. The strong reference remains for
+// the lifetime of the MemTracker, but the weak reference can be dropped via
+// UnregisterFromParent(). A MemTracker in this state may continue servicing
+// memory consumption operations while allowing a new MemTracker with the same
+// id to be created on the old parent.
 //
 // By default, memory consumption is tracked via calls to Consume()/Release(), either to
 // the tracker itself or to one of its descendents. Alternatively, a consumption function
@@ -65,6 +81,21 @@ class MemTracker : public std::tr1::enable_shared_from_this<MemTracker> {
   typedef boost::function<void ()> GcFunction;
 
   ~MemTracker();
+
+  // Removes this tracker from its parent's children. This tracker retains its
+  // link to its parent. Must be called on a tracker with a parent.
+  //
+  // Automatically called in the MemTracker destructor, but should be called
+  // explicitly when an object is destroyed if that object is also the "primary
+  // owner" of a tracker (i.e. the object that originally created the tracker).
+  // This orphans the tracker so that if the object is recreated, its new
+  // tracker won't collide with the now orphaned tracker.
+  //
+  // Is thread-safe on the parent but not the child. Meaning, multiple trackers
+  // that share the same parent can all UnregisterFromParent() at the same
+  // time, but all UnregisterFromParent() calls on a given tracker must be
+  // externally synchronized.
+  void UnregisterFromParent();
 
   // Creates and adds the tracker to the tree so that it can be retrieved with
   // FindTracker/FindOrCreateTracker.

@@ -41,7 +41,7 @@ DeltaMemStore::DeltaMemStore(int64_t id,
                                   &mem_tracker_,
                                   parent_tracker));
   } else {
-    mem_tracker_ = (MemTracker::GetRootTracker());
+    mem_tracker_ = MemTracker::GetRootTracker();
   }
   allocator_.reset(new MemoryTrackingBufferAllocator(
       HeapBufferAllocator::Get(), mem_tracker_));

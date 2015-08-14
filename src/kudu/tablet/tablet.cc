@@ -110,18 +110,6 @@ TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
 // Tablet
 ////////////////////////////////////////////////////////////
 
-// Hack to work around lifetime issues related to the MemTracker and Tablet.
-// Since a tablet may be tombstoned (deleted) and then immediately remotely
-// bootstrapped, there is a possibility (observed in tests; see KUDU-994) that
-// some object outside of our control (scanner, web UI) may keep a reference to
-// a MemRowSet object for arbitrary amounts of time after we shut a Tablet
-// down, which keeps the Tablet MemTracker alive indirectly. Instead
-// of trying to make sure all references to Tablet and the tablet's MemTracker
-// have been released before creating a new one, we create a unique id for each
-// tablet memtracker instance by appending a monotonically increasing integer
-// to the tablet id.
-static AtomicInt<uint64_t> memtracker_counter(0);
-
 const char* Tablet::kDMSMemTrackerId = "DeltaMemStores";
 
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
@@ -133,7 +121,7 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     metadata_(metadata),
     log_anchor_registry_(log_anchor_registry),
     mem_tracker_(MemTracker::CreateTracker(
-        -1, Substitute("tablet-$0-$1", tablet_id(), memtracker_counter.Increment()),
+        -1, Substitute("tablet-$0", tablet_id()),
                        parent_mem_tracker)),
     dms_mem_tracker_(MemTracker::CreateTracker(
         -1, kDMSMemTrackerId, mem_tracker_)),
@@ -162,6 +150,8 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
 
 Tablet::~Tablet() {
   Shutdown();
+  dms_mem_tracker_->UnregisterFromParent();
+  mem_tracker_->UnregisterFromParent();
 }
 
 Status Tablet::Open() {

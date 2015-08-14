@@ -166,6 +166,8 @@ class MemRowSet : public RowSet,
             const std::tr1::shared_ptr<MemTracker>& parent_tracker =
             std::tr1::shared_ptr<MemTracker>());
 
+  ~MemRowSet();
+
   // Insert a new row into the memrowset.
   //
   // The provided 'row' must have the same memrowset's Schema.
