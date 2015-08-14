@@ -23,19 +23,53 @@ from source. To run Kudu without installing anything, use the link:quickstart.ht
 
 .Operating System
 - An operating system and version supported by Cloudera.
+[[req_hole_punching]]
+- A kernel version and filesystem that support _hole punching_. On Linux, hole punching
+is the use of the `fallocate()` system call with the `FALLOC_FL_PUNCH_HOLE` option
+set.
+  - RHEL or CentOS 6.4 or later, patched to kernel version of 2.6.32-358 or later.
+  Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole punching.
+  - Ubuntu 14.04 includes version 3.13 of the Linux kernel, which supports hole punching.
+  - Newer versions of the EXT4 or XFS filesystems support hole punching, but EXT3 does
+  not. Older versions of XFS that do not support hole punching return a `EOPNOTSUPP`
+  (operation not supported) error. Older versions of either EXT4 or XFS that do
+  not support hole punching cause Kudu to emit an error message such as the following
+  and to fail to start:
++
+----
+Error during hole punch test. The log block manager requires a
+filesystem with hole punching support such as ext4 or xfs. On el6,
+kernel version 2.6.32-358 or newer is required. To run without hole
+punching (at the cost of some efficiency and scalability), reconfigure
+Kudu with --block_manager=file. Refer to the Kudu documentation for more
+details. Raw error message follows.
+----
+  - Without hole punching support, the log block manager is unsafe to use. It won't
+  ever delete blocks, consuming ever more space on disk.
+  - If you can't use hole punching in your environment, you can still
+  try Kudu. Enable the file block manager instead of the log block manager by
+  adding the `--block_manager=file` flag to the commands you use to start the master
+  and tablet servers. The file block manager does not scale as well as the log block
+  manager.
 - OSX is not supported, even for building from source.
 
 .Storage
 - If solid state storage is available, storing Kudu WALs on such high-performance
 media may significantly improve latency when Kudu is configured for its highest
 durability levels.
-- An EXT4 or XFS filesystem to store Kudu data and write-ahead logs (WALs).
+- A filesystem that supports <<req_hole_punching,hole punching>> is recommended.
+Supported filesystems
+are EXT4 and XFS.
 
 == Install Using Parcels
 
 If you use Cloudera Manager, the easiest way to install Kudu is with parcels. First,
 add the parcel repository to Cloudera Manager. Then distribute Kudu to your cluster.
 Here is the procedure in detail.
+
+WARNING: If you install Kudu using parcels and your filesystem does not support hole
+punching, the initial service start-up will fail and you will need to use an advanced
+configuration snippet to configure the file block manager. See <<req_hole_punching,Hole Punching>>.
 
 //  tag::quickstart_parcels[]
 
@@ -83,8 +117,14 @@ servers. Cloudera Manager will create the directories.
   - You cannot store WALs in a subdirectory of the data directory.
   - If any host is both a master and tablet server, configure different directories
   for master and tablet server. For instance, `/data/kudu/master` and `/data/kudu/tserver`.
+  - If you choose a filesystem that does not support <<req_hole_punching,hole punching>>,
+  service start-up will fail. Exit the configuration wizard by clicking the *Cloudera*
+  logo at the top of the Cloudera Manager interface, and search for the
+  *Kudu Service Advanced Configuration Snippet (Safety Valve) for gflagfile* configuration option.
+  Add the following line to it, and save your changes: `--block_manager=file`
 
-. Click *Continue*. Kudu masters and tablet servers are started.
+. If you did not need to exit the wizard, click *Continue*. Kudu masters and tablet
+servers are started. Otherwise, go to the Kudu service, and click *Actions > Start*.
 
 +
 // tag::verify_install[]
@@ -193,10 +233,15 @@ modified to match your environment. It should be world-readable.
 # Minimum configuration for masters
 --master_data_dirs=/data/kudu
 --master_wal_dir=/data/kudu
+# Uncomment this if your system does not support hole punching.
+#--block_manager=file
+
 # Minimum configuration for tablet servers
 --tserver_data_dirs=/data/kudu
 --tserver_wal_dir=/data/kudu
 --tserver_master_addrs=kudu_master.example.com
+# Uncomment this if your system does not support hole punching.
+#--block_manager=file
 ----
 // TODO probably change this to 'review and edit' later
 
