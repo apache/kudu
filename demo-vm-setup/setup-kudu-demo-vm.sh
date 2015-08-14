@@ -76,8 +76,7 @@ while true; do
     sleep 5
 done
 
-check=`grep quickstart.cloudera /etc/hosts`
-if [[ ! $? -eq 0 ]]; then
+if ! grep -q quickstart.cloudera /etc/hosts ; then
 echo "Updating the /etc/hosts file requires sudo rights."
 sudo bash -e -c 'echo "#Cloudera Quickstart VM" >> /etc/hosts'
 sudo bash -c "echo $ip quickstart.cloudera >> /etc/hosts"
