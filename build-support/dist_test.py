@@ -275,11 +275,16 @@ def run_isolate(staging):
 
   Throws an exception if the call fails.
   """
-  subprocess.check_call(['isolate', 'batcharchive',
-                         '-isolate-server=' + ISOLATE_SERVER,
-                         '-dump-json=' + staging.archive_dump_path(),
-                         '--'] + staging.gen_json_paths())
-
+  isolate_path = "isolate"
+  try:
+    subprocess.check_call([isolate_path,
+                           'batcharchive',
+                           '-isolate-server=' + ISOLATE_SERVER,
+                           '-dump-json=' + staging.archive_dump_path(),
+                           '--'] + staging.gen_json_paths())
+  except:
+    print >>sys.stderr, "Failed to run", isolate_path
+    raise
 
 def submit_tasks(staging):
   """
@@ -289,10 +294,19 @@ def submit_tasks(staging):
   This requires that the tasks JSON file has already been generated
   by 'create_task_json()'.
   """
-  subprocess.check_call([os.path.join(DIST_TEST_HOME, "client.py"),
-                         "submit",
-                         staging.tasks_json_path()])
-
+  if not os.path.exists(DIST_TEST_HOME):
+    print >>sys.stderr, "Cannot find dist_test tools at path %s " \
+        "Set the DIST_TEST_HOME environment variable to the path to the dist_test directory. " \
+        % DIST_TEST_HOME,
+    raise OSError("Cannot find path to dist_test tools")
+  client_py_path = os.path.join(DIST_TEST_HOME, "client.py")
+  try:
+    subprocess.check_call([client_py_path,
+                           "submit",
+                           staging.tasks_json_path()])
+  except:
+    print >>sys.stderr, "Failed to run", client_py_path
+    raise
 
 def run_all_tests(argv):
   """
