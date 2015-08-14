@@ -17,7 +17,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 
-DEFINE_int64(tablet_transaction_memory_limit_mb, 16,
+DEFINE_int64(tablet_transaction_memory_limit_mb, 64,
              "Maximum amount of memory that may be consumed by all in-flight "
              "transactions belonging to a particular tablet. When this limit "
              "is reached, new transactions will be rejected and clients will "
