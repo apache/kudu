@@ -13,6 +13,7 @@ sudo chmod -R g+rw python
 sudo chmod -R o+r python
 
 # Install python client
+sudo easy_install cython
 cd python
 sudo python setup.py install
 ENDSSH
