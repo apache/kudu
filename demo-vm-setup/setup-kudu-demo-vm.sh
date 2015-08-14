@@ -48,6 +48,7 @@ VBoxManage dhcpserver modify --ifname $last_if --enable
 VBoxManage import ${OVF} --vsys 0 --cpus ${VM_NUM_CPUS} --memory ${VM_MEM_MB} --vmname ${VM_NAME} --options keepallmacs
 VBoxManage modifyvm ${VM_NAME} --nic1 hostonly
 VBoxManage modifyvm ${VM_NAME} --hostonlyadapter1 $last_if
+VBoxManage modifyvm ${VM_NAME} --nic2 nat
 
 # Create a shared folder with the current checkout available to the VM
 REL_PATH=`pwd`/../
