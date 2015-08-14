@@ -21,9 +21,17 @@ void LogSessionErrorsAndDie(const std::tr1::shared_ptr<KuduSession>& session,
   bool overflow;
   session->GetPendingErrors(&errors, &overflow);
   CHECK(!overflow);
+
+  // Log only the first 10 errors.
+  LOG(INFO) << errors.size() << " failed ops. First 10 errors follow";
+  int i = 0;
   BOOST_FOREACH(const KuduError* e, errors) {
+    if (i == 10) {
+      break;
+    }
     LOG(INFO) << "Op " << e->failed_op().ToString()
               << " had status " << e->status().ToString();
+    i++;
   }
   CHECK_OK(s); // will fail
 }

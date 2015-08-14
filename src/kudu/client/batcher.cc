@@ -355,7 +355,8 @@ void WriteRpc::SendRpc() {
 }
 
 string WriteRpc::ToString() const {
-  return Substitute("Write($0, $1 ops)", tablet_->tablet_id(), ops_.size());
+  return Substitute("Write(tablet: $0, num_ops: $1, num_attempts: $2)",
+                    tablet_->tablet_id(), ops_.size(), num_attempts());
 }
 
 void WriteRpc::LookupTabletCb(const Status& status) {
@@ -366,7 +367,7 @@ void WriteRpc::LookupTabletCb(const Status& status) {
   // but unnecessary the first time through. Seeing as leader failures are
   // rare, perhaps this doesn't matter.
   followers_.clear();
-  retrier().DelayedRetry(this);
+  mutable_retrier()->DelayedRetry(this);
 }
 
 void WriteRpc::RefreshTSProxyCb(const Status& status) {
@@ -378,7 +379,8 @@ void WriteRpc::RefreshTSProxyCb(const Status& status) {
 
   VLOG(2) << "Tablet " << tablet_->tablet_id() << ": Writing batch to replica "
           << current_ts_->ToString();
-  current_ts_->proxy()->WriteAsync(req_, &resp_, &retrier().controller(),
+  current_ts_->proxy()->WriteAsync(req_, &resp_,
+                                   mutable_retrier()->mutable_controller(),
                                    boost::bind(&WriteRpc::SendRpcCb, this, Status::OK()));
 }
 
@@ -390,13 +392,13 @@ void WriteRpc::FailToNewReplica(const Status& reason) {
       << "Tablet " << tablet_->tablet_id() << ": Unable to mark replica " << current_ts_->ToString()
       << " as failed. Replicas: " << tablet_->ReplicasAsString();
 
-  retrier().DelayedRetry(this);
+  mutable_retrier()->DelayedRetry(this);
 }
 
 void WriteRpc::SendRpcCb(const Status& status) {
   // Prefer early failures over controller failures.
   Status new_status = status;
-  if (new_status.ok() && retrier().HandleResponse(this, &new_status)) {
+  if (new_status.ok() && mutable_retrier()->HandleResponse(this, &new_status)) {
     return;
   }
 
@@ -422,7 +424,7 @@ void WriteRpc::SendRpcCb(const Status& status) {
   // this case.
   if (new_status.IsIllegalState() || new_status.IsAborted()) {
     followers_.insert(current_ts_);
-    retrier().DelayedRetry(this);
+    mutable_retrier()->DelayedRetry(this);
     return;
   }
 

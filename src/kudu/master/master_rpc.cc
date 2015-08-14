@@ -51,21 +51,21 @@ void GetMasterRegistrationRpc::SendRpc() {
                            addr_);
   GetMasterRegistrationRequestPB req;
   proxy.GetMasterRegistrationAsync(req, &resp_,
-                                   &retrier().controller(),
+                                   mutable_retrier()->mutable_controller(),
                                    boost::bind(&GetMasterRegistrationRpc::SendRpcCb,
                                                this,
                                                Status::OK()));
 }
 
 string GetMasterRegistrationRpc::ToString() const {
-  return strings::Substitute("GetMasterRegistrationRpc(address=$0)",
-                             addr_.ToString());
+  return strings::Substitute("GetMasterRegistrationRpc(address: $0, num_attempts: $1)",
+                             addr_.ToString(), num_attempts());
 }
 
 void GetMasterRegistrationRpc::SendRpcCb(const Status& status) {
   gscoped_ptr<GetMasterRegistrationRpc> deleter(this);
   Status new_status = status;
-  if (new_status.ok() && retrier().HandleResponse(this, &new_status)) {
+  if (new_status.ok() && mutable_retrier()->HandleResponse(this, &new_status)) {
     ignore_result(deleter.release());
     return;
   }
@@ -117,8 +117,9 @@ string GetLeaderMasterRpc::ToString() const {
   BOOST_FOREACH(const Sockaddr& addr, addrs_) {
     sockaddr_str.push_back(addr.ToString());
   }
-  return strings::Substitute("GetLeaderMasterRpc(addrs=$0)",
-                             JoinStrings(sockaddr_str, ","));
+  return strings::Substitute("GetLeaderMasterRpc(addrs: $0, num_attempts: $1)",
+                             JoinStrings(sockaddr_str, ","),
+                             num_attempts());
 }
 
 void GetLeaderMasterRpc::SendRpc() {
@@ -143,7 +144,7 @@ void GetLeaderMasterRpc::SendRpcCb(const Status& status) {
   if (status.IsNetworkError() || status.IsNotFound()) {
     // TODO (KUDU-573): Allow cancelling delayed tasks on reactor so
     // that we can safely use DelayedRetry here.
-    retrier().DelayedRetryCb(this, Status::OK());
+    mutable_retrier()->DelayedRetryCb(this, Status::OK());
     return;
   }
   {

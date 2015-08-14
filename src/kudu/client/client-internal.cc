@@ -576,19 +576,20 @@ void GetTableSchemaRpc::SendRpc() {
   // See KuduClient::Data::SyncLeaderMasterRpc().
   MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
   rpc_deadline.AddDelta(client_->default_rpc_timeout());
-  retrier().controller().set_deadline(
+  mutable_retrier()->mutable_controller()->set_deadline(
       MonoTime::Earliest(rpc_deadline, retrier().deadline()));
 
   GetTableSchemaRequestPB req;
   req.mutable_table()->set_table_name(table_name_);
   client_->data_->master_proxy()->GetTableSchemaAsync(
-      req, &resp_, &retrier().controller(),
+      req, &resp_,
+      mutable_retrier()->mutable_controller(),
       boost::bind(&GetTableSchemaRpc::SendRpcCb, this, Status::OK()));
 }
 
 string GetTableSchemaRpc::ToString() const {
-  return Substitute("GetTableSchemaRpc(table_name=$0)",
-                    table_name_);
+  return Substitute("GetTableSchemaRpc(table_name: $0, num_attempts: $1)",
+                    table_name_, num_attempts());
 }
 
 void GetTableSchemaRpc::ResetLeaderMasterAndRetry() {
@@ -601,17 +602,17 @@ void GetTableSchemaRpc::ResetLeaderMasterAndRetry() {
 
 void GetTableSchemaRpc::NewLeaderMasterDeterminedCb(const Status& status) {
   if (status.ok()) {
-    retrier().controller().Reset();
+    mutable_retrier()->mutable_controller()->Reset();
     SendRpc();
   } else {
     LOG(WARNING) << "Failed to determine new Master: " << status.ToString();
-    retrier().DelayedRetry(this);
+    mutable_retrier()->DelayedRetry(this);
   }
 }
 
 void GetTableSchemaRpc::SendRpcCb(const Status& status) {
   Status new_status = status;
-  if (new_status.ok() && retrier().HandleResponse(this, &new_status)) {
+  if (new_status.ok() && mutable_retrier()->HandleResponse(this, &new_status)) {
     return;
   }
 

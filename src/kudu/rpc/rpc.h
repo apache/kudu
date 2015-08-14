@@ -51,13 +51,16 @@ class RpcRetrier {
   // Callers should ensure that 'rpc' remains alive.
   void DelayedRetry(Rpc* rpc);
 
-  RpcController& controller() { return controller_; }
+  RpcController* mutable_controller() { return &controller_; }
+  const RpcController& controller() const { return controller_; }
 
-  const MonoTime& deadline() { return deadline_; }
+  const MonoTime& deadline() const { return deadline_; }
 
   const std::tr1::shared_ptr<Messenger>& messenger() const {
     return messenger_;
   }
+
+  int attempt_num() const { return attempt_num_; }
 
   // Called when an RPC comes up for retrying. Actually sends the RPC.
   void DelayedRetryCb(Rpc* rpc, const Status& status);
@@ -99,8 +102,13 @@ class Rpc {
   // Returns a string representation of the RPC.
   virtual std::string ToString() const = 0;
 
+  // Returns the number of times this RPC has been sent. Will always be at
+  // least one.
+  int num_attempts() const { return retrier().attempt_num(); }
+
  protected:
-  RpcRetrier& retrier() { return retrier_; }
+  const RpcRetrier& retrier() const { return retrier_; }
+  RpcRetrier* mutable_retrier() { return &retrier_; }
 
  private:
   friend class RpcRetrier;

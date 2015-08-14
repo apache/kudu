@@ -15,6 +15,7 @@
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client.h"
+#include "kudu/client/client-test-util.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/write_op.h"
 #include "kudu/codegen/compilation_manager.h"
@@ -121,13 +122,11 @@ class FullStackInsertScanTest : public KuduTest {
     ASSERT_GE(kNumInsertClients, 0);
     ASSERT_GE(kNumInsertsPerClient, 0);
     InitCluster();
-    shared_ptr<KuduClient> reader;
-    ASSERT_OK(client_builder_.Build(&reader));
-    gscoped_ptr<KuduTableCreator> table_creator(reader->NewTableCreator());
+    gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
              .Create());
-    ASSERT_OK(reader->OpenTable(kTableName, &reader_table_));
+    ASSERT_OK(client_->OpenTable(kTableName, &reader_table_));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -156,16 +155,16 @@ class FullStackInsertScanTest : public KuduTest {
     // Start mini-cluster with 1 tserver, config client options
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
     ASSERT_OK(cluster_->Start());
-    client_builder_.add_master_server_addr(
+    KuduClientBuilder builder;
+    builder.add_master_server_addr(
         cluster_->mini_master()->bound_rpc_addr_str());
+    ASSERT_OK(builder.Build(&client_));
   }
 
   // Adds newly generated client's session and table pointers to arrays at id
   void CreateNewClient(int id) {
-    shared_ptr<KuduClient> client;
-    CHECK_OK(client_builder_.Build(&client));
-    CHECK_OK(client->OpenTable(kTableName, &tables_[id]));
-    shared_ptr<KuduSession> session = client->NewSession();
+    CHECK_OK(client_->OpenTable(kTableName, &tables_[id]));
+    shared_ptr<KuduSession> session = client_->NewSession();
     session->SetTimeoutMillis(kSessionTimeoutMs);
     CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     sessions_[id] = session;
@@ -200,7 +199,7 @@ class FullStackInsertScanTest : public KuduTest {
 
   KuduSchema schema_;
   shared_ptr<MiniCluster> cluster_;
-  KuduClientBuilder client_builder_;
+  shared_ptr<KuduClient> client_;
   shared_ptr<KuduTable> reader_table_;
   // Concurrent client insertion test variables
   vector<shared_ptr<KuduSession> > sessions_;
@@ -339,8 +338,8 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
 
   start_latch->Wait();
   // Retrieve id's session and table
-  KuduSession* session = CHECK_NOTNULL(sessions_[id].get());
-  KuduTable* table = CHECK_NOTNULL(tables_[id].get());
+  shared_ptr<KuduSession> session = sessions_[id];
+  shared_ptr<KuduTable> table = tables_[id];
   // Identify start and end of keyrange id is responsible for
   int64_t start = kNumInsertsPerClient * id;
   int64_t end = start + kNumInsertsPerClient;
@@ -362,15 +361,21 @@ void FullStackInsertScanTest::InsertRows(CountDownLatch* start_latch, int id,
     // Report updates or flush every so often, using the synchronizer to always
     // start filling up the next batch while previous one is sent out.
     if (key % kFlushEveryN == 0) {
-      sync.Wait();
+      Status s = sync.Wait();
+      if (!s.ok()) {
+        LogSessionErrorsAndDie(session, s);
+      }
       sync.Reset();
       session->FlushAsync(&cb);
     }
     ReportTenthDone(key, start, end, id, kNumInsertClients);
   }
   ReportAllDone(id, kNumInsertClients);
-  sync.Wait();
-  CHECK_OK(session->Flush());
+  Status s = sync.Wait();
+  if (!s.ok()) {
+    LogSessionErrorsAndDie(session, s);
+  }
+  FlushSessionOrDie(session);
 }
 
 void FullStackInsertScanTest::ScanProjection(const vector<string>& cols,

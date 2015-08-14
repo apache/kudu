@@ -399,7 +399,7 @@ void LookupRpc::SendRpc() {
   }
   if (!has_permit_) {
     // Couldn't get a permit, try again in a little while.
-    retrier().DelayedRetry(this);
+    mutable_retrier()->DelayedRetry(this);
     return;
   }
 
@@ -413,17 +413,19 @@ void LookupRpc::SendRpc() {
   // See KuduClient::Data::SyncLeaderMasterRpc().
   MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
   rpc_deadline.AddDelta(meta_cache_->client_->default_rpc_timeout());
-  retrier().controller().set_deadline(
+  mutable_retrier()->mutable_controller()->set_deadline(
       MonoTime::Earliest(rpc_deadline, retrier().deadline()));
 
-  master_proxy()->GetTableLocationsAsync(req_, &resp_, &retrier().controller(),
+  master_proxy()->GetTableLocationsAsync(req_, &resp_,
+                                         mutable_retrier()->mutable_controller(),
                                          boost::bind(&LookupRpc::SendRpcCb, this, Status::OK()));
 }
 
 string LookupRpc::ToString() const {
   const int kMaxDebugStringLen = 128;
-  return Substitute("GetTableLocations($0, $1)",
-                    table_->name(), key_.ToDebugString(kMaxDebugStringLen));
+  return Substitute("GetTableLocations(table: $0, key: $1, num_attempts: $2)",
+                    table_->name(), key_.ToDebugString(kMaxDebugStringLen),
+                    num_attempts());
 }
 
 void LookupRpc::ResetMasterLeaderAndRetry() {
@@ -436,11 +438,11 @@ void LookupRpc::ResetMasterLeaderAndRetry() {
 
 void LookupRpc::NewLeaderMasterDeterminedCb(const Status& status) {
   if (status.ok()) {
-    retrier().controller().Reset();
+    mutable_retrier()->mutable_controller()->Reset();
     SendRpc();
   } else {
     LOG(WARNING) << "Failed to determine new Master: " << status.ToString();
-    retrier().DelayedRetry(this);
+    mutable_retrier()->DelayedRetry(this);
   }
 }
 
@@ -449,7 +451,7 @@ void LookupRpc::SendRpcCb(const Status& status) {
 
   // Prefer early failures over controller failures.
   Status new_status = status;
-  if (new_status.ok() && retrier().HandleResponse(this, &new_status)) {
+  if (new_status.ok() && mutable_retrier()->HandleResponse(this, &new_status)) {
     ignore_result(delete_me.release());
     return;
   }
