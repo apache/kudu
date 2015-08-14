@@ -373,8 +373,8 @@ class AllTypesItest : public KuduTest {
           VerifyRow(rows[j], i, total_rows_in_tablet + j);
         }
         total_rows_in_tablet += rows.size();
-        CHECK_EQ(total_rows_in_tablet, setup_.GetRowsPerTablet());
       }
+      CHECK_EQ(total_rows_in_tablet, setup_.GetRowsPerTablet());
       total_rows += total_rows_in_tablet;
     }
     CHECK_EQ(total_rows, setup_.GetRowsPerTablet() * kNumTablets);
