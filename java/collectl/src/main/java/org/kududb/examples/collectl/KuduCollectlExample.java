@@ -116,8 +116,8 @@ public class KuduCollectlExample {
         return;
       }
       Insert ins = idTable.newInsert();
-      ins.addString("host", host);
-      ins.addString("metric", metric);
+      ins.getRow().addString("host", host);
+      ins.getRow().addString("metric", metric);
       session.apply(ins);
       session.flush();
       // TODO: error handling!
@@ -151,10 +151,10 @@ public class KuduCollectlExample {
         int ts = Integer.parseInt(fields[2]);
         
         Insert insert = table.newInsert();
-        insert.addString("host", hostAndMetric[0]);
-        insert.addString("metric", hostAndMetric[1]);
-        insert.addInt("timestamp", ts);
-        insert.addDouble("value", val);
+        insert.getRow().addString("host", hostAndMetric[0]);
+        insert.getRow().addString("metric", hostAndMetric[1]);
+        insert.getRow().addInt("timestamp", ts);
+        insert.getRow().addDouble("value", val);
         session.apply(insert);
         
         // If there's more data to read, don't flush yet -- better to accumulate
