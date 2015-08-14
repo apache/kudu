@@ -8,7 +8,7 @@ dir_resolve()
   echo "`pwd -P`"
 }
 
-: ${VIRTUALBOX_URL:=http://a2122.halxg.cloudera.com/cloudera-quickstart-vm/cloudera-quickstart-vm-5.4.2-kudu-virtualbox.zip}
+: ${VIRTUALBOX_URL:=http://cloudera-kudu-beta.s3.amazonaws.com/cloudera-quickstart-vm-5.4.2-kudu-virtualbox.zip}
 : ${VIRTUALBOX_NAME:=cloudera-quickstart-vm-5.4.2-kudu-virtualbox}
 
 # VM Settings default.
