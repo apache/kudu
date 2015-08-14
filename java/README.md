@@ -8,7 +8,7 @@ System Requirements
 
 - Java 7
 - Maven 3
-- protobuf 2.5.0
+- protobuf 2.6.0
 
 
 Building the Client
