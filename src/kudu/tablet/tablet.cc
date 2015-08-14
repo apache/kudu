@@ -111,7 +111,15 @@ TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
 ////////////////////////////////////////////////////////////
 
 // Hack to work around lifetime issues related to the MemTracker and Tablet.
-// See KUDU-994 for details.
+// Since a tablet may be tombstoned (deleted) and then immediately remotely
+// bootstrapped, there is a possibility (observed in tests; see KUDU-994) that
+// some object outside of our control (scanner, web UI) may keep a reference to
+// a MemRowSet object for arbitrary amounts of time after we shut a Tablet
+// down, which keeps the Tablet MemTracker alive indirectly. Instead
+// of trying to make sure all references to Tablet and the tablet's MemTracker
+// have been released before creating a new one, we create a unique id for each
+// tablet memtracker instance by appending a monotonically increasing integer
+// to the tablet id.
 static AtomicInt<uint64_t> memtracker_counter(0);
 
 const char* Tablet::kDMSMemTrackerId = "DeltaMemStores";
