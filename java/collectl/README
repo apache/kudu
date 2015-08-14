@@ -20,31 +20,69 @@ example program).
 
 ----
 
+Exploring the data with Impala
+========
+
+First, we need to map the table into Impala:
+
+    CREATE EXTERNAL TABLE `metrics` (
+    `host` STRING,
+    `metric` STRING,
+    `timestamp` INT,
+    `value` DOUBLE
+    )
+    TBLPROPERTIES(
+      'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+      'kudu.table_name' = 'metrics',
+      'kudu.master_addresses' = 'quickstart.cloudera:7051',
+      'kudu.key_columns' = 'host, metric, timestamp'
+    );
+
+Then, we can run some queries:
+
+    [quickstart.cloudera:21000] > select count(distinct metric) from metrics;
+    Query: select count(distinct metric) from metrics
+    +------------------------+
+    | count(distinct metric) |
+    +------------------------+
+    | 23                     |
+    +------------------------+
+    Fetched 1 row(s) in 0.19s
+
+
 Exploring the data with Spark
 ========
 
-Enter the following commands in the Spark shell to explore the data:
+NOTE: if you are using the Quickstart VM, Spark is not installed by default.
+You can install it by running:
 
-$ spark-shell --jars /path/to/kudu-mapreduce-0.1.0-SNAPSHOT-jar-with-dependencies.jar
+    sudo yum -y install spark-core
 
-import org.kududb.mapreduce._
-import org.apache.hadoop.conf.Configuration
-import org.kududb.client._
-import org.apache.hadoop.io.NullWritable;
+Download the Kudu MR jar and run Spark with it on the classpath:
 
-val conf = new Configuration
-conf.set("kudu.mapreduce.master.address", "127.0.0.1");
-conf.set("kudu.mapreduce.input.table", "metrics");
-conf.set("kudu.mapreduce.column.projection", "host,metric,timestamp,value");
-val kuduRdd = sc.newAPIHadoopRDD(conf, classOf[KuduTableInputFormat], classOf[NullWritable], classOf[RowResult])
+    wget http://d2106.halxg.cloudera.com/kudu-2015-08-13-1/org/kududb/kudu-mapreduce/0.1.0-SNAPSHOT/kudu-mapreduce-0.1.0-20150813.213926-1-jar-with-dependencies.jar
+    spark-shell --jars kudu-mapred*jar
 
-// Print the first five values
-kuduRdd.values.map(r => r.rowToString()).take(5).foreach(x => print(x + "\n"))
+You can then paste this example script:
 
-// Calculate the average value of every host/metric pair
-(kuduRdd.values.map(r => (r.getString(0) + "/" + r.getString(1), r.getDouble(3))).
-    mapValues(x => (x, 1))
-    .reduceByKey((x, y) => (x._1 + y._1, x._2 + y._2))
-    .mapValues(result => result._1)
-    .take(5))
-
+    import org.kududb.mapreduce._
+    import org.apache.hadoop.conf.Configuration
+    import org.kududb.client._
+    import org.apache.hadoop.io.NullWritable;
+    
+    val conf = new Configuration
+    conf.set("kudu.mapreduce.master.address", "quickstart.cloudera");
+    conf.set("kudu.mapreduce.input.table", "metrics");
+    conf.set("kudu.mapreduce.column.projection", "host,metric,timestamp,value");
+    val kuduRdd = sc.newAPIHadoopRDD(conf, classOf[KuduTableInputFormat], classOf[NullWritable], classOf[RowResult])
+    
+    // Print the first five values
+    kuduRdd.values.map(r => r.rowToString()).take(5).foreach(x => print(x + "\n"))
+    
+    // Calculate the average value of every host/metric pair
+    (kuduRdd.values.map(r => (r.getString(0) + "/" + r.getString(1), r.getDouble(3))).
+        mapValues(x => (x, 1))
+        .reduceByKey((x, y) => (x._1 + y._1, x._2 + y._2))
+        .mapValues(result => result._1)
+        .take(5))
+    
