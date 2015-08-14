@@ -24,8 +24,11 @@ import org.kududb.client.SessionConfiguration.FlushMode;
 
 public class KuduCollectlExample {
   private static final int GRAPHITE_PORT = 2003;
-  private static final String TABLE_NAME = "metrics2";
+  private static final String TABLE_NAME = "metrics";
   private static final String ID_TABLE_NAME = "metric_ids";
+
+  private static final String KUDU_MASTER =
+      System.getProperty("kuduMaster", "quickstart.cloudera");
 
   private KuduClient client;
   private KuduTable table;
@@ -39,7 +42,7 @@ public class KuduCollectlExample {
   }
 
   KuduCollectlExample() {
-    this.client = new KuduClient.KuduClientBuilder("127.0.0.1").build();
+    this.client = new KuduClient.KuduClientBuilder(KUDU_MASTER).build();
   }
   
   public void run() throws Exception {

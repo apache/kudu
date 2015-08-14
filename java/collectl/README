@@ -3,7 +3,8 @@ TCP socket for time series data corresponding to the Collectl wire protocol.
 The commonly-available 'collectl' tool can be used to send example data
 to the server.
 
-This tutorial assumes that you are running a Kudu master on localhost.
+This tutorial assumes that you are running a Kudu master on 'quickstart.cloudera'.
+Otherwise, you can pass another host using '-DkuduMaster=host:port'.
 
 To start the example server:
 

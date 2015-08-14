@@ -10,9 +10,16 @@ import java.util.List;
 
 public class Sample {
 
+  private static final String KUDU_MASTER = System.getProperty(
+      "kuduMaster", "quickstart.cloudera");
+
   public static void main(String[] args) {
+    System.out.println("-----------------------------------------------");
+    System.out.println("Will try to connect to Kudu master at " + KUDU_MASTER);
+    System.out.println("Run with -DkuduMaster=myHost:port to override.");
+    System.out.println("-----------------------------------------------");
     String tableName = "java_sample-" + System.currentTimeMillis();
-    KuduClient client = new KuduClient.KuduClientBuilder("a1216.halxg.cloudera.com").build();
+    KuduClient client = new KuduClient.KuduClientBuilder(KUDU_MASTER).build();
 
     try {
       List<ColumnSchema> columns = new ArrayList(2);
