@@ -110,6 +110,10 @@ TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
 // Tablet
 ////////////////////////////////////////////////////////////
 
+// Hack to work around lifetime issues related to the MemTracker and Tablet.
+// See KUDU-994 for details.
+static AtomicInt<uint64_t> memtracker_counter(0);
+
 const char* Tablet::kDMSMemTrackerId = "DeltaMemStores";
 
 Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
@@ -121,7 +125,8 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     metadata_(metadata),
     log_anchor_registry_(log_anchor_registry),
     mem_tracker_(MemTracker::CreateTracker(
-        -1, Substitute("tablet-$0", tablet_id()), parent_mem_tracker)),
+        -1, Substitute("tablet-$0-$1", tablet_id(), memtracker_counter.Increment()),
+                       parent_mem_tracker)),
     dms_mem_tracker_(MemTracker::CreateTracker(
         -1, kDMSMemTrackerId, mem_tracker_)),
     next_mrs_id_(0),
