@@ -17,6 +17,7 @@
 #include "kudu/gutil/strings/human_readable.h"
 #include "kudu/server/server_base.proxy.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/env.h"
@@ -35,7 +36,10 @@ using std::vector;
 using kudu::client::KuduRowResult;
 using kudu::client::KuduScanner;
 using kudu::tablet::TabletStatusPB;
+using kudu::tserver::TabletServerAdminServiceProxy;
 using kudu::tserver::TabletServerServiceProxy;
+using kudu::tserver::DeleteTabletRequestPB;
+using kudu::tserver::DeleteTabletResponsePB;
 using kudu::tserver::ListTabletsRequestPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::NewScanRequestPB;
@@ -52,6 +56,7 @@ const char* const kListTabletsOp = "list_tablets";
 const char* const kAreTabletsRunningOp = "are_tablets_running";
 const char* const kSetFlagOp = "set_flag";
 const char* const kDumpTabletOp = "dump_tablet";
+const char* const kDeleteTabletOp = "delete_tablet";
 const char* const kCurrentTimestamp = "current_timestamp";
 const char* const kStatus = "status";
 
@@ -95,6 +100,11 @@ class TsAdminClient {
   // Dump the contents of the given tablet, in key order, to the console.
   Status DumpTablet(const std::string& tablet_id);
 
+  // Delete a replica. The 'reason' string is passed to the tablet server,
+  // used for logging.
+  Status DeleteTablet(const std::string& tablet_id,
+                      const std::string& reason);
+
   // Sets timestamp to the value of the tablet server's current timestamp.
   Status CurrentTimestamp(uint64_t* timestamp);
 
@@ -107,6 +117,7 @@ class TsAdminClient {
   bool initted_;
   shared_ptr<server::GenericServiceProxy> generic_proxy_;
   gscoped_ptr<tserver::TabletServerServiceProxy> ts_proxy_;
+  gscoped_ptr<tserver::TabletServerAdminServiceProxy> ts_admin_proxy_;
   shared_ptr<rpc::Messenger> messenger_;
 
   DISALLOW_COPY_AND_ASSIGN(TsAdminClient);
@@ -130,6 +141,7 @@ Status TsAdminClient::Init() {
 
   generic_proxy_.reset(new server::GenericServiceProxy(messenger_, addrs_[0]));
   ts_proxy_.reset(new TabletServerServiceProxy(messenger_, addrs_[0]));
+  ts_admin_proxy_.reset(new TabletServerAdminServiceProxy(messenger_, addrs_[0]));
 
   initted_ = true;
 
@@ -239,6 +251,26 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
   return Status::OK();
 }
 
+Status TsAdminClient::DeleteTablet(const std::string& tablet_id,
+                                   const std::string& reason) {
+  DeleteTabletRequestPB req;
+  DeleteTabletResponsePB resp;
+  RpcController rpc;
+
+  req.set_tablet_id(tablet_id);
+  req.set_reason(reason);
+  req.set_delete_type(tablet::TABLET_DATA_TOMBSTONED);
+  rpc.set_timeout(timeout_);
+  RETURN_NOT_OK_PREPEND(ts_admin_proxy_->DeleteTablet(req, &resp, &rpc),
+                        "DeleteTablet() failed");
+
+  if (resp.has_error()) {
+    return Status::IOError("Failed to delete tablet: ",
+                           resp.error().ShortDebugString());
+  }
+  return Status::OK();
+}
+
 Status TsAdminClient::CurrentTimestamp(uint64_t* timestamp) {
   server::ServerClockRequestPB req;
   server::ServerClockResponsePB resp;
@@ -272,6 +304,7 @@ void SetUsage(const char* argv0) {
       << "  " << kAreTabletsRunningOp << "\n"
       << "  " << kSetFlagOp << " [-force] <flag> <value>\n"
       << "  " << kDumpTabletOp << " <tablet_id>\n"
+      << "  " << kDeleteTabletOp << " <tablet_id> <reason string>\n"
       << "  " << kCurrentTimestamp << "\n"
       << "  " << kStatus;
   google::SetUsageMessage(str.str());
@@ -361,6 +394,15 @@ static int TsCliMain(int argc, char** argv) {
     }
     string tablet_id = argv[2];
     CHECK_OK(client.DumpTablet(tablet_id));
+  } else if (op == kDeleteTabletOp) {
+    if (argc != 4) {
+      google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
+      return 1;
+    }
+    string tablet_id = argv[2];
+    string reason = argv[3];
+
+    CHECK_OK(client.DeleteTablet(tablet_id, reason));
   } else if (op == kCurrentTimestamp) {
     uint64_t timestamp;
     CHECK_OK(client.CurrentTimestamp(&timestamp));
