@@ -30,6 +30,9 @@ KuduPredicate::Data::Data() {
 KuduPredicate::Data::~Data() {
 }
 
+KuduPredicate* KuduPredicate::Clone() const {
+  return new KuduPredicate(data_->Clone());
+}
 
 ComparisonPredicateData::ComparisonPredicateData(const ColumnSchema& col,
                                                  KuduPredicate::ComparisonOp op,

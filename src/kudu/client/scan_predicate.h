@@ -26,6 +26,9 @@ class KUDU_EXPORT KuduPredicate {
 
   ~KuduPredicate();
 
+  // Returns a new, identical, KuduPredicate.
+  KuduPredicate* Clone() const;
+
   // The PIMPL class has to be public since it's actually just an interface,
   // and gcc gives an error trying to derive from a private nested class.
   class KUDU_NO_EXPORT Data;

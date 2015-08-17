@@ -2389,5 +2389,41 @@ TEST_F(ClientTest, TestLatestObservedTimestamp) {
   ASSERT_EQ(ts1, ts2);
 }
 
+TEST_F(ClientTest, TestClonePredicates) {
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(),
+                                         2, 0));
+  gscoped_ptr<KuduPredicate> predicate(client_table_->NewComparisonPredicate(
+      "key",
+      KuduPredicate::EQUAL,
+      KuduValue::FromInt(1)));
+
+  gscoped_ptr<KuduScanner> scanner(new KuduScanner(client_table_.get()));
+  ASSERT_OK(scanner->AddConjunctPredicate(predicate->Clone()));
+  ASSERT_OK(scanner->Open());
+
+  int count = 0;
+  vector<KuduRowResult> rows;
+  while (scanner->HasMoreRows()) {
+    ASSERT_OK(scanner->NextBatch(&rows));
+    count += rows.size();
+    rows.clear();
+  }
+
+  ASSERT_EQ(count, 1);
+
+  scanner.reset(new KuduScanner(client_table_.get()));
+  ASSERT_OK(scanner->AddConjunctPredicate(predicate->Clone()));
+  ASSERT_OK(scanner->Open());
+
+  count = 0;
+  while (scanner->HasMoreRows()) {
+    ASSERT_OK(scanner->NextBatch(&rows));
+    count += rows.size();
+    rows.clear();
+  }
+
+  ASSERT_EQ(count, 1);
+}
+
 } // namespace client
 } // namespace kudu

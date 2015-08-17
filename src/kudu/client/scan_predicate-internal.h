@@ -17,6 +17,7 @@ class KuduPredicate::Data {
   Data();
   virtual ~Data();
   virtual Status AddToScanSpec(ScanSpec* spec) = 0;
+  virtual Data* Clone() const = 0;
 };
 
 // A predicate implementation which represents an error constructing
@@ -39,6 +40,10 @@ class ErrorPredicateData : public KuduPredicate::Data {
     return status_;
   }
 
+  virtual ErrorPredicateData* Clone() const OVERRIDE {
+    return new ErrorPredicateData(status_);
+  }
+
  private:
   Status status_;
 };
@@ -54,6 +59,10 @@ class ComparisonPredicateData : public KuduPredicate::Data {
   virtual ~ComparisonPredicateData();
 
   virtual Status AddToScanSpec(ScanSpec* spec) OVERRIDE;
+
+  virtual ComparisonPredicateData* Clone() const OVERRIDE {
+      return new ComparisonPredicateData(col_, op_, val_->Clone());
+  }
 
  private:
   friend class KuduScanner;
