@@ -72,6 +72,7 @@ target_link_libraries(tablet
 
 set(KUDU_TEST_LINK_LIBS tablet ${KUDU_MIN_TEST_LIBS})
 ADD_KUDU_TEST(tablet-test)
+ADD_KUDU_TEST(tablet_metadata-test)
 ADD_KUDU_TEST(mt-tablet-test RUN_SERIAL true)
 ADD_KUDU_TEST(compaction_policy-test)
 ADD_KUDU_TEST(diskrowset-test)

@@ -225,6 +225,9 @@ Status TabletMetadata::LoadFromDisk() {
 Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) {
   vector<BlockId> orphaned_blocks;
 
+  VLOG(2) << "Loading TabletMetadata from SuperBlockPB:" << std::endl
+          << superblock.DebugString();
+
   {
     boost::lock_guard<LockType> l(data_lock_);
 
@@ -251,6 +254,7 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
 
     tablet_data_state_ = superblock.tablet_data_state();
 
+    rowsets_.clear();
     BOOST_FOREACH(const RowSetDataPB& rowset_pb, superblock.rowsets()) {
       gscoped_ptr<RowSetMetadata> rowset_meta;
       RETURN_NOT_OK(RowSetMetadata::Load(this, rowset_pb, &rowset_meta));
