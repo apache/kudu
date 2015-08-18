@@ -37,6 +37,7 @@ DECLARE_int32(consensus_rpc_timeout_ms);
 
 METRIC_DECLARE_entity(tablet);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
+METRIC_DECLARE_gauge_int64(raft_term);
 
 namespace kudu {
 namespace tserver {
@@ -1117,8 +1118,18 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
   cluster_->tablet_server_by_uuid(tservers[1]->uuid())->Shutdown();
   cluster_->tablet_server_by_uuid(tservers[2]->uuid())->Shutdown();
 
-
   LOG(INFO) << "================================== Cluster setup complete.";
+
+  // Check that the 'term' metric is correctly exposed.
+  {
+    int64_t term_from_metric = -1;
+    ASSERT_OK(cluster_->tablet_server_by_uuid(replica_ts->uuid())->GetInt64Metric(
+                  &METRIC_ENTITY_tablet,
+                  NULL,
+                  &METRIC_raft_term,
+                  &term_from_metric));
+    ASSERT_EQ(term_from_metric, 1);
+  }
 
   ConsensusServiceProxy* c_proxy = CHECK_NOTNULL(replica_ts->consensus_proxy.get());
 

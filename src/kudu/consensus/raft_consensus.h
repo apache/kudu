@@ -404,6 +404,7 @@ class RaftConsensus : public Consensus,
   AtomicBool shutdown_;
 
   scoped_refptr<Counter> follower_memory_pressure_rejections_;
+  scoped_refptr<AtomicGauge<int64_t> > term_metric_;
 
   std::tr1::shared_ptr<MemTracker> parent_mem_tracker_;
 

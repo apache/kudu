@@ -63,6 +63,11 @@ METRIC_DEFINE_counter(tablet, follower_memory_pressure_rejections,
                       kudu::MetricUnit::kRequests,
                       "Number of RPC requests rejected due to "
                       "memory pressure while FOLLOWER.");
+METRIC_DEFINE_gauge_int64(tablet, raft_term,
+                          "Current Raft Consensus Term",
+                          kudu::MetricUnit::kUnits,
+                          "Current Term of the Raft Consensus algorithm. This number increments "
+                          "each time a leader election is started.");
 
 namespace kudu {
 namespace consensus {
@@ -161,6 +166,8 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
       shutdown_(false),
       follower_memory_pressure_rejections_(metric_entity->FindOrCreateCounter(
           &METRIC_follower_memory_pressure_rejections)),
+      term_metric_(metric_entity->FindOrCreateGauge(&METRIC_raft_term,
+                                                    cmeta->current_term())),
       parent_mem_tracker_(parent_mem_tracker) {
   DCHECK_NOTNULL(log_.get());
   state_.reset(new ReplicaState(options,
@@ -1691,6 +1698,7 @@ Status RaftConsensus::HandleTermAdvanceUnlocked(ConsensusTerm new_term) {
 
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Advancing to term " << new_term;
   RETURN_NOT_OK(state_->SetCurrentTermUnlocked(new_term));
+  term_metric_->set_value(new_term);
   return Status::OK();
 }
 
