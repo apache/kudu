@@ -598,6 +598,7 @@ Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
     snapshot_pb->set_num_significant_digits(snapshot.num_significant_digits());
   }
   snapshot_pb->set_total_count(snapshot.TotalCount());
+  snapshot_pb->set_total_sum(snapshot.TotalSum());
   snapshot_pb->set_min(snapshot.MinValue());
   snapshot_pb->set_mean(snapshot.MeanValue());
   snapshot_pb->set_percentile_75(snapshot.ValueAtPercentile(75));

@@ -30,6 +30,7 @@ HdrHistogram::HdrHistogram(uint64_t highest_trackable_value, int num_significant
     sub_bucket_half_count_(0),
     sub_bucket_mask_(0),
     total_count_(0),
+    total_sum_(0),
     min_value_(std::numeric_limits<Atomic64>::max()),
     max_value_(0),
     counts_(0) {
@@ -46,14 +47,17 @@ HdrHistogram::HdrHistogram(const HdrHistogram& other)
     sub_bucket_half_count_(0),
     sub_bucket_mask_(0),
     total_count_(0),
+    total_sum_(0),
     min_value_(std::numeric_limits<Atomic64>::max()),
     max_value_(0),
     counts_(0) {
   Init();
 
   // Not a consistent snapshot but we try to roughly keep it close.
-  // Copy the min first.
+  // Copy the sum and min first.
+  NoBarrier_Store(&total_sum_, NoBarrier_Load(&other.total_sum_));
   NoBarrier_Store(&min_value_, NoBarrier_Load(&other.min_value_));
+
   uint64_t total_copied_count = 0;
   // Copy the counts in order of ascending magnitude.
   for (int i = 0; i < counts_array_length_; i++) {
@@ -135,9 +139,10 @@ void HdrHistogram::IncrementBy(int64_t value, int64_t count) {
   int sub_bucket_index = SubBucketIndex(value, bucket_index);
   int counts_index = CountsArrayIndex(bucket_index, sub_bucket_index);
 
-  // Increment bucket & total.
+  // Increment bucket, total, and sum.
   NoBarrier_AtomicIncrement(&counts_[counts_index], count);
   NoBarrier_AtomicIncrement(&total_count_, count);
+  NoBarrier_AtomicIncrement(&total_sum_, value * count);
 
   // Update min, if needed.
   {
@@ -265,19 +270,7 @@ uint64_t HdrHistogram::MaxValue() const {
 double HdrHistogram::MeanValue() const {
   uint64_t count = TotalCount();
   if (PREDICT_FALSE(count == 0)) return 0.0;
-
-  RecordedValuesIterator iter(this);
-  uint64_t total_value = 0;
-  HistogramIterationValue val;
-  while (iter.HasNext()) {
-    Status s = iter.Next(&val);
-    if (!s.ok()) {
-      LOG(DFATAL) << "Error while iterating over histogram: " << s.ToString();
-      return 0.0;
-    }
-    total_value = val.total_value_to_this_value;
-  }
-  return static_cast<double>(total_value) / static_cast<double>(count);
+  return static_cast<double>(TotalSum()) / count;
 }
 
 uint64_t HdrHistogram::ValueAtPercentile(double percentile) const {

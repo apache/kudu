@@ -13,6 +13,7 @@ message HistogramSnapshotPB {
   required uint64 max_trackable_value = 5;
   required int32 num_significant_digits = 6;
   required uint64 total_count = 7;
+  optional uint64 total_sum = 18;
   required uint64 min = 8;
   required double mean = 9;
   required uint64 percentile_75 = 10;
