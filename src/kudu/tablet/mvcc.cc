@@ -54,8 +54,8 @@ Timestamp MvccManager::StartTransactionAtLatest() {
   // timestamps at all times
 #ifndef NDEBUG
   if (!timestamps_in_flight_.empty()) {
-    Timestamp max(*std::max_element(timestamps_in_flight_.begin(),
-                                    timestamps_in_flight_.end()));
+    Timestamp max(std::max_element(timestamps_in_flight_.begin(),
+                                   timestamps_in_flight_.end())->first);
     CHECK_EQ(max.value(), now_latest.value());
   }
 #endif
@@ -78,6 +78,23 @@ Status MvccManager::StartTransactionAtTimestamp(Timestamp timestamp) {
   return Status::OK();
 }
 
+void MvccManager::StartApplyingTransaction(Timestamp timestamp) {
+  boost::lock_guard<LockType> l(lock_);
+  InFlightMap::iterator it = timestamps_in_flight_.find(timestamp.value());
+  if (PREDICT_FALSE(it == timestamps_in_flight_.end())) {
+    LOG(FATAL) << "Cannot mark timestamp " << timestamp.ToString() << " as APPLYING: "
+               << "not in the in-flight map.";
+  }
+
+  TxnState cur_state = it->second;
+  if (PREDICT_FALSE(cur_state != RESERVED)) {
+    LOG(FATAL) << "Cannot mark timestamp " << timestamp.ToString() << " as APPLYING: "
+               << "wrong state: " << cur_state;
+  }
+
+  it->second = APPLYING;
+}
+
 bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
   // Ensure that we didn't mark the given timestamp as "safe" in between
   // acquiring the time and taking the lock. This allows us to acquire timestamps
@@ -98,7 +115,7 @@ bool MvccManager::InitTransactionUnlocked(const Timestamp& timestamp) {
     earliest_in_flight_ = timestamp;
   }
 
-  return timestamps_in_flight_.insert(timestamp.value()).second;
+  return InsertIfNotPresent(&timestamps_in_flight_, timestamp.value(), RESERVED);
 }
 
 void MvccManager::CommitTransaction(Timestamp timestamp) {
@@ -123,9 +140,9 @@ void MvccManager::AbortTransaction(Timestamp timestamp) {
   boost::lock_guard<LockType> l(lock_);
 
   // Remove from our in-flight list.
-  CHECK_EQ(timestamps_in_flight_.erase(timestamp.value()), 1)
-    << "Trying to abort timestamp which isn't in the in-flight set: "
-    << timestamp.ToString();
+  TxnState old_state = RemoveInFlightAndGetStateUnlocked(timestamp);
+  CHECK_EQ(old_state, RESERVED) << "transaction with timestamp " << timestamp.ToString()
+                                << " cannot be aborted in state " << old_state;
 
   // If we're aborting the earliest transaction that was in flight,
   // update our cached value.
@@ -150,6 +167,19 @@ void MvccManager::OfflineCommitTransaction(Timestamp timestamp) {
   }
 }
 
+MvccManager::TxnState MvccManager::RemoveInFlightAndGetStateUnlocked(Timestamp ts) {
+  DCHECK(lock_.is_locked());
+
+  InFlightMap::iterator it = timestamps_in_flight_.find(ts.value());
+  if (it == timestamps_in_flight_.end()) {
+    LOG(FATAL) << "Trying to remove timestamp which isn't in the in-flight set: "
+               << ts.ToString();
+  }
+  TxnState state = it->second;
+  timestamps_in_flight_.erase(it);
+  return state;
+}
+
 void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
                                             bool* was_earliest_in_flight) {
   DCHECK(clock_->IsAfter(timestamp))
@@ -159,9 +189,10 @@ void MvccManager::CommitTransactionUnlocked(Timestamp timestamp,
   *was_earliest_in_flight = earliest_in_flight_ == timestamp;
 
   // Remove from our in-flight list.
-  CHECK_EQ(timestamps_in_flight_.erase(timestamp.value()), 1)
-    << "Trying to commit timestamp which isn't in the in-flight set: "
-    << timestamp.ToString();
+  TxnState old_state = RemoveInFlightAndGetStateUnlocked(timestamp);
+  CHECK_EQ(old_state, APPLYING)
+    << "Trying to commit a transaction which never entered APPLYING state: "
+    << timestamp.ToString() << " state=" << old_state;
 
   // Add to snapshot's committed list
   cur_snap_.AddCommittedTimestamp(timestamp);
@@ -177,8 +208,8 @@ void MvccManager::AdvanceEarliestInFlightTimestamp() {
   if (timestamps_in_flight_.empty()) {
     earliest_in_flight_ = Timestamp::kMax;
   } else {
-    earliest_in_flight_ = Timestamp(*std::min_element(timestamps_in_flight_.begin(),
-                                                      timestamps_in_flight_.end()));
+    earliest_in_flight_ = Timestamp(std::min_element(timestamps_in_flight_.begin(),
+                                                     timestamps_in_flight_.end())->first);
   }
 }
 
@@ -303,8 +334,8 @@ void MvccManager::WaitForAllInFlightToCommit() const {
     // This may wait longer than necessary if new transactions start with
     // a lower timestamp, but that's OK - there is no "wait for the minimum
     // amount of time" guarantee in this API.
-    wait_for = Timestamp(*std::max_element(timestamps_in_flight_.begin(),
-                                           timestamps_in_flight_.end()));
+    wait_for = Timestamp(std::max_element(timestamps_in_flight_.begin(),
+                                          timestamps_in_flight_.end())->first);
   }
 
   WaitUntilAllCommitted(wait_for);
@@ -328,8 +359,8 @@ Timestamp MvccManager::GetCleanTimestamp() const {
 void MvccManager::GetInFlightTransactionTimestamps(std::vector<Timestamp>* timestamps) const {
   boost::lock_guard<LockType> l(lock_);
   timestamps->reserve(timestamps_in_flight_.size());
-  BOOST_FOREACH(const Timestamp::val_type val, timestamps_in_flight_) {
-    timestamps->push_back(Timestamp(val));
+  BOOST_FOREACH(const InFlightMap::value_type entry, timestamps_in_flight_) {
+    timestamps->push_back(Timestamp(entry.first));
   }
 }
 
@@ -457,8 +488,12 @@ ScopedTransaction::ScopedTransaction(MvccManager *mgr, Timestamp timestamp)
 
 ScopedTransaction::~ScopedTransaction() {
   if (!done_) {
-    Commit();
+    Abort();
   }
+}
+
+void ScopedTransaction::StartApplying() {
+  manager_->StartApplyingTransaction(timestamp_);
 }
 
 void ScopedTransaction::Commit() {

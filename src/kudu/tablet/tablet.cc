@@ -469,6 +469,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
 }
 
 void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
+  tx_state->StartApplying();
   BOOST_FOREACH(RowOp* row_op, tx_state->row_ops()) {
     ApplyRowOperation(tx_state, row_op);
   }

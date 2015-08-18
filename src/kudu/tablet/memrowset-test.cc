@@ -98,7 +98,10 @@ class TestMemRowSet : public ::testing::Test {
     RowBuilder rb(schema_);
     rb.AddString(key);
     rb.AddUint32(val);
-    return mrs->Insert(tx.timestamp(), rb.row(), op_id_);
+    tx.StartApplying();
+    Status s = mrs->Insert(tx.timestamp(), rb.row(), op_id_);
+    tx.Commit();
+    return s;
   }
 
   Status UpdateRow(MemRowSet *mrs,
@@ -106,6 +109,8 @@ class TestMemRowSet : public ::testing::Test {
                    uint32_t new_val,
                    OperationResultPB* result) {
     ScopedTransaction tx(&mvcc_);
+    tx.StartApplying();
+
     mutation_buf_.clear();
     RowChangeListEncoder update(&mutation_buf_);
     update.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &new_val);
@@ -114,16 +119,20 @@ class TestMemRowSet : public ::testing::Test {
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
-    return mrs->MutateRow(tx.timestamp(),
-                          probe,
-                          RowChangeList(mutation_buf_),
-                          op_id_,
-                          &stats,
-                          result);
+    Status s = mrs->MutateRow(tx.timestamp(),
+                              probe,
+                              RowChangeList(mutation_buf_),
+                              op_id_,
+                              &stats,
+                              result);
+    tx.Commit();
+    return s;
   }
 
   Status DeleteRow(MemRowSet *mrs, const string &key, OperationResultPB* result) {
     ScopedTransaction tx(&mvcc_);
+    tx.StartApplying();
+
     mutation_buf_.clear();
     RowChangeListEncoder update(&mutation_buf_);
     update.SetToDelete();
@@ -132,12 +141,14 @@ class TestMemRowSet : public ::testing::Test {
     rb.AddString(Slice(key));
     RowSetKeyProbe probe(rb.row());
     ProbeStats stats;
-    return mrs->MutateRow(tx.timestamp(),
-                          probe,
-                          RowChangeList(mutation_buf_),
-                          op_id_,
-                          &stats,
-                          result);
+    Status s = mrs->MutateRow(tx.timestamp(),
+                              probe,
+                              RowChangeList(mutation_buf_),
+                              op_id_,
+                              &stats,
+                              result);
+    tx.Commit();
+    return s;
   }
 
   int ScanAndCount(MemRowSet* mrs, const MvccSnapshot& snap) {
@@ -204,31 +215,37 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
   RowBuilder rb(compound_key_schema);
   {
     ScopedTransaction tx(&mvcc_);
+    tx.StartApplying();
     rb.AddString(string("hello world"));
     rb.AddInt32(1);
     rb.AddUint32(12345);
     Status row1 = mrs->Insert(tx.timestamp(), rb.row(), op_id_);
     ASSERT_OK(row1);
+    tx.Commit();
   }
 
   {
     ScopedTransaction tx2(&mvcc_);
+    tx2.StartApplying();
     rb.Reset();
     rb.AddString(string("goodbye world"));
     rb.AddInt32(2);
     rb.AddUint32(54321);
     Status row2 = mrs->Insert(tx2.timestamp(), rb.row(), op_id_);
     ASSERT_OK(row2);
+    tx2.Commit();
   }
 
   {
     ScopedTransaction tx3(&mvcc_);
+    tx3.StartApplying();
     rb.Reset();
     rb.AddString(string("goodbye world"));
     rb.AddInt32(1);
     rb.AddUint32(12345);
     Status row3 = mrs->Insert(tx3.timestamp(), rb.row(), op_id_);
     ASSERT_OK(row3);
+    tx3.Commit();
   }
 
   ASSERT_EQ(3, mrs->entry_count());
@@ -419,6 +436,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
   for (uint32_t i = 0; i < 5; i++) {
     {
       ScopedTransaction tx(&mvcc_);
+      tx.StartApplying();
       RowBuilder rb(schema_);
       char keybuf[256];
       rb.Reset();
@@ -426,6 +444,7 @@ TEST_F(TestMemRowSet, TestInsertionMVCC) {
       rb.AddString(Slice(keybuf));
       rb.AddUint32(i);
       ASSERT_OK_FAST(mrs->Insert(tx.timestamp(), rb.row(), op_id_));
+      tx.Commit();
     }
 
     // Transaction is committed. Save the snapshot after this commit.

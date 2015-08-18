@@ -223,6 +223,10 @@ void WriteTransactionState::ReleaseSchemaLock() {
   TRACE("Released schema lock");
 }
 
+void WriteTransactionState::StartApplying() {
+  CHECK_NOTNULL(mvcc_tx_.get())->StartApplying();
+}
+
 void WriteTransactionState::Abort() {
   if (mvcc_tx_.get() != NULL) {
     // Abort the transaction.

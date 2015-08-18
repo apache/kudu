@@ -61,12 +61,14 @@ class TestDeltaMemStore : public KuduTest {
 
     BOOST_FOREACH(uint32_t idx_to_update, indexes_to_update) {
       ScopedTransaction tx(&mvcc_);
+      tx.StartApplying();
       update.Reset();
       uint32_t new_val = idx_to_update * 10;
       update.AddColumnUpdate(schema_.column(kIntColumn),
                              schema_.column_id(kIntColumn), &new_val);
 
       CHECK_OK(dms_->Update(tx.timestamp(), idx_to_update, RowChangeList(buf), op_id_));
+      tx.Commit();
     }
   }
 
@@ -134,10 +136,12 @@ TEST_F(TestDeltaMemStore, TestUpdateCount) {
     }
     if (idx % 2 == 0) {
       ScopedTransaction tx(&mvcc_);
+      tx.StartApplying();
       uint32_t new_val = idx * 10;
       update.AddColumnUpdate(schema_.column(kIntColumn),
                              schema_.column_id(kIntColumn), &new_val);
       ASSERT_OK_FAST(dms_->Update(tx.timestamp(), idx, RowChangeList(update_buf), op_id_));
+      tx.Commit();
     }
   }
 
@@ -202,11 +206,13 @@ TEST_F(TestDeltaMemStore, BenchmarkManyUpdatesToOneRow) {
     RowChangeListEncoder update(&buf);
 
     ScopedTransaction tx(&mvcc_);
+    tx.StartApplying();
     string str(kStringDataSize, 'x');
     Slice s(str);
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
     CHECK_OK(dms_->Update(tx.timestamp(), kIdxToUpdate, RowChangeList(buf), op_id_));
+    tx.Commit();
   }
 
   MvccSnapshot snap(mvcc_);
@@ -234,18 +240,21 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
   // underlying data is properly copied into the DMS arena.
   {
     ScopedTransaction tx(&mvcc_);
+    tx.StartApplying();
     char buf[256] = "update 1";
     Slice s(buf);
     update.AddColumnUpdate(schema_.column(0),
                            schema_.column_id(0), &s);
     ASSERT_OK_FAST(dms_->Update(tx.timestamp(), 123, RowChangeList(update_buf), op_id_));
     memset(buf, 0xff, sizeof(buf));
+    tx.Commit();
   }
   MvccSnapshot snapshot_after_first_update(mvcc_);
 
   // Update the same cell again with a different value
   {
     ScopedTransaction tx(&mvcc_);
+    tx.StartApplying();
     char buf[256] = "update 2";
     Slice s(buf);
     update.Reset();
@@ -253,6 +262,7 @@ TEST_F(TestDeltaMemStore, TestReUpdateSlice) {
                            schema_.column_id(0), &s);
     ASSERT_OK_FAST(dms_->Update(tx.timestamp(), 123, RowChangeList(update_buf), op_id_));
     memset(buf, 0xff, sizeof(buf));
+    tx.Commit();
   }
   MvccSnapshot snapshot_after_second_update(mvcc_);
 
@@ -283,16 +293,21 @@ TEST_F(TestDeltaMemStore, TestOutOfOrderTxns) {
     ScopedTransaction tx1(&mvcc_);
     ScopedTransaction tx2(&mvcc_);
 
+    tx2.StartApplying();
     Slice s("update 2");
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
     ASSERT_OK(dms_->Update(tx2.timestamp(), 123, RowChangeList(update_buf), op_id_));
+    tx2.Commit();
 
+
+    tx1.StartApplying();
     update.Reset();
     s = Slice("update 1");
     update.AddColumnUpdate(schema_.column(kStringColumn),
                            schema_.column_id(kStringColumn), &s);
     ASSERT_OK(dms_->Update(tx1.timestamp(), 123, RowChangeList(update_buf), op_id_));
+    tx1.Commit();
   }
 
   // Ensure we end up two entries for the cell.
@@ -311,6 +326,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
   char buf[256];
   for (uint32_t i = 0; i < 1000; i++) {
     ScopedTransaction tx(&mvcc_);
+    tx.StartApplying();
     update.Reset();
 
     uint32_t val = i * 10;
@@ -323,6 +339,7 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
                            schema_.column_id(kStringColumn), &s);
 
     ASSERT_OK_FAST(dms_->Update(tx.timestamp(), i, RowChangeList(update_buf), op_id_));
+    tx.Commit();
   }
 
   ASSERT_EQ(1000, dms_->Count());
@@ -353,12 +370,14 @@ TEST_F(TestDeltaMemStore, TestDMSBasic) {
   // old ones for snapshot consistency purposes.
   for (uint32_t i = 0; i < 1000; i++) {
     ScopedTransaction tx(&mvcc_);
+    tx.StartApplying();
     update.Reset();
 
     uint32_t val = i * 20;
     update.AddColumnUpdate(schema_.column(kIntColumn),
                            schema_.column_id(kIntColumn), &val);
     ASSERT_OK_FAST(dms_->Update(tx.timestamp(), i, RowChangeList(update_buf), op_id_));
+    tx.Commit();
   }
 
   ASSERT_EQ(2000, dms_->Count());

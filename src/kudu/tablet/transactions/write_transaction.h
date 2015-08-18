@@ -115,16 +115,26 @@ class WriteTransactionState : public TransactionState {
     return tablet_components_.get();
   }
 
+  // Notifies the MVCC manager that this operation is about to start applying
+  // its in-memory edits. After this method is called, the transaction _must_
+  // Commit() within a bounded amount of time (there may be other threads
+  // blocked on it).
+  void StartApplying();
+
   // Commits the Mvcc transaction and releases the component lock. After
   // this method is called all the inserts and mutations will become
   // visible to other transactions.
+  //
   // Only one of Commit() or Abort() should be called.
+  // REQUIRES: StartApplying() was called.
   //
   // Note: request_ and response_ are set to NULL after this method returns.
   void Commit();
 
   // Aborts the mvcc transaction and releases the component lock.
   // Only one of Commit() or Abort() should be called.
+  //
+  // REQUIRES: StartApplying() must never have been called.
   void Abort();
 
   // Returns all the prepared row writes for this transaction. Usually called

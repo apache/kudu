@@ -75,6 +75,7 @@ class TestCompaction : public KuduRowSetTest {
   // or 'val' (when val is even).
   void InsertRow(MemRowSet *mrs, int row_key, int32_t val) {
     ScopedTransaction tx(&mvcc_);
+    tx.StartApplying();
     row_builder_.Reset();
     snprintf(key_buf_, sizeof(key_buf_), kRowKeyFormat, row_key);
     row_builder_.AddString(Slice(key_buf_));
@@ -96,6 +97,7 @@ class TestCompaction : public KuduRowSetTest {
     } else {
       ASSERT_OK_FAST(mrs->Insert(tx.timestamp(), row_builder_.row(), op_id_));
     }
+    tx.Commit();
   }
 
   // Update n_rows rows of data.
@@ -112,6 +114,7 @@ class TestCompaction : public KuduRowSetTest {
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
       ScopedTransaction tx(&mvcc_);
+      tx.StartApplying();
       snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
 
       update_buf.clear();
@@ -136,6 +139,7 @@ class TestCompaction : public KuduRowSetTest {
                                          op_id_,
                                          &stats,
                                          &result));
+      tx.Commit();
     }
   }
 
@@ -145,6 +149,7 @@ class TestCompaction : public KuduRowSetTest {
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
       ScopedTransaction tx(&mvcc_);
+      tx.StartApplying();
       snprintf(keybuf, sizeof(keybuf), kRowKeyFormat, i * 10 + delta);
 
       update_buf.clear();
@@ -162,6 +167,7 @@ class TestCompaction : public KuduRowSetTest {
                                          op_id_,
                                          &stats,
                                          &result));
+      tx.Commit();
     }
   }
 

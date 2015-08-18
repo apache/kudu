@@ -171,7 +171,10 @@ class TestRowSet : public KuduRowSetTest {
 
     ProbeStats stats;
     ScopedTransaction tx(&mvcc_);
-    return rs->MutateRow(tx.timestamp(), probe, mutation, op_id_, &stats, result);
+    tx.StartApplying();
+    Status s = rs->MutateRow(tx.timestamp(), probe, mutation, op_id_, &stats, result);
+    tx.Commit();
+    return s;
   }
 
   Status CheckRowPresent(const DiskRowSet &rs, uint32_t row_idx, bool *present) {

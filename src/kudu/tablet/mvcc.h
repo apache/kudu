@@ -5,7 +5,7 @@
 #define KUDU_TABLET_MVCC_H
 
 #include <gtest/gtest_prod.h>
-#include <tr1/unordered_set>
+#include <tr1/unordered_map>
 #include <string>
 #include <vector>
 
@@ -18,7 +18,6 @@ class CountDownLatch;
 namespace tablet {
 class MvccManager;
 
-using std::tr1::unordered_set;
 using std::string;
 
 // A snapshot of the current MVCC state, which can determine whether
@@ -143,10 +142,28 @@ class MvccSnapshot {
 // the MvccManager to obtain a unique timestamp, usually through the ScopedTransaction
 // class defined below.
 //
-// NOTE: There is no support for transaction abort/rollback, since
-// transaction support is quite simple. Transactions are only used to
-// defer visibility of updates until commit time, and allow iterators to
+// MVCC is used to defer updates until commit time, and allow iterators to
 // operate on a snapshot which contains only committed transactions.
+//
+// There are two valid paths for a transaction:
+//
+// 1) StartTransaction() -> StartApplyingTransaction() -> CommitTransaction()
+//   or
+// 2) StartTransaction() -> AbortTransaction()
+//
+// When a transaction is started, a timestamp is assigned. The manager will
+// never assign a timestamp if there is already another transaction with
+// the same timestamp in flight or previously committed.
+//
+// When a transaction is ready to start making changes to in-memory data,
+// it should transition to APPLYING state by calling StartApplyingTransaction().
+// At this point, the transaction should apply its in-memory operations and
+// must commit in a bounded amount of time (i.e it should not wait on external
+// input such as an RPC from another host).
+//
+// NOTE: we do not support "rollback" of in-memory edits. Thus, once we call
+// StartApplyingTransaction(), the transaction _must_ commit.
+//
 class MvccManager {
  public:
   explicit MvccManager(const scoped_refptr<server::Clock>& clock);
@@ -168,6 +185,11 @@ class MvccManager {
   // committed, e.g. if timestamp < 'all_committed_before_'.
   Status StartTransactionAtTimestamp(Timestamp timestamp);
 
+  // Mark that the transaction with the given timestamp is starting to apply
+  // its writes to in-memory stores. This must be called before CommitTransaction().
+  // If this is called, then AbortTransaction(timestamp) must never be called.
+  void StartApplyingTransaction(Timestamp timestamp);
+
   // Commit the given transaction.
   //
   // If the transaction is not currently in-flight, this will trigger an
@@ -178,6 +200,9 @@ class MvccManager {
   // replicas and not for delayed processing on FOLLOWER/LEARNER replicas or
   // on bootstrap, as this advances 'all_committed_before_' to clock_->Now()
   // when possible.
+  //
+  // The transaction must already have been marked as 'APPLYING' by calling
+  // StartApplyingTransaction(), or else this logs a FATAL error.
   void CommitTransaction(Timestamp timestamp);
 
   // Abort the given transaction.
@@ -189,10 +214,16 @@ class MvccManager {
   // This makes sure that the transaction with 'timestamp' is removed from
   // the in-flight set but without advancing the safe time since a new
   // transaction with a lower timestamp might be executed later.
+  //
+  // The transaction must not have been marked as 'APPLYING' by calling
+  // StartApplyingTransaction(), or else this logs a FATAL error.
   void AbortTransaction(Timestamp timestamp);
 
   // Same as commit transaction but does not advance 'all_committed_before_'.
   // Used for bootstrap and delayed processing in FOLLOWERS/LEARNERS.
+  //
+  // The transaction must already have been marked as 'APPLYING' by calling
+  // StartApplyingTransaction(), or else this logs a FATAL error.
   void OfflineCommitTransaction(Timestamp timestamp);
 
   // Used in conjunction with OfflineCommitTransaction() so that the mvcc
@@ -256,6 +287,11 @@ class MvccManager {
   FRIEND_TEST(MvccTest, TestTxnAbort);
   FRIEND_TEST(MvccTest, TestCleanTimeCoalescingOnOfflineTransactions);
 
+  enum TxnState {
+    RESERVED,
+    APPLYING
+  };
+
   bool InitTransactionUnlocked(const Timestamp& timestamp);
 
   struct WaitingState {
@@ -277,6 +313,11 @@ class MvccManager {
   void CommitTransactionUnlocked(Timestamp timestamp,
                                  bool* was_earliest);
 
+  // Remove the timestamp 'ts' from the in-flight map.
+  // FATALs if the ts is not in the in-flight map.
+  // Returns its state.
+  TxnState RemoveInFlightAndGetStateUnlocked(Timestamp ts);
+
   // Adjusts the clean time, i.e. the timestamp such that all transactions with
   // lower timestamps are committed or aborted, based on which transactions are
   // currently in flight and on what is the latest value of 'no_new_transactions_at_or_before_'.
@@ -293,7 +334,8 @@ class MvccManager {
   MvccSnapshot cur_snap_;
 
   // The set of timestamps corresponding to currently in-flight transactions.
-  std::tr1::unordered_set<Timestamp::val_type> timestamps_in_flight_;
+  typedef std::tr1::unordered_map<Timestamp::val_type, TxnState> InFlightMap;
+  InFlightMap timestamps_in_flight_;
 
   // A transaction ID below which all transactions are either committed or in-flight,
   // meaning no new transactions will be started with a timestamp that is equal
@@ -348,10 +390,21 @@ class ScopedTransaction {
     return timestamp_;
   }
 
+  // Mark that this transaction is about to begin applying its modifications to
+  // in-memory stores.
+  //
+  // This must be called before Commit(). Abort() may not be called after this
+  // method.
+  void StartApplying();
+
   // Commit the in-flight transaction.
+  //
+  // Requires that StartApplying() has been called.
   void Commit();
 
   // Abort the in-flight transaction.
+  //
+  // Requires that StartApplying() has NOT been called.
   void Abort();
 
  private:

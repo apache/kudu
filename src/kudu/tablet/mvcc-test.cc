@@ -66,6 +66,12 @@ TEST_F(MvccTest, TestMvccBasic) {
   ASSERT_FALSE(snap.IsCommitted(Timestamp(1)));
   ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
 
+  // Mark timestamp 1 as "applying"
+  mgr.StartApplyingTransaction(t);
+
+  // This should not change the set of committed transactions.
+  ASSERT_FALSE(snap.IsCommitted(Timestamp(1)));
+
   // Commit timestamp 1
   mgr.CommitTransaction(t);
 
@@ -94,6 +100,7 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   ASSERT_FALSE(snap.IsCommitted(t2));
 
   // Commit timestamp 2
+  mgr.StartApplyingTransaction(t2);
   mgr.CommitTransaction(t2);
 
   // State should show 2 as committed, 1 as uncommitted.
@@ -118,6 +125,7 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   ASSERT_FALSE(snap.IsCommitted(t3));
 
   // Commit 3
+  mgr.StartApplyingTransaction(t3);
   mgr.CommitTransaction(t3);
 
   // 2 and 3 committed
@@ -130,6 +138,7 @@ TEST_F(MvccTest, TestMvccMultipleInFlight) {
   ASSERT_TRUE(snap.IsCommitted(t3));
 
   // Commit 1
+  mgr.StartApplyingTransaction(t1);
   mgr.CommitTransaction(t1);
 
   // all committed
@@ -154,6 +163,7 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
   Timestamp cw_txn = mgr.StartTransactionAtLatest();
 
   // Commit the original txn
+  mgr.StartApplyingTransaction(normal_txn);
   mgr.CommitTransaction(normal_txn);
 
   // Start a new txn
@@ -170,6 +180,7 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
 
   // Commit the commit-wait one once it is time.
   ASSERT_OK(hybrid_clock->WaitUntilAfter(cw_txn));
+  mgr.StartApplyingTransaction(cw_txn);
   mgr.CommitTransaction(cw_txn);
 
   // A new snapshot at this point should still think that normal_txn_2 is uncommitted
@@ -194,6 +205,7 @@ TEST_F(MvccTest, TestOfflineTransactions) {
   // and committing this transaction "offline" this
   // should not advance the MvccManager 'all_committed_before_'
   // watermark.
+  mgr.StartApplyingTransaction(Timestamp(50));
   mgr.OfflineCommitTransaction(Timestamp(50));
 
   // Now take a snaphsot.
@@ -227,6 +239,7 @@ TEST_F(MvccTest, TestScopedTransaction) {
     ASSERT_EQ(1, t1.timestamp().value());
     ASSERT_EQ(2, t2.timestamp().value());
 
+    t1.StartApplying();
     t1.Commit();
 
     mgr.TakeSnapshot(&snap);
@@ -234,10 +247,10 @@ TEST_F(MvccTest, TestScopedTransaction) {
     ASSERT_FALSE(snap.IsCommitted(t2.timestamp()));
   }
 
-  // t2 going out of scope commits it.
+  // t2 going out of scope aborts it.
   mgr.TakeSnapshot(&snap);
   ASSERT_TRUE(snap.IsCommitted(Timestamp(1)));
-  ASSERT_TRUE(snap.IsCommitted(Timestamp(2)));
+  ASSERT_FALSE(snap.IsCommitted(Timestamp(2)));
 }
 
 TEST_F(MvccTest, TestPointInTimeSnapshot) {
@@ -347,6 +360,7 @@ TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
 
   // commit tx3, should all still report as having as having uncommitted
   // transactions.
+  mgr.StartApplyingTransaction(tx3);
   mgr.CommitTransaction(tx3);
   ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(1)));
   ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(2)));
@@ -354,12 +368,14 @@ TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
 
   // commit tx1, first snap with in-flights should now report as all committed
   // and remaining snaps as still having uncommitted transactions
+  mgr.StartApplyingTransaction(tx1);
   mgr.CommitTransaction(tx1);
   ASSERT_TRUE(mgr.AreAllTransactionsCommitted(Timestamp(1)));
   ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(2)));
   ASSERT_FALSE(mgr.AreAllTransactionsCommitted(Timestamp(3)));
 
   // Now they should all report as all committed.
+  mgr.StartApplyingTransaction(tx2);
   mgr.CommitTransaction(tx2);
   ASSERT_TRUE(mgr.AreAllTransactionsCommitted(Timestamp(1)));
   ASSERT_TRUE(mgr.AreAllTransactionsCommitted(Timestamp(2)));
@@ -387,8 +403,10 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithInFlights) {
       &MvccTest::WaitForSnapshotAtTSThread, this, &mgr, clock_->Now());
 
   ASSERT_FALSE(HasResultSnapshot());
+  mgr.StartApplyingTransaction(tx1);
   mgr.CommitTransaction(tx1);
   ASSERT_FALSE(HasResultSnapshot());
+  mgr.StartApplyingTransaction(tx2);
   mgr.CommitTransaction(tx2);
   waiting_thread.join();
   ASSERT_TRUE(HasResultSnapshot());
@@ -409,16 +427,19 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights) {
   ASSERT_FALSE(HasResultSnapshot());
 
   // Commit tx 1 - thread should still wait.
+  mgr.StartApplyingTransaction(tx1);
   mgr.CommitTransaction(tx1);
   SleepFor(MonoDelta::FromMilliseconds(1));
   ASSERT_FALSE(HasResultSnapshot());
 
   // Commit tx 3 - thread should still wait.
+  mgr.StartApplyingTransaction(tx3);
   mgr.CommitTransaction(tx3);
   SleepFor(MonoDelta::FromMilliseconds(1));
   ASSERT_FALSE(HasResultSnapshot());
 
   // Commit tx 2 - thread can now continue
+  mgr.StartApplyingTransaction(tx2);
   mgr.CommitTransaction(tx2);
   waiting_thread.join();
   ASSERT_TRUE(HasResultSnapshot());
@@ -444,11 +465,13 @@ TEST_F(MvccTest, TestTxnAbort) {
   // Committing tx3 shouldn't advance the clean time since it is not the earliest
   // in-flight, but it should advance 'no_new_transactions_at_or_before_', the "safe"
   // time, to 3.
+  mgr.StartApplyingTransaction(tx3);
   mgr.CommitTransaction(tx3);
   ASSERT_TRUE(mgr.cur_snap_.IsCommitted(tx3));
   ASSERT_EQ(mgr.no_new_transactions_at_or_before_.CompareTo(tx3), 0);
 
   // Committing tx2 should advance the clean time to 3.
+  mgr.StartApplyingTransaction(tx2);
   mgr.CommitTransaction(tx2);
   ASSERT_TRUE(mgr.cur_snap_.IsCommitted(tx2));
   ASSERT_EQ(mgr.GetCleanTimestamp().CompareTo(tx3), 0);
@@ -464,9 +487,76 @@ TEST_F(MvccTest, TestCleanTimeCoalescingOnOfflineTransactions) {
   CHECK_OK(mgr.StartTransactionAtTimestamp(Timestamp(10)));
   CHECK_OK(mgr.StartTransactionAtTimestamp(Timestamp(15)));
   mgr.OfflineAdjustSafeTime(Timestamp(15));
+
+  mgr.StartApplyingTransaction(Timestamp(15));
   mgr.OfflineCommitTransaction(Timestamp(15));
+
+  mgr.StartApplyingTransaction(Timestamp(10));
   mgr.OfflineCommitTransaction(Timestamp(10));
   ASSERT_EQ(mgr.cur_snap_.ToString(), "MvccSnapshot[committed={T|T < 15 or (T in {15})}]");
+}
+
+// Various death tests which ensure that we can only transition in one of the following
+// valid ways:
+//
+// - Start() -> StartApplying() -> Commit()
+// - Start() -> Abort()
+//
+// Any other transition should fire a CHECK failure.
+TEST_F(MvccTest, TestIllegalStateTransitionsCrash) {
+  MvccManager mgr(clock_.get());
+  MvccSnapshot snap;
+
+  EXPECT_DEATH({
+      mgr.StartApplyingTransaction(Timestamp(1));
+    }, "Cannot mark timestamp 1 as APPLYING: not in the in-flight map");
+
+  // Depending whether this is a DEBUG or RELEASE build, the error message
+  // could be different for this case -- the "future timestamp" check is only
+  // run in DEBUG builds.
+  EXPECT_DEATH({
+      mgr.CommitTransaction(Timestamp(1));
+    },
+    "Trying to commit a transaction with a future timestamp|"
+    "Trying to remove timestamp which isn't in the in-flight set: 1");
+
+  clock_->Update(Timestamp(20));
+
+  EXPECT_DEATH({
+      mgr.CommitTransaction(Timestamp(1));
+    }, "Trying to remove timestamp which isn't in the in-flight set: 1");
+
+  // Start a transaction, and try committing it without having moved to "Applying"
+  // state.
+  Timestamp t = mgr.StartTransaction();
+  EXPECT_DEATH({
+      mgr.CommitTransaction(t);
+    }, "Trying to commit a transaction which never entered APPLYING state");
+
+  // Aborting should succeed, since we never moved to Applying.
+  mgr.AbortTransaction(t);
+
+  // Aborting a second time should fail
+  EXPECT_DEATH({
+      mgr.AbortTransaction(t);
+    }, "Trying to remove timestamp which isn't in the in-flight set: 21");
+
+  // Start a new transaction. This time, mark it as Applying.
+  t = mgr.StartTransaction();
+  mgr.StartApplyingTransaction(t);
+
+  // Can only call StartApplying once.
+  EXPECT_DEATH({
+      mgr.StartApplyingTransaction(t);
+    }, "Cannot mark timestamp 22 as APPLYING: wrong state: 1");
+
+  // Cannot Abort() a transaction once we start applying it.
+  EXPECT_DEATH({
+      mgr.AbortTransaction(t);
+    }, "transaction with timestamp 22 cannot be aborted in state 1");
+
+  // We can commit it successfully.
+  mgr.CommitTransaction(t);
 }
 
 } // namespace tablet

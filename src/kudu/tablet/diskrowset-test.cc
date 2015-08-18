@@ -319,6 +319,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
   for (uint32_t i = 2; i <= 5; i++) {
     {
       ScopedTransaction tx(&mvcc_);
+      tx.StartApplying();
       update.Reset();
       update.AddColumnUpdate(schema_.column(1), schema_.column_id(1), &i);
       RowBuilder rb(schema_.CreateKeyProjection());
@@ -335,6 +336,7 @@ TEST_F(TestRowSet, TestFlushedUpdatesRespectMVCC) {
       ASSERT_EQ(1, result.mutated_stores_size());
       ASSERT_EQ(0L, result.mutated_stores(0).rs_id());
       ASSERT_EQ(0L, result.mutated_stores(0).dms_id());
+      tx.Commit();
     }
     snaps.push_back(MvccSnapshot(mvcc_));
   }
