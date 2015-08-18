@@ -55,17 +55,39 @@ def load_all_metrics():
     all_metrics.extend(m for m in metrics_dump['metrics'])
   return all_metrics
 
-def metric_to_mdl(m):
+def append_sentence(a, b):
+  if not a.endswith("."):
+    a += "."
+  return a + " " + b
+
+def metric_to_mdl_entries(m):
   if m['type'] == 'histogram':
-    print >>sys.stderr, "Skipping histogram metric %s" % m['name']
-    return None
-  return dict(
+    return [
+      dict(
+        context=(m['name'] + "::total_count"),
+        name=('kudu_' + m['name'].lower()) + '_count',
+        counter=True,
+        numeratorUnit='samples',
+        description=append_sentence(m['description'],
+                                    "This is the total number of recorded samples."),
+        label=m['label'] + ": Samples"),
+      dict(
+        context=(m['name'] + "::total_sum"),
+        name=('kudu_' + m['name'].lower()) + '_sum',
+        counter=True,
+        numeratorUnit=m['unit'],
+        description=append_sentence(m['description'],
+                                    "This is the total sum of recorded samples."),
+        label=m['label'] + ": Total")
+      ]
+
+  return [dict(
     context=(m['name'] + "::value"),
     name=('kudu_' + m['name'].lower()),
     counter=(m['type'] == 'counter'),
     numeratorUnit=m['unit'],
     description=m['description'],
-    label=m['label'])
+    label=m['label'])]
 
 def metrics_to_mdl(metrics):
   """
@@ -84,9 +106,7 @@ def metrics_to_mdl(metrics):
     seen.add(key)
 
     # Convert to the format that CM expects.
-    mdl_metric = metric_to_mdl(m)
-    if mdl_metric:
-      by_entity[m['entity_type']].append(mdl_metric)
+    by_entity[m['entity_type']].extend(metric_to_mdl_entries(m))
   return by_entity
 
 def main():

@@ -592,6 +592,7 @@ Status Histogram::GetHistogramSnapshotPB(HistogramSnapshotPB* snapshot_pb,
   snapshot_pb->set_name(prototype_->name());
   if (opts.include_schema_info) {
     snapshot_pb->set_type(MetricType::Name(prototype_->type()));
+    snapshot_pb->set_label(prototype_->label());
     snapshot_pb->set_unit(MetricUnit::Name(prototype_->unit()));
     snapshot_pb->set_description(prototype_->description());
     snapshot_pb->set_max_trackable_value(snapshot.highest_trackable_value());

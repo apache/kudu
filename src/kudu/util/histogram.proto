@@ -10,6 +10,8 @@ message HistogramSnapshotPB {
   required string name = 2;
   optional string description = 3;
   required string unit = 4;
+  optional string label = 19;
+
   required uint64 max_trackable_value = 5;
   required int32 num_significant_digits = 6;
   required uint64 total_count = 7;
