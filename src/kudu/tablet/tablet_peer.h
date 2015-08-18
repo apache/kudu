@@ -112,12 +112,17 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     return consensus_.get();
   }
 
+  scoped_refptr<consensus::Consensus> shared_consensus() const {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    return consensus_;
+  }
+
   Tablet* tablet() const {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return tablet_.get();
   }
 
-  const std::tr1::shared_ptr<Tablet>& shared_tablet() {
+  std::tr1::shared_ptr<Tablet> shared_tablet() const {
     boost::lock_guard<simple_spinlock> lock(lock_);
     return tablet_;
   }
@@ -175,7 +180,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   Status GetGCableDataSize(int64_t* retention_size) const;
 
   // Return a pointer to the Log.
-  // The Log is owned by TabletPeer and will be destroyed with TabletPeer.
+  // TabletPeer keeps a reference to Log after Init().
   log::Log* log() const {
     return log_.get();
   }
@@ -191,7 +196,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Returns the tablet_id of the tablet managed by this TabletPeer.
   // Returns the correct tablet_id even if the underlying tablet is not available
   // yet.
-  std::string tablet_id() const { return tablet_id_; }
+  const std::string& tablet_id() const { return tablet_id_; }
 
   // Convenience method to return the permanent_uuid of this peer.
   std::string permanent_uuid() const { return tablet_->metadata()->fs_manager()->uuid(); }

@@ -58,15 +58,22 @@ Status RemoteBootstrapSession::Init() {
   blocks_.clear();
   logs_.clear();
 
-  const string& tablet_id = tablet_peer_->tablet()->tablet_id();
+  const string& tablet_id = tablet_peer_->tablet_id();
 
   // Look up the metadata.
-  const TabletMetadata* metadata = tablet_peer_->shared_tablet()->metadata();
+  scoped_refptr<TabletMetadata> metadata = tablet_peer_->tablet_metadata();
   RETURN_NOT_OK_PREPEND(metadata->ToSuperBlock(&tablet_superblock_),
                         Substitute("Unable to access superblock for tablet $0", tablet_id));
 
   // Look up the committed consensus state.
-  initial_committed_cstate_ = tablet_peer_->consensus()->CommittedConsensusState();
+  scoped_refptr<consensus::Consensus> consensus = tablet_peer_->shared_consensus();
+  if (!consensus) {
+    tablet::TabletStatePB tablet_state = tablet_peer_->state();
+    return Status::IllegalState(Substitute("Unable to initialize remote bootstrap session "
+                                "for tablet $0. Consensus is not available. Tablet state: $1 ($2)",
+                                tablet_id, tablet::TabletStatePB_Name(tablet_state), tablet_state));
+  }
+  initial_committed_cstate_ = consensus->CommittedConsensusState();
 
   // Anchor the data blocks by opening them and adding them to the cache.
   //
@@ -121,7 +128,7 @@ Status RemoteBootstrapSession::Init() {
 }
 
 const std::string& RemoteBootstrapSession::tablet_id() const {
-  return tablet_peer_->tablet()->tablet_id();
+  return tablet_peer_->tablet_id();
 }
 
 const std::string& RemoteBootstrapSession::requestor_uuid() const {

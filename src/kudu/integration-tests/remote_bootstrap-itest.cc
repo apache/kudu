@@ -7,10 +7,14 @@
 #include <string>
 
 #include "kudu/client/client.h"
+#include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
+#include "kudu/tablet/tablet_bootstrap.h"
+#include "kudu/tablet/tablet_metadata.h"
+#include "kudu/tserver/remote_bootstrap_client.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"
 
@@ -19,6 +23,7 @@ using kudu::client::KuduClientBuilder;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
+using kudu::tserver::RemoteBootstrapClient;
 using std::string;
 using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
@@ -181,6 +186,68 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
     ASSERT_EQ(TABLET_DATA_TOMBSTONED, tablets[0].tablet_status().tablet_data_state());
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
+}
+
+// Start remote bootstrap session and delete the tablet in the middle.
+// It should actually be possible to complete bootstrap in such a case, because
+// when a remote bootstrap session is started on the "source" server, all of
+// the relevant files are either read or opened, meaning that an in-progress
+// remote bootstrap can complete even after a tablet is officially "deleted" on
+// the source server. This is also a regression test for KUDU-1009.
+TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
+  MonoDelta timeout = MonoDelta::FromSeconds(10);
+  const int kTsIndex = 0; // We'll test with the first TS.
+  NO_FATALS(StartCluster());
+
+  // Populate a tablet with some data.
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+  workload.Start();
+  while (workload.rows_inserted() < 1000) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Ensure all the servers agree before we proceed.
+  workload.StopAndJoin();
+  ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, workload.batches_completed()));
+
+  // Set up an FsManager to use with the RemoteBootstrapClient.
+  FsManagerOpts opts;
+  string testbase = GetTestPath("fake-ts");
+  ASSERT_OK(env_->CreateDir(testbase));
+  opts.wal_path = JoinPathSegments(testbase, "wals");
+  opts.data_paths.push_back(JoinPathSegments(testbase, "data-0"));
+  gscoped_ptr<FsManager> fs_manager(new FsManager(env_.get(), opts));
+  ASSERT_OK(fs_manager->CreateInitialFileSystemLayout());
+  ASSERT_OK(fs_manager->Open());
+
+  // Start up a RemoteBootstrapClient and open a remote bootstrap session.
+  gscoped_ptr<RemoteBootstrapClient> rb_client(
+      new RemoteBootstrapClient(tablet_id, fs_manager.get(),
+                                cluster_->messenger(), fs_manager->uuid()));
+  scoped_refptr<tablet::TabletMetadata> meta;
+  ASSERT_OK(rb_client->Start(cluster_->tablet_server(kTsIndex)->uuid(),
+                             cluster_->tablet_server(kTsIndex)->bound_rpc_hostport(),
+                             &meta));
+
+  // Tombstone the tablet on the remote!
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+
+  // Now finish bootstrapping!
+  tablet::TabletStatusListener listener(meta);
+  ASSERT_OK(rb_client->FetchAll(&listener));
+  ASSERT_OK(rb_client->Finish());
+
+  // Run destructor, which closes the remote session.
+  rb_client.reset();
+  SleepFor(MonoDelta::FromMilliseconds(50));  // Give a little time for a crash (KUDU-1009).
+  ASSERT_TRUE(cluster_->tablet_server(kTsIndex)->IsProcessAlive());
 }
 
 } // namespace kudu
