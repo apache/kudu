@@ -174,15 +174,9 @@ class KUDU_EXPORT KuduPartialRow {
 
   const Schema* schema() const { return schema_; }
 
-  // Initializes the provided message with column values from this row.
-  Status ToPB(PartialRowPB* pb) const WARN_UNUSED_RESULT;
-
-  // Sets the column values for this row to the values in the message.
-  static Status FromPB(const PartialRowPB& pb,
-                       KuduPartialRow* row) WARN_UNUSED_RESULT;
-
  private:
   friend class RowKeyUtilTest;
+  friend class RowOperationsPBDecoder;
   friend class RowOperationsPBEncoder;
   friend class client::KuduWriteOperation;   // for row_data_.
   friend class PartitionSchema;
@@ -196,6 +190,9 @@ class KUDU_EXPORT KuduPartialRow {
   template<typename T>
   Status Set(int col_idx, const typename T::cpp_type& val,
              bool owned = false);
+
+  // Runtime version of the generic setter.
+  Status Set(int32_t column_idx, const uint8_t* val);
 
   template<typename T>
   Status Get(const Slice& col_name, typename T::cpp_type* val) const;

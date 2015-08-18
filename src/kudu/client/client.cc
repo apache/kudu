@@ -27,6 +27,7 @@
 #include "kudu/client/table_creator-internal.h"
 #include "kudu/client/tablet_server-internal.h"
 #include "kudu/client/write_op.h"
+#include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -421,8 +422,11 @@ Status KuduTableCreator::Create() {
   }
   RETURN_NOT_OK_PREPEND(SchemaToPB(*data_->schema_->schema_, req.mutable_schema()),
                         "Invalid schema");
+
+  RowOperationsPBEncoder encoder(req.mutable_split_rows());
+
   BOOST_FOREACH(const KuduPartialRow* row, data_->split_rows_) {
-    RETURN_NOT_OK(row->ToPB(req.add_split_rows()));
+    encoder.Add(RowOperationsPB::SPLIT_ROW, *row);
   }
 
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);

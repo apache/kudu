@@ -19,6 +19,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.List;
 
 /**
  * Base class for the RPCs that related to WriteRequestPB. It contains almost all the logic
@@ -33,7 +34,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   enum ChangeType {
     INSERT((byte)RowOperationsPB.Type.INSERT.getNumber()),
     UPDATE((byte)RowOperationsPB.Type.UPDATE.getNumber()),
-    DELETE((byte)RowOperationsPB.Type.DELETE.getNumber());
+    DELETE((byte)RowOperationsPB.Type.DELETE.getNumber()),
+    SPLIT_ROWS((byte)RowOperationsPB.Type.SPLIT_ROW.getNumber());
 
     ChangeType(byte encodedByte) {
       this.encodedByte = encodedByte;
@@ -140,31 +142,70 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
    */
   static Tserver.WriteRequestPB.Builder createAndFillWriteRequestPB(Operation... operations) {
     if (operations == null || operations.length == 0) return null;
-
     Schema schema = operations[0].table.getSchema();
+    RowOperationsPB rowOps = new OperationsEncoder().encodeOperations(operations);
+    if (rowOps == null) return null;
 
+    Tserver.WriteRequestPB.Builder requestBuilder = Tserver.WriteRequestPB.newBuilder();
+    requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema));
+    requestBuilder.setRowOperations(rowOps);
+    return requestBuilder;
+  }
 
-    // Set up the encoded data.
-    // Estimate a maximum size for the data. This is conservative, but avoids
-    // having to loop through all the operations twice.
-    final int columnBitSetSize = Bytes.getBitSetSize(schema.getColumnCount());
-    int sizePerRow = 1 /* for the op type */ + schema.getRowSize() + columnBitSetSize;
-    if (schema.hasNullableColumns()) {
-      // nullsBitSet is the same size as the columnBitSet
-      sizePerRow += columnBitSetSize;
+  static class OperationsEncoder {
+    private Schema schema;
+    private ByteBuffer rows;
+    private ByteArrayOutputStream indirect;
+
+    /**
+     * Initializes the state of the encoder based on the schema and number of operations to encode.
+     *
+     * @param schema the schema of the table which the operations belong to.
+     * @param numOperations the number of operations.
+     */
+    private void init(Schema schema, int numOperations) {
+      this.schema = schema;
+
+      // Set up the encoded data.
+      // Estimate a maximum size for the data. This is conservative, but avoids
+      // having to loop through all the operations twice.
+      final int columnBitSetSize = Bytes.getBitSetSize(schema.getColumnCount());
+      int sizePerRow = 1 /* for the op type */ + schema.getRowSize() + columnBitSetSize;
+      if (schema.hasNullableColumns()) {
+        // nullsBitSet is the same size as the columnBitSet
+        sizePerRow += columnBitSetSize;
+      }
+
+      // TODO: would be more efficient to use a buffer which "chains" smaller allocations
+      // instead of a doubling buffer like BAOS.
+      this.rows = ByteBuffer.allocate(sizePerRow * numOperations)
+                            .order(ByteOrder.LITTLE_ENDIAN);
+      this.indirect = new ByteArrayOutputStream();
     }
 
-    // TODO: would be more efficient to use a buffer which "chains" smaller allocations
-    // instead of a doubling buffer like BAOS.
-    ByteBuffer rows = ByteBuffer.allocate(sizePerRow * operations.length)
-        .order(ByteOrder.LITTLE_ENDIAN);
-    ByteArrayOutputStream indirect = new ByteArrayOutputStream();
+    /**
+     * Builds the row operations protobuf message with encoded operations.
+     * @return the row operations protobuf message.
+     */
+    private RowOperationsPB toPB() {
+      RowOperationsPB.Builder rowOpsBuilder = RowOperationsPB.newBuilder();
 
-    for (Operation operation : operations) {
-      PartialRow row = operation.getRow();
-      assert row.getSchema() == schema;
+      // TODO: we could implement a ZeroCopy approach here by subclassing LiteralByteString.
+      // We have ZeroCopyLiteralByteString, but that only supports an entire array. Here
+      // we've only partially filled in rows.array(), so we have to make the extra copy.
+      rows.limit(rows.position());
+      rows.flip();
+      rowOpsBuilder.setRows(ByteString.copyFrom(rows));
+      if (indirect.size() > 0) {
+        // TODO: same as above, we could avoid a copy here by using an implementation that allows
+        // zero-copy on a slice of an array.
+        rowOpsBuilder.setIndirectData(ZeroCopyLiteralByteString.wrap(indirect.toByteArray()));
+      }
+      return rowOpsBuilder.build();
+    }
 
-      rows.put(operation.getChangeType().toEncodedByte());
+    private void encodeRow(PartialRow row, ChangeType type) {
+      rows.put(type.toEncodedByte());
       rows.put(Bytes.fromBitSet(row.getColumnsBitSet(), schema.getColumnCount()));
       if (schema.hasNullableColumns()) {
         rows.put(Bytes.fromBitSet(row.getNullsBitSet(), schema.getColumnCount()));
@@ -196,24 +237,22 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
       }
     }
 
-    // Actually build the protobuf.
-    RowOperationsPB.Builder rowOpsBuilder = RowOperationsPB.newBuilder();
-
-    // TODO: we could implement a ZeroCopy approach here by subclassing LiteralByteString.
-    // We have ZeroCopyLiteralByteString, but that only supports an entire array. Here
-    // we've only partially filled in rows.array(), so we have to make the extra copy.
-    rows.limit(rows.position());
-    rows.flip();
-    rowOpsBuilder.setRows(ByteString.copyFrom(rows));
-    if (indirect.size() > 0) {
-      // TODO: same as above, we could avoid a copy here by using an implementation that allows
-      // zero-copy on a slice of an array.
-      rowOpsBuilder.setIndirectData(ZeroCopyLiteralByteString.wrap(indirect.toByteArray()));
+    public RowOperationsPB encodeOperations(Operation... operations) {
+      if (operations == null || operations.length == 0) return null;
+      init(operations[0].table.getSchema(), operations.length);
+      for (Operation operation : operations) {
+        encodeRow(operation.row, operation.getChangeType());
+      }
+      return toPB();
     }
 
-    Tserver.WriteRequestPB.Builder requestBuilder = Tserver.WriteRequestPB.newBuilder();
-    requestBuilder.setSchema(ProtobufHelper.schemaToPb(schema));
-    requestBuilder.setRowOperations(rowOpsBuilder);
-    return requestBuilder;
+    public RowOperationsPB encodeSplitRows(List<PartialRow> rows) {
+      if (rows == null || rows.isEmpty()) return null;
+      init(rows.get(0).getSchema(), rows.size());
+      for (PartialRow row : rows) {
+        encodeRow(row, ChangeType.SPLIT_ROWS);
+      }
+      return toPB();
+    }
   }
 }

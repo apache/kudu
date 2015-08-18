@@ -24,7 +24,7 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
     super(masterTable);
     this.schema = schema;
     this.name = name;
-    this.builder = builder.pb;
+    this.builder = builder.getBuilder();
   }
 
   @Override

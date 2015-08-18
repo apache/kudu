@@ -43,6 +43,9 @@ struct DecodedRowOperation {
   // For UPDATE and DELETE types, the changelist
   RowChangeList changelist;
 
+  // For SPLIT_ROW, the partial row to split on.
+  shared_ptr<KuduPartialRow> split_row;
+
   std::string ToString(const Schema& schema) const;
 };
 
@@ -60,6 +63,7 @@ class RowOperationsPBDecoder {
   Status ReadOpType(RowOperationsPB::Type* type);
   Status ReadIssetBitmap(const uint8_t** bitmap);
   Status ReadNullBitmap(const uint8_t** null_bm);
+  Status GetColumnSlice(const ColumnSchema& col, Slice* slice);
   Status ReadColumn(const ColumnSchema& col, uint8_t* dst);
   bool HasNext() const;
 
@@ -70,10 +74,13 @@ class RowOperationsPBDecoder {
   // Serialization/deserialization support
   //------------------------------------------------------------
 
-  // Decode the next encoded operation, which must be UPDATE or DELETE..
+  // Decode the next encoded operation, which must be UPDATE or DELETE.
   Status DecodeUpdateOrDelete(const ClientServerMapping& mapping,
                               DecodedRowOperation* op);
 
+  // Decode the next encoded operation, which must be SPLIT_KEY.
+  Status DecodeSplitRow(const ClientServerMapping& mapping,
+                        DecodedRowOperation* op);
 
   const RowOperationsPB* const pb_;
   const Schema* const client_schema_;

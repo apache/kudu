@@ -8,10 +8,7 @@ import java.util.List;
 
 import com.google.common.collect.Lists;
 import com.google.common.primitives.Longs;
-import com.google.protobuf.ByteString;
-import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
-import org.kududb.Common.PartialRowPB;
 import org.kududb.Schema;
 import org.kududb.Type;
 
@@ -42,6 +39,23 @@ public class PartialRow {
         new BitSet(this.schema.getColumnCount()) : null;
     this.rowAlloc = new byte[schema.getRowSize()];
     this.varLengthData = Lists.newArrayListWithCapacity(schema.getVarLengthColumnCount());
+  }
+
+  /**
+   * Creates a new partial row by deep-copying the data-fields of the provided partial row.
+   * @param row the partial row to copy.
+   */
+  PartialRow(PartialRow row) {
+    this.schema = row.schema;
+
+    this.varLengthData = Lists.newArrayListWithCapacity(row.varLengthData.size());
+    for (byte[] data: row.varLengthData) {
+      this.varLengthData.add(data.clone());
+    }
+
+    this.rowAlloc = row.rowAlloc.clone();
+    this.columnsBitSet = (BitSet) row.columnsBitSet.clone();
+    this.nullsBitSet = row.nullsBitSet == null ? null : (BitSet) row.nullsBitSet.clone();
   }
 
   /**
@@ -466,77 +480,6 @@ public class PartialRow {
   }
 
   /**
-   * Serializes this partial row to a protobuf message.
-   * @return The partial row as a protobuf message.
-   */
-  PartialRowPB toPB() {
-    PartialRowPB.Builder builder = PartialRowPB.newBuilder();
-    for (int idx = columnsBitSet.nextSetBit(0); idx >= 0; idx = columnsBitSet.nextSetBit(idx+1)) {
-
-      if (isSetToNull(idx)) {
-        // Leave the value field unset for null.
-        builder.addColumnsBuilder().setIndex(idx);
-        continue;
-      }
-
-      switch (this.schema.getColumn(idx).getType()) {
-        case BOOL: {
-          boolean val = Bytes.getBoolean(this.rowAlloc, this.schema.getColumnOffset(idx));
-          builder.addColumnsBuilder().setIndex(idx).setBoolVal(val);
-          break;
-        }
-        case INT8: {
-          byte val = Bytes.getByte(this.rowAlloc, this.schema.getColumnOffset(idx));
-          builder.addColumnsBuilder().setIndex(idx).setInt8Val(val);
-          break;
-        }
-        case INT16: {
-          short val = Bytes.getShort(this.rowAlloc, this.schema.getColumnOffset(idx));
-          builder.addColumnsBuilder().setIndex(idx).setInt16Val(val);
-          break;
-        }
-        case INT32: {
-          int val = Bytes.getInt(this.rowAlloc, this.schema.getColumnOffset(idx));
-          builder.addColumnsBuilder().setIndex(idx).setInt32Val(val);
-          break;
-        }
-        case INT64: {
-          long val = Bytes.getLong(this.rowAlloc, this.schema.getColumnOffset(idx));
-          builder.addColumnsBuilder().setIndex(idx).setInt64Val(val);
-          break;
-        }
-        case FLOAT: {
-          float val = Bytes.getFloat(this.rowAlloc, this.schema.getColumnOffset(idx));
-          builder.addColumnsBuilder().setIndex(idx).setFloatVal(val);
-          break;
-        }
-        case DOUBLE: {
-          double val = Bytes.getDouble(this.rowAlloc, this.schema.getColumnOffset(idx));
-          builder.addColumnsBuilder().setIndex(idx).setDoubleVal(val);
-          break;
-        }
-        case STRING: {
-          int varLengthDataIdx = (int) Bytes.getLong(this.rowAlloc, this.schema.getColumnOffset(idx));
-          final ByteString val = ZeroCopyLiteralByteString.wrap(this.varLengthData.get(varLengthDataIdx));
-          builder.addColumnsBuilder().setIndex(idx).setStringValBytes(val);
-          break;
-        }
-        case BINARY: {
-          int varLengthDataIdx = (int) Bytes.getLong(this.rowAlloc, this.schema.getColumnOffset(idx));
-          final ByteString val = ZeroCopyLiteralByteString.wrap(this.varLengthData.get(varLengthDataIdx));
-          builder.addColumnsBuilder().setIndex(idx).setBinaryVal(val);
-          break;
-        }
-        default: {
-          throw new RuntimeException(String.format("Unknown column type: %s",
-                                                   this.schema.getColumn(idx)));
-        }
-      }
-    }
-    return builder.build();
-  }
-
-  /**
    * Get the schema used for this row.
    * @return a schema that came from KuduTable
    */
@@ -577,5 +520,4 @@ public class PartialRow {
   BitSet getNullsBitSet() {
     return nullsBitSet;
   }
-
 }

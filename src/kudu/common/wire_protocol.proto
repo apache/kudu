@@ -131,6 +131,8 @@ message RowOperationsPB {
     INSERT = 1;
     UPDATE = 2;
     DELETE = 3;
+    // Used when specifying split rows on table creation.
+    SPLIT_ROW = 4;
   }
 
   // The row data for each operation is stored in the following format:

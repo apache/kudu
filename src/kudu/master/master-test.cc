@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row_operations.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/master/master.h"
 #include "kudu/master/master.proxy.h"
@@ -200,8 +201,9 @@ Status MasterTest::CreateTable(const string& table_name,
 
   req.set_name(table_name);
   RETURN_NOT_OK(SchemaToPB(schema, req.mutable_schema()));
+  RowOperationsPBEncoder encoder(req.mutable_split_rows());
   BOOST_FOREACH(const KuduPartialRow& row, split_rows) {
-    RETURN_NOT_OK(row.ToPB(req.add_split_rows()));
+    encoder.Add(RowOperationsPB::SPLIT_ROW, row);
   }
 
   RETURN_NOT_OK(proxy_->CreateTable(req, &resp, &controller));

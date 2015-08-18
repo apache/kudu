@@ -90,180 +90,6 @@ KuduPartialRow& KuduPartialRow::operator=(KuduPartialRow other) {
   return *this;
 }
 
-Status KuduPartialRow::ToPB(PartialRowPB* pb) const {
-  pb->Clear();
-  for (int32_t column_idx = 0; column_idx < schema()->num_columns(); column_idx++) {
-    if (!IsColumnSet(column_idx)) { continue; }
-    const ColumnSchema& column_schema = schema()->column(column_idx);
-    PartialRowPB_ColumnEntryPB* column = pb->add_columns();
-    column->set_index(column_idx);
-
-    if (IsNull(column_idx)) {
-      // Leave the value field unset to signify null.
-      continue;
-    }
-
-    switch (column_schema.type_info()->type()) {
-      case BOOL: {
-        bool value;
-        RETURN_NOT_OK(GetBool(column_idx, &value));
-        column->set_bool_val(value);
-        break;
-      };
-      case INT8: {
-        int8_t value;
-        RETURN_NOT_OK(GetInt8(column_idx, &value));
-        column->set_int8_val(value);
-        break;
-      };
-      case INT16: {
-        int16_t value;
-        RETURN_NOT_OK(GetInt16(column_idx, &value));
-        column->set_int16_val(value);
-        break;
-      };
-      case INT32: {
-        int32_t value;
-        RETURN_NOT_OK(GetInt32(column_idx, &value));
-        column->set_int32_val(value);
-        break;
-      };
-      case INT64: {
-        int64_t value;
-        RETURN_NOT_OK(GetInt64(column_idx, &value));
-        column->set_int64_val(value);
-        break;
-      };
-      case FLOAT: {
-        float value;
-        RETURN_NOT_OK(GetFloat(column_idx, &value));
-        column->set_float_val(value);
-        break;
-      };
-      case DOUBLE: {
-        double value;
-        RETURN_NOT_OK(GetDouble(column_idx, &value));
-        column->set_double_val(value);
-        break;
-      };
-      case STRING: {
-        Slice value;
-        RETURN_NOT_OK(GetString(column_idx, &value));
-        column->set_string_val(reinterpret_cast<const char*>(value.data()), value.size());
-        break;
-      };
-      case BINARY: {
-        Slice value;
-        RETURN_NOT_OK(GetBinary(column_idx, &value));
-        column->set_binary_val(reinterpret_cast<const char*>(value.data()), value.size());
-        break;
-      }
-      case TIMESTAMP: {
-        int64_t value;
-        RETURN_NOT_OK(GetTimestamp(column_idx, &value));
-        column->set_timestamp_val(value);
-        break;
-      }
-      default: {
-        return Status::InvalidArgument("Unknown column type in schema",
-                                       column_schema.ToString());
-      };
-    }
-  }
-  return Status::OK();
-}
-
-Status KuduPartialRow::FromPB(const PartialRowPB& pb,
-                              KuduPartialRow* row) {
-  BOOST_FOREACH(const PartialRowPB_ColumnEntryPB& entry, pb.columns()) {
-    int32_t column_idx = entry.index();
-    const ColumnSchema& column_schema = row->schema()->column(column_idx);
-
-    if (entry.value_case() == entry.VALUE_NOT_SET) {
-      RETURN_NOT_OK(row->SetNull(column_idx));
-      continue;
-    }
-
-    switch (column_schema.type_info()->type()) {
-      case BOOL: {
-        if (!entry.has_bool_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetBool(column_idx, entry.bool_val()));
-        break;
-      };
-      case INT8: {
-        if (!entry.has_int8_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetInt8(column_idx, entry.int8_val()));
-        break;
-      };
-      case INT16: {
-        if (!entry.has_int16_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetInt16(column_idx, entry.int16_val()));
-        break;
-      };
-      case INT32: {
-        if (!entry.has_int32_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetInt32(column_idx, entry.int32_val()));
-        break;
-      };
-      case INT64: {
-        if (!entry.has_int64_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetInt64(column_idx, entry.int64_val()));
-        break;
-      };
-      case FLOAT: {
-        if (!entry.has_float_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetFloat(column_idx, entry.float_val()));
-        break;
-      };
-      case DOUBLE: {
-        if (!entry.has_double_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetDouble(column_idx, entry.double_val()));
-        break;
-      };
-      case STRING: {
-        if (!entry.has_string_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetStringCopy(column_idx, entry.string_val()));
-        break;
-      };
-      case BINARY: {
-        if (!entry.has_binary_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetBinaryCopy(column_idx, entry.binary_val()));
-        break;
-      };
-      case TIMESTAMP: {
-        if (!entry.has_timestamp_val()) {
-          return Status::InvalidArgument("invalid value type", entry.DebugString());
-        }
-        RETURN_NOT_OK(row->SetTimestamp(column_idx, entry.timestamp_val()));
-        break;
-      };
-      default: {
-        return Status::InvalidArgument("Unknown column type in schema",
-                                       column_schema.ToString());
-      };
-    }
-  }
-  return Status::OK();
-}
-
 template<typename T>
 Status KuduPartialRow::Set(const Slice& col_name,
                            const typename T::cpp_type& val,
@@ -302,6 +128,58 @@ Status KuduPartialRow::Set(int col_idx,
   memcpy(dst.mutable_ptr(), &val, sizeof(val));
   if (owned) {
     BitmapSet(owned_strings_bitmap_, col_idx);
+  }
+  return Status::OK();
+}
+
+Status KuduPartialRow::Set(int32_t column_idx, const uint8_t* val) {
+  const ColumnSchema& column_schema = schema()->column(column_idx);
+
+  switch (column_schema.type_info()->type()) {
+    case BOOL: {
+      RETURN_NOT_OK(SetBool(column_idx, *reinterpret_cast<const bool*>(val)));
+      break;
+    };
+    case INT8: {
+      RETURN_NOT_OK(SetInt8(column_idx, *reinterpret_cast<const int8_t*>(val)));
+      break;
+    };
+    case INT16: {
+      RETURN_NOT_OK(SetInt16(column_idx, *reinterpret_cast<const int16_t*>(val)));
+      break;
+    };
+    case INT32: {
+      RETURN_NOT_OK(SetInt32(column_idx, *reinterpret_cast<const int32_t*>(val)));
+      break;
+    };
+    case INT64: {
+      RETURN_NOT_OK(SetInt64(column_idx, *reinterpret_cast<const int64_t*>(val)));
+      break;
+    };
+    case FLOAT: {
+      RETURN_NOT_OK(SetFloat(column_idx, *reinterpret_cast<const float*>(val)));
+      break;
+    };
+    case DOUBLE: {
+      RETURN_NOT_OK(SetDouble(column_idx, *reinterpret_cast<const double*>(val)));
+      break;
+    };
+    case STRING: {
+      RETURN_NOT_OK(SetStringCopy(column_idx, *reinterpret_cast<const Slice*>(val)));
+      break;
+    };
+    case BINARY: {
+      RETURN_NOT_OK(SetBinaryCopy(column_idx, *reinterpret_cast<const Slice*>(val)));
+      break;
+    };
+    case TIMESTAMP: {
+      RETURN_NOT_OK(SetTimestamp(column_idx, *reinterpret_cast<const int64_t*>(val)));
+      break;
+    };
+    default: {
+      return Status::InvalidArgument("Unknown column type in schema",
+                                     column_schema.ToString());
+    };
   }
   return Status::OK();
 }

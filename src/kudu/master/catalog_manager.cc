@@ -34,6 +34,7 @@
 #include <vector>
 
 #include "kudu/common/partial_row.h"
+#include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/atomicops.h"
@@ -619,34 +620,44 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   RETURN_NOT_OK(CheckOnline());
 
   // a. Validate the user request.
-  Schema schema;
-  RETURN_NOT_OK(SchemaFromPB(req->schema(), &schema));
-  if (schema.has_column_ids()) {
+  Schema client_schema;
+  RETURN_NOT_OK(SchemaFromPB(req->schema(), &client_schema));
+  if (client_schema.has_column_ids()) {
     Status s = Status::InvalidArgument("User requests should not have Column IDs");
     SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
     return s;
   }
-  if (PREDICT_FALSE(schema.num_key_columns() <= 0)) {
+  if (PREDICT_FALSE(client_schema.num_key_columns() <= 0)) {
     Status s = Status::InvalidArgument("Must specify at least one key column");
     SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
         return s;
   }
-  for (int i = 0; i < schema.num_key_columns(); i++) {
-    if (!IsTypeAllowableInKey(schema.column(i).type_info())) {
+  for (int i = 0; i < client_schema.num_key_columns(); i++) {
+    if (!IsTypeAllowableInKey(client_schema.column(i).type_info())) {
         Status s = Status::InvalidArgument(
             "Key column may not have type of BOOL, FLOAT, or DOUBLE");
         SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
         return s;
     }
   }
-  schema = schema.CopyWithColumnIds();
+  Schema schema = client_schema.CopyWithColumnIds();
 
   vector<string> split_keys;
-  BOOST_FOREACH(const PartialRowPB& row_pb, req->split_rows()) {
-    KuduPartialRow row(&schema);
-    RETURN_NOT_OK(KuduPartialRow::FromPB(row_pb, &row));
+
+  RowOperationsPBDecoder decoder(&req->split_rows(), &client_schema, &schema, NULL);
+  vector<DecodedRowOperation> ops;
+  RETURN_NOT_OK(decoder.DecodeOperations(&ops));
+
+  BOOST_FOREACH(const DecodedRowOperation& op, ops) {
+    if (op.type != RowOperationsPB::SPLIT_ROW) {
+      Status s = Status::InvalidArgument(
+          "Split rows must be specified as RowOperationsPB::SPLIT_ROW");
+      SetupError(resp->mutable_error(), MasterErrorPB::UNKNOWN_ERROR, s);
+      return s;
+    }
+
     string row_key;
-    RETURN_NOT_OK(row.EncodeRowKey(&row_key));
+    RETURN_NOT_OK(op.split_row->EncodeRowKey(&row_key));
     split_keys.push_back(row_key);
   }
 

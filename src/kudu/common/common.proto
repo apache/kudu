@@ -193,34 +193,6 @@ enum OrderMode {
   ORDERED = 2;
 }
 
-// A row of a Kudu table, possibly with missing columns.
-message PartialRowPB {
-
-  // A column in the row.
-  message ColumnEntryPB {
-
-    // The column index.
-    optional int32 index = 1;
-
-    // The column value, or null if not set.
-    oneof value {
-      int32 int8_val = 2;
-      int32 int16_val = 3;
-      int32 int32_val = 4;
-      int64 int64_val = 5;
-      string string_val = 6;
-      bool bool_val = 7;
-      float float_val = 8;
-      double double_val = 9;
-      bytes binary_val = 10;
-      int64 timestamp_val = 11;
-    }
-  }
-
-  // The columns.
-  repeated ColumnEntryPB columns = 1;
-}
-
 // The serialized format of a Kudu table partition schema.
 message PartitionSchemaPB {
 

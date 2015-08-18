@@ -7,8 +7,9 @@
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/schema.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/safe_math.h"
 #include "kudu/util/bitmap.h"
+#include "kudu/util/faststring.h"
+#include "kudu/util/safe_math.h"
 #include "kudu/util/slice.h"
 
 using std::string;
@@ -25,6 +26,8 @@ string DecodedRowOperation::ToString(const Schema& schema) const {
       return Substitute("MUTATE $0 $1",
                         schema.DebugRowKey(ConstContiguousRow(&schema, row_data)),
                         changelist.ToString(schema));
+    case RowOperationsPB::SPLIT_ROW:
+      return Substitute("SPLIT_ROW $0", split_row->ToString());
     default:
       LOG(DFATAL) << "Bad type: " << type;
       return "<bad row operation>";
@@ -80,7 +83,7 @@ void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const KuduPartia
       const Slice* val = reinterpret_cast<const Slice*>(row.cell_ptr(i));
       size_t indirect_offset = pb_->mutable_indirect_data()->size();
       pb_->mutable_indirect_data()->append(reinterpret_cast<const char*>(val->data()),
-                                          val->size());
+                                           val->size());
       Slice to_append(reinterpret_cast<const uint8_t*>(indirect_offset),
                       val->size());
       memcpy(dst_ptr, &to_append, sizeof(Slice));
@@ -99,9 +102,9 @@ void RowOperationsPBEncoder::Add(RowOperationsPB::Type op_type, const KuduPartia
 // ------------------------------------------------------------
 
 RowOperationsPBDecoder::RowOperationsPBDecoder(const RowOperationsPB* pb,
-                         const Schema* client_schema,
-                         const Schema* tablet_schema,
-                         Arena* dst_arena)
+                                               const Schema* client_schema,
+                                               const Schema* tablet_schema,
+                                               Arena* dst_arena)
   : pb_(pb),
     client_schema_(client_schema),
     tablet_schema_(tablet_schema),
@@ -109,7 +112,6 @@ RowOperationsPBDecoder::RowOperationsPBDecoder(const RowOperationsPB* pb,
     bm_size_(BitmapSize(client_schema_->num_columns())),
     tablet_row_size_(ContiguousRowHelper::row_size(*tablet_schema_)),
     src_(pb->rows().data(), pb->rows().size()) {
-
 }
 
 RowOperationsPBDecoder::~RowOperationsPBDecoder() {
@@ -147,36 +149,45 @@ Status RowOperationsPBDecoder::ReadNullBitmap(const uint8_t** null_bm) {
   return Status::OK();
 }
 
-Status RowOperationsPBDecoder::ReadColumn(const ColumnSchema& col, uint8_t* dst) {
+Status RowOperationsPBDecoder::GetColumnSlice(const ColumnSchema& col, Slice* slice) {
   int size = col.type_info()->size();
   if (PREDICT_FALSE(src_.size() < size)) {
     return Status::Corruption("Not enough data for column", col.ToString());
   }
-  // Copy the data
+  // Find the data
   if (col.type_info()->physical_type() == BINARY) {
     // The Slice in the protobuf has a pointer relative to the indirect data,
     // not a real pointer. Need to fix that.
-    const Slice* slice = reinterpret_cast<const Slice*>(src_.data());
-    size_t offset_in_indirect = reinterpret_cast<uintptr_t>(slice->data());
+    const Slice* ptr_slice = reinterpret_cast<const Slice*>(src_.data());
+    size_t offset_in_indirect = reinterpret_cast<uintptr_t>(ptr_slice->data());
     bool overflowed = false;
-    size_t max_offset = AddWithOverflowCheck(offset_in_indirect, slice->size(), &overflowed);
+    size_t max_offset = AddWithOverflowCheck(offset_in_indirect, ptr_slice->size(), &overflowed);
     if (PREDICT_FALSE(overflowed || max_offset > pb_->indirect_data().size())) {
       return Status::Corruption("Bad indirect slice");
     }
 
-    Slice real_slice(&pb_->indirect_data()[offset_in_indirect], slice->size());
-    memcpy(dst, &real_slice, size);
+    *slice = Slice(&pb_->indirect_data()[offset_in_indirect], ptr_slice->size());
   } else {
-    memcpy(dst, src_.data(), size);
+    *slice = Slice(src_.data(), size);
   }
   src_.remove_prefix(size);
+  return Status::OK();
+}
+
+Status RowOperationsPBDecoder::ReadColumn(const ColumnSchema& col, uint8_t* dst) {
+  Slice slice;
+  RETURN_NOT_OK(GetColumnSlice(col, &slice));
+  if (col.type_info()->physical_type() == BINARY) {
+    memcpy(dst, &slice, col.type_info()->size());
+  } else {
+    slice.relocate(dst);
+  }
   return Status::OK();
 }
 
 bool RowOperationsPBDecoder::HasNext() const {
   return !src_.empty();
 }
-
 
 namespace {
 
@@ -461,6 +472,51 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
   return Status::OK();
 }
 
+Status RowOperationsPBDecoder::DecodeSplitRow(const ClientServerMapping& mapping,
+                                              DecodedRowOperation* op) {
+  op->split_row.reset(new KuduPartialRow(tablet_schema_));
+
+  const uint8_t* client_isset_map;
+  const uint8_t* client_null_map;
+
+  // Read the null and isset bitmaps for the client-provided row.
+  RETURN_NOT_OK(ReadIssetBitmap(&client_isset_map));
+  if (client_schema_->has_nullables()) {
+    RETURN_NOT_OK(ReadNullBitmap(&client_null_map));
+  }
+
+  // Now handle each of the columns passed by the user.
+  for (int client_col_idx = 0; client_col_idx < client_schema_->num_columns(); client_col_idx++) {
+    // Look up the corresponding column from the tablet. We use the server-side
+    // ColumnSchema object since it has the most up-to-date default, nullability,
+    // etc.
+    int tablet_col_idx = mapping.client_to_tablet_idx(client_col_idx);
+    DCHECK_GE(tablet_col_idx, 0);
+    const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
+
+    if (BitmapTest(client_isset_map, client_col_idx)) {
+
+      // All columns must be primary key columns.
+      if (tablet_col_idx >= tablet_schema_->num_key_columns()) {
+        return Status::InvalidArgument(
+            "value set on non-primary key column in split row", col.ToString());
+      }
+
+      // If the client provided a value for this column, copy it.
+      Slice column_slice;
+      RETURN_NOT_OK(GetColumnSlice(col, &column_slice));
+      const uint8_t* data;
+      if (col.type_info()->physical_type() == BINARY) {
+        data = reinterpret_cast<const uint8_t*>(&column_slice);
+      } else {
+        data = column_slice.data();
+      }
+      RETURN_NOT_OK(op->split_row->Set(tablet_col_idx, data));
+    }
+  }
+  return Status::OK();
+}
+
 Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops) {
   // TODO: there's a bug here, in that if a client passes some column
   // in its schema that has been deleted on the server, it will fail
@@ -499,6 +555,9 @@ Status RowOperationsPBDecoder::DecodeOperations(vector<DecodedRowOperation>* ops
       case RowOperationsPB::UPDATE:
       case RowOperationsPB::DELETE:
         RETURN_NOT_OK(DecodeUpdateOrDelete(mapping, &op));
+        break;
+      case RowOperationsPB::SPLIT_ROW:
+        RETURN_NOT_OK(DecodeSplitRow(mapping, &op));
         break;
     }
 

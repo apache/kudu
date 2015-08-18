@@ -276,6 +276,7 @@ void WriteTransactionState::UpdateMetricsForOp(const RowOp& op) {
       tx_metrics_.successful_deletes++;
       break;
     case RowOperationsPB::UNKNOWN:
+    case RowOperationsPB::SPLIT_ROW:
       break;
   }
 }

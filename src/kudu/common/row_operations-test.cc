@@ -95,6 +95,9 @@ void RowOperationsTest::DoFuzzTest(const Schema& server_schema,
       case 2:
         enc.Add(RowOperationsPB::DELETE, row);
         break;
+      case 3:
+        enc.Add(RowOperationsPB::SPLIT_ROW, row);
+        break;
     }
 
     const Schema* client_schema = row.schema();
@@ -598,5 +601,68 @@ TEST_F(RowOperationsTest, TestProjectDeletes) {
             TestProjection(RowOperationsPB::DELETE, client_row, server_schema));
 }
 
+TEST_F(RowOperationsTest, SplitKeyRoundTrip) {
+  Schema client_schema = Schema(boost::assign::list_of(ColumnSchema("int8", INT8))
+                                                      (ColumnSchema("int16", INT16))
+                                                      (ColumnSchema("int32", INT32))
+                                                      (ColumnSchema("int64", INT64))
+                                                      (ColumnSchema("string", STRING))
+                                                      (ColumnSchema("binary", BINARY))
+                                                      (ColumnSchema("timestamp", TIMESTAMP))
+                                                      (ColumnSchema("missing", STRING)),
+                                8);
+
+  // Use values at the upper end of the range.
+  int8_t int8_expected = 0xFE;
+  int16_t int16_expected = 0xFFFE;
+  int32_t int32_expected = 0xFFFFFE;
+  int64_t int64_expected = 0xFFFFFFFE;
+
+  KuduPartialRow row(&client_schema);
+  ASSERT_OK(row.SetInt8("int8", int8_expected));
+  ASSERT_OK(row.SetInt16("int16", int16_expected));
+  ASSERT_OK(row.SetInt32("int32", int32_expected));
+  ASSERT_OK(row.SetInt64("int64", int64_expected));
+  ASSERT_OK(row.SetString("string", "string-value"));
+  ASSERT_OK(row.SetBinary("binary", "binary-value"));
+  ASSERT_OK(row.SetTimestamp("timestamp", 9));
+
+  RowOperationsPB pb;
+  RowOperationsPBEncoder(&pb).Add(RowOperationsPB::SPLIT_ROW, row);
+
+  Schema schema = client_schema.CopyWithColumnIds();
+  RowOperationsPBDecoder decoder(&pb, &client_schema, &schema, NULL);
+  vector<DecodedRowOperation> ops;
+  ASSERT_OK(decoder.DecodeOperations(&ops));
+  ASSERT_EQ(1, ops.size());
+
+  const shared_ptr<KuduPartialRow>& row2 = ops[0].split_row;
+
+  int8_t int8_val;
+  ASSERT_OK(row2->GetInt8("int8", &int8_val));
+  CHECK_EQ(int8_expected, int8_val);
+
+  int16_t int16_val;
+  ASSERT_OK(row2->GetInt16("int16", &int16_val));
+  CHECK_EQ(int16_expected, int16_val);
+
+  int32_t int32_val;
+  ASSERT_OK(row2->GetInt32("int32", &int32_val));
+  CHECK_EQ(int32_expected, int32_val);
+
+  int64_t int64_val;
+  ASSERT_OK(row2->GetInt64("int64", &int64_val));
+  CHECK_EQ(int64_expected, int64_val);
+
+  Slice string_val;
+  ASSERT_OK(row2->GetString("string", &string_val));
+  CHECK_EQ("string-value", string_val);
+
+  Slice binary_val;
+  ASSERT_OK(row2->GetBinary("binary", &binary_val));
+  CHECK_EQ(Slice("binary-value"), binary_val);
+
+  CHECK(!row2->IsColumnSet("missing"));
+}
 
 } // namespace kudu
