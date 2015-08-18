@@ -158,6 +158,7 @@ class FullStackInsertScanTest : public KuduTest {
     KuduClientBuilder builder;
     builder.add_master_server_addr(
         cluster_->mini_master()->bound_rpc_addr_str());
+    builder.default_rpc_timeout(MonoDelta::FromSeconds(30));
     ASSERT_OK(builder.Build(&client_));
   }
 
@@ -183,7 +184,7 @@ class FullStackInsertScanTest : public KuduTest {
   vector<string> Int64ColumnNames() const;
 
   static const char* const kTableName;
-  static const int kSessionTimeoutMs = 5000;
+  static const int kSessionTimeoutMs = 60000;
   static const int kRandomStrMinLength = 16;
   static const int kRandomStrMaxLength = 31;
   static const int kNumIntCols = 4;
