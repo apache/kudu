@@ -241,6 +241,9 @@ class MvccManager {
   // them to complete before returning. Hence, we guarantee that, upon return,
   // snapshot->is_clean().
   //
+  // TODO(KUDU-689): this may currently block forever, stalling scanner threads
+  // and potentially blocking tablet shutdown.
+  //
   // REQUIRES: 'timestamp' must be in the past according to the configured
   // clock.
   void WaitForCleanSnapshotAtTimestamp(Timestamp timestamp,
@@ -259,13 +262,12 @@ class MvccManager {
   // Note that transactions are not blocked during this call.
   void WaitForCleanSnapshot(MvccSnapshot* snapshot) const;
 
-
-  // Wait until all of the currently in-flight transactions have committed.
+  // Wait for all operations that are currently APPLYING to commit.
   //
-  // NOTE: this does _not_ guarantee that no transactions are in flight upon
-  // return -- just that those that were in-flight at call time are finished
+  // NOTE: this does _not_ guarantee that no transactions are APPLYING upon
+  // return -- just that those that were APPLYING at call time are finished
   // upon return.
-  void WaitForAllInFlightToCommit() const;
+  void WaitForApplyingTransactionsToCommit() const;
 
   bool AreAllTransactionsCommitted(Timestamp ts) const;
 
@@ -276,8 +278,14 @@ class MvccManager {
   // All timestamps before this one are guaranteed to be committed.
   Timestamp GetCleanTimestamp() const;
 
-  // Return the timestamps of all currently in-flight transactions.
-  void GetInFlightTransactionTimestamps(std::vector<Timestamp>* timestamps) const;
+  // Return the timestamps of all transactions which are currently 'APPLYING'
+  // (i.e. those which have started to apply their operations to in-memory data
+  // structures). Other transactions may have reserved their timestamps via
+  // StartTransaction() but not yet been applied.
+  //
+  // These transactions are guaranteed to eventually Commit() -- i.e. they will
+  // never Abort().
+  void GetApplyingTransactionsTimestamps(std::vector<Timestamp>* timestamps) const;
 
   ~MvccManager();
 
@@ -286,6 +294,7 @@ class MvccManager {
   FRIEND_TEST(MvccTest, TestAreAllTransactionsCommitted);
   FRIEND_TEST(MvccTest, TestTxnAbort);
   FRIEND_TEST(MvccTest, TestCleanTimeCoalescingOnOfflineTransactions);
+  FRIEND_TEST(MvccTest, TestWaitForApplyingTransactionsToCommit);
 
   enum TxnState {
     RESERVED,
@@ -294,9 +303,15 @@ class MvccManager {
 
   bool InitTransactionUnlocked(const Timestamp& timestamp);
 
+  enum WaitFor {
+    ALL_COMMITTED,
+    NONE_APPLYING
+  };
+
   struct WaitingState {
     Timestamp timestamp;
     CountDownLatch* latch;
+    WaitFor wait_for;
   };
 
   // Returns true if all transactions before the given timestamp are committed.
@@ -305,8 +320,16 @@ class MvccManager {
   // start with a lower timestamp after this returns.
   bool AreAllTransactionsCommittedUnlocked(Timestamp ts) const;
 
+  // Return true if there is any APPLYING operation with a timestamp
+  // less than or equal to 'ts'.
+  bool AnyApplyingAtOrBeforeUnlocked(Timestamp ts) const;
+
   // Waits until all transactions before the given time are committed.
-  void WaitUntilAllCommitted(Timestamp ts) const;
+  void WaitUntil(WaitFor wait_for, Timestamp ts) const;
+
+  // Return true if the condition that the given waiter is waiting on has
+  // been achieved.
+  bool IsDoneWaitingUnlocked(const WaitingState& waiter) const;
 
   // Commits the given transaction.
   // Sets *was_earliest to true if this was the earliest in-flight transaction.
@@ -327,6 +350,11 @@ class MvccManager {
   // currently in-flight. Usually called when the previous earliest transaction
   // commits or aborts.
   void AdvanceEarliestInFlightTimestamp();
+
+  int GetNumWaitersForTests() const {
+    lock_guard<simple_spinlock> l(&lock_);
+    return waiters_.size();
+  }
 
   typedef simple_spinlock LockType;
   mutable LockType lock_;

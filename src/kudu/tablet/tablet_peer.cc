@@ -563,10 +563,48 @@ void TabletPeer::UnregisterMaintenanceOps() {
 }
 
 Status FlushInflightsToLogCallback::WaitForInflightsAndFlushLog() {
+  // This callback is triggered prior to any TabletMetadata flush.
+  // The guarantee that we are trying to enforce is this:
+  //
+  //   If an operation has been flushed to stable storage (eg a DRS or DeltaFile)
+  //   then its COMMIT message must be present in the log.
+  //
+  // The purpose for this is so that, during bootstrap, we can accurately identify
+  // whether each operation has been flushed. If we don't see a COMMIT message for
+  // an operation, then we assume it was not completely applied and needs to be
+  // re-applied. Thus, if we had something on disk but with no COMMIT message,
+  // we'd attempt to double-apply the write, resulting in an error (eg trying to
+  // delete an already-deleted row).
+  //
+  // So, to enforce this property, we do two steps:
+  //
+  // 1) Wait for any operations which are already mid-Apply() to Commit() in MVCC.
+  //
+  // Because the operations always enqueue their COMMIT message to the log
+  // before calling Commit(), this ensures that any in-flight operations have
+  // their commit messages "en route".
+  //
+  // NOTE: we only wait for those operations that have started their Apply() phase.
+  // Any operations which haven't yet started applying haven't made any changes
+  // to in-memory state: thus, they obviously couldn't have made any changes to
+  // on-disk storage either (data can only get to the disk by going through an in-memory
+  // store). Only those that have started Apply() could have potentially written some
+  // data which is now on disk.
+  //
+  // Perhaps more importantly, if we waited on operations that hadn't started their
+  // Apply() phase, we might be waiting forever -- for example, if a follower has been
+  // partitioned from its leader, it may have operations sitting around in flight
+  // for quite a long time before eventually aborting or committing. This would
+  // end up blocking all flushes if we waited on it.
+  //
+  // 2) Flush the log
+  //
+  // This ensures that the above-mentioned commit messages are not just enqueued
+  // to the log, but also on disk.
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
       <<  ": Waiting for in-flight transactions to commit.";
   LOG_SLOW_EXECUTION(WARNING, 200, "Committing in-flights took a long time.") {
-    tablet_->mvcc_manager()->WaitForAllInFlightToCommit();
+    tablet_->mvcc_manager()->WaitForApplyingTransactionsToCommit();
   }
   VLOG(1) << "T " << tablet_->metadata()->tablet_id()
       << ": Waiting for the log queue to be flushed.";

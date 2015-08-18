@@ -316,8 +316,6 @@ Status Tablet::AcquireLockForOp(WriteTransactionState* tx_state, RowOp* op) {
 }
 
 void Tablet::StartTransaction(WriteTransactionState* tx_state) {
-  boost::shared_lock<rw_spinlock> lock(component_lock_);
-
   gscoped_ptr<ScopedTransaction> mvcc_tx;
 
   // If the state already has a timestamp then we're replaying a transaction that occurred
@@ -334,7 +332,6 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
     mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW));
   }
   tx_state->set_mvcc_tx(mvcc_tx.Pass());
-  tx_state->set_tablet_components(components_);
 }
 
 Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
@@ -468,8 +465,14 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
   return s;
 }
 
-void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
+void Tablet::StartApplying(WriteTransactionState* tx_state) {
+  boost::shared_lock<rw_spinlock> lock(component_lock_);
   tx_state->StartApplying();
+  tx_state->set_tablet_components(components_);
+}
+
+void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
+  StartApplying(tx_state);
   BOOST_FOREACH(RowOp* row_op, tx_state->row_ops()) {
     ApplyRowOperation(tx_state, row_op);
   }
@@ -570,7 +573,7 @@ Status Tablet::FlushUnlocked() {
 
   // Wait for any in-flight transactions to finish against the old MRS
   // before we flush it.
-  mvcc_.WaitForAllInFlightToCommit();
+  mvcc_.WaitForApplyingTransactionsToCommit();
 
   // Note: "input" should only contain old_mrs.
   return FlushInternal(input, old_mrs);
@@ -1204,44 +1207,44 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   // MVCC snapshot which includes all of the transactions that saw a pre-DuplicatingRowSet
   // version of components_.
   MvccSnapshot non_duplicated_txns_snap;
-  vector<Timestamp> in_flight_during_swap;
+  vector<Timestamp> applying_during_swap;
   {
     TRACE_EVENT0("tablet", "Swapping DuplicatingRowSet");
     // Taking component_lock_ in write mode ensures that no new transactions
-    // can start (or snapshot components_) during this block.
+    // can StartApplying() (or snapshot components_) during this block.
     boost::lock_guard<rw_spinlock> lock(component_lock_);
     AtomicSwapRowSetsUnlocked(input.rowsets(), boost::assign::list_of(inprogress_rowset));
 
     // NOTE: transactions may *commit* in between these two lines.
     // We need to make sure all such transactions end up in the
-    // in-flight list, the 'non_duplicated_txns_snap' snapshot, or both. Thus it's
-    // crucial that these next two lines are in this order!
-    mvcc_.GetInFlightTransactionTimestamps(&in_flight_during_swap);
+    // 'applying_during_swap' list, the 'non_duplicated_txns_snap' snapshot,
+    // or both. Thus it's crucial that these next two lines are in this order!
+    mvcc_.GetApplyingTransactionsTimestamps(&applying_during_swap);
     non_duplicated_txns_snap = MvccSnapshot(mvcc_);
   }
 
   // All transactions committed in 'non_duplicated_txns_snap' saw the pre-swap components_.
-  // Additionally, any transactions that were in-flight during the above block by definition
-  // _started_ before the swap. Hence the in-flights also need to get included in
-  // non_duplicated_txns_snap. To do so, we wait for those in-flights to commit, and then
+  // Additionally, any transactions that were APPLYING during the above block by definition
+  // _started_ doing so before the swap. Hence those transactions also need to get included in
+  // non_duplicated_txns_snap. To do so, we wait for them to commit, and then
   // manually include them into our snapshot.
-  if (VLOG_IS_ON(1) && !in_flight_during_swap.empty()) {
-    VLOG(1) << "Waiting for " << in_flight_during_swap.size() << " in-flight txns to commit "
+  if (VLOG_IS_ON(1) && !applying_during_swap.empty()) {
+    VLOG(1) << "Waiting for " << applying_during_swap.size() << " mid-APPLY txns to commit "
             << "before finishing compaction...";
-    BOOST_FOREACH(const Timestamp& ts, in_flight_during_swap) {
+    BOOST_FOREACH(const Timestamp& ts, applying_during_swap) {
       VLOG(1) << "  " << ts.value();
     }
   }
 
   // This wait is a little bit conservative - technically we only need to wait for
-  // those transactions in 'in_flight_during_swap', but MVCC doesn't implement the
-  // ability to wait for a specific set. So instead we wait for all current in-flights --
+  // those transactions in 'applying_during_swap', but MVCC doesn't implement the
+  // ability to wait for a specific set. So instead we wait for all currently applying --
   // a bit more than we need, but still correct.
-  mvcc_.WaitForAllInFlightToCommit();
+  mvcc_.WaitForApplyingTransactionsToCommit();
 
   // Then we want to consider all those transactions that were in-flight when we did the
   // swap as committed in 'non_duplicated_txns_snap'.
-  non_duplicated_txns_snap.AddCommittedTimestamps(in_flight_during_swap);
+  non_duplicated_txns_snap.AddCommittedTimestamps(applying_during_swap);
 
   if (common_hooks_) {
     RETURN_NOT_OK_PREPEND(common_hooks_->PostSwapInDuplicatingRowSet(),

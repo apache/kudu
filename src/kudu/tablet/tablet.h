@@ -161,6 +161,9 @@ class Tablet {
   Status AcquireLockForOp(WriteTransactionState* tx_state,
                           RowOp* op);
 
+  // Signal that the given transaction is about to Apply.
+  void StartApplying(WriteTransactionState* tx_state);
+
   // Apply all of the row operations associated with this transaction.
   void ApplyRowOperations(WriteTransactionState* tx_state);
 

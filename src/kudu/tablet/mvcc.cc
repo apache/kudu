@@ -267,7 +267,7 @@ void MvccManager::AdjustCleanTime() {
     vector<WaitingState*>::iterator iter = waiters_.begin();
     while (iter != waiters_.end()) {
       WaitingState* waiter = *iter;
-      if (AreAllTransactionsCommittedUnlocked(waiter->timestamp)) {
+      if (IsDoneWaitingUnlocked(*waiter)) {
         iter = waiters_.erase(iter);
         waiter->latch->CountDown();
         continue;
@@ -277,19 +277,32 @@ void MvccManager::AdjustCleanTime() {
   }
 }
 
-void MvccManager::WaitUntilAllCommitted(Timestamp ts) const {
-  TRACE_EVENT1("tablet", "MvccManager::WaitUntilAllCommitted",
-               "ts", ts.ToUint64());
+void MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts) const {
+  TRACE_EVENT2("tablet", "MvccManager::WaitUntil",
+               "wait_for", wait_for == ALL_COMMITTED ? "all_committed" : "none_applying",
+               "ts", ts.ToUint64())
+
   CountDownLatch latch(1);
   WaitingState waiting_state;
   {
-    boost::lock_guard<LockType> l(lock_);
-    if (AreAllTransactionsCommittedUnlocked(ts)) return;
     waiting_state.timestamp = ts;
     waiting_state.latch = &latch;
+    waiting_state.wait_for = wait_for;
+
+    boost::lock_guard<LockType> l(lock_);
+    if (IsDoneWaitingUnlocked(waiting_state)) return;
     waiters_.push_back(&waiting_state);
   }
   waiting_state.latch->Wait();
+}
+
+bool MvccManager::IsDoneWaitingUnlocked(const WaitingState& waiter) const {
+  switch (waiter.wait_for) {
+    case ALL_COMMITTED:
+      return AreAllTransactionsCommittedUnlocked(waiter.timestamp);
+    case NONE_APPLYING:
+      return !AnyApplyingAtOrBeforeUnlocked(waiter.timestamp);
+  }
 }
 
 bool MvccManager::AreAllTransactionsCommittedUnlocked(Timestamp ts) const {
@@ -302,6 +315,15 @@ bool MvccManager::AreAllTransactionsCommittedUnlocked(Timestamp ts) const {
   return !cur_snap_.MayHaveUncommittedTransactionsAtOrBefore(ts);
 }
 
+bool MvccManager::AnyApplyingAtOrBeforeUnlocked(Timestamp ts) const {
+  BOOST_FOREACH(const InFlightMap::value_type entry, timestamps_in_flight_) {
+    if (entry.first <= ts.value()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
   boost::lock_guard<LockType> l(lock_);
   *snap = cur_snap_;
@@ -310,7 +332,7 @@ void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
 void MvccManager::WaitForCleanSnapshotAtTimestamp(Timestamp timestamp, MvccSnapshot *snap) const {
   DCHECK(clock_->IsAfter(timestamp))
     << "timestamp " << timestamp.ToString() << " must be in the past";
-  WaitUntilAllCommitted(timestamp);
+  WaitUntil(ALL_COMMITTED, timestamp);
   *snap = MvccSnapshot(timestamp);
 }
 
@@ -318,27 +340,29 @@ void MvccManager::WaitForCleanSnapshot(MvccSnapshot* snap) const {
   WaitForCleanSnapshotAtTimestamp(clock_->Now(), snap);
 }
 
-void MvccManager::WaitForAllInFlightToCommit() const {
-  TRACE_EVENT0("tablet", "MvccManager::WaitForAllInFlightToCommit");
-  Timestamp wait_for;
+void MvccManager::WaitForApplyingTransactionsToCommit() const {
+  TRACE_EVENT0("tablet", "MvccManager::WaitForApplyingTransactionsToCommit");
 
+  // Find the highest timestamp of an APPLYING transaction.
+  Timestamp wait_for = Timestamp::kMin;
   {
     boost::lock_guard<LockType> l(lock_);
-    if (timestamps_in_flight_.empty()) {
-      return;
+    BOOST_FOREACH(const InFlightMap::value_type entry, timestamps_in_flight_) {
+      if (entry.second == APPLYING) {
+        wait_for = Timestamp(std::max(entry.first, wait_for.value()));
+      }
     }
-
-    // We could wait exactly for the set of in-flight transactions to commit,
-    // but that's a little trickier to implement. So for now, we just wait
-    // until all transactions lower than the current highest timestamp.
-    // This may wait longer than necessary if new transactions start with
-    // a lower timestamp, but that's OK - there is no "wait for the minimum
-    // amount of time" guarantee in this API.
-    wait_for = Timestamp(std::max_element(timestamps_in_flight_.begin(),
-                                          timestamps_in_flight_.end())->first);
   }
 
-  WaitUntilAllCommitted(wait_for);
+  // Wait until there are no transactions applying with that timestamp
+  // or below. It's possible that we're a bit conservative here - more transactions
+  // may enter the APPLYING set while we're waiting, but we will eventually
+  // succeed.
+  if (wait_for == Timestamp::kMin) {
+    // None were APPLYING: we can just return.
+    return;
+  }
+  WaitUntil(NONE_APPLYING, wait_for);
 }
 
 bool MvccManager::AreAllTransactionsCommitted(Timestamp ts) const {
@@ -356,11 +380,13 @@ Timestamp MvccManager::GetCleanTimestamp() const {
   return cur_snap_.all_committed_before_;
 }
 
-void MvccManager::GetInFlightTransactionTimestamps(std::vector<Timestamp>* timestamps) const {
+void MvccManager::GetApplyingTransactionsTimestamps(std::vector<Timestamp>* timestamps) const {
   boost::lock_guard<LockType> l(lock_);
   timestamps->reserve(timestamps_in_flight_.size());
   BOOST_FOREACH(const InFlightMap::value_type entry, timestamps_in_flight_) {
-    timestamps->push_back(Timestamp(entry.first));
+    if (entry.second == APPLYING) {
+      timestamps->push_back(Timestamp(entry.first));
+    }
   }
 }
 

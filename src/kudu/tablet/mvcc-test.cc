@@ -28,7 +28,6 @@ class MvccTest : public KuduTest {
   void WaitForSnapshotAtTSThread(MvccManager* mgr, Timestamp ts) {
     MvccSnapshot s;
     mgr->WaitForCleanSnapshotAtTimestamp(ts, &s);
-    mgr->WaitUntilAllCommitted(ts);
     CHECK(s.is_clean()) << "verifying postcondition";
     boost::lock_guard<simple_spinlock> lock(lock_);
     result_snapshot_.reset(new MvccSnapshot(s));
@@ -382,7 +381,7 @@ TEST_F(MvccTest, TestAreAllTransactionsCommitted) {
   ASSERT_TRUE(mgr.AreAllTransactionsCommitted(Timestamp(3)));
 }
 
-TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithNoInflights) {
+TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapWithNoInflights) {
   MvccManager mgr(clock_.get());
   boost::thread waiting_thread = boost::thread(
       &MvccTest::WaitForSnapshotAtTSThread, this, &mgr, clock_->Now());
@@ -392,7 +391,7 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithNoInflights) {
   ASSERT_TRUE(HasResultSnapshot());
 }
 
-TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithInFlights) {
+TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapWithInFlights) {
 
   MvccManager mgr(clock_.get());
 
@@ -412,7 +411,36 @@ TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapWithInFlights) {
   ASSERT_TRUE(HasResultSnapshot());
 }
 
-TEST_F(MvccTest, TestWaitUntilAllCommitted_SnapAtTimestampWithInFlights) {
+TEST_F(MvccTest, TestWaitForApplyingTransactionsToCommit) {
+  MvccManager mgr(clock_.get());
+
+  Timestamp tx1 = mgr.StartTransaction();
+  Timestamp tx2 = mgr.StartTransaction();
+
+  // Wait should return immediately, since we have no transactions "applying"
+  // yet.
+  mgr.WaitForApplyingTransactionsToCommit();
+
+  mgr.StartApplyingTransaction(tx1);
+
+  boost::thread waiting_thread = boost::thread(
+      &MvccManager::WaitForApplyingTransactionsToCommit, &mgr);
+  while (mgr.GetNumWaitersForTests() == 0) {
+    SleepFor(MonoDelta::FromMilliseconds(5));
+  }
+  ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
+
+  // Aborting the other transaction shouldn't affect our waiter.
+  mgr.AbortTransaction(tx2);
+  ASSERT_EQ(mgr.GetNumWaitersForTests(), 1);
+
+  // Committing our transaction should wake the waiter.
+  mgr.CommitTransaction(tx1);
+  ASSERT_EQ(mgr.GetNumWaitersForTests(), 0);
+  waiting_thread.join();
+}
+
+TEST_F(MvccTest, TestWaitForCleanSnapshot_SnapAtTimestampWithInFlights) {
 
   MvccManager mgr(clock_.get());
 

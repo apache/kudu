@@ -1378,7 +1378,9 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
 
   tablet::MvccSnapshot snap;
 
-  // Wait for the in-flights in the snapshot to be finished
+  // Wait for the in-flights in the snapshot to be finished.
+  // TODO(KUDU-689): this can wait forever if the follower has been abandoned by its
+  // leader!
   TRACE("Waiting for operations in snapshot to commit");
   MonoTime before = MonoTime::Now(MonoTime::FINE);
   tablet_peer->tablet()->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(tmp_snap_timestamp, &snap);

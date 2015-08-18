@@ -1133,7 +1133,7 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   tx_state.set_timestamp(Timestamp(replicate_msg->timestamp()));
 
   tablet_->StartTransaction(&tx_state);
-  tx_state.StartApplying();
+  tablet_->StartApplying(&tx_state);
 
   // Use committed OpId for mem store anchoring.
   tx_state.mutable_op_id()->CopyFrom(replicate_msg->id());

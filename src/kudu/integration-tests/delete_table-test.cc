@@ -25,6 +25,8 @@
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
+using kudu::client::KuduSchema;
+using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
 using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::ConsensusStatePB;
@@ -55,6 +57,9 @@ class DeleteTableTest : public KuduTest {
           LOG(INFO) << "Tablet server " << i << " is not running. Cannot dump its stacks.";
           continue;
         }
+        LOG(INFO) << "Attempting to dump stacks of TS " << i
+                  << " with UUID " << cluster_->tablet_server(i)->uuid()
+                  << " and pid " << cluster_->tablet_server(i)->pid();
         WARN_NOT_OK(PstackWatcher::DumpPidStacks(cluster_->tablet_server(i)->pid()),
                     "Couldn't dump stacks");
       }
@@ -70,7 +75,8 @@ class DeleteTableTest : public KuduTest {
     CMETA_EXPECTED = 1
   };
 
-  void StartCluster(const vector<string>& extra_tserver_flags = vector<string>());
+  void StartCluster(const vector<string>& extra_tserver_flags = vector<string>(),
+                    int num_tablet_servers = 3);
 
   // Get the UUID of the leader of the specified tablet, as seen by the TS with
   // the given 'ts_uuid'.
@@ -110,9 +116,10 @@ class DeleteTableTest : public KuduTest {
   unordered_map<string, TServerDetails*> ts_map_;
 };
 
-void DeleteTableTest::StartCluster(const vector<string>& extra_tserver_flags) {
+void DeleteTableTest::StartCluster(const vector<string>& extra_tserver_flags,
+                                   int num_tablet_servers) {
   ExternalMiniClusterOptions opts;
-  opts.num_tablet_servers = 3;
+  opts.num_tablet_servers = num_tablet_servers;
   opts.extra_tserver_flags = extra_tserver_flags;
   cluster_.reset(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster_->Start());
@@ -541,6 +548,75 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb));
   ASSERT_EQ(3, cmeta_pb.current_term());
   ASSERT_TRUE(!cmeta_pb.has_voted_for()) << cmeta_pb.ShortDebugString();
+}
+
+// Regression test for KUDU-987, a bug where followers with transactions in
+// REPLICATING state, which means they have not yet been committed to a
+// majority, cannot shut down during a DeleteTablet() call.
+TEST_F(DeleteTableTest, TestDeleteFollowerWithReplicatingTransaction) {
+  if (!AllowSlowTests()) {
+    // We will typically wait at least 5 seconds for timeouts to occur.
+    LOG(INFO) << "Skipping test in fast-test mode.";
+    return;
+  }
+
+  const MonoDelta timeout = MonoDelta::FromSeconds(10);
+
+  const int kNumTabletServers = 5;
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  flags.push_back("--flush_threshold_mb=0"); // Always be flushing.
+  flags.push_back("--maintenance_manager_polling_interval_ms=100");
+  NO_FATALS(StartCluster(flags, kNumTabletServers));
+
+  const int kTsIndex = 0; // We'll test with the first TS.
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(kNumTabletServers);
+  workload.Setup();
+
+  // Figure out the tablet ids of the created tablets.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, timeout, &tablets));
+  const string& tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, timeout));
+  }
+
+  // Elect TS 1 as leader.
+  const int kLeaderIndex = 1;
+  const string kLeaderUuid = cluster_->tablet_server(kLeaderIndex)->uuid();
+  TServerDetails* leader = ts_map_[kLeaderUuid];
+  ASSERT_OK(itest::StartElection(leader, tablet_id, timeout));
+  ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));
+
+  // Kill a majority, but leave the leader and a single follower.
+  LOG(INFO) << "Killing majority";
+  for (int i = 2; i < kNumTabletServers; i++) {
+    cluster_->tablet_server(i)->Shutdown();
+  }
+
+  // Now write a single row to the leader.
+  // We give 5 seconds for the timeout to pretty much guarantee that a flush
+  // will occur due to the low flush threshold we set.
+  LOG(INFO) << "Writing a row";
+  Status s = WriteSimpleTestRow(leader, tablet_id, RowOperationsPB::INSERT,
+                                1, 1, "hola, world", MonoDelta::FromSeconds(5));
+  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_STR_CONTAINS(s.ToString(), "Call timed out");
+
+  LOG(INFO) << "Killing the leader...";
+  cluster_->tablet_server(kLeaderIndex)->Shutdown();
+
+  // Now tombstone the follower tablet. This should succeed even though there
+  // are uncommitted operations on the replica.
+  LOG(INFO) << "Tombstoning tablet " << tablet_id << " on TS " << ts->uuid();
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
 }
 
 // Parameterized test case for TABLET_DATA_DELETED deletions.
