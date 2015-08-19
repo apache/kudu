@@ -30,6 +30,10 @@ class TestWorkload {
   explicit TestWorkload(ExternalMiniCluster* cluster);
   ~TestWorkload();
 
+  void set_payload_bytes(int n) {
+    payload_bytes_ = n;
+  }
+
   void set_num_write_threads(int n) {
     num_write_threads_ = n;
   }
@@ -101,6 +105,7 @@ class TestWorkload {
   client::KuduClientBuilder client_builder_;
   std::tr1::shared_ptr<client::KuduClient> client_;
 
+  int payload_bytes_;
   int num_write_threads_;
   int write_batch_size_;
   int write_timeout_millis_;

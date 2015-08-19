@@ -38,6 +38,7 @@ const char* const TestWorkload::kDefaultTableName = "test-workload";
 
 TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
   : cluster_(cluster),
+    payload_bytes_(11),
     num_write_threads_(4),
     write_batch_size_(50),
     write_timeout_millis_(20000),
@@ -93,7 +94,12 @@ void TestWorkload::WriteThread() {
       KuduPartialRow* row = insert->mutable_row();
       CHECK_OK(row->SetInt32(0, r.Next()));
       CHECK_OK(row->SetInt32(1, r.Next()));
-      CHECK_OK(row->SetStringCopy(2, "hello world"));
+      string test_payload("hello world");
+      if (payload_bytes_ != 11) {
+        // We fill with zeros if you change the default.
+        test_payload.assign(payload_bytes_, '0');
+      }
+      CHECK_OK(row->SetStringCopy(2, test_payload));
       CHECK_OK(session->Apply(insert.release()));
     }
 
