@@ -51,7 +51,7 @@ class MockQueue : public PeerMessageQueue {
     : PeerMessageQueue(metric_entity, log, FakeRaftPeerPB(kLocalPeerUuid), kTestTablet) {}
   MOCK_METHOD1(Init, void(const OpId& locally_replicated_index));
   MOCK_METHOD3(SetLeaderMode, void(const OpId& committed_opid,
-                                   uint64_t current_term,
+                                   int64_t current_term,
                                    int majority_size));
   MOCK_METHOD0(SetNonLeaderMode, void());
   virtual Status AppendOperations(const vector<ReplicateRefPtr>& msgs,

@@ -272,7 +272,7 @@ bool ReplicaState::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch
   return true;
 }
 
-Status ReplicaState::SetCurrentTermUnlocked(uint64_t new_term) {
+Status ReplicaState::SetCurrentTermUnlocked(int64_t new_term) {
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(new_term <= GetCurrentTermUnlocked())) {
     return Status::IllegalState(
@@ -287,7 +287,7 @@ Status ReplicaState::SetCurrentTermUnlocked(uint64_t new_term) {
   return Status::OK();
 }
 
-const uint64_t ReplicaState::GetCurrentTermUnlocked() const {
+const int64_t ReplicaState::GetCurrentTermUnlocked() const {
   DCHECK(update_lock_.is_locked());
   return cmeta_->current_term();
 }
@@ -445,7 +445,7 @@ Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& ro
   return Status::OK();
 }
 
-scoped_refptr<ConsensusRound> ReplicaState::GetPendingOpByIndexOrNullUnlocked(uint64_t index) {
+scoped_refptr<ConsensusRound> ReplicaState::GetPendingOpByIndexOrNullUnlocked(int64_t index) {
   DCHECK(update_lock_.is_locked());
   return FindPtrOrNull(pending_txns_, index);
 }

@@ -111,7 +111,7 @@ void PeerMessageQueue::Init(const OpId& last_locally_replicated) {
 }
 
 void PeerMessageQueue::SetLeaderMode(const OpId& committed_index,
-                                     uint64_t current_term,
+                                     int64_t current_term,
                                      int majority_size) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   CHECK(committed_index.IsInitialized());
@@ -694,7 +694,7 @@ void PeerMessageQueue::NotifyObserversOfMajorityReplOpChange(
               LogPrefixUnlocked() + " Unable to notify peers of majority replicated op change.");
 }
 
-void PeerMessageQueue::NotifyObserversOfTermChange(uint64_t term) {
+void PeerMessageQueue::NotifyObserversOfTermChange(int64_t term) {
   WARN_NOT_OK(observers_pool_->SubmitClosure(
       Bind(&PeerMessageQueue::NotifyObserversOfTermChangeTask,
            Unretained(this), term)),
@@ -725,7 +725,7 @@ void PeerMessageQueue::NotifyObserversOfMajorityReplOpChangeTask(
   }
 }
 
-void PeerMessageQueue::NotifyObserversOfTermChangeTask(uint64_t term) {
+void PeerMessageQueue::NotifyObserversOfTermChangeTask(int64_t term) {
   std::vector<PeerMessageQueueObserver*> copy;
   {
     boost::lock_guard<simple_spinlock> lock(queue_lock_);

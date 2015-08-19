@@ -314,7 +314,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     vector<OpId> op_ids;
     CHECK_OK(GetLastOpIdForEachReplica(tablet_id, replicas, &op_ids));
 
-    uint64 max_index = 0;
+    int64 max_index = 0;
     int max_replica_index = -1;
     for (int i = 0; i < op_ids.size(); i++) {
       if (op_ids[i].index() > max_index) {

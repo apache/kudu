@@ -320,7 +320,7 @@ class LogTestBase : public KuduTest {
   gscoped_ptr<MetricRegistry> metric_registry_;
   scoped_refptr<MetricEntity> metric_entity_;
   scoped_refptr<Log> log_;
-  uint32_t current_index_;
+  int32_t current_index_;
   LogOptions options_;
   // Reusable entries vector that deletes the entries on destruction.
   vector<LogEntryPB* > entries_;

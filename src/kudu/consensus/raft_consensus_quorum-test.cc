@@ -523,14 +523,14 @@ class RaftConsensusQuorumTest : public KuduTest {
   }
 
   // Assert that the durable term == term and that the peer that got the vote == voted_for.
-  void AssertDurableTermAndVote(int peer_index, uint64_t term, const std::string& voted_for) {
+  void AssertDurableTermAndVote(int peer_index, int64_t term, const std::string& voted_for) {
     gscoped_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
     ASSERT_EQ(term, cmeta->current_term());
     ASSERT_EQ(voted_for, cmeta->voted_for());
   }
 
   // Assert that the durable term == term and that the peer has not yet voted.
-  void AssertDurableTermWithoutVote(int peer_index, uint64_t term) {
+  void AssertDurableTermWithoutVote(int peer_index, int64_t term) {
     gscoped_ptr<ConsensusMetadata> cmeta = ReadConsensusMetadataFromDisk(peer_index);
     ASSERT_EQ(term, cmeta->current_term());
     ASSERT_FALSE(cmeta->has_voted_for());

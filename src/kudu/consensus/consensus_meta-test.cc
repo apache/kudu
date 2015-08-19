@@ -29,7 +29,7 @@ using std::string;
 using std::vector;
 
 const char* kTabletId = "test-consensus-metadata";
-const uint64_t kInitialTerm = 3;
+const int64_t kInitialTerm = 3;
 
 class ConsensusMetadataTest : public KuduTest {
  public:
@@ -51,7 +51,7 @@ class ConsensusMetadataTest : public KuduTest {
  protected:
   // Assert that the given cmeta has a single configuration with the given metadata values.
   void AssertValuesEqual(const ConsensusMetadata& cmeta,
-                         int64_t opid_index, const string& permanant_uuid, uint64_t term);
+                         int64_t opid_index, const string& permanant_uuid, int64_t term);
 
   FsManager fs_manager_;
   RaftConfigPB config_;
@@ -60,7 +60,7 @@ class ConsensusMetadataTest : public KuduTest {
 void ConsensusMetadataTest::AssertValuesEqual(const ConsensusMetadata& cmeta,
                                               int64_t opid_index,
                                               const string& permanant_uuid,
-                                              uint64_t term) {
+                                              int64_t term) {
   // Sanity checks.
   ASSERT_TRUE(cmeta.committed_config().local());
   ASSERT_EQ(1, cmeta.committed_config().peers_size());
@@ -96,7 +96,7 @@ TEST_F(ConsensusMetadataTest, TestFailedLoad) {
 
 // Check that changes are not written to disk until Flush() is called.
 TEST_F(ConsensusMetadataTest, TestFlush) {
-  const uint64_t kNewTerm = 4;
+  const int64_t kNewTerm = 4;
   gscoped_ptr<ConsensusMetadata> cmeta;
   ASSERT_OK(ConsensusMetadata::Create(&fs_manager_, kTabletId, fs_manager_.uuid(),
                                       config_, kInitialTerm, &cmeta));

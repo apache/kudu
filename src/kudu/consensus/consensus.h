@@ -40,7 +40,7 @@ class ConsensusCommitContinuation;
 class ConsensusRound;
 class ReplicaTransactionFactory;
 
-typedef uint64_t ConsensusTerm;
+typedef int64_t ConsensusTerm;
 
 typedef StatusCallback ConsensusReplicatedCallback;
 

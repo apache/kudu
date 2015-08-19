@@ -67,7 +67,7 @@ class PeerMessageQueue {
 
     // Check that the terms seen from a given peer only increase
     // monotonically.
-    void CheckMonotonicTerms(uint64_t term) {
+    void CheckMonotonicTerms(int64_t term) {
       DCHECK_GE(term, last_seen_term_);
       last_seen_term_ = term;
     }
@@ -101,7 +101,7 @@ class PeerMessageQueue {
     // The last term we saw from a given peer.
     // This is only used for sanity checking that a peer doesn't
     // go backwards in time.
-    uint64_t last_seen_term_;
+    int64_t last_seen_term_;
   };
 
   PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_entity,
@@ -122,7 +122,7 @@ class PeerMessageQueue {
   // Majority size corresponds to the number of peers that must have replicated
   // a certain operation for it to be considered committed.
   virtual void SetLeaderMode(const OpId& committed_index,
-                             uint64_t current_term,
+                             int64_t current_term,
                              int majority_size);
 
   // Changes the queue to non-leader mode. Currently tracked peers will still
@@ -272,7 +272,7 @@ class PeerMessageQueue {
     // from another peer the queue owner must step down.
     // TODO: it is likely to be cleaner to get this from the ConsensusMetadata
     // rather than by snooping on what operations are appended to the queue.
-    uint64_t current_term;
+    int64_t current_term;
 
     // The size of the majority for the queue.
     // TODO support changing majority sizes when configurations change.
@@ -296,9 +296,9 @@ class PeerMessageQueue {
 
   void NotifyObserversOfMajorityReplOpChangeTask(const OpId new_majority_replicated_op);
 
-  void NotifyObserversOfTermChange(uint64_t term);
+  void NotifyObserversOfTermChange(int64_t term);
 
-  void NotifyObserversOfTermChangeTask(uint64_t term);
+  void NotifyObserversOfTermChangeTask(int64_t term);
 
   typedef std::tr1::unordered_map<std::string, TrackedPeer*> PeersMap;
 
@@ -375,7 +375,7 @@ class PeerMessageQueueObserver {
 
   // Notify the Consensus implementation that a follower replied with a term
   // higher than that established in the queue.
-  virtual void NotifyTermChange(uint64_t term) = 0;
+  virtual void NotifyTermChange(int64_t term) = 0;
 
   virtual ~PeerMessageQueueObserver() {}
 };

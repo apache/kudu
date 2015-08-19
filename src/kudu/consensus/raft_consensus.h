@@ -140,7 +140,7 @@ class RaftConsensus : public Consensus,
   void UpdateMajorityReplicated(const OpId& majority_replicated,
                                 OpId* committed_index) OVERRIDE;
 
-  virtual void NotifyTermChange(uint64_t term) OVERRIDE;
+  virtual void NotifyTermChange(int64_t term) OVERRIDE;
 
   virtual Status GetLastReceivedOpId(OpId* id) OVERRIDE;
 

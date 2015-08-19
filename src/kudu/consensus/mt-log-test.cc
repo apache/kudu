@@ -83,7 +83,7 @@ class MultiThreadedLogTest : public LogTestBase {
         boost::lock_guard<simple_spinlock> lock_guard(lock_);
         for (int j = 0; j < num_ops; j++) {
           ReplicateRefPtr replicate = make_scoped_refptr_replicate(new ReplicateMsg);
-          uint32_t index = current_index_++;
+          int32_t index = current_index_++;
           OpId* op_id = replicate->get()->mutable_id();
           op_id->set_term(0);
           op_id->set_index(index);

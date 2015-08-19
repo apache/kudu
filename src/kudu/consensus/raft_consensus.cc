@@ -500,7 +500,7 @@ void RaftConsensus::UpdateMajorityReplicatedUnlocked(const OpId& majority_replic
   }
 }
 
-void RaftConsensus::NotifyTermChange(uint64_t term) {
+void RaftConsensus::NotifyTermChange(int64_t term) {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForConfigChange(&lock));
   WARN_NOT_OK(HandleTermAdvanceUnlocked(term), "Couldn't advance consensus term.");

@@ -44,7 +44,7 @@ namespace log {
 // read/write it via mmap.
 // See LogIndexEntry for docs.
 struct PhysicalEntry {
-  uint64_t term;
+  int64_t term;
   uint64_t segment_sequence_number;
   uint64_t offset_in_segment;
 } PACKED;

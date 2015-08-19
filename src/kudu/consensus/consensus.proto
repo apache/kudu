@@ -222,7 +222,7 @@ message VoteRequestPB {
   // The term we are requesting a vote for.
   // If this term is higher than the callee's term, the callee will update its
   // own term to match, and if it is the current leader it will step down.
-  required uint64 candidate_term = 3;
+  required int64 candidate_term = 3;
 
   // The candidate node status so that the voter node can
   // decide whether to vote for it as LEADER.
@@ -248,7 +248,7 @@ message VoteResponsePB {
 
   // The term of the node sending the reply.
   // Allows the candidate to update itself if it is behind.
-  optional uint64 responder_term = 2;
+  optional int64 responder_term = 2;
 
   // True if this peer voted for the caller, false otherwise.
   optional bool vote_granted = 3;
@@ -273,7 +273,7 @@ message ConsensusRequestPB {
   // is equal to or higher than the last term they know about.
   // If a leader receives a request with a term higher than its own,
   // it will step down and enter FOLLOWER state (see Raft sec. 5.1).
-  required uint64 caller_term = 3;
+  required int64 caller_term = 3;
 
   // The id of the operation immediately preceding the first
   // operation in 'ops'. If the replica is receiving 'ops' for
@@ -305,7 +305,7 @@ message ConsensusResponsePB {
   // The current term of the peer making the response.
   // This is used to update the caller (and make it step down if it is
   // out of date).
-  optional uint64 responder_term = 2;
+  optional int64 responder_term = 2;
 
   // The current consensus status of the receiver peer.
   optional ConsensusStatusPB status = 3;

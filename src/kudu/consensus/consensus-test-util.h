@@ -821,7 +821,8 @@ class TestRaftConsensusQueueIface : public PeerMessageQueueObserver {
     majority_replicated_index_ = majority_replicated.index();
     committed_index->CopyFrom(majority_replicated);
   }
-  virtual void NotifyTermChange(uint64_t term) OVERRIDE {}
+  virtual void NotifyTermChange(int64_t term) OVERRIDE {}
+
  private:
   mutable simple_spinlock lock_;
   int64_t majority_replicated_index_;

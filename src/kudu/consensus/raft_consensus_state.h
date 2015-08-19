@@ -189,10 +189,10 @@ class ReplicaState {
 
   // Checks if the term change is legal. If so, sets 'current_term'
   // to 'new_term' and sets 'has voted' to no for the current term.
-  Status SetCurrentTermUnlocked(uint64_t new_term) WARN_UNUSED_RESULT;
+  Status SetCurrentTermUnlocked(int64_t new_term) WARN_UNUSED_RESULT;
 
   // Returns the term set in the last config change round.
-  const uint64_t GetCurrentTermUnlocked() const;
+  const int64_t GetCurrentTermUnlocked() const;
 
   // Accessors for the leader of the current term.
   void SetLeaderUuidUnlocked(const std::string& uuid);
@@ -228,7 +228,7 @@ class ReplicaState {
 
   // Returns the the ConsensusRound with the provided index, if there is any, or NULL
   // if there isn't.
-  scoped_refptr<ConsensusRound> GetPendingOpByIndexOrNullUnlocked(uint64_t index);
+  scoped_refptr<ConsensusRound> GetPendingOpByIndexOrNullUnlocked(int64_t index);
 
   // Add 'round' to the set of rounds waiting to be committed.
   Status AddPendingOperation(const scoped_refptr<ConsensusRound>& round);
@@ -323,7 +323,7 @@ class ReplicaState {
 
   // Used by the LEADER. This is the index of the next operation generated
   // by this LEADER.
-  uint64_t next_index_;
+  int64_t next_index_;
 
   // Index=>Round map that manages pending ops, i.e. operations for which we've
   // received a replicate message from the leader but have yet to be committed.
