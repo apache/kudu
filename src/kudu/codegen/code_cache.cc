@@ -13,21 +13,30 @@
 namespace kudu {
 namespace codegen {
 
-CodeCache::CodeCache(size_t capacity)
-  : cache_(NewLRUCache(capacity, "code_cache")) {}
-
-CodeCache::~CodeCache() {}
-
 namespace {
 
-void CodeCacheDeleter(const Slice& key, void* value) {
-  // The Cache from cache.h deletes the memory that it allocates for its
-  // own copy of key, but it expects its users to delete their own
-  // void* values. To delete, we just release our shared ownership.
-  static_cast<JITWrapper*>(value)->Release();
-}
+class Deleter : public CacheDeleter {
+ public:
+  Deleter() {}
+  virtual void Delete(const Slice& key, void* value) OVERRIDE {
+    // The Cache from cache.h deletes the memory that it allocates for its
+    // own copy of key, but it expects its users to delete their own
+    // void* values. To delete, we just release our shared ownership.
+    static_cast<JITWrapper*>(value)->Release();
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(Deleter);
+};
 
 } // anonymous namespace
+
+CodeCache::CodeCache(size_t capacity)
+  : cache_(NewLRUCache(capacity, "code_cache")) {
+  deleter_.reset(new Deleter());
+}
+
+CodeCache::~CodeCache() {}
 
 Status CodeCache::AddEntry(const scoped_refptr<JITWrapper>& value) {
   // Get the key
@@ -39,7 +48,7 @@ Status CodeCache::AddEntry(const scoped_refptr<JITWrapper>& value) {
   value->AddRef();
 
   // Insert into cache and release the handle (we have a local copy of a refptr)
-  Cache::Handle* inserted = cache_->Insert(key, value.get(), 1, CodeCacheDeleter);
+  Cache::Handle* inserted = cache_->Insert(key, value.get(), 1, deleter_.get());
   cache_->Release(inserted);
   return Status::OK();
 }

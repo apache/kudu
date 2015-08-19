@@ -32,13 +32,31 @@ struct CacheKey {
   uint64_t offset_;
 } PACKED;
 
+namespace {
+class Deleter : public CacheDeleter {
+ public:
+  Deleter() {}
+  virtual void Delete(const Slice& slice, void* value) OVERRIDE {
+    Slice *value_slice = reinterpret_cast<Slice *>(value);
+
+    delete[] value_slice->data();
+    delete value_slice;
+  }
+ private:
+  DISALLOW_COPY_AND_ASSIGN(Deleter);
+};
+
+} // anonymous namespace
+
 BlockCache::BlockCache()
   : cache_(CHECK_NOTNULL(NewLRUCache(FLAGS_block_cache_capacity_mb * 1024 * 1024,
                                      "block_cache"))) {
+  deleter_.reset(new Deleter());
 }
 
 BlockCache::BlockCache(size_t capacity)
   : cache_(CHECK_NOTNULL(NewLRUCache(capacity, "block_cache"))) {
+  deleter_.reset(new Deleter());
 }
 
 bool BlockCache::Lookup(FileId file_id, uint64_t offset, Cache::CacheBehavior behavior,
@@ -60,15 +78,8 @@ void BlockCache::Insert(FileId file_id, uint64_t offset, const Slice &block_data
   Slice *value = new Slice(block_data);
 
   Cache::Handle *h = cache_->Insert(key.slice(), value, value->size(),
-                             BlockCache::ValueDeleter);
+                                    deleter_.get());
   inserted->SetHandle(cache_.get(), h);
-}
-
-void BlockCache::ValueDeleter(const Slice &key, void *value) {
-  Slice *value_slice = reinterpret_cast<Slice *>(value);
-
-  delete [] value_slice->data();
-  delete value_slice;
 }
 
 void BlockCache::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {

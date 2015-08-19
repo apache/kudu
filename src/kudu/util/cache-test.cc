@@ -29,13 +29,13 @@ static int DecodeKey(const Slice& k) {
 static void* EncodeValue(uintptr_t v) { return reinterpret_cast<void*>(v); }
 static int DecodeValue(void* v) { return reinterpret_cast<uintptr_t>(v); }
 
-class CacheTest : public ::testing::Test {
+class CacheTest : public ::testing::Test, public CacheDeleter {
  public:
-  static CacheTest* current_;
 
-  static void Deleter(const Slice& key, void* v) {
-    current_->deleted_keys_.push_back(DecodeKey(key));
-    current_->deleted_values_.push_back(DecodeValue(v));
+  // Implementation of the CacheDeleter interface
+  virtual void Delete(const Slice& key, void* v) OVERRIDE {
+    deleted_keys_.push_back(DecodeKey(key));
+    deleted_values_.push_back(DecodeValue(v));
   }
 
   static const int kCacheSize = 1000;
@@ -47,7 +47,6 @@ class CacheTest : public ::testing::Test {
 
   CacheTest()
     : cache_(NewLRUCache(kCacheSize, "cache_test")) {
-    current_ = this;
     CHECK(MemTracker::FindTracker("cache_test-sharded_lru_cache", &mem_tracker_));
     scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(
         &metric_registry_, "test");
@@ -69,14 +68,13 @@ class CacheTest : public ::testing::Test {
 
   void Insert(int key, int value, int charge = 1) {
     cache_->Release(cache_->Insert(EncodeKey(key), EncodeValue(value), charge,
-                                   &CacheTest::Deleter));
+                                   this));
   }
 
   void Erase(int key) {
     cache_->Erase(EncodeKey(key));
   }
 };
-CacheTest* CacheTest::current_;
 
 
 TEST_F(CacheTest, TrackMemory) {

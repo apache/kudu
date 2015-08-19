@@ -12,6 +12,7 @@
 namespace kudu {
 
 class Cache;
+class CacheDeleter;
 class Schema;
 
 namespace codegen {
@@ -34,7 +35,7 @@ class CodeCache {
  public:
   // TODO: currently CodeCache is implemented using the Cache in
   // kudu/util/cache.h, which requires some transformation to nongeneric
-  // Slice-type keys, void* values, and C-style deleters. Furthermore, Cache
+  // Slice-type keys, and void* values. Furthermore, the Cache implementation
   // provides concurrent write guarantees (thus relies on locks heavily), which
   // is unnecessary for the CodeCache. A potential improvement would be to
   // implement a single-writer multi-reader LRU cache with proper generics.
@@ -66,6 +67,7 @@ class CodeCache {
 
  private:
 
+  gscoped_ptr<CacheDeleter> deleter_;
   gscoped_ptr<Cache> cache_;
 
   DISALLOW_COPY_AND_ASSIGN(CodeCache);

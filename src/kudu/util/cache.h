@@ -36,6 +36,17 @@ class MetricEntity;
 // of Cache uses a least-recently-used eviction policy.
 extern Cache* NewLRUCache(size_t capacity, const std::string& id);
 
+// Callback interface for deleting a value stored in the cache.
+// This is called when an inserted entry is no longer needed.
+class CacheDeleter {
+ public:
+  // Delete the given 'value'.
+  // The key is only passed for convenenience -- the cache itself is
+  // responsible for managing the key's memory.
+  virtual void Delete(const Slice& key, void* value) = 0;
+  virtual ~CacheDeleter() {}
+};
+
 class Cache {
  public:
   Cache() { }
@@ -58,12 +69,11 @@ class Cache {
   // the cache. The caller may free or mutate the key data freely
   // after this method returns.
   //
-  // When the inserted entry is no longer needed, the key and
-  // value will be passed to "deleter". The key is only passed
-  // to the deleter for convenience -- the cache itself is responsible
-  // for managing the key's memory.
+  // When the inserted entry is no longer needed, the cache object, key and
+  // value will be passed to "deleter". The deleter callback must remain
+  // valid until it is called.
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
-                         void (*deleter)(const Slice& key, void* value)) = 0;
+                         CacheDeleter* deleter) = 0;
 
   // Passing EXPECT_IN_CACHE will increment the hit/miss metrics that track the number of times
   // blocks were requested that the users were hoping to get the block from the cache, along with

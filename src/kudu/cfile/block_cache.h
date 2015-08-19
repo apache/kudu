@@ -67,8 +67,9 @@ class BlockCache {
 
   DISALLOW_COPY_AND_ASSIGN(BlockCache);
 
-  static void ValueDeleter(const Slice &key, void *value);
-
+  // Deleter must be defined before cache_ so that cache_ destructs first.
+  // (the Cache needs to use the Deleter during destruction)
+  gscoped_ptr<CacheDeleter> deleter_;
   gscoped_ptr<Cache> cache_;
 };
 

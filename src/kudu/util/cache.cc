@@ -43,7 +43,7 @@ typedef simple_spinlock MutexType;
 // are kept in a circular doubly linked list ordered by access time.
 struct LRUHandle {
   void* value;
-  void (*deleter)(const Slice&, void* value);
+  CacheDeleter* deleter;
   LRUHandle* next_hash;
   LRUHandle* next;
   LRUHandle* prev;
@@ -164,7 +164,7 @@ class LRUCache {
   // Like Cache methods, but with an extra "hash" parameter.
   Cache::Handle* Insert(const Slice& key, uint32_t hash,
                         void* value, size_t charge,
-                        void (*deleter)(const Slice& key, void* value));
+                        CacheDeleter* deleter);
   Cache::Handle* Lookup(const Slice& key, uint32_t hash, bool caching);
   void Release(Cache::Handle* handle);
   void Erase(const Slice& key, uint32_t hash);
@@ -223,7 +223,7 @@ bool LRUCache::Unref(LRUHandle* e) {
 
 void LRUCache::FreeEntry(LRUHandle* e) {
   DCHECK_EQ(ANNOTATE_UNPROTECTED_READ(e->refs), 0);
-  (*e->deleter)(e->key(), e->value);
+  e->deleter->Delete(e->key(), e->value);
   mem_tracker_->Release(e->charge);
   if (PREDICT_TRUE(metrics_)) {
     metrics_->cache_usage->DecrementBy(e->charge);
@@ -291,7 +291,7 @@ void LRUCache::Release(Cache::Handle* handle) {
 
 Cache::Handle* LRUCache::Insert(
     const Slice& key, uint32_t hash, void* value, size_t charge,
-    void (*deleter)(const Slice& key, void* value)) {
+    CacheDeleter *deleter) {
 
   LRUHandle* e = reinterpret_cast<LRUHandle*>(
       malloc(sizeof(LRUHandle)-1 + key.size()));
@@ -406,7 +406,7 @@ class ShardedLRUCache : public Cache {
   }
 
   virtual Handle* Insert(const Slice& key, void* value, size_t charge,
-                         void (*deleter)(const Slice& key, void* value)) OVERRIDE {
+                         CacheDeleter* deleter) OVERRIDE {
     const uint32_t hash = HashSlice(key);
     return shards_[Shard(hash)]->Insert(key, hash, value, charge, deleter);
   }
