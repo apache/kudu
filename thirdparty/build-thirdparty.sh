@@ -11,7 +11,8 @@ TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 #
 # We also enable -fno-omit-frame-pointer so that profiling tools which
 # use frame-pointer based stack unwinding can function correctly.
-EXTRA_CXXFLAGS="-O2 -g $CXXFLAGS -fno-omit-frame-pointer"
+DEBUG_CFLAGS="-g -fno-omit-frame-pointer"
+EXTRA_CXXFLAGS="-O2 $DEBUG_CFLAGS $CXXFLAGS "
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
 elif [[ "$OSTYPE" == "darwin"* ]]; then
@@ -49,6 +50,7 @@ else
       "libunwind")  F_LIBUNWIND=1 ;;
       "llvm")       F_LLVM=1 ;;
       "trace-viewer") F_TRACE_VIEWER=1 ;;
+      "nvml")       F_NVML=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
     esac
   done
@@ -303,6 +305,25 @@ fi
 if [ -n "$F_ALL" -o -n "$F_TRACE_VIEWER" ]; then
   echo Installing trace-viewer into the www directory
   cp -a $TRACE_VIEWER_DIR/* $TP_DIR/../www/
+fi
+
+# Build NVML
+if [ -n "$F_ALL" -o -n "$F_NVML" ]; then
+  cd $NVML_DIR/src/
+
+  # The embedded jemalloc build doesn't pick up the EXTRA_CFLAGS environment
+  # variable, so we have to stick our flags into this config file.
+  if ! grep -q -e "$DEBUG_CFLAGS" jemalloc/jemalloc.cfg ; then
+    perl -p -i -e "s,(EXTRA_CFLAGS=\"),\$1$DEBUG_CFLAGS ," jemalloc/jemalloc.cfg
+  fi
+
+  EXTRA_CFLAGS="$DEBUG_CFLAGS" make -j$PARALLEL libvmem DEBUG=0
+  # NVML doesn't allow configuring PREFIX -- it always installs into
+  # DESTDIR/usr/lib. Additionally, the 'install' target builds all of
+  # the NVML libraries, even though we only need libvmem.
+  # So, we manually install the built artifacts.
+  cp -a $NVML_DIR/src/include/libvmem.h $PREFIX/include
+  cp -a $NVML_DIR/src/nondebug/libvmem.{so*,a} $PREFIX/lib
 fi
 
 echo "---------------------"

@@ -722,6 +722,13 @@ if (NOT "${KUDU_USE_ASAN}" AND
   set(KUDU_TCMALLOC_AVAILABLE 1)
 endif()
 
+# libvmem
+find_package(Vmem REQUIRED)
+include_directories(SYSTEM ${VMEM_INCLUDE_DIR})
+ADD_THIRDPARTY_LIB(vmem
+  STATIC_LIB "${VMEM_STATIC_LIB}"
+  SHARED_LIB "${VMEM_SHARED_LIB}")
+
 ## curl
 find_package(CURL REQUIRED)
 

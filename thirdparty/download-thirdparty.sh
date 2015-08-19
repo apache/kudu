@@ -211,5 +211,9 @@ if [ ! -d $TRACE_VIEWER_DIR ]; then
   fetch_and_expand kudu-trace-viewer-${TRACE_VIEWER_VERSION}.tar.gz
 fi
 
+if [ ! -d $NVML_DIR ]; then
+  fetch_and_expand nvml-${NVML_VERSION}.tgz
+fi
+
 echo "---------------"
 echo "Thirdparty dependencies downloaded successfully"
