@@ -60,13 +60,34 @@ const char* const kDeleteTabletOp = "delete_tablet";
 const char* const kCurrentTimestamp = "current_timestamp";
 const char* const kStatus = "status";
 
-DEFINE_string(tserver_address, "localhost",
-                "Address of tablet server to run against");
+DEFINE_string(server_address, "localhost",
+              "Address of server to run against");
 DEFINE_int64(timeout_ms, 1000 * 60, "RPC timeout in milliseconds");
 
 DEFINE_bool(force, false, "If true, allows the set_flag command to set a flag "
             "which is not explicitly marked as runtime-settable. Such flag changes may be "
             "simply ignored on the server, or may cause the server to crash.");
+
+// Check that the value of argc matches what's expected, otherwise return a
+// non-zero exit code. Should be used in main().
+#define CHECK_ARGC_OR_RETURN_WITH_USAGE(expected) \
+  do { \
+    if (argc != (expected)) { \
+      google::ShowUsageWithFlagsRestrict(argv[0], __FILE__); \
+      return 2; \
+    } \
+  } while (0);
+
+// Invoke 'to_call' and check its result. If it failed, print 'to_prepend' and
+// the error to cerr and return a non-zero exit code. Should be used in main().
+#define RETURN_NOT_OK_PREPEND_FROM_MAIN(to_call, to_prepend) \
+  do { \
+    ::kudu::Status s = (to_call); \
+    if (!s.ok()) { \
+      std::cerr << (to_prepend) << ": " << s.ToString() << std::endl; \
+      return 1; \
+    } \
+  } while (0);
 
 namespace kudu {
 namespace tools {
@@ -145,7 +166,7 @@ Status TsAdminClient::Init() {
 
   initted_ = true;
 
-  LOG(INFO) << "Connected to " << addr_;
+  VLOG(1) << "Connected to " << addr_;
 
   return Status::OK();
 }
@@ -208,13 +229,13 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
   SchemaPB schema_pb;
   RETURN_NOT_OK(GetTabletSchema(tablet_id, &schema_pb));
   Schema schema;
-  CHECK_OK(SchemaFromPB(schema_pb, &schema));
+  RETURN_NOT_OK(SchemaFromPB(schema_pb, &schema));
 
   ScanRequestPB req;
   ScanResponsePB resp;
 
   NewScanRequestPB* new_req = req.mutable_new_scan_request();
-  CHECK_OK(SchemaToColumnPBsWithoutIds(schema, new_req->mutable_projected_columns()));
+  RETURN_NOT_OK(SchemaToColumnPBsWithoutIds(schema, new_req->mutable_projected_columns()));
   new_req->set_tablet_id(tablet_id);
   new_req->set_cache_blocks(false);
   new_req->set_order_mode(ORDERED);
@@ -232,7 +253,7 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
     }
 
     rows.clear();
-    CHECK_OK(KuduScanner::Data::ExtractRows(rpc, &schema, &resp, &rows));
+    RETURN_NOT_OK(KuduScanner::Data::ExtractRows(rpc, &schema, &resp, &rows));
     BOOST_FOREACH(const KuduRowResult& r, rows) {
       std::cout << r.ToString() << std::endl;
     }
@@ -326,21 +347,26 @@ static int TsCliMain(int argc, char** argv) {
   SetUsage(argv[0]);
   ParseCommandLineFlags(&argc, &argv, true);
   InitGoogleLoggingSafe(argv[0]);
-  const string addr = FLAGS_tserver_address;
+  const string addr = FLAGS_server_address;
 
   string op = GetOp(argc, argv);
 
   TsAdminClient client(addr, FLAGS_timeout_ms);
 
-  CHECK_OK_PREPEND(client.Init(), "Unable to establish connection to " + addr);
+  RETURN_NOT_OK_PREPEND_FROM_MAIN(client.Init(),
+                                  "Unable to establish connection to " + addr);
 
   // TODO add other operations here...
   if (op == kListTabletsOp) {
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(2);
+
     vector<StatusAndSchemaPB> tablets;
-    CHECK_OK_PREPEND(client.ListTablets(&tablets), "Unable to list tablets on " + addr);
+    RETURN_NOT_OK_PREPEND_FROM_MAIN(client.ListTablets(&tablets),
+                                    "Unable to list tablets on " + addr);
     BOOST_FOREACH(const StatusAndSchemaPB& status_and_schema, tablets) {
       Schema schema;
-      CHECK_OK(SchemaFromPB(status_and_schema.schema(), &schema));
+      RETURN_NOT_OK_PREPEND_FROM_MAIN(SchemaFromPB(status_and_schema.schema(), &schema),
+                                      "Unable to convert schema from " + addr);
       TabletStatusPB ts = status_and_schema.tablet_status();
       string state = tablet::TabletStatePB_Name(ts.state());
       std::cout << "Tablet id: " << ts.tablet_id() << std::endl;
@@ -357,8 +383,11 @@ static int TsCliMain(int argc, char** argv) {
       std::cout << "Schema: " << schema.ToString() << std::endl;
     }
   } else if (op == kAreTabletsRunningOp) {
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(2);
+
     vector<StatusAndSchemaPB> tablets;
-    CHECK_OK_PREPEND(client.ListTablets(&tablets), "Unable to list tablets on " + addr);
+    RETURN_NOT_OK_PREPEND_FROM_MAIN(client.ListTablets(&tablets),
+                                    "Unable to list tablets on " + addr);
     bool all_running = true;
     BOOST_FOREACH(const StatusAndSchemaPB& status_and_schema, tablets) {
       TabletStatusPB ts = status_and_schema.tablet_status();
@@ -376,45 +405,43 @@ static int TsCliMain(int argc, char** argv) {
       return 1;
     }
   } else if (op == kSetFlagOp) {
-    if (argc != 4) {
-      google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
-      exit(1);
-    }
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(4);
 
-    Status s = client.SetFlag(argv[2], argv[3], FLAGS_force);
-    if (!s.ok()) {
-      std::cerr << "Unable to set flag: " << s.ToString() << std::endl;
-      return 1;
-    }
+    RETURN_NOT_OK_PREPEND_FROM_MAIN(client.SetFlag(argv[2], argv[3], FLAGS_force),
+                                    "Unable to set flag");
 
   } else if (op == kDumpTabletOp) {
-    if (argc != 3) {
-      google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
-      exit(1);
-    }
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(3);
+
     string tablet_id = argv[2];
-    CHECK_OK(client.DumpTablet(tablet_id));
+    RETURN_NOT_OK_PREPEND_FROM_MAIN(client.DumpTablet(tablet_id),
+                                    "Unable to dump tablet");
   } else if (op == kDeleteTabletOp) {
-    if (argc != 4) {
-      google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
-      return 1;
-    }
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(4);
+
     string tablet_id = argv[2];
     string reason = argv[3];
 
-    CHECK_OK(client.DeleteTablet(tablet_id, reason));
+    RETURN_NOT_OK_PREPEND_FROM_MAIN(client.DeleteTablet(tablet_id, reason),
+                                    "Unable to delete tablet");
   } else if (op == kCurrentTimestamp) {
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(2);
+
     uint64_t timestamp;
-    CHECK_OK(client.CurrentTimestamp(&timestamp));
+    RETURN_NOT_OK_PREPEND_FROM_MAIN(client.CurrentTimestamp(&timestamp),
+                                    "Unable to get timestamp");
     std::cout << timestamp << std::endl;
   } else if (op == kStatus) {
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(2);
+
     ServerStatusPB status;
-    CHECK_OK(client.GetStatus(&status));
+    RETURN_NOT_OK_PREPEND_FROM_MAIN(client.GetStatus(&status),
+                                    "Unable to get status");
     std::cout << status.DebugString() << std::endl;
   } else {
     std::cerr << "Invalid operation: " << op << std::endl;
     google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
-    exit(1);
+    return 2;
   }
 
   return 0;
