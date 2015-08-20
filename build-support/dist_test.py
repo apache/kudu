@@ -54,6 +54,9 @@ DEPS_FOR_ALL = \
      # TODO: again, we should do this with some per-test metadata file.
      "src/kudu/twitter-demo/example-deletes.txt",
      "src/kudu/twitter-demo/example-tweets.txt",
+
+     # Tests that require tooling require these.
+     "build/latest/kudu-admin",
      ]
 
 
