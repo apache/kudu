@@ -36,6 +36,8 @@
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/fault_injection.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/path_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
@@ -43,6 +45,13 @@
 
 DEFINE_bool(skip_remove_old_recovery_dir, false,
             "Skip removing WAL recovery dir after startup. (useful for debugging)");
+
+DEFINE_double(fault_crash_during_log_replay, 0.0,
+              "Fraction of the time when the tablet will crash immediately "
+              "after processing a log entry during log replay. "
+              "(For testing only!)");
+TAG_FLAG(fault_crash_during_log_replay, unsafe);
+
 DECLARE_int32(max_clock_sync_error_usec);
 
 namespace kudu {
@@ -523,29 +532,18 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
     LOG_WITH_PREFIX(INFO) << "Previous recovery directory found at " << recovery_path << ": "
                           << "Replaying log files from this location instead of " << log_dir;
 
-    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
-                          "Failed to create log dir");
-
-    // If we have a recovery directory, delete all the WAL files from the main
-    // log dir (if any), since the files in log_dir are the result of a
-    // previous, failed recovery attempt.
-    bool deleted_any = false;
-    vector<string> children;
-    RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
-                          "Couldn't list log segments.");
-    BOOST_FOREACH(const string& child, children) {
-      if (!log::IsLogFileName(child)) {
-        continue;
-      }
-      if (!deleted_any) {
-        LOG_WITH_PREFIX(INFO) << "Deleting old files from previous, failed log recovery attempt "
-                              << "found in " << log_dir;
-        deleted_any = true;
-      }
-      string path = JoinPathSegments(log_dir, child);
-      LOG_WITH_PREFIX(INFO) << "Removing old file from previous log recovery attempt: " << path;
-      RETURN_NOT_OK(fs_manager->env()->DeleteFile(path));
+    // Since we have a recovery directory, clear out the log_dir by recursively
+    // deleting it and creating a new one so that we don't end up with remnants
+    // of old WAL segments or indexes after replay.
+    if (fs_manager->env()->FileExists(log_dir)) {
+      LOG_WITH_PREFIX(INFO) << "Deleting old log files from previous recovery attempt in "
+                            << log_dir;
+      RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(log_dir),
+                            "Could not recursively delete old log dir " + log_dir);
     }
+
+    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+                          "Failed to create log directory " + log_dir);
 
     *needs_recovery = true;
     return Status::OK();
@@ -753,6 +751,7 @@ Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
     default:
       return Status::Corruption(Substitute("Unexpected log entry type: $0", entry->type()));
   }
+  MAYBE_FAULT(FLAGS_fault_crash_during_log_replay);
   return Status::OK();
 }
 
