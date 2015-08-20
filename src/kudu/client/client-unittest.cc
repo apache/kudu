@@ -6,11 +6,13 @@
 #include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 #include <string>
+#include <vector>
 
 #include "kudu/client/client.h"
 
 using boost::assign::list_of;
 using std::string;
+using std::vector;
 
 namespace kudu {
 namespace client {
@@ -87,6 +89,10 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_GoodSchema) {
   b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
   b.SetPrimaryKey(list_of<string>("a")("b"));
   ASSERT_EQ("OK", b.Build(&s).ToString());
+
+  vector<int> key_columns;
+  s.GetPrimaryKeyColumnIndexes(&key_columns);
+  ASSERT_EQ(list_of<int>(0)(1), key_columns);
 }
 
 TEST(ClientUnitTest, TestSchemaBuilder_DefaultValues) {

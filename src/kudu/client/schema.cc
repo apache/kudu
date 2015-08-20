@@ -497,5 +497,13 @@ size_t KuduSchema::num_key_columns() const {
   return schema_->num_key_columns();
 }
 
+void KuduSchema::GetPrimaryKeyColumnIndexes(vector<int>* indexes) const {
+  indexes->clear();
+  indexes->resize(num_key_columns());
+  for (int i = 0; i < num_key_columns(); i++) {
+    (*indexes)[i] = i;
+  }
+}
+
 } // namespace client
 } // namespace kudu

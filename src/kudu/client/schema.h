@@ -264,6 +264,12 @@ class KUDU_EXPORT KuduSchema {
   KuduColumnSchema Column(size_t idx) const;
   size_t num_columns() const;
 
+  // Get the indexes of the primary key columns within this Schema.
+  // In current versions of Kudu, these will always be contiguous column
+  // indexes starting with 0. However, in future versions this assumption
+  // may not hold, so callers should not assume it is the case.
+  void GetPrimaryKeyColumnIndexes(std::vector<int>* indexes) const;
+
   // Create a new row corresponding to this schema.
   //
   // The new row refers to this KuduSchema object, so must be destroyed before
