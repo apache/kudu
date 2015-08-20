@@ -214,6 +214,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   // Format a nice error message to report on a corruption in a log file.
   Status MakeCorruptionStatus(int batch_number, int64_t batch_offset,
                               std::vector<int64_t>* recent_offsets,
+                              const std::vector<LogEntryPB*>& entries,
                               const Status& status) const;
 
   Status ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,

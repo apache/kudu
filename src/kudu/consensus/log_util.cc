@@ -438,7 +438,8 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries,
       }
 
       Status corruption_status = MakeCorruptionStatus(
-        batches_read, this_batch_offset, &recent_offsets, s);
+          batches_read, this_batch_offset, &recent_offsets,
+          *entries, s);
 
       // If we have a valid footer in the segment, then the segment was correctly
       // closed, and we shouldn't see any corruption anywhere (including the last
@@ -540,6 +541,7 @@ Status ReadableLogSegment::ScanForValidEntryHeaders(int64_t offset, bool* has_va
 
 Status ReadableLogSegment::MakeCorruptionStatus(int batch_number, int64_t batch_offset,
                                                 vector<int64_t>* recent_offsets,
+                                                const std::vector<LogEntryPB*>& entries,
                                                 const Status& status) const {
 
   string err = "Log file corruption detected. ";
@@ -550,6 +552,24 @@ Status ReadableLogSegment::MakeCorruptionStatus(int batch_number, int64_t batch_
   BOOST_FOREACH(int64_t offset, *recent_offsets) {
     if (offset >= 0) {
       SubstituteAndAppend(&err, " $0", offset);
+    }
+  }
+  if (!entries.empty()) {
+    err.append("; Last log entries read:");
+    const int kNumEntries = 4; // Include up to the last 4 entries in the segment.
+    for (int i = std::max(0, static_cast<int>(entries.size()) - kNumEntries);
+        i < entries.size(); i++) {
+      LogEntryPB* entry = entries[i];
+      LogEntryTypePB type = entry->type();
+      string opid_str;
+      if (type == log::REPLICATE && entry->has_replicate()) {
+        opid_str = OpIdToString(entry->replicate().id());
+      } else if (entry->has_commit() && entry->commit().has_commited_op_id()) {
+        opid_str = OpIdToString(entry->commit().commited_op_id());
+      } else {
+        opid_str = "<unknown>";
+      }
+      SubstituteAndAppend(&err, " [$0 ($1)]", LogEntryTypePB_Name(type), opid_str);
     }
   }
 
