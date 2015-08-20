@@ -502,12 +502,12 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
   shared_ptr<Tablet> tablet;
   scoped_refptr<Log> log;
 
-  LOG(INFO) << "Bootstrapping tablet: " << tablet_id;
+  LOG(INFO) << LogPrefix(tablet_id) << "Bootstrapping tablet";
   TRACE("Bootstrapping tablet");
 
   consensus::ConsensusBootstrapInfo bootstrap_info;
   Status s;
-  LOG_TIMING(INFO, Substitute("bootstrapping tablet $0", tablet_id)) {
+  LOG_TIMING_PREFIX(INFO, LogPrefix(tablet_id), "bootstrapping tablet") {
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
     // partially created tablet here?
     s = BootstrapTablet(meta,
@@ -520,15 +520,15 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
                         tablet_peer->log_anchor_registry(),
                         &bootstrap_info);
     if (!s.ok()) {
-      LOG(ERROR) << "Tablet failed to bootstrap: "
-          << tablet_id << " Status: " << s.ToString();
+      LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to bootstrap: "
+                 << s.ToString();
       tablet_peer->SetFailed(s);
       return;
     }
   }
 
   MonoTime start(MonoTime::Now(MonoTime::FINE));
-  LOG_TIMING(INFO, Substitute("starting tablet $0", tablet_id)) {
+  LOG_TIMING_PREFIX(INFO, LogPrefix(tablet_id), "starting tablet") {
     TRACE("Initializing tablet peer");
     s =  tablet_peer->Init(tablet,
                            scoped_refptr<server::Clock>(server_->clock()),
@@ -537,8 +537,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
                            tablet->GetMetricEntity());
 
     if (!s.ok()) {
-      LOG(ERROR) << "Tablet failed to init: "
-          << tablet_id << " Status: " << s.ToString();
+      LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to init: "
+                 << s.ToString();
       tablet_peer->SetFailed(s);
       return;
     }
@@ -546,8 +546,8 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
     TRACE("Starting tablet peer");
     s = tablet_peer->Start(bootstrap_info);
     if (!s.ok()) {
-      LOG(ERROR) << "Tablet failed to start: "
-          << tablet_id << " Status: " << s.ToString();
+      LOG(ERROR) << LogPrefix(tablet_id) << "Tablet failed to start: "
+                 << s.ToString();
       tablet_peer->SetFailed(s);
       return;
     }
@@ -557,9 +557,10 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
 
   int elapsed_ms = MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToMilliseconds();
   if (elapsed_ms > FLAGS_tablet_start_warn_threshold_ms) {
-    LOG(WARNING) << "Tablet startup for " << tablet_id << " took " << elapsed_ms << "ms";
+    LOG(WARNING) << LogPrefix(tablet_id) << "Tablet startup took " << elapsed_ms << "ms";
     if (Trace::CurrentTrace()) {
-      LOG(WARNING) << "Trace:\n" << Trace::CurrentTrace()->DumpToString(true);
+      LOG(WARNING) << LogPrefix(tablet_id) << "Trace:" << std::endl
+                   << Trace::CurrentTrace()->DumpToString(true);
     }
   }
 }

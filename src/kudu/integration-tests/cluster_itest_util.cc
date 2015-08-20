@@ -493,15 +493,20 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
   Status s;
   tablet::TabletStatePB last_state = tablet::UNKNOWN;
   while (true) {
-    Status s = ListTablets(ts, MonoDelta::FromSeconds(10), &tablets);
+    s = ListTablets(ts, MonoDelta::FromSeconds(10), &tablets);
     if (s.ok()) {
+      bool seen = false;
       BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
         if (t.tablet_status().tablet_id() == tablet_id) {
+          seen = true;
           last_state = t.tablet_status().state();
           if (last_state == tablet::RUNNING) {
             return Status::OK();
           }
         }
+      }
+      if (!seen) {
+        s = Status::NotFound("Tablet " + tablet_id + " not found");
       }
     }
     if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
@@ -509,9 +514,11 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  return Status::TimedOut("Tablet " + tablet_id + " not RUNNING after " +
-                          MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
-                          tablet::TabletStatePB_Name(last_state));
+  return Status::TimedOut(Substitute("T $0 P $1: Tablet not RUNNING after $2: "
+                                     "Tablet state: $3, Status message: $4",
+                                     tablet_id, ts->uuid(),
+                                     MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
+                                     tablet::TabletStatePB_Name(last_state), s.ToString()));
 }
 
 Status DeleteTablet(const TServerDetails* ts,
