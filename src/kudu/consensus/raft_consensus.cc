@@ -1270,7 +1270,8 @@ OpId RaftConsensus::GetLatestOpIdFromLog() {
 Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg) {
   OperationType op_type = msg->get()->op_type();
   CHECK(IsConsensusOnlyOperation(op_type))
-      << "Expected op type: " << OperationType_Name(op_type);
+      << "Expected a consensus-only op type, got " << OperationType_Name(op_type)
+      << ": " << msg->get()->ShortDebugString();
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Starting consensus round: "
                                << msg->get()->id().ShortDebugString();
   scoped_refptr<ConsensusRound> round(new ConsensusRound(this, msg));
