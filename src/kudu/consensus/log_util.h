@@ -373,8 +373,7 @@ class WritableLogSegment {
 void CreateBatchFromAllocatedOperations(const std::vector<consensus::ReplicateRefPtr>& msgs,
                                         gscoped_ptr<LogEntryBatchPB>* batch);
 
-// Checks if 'fname' is a correctly formatted name of log segment
-// file.
+// Checks if 'fname' is a correctly formatted name of log segment file.
 bool IsLogFileName(const std::string& fname);
 
 }  // namespace log

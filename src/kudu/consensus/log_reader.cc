@@ -135,8 +135,8 @@ Status LogReader::Init(const string& tablet_wal_path) {
       CHECK(segment->IsInitialized()) << "Uninitialized segment at: " << segment->path();
 
       if (!segment->HasFooter()) {
-        LOG(WARNING) << "Segment: " << fqp << " was likely left in-progress "
-            "after a previous crash. Will try to rebuild footer by scanning data";
+        LOG(WARNING) << "Log segment " << fqp << " was likely left in-progress "
+            "after a previous crash. Will try to rebuild footer by scanning data.";
         RETURN_NOT_OK(segment->RebuildFooterByScanning());
       }
 

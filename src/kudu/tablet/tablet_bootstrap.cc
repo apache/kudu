@@ -137,6 +137,18 @@ class TabletBootstrap {
   // Sets '*has_blocks' to true if there was any data on disk for this tablet.
   Status OpenTablet(bool* has_blocks);
 
+  // Checks if a previous log recovery directory exists. If so, it deletes any
+  // files in the log dir and sets 'needs_recovery' to true, meaning that the
+  // previous recovery attempt should be retried from the recovery dir.
+  //
+  // Otherwise, if there is a log directory with log files in it, renames that
+  // log dir to the log recovery dir and creates a new, empty log dir so that
+  // log replay can proceed. 'needs_recovery' is also returned as true in this
+  // case.
+  //
+  // If no log segments are found, 'needs_recovery' is set to false.
+  Status PrepareRecoveryDir(bool* needs_recovery);
+
   // Opens the latest log segments for the Tablet that will allow to rebuild
   // the tablet's soft state. If there are existing log segments in the tablet's
   // log directly they are moved to a "log-recovery" directory which is deleted
@@ -146,7 +158,7 @@ class TabletBootstrap {
   // If a "log-recovery" directory is already present, we will continue to replay
   // from the "log-recovery" directory. Tablet metadata is updated once replay
   // has finished from the "log-recovery" directory.
-  Status OpenLogReader(bool* needs_recovery);
+  Status OpenLogReaderInRecoveryDir();
 
   // Opens a new log in the tablet's log directory.
   // The directory is expected to be clean.
@@ -156,14 +168,6 @@ class TabletBootstrap {
   Status FinishBootstrap(const std::string& message,
                          scoped_refptr<log::Log>* rebuilt_log,
                          shared_ptr<Tablet>* rebuilt_tablet);
-
-  // Checks if a previous attempt at a recovery has been made: if so,
-  // sets 'needs_recovery' to true.  Otherwise, moves the log segments
-  // present in the tablet's log dir into the log recovery directory.
-  //
-  // Replaying the segments in the log recovery directory will create
-  // a new log that will go into the normal tablet wal directory.
-  Status PrepareRecoveryDir(bool* needs_recovery);
 
   // Plays the log segments into the tablet being built.
   // The process of playing the segments generates a new log that can be continued
@@ -237,7 +241,8 @@ class TabletBootstrap {
   // with it.
   Status UpdateClock(uint64_t timestamp);
 
-  // Removes the recovery directory.
+  // Removes the recovery directory and all files contained therein.
+  // Intended to be invoked after log replay successfully completes.
   Status RemoveRecoveryDir();
 
   scoped_refptr<TabletMetadata> meta_;
@@ -329,7 +334,8 @@ TabletStatusListener::~TabletStatusListener() {
 }
 
 void TabletStatusListener::StatusMessage(const string& status) {
-  LOG(INFO) << "Tablet " << tablet_id() << ": " << status;
+  LOG(INFO) << "T " << tablet_id() << " P " << meta_->fs_manager()->uuid() << ": "
+            << status;
   boost::lock_guard<boost::shared_mutex> l(lock_);
   last_status_ = status;
 }
@@ -424,9 +430,12 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   RETURN_NOT_OK(OpenTablet(&has_blocks));
 
   bool needs_recovery;
-  RETURN_NOT_OK(OpenLogReader(&needs_recovery));
+  RETURN_NOT_OK(PrepareRecoveryDir(&needs_recovery));
+  if (needs_recovery) {
+    RETURN_NOT_OK(OpenLogReaderInRecoveryDir());
+  }
 
-  // This is a new tablet just return OK()
+  // This is a new tablet, nothing left to do.
   if (!has_blocks && !needs_recovery) {
     LOG(INFO) << "No blocks or log segments found for tablet: " << tablet_id
         << " creating new one.";
@@ -439,18 +448,14 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     return Status::OK();
   }
 
-
-  // If there were blocks there must be segments to replay.
-  // TODO this actually may not be a requirement if the tablet was Flush()ed
-  // before shutdown *and* the Log was GC()'d but because we aren't doing Log
-  // GC on shutdown there should be some segments available even if there is
-  // no soft state to rebuild.
+  // If there were blocks, there must be segments to replay. This is required
+  // by Raft, since we always need to know the term and index of the last
+  // logged op in order to vote, know how to respond to AppendEntries(), etc.
   if (has_blocks && !needs_recovery) {
-    return Status::IllegalState(Substitute("Tablet: $0 had rowsets but no log "
+    return Status::IllegalState(Substitute("Tablet $0: Found rowsets but no log "
                                            "segments could be found.",
                                            tablet_id));
   }
-
 
   // Before playing any segments we set the safe and clean times to 'kMin' so that
   // the MvccManager will accept all transactions that we replay as uncommitted.
@@ -501,68 +506,58 @@ Status TabletBootstrap::OpenTablet(bool* has_blocks) {
   return Status::OK();
 }
 
-Status TabletBootstrap::OpenLogReader(bool* needs_recovery) {
-  RETURN_NOT_OK(PrepareRecoveryDir(needs_recovery));
-
-  // TODO in a dist setting we want to get segments from other nodes
-  // and do not require that local segments are present but for now
-  // we do, i.e. a tablet having local blocks but no local log segments
-  // signals lost state.
-  if (!*needs_recovery) {
-    return Status::OK();
-  }
-
-  VLOG(1) << "Existing Log segments found, opening log reader.";
-  // Open the reader.
-  RETURN_NOT_OK_PREPEND(LogReader::OpenFromRecoveryDir(tablet_->metadata()->fs_manager(),
-                                                       tablet_->metadata()->tablet_id(),
-                                                       tablet_->GetMetricEntity().get(),
-                                                       &log_reader_),
-                        "Could not open LogReader. Reason");
-  return Status::OK();
-}
-
 Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
-
   *needs_recovery = false;
 
   FsManager* fs_manager = tablet_->metadata()->fs_manager();
   string tablet_id = tablet_->metadata()->tablet_id();
   string log_dir = fs_manager->GetTabletWalDir(tablet_id);
 
+  // If the recovery directory exists, then we crashed mid-recovery.
+  // Throw away any logs from the previous recovery attempt and restart the log
+  // replay process from the beginning using the same recovery dir as last time.
   string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_id);
   if (fs_manager->Exists(recovery_path)) {
-    LOG(INFO) << "Replaying from previous recovery directory: " << recovery_path;
-    if (fs_manager->Exists(log_dir)) {
-      vector<string> children;
-      RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
-                            "Couldn't list log segments.");
-      BOOST_FOREACH(const string& child, children) {
-        if (!log::IsLogFileName(child)) {
-          continue;
-        }
-        string path = JoinPathSegments(log_dir, child);
-        LOG(INFO) << "Removing old log file from previous aborted recovery attempt: " << path;
-        RETURN_NOT_OK(fs_manager->env()->DeleteFile(path));
+    LOG(INFO) << "Previous recovery directory found at " << recovery_path << ": "
+              << "Replaying log files from this location instead of " << log_dir;
+
+    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+                          "Failed to create log dir");
+
+    // If we have a recovery directory, delete all the WAL files from the main
+    // log dir (if any), since the files in log_dir are the result of a
+    // previous, failed recovery attempt.
+    bool deleted_any = false;
+    vector<string> children;
+    RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
+                          "Couldn't list log segments.");
+    BOOST_FOREACH(const string& child, children) {
+      if (!log::IsLogFileName(child)) {
+        continue;
       }
-    } else {
-      RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
-                            "Failed to create log dir");
+      if (!deleted_any) {
+        LOG(INFO) << "Deleting old files from previous, failed log recovery attempt "
+                  << "found in " << log_dir;
+        deleted_any = true;
+      }
+      string path = JoinPathSegments(log_dir, child);
+      LOG(INFO) << "Removing old file from previous log recovery attempt: " << path;
+      RETURN_NOT_OK(fs_manager->env()->DeleteFile(path));
     }
+
     *needs_recovery = true;
     return Status::OK();
   }
 
-  if (!fs_manager->Exists(log_dir)) {
-    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
-                          "Failed to create log dir");
-    return Status::OK();
-  }
+  // If we made it here, there was no pre-existing recovery dir.
+  // Now we look for log files in log_dir, and if we find any then we rename
+  // the whole log_dir to a recovery dir and return needs_recovery = true.
+  RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+                        "Failed to create log dir");
 
   vector<string> children;
   RETURN_NOT_OK_PREPEND(fs_manager->ListDir(log_dir, &children),
                         "Couldn't list log segments.");
-
   BOOST_FOREACH(const string& child, children) {
     if (!log::IsLogFileName(child)) {
       continue;
@@ -577,36 +572,51 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
   if (*needs_recovery) {
     // Atomically rename the log directory to the recovery directory
     // and then re-create the log directory.
+    LOG(INFO) << "Moving log directory " << log_dir << " to recovery directory "
+              << recovery_path << " in preparation for log replay";
     RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(log_dir, recovery_path),
                           Substitute("Could not move log directory $0 to recovery dir $1",
                                      log_dir, recovery_path));
-    LOG(INFO) << "Moved log directory: " << log_dir << " to recovery directory: " << recovery_path;
-    RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
+    RETURN_NOT_OK_PREPEND(fs_manager->env()->CreateDir(log_dir),
                           "Failed to recreate log directory " + log_dir);
   }
+  return Status::OK();
+}
+
+Status TabletBootstrap::OpenLogReaderInRecoveryDir() {
+  VLOG(1) << "Opening log reader in log recovery dir "
+          << tablet_->metadata()->fs_manager()->GetTabletWalRecoveryDir(tablet_->tablet_id());
+  // Open the reader.
+  RETURN_NOT_OK_PREPEND(LogReader::OpenFromRecoveryDir(tablet_->metadata()->fs_manager(),
+                                                       tablet_->metadata()->tablet_id(),
+                                                       tablet_->GetMetricEntity().get(),
+                                                       &log_reader_),
+                        "Could not open LogReader. Reason");
   return Status::OK();
 }
 
 Status TabletBootstrap::RemoveRecoveryDir() {
   FsManager* fs_manager = tablet_->metadata()->fs_manager();
   string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_->metadata()->tablet_id());
-
-  DCHECK(fs_manager->Exists(recovery_path))
+  CHECK(fs_manager->Exists(recovery_path))
       << "Tablet WAL recovery dir " << recovery_path << " does not exist.";
 
+  LOG(INFO) << "Preparing to delete log recovery files and directory " << recovery_path;
+
   string tmp_path = Substitute("$0-$1", recovery_path, GetCurrentTimeMicros());
+  LOG(INFO) << "Renaming log recovery dir from "  << recovery_path << " to " << tmp_path;
   RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(recovery_path, tmp_path),
                         Substitute("Could not rename old recovery dir from: $0 to: $1",
                                    recovery_path, tmp_path));
-  LOG(INFO) << "Renamed old recovery dir from: "  << recovery_path << " to: " << tmp_path;
 
   if (FLAGS_skip_remove_old_recovery_dir) {
-    LOG(INFO) << "--skip_remove_old_recovery_dir enabled. NOT removing " << tmp_path;
+    LOG(INFO) << "--skip_remove_old_recovery_dir enabled. NOT deleting " << tmp_path;
     return Status::OK();
   }
+  LOG(INFO) << "Deleting all files from renamed log recovery directory " << tmp_path;
   RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(tmp_path),
-                        "Could not remove renamed recovery dir" +  tmp_path);
-  LOG(INFO) << "Removed renamed recovery dir: " << tmp_path;
+                        "Could not remove renamed recovery dir " + tmp_path);
+  LOG(INFO) << "Completed deletion of old log recovery files and directory " << tmp_path;
   return Status::OK();
 }
 

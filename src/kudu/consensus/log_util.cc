@@ -147,7 +147,7 @@ Status ReadableLogSegment::Init() {
   Status s = ReadFooter();
   if (!s.ok()) {
     LOG(WARNING) << "Could not read footer for segment: " << path_
-        << ". Status: " << s.ToString();
+        << ": " << s.ToString();
   }
 
   is_initialized_ = true;
@@ -462,9 +462,11 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries,
         return corruption_status;
       }
 
-      LOG(INFO) << "Ignoring corruption " << corruption_status.ToString() << ": there were "
-                << "no further log entries following this one, so likely the log was "
-                << "truncated during writing";
+      LOG(INFO) << "Ignoring log segment corruption in " << path_ << " because "
+                << "there are no log entries following the corrupted one. "
+                << "The server probably crashed in the middle of writing an entry "
+                << "to the write-ahead log or downloaded an active log via remote bootstrap. "
+                << "Error detail: " << corruption_status.ToString();
       break;
     }
 
@@ -540,8 +542,8 @@ Status ReadableLogSegment::MakeCorruptionStatus(int batch_number, int64_t batch_
                                                 vector<int64_t>* recent_offsets,
                                                 const Status& status) const {
 
-  string err = "Log file corrupted. ";
-  SubstituteAndAppend(&err, "Failed trying to read batch #$0 at offset $1 for segment at $2. ",
+  string err = "Log file corruption detected. ";
+  SubstituteAndAppend(&err, "Failed trying to read batch #$0 at offset $1 for log segment $2: ",
                       batch_number, batch_offset, path_);
   err.append("Prior batch offsets:");
   std::sort(recent_offsets->begin(), recent_offsets->end());
@@ -555,7 +557,7 @@ Status ReadableLogSegment::MakeCorruptionStatus(int batch_number, int64_t batch_
 }
 
 Status ReadableLogSegment::ReadEntryHeaderAndBatch(int64_t* offset, faststring* tmp_buf,
-                                              gscoped_ptr<LogEntryBatchPB>* batch) {
+                                                   gscoped_ptr<LogEntryBatchPB>* batch) {
   EntryHeader header;
   RETURN_NOT_OK(ReadEntryHeader(offset, &header));
   RETURN_NOT_OK(ReadEntryBatch(offset, header, tmp_buf, batch));
@@ -568,10 +570,10 @@ Status ReadableLogSegment::ReadEntryHeader(int64_t *offset, EntryHeader* header)
   Slice slice;
   RETURN_NOT_OK_PREPEND(ReadFully(readable_file().get(), *offset, kEntryHeaderSize,
                                   &slice, scratch),
-                        "Could not read entry header");
+                        "Could not read log entry header");
 
   if (PREDICT_FALSE(!DecodeEntryHeader(slice, header))) {
-    return Status::Corruption("CRC mismatch in log header");
+    return Status::Corruption("CRC mismatch in log entry header");
   }
   *offset += slice.size();
   return Status::OK();
