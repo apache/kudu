@@ -7,6 +7,7 @@
 #include <signal.h>
 #include <time.h>
 
+#include "kudu/util/glibc_workaround.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/flags.h"
 #include "kudu/util/status.h"
@@ -41,6 +42,7 @@ int main(int argc, char **argv) {
 }
 
 static void CreateAndStartTimer(timer_t* timerid, struct sigevent* sevp, struct itimerspec* its) {
+  kudu::ForceLinkingGlibcWorkaround();
   // Create the test-timeout timer.
   sevp->sigev_notify = SIGEV_THREAD;
   sevp->sigev_value.sival_ptr = timerid;

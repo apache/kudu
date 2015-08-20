@@ -182,6 +182,7 @@ target_link_libraries(kudu_test_util
 #######################################
 
 add_library(kudu_test_main
+  glibc_workaround.cc
   test_main.cc)
 target_link_libraries(kudu_test_main
   gflags
@@ -189,6 +190,7 @@ target_link_libraries(kudu_test_main
   gmock
   kudu_util
   kudu_test_util
+  dl
   rt)
 
 #######################################

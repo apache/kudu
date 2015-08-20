@@ -759,6 +759,14 @@ endif()
 ADD_THIRDPARTY_LIB(rt
   SHARED_LIB "${RT_LIB_PATH}")
 
+## libdl
+find_library(DL_LIB_PATH dl)
+if(NOT DL_LIB_PATH)
+  message(FATAL_ERROR "Could not find libdl on the system path")
+endif()
+ADD_THIRDPARTY_LIB(dl
+  SHARED_LIB "${DL_LIB_PATH}")
+
 ## Boost
 # It's important that Boost come last in the list of packages, because it's the only
 # dependency that we don't currently bundle in thirdparty/. If we put this earlier
