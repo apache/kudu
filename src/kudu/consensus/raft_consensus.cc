@@ -378,7 +378,10 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
   replicate->set_op_type(NO_OP);
   replicate->mutable_noop_request(); // Define the no-op request field.
 
-  // TODO We should have no-ops (?) and config changes be COMMIT_WAIT transactions.
+  // TODO: We should have no-ops (?) and config changes be COMMIT_WAIT
+  // transactions. See KUDU-798.
+  // Note: This timestamp has no meaning from a serialization perspective
+  // because this method is not executed on the TabletPeer's prepare thread.
   replicate->set_timestamp(clock_->Now().ToUint64());
 
   scoped_refptr<ConsensusRound> round(
@@ -1421,7 +1424,10 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(const RaftConfigPB& old_conf
   *cc_req->mutable_old_config() = old_config;
   *cc_req->mutable_new_config() = new_config;
 
-  // TODO We should have no-ops (?) and config changes be COMMIT_WAIT transactions.
+  // TODO: We should have no-ops (?) and config changes be COMMIT_WAIT
+  // transactions. See KUDU-798.
+  // Note: This timestamp has no meaning from a serialization perspective
+  // because this method is not executed on the TabletPeer's prepare thread.
   cc_replicate->set_timestamp(clock_->Now().ToUint64());
 
   scoped_refptr<ConsensusRound> round(

@@ -36,12 +36,16 @@ using consensus::ConsensusMetadata;
 using consensus::kMinimumTerm;
 using consensus::MakeOpId;
 using consensus::OpId;
+using consensus::ReplicateMsg;
+using consensus::ReplicateRefPtr;
+using consensus::make_scoped_refptr_replicate;
 using log::Log;
 using log::LogAnchorRegistry;
 using log::LogTestBase;
 using log::ReadableLogSegment;
 using server::Clock;
 using server::LogicalClock;
+using tserver::WriteRequestPB;
 
 class BootstrapTest : public LogTestBase {
  protected:
@@ -471,6 +475,64 @@ TEST_F(BootstrapTest, TestMissingCommitMessage) {
   vector<string> results;
   IterateTabletRows(tablet.get(), &results);
   ASSERT_EQ(0, results.size());
+}
+
+// Test that we do not crash when a consensus-only operation has a timestamp
+// that is higher than a timestamp assigned to a write operation that follows
+// it in the log.
+TEST_F(BootstrapTest, TestConsensusOnlyOperationOutOfOrderTimestamp) {
+  BuildLog();
+
+  // Append NO_OP.
+  ReplicateRefPtr noop_replicate = make_scoped_refptr_replicate(new ReplicateMsg());
+  noop_replicate->get()->set_op_type(consensus::NO_OP);
+  *noop_replicate->get()->mutable_id() = MakeOpId(1, 1);
+  noop_replicate->get()->set_timestamp(2);
+
+  AppendReplicateBatch(noop_replicate, true);
+
+  // Append WRITE_OP with higher OpId and lower timestamp.
+  ReplicateRefPtr write_replicate = make_scoped_refptr_replicate(new ReplicateMsg());
+  write_replicate->get()->set_op_type(consensus::WRITE_OP);
+  WriteRequestPB* batch_request = write_replicate->get()->mutable_write_request();
+  ASSERT_OK(SchemaToPB(schema_, batch_request->mutable_schema()));
+  batch_request->set_tablet_id(log::kTestTablet);
+  *write_replicate->get()->mutable_id() = MakeOpId(1, 2);
+  write_replicate->get()->set_timestamp(1);
+  AddTestRowToPB(RowOperationsPB::INSERT, schema_, 1, 1, "foo",
+                 batch_request->mutable_row_operations());
+
+  AppendReplicateBatch(write_replicate, true);
+
+  // Now commit in OpId order.
+  // NO_OP...
+  gscoped_ptr<consensus::CommitMsg> mutate_commit(new consensus::CommitMsg);
+  mutate_commit->set_op_type(consensus::NO_OP);
+  *mutate_commit->mutable_commited_op_id() = noop_replicate->get()->id();
+
+  AppendCommit(mutate_commit.Pass());
+
+  // ...and WRITE_OP...
+  mutate_commit.reset(new consensus::CommitMsg);
+  mutate_commit->set_op_type(consensus::WRITE_OP);
+  *mutate_commit->mutable_commited_op_id() = write_replicate->get()->id();
+  TxResultPB* result = mutate_commit->mutable_result();
+  OperationResultPB* mutate = result->add_ops();
+  MemStoreTargetPB* target = mutate->add_mutated_stores();
+  target->set_mrs_id(1);
+
+  AppendCommit(mutate_commit.Pass());
+
+  ConsensusBootstrapInfo boot_info;
+  shared_ptr<Tablet> tablet;
+  ASSERT_OK(BootstrapTestTablet(-1, -1, &tablet, &boot_info));
+  ASSERT_EQ(boot_info.orphaned_replicates.size(), 0);
+  ASSERT_OPID_EQ(boot_info.last_committed_id, write_replicate->get()->id());
+
+  // Confirm that the insert op was applied.
+  vector<string> results;
+  IterateTabletRows(tablet.get(), &results);
+  ASSERT_EQ(1, results.size());
 }
 
 } // namespace tablet

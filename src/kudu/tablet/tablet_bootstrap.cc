@@ -945,6 +945,12 @@ Status TabletBootstrap::HandleEntryPair(LogEntryPB* replicate_entry, LogEntryPB*
 
 #undef RETURN_NOT_OK_REPLAY
 
+  // Non-tablet operations should not advance the safe time, because they are
+  // not started serially and so may have timestamps that are out of order.
+  if (op_type == NO_OP || op_type == CHANGE_CONFIG_OP) {
+    return Status::OK();
+  }
+
   // Handle safe time advancement:
   //
   // If this operation has an external consistency mode other than COMMIT_WAIT, we know that no
