@@ -86,7 +86,9 @@ class WriteTransactionState : public TransactionState {
   // Set the MVCC transaction associated with this Write operation.
   // This must be called exactly once, during the PREPARE phase just
   // after the MvccManager has assigned a timestamp.
-  void set_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx);
+  // This also copies the timestamp from the MVCC transaction into the
+  // WriteTransactionState object.
+  void SetMvccTxAndTimestamp(gscoped_ptr<ScopedTransaction> mvcc_tx);
 
   // Set the Tablet components that this transaction will write into.
   // Called exactly once at the beginning of Apply, before applying its

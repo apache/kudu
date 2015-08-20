@@ -195,14 +195,14 @@ WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
 }
 
 
-void WriteTransactionState::set_mvcc_tx(gscoped_ptr<ScopedTransaction> mvcc_tx) {
-  DCHECK(mvcc_tx_.get() == NULL) << "Mvcc transaction already started/set.";
+void WriteTransactionState::SetMvccTxAndTimestamp(gscoped_ptr<ScopedTransaction> mvcc_tx) {
+  DCHECK(!mvcc_tx_) << "Mvcc transaction already started/set.";
   if (has_timestamp()) {
     DCHECK_EQ(timestamp(), mvcc_tx->timestamp());
   } else {
     set_timestamp(mvcc_tx->timestamp());
   }
-  mvcc_tx_.reset(mvcc_tx.release());
+  mvcc_tx_ = mvcc_tx.Pass();
 }
 
 void WriteTransactionState::set_tablet_components(

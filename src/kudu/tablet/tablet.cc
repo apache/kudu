@@ -331,7 +331,7 @@ void Tablet::StartTransaction(WriteTransactionState* tx_state) {
   } else {
     mvcc_tx.reset(new ScopedTransaction(&mvcc_, ScopedTransaction::NOW));
   }
-  tx_state->set_mvcc_tx(mvcc_tx.Pass());
+  tx_state->SetMvccTxAndTimestamp(mvcc_tx.Pass());
 }
 
 Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
