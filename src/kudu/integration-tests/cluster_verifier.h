@@ -47,7 +47,7 @@ class ClusterVerifier {
   // Check that the given table has the given number of rows. Depending on ComparisonMode,
   // the comparison could be exact or a lower bound.
   //
-  // Triggers a gtest assertion failure if the row count is not as expected.
+  // Returns a Corruption Status if the row count is not as expected.
   //
   // NOTE: this does not perform any retries. If it's possible that the replicas are
   // still converging, it's best to use CheckCluster() first, which will wait for
@@ -56,8 +56,21 @@ class ClusterVerifier {
                      ComparisonMode mode,
                      int expected_row_count);
 
+  // The same as above, but retries until a timeout elapses.
+  void CheckRowCountWithRetries(const std::string& table_name,
+                                ComparisonMode mode,
+                                int expected_row_count,
+                                const MonoDelta& timeout);
+
  private:
   Status DoKsck();
+
+  // Implementation for CheckRowCount -- returns a Status instead of firing
+  // gtest assertions.
+  Status DoCheckRowCount(const std::string& table_name,
+                         ComparisonMode mode,
+                         int expected_row_count);
+
 
   ExternalMiniCluster* cluster_;
 

@@ -60,9 +60,17 @@ TEST_F(TsRecoveryITest, TestLookupTimeouts) {
   cluster_->tablet_server(0)->Shutdown();
   ASSERT_OK(cluster_->tablet_server(0)->Restart());
 
+
+  // TODO(KUDU-796): after a restart, we may have to replay some
+  // orphaned replicates from the log. However, we currently
+  // allow reading while those are being replayed, which means we
+  // can "go back in time" briefly. So, we have some retries here.
+  // When KUDU-796 is fixed, remove the retries.
   ClusterVerifier v(cluster_.get());
-  NO_FATALS(v.CheckRowCount(work.table_name(), ClusterVerifier::AT_LEAST,
-                            work.rows_inserted()));
+  NO_FATALS(v.CheckRowCountWithRetries(work.table_name(),
+                                       ClusterVerifier::AT_LEAST,
+                                       work.rows_inserted(),
+                                       MonoDelta::FromSeconds(20)));
 }
 
 } // namespace kudu

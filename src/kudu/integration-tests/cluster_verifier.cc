@@ -7,6 +7,7 @@
 
 #include "kudu/client/client.h"
 #include "kudu/client/row_result.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/tools/ksck_remote.h"
@@ -18,6 +19,7 @@ using std::vector;
 
 namespace kudu {
 
+using strings::Substitute;
 using tools::Ksck;
 using tools::KsckCluster;
 using tools::KsckMaster;
@@ -83,28 +85,57 @@ Status ClusterVerifier::DoKsck() {
 void ClusterVerifier::CheckRowCount(const std::string& table_name,
                                     ComparisonMode mode,
                                     int expected_row_count) {
+  ASSERT_OK(DoCheckRowCount(table_name, mode, expected_row_count));
+}
+
+Status ClusterVerifier::DoCheckRowCount(const std::string& table_name,
+                                        ComparisonMode mode,
+                                        int expected_row_count) {
   shared_ptr<client::KuduClient> client;
   client::KuduClientBuilder builder;
-  ASSERT_OK(cluster_->CreateClient(builder,
-                                   &client));
+  RETURN_NOT_OK_PREPEND(cluster_->CreateClient(builder,
+                                               &client),
+                        "Unable to connect to cluster");
   shared_ptr<client::KuduTable> table;
-  ASSERT_OK(client->OpenTable(table_name, &table));
+  RETURN_NOT_OK_PREPEND(client->OpenTable(table_name, &table),
+                        "Unable to open table");
   client::KuduScanner scanner(table.get());
-  ASSERT_OK(scanner.SetProjectedColumns(vector<string>()));
-  ASSERT_OK(scanner.Open());
+  CHECK_OK(scanner.SetProjectedColumns(vector<string>()));
+  RETURN_NOT_OK_PREPEND(scanner.Open(), "Unable to open scanner");
   int count = 0;
   vector<client::KuduRowResult> rows;
   while (scanner.HasMoreRows()) {
-    ASSERT_OK(scanner.NextBatch(&rows));
+    RETURN_NOT_OK_PREPEND(scanner.NextBatch(&rows), "Unable to read from scanner");
     count += rows.size();
     rows.clear();
   }
 
-  if (mode == AT_LEAST) {
-    ASSERT_GE(count, expected_row_count);
-  } else {
-    ASSERT_EQ(expected_row_count, count);
+  if (mode == AT_LEAST && count < expected_row_count) {
+    return Status::Corruption(Substitute("row count $0 is not at least expected value $1",
+                                         count, expected_row_count));
+  } else if (mode == EXACTLY && count != expected_row_count) {
+    return Status::Corruption(Substitute("row count $0 is not exactly expected value $1",
+                                         count, expected_row_count));
   }
+  return Status::OK();
+}
+
+void ClusterVerifier::CheckRowCountWithRetries(const std::string& table_name,
+                                               ComparisonMode mode,
+                                               int expected_row_count,
+                                               const MonoDelta& timeout) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  Status s;
+  while (true) {
+    s = DoCheckRowCount(table_name, mode, expected_row_count);
+    if (s.ok() || deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) break;
+    LOG(WARNING) << "CheckRowCount() has not succeeded yet: " << s.ToString()
+                 << "... will retry";
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+
+  ASSERT_OK(s);
 }
 
 } // namespace kudu
