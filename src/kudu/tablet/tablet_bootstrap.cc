@@ -245,6 +245,9 @@ class TabletBootstrap {
   // Intended to be invoked after log replay successfully completes.
   Status RemoveRecoveryDir();
 
+  // Return a log prefix string in the standard "T xxx P yyy" format.
+  string LogPrefix() const;
+
   scoped_refptr<TabletMetadata> meta_;
   scoped_refptr<Clock> clock_;
   shared_ptr<MemTracker> mem_tracker_;
@@ -421,7 +424,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   if (VLOG_IS_ON(1)) {
     TabletSuperBlockPB super_block;
     RETURN_NOT_OK(meta_->ToSuperBlock(&super_block));
-    VLOG(1) << "Tablet Metadata: " << super_block.DebugString();
+    VLOG_WITH_PREFIX(1) << "Tablet Metadata: " << super_block.DebugString();
   }
 
   RETURN_NOT_OK(flushed_stores_.InitFrom(*meta_.get()));
@@ -437,8 +440,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
 
   // This is a new tablet, nothing left to do.
   if (!has_blocks && !needs_recovery) {
-    LOG(INFO) << "No blocks or log segments found for tablet: " << tablet_id
-        << " creating new one.";
+    LOG_WITH_PREFIX(INFO) << "No blocks or log segments found. Creating new log.";
     RETURN_NOT_OK_PREPEND(OpenNewLog(), "Failed to open new log");
     RETURN_NOT_OK(FinishBootstrap("No bootstrap required, opened a new log",
                                   rebuilt_log,
@@ -498,7 +500,7 @@ Status TabletBootstrap::OpenTablet(bool* has_blocks) {
                                         metric_registry_,
                                         log_anchor_registry_));
   // doing nothing for now except opening a tablet locally.
-  LOG_TIMING(INFO, Substitute("opening tablet $0", tablet->tablet_id())) {
+  LOG_TIMING_PREFIX(INFO, LogPrefix(), "opening tablet") {
     RETURN_NOT_OK(tablet->Open());
   }
   *has_blocks = tablet->num_rowsets() != 0;
@@ -518,8 +520,8 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
   // replay process from the beginning using the same recovery dir as last time.
   string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_id);
   if (fs_manager->Exists(recovery_path)) {
-    LOG(INFO) << "Previous recovery directory found at " << recovery_path << ": "
-              << "Replaying log files from this location instead of " << log_dir;
+    LOG_WITH_PREFIX(INFO) << "Previous recovery directory found at " << recovery_path << ": "
+                          << "Replaying log files from this location instead of " << log_dir;
 
     RETURN_NOT_OK_PREPEND(fs_manager->CreateDirIfMissing(log_dir),
                           "Failed to create log dir");
@@ -536,12 +538,12 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
         continue;
       }
       if (!deleted_any) {
-        LOG(INFO) << "Deleting old files from previous, failed log recovery attempt "
-                  << "found in " << log_dir;
+        LOG_WITH_PREFIX(INFO) << "Deleting old files from previous, failed log recovery attempt "
+                              << "found in " << log_dir;
         deleted_any = true;
       }
       string path = JoinPathSegments(log_dir, child);
-      LOG(INFO) << "Removing old file from previous log recovery attempt: " << path;
+      LOG_WITH_PREFIX(INFO) << "Removing old file from previous log recovery attempt: " << path;
       RETURN_NOT_OK(fs_manager->env()->DeleteFile(path));
     }
 
@@ -565,15 +567,16 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
 
     string source_path = JoinPathSegments(log_dir, child);
     string dest_path = JoinPathSegments(recovery_path, child);
-    LOG(INFO) << "Will attempt to recover log segment: " << source_path << " to: " << dest_path;
+    LOG_WITH_PREFIX(INFO) << "Will attempt to recover log segment " << source_path
+                          << " to " << dest_path;
     *needs_recovery = true;
   }
 
   if (*needs_recovery) {
     // Atomically rename the log directory to the recovery directory
     // and then re-create the log directory.
-    LOG(INFO) << "Moving log directory " << log_dir << " to recovery directory "
-              << recovery_path << " in preparation for log replay";
+    LOG_WITH_PREFIX(INFO) << "Moving log directory " << log_dir << " to recovery directory "
+                          << recovery_path << " in preparation for log replay";
     RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(log_dir, recovery_path),
                           Substitute("Could not move log directory $0 to recovery dir $1",
                                      log_dir, recovery_path));
@@ -584,8 +587,8 @@ Status TabletBootstrap::PrepareRecoveryDir(bool* needs_recovery) {
 }
 
 Status TabletBootstrap::OpenLogReaderInRecoveryDir() {
-  VLOG(1) << "Opening log reader in log recovery dir "
-          << tablet_->metadata()->fs_manager()->GetTabletWalRecoveryDir(tablet_->tablet_id());
+  VLOG_WITH_PREFIX(1) << "Opening log reader in log recovery dir "
+                      << meta_->fs_manager()->GetTabletWalRecoveryDir(tablet_->tablet_id());
   // Open the reader.
   RETURN_NOT_OK_PREPEND(LogReader::OpenFromRecoveryDir(tablet_->metadata()->fs_manager(),
                                                        tablet_->metadata()->tablet_id(),
@@ -601,22 +604,24 @@ Status TabletBootstrap::RemoveRecoveryDir() {
   CHECK(fs_manager->Exists(recovery_path))
       << "Tablet WAL recovery dir " << recovery_path << " does not exist.";
 
-  LOG(INFO) << "Preparing to delete log recovery files and directory " << recovery_path;
+  LOG_WITH_PREFIX(INFO) << "Preparing to delete log recovery files and directory " << recovery_path;
 
   string tmp_path = Substitute("$0-$1", recovery_path, GetCurrentTimeMicros());
-  LOG(INFO) << "Renaming log recovery dir from "  << recovery_path << " to " << tmp_path;
+  LOG_WITH_PREFIX(INFO) << "Renaming log recovery dir from "  << recovery_path
+                        << " to " << tmp_path;
   RETURN_NOT_OK_PREPEND(fs_manager->env()->RenameFile(recovery_path, tmp_path),
                         Substitute("Could not rename old recovery dir from: $0 to: $1",
                                    recovery_path, tmp_path));
 
   if (FLAGS_skip_remove_old_recovery_dir) {
-    LOG(INFO) << "--skip_remove_old_recovery_dir enabled. NOT deleting " << tmp_path;
+    LOG_WITH_PREFIX(INFO) << "--skip_remove_old_recovery_dir enabled. NOT deleting " << tmp_path;
     return Status::OK();
   }
-  LOG(INFO) << "Deleting all files from renamed log recovery directory " << tmp_path;
+  LOG_WITH_PREFIX(INFO) << "Deleting all files from renamed log recovery directory " << tmp_path;
   RETURN_NOT_OK_PREPEND(fs_manager->env()->DeleteRecursively(tmp_path),
                         "Could not remove renamed recovery dir " + tmp_path);
-  LOG(INFO) << "Completed deletion of old log recovery files and directory " << tmp_path;
+  LOG_WITH_PREFIX(INFO) << "Completed deletion of old log recovery files and directory "
+                        << tmp_path;
   return Status::OK();
 }
 
@@ -734,7 +739,7 @@ struct ReplayState {
 // Otherwise, caller frees.
 Status TabletBootstrap::HandleEntry(ReplayState* state, LogEntryPB* entry) {
   if (VLOG_IS_ON(1)) {
-    VLOG(1) << "Handling entry: " << entry->ShortDebugString();
+    VLOG_WITH_PREFIX(1) << "Handling entry: " << entry->ShortDebugString();
   }
 
   switch (entry->type()) {
@@ -778,9 +783,10 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* r
 
     LogEntryPB* last_entry = (*state->pending_replicates.rbegin()).second;
 
-    LOG(INFO) << "Overwriting operations starting at: " << existing_entry->replicate().id()
-        << " up to: " << last_entry->replicate().id() << " with operation: "
-        << replicate_entry->replicate().id();
+    LOG_WITH_PREFIX(INFO) << "Overwriting operations starting at: "
+                          << existing_entry->replicate().id()
+                          << " up to: " << last_entry->replicate().id()
+                          << " with operation: " << replicate_entry->replicate().id();
 
     while (iter != state->pending_replicates.end()) {
       delete (*iter).second;
@@ -867,7 +873,7 @@ bool TabletBootstrap::AreAnyStoresAlreadyFlushed(const CommitMsg& commit) {
 Status TabletBootstrap::CheckOrphanedCommitAlreadyFlushed(const CommitMsg& commit) {
   if (!AreAllStoresAlreadyFlushed(commit)) {
     TabletSuperBlockPB super;
-    WARN_NOT_OK(meta_->ToSuperBlock(&super), "Couldn't build TabletSuperBlockPB.");
+    WARN_NOT_OK(meta_->ToSuperBlock(&super), LogPrefix() + "Couldn't build TabletSuperBlockPB");
     return Status::Corruption(Substitute("CommitMsg was orphaned but it referred to "
         "unflushed stores. Commit: $0. TabletMetadata: $1", commit.ShortDebugString(),
         super.ShortDebugString()));
@@ -895,7 +901,7 @@ Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commi
           committed_op_id.ShortDebugString(),
           pending_replicate_entry->replicate().ShortDebugString(),
           commit_entry->commit().ShortDebugString());
-      LOG(DFATAL) << error_msg;
+      LOG_WITH_PREFIX(DFATAL) << error_msg;
       return Status::Corruption(error_msg);
     }
     RETURN_NOT_OK(HandleEntryPair(pending_replicate_entry.get(), commit_entry));
@@ -983,7 +989,7 @@ void TabletBootstrap::DumpReplayStateToLog(const ReplayState& state) {
   vector<string> state_dump;
   state.DumpReplayStateToStrings(&state_dump);
   BOOST_FOREACH(const string& string, state_dump) {
-    LOG(INFO) << string;
+    LOG_WITH_PREFIX(INFO) << string;
   }
 }
 
@@ -1208,16 +1214,19 @@ Status TabletBootstrap::PlayChangeConfigRequest(ReplicateMsg* replicate_msg,
   if (replicate_msg->id().index() > cmeta_opid_index) {
     DCHECK(!config.has_opid_index());
     config.set_opid_index(replicate_msg->id().index());
-    VLOG(1) << "WAL replay found Raft configuration with log index " << config.opid_index()
-            << " that is greater than the committed config's index " << cmeta_opid_index
-            << ". Applying this configuration change.";
+    VLOG_WITH_PREFIX(1) << "WAL replay found Raft configuration with log index "
+                        << config.opid_index()
+                        << " that is greater than the committed config's index "
+                        << cmeta_opid_index
+                        << ". Applying this configuration change.";
     cmeta_->set_committed_config(config);
     // We flush once at the end of bootstrap.
   } else {
-    VLOG(1) << "WAL replay found Raft configuration with log index "
-            << replicate_msg->id().index() << ", which is less than or equal to the committed "
-            << "config's index " << cmeta_opid_index << ". "
-            << "Skipping application of this config change.";
+    VLOG_WITH_PREFIX(1) << "WAL replay found Raft configuration with log index "
+                        << replicate_msg->id().index()
+                        << ", which is less than or equal to the committed "
+                        << "config's index " << cmeta_opid_index << ". "
+                        << "Skipping application of this config change.";
   }
 
   return AppendCommitMsg(commit_msg);
@@ -1261,10 +1270,10 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
     if (PREDICT_FALSE(orig_op_result.has_failed_status())) {
       Status status = StatusFromPB(orig_op_result.failed_status());
       if (VLOG_IS_ON(1)) {
-        VLOG(1) << "Skipping operation that originally resulted in error. OpId: "
-                << tx_state->op_id().DebugString() << " op index: "
-                << op_idx - 1 << " original error: "
-                << status.ToString();
+        VLOG_WITH_PREFIX(1) << "Skipping operation that originally resulted in error. OpId: "
+                            << tx_state->op_id().DebugString() << " op index: "
+                            << op_idx - 1 << " original error: "
+                            << status.ToString();
       }
       op->SetFailed(status);
       continue;
@@ -1294,7 +1303,7 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
         }
         break;
       default:
-        LOG(FATAL) << "Bad op type: " << op->decoded_op.type;
+        LOG_WITH_PREFIX(FATAL) << "Bad op type: " << op->decoded_op.type;
         break;
     }
     if (op->result != NULL) {
@@ -1333,10 +1342,11 @@ Status TabletBootstrap::FilterInsert(WriteTransactionState* tx_state,
   // check if the insert is already flushed
   if (flushed_stores_.WasStoreAlreadyFlushed(op_result.mutated_stores(0))) {
     if (VLOG_IS_ON(1)) {
-      VLOG(1) << "Skipping insert that was already flushed. OpId: "
-              << tx_state->op_id().DebugString()
-              << " flushed to: " << op_result.mutated_stores(0).mrs_id()
-              << " latest durable mrs id: " << tablet_->metadata()->last_durable_mrs_id();
+      VLOG_WITH_PREFIX(1) << "Skipping insert that was already flushed. OpId: "
+                          << tx_state->op_id().DebugString()
+                          << " flushed to: " << op_result.mutated_stores(0).mrs_id()
+                          << " latest durable mrs id: "
+                          << tablet_->metadata()->last_durable_mrs_id();
     }
 
     op->SetAlreadyFlushed();
@@ -1367,9 +1377,9 @@ Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
     } else {
       if (VLOG_IS_ON(1)) {
         string mutation = op->decoded_op.changelist.ToString(*tablet_->schema());
-        VLOG(1) << "Skipping mutation to " << mutated_store.ShortDebugString()
-                << " that was already flushed. "
-                << "OpId: " << tx_state->op_id().DebugString();
+        VLOG_WITH_PREFIX(1) << "Skipping mutation to " << mutated_store.ShortDebugString()
+                            << " that was already flushed. "
+                            << "OpId: " << tx_state->op_id().DebugString();
       }
     }
   }
@@ -1388,8 +1398,8 @@ Status TabletBootstrap::FilterMutate(WriteTransactionState* tx_state,
     // This case is not currently covered by any tests -- we need to add test coverage
     // for this. See KUDU-218. It's likely the correct behavior is just to apply the edit,
     // ie not fatal below.
-    LOG(DFATAL) << "TODO: add test coverage for case where op is unflushed in both duplicated "
-                << "targets";
+    LOG_WITH_PREFIX(DFATAL) << "TODO: add test coverage for case where op is unflushed "
+                            << "in both duplicated targets";
   }
 
   return Status::OK();
@@ -1400,6 +1410,10 @@ Status TabletBootstrap::UpdateClock(uint64_t timestamp) {
   RETURN_NOT_OK(ts.FromUint64(timestamp));
   RETURN_NOT_OK(clock_->Update(ts));
   return Status::OK();
+}
+
+string TabletBootstrap::LogPrefix() const {
+  return Substitute("T $0 P $1: ", meta_->tablet_id(), meta_->fs_manager()->uuid());
 }
 
 Status FlushedStoresSnapshot::InitFrom(const TabletMetadata& meta) {
