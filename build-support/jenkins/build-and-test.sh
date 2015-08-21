@@ -294,7 +294,7 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   virtualenv test_environment
   source test_environment/bin/activate
   pip install --upgrade pip
-  pip install -r requirements.txt
+  pip install --disable-pip-version-check -r requirements.txt
 
   # Assuming we run this script from base dir
   python setup.py build_ext
