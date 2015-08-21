@@ -217,6 +217,46 @@ TEST_F(ConsensusPeersTest, TestRemotePeers) {
   WaitForMajorityReplicatedIndex(2);
 }
 
+// Regression test for KUDU-699: even if a peer isn't making progress,
+// and thus always has data pending, we should be able to close the peer.
+TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
+  message_queue_->Init(MinimumOpId());
+  message_queue_->SetLeaderMode(MinimumOpId(),
+                                MinimumOpId().term(),
+                                1);
+
+  MockedPeerProxy* mock_proxy = new MockedPeerProxy(pool_.get());
+  gscoped_ptr<Peer> peer;
+  ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB("test-peer"),
+                                "fake-tablet",
+                                "fake-leader-uuid",
+                                message_queue_.get(),
+                                pool_.get(),
+                                gscoped_ptr<PeerProxy>(mock_proxy),
+                                &peer));
+
+  // Make the peer respond without making any progress -- it always returns
+  // that it has only replicated op 0.0. When we see the response, we always
+  // decide that more data is pending, and we want to send another request.
+  ConsensusResponsePB peer_resp;
+  peer_resp.set_responder_uuid("test-peer");
+  peer_resp.set_responder_term(0);
+  peer_resp.mutable_status()->mutable_last_received()->CopyFrom(
+      MakeOpId(0, 0));
+  peer_resp.mutable_status()->mutable_last_received_current_leader()->CopyFrom(
+      MakeOpId(0, 0));
+  peer_resp.mutable_status()->set_last_committed_idx(0);
+
+  mock_proxy->set_update_response(peer_resp);
+
+  // Add an op to the queue and start sending requests to the peer.
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 1);
+  peer->SignalRequest(true);
+
+  // We should be able to close the peer even though it has more data pending.
+  peer->Close();
+}
+
 }  // namespace consensus
 }  // namespace kudu
 

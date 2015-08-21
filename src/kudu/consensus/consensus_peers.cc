@@ -91,7 +91,7 @@ void Peer::SetTermForTest(int term) {
 }
 
 Status Peer::Init() {
-  boost::lock_guard<Semaphore> lock(sem_);
+  boost::lock_guard<simple_spinlock> lock(peer_lock_);
   queue_->TrackPeer(peer_pb_.permanent_uuid());
   RETURN_NOT_OK(heartbeater_.Start());
   state_ = kPeerStarted;
@@ -104,20 +104,24 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
   if (!sem_.TryAcquire()) {
     return Status::OK();
   }
-  if (PREDICT_FALSE(state_ == kPeerClosed)) {
-    sem_.Release();
-    return Status::IllegalState("Peer was closed.");
+  {
+    boost::lock_guard<simple_spinlock> l(peer_lock_);
+
+    if (PREDICT_FALSE(state_ == kPeerClosed)) {
+      sem_.Release();
+      return Status::IllegalState("Peer was closed.");
+    }
+
+    // For the first request sent by the peer, we send it even if the queue is empty,
+    // which it will always appear to be for the first request, since this is the
+    // negotiation round.
+    if (PREDICT_FALSE(state_ == kPeerStarted)) {
+      even_if_queue_empty = true;
+      state_ = kPeerRunning;
+    }
+    DCHECK_EQ(state_, kPeerRunning);
   }
 
-  // For the first request sent by the peer, we send it even if the queue is empty,
-  // which it will always appear to be for the first request, since this is the
-  // negotiation round.
-  if (PREDICT_FALSE(state_ == kPeerStarted)) {
-    even_if_queue_empty = true;
-    state_ = kPeerIdle;
-  }
-
-  DCHECK_EQ(state_, kPeerIdle);
 
   RETURN_NOT_OK(thread_pool_->SubmitClosure(
                   Bind(&Peer::SendNextRequest, Unretained(this), even_if_queue_empty)));
@@ -161,7 +165,6 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 
   MAYBE_FAULT(FLAGS_fault_crash_on_leader_request_fraction);
 
-  state_ = kPeerWaitingForResponse;
 
   VLOG_WITH_PREFIX_UNLOCKED(2) << "Sending to peer " << peer_pb().permanent_uuid() << ": "
       << request_.ShortDebugString();
@@ -176,7 +179,6 @@ void Peer::ProcessResponse() {
 
   DCHECK_EQ(0, sem_.GetValue())
     << "Got a response when nothing was pending";
-  DCHECK_EQ(state_, kPeerWaitingForResponse);
 
   if (!controller_.status().ok()) {
     ProcessResponseError(controller_.status());
@@ -199,7 +201,6 @@ void Peer::ProcessResponse() {
   if (PREDICT_FALSE(!s.ok())) {
     LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to process peer response: " << s.ToString()
         << ": " << response_.ShortDebugString();
-    state_ = kPeerIdle;
     sem_.Release();
   }
 }
@@ -212,8 +213,11 @@ void Peer::DoProcessResponse() {
 
   bool more_pending;
   queue_->ResponseFromPeer(peer_pb_.permanent_uuid(), response_, &more_pending);
-  state_ = kPeerIdle;
-  if (more_pending && state_ != kPeerClosed) {
+
+  // We're OK to read the state_ without a lock here -- if we get a race,
+  // the worst thing that could happen is that we'll make one more request before
+  // noticing a close.
+  if (more_pending && ANNOTATE_UNPROTECTED_READ(state_) != kPeerClosed) {
     SendNextRequest(true);
   } else {
     sem_.Release();
@@ -248,7 +252,6 @@ void Peer::ProcessResponseError(const Status& status) {
       << " for tablet " << tablet_id_
       << " Status: " << status.ToString() << ". Retrying in the next heartbeat period."
       << " Already tried " << failed_attempts_ << " times.";
-  state_ = kPeerIdle;
   sem_.Release();
 }
 
@@ -261,15 +264,19 @@ string Peer::LogPrefixUnlocked() const {
 void Peer::Close() {
   WARN_NOT_OK(heartbeater_.Stop(), "Could not stop heartbeater");
 
-  // Acquire the semaphore to wait for any concurrent request to finish.
-  boost::lock_guard<Semaphore> l(sem_);
-
   // If the peer is already closed return.
-  if (state_ == kPeerClosed) return;
-  DCHECK(state_ == kPeerIdle || state_ == kPeerStarted) << "Unexpected state: " << state_;
-  state_ = kPeerClosed;
-
+  {
+    boost::lock_guard<simple_spinlock> lock(peer_lock_);
+    if (state_ == kPeerClosed) return;
+    DCHECK(state_ == kPeerRunning || state_ == kPeerStarted) << "Unexpected state: " << state_;
+    state_ = kPeerClosed;
+  }
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Closing peer: " << peer_pb_.permanent_uuid();
+
+  // Acquire the semaphore to wait for any concurrent request to finish.
+  // They will see the state_ == kPeerClosed and not start any new requests,
+  // but we can't currently cancel the already-sent ones. (see KUDU-699)
+  boost::lock_guard<Semaphore> l(sem_);
   queue_->UntrackPeer(peer_pb_.permanent_uuid());
   // We don't own the ops (the queue does).
   request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);

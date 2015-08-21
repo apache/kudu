@@ -195,8 +195,6 @@ class Peer {
   // at Close().
   Semaphore sem_;
 
-  // lock that protects Peer state changes
-  mutable simple_spinlock peer_lock_;
 
   // Heartbeater for remote peer implementations.
   // This will send status only requests to the remote peers
@@ -210,11 +208,13 @@ class Peer {
   enum State {
     kPeerCreated,
     kPeerStarted,
-    kPeerIdle,
-    kPeerWaitingForResponse,
+    kPeerRunning,
     kPeerClosed
   };
 
+  // lock that protects Peer state changes, initialization, etc.
+  // Must not try to acquire sem_ while holding peer_lock_.
+  mutable simple_spinlock peer_lock_;
   State state_;
 };
 
