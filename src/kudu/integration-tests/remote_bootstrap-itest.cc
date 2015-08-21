@@ -1,6 +1,7 @@
 // Copyright (c) 2015, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <tr1/memory>
 #include <tr1/unordered_map>
@@ -23,6 +24,15 @@
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"
 
+DEFINE_int32(test_delete_leader_num_iters, 3,
+             "Number of iterations to run in TestDeleteLeaderDuringRemoteBootstrapStressTest.");
+DEFINE_int32(test_delete_leader_min_rows_per_iter, 20,
+             "Number of writer threads in TestDeleteLeaderDuringRemoteBootstrapStressTest.");
+DEFINE_int32(test_delete_leader_payload_bytes, 16 * 1024,
+             "Payload byte size in TestDeleteLeaderDuringRemoteBootstrapStressTest.");
+DEFINE_int32(test_delete_leader_num_writer_threads, 1,
+             "Number of writer threads in TestDeleteLeaderDuringRemoteBootstrapStressTest.");
+
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
@@ -44,6 +54,7 @@ class RemoteBootstrapITest : public KuduTest {
  public:
   virtual void TearDown() OVERRIDE {
     if (HasFatalFailure()) {
+      LOG(INFO) << "Found fatal failure";
       for (int i = 0; i < 3; i++) {
         if (!cluster_->tablet_server(i)->IsProcessAlive()) {
           LOG(INFO) << "Tablet server " << i << " is not running. Cannot dump its stacks.";
@@ -62,19 +73,24 @@ class RemoteBootstrapITest : public KuduTest {
   }
 
  protected:
-  void StartCluster(const vector<string>& extra_tserver_flags = vector<string>());
+  void StartCluster(const vector<string>& extra_tserver_flags = vector<string>(),
+                    int num_tablet_servers = 3);
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
+  gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
   shared_ptr<KuduClient> client_;
   unordered_map<string, TServerDetails*> ts_map_;
 };
 
-void RemoteBootstrapITest::StartCluster(const vector<string>& extra_tserver_flags) {
+void RemoteBootstrapITest::StartCluster(const vector<string>& extra_tserver_flags,
+                                        int num_tablet_servers) {
   ExternalMiniClusterOptions opts;
-  opts.num_tablet_servers = 3;
+  opts.num_tablet_servers = num_tablet_servers;
   opts.extra_tserver_flags = extra_tserver_flags;
+  opts.extra_tserver_flags.push_back("--never_fsync"); // fsync causes flakiness on EC2.
   cluster_.reset(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster_->Start());
+  inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
   ASSERT_OK(itest::CreateTabletServerMap(cluster_->master_proxy().get(),
                                           cluster_->messenger(),
                                           &ts_map_));
@@ -358,6 +374,91 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
   ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Resume());
   BOOST_FOREACH(const string& tablet_id, tablet_ids) {
     ASSERT_OK(itest::WaitUntilTabletRunning(target_ts, tablet_id, timeout));
+  }
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
+                            workload.rows_inserted()));
+}
+
+// Test that repeatedly runs a load, tombstones a follower, then tombstones the
+// leader while the follower is remotely bootstrapping. Regression test for
+// KUDU-1047.
+TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
+  // This test takes a while due to failure detection.
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipping test in fast-test mode.";
+    return;
+  }
+
+  const MonoDelta timeout = MonoDelta::FromSeconds(60);
+  NO_FATALS(StartCluster(vector<string>(), 5));
+
+  TestWorkload workload(cluster_.get());
+  workload.set_num_replicas(5);
+  workload.set_payload_bytes(FLAGS_test_delete_leader_payload_bytes);
+  workload.set_num_write_threads(FLAGS_test_delete_leader_num_writer_threads);
+  workload.set_write_batch_size(1);
+  workload.set_write_timeout_millis(10000);
+  workload.set_timeout_allowed(true);
+  workload.set_not_found_allowed(true);
+  workload.Setup();
+
+  // Figure out the tablet id.
+  const int kTsIndex = 0;
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, timeout));
+  }
+
+  int leader_index = -1;
+  int follower_index = -1;
+  TServerDetails* leader_ts = NULL;
+  TServerDetails* follower_ts = NULL;
+
+  for (int i = 0; i < FLAGS_test_delete_leader_num_iters; i++) {
+    LOG(INFO) << "Iteration " << (i + 1);
+    int rows_previously_inserted = workload.rows_inserted();
+
+    // Find out who's leader.
+    ASSERT_OK(FindTabletLeader(ts_map_, tablet_id, timeout, &leader_ts));
+    leader_index = cluster_->tablet_server_index_by_uuid(leader_ts->uuid());
+
+    // Select an arbitrary follower.
+    follower_index = (leader_index + 1) % cluster_->num_tablet_servers();
+    follower_ts = ts_map_[cluster_->tablet_server(follower_index)->uuid()];
+
+    // Spin up the workload.
+    workload.Start();
+    while (workload.rows_inserted() < rows_previously_inserted +
+                                      FLAGS_test_delete_leader_min_rows_per_iter) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+
+    // Tombstone the follower.
+    LOG(INFO) << "Tombstoning follower tablet " << tablet_id << " on TS " << follower_ts->uuid();
+    ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+
+    // Wait for remote bootstrap to start.
+    ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(follower_index, tablet_id,
+                                                   tablet::TABLET_DATA_COPYING, timeout));
+
+    // Tombstone the leader.
+    LOG(INFO) << "Tombstoning leader tablet " << tablet_id << " on TS " << leader_ts->uuid();
+    ASSERT_OK(itest::DeleteTablet(leader_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+
+    // Quiesce and rebuild to full strength. This involves electing a new
+    // leader from the remaining three, which requires a unanimous vote, and
+    // that leader then remotely bootstrapping the old leader.
+    workload.StopAndJoin();
+    ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));
   }
 
   ClusterVerifier v(cluster_.get());

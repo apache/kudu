@@ -9,7 +9,6 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
-#include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/env.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/pb_util.h"
@@ -23,6 +22,7 @@ using std::vector;
 
 using consensus::ConsensusMetadataPB;
 using strings::Substitute;
+using tablet::TabletDataState;
 using tablet::TabletSuperBlockPB;
 
 ExternalMiniClusterFsInspector::ExternalMiniClusterFsInspector(ExternalMiniCluster* cluster)
@@ -147,6 +147,18 @@ Status ExternalMiniClusterFsInspector::ReadConsensusMetadataOnTS(int index,
   return pb_util::ReadPBContainerFromPath(env_, cmeta_file, cmeta_pb);
 }
 
+Status ExternalMiniClusterFsInspector::CheckTabletDataStateOnTS(int index,
+                                                                const string& tablet_id,
+                                                                TabletDataState state) {
+  TabletSuperBlockPB sb;
+  RETURN_NOT_OK(ReadTabletSuperBlockOnTS(index, tablet_id, &sb));
+  if (PREDICT_FALSE(sb.tablet_data_state() != state)) {
+    return Status::IllegalState("Tablet data state != " + TabletDataState_Name(state),
+                                TabletDataState_Name(sb.tablet_data_state()));
+  }
+  return Status::OK();
+}
+
 Status ExternalMiniClusterFsInspector::WaitForNoData(const MonoDelta& timeout) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(timeout);
@@ -211,9 +223,28 @@ Status ExternalMiniClusterFsInspector::WaitForReplicaCount(int expected, const M
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  return Status::TimedOut(Substitute("Timed out waiting for a total eplica count of $0. "
+  return Status::TimedOut(Substitute("Timed out waiting for a total replica count of $0. "
                                      "Found $2 replicas",
                                      expected, found));
+}
+
+Status ExternalMiniClusterFsInspector::WaitForTabletDataStateOnTS(int index,
+                                                                  const string& tablet_id,
+                                                                  TabletDataState expected,
+                                                                  const MonoDelta& timeout) {
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = start;
+  deadline.AddDelta(timeout);
+  Status s;
+  while (true) {
+    s = CheckTabletDataStateOnTS(index, tablet_id, expected);
+    if (s.ok()) return Status::OK();
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) break;
+    SleepFor(MonoDelta::FromMilliseconds(5));
+  }
+  return Status::TimedOut(Substitute("Timed out after $0 waiting for tablet data state $1: $2",
+                                     MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
+                                     TabletDataState_Name(expected), s.ToString()));
 }
 
 } // namespace itest

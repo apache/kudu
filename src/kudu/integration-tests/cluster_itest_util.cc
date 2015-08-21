@@ -338,6 +338,38 @@ Status WaitUntilLeader(const TServerDetails* replica,
                                      replica->ToString(), timeout.ToString(), s.ToString()));
 }
 
+Status FindTabletLeader(const TabletServerMap& tablet_servers,
+                        const string& tablet_id,
+                        const MonoDelta& timeout,
+                        TServerDetails** leader) {
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers, &tservers);
+
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = start;
+  deadline.AddDelta(timeout);
+  Status s;
+  int i = 0;
+  while (true) {
+    MonoDelta remaining_timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    s = GetReplicaStatusAndCheckIfLeader(tservers[i], tablet_id, remaining_timeout);
+    if (s.ok()) {
+      *leader = tservers[i];
+      return Status::OK();
+    }
+
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) break;
+    i = (i + 1) % tservers.size();
+    if (i == 0) {
+      SleepFor(MonoDelta::FromMilliseconds(10));
+    }
+  }
+  return Status::TimedOut(Substitute("Unable to find leader of tablet $0 after $1. "
+                                     "Status message: $2", tablet_id,
+                                     MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
+                                     s.ToString()));
+}
+
 Status StartElection(const TServerDetails* replica,
                      const string& tablet_id,
                      const MonoDelta& timeout) {

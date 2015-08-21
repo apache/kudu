@@ -82,9 +82,6 @@ class DeleteTableTest : public KuduTest {
   // the given 'ts_uuid'.
   string GetLeaderUUID(const string& ts_uuid, const string& tablet_id);
 
-  Status CheckTabletDataStateOnTS(int index,
-                                  const string& tablet_id,
-                                  TabletDataState state);
   Status CheckTabletTombstonedOnTS(int index,
                                    const string& tablet_id,
                                    IsCMetaExpected is_cmeta_expected);
@@ -92,9 +89,6 @@ class DeleteTableTest : public KuduTest {
   void WaitForTabletTombstonedOnTS(int index,
                                    const string& tablet_id,
                                    IsCMetaExpected is_cmeta_expected);
-  void WaitForTabletDataStateOnTS(int index,
-                                  const string& tablet_id,
-                                  TabletDataState data_state);
 
   void WaitForTSToCrash(int index);
   void WaitForAllTSToCrash();
@@ -138,24 +132,12 @@ string DeleteTableTest::GetLeaderUUID(const string& ts_uuid, const string& table
   return cstate.leader_uuid();
 }
 
-Status DeleteTableTest::CheckTabletDataStateOnTS(int index,
-                                                 const string& tablet_id,
-                                                 TabletDataState state) {
-  TabletSuperBlockPB sb;
-  RETURN_NOT_OK(inspect_->ReadTabletSuperBlockOnTS(index, tablet_id, &sb));
-  if (PREDICT_FALSE(sb.tablet_data_state() != state)) {
-    return Status::IllegalState("Tablet data state != " + TabletDataState_Name(state),
-                                TabletDataState_Name(sb.tablet_data_state()));
-  }
-  return Status::OK();
-}
-
 Status DeleteTableTest::CheckTabletTombstonedOnTS(int index,
                                                   const string& tablet_id,
                                                   IsCMetaExpected is_cmeta_expected) {
   // We simply check that no WALs exist and that the superblock indicates
   // TOMBSTONED.
-  RETURN_NOT_OK(CheckTabletDataStateOnTS(index, tablet_id, TABLET_DATA_TOMBSTONED));
+  RETURN_NOT_OK(inspect_->CheckTabletDataStateOnTS(index, tablet_id, TABLET_DATA_TOMBSTONED));
   if (inspect_->CountWALSegmentsForTabletOnTS(index, tablet_id) > 0) {
     return Status::IllegalState("WAL segments exist for tablet", tablet_id);
   }
@@ -175,22 +157,6 @@ void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
     if (s.ok()) return;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  ASSERT_OK(s);
-}
-
-void DeleteTableTest::WaitForTabletDataStateOnTS(int index,
-                                                 const string& tablet_id,
-                                                 TabletDataState data_state) {
-  Status s;
-  MonoTime start = MonoTime::Now(MonoTime::FINE);
-  for (int i = 0; i < 3000; i++) {
-    s = CheckTabletDataStateOnTS(index, tablet_id, data_state);
-    if (s.ok()) return;
-    SleepFor(MonoDelta::FromMilliseconds(10));
-  }
-  s = s.CloneAndPrepend("Timed out after " +
-                        MonoTime::Now(MonoTime::FINE)
-                        .GetDeltaSince(start).ToString());
   ASSERT_OK(s);
 }
 
@@ -335,7 +301,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
   NO_FATALS(WaitForTSToCrash(kTsIndex));
 
   // The superblock should be in TABLET_DATA_COPYING state on disk.
-  NO_FATALS(CheckTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_COPYING));
+  NO_FATALS(inspect_->CheckTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_COPYING));
 
   // Kill the other tablet servers so the leader doesn't try to remote
   // bootstrap it again during our verification here.
@@ -420,7 +386,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   // consensus metadata.
   ASSERT_OK(cluster_->tablet_server(1)->Restart());
   ASSERT_OK(cluster_->tablet_server(2)->Restart());
-  NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
   NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
@@ -436,7 +402,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   // This time, the leader will have replaced a tablet with consensus metadata.
   ASSERT_OK(cluster_->tablet_server(1)->Resume());
   ASSERT_OK(cluster_->tablet_server(2)->Resume());
-  NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
 
   NO_FATALS(v.CheckCluster());
   NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
@@ -519,7 +485,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   LOG(INFO) << "Bringing TS " << cluster_->tablet_server(kTsIndex)->uuid()
             << " back up...";
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
-  NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
 
   // Assert that the election history is retained (voted for self).
   ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb));
@@ -542,7 +508,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   NO_FATALS(WaitUntilTabletRunning(1, tablet_id));
   NO_FATALS(WaitUntilTabletRunning(2, tablet_id));
   ASSERT_OK(itest::StartElection(leader, tablet_id, timeout));
-  NO_FATALS(WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
+  ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(kTsIndex, tablet_id, TABLET_DATA_READY));
 
   // The election history should have been wiped out.
   ASSERT_OK(inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb));

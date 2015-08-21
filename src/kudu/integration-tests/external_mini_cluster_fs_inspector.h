@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "kudu/gutil/macros.h"
+#include "kudu/tablet/metadata.pb.h"
 #include "kudu/util/monotime.h"
 
 namespace kudu {
@@ -49,6 +50,9 @@ class ExternalMiniClusterFsInspector {
                                   tablet::TabletSuperBlockPB* sb);
   Status ReadConsensusMetadataOnTS(int index, const std::string& tablet_id,
                                    consensus::ConsensusMetadataPB* cmeta_pb);
+  Status CheckTabletDataStateOnTS(int index,
+                                  const std::string& tablet_id,
+                                  tablet::TabletDataState state);
 
   Status WaitForNoData(const MonoDelta& timeout = MonoDelta::FromSeconds(30));
   Status WaitForNoDataOnTS(int index, const MonoDelta& timeout = MonoDelta::FromSeconds(30));
@@ -57,6 +61,10 @@ class ExternalMiniClusterFsInspector {
                                            int count,
                                            const MonoDelta& timeout = MonoDelta::FromSeconds(30));
   Status WaitForReplicaCount(int expected, const MonoDelta& timeout = MonoDelta::FromSeconds(30));
+  Status WaitForTabletDataStateOnTS(int index,
+                                    const std::string& tablet_id,
+                                    tablet::TabletDataState data_state,
+                                    const MonoDelta& timeout = MonoDelta::FromSeconds(30));
 
  private:
   Env* const env_;

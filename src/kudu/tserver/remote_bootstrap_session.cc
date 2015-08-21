@@ -103,6 +103,7 @@ Status RemoteBootstrapSession::Init() {
   // The Log doesn't add the active segment to the log reader's list until
   // a header has been written to it (but it will not have a footer).
   RETURN_NOT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&log_segments_));
+  LOG(INFO) << "Got snapshot of " << log_segments_.size() << " log segments";
 
   // Re-anchor on the highest OpId that was in the log right before we
   // snapshotted the log segments. This helps ensure that we don't end up in a
@@ -254,15 +255,9 @@ template <class Collection, class Key, class Readable, class Info>
 static Status AddToCacheUnlocked(Collection* const cache,
                                  const Key& key,
                                  const Readable& readable,
+                                 uint64_t size,
                                  Info** info,
                                  RemoteBootstrapErrorPB::Code* error_code) {
-  uint64_t size;
-  Status s = readable->Size(&size);
-  if (PREDICT_FALSE(!s.ok())) {
-    *error_code = RemoteBootstrapErrorPB::IO_ERROR;
-    return s.CloneAndPrepend("Unable to get size of object");
-  }
-
   // Sanity check for 0-length files.
   if (size == 0) {
     *error_code = RemoteBootstrapErrorPB::IO_ERROR;
@@ -311,7 +306,14 @@ Status RemoteBootstrapSession::FindOrOpenBlockUnlocked(const BlockId& block_id,
                                         block_id.ToString()));
   }
 
-  s = AddToCacheUnlocked(&blocks_, block_id, block.get(), block_info, error_code);
+  uint64_t size;
+  s = block->Size(&size);
+  if (PREDICT_FALSE(!s.ok())) {
+    *error_code = RemoteBootstrapErrorPB::IO_ERROR;
+    return s.CloneAndPrepend("Unable to get size of block");
+  }
+
+  s = AddToCacheUnlocked(&blocks_, block_id, block.get(), size, block_info, error_code);
   if (!s.ok()) {
     s = s.CloneAndPrepend(Substitute("Error accessing data for block $0", block_id.ToString()));
     LOG(DFATAL) << "Data block disappeared: " << s.ToString();
@@ -342,7 +344,8 @@ Status RemoteBootstrapSession::FindLogSegment(uint64_t segment_seqno,
   log_segment = log_segments_[position];
   CHECK_EQ(log_segment->header().sequence_number(), segment_seqno);
 
-  Status s = AddToCacheUnlocked(&logs_, segment_seqno, log_segment->readable_file(),
+  uint64_t size = log_segment->readable_up_to();
+  Status s = AddToCacheUnlocked(&logs_, segment_seqno, log_segment->readable_file(), size,
                                 file_info, error_code);
   if (!s.ok()) {
     s = s.CloneAndPrepend(

@@ -141,6 +141,13 @@ Status WaitUntilLeader(const TServerDetails* replica,
                        const std::string& tablet_id,
                        const MonoDelta& timeout);
 
+// Loops over the replicas, attempting to determine the leader, until it finds
+// the first replica that believes it is the leader.
+Status FindTabletLeader(const TabletServerMap& tablet_servers,
+                        const std::string& tablet_id,
+                        const MonoDelta& timeout,
+                        TServerDetails** leader);
+
 // Start an election on the specified tserver.
 // 'timeout' only refers to the RPC asking the peer to start an election. The
 // StartElection() RPC does not block waiting for the results of the election,
