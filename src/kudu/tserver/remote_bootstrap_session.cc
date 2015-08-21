@@ -9,6 +9,7 @@
 #include "kudu/fs/block_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/type_traits.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/tablet_peer.h"
@@ -22,6 +23,7 @@ using consensus::OpId;
 using consensus::MinimumOpId;
 using fs::ReadableBlock;
 using log::LogAnchorRegistry;
+using log::ReadableLogSegment;
 using tablet::DeltaDataPB;
 using tablet::ColumnDataPB;
 using tablet::RowSetDataPB;
@@ -71,28 +73,14 @@ Status RemoteBootstrapSession::Init() {
                         Substitute("Unable to access superblock for tablet $0",
                                    tablet_id));
 
-  // Look up the committed consensus state.
-  scoped_refptr<consensus::Consensus> consensus = tablet_peer_->shared_consensus();
-  if (!consensus) {
-    tablet::TabletStatePB tablet_state = tablet_peer_->state();
-    return Status::IllegalState(Substitute("Unable to initialize remote bootstrap session "
-                                "for tablet $0. Consensus is not available. Tablet state: $1 ($2)",
-                                tablet_id, tablet::TabletStatePB_Name(tablet_state), tablet_state));
-  }
-  initial_committed_cstate_ = consensus->CommittedConsensusState();
-
   // Anchor the data blocks by opening them and adding them to the cache.
   //
   // All subsequent requests should reuse the opened blocks.
   vector<BlockIdPB> data_blocks;
   TabletMetadata::CollectBlockIdPBs(tablet_superblock_, &data_blocks);
   BOOST_FOREACH(const BlockIdPB& block_id, data_blocks) {
-    ImmutableReadableBlockInfo* block_info;
-    RemoteBootstrapErrorPB::Code code;
     LOG(INFO) << "Opening block " << block_id.DebugString();
-
-    RETURN_NOT_OK(FindOrOpenBlockUnlocked(
-        BlockId::FromPB(block_id), &block_info, &code));
+    RETURN_NOT_OK(OpenBlockUnlocked(BlockId::FromPB(block_id)));
   }
 
   // Get the latest opid in the log at this point in time so we can re-anchor.
@@ -103,7 +91,23 @@ Status RemoteBootstrapSession::Init() {
   // The Log doesn't add the active segment to the log reader's list until
   // a header has been written to it (but it will not have a footer).
   RETURN_NOT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&log_segments_));
+  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, log_segments_) {
+    RETURN_NOT_OK(OpenLogSegmentUnlocked(segment->header().sequence_number()));
+  }
   LOG(INFO) << "Got snapshot of " << log_segments_.size() << " log segments";
+
+  // Look up the committed consensus state.
+  // We do this after snapshotting the log to avoid a scenario where the latest
+  // entry in the log has a term higher than the term stored in the consensus
+  // metadata, which will results in a CHECK failure on RaftConsensus init.
+  scoped_refptr<consensus::Consensus> consensus = tablet_peer_->shared_consensus();
+  if (!consensus) {
+    tablet::TabletStatePB tablet_state = tablet_peer_->state();
+    return Status::IllegalState(Substitute("Unable to initialize remote bootstrap session "
+                                "for tablet $0. Consensus is not available. Tablet state: $1 ($2)",
+                                tablet_id, tablet::TabletStatePB_Name(tablet_state), tablet_state));
+  }
+  initial_committed_cstate_ = consensus->CommittedConsensusState();
 
   // Re-anchor on the highest OpId that was in the log right before we
   // snapshotted the log segments. This helps ensure that we don't end up in a
@@ -251,24 +255,50 @@ bool RemoteBootstrapSession::IsBlockOpenForTests(const BlockId& block_id) const 
 
 // Add a file to the cache and populate the given ImmutableRandomAcccessFileInfo
 // object with the file ref and size.
-template <class Collection, class Key, class Readable, class Info>
-static Status AddToCacheUnlocked(Collection* const cache,
-                                 const Key& key,
-                                 const Readable& readable,
-                                 uint64_t size,
-                                 Info** info,
-                                 RemoteBootstrapErrorPB::Code* error_code) {
+template <class Collection, class Key, class Readable>
+static Status AddImmutableFileToMap(Collection* const cache,
+                                    const Key& key,
+                                    const Readable& readable,
+                                    uint64_t size) {
   // Sanity check for 0-length files.
   if (size == 0) {
-    *error_code = RemoteBootstrapErrorPB::IO_ERROR;
     return Status::Corruption("Found 0-length object");
   }
 
   // Looks good, add it to the cache.
-  *info = new Info(readable, size);
-  InsertOrDie(cache, key, *info);
+  typedef typename Collection::mapped_type InfoPtr;
+  typedef typename base::remove_pointer<InfoPtr>::type Info;
+  InsertOrDie(cache, key, new Info(readable, size));
 
   return Status::OK();
+}
+
+Status RemoteBootstrapSession::OpenBlockUnlocked(const BlockId& block_id) {
+  DCHECK(session_lock_.is_locked());
+
+  gscoped_ptr<ReadableBlock> block;
+  Status s = fs_manager_->OpenBlock(block_id, &block);
+  if (PREDICT_FALSE(!s.ok())) {
+    LOG(WARNING) << "Unable to open requested (existing) block file: "
+                 << block_id.ToString() << ": " << s.ToString();
+    return s.CloneAndPrepend(Substitute("Unable to open block file for block $0",
+                                        block_id.ToString()));
+  }
+
+  uint64_t size;
+  s = block->Size(&size);
+  if (PREDICT_FALSE(!s.ok())) {
+    return s.CloneAndPrepend("Unable to get size of block");
+  }
+
+  s = AddImmutableFileToMap(&blocks_, block_id, block.get(), size);
+  if (!s.ok()) {
+    s = s.CloneAndPrepend(Substitute("Error accessing data for block $0", block_id.ToString()));
+    LOG(DFATAL) << "Data block disappeared: " << s.ToString();
+  } else {
+    ignore_result(block.release());
+  }
+  return s;
 }
 
 Status RemoteBootstrapSession::FindBlock(const BlockId& block_id,
@@ -283,42 +313,28 @@ Status RemoteBootstrapSession::FindBlock(const BlockId& block_id,
   return s;
 }
 
-Status RemoteBootstrapSession::FindOrOpenBlockUnlocked(const BlockId& block_id,
-                                                       ImmutableReadableBlockInfo** block_info,
-                                                       RemoteBootstrapErrorPB::Code* error_code) {
+Status RemoteBootstrapSession::OpenLogSegmentUnlocked(uint64_t segment_seqno) {
   DCHECK(session_lock_.is_locked());
 
-  if (FindCopy(blocks_, block_id, block_info)) {
-    return Status::OK();
+  scoped_refptr<log::ReadableLogSegment> log_segment;
+  int position = -1;
+  if (!log_segments_.empty()) {
+    position = segment_seqno - log_segments_[0]->header().sequence_number();
   }
-
-  gscoped_ptr<ReadableBlock> block;
-  Status s = fs_manager_->OpenBlock(block_id, &block);
-  if (PREDICT_FALSE(!s.ok())) {
-    LOG(WARNING) << "Unable to open requested (existing) block file: "
-                 << block_id.ToString() << ": " << s.ToString();
-    if (s.IsNotFound()) {
-      *error_code = RemoteBootstrapErrorPB::BLOCK_NOT_FOUND;
-    } else {
-      *error_code = RemoteBootstrapErrorPB::IO_ERROR;
-    }
-    return s.CloneAndPrepend(Substitute("Unable to open block file for block $0",
-                                        block_id.ToString()));
+  if (position < 0 || position >= log_segments_.size()) {
+    return Status::NotFound(Substitute("Segment with sequence number $0 not found",
+                                       segment_seqno));
   }
+  log_segment = log_segments_[position];
+  CHECK_EQ(log_segment->header().sequence_number(), segment_seqno);
 
-  uint64_t size;
-  s = block->Size(&size);
-  if (PREDICT_FALSE(!s.ok())) {
-    *error_code = RemoteBootstrapErrorPB::IO_ERROR;
-    return s.CloneAndPrepend("Unable to get size of block");
-  }
-
-  s = AddToCacheUnlocked(&blocks_, block_id, block.get(), size, block_info, error_code);
+  uint64_t size = log_segment->readable_up_to();
+  Status s = AddImmutableFileToMap(&logs_, segment_seqno, log_segment->readable_file(), size);
   if (!s.ok()) {
-    s = s.CloneAndPrepend(Substitute("Error accessing data for block $0", block_id.ToString()));
-    LOG(DFATAL) << "Data block disappeared: " << s.ToString();
-  } else {
-    ignore_result(block.release());
+    s = s.CloneAndPrepend(
+            Substitute("Error accessing data for log segment with seqno $0",
+                       segment_seqno));
+    LOG(INFO) << s.ToString();
   }
   return s;
 }
@@ -327,33 +343,12 @@ Status RemoteBootstrapSession::FindLogSegment(uint64_t segment_seqno,
                                               ImmutableRandomAccessFileInfo** file_info,
                                               RemoteBootstrapErrorPB::Code* error_code) {
   boost::lock_guard<simple_spinlock> l(session_lock_);
-  if (FindCopy(logs_, segment_seqno, file_info)) {
-    return Status::OK();
-  }
-
-  scoped_refptr<log::ReadableLogSegment> log_segment;
-  int position = -1;
-  if (!log_segments_.empty()) {
-    position = segment_seqno - log_segments_[0]->header().sequence_number();
-  }
-  if (position < 0 || position > log_segments_.size()) {
+  if (!FindCopy(logs_, segment_seqno, file_info)) {
     *error_code = RemoteBootstrapErrorPB::WAL_SEGMENT_NOT_FOUND;
     return Status::NotFound(Substitute("Segment with sequence number $0 not found",
                                        segment_seqno));
   }
-  log_segment = log_segments_[position];
-  CHECK_EQ(log_segment->header().sequence_number(), segment_seqno);
-
-  uint64_t size = log_segment->readable_up_to();
-  Status s = AddToCacheUnlocked(&logs_, segment_seqno, log_segment->readable_file(), size,
-                                file_info, error_code);
-  if (!s.ok()) {
-    s = s.CloneAndPrepend(
-            Substitute("Error accessing data for log segment with seqno $0",
-                       segment_seqno));
-    LOG(INFO) << s.ToString();
-  }
-  return s;
+  return Status::OK();
 }
 
 Status RemoteBootstrapSession::UnregisterAnchorIfNeededUnlocked() {

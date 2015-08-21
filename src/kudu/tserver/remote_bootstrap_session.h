@@ -129,16 +129,16 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
 
   ~RemoteBootstrapSession();
 
+  // Open the block and add it to the block map.
+  Status OpenBlockUnlocked(const BlockId& block_id);
+
   // Look up cached block information.
   Status FindBlock(const BlockId& block_id,
                    ImmutableReadableBlockInfo** block_info,
                    RemoteBootstrapErrorPB::Code* error_code);
 
-  // Look up cached block information, opening the block anew if it wasn't
-  // in the cache.
-  Status FindOrOpenBlockUnlocked(const BlockId& block_id,
-                                 ImmutableReadableBlockInfo** block_info,
-                                 RemoteBootstrapErrorPB::Code* error_code);
+  // Snapshot the log segment's length and put it into segment map.
+  Status OpenLogSegmentUnlocked(uint64_t segment_seqno);
 
   // Look up log segment in cache or log segment map.
   Status FindLogSegment(uint64_t segment_seqno,
