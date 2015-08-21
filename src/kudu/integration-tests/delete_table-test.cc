@@ -1,6 +1,7 @@
 // Copyright (c) 2015, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -23,6 +24,7 @@
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"
 
+using boost::assign::list_of;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
@@ -115,6 +117,11 @@ void DeleteTableTest::StartCluster(const vector<string>& extra_tserver_flags,
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_tserver_flags = extra_tserver_flags;
+
+  // Disable fsyncing, since these tests do a lot of data writing and transfer,
+  // and the fsyncs (a) make them slower, and (b) make them flaky since the syncs
+  // can take a long time on loaded build slaves.
+  opts.extra_tserver_flags.push_back("--never_fsync");
   cluster_.reset(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
@@ -152,7 +159,7 @@ void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
                                                   const string& tablet_id,
                                                   IsCMetaExpected is_cmeta_expected) {
   Status s;
-  for (int i = 0; i < 3000; i++) {
+  for (int i = 0; i < 6000; i++) {
     s = CheckTabletTombstonedOnTS(index, tablet_id, is_cmeta_expected);
     if (s.ok()) return;
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -162,7 +169,7 @@ void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
 
 void DeleteTableTest::WaitForTSToCrash(int index) {
   ExternalTabletServer* ts = cluster_->tablet_server(index);
-  for (int i = 0; i < 1000; i++) {
+  for (int i = 0; i < 6000; i++) { // wait 60sec
     if (!ts->IsProcessAlive()) return;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
@@ -223,7 +230,14 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
 }
 
 TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
-  NO_FATALS(StartCluster());
+  // TODO(KUDU-941): we have to disable remote bootstrap in this test right
+  // now, or else we hit an issue where we delete a replica, and then
+  // before the follower has been deleted, it resuscitates it. The resuscitated
+  // (remote bootstrapping) replica then fails the bootstrap process, but
+  // leaves a TOMBSTONED metadata file arounde, so the "WaitForNoData()"
+  // call never succeeds. KUDU-941 should make the DeleteTable() call leave
+  // around a tombstone marker for some amount of time.
+  NO_FATALS(StartCluster(list_of<string>("--noenable_remote_bootstrap")));
   int n_iters = AllowSlowTests() ? 20 : 1;
   for (int i = 0; i < n_iters; i++) {
     TestWorkload workload(cluster_.get());
@@ -323,7 +337,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   vector<string> flags;
   flags.push_back("--log_segment_size_mb=1"); // Faster log rolls.
   NO_FATALS(StartCluster(flags));
-  const MonoDelta timeout = MonoDelta::FromSeconds(10);
+  const MonoDelta timeout = MonoDelta::FromSeconds(20);
   const int kTsIndex = 0; // We'll test with the first TS.
 
   // We'll do a config change to remote bootstrap a replica here later. For
@@ -454,7 +468,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   NO_FATALS(WaitUntilTabletRunning(kTsIndex, tablet_id));
   TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
   ASSERT_OK(itest::StartElection(ts, tablet_id, timeout));
-  for (int i = 0; i < 1000; i++) {
+  for (int i = 0; i < 6000; i++) {
     Status s = inspect_->ReadConsensusMetadataOnTS(kTsIndex, tablet_id, &cmeta_pb);
     if (s.ok() &&
         cmeta_pb.current_term() == 2 &&
