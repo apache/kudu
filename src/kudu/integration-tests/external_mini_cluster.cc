@@ -674,10 +674,13 @@ const string& ExternalDaemon::uuid() const {
 Status ExternalDaemon::GetInt64Metric(const MetricEntityPrototype* entity_proto,
                                       const char* entity_id,
                                       const MetricPrototype* metric_proto,
+                                      const char* value_field,
                                       int64_t* value) const {
-  // Fetch all the metrics.
+  // Fetch metrics whose name matches the given prototype.
   string url = Substitute(
-      "http://$0/jsonmetricz", bound_http_hostport().ToString());
+      "http://$0/jsonmetricz?metrics=$1",
+      bound_http_hostport().ToString(),
+      metric_proto->name());
   EasyCurl curl;
   faststring dst;
   RETURN_NOT_OK(curl.FetchURL(url, &dst));
@@ -711,7 +714,7 @@ Status ExternalDaemon::GetInt64Metric(const MetricEntityPrototype* entity_proto,
       if (name != metric_proto->name()) {
         continue;
       }
-      RETURN_NOT_OK(r.ExtractInt64(metric, "value", value));
+      RETURN_NOT_OK(r.ExtractInt64(metric, value_field, value));
       return Status::OK();
     }
   }

@@ -37,6 +37,15 @@ DEFINE_double(fault_crash_on_leader_request_fraction, 0.0,
               "UpdateConsensus RPC. (For testing only!)");
 TAG_FLAG(fault_crash_on_leader_request_fraction, unsafe);
 
+
+// Allow for disabling remote bootstrap in unit tests where we want to test
+// certain scenarios without triggering bootstrap of a remote peer.
+DEFINE_bool(enable_remote_bootstrap, true,
+            "Whether remote bootstrap will be initiated by the leader when it "
+            "detects that a follower is out of date or does not have a tablet "
+            "replica. For testing purposes only.");
+TAG_FLAG(enable_remote_bootstrap, unsafe);
+
 namespace kudu {
 namespace consensus {
 
@@ -157,7 +166,12 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   }
 
   if (PREDICT_FALSE(needs_remote_bootstrap)) {
-    SendRemoteBootstrapRequest();
+    Status s = SendRemoteBootstrapRequest();
+    if (!s.ok()) {
+      sem_.Release();
+      LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate remote bootstrap request for peer: "
+                                        << s.ToString();
+    }
     return;
   }
 
@@ -239,17 +253,18 @@ void Peer::DoProcessResponse() {
   }
 }
 
-void Peer::SendRemoteBootstrapRequest() {
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Sending request to remotely bootstrap";
-  Status s = queue_->GetRemoteBootstrapRequestForPeer(peer_pb_.permanent_uuid(), &rb_request_);
-  if (PREDICT_FALSE(!s.ok())) {
-    LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate remote bootstrap request for peer: "
-                                      << s.ToString();
-    return;
+Status Peer::SendRemoteBootstrapRequest() {
+  if (!FLAGS_enable_remote_bootstrap) {
+    failed_attempts_++;
+    return Status::NotSupported("remote bootstrap is disabled");
   }
+
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Sending request to remotely bootstrap";
+  RETURN_NOT_OK(queue_->GetRemoteBootstrapRequestForPeer(peer_pb_.permanent_uuid(), &rb_request_));
   controller_.Reset();
   proxy_->StartRemoteBootstrap(&rb_request_, &rb_response_, &controller_,
                                boost::bind(&Peer::ProcessRemoteBootstrapResponse, this));
+  return Status::OK();
 }
 
 void Peer::ProcessRemoteBootstrapResponse() {

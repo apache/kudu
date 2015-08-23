@@ -1127,6 +1127,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
                   &METRIC_ENTITY_tablet,
                   NULL,
                   &METRIC_raft_term,
+                  "value",
                   &term_from_metric));
     ASSERT_EQ(term_from_metric, 1);
   }
@@ -1897,6 +1898,7 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
         &METRIC_ENTITY_tablet,
         NULL,
         &METRIC_transaction_memory_pressure_rejections,
+        "value",
         &num_rejections));
     if (num_rejections >= kMinRejections) {
       break;

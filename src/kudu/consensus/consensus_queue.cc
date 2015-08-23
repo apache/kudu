@@ -36,14 +36,6 @@
 DEFINE_int32(consensus_max_batch_size_bytes, 1024 * 1024,
              "The maximum per-tablet RPC batch size when updating peers.");
 
-// Allow for disabling remote bootstrap in unit tests where we want to test
-// certain scenarios without triggering bootstrap of a remote peer.
-DEFINE_bool(enable_remote_bootstrap, true,
-            "Whether remote bootstrap will be initiated by the leader when it "
-            "detects that a follower is out of date or does not have a tablet "
-            "replica. For testing purposes only.");
-TAG_FLAG(enable_remote_bootstrap, unsafe);
-
 namespace kudu {
 namespace consensus {
 
@@ -250,7 +242,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     request->set_caller_term(queue_state_.current_term);
   }
 
-  if (PREDICT_FALSE(FLAGS_enable_remote_bootstrap && peer->needs_remote_bootstrap)) {
+  if (PREDICT_FALSE(peer->needs_remote_bootstrap)) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Peer needs remote bootstrap: " << peer->ToString();
     *needs_remote_bootstrap = true;
     return Status::OK();
@@ -418,6 +410,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
       // We only let special types of errors through to this point from the peer.
       CHECK_EQ(tserver::TabletServerErrorPB::TABLET_NOT_FOUND, response.error().code())
           << response.ShortDebugString();
+
       peer->needs_remote_bootstrap = true;
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Marked peer as needing remote bootstrap: "
                                      << peer->ToString();

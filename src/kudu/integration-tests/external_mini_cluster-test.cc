@@ -58,6 +58,7 @@ TEST_F(EMCTest, TestBasicOperation) {
     ASSERT_OK(master->GetInt64Metric(&METRIC_ENTITY_server,
                                      "kudu.master",
                                      &METRIC_threads_running,
+                                     "value",
                                      &value));
     EXPECT_GT(value, 0);
   }
@@ -79,6 +80,7 @@ TEST_F(EMCTest, TestBasicOperation) {
     ASSERT_OK(ts->GetInt64Metric(&METRIC_ENTITY_server,
                                  "kudu.tabletserver",
                                  &METRIC_threads_running,
+                                 "value",
                                  &value));
     EXPECT_GT(value, 0);
   }

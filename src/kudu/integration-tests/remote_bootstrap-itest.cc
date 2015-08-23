@@ -21,6 +21,7 @@
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tserver/remote_bootstrap_client.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"
 
@@ -47,6 +48,12 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using std::vector;
 using strings::Substitute;
+
+METRIC_DECLARE_entity(server);
+METRIC_DECLARE_histogram(handler_latency_kudu_consensus_ConsensusService_UpdateConsensus);
+METRIC_DECLARE_counter(glog_info_messages);
+METRIC_DECLARE_counter(glog_warning_messages);
+METRIC_DECLARE_counter(glog_error_messages);
 
 namespace kudu {
 
@@ -465,6 +472,110 @@ TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
   NO_FATALS(v.CheckCluster());
   NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
                             workload.rows_inserted()));
+}
+
+namespace {
+int64_t CountUpdateConsensusCalls(ExternalTabletServer* ets, const string& tablet_id) {
+  int64_t ret;
+  CHECK_OK(ets->GetInt64Metric(
+               &METRIC_ENTITY_server,
+               "kudu.tabletserver",
+               &METRIC_handler_latency_kudu_consensus_ConsensusService_UpdateConsensus,
+               "total_count",
+               &ret));
+  return ret;
+}
+int64_t CountLogMessages(ExternalTabletServer* ets) {
+  int64_t total = 0;
+
+  int64_t count;
+  CHECK_OK(ets->GetInt64Metric(
+               &METRIC_ENTITY_server,
+               "kudu.tabletserver",
+               &METRIC_glog_info_messages,
+               "value",
+               &count));
+  total += count;
+
+  CHECK_OK(ets->GetInt64Metric(
+               &METRIC_ENTITY_server,
+               "kudu.tabletserver",
+               &METRIC_glog_warning_messages,
+               "value",
+               &count));
+  total += count;
+
+  CHECK_OK(ets->GetInt64Metric(
+               &METRIC_ENTITY_server,
+               "kudu.tabletserver",
+               &METRIC_glog_error_messages,
+               "value",
+               &count));
+  total += count;
+
+  return total;
+}
+} // anonymous namespace
+
+// Test that if remote bootstrap is disabled by a flag, we don't get into
+// tight loops after a tablet is deleted. This is a regression test for situation
+// similar to the bug described in KUDU-821: we were previously handling a missing
+// tablet within consensus in such a way that we'd immediately send another RPC.
+TEST_F(RemoteBootstrapITest, TestDisableRemoteBootstrap_NoTightLoopWhenTabletDeleted) {
+  MonoDelta timeout = MonoDelta::FromSeconds(10);
+  vector<string> flags;
+  flags.push_back("--enable_remote_bootstrap=false");
+  flags.push_back("--enable_leader_failure_detection=false");
+  NO_FATALS(StartCluster(flags));
+
+  TestWorkload workload(cluster_.get());
+  // TODO(KUDU-1054): the client should handle retrying on different replicas
+  // if the tablet isn't found, rather than giving us this error.
+  workload.set_not_found_allowed(true);
+  workload.set_write_batch_size(1);
+  workload.Setup();
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ExternalTabletServer* replica_ets = cluster_->tablet_server(1);
+  TServerDetails* replica_ts = ts_map_[replica_ets->uuid()];
+  ASSERT_OK(WaitForNumTabletsOnTS(replica_ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, timeout));
+  }
+
+  // Elect a leader (TS 0)
+  ExternalTabletServer* leader_ts = cluster_->tablet_server(0);
+  ASSERT_OK(itest::StartElection(ts_map_[leader_ts->uuid()], tablet_id, timeout));
+
+  // Start writing, wait for some rows to be inserted.
+  workload.Start();
+  while (workload.rows_inserted() < 100) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  // Tombstone the tablet on one of the servers (TS 1)
+  ASSERT_OK(itest::DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+
+  // Ensure that, if we sleep for a second while still doing writes to the leader:
+  // a) we don't spew logs on the leader side
+  // b) we don't get hit with a lot of UpdateConsensus calls on the replica.
+  int64_t num_update_rpcs_initial = CountUpdateConsensusCalls(replica_ets, tablet_id);
+  int64_t num_logs_initial = CountLogMessages(leader_ts);
+
+  SleepFor(MonoDelta::FromSeconds(1));
+  int64_t num_update_rpcs_after_sleep = CountUpdateConsensusCalls(replica_ets, tablet_id);
+  int64_t num_logs_after_sleep = CountLogMessages(leader_ts);
+
+  // Calculate rate per second of RPCs and log messages
+  int64_t update_rpcs_per_second = num_update_rpcs_after_sleep - num_update_rpcs_initial;
+  EXPECT_LT(update_rpcs_per_second, 20);
+  int64_t num_logs_per_second = num_logs_after_sleep - num_logs_initial;
+  EXPECT_LT(num_logs_per_second, 20);
 }
 
 } // namespace kudu

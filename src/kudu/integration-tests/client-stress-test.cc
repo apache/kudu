@@ -158,6 +158,7 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
           &METRIC_ENTITY_tablet,
           NULL,
           &METRIC_leader_memory_pressure_rejections,
+          "value",
           &value);
       if (!s.IsNotFound()) {
         ASSERT_OK(s);
@@ -167,6 +168,7 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
           &METRIC_ENTITY_tablet,
           NULL,
           &METRIC_follower_memory_pressure_rejections,
+          "value",
           &value);
       if (!s.IsNotFound()) {
         ASSERT_OK(s);

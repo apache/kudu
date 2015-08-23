@@ -151,7 +151,10 @@ class Peer {
 
   // Fetch the desired remote bootstrap request from the queue and send it
   // to the peer. The callback goes to ProcessRemoteBootstrapResponse().
-  void SendRemoteBootstrapRequest();
+  //
+  // Returns a bad Status if remote bootstrap is disabled, or if the
+  // request cannot be generated for some reason.
+  Status SendRemoteBootstrapRequest();
 
   // Handle RPC callback from initiating remote bootstrap.
   void ProcessRemoteBootstrapResponse();
