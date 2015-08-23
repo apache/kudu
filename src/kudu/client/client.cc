@@ -242,10 +242,12 @@ Status KuduClient::GetTableSchema(const string& table_name,
                                   KuduSchema* schema) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(default_admin_operation_timeout());
+  string table_id_ignored;
   return data_->GetTableSchema(this,
                                table_name,
                                deadline,
-                               schema);
+                               schema,
+                               &table_id_ignored);
 }
 
 Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) {
@@ -320,11 +322,17 @@ Status KuduClient::TableExists(const string& table_name, bool* exists) {
 Status KuduClient::OpenTable(const string& table_name,
                              shared_ptr<KuduTable>* table) {
   KuduSchema schema;
-  RETURN_NOT_OK(GetTableSchema(table_name, &schema));
+  string table_id;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(default_admin_operation_timeout());
+  RETURN_NOT_OK(data_->GetTableSchema(this,
+                                      table_name,
+                                      deadline,
+                                      &schema, &table_id));
 
   // In the future, probably will look up the table in some map to reuse KuduTable
   // instances.
-  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, schema));
+  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, table_id, schema));
   RETURN_NOT_OK(ret->data_->Open());
   table->swap(ret);
 
@@ -447,8 +455,9 @@ Status KuduTableCreator::Create() {
 
 KuduTable::KuduTable(const shared_ptr<KuduClient>& client,
                      const string& name,
+                     const string& table_id,
                      const KuduSchema& schema)
-  : data_(new KuduTable::Data(client, name, schema)) {
+  : data_(new KuduTable::Data(client, name, table_id, schema)) {
 }
 
 KuduTable::~KuduTable() {
@@ -457,6 +466,10 @@ KuduTable::~KuduTable() {
 
 const string& KuduTable::name() const {
   return data_->name_;
+}
+
+const string& KuduTable::id() const {
+  return data_->id_;
 }
 
 const KuduSchema& KuduTable::schema() const {

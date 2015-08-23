@@ -26,10 +26,12 @@ namespace client {
 
 KuduTable::Data::Data(const shared_ptr<KuduClient>& client,
                       const string& name,
+                      const string& id,
                       const KuduSchema& schema)
   : client_(client),
     name_(name),
-    schema_(schema) {
+    schema_(schema),
+    id_(id) {
 }
 
 KuduTable::Data::~Data() {
@@ -43,7 +45,7 @@ Status KuduTable::Data::Open() {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(client_->default_admin_operation_timeout());
 
-  req.mutable_table()->set_table_name(name_);
+  req.mutable_table()->set_table_id(id_);
   Status s;
   // TODO: replace this with Async RPC-retrier based RPC in the next revision,
   // adding exponential backoff and allowing this to be used safely in a

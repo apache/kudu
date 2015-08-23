@@ -1760,10 +1760,18 @@ TEST_F(ClientTest, TestBasicAlterOperations) {
 }
 
 TEST_F(ClientTest, TestDeleteTable) {
-  string tablet_id = GetFirstTabletId(client_table_.get());
+  // Open the table before deleting it.
+  ASSERT_OK(client_->OpenTable(kTableName, &client_table_));
+
+  // Insert a few rows, and scan them back. This is to populate the MetaCache.
+  NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
+  vector<string> rows;
+  ScanTableToStrings(client_table_.get(), &rows);
+  ASSERT_EQ(10, rows.size());
 
   // Remove the table
   // NOTE that it returns when the operation is completed on the master side
+  string tablet_id = GetFirstTabletId(client_table_.get());
   ASSERT_OK(client_->DeleteTable(kTableName));
   CatalogManager *catalog_manager = cluster_->mini_master()->master()->catalog_manager();
   ASSERT_FALSE(catalog_manager->TableNameExists(kTableName));
@@ -1784,6 +1792,13 @@ TEST_F(ClientTest, TestDeleteTable) {
   Status s = client_->OpenTable(kTableName, &client_table_);
   ASSERT_TRUE(s.IsNotFound());
   ASSERT_STR_CONTAINS(s.ToString(), "The table does not exist");
+
+  // Create a new table with the same name. This is to ensure that the client
+  // doesn't cache anything inappropriately by table name (see KUDU-1055).
+  NO_FATALS(CreateTable(kTableName, 1, GenerateSplitRows(), &client_table_));
+
+  // Should be able to insert successfully into the new table.
+  NO_FATALS(InsertTestRows(client_.get(), client_table_.get(), 10));
 }
 
 TEST_F(ClientTest, TestGetTableSchema) {

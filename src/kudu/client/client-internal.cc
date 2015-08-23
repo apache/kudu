@@ -326,13 +326,14 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
     if (resp.error().code() == MasterErrorPB::TABLE_ALREADY_PRESENT && attempts > 1) {
       // If the table already exists and the number of attempts is >
       // 1, then it means we may have succeeded in creating the
-      // table consensus configuration, but client didn't receive the succesful
-      // response (e.g., due to failure before the succesful
+      // table, but client didn't receive the successful
+      // response (e.g., due to failure before the successful
       // response could be sent back, or due to a I/O pause or a
       // network blip leading to a timeout, etc...)
       KuduSchema actual_schema;
+      string table_id;
       RETURN_NOT_OK_PREPEND(
-          GetTableSchema(client, req.name(), deadline, &actual_schema),
+          GetTableSchema(client, req.name(), deadline, &actual_schema, &table_id),
           Substitute("Unable to check the schema of table $0", req.name()));
       if (schema.Equals(actual_schema)) {
         return Status::OK();
@@ -531,6 +532,7 @@ class GetTableSchemaRpc : public Rpc {
                     const StatusCallback& user_cb,
                     const string& table_name,
                     KuduSchema *out_schema,
+                    string* out_id,
                     const MonoTime& deadline,
                     const shared_ptr<rpc::Messenger>& messenger);
 
@@ -551,6 +553,7 @@ class GetTableSchemaRpc : public Rpc {
   StatusCallback user_cb_;
   const string table_name_;
   KuduSchema* out_schema_;
+  string* out_id_;
   GetTableSchemaResponsePB resp_;
 };
 
@@ -558,15 +561,15 @@ GetTableSchemaRpc::GetTableSchemaRpc(KuduClient* client,
                                      const StatusCallback& user_cb,
                                      const string& table_name,
                                      KuduSchema* out_schema,
+                                     string* out_id,
                                      const MonoTime& deadline,
                                      const shared_ptr<rpc::Messenger>& messenger)
     : Rpc(deadline, messenger),
-      client_(client),
+      client_(DCHECK_NOTNULL(client)),
       user_cb_(user_cb),
       table_name_(table_name),
-      out_schema_(out_schema) {
-  DCHECK(client);
-  DCHECK(out_schema);
+      out_schema_(DCHECK_NOTNULL(out_schema)),
+      out_id_(DCHECK_NOTNULL(out_id)) {
 }
 
 GetTableSchemaRpc::~GetTableSchemaRpc() {
@@ -659,6 +662,9 @@ void GetTableSchemaRpc::SendRpcCb(const Status& status) {
       client_schema->Reset(server_schema.columns(), server_schema.num_key_columns());
       delete out_schema_->schema_;
       out_schema_->schema_ = client_schema.release();
+
+      *out_id_ = resp_.table_id();
+      CHECK_GT(out_id_->size(), 0) << "Running against a too-old master";
     }
   }
   if (!new_status.ok()) {
@@ -672,12 +678,14 @@ void GetTableSchemaRpc::SendRpcCb(const Status& status) {
 Status KuduClient::Data::GetTableSchema(KuduClient* client,
                                         const string& table_name,
                                         const MonoTime& deadline,
-                                        KuduSchema* schema) {
+                                        KuduSchema* schema,
+                                        string* table_id) {
   Synchronizer sync;
   GetTableSchemaRpc rpc(client,
                         sync.AsStatusCallback(),
                         table_name,
                         schema,
+                        table_id,
                         deadline,
                         messenger_);
   rpc.SendRpc();

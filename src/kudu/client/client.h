@@ -333,6 +333,11 @@ class KUDU_EXPORT KuduTable : public std::tr1::enable_shared_from_this<KuduTable
 
   const std::string& name() const;
 
+  // Return the table's ID. This is an internal identifier which uniquely
+  // identifies a table. If the table is deleted and recreated with the same
+  // name, the ID will distinguish the old table from the new.
+  const std::string& id() const;
+
   const KuduSchema& schema() const;
 
   // Create a new write operation for this table. It is the caller's
@@ -369,6 +374,7 @@ class KUDU_EXPORT KuduTable : public std::tr1::enable_shared_from_this<KuduTable
 
   KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
             const std::string& name,
+            const std::string& table_id,
             const KuduSchema& schema);
 
   // Owned.

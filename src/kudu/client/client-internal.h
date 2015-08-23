@@ -86,7 +86,8 @@ class KuduClient::Data {
   Status GetTableSchema(KuduClient* client,
                         const std::string& table_name,
                         const MonoTime& deadline,
-                        KuduSchema* schema);
+                        KuduSchema* schema,
+                        std::string* table_id);
 
   Status InitLocalHostNames();
 

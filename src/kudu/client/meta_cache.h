@@ -257,7 +257,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Protected by lock_
   TabletServerMap ts_cache_;
 
-  // Cache of tablets, keyed by table name, then by start key.
+  // Cache of tablets, keyed by table ID, then by start key.
   //
   // Protected by lock_.
   typedef SliceMap<scoped_refptr<RemoteTablet> >::type SliceTabletMap;

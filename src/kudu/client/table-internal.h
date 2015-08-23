@@ -15,6 +15,7 @@ class KuduTable::Data {
  public:
   Data(const std::tr1::shared_ptr<KuduClient>& client,
        const std::string& name,
+       const std::string& table_id,
        const KuduSchema& schema);
   ~Data();
 
@@ -28,6 +29,7 @@ class KuduTable::Data {
   // Do we make them call a RefreshSchema() method? Or maybe reopen the table and get
   // a new KuduTable instance (which would simplify the object lifecycle a little?)
   const KuduSchema schema_;
+  const std::string id_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

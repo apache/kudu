@@ -303,6 +303,7 @@ class LookupRpc : public Rpc {
 
   const GetTableLocationsResponsePB& resp() const { return resp_; }
   const string& table_name() const { return table_->name(); }
+  const string& table_id() const { return table_->id(); }
 
  private:
   virtual void SendRpcCb(const Status& status) OVERRIDE;
@@ -404,7 +405,7 @@ void LookupRpc::SendRpc() {
   }
 
   // Fill out the request.
-  req_.mutable_table()->set_table_name(table_->name());
+  req_.mutable_table()->set_table_id(table_->id());
   req_.set_start_key(key_.data(), key_.size());
 
   // The end key is left unset intentionally so that we'll prefetch some
@@ -513,7 +514,7 @@ const scoped_refptr<RemoteTablet>& MetaCache::ProcessLookupResponse(const Lookup
 
   lock_guard<rw_spinlock> l(&lock_);
   SliceTabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
-                                                  rpc.table_name(), SliceTabletMap());
+                                                  rpc.table_id(), SliceTabletMap());
   BOOST_FOREACH(const TabletLocationsPB& loc, rpc.resp().tablet_locations()) {
     // First, update the tserver cache, needed for the Refresh calls below.
     BOOST_FOREACH(const TabletLocationsPB_ReplicaPB& r, loc.replicas()) {
@@ -559,7 +560,7 @@ bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
                                           const Slice& key,
                                           scoped_refptr<RemoteTablet>* remote_tablet) {
   shared_lock<rw_spinlock> l(&lock_);
-  const SliceTabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->name());
+  const SliceTabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
   if (PREDICT_FALSE(!tablets)) {
     // No cache available for this table.
     return false;

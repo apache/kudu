@@ -452,6 +452,9 @@ message GetTableSchemaResponsePB {
   optional SchemaPB schema = 2;
 
   optional int32 num_replicas = 3;
+
+  // The ID of the table.
+  optional bytes table_id = 4;
 }
 
 // ============================================================================
