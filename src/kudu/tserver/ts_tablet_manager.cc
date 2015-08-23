@@ -163,15 +163,12 @@ Status TSTabletManager::Init() {
 
   InitLocalRaftPeerPB();
 
-  // Register the tablets and trigger the asynchronous bootstrap
-  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
-    {
-      boost::lock_guard<rw_spinlock> lock(lock_);
-      InsertOrDie(&transition_in_progress_, tablet_id);
-    }
-    scoped_refptr<TransitionInProgressDeleter> deleter(
-        new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
+  vector<scoped_refptr<TabletMetadata> > metas;
 
+  // First, load all of the tablet metadata. We do this before we start
+  // submitting the actual OpenTablet() tasks so that we don't have to compete
+  // for disk resources, etc, with bootstrap processes and running tablets.
+  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet_id, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet_id);
@@ -179,6 +176,18 @@ Status TSTabletManager::Init() {
       RETURN_NOT_OK(HandleNonReadyTabletOnStartup(meta));
       continue;
     }
+    metas.push_back(meta);
+  }
+
+  // Now submit the "Open" task for each.
+  BOOST_FOREACH(const scoped_refptr<TabletMetadata>& meta, metas) {
+    {
+      boost::lock_guard<rw_spinlock> lock(lock_);
+      InsertOrDie(&transition_in_progress_, meta->tablet_id());
+    }
+    scoped_refptr<TransitionInProgressDeleter> deleter(
+        new TransitionInProgressDeleter(&transition_in_progress_, &lock_, meta->tablet_id()));
+
     scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta, NEW_PEER);
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
                                                 this, meta, deleter)));
@@ -478,7 +487,7 @@ Status TSTabletManager::CheckRunningUnlocked() const {
 
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
                                        scoped_refptr<TabletMetadata>* metadata) {
-  LOG(INFO) << "Loading tablet " << tablet_id;
+  LOG(INFO) << "Loading metadata for tablet " << tablet_id;
   TRACE("Loading metadata...");
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK_PREPEND(TabletMetadata::Load(fs_manager_, tablet_id, &meta),
