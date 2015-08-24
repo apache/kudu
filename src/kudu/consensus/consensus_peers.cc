@@ -120,6 +120,21 @@ Status Peer::SignalRequest(bool even_if_queue_empty) {
       state_ = kPeerRunning;
     }
     DCHECK_EQ(state_, kPeerRunning);
+
+    // If our last request generated an error, and this is not a normal
+    // heartbeat request, then don't send the "per-RPC" request. Instead,
+    // we'll wait for the heartbeat.
+    //
+    // TODO: we could consider looking at the number of consecutive failed
+    // attempts, and instead of ignoring the signal, ask the heartbeater
+    // to "expedite" the next heartbeat in order to achieve something like
+    // exponential backoff after an error. As it is implemented today, any
+    // transient error will result in a latency blip as long as the heartbeat
+    // period.
+    if (failed_attempts_ > 0 && !even_if_queue_empty) {
+      sem_.Release();
+      return Status::OK();
+    }
   }
 
 

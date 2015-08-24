@@ -138,7 +138,7 @@ class TestPeerProxy : public PeerProxy {
     Respond(method);
   }
 
-  simple_spinlock lock_;
+  mutable simple_spinlock lock_;
   ThreadPool* pool_;
   std::map<Method, rpc::ResponseCallback> callbacks_; // Protected by lock_.
 };
@@ -214,22 +214,35 @@ class DelayablePeerProxy : public TestPeerProxy {
 // You set the response, it will respond with that.
 class MockedPeerProxy : public TestPeerProxy {
  public:
-  explicit MockedPeerProxy(ThreadPool* pool) : TestPeerProxy(pool) {}
+  explicit MockedPeerProxy(ThreadPool* pool)
+  : TestPeerProxy(pool),
+    update_count_(0) {
+  }
 
   virtual void set_update_response(const ConsensusResponsePB& update_response) {
     CHECK(update_response.IsInitialized()) << update_response.ShortDebugString();
-    update_response_ = update_response;
+    {
+      lock_guard<simple_spinlock> l(&lock_);
+      update_response_ = update_response;
+    }
   }
 
   virtual void set_vote_response(const VoteResponsePB& vote_response) {
-    vote_response_ = vote_response;
+    {
+      lock_guard<simple_spinlock> l(&lock_);
+      vote_response_ = vote_response;
+    }
   }
 
   virtual void UpdateAsync(const ConsensusRequestPB* request,
                            ConsensusResponsePB* response,
                            rpc::RpcController* controller,
                            const rpc::ResponseCallback& callback) OVERRIDE {
-    *response = update_response_;
+    {
+      lock_guard<simple_spinlock> l(&lock_);
+      update_count_++;
+      *response = update_response_;
+    }
     return RegisterCallbackAndRespond(kUpdate, callback);
   }
 
@@ -241,7 +254,15 @@ class MockedPeerProxy : public TestPeerProxy {
     return RegisterCallbackAndRespond(kRequestVote, callback);
   }
 
+  // Return the number of times that UpdateAsync() has been called.
+  int update_count() const {
+    lock_guard<simple_spinlock> l(&lock_);
+    return update_count_;
+  }
+
  protected:
+  int update_count_;
+
   ConsensusResponsePB update_response_;
   VoteResponsePB vote_response_;
 };

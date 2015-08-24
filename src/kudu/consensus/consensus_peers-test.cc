@@ -257,6 +257,62 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
   peer->Close();
 }
 
+TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
+  message_queue_->Init(MinimumOpId());
+  message_queue_->SetLeaderMode(MinimumOpId(),
+                                MinimumOpId().term(),
+                                1);
+
+  MockedPeerProxy* mock_proxy = new MockedPeerProxy(pool_.get());
+  gscoped_ptr<Peer> peer;
+  ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB("test-peer"),
+                                "fake-tablet",
+                                "fake-leader-uuid",
+                                message_queue_.get(),
+                                pool_.get(),
+                                gscoped_ptr<PeerProxy>(mock_proxy),
+                                &peer));
+
+  // Initial response has to be successful -- otherwise we'll consider the peer
+  // "new" and only send heartbeat RPCs.
+  ConsensusResponsePB initial_resp;
+  initial_resp.set_responder_uuid("test-peer");
+  initial_resp.set_responder_term(0);
+  initial_resp.mutable_status()->mutable_last_received()->CopyFrom(
+      MakeOpId(1, 1));
+  initial_resp.mutable_status()->mutable_last_received_current_leader()->CopyFrom(
+      MakeOpId(1, 1));
+  initial_resp.mutable_status()->set_last_committed_idx(0);
+  mock_proxy->set_update_response(initial_resp);
+
+  AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 1);
+  peer->SignalRequest(true);
+
+  // Now wait for the message to be replicated, this should succeed since
+  // majority = 1.
+  WaitForMajorityReplicatedIndex(1);
+
+
+  // Set up the peer to respond with an error.
+  ConsensusResponsePB error_resp;
+  error_resp.mutable_error()->set_code(tserver::TabletServerErrorPB::UNKNOWN_ERROR);
+  StatusToPB(Status::NotFound("fake error"), error_resp.mutable_error()->mutable_status());
+  mock_proxy->set_update_response(error_resp);
+
+  // Add a bunch of messages to the queue.
+  for (int i = 2; i <= 100; i++) {
+    AppendReplicateMessagesToQueue(message_queue_.get(), clock_, i, 1);
+    peer->SignalRequest(false);
+    SleepFor(MonoDelta::FromMilliseconds(2));
+  }
+
+  // Check that we didn't attempt to send one UpdateConsensus call per
+  // Write. 100 writes might have taken a second or two, though, so it's
+  // OK to have called UpdateConsensus() a few times due to regularly
+  // scheduled heartbeats.
+  ASSERT_LT(mock_proxy->update_count(), 5);
+}
+
 }  // namespace consensus
 }  // namespace kudu
 
