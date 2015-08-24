@@ -1,5 +1,8 @@
 [[installation]]
 = Installing Kudu
+
+include::index.adoc[tags=start_nav]
+
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font
@@ -476,6 +479,7 @@ see `java/README.md`.
 [[view_api]]
 == View API Documentation
 
+// tag::view_api[]
 .C++ API Documentation
 The documentation for the C++ client APIs is included in the header files in
 `/usr/include/kudu/` if you installed Kudu using packages or subdirectories
@@ -495,7 +499,7 @@ $ find /usr/include/kudu -type f -name *.h
 You can view the link:../apidocs/index.html[Java API documentation] online. Alternatively,
 after <<build_java_client,building the Java client>>, Java API documentation is available
 in `java/kudu-client/target/apidocs/index.html`.
-
+// end::view_api[]
 == Next Steps
 - link:configuration.html[Configuring Kudu]
 - link:administration.html[Kudu Administration]

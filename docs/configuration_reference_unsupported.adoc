@@ -1,5 +1,8 @@
 [[configuration_reference_unsupported]]
 = Unsupported Configuration Flags
+
+include::index.adoc[tags=start_nav]
+
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font

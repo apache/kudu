@@ -1,5 +1,8 @@
 [[documentation_style_guide]]
 = Kudu Documentation Style Guide
+
+include::index.adoc[tags=start_nav]
+
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font

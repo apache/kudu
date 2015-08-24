@@ -1,5 +1,8 @@
 [[troubleshooting]]
 = Troubleshooting
+
+include::index.adoc[tags=start_nav]
+
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font
@@ -9,3 +12,4 @@
 :backend: html5
 :sectlinks:
 :experimental:
+

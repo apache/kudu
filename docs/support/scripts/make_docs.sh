@@ -27,7 +27,7 @@ done
 
 mkdir -p "$BUILD_DIR"
 
-cp -r docs/*.adoc docs/images "$BUILD_DIR/"
+cp -r docs/*.adoc docs/docinfo.html docs/images "$BUILD_DIR/"
 
 # Create config flag references for each of the binaries below
 binaries=("cfile-dump" \
@@ -69,7 +69,7 @@ done
 # Add the includes to the configuration reference files, replacing the template lines
 sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_SUPPORTED}#" ${BUILD_DIR}/configuration_reference.adoc
 sed -i "s#@@CONFIGURATION_REFERENCE@@#${INCLUSIONS_UNSUPPORTED}#" ${BUILD_DIR}/configuration_reference_unsupported.adoc
-asciidoctor -d book ${BUILD_DIR}/*.adoc -D "$OUTPUT_DIR"
+asciidoctor -d book -a docinfo1 ${BUILD_DIR}/*.adoc -D "$OUTPUT_DIR"
 RESULT=$?
 if [ $RESULT -eq 0 ]; then
   echo "Docs built in $OUTPUT_DIR."

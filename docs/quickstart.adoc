@@ -1,5 +1,8 @@
 [[quickstart]]
 = Kudu Quickstart
+
+include::index.adoc[tags=start_nav]
+
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font
