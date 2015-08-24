@@ -189,6 +189,21 @@ for ATTEMPT_NUMBER in $(seq 1 $TEST_EXECUTION_ATTEMPTS) ; do
   fi
 done
 
+# If we have a LeakSanitizer report, and XML reporting is configured, add a new test
+# case result to the XML file for the leak report. Otherwise Jenkins won't show
+# us which tests had LSAN errors.
+if zgrep --silent "ERROR: LeakSanitizer: detected memory leaks" $LOGFILE ; then
+    echo Test had memory leaks. Editing XML
+    perl -p -i -e '
+    if (m#</testsuite>#) {
+      print "<testcase name=\"LeakSanitizer\" status=\"run\" classname=\"LSAN\">\n";
+      print "  <failure message=\"LeakSanitizer failed\" type=\"\">\n";
+      print "    See txt log file for details\n";
+      print "  </failure>\n";
+      print "</testcase>\n";
+    }' $XMLFILE
+fi
+
 # Capture and compress core file and binary.
 COREFILES=$(ls | grep ^core)
 if [ -n "$COREFILES" ]; then
