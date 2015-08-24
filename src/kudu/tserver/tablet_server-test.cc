@@ -188,6 +188,7 @@ TEST_F(TabletServerTest, TestWebPages) {
 #ifdef TCMALLOC_ENABLED
     ASSERT_STR_CONTAINS(buf.ToString(), "tcmalloc_max_total_thread_cache_bytes");
 #endif
+    ASSERT_STR_CONTAINS(buf.ToString(), "glog_info_messages");
   }
 
   // Smoke-test the tracing infrastructure.

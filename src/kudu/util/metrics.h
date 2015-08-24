@@ -338,6 +338,7 @@ struct MetricUnit {
     kBlocks,
     kLogBlockContainers,
     kTasks,
+    kMessages,
   };
   static const char* Name(Type unit);
 };

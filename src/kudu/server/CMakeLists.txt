@@ -51,8 +51,9 @@ target_link_libraries(server_base_proto
 #########################################
 
 set(SERVER_PROCESS_SRCS
-  generic_service.cc
   default-path-handlers.cc
+  generic_service.cc
+  glog_metrics.cc
   pprof-path-handlers.cc
   rpcz-path-handler.cc
   rpc_server.cc

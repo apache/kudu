@@ -16,6 +16,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/default-path-handlers.h"
 #include "kudu/server/generic_service.h"
+#include "kudu/server/glog_metrics.h"
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/server/logical_clock.h"
 #include "kudu/server/rpc_server.h"
@@ -129,6 +130,7 @@ void ServerBase::GenerateInstanceID() {
 }
 
 Status ServerBase::Init() {
+  glog_metrics_.reset(new ScopedGLogMetrics(metric_entity_));
   tcmalloc::RegisterMetrics(metric_entity_);
   RegisterSpinLockContentionMetrics(metric_entity_);
 

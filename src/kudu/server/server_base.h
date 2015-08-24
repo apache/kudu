@@ -22,6 +22,7 @@ class MetricEntity;
 class MetricRegistry;
 class NodeInstancePB;
 class RpcServer;
+class ScopedGLogMetrics;
 class Sockaddr;
 class Thread;
 class Webserver;
@@ -110,6 +111,8 @@ class ServerBase {
 
   scoped_refptr<Thread> metrics_logging_thread_;
   CountDownLatch stop_metrics_logging_latch_;
+
+  gscoped_ptr<ScopedGLogMetrics> glog_metrics_;
 
   DISALLOW_COPY_AND_ASSIGN(ServerBase);
 };
