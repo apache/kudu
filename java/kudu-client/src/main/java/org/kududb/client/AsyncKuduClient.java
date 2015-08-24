@@ -1442,7 +1442,11 @@ public class AsyncKuduClient {
     }
     LOG.debug("Removed from IP cache: {" + hostport + "} -> {" + client + "}");
     if (old == null) {
-      LOG.warn("When expiring " + client + " from the client cache (host:port="
+      // Currently we're seeing this message when masters are disconnected and the hostport we got
+      // above is different than the one the user passes (that we use to populate ip2client). At
+      // worst this doubles the entries for masters, which has an insignificant impact.
+      // TODO When fixed, make this a WARN again.
+      LOG.trace("When expiring " + client + " from the client cache (host:port="
           + hostport + "), it was found that there was no entry"
           + " corresponding to " + remote + ".  This shouldn't happen.");
     }
