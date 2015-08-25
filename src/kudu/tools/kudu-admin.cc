@@ -208,7 +208,7 @@ Status ClusterAdminClient::ChangeConfig(const string& tablet_id,
   rpc.set_timeout(timeout_);
 
   req.set_tablet_id(tablet_id);
-  req.set_type(consensus::ADD_SERVER);
+  req.set_type(cc_type);
   *req.mutable_server() = peer_pb;
 
   RETURN_NOT_OK(consensus_proxy->ChangeConfig(req, &resp, &rpc));

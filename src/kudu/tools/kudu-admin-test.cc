@@ -102,11 +102,13 @@ TEST_F(AdminCliTest, TestChangeConfig) {
                               tablet_id_, new_node->uuid());
   vector<string> args = Split(arg_str, " ");
   LOG(INFO) << "Invoking command: " << arg_str;
-  Subprocess proc(args[0], args);
-  ASSERT_OK(proc.Start());
-  int retcode;
-  ASSERT_OK(proc.Wait(&retcode));
-  ASSERT_EQ(0, retcode);
+  {
+    Subprocess proc(args[0], args);
+    ASSERT_OK(proc.Start());
+    int retcode;
+    ASSERT_OK(proc.Wait(&retcode));
+    ASSERT_EQ(0, retcode);
+  }
 
   InsertOrDie(&active_tablet_servers, new_node->uuid(), new_node);
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
@@ -132,6 +134,27 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
   NO_FATALS(v.CheckRowCount(kTableId, ClusterVerifier::AT_LEAST, rows_inserted));
+
+  // Now remove the server once again.
+  LOG(INFO) << "Removing tserver with uuid " << new_node->uuid() << " from the config...";
+  arg_str = Substitute("$0 -master_addresses $1 change_config $2 REMOVE_SERVER $3",
+                       exe_path,
+                       cluster_->master()->bound_rpc_addr().ToString(),
+                       tablet_id_, new_node->uuid());
+  args = Split(arg_str, " ");
+  LOG(INFO) << "Invoking command: " << arg_str;
+  {
+    Subprocess proc(args[0], args);
+    ASSERT_OK(proc.Start());
+    int retcode;
+    ASSERT_OK(proc.Wait(&retcode));
+    ASSERT_EQ(0, retcode);
+  }
+
+  ASSERT_EQ(1, active_tablet_servers.erase(new_node->uuid()));
+  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
+                                                leader, tablet_id_,
+                                                MonoDelta::FromSeconds(10)));
 }
 
 } // namespace tools
