@@ -121,7 +121,7 @@ class FullStackInsertScanTest : public KuduTest {
   void CreateTable() {
     ASSERT_GE(kNumInsertClients, 0);
     ASSERT_GE(kNumInsertsPerClient, 0);
-    InitCluster();
+    NO_FATALS(InitCluster());
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(kTableName)
              .schema(&schema_)
