@@ -1,0 +1,5 @@
+org.kududb
+org.kududb.client
+org.kududb.mapreduce
+org.kududb.mapreduce.tools
+org.kududb.util
