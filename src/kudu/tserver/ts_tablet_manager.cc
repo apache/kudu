@@ -230,9 +230,10 @@ Status TSTabletManager::WaitForAllBootstrapsToFinish() {
 
 Status TSTabletManager::CreateNewTablet(const string& table_id,
                                         const string& tablet_id,
-                                        const string& start_key, const string& end_key,
+                                        const Partition& partition,
                                         const string& table_name,
                                         const Schema& schema,
+                                        const PartitionSchema& partition_schema,
                                         RaftConfigPB config,
                                         scoped_refptr<TabletPeer>* tablet_peer) {
   CHECK_EQ(state(), MANAGER_RUNNING);
@@ -277,8 +278,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
                               tablet_id,
                               table_name,
                               schema,
-                              start_key,
-                              end_key,
+                              partition_schema,
+                              partition,
                               TABLET_DATA_READY,
                               &meta),
     "Couldn't create tablet metadata");

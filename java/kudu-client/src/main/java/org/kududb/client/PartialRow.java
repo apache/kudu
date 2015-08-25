@@ -47,7 +47,7 @@ public class PartialRow {
 
   /**
    * Creates a new partial row by deep-copying the data-fields of the provided partial row.
-   * @param row the partial row to copy.
+   * @param row the partial row to copy
    */
   PartialRow(PartialRow row) {
     this.schema = row.schema;
@@ -411,28 +411,11 @@ public class PartialRow {
   }
 
   /**
-   * Encodes the row key based on the set columns and returns it.
-   * @return a byte array containing an encoded row key
+   * Returns the encoded primary key of the row.
+   * @return a byte array containing an encoded primary key
    */
-  public byte[] key() {
-    int seenVarLengthCols = 0;
-    KeyEncoder keyEncoder = new KeyEncoder(this.schema);
-    for (int i = 0; i < this.schema.getPrimaryKeyColumnCount(); i++) {
-      ColumnSchema column = this.schema.getColumnByIndex(i);
-      if (!isSet(i)) {
-        throw new IllegalStateException(String.format("Key column %s is not set", column));
-      }
-      if (column.getType() == Type.STRING || column.getType() == Type.BINARY) {
-        byte[] data = this.varLengthData.get(seenVarLengthCols);
-        seenVarLengthCols++;
-        keyEncoder.addKey(data, 0, data.length, column, i);
-      } else {
-        keyEncoder.addKey(this.rowAlloc, this.schema.getColumnOffset(i), column.getType().getSize(),
-            column, i);
-      }
-    }
-    // TODO we might want to cache the key
-    return keyEncoder.extractByteArray();
+  public byte[] encodePrimaryKey() {
+    return new KeyEncoder().encodePrimaryKey(this);
   }
 
   /**

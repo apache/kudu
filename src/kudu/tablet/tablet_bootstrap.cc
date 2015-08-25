@@ -331,15 +331,11 @@ const string TabletStatusListener::table_name() const {
   return meta_->table_name();
 }
 
-const string TabletStatusListener::start_key() const {
-  return meta_->start_key();
+const Partition& TabletStatusListener::partition() const {
+  return meta_->partition();
 }
 
-const string TabletStatusListener::end_key() const {
-  return meta_->end_key();
-}
-
-const Schema TabletStatusListener::schema() const {
+const Schema& TabletStatusListener::schema() const {
   return meta_->schema();
 }
 

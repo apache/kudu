@@ -274,7 +274,7 @@ Status RemoteKsckMaster::RetrieveTabletsList(const shared_ptr<KsckTable>& table)
 }
 
 Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
-                                         string* last_key,
+                                         string* last_partition_key,
                                          vector<shared_ptr<KsckTablet> >& tablets,
                                          bool* more_tablets) {
   master::GetTableLocationsRequestPB req;
@@ -283,7 +283,7 @@ Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
 
   req.mutable_table()->set_table_name(table_name);
   req.set_max_returned_locations(FLAGS_tablets_batch_size_max);
-  req.set_start_key(*last_key);
+  req.set_partition_key_start(*last_partition_key);
 
   rpc.set_timeout(GetDefaultTimeout());
   RETURN_NOT_OK(proxy_->GetTableLocations(req, &resp, &rpc));
@@ -300,13 +300,13 @@ Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
     tablets.push_back(tablet);
   }
   if (resp.tablet_locations_size() != 0) {
-    *last_key = (resp.tablet_locations().end() - 1)->end_key();
+    *last_partition_key = (resp.tablet_locations().end() - 1)->partition().partition_key_end();
   } else {
     return Status::NotFound(Substitute(
       "The Master returned 0 tablets for GetTableLocations of table $0 at start key $1",
-      table_name, *(last_key)));
+      table_name, *(last_partition_key)));
   }
-  if (last_key->empty()) {
+  if (last_partition_key->empty()) {
     *more_tablets = false;
   }
   return Status::OK();

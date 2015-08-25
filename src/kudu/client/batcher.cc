@@ -140,7 +140,7 @@ struct InFlightOp {
   // The actual operation.
   gscoped_ptr<KuduWriteOperation> write_op;
 
-  gscoped_ptr<EncodedKey> key;
+  string partition_key;
 
   // The tablet the operation is destined for.
   // This is only filled in after passing through the kLookingUpTablet state.
@@ -237,7 +237,8 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   req_.set_tablet_id(tablet->tablet_id());
   // Set up schema
 
-  CHECK_OK(SchemaToPB(*schema, req_.mutable_schema(), SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES));
+  CHECK_OK(SchemaToPB(*schema, req_.mutable_schema(),
+                      SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES | SCHEMA_PB_WITHOUT_IDS));
 
   RowOperationsPB* requested = req_.mutable_row_operations();
 
@@ -245,14 +246,17 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   int ctr = 0;
   RowOperationsPBEncoder enc(requested);
   BOOST_FOREACH(InFlightOp* op, ops_) {
-    DCHECK(op->key->InRange(op->tablet->start_key(), op->tablet->end_key()))
-                << "Row "
-                << schema->DebugEncodedRowKey(op->key->encoded_key(), Schema::START_KEY)
-                << " not in range ("
-                << schema->DebugEncodedRowKey(tablet->start_key(), Schema::START_KEY)
-                << ", "
-                << schema->DebugEncodedRowKey(tablet->end_key(), Schema::END_KEY)
-                << ")";
+    const Partition& partition = op->tablet->partition();
+    const PartitionSchema& partition_schema = table()->partition_schema();
+    const KuduPartialRow& row = op->write_op->row();
+
+#ifndef NDEBUG
+    bool partition_contains_row;
+    CHECK(partition_schema.PartitionContainsRow(partition, row, &partition_contains_row).ok());
+    CHECK(partition_contains_row)
+        << "Row " << partition_schema.RowDebugString(row)
+        << "not in partition " << partition_schema.PartitionDebugString(partition, *schema);
+#endif
 
     enc.Add(ToInternalWriteType(op->write_op->type()), op->write_op->row());
 
@@ -340,7 +344,8 @@ void WriteRpc::SendRpc() {
   // the write to another tablet (i.e. if it's since been split).
   if (!current_ts_) {
     batcher_->client_->data_->meta_cache_->LookupTabletByKey(table(),
-                                                             tablet_->start_key(),
+                                                             tablet_->partition()
+                                                                     .partition_key_start(),
                                                              retrier().deadline(),
                                                              NULL,
                                                              Bind(&WriteRpc::LookupTabletCb,
@@ -563,9 +568,10 @@ Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
   // As soon as we get the op, start looking up where it belongs,
   // so that when the user calls Flush, we are ready to go.
   InFlightOp* op = new InFlightOp;
+  RETURN_NOT_OK(write_op->table_->partition_schema()
+                                 .EncodeKey(write_op->row(), &op->partition_key));
   op->write_op.reset(write_op.release());
   op->state = InFlightOp::kLookingUpTablet;
-  op->key.reset(op->write_op->CreateKey());
 
   AddInFlightOp(op);
   VLOG(3) << "Looking up tablet for " << op->write_op->ToString();
@@ -578,11 +584,10 @@ Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
   deadline.AddDelta(timeout_);
   base::RefCountInc(&outstanding_lookups_);
   client_->data_->meta_cache_->LookupTabletByKey(op->write_op->table(),
-                                                 op->key->encoded_key(),
+                                                 op->partition_key,
                                                  deadline,
                                                  &op->tablet,
-                                                 Bind(&Batcher::TabletLookupFinished,
-                                                      this, op));
+                                                 Bind(&Batcher::TabletLookupFinished, this, op));
   return Status::OK();
 }
 

@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import com.google.common.base.Charsets;
+import com.google.common.collect.ImmutableList;
 import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
@@ -82,27 +84,92 @@ public class ProtobufHelper {
     return new Schema(columns, columnIds);
   }
 
+  /**
+   * Factory method for creating a {@code PartitionSchema} from a protobuf message.
+   *
+   * @param pb the partition schema protobuf message
+   * @return a partition instance
+   */
+  static PartitionSchema pbToPartitionSchema(Common.PartitionSchemaPB pb, Schema schema) {
+    List<Integer> rangeColumns = pbToIds(pb.getRangeSchema().getColumnsList());
+    PartitionSchema.RangeSchema rangeSchema = new PartitionSchema.RangeSchema(rangeColumns);
+
+    ImmutableList.Builder<PartitionSchema.HashBucketSchema> hashSchemas = ImmutableList.builder();
+
+    for (Common.PartitionSchemaPB.HashBucketSchemaPB hashBucketSchemaPB
+        : pb.getHashBucketSchemasList()) {
+      List<Integer> hashColumnIds = pbToIds(hashBucketSchemaPB.getColumnsList());
+
+      PartitionSchema.HashBucketSchema hashSchema =
+          new PartitionSchema.HashBucketSchema(hashColumnIds,
+                                               hashBucketSchemaPB.getNumBuckets(),
+                                               hashBucketSchemaPB.getSeed());
+
+      hashSchemas.add(hashSchema);
+    }
+
+    return new PartitionSchema(rangeSchema, hashSchemas.build(), schema);
+  }
+
+  /**
+   * Constructs a new {@code Partition} instance from the a protobuf message.
+   * @param pb the protobuf message
+   * @return the {@code Partition} corresponding to the message
+   */
+  static Partition pbToPartition(Common.PartitionPB pb) {
+    return new Partition(pb.getPartitionKeyStart().toByteArray(),
+                         pb.getPartitionKeyEnd().toByteArray(),
+                         pb.getHashBucketsList());
+  }
+
+  /**
+   * Deserializes a list of column identifier protobufs into a list of column IDs. This method
+   * relies on the fact that the master will aways send a partition schema with column IDs, and not
+   * column names (column names are only used when the client is sending the partition schema to
+   * the master as part of the create table process).
+   *
+   * @param columnIdentifiers the column identifiers
+   * @return the column IDs
+   */
+  private static List<Integer> pbToIds(
+      List<Common.PartitionSchemaPB.ColumnIdentifierPB> columnIdentifiers) {
+    ImmutableList.Builder<Integer> columnIds = ImmutableList.builder();
+    for (Common.PartitionSchemaPB.ColumnIdentifierPB column : columnIdentifiers) {
+      switch (column.getIdentifierCase()) {
+        case ID:
+          columnIds.add(column.getId());
+          break;
+        case NAME:
+          throw new IllegalArgumentException(
+              String.format("Expected column ID from master: %s", column));
+        case IDENTIFIER_NOT_SET:
+          throw new IllegalArgumentException("Unknown column: " + column);
+      }
+    }
+    return columnIds.build();
+  }
+
   private static byte[] objectToWireFormat(ColumnSchema col, Object value) {
     switch (col.getType()) {
       case BOOL:
         return Bytes.fromBoolean((Boolean) value);
       case INT8:
-        return new byte[] { ((Byte)value).byteValue() };
+        return new byte[] {(Byte) value};
       case INT16:
-        return Bytes.fromShort((Short)value);
+        return Bytes.fromShort((Short) value);
       case INT32:
         return Bytes.fromInt((Integer) value);
       case INT64:
       case TIMESTAMP:
         return Bytes.fromLong((Long) value);
       case STRING:
-        return ((String)value).getBytes(Charset.forName("UTF-8"));
+        return ((String) value).getBytes(Charsets.UTF_8);
       case BINARY:
         return (byte[]) value;
       case FLOAT:
-        return Bytes.fromFloat((Float)value);
+        return Bytes.fromFloat((Float) value);
       case DOUBLE:
-        return Bytes.fromDouble((Double)value);
+        return Bytes.fromDouble((Double) value);
       default:
         throw new IllegalArgumentException("The column " + col.getName() + " is of type " + col
             .getType() + " which is unknown");
@@ -128,7 +195,7 @@ public class ProtobufHelper {
       case DOUBLE:
         return Bytes.getDouble(buf);
       case STRING:
-        return new String(buf, Charset.forName("UTF-8"));
+        return new String(buf, Charsets.UTF_8);
       case BINARY:
         return buf;
       default:

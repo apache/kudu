@@ -50,6 +50,9 @@ enum SchemaPBConversionFlags {
 // 'flags' is a bitfield of SchemaPBConversionFlags values.
 Status SchemaToPB(const Schema& schema, SchemaPB* pb, int flags = 0);
 
+// Convert the specified schema to protobuf without column IDs.
+Status SchemaToPBWithoutIds(const Schema& schema, SchemaPB *pb);
+
 // Returns the Schema created from the specified protobuf.
 // If the schema is invalid, return a non-OK status.
 Status SchemaFromPB(const SchemaPB& pb, Schema *schema);

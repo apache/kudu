@@ -24,8 +24,10 @@
 
 namespace kudu {
 
-class HostPort;
+class PartitionSchema;
 class FsManager;
+class HostPort;
+class Partition;
 class Schema;
 
 namespace consensus {
@@ -89,10 +91,10 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // and returns a bad Status.
   Status CreateNewTablet(const std::string& table_id,
                          const std::string& tablet_id,
-                         const std::string& start_key,
-                         const std::string& end_key,
+                         const Partition& partition,
                          const std::string& table_name,
                          const Schema& schema,
+                         const PartitionSchema& partition_schema,
                          consensus::RaftConfigPB config,
                          scoped_refptr<tablet::TabletPeer>* tablet_peer);
 

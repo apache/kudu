@@ -44,7 +44,8 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                  const string& tablet_id,
                                  const string& table_name,
                                  const Schema& schema,
-                                 const string& start_key, const string& end_key,
+                                 const PartitionSchema& partition_schema,
+                                 const Partition& partition,
                                  const TabletDataState& initial_tablet_data_state,
                                  scoped_refptr<TabletMetadata>* metadata) {
 
@@ -57,8 +58,8 @@ Status TabletMetadata::CreateNew(FsManager* fs_manager,
                                                        tablet_id,
                                                        table_name,
                                                        schema,
-                                                       start_key,
-                                                       end_key,
+                                                       partition_schema,
+                                                       partition,
                                                        initial_tablet_data_state));
   RETURN_NOT_OK(ret->Flush());
   metadata->swap(ret);
@@ -78,7 +79,8 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
                                     const string& tablet_id,
                                     const string& table_name,
                                     const Schema& schema,
-                                    const string& start_key, const string& end_key,
+                                    const PartitionSchema& partition_schema,
+                                    const Partition& partition,
                                     const TabletDataState& initial_tablet_data_state,
                                     scoped_refptr<TabletMetadata>* metadata) {
   Status s = Load(fs_manager, tablet_id, metadata);
@@ -91,7 +93,7 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
     return Status::OK();
   } else if (s.IsNotFound()) {
     return CreateNew(fs_manager, tablet_id, table_name, schema,
-                     start_key, end_key, initial_tablet_data_state,
+                     partition_schema, partition, initial_tablet_data_state,
                      metadata);
   } else {
     return s;
@@ -178,18 +180,19 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager,
                                const string& tablet_id,
                                const string& table_name,
                                const Schema& schema,
-                               const string& start_key,
-                               const string& end_key,
+                               const PartitionSchema& partition_schema,
+                               const Partition& partition,
                                const TabletDataState& tablet_data_state)
   : state_(kNotWrittenYet),
     tablet_id_(tablet_id),
-    start_key_(start_key), end_key_(end_key),
+    partition_(partition),
     fs_manager_(fs_manager),
     next_rowset_idx_(0),
     last_durable_mrs_id_(kNoDurableMemStore),
     schema_(new Schema(schema)),
     schema_version_(0),
     table_name_(table_name),
+    partition_schema_(partition_schema),
     tablet_data_state_(tablet_data_state),
     tombstone_last_logged_opid_(MinimumOpId()),
     num_flush_pins_(0),
@@ -246,8 +249,6 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
                                 superblock.DebugString());
     }
 
-    start_key_ = superblock.start_key();
-    end_key_ = superblock.end_key();
     table_id_ = superblock.table_id();
     last_durable_mrs_id_ = superblock.last_durable_mrs_id();
 
@@ -259,6 +260,27 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
                           "Failed to parse Schema from superblock " +
                           superblock.ShortDebugString());
     SetSchemaUnlocked(schema.Pass(), schema_version);
+
+    // This check provides backwards compatibility with the
+    // flexible-partitioning changes introduced in KUDU-818.
+    if (superblock.has_partition()) {
+      RETURN_NOT_OK(PartitionSchema::FromPB(superblock.partition_schema(),
+                                            *schema_, &partition_schema_));
+      Partition::FromPB(superblock.partition(), &partition_);
+    } else {
+      // This clause may be removed after compatibility with tables created
+      // before KUDU-818 is not needed.
+      RETURN_NOT_OK(PartitionSchema::FromPB(PartitionSchemaPB(), *schema_, &partition_schema_));
+      PartitionPB partition;
+      if (!superblock.has_start_key() || !superblock.has_end_key()) {
+        return Status::Corruption(
+            "tablet superblock must contain either a partition or start and end primary keys",
+            superblock.ShortDebugString());
+      }
+      partition.set_partition_key_start(superblock.start_key());
+      partition.set_partition_key_end(superblock.end_key());
+      Partition::FromPB(partition, &partition_);
+    }
 
     tablet_data_state_ = superblock.tablet_data_state();
 
@@ -470,10 +492,10 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   TabletSuperBlockPB pb;
   pb.set_table_id(table_id_);
   pb.set_tablet_id(tablet_id_);
-  pb.set_start_key(start_key_);
-  pb.set_end_key(end_key_);
+  partition_.ToPB(pb.mutable_partition());
   pb.set_last_durable_mrs_id(last_durable_mrs_id_);
   pb.set_schema_version(schema_version_);
+  partition_schema_.ToPB(pb.mutable_partition_schema());
   pb.set_table_name(table_name_);
 
   BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, rowsets) {

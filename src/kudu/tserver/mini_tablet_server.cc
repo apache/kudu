@@ -4,6 +4,7 @@
 #include "kudu/tserver/mini_tablet_server.h"
 
 #include <boost/assign/list_of.hpp>
+#include <utility>
 
 #include <glog/logging.h>
 
@@ -16,6 +17,7 @@
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
 #include "kudu/consensus/log.h"
@@ -25,6 +27,8 @@
 #include "kudu/consensus/local_consensus.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
+
+using std::pair;
 
 using kudu::consensus::Consensus;
 using kudu::consensus::ConsensusOptions;
@@ -111,8 +115,12 @@ Status MiniTabletServer::AddTestTablet(const std::string& table_id,
                                        const Schema& schema,
                                        const RaftConfigPB& config) {
   CHECK(started_) << "Must Start()";
+  Schema schema_with_ids = SchemaBuilder(schema).Build();
+  pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(schema_with_ids);
+
   return server_->tablet_manager()->CreateNewTablet(
-    table_id, tablet_id, "", "", table_id, SchemaBuilder(schema).Build(), config, NULL);
+    table_id, tablet_id, partition.second, table_id,
+    schema_with_ids, partition.first, config, NULL);
 }
 
 void MiniTabletServer::FailHeartbeats() {

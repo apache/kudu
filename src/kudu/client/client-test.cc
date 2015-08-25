@@ -362,10 +362,10 @@ class ClientTest : public KuduTest {
 
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     ASSERT_OK(table_creator->table_name(table_name)
-              .schema(&schema_)
-              .num_replicas(num_replicas)
-              .split_rows(split_rows)
-              .Create());
+                            .schema(&schema_)
+                            .num_replicas(num_replicas)
+                            .split_rows(split_rows)
+                            .Create());
 
     ASSERT_OK(client_->OpenTable(table_name, table));
   }
@@ -1012,7 +1012,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   scoped_refptr<internal::RemoteTablet> rt;
   while (true) {
     Synchronizer sync;
-    client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(), MonoTime::Max(), &rt,
+    client_->data_->meta_cache_->LookupTabletByKey(table.get(), "", MonoTime::Max(), &rt,
                                                   sync.AsStatusCallback());
     ASSERT_OK(sync.Wait());
     ASSERT_TRUE(rt.get() != NULL);
@@ -1954,7 +1954,7 @@ TEST_F(ClientTest, TestReplicatedMultiTabletTableFailover) {
   // Find the leader of the first tablet.
   Synchronizer sync;
   scoped_refptr<internal::RemoteTablet> rt;
-  client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
+  client_->data_->meta_cache_->LookupTabletByKey(table.get(), "",
                                                  MonoTime::Max(),
                                                  &rt, sync.AsStatusCallback());
   ASSERT_OK(sync.Wait());
@@ -2011,7 +2011,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   // Find the leader replica
   Synchronizer sync;
   scoped_refptr<internal::RemoteTablet> rt;
-  client_->data_->meta_cache_->LookupTabletByKey(table.get(), Slice(),
+  client_->data_->meta_cache_->LookupTabletByKey(table.get(), "",
                                                  MonoTime::Max(),
                                                  &rt, sync.AsStatusCallback());
   ASSERT_OK(sync.Wait());

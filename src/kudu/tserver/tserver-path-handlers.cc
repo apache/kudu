@@ -165,7 +165,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
   *output << "<h1>Tablets</h1>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
-      "<th>Start key</th><th>End key</th>"
+      "<th>Partition</th>"
       "<th>State</th><th>On-disk size</th><th>RaftConfig</th><th>Last status</th></tr>\n";
   BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers) {
     TabletStatusPB status;
@@ -173,7 +173,6 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
     string id = status.tablet_id();
     string table_name = status.table_name();
     string tablet_id_or_link;
-    const Schema& schema = peer->status_listener()->schema();
     if (peer->tablet() != NULL) {
       tablet_id_or_link = TabletLink(id);
     } else {
@@ -188,23 +187,24 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
       StrAppend(&state, ": ", EscapeForHtmlToString(peer->error().ToString()));
     }
 
-    string start_key = schema.DebugEncodedRowKey(status.start_key(), Schema::START_KEY);
-    string end_key = schema.DebugEncodedRowKey(status.end_key(), Schema::END_KEY);
+    string partition = peer->tablet_metadata()
+                           ->partition_schema()
+                            .PartitionDebugString(peer->status_listener()->partition(),
+                                                  peer->tablet_metadata()->schema());
 
     // TODO: would be nice to include some other stuff like memory usage
     (*output) << Substitute(
-        // Table name, tablet id, start key, end key
-        "<tr><td>$0</td><td>$1</td><td>$2</td><td>$3</td>"
+        // Table name, tablet id, partition
+        "<tr><td>$0</td><td>$1</td><td>$2</td>"
         // State, on-disk size, consensus configuration, last status
-        "<td>$4</td><td>$5</td><td>$6</td><td>$7</td></tr>\n",
+        "<td>$3</td><td>$4</td><td>$5</td><td>$6</td></tr>\n",
         EscapeForHtmlToString(table_name), // $0
         tablet_id_or_link, // $1
-        EscapeForHtmlToString(start_key), // $2
-        EscapeForHtmlToString(end_key), // $3
-        state, n_bytes, // $4, $5
+        EscapeForHtmlToString(partition), // $2
+        state, n_bytes, // $3, $4
         peer->consensus() == NULL ? "" : ConsensusStatePBToHtml(
-                                             peer->consensus()->CommittedConsensusState()), // $6
-        EscapeForHtmlToString(status.last_status())); // $7
+                                             peer->consensus()->CommittedConsensusState()), // $5
+        EscapeForHtmlToString(status.last_status())); // $6
   }
   *output << "</table>\n";
 }
@@ -293,7 +293,7 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
   scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, req, &tablet_id, &peer, output)) return;
 
-  string table_name = peer->tablet()->metadata()->table_name();
+  string table_name = peer->tablet_metadata()->table_name();
 
   *output << "<h1>Tablet " << EscapeForHtmlToString(tablet_id) << "</h1>\n";
 

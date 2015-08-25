@@ -72,11 +72,14 @@ message TabletSuperBlockPB {
   // The latest durable MemRowSet id
   required int64 last_durable_mrs_id = 3;
 
-  // Tablet start-key (inclusive)
-  required bytes start_key = 4;
+  // DEPRECATED.
+  optional bytes start_key = 4;
 
-  // Tablet end-key (exclusive)
-  required bytes end_key = 5;
+  // DEPRECATED.
+  optional bytes end_key = 5;
+
+  // The partition of the table.
+  optional PartitionPB partition = 13;
 
   // Tablet RowSets
   repeated RowSetDataPB rowsets = 6;
@@ -87,6 +90,9 @@ message TabletSuperBlockPB {
   required string table_name = 7;
   required SchemaPB schema = 8;
   required uint32 schema_version = 9;
+
+  // The partition schema of the table.
+  optional PartitionSchemaPB partition_schema = 14;
 
   // The current state of the tablet's data.
   optional TabletDataState tablet_data_state = 10 [ default = TABLET_DATA_UNKNOWN ];

@@ -337,8 +337,7 @@ void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   status_pb_out->set_tablet_id(status_listener_->tablet_id());
   status_pb_out->set_table_name(status_listener_->table_name());
   status_pb_out->set_last_status(status_listener_->last_status());
-  status_pb_out->set_start_key(status_listener_->start_key());
-  status_pb_out->set_end_key(status_listener_->end_key());
+  status_listener_->partition().ToPB(status_pb_out->mutable_partition());
   status_pb_out->set_state(state_);
   status_pb_out->set_tablet_data_state(meta_->tablet_data_state());
   if (tablet_) {

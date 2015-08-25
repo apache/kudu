@@ -8,11 +8,13 @@
 #include <string>
 #include <tr1/memory>
 
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/tablet/tablet_peer.h"
+#include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/test_util.h"
@@ -59,14 +61,15 @@ class TsTabletManagerTest : public KuduTest {
   }
 
   Status CreateNewTablet(const std::string& tablet_id,
-                         const std::string& start_key,
-                         const std::string& end_key,
                          const Schema& schema,
                          scoped_refptr<tablet::TabletPeer>* out_tablet_peer) {
+    Schema full_schema = SchemaBuilder(schema).Build();
+    std::pair<PartitionSchema, Partition> partition = tablet::CreateDefaultPartition(full_schema);
+
     scoped_refptr<tablet::TabletPeer> tablet_peer;
-    RETURN_NOT_OK(tablet_manager_->CreateNewTablet(tablet_id, tablet_id, start_key, end_key,
+    RETURN_NOT_OK(tablet_manager_->CreateNewTablet(tablet_id, tablet_id, partition.second,
                                                    tablet_id,
-                                                   SchemaBuilder(schema).Build(),
+                                                   full_schema, partition.first,
                                                    config_,
                                                    &tablet_peer));
     if (out_tablet_peer) {
@@ -88,7 +91,7 @@ class TsTabletManagerTest : public KuduTest {
 TEST_F(TsTabletManagerTest, TestCreateTablet) {
   // Create a new tablet.
   scoped_refptr<TabletPeer> peer;
-  ASSERT_OK(CreateNewTablet(kTabletId, "", "",schema_, &peer));
+  ASSERT_OK(CreateNewTablet(kTabletId, schema_, &peer));
   ASSERT_EQ(kTabletId, peer->tablet()->tablet_id());
   peer.reset();
 
@@ -158,7 +161,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
-  ASSERT_OK(CreateNewTablet("tablet-1", "", "", schema_, NULL));
+  ASSERT_OK(CreateNewTablet("tablet-1", schema_, NULL));
   int updated_tablets = 0;
   while (updated_tablets != 1) {
     tablet_manager_->GenerateIncrementalTabletReport(&report);
@@ -186,7 +189,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
-  ASSERT_OK(CreateNewTablet("tablet-2", "", "", schema_, NULL));
+  ASSERT_OK(CreateNewTablet("tablet-2", schema_, NULL));
 
   // Wait up to 10 seconds to get a tablet report from tablet-2.
   // TabletPeer does not mark tablets dirty until after it commits the

@@ -287,8 +287,8 @@ class ScanResultCollector {
   // Returns number of bytes which will be returned in the response.
   virtual int64_t ResponseSize() const = 0;
 
-  // Returns the encoded last row processed.
-  virtual const faststring& encoded_last_row() const = 0;
+  // Returns the last processed row's primary key.
+  virtual const faststring& last_primary_key() const = 0;
 
   // Return the number of rows actually returned to the client.
   virtual int64_t NumRowsReturned() const = 0;
@@ -296,9 +296,9 @@ class ScanResultCollector {
 
 namespace {
 
-// Given a RowBlock, set encoded_last_row to the encoded key of the last selected row
-// in the RowBlock. If no row is selected, encoded_last_row is not set.
-void SetLastRow(const RowBlock& row_block, faststring* encoded_last_row) {
+// Given a RowBlock, set last_primary_key to the primary key of the last selected row
+// in the RowBlock. If no row is selected, last_primary_key is not set.
+void SetLastRow(const RowBlock& row_block, faststring* last_primary_key) {
   // Find the last selected row and save its encoded key.
   const SelectionVector* sel = row_block.selection_vector();
   if (sel->AnySelected()) {
@@ -306,7 +306,7 @@ void SetLastRow(const RowBlock& row_block, faststring* encoded_last_row) {
       if (sel->IsRowSelected(i)) {
         RowBlockRow last_row = row_block.row(i);
         const Schema* schema = last_row.schema();
-        schema->EncodeComparableKey(last_row, encoded_last_row);
+        schema->EncodeComparableKey(last_row, last_primary_key);
         break;
       }
     }
@@ -339,7 +339,7 @@ class ScanResultCopier : public ScanResultCollector {
     num_rows_returned_ += row_block.selection_vector()->CountSelected();
     SerializeRowBlock(row_block, rowblock_pb_, client_projection_schema,
                       rows_data_, indirect_data_);
-    SetLastRow(row_block, &encoded_last_row_);
+    SetLastRow(row_block, &last_primary_key_);
   }
 
   virtual int BlocksProcessed() const OVERRIDE { return blocks_processed_; }
@@ -349,8 +349,8 @@ class ScanResultCopier : public ScanResultCollector {
     return rows_data_->size() + indirect_data_->size();
   }
 
-  virtual const faststring& encoded_last_row() const OVERRIDE {
-    return encoded_last_row_;
+  virtual const faststring& last_primary_key() const OVERRIDE {
+    return last_primary_key_;
   }
 
   virtual int64_t NumRowsReturned() const OVERRIDE {
@@ -363,7 +363,7 @@ class ScanResultCopier : public ScanResultCollector {
   faststring* const indirect_data_;
   int blocks_processed_;
   int64_t num_rows_returned_;
-  faststring encoded_last_row_;
+  faststring last_primary_key_;
 
   DISALLOW_COPY_AND_ASSIGN(ScanResultCopier);
 };
@@ -399,7 +399,7 @@ class ScanResultChecksummer : public ScanResultCollector {
   // Returns a constant -- we only return checksum based on a time budget.
   virtual int64_t ResponseSize() const OVERRIDE { return sizeof(agg_checksum_); }
 
-  virtual const faststring& encoded_last_row() const OVERRIDE { return encoded_last_row_; }
+  virtual const faststring& last_primary_key() const OVERRIDE { return encoded_last_row_; }
 
   virtual int64_t NumRowsReturned() const OVERRIDE {
     return 0;
@@ -556,29 +556,41 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
   }
   TRACE_EVENT1("tserver", "CreateTablet",
                "tablet_id", req->tablet_id());
-  LOG(INFO) << "Processing CreateTablet for tablet " << req->tablet_id()
-            << " (table=" << req->table_name()
-            << " [id=" << req->table_id() << "]), range=[\""
-            << strings::CHexEscape(req->start_key()) << "\", \""
-            << strings::CHexEscape(req->end_key()) << "\"]";
-  VLOG(1) << "Full request: " << req->DebugString();
 
   Schema schema;
   Status s = SchemaFromPB(req->schema(), &schema);
   DCHECK(schema.has_column_ids());
   if (!s.ok()) {
     SetupErrorAndRespond(resp->mutable_error(),
-                         Status::IllegalState("Invalid Schema."),
+                         Status::InvalidArgument("Invalid Schema."),
                          TabletServerErrorPB::INVALID_SCHEMA, context);
     return;
   }
 
+  PartitionSchema partition_schema;
+  s = PartitionSchema::FromPB(req->partition_schema(), schema, &partition_schema);
+  if (!s.ok()) {
+    SetupErrorAndRespond(resp->mutable_error(),
+                         Status::InvalidArgument("Invalid PartitionSchema."),
+                         TabletServerErrorPB::INVALID_SCHEMA, context);
+    return;
+  }
+
+  Partition partition;
+  Partition::FromPB(req->partition(), &partition);
+
+  LOG(INFO) << "Processing CreateTablet for tablet " << req->tablet_id()
+            << " (table=" << req->table_name()
+            << " [id=" << req->table_id() << "]), partition="
+            << partition_schema.PartitionDebugString(partition, schema);
+  VLOG(1) << "Full request: " << req->DebugString();
+
   s = server_->tablet_manager()->CreateNewTablet(req->table_id(),
                                                  req->tablet_id(),
-                                                 req->start_key(),
-                                                 req->end_key(),
+                                                 partition,
                                                  req->table_name(),
                                                  schema,
+                                                 partition_schema,
                                                  req->config(),
                                                  NULL);
   if (PREDICT_FALSE(!s.ok())) {
@@ -989,9 +1001,9 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
     // Set the last row found by the collector.
     // We could have an empty batch if all the remaining rows are filtered by the predicate,
     // in which case do not set the last row.
-    const faststring& last = collector.encoded_last_row();
+    const faststring& last = collector.last_primary_key();
     if (last.length() > 0) {
-      resp->set_encoded_last_row_key(last.ToString());
+      resp->set_last_primary_key(last.ToString());
     }
   }
 
@@ -1009,6 +1021,7 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
     peer->GetTabletStatusPB(status->mutable_tablet_status());
     CHECK_OK(SchemaToPB(peer->status_listener()->schema(),
                         status->mutable_schema()));
+    peer->tablet_metadata()->partition_schema().ToPB(status->mutable_partition_schema());
   }
   context->RespondSuccess();
 }
@@ -1119,29 +1132,28 @@ static Status DecodeEncodedKeyRange(const NewScanRequestPB& scan_pb,
                                     const SharedScanner& scanner,
                                     ScanSpec* spec) {
   gscoped_ptr<EncodedKey> start, stop;
-  if (scan_pb.has_encoded_start_key()) {
+  if (scan_pb.has_start_primary_key()) {
     RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(
                             tablet_schema, scanner->arena(),
-                            scan_pb.encoded_start_key(), &start),
+                            scan_pb.start_primary_key(), &start),
                           "Invalid scan start key");
   }
 
-  if (scan_pb.has_encoded_stop_key()) {
+  if (scan_pb.has_stop_primary_key()) {
     RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(
                             tablet_schema, scanner->arena(),
-                            scan_pb.encoded_stop_key(), &stop),
+                            scan_pb.stop_primary_key(), &stop),
                           "Invalid scan stop key");
   }
 
-  if (scan_pb.order_mode() == ORDERED && scan_pb.has_encoded_last_row_key()) {
+  if (scan_pb.order_mode() == ORDERED && scan_pb.has_last_primary_key()) {
     if (start) {
       return Status::InvalidArgument("Cannot specify both a start key and a last key");
     }
     // Set the start key to the last key from a previous scan result.
-    RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(
-                            tablet_schema, scanner->arena(),
-                            scan_pb.encoded_last_row_key(), &start),
-                          "Failed to decode encoded last row key");
+    RETURN_NOT_OK_PREPEND(EncodedKey::DecodeEncodedString(tablet_schema, scanner->arena(),
+                                                          scan_pb.last_primary_key(), &start),
+                          "Failed to decode last primary key");
     // Increment the start key, so we don't return the last row again.
     RETURN_NOT_OK_PREPEND(EncodedKey::IncrementEncodedKey(tablet_schema, &start, scanner->arena()),
                           "Failed to increment encoded last row key");

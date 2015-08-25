@@ -17,6 +17,8 @@
 namespace kudu {
 
 class MetricRegistry;
+class Partition;
+class PartitionSchema;
 
 namespace log {
 class Log;
@@ -49,11 +51,9 @@ class TabletStatusListener {
 
   const std::string table_name() const;
 
-  const std::string start_key() const;
+  const Partition& partition() const;
 
-  const std::string end_key() const;
-
-  const Schema schema() const;
+  const Schema& schema() const;
 
   std::string last_status() const {
     boost::shared_lock<boost::shared_mutex> l(lock_);

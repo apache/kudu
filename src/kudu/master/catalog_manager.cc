@@ -33,7 +33,9 @@
 #include <string>
 #include <vector>
 
+#include "kudu/cfile/type_encodings.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/quorum_util.h"
@@ -53,18 +55,17 @@
 #include "kudu/master/sys_catalog.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
-#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_context.h"
+#include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
-#include "kudu/util/thread_restrictions.h"
 #include "kudu/util/threadpool.h"
+#include "kudu/util/thread_restrictions.h"
 #include "kudu/util/trace.h"
-#include "kudu/cfile/type_encodings.h"
 
 DEFINE_int32(master_ts_rpc_timeout_ms, 10 * 1000, // 10 sec
              "Timeout used for the Master->TS async rpc calls.");
@@ -621,17 +622,18 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
                                    CreateTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
   RETURN_NOT_OK(CheckOnline());
+  Status s;
 
   // a. Validate the user request.
   Schema client_schema;
   RETURN_NOT_OK(SchemaFromPB(req->schema(), &client_schema));
   if (client_schema.has_column_ids()) {
-    Status s = Status::InvalidArgument("User requests should not have Column IDs");
+    s = Status::InvalidArgument("User requests should not have Column IDs");
     SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
     return s;
   }
   if (PREDICT_FALSE(client_schema.num_key_columns() <= 0)) {
-    Status s = Status::InvalidArgument("Must specify at least one key column");
+    s = Status::InvalidArgument("Must specify at least one key column");
     SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
         return s;
   }
@@ -645,7 +647,17 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   }
   Schema schema = client_schema.CopyWithColumnIds();
 
-  vector<string> split_keys;
+  // If the client did not set a partition schema in the create table request,
+  // the default partition schema (no hash bucket components and a range
+  // partitioned on the primary key columns) will be used.
+  PartitionSchema partition_schema;
+  s = PartitionSchema::FromPB(req->partition_schema(), schema, &partition_schema);
+  if (!s.ok()) {
+    SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
+    return s;
+  }
+
+  vector<KuduPartialRow> split_rows;
 
   RowOperationsPBDecoder decoder(&req->split_rows(), &client_schema, &schema, NULL);
   vector<DecodedRowOperation> ops;
@@ -659,29 +671,18 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
       return s;
     }
 
-    string row_key;
-    RETURN_NOT_OK(op.split_row->EncodeRowKey(&row_key));
-    split_keys.push_back(row_key);
+    split_rows.push_back(*op.split_row);
   }
+
+  vector<Partition> partitions;
+  RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, schema, &partitions));
 
   int max_tablets = FLAGS_max_create_tablets_per_ts * master_->ts_manager()->GetCount();
-  if (req->num_replicas() > 1 && max_tablets > 0 && split_keys.size() > max_tablets) {
-    Status s = Status::InvalidArgument(Substitute("The number of tablets requested is over the "
-                                                  "permitted maximum ($0)", max_tablets));
+  if (req->num_replicas() > 1 && max_tablets > 0 && partitions.size() > max_tablets) {
+    s = Status::InvalidArgument(Substitute("The number of tablets requested is over the "
+                                           "permitted maximum ($0)", max_tablets));
     SetupError(resp->mutable_error(), MasterErrorPB::TOO_MANY_TABLETS, s);
     return s;
-  }
-
-  // Check for duplicate split keys.
-  std::sort(split_keys.begin(), split_keys.end());
-  for (int i = 1; i < split_keys.size(); i++) {
-    if (split_keys[i - 1] == split_keys[i]) {
-      Status s = Status::InvalidArgument(
-          Substitute("Duplicate split key: $0", schema.DebugEncodedRowKey(
-              split_keys[i], Schema::START_KEY)));
-      SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
-      return s;
-    }
   }
 
   LOG(INFO) << "CreateTable from " << RequestorString(rpc)
@@ -696,23 +697,27 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     // b. Verify that the table does not exist.
     table = FindPtrOrNull(table_names_map_, req->name());
     if (table != NULL) {
-      Status s = Status::AlreadyPresent("Table already exists", table->id());
+      s = Status::AlreadyPresent("Table already exists", table->id());
       SetupError(resp->mutable_error(), MasterErrorPB::TABLE_ALREADY_PRESENT, s);
       return s;
     }
 
     // c. Add the new table in "preparing" state.
-    table = CreateTableInfo(req, schema);
+    table = CreateTableInfo(req, schema, partition_schema);
     table_ids_map_[table->id()] = table;
     table_names_map_[req->name()] = table;
 
     // d. Create the TabletInfo objects in state PREPARING.
-    CreateTablets(split_keys, table.get(), &tablets);
+    BOOST_FOREACH(const Partition& partition, partitions) {
+      PartitionPB partition_pb;
+      partition.ToPB(&partition_pb);
+      tablets.push_back(CreateTabletInfo(table.get(), partition_pb));
+    }
 
     // Add the table/tablets to the in-memory map for the assignment.
     resp->set_table_id(table->id());
     table->AddTablets(tablets);
-    BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+    BOOST_FOREACH(TabletInfo* tablet, tablets) {
       InsertOrDie(&tablet_map_, tablet->tablet_id(), tablet);
     }
   }
@@ -723,13 +728,12 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   // They will get committed at the end of this function.
   // Sanity check: the tables and tablets should all be in "preparing" state.
   CHECK_EQ(SysTablesEntryPB::PREPARING, table->metadata().dirty().pb.state());
-  BOOST_FOREACH(TabletInfo *tablet, tablets) {
-    CHECK_EQ(SysTabletsEntryPB::PREPARING,
-             tablet->metadata().dirty().pb.state());
+  BOOST_FOREACH(const TabletInfo *tablet, tablets) {
+    CHECK_EQ(SysTabletsEntryPB::PREPARING, tablet->metadata().dirty().pb.state());
   }
 
   // e. Write Tablets to sys-tablets (in "preparing" state)
-  Status s = sys_catalog_->AddTablets(tablets);
+  s = sys_catalog_->AddTablets(tablets);
   if (!s.ok()) {
     s = s.CloneAndPrepend(Substitute("An error occurred while inserting to sys-tablets: $0",
                                      s.ToString()));
@@ -795,29 +799,9 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   return Status::OK();
 }
 
-void CatalogManager::CreateTablets(const vector<string>& sorted_split_keys,
-                                   TableInfo* table,
-                                   vector<TabletInfo*>* tablets) {
-  const char *kTabletEmptyKey = "";
-  if (sorted_split_keys.size() > 0) {
-    int i = 0;
-
-    // First region with empty start key
-    tablets->push_back(CreateTabletInfo(table, kTabletEmptyKey, sorted_split_keys[0]));
-    // Mid regions with non-empty start/end key
-    while (++i < sorted_split_keys.size()) {
-      tablets->push_back(CreateTabletInfo(table, sorted_split_keys[i - 1], sorted_split_keys[i]));
-    }
-    // Last region with empty end key
-    tablets->push_back(CreateTabletInfo(table, sorted_split_keys[i - 1], kTabletEmptyKey));
-  } else {
-    // Single region with empty start/end key
-    tablets->push_back(CreateTabletInfo(table, kTabletEmptyKey, kTabletEmptyKey));
-  }
-}
-
 TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
-                                           const Schema& schema) {
+                                           const Schema& schema,
+                                           const PartitionSchema& partition_schema) {
   DCHECK(schema.has_column_ids());
   TableInfo* table = new TableInfo(GenerateId());
   table->mutable_metadata()->StartMutation();
@@ -833,18 +817,17 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
   // Use the Schema object passed in, since it has the column IDs already assigned,
   // whereas the user request PB does not.
   CHECK_OK(SchemaToPB(schema, metadata->mutable_schema()));
+  partition_schema.ToPB(metadata->mutable_partition_schema());
   return table;
 }
 
-TabletInfo *CatalogManager::CreateTabletInfo(TableInfo *table,
-                                             const string& start_key,
-                                             const string& end_key) {
+TabletInfo* CatalogManager::CreateTabletInfo(TableInfo* table,
+                                             const PartitionPB& partition) {
   TabletInfo* tablet = new TabletInfo(table, GenerateId());
   tablet->mutable_metadata()->StartMutation();
   SysTabletsEntryPB *metadata = &tablet->mutable_metadata()->mutable_dirty()->pb;
   metadata->set_state(SysTabletsEntryPB::PREPARING);
-  metadata->set_start_key(start_key);
-  metadata->set_end_key(end_key);
+  metadata->mutable_partition()->CopyFrom(partition);
   metadata->set_table_id(table->id());
   return tablet;
 }
@@ -1208,6 +1191,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   }
   resp->set_num_replicas(l.data().pb.num_replicas());
   resp->set_table_id(table->id());
+  resp->mutable_partition_schema()->CopyFrom(l.data().pb.partition_schema());
 
   return Status::OK();
 }
@@ -1872,10 +1856,10 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     req_.set_dest_uuid(permanent_uuid);
     req_.set_table_id(tablet->table()->id());
     req_.set_tablet_id(tablet->tablet_id());
-    req_.set_start_key(tablet_pb.start_key());
-    req_.set_end_key(tablet_pb.end_key());
+    req_.mutable_partition()->CopyFrom(tablet_pb.partition());
     req_.set_table_name(table_lock.data().pb.name());
     req_.mutable_schema()->CopyFrom(table_lock.data().pb.schema());
+    req_.mutable_partition_schema()->CopyFrom(table_lock.data().pb.partition_schema());
     req_.mutable_config()->CopyFrom(tablet_pb.committed_consensus_state().config());
   }
 
@@ -2208,8 +2192,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
   // The "tablet creation" was already sent, but we didn't receive an answer
   // within the timeout. So the tablet will be replaced by a new one.
   TabletInfo *replacement = CreateTabletInfo(tablet->table().get(),
-                                             old_info.pb.start_key(),
-                                             old_info.pb.end_key());
+                                             old_info.pb.partition());
   LOG(WARNING) << "Tablet " << tablet->ToString() << " was not created within "
                << "the allowed timeout. Replacing with a new tablet "
                << replacement->tablet_id();
@@ -2515,8 +2498,7 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
       cstate = l_tablet.data().pb.committed_consensus_state();
     }
 
-    locs_pb->set_start_key(tablet->metadata().state().pb.start_key());
-    locs_pb->set_end_key(tablet->metadata().state().pb.end_key());
+    locs_pb->mutable_partition()->CopyFrom(tablet->metadata().state().pb.partition());
   }
 
   locs_pb->set_tablet_id(tablet->tablet_id());
@@ -2576,8 +2558,9 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
 
   // If start-key is > end-key report an error instead of swap the two
   // since probably there is something wrong app-side.
-  if (req->has_start_key() && req->has_end_key() && req->start_key() > req->end_key()) {
-    return Status::InvalidArgument("start-key is greater than end_key");
+  if (req->has_partition_key_start() && req->has_partition_key_end()
+      && req->partition_key_start() > req->partition_key_end()) {
+    return Status::InvalidArgument("start partition key is greater than the end partition key");
   }
 
   if (req->max_returned_locations() <= 0) {
@@ -2799,7 +2782,9 @@ void TableInfo::AddTablets(const vector<TabletInfo*>& tablets) {
 
 void TableInfo::AddTabletUnlocked(TabletInfo* tablet) {
   TabletInfo* old = NULL;
-  if (UpdateReturnCopy(&tablet_map_, tablet->metadata().dirty().pb.start_key(), tablet, &old)) {
+  if (UpdateReturnCopy(&tablet_map_,
+                       tablet->metadata().dirty().pb.partition().partition_key_start(),
+                       tablet, &old)) {
     VLOG(1) << "Replaced tablet " << old->tablet_id() << " with " << tablet->tablet_id();
     // TODO: can we assert that the replaced tablet is not in Running state?
     // May be a little tricky since we don't know whether to look at its committed or
@@ -2813,15 +2798,15 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
   int max_returned_locations = req->max_returned_locations();
 
   TableInfo::TabletInfoMap::const_iterator it, it_end;
-  if (req->has_start_key()) {
-    it = tablet_map_.upper_bound(req->start_key());
+  if (req->has_partition_key_start()) {
+    it = tablet_map_.upper_bound(req->partition_key_start());
     --it;
   } else {
     it = tablet_map_.begin();
   }
 
-  if (req->has_end_key()) {
-    it_end = tablet_map_.upper_bound(req->end_key());
+  if (req->has_partition_key_end()) {
+    it_end = tablet_map_.upper_bound(req->partition_key_end());
   } else {
     it_end = tablet_map_.end();
   }

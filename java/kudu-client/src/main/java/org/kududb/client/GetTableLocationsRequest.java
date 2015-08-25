@@ -15,18 +15,20 @@ import org.jboss.netty.buffer.ChannelBuffer;
 @InterfaceAudience.Private
 class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponsePB> {
 
-  private final byte[] startKey;
+  private final byte[] startPartitionKey;
   private final byte[] endKey;
   private final String tableName;
 
-  GetTableLocationsRequest(KuduTable table, byte[] startKey, byte[] endKey, String tableName) {
+  GetTableLocationsRequest(KuduTable table, byte[] startPartitionKey,
+                           byte[] endPartitionKey, String tableName) {
     super(table);
-    if (startKey != null && endKey != null && Bytes.memcmp(startKey, endKey) > 0) {
-      throw new IllegalArgumentException("The start key needs to be smaller or equal to the end " +
-          "key");
+    if (startPartitionKey != null && endPartitionKey != null
+        && Bytes.memcmp(startPartitionKey, endPartitionKey) > 0) {
+      throw new IllegalArgumentException(
+          "The start partition key must be smaller or equal to the end partition key");
     }
-    this.startKey = startKey;
-    this.endKey = endKey;
+    this.startPartitionKey = startPartitionKey;
+    this.endKey = endPartitionKey;
     this.tableName = tableName;
   }
 
@@ -55,11 +57,11 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
     final Master.GetTableLocationsRequestPB.Builder builder = Master
         .GetTableLocationsRequestPB.newBuilder();
     builder.setTable(Master.TableIdentifierPB.newBuilder().setTableName(tableName));
-    if (startKey != null) {
-      builder.setStartKey(ZeroCopyLiteralByteString.wrap(startKey));
+    if (startPartitionKey != null) {
+      builder.setPartitionKeyStart(ZeroCopyLiteralByteString.wrap(startPartitionKey));
     }
     if (endKey != null) {
-      builder.setEndKey(ZeroCopyLiteralByteString.wrap(endKey));
+      builder.setPartitionKeyEnd(ZeroCopyLiteralByteString.wrap(endKey));
     }
     return toChannelBuffer(header, builder.build());
   }

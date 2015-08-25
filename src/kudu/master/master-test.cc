@@ -336,7 +336,7 @@ TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
     ASSERT_OK(split2.SetInt32("key", 2));
     Status s = CreateTable(kTableName, kTableSchema, list_of(split1)(split1)(split2));
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
-    ASSERT_STR_CONTAINS(s.ToString(), "Duplicate split key");
+    ASSERT_STR_CONTAINS(s.ToString(), "Duplicate split row");
   }
 
   // No empty split rows.
@@ -346,7 +346,9 @@ TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
     KuduPartialRow split2(&kTableSchema);
     Status s = CreateTable(kTableName, kTableSchema, list_of(split1)(split2));
     ASSERT_TRUE(s.IsInvalidArgument());
-    ASSERT_STR_CONTAINS(s.ToString(), "Invalid argument: All key columns must be set: key");
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "Invalid argument: Split rows must contain a value for at "
+                        "least one primary key column");
   }
 }
 

@@ -4,6 +4,7 @@ package kudu.tablet;
 
 option java_package = "org.kududb.tablet";
 
+import "kudu/common/common.proto";
 import "kudu/common/wire_protocol.proto";
 import "kudu/tablet/metadata.proto";
 
@@ -74,10 +75,11 @@ message TabletStatusPB {
   optional TabletStatePB state = 3 [ default = UNKNOWN ];
   optional tablet.TabletDataState tablet_data_state = 8 [ default = TABLET_DATA_UNKNOWN ];
   required string last_status = 4;
-  // The encoded start key of the tablet.
-  required bytes start_key = 5;
-  // The encoded end key of the tablet.
-  required bytes end_key = 6;
+  // DEPRECATED.
+  optional bytes start_key = 5;
+  // DEPRECATED.
+  optional bytes end_key = 6;
+  optional PartitionPB partition = 9;
   optional int64 estimated_on_disk_size = 7;
 }
 

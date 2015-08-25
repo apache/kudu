@@ -337,8 +337,8 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
 
     String table = operation.getTable().getName();
-    byte[] rowkey = operation.key();
-    AsyncKuduClient.RemoteTablet tablet = client.getTablet(table, rowkey);
+    byte[] partitionKey = operation.partitionKey();
+    AsyncKuduClient.RemoteTablet tablet = client.getTablet(table, partitionKey);
     // We go straight to the buffer if we know the tabletSlice
     if (tablet != null) {
       operation.setTablet(tablet);
@@ -357,7 +357,7 @@ public class AsyncKuduSession implements SessionConfiguration {
       return client.delayedIsCreateTableDone(table, operation, cb, getOpInLookupErrback(operation));
     }
 
-    Deferred<Master.GetTableLocationsResponsePB> d = client.locateTablet(table, rowkey);
+    Deferred<Master.GetTableLocationsResponsePB> d = client.locateTablet(table, partitionKey);
     d.addErrback(getOpInLookupErrback(operation));
     return d.addCallbackDeferring(
         new TabletLookupCB<Master.GetTableLocationsResponsePB>(operation));

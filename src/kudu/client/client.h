@@ -26,6 +26,7 @@
 namespace kudu {
 
 class LinkedListTester;
+class PartitionSchema;
 
 namespace tools {
 class TsAdminClient;
@@ -282,6 +283,10 @@ class KUDU_EXPORT KuduTableCreator {
   // Sets the rows on which to pre-split the table.
   // The table creator takes ownership of the rows.
   //
+  // If any provided row is missing a value for any of the range partition
+  // columns, the logical minimum value for that column type will be used by
+  // default.
+  //
   // If not provided, no range-based pre-splitting is performed.
   //
   // Optional.
@@ -372,6 +377,8 @@ class KUDU_EXPORT KuduTable : public std::tr1::enable_shared_from_this<KuduTable
 
   KuduClient* client() const;
 
+  const PartitionSchema& partition_schema() const;
+
  private:
   class KUDU_NO_EXPORT Data;
 
@@ -380,7 +387,8 @@ class KUDU_EXPORT KuduTable : public std::tr1::enable_shared_from_this<KuduTable
   KuduTable(const std::tr1::shared_ptr<KuduClient>& client,
             const std::string& name,
             const std::string& table_id,
-            const KuduSchema& schema);
+            const KuduSchema& schema,
+            const PartitionSchema& partition_schema);
 
   // Owned.
   Data* data_;

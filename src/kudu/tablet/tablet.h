@@ -439,7 +439,7 @@ class Tablet {
   Status GetMappedReadProjection(const Schema& projection,
                                  Schema *mapped_projection) const;
 
-  Status CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const;
+  Status CheckRowInTablet(const ConstContiguousRow& probe) const;
 
   // Helper method to find the rowset that has the DMS with the highest retention.
   shared_ptr<RowSet> FindBestDMSToFlush(const MaxIdxToSegmentMap& max_idx_to_segment_size) const;

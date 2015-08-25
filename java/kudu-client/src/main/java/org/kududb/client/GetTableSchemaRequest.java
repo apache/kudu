@@ -5,6 +5,7 @@ package org.kududb.client;
 import com.google.protobuf.Message;
 import static org.kududb.master.Master.*;
 
+import org.kududb.Schema;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -46,10 +47,12 @@ public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
                                                    String tsUUID) throws Exception {
     final GetTableSchemaResponsePB.Builder respBuilder = GetTableSchemaResponsePB.newBuilder();
     readProtobuf(callResponse.getPBMessage(), respBuilder);
+    Schema schema = ProtobufHelper.pbToSchema(respBuilder.getSchema());
     GetTableSchemaResponse response = new GetTableSchemaResponse(
         deadlineTracker.getElapsedMillis(),
         tsUUID,
-        ProtobufHelper.pbToSchema(respBuilder.getSchema()));
+        schema,
+        ProtobufHelper.pbToPartitionSchema(respBuilder.getPartitionSchema(), schema));
     return new Pair<GetTableSchemaResponse, Object>(
         response, respBuilder.hasError() ? respBuilder.getError() : null);
   }

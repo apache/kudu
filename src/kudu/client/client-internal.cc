@@ -332,17 +332,31 @@ Status KuduClient::Data::CreateTable(KuduClient* client,
       // network blip leading to a timeout, etc...)
       KuduSchema actual_schema;
       string table_id;
+      PartitionSchema actual_partition_schema;
       RETURN_NOT_OK_PREPEND(
-          GetTableSchema(client, req.name(), deadline, &actual_schema, &table_id),
+          GetTableSchema(client, req.name(), deadline, &actual_schema,
+                         &actual_partition_schema, &table_id),
           Substitute("Unable to check the schema of table $0", req.name()));
-      if (schema.Equals(actual_schema)) {
-        return Status::OK();
-      } else {
+      if (!schema.Equals(actual_schema)) {
         string msg = Substitute("Table $0 already exists with a different "
             "schema. Requested schema was: $1, actual schema is: $2",
             req.name(), schema.schema_->ToString(), actual_schema.schema_->ToString());
         LOG(ERROR) << msg;
         return Status::AlreadyPresent(msg);
+      } else {
+        PartitionSchema partition_schema;
+        RETURN_NOT_OK(PartitionSchema::FromPB(req.partition_schema(),
+                                              *schema.schema_, &partition_schema));
+        if (!partition_schema.Equals(actual_partition_schema)) {
+          string msg = Substitute("Table $0 already exists with a different partition schema. "
+              "Requested partition schema was: $1, actual partition schema is: $2",
+              req.name(), partition_schema.DebugString(*schema.schema_),
+              actual_partition_schema.DebugString(*actual_schema.schema_));
+          LOG(ERROR) << msg;
+          return Status::AlreadyPresent(msg);
+        } else {
+          return Status::OK();
+        }
       }
     }
     return StatusFromPB(resp.error().status());
@@ -532,6 +546,7 @@ class GetTableSchemaRpc : public Rpc {
                     const StatusCallback& user_cb,
                     const string& table_name,
                     KuduSchema *out_schema,
+                    PartitionSchema* out_partition_schema,
                     string* out_id,
                     const MonoTime& deadline,
                     const shared_ptr<rpc::Messenger>& messenger);
@@ -553,6 +568,7 @@ class GetTableSchemaRpc : public Rpc {
   StatusCallback user_cb_;
   const string table_name_;
   KuduSchema* out_schema_;
+  PartitionSchema* out_partition_schema_;
   string* out_id_;
   GetTableSchemaResponsePB resp_;
 };
@@ -561,6 +577,7 @@ GetTableSchemaRpc::GetTableSchemaRpc(KuduClient* client,
                                      const StatusCallback& user_cb,
                                      const string& table_name,
                                      KuduSchema* out_schema,
+                                     PartitionSchema* out_partition_schema,
                                      string* out_id,
                                      const MonoTime& deadline,
                                      const shared_ptr<rpc::Messenger>& messenger)
@@ -569,6 +586,7 @@ GetTableSchemaRpc::GetTableSchemaRpc(KuduClient* client,
       user_cb_(user_cb),
       table_name_(table_name),
       out_schema_(DCHECK_NOTNULL(out_schema)),
+      out_partition_schema_(DCHECK_NOTNULL(out_partition_schema)),
       out_id_(DCHECK_NOTNULL(out_id)) {
 }
 
@@ -655,13 +673,14 @@ void GetTableSchemaRpc::SendRpcCb(const Status& status) {
   }
 
   if (new_status.ok()) {
-    Schema server_schema;
-    new_status = SchemaFromPB(resp_.schema(), &server_schema);
+    gscoped_ptr<Schema> schema(new Schema());
+    new_status = SchemaFromPB(resp_.schema(), schema.get());
     if (new_status.ok()) {
-      gscoped_ptr<Schema> client_schema(new Schema());
-      client_schema->Reset(server_schema.columns(), server_schema.num_key_columns());
       delete out_schema_->schema_;
-      out_schema_->schema_ = client_schema.release();
+      out_schema_->schema_ = schema.release();
+      new_status = PartitionSchema::FromPB(resp_.partition_schema(),
+                                           *out_schema_->schema_,
+                                           out_partition_schema_);
 
       *out_id_ = resp_.table_id();
       CHECK_GT(out_id_->size(), 0) << "Running against a too-old master";
@@ -679,12 +698,14 @@ Status KuduClient::Data::GetTableSchema(KuduClient* client,
                                         const string& table_name,
                                         const MonoTime& deadline,
                                         KuduSchema* schema,
+                                        PartitionSchema* partition_schema,
                                         string* table_id) {
   Synchronizer sync;
   GetTableSchemaRpc rpc(client,
                         sync.AsStatusCallback(),
                         table_name,
                         schema,
+                        partition_schema,
                         table_id,
                         deadline,
                         messenger_);

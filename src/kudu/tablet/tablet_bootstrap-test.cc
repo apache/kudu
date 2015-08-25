@@ -55,14 +55,15 @@ class BootstrapTest : public LogTestBase {
   }
 
   Status LoadTestTabletMetadata(int mrs_id, int delta_id, scoped_refptr<TabletMetadata>* meta) {
+    Schema schema = SchemaBuilder(schema_).Build();
+    std::pair<PartitionSchema, Partition> partition = CreateDefaultPartition(schema);
+
     RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
                                                log::kTestTablet,
                                                log::kTestTable,
-                                               // We need a schema with ids for
-                                               // TabletMetadata::LoadOrCreate()
-                                               SchemaBuilder(schema_).Build(),
-                                               "",
-                                               "",
+                                               schema,
+                                               partition.first,
+                                               partition.second,
                                                TABLET_DATA_READY,
                                                meta));
     (*meta)->SetLastDurableMrsIdForTests(mrs_id);

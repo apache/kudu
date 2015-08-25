@@ -9,6 +9,7 @@
 #include <tr1/unordered_set>
 #include <vector>
 
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/consensus/opid.pb.h"
 #include "kudu/fs/block_id.h"
@@ -51,7 +52,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                           const std::string& tablet_id,
                           const std::string& table_name,
                           const Schema& schema,
-                          const std::string& start_key, const std::string& end_key,
+                          const PartitionSchema& partition_schema,
+                          const Partition& partition,
                           const TabletDataState& initial_tablet_data_state,
                           scoped_refptr<TabletMetadata>* metadata);
 
@@ -69,7 +71,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                              const std::string& tablet_id,
                              const std::string& table_name,
                              const Schema& schema,
-                             const std::string& start_key, const std::string& end_key,
+                             const PartitionSchema& partition_schema,
+                             const Partition& partition,
                              const TabletDataState& initial_tablet_data_state,
                              scoped_refptr<TabletMetadata>* metadata);
 
@@ -81,16 +84,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     return tablet_id_;
   }
 
-  // Return the inclusive start key of the tablet.
-  const std::string& start_key() const {
-    DCHECK_NE(state_, kNotLoadedYet);
-    return start_key_;
-  }
-
-  // Return the exclusive end key of the tablet.
-  const std::string& end_key() const {
-    DCHECK_NE(state_, kNotLoadedYet);
-    return end_key_;
+  // Returns the partition of the tablet.
+  const Partition& partition() const {
+    return partition_;
   }
 
   const std::string& table_id() const {
@@ -113,6 +109,11 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     const Schema* s = reinterpret_cast<const Schema*>(
         base::subtle::Acquire_Load(reinterpret_cast<const AtomicWord*>(&schema_)));
     return *s;
+  }
+
+  // Returns the partition schema of the tablet's table.
+  const PartitionSchema& partition_schema() const {
+    return partition_schema_;
   }
 
   // Set / get the remote bootstrap / tablet data state.
@@ -221,8 +222,8 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
                  const std::string& tablet_id,
                  const std::string& table_name,
                  const Schema& schema,
-                 const std::string& start_key,
-                 const std::string& end_key,
+                 const PartitionSchema& partition_schema,
+                 const Partition& partition,
                  const TabletDataState& tablet_data_state);
 
   // Constructor for loading an existing tablet.
@@ -279,11 +280,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   const std::string tablet_id_;
   std::string table_id_;
 
-  // Start key (inclusive).
-  std::string start_key_;
-
-  // End key (exclusive).
-  std::string end_key_;
+  Partition partition_;
 
   FsManager *fs_manager_;
   RowSetMetadataVector rowsets_;
@@ -297,6 +294,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   Schema* schema_;
   uint32_t schema_version_;
   std::string table_name_;
+  PartitionSchema partition_schema_;
 
   // Previous values of 'schema_'.
   // These are currently kept alive forever, under the assumption that

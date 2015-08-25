@@ -23,6 +23,7 @@ import java.util.List;
 public class KuduTable {
 
   private final Schema schema;
+  private final PartitionSchema partitionSchema;
   private final AsyncKuduClient client;
   private final String name;
 
@@ -32,8 +33,9 @@ public class KuduTable {
    * @param name this table's name
    * @param schema this table's schema
    */
-  KuduTable(AsyncKuduClient client, String name, Schema schema) {
+  KuduTable(AsyncKuduClient client, String name, Schema schema, PartitionSchema partitionSchema) {
     this.schema = schema;
+    this.partitionSchema = partitionSchema;
     this.client = client;
     this.name = name;
   }
@@ -44,6 +46,14 @@ public class KuduTable {
    */
   public Schema getSchema() {
     return this.schema;
+  }
+
+  /**
+   * Gets the table's partition schema.
+   * @return the table's partition schema.
+   */
+  PartitionSchema getPartitionSchema() {
+    return partitionSchema;
   }
 
   /**

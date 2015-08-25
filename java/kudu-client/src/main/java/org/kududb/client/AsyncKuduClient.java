@@ -31,6 +31,7 @@ package org.kududb.client;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
@@ -138,21 +139,19 @@ public class AsyncKuduClient {
    * is only used to handle TabletServer disconnections gracefully.
    */
   private final ConcurrentHashMap<String, ConcurrentSkipListMap<byte[],
-      RemoteTablet>> tabletsCache = new ConcurrentHashMap<String, ConcurrentSkipListMap<byte[],
-      RemoteTablet>>();
+      RemoteTablet>> tabletsCache = new ConcurrentHashMap<>();
 
   /**
-   * Maps a tablet ID to the to the RemoteTablet that knows where all the replicas are served
+   * Maps a tablet ID to the RemoteTablet that knows where all the replicas are served.
    */
-  private final ConcurrentHashMap<Slice, RemoteTablet> tablet2client =
-      new ConcurrentHashMap<Slice, RemoteTablet>();
+  private final ConcurrentHashMap<Slice, RemoteTablet> tablet2client = new ConcurrentHashMap<>();
 
   /**
    * Maps a client connected to a TabletServer to the list of tablets we know
    * it's serving so far.
    */
   private final ConcurrentHashMap<TabletClient, ArrayList<RemoteTablet>> client2tablets =
-      new ConcurrentHashMap<TabletClient, ArrayList<RemoteTablet>>();
+      new ConcurrentHashMap<>();
 
   /**
    * Cache that maps a TabletServer address ("ip:port") to the clients
@@ -228,8 +227,7 @@ public class AsyncKuduClient {
   private AsyncKuduClient(AsyncKuduClientBuilder b) {
     this.channelFactory = b.createChannelFactory();
     this.masterAddresses = b.masterAddresses;
-    this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER,
-       new Schema(new ArrayList<ColumnSchema>(0)));
+    this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER, null, null);
     this.defaultOperationTimeoutMs = b.defaultOperationTimeoutMs;
     this.defaultAdminOperationTimeoutMs = b.defaultAdminOperationTimeoutMs;
     this.defaultSocketReadTimeoutMs = b.defaultSocketReadTimeoutMs;
@@ -395,7 +393,8 @@ public class AsyncKuduClient {
     return getTableSchema(name).addCallback(new Callback<KuduTable, GetTableSchemaResponse>() {
       @Override
       public KuduTable call(GetTableSchemaResponse response) throws Exception {
-        return new KuduTable(AsyncKuduClient.this, name, response.getSchema());
+        return new KuduTable(AsyncKuduClient.this, name, response.getSchema(),
+                             response.getPartitionSchema());
       }
     });
   }
@@ -538,11 +537,11 @@ public class AsyncKuduClient {
     }
     request.attempt++;
     final String tableName = request.getTable().getName();
-    byte[] rowkey = null;
+    byte[] partitionKey = null;
     if (request instanceof KuduRpc.HasKey) {
-       rowkey = ((KuduRpc.HasKey)request).key();
+       partitionKey = ((KuduRpc.HasKey)request).partitionKey();
     }
-    final RemoteTablet tablet = getTablet(tableName, rowkey);
+    final RemoteTablet tablet = getTablet(tableName, partitionKey);
 
     // Set the propagated timestamp so that the next time we send a message to
     // the server the message includes the last propagated timestamp.
@@ -572,10 +571,9 @@ public class AsyncKuduClient {
           new RetryRpcCB<R, Master.IsCreateTableDoneResponsePB>(request),
           getDelayedIsCreateTableDoneErrback(request));
     }
-    Callback<Deferred<R>, Master.GetTableLocationsResponsePB> cb = new RetryRpcCB<R,
-        Master.GetTableLocationsResponsePB>(request);
-    Callback<Deferred<R>, Exception> eb = new RetryRpcErrback<R>(request);
-    Deferred<Master.GetTableLocationsResponsePB> returnedD = locateTablet(tableName, rowkey);
+    Callback<Deferred<R>, Master.GetTableLocationsResponsePB> cb = new RetryRpcCB<>(request);
+    Callback<Deferred<R>, Exception> eb = new RetryRpcErrback<>(request);
+    Deferred<Master.GetTableLocationsResponsePB> returnedD = locateTablet(tableName, partitionKey);
     return AsyncUtil.addCallbacksDeferring(returnedD, cb, eb);
   }
 
@@ -741,7 +739,7 @@ public class AsyncKuduClient {
     public String toString() {
       return "ask the master if " + table + " was created";
     }
-  };
+  }
 
   boolean isTableNotServed(String tableName) {
     return tablesNotServed.contains(tableName);
@@ -773,8 +771,7 @@ public class AsyncKuduClient {
 
   /**
    * This method first clears tabletsCache and then tablet2client without any regards for
-   * calls to {@link #discoverTablets(String, kudu.master.Master.GetTableLocationsResponsePB)}.
-   * Call only when AsyncKuduClient is in a steady state.
+   * calls to {@link #discoverTablets}. Call only when AsyncKuduClient is in a steady state.
    * @param tableName Table for which we remove all the RemoteTablet entries
    */
   @VisibleForTesting
@@ -843,24 +840,24 @@ public class AsyncKuduClient {
   }
 
   /**
-   * Sends a getTableLocations RPC to the master to find the table's tablets
-   * @param table table's name, in the future this will use a tablet id
-   * @param rowkey can be null, if not we'll find the exact tablet that contains it
+   * Sends a getTableLocations RPC to the master to find the table's tablets.
+   * @param table table's name, in the future this will use a tablet ID
+   * @param partitionKey can be null, if not we'll find the exact tablet that contains it
    * @return Deferred to track the progress
    */
-  Deferred<Master.GetTableLocationsResponsePB> locateTablet(String table, byte[] rowkey) {
+  Deferred<Master.GetTableLocationsResponsePB> locateTablet(String table, byte[] partitionKey) {
     final boolean has_permit = acquireMasterLookupPermit();
     if (!has_permit) {
       // If we failed to acquire a permit, it's worth checking if someone
       // looked up the tablet we're interested in.  Every once in a while
       // this will save us a Master lookup.
-      RemoteTablet tablet = getTablet(table, rowkey);
+      RemoteTablet tablet = getTablet(table, partitionKey);
       if (tablet != null && clientFor(tablet) != null) {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
-    GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTable, rowkey,
-        rowkey, table);
+    GetTableLocationsRequest rpc =
+        new GetTableLocationsRequest(masterTable, partitionKey, partitionKey, table);
     rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     final Deferred<Master.GetTableLocationsResponsePB> d;
 
@@ -880,7 +877,7 @@ public class AsyncKuduClient {
 
   /**
    * Update the master config: send RPCs to all config members, use the returned data to
-   * fill a {@link kudu.master.Master.GetTableLocationsResponsePB} object.
+   * fill a {@link Master.GetTabletLocationsResponsePB} object.
    * @return An initialized Deferred object to hold the response.
    */
   Deferred<Master.GetTableLocationsResponsePB> getMasterTableLocationsPB() {
@@ -913,20 +910,20 @@ public class AsyncKuduClient {
    * are a lot of tablets.
    * This method blocks until it gets all the tablets.
    * @param table Table name
-   * @param startKey where to start in the table, pass null to start at the beginning
-   * @param endKey where to stop in the table, pass null to get all the tablets until the end of
-   *               the table
+   * @param startPartitionKey where to start in the table, pass null to start at the beginning
+   * @param endPartitionKey where to stop in the table, pass null to get all the tablets until the
+   *                        end of the table
    * @param deadline deadline in milliseconds for this method to finish
    * @return a list of the tablets in the table, which can be queried for metadata about
    *         each tablet
    * @throws Exception MasterErrorException if the table doesn't exist
    */
   List<LocatedTablet> syncLocateTable(String table,
-                                      byte[] startKey,
-                                      byte[] endKey,
+                                      byte[] startPartitionKey,
+                                      byte[] endPartitionKey,
                                       long deadline) throws Exception {
     List<LocatedTablet> ret = Lists.newArrayList();
-    byte[] lastEndKey = null;
+    byte[] lastEndPartitionKey = null;
 
     DeadlineTracker deadlineTracker = new DeadlineTracker();
     deadlineTracker.setDeadline(deadline);
@@ -935,8 +932,8 @@ public class AsyncKuduClient {
         throw new NonRecoverableException("Took too long getting the list of tablets, " +
             "deadline=" + deadline);
       }
-      GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTable, startKey,
-          endKey, table);
+      GetTableLocationsRequest rpc =
+          new GetTableLocationsRequest(masterTable, startPartitionKey, endPartitionKey, table);
       rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
       final Deferred<Master.GetTableLocationsResponsePB> d = sendRpcToTablet(rpc);
       Master.GetTableLocationsResponsePB response =
@@ -949,22 +946,23 @@ public class AsyncKuduClient {
         LocatedTablet locs = new LocatedTablet(tabletPb);
         ret.add(locs);
 
-        if (lastEndKey != null &&
-            locs.getEndKey().length != 0 &&
-            Bytes.memcmp(locs.getEndKey(), lastEndKey) < 0) {
+        Partition partition = locs.getPartition();
+        if (lastEndPartitionKey != null &&
+            !partition.isEndPartition() &&
+            Bytes.memcmp(partition.getPartitionKeyEnd(), lastEndPartitionKey) < 0) {
           throw new IllegalStateException(
             "Server returned tablets out of order: " +
-            "end key '" + Bytes.pretty(locs.getEndKey()) + "' followed " +
-            "end key '" + Bytes.pretty(lastEndKey) + "'");
+            "end partition key '" + Bytes.pretty(partition.getPartitionKeyEnd()) + "' followed " +
+            "end partition key '" + Bytes.pretty(lastEndPartitionKey) + "'");
         }
-        lastEndKey = locs.getEndKey();
+        lastEndPartitionKey = partition.getPartitionKeyEnd();
       }
       // If true, we're done, else we have to go back to the master with the last end key
-      if (lastEndKey.length == 0 ||
-          (endKey != null && Bytes.memcmp(lastEndKey, endKey) > 0)) {
+      if (lastEndPartitionKey.length == 0 ||
+          (endPartitionKey != null && Bytes.memcmp(lastEndPartitionKey, endPartitionKey) > 0)) {
         break;
       } else {
-        startKey = lastEndKey;
+        startPartitionKey = lastEndPartitionKey;
       }
     }
     return ret;
@@ -1073,7 +1071,7 @@ public class AsyncKuduClient {
     if (response.getTabletLocationsCount() == 0) {
       // Keep a note that the table exists but it's not served yet, we'll retry
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Table " + table + " hasn't been created yet");
+        LOG.debug("Table {} has not been created yet", table);
       }
       tablesNotServed.add(table);
       return;
@@ -1082,7 +1080,7 @@ public class AsyncKuduClient {
     // the most common case the table should already be present
     ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(table);
     if (tablets == null) {
-      tablets = new ConcurrentSkipListMap<byte[], RemoteTablet>(Bytes.MEMCMP);
+      tablets = new ConcurrentSkipListMap<>(Bytes.MEMCMP);
       ConcurrentSkipListMap<byte[], RemoteTablet> oldTablets = tabletsCache.putIfAbsent
           (table, tablets);
       if (oldTablets != null) {
@@ -1109,23 +1107,20 @@ public class AsyncKuduClient {
         // someone beat us to it
         continue;
       }
-      LOG.info("Discovering tablet " + tabletId.toString(Charset.defaultCharset()) + " for " +
-          "table " + table + " with start key " + Bytes.pretty(rt.startKey) + " and endkey " +
-          Bytes.pretty(rt.endKey));
+      LOG.info("Discovered tablet {} for table {} with partition {}",
+               tabletId.toString(Charset.defaultCharset()), table, rt.getPartition());
       rt.refreshServers(tabletPb);
       // This is making this tablet available
       // Even if two clients were racing in this method they are putting the same RemoteTablet
       // with the same start key in the CSLM in the end
-      tablets.put(rt.getStartKey(), rt);
+      tablets.put(rt.getPartition().getPartitionKeyStart(), rt);
     }
   }
 
   RemoteTablet createTabletFromPb(String table, Master.TabletLocationsPB tabletPb) {
-    byte[] startKey = tabletPb.getStartKey().toByteArray();
-    byte[] endKey = tabletPb.getEndKey().toByteArray();
+    Partition partition = ProtobufHelper.pbToPartition(tabletPb.getPartition());
     Slice tabletId = new Slice(tabletPb.getTabletId().toByteArray());
-    RemoteTablet rt = new RemoteTablet(table, tabletId, startKey, endKey);
-    return rt;
+    return new RemoteTablet(table, tabletId, partition);
   }
 
   /**
@@ -1134,7 +1129,7 @@ public class AsyncKuduClient {
    * @param tableName table to find the tablet
    * @return a tablet ID as a slice or null if not found
    */
-  RemoteTablet getTablet(String tableName, byte[] rowkey) {
+  RemoteTablet getTablet(String tableName, byte[] partitionKey) {
     ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(tableName);
 
     if (tablets == null) {
@@ -1149,18 +1144,18 @@ public class AsyncKuduClient {
       return tablets.firstEntry().getValue();
     }
 
-    Map.Entry<byte[], RemoteTablet> tabletPair = tablets.floorEntry(rowkey);
+    Map.Entry<byte[], RemoteTablet> tabletPair = tablets.floorEntry(partitionKey);
 
     if (tabletPair == null) {
       return null;
     }
 
-    byte[] endKey = tabletPair.getValue().getEndKey();
+    Partition partition = tabletPair.getValue().getPartition();
 
-    if (endKey != EMPTY_ARRAY
-        // If the stop key is an empty byte array, it means this tablet is the
-        // last tablet for this table and this key ought to be in that tablet.
-        && Bytes.memcmp(rowkey, endKey) >= 0) {
+    // If the partition is not the end partition, but it doesn't include the key
+    // we are looking for, then we have not yet found the correct tablet.
+    if (!partition.isEndPartition()
+        && Bytes.memcmp(partitionKey, partition.getPartitionKeyEnd()) >= 0) {
       return null;
     }
 
@@ -1626,7 +1621,7 @@ public class AsyncKuduClient {
   /**
    * This class encapsulates the information regarding a tablet and its locations.
    *
-   * Leader failover mecanism:
+   * Leader failover mechanism:
    * When we get a complete peer list from the master, we place the leader in the first
    * position of the tabletServers array. When we detect that it isn't the leader anymore (in
    * TabletClient), we demote it and set the next TS in the array as the leader. When the RPC
@@ -1656,16 +1651,13 @@ public class AsyncKuduClient {
     private final String table;
     private final Slice tabletId;
     private final ArrayList<TabletClient> tabletServers = new ArrayList<TabletClient>();
-    private final byte[] startKey;
-    private final byte[] endKey;
+    private final Partition partition;
     private int leaderIndex = NO_LEADER_INDEX;
 
-    RemoteTablet(String table, Slice tabletId, byte[] startKey, byte[] endKey) {
+    RemoteTablet(String table, Slice tabletId, Partition partition) {
       this.tabletId = tabletId;
       this.table = table;
-      this.startKey = startKey;
-      // makes comparisons easier in getTablet, we just do == instead of equals.
-      this.endKey = endKey.length == 0 ? EMPTY_ARRAY : endKey;
+      this.partition = partition;
     }
 
     void refreshServers(Master.TabletLocationsPB tabletLocations) throws NonRecoverableException {
@@ -1801,12 +1793,8 @@ public class AsyncKuduClient {
       return tabletId;
     }
 
-    public byte[] getStartKey() {
-      return startKey;
-    }
-
-    public byte[] getEndKey() {
-      return endKey;
+    public Partition getPartition() {
+      return partition;
     }
 
     byte[] getTabletIdAsBytes() {
@@ -1832,28 +1820,9 @@ public class AsyncKuduClient {
         return 1;
       }
 
-      int result = ComparisonChain.start()
+      return ComparisonChain.start()
           .compare(this.table, remoteTablet.table)
-          .compare(this.startKey, remoteTablet.startKey, Bytes.MEMCMP).result();
-
-      if (result != 0) {
-        return result;
-      }
-
-      int endKeyCompare = Bytes.memcmp(this.endKey, remoteTablet.endKey);
-
-      if (endKeyCompare != 0) {
-        if (this.startKey != EMPTY_ARRAY
-            && this.endKey == EMPTY_ARRAY) {
-          return 1; // this is last tablet
-        }
-        if (remoteTablet.startKey != EMPTY_ARRAY
-            && remoteTablet.endKey == EMPTY_ARRAY) {
-          return -1; // remoteTablet is the last tablet
-        }
-        return endKeyCompare;
-      }
-      return 0;
+          .compare(this.partition, remoteTablet.partition).result();
     }
 
     @Override
@@ -1868,7 +1837,7 @@ public class AsyncKuduClient {
 
     @Override
     public int hashCode() {
-      return Objects.hashCode(table, startKey, endKey);
+      return Objects.hashCode(table, partition);
     }
   }
 

@@ -30,8 +30,9 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     TabletInfo* tablet = new TabletInfo(table, tablet_id);
     TabletMetadataLock meta_lock(tablet, TabletMetadataLock::WRITE);
 
-    meta_lock.mutable_data()->pb.mutable_start_key()->assign(start_key);
-    meta_lock.mutable_data()->pb.mutable_end_key()->assign(end_key);
+    PartitionPB* partition = meta_lock.mutable_data()->pb.mutable_partition();
+    partition->set_partition_key_start(start_key);
+    partition->set_partition_key_end(end_key);
     meta_lock.mutable_data()->pb.set_state(SysTabletsEntryPB::RUNNING);
 
     table->AddTablet(tablet);
@@ -48,7 +49,7 @@ TEST(TableInfoTest, TestAssignmentRanges) {
     GetTableLocationsRequestPB req;
     req.set_max_returned_locations(1);
     req.mutable_table()->mutable_table_name()->assign(table_id);
-    req.mutable_start_key()->assign(start_key);
+    req.mutable_partition_key_start()->assign(start_key);
     vector<scoped_refptr<TabletInfo> > tablets_in_range;
     table->GetTabletsInRange(&req, &tablets_in_range);
 

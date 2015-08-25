@@ -219,8 +219,8 @@ static TabletInfo *CreateTablet(TableInfo *table,
   TabletInfo *tablet = new TabletInfo(table, tablet_id);
   TabletMetadataLock l(tablet, TabletMetadataLock::WRITE);
   l.mutable_data()->pb.set_state(SysTabletsEntryPB::PREPARING);
-  l.mutable_data()->pb.set_start_key(start_key);
-  l.mutable_data()->pb.set_end_key(end_key);
+  l.mutable_data()->pb.mutable_partition()->set_partition_key_start(start_key);
+  l.mutable_data()->pb.mutable_partition()->set_partition_key_end(end_key);
   l.mutable_data()->pb.set_table_id(table->id());
   l.Commit();
   return tablet;
@@ -325,15 +325,16 @@ TEST_F(SysCatalogTest, TestTabletInfoCommit) {
 
   // Mutate the tablet, the changes should not be visible
   TabletMetadataLock l(tablet.get(), TabletMetadataLock::WRITE);
-  l.mutable_data()->pb.set_start_key("a");
-  l.mutable_data()->pb.set_end_key("b");
+  PartitionPB* partition = l.mutable_data()->pb.mutable_partition();
+  partition->set_partition_key_start("a");
+  partition->set_partition_key_end("b");
   l.mutable_data()->set_state(SysTabletsEntryPB::RUNNING, "running");
   {
     // Changes shouldn't be visible, and lock should still be
     // acquired even though the mutation is under way.
     TabletMetadataLock read_lock(tablet.get(), TabletMetadataLock::READ);
-    ASSERT_NE("a", read_lock.data().pb.start_key());
-    ASSERT_NE("b", read_lock.data().pb.end_key());
+    ASSERT_NE("a", read_lock.data().pb.partition().partition_key_start());
+    ASSERT_NE("b", read_lock.data().pb.partition().partition_key_end());
     ASSERT_NE("running", read_lock.data().pb.state_msg());
     ASSERT_NE(SysTabletsEntryPB::RUNNING,
               read_lock.data().pb.state());
@@ -345,8 +346,8 @@ TEST_F(SysCatalogTest, TestTabletInfoCommit) {
   // Verify that the data is visible
   {
     TabletMetadataLock read_lock(tablet.get(), TabletMetadataLock::READ);
-    ASSERT_EQ("a", read_lock.data().pb.start_key());
-    ASSERT_EQ("b", read_lock.data().pb.end_key());
+    ASSERT_EQ("a", read_lock.data().pb.partition().partition_key_start());
+    ASSERT_EQ("b", read_lock.data().pb.partition().partition_key_end());
     ASSERT_EQ("running", read_lock.data().pb.state_msg());
     ASSERT_EQ(SysTabletsEntryPB::RUNNING,
               read_lock.data().pb.state());

@@ -27,6 +27,7 @@
 #include "kudu/client/table_creator-internal.h"
 #include "kudu/client/tablet_server-internal.h"
 #include "kudu/client/write_op.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
@@ -35,8 +36,8 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
-#include "kudu/util/net/dns_resolver.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/net/dns_resolver.h"
 
 using std::set;
 using std::string;
@@ -248,10 +249,12 @@ Status KuduClient::GetTableSchema(const string& table_name,
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(default_admin_operation_timeout());
   string table_id_ignored;
+  PartitionSchema partition_schema;
   return data_->GetTableSchema(this,
                                table_name,
                                deadline,
                                schema,
+                               &partition_schema,
                                &table_id_ignored);
 }
 
@@ -328,16 +331,20 @@ Status KuduClient::OpenTable(const string& table_name,
                              shared_ptr<KuduTable>* table) {
   KuduSchema schema;
   string table_id;
+  PartitionSchema partition_schema;
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(default_admin_operation_timeout());
   RETURN_NOT_OK(data_->GetTableSchema(this,
                                       table_name,
                                       deadline,
-                                      &schema, &table_id));
+                                      &schema,
+                                      &partition_schema,
+                                      &table_id));
 
   // In the future, probably will look up the table in some map to reuse KuduTable
   // instances.
-  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, table_id, schema));
+  shared_ptr<KuduTable> ret(new KuduTable(shared_from_this(), table_name, table_id,
+                                          schema, partition_schema));
   RETURN_NOT_OK(ret->data_->Open());
   table->swap(ret);
 
@@ -464,8 +471,9 @@ Status KuduTableCreator::Create() {
 KuduTable::KuduTable(const shared_ptr<KuduClient>& client,
                      const string& name,
                      const string& table_id,
-                     const KuduSchema& schema)
-  : data_(new KuduTable::Data(client, name, table_id, schema)) {
+                     const KuduSchema& schema,
+                     const PartitionSchema& partition_schema)
+  : data_(new KuduTable::Data(client, name, table_id, schema, partition_schema)) {
 }
 
 KuduTable::~KuduTable() {
@@ -498,6 +506,10 @@ KuduDelete* KuduTable::NewDelete() {
 
 KuduClient* KuduTable::client() const {
   return data_->client_.get();
+}
+
+const PartitionSchema& KuduTable::partition_schema() const {
+  return data_->partition_schema_;
 }
 
 KuduPredicate* KuduTable::NewComparisonPredicate(const Slice& col_name,
@@ -927,8 +939,9 @@ Status KuduScanner::Open() {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(data_->timeout_);
   set<string> blacklist;
+  // TODO(KUDU-826): This will break on tables with hash bucketed partitions.
   RETURN_NOT_OK(data_->OpenTablet(data_->spec_.lower_bound_key() != NULL
-                                  ? data_->spec_.lower_bound_key()->encoded_key() : Slice(),
+                                  ? data_->spec_.lower_bound_key()->encoded_key().ToString() : "",
                                   deadline,
                                   &blacklist));
 
@@ -1016,8 +1029,8 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
 
     // Success case.
     if (rpc_status.ok() && server_status.ok()) {
-      if (data_->last_response_.has_encoded_last_row_key()) {
-        data_->encoded_last_row_key_ = data_->last_response_.encoded_last_row_key();
+      if (data_->last_response_.has_last_primary_key()) {
+        data_->last_primary_key_ = data_->last_response_.last_primary_key();
       }
       return data_->ExtractRows(rows);
     }
@@ -1032,18 +1045,20 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
                                       batch_deadline, candidates, &blacklist));
 
     LOG(WARNING) << "Attempting to retry scan of tablet " << ToString() << " elsewhere.";
-    // Use the start key of the current tablet as the start key.
-    return data_->OpenTablet(data_->remote_->start_key(), batch_deadline, &blacklist);
+    // Use the start partition key of the current tablet as the start partition key.
+    const string& partition_key_start = data_->remote_->partition().partition_key_start();
+    return data_->OpenTablet(partition_key_start, batch_deadline, &blacklist);
   } else if (data_->MoreTablets()) {
     // More data may be available in other tablets.
     // No need to close the current tablet; we scanned all the data so the
     // server closed it for us.
     VLOG(1) << "Scanning next tablet " << ToString();
-    data_->encoded_last_row_key_.clear();
+    data_->last_primary_key_.clear();
     MonoTime deadline = MonoTime::Now(MonoTime::FINE);
     deadline.AddDelta(data_->timeout_);
     set<string> blacklist;
-    RETURN_NOT_OK(data_->OpenTablet(data_->remote_->end_key(), deadline, &blacklist));
+    RETURN_NOT_OK(data_->OpenTablet(data_->remote_->partition().partition_key_end(),
+                                    deadline, &blacklist));
 
     // No rows written, the next invocation will pick them up.
     return Status::OK();

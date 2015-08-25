@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/common/common.pb.h"
 
 namespace kudu {
 
@@ -24,6 +25,8 @@ class KuduTableCreator::Data {
   const KuduSchema* schema_;
 
   std::vector<const KuduPartialRow*> split_rows_;
+
+  PartitionSchemaPB partition_schema_;
 
   int num_replicas_;
 

@@ -84,10 +84,11 @@ class RemoteKsckMaster : public KsckMaster {
 
   Status GetTableInfo(const std::string& table_name, Schema* schema, int* num_replicas);
 
-  // Used to get a batch of tablets from the master, passing a pointer to the seen last key that
-  // will be used as the new start key. The last_key is updated to point at the new last key
-  // that came in the batch.
-  Status GetTabletsBatch(const std::string& table_name, std::string* last_key,
+  // Used to get a batch of tablets from the master, passing a pointer to the
+  // seen last key that will be used as the new start key. The
+  // last_partition_key is updated to point at the new last key that came in
+  // the batch.
+  Status GetTabletsBatch(const std::string& table_name, std::string* last_partition_key,
     std::vector<std::tr1::shared_ptr<KsckTablet> >& tablets, bool* more_tablets);
 
   std::tr1::shared_ptr<rpc::Messenger> messenger_;

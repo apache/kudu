@@ -165,9 +165,10 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
           }
           addresses.add(reverseDNS(replica.getRpcHost(), replica.getRpcPort()));
           String[] addressesArray = addresses.toArray(new String[addresses.size()]);
-          TableSplit split = new TableSplit(locatedTablet.getStartKey(),
-              locatedTablet.getEndKey(),
-              addressesArray);
+          Partition partition = locatedTablet.getPartition();
+          TableSplit split = new TableSplit(partition.getPartitionKeyStart(),
+                                            partition.getPartitionKeyEnd(),
+                                            addressesArray);
           splits.add(split);
         }
         return splits;

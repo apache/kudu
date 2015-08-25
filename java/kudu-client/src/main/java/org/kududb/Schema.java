@@ -187,7 +187,8 @@ public class Schema {
   public int getColumnIndex(int columnId) {
     if (!hasColumnIds()) throw new IllegalStateException("Schema does not have Column IDs");
     Integer index = this.columnsById.get(columnId);
-    if (index == null) throw new IllegalArgumentException("Unknown column id: %s" + columnId);
+    if (index == null) throw new IllegalArgumentException(
+        String.format("Unknown column id: %s", columnId));
     return index;
   }
 

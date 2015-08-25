@@ -142,8 +142,8 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     // TODO(KUDU-745): table_id is apparently not set in the metadata.
     attrs["table_id"] = metadata_->table_id();
     attrs["table_name"] = metadata_->table_name();
-    attrs["start_key"] = schema()->DebugEncodedRowKey(metadata_->start_key(), Schema::START_KEY);
-    attrs["end_key"] = schema()->DebugEncodedRowKey(metadata_->end_key(), Schema::END_KEY);
+    attrs["partition"] = metadata_->partition_schema().PartitionDebugString(metadata_->partition(),
+                                                                            *schema());
     metric_entity_ = METRIC_ENTITY_tablet.Instantiate(metric_registry, tablet_id(), attrs);
     metrics_.reset(new TabletMetrics(metric_entity_));
     METRIC_memrowset_size.InstantiateFunctionGauge(
@@ -295,16 +295,18 @@ Status Tablet::AcquireRowLocks(WriteTransactionState* tx_state) {
   return Status::OK();
 }
 
-Status Tablet::CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const {
-  if (!probe.encoded_key().InRange(Slice(metadata_->start_key()),
-                                   Slice(metadata_->end_key()))) {
+Status Tablet::CheckRowInTablet(const ConstContiguousRow& row) const {
+  bool contains_row;
+  RETURN_NOT_OK(metadata_->partition_schema().PartitionContainsRow(metadata_->partition(),
+                                                                   row,
+                                                                   &contains_row));
+
+  if (PREDICT_FALSE(!contains_row)) {
     return Status::NotFound(
-        Substitute("Row not within tablet range. Tablet start key: '$0', exclusive end key: '$1'."
-                   "Probe key: '$2'",
-                   schema()->DebugEncodedRowKey(metadata_->start_key(), Schema::START_KEY),
-                   schema()->DebugEncodedRowKey(metadata_->end_key(), Schema::END_KEY),
-                   schema()->DebugEncodedRowKey(probe.encoded_key().encoded_key(),
-                                               Schema::START_KEY)));
+        Substitute("Row not in tablet partition. Partition: '$0', row: '$1'.",
+                   metadata_->partition_schema().PartitionDebugString(metadata_->partition(),
+                                                                      *schema()),
+                   metadata_->partition_schema().RowDebugString(row)));
   }
   return Status::OK();
 }
@@ -312,7 +314,7 @@ Status Tablet::CheckRowInTablet(const tablet::RowSetKeyProbe& probe) const {
 Status Tablet::AcquireLockForOp(WriteTransactionState* tx_state, RowOp* op) {
   ConstContiguousRow row_key(&key_schema_, op->decoded_op.row_data);
   op->key_probe.reset(new tablet::RowSetKeyProbe(row_key));
-  RETURN_NOT_OK(CheckRowInTablet(*op->key_probe));
+  RETURN_NOT_OK(CheckRowInTablet(row_key));
 
   ScopedRowLock row_lock(&lock_manager_,
                          tx_state,

@@ -59,7 +59,7 @@ public class RowError {
 
   @Override
   public String toString() {
-    return "Row error for key=" + Bytes.pretty(operation.key()) +
+    return "Row error for primary key=" + Bytes.pretty(operation.getRow().encodePrimaryKey()) +
         ", tablet=" + operation.getTablet().getTabletIdAsString() +
         ", server=" + tsUUID +
         ", status=" + status +

@@ -6,11 +6,13 @@
 #define KUDU_CLIENT_META_CACHE_H
 
 #include <boost/function.hpp>
+#include <map>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <vector>
 
+#include "kudu/common/partition.h"
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
@@ -105,11 +107,9 @@ typedef std::tr1::unordered_map<std::string, RemoteTabletServer*> TabletServerMa
 class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
  public:
   RemoteTablet(const std::string& tablet_id,
-               const Slice& start_key,
-               const Slice& end_key)
+               const Partition& partition)
     : tablet_id_(tablet_id),
-      start_key_(start_key),
-      end_key_(end_key) {
+      partition_(partition) {
   }
 
   // Updates this tablet's replica locations.
@@ -146,8 +146,9 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
 
   const std::string& tablet_id() const { return tablet_id_; }
 
-  const Slice& start_key() const { return start_key_; }
-  const Slice& end_key() const { return end_key_; }
+  const Partition& partition() const {
+    return partition_;
+  }
 
   // Mark the specified tablet server as the leader of the consensus configuration in the cache.
   void MarkTServerAsLeader(const RemoteTabletServer* server);
@@ -167,8 +168,7 @@ class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
   std::string ReplicasAsStringUnlocked() const;
 
   const std::string tablet_id_;
-  const Slice start_key_;
-  const Slice end_key_;
+  const Partition partition_;
 
   // All non-const members are protected by 'lock_'.
   mutable simple_spinlock lock_;
@@ -187,18 +187,17 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   explicit MetaCache(KuduClient* client);
   ~MetaCache();
 
-  // Look up which tablet hosts the given key of the given table. When it
-  // is available, the tablet is stored in 'remote_tablet' (if not NULL) and
-  // the callback is fired. Only tablets with non-failed LEADERs are
-  // considered.
+  // Look up which tablet hosts the given partition key for a table. When it is
+  // available, the tablet is stored in 'remote_tablet' (if not NULL) and the
+  // callback is fired. Only tablets with non-failed LEADERs are considered.
   //
-  // NOTE: the callback may be called from an IO thread or inline with
-  // this call if the cached data is already available.
+  // NOTE: the callback may be called from an IO thread or inline with this
+  // call if the cached data is already available.
   //
-  // NOTE: the memory referenced by 'table' and 'key' must remain valid
-  // until 'callback' is invoked.
+  // NOTE: the memory referenced by 'table' must remain valid until 'callback'
+  // is invoked.
   void LookupTabletByKey(const KuduTable* table,
-                         const Slice& key,
+                         const std::string& partition_key,
                          const MonoTime& deadline,
                          scoped_refptr<RemoteTablet>* remote_tablet,
                          const StatusCallback& callback);
@@ -233,7 +232,7 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Lookup the given tablet by key, only consulting local information.
   // Returns true and sets *remote_tablet if successful.
   bool LookupTabletByKeyFastPath(const KuduTable* table,
-                                 const Slice& key,
+                                 const std::string& partition_key,
                                  scoped_refptr<RemoteTablet>* remote_tablet);
 
   // Update our information about the given tablet server.
@@ -257,22 +256,16 @@ class MetaCache : public RefCountedThreadSafe<MetaCache> {
   // Protected by lock_
   TabletServerMap ts_cache_;
 
-  // Cache of tablets, keyed by table ID, then by start key.
+  // Cache of tablets, keyed by table ID, then by start partition key.
   //
   // Protected by lock_.
-  typedef SliceMap<scoped_refptr<RemoteTablet> >::type SliceTabletMap;
-  std::tr1::unordered_map<std::string, SliceTabletMap> tablets_by_table_and_key_;
-
-  // Manages data for slices from tablets_by_table_and_key_.
-  //
-  // Protected by lock_.
-  Arena slice_data_arena_;
+  typedef std::map<std::string, scoped_refptr<RemoteTablet> > TabletMap;
+  std::tr1::unordered_map<std::string, TabletMap> tablets_by_table_and_key_;
 
   // Cache of tablets, keyed by tablet ID.
   //
   // Protected by lock_
-  typedef std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > TabletMap;
-  TabletMap tablets_by_id_;
+  std::tr1::unordered_map<std::string, scoped_refptr<RemoteTablet> > tablets_by_id_;
 
   // Prevents master lookup "storms" by delaying master lookups when all
   // permits have been acquired.

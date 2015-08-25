@@ -7,6 +7,7 @@ import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.kududb.annotations.InterfaceAudience;
+import org.kududb.Common;
 import org.kududb.consensus.Metadata;
 import org.kududb.master.Master;
 import org.kududb.util.NetUtil;
@@ -135,8 +136,8 @@ final class GetMasterRegistrationReceived {
 
     @Override
     public Void call(GetMasterRegistrationResponse r) throws Exception {
-      Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder = Master.TabletLocationsPB
-          .ReplicaPB.newBuilder();
+      Master.TabletLocationsPB.ReplicaPB.Builder replicaBuilder =
+          Master.TabletLocationsPB.ReplicaPB.newBuilder();
 
       Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();
       tsInfoBuilder.addRpcAddresses(ProtobufHelper.hostAndPortToPB(hostAndPort));
@@ -145,8 +146,9 @@ final class GetMasterRegistrationReceived {
       if (r.getRole().equals(Metadata.RaftPeerPB.Role.LEADER)) {
         replicaBuilder.setRole(r.getRole());
         Master.TabletLocationsPB.Builder locationBuilder = Master.TabletLocationsPB.newBuilder();
-        locationBuilder.setStartKey(ByteString.copyFromUtf8(""));
-        locationBuilder.setEndKey(ByteString.copyFromUtf8(""));
+        locationBuilder.setPartition(
+            Common.PartitionPB.newBuilder().setPartitionKeyStart(ByteString.EMPTY)
+                                           .setPartitionKeyEnd(ByteString.EMPTY));
         locationBuilder.setTabletId(
             ByteString.copyFromUtf8(AsyncKuduClient.MASTER_TABLE_NAME_PLACEHOLDER));
         locationBuilder.setStale(false);

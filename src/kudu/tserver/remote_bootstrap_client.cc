@@ -190,12 +190,19 @@ Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
                           "Remote bootstrap unable to replace superblock on tablet " +
                           tablet_id_);
   } else {
+
+    Partition partition;
+    Partition::FromPB(superblock_->partition(), &partition);
+    PartitionSchema partition_schema;
+    RETURN_NOT_OK(PartitionSchema::FromPB(superblock_->partition_schema(),
+                                          schema, &partition_schema));
+
     // Create the superblock on disk.
     RETURN_NOT_OK(TabletMetadata::CreateNew(fs_manager_, tablet_id_,
                                             superblock_->table_name(),
                                             schema,
-                                            superblock_->start_key(),
-                                            superblock_->end_key(),
+                                            partition_schema,
+                                            partition,
                                             tablet::TABLET_DATA_COPYING,
                                             &meta_));
   }

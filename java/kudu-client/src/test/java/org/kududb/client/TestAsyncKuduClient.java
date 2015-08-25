@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import com.google.common.base.Charsets;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Deferred;
 import org.junit.BeforeClass;
@@ -40,7 +41,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
 
 
     // Test that we can reconnect to a TS while scanning.
-    // 1. Insert enough rows to have to call next() mulitple times.
+    // 1. Insert enough rows to have to call next() multiple times.
     KuduSession session = syncClient.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
     int rowCount = 200;
@@ -67,7 +68,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   }
 
   @Test
-  public void testBadHostnames() {
+  public void testBadHostnames() throws Exception {
     String badHostname = "some-unknown-host-hopefully";
 
     // Test that a bad hostname for the master makes us error out quickly.
@@ -86,8 +87,10 @@ public class TestAsyncKuduClient extends BaseKuduTest {
     // Builder three bad locations.
     Master.TabletLocationsPB.Builder tabletPb = Master.TabletLocationsPB.newBuilder();
     for (int i = 0; i < 3; i++) {
-      tabletPb.setStartKey(ByteString.copyFromUtf8("a" + i));
-      tabletPb.setEndKey(ByteString.copyFromUtf8("b" + i));
+      Common.PartitionPB.Builder partition = Common.PartitionPB.newBuilder();
+      partition.setPartitionKeyStart(ByteString.copyFrom("a" + i, Charsets.UTF_8.name()));
+      partition.setPartitionKeyEnd(ByteString.copyFrom("b" + i, Charsets.UTF_8.name()));
+      tabletPb.setPartition(partition);
       tabletPb.setStale(false);
       tabletPb.setTabletId(ByteString.copyFromUtf8("some id " + i));
       Master.TSInfoPB.Builder tsInfoBuilder = Master.TSInfoPB.newBuilder();

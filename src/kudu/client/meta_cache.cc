@@ -264,7 +264,6 @@ std::string RemoteTablet::ReplicasAsStringUnlocked() const {
 
 MetaCache::MetaCache(KuduClient* client)
   : client_(client),
-    slice_data_arena_(16 * 1024, 128 * 1024), // arbitrarily chosen
     master_lookup_sem_(50) {
 }
 
@@ -284,8 +283,8 @@ void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
   InsertOrDie(&ts_cache_, pb.permanent_uuid(), new RemoteTabletServer(pb));
 }
 
-// A (table,key) --> tablet lookup. May be in-flight to a master, or may be
-// handled locally.
+// A (table, partition_key) --> tablet lookup. May be in-flight to a master, or
+// may be handled locally.
 //
 // Keeps a reference on the owning metacache while alive.
 class LookupRpc : public Rpc {
@@ -293,7 +292,7 @@ class LookupRpc : public Rpc {
   LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
             const StatusCallback& user_cb,
             const KuduTable* table,
-            const Slice& key,
+            const string& partition_key,
             scoped_refptr<RemoteTablet> *remote_tablet,
             const MonoTime& deadline,
             const shared_ptr<Messenger>& messenger);
@@ -337,8 +336,8 @@ class LookupRpc : public Rpc {
   // Table to lookup.
   const KuduTable* table_;
 
-  // Encoded key to lookup.
-  Slice key_;
+  // Encoded partition key to lookup.
+  string partition_key_;
 
   // When lookup finishes successfully, the selected tablet is
   // written here prior to invoking 'user_cb_'.
@@ -351,7 +350,7 @@ class LookupRpc : public Rpc {
 LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
                      const StatusCallback& user_cb,
                      const KuduTable* table,
-                     const Slice& key,
+                     const string& partition_key,
                      scoped_refptr<RemoteTablet> *remote_tablet,
                      const MonoTime& deadline,
                      const shared_ptr<Messenger>& messenger)
@@ -359,7 +358,7 @@ LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
     meta_cache_(meta_cache),
     user_cb_(user_cb),
     table_(table),
-    key_(key),
+    partition_key_(partition_key),
     remote_tablet_(remote_tablet),
     has_permit_(false) {
   DCHECK(deadline.Initialized());
@@ -372,14 +371,13 @@ LookupRpc::~LookupRpc() {
 }
 
 void LookupRpc::SendRpc() {
-  const Schema* schema = table_->schema().schema_;
-
   // Fast path: lookup in the cache.
   scoped_refptr<RemoteTablet> result;
-  if (PREDICT_TRUE(meta_cache_->LookupTabletByKeyFastPath(table_, key_, &result)) &&
+  if (PREDICT_TRUE(meta_cache_->LookupTabletByKeyFastPath(table_, partition_key_, &result)) &&
       result->HasLeader()) {
     VLOG(3) << "Fast lookup: found tablet " << result->tablet_id()
-            << " for " << schema->DebugEncodedRowKey(key_, Schema::START_KEY)
+            << " for " << table_->partition_schema()
+                                 .PartitionKeyDebugString(partition_key_, *table_->schema().schema_)
             << " of " << table_->name();
     if (remote_tablet_) {
       *remote_tablet_ = result;
@@ -391,7 +389,8 @@ void LookupRpc::SendRpc() {
 
   // Slow path: must lookup the tablet in the master.
   VLOG(3) << "Fast lookup: no known tablet"
-          << " for " << schema->DebugEncodedRowKey(key_, Schema::START_KEY)
+          << " for " << table_->partition_schema()
+                               .PartitionKeyDebugString(partition_key_, *table_->schema().schema_)
           << " of " << table_->name()
           << ": refreshing our metadata from the Master";
 
@@ -406,10 +405,10 @@ void LookupRpc::SendRpc() {
 
   // Fill out the request.
   req_.mutable_table()->set_table_id(table_->id());
-  req_.set_start_key(key_.data(), key_.size());
+  req_.set_partition_key_start(partition_key_);
 
-  // The end key is left unset intentionally so that we'll prefetch some
-  // additional tablets.
+  // The end partition key is left unset intentionally so that we'll prefetch
+  // some additional tablets.
 
   // See KuduClient::Data::SyncLeaderMasterRpc().
   MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
@@ -423,9 +422,10 @@ void LookupRpc::SendRpc() {
 }
 
 string LookupRpc::ToString() const {
-  const int kMaxDebugStringLen = 128;
-  return Substitute("GetTableLocations(table: $0, key: $1, num_attempts: $2)",
-                    table_->name(), key_.ToDebugString(kMaxDebugStringLen),
+  return Substitute("GetTableLocations($0, $1, $2)",
+                    table_->name(),
+                    table_->partition_schema()
+                           .PartitionKeyDebugString(partition_key_, *table_->schema().schema_),
                     num_attempts());
 }
 
@@ -513,8 +513,8 @@ const scoped_refptr<RemoteTablet>& MetaCache::ProcessLookupResponse(const Lookup
           << ". Response: " << rpc.resp().ShortDebugString();
 
   lock_guard<rw_spinlock> l(&lock_);
-  SliceTabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
-                                                  rpc.table_id(), SliceTabletMap());
+  TabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
+                                             rpc.table_id(), TabletMap());
   BOOST_FOREACH(const TabletLocationsPB& loc, rpc.resp().tablet_locations()) {
     // First, update the tserver cache, needed for the Refresh calls below.
     BOOST_FOREACH(const TabletLocationsPB_ReplicaPB& r, loc.replicas()) {
@@ -525,9 +525,9 @@ const scoped_refptr<RemoteTablet>& MetaCache::ProcessLookupResponse(const Lookup
     string tablet_id = loc.tablet_id();
     scoped_refptr<RemoteTablet> remote = FindPtrOrNull(tablets_by_id_, tablet_id);
     if (remote.get() != NULL) {
-      // Start/end keys should not have changed.
-      DCHECK_EQ(loc.start_key(), remote->start_key().ToString());
-      DCHECK_EQ(loc.end_key(), remote->end_key().ToString());
+      // Partition should not have changed.
+      DCHECK_EQ(loc.partition().partition_key_start(), remote->partition().partition_key_start());
+      DCHECK_EQ(loc.partition().partition_key_end(), remote->partition().partition_key_end());
 
       VLOG(3) << "Refreshing tablet " << tablet_id << ": "
               << loc.ShortDebugString();
@@ -536,20 +536,15 @@ const scoped_refptr<RemoteTablet>& MetaCache::ProcessLookupResponse(const Lookup
     }
 
     VLOG(3) << "Caching tablet " << tablet_id << " for (" << rpc.table_name()
-            << "," << loc.start_key() << "," << loc.end_key() << ")"
-            << ": " << loc.ShortDebugString();
+            << "): " << loc.ShortDebugString();
 
-    // The keys will outlive the pbs, so we relocate their data into our arena.
-    Slice relocated_start_key;
-    Slice relocated_end_key;
-    CHECK(slice_data_arena_.RelocateSlice(Slice(loc.start_key()), &relocated_start_key));
-    CHECK(slice_data_arena_.RelocateSlice(Slice(loc.end_key()), &relocated_end_key));
-
-    remote = new RemoteTablet(tablet_id, relocated_start_key, relocated_end_key);
+    Partition partition;
+    Partition::FromPB(loc.partition(), &partition);
+    remote = new RemoteTablet(tablet_id, partition);
     remote->Refresh(ts_cache_, loc.replicas());
 
     InsertOrDie(&tablets_by_id_, tablet_id, remote);
-    InsertOrDie(&tablets_by_key, remote->start_key(), remote);
+    InsertOrDie(&tablets_by_key, partition.partition_key_start(), remote);
   }
 
   // Always return the first tablet.
@@ -557,23 +552,24 @@ const scoped_refptr<RemoteTablet>& MetaCache::ProcessLookupResponse(const Lookup
 }
 
 bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
-                                          const Slice& key,
+                                          const string& partition_key,
                                           scoped_refptr<RemoteTablet>* remote_tablet) {
   shared_lock<rw_spinlock> l(&lock_);
-  const SliceTabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
+  const TabletMap* tablets = FindOrNull(tablets_by_table_and_key_, table->id());
   if (PREDICT_FALSE(!tablets)) {
     // No cache available for this table.
     return false;
   }
 
-  const scoped_refptr<RemoteTablet>* r = FindFloorOrNull(*tablets, key);
+  const scoped_refptr<RemoteTablet>* r = FindFloorOrNull(*tablets, partition_key);
   if (PREDICT_FALSE(!r)) {
-    // No tablets with a start key lower than 'key'.
+    // No tablets with a start partition key lower than 'partition_key'.
     return false;
   }
 
-  if ((*r)->end_key().compare(key) > 0 ||  // key < tablet.end
-      (*r)->end_key().empty()) {           // tablet doesn't end
+  if ((*r)->partition().partition_key_end().compare(partition_key) > 0 ||
+      (*r)->partition().partition_key_end().empty()) {
+    // partition_key < partition.end OR tablet doesn't end
     *remote_tablet = *r;
     return true;
   }
@@ -582,14 +578,14 @@ bool MetaCache::LookupTabletByKeyFastPath(const KuduTable* table,
 }
 
 void MetaCache::LookupTabletByKey(const KuduTable* table,
-                                  const Slice& key,
+                                  const string& partition_key,
                                   const MonoTime& deadline,
                                   scoped_refptr<RemoteTablet>* remote_tablet,
                                   const StatusCallback& callback) {
   LookupRpc* rpc = new LookupRpc(this,
                                  callback,
                                  table,
-                                 key,
+                                 partition_key,
                                  remote_tablet,
                                  deadline,
                                  client_->data_->messenger_);

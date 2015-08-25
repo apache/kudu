@@ -233,8 +233,8 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
     ASSERT_EQ(resp.tablet_locations_size(), 1);
     // empty since it's the first
-    ASSERT_EQ(resp.tablet_locations(0).start_key(), "");
-    ASSERT_EQ(resp.tablet_locations(0).end_key(), string("\x80\0\0\1", 4));
+    ASSERT_EQ(resp.tablet_locations(0).partition().partition_key_start(), "");
+    ASSERT_EQ(resp.tablet_locations(0).partition().partition_key_end(), string("\x80\0\0\1", 4));
   }
 
   int half_tablets = FLAGS_num_test_tablets / 2;
@@ -274,10 +274,12 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
       const master::SysTabletsEntryPB& metadata = tablet_info->metadata().state().pb;
       LOG(INFO) << "  Tablet: " << tablet_info->ToString()
                 << " { start_key: "
-                << ((metadata.has_start_key()) ? metadata.start_key() : "<< none >>")
+                << ((metadata.partition().has_partition_key_start())
+                    ? metadata.partition().partition_key_start() : "<< none >>")
                 << ", end_key: "
-                << ((metadata.has_end_key()) ? metadata.end_key() : "<< none >>") << ", "
-                << "running = " << tablet_info->metadata().state().is_running() << " }";
+                << ((metadata.partition().has_partition_key_end())
+                    ? metadata.partition().partition_key_end() : "<< none >>")
+                << ", running = " << tablet_info->metadata().state().is_running() << " }";
     }
     ASSERT_EQ(FLAGS_num_test_tablets, tablets.size());
   }
@@ -297,10 +299,10 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
     resp.Clear();
     req.mutable_table()->set_table_name(table_name);
     req.set_max_returned_locations(1);
-    req.set_start_key(start_key_middle);
+    req.set_partition_key_start(start_key_middle);
     ASSERT_OK(cluster_->mini_master()->master()->catalog_manager()->GetTableLocations(&req, &resp));
     ASSERT_EQ(1, resp.tablet_locations_size()) << "Response: [" << resp.DebugString() << "]";
-    ASSERT_EQ(start_key_middle, resp.tablet_locations(0).start_key());
+    ASSERT_EQ(start_key_middle, resp.tablet_locations(0).partition().partition_key_start());
   }
 }
 

@@ -27,11 +27,13 @@ namespace client {
 KuduTable::Data::Data(const shared_ptr<KuduClient>& client,
                       const string& name,
                       const string& id,
-                      const KuduSchema& schema)
+                      const KuduSchema& schema,
+                      const PartitionSchema& partition_schema)
   : client_(client),
     name_(name),
+    id_(id),
     schema_(schema),
-    id_(id) {
+    partition_schema_(partition_schema) {
 }
 
 KuduTable::Data::~Data() {

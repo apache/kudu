@@ -126,8 +126,8 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
   }
 
   @Override
-  public byte[] key() {
-   return this.row.key();
+  public byte[] partitionKey() {
+    return this.getTable().getPartitionSchema().encodePartitionKey(row);
   }
 
   /**

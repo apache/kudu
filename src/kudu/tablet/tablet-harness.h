@@ -4,6 +4,7 @@
 #define KUDU_TABLET_TABLET_PEER_HARNESS_H
 
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "kudu/common/schema.h"
@@ -21,6 +22,25 @@ using std::vector;
 
 namespace kudu {
 namespace tablet {
+
+// Creates a default partition schema and partition for a table.
+//
+// The provided schema must include column IDs.
+//
+// The partition schema will have no hash components, and a single range
+// component over the primary key columns. The partition will cover the
+// entire partition-key space.
+static std::pair<PartitionSchema, Partition> CreateDefaultPartition(const Schema& schema) {
+  // Create a default partition schema.
+  PartitionSchema partition_schema;
+  CHECK_OK(PartitionSchema::FromPB(PartitionSchemaPB(), schema, &partition_schema));
+
+  // Create the tablet partitions.
+  vector<Partition> partitions;
+  CHECK_OK(partition_schema.CreatePartitions(vector<KuduPartialRow>(), schema, &partitions));
+  CHECK_EQ(1, partitions.size());
+  return std::make_pair(partition_schema, partitions[0]);
+}
 
 class TabletHarness {
  public:
@@ -45,8 +65,7 @@ class TabletHarness {
   }
 
   Status Create(bool first_time) {
-    // Build a schema with IDs
-    Schema server_schema = SchemaBuilder(schema_).Build();
+    std::pair<PartitionSchema, Partition> partition(CreateDefaultPartition(schema_));
 
     // Build the Tablet
     fs_manager_.reset(new FsManager(options_.env, options_.root_dir));
@@ -57,12 +76,13 @@ class TabletHarness {
 
     scoped_refptr<TabletMetadata> metadata;
     RETURN_NOT_OK(TabletMetadata::LoadOrCreate(fs_manager_.get(),
-                                                         options_.tablet_id,
-                                                         "KuduTableTest",
-                                                         server_schema,
-                                                         "", "",
-                                                         TABLET_DATA_READY,
-                                                         &metadata));
+                                               options_.tablet_id,
+                                               "KuduTableTest",
+                                               schema_,
+                                               partition.first,
+                                               partition.second,
+                                               TABLET_DATA_READY,
+                                               &metadata));
     if (options_.enable_metrics) {
       metrics_registry_.reset(new MetricRegistry());
     }

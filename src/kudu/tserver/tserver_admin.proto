@@ -38,12 +38,17 @@ message CreateTabletRequestPB {
 
   required bytes table_id = 1;
   required bytes tablet_id = 2;
-  // In the following keys, the non-string components are in big-endian order
-  required bytes start_key = 3;
-  required bytes end_key = 4;
+  // DEPRECATED.
+  optional bytes start_key = 3;
+  // DEPRECATED.
+  optional bytes end_key = 4;
+  // The partition of the tablet.
+  optional PartitionPB partition = 9;
 
   required string table_name = 5;
   required SchemaPB schema = 6;
+  // The partition schema of the table which the tablet belongs to.
+  optional PartitionSchemaPB partition_schema = 10;
 
   // Initial consensus configuration for the tablet.
   required consensus.RaftConfigPB config = 7;

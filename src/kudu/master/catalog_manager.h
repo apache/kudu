@@ -10,6 +10,7 @@
 #include <tr1/unordered_set>
 #include <vector>
 
+#include "kudu/common/partition.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
@@ -238,7 +239,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
 
   const std::string table_id_;
 
-  // Tablet map start-key/info.
+  // Sorted index of tablet start partition-keys to TabletInfo.
   // The TabletInfo objects are owned by the CatalogManager.
   typedef std::map<std::string, TabletInfo *> TabletInfoMap;
   TabletInfoMap tablet_map_;
@@ -446,26 +447,18 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // This method is thread-safe.
   Status InitSysCatalogAsync(bool is_first_run);
 
-  // Helper for creating the inital Tablets of the table
-  // based on the provided split keys.
-  // Leaves the tablets "write locked" with the new info in the
-  // "dirty" state field.
-  void CreateTablets(const std::vector<std::string>& sorted_split_keys,
-                     TableInfo* table,
-                     std::vector<TabletInfo*>* tablets);
-
   // Helper for creating the initial TableInfo state
   // Leaves the table "write locked" with the new info in the
   // "dirty" state field.
   TableInfo *CreateTableInfo(const CreateTableRequestPB* req,
-                             const Schema& schema);
+                             const Schema& schema,
+                             const PartitionSchema& partition_schema);
 
   // Helper for creating the initial TabletInfo state.
   // Leaves the tablet "write locked" with the new info in the
   // "dirty" state field.
-  TabletInfo *CreateTabletInfo(TableInfo *table,
-                               const std::string& start_key,
-                               const std::string& end_key);
+  TabletInfo *CreateTabletInfo(TableInfo* table,
+                               const PartitionPB& partition);
 
   // Builds the TabletLocationsPB for a tablet based on the provided TabletInfo.
   // Populates locs_pb and returns true on success.

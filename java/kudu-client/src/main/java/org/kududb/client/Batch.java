@@ -93,9 +93,9 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
   }
 
   @Override
-  public byte[] key() {
+  public byte[] partitionKey() {
     assert this.ops.size() > 0;
-    return this.ops.get(0).key();
+    return this.ops.get(0).partitionKey();
   }
 
   /**

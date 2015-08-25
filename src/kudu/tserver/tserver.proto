@@ -145,6 +145,7 @@ message ListTabletsResponsePB {
   message StatusAndSchemaPB {
     required tablet.TabletStatusPB tablet_status = 1;
     required SchemaPB schema = 2;
+    optional PartitionSchemaPB partition_schema = 3;
   }
 
   repeated StatusAndSchemaPB status_and_schema = 2;
@@ -186,10 +187,10 @@ message NewScanRequestPB {
   // Any column range predicates to enforce.
   repeated ColumnRangePredicatePB range_predicates = 3;
 
-  // Encoded-key to start scanning at (inclusive).
-  optional bytes encoded_start_key = 8;
-  // Encoded-key to stop scanning at (exclusive).
-  optional bytes encoded_stop_key = 9;
+  // Encoded primary key to begin scanning at (inclusive).
+  optional bytes start_primary_key = 8;
+  // Encoded primary key to stop scanning at (exclusive).
+  optional bytes stop_primary_key = 9;
 
   // Which columns to select.
   // if this is an empty list, no data will be returned, but the num_rows
@@ -219,8 +220,10 @@ message NewScanRequestPB {
   // This is used for scanner fault-tolerance.
   optional OrderMode order_mode = 11 [default = UNORDERED];
 
-  // If retrying a scan, the last key returned in the previous scan response.
-  optional bytes encoded_last_row_key = 12;
+  // If retrying a scan, the final primary key retrieved in the previous scan
+  // attempt. If set, this will take precedence over the `start_primary_key`
+  // field, and functions as an exclusive start primary key.
+  optional bytes last_primary_key = 12;
 }
 
 // A scan request. Initially, it should specify a scan. Later on, you
@@ -295,7 +298,7 @@ message ScanResponsePB {
   // 'new_scan_request' set) and only for READ_AT_SNAPSHOT scans.
   optional fixed64 snap_timestamp = 6;
 
-  // If this is a fault-tolerant scanner, this is set to the
-  // primary key of the last row returned in the response.
-  optional bytes encoded_last_row_key = 7;
+  // If this is a fault-tolerant scanner, this is set to the encoded primary
+  // key of the last row returned in the response.
+  optional bytes last_primary_key = 7;
 }

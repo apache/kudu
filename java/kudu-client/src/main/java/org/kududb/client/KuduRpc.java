@@ -65,11 +65,11 @@ public abstract class KuduRpc<R> {
 
   public interface HasKey {
     /**
-     * Returns the row key this RPC is for.
+     * Returns the partition key this RPC is for.
      * <p>
      * <strong>DO NOT MODIFY THE CONTENTS OF THE ARRAY RETURNED.</strong>
      */
-    public byte[] key();
+    byte[] partitionKey();
   }
 
   /**
@@ -130,7 +130,7 @@ public abstract class KuduRpc<R> {
    * Notice that this method is package-private, so only classes within this
    * package can use this as a base class.
    *
-   * @param response The call response from which to deserialize.
+   * @param callResponse The call response from which to deserialize.
    * @param tsUUID A string that contains the UUID of the server that answered the RPC.
    * @return An Object of type R that will be sent to callback and an Object that will be an Error
    * of type TabletServerErrorPB or MasterErrorPB that will be converted into an exception and
@@ -160,7 +160,7 @@ public abstract class KuduRpc<R> {
     this.propagatedTimestamp = propagatedTimestamp;
   }
 
-  private final void handleCallback(final Object result) {
+  private void handleCallback(final Object result) {
     final Deferred<R> d = deferred;
     if (d == null) {
       return;
@@ -251,7 +251,7 @@ public abstract class KuduRpc<R> {
     }
   }
 
-  static final ChannelBuffer toChannelBuffer(Message header, Message pb) {
+  static ChannelBuffer toChannelBuffer(Message header, Message pb) {
     int totalSize = IPCUtil.getTotalSizeWhenWrittenDelimited(header, pb);
     byte[] buf = new byte[totalSize+4];
     ChannelBuffer chanBuf = ChannelBuffers.wrappedBuffer(buf);

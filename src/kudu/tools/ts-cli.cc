@@ -12,6 +12,7 @@
 
 #include "kudu/client/row_result.h"
 #include "kudu/client/scanner-internal.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/strings/human_readable.h"
@@ -368,16 +369,24 @@ static int TsCliMain(int argc, char** argv) {
     BOOST_FOREACH(const StatusAndSchemaPB& status_and_schema, tablets) {
       Schema schema;
       RETURN_NOT_OK_PREPEND_FROM_MAIN(SchemaFromPB(status_and_schema.schema(), &schema),
-                                      "Unable to convert schema from " + addr);
+                                      "Unable to deserialize schema from " + addr);
+      PartitionSchema partition_schema;
+      RETURN_NOT_OK_PREPEND_FROM_MAIN(PartitionSchema::FromPB(status_and_schema.partition_schema(),
+                                                              schema, &partition_schema),
+                                      "Unable to deserialize partition schema from " + addr);
+
+
       TabletStatusPB ts = status_and_schema.tablet_status();
+
+      Partition partition;
+      Partition::FromPB(ts.partition(), &partition);
+
       string state = tablet::TabletStatePB_Name(ts.state());
       std::cout << "Tablet id: " << ts.tablet_id() << std::endl;
       std::cout << "State: " << state << std::endl;
       std::cout << "Table name: " << ts.table_name() << std::endl;
-      std::cout << "Start key: " << schema.DebugEncodedRowKey(ts.start_key(), Schema::START_KEY)
-          << std::endl;
-      std::cout << "End key: " << schema.DebugEncodedRowKey(ts.end_key(), Schema::END_KEY)
-          << std::endl;
+      std::cout << "Partition: " << partition_schema.PartitionDebugString(partition, schema)
+                << std::endl;
       if (ts.has_estimated_on_disk_size()) {
         std::cout << "Estimated on disk size: " <<
             HumanReadableNumBytes::ToString(ts.estimated_on_disk_size()) << std::endl;

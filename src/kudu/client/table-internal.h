@@ -5,6 +5,7 @@
 
 #include <string>
 
+#include "kudu/common/partition.h"
 #include "kudu/client/client.h"
 
 namespace kudu {
@@ -16,7 +17,8 @@ class KuduTable::Data {
   Data(const std::tr1::shared_ptr<KuduClient>& client,
        const std::string& name,
        const std::string& table_id,
-       const KuduSchema& schema);
+       const KuduSchema& schema,
+       const PartitionSchema& partition_schema);
   ~Data();
 
   Status Open();
@@ -24,12 +26,13 @@ class KuduTable::Data {
   std::tr1::shared_ptr<KuduClient> client_;
 
   std::string name_;
+  const std::string id_;
 
   // TODO: figure out how we deal with a schema change from the client perspective.
   // Do we make them call a RefreshSchema() method? Or maybe reopen the table and get
   // a new KuduTable instance (which would simplify the object lifecycle a little?)
   const KuduSchema schema_;
-  const std::string id_;
+  const PartitionSchema partition_schema_;
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };

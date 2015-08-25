@@ -150,8 +150,7 @@ TEST_F(TabletServerTest, TestWebPages) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablets", addr),
                               &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), kTabletId);
-  ASSERT_STR_CONTAINS(buf.ToString(), "<td>&lt;start of table&gt;</td>");
-  ASSERT_STR_CONTAINS(buf.ToString(), "<td>&lt;end of table&gt;</td>");
+  ASSERT_STR_CONTAINS(buf.ToString(), "<td>range: [(&lt;start&gt;), (&lt;end&gt;))</td>");
 
   // Tablet page should include the schema.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tablet?id=$1", addr, kTabletId),
@@ -174,7 +173,8 @@ TEST_F(TabletServerTest, TestWebPages) {
     // Check that the tablet entry shows up.
     ASSERT_STR_CONTAINS(buf.ToString(), "\"type\": \"tablet\"");
     ASSERT_STR_CONTAINS(buf.ToString(), "\"id\": \"TestTablet\"");
-    ASSERT_STR_CONTAINS(buf.ToString(), "\"start_key\": \"<start of table>\"");
+    ASSERT_STR_CONTAINS(buf.ToString(), "\"partition\": \"range: [(<start>), (<end>))\"");
+
 
     // Check entity attributes.
     ASSERT_STR_CONTAINS(buf.ToString(), "\"table_name\": \"TestTable\"");
@@ -1214,7 +1214,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
       // Save the rows into 'results' vector.
       StringifyRowsFromResponse(projection, rpc, resp, &results);
       // Retry the scan, setting the last_row_key and snapshot based on the response.
-      scan->set_encoded_last_row_key(resp.encoded_last_row_key());
+      scan->set_last_primary_key(resp.last_primary_key());
       scan->set_snap_timestamp(resp.snap_timestamp());
     } while (resp.has_more_results());
 
@@ -1437,10 +1437,10 @@ TEST_F(TabletServerTest, TestScanWithEncodedPredicates) {
   ekb.AddColumnKey(&stop_key_int);
   gscoped_ptr<EncodedKey> stop_encoded(ekb.BuildEncodedKey());
 
-  scan->mutable_encoded_start_key()->assign(
+  scan->mutable_start_primary_key()->assign(
     reinterpret_cast<const char*>(start_encoded->encoded_key().data()),
     start_encoded->encoded_key().size());
-  scan->mutable_encoded_stop_key()->assign(
+  scan->mutable_stop_primary_key()->assign(
     reinterpret_cast<const char*>(stop_encoded->encoded_key().data()),
     stop_encoded->encoded_key().size());
 
@@ -1819,12 +1819,14 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
   req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
   req.set_table_id("testtb");
   req.set_tablet_id(kTabletId);
-  req.set_start_key(" ");
-  req.set_end_key(" ");
+  PartitionPB* partition = req.mutable_partition();
+  partition->set_partition_key_start(" ");
+  partition->set_partition_key_end(" ");
   req.set_table_name("testtb");
   req.mutable_config()->CopyFrom(mini_server_->CreateLocalConfig());
-  ASSERT_OK(SchemaToPB(SchemaBuilder(schema_).Build(),
-                              req.mutable_schema()));
+
+  Schema schema = SchemaBuilder(schema_).Build();
+  ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
 
   // Send the call
   {
@@ -2028,19 +2030,27 @@ TEST_F(TabletServerTest, TestRpcServerCreateDestroy) {
 
 TEST_F(TabletServerTest, TestWriteOutOfBounds) {
   const char *tabletId = "TestWriteOutOfBoundsTablet";
-  EncodedKeyBuilder key_builder(&schema_);
-  int val = 10;
-  key_builder.AddColumnKey(&val);
-  gscoped_ptr<EncodedKey> start(key_builder.BuildEncodedKey());
-  val = 20;
-  key_builder.Reset();
-  key_builder.AddColumnKey(&val);
-  gscoped_ptr<EncodedKey> end(key_builder.BuildEncodedKey());
+  Schema schema = SchemaBuilder(schema_).Build();
+
+  PartitionSchema partition_schema;
+  CHECK_OK(PartitionSchema::FromPB(PartitionSchemaPB(), schema, &partition_schema));
+
+  KuduPartialRow start_row(&schema);
+  ASSERT_OK(start_row.SetInt32("key", 10));
+
+  KuduPartialRow end_row(&schema);
+  ASSERT_OK(end_row.SetInt32("key", 20));
+
+  vector<Partition> partitions;
+  ASSERT_OK(partition_schema.CreatePartitions(boost::assign::list_of(start_row)(end_row),
+                                              schema, &partitions));
+
+  ASSERT_EQ(3, partitions.size());
+
   ASSERT_OK(mini_server_->server()->tablet_manager()->CreateNewTablet(
       "TestWriteOutOfBoundsTable", tabletId,
-      start->encoded_key().ToString(),
-      end->encoded_key().ToString(),
-      tabletId, SchemaBuilder(schema_).Build(),
+      partitions[1],
+      tabletId, schema, partition_schema,
       mini_server_->CreateLocalConfig(), NULL));
 
   ASSERT_OK(WaitForTabletRunning(tabletId));
@@ -2056,7 +2066,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
 
   BOOST_FOREACH(const RowOperationsPB::Type &op, ops) {
     RowOperationsPB* data = req.mutable_row_operations();
-    AddTestRowToPB(op, schema_, val, 1, "1", data);
+    AddTestRowToPB(op, schema_, 20, 1, "1", data);
     SCOPED_TRACE(req.DebugString());
     ASSERT_OK(proxy_->Write(req, &resp, &controller));
     SCOPED_TRACE(resp.DebugString());
@@ -2066,7 +2076,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
     Status s = StatusFromPB(resp.error().status());
     EXPECT_TRUE(s.IsNotFound());
     ASSERT_STR_CONTAINS(s.ToString(),
-                        "Not found: Row not within tablet range");
+                        "Not found: Row not in tablet partition");
     data->Clear();
     controller.Reset();
   }

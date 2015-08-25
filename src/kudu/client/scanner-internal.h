@@ -47,7 +47,9 @@ class KuduScanner::Data {
   // The deadline is the time budget for this operation.
   // The blacklist is used to temporarily filter out nodes that are experiencing transient errors.
   // This blacklist may be modified by the callee.
-  Status OpenTablet(const Slice& key, const MonoTime& deadline, std::set<std::string>* blacklist);
+  Status OpenTablet(const std::string& partition_key,
+                    const MonoTime& deadline,
+                    std::set<std::string>* blacklist);
 
   // Extracts data from the last scan response and adds them to 'rows'.
   Status ExtractRows(std::vector<KuduRowResult>* rows);
@@ -94,8 +96,8 @@ class KuduScanner::Data {
   bool is_fault_tolerant_;
   int64_t snapshot_timestamp_;
 
-  // The encoded last row key from the most recent scan response.
-  std::string encoded_last_row_key_;
+  // The encoded last primary key from the most recent tablet scan response.
+  std::string last_primary_key_;
 
   internal::RemoteTabletServer* ts_;
   // The proxy can be derived from the RemoteTabletServer, but this involves retaking the

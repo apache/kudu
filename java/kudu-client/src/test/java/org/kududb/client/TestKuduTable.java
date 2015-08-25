@@ -134,7 +134,7 @@ public class TestKuduTable extends BaseKuduTest {
   public byte[] getKeyInBytes(int i) {
     PartialRow row = schema.newPartialRow();
     row.addInt(0, i);
-    return row.key();
+    return row.encodePrimaryKey();
   }
 
   public KuduTable createTableWithSplitsAndTest(int splitsCount) throws Exception {

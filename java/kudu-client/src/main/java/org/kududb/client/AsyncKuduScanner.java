@@ -119,17 +119,24 @@ public final class AsyncKuduScanner {
   private final long limit;
 
   /**
-   * Set in the builder. If it's not set by the user, it will default to EMPTY_ARRAY.
-   * It is then reset to the new start key of each tablet we open a scanner on as the scan moves
-   * from one tablet to the next.
+   * The partition key of the next tablet to scan.
+   *
+   * Each time the scan exhausts a tablet, this is updated to that tablet's end partition key.
    */
-  private byte[] startKey;
+  private byte[] nextPartitionKey;
+
+  /**
+   * Set in the builder. If it's not set by the user, it will default to EMPTY_ARRAY.
+   * It is then reset to the new start primary key of each tablet we open a scanner on as the scan
+   * moves from one tablet to the next.
+   */
+  private final byte[] startPrimaryKey;
 
   /**
    * Set in the builder. If it's not set by the user, it will default to EMPTY_ARRAY.
    * It's never modified after that.
    */
-  private byte[] endKey;
+  private final byte[] endPrimaryKey;
 
   private final boolean prefetching;
 
@@ -180,7 +187,8 @@ public final class AsyncKuduScanner {
   AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedCols,
                    ReadMode readMode, long scanRequestTimeout,
                    List<Tserver.ColumnRangePredicatePB> columnRangePredicates, long limit,
-                   boolean cacheBlocks, boolean prefetching, byte[] startKey, byte[] endKey,
+                   boolean cacheBlocks, boolean prefetching,
+                   byte[] startPrimaryKey, byte[] endPrimaryKey,
                    long htTimestamp, int maxNumBytes) {
     Preconditions.checkArgument(maxNumBytes > 0, "Need a strictly positive number of bytes, " +
         "got %s", maxNumBytes);
@@ -199,10 +207,18 @@ public final class AsyncKuduScanner {
     this.limit = limit;
     this.cacheBlocks = cacheBlocks;
     this.prefetching = prefetching;
-    this.startKey = startKey;
-    this.endKey = endKey;
+    this.startPrimaryKey = startPrimaryKey;
+    this.endPrimaryKey = endPrimaryKey;
     this.htTimestamp = htTimestamp;
     this.maxNumBytes = maxNumBytes;
+
+    if (table.getPartitionSchema().isSimpleRangePartitioning()) {
+      // For tables with default partitioning, we can optimize the tablet lookup
+      // to skip tablets with partition keys below the start primary key.
+      this.nextPartitionKey = this.startPrimaryKey;
+    } else {
+      this.nextPartitionKey = AsyncKuduClient.EMPTY_ARRAY;
+    }
 
     // Map the column names to actual columns in the table schema.
     // If the user set this to 'null', we scan all columns.
@@ -367,19 +383,23 @@ public final class AsyncKuduScanner {
   }
 
   void scanFinished() {
-    // We're done if 1) we finished scanning the last tablet, or 2) we're past a configured end
-    // row key
-    if (tablet.getEndKey() == AsyncKuduClient.EMPTY_ARRAY || (this.endKey != AsyncKuduClient.EMPTY_ARRAY
-        && Bytes.memcmp(this.endKey , tablet.getEndKey()) <= 0)) {
+    // We're done if
+    // 1) the last tablet has been scanned, or
+    // 2) the table is using default partitioning and we're past the end primary key.
+    Partition partition = tablet.getPartition();
+    if (partition.isEndPartition()
+        || (this.table.getPartitionSchema().isSimpleRangePartitioning()
+            && this.endPrimaryKey != AsyncKuduClient.EMPTY_ARRAY
+            && Bytes.memcmp(this.endPrimaryKey, partition.getPartitionKeyEnd()) <= 0)) {
       hasMore = false;
       closed = true; // the scanner is closed on the other side at this point
       return;
     }
     if (LOG.isDebugEnabled()) {
-      LOG.debug("Done Scanning tablet " + tablet.getTabletIdAsString() + " with scanner id " +
-          Bytes.pretty(scannerId));
+      LOG.debug("Done scanning tablet {} for partition {} with scanner id {}",
+                tablet.getTabletIdAsString(), tablet.getPartition(), Bytes.pretty(scannerId));
     }
-    startKey = tablet.getEndKey();
+    nextPartitionKey = partition.getPartitionKeyEnd();
     scannerId = null;
     invalidate();
   }
@@ -586,14 +606,14 @@ public final class AsyncKuduScanner {
             newBuilder.setSnapTimestamp(AsyncKuduScanner.this.getSnapshotTimestamp());
           }
 
-          if (AsyncKuduScanner.this.startKey != AsyncKuduClient.EMPTY_ARRAY &&
-              AsyncKuduScanner.this.startKey.length > 0) {
-            newBuilder.setEncodedStartKey(ZeroCopyLiteralByteString.copyFrom(startKey));
+          if (AsyncKuduScanner.this.startPrimaryKey != AsyncKuduClient.EMPTY_ARRAY &&
+              AsyncKuduScanner.this.startPrimaryKey.length > 0) {
+            newBuilder.setStartPrimaryKey(ZeroCopyLiteralByteString.copyFrom(startPrimaryKey));
           }
 
-          if (AsyncKuduScanner.this.endKey != AsyncKuduClient.EMPTY_ARRAY &&
-              AsyncKuduScanner.this.endKey.length > 0) {
-            newBuilder.setEncodedStopKey(ZeroCopyLiteralByteString.copyFrom(endKey));
+          if (AsyncKuduScanner.this.endPrimaryKey != AsyncKuduClient.EMPTY_ARRAY &&
+              AsyncKuduScanner.this.endPrimaryKey.length > 0) {
+            newBuilder.setStopPrimaryKey(ZeroCopyLiteralByteString.copyFrom(endPrimaryKey));
           }
 
           if (!columnRangePredicates.isEmpty()) {
@@ -622,7 +642,8 @@ public final class AsyncKuduScanner {
     }
 
     @Override
-    Pair<Response, Object> deserialize(final CallResponse callResponse, String tsUUID) throws Exception {
+    Pair<Response, Object> deserialize(final CallResponse callResponse,
+                                       String tsUUID) throws Exception {
       ScanResponsePB.Builder builder = ScanResponsePB.newBuilder();
       readProtobuf(callResponse.getPBMessage(), builder);
       ScanResponsePB resp = builder.build();
@@ -661,9 +682,9 @@ public final class AsyncKuduScanner {
     }
 
     @Override
-    public byte[] key() {
+    public byte[] partitionKey() {
       // This key is used to lookup where the request needs to go
-      return startKey;
+      return nextPartitionKey;
     }
   }
 

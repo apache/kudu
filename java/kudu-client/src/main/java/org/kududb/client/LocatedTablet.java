@@ -22,15 +22,13 @@ import org.kududb.master.Master.TabletLocationsPB.ReplicaPB;
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public class LocatedTablet {
-  private final byte[] startKey;
-  private final byte[] endKey;
+  private final Partition partition;
   private final byte[] tabletId;
 
   private final List<Replica> replicas;
 
   LocatedTablet(TabletLocationsPB pb) {
-    this.startKey = pb.getStartKey().toByteArray();
-    this.endKey = pb.getEndKey().toByteArray();
+    this.partition = ProtobufHelper.pbToPartition(pb.getPartition());
     this.tabletId = pb.getTabletId().toByteArray();
 
     List<Replica> reps = Lists.newArrayList();
@@ -44,12 +42,24 @@ public class LocatedTablet {
     return replicas;
   }
 
-  public byte[] getStartKey() {
-    return startKey;
+  public Partition getPartition() {
+    return partition;
   }
 
+  /**
+   * DEPRECATED: use {@link #getPartition()}
+   */
+  @Deprecated
+  public byte[] getStartKey() {
+    return getPartition().getPartitionKeyStart();
+  }
+
+  /**
+   * DEPRECATED: use {@link #getPartition()}
+   */
+  @Deprecated()
   public byte[] getEndKey() {
-    return endKey;
+    return getPartition().getPartitionKeyEnd();
   }
 
   public byte[] getTabletId() {
@@ -75,9 +85,7 @@ public class LocatedTablet {
 
   @Override
   public String toString() {
-    return Bytes.pretty(tabletId)
-      + "[" + Bytes.pretty(startKey) + ","
-      + Bytes.pretty(endKey) + "]";
+    return Bytes.pretty(tabletId) + " " + partition.toString();
   }
 
   /**

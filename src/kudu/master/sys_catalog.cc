@@ -7,9 +7,10 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
-#include "kudu/common/schema.h"
 #include "kudu/common/partial_row.h"
+#include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
+#include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_meta.h"
 #include "kudu/consensus/consensus_peers.h"
@@ -22,8 +23,8 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/tablet/tablet_bootstrap.h"
-#include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
@@ -111,11 +112,20 @@ Status SysCatalogTable::Load(FsManager *fs_manager) {
 Status SysCatalogTable::CreateNew(FsManager *fs_manager) {
   // Create the new Metadata
   scoped_refptr<tablet::TabletMetadata> metadata;
+  Schema schema = BuildTableSchema();
+  PartitionSchema partition_schema;
+  RETURN_NOT_OK(PartitionSchema::FromPB(PartitionSchemaPB(), schema, &partition_schema));
+
+  vector<KuduPartialRow> split_rows;
+  vector<Partition> partitions;
+  RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, schema, &partitions));
+  DCHECK_EQ(1, partitions.size());
+
   RETURN_NOT_OK(tablet::TabletMetadata::CreateNew(fs_manager,
                                                   kSysCatalogTabletId,
                                                   table_name(),
-                                                  BuildTableSchema(),
-                                                  "", "",
+                                                  schema, partition_schema,
+                                                  partitions[0],
                                                   tablet::TABLET_DATA_READY,
                                                   &metadata));
 

@@ -242,7 +242,6 @@ class ColumnSchema {
     name_ = name;
   }
 
-  size_t id_;
   string name_;
   const TypeInfo *type_info_;
   bool is_nullable_;
@@ -513,7 +512,12 @@ class Schema {
   Schema CreateKeyProjection() const {
     vector<ColumnSchema> key_cols(cols_.begin(),
                                   cols_.begin() + num_key_columns_);
-    return Schema(key_cols, num_key_columns_);
+    vector<size_t> col_ids;
+    if (!col_ids_.empty()) {
+      col_ids.assign(col_ids_.begin(), col_ids_.begin() + num_key_columns_);
+    }
+
+    return Schema(key_cols, col_ids, num_key_columns_);
   }
 
   // Return a new Schema which is the same as this one, but with IDs assigned.

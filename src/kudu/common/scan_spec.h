@@ -27,12 +27,12 @@ class ScanSpec {
   void AddPredicate(const ColumnRangePredicate &pred);
 
 
-  // Set the lower bound (inclusive) for the scan.
+  // Set the lower bound (inclusive) primary key for the scan.
   // Does not take ownership of 'key', which must remain valid.
   // If called multiple times, the most restrictive key will be used.
   void SetLowerBoundKey(const EncodedKey* key);
 
-  // Set the upper bound (exclusive) for the scan.
+  // Set the upper bound (exclusive) primary key for the scan.
   // Does not take ownership of 'key', which must remain valid.
   // If called multiple times, the most restrictive key will be used.
   void SetExclusiveUpperBoundKey(const EncodedKey* key);
