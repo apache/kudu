@@ -347,7 +347,6 @@ Status DefaultColumnValueIterator::Scan(ColumnBlock *dst)  {
       }
     }
   }
-  io_stats_.rows_read_from_disk += dst->nrows();
   return Status::OK();
 }
 
@@ -578,8 +577,6 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
   prep_block->dblk_ptr_ = idx_iter.GetCurrentBlockPointer();
   RETURN_NOT_OK(reader_->ReadBlock(prep_block->dblk_ptr_, cache_control_, &prep_block->dblk_data_));
 
-  io_stats_.data_blocks_read_from_disk++;
-
   uint32_t num_rows_in_block = 0;
   Slice data_block = prep_block->dblk_data_.data();
   if (reader_->is_nullable()) {
@@ -600,7 +597,9 @@ Status CFileIterator::ReadCurrentDataBlock(const IndexTreeIterator &idx_iter,
     num_rows_in_block = bd->Count();
   }
 
-  io_stats_.rows_read_from_disk += num_rows_in_block;
+  io_stats_.cells_read_from_disk += num_rows_in_block;
+  io_stats_.data_blocks_read_from_disk++;
+  io_stats_.bytes_read_from_disk += data_block.size();
 
   prep_block->idx_in_block_ = 0;
   prep_block->num_rows_in_block_ = num_rows_in_block;

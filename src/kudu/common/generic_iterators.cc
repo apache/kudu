@@ -272,9 +272,9 @@ const Schema& MergeIterator::schema() const {
 void MergeIterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   CHECK(initted_);
   vector<vector<IteratorStats> > stats_by_iter;
-  BOOST_FOREACH(const shared_ptr<MergeIterState>& iter_state, iters_) {
+  BOOST_FOREACH(const shared_ptr<RowwiseIterator>& iter, orig_iters_) {
     vector<IteratorStats> stats_for_iter;
-    iter_state->iter()->GetIteratorStats(&stats_for_iter);
+    iter->GetIteratorStats(&stats_for_iter);
     stats_by_iter.push_back(stats_for_iter);
   }
   for (size_t idx = 0; idx < schema_.num_columns(); ++idx) {

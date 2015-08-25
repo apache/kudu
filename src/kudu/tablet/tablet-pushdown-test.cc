@@ -125,7 +125,7 @@ class TabletPushdownTest : public KuduTabletTest,
       iter->GetIteratorStats(&stats);
       BOOST_FOREACH(const IteratorStats& col_stats, stats) {
         EXPECT_EQ(expected_blocks_from_disk, col_stats.data_blocks_read_from_disk);
-        EXPECT_EQ(expected_rows_from_disk, col_stats.rows_read_from_disk);
+        EXPECT_EQ(expected_rows_from_disk, col_stats.cells_read_from_disk);
       }
     }
   }

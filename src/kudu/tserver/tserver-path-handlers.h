@@ -54,7 +54,8 @@ class TabletServerPathHandlers {
                                     std::stringstream* output);
   std::string ConsensusStatePBToHtml(const consensus::ConsensusStatePB& cstate) const;
   std::string ScannerToHtml(const Scanner& scanner) const;
-  std::string IteratorStatsToHtml(const std::vector<IteratorStats>& stats) const;
+  std::string IteratorStatsToHtml(const Schema& projection,
+                                  const std::vector<IteratorStats>& stats) const;
   std::string GetDashboardLine(const std::string& link,
                                const std::string& text, const std::string& desc);
 

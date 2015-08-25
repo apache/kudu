@@ -386,15 +386,18 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
   uint64_t time_since_last_access_us =
       scanner.TimeSinceLastAccess(MonoTime::Now(MonoTime::COARSE)).ToMicroseconds();
 
+  const Schema* projection = &scanner.iter()->schema();
+
   vector<IteratorStats> stats;
   scanner.GetIteratorStats(&stats);
+  CHECK_EQ(stats.size(), projection->num_columns());
   html << Substitute("<tr><td>$0</td><td>$1</td><td>$2 us.</td><td>$3 us.</td><td>$4</td>"
                      "<td>$5</td>",
                      EscapeForHtmlToString(scanner.tablet_id()), // $0
                      EscapeForHtmlToString(scanner.id()), // $1
                      time_in_flight_us, time_since_last_access_us, // $2, $3
                      EscapeForHtmlToString(scanner.requestor_string()), // $4
-                     IteratorStatsToHtml(stats)); // $5
+                     IteratorStatsToHtml(*projection, stats)); // $5
   scoped_refptr<TabletPeer> tablet_peer;
   if (!tserver_->tablet_manager()->LookupTablet(scanner.tablet_id(), &tablet_peer)) {
     html << Substitute("<td><b>Tablet $0 is no longer valid.</b></td></tr>\n",
@@ -418,15 +421,31 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
   return html.str();
 }
 
-string TabletServerPathHandlers::IteratorStatsToHtml(const vector<IteratorStats>& stats) const {
+string TabletServerPathHandlers::IteratorStatsToHtml(const Schema& projection,
+                                                     const vector<IteratorStats>& stats) const {
   std::stringstream html;
   html << "<table>\n";
-  html << "<tr><th>Column</th><th>Blocks read from disk</th>"
-      "<th>Rows read from disk</th></tr>\n";
+  html << "<tr><th>Column</th>"
+       << "<th>Blocks read from disk</th>"
+       << "<th>Bytes read from disk</th>"
+       << "<th>Cells read from disk</th>"
+       << "</tr>\n";
   for (size_t idx = 0; idx < stats.size(); idx++) {
-    html << Substitute("<tr><td>$0</td><td>$1</td><td>$2</td></tr>\n",
-                       idx, stats[idx].data_blocks_read_from_disk,
-                       stats[idx].rows_read_from_disk);
+    // We use 'title' attributes so that if the user hovers over the value, they get a
+    // human-readable tooltip.
+    html << Substitute("<tr>"
+                       "<td>$0</td>"
+                       "<td title=\"$1\">$2</td>"
+                       "<td title=\"$3\">$4</td>"
+                       "<td title=\"$5\">$6</td>"
+                       "</tr>\n",
+                       EscapeForHtmlToString(projection.column(idx).name()), // $0
+                       HumanReadableInt::ToString(stats[idx].data_blocks_read_from_disk), // $1
+                       stats[idx].data_blocks_read_from_disk, // $2
+                       HumanReadableNumBytes::ToString(stats[idx].bytes_read_from_disk), // $3
+                       stats[idx].bytes_read_from_disk, // $4
+                       HumanReadableInt::ToString(stats[idx].cells_read_from_disk), // $5
+                       stats[idx].cells_read_from_disk); // $6
   }
   html << "</table>\n";
   return html.str();

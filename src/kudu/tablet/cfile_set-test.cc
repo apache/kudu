@@ -174,9 +174,10 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   // Since we didn't ever materialize column 2, we shouldn't have read any data blocks.
   ASSERT_EQ(0, stats[2].data_blocks_read_from_disk);
 
-  // Column 0 and 1 skipped a lot of blocks, so should not have read all rows.
-  ASSERT_LT(stats[0].rows_read_from_disk, kNumRows * 3 / 4);
-  ASSERT_LT(stats[1].rows_read_from_disk, kNumRows * 3 / 4);
+  // Column 0 and 1 skipped a lot of blocks, so should not have read all of the cells
+  // from either column.
+  ASSERT_LT(stats[0].cells_read_from_disk, kNumRows * 3 / 4);
+  ASSERT_LT(stats[1].cells_read_from_disk, kNumRows * 3 / 4);
 }
 
 TEST_F(TestCFileSet, TestIteratePartialSchema) {

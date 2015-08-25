@@ -16,6 +16,56 @@ METRIC_DEFINE_counter(tablet, rows_updated, "Rows Updated",
 METRIC_DEFINE_counter(tablet, rows_deleted, "Rows Deleted",
     kudu::MetricUnit::kRows,
     "Number of row delete operations performed on this tablet since service start");
+
+METRIC_DEFINE_counter(tablet, scanner_rows_returned, "Scanner Rows Returned",
+                      kudu::MetricUnit::kRows,
+                      "Number of rows returned by scanners to clients. This count "
+                      "is measured after predicates are applied, and thus is not "
+                      "a reflection of the amount of work being done by scanners.");
+METRIC_DEFINE_counter(tablet, scanner_cells_returned, "Scanner Cells Returned",
+                      kudu::MetricUnit::kCells,
+                      "Number of table cells returned by scanners to clients. This count "
+                      "is measured after predicates are applied, and thus is not "
+                      "a reflection of the amount of work being done by scanners.");
+METRIC_DEFINE_counter(tablet, scanner_bytes_returned, "Scanner Bytes Returned",
+                      kudu::MetricUnit::kBytes,
+                      "Number of bytes returned by scanners to clients. This count "
+                      "is measured after predicates are applied and the data is decoded "
+                      "for consumption by clients, and thus is not "
+                      "a reflection of the amount of work being done by scanners.");
+
+
+METRIC_DEFINE_counter(tablet, scanner_rows_scanned, "Scanner Rows Scanned",
+                      kudu::MetricUnit::kRows,
+                      "Number of rows processed by scan requests. This is measured "
+                      "as a raw count prior to application of predicates, deleted data,"
+                      "or MVCC-based filtering. Thus, this is a better measure of actual "
+                      "table rows that have been processed by scan operations compared "
+                      "to the Scanner Rows Returned metric.");
+
+METRIC_DEFINE_counter(tablet, scanner_cells_scanned_from_disk, "Scanner Cells Scanned From Disk",
+                      kudu::MetricUnit::kCells,
+                      "Number of table cells processed by scan requests. This is measured "
+                      "as a raw count prior to application of predicates, deleted data,"
+                      "or MVCC-based filtering. Thus, this is a better measure of actual "
+                      "table cells that have been processed by scan operations compared "
+                      "to the Scanner Cells Returned metric.\n"
+                      "Note that this only counts data that has been flushed to disk, "
+                      "and does not include data read from in-memory stores. However, it"
+                      "includes both cache misses and cache hits.");
+
+METRIC_DEFINE_counter(tablet, scanner_bytes_scanned_from_disk, "Scanner Bytes Scanned From Disk",
+                      kudu::MetricUnit::kBytes,
+                      "Number of bytes read by scan requests. This is measured "
+                      "as a raw count prior to application of predicates, deleted data,"
+                      "or MVCC-based filtering. Thus, this is a better measure of actual "
+                      "IO that has been caused by scan operations compared "
+                      "to the Scanner Bytes Returned metric.\n"
+                      "Note that this only counts data that has been flushed to disk, "
+                      "and does not include data read from in-memory stores. However, it"
+                      "includes both cache misses and cache hits.");
+
+
 METRIC_DEFINE_counter(tablet, insertions_failed_dup_key, "Duplicate Key Inserts",
                       kudu::MetricUnit::kRows,
                       "Number of inserts which failed because the key already existed");
@@ -152,6 +202,12 @@ TabletMetrics::TabletMetrics(const scoped_refptr<MetricEntity>& entity)
     MINIT(rows_updated),
     MINIT(rows_deleted),
     MINIT(insertions_failed_dup_key),
+    MINIT(scanner_rows_returned),
+    MINIT(scanner_cells_returned),
+    MINIT(scanner_bytes_returned),
+    MINIT(scanner_rows_scanned),
+    MINIT(scanner_cells_scanned_from_disk),
+    MINIT(scanner_bytes_scanned_from_disk),
     MINIT(scans_started),
     MINIT(bloom_lookups),
     MINIT(key_file_lookups),

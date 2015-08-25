@@ -29,6 +29,12 @@ struct TabletMetrics {
   scoped_refptr<Counter> rows_updated;
   scoped_refptr<Counter> rows_deleted;
   scoped_refptr<Counter> insertions_failed_dup_key;
+  scoped_refptr<Counter> scanner_rows_returned;
+  scoped_refptr<Counter> scanner_cells_returned;
+  scoped_refptr<Counter> scanner_bytes_returned;
+  scoped_refptr<Counter> scanner_rows_scanned;
+  scoped_refptr<Counter> scanner_cells_scanned_from_disk;
+  scoped_refptr<Counter> scanner_bytes_scanned_from_disk;
   scoped_refptr<Counter> scans_started;
 
   // Probe stats

@@ -216,6 +216,9 @@ class ScanResultCollector {
 
   // Returns the encoded last row processed.
   virtual const faststring& encoded_last_row() const = 0;
+
+  // Return the number of rows actually returned to the client.
+  virtual int64_t NumRowsReturned() const = 0;
 };
 
 namespace {
@@ -253,12 +256,14 @@ class ScanResultCopier : public ScanResultCollector {
       : rowblock_pb_(DCHECK_NOTNULL(rowblock_pb)),
         rows_data_(DCHECK_NOTNULL(rows_data)),
         indirect_data_(DCHECK_NOTNULL(indirect_data)),
-        blocks_processed_(0) {
+        blocks_processed_(0),
+        num_rows_returned_(0) {
   }
 
   virtual void HandleRowBlock(const Schema* client_projection_schema,
                               const RowBlock& row_block) OVERRIDE {
     blocks_processed_++;
+    num_rows_returned_ += row_block.selection_vector()->CountSelected();
     SerializeRowBlock(row_block, rowblock_pb_, client_projection_schema,
                       rows_data_, indirect_data_);
     SetLastRow(row_block, &encoded_last_row_);
@@ -275,11 +280,16 @@ class ScanResultCopier : public ScanResultCollector {
     return encoded_last_row_;
   }
 
+  virtual int64_t NumRowsReturned() const OVERRIDE {
+    return num_rows_returned_;
+  }
+
  private:
   RowwiseRowBlockPB* const rowblock_pb_;
   faststring* const rows_data_;
   faststring* const indirect_data_;
   int blocks_processed_;
+  int64_t num_rows_returned_;
   faststring encoded_last_row_;
 
   DISALLOW_COPY_AND_ASSIGN(ScanResultCopier);
@@ -317,6 +327,10 @@ class ScanResultChecksummer : public ScanResultCollector {
   virtual int64_t ResponseSize() const OVERRIDE { return sizeof(agg_checksum_); }
 
   virtual const faststring& encoded_last_row() const OVERRIDE { return encoded_last_row_; }
+
+  virtual int64_t NumRowsReturned() const OVERRIDE {
+    return 0;
+  }
 
   // Accessors for initializing / setting the checksum.
   void set_agg_checksum(uint64_t value) { agg_checksum_ = value; }
@@ -1132,7 +1146,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   const Schema* tablet_schema = tablet_peer->tablet()->schema();
 
   SharedScanner scanner;
-  server_->scanner_manager()->NewScanner(tablet_peer->tablet_id(),
+  server_->scanner_manager()->NewScanner(tablet_peer,
                                          requestor_string,
                                          &scanner);
 
@@ -1328,6 +1342,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
   deadline.AddDelta(MonoDelta::FromMilliseconds(budget_ms));
 
+  int64_t rows_scanned = 0;
   while (iter->HasNext()) {
     Status s = iter->NextBlock(&block);
     if (PREDICT_FALSE(!s.ok())) {
@@ -1337,6 +1352,10 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
     }
 
     if (PREDICT_TRUE(block.nrows() > 0)) {
+      // Count the number of rows scanned, regardless of predicates or deletions.
+      // The collector will separately count the number of rows actually returned to
+      // the client.
+      rows_scanned += block.nrows();
       result_collector->HandleRowBlock(scanner->client_projection_schema(), block);
     }
 
@@ -1358,6 +1377,38 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
       break;
     }
   }
+
+  // Update metrics based on this scan request.
+  TabletPeer* tablet_peer = scanner->tablet_peer().get();
+
+  // First, the number of rows/cells/bytes actually returned to the user.
+  tablet_peer->tablet()->metrics()->scanner_rows_returned->IncrementBy(
+      result_collector->NumRowsReturned());
+  tablet_peer->tablet()->metrics()->scanner_cells_returned->IncrementBy(
+      result_collector->NumRowsReturned() * scanner->client_projection_schema()->num_columns());
+  tablet_peer->tablet()->metrics()->scanner_bytes_returned->IncrementBy(
+      result_collector->ResponseSize());
+
+  // Then the number of rows/cells/bytes actually processed. Here we have to dig
+  // into the per-column iterator stats, sum them up, and then subtract out the
+  // total that we already reported in a previous scan.
+  vector<IteratorStats> stats_by_col;
+  scanner->GetIteratorStats(&stats_by_col);
+  IteratorStats total_stats;
+  BOOST_FOREACH(const IteratorStats& stats, stats_by_col) {
+    total_stats.AddStats(stats);
+  }
+  IteratorStats delta_stats = total_stats;
+  delta_stats.SubtractStats(scanner->already_reported_stats());
+  scanner->set_already_reported_stats(total_stats);
+
+  tablet_peer->tablet()->metrics()->scanner_rows_scanned->IncrementBy(
+      rows_scanned);
+  tablet_peer->tablet()->metrics()->scanner_cells_scanned_from_disk->IncrementBy(
+      delta_stats.cells_read_from_disk);
+  tablet_peer->tablet()->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(
+      delta_stats.bytes_read_from_disk);
+
 
   scanner->UpdateAccessTime();
   *has_more_results = !req->close_scanner() && iter->HasNext();

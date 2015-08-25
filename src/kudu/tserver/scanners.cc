@@ -27,6 +27,9 @@ METRIC_DEFINE_gauge_uint64(server, active_scanners,
                            "Number of scanners that are currently active");
 
 namespace kudu {
+
+using tablet::TabletPeer;
+
 namespace tserver {
 
 // The interval at which we remove expired scanners.
@@ -79,7 +82,7 @@ void ScannerManager::RunRemovalThread() {
   }
 }
 
-void ScannerManager::NewScanner(const std::string& tablet_id,
+void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
                                 const std::string& requestor_string,
                                 SharedScanner* scanner) {
   // Keep trying to generate a unique ID until we get one.
@@ -89,7 +92,7 @@ void ScannerManager::NewScanner(const std::string& tablet_id,
     // probably generate random numbers instead, since we can safely
     // just retry until we avoid a collission.
     string id = oid_generator_.Next();
-    scanner->reset(new Scanner(id, tablet_id, requestor_string, metrics_.get()));
+    scanner->reset(new Scanner(id, tablet_peer, requestor_string, metrics_.get()));
 
     boost::lock_guard<boost::shared_mutex> l(lock_);
     success = InsertIfNotPresent(&scanners_by_id_, id, *scanner);
@@ -142,11 +145,11 @@ void ScannerManager::RemoveExpiredScanners() {
 }
 
 Scanner::Scanner(const string& id,
-                 const string& tablet_id,
+                 const scoped_refptr<TabletPeer>& tablet_peer,
                  const string& requestor_string,
                  ScannerMetrics* metrics)
     : id_(id),
-      tablet_id_(tablet_id),
+      tablet_peer_(tablet_peer),
       requestor_string_(requestor_string),
       call_seq_id_(0),
       start_time_(MonoTime::Now(MonoTime::COARSE)),

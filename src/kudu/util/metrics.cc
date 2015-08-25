@@ -57,6 +57,8 @@ const char* MetricUnit::Name(Type unit) {
       return "entries";
     case kRows:
       return "rows";
+    case kCells:
+      return "cells";
     case kConnections:
       return "connections";
     case kOperations:

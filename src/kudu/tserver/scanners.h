@@ -12,9 +12,11 @@
 
 #include <boost/thread/shared_mutex.hpp>
 
+#include "kudu/common/iterator_stats.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/tablet/tablet_peer.h"
 #include "kudu/util/auto_release_pool.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/metrics.h"
@@ -55,7 +57,7 @@ class ScannerManager {
   Status StartRemovalThread();
 
   // Create a new scanner with a unique ID, inserting it into the map.
-  void NewScanner(const std::string& tablet_id,
+  void NewScanner(const scoped_refptr<tablet::TabletPeer>& tablet_peer,
                   const std::string& requestor_string,
                   SharedScanner* scanner);
 
@@ -147,7 +149,7 @@ class ScopedUnregisterScanner {
 class Scanner {
  public:
   explicit Scanner(const std::string& id,
-                   const std::string& tablet_id,
+                   const scoped_refptr<tablet::TabletPeer>& tablet_peer,
                    const std::string& requestor_string,
                    ScannerMetrics* metrics);
   ~Scanner();
@@ -158,6 +160,10 @@ class Scanner {
             gscoped_ptr<ScanSpec> spec);
 
   RowwiseIterator* iter() {
+    return DCHECK_NOTNULL(iter_.get());
+  }
+
+  const RowwiseIterator* iter() const {
     return DCHECK_NOTNULL(iter_.get());
   }
 
@@ -182,7 +188,9 @@ class Scanner {
   // Return the ScanSpec associated with this Scanner.
   const ScanSpec& spec() const;
 
-  const std::string& tablet_id() const { return tablet_id_; }
+  const std::string& tablet_id() const { return tablet_peer_->tablet_id(); }
+
+  const scoped_refptr<tablet::TabletPeer>& tablet_peer() const { return tablet_peer_; }
 
   const std::string& requestor_string() const { return requestor_string_; }
 
@@ -228,6 +236,13 @@ class Scanner {
   // Get per-column stats for each iterator.
   void GetIteratorStats(std::vector<IteratorStats>* stats) const;
 
+  const IteratorStats& already_reported_stats() const {
+    return already_reported_stats_;
+  }
+  void set_already_reported_stats(const IteratorStats& stats) {
+    already_reported_stats_ = stats;
+  }
+
  private:
   friend class ScannerManager;
 
@@ -235,7 +250,7 @@ class Scanner {
   const std::string id_;
 
   // Tablet associated with the scanner.
-  const std::string tablet_id_;
+  const scoped_refptr<tablet::TabletPeer> tablet_peer_;
 
   // Information about the requestor. Populated from
   // RpcContext::requestor_string().
@@ -255,6 +270,11 @@ class Scanner {
 
   // (Optional) scanner metrics struct, for recording scanner's duration.
   ScannerMetrics* metrics_;
+
+  // A summary of the statistics already reported to the metrics system
+  // for this scanner. This allows us to report the metrics incrementally
+  // as the scanner proceeds.
+  IteratorStats already_reported_stats_;
 
   // The spec used by 'iter_'
   gscoped_ptr<ScanSpec> spec_;

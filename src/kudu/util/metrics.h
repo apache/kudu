@@ -323,6 +323,7 @@ struct MetricUnit {
     kRequests,
     kEntries,
     kRows,
+    kCells,
     kConnections,
     kOperations,
     kProbes,

@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "kudu/tablet/tablet_peer.h"
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
@@ -12,17 +13,21 @@
 DECLARE_int32(scanner_ttl_millis);
 
 namespace kudu {
+
+using tablet::TabletPeer;
+
 namespace tserver {
 
 using std::vector;
 
 TEST(ScannersTest, TestManager) {
+  scoped_refptr<TabletPeer> null_peer(NULL);
   ScannerManager mgr(NULL);
 
   // Create two scanners, make sure their ids are different.
   SharedScanner s1, s2;
-  mgr.NewScanner("", "", &s1);
-  mgr.NewScanner("", "", &s2);
+  mgr.NewScanner(null_peer, "", &s1);
+  mgr.NewScanner(null_peer, "", &s2);
   ASSERT_NE(s1->id(), s2->id());
 
   // Check that they're both registered.
@@ -45,12 +50,13 @@ TEST(ScannersTest, TestManager) {
 }
 
 TEST(ScannerTest, TestExpire) {
+  scoped_refptr<TabletPeer> null_peer(NULL);
   FLAGS_scanner_ttl_millis = 100;
   MetricRegistry registry;
   ScannerManager mgr(METRIC_ENTITY_server.Instantiate(&registry, "test"));
   SharedScanner s1, s2;
-  mgr.NewScanner("", "", &s1);
-  mgr.NewScanner("", "", &s2);
+  mgr.NewScanner(null_peer, "", &s1);
+  mgr.NewScanner(null_peer, "", &s2);
   SleepFor(MonoDelta::FromMilliseconds(200));
   s2->UpdateAccessTime();
   mgr.RemoveExpiredScanners();
