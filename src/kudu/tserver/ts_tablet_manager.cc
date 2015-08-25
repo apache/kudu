@@ -41,8 +41,14 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 
-DEFINE_int32(num_tablets_to_open_simultaneously, 50,
-    "Number of threads available to open tablets.");
+DEFINE_int32(num_tablets_to_open_simultaneously, 0,
+             "Number of threads available to open tablets during startup. If this "
+             "is set to 0 (the default), then the number of bootstrap threads will "
+             "be set based on the number of data directories. If the data directories "
+             "are on some very fast storage device such as SSD or a RAID array, it "
+             "may make sense to manually tune this.");
+TAG_FLAG(num_tablets_to_open_simultaneously, advanced);
+
 DEFINE_int32(tablet_start_warn_threshold_ms, 500,
              "If a tablet takes more than this number of millis to start, issue "
              "a warning with a trace.");
@@ -129,20 +135,8 @@ TSTabletManager::TSTabletManager(FsManager* fs_manager,
     next_report_seq_(0),
     metric_registry_(metric_registry),
     state_(MANAGER_INITIALIZING) {
-  // TODO base the number of parallel tablet bootstraps on something related
-  // to the number of physical devices.
-  // Right now it's set to be the same as the number of RPC handlers so that we
-  // can process as many of them in parallel as we can.
-  CHECK_OK(ThreadPoolBuilder("tablet-bootstrap")
-      .set_max_threads(FLAGS_num_tablets_to_open_simultaneously)
-      .Build(&open_tablet_pool_));
-  // TODO currently this is initialized to default values: no
-  // minimum number of threads, 500 ms idle timeout, and maximum
-  // number of threads equal to number of CPU cores. Instead, it
-  // likewise makes more sense to set this equal to the number of
-  // physical storage devices available to us.
-  CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
 
+  CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
   apply_pool_->SetQueueLengthHistogram(
       METRIC_op_apply_queue_length.Instantiate(server_->metric_entity()));
   apply_pool_->SetQueueTimeMicrosHistogram(
@@ -156,6 +150,18 @@ TSTabletManager::~TSTabletManager() {
 
 Status TSTabletManager::Init() {
   CHECK_EQ(state(), MANAGER_INITIALIZING);
+
+  // Start the threadpool we'll use to open tablets.
+  // This has to be done in Init() instead of the constructor, since the
+  // FsManager isn't initialized until this point.
+  int max_bootstrap_threads = FLAGS_num_tablets_to_open_simultaneously;
+  if (max_bootstrap_threads == 0) {
+    // Default to the number of disks.
+    max_bootstrap_threads = fs_manager_->GetDataRootDirs().size();
+  }
+  RETURN_NOT_OK(ThreadPoolBuilder("tablet-bootstrap")
+                .set_max_threads(max_bootstrap_threads)
+                .Build(&open_tablet_pool_));
 
   // Search for tablets in the metadata dir.
   vector<string> tablet_ids;
