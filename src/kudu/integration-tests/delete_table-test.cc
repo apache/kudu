@@ -78,6 +78,11 @@ class DeleteTableTest : public KuduTest {
     CMETA_EXPECTED = 1
   };
 
+  enum IsSuperBlockExpected {
+    SUPERBLOCK_NOT_EXPECTED = 0,
+    SUPERBLOCK_EXPECTED = 1
+  };
+
   void StartCluster(const vector<string>& extra_tserver_flags = vector<string>(),
                     int num_tablet_servers = 3);
 
@@ -85,13 +90,28 @@ class DeleteTableTest : public KuduTest {
   // the given 'ts_uuid'.
   string GetLeaderUUID(const string& ts_uuid, const string& tablet_id);
 
+  Status CheckTabletTombstonedOrDeletedOnTS(
+      int index,
+      const string& tablet_id,
+      TabletDataState data_state,
+      IsCMetaExpected is_cmeta_expected,
+      IsSuperBlockExpected is_superblock_expected);
+
   Status CheckTabletTombstonedOnTS(int index,
                                    const string& tablet_id,
                                    IsCMetaExpected is_cmeta_expected);
 
+  Status CheckTabletDeletedOnTS(int index,
+                                const string& tablet_id,
+                                IsSuperBlockExpected is_superblock_expected);
+
   void WaitForTabletTombstonedOnTS(int index,
                                    const string& tablet_id,
                                    IsCMetaExpected is_cmeta_expected);
+
+  void WaitForTabletDeletedOnTS(int index,
+                                const string& tablet_id,
+                                IsSuperBlockExpected is_superblock_expected);
 
   void WaitForTSToCrash(int index);
   void WaitForAllTSToCrash();
@@ -140,12 +160,14 @@ string DeleteTableTest::GetLeaderUUID(const string& ts_uuid, const string& table
   return cstate.leader_uuid();
 }
 
-Status DeleteTableTest::CheckTabletTombstonedOnTS(int index,
-                                                  const string& tablet_id,
-                                                  IsCMetaExpected is_cmeta_expected) {
-  // We simply check that no WALs exist and that the superblock indicates
-  // TOMBSTONED.
-  RETURN_NOT_OK(inspect_->CheckTabletDataStateOnTS(index, tablet_id, TABLET_DATA_TOMBSTONED));
+Status DeleteTableTest::CheckTabletTombstonedOrDeletedOnTS(
+      int index,
+      const string& tablet_id,
+      TabletDataState data_state,
+      IsCMetaExpected is_cmeta_expected,
+      IsSuperBlockExpected is_superblock_expected) {
+  CHECK(data_state == TABLET_DATA_TOMBSTONED || data_state == TABLET_DATA_DELETED) << data_state;
+  // There should be no WALs and no cmeta.
   if (inspect_->CountWALSegmentsForTabletOnTS(index, tablet_id) > 0) {
     return Status::IllegalState("WAL segments exist for tablet", tablet_id);
   }
@@ -153,7 +175,30 @@ Status DeleteTableTest::CheckTabletTombstonedOnTS(int index,
       !inspect_->DoesConsensusMetaExistForTabletOnTS(index, tablet_id)) {
     return Status::IllegalState("Expected cmeta for tablet " + tablet_id + " but it doesn't exist");
   }
+  if (is_superblock_expected == SUPERBLOCK_EXPECTED) {
+    RETURN_NOT_OK(inspect_->CheckTabletDataStateOnTS(index, tablet_id, data_state));
+  } else {
+    TabletSuperBlockPB superblock_pb;
+    Status s = inspect_->ReadTabletSuperBlockOnTS(index, tablet_id, &superblock_pb);
+    if (!s.IsNotFound()) {
+      return Status::IllegalState("Found unexpected superblock for tablet " + tablet_id);
+    }
+  }
   return Status::OK();
+}
+
+Status DeleteTableTest::CheckTabletTombstonedOnTS(int index,
+                                                  const string& tablet_id,
+                                                  IsCMetaExpected is_cmeta_expected) {
+  return CheckTabletTombstonedOrDeletedOnTS(index, tablet_id, TABLET_DATA_TOMBSTONED,
+                                            is_cmeta_expected, SUPERBLOCK_EXPECTED);
+}
+
+Status DeleteTableTest::CheckTabletDeletedOnTS(int index,
+                                               const string& tablet_id,
+                                               IsSuperBlockExpected is_superblock_expected) {
+  return CheckTabletTombstonedOrDeletedOnTS(index, tablet_id, TABLET_DATA_DELETED,
+                                            CMETA_NOT_EXPECTED, is_superblock_expected);
 }
 
 void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
@@ -162,6 +207,18 @@ void DeleteTableTest::WaitForTabletTombstonedOnTS(int index,
   Status s;
   for (int i = 0; i < 6000; i++) {
     s = CheckTabletTombstonedOnTS(index, tablet_id, is_cmeta_expected);
+    if (s.ok()) return;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  ASSERT_OK(s);
+}
+
+void DeleteTableTest::WaitForTabletDeletedOnTS(int index,
+                                               const string& tablet_id,
+                                               IsSuperBlockExpected is_superblock_expected) {
+  Status s;
+  for (int i = 0; i < 6000; i++) {
+    s = CheckTabletDeletedOnTS(index, tablet_id, is_superblock_expected);
     if (s.ok()) return;
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
@@ -234,6 +291,13 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
 
   // Delete it and wait for the replicas to get deleted.
   NO_FATALS(DeleteTable(TestWorkload::kDefaultTableName));
+  for (int i = 0; i < 3; i++) {
+    NO_FATALS(WaitForTabletDeletedOnTS(i, tablet_id, SUPERBLOCK_EXPECTED));
+  }
+
+  // Restart the cluster, the superblocks should be deleted on startup.
+  cluster_->Shutdown();
+  ASSERT_OK(cluster_->Restart());
   ASSERT_OK(inspect_->WaitForNoData());
 
   // Check that the master no longer exposes the table in any way:
@@ -272,14 +336,7 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
 }
 
 TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
-  // TODO(KUDU-941): we have to disable remote bootstrap in this test right
-  // now, or else we hit an issue where we delete a replica, and then
-  // before the follower has been deleted, it resuscitates it. The resuscitated
-  // (remote bootstrapping) replica then fails the bootstrap process, but
-  // leaves a TOMBSTONED metadata file arounde, so the "WaitForNoData()"
-  // call never succeeds. KUDU-941 should make the DeleteTable() call leave
-  // around a tombstone marker for some amount of time.
-  NO_FATALS(StartCluster(list_of<string>("--noenable_remote_bootstrap")));
+  NO_FATALS(StartCluster());
   int n_iters = AllowSlowTests() ? 20 : 1;
   for (int i = 0; i < n_iters; i++) {
     TestWorkload workload(cluster_.get());
@@ -296,9 +353,15 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
       SleepFor(MonoDelta::FromMilliseconds(10));
     }
 
+    vector<string> tablets = inspect_->ListTabletsOnTS(1);
+    ASSERT_EQ(1, tablets.size());
+    const string& tablet_id = tablets[0];
+
     // Delete it and wait for the replicas to get deleted.
     NO_FATALS(DeleteTable(workload.table_name()));
-    ASSERT_OK(inspect_->WaitForNoData());
+    for (int i = 0; i < 3; i++) {
+      NO_FATALS(WaitForTabletDeletedOnTS(i, tablet_id, SUPERBLOCK_EXPECTED));
+    }
 
     // Sleep just a little longer to make sure client threads send
     // requests to the missing tablets.
@@ -306,6 +369,11 @@ TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
 
     workload.StopAndJoin();
     cluster_->AssertNoCrashes();
+
+    // Restart the cluster, the superblocks should be deleted on startup.
+    cluster_->Shutdown();
+    ASSERT_OK(cluster_->Restart());
+    ASSERT_OK(inspect_->WaitForNoData());
   }
 }
 
@@ -798,7 +866,12 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
     // We need retries here, since some of the tablets may still be
     // bootstrapping after being restarted above.
     NO_FATALS(DeleteTabletWithRetries(ts, tablet_id, TABLET_DATA_DELETED, timeout));
+    NO_FATALS(WaitForTabletDeletedOnTS(kTsIndex, tablet_id, SUPERBLOCK_EXPECTED));
   }
+
+  // Restart the TS, the superblock should be deleted on startup.
+  cluster_->tablet_server(kTsIndex)->Shutdown();
+  ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
   ASSERT_OK(inspect_->WaitForNoDataOnTS(kTsIndex));
 }
 

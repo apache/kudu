@@ -198,6 +198,11 @@ Status ListTablets(const TServerDetails* ts,
                    const MonoDelta& timeout,
                    std::vector<tserver::ListTabletsResponsePB_StatusAndSchemaPB>* tablets);
 
+// Get the list of RUNNING tablet ids from the remote server.
+Status ListRunningTabletIds(const TServerDetails* ts,
+                            const MonoDelta& timeout,
+                            std::vector<std::string>* tablet_ids);
+
 // Repeatedly invoke ListTablets(), waiting for up to 'timeout' time for the
 // specified 'count' number of replicas.
 Status WaitForNumTabletsOnTS(

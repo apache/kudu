@@ -812,6 +812,14 @@ Status TSTabletManager::HandleNonReadyTabletOnStartup(const scoped_refptr<Tablet
                                     << "of type " << TabletDataState_Name(data_state);
   RETURN_NOT_OK(DeleteTabletData(meta, data_state));
 
+  // We only delete the actual superblock of a TABLET_DATA_DELETED tablet on startup.
+  // TODO: Consider doing this after a fixed delay, instead of waiting for a restart.
+  // See KUDU-941.
+  if (data_state == TABLET_DATA_DELETED) {
+    LOG(INFO) << LogPrefix(tablet_id) << "Deleting tablet superblock";
+    return meta->DeleteSuperBlock();
+  }
+
   // Register TOMBSTONED tablets so that they get reported to the Master, which
   // allows us to permanently delete replica tombstones when a table gets
   // deleted.
@@ -850,8 +858,6 @@ Status TSTabletManager::DeleteTabletData(const scoped_refptr<TabletMetadata>& me
   RETURN_NOT_OK(ConsensusMetadata::DeleteOnDiskData(meta->fs_manager(), meta->tablet_id()));
   MAYBE_FAULT(FLAGS_fault_crash_after_cmeta_deleted);
 
-  // TODO: Delete the superblock after some delay, or on startup. See KUDU-941.
-  RETURN_NOT_OK(meta->DeleteSuperBlock());
   return Status::OK();
 }
 

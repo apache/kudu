@@ -492,6 +492,20 @@ Status ListTablets(const TServerDetails* ts,
   return Status::OK();
 }
 
+Status ListRunningTabletIds(const TServerDetails* ts,
+                            const MonoDelta& timeout,
+                            vector<string>* tablet_ids) {
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  RETURN_NOT_OK(ListTablets(ts, timeout, &tablets));
+  tablet_ids->clear();
+  BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+    if (t.tablet_status().state() == tablet::RUNNING) {
+      tablet_ids->push_back(t.tablet_status().tablet_id());
+    }
+  }
+  return Status::OK();
+}
+
 Status WaitForNumTabletsOnTS(TServerDetails* ts,
                              int count,
                              const MonoDelta& timeout,

@@ -12,24 +12,31 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/fs/fs_manager.h"
+#include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/master/master-test-util.h"
+#include "kudu/rpc/messenger.h"
 #include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
 using std::tr1::shared_ptr;
+
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
 using kudu::client::KuduColumnSchema;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaBuilder;
 using kudu::client::KuduTableCreator;
-using kudu::rpc::RpcController;
+using kudu::itest::CreateTabletServerMap;
+using kudu::itest::TabletServerMap;
 using kudu::master::MasterServiceProxy;
+using kudu::rpc::Messenger;
+using kudu::rpc::MessengerBuilder;
+using kudu::rpc::RpcController;
 
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(log_preallocate_segments);
@@ -69,10 +76,19 @@ class CreateTableStressTest : public KuduTest {
     ASSERT_OK(KuduClientBuilder()
                      .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())
                      .Build(&client_));
+
+    ASSERT_OK(MessengerBuilder("stress-test-msgr")
+              .set_num_reactors(1)
+              .set_negotiation_threads(1)
+              .Build(&messenger_));
+    master_proxy_.reset(new MasterServiceProxy(messenger_,
+                                               cluster_->mini_master()->bound_rpc_addr()));
+    ASSERT_OK(CreateTabletServerMap(master_proxy_.get(), messenger_, &ts_map_));
   }
 
   virtual void TearDown() OVERRIDE {
     cluster_->Shutdown();
+    STLDeleteValues(&ts_map_);
   }
 
   void CreateBigTable(const string& table_name, int num_tablets);
@@ -81,6 +97,9 @@ class CreateTableStressTest : public KuduTest {
   shared_ptr<KuduClient> client_;
   gscoped_ptr<MiniCluster> cluster_;
   KuduSchema schema_;
+  shared_ptr<Messenger> messenger_;
+  gscoped_ptr<MasterServiceProxy> master_proxy_;
+  TabletServerMap ts_map_;
 };
 
 void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tablets) {
@@ -110,7 +129,7 @@ TEST_F(CreateTableStressTest, CreateAndDeleteBigTable) {
   ASSERT_NO_FATAL_FAILURE(CreateBigTable(table_name, FLAGS_num_test_tablets));
   master::GetTableLocationsResponsePB resp;
   ASSERT_OK(WaitForRunningTabletCount(cluster_->mini_master(), table_name,
-                                             FLAGS_num_test_tablets, &resp));
+                                      FLAGS_num_test_tablets, &resp));
   LOG(INFO) << "Created table successfully!";
   // Use std::cout instead of log, since these responses are large and log
   // messages have a max size.
@@ -126,8 +145,9 @@ TEST_F(CreateTableStressTest, CreateAndDeleteBigTable) {
   LOG(INFO) << "Waiting for tablets to be removed";
   vector<string> tablet_ids;
   for (int i = 0; i < 1000; i++) {
-    tablet_ids.clear();
-    ASSERT_OK(cluster_->mini_tablet_server(0)->server()->fs_manager()->ListTabletIds(&tablet_ids));
+    ASSERT_OK(itest::ListRunningTabletIds(ts_map_.begin()->second,
+                                          MonoDelta::FromSeconds(10),
+                                          &tablet_ids));
     if (tablet_ids.empty()) break;
     SleepFor(MonoDelta::FromMilliseconds(100));
   }
