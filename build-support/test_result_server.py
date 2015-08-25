@@ -179,7 +179,7 @@ class TRServer(object):
     c = self.execute_query(
       "SELECT * from test_results WHERE status != 0 "
       "AND timestamp > NOW() - INTERVAL 1 WEEK "
-      "ORDER BY timestamp DESC")
+      "ORDER BY timestamp DESC LIMIT 50")
     failed_tests = c.fetchall()
 
     prev_date = None
@@ -188,7 +188,7 @@ class TRServer(object):
       prev_date = t['timestamp'].date()
 
     template = Template("""
-    <h1>Failures in last week</h1>
+    <h1>50 most recent failures</h1>
     <table class="table">
       <tr>
         <th>test</th>
