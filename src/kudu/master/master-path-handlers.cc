@@ -160,7 +160,15 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
     }
     master_addresses = JoinElements(all_addresses, ",");
   } else {
-    master_addresses = master_->first_rpc_address().ToString();
+    Sockaddr addr = master_->first_rpc_address();
+    HostPort hp;
+    Status s = HostPortFromSockaddrReplaceWildcard(addr, &hp);
+    if (s.ok()) {
+      master_addresses = hp.ToString();
+    } else {
+      LOG(WARNING) << "Unable to determine proper local hostname: " << s.ToString();
+      master_addresses = addr.ToString();
+    }
   }
   HtmlOutputImpalaSchema(table_name, schema, master_addresses, output);
 
