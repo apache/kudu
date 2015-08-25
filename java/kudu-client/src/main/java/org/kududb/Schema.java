@@ -103,7 +103,16 @@ public class Schema {
   }
 
   /**
-   * Get the index for the provided column based
+   * Get the index for the provided column name.
+   * @param columnName column to search for
+   * @return an index in the schema
+   */
+  public int getColumnIndex(String columnName) {
+    return this.columns.indexOf(this.getColumn(columnName));
+  }
+
+  /**
+   * Get the index for the provided column schema.
    * @param column column to search for
    * @return an index in the schema
    */

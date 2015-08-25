@@ -17,6 +17,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.google.common.collect.ImmutableList;
 import org.apache.commons.io.FileUtils;
 import org.junit.AfterClass;
 import org.junit.BeforeClass;
@@ -72,6 +73,7 @@ public class BaseKuduTest {
   protected static AsyncKuduClient client;
   protected static KuduClient syncClient;
   protected static Schema basicSchema = getBasicSchema();
+  protected static Schema allTypesSchema = getSchemaWithAllTypes();
   protected static boolean startCluster;
 
   private static List<String> tableNames = new ArrayList<>();
@@ -369,6 +371,24 @@ public class BaseKuduTest {
     }
     session.close().join(DEFAULT_SLEEP);
     return table;
+  }
+
+  public static Schema getSchemaWithAllTypes() {
+    List<ColumnSchema> columns =
+        ImmutableList.of(
+            new ColumnSchema.ColumnSchemaBuilder("int8", Type.INT8).key(true).build(),
+            new ColumnSchema.ColumnSchemaBuilder("int16", Type.INT16).build(),
+            new ColumnSchema.ColumnSchemaBuilder("int32", Type.INT32).build(),
+            new ColumnSchema.ColumnSchemaBuilder("int64", Type.INT64).build(),
+            new ColumnSchema.ColumnSchemaBuilder("bool", Type.BOOL).build(),
+            new ColumnSchema.ColumnSchemaBuilder("float", Type.FLOAT).build(),
+            new ColumnSchema.ColumnSchemaBuilder("double", Type.DOUBLE).build(),
+            new ColumnSchema.ColumnSchemaBuilder("string", Type.STRING).build(),
+            new ColumnSchema.ColumnSchemaBuilder("binary", Type.BINARY).build(),
+            new ColumnSchema.ColumnSchemaBuilder("null", Type.STRING).nullable(true).build(),
+            new ColumnSchema.ColumnSchemaBuilder("timestamp", Type.TIMESTAMP).build());
+
+    return new Schema(columns);
   }
 
   public static Schema getBasicSchema() {

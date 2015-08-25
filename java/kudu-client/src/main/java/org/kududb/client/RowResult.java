@@ -4,6 +4,7 @@ package org.kududb.client;
 
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
+import org.kududb.Type;
 import org.kududb.util.Slice;
 
 import java.math.BigInteger;
@@ -86,6 +87,16 @@ public class RowResult {
 
   /**
    * Get the specified column's integer
+   * @param columnName name of the column to get data for
+   * @return An integer
+   * @throws IllegalArgumentException if the column is null
+   */
+  public int getInt(String columnName) {
+    return getInt(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's integer
    * @param columnIndex Column index in the schema
    * @return An integer
    * @throws IllegalArgumentException if the column is null
@@ -100,6 +111,16 @@ public class RowResult {
 
   /**
    * Get the specified column's short
+   * @param columnName name of the column to get data for
+   * @return A short
+   * @throws IllegalArgumentException if the column is null
+   */
+  public short getShort(String columnName) {
+    return getShort(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's short
    * @param columnIndex Column index in the schema
    * @return A short
    * @throws IllegalArgumentException if the column is null
@@ -110,6 +131,16 @@ public class RowResult {
     checkNull(columnIndex);
     return Bytes.getShort(this.rowData.getRawArray(),
         this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex));
+  }
+
+  /**
+   * Get the specified column's boolean
+   * @param columnName name of the column to get data for
+   * @return A boolean
+   * @throws IllegalArgumentException if the column is null
+   */
+  public boolean getBoolean(String columnName) {
+    return getBoolean(this.schema.getColumnIndex(columnName));
   }
 
   /**
@@ -130,6 +161,17 @@ public class RowResult {
 
   /**
    * Get the specified column's byte
+   * @param columnName name of the column to get data for
+   * @return A byte
+   * @throws IllegalArgumentException if the column is null
+   */
+  public byte getByte(String columnName) {
+    return getByte(this.schema.getColumnIndex(columnName));
+
+  }
+
+  /**
+   * Get the specified column's byte
    * @param columnIndex Column index in the schema
    * @return A byte
    * @throws IllegalArgumentException if the column is null
@@ -140,6 +182,20 @@ public class RowResult {
     checkNull(columnIndex);
     return Bytes.getByte(this.rowData.getRawArray(),
         this.rowData.getRawOffset() + getCurrentRowDataOffsetForColumn(columnIndex));
+  }
+
+  /**
+   * Get the specified column's long
+   *
+   * If this is a TIMESTAMP column, the long value corresponds to a number of microseconds
+   * since midnight, January 1, 1970 UTC.
+   *
+   * @param columnName name of the column to get data for
+   * @return A positive long
+   * @throws IllegalArgumentException if the column is null\
+   */
+  public long getLong(String columnName) {
+    return getLong(this.schema.getColumnIndex(columnName));
   }
 
   /**
@@ -163,6 +219,16 @@ public class RowResult {
 
   /**
    * Get the specified column's float
+   * @param columnName name of the column to get data for
+   * @return A float
+   */
+  public float getFloat(String columnName) {
+    return getFloat(this.schema.getColumnIndex(columnName));
+
+  }
+
+  /**
+   * Get the specified column's float
    * @param columnIndex Column index in the schema
    * @return A float
    */
@@ -172,6 +238,16 @@ public class RowResult {
     return Bytes.getFloat(this.rowData.getRawArray(),
                           this.rowData.getRawOffset()
                           + getCurrentRowDataOffsetForColumn(columnIndex));
+  }
+
+  /**
+   * Get the specified column's double
+   * @param columnName name of the column to get data for
+   * @return A double
+   */
+  public double getDouble(String columnName) {
+    return getDouble(this.schema.getColumnIndex(columnName));
+
   }
 
   /**
@@ -197,6 +273,17 @@ public class RowResult {
 
   /**
    * Get the specified column's string.
+   * @param columnName name of the column to get data for
+   * @return A string
+   * @throws IllegalArgumentException if the column is null
+   */
+  public String getString(String columnName) {
+    return getString(this.schema.getColumnIndex(columnName));
+
+  }
+
+  /**
+   * Get the specified column's string.
    * @param columnIndex Column index in the schema
    * @return A string
    * @throws IllegalArgumentException if the column is null
@@ -213,6 +300,18 @@ public class RowResult {
     return Bytes.getString(indirectData.getRawArray(),
                            indirectData.getRawOffset() + (int)offset,
                            (int)length);
+  }
+
+  /**
+   * Get a copy of the specified column's binary data.
+   * @param columnName name of the column to get data for
+   * @return a byte[] with the binary data.
+   * @throws IllegalArgumentException if the column is null
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public byte[] getBinaryCopy(String columnName) {
+    return getBinaryCopy(this.schema.getColumnIndex(columnName));
+
   }
 
   /**
@@ -243,6 +342,21 @@ public class RowResult {
    * This doesn't copy the data and instead returns a ByteBuffer that wraps it. The ByteBuffer
    * is backed by 'indirectData' in this RowResult.
    *
+   * @param columnName name of the column to get data for
+   * @return a byte[] with the binary data.
+   * @throws IllegalArgumentException if the column is null
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public ByteBuffer getBinary(String columnName) {
+    return getBinary(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get the specified column's binary data.
+   *
+   * This doesn't copy the data and instead returns a ByteBuffer that wraps it. The ByteBuffer
+   * is backed by 'indirectData' in this RowResult.
+   *
    * @param columnIndex Column index in the schema
    * @return a byte[] with the binary data.
    * @throws IllegalArgumentException if the column is null
@@ -263,6 +377,17 @@ public class RowResult {
 
   /**
    * Get if the specified column is NULL
+   * @param columnName name of the column to get data for
+   * @return true if the column cell is null and the column is nullable,
+   * false otherwise
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public boolean isNull(String columnName) {
+    return isNull(this.schema.getColumnIndex(columnName));
+  }
+
+  /**
+   * Get if the specified column is NULL
    * @param columnIndex Column index in the schema
    * @return true if the column cell is null and the column is nullable,
    * false otherwise
@@ -275,6 +400,33 @@ public class RowResult {
     }
     return schema.getColumn(columnIndex).isNullable()
         && nullsBitSet.get(columnIndex);
+  }
+
+  /**
+   * Get the type of a column in this result.
+   * @param columnName name of the column
+   * @return a type
+   */
+  public Type getColumnType(String columnName) {
+    return this.schema.getColumn(columnName).getType();
+  }
+
+  /**
+   * Get the type of a column in this result.
+   * @param columnIndex column index in the schema
+   * @return a type
+   * @throws IndexOutOfBoundsException if the column doesn't exist
+   */
+  public Type getColumnType(int columnIndex) {
+    return this.schema.getColumn(columnIndex).getType();
+  }
+
+  /**
+   * Get the schema associated with this result.
+   * @return a schema
+   */
+  public Schema getSchema() {
+    return schema;
   }
 
   /**
