@@ -57,6 +57,9 @@ class Webserver : public WebCallbackRegistry {
                                    const PathHandlerCallback& callback,
                                    bool is_styled = true, bool is_on_nav_bar = true) OVERRIDE;
 
+  // Change the footer HTML to be displayed at the bottom of all styled web pages.
+  void set_footer_html(const std::string& html);
+
   // True if serving all traffic over SSL, false otherwise
   bool IsSecure() const;
  private:
@@ -128,14 +131,18 @@ class Webserver : public WebCallbackRegistry {
 
   const WebserverOptions opts_;
 
-  // Lock guarding the path_handlers_ map
-  boost::shared_mutex path_handlers_lock_;
+  // Lock guarding the path_handlers_ map and footer_html.
+  boost::shared_mutex lock_;
 
   // Map of path to a PathHandler containing a list of handlers for that
   // path. More than one handler may register itself with a path so that many
   // components may contribute to a single page.
   typedef std::map<std::string, PathHandler*> PathHandlerMap;
   PathHandlerMap path_handlers_;
+
+  // Snippet of HTML which will be displayed in the footer of all pages
+  // rendered by this server. Protected by 'lock_'.
+  std::string footer_html_;
 
   // The address of the interface on which to run this webserver.
   std::string http_address_;

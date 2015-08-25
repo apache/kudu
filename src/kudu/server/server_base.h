@@ -106,6 +106,7 @@ class ServerBase {
                         const std::string& format) const;
   Status StartMetricsLogging();
   void MetricsLoggingThread();
+  std::string FooterHtml() const;
 
   ServerBaseOptions options_;
 

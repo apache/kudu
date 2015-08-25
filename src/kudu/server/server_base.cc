@@ -12,6 +12,7 @@
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/server/default-path-handlers.h"
@@ -46,6 +47,7 @@ DECLARE_bool(use_hybrid_clock);
 using std::string;
 using std::stringstream;
 using std::vector;
+using strings::Substitute;
 
 namespace kudu {
 namespace server {
@@ -269,6 +271,12 @@ void ServerBase::MetricsLoggingThread() {
   WARN_NOT_OK(log.Close(), "Unable to close metric log");
 }
 
+std::string ServerBase::FooterHtml() const {
+  return Substitute("<pre>$0\nserver uuid $1</pre>",
+                    VersionInfo::GetShortVersionString(),
+                    instance_pb_->permanent_uuid());
+}
+
 Status ServerBase::Start() {
   GenerateInstanceID();
 
@@ -281,6 +289,7 @@ Status ServerBase::Start() {
   AddRpczPathHandlers(messenger_, web_server_.get());
   RegisterMetricsJsonHandler(web_server_.get(), metric_registry_.get());
   TracingPathHandlers::RegisterHandlers(web_server_.get());
+  web_server_->set_footer_html(FooterHtml());
   RETURN_NOT_OK(web_server_->Start());
 
   if (!options_.dump_info_path.empty()) {

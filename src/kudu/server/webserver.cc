@@ -260,7 +260,7 @@ int Webserver::BeginRequestCallback(struct sq_connection* connection,
                                     struct sq_request_info* request_info) {
   PathHandler* handler;
   {
-    boost::shared_lock<boost::shared_mutex> lock(path_handlers_lock_);
+    boost::shared_lock<boost::shared_mutex> lock(lock_);
     PathHandlerMap::const_iterator it = path_handlers_.find(request_info->uri);
     if (it == path_handlers_.end()) {
       // Let Mongoose deal with this request; returning NULL will fall through
@@ -359,7 +359,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
 
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
-  boost::lock_guard<boost::shared_mutex> lock(path_handlers_lock_);
+  boost::lock_guard<boost::shared_mutex> lock(lock_);
   PathHandlerMap::iterator it = path_handlers_.find(path);
   if (it == path_handlers_.end()) {
     it = path_handlers_.insert(
@@ -371,16 +371,10 @@ void Webserver::RegisterPathHandler(const string& path, const string& alias,
 const char* const PAGE_HEADER = "<!DOCTYPE html>"
 " <html>"
 "   <head><title>Cloudera Kudu</title>"
-" <link href='bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />"
-"  <style>"
-"  body {"
-"    padding-top: 60px; "
-"  }"
-"  </style>"
+" <link href='/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />"
+" <link href='/kudu.css' rel='stylesheet' />"
 " </head>"
 " <body>";
-
-static const char* const PAGE_FOOTER = "</div></body></html>";
 
 static const char* const NAVIGATION_BAR_PREFIX =
 "<div class='navbar navbar-inverse navbar-fixed-top'>"
@@ -422,8 +416,20 @@ bool Webserver::static_pages_available() const {
   return !opts_.doc_root.empty() && opts_.enable_doc_root;
 }
 
+void Webserver::set_footer_html(const std::string& html) {
+  boost::lock_guard<boost::shared_mutex> l(lock_);
+  footer_html_ = html;
+}
+
 void Webserver::BootstrapPageFooter(stringstream* output) {
-  (*output) << PAGE_FOOTER;
+  boost::shared_lock<boost::shared_mutex> l(lock_);
+  *output << "</div>\n"; // end bootstrap 'container' div
+  if (!footer_html_.empty()) {
+    *output << "<footer class=\"footer\"><div class=\"container text-muted\">";
+    *output << footer_html_;
+    *output << "</div></footer>";
+  }
+  *output << "</body></html>";
 }
 
 } // namespace kudu
