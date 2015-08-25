@@ -32,6 +32,7 @@ set(COMMON_SRCS
   iterator_stats.cc
   key_encoder.cc
   partial_row.cc
+  partition.cc
   predicate_encoder.cc
   rowblock.cc
   row_changelist.cc
@@ -66,6 +67,7 @@ ADD_KUDU_TEST(encoded_key-test)
 ADD_KUDU_TEST(generic_iterators-test)
 ADD_KUDU_TEST(id_mapping-test)
 ADD_KUDU_TEST(partial_row-test)
+ADD_KUDU_TEST(partition-test)
 ADD_KUDU_TEST(predicate-test)
 ADD_KUDU_TEST(predicate_encoder-test)
 ADD_KUDU_TEST(row_changelist-test)

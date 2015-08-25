@@ -220,3 +220,61 @@ message PartialRowPB {
   // The columns.
   repeated ColumnEntryPB columns = 1;
 }
+
+// The serialized format of a Kudu table partition schema.
+message PartitionSchemaPB {
+
+  // A column identifier for partition schemas. In general, the name will be
+  // used when a client creates the table since column IDs are assigned by the
+  // master. All other uses of partition schemas will use the numeric column ID.
+  message ColumnIdentifierPB {
+    oneof identifier {
+      int32 id = 1;
+      string name = 2;
+    }
+  }
+
+  message RangeSchemaPB {
+    // Column identifiers of columns included in the range. All columns must be
+    // a component of the primary key.
+    repeated ColumnIdentifierPB columns = 1;
+  }
+
+  message HashBucketSchemaPB {
+    // Column identifiers of columns included in the hash. Every column must be
+    // a component of the primary key.
+    repeated ColumnIdentifierPB columns = 1;
+
+    // Number of buckets into which columns will be hashed. Must be at least 2.
+    required int32 num_buckets = 2;
+
+    // Seed value for hash calculation. Administrators may set a seed value
+    // on a per-table basis in order to randomize the mapping of rows to
+    // buckets. Setting a seed provides some amount of protection against denial
+    // of service attacks when the hash bucket columns contain user provided
+    // input.
+    optional uint32 seed = 3;
+
+    enum HashAlgorithm {
+      UNKNOWN = 0;
+      MURMUR_HASH_2 = 1;
+    }
+
+    // The hash algorithm to use for calculating the hash bucket.
+    optional HashAlgorithm hash_algorithm = 4;
+  }
+
+  repeated HashBucketSchemaPB hash_bucket_schemas = 1;
+  optional RangeSchemaPB range_schema = 2;
+}
+
+// The serialized format of a Kudu table partition.
+message PartitionPB {
+  // The hash buckets of the partition. The number of hash buckets must match
+  // the number of hash bucket components in the partition's schema.
+  repeated int32 hash_buckets = 1 [packed = true];
+  // The encoded start partition key (inclusive).
+  optional bytes partition_key_start = 2;
+  // The encoded end partition key (exclusive).
+  optional bytes partition_key_end = 3;
+}
