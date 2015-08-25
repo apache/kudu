@@ -35,7 +35,8 @@
 
 DEFINE_int32(log_min_segments_to_retain, 2,
              "The minimum number of past log segments to keep at all times,"
-             " regardless of what is required for durability.");
+             " regardless of what is required for durability. "
+             "Must be at least 1.");
 
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
              "Maximum size of the group commit queue in bytes");
@@ -56,6 +57,17 @@ DEFINE_double(fault_crash_before_append_commit, 0.0,
               "COMMIT message to the log. (For testing only!)");
 TAG_FLAG(fault_crash_before_append_commit, unsafe);
 
+// Validate that log_min_segments_to_retain >= 1
+static bool ValidateLogsToRetain(const char* flagname, int value) {
+  if (value >= 1) {
+    return true;
+  }
+  LOG(ERROR) << strings::Substitute("$0 must be at least 1, value $1 is invalid",
+                                    flagname, value);
+  return false;
+}
+static bool dummy = google::RegisterFlagValidator(
+    &FLAGS_log_min_segments_to_retain, &ValidateLogsToRetain);
 
 static const char kSegmentPlaceholderFileTemplate[] = ".tmp.newsegmentXXXXXX";
 
