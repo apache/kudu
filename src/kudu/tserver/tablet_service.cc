@@ -53,6 +53,7 @@ namespace tserver {
 
 using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
+using consensus::Consensus;
 using consensus::ConsensusRequestPB;
 using consensus::ConsensusResponsePB;
 using consensus::GetNodeInstanceRequestPB;
@@ -105,6 +106,21 @@ bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
     if (state == tablet::FAILED) {
       s = s.CloneAndAppend((*peer)->error().ToString());
     }
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::TABLET_NOT_RUNNING, context);
+    return false;
+  }
+  return true;
+}
+
+template<class RespClass>
+bool GetConsensusOrRespond(scoped_refptr<TabletPeer>& tablet_peer,
+                           RespClass* resp,
+                           rpc::RpcContext* context,
+                           scoped_refptr<Consensus>* consensus) {
+  *consensus = tablet_peer->shared_consensus();
+  if (!*consensus) {
+    Status s = Status::ServiceUnavailable("Consensus unavailable. Tablet not running");
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return false;
@@ -602,7 +618,9 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
   }
 
   // Submit the update directly to the TabletPeer's Consensus instance.
-  Status s = tablet_peer->consensus()->Update(req, resp);
+  scoped_refptr<Consensus> consensus;
+  if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
+  Status s = consensus->Update(req, resp);
   if (PREDICT_FALSE(!s.ok())) {
     // Clear the response first, since a partially-filled response could
     // result in confusing a caller, or in having missing required fields
@@ -627,7 +645,9 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
   }
 
   // Submit the vote request directly to the consensus instance.
-  Status s = tablet_peer->consensus()->RequestVote(req, resp);
+  scoped_refptr<Consensus> consensus;
+  if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
+  Status s = consensus->RequestVote(req, resp);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -658,7 +678,9 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
     return;
   }
 
-  Status s = tablet_peer->consensus()->ChangeConfig(req->type(), req->server(), resp,
+  scoped_refptr<Consensus> consensus;
+  if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
+  Status s = consensus->ChangeConfig(req->type(), req->server(), resp,
                                                     BindHandleResponse(req, resp, context));
   if (PREDICT_FALSE(!s.ok())) {
     HandleUnknownError(req, resp, context, s);
@@ -684,7 +706,9 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
     return;
   }
 
-  Status s = tablet_peer->consensus()->StartElection(
+  scoped_refptr<Consensus> consensus;
+  if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
+  Status s = consensus->StartElection(
       consensus::Consensus::ELECT_EVEN_IF_LEADER_IS_ALIVE);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
@@ -704,7 +728,9 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
     return;
   }
 
-  Status s = tablet_peer->consensus()->StepDown(resp);
+  scoped_refptr<Consensus> consensus;
+  if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
+  Status s = consensus->StepDown(resp);
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -729,7 +755,9 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
     return;
   }
-  Status s = tablet_peer->consensus()->GetLastReceivedOpId(resp->mutable_opid());
+  scoped_refptr<Consensus> consensus;
+  if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
+  Status s = consensus->GetLastReceivedOpId(resp->mutable_opid());
   if (PREDICT_FALSE(!s.ok())) {
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::UNKNOWN_ERROR,
@@ -748,7 +776,9 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
     return;
   }
 
-  *resp->mutable_cstate() = tablet_peer->consensus()->CommittedConsensusState();
+  scoped_refptr<Consensus> consensus;
+  if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
+  *resp->mutable_cstate() = consensus->CommittedConsensusState();
   context->RespondSuccess();
 }
 
