@@ -71,6 +71,9 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
   *output << "  <tr><th>Table Name</th><th>Table Id</th><th>State</th></tr>\n";
   BOOST_FOREACH(const scoped_refptr<TableInfo>& table, tables) {
     TableMetadataLock l(table.get(), TableMetadataLock::READ);
+    if (!l.data().is_running()) {
+      continue;
+    }
     string state = SysTablesEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
     *output << Substitute(
