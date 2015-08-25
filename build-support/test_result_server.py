@@ -33,6 +33,7 @@
 import boto
 import cherrypy
 import gzip
+import itertools
 from jinja2 import Template
 import logging
 import MySQLdb
@@ -230,33 +231,82 @@ class TRServer(object):
     c = self.execute_query(
               """SELECT
                    test_name,
+                   DATEDIFF(NOW(), timestamp) AS days_ago,
                    SUM(IF(status != 0, 1, 0)) AS num_failures,
                    COUNT(*) AS num_runs
                  FROM test_results
                  WHERE timestamp > NOW() - INTERVAL 1 WEEK
-                 GROUP BY test_name
+                 GROUP BY test_name, days_ago
                  HAVING num_failures > 0
                  ORDER BY test_name""")
-    r = c.fetchall()
+    rows = c.fetchall()
+
+    results = []
+    for test_name, test_rows in itertools.groupby(rows, lambda r: r['test_name']):
+      # Convert to list so we can consume it multiple times
+      test_rows = list(test_rows)
+
+      # Compute summary for last 7 days and last 2 days
+      runs_7day = sum(r['num_runs'] for r in test_rows)
+      failures_7day = sum(r['num_failures'] for r in test_rows)
+      runs_2day = sum(r['num_runs'] for r in test_rows if r['days_ago'] < 2)
+      failures_2day = sum(r['num_failures'] for r in test_rows if r['days_ago'] < 2)
+
+      # Compute a sparkline (percentage failure for each day)
+      sparkline = [0 for x in xrange(8)]
+      for r in test_rows:
+        if r['num_runs'] > 0:
+          percent = float(r['num_failures']) / r['num_runs'] * 100
+        else:
+          percent = 0
+        sparkline[7 - r['days_ago']] = percent
+
+      # Add to results list for tablet.
+      results.append(dict(test_name=test_name,
+                          runs_7day=runs_7day,
+                          failures_7day=failures_7day,
+                          runs_2day=runs_2day,
+                          failures_2day=failures_2day,
+                          sparkline=",".join("%.2f" % p for p in sparkline)))
+
     return Template("""
     <h1>Flaky rate over last week</h1>
-    <table class="table">
+    <table class="table" id="flaky-rate">
       <tr>
        <th>test</th>
-       <th>failure rate</th>
+       <th>failure rate (7-day)</th>
+       <th>failure rate (2-day)</th>
+       <th>trend</th>
       </tr>
       {% for r in results %}
       <tr>
         <td><a href="/test_drilldown?test_name={{ r.test_name |urlencode }}">
               {{ r.test_name |e }}
             </a></td>
-        <td>{{ r.num_failures |e }} / {{ r.num_runs }}
-            ({{ "%.2f"|format(r.num_failures / r.num_runs * 100) }}%)
+        <td>{{ r.failures_7day |e }} / {{ r.runs_7day }}
+            ({{ "%.2f"|format(r.failures_7day / r.runs_7day * 100) }}%)
         </td>
+        <td>{{ r.failures_2day |e }} / {{ r.runs_2day }}
+            {% if r.runs_2day > 0 %}
+            ({{ "%.2f"|format(r.failures_2day / r.runs_2day * 100) }}%)
+            {% endif %}
+        </td>
+        <td><span class="inlinesparkline">{{ r.sparkline |e }}</span></td>
       </tr>
       {% endfor %}
     </table>
-    """).render(results=r)
+    <script type="text/javascript">
+      $(function() {
+        $('.inlinesparkline').sparkline('html', {
+           'height': 25,
+            'width': '40px',
+            'chartRangeMin': 0,
+            'tooltipFormatter': function(sparkline, options, fields) {
+              return String(7 - fields.x) + "d ago: " + fields.y + "%"; }
+        });
+      });
+    </script>
+    """).render(results=results)
 
   @cherrypy.expose
   def list_failed_tests(self, build_pattern, num_days):
@@ -359,11 +409,22 @@ class TRServer(object):
       <link rel="stylesheet" href="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/css/bootstrap.min.css" />
       <style>
         .new-date { border-bottom: 2px solid #666; }
+        #flaky-rate tr :nth-child(1) { width: 70%; }
+
+        /* make sparkline data not show up before loading */
+        .inlinesparkline { color: #fff; }
+        /* fix sparkline tooltips */
+        .jqstooltip {
+          -webkit-box-sizing: content-box;
+          -moz-box-sizing: content-box;
+          box-sizing: content-box;
+        }
       </style>
     </head>
     <body>
       <script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.1/jquery.min.js"></script>
       <script src="//maxcdn.bootstrapcdn.com/bootstrap/3.2.0/js/bootstrap.min.js"></script>
+      <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-sparklines/2.1.2/jquery.sparkline.min.js"></script>
       <div class="container-fluid">
       {{ body }}
       </div>
