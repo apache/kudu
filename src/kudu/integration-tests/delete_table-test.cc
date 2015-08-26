@@ -776,6 +776,67 @@ TEST_F(DeleteTableTest, TestDeleteFollowerWithReplicatingTransaction) {
   ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
 }
 
+// Test that orphaned blocks are cleared from the superblock when a tablet is
+// tombstoned.
+TEST_F(DeleteTableTest, TestOrphanedBlocksClearedOnDelete) {
+  const MonoDelta timeout = MonoDelta::FromSeconds(30);
+  vector<string> flags;
+  flags.push_back("--enable_leader_failure_detection=false");
+  flags.push_back("--flush_threshold_mb=0"); // Flush quickly since we wait for a flush to occur.
+  flags.push_back("--maintenance_manager_polling_interval_ms=100");
+  NO_FATALS(StartCluster(flags));
+
+  const int kFollowerIndex = 0;
+  TServerDetails* follower_ts = ts_map_[cluster_->tablet_server(kFollowerIndex)->uuid()];
+
+  // Create the table.
+  TestWorkload workload(cluster_.get());
+  workload.Setup();
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(WaitForNumTabletsOnTS(follower_ts, 1, timeout, &tablets));
+  const string& tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, timeout));
+  }
+
+  // Elect TS 1 as leader.
+  const int kLeaderIndex = 1;
+  const string kLeaderUuid = cluster_->tablet_server(kLeaderIndex)->uuid();
+  TServerDetails* leader_ts = ts_map_[kLeaderUuid];
+  ASSERT_OK(itest::StartElection(leader_ts, tablet_id, timeout));
+  ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));
+
+  // Run a write workload and wait until we see some rowsets flush on the follower.
+  workload.Start();
+  TabletSuperBlockPB superblock_pb;
+  for (int i = 0; i < 3000; i++) {
+    ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(kFollowerIndex, tablet_id, &superblock_pb));
+    if (!superblock_pb.rowsets().empty()) break;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  ASSERT_GT(superblock_pb.rowsets_size(), 0)
+      << "Timed out waiting for rowset flush on TS " << follower_ts->uuid() << ": "
+      << "Superblock:\n" << superblock_pb.DebugString();
+
+  // Shut down the leader so it doesn't try to bootstrap our follower later.
+  workload.StopAndJoin();
+  cluster_->tablet_server(kLeaderIndex)->Shutdown();
+
+  // Tombstone the follower and check that there are no rowsets or orphaned
+  // blocks retained in the superblock.
+  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED,
+                                boost::none, timeout));
+  NO_FATALS(WaitForTabletTombstonedOnTS(kFollowerIndex, tablet_id, CMETA_EXPECTED));
+  ASSERT_OK(inspect_->ReadTabletSuperBlockOnTS(kFollowerIndex, tablet_id, &superblock_pb));
+  ASSERT_EQ(0, superblock_pb.rowsets_size()) << superblock_pb.DebugString();
+  ASSERT_EQ(0, superblock_pb.orphaned_blocks_size()) << superblock_pb.DebugString();
+}
+
 // Parameterized test case for TABLET_DATA_DELETED deletions.
 class DeleteTableDeletedParamTest : public DeleteTableTest,
                                     public ::testing::WithParamInterface<const char*> {

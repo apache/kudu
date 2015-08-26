@@ -134,8 +134,6 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
   //
   // We also set the state in our persisted metadata to indicate that
   // we have been deleted.
-  // TODO: explain in what cases we can actually remove the metadata vs
-  // need a tombstone
   {
     boost::lock_guard<LockType> l(data_lock_);
     BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rsmd, rowsets_) {
@@ -150,6 +148,12 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
 
   // Flushing will sync the new tablet_data_state_ to disk and will now also
   // delete all the data.
+  RETURN_NOT_OK(Flush());
+
+  // Re-sync to disk one more time.
+  // This call will typically re-sync with an empty orphaned blocks list
+  // (unless deleting any orphans failed during the last Flush()), so that we
+  // don't try to re-delete the deleted orphaned blocks on every startup.
   return Flush();
 }
 
