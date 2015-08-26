@@ -51,7 +51,8 @@ struct PersistentTabletInfo {
   }
 
   bool is_deleted() const {
-    return pb.state() == SysTabletsEntryPB::REPLACED;
+    return pb.state() == SysTabletsEntryPB::REPLACED ||
+      pb.state() == SysTabletsEntryPB::DELETED;
   }
 
   // Helper to set the state of the tablet with a custom message.
@@ -549,8 +550,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // tablet.
   void SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet);
 
-  // Send the "delete tablet request" to all TS that have tablet of the specified table
-  void SendDeleteTabletRequestsForTable(const scoped_refptr<TableInfo>& table);
+  // Marks each of the tablets in the given table as deleted and triggers requests
+  // to the tablet servers to delete them.
+  void DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>& table);
 
   // Send the "delete tablet request" to the specified TS/tablet.
   // The specified 'reason' will be logged on the TS.

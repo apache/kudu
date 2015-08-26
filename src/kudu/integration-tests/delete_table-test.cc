@@ -21,6 +21,7 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/tablet/tablet.pb.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/curl_util.h"
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"
 
@@ -215,6 +216,8 @@ void DeleteTableTest::DeleteTabletWithRetries(const TServerDetails* ts,
   ASSERT_OK(s);
 }
 
+// Test deleting an empty table, and ensure that the tablets get removed,
+// and the master no longer shows the table as existing.
 TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
   NO_FATALS(StartCluster());
   // Create a table on the cluster. We're just using TestWorkload
@@ -224,9 +227,48 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
   // The table should have replicas on all three tservers.
   ASSERT_OK(inspect_->WaitForReplicaCount(3));
 
+  // Grab the tablet ID (used later).
+  vector<string> tablets = inspect_->ListTabletsOnTS(1);
+  ASSERT_EQ(1, tablets.size());
+  const string& tablet_id = tablets[0];
+
   // Delete it and wait for the replicas to get deleted.
   NO_FATALS(DeleteTable(TestWorkload::kDefaultTableName));
   ASSERT_OK(inspect_->WaitForNoData());
+
+  // Check that the master no longer exposes the table in any way:
+
+  // 1) Should not list it in ListTables.
+  vector<string> table_names;
+  ASSERT_OK(client_->ListTables(&table_names));
+  ASSERT_TRUE(table_names.empty()) << "table still exposed in ListTables";
+
+  // 2) Should respond to GetTableSchema with a NotFound error.
+  KuduSchema schema;
+  Status s = client_->GetTableSchema(TestWorkload::kDefaultTableName, &schema);
+  ASSERT_TRUE(s.IsNotFound()) << s.ToString();
+
+  // 3) Should return an error for GetTabletLocations RPCs.
+  {
+    rpc::RpcController rpc;
+    master::GetTabletLocationsRequestPB req;
+    master::GetTabletLocationsResponsePB resp;
+    rpc.set_timeout(MonoDelta::FromSeconds(10));
+    req.add_tablet_ids()->assign(tablet_id);
+    ASSERT_OK(cluster_->master_proxy()->GetTabletLocations(req, &resp, &rpc));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_EQ(1, resp.errors_size());
+    ASSERT_STR_CONTAINS(resp.errors(0).ShortDebugString(),
+                        "code: NOT_FOUND message: \"Tablet deleted: Table deleted");
+  }
+
+  // 4) The master 'dump-entities' page should not list the deleted table or tablets.
+  EasyCurl c;
+  faststring entities_buf;
+  ASSERT_OK(c.FetchURL(Substitute("http://$0/dump-entities",
+                                  cluster_->master()->bound_http_hostport().ToString()),
+                       &entities_buf));
+  ASSERT_EQ("{\"tables\":[],\"tablets\":[]}", entities_buf.ToString());
 }
 
 TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {

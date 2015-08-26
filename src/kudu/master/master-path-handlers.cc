@@ -235,6 +235,10 @@ class JsonDumper : public TableVisitor, public TabletVisitor {
 
   Status VisitTable(const std::string& table_id,
                     const SysTablesEntryPB& metadata) OVERRIDE {
+    if (metadata.state() != SysTablesEntryPB::RUNNING) {
+      return Status::OK();
+    }
+
     jw_->StartObject();
     jw_->String("table_id");
     jw_->String(table_id);
@@ -252,6 +256,10 @@ class JsonDumper : public TableVisitor, public TabletVisitor {
   Status VisitTablet(const std::string& table_id,
                      const std::string& tablet_id,
                      const SysTabletsEntryPB& metadata) OVERRIDE {
+    if (metadata.state() != SysTabletsEntryPB::RUNNING) {
+      return Status::OK();
+    }
+
     jw_->StartObject();
     jw_->String("table_id");
     jw_->String(table_id);

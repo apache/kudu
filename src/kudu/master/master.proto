@@ -81,6 +81,7 @@ message SysTabletsEntryPB {
     CREATING = 1;
     RUNNING = 2;
     REPLACED = 3;
+    DELETED = 4;
   }
 
   // Tablet key range.
@@ -293,7 +294,6 @@ message GetTabletLocationsResponsePB {
 
   repeated TabletLocationsPB tablet_locations = 2;
 
-  // TODO: fill in Errors for bad tablet IDs.
   message Error {
     required bytes tablet_id = 1;
     required AppStatusPB status = 2;

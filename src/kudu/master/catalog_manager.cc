@@ -196,6 +196,9 @@ class TabletLoader : public TabletVisitor {
     }
     l.Commit();
 
+    // TODO(KUDU-1070): if we see a running tablet under a deleted table,
+    // we should "roll forward" the deletion of the tablet here.
+
     TableMetadataLock table_lock(table.get(), TableMetadataLock::READ);
 
     LOG(INFO) << "Loaded metadata for tablet " << tablet_id
@@ -872,7 +875,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   TRACE("Updating metadata on disk");
   // 2. Update the metadata for the on-disk state
   l.mutable_data()->set_state(SysTablesEntryPB::REMOVED,
-                              Substitute("Deleted at ts=$0", GetCurrentTimeMicros()));
+                              Substitute("Deleted at $0", LocalTimeAsString()));
 
   // 3. Update sys-catalog with the removed table state.
   Status s = sys_catalog_->UpdateTable(table.get());
@@ -901,7 +904,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   l.Commit();
 
   // Send a DeleteTablet() request to each tablet replica in the table.
-  SendDeleteTabletRequestsForTable(table);
+  DeleteTabletsAndSendRequests(table);
 
   LOG(INFO) << "Successfully deleted table " << table->ToString()
             << " per request from " << RequestorString(rpc);
@@ -1077,8 +1080,8 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   l.mutable_data()->pb.set_next_column_id(next_col_id);
   l.mutable_data()->set_state(SysTablesEntryPB::ALTERING,
                               Substitute("Alter Table version=$0 ts=$1",
-                              l.mutable_data()->pb.version(),
-                              GetCurrentTimeMicros()));
+                                         l.mutable_data()->pb.version(),
+                                         LocalTimeAsString()));
 
   // 5. Update sys-catalog with the new table schema.
   TRACE("Updating metadata on disk");
@@ -2025,9 +2028,11 @@ void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tab
   WARN_NOT_OK(call->Run(), "Failed to send alter table request");
 }
 
-void CatalogManager::SendDeleteTabletRequestsForTable(const scoped_refptr<TableInfo>& table) {
+void CatalogManager::DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>& table) {
   vector<scoped_refptr<TabletInfo> > tablets;
   table->GetAllTablets(&tablets);
+
+  string deletion_msg = "Table deleted at " + LocalTimeAsString();
 
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
     std::vector<TabletReplica> locations;
@@ -2035,9 +2040,13 @@ void CatalogManager::SendDeleteTabletRequestsForTable(const scoped_refptr<TableI
     LOG(INFO) << "Sending DeleteTablet for " << locations.size()
               << " replicas of tablet " << tablet->tablet_id();
     BOOST_FOREACH(const TabletReplica& replica, locations) {
-      SendDeleteTabletRequest(tablet->tablet_id(), table, replica.ts_desc,
-                              "Table being deleted");
+      SendDeleteTabletRequest(tablet->tablet_id(), table, replica.ts_desc, deletion_msg);
     }
+
+    TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::WRITE);
+    tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::DELETED, deletion_msg);
+    CHECK_OK(sys_catalog_->UpdateTablets(boost::assign::list_of(tablet.get())));
+    tablet_lock.Commit();
   }
 }
 
@@ -2149,8 +2158,8 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
   // Mark old tablet as replaced.
   tablet->mutable_metadata()->mutable_dirty()->set_state(
     SysTabletsEntryPB::REPLACED,
-    Substitute("Replaced by $0 at ts=$1",
-               replacement->tablet_id(), GetCurrentTimeMicros()));
+    Substitute("Replaced by $0 at $1",
+               replacement->tablet_id(), LocalTimeAsString()));
 
   // Mark new tablet as being created.
   replacement->mutable_metadata()->mutable_dirty()->set_state(
@@ -2428,9 +2437,12 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
   consensus::ConsensusStatePB cstate;
   {
     TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
-    if (!l_tablet.data().is_running()) {
-      return Status::ServiceUnavailable(Substitute("Tablet $0 is not running",
-                                                   tablet->tablet_id()));
+    if (PREDICT_FALSE(l_tablet.data().is_deleted())) {
+      return Status::NotFound("Tablet deleted", l_tablet.data().pb.state_msg());
+    }
+
+    if (PREDICT_FALSE(!l_tablet.data().is_running())) {
+      return Status::ServiceUnavailable("Tablet not running");
     }
 
     locs.clear();
@@ -2480,6 +2492,8 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
 
 Status CatalogManager::GetTabletLocations(const std::string& tablet_id,
                                           TabletLocationsPB* locs_pb) {
+  RETURN_NOT_OK(CheckOnline());
+
   locs_pb->mutable_replicas()->Clear();
   scoped_refptr<TabletInfo> tablet_info;
   {

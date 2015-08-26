@@ -171,3 +171,9 @@ void StringAppendStrftime(string* dst,
   }
   StringAppendStrftime(dst, format, &tm);
 }
+
+string LocalTimeAsString() {
+  string ret;
+  StringAppendStrftime(&ret, "%Y-%m-%d %H:%M:%S %Z", time(NULL), true);
+  return ret;
+}

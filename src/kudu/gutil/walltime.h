@@ -30,6 +30,9 @@ void StringAppendStrftime(std::string* dst,
                                  time_t when,
                                  bool local);
 
+// Return the local time as a string suitable for user display.
+std::string LocalTimeAsString();
+
 // Similar to the WallTime_Parse, but it takes a boolean flag local as
 // argument specifying if the time_spec is in local time or UTC
 // time. If local is set to true, the same exact result as
