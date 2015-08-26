@@ -45,10 +45,11 @@ DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
 
 DEFINE_string(fs_wal_dir, "",
               "Directory with write-ahead logs. If this is not specified, the "
-              "program will not start. May be the same as --fs_data_dirs");
+              "program will not start. May be the same as fs_data_dirs");
 DEFINE_string(fs_data_dirs, "",
               "Comma-separated list of directories with data blocks. If this "
-              "is not specified, the program will not start.");
+              "is not specified, fs_wal_dir will be used as the sole data "
+              "block directory.");
 
 using boost::assign::list_of;
 using google::protobuf::Message;
@@ -117,6 +118,11 @@ Status FsManager::Init() {
     return Status::OK();
   }
 
+  // The wal root must be set.
+  if (wal_fs_root_.empty()) {
+    return Status::IOError("Write-ahead log directory (fs_wal_dir) not provided");
+  }
+
   // Deduplicate all of the roots.
   set<string> all_roots;
   all_roots.insert(wal_fs_root_);
@@ -155,9 +161,16 @@ Status FsManager::Init() {
 
   // All done, use the map to set the canonicalized state.
   canonicalized_wal_fs_root_ = FindOrDie(canonicalized_roots, wal_fs_root_);
-  canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, data_fs_roots_[0]);
-  BOOST_FOREACH(const string& data_fs_root, data_fs_roots_) {
-    canonicalized_data_fs_roots_.insert(FindOrDie(canonicalized_roots, data_fs_root));
+  if (!data_fs_roots_.empty()) {
+    canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, data_fs_roots_[0]);
+    BOOST_FOREACH(const string& data_fs_root, data_fs_roots_) {
+      canonicalized_data_fs_roots_.insert(FindOrDie(canonicalized_roots, data_fs_root));
+    }
+  } else {
+    LOG(INFO) << "Data directories (fs_data_dirs) not provided";
+    LOG(INFO) << "Using write-ahead log directory (fs_wal_dir) as data directory";
+    canonicalized_metadata_fs_root_ = canonicalized_wal_fs_root_;
+    canonicalized_data_fs_roots_.insert(canonicalized_wal_fs_root_);
   }
   BOOST_FOREACH(const RootMap::value_type& e, canonicalized_roots) {
     canonicalized_all_fs_roots_.insert(e.second);

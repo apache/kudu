@@ -144,4 +144,25 @@ TEST_F(FsManagerTestBase, TestCannotUseNonEmptyFsRoot) {
   ASSERT_TRUE(fs_manager()->CreateInitialFileSystemLayout().IsAlreadyPresent());
 }
 
+TEST_F(FsManagerTestBase, TestEmptyWALPath) {
+  ReinitFsManager("", vector<string>());
+  Status s = fs_manager()->CreateInitialFileSystemLayout();
+  ASSERT_TRUE(s.IsIOError());
+  ASSERT_STR_CONTAINS(s.ToString(), "directory (fs_wal_dir) not provided");
+}
+
+TEST_F(FsManagerTestBase, TestOnlyWALPath) {
+  string path = GetTestPath("new_fs_root");
+  ASSERT_OK(env_->CreateDir(path));
+
+  ReinitFsManager(path, vector<string>());
+  ASSERT_OK(fs_manager()->CreateInitialFileSystemLayout());
+  ASSERT_TRUE(HasPrefixString(fs_manager()->GetWalsRootDir(), path));
+  ASSERT_TRUE(HasPrefixString(fs_manager()->GetConsensusMetadataDir(), path));
+  ASSERT_TRUE(HasPrefixString(fs_manager()->GetTabletMetadataDir(), path));
+  vector<string> data_dirs = fs_manager()->GetDataRootDirs();
+  ASSERT_EQ(1, data_dirs.size());
+  ASSERT_TRUE(HasPrefixString(data_dirs[0], path));
+}
+
 } // namespace kudu
