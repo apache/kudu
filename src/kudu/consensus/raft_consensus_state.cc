@@ -547,7 +547,7 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index) 
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Committing config change with OpId "
           << current_id << ". "
           << "Old config: { " << old_config.ShortDebugString() << " }. "
-          << "New config: {" << new_config.ShortDebugString() << "}";
+          << "New config: { " << new_config.ShortDebugString() << " }";
       CHECK_OK(SetCommittedConfigUnlocked(new_config));
     }
 

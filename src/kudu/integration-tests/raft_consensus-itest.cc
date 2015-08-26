@@ -1804,6 +1804,20 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
                                             &has_leader, &tablet_locations));
   ASSERT_TRUE(has_leader) << tablet_locations.DebugString();
   LOG(INFO) << "Tablet locations:\n" << tablet_locations.DebugString();
+
+  // Change the config again.
+  LOG(INFO) << "Removing tserver with uuid " << tserver_to_add->uuid();
+  ASSERT_OK(RemoveServer(leader_ts, tablet_id_, tserver_to_add, timeout));
+  TabletServerMap active_tablet_servers = tablet_servers_;
+  ASSERT_EQ(1, active_tablet_servers.erase(tserver_to_add->uuid()));
+  ASSERT_OK(WaitForServersToAgree(timeout, active_tablet_servers, tablet_id_, 3));
+
+  // Wait for the master to be notified of the removal.
+  LOG(INFO) << "Waiting for Master to see config change...";
+  NO_FATALS(WaitForReplicasReportedToMaster(2, tablet_id, timeout, NO_WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
+  ASSERT_TRUE(has_leader) << tablet_locations.DebugString();
+  LOG(INFO) << "Tablet locations:\n" << tablet_locations.DebugString();
 }
 
 // Test that even with memory pressure, a replica will still commit pending

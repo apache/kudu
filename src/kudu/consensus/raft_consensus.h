@@ -365,6 +365,10 @@ class RaftConsensus : public Consensus,
   // has changed, thus reporting it back to the master.
   void MarkDirty();
 
+  // Calls MarkDirty() if 'status' == OK. Then, always calls 'client_cb' with
+  // 'status' as its argument.
+  void MarkDirtyOnSuccess(const StatusCallback& client_cb, const Status& status);
+
   // Threadpool for constructing requests to peers, handling RPC callbacks,
   // etc.
   gscoped_ptr<ThreadPool> thread_pool_;

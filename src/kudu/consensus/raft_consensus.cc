@@ -1216,7 +1216,10 @@ Status RaftConsensus::ChangeConfig(ChangeConfigType type,
         return Status::NotSupported("Role change is not yet implemented.");
     }
 
-    RETURN_NOT_OK(ReplicateConfigChangeUnlocked(committed_config, new_config, client_cb));
+    RETURN_NOT_OK(ReplicateConfigChangeUnlocked(committed_config, new_config,
+                                                Bind(&RaftConsensus::MarkDirtyOnSuccess,
+                                                     Unretained(this),
+                                                     client_cb)));
   }
   peer_manager_->SignalRequest();
   return Status::OK();
@@ -1286,7 +1289,9 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
   round->SetConsensusReplicatedCallback(Bind(&RaftConsensus::NonTxRoundReplicationFinished,
                                              Unretained(this),
                                              Unretained(round.get()),
-                                             Bind(&DoNothingStatusCB)));
+                                             Bind(&RaftConsensus::MarkDirtyOnSuccess,
+                                                  Unretained(this),
+                                                  Bind(&DoNothingStatusCB))));
   return state_->AddPendingOperation(round);
 }
 
@@ -1591,6 +1596,13 @@ Status RaftConsensus::GetLastReceivedOpId(OpId* id) {
 void RaftConsensus::MarkDirty() {
   WARN_NOT_OK(thread_pool_->SubmitClosure(mark_dirty_clbk_),
               state_->LogPrefixThreadSafe() + "Unable to run MarkDirty callback");
+}
+
+void RaftConsensus::MarkDirtyOnSuccess(const StatusCallback& client_cb, const Status& status) {
+  if (PREDICT_TRUE(status.ok())) {
+    MarkDirty();
+  }
+  client_cb.Run(status);
 }
 
 void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
