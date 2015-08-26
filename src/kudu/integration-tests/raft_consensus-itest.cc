@@ -65,6 +65,9 @@ using itest::RemoveServer;
 using itest::StartElection;
 using itest::WaitUntilLeader;
 using itest::WriteSimpleTestRow;
+using master::GetTabletLocationsRequestPB;
+using master::GetTabletLocationsResponsePB;
+using master::GetTabletLocationsResponsePB_Error;
 using master::TableIdentifierPB;
 using master::TabletLocationsPB;
 using master::TSInfoPB;
@@ -348,6 +351,24 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // Note: This test assumes all tablet servers listed in tablet_servers are voters.
   void AssertMajorityRequiredForElectionsAndWrites(const TabletServerMap& tablet_servers,
                                                    const string& leader_uuid);
+
+  // Return the replicas of the specified 'tablet_id', as seen by the Master.
+  Status GetTabletLocations(const string& tablet_id, const MonoDelta& timeout,
+                            master::TabletLocationsPB* tablet_locations);
+
+  enum WaitForLeader {
+    NO_WAIT_FOR_LEADER = 0,
+    WAIT_FOR_LEADER = 1
+  };
+
+  // Wait for the specified number of replicas to be reported by the master for
+  // the given tablet. Fails with an assertion if the timeout expires.
+  void WaitForReplicasReportedToMaster(int num_replicas, const string& tablet_id,
+                                       const MonoDelta& timeout,
+                                       WaitForLeader wait_for_leader,
+                                       bool* has_leader,
+                                       master::TabletLocationsPB* tablet_locations);
+
 
  protected:
   shared_ptr<KuduTable> table_;
@@ -1376,6 +1397,60 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
                                MonoDelta::FromSeconds(10)));
 }
 
+// Return the replicas of the specified 'tablet_id', as seen by the Master.
+Status RaftConsensusITest::GetTabletLocations(const string& tablet_id, const MonoDelta& timeout,
+                                              master::TabletLocationsPB* tablet_locations) {
+  RpcController rpc;
+  rpc.set_timeout(timeout);
+  GetTabletLocationsRequestPB req;
+  *req.add_tablet_ids() = tablet_id;
+  GetTabletLocationsResponsePB resp;
+  RETURN_NOT_OK(cluster_->master_proxy()->GetTabletLocations(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  if (resp.errors_size() > 0) {
+    CHECK_EQ(1, resp.errors_size()) << resp.ShortDebugString();
+    CHECK_EQ(tablet_id, resp.errors(0).tablet_id()) << resp.ShortDebugString();
+    return StatusFromPB(resp.errors(0).status());
+  }
+  CHECK_EQ(1, resp.tablet_locations_size()) << resp.ShortDebugString();
+  *tablet_locations = resp.tablet_locations(0);
+  return Status::OK();
+}
+
+void RaftConsensusITest::WaitForReplicasReportedToMaster(
+    int num_replicas, const string& tablet_id,
+    const MonoDelta& timeout,
+    WaitForLeader wait_for_leader,
+    bool* has_leader,
+    master::TabletLocationsPB* tablet_locations) {
+  MonoTime deadline(MonoTime::Now(MonoTime::FINE));
+  deadline.AddDelta(timeout);
+  while (true) {
+    ASSERT_OK(GetTabletLocations(tablet_id, timeout, tablet_locations));
+    *has_leader = false;
+    if (tablet_locations->replicas_size() == num_replicas) {
+      BOOST_FOREACH(const master::TabletLocationsPB_ReplicaPB& replica,
+                    tablet_locations->replicas()) {
+        if (replica.role() == RaftPeerPB::LEADER) {
+          *has_leader = true;
+        }
+      }
+      if (wait_for_leader == NO_WAIT_FOR_LEADER ||
+          (wait_for_leader == WAIT_FOR_LEADER && *has_leader)) {
+        break;
+      }
+    }
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) break;
+    SleepFor(MonoDelta::FromMilliseconds(20));
+  }
+  ASSERT_EQ(num_replicas, tablet_locations->replicas_size()) << tablet_locations->DebugString();
+  if (wait_for_leader == WAIT_FOR_LEADER) {
+    ASSERT_TRUE(*has_leader) << tablet_locations->DebugString();
+  }
+}
+
 // Basic test of adding and removing servers from a configuration.
 TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   FLAGS_num_tablet_servers = 3;
@@ -1681,6 +1756,54 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
 
   LOG(INFO) << "Number of rows inserted: " << rows_inserted.Load();
   ASSERT_ALL_REPLICAS_AGREE(rows_inserted.Load());
+}
+
+TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 2;
+  BuildAndStart();
+
+  LOG(INFO) << "Finding tablet leader and waiting for things to start...";
+  string tablet_id = tablet_replicas_.begin()->first;
+  TServerDetails* leader_ts;
+  ASSERT_OK(FindTabletLeader(tablet_servers_, tablet_id, timeout, &leader_ts));
+
+  // Determine the server to add to the config.
+  unordered_set<string> active;
+  for (itest::TabletReplicaMap::const_iterator iter = tablet_replicas_.find(tablet_id);
+       iter != tablet_replicas_.end(); ++iter) {
+    InsertOrDie(&active, iter->second->uuid());
+  }
+  string uuid_to_add;
+  BOOST_FOREACH(const TabletServerMap::value_type& entry, tablet_servers_) {
+    if (!ContainsKey(active, entry.second->uuid())) {
+      uuid_to_add = entry.second->uuid();
+    }
+  }
+  ASSERT_FALSE(uuid_to_add.empty());
+
+  // Get a baseline config reported to the master.
+  LOG(INFO) << "Waiting for Master to see the current replicas...";
+  master::TabletLocationsPB tablet_locations;
+  bool has_leader;
+  NO_FATALS(WaitForReplicasReportedToMaster(2, tablet_id, timeout, WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
+  LOG(INFO) << "Tablet locations:\n" << tablet_locations.DebugString();
+
+  // Change the config.
+  TServerDetails* tserver_to_add = tablet_servers_[uuid_to_add];
+  LOG(INFO) << "Adding tserver with uuid " << tserver_to_add->uuid();
+  ASSERT_OK(AddServer(leader_ts, tablet_id_, tserver_to_add, RaftPeerPB::VOTER, timeout));
+  ASSERT_OK(WaitForServersToAgree(timeout, tablet_servers_, tablet_id_, 2));
+
+  // Wait for the master to be notified of the config change.
+  // It should continue to have the same leader, even without waiting.
+  LOG(INFO) << "Waiting for Master to see config change...";
+  NO_FATALS(WaitForReplicasReportedToMaster(3, tablet_id, timeout, NO_WAIT_FOR_LEADER,
+                                            &has_leader, &tablet_locations));
+  ASSERT_TRUE(has_leader) << tablet_locations.DebugString();
+  LOG(INFO) << "Tablet locations:\n" << tablet_locations.DebugString();
 }
 
 // Test that even with memory pressure, a replica will still commit pending

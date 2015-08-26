@@ -411,7 +411,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // Starts an external cluster with a single tablet and a number of replicas equal
   // to 'FLAGS_num_replicas'. The caller can pass 'ts_flags' to specify non-default
   // flags to pass to the tablet servers.
-  void BuildAndStart(const vector<string>& ts_flags,
+  void BuildAndStart(const vector<string>& ts_flags = vector<string>(),
                      const vector<string>& master_flags = vector<string>()) {
     CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
     CreateClient(&client_);

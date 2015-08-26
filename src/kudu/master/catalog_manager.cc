@@ -1391,7 +1391,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     }
 
     const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.committed_consensus_state();
-    const ConsensusStatePB& cstate = report.committed_consensus_state();
+    ConsensusStatePB cstate = report.committed_consensus_state();
     // The Master only accepts committed consensus configurations since it needs the committed index
     // to only cache the most up-to-date config.
     if (PREDICT_FALSE(!cstate.config().has_opid_index())) {
@@ -1399,9 +1399,33 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       return Status::InvalidArgument("Missing opid_index in reported config");
     }
 
+    bool modified_cstate = false;
     if (cstate.config().opid_index() > prev_cstate.config().opid_index() ||
         (cstate.has_leader_uuid() &&
-        (!prev_cstate.has_leader_uuid() || cstate.current_term() > prev_cstate.current_term()))) {
+         (!prev_cstate.has_leader_uuid() || cstate.current_term() > prev_cstate.current_term()))) {
+
+      // When a config change is reported to the master, it may not include the
+      // leader because the follower doing the reporting may not know who the
+      // leader is yet (it may have just started up). If the reported config
+      // has the same term as the previous config, and the leader was
+      // previously known for the current term, then retain knowledge of that
+      // leader even if it wasn't reported in the latest config.
+      if (cstate.current_term() == prev_cstate.current_term()) {
+        if (!cstate.has_leader_uuid() && prev_cstate.has_leader_uuid()) {
+          cstate.set_leader_uuid(prev_cstate.leader_uuid());
+          modified_cstate = true;
+        // Sanity check to detect consensus divergence bugs.
+        } else if (cstate.has_leader_uuid() && prev_cstate.has_leader_uuid() &&
+                   cstate.leader_uuid() != prev_cstate.leader_uuid()) {
+          string msg = Substitute("Previously reported cstate for tablet $0 gave "
+                                  "a different leader for term $1 than the current cstate. "
+                                  "Previous cstate: $2. Current cstate: $3.",
+                                  tablet->ToString(), cstate.current_term(),
+                                  prev_cstate.ShortDebugString(), cstate.ShortDebugString());
+          LOG(DFATAL) << msg;
+          return Status::InvalidArgument(msg);
+        }
+      }
 
       // If a replica is reporting a new consensus configuration, reset the tablet's replicas.
       // Note that we leave out replicas who live in tablet servers who have not heartbeated to
@@ -1409,15 +1433,26 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       LOG(INFO) << "Tablet: " << tablet->tablet_id() << " reported consensus state change."
                 << " New consensus state: " << cstate.ShortDebugString();
 
-      VLOG(2) << "Resetting replicas for tablet " << report.tablet_id()
+      // If we need to change the report, copy the whole thing on the stack
+      // rather than const-casting.
+      const ReportedTabletPB* final_report = &report;
+      ReportedTabletPB updated_report;
+      if (modified_cstate) {
+        updated_report = report;
+        *updated_report.mutable_committed_consensus_state() = cstate;
+        final_report = &updated_report;
+      }
+
+      VLOG(2) << "Resetting replicas for tablet " << final_report->tablet_id()
               << " from config reported by " << ts_desc->permanent_uuid()
               << " to that committed in log index "
-              << report.committed_consensus_state().config().opid_index()
+              << final_report->committed_consensus_state().config().opid_index()
               << " with leader state from term "
-              << report.committed_consensus_state().current_term();
+              << final_report->committed_consensus_state().current_term();
 
       *tablet_lock.mutable_data()->pb.mutable_committed_consensus_state() = cstate;
-      ResetTabletReplicasFromReportedConfig(ts_desc, report, tablet, &tablet_lock);
+      ResetTabletReplicasFromReportedConfig(ts_desc, *final_report, tablet, &tablet_lock);
+
     } else {
       // Report opid_index is equal to the previous opid_index. If some
       // replica is reporting the same consensus configuration we already know about and hasn't
