@@ -164,10 +164,10 @@ class FullStackInsertScanTest : public KuduTest {
 
   // Adds newly generated client's session and table pointers to arrays at id
   void CreateNewClient(int id) {
-    CHECK_OK(client_->OpenTable(kTableName, &tables_[id]));
+    ASSERT_OK(client_->OpenTable(kTableName, &tables_[id]));
     shared_ptr<KuduSession> session = client_->NewSession();
     session->SetTimeoutMillis(kSessionTimeoutMs);
-    CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     sessions_[id] = session;
   }
 
@@ -227,9 +227,9 @@ gscoped_ptr<Subprocess> MakePerfRecord() {
 
 void InterruptNotNull(gscoped_ptr<Subprocess> sub) {
   if (!sub) return;
-  CHECK_OK(sub->Kill(SIGINT));
+  ASSERT_OK(sub->Kill(SIGINT));
   int exit_status = 0;
-  CHECK_OK(sub->Wait(&exit_status));
+  ASSERT_OK(sub->Wait(&exit_status));
   if (!exit_status) {
     LOG(WARNING) << "Subprocess returned " << exit_status
                  << ": " << ErrnoToString(exit_status);
@@ -262,23 +262,23 @@ const char* const FullStackInsertScanTest::kTableName = "full-stack-mrs-test-tbl
 
 TEST_F(FullStackInsertScanTest, MRSOnlyStressTest) {
   FLAGS_enable_maintenance_manager = false;
-  CreateTable();
-  DoConcurrentClientInserts();
-  DoTestScans();
+  NO_FATALS(CreateTable());
+  NO_FATALS(DoConcurrentClientInserts());
+  NO_FATALS(DoTestScans());
 }
 
 TEST_F(FullStackInsertScanTest, WithDiskStressTest) {
-  CreateTable();
-  DoConcurrentClientInserts();
-  FlushToDisk();
-  DoTestScans();
+  NO_FATALS(CreateTable());
+  NO_FATALS(DoConcurrentClientInserts());
+  NO_FATALS(FlushToDisk());
+  NO_FATALS(DoTestScans());
 }
 
 void FullStackInsertScanTest::DoConcurrentClientInserts() {
   vector<scoped_refptr<Thread> > threads(kNumInsertClients);
   CountDownLatch start_latch(kNumInsertClients + 1);
   for (int i = 0; i < kNumInsertClients; ++i) {
-    CreateNewClient(i);
+    NO_FATALS(CreateNewClient(i));
     ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
                              StrCat(CURRENT_TEST_CASE_NAME(), "-id", i),
                              &FullStackInsertScanTest::InsertRows, this,
@@ -305,15 +305,15 @@ void FullStackInsertScanTest::DoTestScans() {
   if (stat) stat->Start();
   if (record) record->Start();
 
-  ScanProjection(vector<string>(), "empty projection, 0 col");
-  ScanProjection(list_of<string>("key"), "key scan, 1 col");
-  ScanProjection(AllColumnNames(), "full schema scan, 10 col");
-  ScanProjection(StringColumnNames(), "String projection, 1 col");
-  ScanProjection(Int32ColumnNames(), "Int32 projection, 4 col");
-  ScanProjection(Int64ColumnNames(), "Int64 projection, 4 col");
+  NO_FATALS(ScanProjection(vector<string>(), "empty projection, 0 col"));
+  NO_FATALS(ScanProjection(list_of<string>("key"), "key scan, 1 col"));
+  NO_FATALS(ScanProjection(AllColumnNames(), "full schema scan, 10 col"));
+  NO_FATALS(ScanProjection(StringColumnNames(), "String projection, 1 col"));
+  NO_FATALS(ScanProjection(Int32ColumnNames(), "Int32 projection, 4 col"));
+  NO_FATALS(ScanProjection(Int64ColumnNames(), "Int64 projection, 4 col"));
 
-  InterruptNotNull(record.Pass());
-  InterruptNotNull(stat.Pass());
+  NO_FATALS(InterruptNotNull(record.Pass()));
+  NO_FATALS(InterruptNotNull(stat.Pass()));
 }
 
 void FullStackInsertScanTest::FlushToDisk() {
@@ -326,9 +326,9 @@ void FullStackInsertScanTest::FlushToDisk() {
     BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers) {
       Tablet* tablet = peer->tablet();
       if (!tablet->MemRowSetEmpty()) {
-        CHECK_OK(tablet->Flush());
+        ASSERT_OK(tablet->Flush());
       }
-      CHECK_OK(tablet->Compact(Tablet::FORCE_COMPACT_ALL));
+      ASSERT_OK(tablet->Compact(Tablet::FORCE_COMPACT_ALL));
     }
   }
 }
@@ -384,12 +384,12 @@ void FullStackInsertScanTest::ScanProjection(const vector<string>& cols,
   {
     // Warmup codegen cache
     KuduScanner scanner(reader_table_.get());
-    CHECK_OK(scanner.SetProjectedColumns(cols));
-    CHECK_OK(scanner.Open());
+    ASSERT_OK(scanner.SetProjectedColumns(cols));
+    ASSERT_OK(scanner.Open());
     codegen::CompilationManager::GetSingleton()->Wait();
   }
   KuduScanner scanner(reader_table_.get());
-  CHECK_OK(scanner.SetProjectedColumns(cols));
+  ASSERT_OK(scanner.SetProjectedColumns(cols));
   uint64_t nrows = 0;
   LOG_TIMING(INFO, msg) {
     ASSERT_OK(scanner.Open());
