@@ -189,13 +189,20 @@ Status SysCatalogTable::SetupDistributedConfig(const MasterOptions& options,
   return Status::OK();
 }
 
-void SysCatalogTable::SysCatalogStateChanged(const std::string& tablet_id) {
-  CHECK_EQ(tablet_peer_->tablet_id(), tablet_id);
-  RaftConfigPB config = tablet_peer_->consensus()->CommittedConfig();
-  LOG_WITH_PREFIX(INFO) << " SysCatalogTable state changed. New config config:"
-                        << config.ShortDebugString();
-  RaftPeerPB::Role new_role = tablet_peer_->consensus()->role();
-  LOG_WITH_PREFIX(INFO) << " This master's current role is: "
+void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const string& reason) {
+  CHECK_EQ(tablet_id, tablet_peer_->tablet_id());
+  scoped_refptr<consensus::Consensus> consensus  = tablet_peer_->shared_consensus();
+  if (!consensus) {
+    LOG_WITH_PREFIX(WARNING) << "Received notification of tablet state change "
+                             << "but tablet no longer running. Tablet ID: "
+                             << tablet_id << ". Reason: " << reason;
+    return;
+  }
+  consensus::ConsensusStatePB cstate = consensus->CommittedConsensusState();
+  LOG_WITH_PREFIX(INFO) << "SysCatalogTable state changed. Reason: " << reason << ". "
+                        << "Latest consensus state: " << cstate.ShortDebugString();
+  RaftPeerPB::Role new_role = GetConsensusRole(tablet_peer_->permanent_uuid(), cstate);
+  LOG_WITH_PREFIX(INFO) << "This master's current role is: "
                         << RaftPeerPB::Role_Name(new_role)
                         << ", previous role was: " << RaftPeerPB::Role_Name(old_role_);
   if (new_role == RaftPeerPB::LEADER) {
@@ -252,7 +259,7 @@ Status SysCatalogTable::SetupTablet(const scoped_refptr<tablet::TabletMetadata>&
 std::string SysCatalogTable::LogPrefix() const {
   return Substitute("T $0 P $1 [$2]: ",
                     tablet_peer_->tablet_id(),
-                    tablet_peer_->consensus()->peer_uuid(),
+                    tablet_peer_->permanent_uuid(),
                     table_name());
 }
 

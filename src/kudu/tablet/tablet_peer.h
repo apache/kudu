@@ -56,7 +56,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   TabletPeer(const scoped_refptr<TabletMetadata>& meta,
              const consensus::RaftPeerPB& local_peer_pb,
              ThreadPool* apply_pool,
-             const Closure& mark_dirty_clbk);
+             const Callback<void(const std::string& reason)>& mark_dirty_clbk);
 
   // Initializes the TabletPeer, namely creating the Log and initializing
   // Consensus.
@@ -291,7 +291,7 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
   // Function to mark this TabletPeer's tablet as dirty in the TSTabletManager.
   // This function must be called any time the cluster membership or cluster
   // leadership changes.
-  Closure mark_dirty_clbk_;
+  Callback<void(const std::string& reason)> mark_dirty_clbk_;
 
   // List of maintenance operations for the tablet that need information that only the peer
   // can provide.

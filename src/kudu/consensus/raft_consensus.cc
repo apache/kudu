@@ -91,7 +91,7 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
     const shared_ptr<rpc::Messenger>& messenger,
     const scoped_refptr<log::Log>& log,
     const shared_ptr<MemTracker>& parent_mem_tracker,
-    const Closure& mark_dirty_clbk) {
+    const Callback<void(const std::string& reason)>& mark_dirty_clbk) {
   gscoped_ptr<PeerProxyFactory> rpc_factory(new RpcPeerProxyFactory(messenger));
 
   // The message queue that keeps track of which operations need to be replicated
@@ -146,7 +146,7 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
                              ReplicaTransactionFactory* txn_factory,
                              const scoped_refptr<log::Log>& log,
                              const shared_ptr<MemTracker>& parent_mem_tracker,
-                             const Closure& mark_dirty_clbk)
+                             const Callback<void(const std::string& reason)>& mark_dirty_clbk)
     : thread_pool_(thread_pool.Pass()),
       log_(log),
       clock_(clock),
@@ -247,7 +247,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
   RETURN_NOT_OK(ExecuteHook(POST_START));
 
   // Report become visible to the Master.
-  MarkDirty();
+  MarkDirty("RaftConsensus started");
 
   return Status::OK();
 }
@@ -1219,6 +1219,7 @@ Status RaftConsensus::ChangeConfig(ChangeConfigType type,
     RETURN_NOT_OK(ReplicateConfigChangeUnlocked(committed_config, new_config,
                                                 Bind(&RaftConsensus::MarkDirtyOnSuccess,
                                                      Unretained(this),
+                                                     string("Config change replication complete"),
                                                      client_cb)));
   }
   peer_manager_->SignalRequest();
@@ -1291,6 +1292,7 @@ Status RaftConsensus::StartConsensusOnlyRoundUnlocked(const ReplicateRefPtr& msg
                                              Unretained(round.get()),
                                              Bind(&RaftConsensus::MarkDirtyOnSuccess,
                                                   Unretained(this),
+                                                  string("Replicated consensus-only round"),
                                                   Bind(&DoNothingStatusCB))));
   return state_->AddPendingOperation(round);
 }
@@ -1421,7 +1423,7 @@ std::string RaftConsensus::LogPrefix() {
 
 void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
   state_->SetLeaderUuidUnlocked(uuid);
-  MarkDirty();
+  MarkDirty("New leader " + uuid);
 }
 
 Status RaftConsensus::ReplicateConfigChangeUnlocked(const RaftConfigPB& old_config,
@@ -1593,14 +1595,16 @@ Status RaftConsensus::GetLastReceivedOpId(OpId* id) {
   return Status::OK();
 }
 
-void RaftConsensus::MarkDirty() {
-  WARN_NOT_OK(thread_pool_->SubmitClosure(mark_dirty_clbk_),
+void RaftConsensus::MarkDirty(const std::string& reason) {
+  WARN_NOT_OK(thread_pool_->SubmitClosure(Bind(mark_dirty_clbk_, reason)),
               state_->LogPrefixThreadSafe() + "Unable to run MarkDirty callback");
 }
 
-void RaftConsensus::MarkDirtyOnSuccess(const StatusCallback& client_cb, const Status& status) {
+void RaftConsensus::MarkDirtyOnSuccess(const string& reason,
+                                       const StatusCallback& client_cb,
+                                       const Status& status) {
   if (PREDICT_TRUE(status.ok())) {
-    MarkDirty();
+    MarkDirty(reason);
   }
   client_cb.Run(status);
 }

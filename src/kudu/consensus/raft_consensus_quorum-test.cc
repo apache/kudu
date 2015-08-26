@@ -57,7 +57,7 @@ using strings::SubstituteAndAppend;
 
 const char* kTestTablet = "TestTablet";
 
-void DoNothing() {
+void DoNothing(const string& s) {
 }
 
 Status WaitUntilLeaderForTests(RaftConsensus* raft) {

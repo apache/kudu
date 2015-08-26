@@ -85,7 +85,7 @@ using tserver::TabletServerErrorPB;
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
                        const consensus::RaftPeerPB& local_peer_pb,
                        ThreadPool* apply_pool,
-                       const Closure& mark_dirty_clbk)
+                       const Callback<void(const std::string& reason)>& mark_dirty_clbk)
   : meta_(meta),
     tablet_id_(meta->tablet_id()),
     local_peer_pb_(local_peer_pb),
@@ -187,7 +187,7 @@ Status TabletPeer::Start(const ConsensusBootstrapInfo& bootstrap_info) {
   }
 
   // Because we changed the tablet state, we need to re-report the tablet to the master.
-  mark_dirty_clbk_.Run();
+  mark_dirty_clbk_.Run("Started TabletPeer");
 
   return Status::OK();
 }

@@ -52,6 +52,7 @@ using log::LogAnchorRegistry;
 using rpc::Messenger;
 using server::Clock;
 using server::LogicalClock;
+using std::string;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 using tserver::WriteRequestPB;
@@ -127,8 +128,8 @@ class TabletPeerTest : public KuduTabletTest {
     return Status::OK();
   }
 
-  void TabletPeerStateChangedCallback(const std::string& tablet_id) {
-    LOG(INFO) << "Tablet peer state changed for tablet " << tablet_id;
+  void TabletPeerStateChangedCallback(const string& tablet_id, const string& reason) {
+    LOG(INFO) << "Tablet peer state changed for tablet " << tablet_id << ". Reason: " << reason;
   }
 
   virtual void TearDown() OVERRIDE {

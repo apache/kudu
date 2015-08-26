@@ -686,9 +686,9 @@ void TSTabletManager::GetTabletPeers(vector<scoped_refptr<TabletPeer> >* tablet_
   AppendValuesFromMap(tablet_map_, tablet_peers);
 }
 
-void TSTabletManager::MarkTabletDirty(const std::string& tablet_id) {
+void TSTabletManager::MarkTabletDirty(const std::string& tablet_id, const std::string& reason) {
   boost::lock_guard<rw_spinlock> lock(lock_);
-  MarkDirtyUnlocked(tablet_id);
+  MarkDirtyUnlocked(tablet_id, reason);
 }
 
 int TSTabletManager::GetNumDirtyTabletsForTests() const {
@@ -696,7 +696,7 @@ int TSTabletManager::GetNumDirtyTabletsForTests() const {
   return dirty_tablets_.size();
 }
 
-void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
+void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id, const std::string& reason) {
   TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
   if (state != NULL) {
     CHECK_GE(next_report_seq_, state->change_seq);
@@ -704,10 +704,11 @@ void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id) {
   } else {
     TabletReportState state;
     state.change_seq = next_report_seq_;
-
     InsertOrDie(&dirty_tablets_, tablet_id, state);
   }
-  VLOG(2) << "Will report tablet " << tablet_id << " in report #" << next_report_seq_;
+  VLOG(2) << LogPrefix(tablet_id) << "Marking dirty. Reason: " << reason
+          << ". Will report this tablet to the Master in the next heartbeat "
+          << "as part of report #" << next_report_seq_;
   server_->heartbeater()->TriggerASAP();
 }
 
@@ -730,15 +731,12 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
     AppStatusPB* error_status = reported_tablet->mutable_error();
     StatusToPB(tablet_peer->error(), error_status);
   }
+  reported_tablet->set_schema_version(tablet_peer->tablet_metadata()->schema_version());
 
-  // We cannot get consensus state information until after Consensus is initialized.
-  if (tablet_peer->consensus()) {
-    *reported_tablet->mutable_committed_consensus_state() =
-        tablet_peer->consensus()->CommittedConsensusState();
-  }
-
-  if (tablet_peer->tablet() != NULL) {
-    reported_tablet->set_schema_version(tablet_peer->tablet()->metadata()->schema_version());
+  // We cannot get consensus state information unless the TabletPeer is running.
+  scoped_refptr<consensus::Consensus> consensus = tablet_peer->shared_consensus();
+  if (consensus) {
+    *reported_tablet->mutable_committed_consensus_state() = consensus->CommittedConsensusState();
   }
 }
 

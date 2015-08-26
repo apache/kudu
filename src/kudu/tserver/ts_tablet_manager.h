@@ -147,7 +147,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Marks tablet with 'tablet_id' dirty.
   // Used for state changes outside of the control of TsTabletManager, such as consensus role
   // changes.
-  void MarkTabletDirty(const std::string& tablet_id);
+  void MarkTabletDirty(const std::string& tablet_id, const std::string& reason);
 
   // Returns the number of tablets in the "dirty" map, for use by unit tests.
   int GetNumDirtyTabletsForTests() const;
@@ -228,7 +228,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // account in the next report.
   //
   // NOTE: requires that the caller holds the lock.
-  void MarkDirtyUnlocked(const std::string& tablet_id);
+  void MarkDirtyUnlocked(const std::string& tablet_id, const std::string& reason);
 
   // Handle the case on startup where we find a tablet that is not in
   // TABLET_DATA_READY state. Generally, we tombstone the replica.

@@ -32,6 +32,7 @@ METRIC_DECLARE_entity(tablet);
 namespace kudu {
 namespace tserver {
 
+using std::string;
 using consensus::ConsensusMetadata;
 using consensus::OpId;
 using consensus::RaftConfigPB;
@@ -124,9 +125,8 @@ class RemoteBootstrapTest : public KuduTabletTest {
     ASSERT_OK(tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(2)));
   }
 
-
-  void TabletPeerStateChangedCallback(const std::string& tablet_id) {
-    LOG(INFO) << "Tablet peer state changed on tablet " << tablet_id;
+  void TabletPeerStateChangedCallback(const string& tablet_id, const string& reason) {
+    LOG(INFO) << "Tablet peer state changed for tablet " << tablet_id << ". Reason: " << reason;
   }
 
   void PopulateTablet() {
