@@ -18,6 +18,8 @@
 
 using strings::Substitute;
 
+DECLARE_bool(rpc_server_allow_ephemeral_ports);
+
 namespace kudu {
 namespace master {
 
@@ -34,6 +36,7 @@ MiniMaster::~MiniMaster() {
 
 Status MiniMaster::Start() {
   CHECK(!running_);
+  FLAGS_rpc_server_allow_ephemeral_ports = true;
   RETURN_NOT_OK(StartOnPorts(rpc_port_, 0));
   return master_->WaitForCatalogManagerInit();
 }

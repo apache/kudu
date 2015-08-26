@@ -16,6 +16,7 @@
 #include "kudu/rpc/service_if.h"
 #include "kudu/rpc/service_pool.h"
 #include "kudu/server/rpc_server.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -28,14 +29,20 @@ using kudu::rpc::Messenger;
 using kudu::rpc::ServiceIf;
 using strings::Substitute;
 
-DEFINE_string(rpc_bind_addresses, "0.0.0.0:0",
-              "Comma-separated list of addresses to bind to for RPC connections");
+DEFINE_string(rpc_bind_addresses, "0.0.0.0",
+              "Comma-separated list of addresses to bind to for RPC connections. "
+              "Currently, ephemeral ports (i.e. port 0) are not allowed.");
 DEFINE_int32(rpc_num_acceptors_per_address, 1,
              "Number of RPC acceptor threads for each bound address");
 DEFINE_int32(rpc_num_service_threads, 10,
              "Number of RPC worker threads to run");
 DEFINE_int32(rpc_service_queue_length, 50,
              "Default length of queue for incoming RPC requests");
+
+DEFINE_bool(rpc_server_allow_ephemeral_ports, false,
+            "Allow binding to ephemeral ports. This can cause problems, so currently "
+            "only allowed in tests.");
+TAG_FLAG(rpc_server_allow_ephemeral_ports, unsafe);
 
 namespace kudu {
 
@@ -72,6 +79,14 @@ Status RpcServer::Init(const std::tr1::shared_ptr<Messenger>& messenger) {
     if (IsPrivilegedPort(addr.port())) {
       LOG(WARNING) << "May be unable to bind to privileged port for address "
                    << addr.ToString();
+    }
+
+    // Currently, we can't support binding to ephemeral ports outside of
+    // unit tests, because consensus caches RPC ports of other servers
+    // across restarts. See KUDU-334.
+    if (addr.port() == 0 && !FLAGS_rpc_server_allow_ephemeral_ports) {
+      LOG(FATAL) << "Binding to ephemeral ports not supported (RPC address "
+                 << "configured to " << addr.ToString() << ")";
     }
   }
 

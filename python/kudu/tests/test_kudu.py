@@ -35,6 +35,7 @@ class KuduBasicsBase(object):
         os.makedirs("{0}/master/logs".format(local_path))
 
         path = ["{0}/kudu-master".format(bin_path),
+                "-rpc_server_allow_ephemeral_ports",
                 "-rpc_bind_addresses=0.0.0.0:0",
                 "-fs_wal_dir={0}/master/data".format(local_path),
                 "-fs_data_dirs={0}/master/data".format(local_path),
@@ -68,6 +69,7 @@ class KuduBasicsBase(object):
             os.makedirs("{0}/ts/{1}/logs".format(local_path, m))
 
             path = ["{0}/kudu-tserver".format(bin_path),
+                    "-rpc_server_allow_ephemeral_ports",
                     "-rpc_bind_addresses=0.0.0.0:0",
                     "-tserver_master_addrs=127.0.0.1:{0}".format(master_port),
                     "-webserver_port=0",

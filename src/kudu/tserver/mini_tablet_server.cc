@@ -35,6 +35,8 @@ using kudu::log::Log;
 using kudu::log::LogOptions;
 using strings::Substitute;
 
+DECLARE_bool(rpc_server_allow_ephemeral_ports);
+
 namespace kudu {
 namespace tserver {
 
@@ -43,6 +45,7 @@ MiniTabletServer::MiniTabletServer(const string& fs_root,
   : started_(false) {
 
   // Start RPC server on loopback.
+  FLAGS_rpc_server_allow_ephemeral_ports = true;
   opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
   opts_.webserver_opts.port = 0;
   opts_.fs_opts.wal_path = fs_root;

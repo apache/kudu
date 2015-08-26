@@ -508,6 +508,10 @@ Status ExternalDaemon::StartProcess(const vector<string>& user_flags) {
   argv.push_back("--server_dump_info_path=" + info_path);
   argv.push_back("--server_dump_info_format=pb");
 
+  // We use ephemeral ports in many tests. They don't work for production, but are OK
+  // in unit tests.
+  argv.push_back("--rpc_server_allow_ephemeral_ports");
+
   // A previous instance of the daemon may have run in the same directory. So, remove
   // the previous info file if it's there.
   ignore_result(Env::Default()->DeleteFile(info_path));
