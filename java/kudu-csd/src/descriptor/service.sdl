@@ -30,6 +30,25 @@
     "requiredTags" : [ "kudu" ]
   },
   "icon" : "images/icon.png",
+  "parameters" : [
+    {
+      "name" : "enable_core_dump",
+      "label" : "Enable Core Dump",
+      "description" : "Used to generate a core dump to get more information about a Kudu crash. Unless otherwise configured systemwide using /proc/sys/kernel/core_pattern, the dump is generated in the configured core dump directory. The core file can be very large.",
+      "type" : "boolean",
+      "required" : "true",
+      "default" : "false"
+    },
+    {
+      "name" : "core_dump_directory",
+      "label" : "Core Dump Directory",
+      "description" : "If Enable Core Dump is set, Kudu processes will dump cores to this location.",
+      "type" : "path",
+      "pathType" : "serviceSpecific",
+      "required" : "true",
+      "default" : "/var/log/kudu"
+    }
+  ],
   "roles" : [
     {
       "name" : "KUDU_MASTER",
@@ -39,7 +58,11 @@
         "program" : "scripts/kudu.sh",
         "args" : [
           "master"
-        ]
+        ],
+        "environmentVariables" : {
+          "ENABLE_CORE_DUMP" : "${enable_core_dump}",
+          "CORE_DUMP_DIRECTORY" : "${core_dump_directory}"
+        }
       },
       "logging" : {
         "dir" : "/var/log/kudu",
@@ -112,7 +135,9 @@
             "filename" : "gflagfile",
             "configFormat" : "gflags",
             "excludedParams" : [
-              "master_address"
+              "master_address",
+              "enable_core_dump",
+              "core_dump_directory"
             ]
           },
           {
@@ -141,7 +166,11 @@
         "program" : "scripts/kudu.sh",
         "args" : [
           "tserver"
-        ]
+        ],
+        "environmentVariables" : {
+          "ENABLE_CORE_DUMP" : "${enable_core_dump}",
+          "CORE_DUMP_DIRECTORY" : "${core_dump_directory}"
+        }
       },
       "logging" : {
         "dir" : "/var/log/kudu",
@@ -193,7 +222,11 @@
         "generators" : [
           {
             "filename" : "gflagfile",
-            "configFormat" : "gflags"
+            "configFormat" : "gflags",
+            "excludedParams" : [
+              "enable_core_dump",
+              "core_dump_directory"
+            ]
           },
           {
             "filename" : "kudu-monitoring.properties",

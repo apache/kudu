@@ -83,6 +83,28 @@ do
 done
 log "Found master(s) on $MASTER_IPS"
 
+# Enable core dumping if requested.
+if [ "$ENABLE_CORE_DUMP" == "true" ]; then
+  # The core dump directory should already exist.
+  if [ -z "$CORE_DUMP_DIRECTORY" -o ! -d "$CORE_DUMP_DIRECTORY" ]; then
+    log "Could not find core dump directory $CORE_DUMP_DIRECTORY, exiting"
+    exit 1
+  fi
+  # It should also be writable.
+  if [ ! -w "$CORE_DUMP_DIRECTORY" ]; then
+    log "Core dump directory $CORE_DUMP_DIRECTORY is not writable, exiting"
+    exit 1
+  fi
+
+  ulimit -c unlimited
+  cd "$CORE_DUMP_DIRECTORY"
+  STATUS=$?
+  if [ $STATUS != 0 ]; then
+    log "Could not change to core dump directory to $CORE_DUMP_DIRECTORY, exiting"
+    exit $STATUS
+  fi
+fi
+
 if [ "$CMD" = "master" ]; then
   # Only pass --master_addresses if there's more than one master.
   #
