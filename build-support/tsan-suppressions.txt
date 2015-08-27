@@ -8,6 +8,7 @@ race:kudu::tablet::ScopedRowLock::Release
 # libstdc++ with TSAN, we just suppress them here.
 race:~basic_string
 race:std::tr1::_Sp_counted_base
+race:std::string::_Rep::_M_is_shared
 race:std::string::_Rep::_M_refcopy
 race:std::string::_Rep::_M_grab
 race:std::string::_Rep::_M_dispose

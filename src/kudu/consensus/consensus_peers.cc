@@ -168,9 +168,9 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
   if (PREDICT_FALSE(needs_remote_bootstrap)) {
     Status s = SendRemoteBootstrapRequest();
     if (!s.ok()) {
-      sem_.Release();
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Unable to generate remote bootstrap request for peer: "
                                         << s.ToString();
+      sem_.Release();
     }
     return;
   }

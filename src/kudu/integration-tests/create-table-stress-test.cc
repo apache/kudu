@@ -40,7 +40,8 @@ using kudu::rpc::RpcController;
 
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(log_preallocate_segments);
-DEFINE_int32(num_test_tablets, 100, "Number of tablets for stress test");
+DECLARE_bool(enable_remote_bootstrap);
+DEFINE_int32(num_test_tablets, 60, "Number of tablets for stress test");
 
 namespace kudu {
 
@@ -69,8 +70,14 @@ class CreateTableStressTest : public KuduTest {
     // this won't be necessary.
     FLAGS_log_preallocate_segments = false;
 
+    // Workaround KUDU-941: without this, it's likely that while shutting
+    // down tablets, they'll get resuscitated by their existing leaders.
+    FLAGS_enable_remote_bootstrap = false;
+
     KuduTest::SetUp();
-    cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
+    MiniClusterOptions opts;
+    opts.num_tablet_servers = 3;
+    cluster_.reset(new MiniCluster(env_.get(), opts));
     ASSERT_OK(cluster_->Start());
 
     ASSERT_OK(KuduClientBuilder()
@@ -116,6 +123,7 @@ void CreateTableStressTest::CreateBigTable(const string& table_name, int num_tab
   ASSERT_OK(table_creator->table_name(table_name)
             .schema(&schema_)
             .split_rows(split_rows)
+            .num_replicas(3)
             .wait(false)
             .Create());
 }

@@ -37,6 +37,7 @@
 #include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/crc.h"
+#include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
@@ -358,6 +359,13 @@ Status WritablePBContainerFile::AppendMsgToBuffer(const Message& msg, faststring
 
 void WritablePBContainerFile::PopulateDescriptorSet(
     const FileDescriptor* desc, FileDescriptorSet* output) {
+  // Because we don't compile protobuf with TSAN enabled, copying the
+  // static PB descriptors in this function ends up triggering a lot of
+  // race reports. We suppress the reports, but TSAN still has to walk
+  // the stack, etc, and this function becomes very slow. So, we ignore
+  // TSAN here.
+  debug::ScopedTSANIgnoreReadsAndWrites ignore_tsan;
+
   FileDescriptorSet all_descs;
 
   // Tracks all schemas that have been added to 'unemitted' at one point
