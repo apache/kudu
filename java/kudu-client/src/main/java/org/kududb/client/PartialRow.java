@@ -496,12 +496,12 @@ public class PartialRow {
           break;
         }
         case INT32: {
-          short val = Bytes.getShort(this.rowAlloc, this.schema.getColumnOffset(idx));
+          int val = Bytes.getInt(this.rowAlloc, this.schema.getColumnOffset(idx));
           builder.addColumnsBuilder().setIndex(idx).setInt32Val(val);
           break;
         }
         case INT64: {
-          short val = Bytes.getShort(this.rowAlloc, this.schema.getColumnOffset(idx));
+          long val = Bytes.getLong(this.rowAlloc, this.schema.getColumnOffset(idx));
           builder.addColumnsBuilder().setIndex(idx).setInt64Val(val);
           break;
         }

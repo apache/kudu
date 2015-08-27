@@ -38,8 +38,8 @@ public class TestPartialRow {
 
     row.addByte("int8", (byte) 1);
     row.addShort("int16", (short) 2);
-    row.addInt("int32", 3);
-    row.addLong("int64", 4l);
+    row.addInt("int32", 123456789);
+    row.addLong("int64", 1234567890123L);
     row.addBoolean("bool", true);
     row.addFloat("float", 5.6f);
     row.addDouble("double", 7.8);
@@ -55,10 +55,10 @@ public class TestPartialRow {
     assertEquals((short) 2, pb.getColumns(1).getInt16Val());
     assertEquals(1, pb.getColumns(1).getIndex());
 
-    assertEquals(3, pb.getColumns(2).getInt32Val());
+    assertEquals(123456789, pb.getColumns(2).getInt32Val());
     assertEquals(2, pb.getColumns(2).getIndex());
 
-    assertEquals(4, pb.getColumns(3).getInt64Val());
+    assertEquals(1234567890123L, pb.getColumns(3).getInt64Val());
     assertEquals(3, pb.getColumns(3).getIndex());
 
     assertEquals(true, pb.getColumns(4).getBoolVal());
