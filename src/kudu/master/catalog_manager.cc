@@ -65,25 +65,35 @@
 #include "kudu/cfile/type_encodings.h"
 
 DEFINE_int32(async_rpc_timeout_ms, 10 * 1000, // 10 sec
-             "Timeout used for the Master->TS async rpc calls. "
-             "(Advanced option)");
+             "Timeout used for the Master->TS async rpc calls.");
+TAG_FLAG(async_rpc_timeout_ms, advanced);
+
 DEFINE_int32(assignment_timeout_ms, 10 * 1000, // 10 sec
-             "Timeout used for Master->TS assignment requests. "
-             "(Advanced option)");
-DEFINE_int32(unresponsive_ts_rpc_timeout_ms, 30 * 1000, // 30 sec
-             "(Advanced option)");
+             "Timeout used for Master->TS assignment requests.");
+TAG_FLAG(assignment_timeout_ms, advanced);
+
+DEFINE_int32(unresponsive_ts_rpc_timeout_ms, 60 * 60 * 1000, // 1 hour
+             "After this amount of time, the master will stop attempting to contact "
+             "a tablet server in order to perform operations such as deleting a tablet.");
+TAG_FLAG(unresponsive_ts_rpc_timeout_ms, advanced);
+
 DEFINE_int32(default_num_replicas, 1, // TODO switch to 3 and fix SelectReplicas()
-             "Default number of replicas for tables that do have the num_replicas set. "
-             "(Advanced option)");
+             "Default number of replicas for tables that do have the num_replicas set.");
+TAG_FLAG(default_num_replicas, advanced);
+
 DEFINE_int32(catalog_manager_bg_task_wait_ms, 1000,
              "Amount of time the catalog manager background task thread waits "
              "between runs");
+TAG_FLAG(catalog_manager_bg_task_wait_ms, hidden);
+
 DEFINE_int32(max_create_tablets_per_ts, 20,
-             "The number of tablets per TS that can be requested for a new table. "
-             "(Advanced option)");
+             "The number of tablets per TS that can be requested for a new table.");
+TAG_FLAG(max_create_tablets_per_ts, advanced);
+
 DEFINE_bool(catalog_manager_allow_local_consensus, true,
             "Use local consensus when config size == 1");
-// TODO: Abdicate on timeout.
+TAG_FLAG(catalog_manager_allow_local_consensus, hidden);
+
 DEFINE_int32(master_failover_catchup_timeout_ms, 30 * 1000, // 30 sec
              "Amount of time to give a newly-elected leader master to load"
              " the previous master's metadata and become active. If this time"
@@ -1691,7 +1701,12 @@ class RetryingTSRpcTask : public MonitoredTask {
       // fail if we have less than that amount of time remaining.
       int64_t millis_remaining = deadline_.GetDeltaSince(now).ToMilliseconds() - 10;
       // Exponential backoff with jitter.
-      int64_t base_delay_ms = 1 << (attempt_ + 3);  // 1st retry delayed 2^4 ms, 2nd 2^5, etc.
+      int64_t base_delay_ms;
+      if (attempt_ <= 12) {
+        base_delay_ms = 1 << (attempt_ + 3);  // 1st retry delayed 2^4 ms, 2nd 2^5, etc.
+      } else {
+        base_delay_ms = 60 * 1000; // cap at 1 minute
+      }
       int64_t jitter_ms = rand() % 50;              // Add up to 50ms of additional random delay.
       int64_t delay_millis = std::min<int64_t>(base_delay_ms + jitter_ms, millis_remaining);
 
