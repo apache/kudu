@@ -1,4 +1,5 @@
 = Kudu Documentation
+
 // License Header Here //
 :author: Kudu Team
 :imagesdir: ./images
@@ -23,6 +24,9 @@ link:installation.html[Installation Guide]::
 
 link:configuration.html[Configuring Kudu]::
   Guidelines for customizing your Kudu cluster.
+
+link:kudu_impala_integration.html[Using Impala With Kudu]::
+  Using Impala to create, query, and update your Kudu tables.
 
 link:administration.html[Administering Kudu]::
   Keeping Kudu running smoothly.
