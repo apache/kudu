@@ -1,11 +1,14 @@
 // Copyright (c) 2013, Cloudera, inc.
 // Confidential Cloudera Information: Covered by NDA.
 
+#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
 #include "kudu/server/hybrid_clock.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
 
 namespace kudu {
@@ -136,6 +139,44 @@ TEST_F(HybridClockTest, TestIsAfter) {
 
   ASSERT_TRUE(clock_->IsAfter(ts1));
   ASSERT_TRUE(clock_->IsAfter(ts2));
+}
+
+// Thread which loops polling the clock and updating it slightly
+// into the future.
+void StresserThread(HybridClock* clock, AtomicBool* stop) {
+  Random rng(GetRandomSeed32());
+  Timestamp prev(0);;
+  while (!stop->Load()) {
+    Timestamp t = clock->Now();
+    CHECK_GT(t.value(), prev.value());
+    prev = t;
+
+    // Add a random bit of offset to the clock, and perform an update.
+    Timestamp new_ts = HybridClock::AddPhysicalTimeToTimestamp(
+        t, MonoDelta::FromMicroseconds(rng.Uniform(10000)));
+    clock->Update(new_ts);
+  }
+}
+
+// Regression test for KUDU-953: if threads are updating and polling the
+// clock concurrently, the clock should still never run backwards.
+TEST_F(HybridClockTest, TestClockDoesntGoBackwardsWithUpdates) {
+  vector<scoped_refptr<kudu::Thread> > threads;
+
+  AtomicBool stop(false);
+  for (int i = 0; i < 4; i++) {
+    scoped_refptr<Thread> thread;
+    ASSERT_OK(Thread::Create("test", "stresser",
+                             &StresserThread, clock_.get(), &stop,
+                             &thread));
+    threads.push_back(thread);
+  }
+
+  SleepFor(MonoDelta::FromSeconds(1));
+  stop.Store(true);
+  BOOST_FOREACH(const scoped_refptr<Thread> t, threads) {
+    t->Join();
+  }
 }
 
 }  // namespace server

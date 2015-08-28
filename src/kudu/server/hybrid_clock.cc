@@ -212,8 +212,11 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
 }
 
 Status HybridClock::Update(const Timestamp& to_update) {
-  Timestamp now = Now();
   boost::lock_guard<simple_spinlock> lock(lock_);
+  Timestamp now;
+  uint64_t error_ignored;
+  NowWithError(&now, &error_ignored);
+
   if (PREDICT_TRUE(now.CompareTo(to_update) > 0)) return Status::OK();
 
   uint64_t to_update_physical = GetPhysicalValueMicros(to_update);
