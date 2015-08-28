@@ -165,6 +165,7 @@ def main():
            description="A Kudu table.",
            label="Kudu Table",
            labelPlural="Kudu Tables",
+           entityLabelFormat="$kuduTableName ($serviceDisplayName)",
            parentMetricEntityTypeNames=["KUDU"],
            metricDefinitions=[]),
       dict(name="KUDU_TABLET",
@@ -175,6 +176,7 @@ def main():
            description="A Kudu tablet.",
            label="Kudu Tablet",
            labelPlural="Kudu Tablets",
+           entityLabelFormat="$kuduTabletId ($kuduTableName) ($serviceDisplayName)",
            parentMetricEntityTypeNames=["KUDU_TABLE"],
            metricDefinitions=[]),
       dict(name="KUDU_REPLICA",
@@ -184,6 +186,7 @@ def main():
            description="A Kudu replica.",
            label="Kudu Replica",
            labelPlural="Kudu Replicas",
+           entityLabelFormat="$kuduReplicaId ($kuduTableName) ($hostname)",
            parentMetricEntityTypeNames=["KUDU_TABLET","KUDU-KUDU_TSERVER"],
            metricDefinitions=tablet_metrics),
       ])
