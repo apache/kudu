@@ -227,29 +227,16 @@ Cloudera recommends using Cloudera Manager.
 If you install Kudu from packages and choose not to use Cloudera Manager, additional
 configuration steps are required on each host before you can start Kudu services.
 
-. Create a flagfile in `/etc/kudu/conf/gflagfile` with at least the following contents,
-modified to match your environment. It should be world-readable.
+. The packages create a `kudu-conf` entry in the operating system's alternatives database,
+and they ship the built-in `conf.dist` alternative. To adjust your configuration,
+you can either edit the files in `/etc/kudu/conf/` directly, or create a new alternative
+using the operating system utilities, make sure it is the link pointed to by `/etc/kudu/conf/`,
+and create custom configuration files there. Some parts of the configuration are configured
+in `/etc/default/kudu-master` and `/etc/default/kudu-tserver` files as well. You
+should include or duplicate these configuration options if you create custom configuration files.
 +
-----
-# Minimum configuration for masters
---master_data_dirs=/data/kudu
---master_wal_dir=/data/kudu
-# Uncomment this if your system does not support hole punching.
-#--block_manager=file
-
-# Minimum configuration for tablet servers
---tserver_data_dirs=/data/kudu
---tserver_wal_dir=/data/kudu
---tserver_master_addrs=kudu_master.example.com
-# Uncomment this if your system does not support hole punching.
-#--block_manager=file
-----
-// TODO probably change this to 'review and edit' later
-
-. Adjust the Kudu default settings to use this flagfile. Edit `/etc/default/kudu`
-and add the following argument to the list of arguments for `KUDU_MASTER_ARGS` and
-`KUDU_TSERVER_ARGS`: `--flagfile=/etc/kudu/conf/gflagfile`
-// TODO probably take this step out later
+Review the configuration, including the default WAL and data directory locations,
+and adjust them according to your requirements.
 
 . Start Kudu services using the following commands:
 +
@@ -273,10 +260,10 @@ them to the default runlevel.
 [source,bash]
 ----
 $ sudo chkconfig kudu-master on                # RHEL / CentOS
-$ sudo chkconfig kudu-tserver on         # RHEL / CentOS
+$ sudo chkconfig kudu-tserver on               # RHEL / CentOS
 
 $ sudo update-rc.d kudu-master defaults        # Debian / Ubuntu
-$ sudo update-rc.d kudu-tserver defaults # Debian / Ubuntu
+$ sudo update-rc.d kudu-tserver defaults       # Debian / Ubuntu
 ----
 
 . For additional configuration of Kudu services, see link:configuration.html[Configuring
