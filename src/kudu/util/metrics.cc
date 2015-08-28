@@ -333,11 +333,19 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
 
 void MetricRegistry::RetireOldMetrics() {
   lock_guard<simple_spinlock> l(&lock_);
-  BOOST_FOREACH(const EntityMap::value_type e, entities_) {
-    e.second->RetireOldMetrics();
+  for (EntityMap::iterator it = entities_.begin();
+       it != entities_.end();) {
+    it->second->RetireOldMetrics();
 
-    // TODO: we should also remove entities once all of their metrics have been retired
-    // if they are only reffed by the registry itself.
+    if (it->second->num_metrics() == 0 && it->second->HasOneRef()) {
+      // No metrics and no external references to this entity, so we can retire it.
+      // Unlike retiring the metrics themselves, we don't wait for any timeout
+      // to retire them -- we assume that that timed retention has been satisfied
+      // by holding onto the metrics inside the entity.
+      entities_.erase(it++);
+    } else {
+      ++it;
+    }
   }
 }
 

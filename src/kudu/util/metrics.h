@@ -447,6 +447,11 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   // Set a particular attribute. Replaces any current value.
   void SetAttribute(const std::string& key, const std::string& val);
 
+  int num_metrics() const {
+    lock_guard<simple_spinlock> l(&lock_);
+    return metric_map_.size();
+  }
+
  private:
   friend class MetricRegistry;
   friend class RefCountedThreadSafe<MetricEntity>;
@@ -530,11 +535,17 @@ class MetricRegistry {
                      const std::vector<std::string>& requested_metrics,
                      const MetricJsonOptions& opts) const;
 
-  // For each registered entity, retires orphaned metrics.
-  // See MetricEntity::RetireOldMetrics().
+  // For each registered entity, retires orphaned metrics. If an entity has no more
+  // metrics and there are no external references, entities are removed as well.
   //
-  // TODO: this should also retire entities that have gone away.
+  // See MetricEntity::RetireOldMetrics().
   void RetireOldMetrics();
+
+  // Return the number of entities in this registry.
+  int num_entities() const {
+    lock_guard<simple_spinlock> l(&lock_);
+    return entities_.size();
+  }
 
  private:
   typedef std::tr1::unordered_map<std::string, scoped_refptr<MetricEntity> > EntityMap;

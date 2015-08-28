@@ -204,6 +204,19 @@ TEST_F(MetricsTest, RetirementTest) {
   ASSERT_EQ(0, entity_->UnsafeMetricsMapForTests().size());
 }
 
+TEST_F(MetricsTest, TestRetiringEntities) {
+  ASSERT_EQ(1, registry_.num_entities());
+
+  // Drop the reference to our entity.
+  entity_.reset();
+
+  // Retire metrics. Since there is nothing inside our entity, it should
+  // retire immediately (no need to loop).
+  registry_.RetireOldMetrics();
+
+  ASSERT_EQ(0, registry_.num_entities());
+}
+
 // Test that we can mark a metric to never be retired.
 TEST_F(MetricsTest, NeverRetireTest) {
   entity_->NeverRetire(METRIC_test_hist.Instantiate(entity_));
