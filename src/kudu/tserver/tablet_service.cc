@@ -911,7 +911,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
 
   size_t batch_size_bytes = GetMaxBatchSizeBytesHint(req);
   gscoped_ptr<faststring> rows_data(new faststring(batch_size_bytes * 11 / 10));
-  gscoped_ptr<faststring> indirect_data(new faststring());
+  gscoped_ptr<faststring> indirect_data(new faststring(batch_size_bytes * 11 / 10));
   RowwiseRowBlockPB data;
   ScanResultCopier collector(&data, rows_data.get(), indirect_data.get());
 
