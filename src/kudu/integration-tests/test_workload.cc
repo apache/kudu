@@ -140,9 +140,21 @@ void TestWorkload::WriteThread() {
 void TestWorkload::Setup() {
   CHECK_OK(cluster_->CreateClient(client_builder_, &client_));
 
-  bool exists;
-  CHECK_OK(client_->TableExists(table_name_, &exists));
-  if (exists) {
+  bool table_exists;
+
+  // Retry KuduClient::TableExists() until we make that call retry reliably.
+  // See KUDU-1074.
+  MonoTime deadline(MonoTime::Now(MonoTime::FINE));
+  deadline.AddDelta(MonoDelta::FromSeconds(10));
+  Status s;
+  while (true) {
+    s = client_->TableExists(table_name_, &table_exists);
+    if (s.ok() || deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) break;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  CHECK_OK(s);
+
+  if (table_exists) {
     LOG(INFO) << "TestWorkload: Skipping table creation because table "
               << table_name_ << " already exists";
     return;
