@@ -1161,6 +1161,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
 
   // Send a simple request with no ops.
   req.set_tablet_id(tablet_id_);
+  req.set_dest_uuid(replica_ts->uuid());
   req.set_caller_uuid("fake_caller");
   req.set_caller_term(2);
   req.mutable_committed_index()->CopyFrom(MakeOpId(1, 1));
@@ -1857,6 +1858,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   ConsensusRequestPB req;
   ConsensusResponsePB resp;
   RpcController rpc;
+  req.set_dest_uuid(replica_ts->uuid());
   req.set_tablet_id(tablet_id_);
   req.set_caller_uuid(tservers[2]->instance_id.permanent_uuid());
   req.set_caller_term(1);

@@ -34,6 +34,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
@@ -109,6 +110,38 @@ bool LookupTabletPeerOrRespond(TabletPeerLookupIf* tablet_manager,
     }
     SetupErrorAndRespond(resp->mutable_error(), s,
                          TabletServerErrorPB::TABLET_NOT_RUNNING, context);
+    return false;
+  }
+  return true;
+}
+
+template<class ReqClass, class RespClass>
+bool CheckUuidMatchOrRespond(TabletPeerLookupIf* tablet_manager,
+                             const char* method_name,
+                             const ReqClass* req,
+                             RespClass* resp,
+                             rpc::RpcContext* context) {
+  const string& local_uuid = tablet_manager->NodeInstance().permanent_uuid();
+  if (PREDICT_FALSE(!req->has_dest_uuid())) {
+    // Maintain compat in release mode, but complain.
+
+    string msg = Substitute("$0: Missing destination UUID in request from $1: $2",
+                            method_name, context->requestor_string(), req->ShortDebugString());
+#ifdef NDEBUG
+    KLOG_EVERY_N(ERROR, 100) << msg;
+#else
+    LOG(DFATAL) << msg;
+#endif
+    return true;
+  }
+  if (PREDICT_FALSE(req->dest_uuid() != local_uuid)) {
+    Status s = Status::InvalidArgument(Substitute("$0: Wrong destination UUID requested. "
+                                                  "Local UUID: $1. Requested UUID: $2",
+                                                  method_name, local_uuid, req->dest_uuid()));
+    LOG(WARNING) << s.ToString() << ": from " << context->requestor_string()
+                 << ": " << req->ShortDebugString();
+    SetupErrorAndRespond(resp->mutable_error(), s,
+                         TabletServerErrorPB::WRONG_SERVER_UUID, context);
     return false;
   }
   return true;
@@ -417,6 +450,9 @@ TabletServiceAdminImpl::TabletServiceAdminImpl(TabletServer* server)
 void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
                                          AlterSchemaResponsePB* resp,
                                          rpc::RpcContext* context) {
+  if (!CheckUuidMatchOrRespond(server_->tablet_manager(), "AlterSchema", req, resp, context)) {
+    return;
+  }
   DVLOG(3) << "Received Alter Schema RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
@@ -487,6 +523,9 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
 void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
                                           CreateTabletResponsePB* resp,
                                           rpc::RpcContext* context) {
+  if (!CheckUuidMatchOrRespond(server_->tablet_manager(), "CreateTablet", req, resp, context)) {
+    return;
+  }
   TRACE_EVENT1("tserver", "CreateTablet",
                "tablet_id", req->tablet_id());
   LOG(INFO) << "Processing CreateTablet for tablet " << req->tablet_id()
@@ -530,6 +569,10 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
 void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
                                           DeleteTabletResponsePB* resp,
                                           rpc::RpcContext* context) {
+  if (!CheckUuidMatchOrRespond(server_->tablet_manager(), "DeleteTablet", req, resp, context)) {
+    return;
+  }
+
   tablet::TabletDataState delete_type = tablet::TABLET_DATA_UNKNOWN;
   if (req->has_delete_type()) {
     delete_type = req->delete_type();
@@ -645,10 +688,15 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                                            ConsensusResponsePB* resp,
                                            rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Update RPC: " << req->DebugString();
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "UpdateConsensus", req, resp, context)) {
+    return;
+  }
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
   }
+
+  tablet_peer->permanent_uuid();
 
   // Submit the update directly to the TabletPeer's Consensus instance.
   scoped_refptr<Consensus> consensus;
@@ -672,6 +720,9 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
                                                 VoteResponsePB* resp,
                                                 rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Request Vote RPC: " << req->DebugString();
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "RequestConsensusVote", req, resp, context)) {
+    return;
+  }
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
@@ -694,7 +745,9 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
                                         ChangeConfigResponsePB* resp,
                                         RpcContext* context) {
   DVLOG(3) << "Received ChangeConfig RPC: " << req->DebugString();
-
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "ChangeConfig", req, resp, context)) {
+    return;
+  }
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context,
                                  &tablet_peer)) {
@@ -734,6 +787,9 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
                                              RunLeaderElectionResponsePB* resp,
                                              rpc::RpcContext* context) {
   DVLOG(3) << "Received Run Leader Election RPC: " << req->DebugString();
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "RunLeaderElection", req, resp, context)) {
+    return;
+  }
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
@@ -756,6 +812,9 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
                                           LeaderStepDownResponsePB* resp,
                                           RpcContext* context) {
   DVLOG(3) << "Received Leader stepdown RPC: " << req->DebugString();
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "LeaderStepDown", req, resp, context)) {
+    return;
+  }
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
@@ -777,6 +836,9 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
                                        consensus::GetLastOpIdResponsePB *resp,
                                        rpc::RpcContext *context) {
   DVLOG(3) << "Received GetLastOpId RPC: " << req->DebugString();
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "GetLastOpId", req, resp, context)) {
+    return;
+  }
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
@@ -804,6 +866,9 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
                                              consensus::GetConsensusStateResponsePB *resp,
                                              rpc::RpcContext *context) {
   DVLOG(3) << "Received GetConsensusState RPC: " << req->DebugString();
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "GetConsensusState", req, resp, context)) {
+    return;
+  }
   scoped_refptr<TabletPeer> tablet_peer;
   if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
@@ -818,6 +883,9 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
 void ConsensusServiceImpl::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB* req,
                                                 StartRemoteBootstrapResponsePB* resp,
                                                 rpc::RpcContext* context) {
+  if (!CheckUuidMatchOrRespond(tablet_manager_, "StartRemoteBootstrap", req, resp, context)) {
+    return;
+  }
   Status s = tablet_manager_->StartRemoteBootstrap(*req);
   if (!s.ok()) {
     SetupErrorAndRespond(resp->mutable_error(), s,

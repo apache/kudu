@@ -325,6 +325,7 @@ Status PeerMessageQueue::GetRemoteBootstrapRequestForPeer(const string& uuid,
     return Status::IllegalState("Peer does not need to remotely bootstrap", uuid);
   }
   req->Clear();
+  req->set_dest_uuid(uuid);
   req->set_tablet_id(tablet_id_);
   req->set_bootstrap_peer_uuid(local_peer_pb_.permanent_uuid());
   *req->mutable_bootstrap_peer_addr() = local_peer_pb_.last_known_addr();

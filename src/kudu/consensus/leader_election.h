@@ -158,6 +158,7 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
 
     gscoped_ptr<PeerProxy> proxy;
     rpc::RpcController rpc;
+    VoteRequestPB request;
     VoteResponsePB response;
   };
 

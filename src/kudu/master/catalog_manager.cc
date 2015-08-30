@@ -1858,6 +1858,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
     const SysTabletsEntryPB& tablet_pb = tablet->metadata().dirty().pb;
 
+    req_.set_dest_uuid(permanent_uuid);
     req_.set_table_id(tablet->table()->id());
     req_.set_tablet_id(tablet->tablet_id());
     req_.set_start_key(tablet_pb.start_key());
@@ -1962,6 +1963,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
 
   virtual void SendRequest(int attempt) OVERRIDE {
     tserver::DeleteTabletRequestPB req;
+    req.set_dest_uuid(permanent_uuid_);
     req.set_tablet_id(tablet_id_);
     req.set_reason(reason_);
     req.set_delete_type(tablet::TABLET_DATA_DELETED);
@@ -2043,6 +2045,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
     TableMetadataLock l(tablet_->table(), TableMetadataLock::READ);
 
     tserver::AlterSchemaRequestPB req;
+    req.set_dest_uuid(permanent_uuid());
     req.set_tablet_id(tablet_->tablet_id());
     req.set_new_table_name(l.data().pb.name());
     req.set_schema_version(l.data().pb.version());

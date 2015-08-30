@@ -177,6 +177,7 @@ void Peer::SendNextRequest(bool even_if_queue_empty) {
 
   request_.set_tablet_id(tablet_id_);
   request_.set_caller_uuid(leader_uuid_);
+  request_.set_dest_uuid(peer_pb_.permanent_uuid());
 
   bool req_has_ops = request_.ops_size() > 0;
   // If the queue is empty, check if we were told to send a status-only

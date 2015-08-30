@@ -335,6 +335,36 @@ TEST_F(DeleteTableTest, TestDeleteEmptyTable) {
   ASSERT_EQ("{\"tables\":[],\"tablets\":[]}", entities_buf.ToString());
 }
 
+// Test that a DeleteTable RPC is rejected without a matching destination UUID.
+TEST_F(DeleteTableTest, TestDeleteTableDestUuidValidation) {
+  NO_FATALS(StartCluster());
+  // Create a table on the cluster. We're just using TestWorkload
+  // as a convenient way to create it.
+  TestWorkload(cluster_.get()).Setup();
+  ASSERT_OK(inspect_->WaitForReplicaCount(3));
+
+  vector<string> tablets = inspect_->ListTabletsOnTS(1);
+  ASSERT_EQ(1, tablets.size());
+  const string& tablet_id = tablets[0];
+
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+
+  tserver::DeleteTabletRequestPB req;
+  tserver::DeleteTabletResponsePB resp;
+  rpc::RpcController rpc;
+  rpc.set_timeout(MonoDelta::FromSeconds(20));
+
+  req.set_dest_uuid("fake-uuid");
+  req.set_tablet_id(tablet_id);
+  req.set_delete_type(TABLET_DATA_TOMBSTONED);
+  ASSERT_OK(ts->tserver_admin_proxy->DeleteTablet(req, &resp, &rpc));
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ(tserver::TabletServerErrorPB::WRONG_SERVER_UUID, resp.error().code())
+      << resp.ShortDebugString();
+  ASSERT_STR_CONTAINS(StatusFromPB(resp.error().status()).ToString(),
+                      "Wrong destination UUID");
+}
+
 TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
   NO_FATALS(StartCluster());
   int n_iters = AllowSlowTests() ? 20 : 1;

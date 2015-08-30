@@ -10,6 +10,9 @@ import "kudu/tablet/metadata.proto";
 import "kudu/tserver/tserver.proto";
 
 message AlterSchemaRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 5;
+
   required bytes tablet_id = 1;
 
   // TODO: Replace with the table descriptor
@@ -30,6 +33,9 @@ message AlterSchemaResponsePB {
 
 // A create tablet request.
 message CreateTabletRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 8;
+
   required bytes table_id = 1;
   required bytes tablet_id = 2;
   // In the following keys, the non-string components are in big-endian order
@@ -49,6 +55,9 @@ message CreateTabletResponsePB {
 
 // A delete tablet request.
 message DeleteTabletRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 4;
+
   required bytes tablet_id = 1;
 
   // Reason the tablet is being deleted (for logging purposes)

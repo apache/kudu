@@ -98,6 +98,7 @@ Status GetLastOpIdForEachReplica(const string& tablet_id,
     controller.Reset();
     controller.set_timeout(MonoDelta::FromSeconds(3));
     opid_resp.Clear();
+    opid_req.set_dest_uuid(ts->uuid());
     opid_req.set_tablet_id(tablet_id);
     RETURN_NOT_OK_PREPEND(
       ts->consensus_proxy->GetLastOpId(opid_req, &opid_resp, &controller),
@@ -250,6 +251,7 @@ Status GetCommittedConsensusState(const TServerDetails* replica,
   GetConsensusStateResponsePB resp;
   RpcController controller;
   controller.set_timeout(timeout);
+  req.set_dest_uuid(replica->uuid());
   req.set_tablet_id(tablet_id);
 
   RETURN_NOT_OK(replica->consensus_proxy->GetConsensusState(req, &resp, &controller));
@@ -374,6 +376,7 @@ Status StartElection(const TServerDetails* replica,
                      const string& tablet_id,
                      const MonoDelta& timeout) {
   RunLeaderElectionRequestPB req;
+  req.set_dest_uuid(replica->uuid());
   req.set_tablet_id(tablet_id);
   RunLeaderElectionResponsePB resp;
   RpcController rpc;
@@ -391,6 +394,7 @@ Status LeaderStepDown(const TServerDetails* replica,
                       const MonoDelta& timeout,
                       TabletServerErrorPB* error) {
   LeaderStepDownRequestPB req;
+  req.set_dest_uuid(replica->uuid());
   req.set_tablet_id(tablet_id);
   LeaderStepDownResponsePB resp;
   RpcController rpc;
@@ -440,6 +444,7 @@ Status AddServer(const TServerDetails* leader,
   RpcController rpc;
   rpc.set_timeout(timeout);
 
+  req.set_dest_uuid(leader->uuid());
   req.set_tablet_id(tablet_id);
   req.set_type(consensus::ADD_SERVER);
   RaftPeerPB* peer = req.mutable_server();
@@ -463,6 +468,7 @@ Status RemoveServer(const TServerDetails* leader,
   RpcController rpc;
   rpc.set_timeout(timeout);
 
+  req.set_dest_uuid(leader->uuid());
   req.set_tablet_id(tablet_id);
   req.set_type(consensus::REMOVE_SERVER);
   RaftPeerPB* peer = req.mutable_server();
@@ -576,6 +582,7 @@ Status DeleteTablet(const TServerDetails* ts,
   RpcController rpc;
   rpc.set_timeout(timeout);
 
+  req.set_dest_uuid(ts->uuid());
   req.set_tablet_id(tablet_id);
   req.set_delete_type(delete_type);
 
@@ -597,6 +604,7 @@ Status StartRemoteBootstrap(const TServerDetails* ts,
   RpcController rpc;
   rpc.set_timeout(timeout);
 
+  req.set_dest_uuid(ts->uuid());
   req.set_tablet_id(tablet_id);
   req.set_bootstrap_peer_uuid(bootstrap_source_uuid);
   RETURN_NOT_OK(HostPortToPB(bootstrap_source_addr, req.mutable_bootstrap_peer_addr()));

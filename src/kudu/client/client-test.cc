@@ -2008,6 +2008,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
 
   LOG(INFO) << "Promoting server at index " << new_leader_idx << " listening at "
             << new_leader->bound_rpc_addr().ToString() << " ...";
+  req.set_dest_uuid(new_leader->server()->fs_manager()->uuid());
   req.set_tablet_id(rt->tablet_id());
   ASSERT_OK(new_leader_proxy->RunLeaderElection(req, &resp, &controller));
   ASSERT_FALSE(resp.has_error()) << "Got error. Response: " << resp.ShortDebugString();

@@ -65,6 +65,9 @@ message TabletServerErrorPB {
 
     // This tserver is not the leader of the consensus configuration.
     NOT_THE_LEADER = 15;
+
+    // The destination UUID in the request does not match this server.
+    WRONG_SERVER_UUID = 16;
   }
 
   // The error code.

@@ -1720,6 +1720,7 @@ TEST_F(TabletServerTest, TestAlterSchema) {
   ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, &c2_write_default));
   Schema s2 = builder.Build();
 
+  req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
   req.set_tablet_id(kTabletId);
   req.set_schema_version(1);
   ASSERT_OK(SchemaToPB(s2, req.mutable_schema()));
@@ -1777,6 +1778,7 @@ TEST_F(TabletServerTest, TestAlterSchema_AddColWithoutWriteDefault) {
   ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, NULL));
   Schema s2 = builder.Build();
 
+  req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
   req.set_tablet_id(kTabletId);
   req.set_schema_version(1);
   ASSERT_OK(SchemaToPB(s2, req.mutable_schema()));
@@ -1814,6 +1816,7 @@ TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
   CreateTabletResponsePB resp;
   RpcController rpc;
 
+  req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
   req.set_table_id("testtb");
   req.set_tablet_id(kTabletId);
   req.set_start_key(" ");
@@ -1870,6 +1873,7 @@ TEST_F(TabletServerTest, TestDeleteTablet) {
   DeleteTabletResponsePB resp;
   RpcController rpc;
 
+  req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
   req.set_tablet_id(kTabletId);
   req.set_delete_type(tablet::TABLET_DATA_DELETED);
 
@@ -1910,6 +1914,7 @@ TEST_F(TabletServerTest, TestDeleteTablet_TabletNotCreated) {
   DeleteTabletResponsePB resp;
   RpcController rpc;
 
+  req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
   req.set_tablet_id("NotPresentTabletId");
   req.set_delete_type(tablet::TABLET_DATA_DELETED);
 
@@ -1936,6 +1941,7 @@ TEST_F(TabletServerTest, TestConcurrentDeleteTablet) {
   CountDownLatch latch(kNumDeletes);
 
   DeleteTabletRequestPB req;
+  req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
   req.set_tablet_id(kTabletId);
   req.set_delete_type(tablet::TABLET_DATA_DELETED);
 

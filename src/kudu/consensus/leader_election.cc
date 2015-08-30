@@ -196,8 +196,12 @@ void LeaderElection::Run() {
     // Send the RPC request.
     LOG_WITH_PREFIX(INFO) << "Requesting vote from peer " << voter_uuid;
     state->rpc.set_timeout(timeout_);
+
+    state->request = request_;
+    state->request.set_dest_uuid(voter_uuid);
+
     state->proxy->RequestConsensusVoteAsync(
-        &request_,
+        &state->request,
         &state->response,
         &state->rpc,
         // We use gutil Bind() for the refcounting and boost::bind to adapt the

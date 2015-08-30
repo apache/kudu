@@ -106,6 +106,9 @@ enum ChangeConfigType {
 // This is the RPC request, but it does not end up in the log.
 // See also ChangeConfigRecordPB.
 message ChangeConfigRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 4;
+
   required bytes tablet_id = 1;
 
   // The type of config change requested.
@@ -213,6 +216,9 @@ message ConsensusStatusPB {
 // the configuration serving tablet with 'tablet_id'.
 // See RAFT sec. 5.2.
 message VoteRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 6;
+
   // Identifies the tablet configuration a the vote is being requested for.
   required string tablet_id = 1;
 
@@ -263,6 +269,9 @@ message VoteResponsePB {
 
 // A consensus request message, the basic unit of a consensus round.
 message ConsensusRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 7;
+
   required string tablet_id = 1;
 
   // The uuid of the peer making the call.
@@ -339,6 +348,9 @@ message GetNodeInstanceResponsePB {
 // Message that makes the local peer run leader election to be elected leader.
 // Assumes that a tablet with 'tablet_id' exists.
 message RunLeaderElectionRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 2;
+
   // the id of the tablet
   required bytes tablet_id = 1;
 }
@@ -349,6 +361,9 @@ message RunLeaderElectionResponsePB {
 }
 
 message LeaderStepDownRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 2;
+
   // The id of the tablet.
   required bytes tablet_id = 1;
 }
@@ -359,6 +374,9 @@ message LeaderStepDownResponsePB {
 }
 
 message GetLastOpIdRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 2;
+
   // the id of the tablet
   required bytes tablet_id = 1;
 }
@@ -370,6 +388,9 @@ message GetLastOpIdResponsePB {
 }
 
 message GetConsensusStateRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 2;
+
   // The id of the tablet.
   required bytes tablet_id = 1;
 }
@@ -381,6 +402,9 @@ message GetConsensusStateResponsePB {
 }
 
 message StartRemoteBootstrapRequestPB {
+  // UUID of server this request is addressed to.
+  optional bytes dest_uuid = 5;
+
   required bytes tablet_id = 1;
 
   // Identification for the host we are bootstrapping from.

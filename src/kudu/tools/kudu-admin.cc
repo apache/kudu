@@ -207,6 +207,7 @@ Status ClusterAdminClient::ChangeConfig(const string& tablet_id,
   RpcController rpc;
   rpc.set_timeout(timeout_);
 
+  req.set_dest_uuid(leader_ts_info.permanent_uuid());
   req.set_tablet_id(tablet_id);
   req.set_type(cc_type);
   *req.mutable_server() = peer_pb;
