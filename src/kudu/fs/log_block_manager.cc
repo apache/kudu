@@ -1250,7 +1250,11 @@ Status LogBlockManager::DeleteBlock(const BlockId& block_id) {
   record.set_op_type(DELETE);
   record.set_timestamp_us(GetCurrentTimeMicros());
   RETURN_NOT_OK(lb->container()->AppendMetadata(record));
-  RETURN_NOT_OK(lb->container()->SyncMetadata());
+
+  // We don't bother fsyncing the metadata append for deletes in order to avoid
+  // the disk overhead. Even if we did fsync it, we'd still need to account for
+  // garbage at startup time (in the event that we crashed just before the
+  // fsync). TODO: Implement GC of orphaned blocks. See KUDU-829.
 
   return Status::OK();
 }
