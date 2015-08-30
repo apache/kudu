@@ -73,6 +73,7 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::AlterSchemaTransactionState;
+using tablet::Tablet;
 using tablet::TabletPeer;
 using tablet::TabletStatusPB;
 using tablet::TransactionCompletionCallback;
@@ -86,11 +87,11 @@ namespace {
 //
 // Returns true if successful.
 template<class RespClass>
-bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
-                           const string& tablet_id,
-                           RespClass* resp,
-                           rpc::RpcContext* context,
-                           scoped_refptr<TabletPeer>* peer) {
+bool LookupTabletPeerOrRespond(TabletPeerLookupIf* tablet_manager,
+                               const string& tablet_id,
+                               RespClass* resp,
+                               rpc::RpcContext* context,
+                               scoped_refptr<TabletPeer>* peer) {
   if (PREDICT_FALSE(!tablet_manager->GetTabletPeer(tablet_id, peer).ok())) {
     SetupErrorAndRespond(resp->mutable_error(),
                          Status::NotFound("Tablet not found"),
@@ -114,7 +115,7 @@ bool LookupTabletOrRespond(TabletPeerLookupIf* tablet_manager,
 }
 
 template<class RespClass>
-bool GetConsensusOrRespond(scoped_refptr<TabletPeer>& tablet_peer,
+bool GetConsensusOrRespond(const scoped_refptr<TabletPeer>& tablet_peer,
                            RespClass* resp,
                            rpc::RpcContext* context,
                            scoped_refptr<Consensus>* consensus) {
@@ -126,6 +127,17 @@ bool GetConsensusOrRespond(scoped_refptr<TabletPeer>& tablet_peer,
     return false;
   }
   return true;
+}
+
+Status GetTabletRef(const scoped_refptr<TabletPeer>& tablet_peer,
+                    shared_ptr<Tablet>* tablet,
+                    TabletServerErrorPB::Code* error_code) {
+  *DCHECK_NOTNULL(tablet) = tablet_peer->shared_tablet();
+  if (PREDICT_FALSE(!*tablet)) {
+    *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+    return Status::IllegalState("Tablet is not running");
+  }
+  return Status::OK();
 }
 
 template <class ReqType, class RespType>
@@ -408,12 +420,12 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
   DVLOG(3) << "Received Alter Schema RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
-                             &tablet_peer)) {
+  if (!LookupTabletPeerOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
+                                 &tablet_peer)) {
     return;
   }
 
-  uint32_t schema_version = tablet_peer->tablet()->metadata()->schema_version();
+  uint32_t schema_version = tablet_peer->tablet_metadata()->schema_version();
 
   // If the schema was already applied, respond as succeded
   if (schema_version == req->schema_version()) {
@@ -427,13 +439,13 @@ void TabletServiceAdminImpl::AlterSchema(const AlterSchemaRequestPB* req,
       return;
     }
 
-    Schema tablet_schema = tablet_peer->tablet()->metadata()->schema();
+    Schema tablet_schema = tablet_peer->tablet_metadata()->schema();
     if (req_schema.Equals(tablet_schema)) {
       context->RespondSuccess();
       return;
     }
 
-    schema_version = tablet_peer->tablet()->metadata()->schema_version();
+    schema_version = tablet_peer->tablet_metadata()->schema_version();
     if (schema_version == req->schema_version()) {
       LOG(ERROR) << "The current schema does not match the request schema."
                  << " version=" << schema_version
@@ -552,16 +564,24 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   DVLOG(3) << "Received Write RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
-                             &tablet_peer)) {
+  if (!LookupTabletPeerOrRespond(server_->tablet_manager(), req->tablet_id(), resp, context,
+                                 &tablet_peer)) {
+    return;
+  }
+
+  shared_ptr<Tablet> tablet;
+  TabletServerErrorPB::Code error_code;
+  Status s = GetTabletRef(tablet_peer, &tablet, &error_code);
+  if (PREDICT_FALSE(!s.ok())) {
+    SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
     return;
   }
 
   // Check for memory pressure; don't bother doing any additional work if we've
   // exceeded the limit.
   double capacity_pct;
-  if (tablet_peer->tablet()->mem_tracker()->AnySoftLimitExceeded(&capacity_pct)) {
-    tablet_peer->tablet()->metrics()->leader_memory_pressure_rejections->Increment();
+  if (tablet->mem_tracker()->AnySoftLimitExceeded(&capacity_pct)) {
+    tablet->metrics()->leader_memory_pressure_rejections->Increment();
     Status s = Status::ServiceUnavailable(StringPrintf(
         "Soft memory limit exceeded (at %.2f%% of capacity)",
         capacity_pct));
@@ -585,7 +605,6 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
 
   // If the client sent us a timestamp, decode it and update the clock so that all future
   // timestamps are greater than the passed timestamp.
-  Status s;
   if (req->has_propagated_timestamp()) {
     Timestamp ts(req->propagated_timestamp());
     s = server_->clock()->Update(ts);
@@ -627,7 +646,7 @@ void ConsensusServiceImpl::UpdateConsensus(const ConsensusRequestPB* req,
                                            rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Update RPC: " << req->DebugString();
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
+  if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
   }
 
@@ -654,7 +673,7 @@ void ConsensusServiceImpl::RequestConsensusVote(const VoteRequestPB* req,
                                                 rpc::RpcContext* context) {
   DVLOG(3) << "Received Consensus Request Vote RPC: " << req->DebugString();
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
+  if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
   }
 
@@ -677,8 +696,8 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
   DVLOG(3) << "Received ChangeConfig RPC: " << req->DebugString();
 
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context,
-                             &tablet_peer)) {
+  if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context,
+                                 &tablet_peer)) {
     return;
   }
 
@@ -716,7 +735,7 @@ void ConsensusServiceImpl::RunLeaderElection(const RunLeaderElectionRequestPB* r
                                              rpc::RpcContext* context) {
   DVLOG(3) << "Received Run Leader Election RPC: " << req->DebugString();
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
+  if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
   }
 
@@ -738,7 +757,7 @@ void ConsensusServiceImpl::LeaderStepDown(const LeaderStepDownRequestPB* req,
                                           RpcContext* context) {
   DVLOG(3) << "Received Leader stepdown RPC: " << req->DebugString();
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
+  if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
   }
 
@@ -759,7 +778,7 @@ void ConsensusServiceImpl::GetLastOpId(const consensus::GetLastOpIdRequestPB *re
                                        rpc::RpcContext *context) {
   DVLOG(3) << "Received GetLastOpId RPC: " << req->DebugString();
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
+  if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
   }
 
@@ -786,7 +805,7 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
                                              rpc::RpcContext *context) {
   DVLOG(3) << "Received GetConsensusState RPC: " << req->DebugString();
   scoped_refptr<TabletPeer> tablet_peer;
-  if (!LookupTabletOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
+  if (!LookupTabletPeerOrRespond(tablet_manager_, req->tablet_id(), resp, context, &tablet_peer)) {
     return;
   }
 
@@ -833,8 +852,8 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
   if (req->has_new_scan_request()) {
     const NewScanRequestPB& scan_pb = req->new_scan_request();
     scoped_refptr<TabletPeer> tablet_peer;
-    if (!LookupTabletOrRespond(server_->tablet_manager(), scan_pb.tablet_id(), resp, context,
-                              &tablet_peer)) {
+    if (!LookupTabletPeerOrRespond(server_->tablet_manager(), scan_pb.tablet_id(), resp, context,
+                                   &tablet_peer)) {
       return;
     }
     string scanner_id;
@@ -935,8 +954,8 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
     scan_req.mutable_new_scan_request()->CopyFrom(req->new_request());
     const NewScanRequestPB& new_req = req->new_request();
     scoped_refptr<TabletPeer> tablet_peer;
-    if (!LookupTabletOrRespond(server_->tablet_manager(), new_req.tablet_id(), resp, context,
-                              &tablet_peer)) {
+    if (!LookupTabletPeerOrRespond(server_->tablet_manager(), new_req.tablet_id(), resp, context,
+                                   &tablet_peer)) {
       return;
     }
 
@@ -1143,7 +1162,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   TRACE_EVENT1("tserver", "TabletServiceImpl::HandleNewScanRequest",
                "tablet_id", scan_pb.tablet_id());
 
-  const Schema* tablet_schema = tablet_peer->tablet()->schema();
+  const Schema& tablet_schema = tablet_peer->tablet_metadata()->schema();
 
   SharedScanner scanner;
   server_->scanner_manager()->NewScanner(tablet_peer,
@@ -1183,7 +1202,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   // projection but are actually needed for the scan, such as columns referred to by
   // predicates or key columns (if this is an ORDERED scan).
   vector<ColumnSchema> missing_cols;
-  s = SetupScanSpec(scan_pb, *tablet_schema, projection, &missing_cols, &spec, scanner);
+  s = SetupScanSpec(scan_pb, tablet_schema, projection, &missing_cols, &spec, scanner);
   if (PREDICT_FALSE(!s.ok())) {
     *error_code = TabletServerErrorPB::INVALID_SCAN_SPEC;
     return s;
@@ -1201,7 +1220,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
     projection_columns.push_back(col);
   }
   BOOST_FOREACH(const ColumnSchema& col, projection_columns) {
-    CHECK_OK(projection_builder.AddColumn(col, tablet_schema->is_key_column(col.name())));
+    CHECK_OK(projection_builder.AddColumn(col, tablet_schema.is_key_column(col.name())));
   }
   projection = projection_builder.BuildWithoutIds();
 
@@ -1209,6 +1228,8 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   // Preset the error code for when creating the iterator on the tablet fails
   TabletServerErrorPB::Code tmp_error_code = TabletServerErrorPB::MISMATCHED_SCHEMA;
 
+  shared_ptr<Tablet> tablet;
+  RETURN_NOT_OK(GetTabletRef(tablet_peer, &tablet, error_code));
   {
     TRACE("Creating iterator");
     TRACE_EVENT0("tserver", "Create iterator");
@@ -1220,16 +1241,16 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
         return s;
       }
       case READ_LATEST: {
-        s = tablet_peer->tablet()->NewRowIterator(projection, &iter);
+        s = tablet->NewRowIterator(projection, &iter);
         break;
       }
       case READ_AT_SNAPSHOT: {
-        s = HandleScanAtSnapshot(scan_pb, projection, tablet_peer, &iter, snap_timestamp);
+        s = HandleScanAtSnapshot(scan_pb, projection, tablet, &iter, snap_timestamp);
         if (!s.ok()) {
           tmp_error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
         }
       }
-        TRACE("Iterator created");
+      TRACE("Iterator created");
     }
   }
 
@@ -1379,14 +1400,16 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   }
 
   // Update metrics based on this scan request.
-  TabletPeer* tablet_peer = scanner->tablet_peer().get();
+  scoped_refptr<TabletPeer> tablet_peer = scanner->tablet_peer();
+  shared_ptr<Tablet> tablet;
+  RETURN_NOT_OK(GetTabletRef(tablet_peer, &tablet, error_code));
 
   // First, the number of rows/cells/bytes actually returned to the user.
-  tablet_peer->tablet()->metrics()->scanner_rows_returned->IncrementBy(
+  tablet->metrics()->scanner_rows_returned->IncrementBy(
       result_collector->NumRowsReturned());
-  tablet_peer->tablet()->metrics()->scanner_cells_returned->IncrementBy(
+  tablet->metrics()->scanner_cells_returned->IncrementBy(
       result_collector->NumRowsReturned() * scanner->client_projection_schema()->num_columns());
-  tablet_peer->tablet()->metrics()->scanner_bytes_returned->IncrementBy(
+  tablet->metrics()->scanner_bytes_returned->IncrementBy(
       result_collector->ResponseSize());
 
   // Then the number of rows/cells/bytes actually processed. Here we have to dig
@@ -1402,13 +1425,12 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   delta_stats.SubtractStats(scanner->already_reported_stats());
   scanner->set_already_reported_stats(total_stats);
 
-  tablet_peer->tablet()->metrics()->scanner_rows_scanned->IncrementBy(
+  tablet->metrics()->scanner_rows_scanned->IncrementBy(
       rows_scanned);
-  tablet_peer->tablet()->metrics()->scanner_cells_scanned_from_disk->IncrementBy(
+  tablet->metrics()->scanner_cells_scanned_from_disk->IncrementBy(
       delta_stats.cells_read_from_disk);
-  tablet_peer->tablet()->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(
+  tablet->metrics()->scanner_bytes_scanned_from_disk->IncrementBy(
       delta_stats.bytes_read_from_disk);
-
 
   scanner->UpdateAccessTime();
   *has_more_results = !req->close_scanner() && iter->HasNext();
@@ -1423,7 +1445,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
 Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                                                const Schema& projection,
-                                               const scoped_refptr<TabletPeer>& tablet_peer,
+                                               const shared_ptr<Tablet>& tablet,
                                                gscoped_ptr<RowwiseIterator>* iter,
                                                Timestamp* snap_timestamp) {
 
@@ -1464,9 +1486,9 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
   // leader!
   TRACE("Waiting for operations in snapshot to commit");
   MonoTime before = MonoTime::Now(MonoTime::FINE);
-  tablet_peer->tablet()->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(tmp_snap_timestamp, &snap);
+  tablet->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(tmp_snap_timestamp, &snap);
   uint64_t duration_usec = MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
-  tablet_peer->tablet()->metrics()->snapshot_read_inflight_wait_duration->Increment(duration_usec);
+  tablet->metrics()->snapshot_read_inflight_wait_duration->Increment(duration_usec);
   TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);
 
   tablet::Tablet::OrderMode order;
@@ -1475,8 +1497,7 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
     case ORDERED: order = tablet::Tablet::ORDERED; break;
     default: LOG(FATAL) << "Unexpected order mode.";
   }
-  RETURN_NOT_OK(tablet_peer->tablet()->NewRowIterator(projection, snap,
-                                                      order, iter));
+  RETURN_NOT_OK(tablet->NewRowIterator(projection, snap, order, iter));
   *snap_timestamp = tmp_snap_timestamp;
   return Status::OK();
 }

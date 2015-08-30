@@ -4,6 +4,7 @@
 #define KUDU_TSERVER_TABLET_SERVICE_H
 
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/ref_counted.h"
@@ -18,6 +19,7 @@ class Status;
 class Timestamp;
 
 namespace tablet {
+class Tablet;
 class TabletPeer;
 class TransactionState;
 } // namespace tablet
@@ -70,7 +72,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
 
   Status HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                               const Schema& projection,
-                              const scoped_refptr<tablet::TabletPeer>& tablet_peer,
+                              const std::tr1::shared_ptr<tablet::Tablet>& tablet,
                               gscoped_ptr<RowwiseIterator>* iter,
                               Timestamp* snap_timestamp);
 
