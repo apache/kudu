@@ -280,7 +280,7 @@ class JsonDumper : public TableVisitor, public TabletVisitor {
         jw_->String("type");
         jw_->String(RaftPeerPB::MemberType_Name(peer.member_type()));
 
-        jw_->String("uuid");
+        jw_->String("server_uuid");
         jw_->String(peer.permanent_uuid());
 
         jw_->String("addr");
