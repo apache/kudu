@@ -279,7 +279,7 @@ void NvmLRUCache::FreeEntry(LRUHandle* e) {
     metrics_->cache_usage->DecrementBy(e->charge);
     metrics_->evictions->Increment();
   }
-  free(e);
+  vmem_free(vmp_, e);
 }
 
 // Allocate nvm memory. Try until successful or FLAGS_nvm_cache_allocation_retry_count
@@ -397,8 +397,12 @@ Cache::Handle* NvmLRUCache::Insert(const Slice& key, uint32_t hash,
                                    CacheDeleter* deleter) {
   // Account for nvm key memory.
   LRUHandle* e = reinterpret_cast<LRUHandle*>(
-      malloc(sizeof(LRUHandle) - 1 /* sizeof(LRUHandle::key_data) */ + key.size()));
+      AllocateAndRetry(sizeof(LRUHandle) - 1 /* sizeof(LRUHandle::key_data) */ + key.size()));
   LRUHandle* to_remove_head = NULL;
+
+  if (!e) {
+    return NULL;
+  }
 
   e->value = value;
   memcpy(e->key_data, key.data(), key.size());
