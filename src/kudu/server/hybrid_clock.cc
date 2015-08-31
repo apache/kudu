@@ -141,13 +141,23 @@ Timestamp HybridClock::NowLatest() {
   Timestamp now;
   uint64_t error;
 
-  boost::lock_guard<simple_spinlock> lock(lock_);
-  NowWithError(&now, &error);
+  {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    NowWithError(&now, &error);
+  }
 
   uint64_t now_latest = GetPhysicalValueMicros(now) + error;
   uint64_t now_logical = GetLogicalValue(now);
 
   return TimestampFromMicrosecondsAndLogicalValue(now_latest, now_logical);
+}
+
+Status HybridClock::GetGlobalLatest(Timestamp* t) {
+  Timestamp now = Now();
+  uint64_t now_latest = GetPhysicalValueMicros(now) + FLAGS_max_clock_sync_error_usec;
+  uint64_t now_logical = GetLogicalValue(now);
+  *t = TimestampFromMicrosecondsAndLogicalValue(now_latest, now_logical);
+  return Status::OK();
 }
 
 void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
@@ -299,6 +309,22 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
   }
 
   return Status::OK();
+}
+
+Status HybridClock::WaitUntilAfterLocally(const Timestamp& then) {
+  while (true) {
+    Timestamp now;
+    uint64_t error;
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      NowWithError(&now, &error);
+    }
+    if (now.CompareTo(then) > 0) {
+      return Status::OK();
+    }
+    uint64_t wait_for_usec = GetPhysicalValueMicros(then) - GetPhysicalValueMicros(now);
+    SleepFor(MonoDelta::FromMicroseconds(wait_for_usec));
+  }
 }
 
 bool HybridClock::IsAfter(Timestamp t) {

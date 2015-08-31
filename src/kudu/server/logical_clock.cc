@@ -53,6 +53,11 @@ Status LogicalClock::WaitUntilAfter(const Timestamp& then) {
       "Logical clock does not support WaitUntilAfter()");
 }
 
+Status LogicalClock::WaitUntilAfterLocally(const Timestamp& then) {
+  return Status::ServiceUnavailable(
+      "Logical clock does not support WaitUntilAfterLocally()");
+}
+
 bool LogicalClock::IsAfter(Timestamp t) {
   return base::subtle::Acquire_Load(&now_) >= t.value();
 }

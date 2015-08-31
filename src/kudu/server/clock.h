@@ -9,6 +9,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 class faststring;
@@ -38,6 +39,14 @@ class Clock : public RefCountedThreadSafe<Clock> {
   // plus the max_error.
   virtual Timestamp NowLatest() = 0;
 
+  // Obtain a timestamp which is guaranteed to be later than the current time
+  // on any machine in the cluster.
+  //
+  // NOTE: this is not a very tight bound.
+  virtual Status GetGlobalLatest(Timestamp* t) {
+    return Status::NotSupported("clock does not support global properties");
+  }
+
   // Indicates whether this clock supports the required external consistency mode.
   virtual bool SupportsExternalConsistencyMode(ExternalConsistencyMode mode) = 0;
 
@@ -48,10 +57,14 @@ class Clock : public RefCountedThreadSafe<Clock> {
   // leader.
   virtual Status Update(const Timestamp& to_update) = 0;
 
-  // Waits until the clock advances to 'then'.
+  // Waits until the clock on all machines has advanced past 'then'.
   // Can also be used to implement 'external consistency' in the same sense as
   // Google's Spanner.
   virtual Status WaitUntilAfter(const Timestamp& then) = 0;
+
+  // Waits until the clock on this machine advances past 'then'. Unlike
+  // WaitUntilAfter(), this does not make any global guarantees.
+  virtual Status WaitUntilAfterLocally(const Timestamp& then) = 0;
 
   // Return true if the given time has definitely passed (i.e any future call
   // to Now() would return a higher value than t).

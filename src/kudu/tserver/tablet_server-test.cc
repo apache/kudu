@@ -1077,8 +1077,8 @@ TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
   ASSERT_GE(resp.snap_timestamp(), now.ToUint64());
 }
 
-// Tests that a snapshot in the future (beyond what clock->Now() returns) fails as an
-// invalid snapshot.
+// Tests that a snapshot in the future (beyond the current time plus maximum
+// synchronization error) fails as an invalid snapshot.
 TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
@@ -1098,10 +1098,10 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
   scan->set_read_mode(READ_AT_SNAPSHOT);
 
   Timestamp read_timestamp(write_timestamps_collector[0]);
-  // increment the write timestamp by 5 secs, the server will definitely consider
+  // Increment the write timestamp by 60 secs: the server will definitely consider
   // this in the future.
   read_timestamp = HybridClock::TimestampFromMicroseconds(
-      HybridClock::GetPhysicalValueMicros(read_timestamp) + 5000000);
+      HybridClock::GetPhysicalValueMicros(read_timestamp) + 60000000);
   scan->set_snap_timestamp(read_timestamp.ToUint64());
 
   // Send the call
@@ -1312,10 +1312,10 @@ TEST_F(TabletServerTest, TestSnapshotScan__SnapshotInTheFutureBeyondPropagatedTi
   scan->set_read_mode(READ_AT_SNAPSHOT);
 
   Timestamp read_timestamp(write_timestamps_collector[0]);
-  // increment the write timestamp by 5 secs, the server will definitely consider
+  // increment the write timestamp by 60 secs, the server will definitely consider
   // this in the future.
   read_timestamp = HybridClock::TimestampFromMicroseconds(
-      HybridClock::GetPhysicalValueMicros(read_timestamp) + 5000000);
+      HybridClock::GetPhysicalValueMicros(read_timestamp) + 60000000);
   scan->set_snap_timestamp(read_timestamp.ToUint64());
 
   // send a propagated timestamp that is an less than the read timestamp (but still

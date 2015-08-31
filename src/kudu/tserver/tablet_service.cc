@@ -1531,20 +1531,30 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
     RETURN_NOT_OK(server_->clock()->Update(propagated_timestamp));
   }
 
-  Timestamp now = server_->clock()->Now();
   Timestamp tmp_snap_timestamp;
 
   // If the client provided no snapshot timestamp we take the current clock
   // time as the snapshot timestamp.
   if (!scan_pb.has_snap_timestamp()) {
-    tmp_snap_timestamp = now;
-  // ... else we use the client provided one, but make sure it is less than
-  // or equal to the current clock read.
+    tmp_snap_timestamp = server_->clock()->Now();
+  // ... else we use the client provided one, but make sure it is not too far
+  // in the future as to be invalid.
   } else {
     tmp_snap_timestamp.FromUint64(scan_pb.snap_timestamp());
-    if (tmp_snap_timestamp.CompareTo(now) > 0) {
-      return Status::InvalidArgument("Snapshot time in the future");
+    Timestamp max_allowed_ts;
+    Status s = server_->clock()->GetGlobalLatest(&max_allowed_ts);
+    if (!s.ok()) {
+      return Status::NotSupported("Snapshot scans not supported on this server",
+                                  s.ToString());
     }
+    if (tmp_snap_timestamp.CompareTo(max_allowed_ts) > 0) {
+      return Status::InvalidArgument(
+          Substitute("Snapshot time $0 in the future. Max allowed timestamp is $1",
+                     server_->clock()->Stringify(tmp_snap_timestamp),
+                     server_->clock()->Stringify(max_allowed_ts)));
+    }
+    // TODO: consolidate this call into Mvcc::WaitForCleanSnapshotAtTimestamp
+    RETURN_NOT_OK(server_->clock()->WaitUntilAfterLocally(tmp_snap_timestamp));
   }
 
   tablet::MvccSnapshot snap;

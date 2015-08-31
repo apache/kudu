@@ -37,8 +37,9 @@ class LogicalClock : public Clock {
 
   virtual Status Update(const Timestamp& to_update) OVERRIDE;
 
-  // WaitUntilAfter() is unavailable for this clock.
+  // The Wait*() functions are not available for this clock.
   virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
+  virtual Status WaitUntilAfterLocally(const Timestamp& then) OVERRIDE;
 
   virtual bool IsAfter(Timestamp t) OVERRIDE;
 

@@ -31,6 +31,12 @@ class HybridClock : public Clock {
   // time.
   virtual Timestamp NowLatest() OVERRIDE;
 
+  // Obtain a timestamp which is guaranteed to be later than the current time
+  // on any machine in the cluster.
+  //
+  // NOTE: this is not a very tight bound.
+  virtual Status GetGlobalLatest(Timestamp* t) OVERRIDE;
+
   // Updates the clock with a timestamp originating on another machine.
   virtual Status Update(const Timestamp& to_update) OVERRIDE;
 
@@ -56,12 +62,17 @@ class HybridClock : public Clock {
   // the past, no wait necessary.
   //
   // 2 - 'then' is greater than > now.earliest(): need to wait until
-  // 'then' - now.earliest()
+  // 'then' <= now.earliest()
   //
   // Returns OK if it waited long enough or if no wait was necessary.
   // Returns Status::ServiceUnavailable if the system clock was not
   // synchronized and therefore it couldn't wait out the error.
   virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
+
+  // Blocks the caller thread until the local time is after 'then'.
+  // This is in contrast to the above method, which waits until the time
+  // on _all_ machines is past the given time.
+  virtual Status WaitUntilAfterLocally(const Timestamp& then) OVERRIDE;
 
   // Return true if the given time has passed (i.e any future call
   // to Now() would return a higher value than t).

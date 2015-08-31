@@ -540,7 +540,30 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
   }
 
   ASSERT_EQ(half_the_rows, sum);
+}
 
+// Test scanning at a timestamp in the future compared to the
+// local clock. If we are within the clock error, this should wait.
+// If we are far in the future, we should get an error.
+TEST_F(ClientTest, TestScanAtFutureTimestamp) {
+  KuduScanner scanner(client_table_.get());
+  ASSERT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
+
+  // Try to perform a scan at NowLatest(). This is in the future,
+  // but the server should wait until it's in the past.
+  int64_t ts = server::HybridClock::GetPhysicalValueMicros(
+      cluster_->mini_tablet_server(0)->server()->clock()->NowLatest());
+  ASSERT_OK(scanner.SetSnapshotMicros(ts));
+  ASSERT_OK(scanner.Open());
+  scanner.Close();
+
+  // Try to perform a scan far in the future (60s -- higher than max clock error).
+  // This should return an error.
+  ts += 60 * 1000000;
+  ASSERT_OK(scanner.SetSnapshotMicros(ts));
+  Status s = scanner.Open();
+  EXPECT_TRUE(s.IsInvalidArgument()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "in the future.");
 }
 
 TEST_F(ClientTest, TestScanMultiTablet) {
