@@ -123,13 +123,14 @@ class TestPeerProxy : public PeerProxy {
 
   // Answer the peer.
   virtual void Respond(Method method) {
-    boost::lock_guard<simple_spinlock> lock(lock_);
-    RespondUnlocked(method);
-  }
-
-  virtual void RespondUnlocked(Method method) {
-    rpc::ResponseCallback callback = FindOrDie(callbacks_, method);
-    CHECK_EQ(1, callbacks_.erase(method));
+    rpc::ResponseCallback callback;
+    {
+      boost::lock_guard<simple_spinlock> lock(lock_);
+      callback = FindOrDie(callbacks_, method);
+      CHECK_EQ(1, callbacks_.erase(method));
+      // Drop the lock before submitting to the pool, since the callback itself may
+      // destroy this instance.
+    }
     CHECK_OK(pool_->SubmitFunc(callback));
   }
 
