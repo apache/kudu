@@ -130,6 +130,13 @@ TEST_F(MetricsTest, AutoDetachToConstant) {
   ASSERT_EQ(12345, gauge->value());
 }
 
+METRIC_DEFINE_gauge_uint64(test_entity, counter_as_gauge, "Gauge exposed as Counter",
+                           MetricUnit::kBytes, "Gauge exposed as Counter",
+                           EXPOSE_AS_COUNTER);
+TEST_F(MetricsTest, TEstExposeGaugeAsCounter) {
+  ASSERT_EQ(MetricType::kCounter, METRIC_counter_as_gauge.type());
+}
+
 METRIC_DEFINE_histogram(test_entity, test_hist, "Test Histogram",
                         MetricUnit::kMilliseconds, "foo", 1000000, 3);
 

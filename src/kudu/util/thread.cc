@@ -41,7 +41,9 @@ using strings::Substitute;
 METRIC_DEFINE_gauge_uint64(server, threads_started,
                            "Threads Started",
                            kudu::MetricUnit::kThreads,
-                           "Total number of threads started on this server");
+                           "Total number of threads started on this server",
+                           kudu::EXPOSE_AS_COUNTER);
+
 METRIC_DEFINE_gauge_uint64(server, threads_running,
                            "Threads Running",
                            kudu::MetricUnit::kThreads,

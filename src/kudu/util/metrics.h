@@ -79,6 +79,18 @@
 // produce a metric for the number of transactions processed over some
 // time period.
 //
+// The one exception to this rule is that occasionally it may be more convenient to
+// implement a metric as a Gauge, even when it is logically a counter, due to Gauge's
+// support for fetching metric values via a bound function. In that case, you can
+// use the 'EXPOSE_AS_COUNTER' flag when defining the gauge prototype. For example:
+//
+// METRIC_DEFINE_gauge_uint64(server, threads_started,
+//                            "Threads Started",
+//                            kudu::MetricUnit::kThreads,
+//                            "Total number of threads started on this server",
+//                            kudu::EXPOSE_AS_COUNTER);
+//
+//
 // Metrics ownership
 // ------------------------------------------------------------
 //
@@ -230,27 +242,27 @@
   ::kudu::CounterPrototype METRIC_##name(                        \
       ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc))
 
-#define METRIC_DEFINE_gauge_string(entity, name, label, unit, desc)  \
+#define METRIC_DEFINE_gauge_string(entity, name, label, unit, desc, ...) \
   ::kudu::GaugePrototype<std::string> METRIC_##name(                 \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc))
-#define METRIC_DEFINE_gauge_bool(entity, name, label, unit, desc)   \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_bool(entity, name, label, unit, desc, ...) \
   ::kudu::GaugePrototype<bool> METRIC_##  name(                    \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc))
-#define METRIC_DEFINE_gauge_int32(entity, name, label, unit, desc) \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_int32(entity, name, label, unit, desc, ...) \
   ::kudu::GaugePrototype<int32_t> METRIC_##name(                   \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc))
-#define METRIC_DEFINE_gauge_uint32(entity, name, label, unit, desc)  \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_uint32(entity, name, label, unit, desc, ...) \
   ::kudu::GaugePrototype<uint32_t> METRIC_##name(                    \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc))
-#define METRIC_DEFINE_gauge_int64(entity, name, label, unit, desc) \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_int64(entity, name, label, unit, desc, ...) \
   ::kudu::GaugePrototype<int64_t> METRIC_##name(                   \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc))
-#define METRIC_DEFINE_gauge_uint64(entity, name, label, unit, desc)  \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_uint64(entity, name, label, unit, desc, ...) \
   ::kudu::GaugePrototype<uint64_t> METRIC_##name(                    \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc))
-#define METRIC_DEFINE_gauge_double(entity, name, label, unit, desc)  \
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
+#define METRIC_DEFINE_gauge_double(entity, name, label, unit, desc, ...) \
   ::kudu::GaugePrototype<double> METRIC_##name(                      \
-      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc))
+      ::kudu::MetricPrototype::CtorArgs(#entity, #name, label, unit, desc, ## __VA_ARGS__))
 
 #define METRIC_DEFINE_histogram(entity, name, label, unit, desc, max_val, num_sig_digits) \
   ::kudu::HistogramPrototype METRIC_##name(                                       \
@@ -596,6 +608,12 @@ class MetricPrototypeRegistry {
   DISALLOW_COPY_AND_ASSIGN(MetricPrototypeRegistry);
 };
 
+enum PrototypeFlags {
+  // Flag which causes a Gauge prototype to expose itself as if it
+  // were a counter.
+  EXPOSE_AS_COUNTER = 1 << 0
+};
+
 class MetricPrototype {
  public:
   // Simple struct to aggregate the arguments common to all prototypes.
@@ -605,12 +623,14 @@ class MetricPrototype {
              const char* name,
              const char* label,
              MetricUnit::Type unit,
-             const char* description)
+             const char* description,
+             uint32_t flags = 0)
       : entity_type_(entity_type),
         name_(name),
         label_(label),
         unit_(unit),
-        description_(description) {
+        description_(description),
+        flags_(flags) {
     }
 
     const char* const entity_type_;
@@ -618,6 +638,7 @@ class MetricPrototype {
     const char* const label_;
     const MetricUnit::Type unit_;
     const char* const description_;
+    const uint32_t flags_;
   };
 
   const char* entity_type() const { return args_.entity_type_; }
@@ -664,7 +685,13 @@ class GaugePrototype : public MetricPrototype {
     return entity->FindOrCreateFunctionGauge(this, function);
   }
 
-  virtual MetricType::Type type() const OVERRIDE { return MetricType::kGauge; }
+  virtual MetricType::Type type() const OVERRIDE {
+    if (args_.flags_ & EXPOSE_AS_COUNTER) {
+      return MetricType::kCounter;
+    } else {
+      return MetricType::kGauge;
+    }
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(GaugePrototype);

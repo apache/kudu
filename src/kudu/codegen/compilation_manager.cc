@@ -31,11 +31,13 @@ DEFINE_bool(time_codegen, false, "Whether to print time that each code "
 
 METRIC_DEFINE_gauge_int64(server, code_cache_hits, "Codegen Cache Hits",
                           kudu::MetricUnit::kCacheHits,
-                          "Number of codegen cache hits since start");
+                          "Number of codegen cache hits since start",
+                          kudu::EXPOSE_AS_COUNTER);
 METRIC_DEFINE_gauge_int64(server, code_cache_queries, "Codegen Cache Queries",
                           kudu::MetricUnit::kCacheQueries,
                           "Number of codegen cache queries (hits + misses) "
-                          "since start");
+                          "since start",
+                          kudu::EXPOSE_AS_COUNTER);
 namespace kudu {
 namespace codegen {
 
