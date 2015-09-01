@@ -181,12 +181,12 @@ public class AsyncKuduClient {
   @GuardedBy("sessions")
   private final Set<AsyncKuduSession> sessions = new HashSet<AsyncKuduSession>();
 
-  // TODO Below is an uber hack, the master is considered a tablet with
-  // a table name.
-  static final String MASTER_TABLE_HACK =  "~~~masterTableHack~~~";
-  final KuduTable masterTableHack;
+  // Since the masters also go through TabletClient, we need to treat them as if they were a normal
+  // table. We'll use the following fake table name to identify places where we need special
+  // handling.
+  static final String MASTER_TABLE_NAME_PLACEHOLDER =  "Kudu Master";
+  final KuduTable masterTable;
   private final List<HostAndPort> masterAddresses;
-  // END OF HACK
 
   private final HashedWheelTimer timer = new HashedWheelTimer(20, MILLISECONDS);
 
@@ -226,7 +226,7 @@ public class AsyncKuduClient {
                           long defaultSocketReadTimeoutMs) {
     this.channelFactory = defaultChannelFactory();
     this.masterAddresses = masterAddresses;
-    this.masterTableHack = new KuduTable(this, MASTER_TABLE_HACK,
+    this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER,
        new Schema(new ArrayList<ColumnSchema>(0)));
     this.defaultOperationTimeoutMs = defaultOperationTimeoutMs;
     this.defaultAdminOperationTimeoutMs = defaultAdminOperationTimeoutMs;
@@ -276,7 +276,7 @@ public class AsyncKuduClient {
     if (builder == null) {
       builder = new CreateTableBuilder();
     }
-    CreateTableRequest create = new CreateTableRequest(this.masterTableHack, name, schema,
+    CreateTableRequest create = new CreateTableRequest(this.masterTable, name, schema,
         builder);
     create.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(create);
@@ -289,7 +289,7 @@ public class AsyncKuduClient {
    */
   public Deferred<DeleteTableResponse> deleteTable(String name) {
     checkIsClosed();
-    DeleteTableRequest delete = new DeleteTableRequest(this.masterTableHack, name);
+    DeleteTableRequest delete = new DeleteTableRequest(this.masterTable, name);
     delete.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(delete);
   }
@@ -305,7 +305,7 @@ public class AsyncKuduClient {
    */
   public Deferred<AlterTableResponse> alterTable(String name, AlterTableBuilder atb) {
     checkIsClosed();
-    AlterTableRequest alter = new AlterTableRequest(this.masterTableHack, name, atb);
+    AlterTableRequest alter = new AlterTableRequest(this.masterTable, name, atb);
     alter.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(alter);
   }
@@ -318,7 +318,7 @@ public class AsyncKuduClient {
    */
   public Deferred<IsAlterTableDoneResponse> isAlterTableDone(String name) throws Exception {
     checkIsClosed();
-    IsAlterTableDoneRequest request = new IsAlterTableDoneRequest(this.masterTableHack, name);
+    IsAlterTableDoneRequest request = new IsAlterTableDoneRequest(this.masterTable, name);
     request.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(request);
   }
@@ -329,13 +329,13 @@ public class AsyncKuduClient {
    */
   public Deferred<ListTabletServersResponse> listTabletServers() {
     checkIsClosed();
-    ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTableHack);
+    ListTabletServersRequest rpc = new ListTabletServersRequest(this.masterTable);
     rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(rpc);
   }
 
   Deferred<GetTableSchemaResponse> getTableSchema(String name) {
-    GetTableSchemaRequest rpc = new GetTableSchemaRequest(this.masterTableHack, name);
+    GetTableSchemaRequest rpc = new GetTableSchemaRequest(this.masterTable, name);
     rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(rpc);
   }
@@ -355,7 +355,7 @@ public class AsyncKuduClient {
    * @return a deferred that yields the list of table names
    */
   public Deferred<ListTablesResponse> getTablesList(String nameFilter) {
-    ListTablesRequest rpc = new ListTablesRequest(this.masterTableHack, nameFilter);
+    ListTablesRequest rpc = new ListTablesRequest(this.masterTable, nameFilter);
     rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(rpc);
   }
@@ -689,7 +689,7 @@ public class AsyncKuduClient {
             }
           }
         }
-        IsCreateTableDoneRequest rpc = new IsCreateTableDoneRequest(masterTableHack, tableName);
+        IsCreateTableDoneRequest rpc = new IsCreateTableDoneRequest(masterTable, tableName);
         rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
         final Deferred<Master.IsCreateTableDoneResponsePB> d =
             sendRpcToTablet(rpc).addCallback(new IsCreateTableDoneCB(tableName));
@@ -857,7 +857,7 @@ public class AsyncKuduClient {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
-    GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTableHack, rowkey,
+    GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTable, rowkey,
         rowkey, table);
     rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     final Deferred<Master.GetTableLocationsResponsePB> d;
@@ -933,7 +933,7 @@ public class AsyncKuduClient {
         throw new NonRecoverableException("Took too long getting the list of tablets, " +
             "deadline=" + deadline);
       }
-      GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTableHack, startKey,
+      GetTableLocationsRequest rpc = new GetTableLocationsRequest(masterTable, startKey,
           endKey, table);
       rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
       final Deferred<Master.GetTableLocationsResponsePB> d = sendRpcToTablet(rpc);
@@ -1140,7 +1140,7 @@ public class AsyncKuduClient {
     }
 
     // We currently only have one master tablet.
-    if (tableName.equals(MASTER_TABLE_HACK)) {
+    if (isMasterTable(tableName)) {
       if (tablets.firstEntry() == null) {
         return null;
       }
@@ -1172,7 +1172,7 @@ public class AsyncKuduClient {
    * @return A Deferred object for the master replica's current registration.
    */
   Deferred<GetMasterRegistrationResponse> getMasterRegistration(TabletClient masterClient) {
-    GetMasterRegistrationRequest rpc = new GetMasterRegistrationRequest(masterTableHack);
+    GetMasterRegistrationRequest rpc = new GetMasterRegistrationRequest(masterTable);
     rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     Deferred<GetMasterRegistrationResponse> d = rpc.getDeferred();
     masterClient.sendRpc(rpc);
@@ -1190,7 +1190,12 @@ public class AsyncKuduClient {
     if (ip == null) {
       return null;
     }
-    return newClient(MASTER_TABLE_HACK + masterHostPort.toString(), ip, masterHostPort.getPort());
+    // We should pass a UUID here but we have a chicken and egg problem, we first need to
+    // communicate with the masters to find out about them, and that's what we're trying to do.
+    // The UUID is used for logging, so instead we're passing the "master table name" followed by
+    // host and port which is enough to identify the node we're connecting to.
+    return newClient(MASTER_TABLE_NAME_PLACEHOLDER + " - " + masterHostPort.toString(),
+        ip, masterHostPort.getPort());
   }
 
   TabletClient newClient(String uuid, final String host, final int port) {
@@ -1468,7 +1473,9 @@ public class AsyncKuduClient {
   }
 
   private boolean isMasterTable(String tableName) {
-    return MASTER_TABLE_HACK.equals(tableName);
+    // Checking that it's the same instance so that we don't to reserve the placeholder's name as
+    // a restricted name.
+    return MASTER_TABLE_NAME_PLACEHOLDER == tableName;
   }
 
   private final class TabletClientPipeline extends DefaultChannelPipeline {
