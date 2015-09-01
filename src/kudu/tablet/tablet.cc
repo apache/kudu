@@ -76,6 +76,9 @@ METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_uint64(tablet, memrowset_size, "MemRowSet Memory Usage",
                            kudu::MetricUnit::kBytes,
                            "Size of this tablet's memrowset");
+METRIC_DEFINE_gauge_uint64(tablet, on_disk_size, "Tablet Size On Disk",
+                           kudu::MetricUnit::kBytes,
+                           "Size of this tablet on disk.");
 
 namespace kudu {
 namespace tablet {
@@ -144,6 +147,9 @@ Tablet::Tablet(const scoped_refptr<TabletMetadata>& metadata,
     metrics_.reset(new TabletMetrics(metric_entity_));
     METRIC_memrowset_size.InstantiateFunctionGauge(
       metric_entity_, Bind(&Tablet::MemRowSetSize, Unretained(this)))
+      ->AutoDetach(&metric_detacher_);
+    METRIC_on_disk_size.InstantiateFunctionGauge(
+      metric_entity_, Bind(&Tablet::EstimateOnDiskSize, Unretained(this)))
       ->AutoDetach(&metric_detacher_);
   }
 }
