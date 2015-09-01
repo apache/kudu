@@ -37,6 +37,17 @@ DEFINE_int32(log_min_segments_to_retain, 2,
              "The minimum number of past log segments to keep at all times,"
              " regardless of what is required for durability. "
              "Must be at least 1.");
+DEFINE_int32(log_min_seconds_to_retain, 300,
+             "The minimum number of seconds for which to keep log segments to keep at all times, "
+             "regardless of what is required for durability. Logs may be still retained for "
+             "a longer amount of time if they are necessary for correct restart. This should be "
+             "set long enough such that a tablet server which has temporarily failed can be "
+             "restarted within the given time period. If a server is down for longer than this "
+             "amount of time, it is possible that its tablets will be re-replicated on other "
+             "machines.");
+
+TAG_FLAG(log_min_seconds_to_retain, runtime);
+TAG_FLAG(log_min_seconds_to_retain, advanced);
 
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
              "Maximum size of the group commit queue in bytes");
@@ -328,6 +339,7 @@ Status Log::CloseCurrentSegment() {
   VLOG(2) << "Segment footer for " << active_segment_->path()
           << ": " << footer_builder_.ShortDebugString();
 
+  footer_builder_.set_close_timestamp_micros(GetCurrentTimeMicros());
   RETURN_NOT_OK(active_segment_->WriteFooterAndClose(footer_builder_));
 
   return Status::OK();
@@ -599,18 +611,39 @@ Status Log::GetSegmentsToGCUnlocked(int64_t min_op_idx, SegmentSequence* segment
 
   int max_to_delete = std::max(reader_->num_segments() - FLAGS_log_min_segments_to_retain, 0);
   if (segments_to_gc->size() > max_to_delete) {
-    VLOG(1) << "GCing " << segments_to_gc->size() << " in " << log_dir_
+    VLOG(2) << "GCing " << segments_to_gc->size() << " in " << log_dir_
         << " would not leave enough remaining segments to satisfy minimum "
-        << "retention requirement. Only GCing "
+        << "retention requirement. Only considering "
         << max_to_delete << "/" << reader_->num_segments();
     segments_to_gc->resize(max_to_delete);
   } else if (segments_to_gc->size() < max_to_delete) {
     int extra_segments = max_to_delete - segments_to_gc->size();
-    VLOG(1) << tablet_id_ << " has too many log segments, need to GC "
+    VLOG(2) << tablet_id_ << " has too many log segments, need to GC "
         << extra_segments << " more. ";
   }
-  return Status::OK();
 
+  // Don't GC segments that are newer than the configured time-based retention.
+  int64_t now = GetCurrentTimeMicros();
+  for (int i = 0; i < segments_to_gc->size(); i++) {
+    const scoped_refptr<ReadableLogSegment>& segment = (*segments_to_gc)[i];
+
+    // Segments here will always have a footer, since we don't return the in-progress segment
+    // up above. However, segments written by older Kudu builds may not have the timestamp
+    // info. In that case, we're allowed to GC them.
+    if (!segment->footer().has_close_timestamp_micros()) continue;
+
+    int64_t age_seconds = (now - segment->footer().close_timestamp_micros()) / 1000000;
+    if (age_seconds < FLAGS_log_min_seconds_to_retain) {
+      VLOG(2) << "Segment " << segment->path() << " is only " << age_seconds << "s old: "
+              << "cannot GC it yet due to configured time-based retention policy.";
+      // Truncate the list of segments to GC here -- if this one is too new, then
+      // all later ones are also too new.
+      segments_to_gc->resize(i);
+      break;
+    }
+  }
+
+  return Status::OK();
 }
 
 Status Log::Append(LogEntryPB* phys_entry) {

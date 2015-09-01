@@ -633,7 +633,18 @@ TEST_F(LogTest, TestLogReopenAndGC) {
     ASSERT_OK(log_anchor_registry_->Unregister(anchors[i]));
   }
   ASSERT_OK(log_anchor_registry_->GetEarliestRegisteredLogIndex(&anchored_index));
+
+  // If we set the min_seconds_to_retain high, then we'll retain the logs even
+  // though we could GC them based on our anchoring.
+  FLAGS_log_min_seconds_to_retain = 500;
   ASSERT_OK(log_->GC(anchored_index, &num_gced_segments));
+  ASSERT_EQ(0, num_gced_segments);
+
+  // Turn off the time-based retention and try GCing again. This time
+  // we should succeed.
+  FLAGS_log_min_seconds_to_retain = 0;
+  ASSERT_OK(log_->GC(anchored_index, &num_gced_segments));
+  ASSERT_EQ(2, num_gced_segments);
 
   // After GC there should be only one left, besides the one currently being
   // written to. That is because min_segments_to_retain defaults to 2.

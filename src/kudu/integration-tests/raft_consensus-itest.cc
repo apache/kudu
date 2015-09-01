@@ -681,6 +681,7 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   vector<string> extra_flags;
   extra_flags.push_back("--log_cache_size_limit_mb=1");
   extra_flags.push_back("--log_segment_size_mb=1");
+  extra_flags.push_back("--log_min_seconds_to_retain=0");
   extra_flags.push_back("--log_async_preallocate_segments=false");
   extra_flags.push_back("--enable_remote_bootstrap=false");
   BuildAndStart(extra_flags);

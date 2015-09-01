@@ -33,6 +33,8 @@
 
 METRIC_DECLARE_entity(tablet);
 
+DECLARE_int32(log_min_seconds_to_retain);
+
 namespace kudu {
 namespace tablet {
 
@@ -281,6 +283,7 @@ class DelayedApplyTransaction : public WriteTransaction {
 
 // Ensure that Log::GC() doesn't delete logs when the MRS has an anchor.
 TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
+  FLAGS_log_min_seconds_to_retain = 0;
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartPeer(info));
 
@@ -322,6 +325,7 @@ TEST_F(TabletPeerTest, TestMRSAnchorPreventsLogGC) {
 
 // Ensure that Log::GC() doesn't delete logs when the DMS has an anchor.
 TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
+  FLAGS_log_min_seconds_to_retain = 0;
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartPeer(info));
 
@@ -403,6 +407,7 @@ TEST_F(TabletPeerTest, TestDMSAnchorPreventsLogGC) {
 
 // Ensure that Log::GC() doesn't compact logs with OpIds of active transactions.
 TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
+  FLAGS_log_min_seconds_to_retain = 0;
   ConsensusBootstrapInfo info;
   ASSERT_OK(StartPeer(info));
 
