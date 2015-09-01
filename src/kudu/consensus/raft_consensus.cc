@@ -293,7 +293,7 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     RETURN_NOT_OK(EnsureFailureDetectorEnabledUnlocked());
 
     MonoDelta timeout = LeaderElectionExpBackoffDeltaUnlocked();
-    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(timeout));
+    RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(timeout, ALLOW_LOGGING));
 
     const RaftConfigPB& active_config = state_->GetActiveConfigUnlocked();
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Starting election with config: "
@@ -1391,13 +1391,20 @@ Status RaftConsensus::RequestVoteRespondLeaderIsAlive(const VoteRequestPB* reque
 
 Status RaftConsensus::RequestVoteRespondVoteGranted(const VoteRequestPB* request,
                                                     VoteResponsePB* response) {
-  // Give peer time to become leader if we vote for them.
-  RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked()));
+  // We know our vote will be "yes", so avoid triggering an election while we
+  // persist our vote to disk. We use an exponential backoff to avoid too much
+  // split-vote contention when nodes display high latencies.
+  MonoDelta additional_backoff = LeaderElectionExpBackoffDeltaUnlocked();
+  RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(additional_backoff, ALLOW_LOGGING));
+
+  // Persist our vote to disk.
+  RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(request->candidate_uuid()));
 
   FillVoteResponseVoteGranted(response);
 
-  // Persist our vote.
-  RETURN_NOT_OK(state_->SetVotedForCurrentTermUnlocked(request->candidate_uuid()));
+  // Give peer time to become leader. Snooze one more time after persisting our
+  // vote. When disk latency is high, this should help reduce churn.
+  RETURN_NOT_OK(SnoozeFailureDetectorUnlocked(additional_backoff, DO_NOT_LOG));
 
   LOG(INFO) << Substitute("$0: Granting yes vote for candidate $1 in term $2.",
                           GetRequestVoteLogPrefixUnlocked(),
@@ -1535,7 +1542,8 @@ void RaftConsensus::DoElectionCallback(const ElectionResult& result) {
     //   finish another one is triggered already.
     // We ignore the status as we don't want to fail if we the timer is
     // disabled.
-    ignore_result(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked()));
+    ignore_result(SnoozeFailureDetectorUnlocked(LeaderElectionExpBackoffDeltaUnlocked(),
+                                                ALLOW_LOGGING));
   }
 
   if (result.decision == VOTE_DENIED) {
@@ -1665,20 +1673,23 @@ Status RaftConsensus::ExpireFailureDetectorUnlocked() {
 }
 
 Status RaftConsensus::SnoozeFailureDetectorUnlocked() {
-  return SnoozeFailureDetectorUnlocked(MonoDelta::FromMicroseconds(0));
+  return SnoozeFailureDetectorUnlocked(MonoDelta::FromMicroseconds(0), DO_NOT_LOG);
 }
 
-Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta) {
+Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta,
+                                                    AllowLogging allow_logging) {
   if (PREDICT_FALSE(!FLAGS_enable_leader_failure_detection)) {
     return Status::OK();
   }
 
   MonoTime time = MonoTime::Now(MonoTime::FINE);
   time.AddDelta(additional_delta);
-  if (additional_delta.ToNanoseconds() > 0) {
-    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Snoozing failure detection for an additional: "
-        << additional_delta.ToString();
+
+  if (allow_logging == ALLOW_LOGGING) {
+    LOG_WITH_PREFIX_UNLOCKED(INFO) << "Snoozing failure detection for election timeout "
+                                   << "plus an additional " + additional_delta.ToString();
   }
+
   return failure_detector_->MessageFrom(kTimerId, time);
 }
 

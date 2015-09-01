@@ -44,6 +44,11 @@ namespace kudu {
   kudu::sw_internal::LogTiming VARNAME_LINENUM(_log_timing)(__FILE__, __LINE__, \
       google::severity, "", description, -1, true);
 
+// Scoped version of LOG_SLOW_EXECUTION() but with a prefix.
+#define SCOPED_LOG_SLOW_EXECUTION_PREFIX(severity, max_expected_millis, prefix, description) \
+  kudu::sw_internal::LogTiming VARNAME_LINENUM(_log_timing)(__FILE__, __LINE__, \
+      google::severity, prefix, description, max_expected_millis, true)
+
 // Macro for logging timing of a block. Usage:
 //   LOG_SLOW_EXECUTION(INFO, 5, "doing some task") {
 //     ... some task which takes some time

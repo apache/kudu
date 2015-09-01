@@ -167,6 +167,13 @@ class RaftConsensus : public Consensus,
   friend class ReplicaState;
   friend class RaftConsensusQuorumTest;
 
+  // Control whether printing of log messages should be done for a particular
+  // function call.
+  enum AllowLogging {
+    DO_NOT_LOG = 0,
+    ALLOW_LOGGING = 1,
+  };
+
   // Helper struct that contains the messages from the leader that we need to
   // append to our log, after they've been deduplicated.
   struct LeaderRequest {
@@ -341,8 +348,10 @@ class RaftConsensus : public Consensus,
   Status SnoozeFailureDetectorUnlocked();
 
   // Like the above but adds 'additional_delta' to the default timeout
-  // period.
-  Status SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta);
+  // period. If allow_logging is set to ALLOW_LOGGING, then this method
+  // will print a log message when called.
+  Status SnoozeFailureDetectorUnlocked(const MonoDelta& additional_delta,
+                                       AllowLogging allow_logging);
 
   // Return the minimum election timeout. Due to backoff and random
   // jitter, election timeouts may be longer than this.

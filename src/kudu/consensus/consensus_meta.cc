@@ -10,6 +10,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
+#include "kudu/util/stopwatch.h"
 
 namespace kudu {
 namespace consensus {
@@ -165,6 +166,7 @@ void ConsensusMetadata::MergeCommittedConsensusStatePB(const ConsensusStatePB& c
 }
 
 Status ConsensusMetadata::Flush() {
+  SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500, LogPrefix(), "flushing consensus metadata");
   // Sanity test to ensure we never write out a bad configuration.
   RETURN_NOT_OK_PREPEND(VerifyRaftConfig(pb_.committed_config(), COMMITTED_QUORUM),
                         "Invalid config in ConsensusMetadata, cannot flush to disk");
