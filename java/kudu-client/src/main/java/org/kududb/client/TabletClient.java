@@ -360,19 +360,21 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
     Pair<Object, Object> decoded = null;
     Exception exception = null;
+    KuduException retryableHeaderException = null;
     if (header.hasIsError() && header.getIsError()) {
       RpcHeader.ErrorStatusPB.Builder errorBuilder = RpcHeader.ErrorStatusPB.newBuilder();
       KuduRpc.readProtobuf(response.getPBMessage(), errorBuilder);
       RpcHeader.ErrorStatusPB error = errorBuilder.build();
       if (error.getCode().equals(RpcHeader.ErrorStatusPB.RpcErrorCodePB.ERROR_SERVER_TOO_BUSY)) {
-        // we're not calling rpc.callback() so we rely on the client to retry that RPC
-        kuduClient.handleRetryableError(rpc, new TabletServerErrorException(uuid, error));
-        return null;
+        // We can't return right away, we still need to remove ourselves from 'rpcs_inflight', so we
+        // populate 'retryableHeaderException'.
+        retryableHeaderException = new TabletServerErrorException(uuid, error);
+      } else {
+        String message = getPeerUuidLoggingString() +
+            "Tablet server sent error " + error.getMessage();
+        exception = new NonRecoverableException(message);
+        LOG.error(message); // can be useful
       }
-      String message = getPeerUuidLoggingString() +
-          "Tablet server sent error " + error.getMessage();
-      exception = new NonRecoverableException(message);
-      LOG.error(message); // can be useful
     } else {
       try {
         decoded = rpc.deserialize(response, this.uuid);
@@ -393,6 +395,12 @@ public class TabletClient extends ReplayingDecoder<VoidEnum> {
         // The RPC we were decoding was cleaned up already, give up.
         throw new NonRecoverableException("RPC not found");
       }
+    }
+
+    // This check is specifically for the ERROR_SERVER_TOO_BUSY case above.
+    if (retryableHeaderException != null) {
+      kuduClient.handleRetryableError(rpc, retryableHeaderException);
+      return null;
     }
 
     // We can get this Message from within the RPC's expected type,
