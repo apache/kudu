@@ -168,6 +168,12 @@ message ColumnRangePredicatePB {
   optional bytes upper_bound = 3;
 }
 
+// List of predicates used by the Java client. Will rapidly evolve into something more reusable
+// as a way to pass scanner configurations.
+message ColumnRangePredicateListPB {
+  repeated ColumnRangePredicatePB range_predicates = 1;
+}
+
 message NewScanRequestPB {
   // The tablet to scan.
   required bytes tablet_id = 1;

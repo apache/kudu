@@ -51,12 +51,25 @@ public abstract class AbstractKuduScannerBuilder
 
   /**
    * Adds a predicate for a column.
-   * Very important constraint: row key predicates must be added in order.
    * @param predicate predicate for a column to add
    * @return this instance
    */
   public S addColumnRangePredicate(ColumnRangePredicate predicate) {
-    columnRangePredicates.add(predicate.pb.build());
+    columnRangePredicates.add(predicate.getPb());
+    return (S) this;
+  }
+
+  /**
+   * Adds a list of predicates in their raw format,
+   * as given by {@link ColumnRangePredicate#toByteArray(List)}.
+   * @param predicateBytes predicates to add
+   * @return this instance
+   * @throws IllegalArgumentException thrown when the passed bytes aren't valid
+   */
+  public S addColumnRangePredicatesRaw(byte[] predicateBytes) {
+    List<Tserver.ColumnRangePredicatePB> predicates =
+        ColumnRangePredicate.fromByteArray(predicateBytes);
+    columnRangePredicates.addAll(predicates);
     return (S) this;
   }
 

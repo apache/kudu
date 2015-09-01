@@ -3,6 +3,7 @@
 package org.kududb.mapreduce;
 
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Lists;
 import org.kududb.Schema;
 import org.kududb.client.*;
 import org.apache.hadoop.conf.Configuration;
@@ -39,15 +40,14 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     session.close().join(DEFAULT_SLEEP);
 
     // Test getting all the columns back
-
-    RecordReader<NullWritable, RowResult> reader = createRecordReader("*");
+    RecordReader<NullWritable, RowResult> reader = createRecordReader("*", null);
     assertTrue(reader.nextKeyValue());
     assertEquals(5, reader.getCurrentValue().getColumnProjection().getColumnCount());
     assertFalse(reader.nextKeyValue());
 
     // Test getting two columns back
     reader = createRecordReader(schema.getColumnByIndex(3).getName() + "," +
-        schema.getColumnByIndex(2).getName());
+        schema.getColumnByIndex(2).getName(), null);
     assertTrue(reader.nextKeyValue());
     assertEquals(2, reader.getCurrentValue().getColumnProjection().getColumnCount());
     assertEquals("a string", reader.getCurrentValue().getString(0));
@@ -60,7 +60,7 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     }
 
     // Test getting one column back
-    reader = createRecordReader(schema.getColumnByIndex(1).getName());
+    reader = createRecordReader(schema.getColumnByIndex(1).getName(), null);
     assertTrue(reader.nextKeyValue());
     assertEquals(1, reader.getCurrentValue().getColumnProjection().getColumnCount());
     assertEquals(2, reader.getCurrentValue().getInt(0));
@@ -72,28 +72,38 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     }
 
     // Test getting empty rows back
-    reader = createRecordReader("");
+    reader = createRecordReader("", null);
     assertTrue(reader.nextKeyValue());
     assertEquals(0, reader.getCurrentValue().getColumnProjection().getColumnCount());
     assertFalse(reader.nextKeyValue());
 
     // Test getting an unknown table, will not work
     try {
-      createRecordReader("unknown");
+      createRecordReader("unknown", null);
       fail("Should not be able to scan a column that doesn't exist");
     } catch (IllegalArgumentException e) {
       // expected
     }
+
+    // Test using a predicate that filters the row out.
+    ColumnRangePredicate pred1 = new ColumnRangePredicate(schema.getColumnByIndex(1));
+    pred1.setLowerBound(3);
+    reader = createRecordReader("*", Lists.newArrayList(pred1));
+    assertFalse(reader.nextKeyValue());
   }
 
-  private RecordReader<NullWritable, RowResult> createRecordReader(String columnProjection)
-      throws IOException, InterruptedException {
+  private RecordReader<NullWritable, RowResult> createRecordReader(String columnProjection,
+        List<ColumnRangePredicate> predicates) throws IOException, InterruptedException {
     KuduTableInputFormat input = new KuduTableInputFormat();
     Configuration conf = new Configuration();
     conf.set(KuduTableInputFormat.MASTER_ADDRESSES_KEY, getMasterAddresses());
     conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, TABLE_NAME);
     if (columnProjection != null) {
       conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);
+    }
+    if (predicates != null) {
+      String encodedPredicates = KuduTableMapReduceUtil.base64EncodePredicates(predicates);
+      conf.set(KuduTableInputFormat.ENCODED_COLUMN_RANGE_PREDICATES_KEY, encodedPredicates);
     }
     input.setConf(conf);
     List<InputSplit> splits = input.getSplits(null);

@@ -362,8 +362,8 @@ public class BaseKuduTest {
         Insert insert = table.newInsert();
         PartialRow row = insert.getRow();
         row.addInt(0, key1 + key2);
-        row.addInt(1, 1);
-        row.addInt(2, 2);
+        row.addInt(1, key1);
+        row.addInt(2, key2);
         row.addString(3, "a string");
         row.addBoolean(4, true);
         session.apply(insert).join(DEFAULT_SLEEP);

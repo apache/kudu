@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.mapreduce;
 
+import com.google.common.collect.Lists;
 import org.kududb.client.*;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
@@ -15,6 +16,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.Assert.*;
 
@@ -51,6 +54,21 @@ public class TestInputFormatJob extends BaseKuduTest {
 
     Configuration conf = new Configuration();
     HADOOP_UTIL.setupAndGetTestDir(TestInputFormatJob.class.getName(), conf).getAbsolutePath();
+
+    createAndTestJob(conf, new ArrayList<ColumnRangePredicate>(), 9);
+
+    ColumnRangePredicate pred1 = new ColumnRangePredicate(basicSchema.getColumnByIndex(0));
+    pred1.setLowerBound(20);
+    createAndTestJob(conf, Lists.newArrayList(pred1), 6);
+
+    ColumnRangePredicate pred2 = new ColumnRangePredicate(basicSchema.getColumnByIndex(2));
+    pred2.setUpperBound(1);
+    createAndTestJob(conf, Lists.newArrayList(pred1, pred2), 2);
+  }
+
+  private void createAndTestJob(Configuration conf,
+                                List<ColumnRangePredicate> predicates, int expectedCount)
+      throws Exception {
     String jobName = TestInputFormatJob.class.getName();
     Job job = new Job(conf, jobName);
 
@@ -59,22 +77,23 @@ public class TestInputFormatJob extends BaseKuduTest {
     job.setMapperClass(mapperClass);
     job.setNumReduceTasks(0);
     job.setOutputFormatClass(NullOutputFormat.class);
-    new KuduTableMapReduceUtil.TableInputFormatConfigurator(
-        job,
-        TABLE_NAME,
-        basicSchema.getColumnByIndex(0).getName(),
-        getMasterAddresses())
-        .operationTimeoutMs(DEFAULT_SLEEP)
-        .addDependencies(false)
-        .cacheBlocks(false)
-        .configure();
+    KuduTableMapReduceUtil.TableInputFormatConfigurator configurator =
+        new KuduTableMapReduceUtil.TableInputFormatConfigurator(
+            job,
+            TABLE_NAME,
+            "*",
+            getMasterAddresses())
+            .operationTimeoutMs(DEFAULT_SLEEP)
+            .addDependencies(false)
+            .cacheBlocks(false);
+    for (ColumnRangePredicate predicate : predicates) {
+      configurator.addColumnRangePredicate(predicate);
+    }
+    configurator.configure();
 
     assertTrue("Test job did not end properly", job.waitForCompletion(true));
 
-    assertEquals(9, job.getCounters().findCounter(Counters.ROWS).getValue());
-
-    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table);
-    assertEquals(9, countRowsInScan(builder.build()));
+    assertEquals(expectedCount, job.getCounters().findCounter(Counters.ROWS).getValue());
   }
 
   /**

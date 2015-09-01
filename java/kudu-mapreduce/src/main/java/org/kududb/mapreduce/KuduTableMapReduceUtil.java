@@ -16,13 +16,9 @@
  */
 package org.kududb.mapreduce;
 
-import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
-import org.kududb.client.AsyncKuduClient;
-import org.kududb.client.KuduTable;
-import org.kududb.client.Operation;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.apache.commons.net.util.Base64;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -31,15 +27,17 @@ import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.TaskInputOutputContext;
 import org.apache.hadoop.util.JarFinder;
 import org.apache.hadoop.util.StringUtils;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+import org.kududb.client.AsyncKuduClient;
+import org.kududb.client.ColumnRangePredicate;
+import org.kududb.client.KuduTable;
+import org.kududb.client.Operation;
 
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLDecoder;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.Set;
+import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -149,6 +147,7 @@ public class KuduTableMapReduceUtil {
     protected long operationTimeoutMs = AsyncKuduClient.DEFAULT_OPERATION_TIMEOUT_MS;
     protected final String columnProjection;
     protected boolean cacheBlocks;
+    protected List<ColumnRangePredicate> columnRangePredicates = new ArrayList<>();
 
     /**
      * Constructor for the required fields to configure.
@@ -186,13 +185,25 @@ public class KuduTableMapReduceUtil {
       conf.set(KuduTableInputFormat.INPUT_TABLE_KEY, table);
       conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs);
       conf.setBoolean(KuduTableInputFormat.SCAN_CACHE_BLOCKS, cacheBlocks);
+
       if (columnProjection != null) {
         conf.set(KuduTableInputFormat.COLUMN_PROJECTION_KEY, columnProjection);
       }
+
+      if (!columnRangePredicates.isEmpty()) {
+        conf.set(KuduTableInputFormat.ENCODED_COLUMN_RANGE_PREDICATES_KEY,
+            base64EncodePredicates(columnRangePredicates));
+      }
+
       if (addDependencies) {
         addDependencyJars(job);
       }
     }
+  }
+
+  static String base64EncodePredicates(List<ColumnRangePredicate> predicates) {
+    byte[] predicateBytes = ColumnRangePredicate.toByteArray(predicates);
+    return Base64.encodeBase64String(predicateBytes);
   }
 
 
@@ -283,11 +294,22 @@ public class KuduTableMapReduceUtil {
       this.operationTimeoutMs = operationTimeoutMs;
       return this;
     }
+
+    /**
+     * Adds a new predicate that will be pushed down to all the tablets.
+     * @param predicate a predicate to add
+     * @return this instance
+     */
+    public TableInputFormatConfigurator addColumnRangePredicate(ColumnRangePredicate predicate) {
+      this.columnRangePredicates.add(predicate);
+      return this;
+    }
   }
 
   /**
    * Table input format that uses a {@link CommandLineParser} in order to set the
    * master config and the operation timeout.
+   * This version cannot set column range predicates.
    */
   public static class TableInputFormatConfiguratorWithCommandLineParser extends
       AbstractTableInputFormatConfigurator<TableInputFormatConfiguratorWithCommandLineParser> {

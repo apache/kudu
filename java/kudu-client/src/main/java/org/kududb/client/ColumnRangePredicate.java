@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
 import org.kududb.Type;
@@ -9,17 +10,20 @@ import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
- * A range predicate on one of the columns in the underlying data
- * The both boundaries are inclusive
+ * A range predicate on one of the columns in the underlying data.
+ * Both boundaries are inclusive.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public class ColumnRangePredicate {
 
-  final Tserver.ColumnRangePredicatePB.Builder pb = Tserver.ColumnRangePredicatePB
+  private final Tserver.ColumnRangePredicatePB.Builder pb = Tserver.ColumnRangePredicatePB
       .newBuilder();
   private final ColumnSchema column;
   private byte[] lowerBound = null;
@@ -236,6 +240,65 @@ public class ColumnRangePredicate {
    */
   public byte[] getUpperBound() {
     return upperBound;
+  }
+
+  /**
+   * Converts a list of predicates into an opaque byte array. This is a convenience method for use
+   * cases that require passing predicates as messages.
+   * @param predicates a list of predicates
+   * @return an opaque byte array, or null if the list was empty
+   */
+  public static byte[] toByteArray(List<ColumnRangePredicate> predicates) {
+    if (predicates.isEmpty()) {
+      return null;
+    }
+
+    Tserver.ColumnRangePredicateListPB.Builder predicateListBuilder =
+        Tserver.ColumnRangePredicateListPB.newBuilder();
+
+    for (ColumnRangePredicate crp : predicates) {
+      predicateListBuilder.addRangePredicates(crp.getPb());
+    }
+
+    return predicateListBuilder.build().toByteArray();
+  }
+
+  /**
+   * Converts a given byte array to a list of predicates in their pb format.
+   * @param listBytes bytes obtained from {@link #toByteArray(List)}
+   * @return a list of predicates
+   * @throws IllegalArgumentException thrown when the passed bytes aren't valid
+   */
+  static List<Tserver.ColumnRangePredicatePB> fromByteArray(byte[] listBytes) {
+    List<Tserver.ColumnRangePredicatePB> predicates = new ArrayList<>();
+    if (listBytes == null || listBytes.length == 0) {
+      return predicates;
+    }
+    Tserver.ColumnRangePredicateListPB list = ColumnRangePredicate.getPbFromBytes(listBytes);
+    return list.getRangePredicatesList();
+  }
+
+  /**
+   * Get the predicate in its protobuf form.
+   * @return this predicate in protobuf
+   */
+  Tserver.ColumnRangePredicatePB getPb() {
+    return pb.build();
+  }
+
+  /**
+   * Convert a list of predicates given in bytes back to its pb format. It also hides the
+   * InvalidProtocolBufferException.
+   */
+  private static Tserver.ColumnRangePredicateListPB getPbFromBytes(byte[] listBytes) {
+    try {
+      return Tserver.ColumnRangePredicateListPB.parseFrom(listBytes);
+    } catch (InvalidProtocolBufferException e) {
+      // We shade our pb dependency so we can't send out the exception above since other modules
+      // won't know what to expect.
+      throw new IllegalArgumentException("Encountered an invalid column range predicate list: "
+          + Bytes.pretty(listBytes), e);
+    }
   }
 
   private void checkColumn(Type... passedTypes) {

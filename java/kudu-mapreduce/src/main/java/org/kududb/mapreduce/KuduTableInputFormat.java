@@ -19,6 +19,7 @@ package org.kududb.mapreduce;
 import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
+import org.apache.commons.net.util.Base64;
 import org.kududb.Schema;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
@@ -85,6 +86,10 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   /** Job parameter that specifies the address for the name server. */
   static final String NAME_SERVER_KEY = "kudu.mapreduce.name.server";
 
+  /** Job parameter that specifies the encoded column range predicates (may be empty). */
+  static final String ENCODED_COLUMN_RANGE_PREDICATES_KEY =
+      "kudu.mapreduce.encoded.column.range.predicates";
+
   /**
    * Job parameter that specifies the column projection as a comma-separated list of column names.
    *
@@ -108,6 +113,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
   private String nameServer;
   private boolean cacheBlocks;
   private List<String> projectedCols;
+  private byte[] rawPredicates;
 
   @Override
   public List<InputSplit> getSplits(JobContext jobContext)
@@ -253,6 +259,9 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
         }
       }
     }
+
+    String encodedPredicates = conf.get(ENCODED_COLUMN_RANGE_PREDICATES_KEY, "");
+    rawPredicates = Base64.decodeBase64(encodedPredicates);
   }
 
   /**
@@ -376,12 +385,14 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       if (!(inputSplit instanceof TableSplit)) {
         throw new IllegalArgumentException("TableSplit is the only accepted input split");
       }
+
       split = (TableSplit) inputSplit;
       scanner = client.newScannerBuilder(table)
           .setProjectedColumnNames(projectedCols)
           .lowerBoundRaw(split.getStartKey())
           .exclusiveUpperBoundRaw(split.getEndKey())
           .cacheBlocks(cacheBlocks)
+          .addColumnRangePredicatesRaw(rawPredicates)
           .build();
 
       // Calling this now to set iterator.
