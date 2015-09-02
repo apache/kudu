@@ -76,16 +76,19 @@ public class TestKuduTable extends BaseKuduTest {
     Schema schemaWithDefault = new Schema(columns);
     createTable(tableWithDefault, schemaWithDefault, builder);
     KuduTable kuduTable = openTable(tableWithDefault);
-    assertEquals(new Integer(defaultInt), kuduTable.getSchema().getColumn(0).getDefaultValue());
+    assertEquals(defaultInt, kuduTable.getSchema().getColumnByIndex(0).getDefaultValue());
     assertEquals(defaultString,
-        kuduTable.getSchema().getColumn(columns.size() - 2).getDefaultValue());
-    assertEquals(new Boolean(true),
-            kuduTable.getSchema().getColumn(columns.size() - 1).getDefaultValue());
+        kuduTable.getSchema().getColumnByIndex(columns.size() - 2).getDefaultValue());
+    assertEquals(true,
+            kuduTable.getSchema().getColumnByIndex(columns.size() - 1).getDefaultValue());
+
+    // Make sure the table's schema includes column IDs.
+    assertTrue(kuduTable.getSchema().hasColumnIds());
 
     // Test splitting and reading those splits
     KuduTable kuduTableWithoutDefaults = createTableWithSplitsAndTest(0);
     // finish testing read defaults
-    assertNull(kuduTableWithoutDefaults.getSchema().getColumn(0).getDefaultValue());
+    assertNull(kuduTableWithoutDefaults.getSchema().getColumnByIndex(0).getDefaultValue());
     createTableWithSplitsAndTest(3);
     createTableWithSplitsAndTest(10);
 
@@ -117,12 +120,10 @@ public class TestKuduTable extends BaseKuduTest {
 
 
     // Test listing tables.
-    assertEquals(0,
-        client.getTablesList(table1).join(DEFAULT_SLEEP).getTablesList().size());
-    assertEquals(1,
-        client.getTablesList(tableWithDefault).join(DEFAULT_SLEEP).getTablesList().size());
-    assertEquals(5,
-        client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(0, client.getTablesList(table1).join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(1, client.getTablesList(tableWithDefault)
+                          .join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(5, client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
     assertFalse(client.getTablesList(tableWithDefault).
         join(DEFAULT_SLEEP).getTablesList().isEmpty());
 

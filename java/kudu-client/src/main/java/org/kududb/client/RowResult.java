@@ -7,7 +7,6 @@ import org.kududb.Schema;
 import org.kududb.Type;
 import org.kududb.util.Slice;
 
-import java.math.BigInteger;
 import java.nio.ByteBuffer;
 import java.util.BitSet;
 
@@ -52,7 +51,7 @@ public class RowResult {
     // Pre-compute the columns offsets in rowData for easier lookups later
     // If the schema has nullables, we also add the offset for the null bitmap at the end
     for (int i = 1; i < columnOffsetsSize; i++) {
-      int previousSize = schema.getColumn(i-1).getType().getSize();
+      int previousSize = schema.getColumnByIndex(i - 1).getType().getSize();
       columnOffsets[i] = previousSize + currentOffset;
       currentOffset += previousSize;
     }
@@ -398,7 +397,7 @@ public class RowResult {
     if (nullsBitSet == null) {
       return false;
     }
-    return schema.getColumn(columnIndex).isNullable()
+    return schema.getColumnByIndex(columnIndex).isNullable()
         && nullsBitSet.get(columnIndex);
   }
 
@@ -418,7 +417,7 @@ public class RowResult {
    * @throws IndexOutOfBoundsException if the column doesn't exist
    */
   public Type getColumnType(int columnIndex) {
-    return this.schema.getColumn(columnIndex).getType();
+    return this.schema.getColumnByIndex(columnIndex).getType();
   }
 
   /**
@@ -464,7 +463,7 @@ public class RowResult {
   public String rowToString() {
     StringBuffer buf = new StringBuffer();
     for (int i = 0; i < schema.getColumnCount(); i++) {
-      ColumnSchema col = schema.getColumn(i);
+      ColumnSchema col = schema.getColumnByIndex(i);
       if (i != 0) {
         buf.append(", ");
       }

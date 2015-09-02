@@ -56,9 +56,9 @@ public class TestScannerMultiTablet extends BaseKuduTest {
       for (String key2 : keys) {
         Insert insert = table.newInsert();
         PartialRow row = insert.getRow();
-        row.addString(schema.getColumn(0).getName(), key1);
-        row.addString(schema.getColumn(1).getName(), key2);
-        row.addString(schema.getColumn(2).getName(), key2);
+        row.addString(0, key1);
+        row.addString(1, key2);
+        row.addString(2, key2);
         Deferred<OperationResponse> d = session.apply(insert);
         d.join(DEFAULT_SLEEP);
       }
@@ -104,30 +104,30 @@ public class TestScannerMultiTablet extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testKeysAndPredicates() throws Exception {
     // First row from the 2nd tablet.
-    ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumn(2));
+    ColumnRangePredicate predicate = new ColumnRangePredicate(schema.getColumnByIndex(2));
     predicate.setLowerBound("1");
     predicate.setUpperBound("1");
     assertEquals(1, countRowsInScan(getScanner("1", "", "2", "", predicate)));
 
     // All the 2nd tablet.
-    predicate = new ColumnRangePredicate(schema.getColumn(2));
+    predicate = new ColumnRangePredicate(schema.getColumnByIndex(2));
     predicate.setLowerBound("1");
     predicate.setUpperBound("3");
     assertEquals(3, countRowsInScan(getScanner("1", "", "2", "", predicate)));
 
     // Value that doesn't exist.
-    predicate = new ColumnRangePredicate(schema.getColumn(2));
+    predicate = new ColumnRangePredicate(schema.getColumnByIndex(2));
     predicate.setLowerBound("4");
     assertEquals(0, countRowsInScan(getScanner("1", "", "2", "", predicate)));
 
     // First row from every tablet.
-    predicate = new ColumnRangePredicate(schema.getColumn(2));
+    predicate = new ColumnRangePredicate(schema.getColumnByIndex(2));
     predicate.setLowerBound("1");
     predicate.setUpperBound("1");
     assertEquals(3, countRowsInScan(getScanner(null, null, null, null, predicate)));
 
     // All the rows.
-    predicate = new ColumnRangePredicate(schema.getColumn(2));
+    predicate = new ColumnRangePredicate(schema.getColumnByIndex(2));
     predicate.setLowerBound("1");
     assertEquals(9, countRowsInScan(getScanner(null, null, null, null, predicate)));
   }
@@ -149,15 +149,15 @@ public class TestScannerMultiTablet extends BaseKuduTest {
 
     if (lowerBoundKeyOne != null) {
       PartialRow lowerBoundRow = schema.newPartialRow();
-      lowerBoundRow.addString(schema.getColumn(0).getName(), lowerBoundKeyOne);
-      lowerBoundRow.addString(schema.getColumn(1).getName(), lowerBoundKeyTwo);
+      lowerBoundRow.addString(0, lowerBoundKeyOne);
+      lowerBoundRow.addString(1, lowerBoundKeyTwo);
       builder.lowerBound(lowerBoundRow);
     }
 
     if (exclusiveUpperBoundKeyOne != null) {
       PartialRow upperBoundRow = schema.newPartialRow();
-      upperBoundRow.addString(schema.getColumn(0).getName(), exclusiveUpperBoundKeyOne);
-      upperBoundRow.addString(schema.getColumn(1).getName(), exclusiveUpperBoundKeyTwo);
+      upperBoundRow.addString(0, exclusiveUpperBoundKeyOne);
+      upperBoundRow.addString(1, exclusiveUpperBoundKeyTwo);
       builder.exclusiveUpperBound(upperBoundRow);
     }
 

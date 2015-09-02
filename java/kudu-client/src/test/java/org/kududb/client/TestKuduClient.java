@@ -64,7 +64,7 @@ public class TestKuduClient extends BaseKuduTest {
     assertFalse(syncClient.getTablesList().getTablesList().contains(tableName));
 
     // Check that we can re-recreate it, with a different schema.
-    List<ColumnSchema> columns = basicSchema.getColumns();
+    List<ColumnSchema> columns = new ArrayList<>(basicSchema.getColumns());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("one more", Type.STRING).build());
     Schema newSchema = new Schema(columns);
     syncClient.createTable(tableName, newSchema);

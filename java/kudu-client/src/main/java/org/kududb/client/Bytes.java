@@ -522,8 +522,8 @@ public final class Bytes {
   /**
    * Writes a little-endian 8-byte long at an offset in the given array.
    * @param b The array to write to.
-   * @param offset The offset in the array to start writing at.
    * @param n A long integer.
+   * @param offset The offset in the array to start writing at.
    * @throws IndexOutOfBoundsException if the byte array is too small.
    */
   public static void setLong(final byte[] b, final long n, final int offset) {

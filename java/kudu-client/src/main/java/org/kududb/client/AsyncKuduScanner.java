@@ -207,7 +207,7 @@ public final class AsyncKuduScanner {
       for (String columnName : projectedCols) {
         ColumnSchema columnSchema = table.getSchema().getColumn(columnName);
         if (columnSchema == null) {
-          throw new IllegalArgumentException("Unkown column " + columnName);
+          throw new IllegalArgumentException("Unknown column " + columnName);
         }
         columns.add(columnSchema);
       }

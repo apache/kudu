@@ -429,10 +429,10 @@ public class TestAsyncKuduSession extends BaseKuduTest {
                                              List<String> columnNames) {
 
     PartialRow lowerBound = schema.newPartialRow();
-    lowerBound.addInt(schema.getColumn(0).getName(), start);
+    lowerBound.addInt(schema.getColumnByIndex(0).getName(), start);
 
     PartialRow upperBound = schema.newPartialRow();
-    upperBound.addInt(schema.getColumn(0).getName(), exclusiveEnd);
+    upperBound.addInt(schema.getColumnByIndex(0).getName(), exclusiveEnd);
 
     AsyncKuduScanner scanner = client.newScannerBuilder(table)
         .lowerBound(lowerBound)

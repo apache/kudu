@@ -27,11 +27,12 @@ class KeyEncoder {
    * @param columnIndex Which column we're adding it to
    */
   void addKey(byte[] value, int columnIndex) {
-    addKey(value, 0 , value.length, schema.getColumn(columnIndex), columnIndex);
+    addKey(value, 0, value.length, schema.getColumnByIndex(columnIndex), columnIndex);
   }
 
   void addKey(byte[] bytes, int offset, int size, ColumnSchema column, int columnIndex) {
-    assert columnIndex == this.lastIndex + 1 && columnIndex < this.schema.getKeysCount();
+    assert columnIndex == this.lastIndex + 1
+        && columnIndex < this.schema.getPrimaryKeyColumnCount();
     switch (column.getType()) {
       case BOOL:
         assert size == 1;
@@ -55,7 +56,7 @@ class KeyEncoder {
       case BINARY:
       case STRING:
         // if this is the last component, just add
-        if (columnIndex + 1 == this.schema.getKeysCount()) {
+        if (columnIndex + 1 == this.schema.getPrimaryKeyColumnCount()) {
           buf.write(bytes, offset, size);
         } else {
           // If we're a middle component of a composite key, we need to add a \x00

@@ -29,11 +29,11 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     Schema schema = getBasicSchema();
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
-    row.addInt(schema.getColumn(0).getName(), 1);
-    row.addInt(schema.getColumn(1).getName(), 2);
-    row.addInt(schema.getColumn(2).getName(), 3);
-    row.addString(schema.getColumn(3).getName(), "a string");
-    row.addBoolean(schema.getColumn(4).getName(), true);
+    row.addInt(0, 1);
+    row.addInt(1, 2);
+    row.addInt(2, 3);
+    row.addString(3, "a string");
+    row.addBoolean(4, true);
     AsyncKuduSession session = client.newSession();
     session.apply(insert).join(DEFAULT_SLEEP);
     session.close().join(DEFAULT_SLEEP);
@@ -46,8 +46,8 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     assertFalse(reader.nextKeyValue());
 
     // Test getting two columns back
-    reader = createRecordReader(schema.getColumn(3).getName() + "," +
-        schema.getColumn(2).getName());
+    reader = createRecordReader(schema.getColumnByIndex(3).getName() + "," +
+        schema.getColumnByIndex(2).getName());
     assertTrue(reader.nextKeyValue());
     assertEquals(2, reader.getCurrentValue().getColumnProjection().getColumnCount());
     assertEquals("a string", reader.getCurrentValue().getString(0));
@@ -60,7 +60,7 @@ public class TestKuduTableInputFormat extends BaseKuduTest {
     }
 
     // Test getting one column back
-    reader = createRecordReader(schema.getColumn(1).getName());
+    reader = createRecordReader(schema.getColumnByIndex(1).getName());
     assertTrue(reader.nextKeyValue());
     assertEquals(1, reader.getCurrentValue().getColumnProjection().getColumnCount());
     assertEquals(2, reader.getCurrentValue().getInt(0));

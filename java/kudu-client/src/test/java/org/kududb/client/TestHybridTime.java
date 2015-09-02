@@ -75,7 +75,7 @@ public class TestHybridTime extends BaseKuduTest {
     for (int i = 0; i < keys.length; i++) {
       Insert insert = table.newInsert();
       PartialRow row = insert.getRow();
-      row.addString(schema.getColumn(0).getName(), keys[i]);
+      row.addString(schema.getColumnByIndex(0).getName(), keys[i]);
       Deferred<OperationResponse> d = session.apply(insert);
       OperationResponse response = d.join(DEFAULT_SLEEP);
       assertTrue(response.getWriteTimestamp() != 0);
@@ -105,7 +105,7 @@ public class TestHybridTime extends BaseKuduTest {
     for (int i = 0; i < keys.length; i++) {
       Insert insert = table.newInsert();
       PartialRow row = insert.getRow();
-      row.addString(schema.getColumn(0).getName(), keys[i]);
+      row.addString(schema.getColumnByIndex(0).getName(), keys[i]);
       session.apply(insert);
       Deferred<ArrayList<BatchResponse>> d = session.flush();
       ArrayList<BatchResponse> responses = d.join(DEFAULT_SLEEP);

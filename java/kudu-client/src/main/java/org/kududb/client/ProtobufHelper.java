@@ -59,7 +59,8 @@ public class ProtobufHelper {
   }
 
   public static Schema pbToSchema(Common.SchemaPB schema) {
-    List<ColumnSchema> columns = new ArrayList<ColumnSchema>(schema.getColumnsCount());
+    List<ColumnSchema> columns = new ArrayList<>(schema.getColumnsCount());
+    List<Integer> columnIds = new ArrayList<>(schema.getColumnsCount());
     for (Common.ColumnSchemaPB columnPb : schema.getColumnsList()) {
       Type type = Type.getTypeForDataType(columnPb.getType());
       Object defaultValue = columnPb.hasReadDefaultValue() ? byteStringToObject(type,
@@ -70,8 +71,13 @@ public class ProtobufHelper {
           .defaultValue(defaultValue)
           .build();
       columns.add(column);
+      int id = columnPb.getId();
+      if (id < 0) {
+        throw new IllegalArgumentException("Illegal column ID: " + id);
+      }
+      columnIds.add(id);
     }
-    return new Schema(columns);
+    return new Schema(columns, columnIds);
   }
 
   private static byte[] objectToWireFormat(ColumnSchema col, Object value) {

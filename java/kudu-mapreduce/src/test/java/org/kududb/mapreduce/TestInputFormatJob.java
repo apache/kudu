@@ -62,7 +62,7 @@ public class TestInputFormatJob extends BaseKuduTest {
     new KuduTableMapReduceUtil.TableInputFormatConfigurator(
         job,
         TABLE_NAME,
-        basicSchema.getColumn(0).getName(),
+        basicSchema.getColumnByIndex(0).getName(),
         getMasterAddresses())
         .operationTimeoutMs(DEFAULT_SLEEP)
         .addDependencies(false)

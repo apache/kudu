@@ -1041,14 +1041,12 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
 
       if (cmd.hasOption("s")) {
         PartialRow row = table.getSchema().newPartialRow();
-        row.addLong(table.getSchema().getColumn(0).getName(),
-            Long.parseLong(cmd.getOptionValue("s")));
+        row.addLong(0, Long.parseLong(cmd.getOptionValue("s")));
         builder.lowerBound(row);
       }
       if (cmd.hasOption("e")) {
         PartialRow row = table.getSchema().newPartialRow();
-        row.addLong(table.getSchema().getColumn(0).getName(),
-            Long.parseLong(cmd.getOptionValue("e")));
+        row.addLong(0, Long.parseLong(cmd.getOptionValue("e")));
         builder.exclusiveUpperBound(row);
       }
 
@@ -1512,14 +1510,14 @@ public class IntegrationTestBigLinkedList extends Configured implements Tool {
                                                     long keyOne,
                                                     long keyTwo) {
     PartialRow lowerBound = table.getSchema().newPartialRow();
-    lowerBound.addLong(table.getSchema().getColumn(0).getName(), keyOne);
-    lowerBound.addLong(table.getSchema().getColumn(1).getName(), keyTwo);
+    lowerBound.addLong(0, keyOne);
+    lowerBound.addLong(1, keyTwo);
     builder.lowerBound(lowerBound);
 
     PartialRow upperBound = table.getSchema().newPartialRow();
     // Adding 1 since we want a single row, and the upper bound is exclusive.
-    upperBound.addLong(table.getSchema().getColumn(0).getName(), keyOne + 1);
-    upperBound.addLong(table.getSchema().getColumn(1).getName(), keyTwo + 1);
+    upperBound.addLong(0, keyOne + 1);
+    upperBound.addLong(1, keyTwo + 1);
     builder.exclusiveUpperBound(upperBound);
   }
 

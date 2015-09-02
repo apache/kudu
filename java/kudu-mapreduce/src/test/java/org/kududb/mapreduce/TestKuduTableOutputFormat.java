@@ -2,7 +2,6 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.mapreduce;
 
-import org.kududb.Schema;
 import org.kududb.client.*;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.io.NullWritable;
@@ -35,15 +34,14 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
     String multitonKey = conf.get(KuduTableOutputFormat.MULTITON_KEY);
     KuduTable table = KuduTableOutputFormat.getKuduTable(multitonKey);
     assertNotNull(table);
-    Schema schema = table.getSchema();
 
     Insert insert = table.newInsert();
     PartialRow row = insert.getRow();
-    row.addInt(schema.getColumn(0).getName(), 1);
-    row.addInt(schema.getColumn(1).getName(), 2);
-    row.addInt(schema.getColumn(2).getName(), 3);
-    row.addString(schema.getColumn(3).getName(), "a string");
-    row.addBoolean(schema.getColumn(4).getName(), true);
+    row.addInt(0, 1);
+    row.addInt(1, 2);
+    row.addInt(2, 3);
+    row.addString(3, "a string");
+    row.addBoolean(4, true);
 
     RecordWriter<NullWritable, Operation> rw = output.getRecordWriter(null);
     rw.write(NullWritable.get(), insert);
