@@ -615,6 +615,16 @@ bool PartitionSchema::Equals(const PartitionSchema& other) const {
   return true;
 }
 
+bool PartitionSchema::IsSimplePKRangePartitioning(const Schema& schema) const {
+  if (!hash_bucket_schemas_.empty()) return false;
+  if (range_schema_.column_ids.size() != schema.num_key_columns()) return false;
+
+  for (int i = 0; i < schema.num_key_columns(); i++) {
+    if (range_schema_.column_ids[i] != schema.column_id(i)) return false;
+  }
+  return true;
+}
+
 // Encodes the specified primary key columns of the supplied row into the buffer.
 Status PartitionSchema::EncodeColumns(const ConstContiguousRow& row,
                                       const vector<int32_t>& column_ids,

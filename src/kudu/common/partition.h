@@ -165,6 +165,10 @@ class PartitionSchema {
   // Returns true if the other partition schema is equivalent to this one.
   bool Equals(const PartitionSchema& other) const;
 
+  // Return true if the partitioning scheme simply range-partitions on the full primary key,
+  // with no bucketing components, etc.
+  bool IsSimplePKRangePartitioning(const Schema& schema) const;
+
  private:
 
   struct RangeSchema {

@@ -373,12 +373,25 @@ Status KuduScanner::Data::ExtractRows(const RpcController& controller,
 bool KuduScanner::Data::MoreTablets() const {
   CHECK(open_);
   // TODO(KUDU-565): add a test which has a scan end on a tablet boundary
-  // TODO(KUDU-818): this check needs to be changed to work with non-PK partition schemas.
-  return !remote_->partition().partition_key_end().empty() &&
-    (spec_.exclusive_upper_bound_key() == NULL ||
-     spec_.exclusive_upper_bound_key()
-         ->encoded_key()
-          .compare(remote_->partition().partition_key_end()) > 0);
+
+  if (remote_->partition().partition_key_end().empty()) {
+    // Last tablet -- nothing more to scan.
+    return false;
+  }
+
+  if (!table_->partition_schema().IsSimplePKRangePartitioning(*table_->schema().schema_)) {
+    // We can't do culling yet if the partitioning isn't simple.
+    return true;
+  }
+
+  if (spec_.exclusive_upper_bound_key() == NULL) {
+    // No upper bound - keep going!
+    return true;
+  }
+
+  // Otherwise, we have to compare the upper bound.
+  return spec_.exclusive_upper_bound_key()->encoded_key()
+          .compare(remote_->partition().partition_key_end()) > 0;
 }
 
 void KuduScanner::Data::PrepareRequest(RequestType state) {

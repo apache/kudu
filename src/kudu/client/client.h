@@ -280,6 +280,35 @@ class KUDU_EXPORT KuduTableCreator {
   // the lifetime of the builder. Required.
   KuduTableCreator& schema(const KuduSchema* schema);
 
+  // Adds a set of hash partitions to the table.
+  //
+  // For each set of hash partitions added to the table, the total number of
+  // table partitions is multiplied by the number of buckets. For example, if a
+  // table is created with 3 split rows, and two hash partitions with 4 and 5
+  // buckets respectively, the total number of table partitions will be 80
+  // (4 range partitions * 4 hash buckets * 5 hash buckets).
+  KuduTableCreator& add_hash_partitions(const std::vector<std::string>& columns,
+                                        int32_t num_buckets);
+
+  // Adds a set of hash partitions to the table.
+  //
+  // This constructor takes a seed value, which can be used to randomize the
+  // mapping of rows to hash buckets. Setting the seed may provide some
+  // amount of protection against denial of service attacks when the hashed
+  // columns contain user provided values.
+  KuduTableCreator& add_hash_partitions(const std::vector<std::string>& columns,
+                                        int32_t num_buckets, int32_t seed);
+
+  // Sets the columns on which the table will be range-partitioned.
+  //
+  // Every column must be a part of the table's primary key. If not set, the
+  // table will be created with the primary-key columns as the range-partition
+  // columns. If called with an empty vector, the table will be created without
+  // range partitioning.
+  //
+  // Optional.
+  KuduTableCreator& set_range_partition_columns(const std::vector<std::string>& columns);
+
   // Sets the rows on which to pre-split the table.
   // The table creator takes ownership of the rows.
   //

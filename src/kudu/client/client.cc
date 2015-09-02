@@ -27,6 +27,7 @@
 #include "kudu/client/table_creator-internal.h"
 #include "kudu/client/tablet_server-internal.h"
 #include "kudu/client/write_op.h"
+#include "kudu/common/common.pb.h"
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
@@ -397,6 +398,35 @@ KuduTableCreator& KuduTableCreator::schema(const KuduSchema* schema) {
   return *this;
 }
 
+KuduTableCreator& KuduTableCreator::add_hash_partitions(const std::vector<std::string>& columns,
+                                                        int32_t num_buckets) {
+  return add_hash_partitions(columns, num_buckets, 0);
+}
+
+KuduTableCreator& KuduTableCreator::add_hash_partitions(const std::vector<std::string>& columns,
+                                                        int32_t num_buckets, int32_t seed) {
+  PartitionSchemaPB::HashBucketSchemaPB* bucket_schema =
+    data_->partition_schema_.add_hash_bucket_schemas();
+  BOOST_FOREACH(const string& col_name, columns) {
+    bucket_schema->add_columns()->set_name(col_name);
+  }
+  bucket_schema->set_num_buckets(num_buckets);
+  bucket_schema->set_seed(seed);
+  return *this;
+}
+
+KuduTableCreator& KuduTableCreator::set_range_partition_columns(
+    const std::vector<std::string>& columns) {
+  PartitionSchemaPB::RangeSchemaPB* range_schema =
+    data_->partition_schema_.mutable_range_schema();
+  range_schema->Clear();
+  BOOST_FOREACH(const string& col_name, columns) {
+    range_schema->add_columns()->set_name(col_name);
+  }
+
+  return *this;
+}
+
 KuduTableCreator& KuduTableCreator::split_rows(const vector<const KuduPartialRow*>& rows) {
   data_->split_rows_ = rows;
   return *this;
@@ -439,6 +469,7 @@ Status KuduTableCreator::Create() {
   BOOST_FOREACH(const KuduPartialRow* row, data_->split_rows_) {
     encoder.Add(RowOperationsPB::SPLIT_ROW, *row);
   }
+  req.mutable_partition_schema()->CopyFrom(data_->partition_schema_);
 
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   if (data_->timeout_.Initialized()) {
@@ -939,11 +970,15 @@ Status KuduScanner::Open() {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(data_->timeout_);
   set<string> blacklist;
-  // TODO(KUDU-826): This will break on tables with hash bucketed partitions.
-  RETURN_NOT_OK(data_->OpenTablet(data_->spec_.lower_bound_key() != NULL
-                                  ? data_->spec_.lower_bound_key()->encoded_key().ToString() : "",
-                                  deadline,
-                                  &blacklist));
+
+  string start_partition_key;
+  if (data_->spec_.lower_bound_key() != NULL &&
+      data_->table_->partition_schema().IsSimplePKRangePartitioning(
+          *data_->table_->schema().schema_)) {
+    start_partition_key = data_->spec_.lower_bound_key()->encoded_key().ToString();
+  }
+
+  RETURN_NOT_OK(data_->OpenTablet(start_partition_key, deadline, &blacklist));
 
   data_->open_ = true;
   return Status::OK();
