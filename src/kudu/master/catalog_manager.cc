@@ -963,7 +963,7 @@ static Status ApplyAlterSteps(const SysTablesEntryPB& current_pb,
         ColumnSchema new_col = ColumnSchemaFromPB(new_col_pb);
         const TypeEncodingInfo *dummy;
         RETURN_NOT_OK(TypeEncodingInfo::Get(new_col.type_info(),
-                                            new_col.attributes().encoding(),
+                                            new_col.attributes().encoding,
                                             &dummy));
 
         // can't accept a NOT NULL column without read default

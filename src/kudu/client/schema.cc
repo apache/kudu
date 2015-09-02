@@ -372,8 +372,9 @@ KuduColumnSchema::KuduColumnSchema(const std::string &name,
                                    bool is_nullable,
                                    const void* default_value,
                                    KuduColumnStorageAttributes attributes) {
-  ColumnStorageAttributes attr_private(ToInternalEncodingType(attributes.encoding()),
-                                       ToInternalCompressionType(attributes.compression()));
+  ColumnStorageAttributes attr_private;
+  attr_private.encoding = ToInternalEncodingType(attributes.encoding());
+  attr_private.compression = ToInternalCompressionType(attributes.compression());
   col_ = new ColumnSchema(name, ToInternalDataType(type), is_nullable,
                           default_value, default_value, attr_private);
 }
@@ -478,8 +479,8 @@ bool KuduSchema::Equals(const KuduSchema& other) const {
 
 KuduColumnSchema KuduSchema::Column(size_t idx) const {
   ColumnSchema col(schema_->column(idx));
-  KuduColumnStorageAttributes attrs(FromInternalEncodingType(col.attributes().encoding()),
-                                    FromInternalCompressionType(col.attributes().compression()));
+  KuduColumnStorageAttributes attrs(FromInternalEncodingType(col.attributes().encoding),
+                                    FromInternalCompressionType(col.attributes().compression));
   return KuduColumnSchema(col.name(), FromInternalDataType(col.type_info()->type()),
                           col.is_nullable(), col.read_default_value(),
                           attrs);

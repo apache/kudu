@@ -319,7 +319,8 @@ class CFileTestBase : public KuduTest {
       opts.block_size = 1024;
     }
 
-    opts.storage_attributes = ColumnStorageAttributes(encoding, compression);
+    opts.storage_attributes.encoding = encoding;
+    opts.storage_attributes.compression = compression;
     CFileWriter w(opts, GetTypeInfo(DataGeneratorType::kDataType),
                   DataGeneratorType::has_nulls(), sink.Pass());
 

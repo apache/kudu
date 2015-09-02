@@ -110,7 +110,7 @@ Status DiskRowSetWriter::InitAdHocIndexWriter() {
   // no need to index positions
   opts.write_posidx = false;
 
-  opts.storage_attributes = ColumnStorageAttributes(PREFIX_ENCODING);
+  opts.storage_attributes.encoding = PREFIX_ENCODING;
 
   // Create the CFile writer for the ad-hoc index.
   ad_hoc_index_writer_.reset(new cfile::CFileWriter(

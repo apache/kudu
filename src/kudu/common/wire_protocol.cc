@@ -177,8 +177,8 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
   pb->set_type(col_schema.type_info()->type());
   pb->set_is_nullable(col_schema.is_nullable());
   if (!(flags & SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES)) {
-    pb->set_encoding(col_schema.attributes().encoding());
-    pb->set_compression(col_schema.attributes().compression());
+    pb->set_encoding(col_schema.attributes().encoding);
+    pb->set_compression(col_schema.attributes().compression);
   }
   if (col_schema.has_read_default()) {
     if (col_schema.type_info()->physical_type() == BINARY) {
@@ -222,10 +222,14 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
       write_default_ptr = write_default.data();
     }
   }
-  // TODO: decide if we want to store this elsewhere, or take another
-  // approach. We could also avoid storing compression and encoding
-  // info if they are (respectively) NO_COMPRESSION and AUTO_ENCODING.
-  ColumnStorageAttributes attributes(pb.encoding(), pb.compression());
+
+  ColumnStorageAttributes attributes;
+  if (pb.has_encoding()) {
+    attributes.encoding = pb.encoding();
+  }
+  if (pb.has_compression()) {
+    attributes.compression = pb.compression();
+  }
   return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
                       read_default_ptr, write_default_ptr,
                       attributes);

@@ -47,26 +47,17 @@ using std::tr1::unordered_set;
 //
 // Column attributes are presently specified in the ColumnSchema
 // protobuf message, but this should ideally be separate.
-class ColumnStorageAttributes {
+struct ColumnStorageAttributes {
  public:
-  ColumnStorageAttributes(EncodingType encoding = AUTO_ENCODING,
-                          CompressionType compression = DEFAULT_COMPRESSION)
-  : encoding_(encoding),
-    compression_(compression) { }
-
-  const EncodingType encoding() const {
-    return encoding_;
-  }
-
-  const CompressionType compression() const {
-    return compression_;
+  ColumnStorageAttributes()
+    : encoding(AUTO_ENCODING),
+      compression(DEFAULT_COMPRESSION) {
   }
 
   string ToString() const;
 
- private:
-  EncodingType encoding_;
-  CompressionType compression_;
+  EncodingType encoding;
+  CompressionType compression;
 };
 
 // The schema for a given column.

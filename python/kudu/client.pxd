@@ -87,14 +87,11 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         COMPRESSION_LZ4 " kudu::client::KuduColumnStorageAttributes::LZ4"
         COMPRESSION_ZLIB " kudu::client::KuduColumnStorageAttributes::ZLIB"
 
-    cdef cppclass KuduColumnStorageAttributes:
+    cdef struct KuduColumnStorageAttributes:
         KuduColumnStorageAttributes()
-        KuduColumnStorageAttributes(EncodingType encoding)
-        KuduColumnStorageAttributes(EncodingType encoding,
-                                    CompressionType compression)
 
-        EncodingType encoding()
-        CompressionType compression()
+        EncodingType encoding
+        CompressionType compression
         string ToString()
 
     cdef cppclass KuduColumnSchema:

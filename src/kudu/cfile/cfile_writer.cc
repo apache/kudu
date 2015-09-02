@@ -58,8 +58,7 @@ WriterOptions::WriterOptions()
     index_block_size(32*1024),
     block_restart_interval(16),
     write_posidx(false),
-    write_validx(false),
-    storage_attributes(ColumnStorageAttributes(AUTO_ENCODING, GetDefaultCompressionCodec())) {
+    write_validx(false) {
 }
 
 
@@ -80,7 +79,7 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     typeinfo_(typeinfo),
     key_encoder_(NULL),
     state_(kWriterInitialized) {
-  EncodingType encoding = options_.storage_attributes.encoding();
+  EncodingType encoding = options_.storage_attributes.encoding;
   Status s = TypeEncodingInfo::Get(typeinfo_, encoding, &type_encoding_info_);
   if (!s.ok()) {
     // TODO: we should somehow pass some contextual info about the
@@ -92,7 +91,7 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     CHECK_OK(s);
   }
 
-  compression_ = options_.storage_attributes.compression();
+  compression_ = options_.storage_attributes.compression;
   if (compression_ == DEFAULT_COMPRESSION) {
     compression_ = GetDefaultCompressionCodec();
   }

@@ -196,7 +196,7 @@ class TestCFile : public CFileTestBase {
     opts.write_posidx = true;
     opts.write_validx = false;
     opts.block_size = FLAGS_cfile_test_block_size;
-    opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, compression);
+    opts.storage_attributes.encoding = PLAIN_ENCODING;
     CFileWriter w(opts, GetTypeInfo(STRING), false, sink.Pass());
     ASSERT_OK(w.Start());
     for (uint32_t i = 0; i < num_entries; i++) {

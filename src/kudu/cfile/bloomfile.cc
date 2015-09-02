@@ -37,7 +37,8 @@ BloomFileWriter::BloomFileWriter(gscoped_ptr<WritableBlock> block,
   opts.write_validx = true;
   // Never use compression, regardless of the default settings, since
   // bloom filters are high-entropy data structures by their nature.
-  opts.storage_attributes = ColumnStorageAttributes(PLAIN_ENCODING, NO_COMPRESSION);
+  opts.storage_attributes.encoding  = PLAIN_ENCODING;
+  opts.storage_attributes.compression = NO_COMPRESSION;
   writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, block.Pass()));
 }
 

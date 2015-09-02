@@ -23,7 +23,7 @@ class TestCFileSet : public KuduRowSetTest {
   TestCFileSet() :
     KuduRowSetTest(Schema(boost::assign::list_of
             (ColumnSchema("c0", UINT32))
-            (ColumnSchema("c1", UINT32, false, NULL, NULL, ColumnStorageAttributes(RLE)))
+            (ColumnSchema("c1", UINT32, false, NULL, NULL, GetRLEStorage()))
             (ColumnSchema("c2", UINT32)), 1))
   {}
 
@@ -90,6 +90,13 @@ class TestCFileSet : public KuduRowSetTest {
         }
       }
     }
+  }
+
+ private:
+  ColumnStorageAttributes GetRLEStorage() const {
+    ColumnStorageAttributes attr;
+    attr.encoding = RLE;
+    return attr;
   }
 
  protected:
