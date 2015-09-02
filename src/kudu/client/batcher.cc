@@ -237,7 +237,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   req_.set_tablet_id(tablet->tablet_id());
   // Set up schema
 
-  CHECK_OK(SchemaToPB(*schema, req_.mutable_schema()));
+  CHECK_OK(SchemaToPB(*schema, req_.mutable_schema(), SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES));
 
   RowOperationsPB* requested = req_.mutable_row_operations();
 

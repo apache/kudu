@@ -54,10 +54,9 @@ enum CompressionType {
   ZLIB = 4;
 }
 
-// TODO: Differentiate between the schema attributes
-// that are only relevant to the server (e.g.,
-// encoding and compression) and those that also
-// matter to the client.
+// This message is used in several different contexts. In some cases,
+// some fields may not be present. Messages and RPCs which embed Schema PBs
+// should document which optional fields will be present.
 message ColumnSchemaPB {
   optional uint32 id = 1;
   required string name = 2;
@@ -66,6 +65,9 @@ message ColumnSchemaPB {
   optional bool is_nullable = 5 [default = false];
   optional bytes read_default_value = 6;
   optional bytes write_default_value = 7;
+
+  // The following attributes refer to the on-disk storage of the column.
+  // They won't always be set, depending on context.
   optional EncodingType encoding = 8 [default=AUTO_ENCODING];
   optional CompressionType compression = 9 [default=DEFAULT_COMPRESSION];
 }

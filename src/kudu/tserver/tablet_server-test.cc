@@ -2102,8 +2102,8 @@ TEST_F(TabletServerTest, TestChecksumScan) {
   req.mutable_new_request()->set_tablet_id(kTabletId);
   req.mutable_new_request()->set_read_mode(READ_LATEST);
   req.set_call_seq_id(0);
-  ASSERT_OK(SchemaToColumnPBsWithoutIds(schema_,
-                                        req.mutable_new_request()->mutable_projected_columns()));
+  ASSERT_OK(SchemaToColumnPBs(schema_, req.mutable_new_request()->mutable_projected_columns(),
+                              SCHEMA_PB_WITHOUT_IDS));
   ChecksumRequestPB new_req = req;  // Cache "new" request.
 
   ChecksumResponsePB resp;

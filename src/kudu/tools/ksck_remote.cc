@@ -92,7 +92,8 @@ class ChecksumStepper {
   }
 
   void Start() {
-    Status s = SchemaToColumnPBsWithoutIds(schema_, &cols_);
+    Status s = SchemaToColumnPBs(schema_, &cols_,
+                                 SCHEMA_PB_WITHOUT_IDS | SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES);
     if (!s.ok()) {
       reporter_callback_.Run(s, 0);
     } else {

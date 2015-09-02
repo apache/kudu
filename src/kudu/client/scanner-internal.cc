@@ -211,7 +211,8 @@ Status KuduScanner::Data::OpenTablet(const Slice& key,
   } else {
     scan->clear_encoded_stop_key();
   }
-  RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns()));
+  RETURN_NOT_OK(SchemaToColumnPBs(*projection_, scan->mutable_projected_columns(),
+                                  SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES));
 
   for (int attempt = 1;; attempt++) {
     Synchronizer sync;

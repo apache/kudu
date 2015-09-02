@@ -162,22 +162,24 @@ Status AddHostPortPBs(const vector<Sockaddr>& addrs,
   return Status::OK();
 }
 
-Status SchemaToPB(const Schema& schema, SchemaPB *pb) {
+Status SchemaToPB(const Schema& schema, SchemaPB *pb, int flags) {
   pb->Clear();
-  return SchemaToColumnPBs(schema, pb->mutable_columns());
+  return SchemaToColumnPBs(schema, pb->mutable_columns(), flags);
 }
 
 Status SchemaFromPB(const SchemaPB& pb, Schema *schema) {
   return ColumnPBsToSchema(pb.columns(), schema);
 }
 
-void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb) {
+void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int flags) {
   pb->Clear();
   pb->set_name(col_schema.name());
   pb->set_type(col_schema.type_info()->type());
   pb->set_is_nullable(col_schema.is_nullable());
-  pb->set_encoding(col_schema.attributes().encoding());
-  pb->set_compression(col_schema.attributes().compression());
+  if (!(flags & SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES)) {
+    pb->set_encoding(col_schema.attributes().encoding());
+    pb->set_compression(col_schema.attributes().compression());
+  }
   if (col_schema.has_read_default()) {
     if (col_schema.type_info()->physical_type() == BINARY) {
       const Slice *read_slice = static_cast<const Slice *>(col_schema.read_default_value());
@@ -261,27 +263,21 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
   return schema->Reset(columns, column_ids, num_key_columns);
 }
 
-Status SchemaToColumnPBsWithoutIds(const Schema& schema,
-                                   RepeatedPtrField<ColumnSchemaPB>* cols) {
+Status SchemaToColumnPBs(const Schema& schema,
+                         RepeatedPtrField<ColumnSchemaPB>* cols,
+                         int flags) {
   cols->Clear();
   int idx = 0;
   BOOST_FOREACH(const ColumnSchema& col, schema.columns()) {
     ColumnSchemaPB* col_pb = cols->Add();
     ColumnSchemaToPB(col, col_pb);
     col_pb->set_is_key(idx < schema.num_key_columns());
-    idx++;
-  }
-  return Status::OK();
-}
 
-Status SchemaToColumnPBs(const Schema& schema,
-                         RepeatedPtrField<ColumnSchemaPB>* cols) {
-  RETURN_NOT_OK(SchemaToColumnPBsWithoutIds(schema, cols));
-  if (schema.has_column_ids()) {
-    for (int i = 0; i < schema.num_columns(); ++i) {
-      ColumnSchemaPB* col_pb = cols->Mutable(i);
-      col_pb->set_id(schema.column_id(i));
+    if (schema.has_column_ids() && !(flags & SCHEMA_PB_WITHOUT_IDS)) {
+      col_pb->set_id(schema.column_id(idx));
     }
+
+    idx++;
   }
   return Status::OK();
 }

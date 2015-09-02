@@ -41,15 +41,22 @@ Status HostPortFromPB(const HostPortPB& host_port_pb, HostPort* host_port);
 Status AddHostPortPBs(const std::vector<Sockaddr>& addrs,
                       google::protobuf::RepeatedPtrField<HostPortPB>* pbs);
 
+enum SchemaPBConversionFlags {
+  SCHEMA_PB_WITHOUT_IDS = 1 << 0,
+  SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES = 1 << 1,
+};
+
 // Convert the specified schema to protobuf.
-Status SchemaToPB(const Schema& schema, SchemaPB *pb);
+// 'flags' is a bitfield of SchemaPBConversionFlags values.
+Status SchemaToPB(const Schema& schema, SchemaPB* pb, int flags = 0);
 
 // Returns the Schema created from the specified protobuf.
 // If the schema is invalid, return a non-OK status.
 Status SchemaFromPB(const SchemaPB& pb, Schema *schema);
 
 // Convert the specified column schema to protobuf.
-void ColumnSchemaToPB(const ColumnSchema& schema, ColumnSchemaPB *pb);
+// 'flags' is a bitfield of SchemaPBConversionFlags values.
+void ColumnSchemaToPB(const ColumnSchema& schema, ColumnSchemaPB *pb, int flags = 0);
 
 // Return the ColumnSchema created from the specified protobuf.
 ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb);
@@ -65,17 +72,11 @@ Status ColumnPBsToSchema(
 // Extract the columns of the given Schema into protobuf objects.
 //
 // The 'cols' list is replaced by this method.
+// 'flags' is a bitfield of SchemaPBConversionFlags values.
 Status SchemaToColumnPBs(
   const Schema& schema,
-  google::protobuf::RepeatedPtrField<ColumnSchemaPB>* cols);
-
-// Extract the columns of the given Schema into protobuf objects.
-// This method will not add the Column IDs to protobuf
-//
-// The 'cols' list is replaced by this method.
-Status SchemaToColumnPBsWithoutIds(
-  const Schema& schema,
-  google::protobuf::RepeatedPtrField<ColumnSchemaPB>* cols);
+  google::protobuf::RepeatedPtrField<ColumnSchemaPB>* cols,
+  int flags = 0);
 
 // Encode the given row block into the provided protobuf and data buffers.
 //
