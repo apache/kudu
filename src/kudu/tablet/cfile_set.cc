@@ -320,8 +320,13 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
     return Status::OK();
   }
 
-  Schema key_schema = base_data_->tablet_schema().CreateKeyProjection();
-  if (spec->lower_bound_key()) {
+  Schema key_schema_for_vlog;
+  if (VLOG_IS_ON(1)) {
+    key_schema_for_vlog = base_data_->tablet_schema().CreateKeyProjection();
+  }
+
+  if (spec->lower_bound_key() &&
+      spec->lower_bound_key()->encoded_key().compare(base_data_->min_encoded_key_) > 0) {
     bool exact;
     Status s = key_iter_->SeekAtOrAfter(*spec->lower_bound_key(), &exact);
     if (s.IsNotFound()) {
@@ -335,18 +340,21 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
 
     lower_bound_idx_ = std::max(lower_bound_idx_, key_iter_->GetCurrentOrdinal());
     VLOG(1) << "Pushed lower bound value "
-            << spec->lower_bound_key()->Stringify(key_schema)
+            << spec->lower_bound_key()->Stringify(key_schema_for_vlog)
             << " as row_idx >= " << lower_bound_idx_;
   }
-  if (spec->exclusive_upper_bound_key()) {
+  if (spec->exclusive_upper_bound_key() &&
+      spec->exclusive_upper_bound_key()->encoded_key().compare(
+          base_data_->max_encoded_key_) <= 0) {
     bool exact;
     Status s = key_iter_->SeekAtOrAfter(*spec->exclusive_upper_bound_key(), &exact);
-    if (s.IsNotFound()) {
-      // The upper bound is after the end of the key range - the existing upper bound
-      // at EOF is correct.
-      VLOG(1) << "Pushed upper bound value "
-              << spec->exclusive_upper_bound_key()->Stringify(key_schema)
-              << " as EOF (row_idx < " << upper_bound_idx_ << ")";
+    if (PREDICT_FALSE(s.IsNotFound())) {
+      LOG(DFATAL) << "CFileSet indicated upper bound was within range, but "
+                  << "key iterator could not seek. "
+                  << "CFileSet upper_bound = "
+                  << Slice(base_data_->max_encoded_key_).ToDebugString()
+                  << ", enc_key = "
+                  << spec->exclusive_upper_bound_key()->encoded_key().ToDebugString();
     } else {
       RETURN_NOT_OK(s);
 
@@ -354,7 +362,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
       upper_bound_idx_ = std::min(upper_bound_idx_, cur);
 
       VLOG(1) << "Pushed upper bound value "
-              << spec->exclusive_upper_bound_key()->Stringify(key_schema)
+              << spec->exclusive_upper_bound_key()->Stringify(key_schema_for_vlog)
               << " as row_idx < " << upper_bound_idx_;
     }
   }
