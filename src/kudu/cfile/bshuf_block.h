@@ -55,7 +55,7 @@ class BShufBlockBuilder : public BlockBuilder {
   void Reset() OVERRIDE {
     count_ = 0;
     data_.clear();
-    data_.reserve(options_->block_size);
+    data_.reserve(options_->storage_attributes.cfile_block_size);
     buffer_.clear();
     buffer_.resize(kMaxHeaderSize);
   }
@@ -68,7 +68,7 @@ class BShufBlockBuilder : public BlockBuilder {
     const CppType* vals = reinterpret_cast<const CppType* >(vals_void);
     int added = 0;
     // If the current block is full, stop adding more items.
-    while (!IsBlockFull(options_->block_size) && added < count) {
+    while (!IsBlockFull(options_->storage_attributes.cfile_block_size) && added < count) {
       const uint8_t* ptr = reinterpret_cast<const uint8_t*>(vals);
       data_.append(ptr, size_of_type);
       vals++;

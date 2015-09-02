@@ -179,6 +179,7 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
   if (!(flags & SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES)) {
     pb->set_encoding(col_schema.attributes().encoding);
     pb->set_compression(col_schema.attributes().compression);
+    pb->set_cfile_block_size(col_schema.attributes().cfile_block_size);
   }
   if (col_schema.has_read_default()) {
     if (col_schema.type_info()->physical_type() == BINARY) {
@@ -229,6 +230,9 @@ ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
   }
   if (pb.has_compression()) {
     attributes.compression = pb.compression();
+  }
+  if (pb.has_cfile_block_size()) {
+    attributes.cfile_block_size = pb.cfile_block_size();
   }
   return ColumnSchema(pb.name(), pb.type(), pb.is_nullable(),
                       read_default_ptr, write_default_ptr,

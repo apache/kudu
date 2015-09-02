@@ -23,14 +23,6 @@ class CFileReader;
 class CFileIterator;
 
 struct WriterOptions {
-  // Approximate size of user data packed per block.  Note that the
-  // block size specified here corresponds to uncompressed data.  The
-  // actual size of the unit read from disk may be smaller if
-  // compression is enabled.  This parameter can be changed dynamically.
-  //
-  // Default: 256K
-  size_t block_size;
-
   // Approximate size of index blocks.
   //
   // Default: 32KB.

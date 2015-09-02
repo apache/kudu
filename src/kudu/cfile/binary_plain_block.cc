@@ -30,7 +30,7 @@ void BinaryPlainBlockBuilder::Reset() {
   offsets_.clear();
   buffer_.clear();
   buffer_.resize(kMaxHeaderSize);
-  buffer_.reserve(options_->block_size);
+  buffer_.reserve(options_->storage_attributes.cfile_block_size);
 
   size_estimate_ = kMaxHeaderSize;
   end_of_data_offset_ = kMaxHeaderSize;
@@ -65,7 +65,7 @@ int BinaryPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
   size_t i = 0;
 
   // If the block is full, should stop adding more items.
-  while (!IsBlockFull(options_->block_size) && i < count) {
+  while (!IsBlockFull(options_->storage_attributes.cfile_block_size) && i < count) {
 
     // Every fourth entry needs a gvint selector byte
     // TODO: does it cost a lot to account these things specifically?

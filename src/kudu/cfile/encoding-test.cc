@@ -83,10 +83,16 @@ class TestEncoding : public ::testing::Test {
     return sbb->Finish(12345L);
   }
 
+  WriterOptions* NewWriterOptions() {
+    WriterOptions* ret = new WriterOptions();
+    ret->storage_attributes.cfile_block_size = 256 * 1024;
+    return ret;
+  }
+
   template<class BuilderType, class DecoderType>
   void TestBinarySeekByValueSmallBlock() {
-    WriterOptions opts;
-    BuilderType sbb(&opts);
+    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    BuilderType sbb(opts.get());
     // Insert "hello 0" through "hello 9"
     const uint kCount = 10;
     Slice s = CreateBinaryBlock(&sbb, kCount, "hello %d");
@@ -139,8 +145,8 @@ class TestEncoding : public ::testing::Test {
   template<class BuilderType, class DecoderType>
   void TestStringSeekByValueLargeBlock() {
     Arena arena(1024, 1024*1024); // TODO: move to fixture?
-    WriterOptions opts;
-    BinaryPrefixBlockBuilder sbb(&opts);
+    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    BinaryPrefixBlockBuilder sbb(opts.get());
     const uint kCount = 1000;
     // Insert 'hello 000' through 'hello 999'
     Slice s = CreateBinaryBlock(&sbb, kCount, "hello %03d");
@@ -216,8 +222,8 @@ class TestEncoding : public ::testing::Test {
 
   template<class BuilderType, class DecoderType>
   void TestBinaryBlockRoundTrip() {
-    WriterOptions opts;
-    BuilderType sbb(&opts);
+    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    BuilderType sbb(opts.get());
     const uint kCount = 10;
     Slice s = CreateBinaryBlock(&sbb, kCount, "hello %d");
 
@@ -320,7 +326,7 @@ class TestEncoding : public ::testing::Test {
 
   template <class BlockBuilderType, class BlockDecoderType>
   void TestEmptyBlockEncodeDecode() {
-    gscoped_ptr<WriterOptions> opts(new WriterOptions());
+    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
     BlockBuilderType bb(opts.get());
     Slice s = bb.Finish(0);
     ASSERT_GT(s.size(), 0);
@@ -337,7 +343,7 @@ class TestEncoding : public ::testing::Test {
                                             uint32_t size) {
     typedef typename TypeTraits<Type>::cpp_type CppType;
     const uint32_t kOrdinalPosBase = 12345;
-    gscoped_ptr<WriterOptions> opts(new WriterOptions());
+    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
     BlockBuilder pbb(opts.get());
 
     pbb.Add(reinterpret_cast<const uint8_t *>(src), size);
@@ -392,8 +398,8 @@ class TestEncoding : public ::testing::Test {
   // Test truncation of blocks
   template<class BuilderType, class DecoderType>
   void TestBinaryBlockTruncation() {
-    WriterOptions opts;
-    BuilderType sbb(&opts);
+    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    BuilderType sbb(opts.get());
     const uint kCount = 10;
     size_t sbsize;
 
@@ -618,7 +624,7 @@ TEST_F(TestEncoding, TestBShufDoubleBlockEncoder) {
 }
 
 TEST_F(TestEncoding, TestIntBlockEncoder) {
-  gscoped_ptr<WriterOptions> opts(new WriterOptions());
+  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
   GVIntBlockBuilder ibb(opts.get());
 
   int *ints = new int[10000];
@@ -668,7 +674,7 @@ TEST_F(TestEncoding, TestRleBitMapRoundTrip) {
 }
 
 TEST_F(TestEncoding, TestGVIntBlockRoundTrip) {
-  gscoped_ptr<WriterOptions> opts(new WriterOptions());
+  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
   gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
   TestIntBlockRoundTrip<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get());
 }
@@ -739,20 +745,20 @@ TEST_F(TestEncoding, TestBinaryPrefixBlockBuilderTruncation) {
 
 #ifdef NDEBUG
 TEST_F(TestEncoding, GVIntSeekBenchmark) {
-  gscoped_ptr<WriterOptions> opts(new WriterOptions());
+  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
   gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
   DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), 32768, 100000, false);
 }
 #endif
 
 TEST_F(TestEncoding, GVIntSeekTest) {
-  gscoped_ptr<WriterOptions> opts(new WriterOptions());
+  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
   gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
   DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), 64, 1000, true);
 }
 
 TEST_F(TestEncoding, GVIntSeekTestTinyBlock) {
-  gscoped_ptr<WriterOptions> opts(new WriterOptions());
+  gscoped_ptr<WriterOptions> opts(NewWriterOptions());
   for (int block_size = 1; block_size < 16; block_size++) {
     gscoped_ptr<GVIntBlockBuilder> ibb(new GVIntBlockBuilder(opts.get()));
     DoSeekTest<GVIntBlockBuilder, GVIntBlockDecoder, UINT32>(ibb.get(), block_size, 1000, true);
@@ -799,8 +805,8 @@ class IntEncodingTest : public TestEncoding {
     typedef typename TestTraits::template Classes<IntType>::encoder_type encoder_type;
     typedef typename TestTraits::template Classes<IntType>::decoder_type decoder_type;
 
-    WriterOptions opts;
-    gscoped_ptr<encoder_type> ibb(new encoder_type(&opts));
+    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    gscoped_ptr<encoder_type> ibb(new encoder_type(opts.get()));
     DoSeekTest<encoder_type, decoder_type, IntType>(ibb.get(), num_ints, num_queries, verify);
   }
 
@@ -816,8 +822,8 @@ class IntEncodingTest : public TestEncoding {
     typedef typename TestTraits::template Classes<IntType>::encoder_type encoder_type;
     typedef typename TestTraits::template Classes<IntType>::decoder_type decoder_type;
 
-    WriterOptions opts;
-    gscoped_ptr<encoder_type> ibb(new encoder_type(&opts));
+    gscoped_ptr<WriterOptions> opts(NewWriterOptions());
+    gscoped_ptr<encoder_type> ibb(new encoder_type(opts.get()));
     TestIntBlockRoundTrip<encoder_type, decoder_type, IntType>(ibb.get());
   }
 };

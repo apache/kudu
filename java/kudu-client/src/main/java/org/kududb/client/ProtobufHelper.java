@@ -44,9 +44,12 @@ public class ProtobufHelper {
 
   public static Common.ColumnSchemaPB
   columnToPb(Common.ColumnSchemaPB.Builder schemaBuilder, ColumnSchema column) {
-    schemaBuilder.setName(column.getName()).
-        setType(column.getType().getDataType()).setIsKey(column.isKey()).setIsNullable(column
-        .isNullable());
+    schemaBuilder
+        .setName(column.getName())
+        .setType(column.getType().getDataType())
+        .setIsKey(column.isKey())
+        .setIsNullable(column.isNullable())
+        .setCfileBlockSize(column.getDesiredBlockSize());
     if (column.getDefaultValue() != null) schemaBuilder.setReadDefaultValue
         (ZeroCopyLiteralByteString.wrap(objectToWireFormat(column, column.getDefaultValue())));
     return schemaBuilder.build();

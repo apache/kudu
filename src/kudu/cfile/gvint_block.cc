@@ -29,7 +29,7 @@ GVIntBlockBuilder::GVIntBlockBuilder(const WriterOptions *options)
 void GVIntBlockBuilder::Reset() {
   ints_.clear();
   buffer_.clear();
-  ints_.reserve(options_->block_size / sizeof(uint32_t));
+  ints_.reserve(options_->storage_attributes.cfile_block_size / sizeof(uint32_t));
   estimated_raw_size_ = 0;
 }
 
@@ -43,7 +43,7 @@ int GVIntBlockBuilder::Add(const uint8_t *vals_void, size_t count) {
   int added = 0;
 
   // If the block is full, should stop adding more items.
-  while (!IsBlockFull(options_->block_size) && added < count) {
+  while (!IsBlockFull(options_->storage_attributes.cfile_block_size) && added < count) {
     uint32_t val = *vals++;
     estimated_raw_size_ += CalcRequiredBytes32(val);
     ints_.push_back(val);

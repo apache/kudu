@@ -13,14 +13,16 @@ public class ColumnSchema {
   private final boolean key;
   private final boolean nullable;
   private final Object defaultValue;
+  private final int desiredBlockSize;
 
   private ColumnSchema(String name, Type type, boolean key, boolean nullable,
-                       Object defaultValue) {
+                       Object defaultValue, int desiredBlockSize) {
     this.name = name;
     this.type = type;
     this.key = key;
     this.nullable = nullable;
     this.defaultValue = defaultValue;
+    this.desiredBlockSize = desiredBlockSize;
   }
 
   /**
@@ -63,6 +65,17 @@ public class ColumnSchema {
     return defaultValue;
   }
 
+  /**
+   * Gets the desired block size for this column.
+   * If no block size has been explicitly specified for this column,
+   * returns 0 to indicate that the server-side default will be used.
+   *
+   * @return the block size, in bytes, or 0 if none has been configured.
+   */
+  public int getDesiredBlockSize() {
+    return desiredBlockSize;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
@@ -99,6 +112,7 @@ public class ColumnSchema {
     private boolean nestedKey = false;
     private boolean nestedNullable = false;
     private Object nestedDefaultValue = null;
+    private int nestedBlockSize = 0;
 
     /**
      * Constructor for the required parameters.
@@ -141,12 +155,37 @@ public class ColumnSchema {
     }
 
     /**
+     * Set the desired block size for this column.
+     *
+     * This is the number of bytes of user data packed per block on disk, and
+     * represents the unit of IO when reading this column. Larger values
+     * may improve scan performance, particularly on spinning media. Smaller
+     * values may improve random access performance, particularly for workloads
+     * that have high cache hit rates or operate on fast storage such as SSD.
+     *
+     * Note that the block size specified here corresponds to uncompressed data.
+     * The actual size of the unit read from disk may be smaller if
+     * compression is enabled.
+     *
+     * It's recommended that this not be set any lower than 4096 (4KB) or higher
+     * than 1048576 (1MB).
+     * @param blockSize the desired block size, in bytes
+     * @return this instance
+     * <!-- TODO(KUDU-1107): move the above info to docs -->
+     */
+    public ColumnSchemaBuilder desiredBlockSize(int blockSize) {
+      this.nestedBlockSize = blockSize;
+      return this;
+    }
+
+    /**
      * Builds a {@link ColumnSchema} using the passed parameters.
      * @return a new {@link ColumnSchema}
      */
     public ColumnSchema build() {
       return new ColumnSchema(nestedName, nestedType,
-          nestedKey, nestedNullable, nestedDefaultValue);
+                              nestedKey, nestedNullable, nestedDefaultValue,
+                              nestedBlockSize);
     }
   }
 }

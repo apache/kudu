@@ -51,13 +51,18 @@ struct ColumnStorageAttributes {
  public:
   ColumnStorageAttributes()
     : encoding(AUTO_ENCODING),
-      compression(DEFAULT_COMPRESSION) {
+      compression(DEFAULT_COMPRESSION),
+      cfile_block_size(0) {
   }
 
   string ToString() const;
 
   EncodingType encoding;
   CompressionType compression;
+
+  // The preferred block size for cfile blocks. If 0, uses the
+  // server-wide default.
+  int32_t cfile_block_size;
 };
 
 // The schema for a given column.

@@ -36,6 +36,7 @@ class KuduColumnSpec::Data {
       has_type(false),
       has_encoding(false),
       has_compression(false),
+      has_block_size(false),
       has_nullable(false),
       primary_key(false),
       has_default(false),
@@ -58,6 +59,9 @@ class KuduColumnSpec::Data {
 
   bool has_compression;
   KuduColumnStorageAttributes::CompressionType compression;
+
+  bool has_block_size;
+  int32_t block_size;
 
   bool has_nullable;
   bool nullable;

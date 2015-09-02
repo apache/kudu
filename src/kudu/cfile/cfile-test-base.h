@@ -316,7 +316,7 @@ class CFileTestBase : public KuduTest {
     }
     if (flags & SMALL_BLOCKSIZE) {
       // Use a smaller block size to exercise multi-level indexing.
-      opts.block_size = 1024;
+      opts.storage_attributes.cfile_block_size = 1024;
     }
 
     opts.storage_attributes.encoding = encoding;

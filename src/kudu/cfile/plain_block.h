@@ -35,7 +35,7 @@ class PlainBlockBuilder : public BlockBuilder {
       : options_(options) {
     // Reserve enough space for the block, plus a bit of slop since
     // we often overrun the block by a few values.
-    buffer_.reserve(kPlainBlockHeaderSize + options_->block_size + 1024);
+    buffer_.reserve(kPlainBlockHeaderSize + options_->storage_attributes.cfile_block_size + 1024);
     Reset();
   }
 

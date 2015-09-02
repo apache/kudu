@@ -34,9 +34,10 @@ BinaryDictBlockBuilder::BinaryDictBlockBuilder(const WriterOptions* options)
 void BinaryDictBlockBuilder::Reset() {
   buffer_.clear();
   buffer_.resize(kMaxHeaderSize);
-  buffer_.reserve(options_->block_size);
+  buffer_.reserve(options_->storage_attributes.cfile_block_size);
 
-  if ((mode_ == kCodeWordMode) && dict_block_.IsBlockFull(options_->block_size)) {
+  if (mode_ == kCodeWordMode &&
+      dict_block_.IsBlockFull(options_->storage_attributes.cfile_block_size)) {
     mode_ = kPlainBinaryMode;
     data_builder_.reset(new BinaryPlainBlockBuilder(options_));
   } else {
@@ -60,13 +61,15 @@ Slice BinaryDictBlockBuilder::Finish(rowid_t ordinal_pos) {
 }
 
 // The current block is considered full when the the size of data block
-// exceeds limit or when the size of dictionary block exceeds options_->block_size.
+// exceeds limit or when the size of dictionary block exceeds the
+// CFile block size.
 //
 // If it is the latter case, all the subsequent data blocks will switch to
 // StringPlainBlock automatically.
 bool BinaryDictBlockBuilder::IsBlockFull(size_t limit) const {
-  if (data_builder_->IsBlockFull(options_->block_size)) return true;
-  if (dict_block_.IsBlockFull(options_->block_size) && (mode_ == kCodeWordMode)) return true;
+  int block_size = options_->storage_attributes.cfile_block_size;
+  if (data_builder_->IsBlockFull(block_size)) return true;
+  if (dict_block_.IsBlockFull(block_size) && (mode_ == kCodeWordMode)) return true;
   return false;
 }
 

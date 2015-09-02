@@ -153,6 +153,12 @@ KuduColumnSpec* KuduColumnSpec::Encoding(
   return this;
 }
 
+KuduColumnSpec* KuduColumnSpec::BlockSize(int32_t block_size) {
+  data_->has_block_size = true;
+  data_->block_size = block_size;
+  return this;
+}
+
 KuduColumnSpec* KuduColumnSpec::PrimaryKey() {
   data_->primary_key = true;
   return this;
@@ -223,9 +229,14 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
     compression = data_->compression;
   }
 
+  int32_t block_size = 0; // '0' signifies server-side default
+  if (data_->has_block_size) {
+    block_size = data_->block_size;
+  }
+
   *col = KuduColumnSchema(data_->name, data_->type, nullable,
                           default_val,
-                          KuduColumnStorageAttributes(encoding, compression));
+                          KuduColumnStorageAttributes(encoding, compression, block_size));
 
   return Status::OK();
 }

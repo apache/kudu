@@ -49,10 +49,16 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
     ZLIB = 4,
   };
 
+
+  // NOTE: this constructor is deprecated for external use, and will
+  // be made private in a future release.
   KuduColumnStorageAttributes(EncodingType encoding = AUTO_ENCODING,
-                              CompressionType compression = DEFAULT_COMPRESSION)
-  : encoding_(encoding),
-    compression_(compression) {}
+                              CompressionType compression = DEFAULT_COMPRESSION,
+                              int32_t block_size = 0)
+      : encoding_(encoding),
+      compression_(compression),
+      block_size_(block_size) {
+  }
 
   const EncodingType encoding() const {
     return encoding_;
@@ -67,6 +73,7 @@ class KUDU_EXPORT KuduColumnStorageAttributes {
  private:
   EncodingType encoding_;
   CompressionType compression_;
+  int32_t block_size_;
 };
 
 class KUDU_EXPORT KuduColumnSchema {
@@ -149,6 +156,22 @@ class KUDU_EXPORT KuduColumnSpec {
   // Note that not all encodings are supported for all column types.
   KuduColumnSpec* Encoding(KuduColumnStorageAttributes::EncodingType encoding);
 
+  // Set the target block size for this column.
+  //
+  // This is the number of bytes of user data packed per block on disk, and
+  // represents the unit of IO when reading this column. Larger values
+  // may improve scan performance, particularly on spinning media. Smaller
+  // values may improve random access performance, particularly for workloads
+  // that have high cache hit rates or operate on fast storage such as SSD.
+  //
+  // Note that the block size specified here corresponds to uncompressed data.
+  // The actual size of the unit read from disk may be smaller if
+  // compression is enabled.
+  //
+  // It's recommended that this not be set any lower than 4096 (4KB) or higher
+  // than 1048576 (1MB).
+  // TODO(KUDU-1107): move above info to docs
+  KuduColumnSpec* BlockSize(int32_t block_size);
 
   // Operations only relevant for Create Table
   // ------------------------------------------------------------

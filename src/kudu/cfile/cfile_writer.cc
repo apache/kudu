@@ -45,6 +45,7 @@ namespace cfile {
 const char kMagicString[] = "kuducfil";
 
 static const size_t kBlockSizeLimit = 16 * 1024 * 1024; // 16MB
+static const size_t kMinBlockSize = 512;
 
 static CompressionType GetDefaultCompressionCodec() {
   return GetCompressionCodecType(FLAGS_cfile_default_compression_codec);
@@ -54,8 +55,7 @@ static CompressionType GetDefaultCompressionCodec() {
 // Options
 ////////////////////////////////////////////////////////////
 WriterOptions::WriterOptions()
-  : block_size(FLAGS_cfile_default_block_size),
-    index_block_size(32*1024),
+  : index_block_size(32*1024),
     block_restart_interval(16),
     write_posidx(false),
     write_validx(false) {
@@ -96,6 +96,16 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     compression_ = GetDefaultCompressionCodec();
   }
 
+  if (options_.storage_attributes.cfile_block_size <= 0) {
+    options_.storage_attributes.cfile_block_size = FLAGS_cfile_default_block_size;
+  }
+  if (options_.storage_attributes.cfile_block_size < kMinBlockSize) {
+    LOG(WARNING) << "Configured block size " << options_.storage_attributes.cfile_block_size
+                 << " smaller than minimum allowed value " << kMinBlockSize
+                 << ": using minimum.";
+    options_.storage_attributes.cfile_block_size = kMinBlockSize;
+  }
+
   if (options.write_posidx) {
     posidx_builder_.reset(new IndexTreeBuilder(&options_,
                                                this));
@@ -106,7 +116,6 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     validx_builder_.reset(new IndexTreeBuilder(&options_,
                                                this));
   }
-
 }
 
 CFileWriter::~CFileWriter() {
@@ -147,7 +156,8 @@ Status CFileWriter::Start() {
   data_block_.reset(bb);
 
   if (is_nullable_) {
-    size_t nrows = ((options_.block_size + typeinfo_->size() - 1) / typeinfo_->size());
+    size_t nrows = ((options_.storage_attributes.cfile_block_size + typeinfo_->size() - 1) /
+                    typeinfo_->size());
     null_bitmap_builder_.reset(new NullBitmapBuilder(nrows * 8));
   }
 
@@ -268,7 +278,7 @@ Status CFileWriter::AppendEntries(const void *entries, size_t count) {
     rem -= n;
     value_count_ += n;
 
-    if (data_block_->IsBlockFull(options_.block_size)) {
+    if (data_block_->IsBlockFull(options_.storage_attributes.cfile_block_size)) {
       RETURN_NOT_OK(FinishCurDataBlock());
     }
   }
@@ -299,7 +309,7 @@ Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
         value_count_ += n;
         rem -= n;
 
-        if (data_block_->IsBlockFull(options_.block_size)) {
+        if (data_block_->IsBlockFull(options_.storage_attributes.cfile_block_size)) {
           RETURN_NOT_OK(FinishCurDataBlock());
         }
 

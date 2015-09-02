@@ -59,7 +59,7 @@ void BinaryPrefixBlockBuilder::Reset() {
 
   buffer_.clear();
   buffer_.resize(kHeaderReservedLength);
-  buffer_.reserve(options_->block_size);
+  buffer_.reserve(options_->storage_attributes.cfile_block_size);
 
   restarts_.clear();
   last_val_.clear();
@@ -118,7 +118,7 @@ int BinaryPrefixBlockBuilder::Add(const uint8_t *vals, size_t count) {
   Slice prev_val(last_val_);
   // We generate a static call to IsBlockFull() to avoid the vtable lookup
   // in this hot path.
-  while (!BinaryPrefixBlockBuilder::IsBlockFull(options_->block_size) &&
+  while (!BinaryPrefixBlockBuilder::IsBlockFull(options_->storage_attributes.cfile_block_size) &&
          added < count) {
     const Slice val = slices[added];
 

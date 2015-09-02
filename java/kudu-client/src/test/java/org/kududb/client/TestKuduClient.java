@@ -72,6 +72,9 @@ public class TestKuduClient extends BaseKuduTest {
     // Check that we can open a table and see that it has the new schema.
     KuduTable table = syncClient.openTable(tableName);
     assertEquals(newSchema.getColumnCount(), table.getSchema().getColumnCount());
+
+    // Check that the block size parameter we specified in the schema is respected.
+    assertEquals(4096, newSchema.getColumn("column3_s").getDesiredBlockSize());
   }
 
   /**

@@ -33,9 +33,10 @@ static const int kFirstColumnId = 10;
 #endif
 
 string ColumnStorageAttributes::ToString() const {
-  return strings::Substitute("encoding=$0,compression=$1",
+  return strings::Substitute("encoding=$0, compression=$1, cfile_block_size=$2",
                              EncodingType_Name(encoding),
-                             CompressionType_Name(compression));
+                             CompressionType_Name(compression),
+                             cfile_block_size);
 }
 
 // TODO: include attributes_.ToString() -- need to fix unit tests

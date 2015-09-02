@@ -51,7 +51,7 @@ DeltaFileWriter::DeltaFileWriter(gscoped_ptr<WritableBlock> block)
 { // NOLINT(*)
   cfile::WriterOptions opts;
   opts.write_validx = true;
-  opts.block_size = FLAGS_deltafile_block_size;
+  opts.storage_attributes.cfile_block_size = FLAGS_deltafile_block_size;
   opts.storage_attributes.encoding = PLAIN_ENCODING;
   writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, block.Pass()));
 }
