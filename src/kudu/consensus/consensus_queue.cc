@@ -17,6 +17,7 @@
 #include "kudu/consensus/log_reader.h"
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/consensus/raft_consensus.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/gutil/map-util.h"
@@ -89,7 +90,7 @@ PeerMessageQueue::PeerMessageQueue(const scoped_refptr<MetricEntity>& metric_ent
   queue_state_.majority_replicated_opid = MinimumOpId();
   queue_state_.state = kQueueConstructed;
   queue_state_.mode = NON_LEADER;
-  queue_state_.majority_size_ = 1;
+  queue_state_.majority_size_ = -1;
   CHECK_OK(ThreadPoolBuilder("queue-observers-pool").set_max_threads(1).Build(&observers_pool_));
 }
 
@@ -104,24 +105,30 @@ void PeerMessageQueue::Init(const OpId& last_locally_replicated) {
 
 void PeerMessageQueue::SetLeaderMode(const OpId& committed_index,
                                      int64_t current_term,
-                                     int majority_size) {
+                                     const RaftConfigPB& active_config) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   CHECK(committed_index.IsInitialized());
   queue_state_.current_term = current_term;
   queue_state_.committed_index = committed_index;
   queue_state_.majority_replicated_opid = committed_index;
-  queue_state_.majority_size_ = majority_size;
+  queue_state_.active_config.reset(new RaftConfigPB(active_config));
+  CHECK(IsRaftConfigVoter(local_peer_pb_.permanent_uuid(), *queue_state_.active_config))
+      << local_peer_pb_.ShortDebugString() << " not a voter in config: "
+      << queue_state_.active_config->ShortDebugString();
+  queue_state_.majority_size_ = MajoritySize(CountVoters(*queue_state_.active_config));
   queue_state_.mode = LEADER;
 
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << " queue going to LEADER mode. State: "
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Queue going to LEADER mode. State: "
       << queue_state_.ToString();
+  CheckPeersInActiveConfigIfLeaderUnlocked();
 }
 
 void PeerMessageQueue::SetNonLeaderMode() {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
+  queue_state_.active_config.reset();
   queue_state_.mode = NON_LEADER;
-  queue_state_.majority_size_ = 1;
-  LOG_WITH_PREFIX_UNLOCKED(INFO) << " queue going to NON_LEADER mode. State: "
+  queue_state_.majority_size_ = -1;
+  LOG_WITH_PREFIX_UNLOCKED(INFO) << "Queue going to NON_LEADER mode. State: "
       << queue_state_.ToString();
 }
 
@@ -147,6 +154,8 @@ void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
   tracked_peer->next_index = queue_state_.last_appended.index() + 1;
   InsertOrDie(&peers_map_, uuid, tracked_peer);
 
+  CheckPeersInActiveConfigIfLeaderUnlocked();
+
   // We don't know how far back this peer is, so set the all replicated watermark to
   // MinimumOpId. We'll advance it when we know how far along the peer is.
   queue_state_.all_replicated_opid = MinimumOpId();
@@ -157,6 +166,22 @@ void PeerMessageQueue::UntrackPeer(const string& uuid) {
   TrackedPeer* peer = EraseKeyReturnValuePtr(&peers_map_, uuid);
   if (peer != NULL) {
     delete peer;
+  }
+}
+
+void PeerMessageQueue::CheckPeersInActiveConfigIfLeaderUnlocked() const {
+  if (queue_state_.mode != LEADER) return;
+  unordered_set<string> config_peer_uuids;
+  BOOST_FOREACH(const RaftPeerPB& peer_pb, queue_state_.active_config->peers()) {
+    InsertOrDie(&config_peer_uuids, peer_pb.permanent_uuid());
+  }
+  BOOST_FOREACH(const PeersMap::value_type& entry, peers_map_) {
+    if (!ContainsKey(config_peer_uuids, entry.first)) {
+      LOG_WITH_PREFIX_UNLOCKED(FATAL) << Substitute("Peer $0 is not in the active config. "
+                                                    "Queue state: $1",
+                                                    entry.first,
+                                                    queue_state_.ToString());
+    }
   }
 }
 
@@ -338,12 +363,14 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
                                              OpId* watermark,
                                              const OpId& replicated_before,
                                              const OpId& replicated_after,
-                                             int num_peers_required) {
+                                             int num_peers_required,
+                                             const TrackedPeer* peer) {
 
   if (VLOG_IS_ON(2)) {
-    VLOG_WITH_PREFIX_UNLOCKED(2) << "Updating " << type << " watermark: " << " peer changed from "
-        << replicated_before << " to " << replicated_after << ". Current value: "
-        << watermark->ShortDebugString();
+    VLOG_WITH_PREFIX_UNLOCKED(2) << "Updating " << type << " watermark: "
+        << "Peer (" << peer->ToString() << ") changed from "
+        << replicated_before << " to " << replicated_after << ". "
+        << "Current value: " << watermark->ShortDebugString();
   }
 
   // Go through the peer's watermarks, we want the highest watermark that
@@ -518,8 +545,8 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     }
 
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
-      VLOG_WITH_PREFIX_UNLOCKED(2) << "Received Response from Peer: " << peer->ToString()
-          << ". Response: " << response.ShortDebugString();
+      VLOG_WITH_PREFIX_UNLOCKED(2) << "Received Response from Peer (" << peer->ToString() << "). "
+          << "Response: " << response.ShortDebugString();
     }
 
     *more_pending = log_cache_.HasOpBeenWritten(peer->next_index);
@@ -531,9 +558,10 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
                             &queue_state_.majority_replicated_opid,
                             previous.last_received,
                             peer->last_received,
-                            queue_state_.majority_size_);
+                            queue_state_.majority_size_,
+                            peer);
 
-      updated_majority_replicated_opid.CopyFrom(queue_state_.majority_replicated_opid);
+      updated_majority_replicated_opid = queue_state_.majority_replicated_opid;
     }
 
     // Advance the all replicated index.
@@ -541,7 +569,8 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
                           &queue_state_.all_replicated_opid,
                           previous.last_received,
                           peer->last_received,
-                          peers_map_.size());
+                          peers_map_.size(),
+                          peer);
 
     log_cache_.EvictThroughOp(queue_state_.all_replicated_opid.index());
 
@@ -749,10 +778,11 @@ string PeerMessageQueue::LogPrefixUnlocked() const {
 string PeerMessageQueue::QueueState::ToString() const {
   return Substitute("All replicated op: $0, Majority replicated op: $1, "
       "Committed index: $2, Last appended: $3, Current term: $4, Majority size: $5, "
-      "State: $6, Mode: $7",
+      "State: $6, Mode: $7$8",
       OpIdToString(all_replicated_opid), OpIdToString(majority_replicated_opid),
       OpIdToString(committed_index), OpIdToString(last_appended), current_term,
-      majority_size_, state, (mode == LEADER ? "LEADER" : "NON_LEADER"));
+      majority_size_, state, (mode == LEADER ? "LEADER" : "NON_LEADER"),
+      active_config ? ", active raft config: " + active_config->ShortDebugString() : "");
 }
 
 }  // namespace consensus

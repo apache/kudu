@@ -89,7 +89,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   // Builds an initial configuration of 'num' elements.
   // All of the peers start as followers.
   void BuildInitialRaftConfigPB(int num) {
-    BuildRaftConfigPBForTests(num, &config_);
+    config_ = BuildRaftConfigPBForTests(num);
     config_.set_opid_index(kInvalidOpIdIndex);
     peers_.reset(new TestPeerMapManager(config_));
   }

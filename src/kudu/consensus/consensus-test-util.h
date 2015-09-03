@@ -86,18 +86,19 @@ static inline void AppendReplicateMessagesToQueue(
   }
 }
 
-// Builds a configuration of 'num' members.
-void BuildRaftConfigPBForTests(int num, RaftConfigPB* config) {
-  config->Clear();
-  config->set_local(false);
+// Builds a configuration of 'num' voters.
+RaftConfigPB BuildRaftConfigPBForTests(int num) {
+  RaftConfigPB raft_config;
+  raft_config.set_local(false);
   for (int i = 0; i < num; i++) {
-    RaftPeerPB* peer_pb = config->add_peers();
+    RaftPeerPB* peer_pb = raft_config.add_peers();
     peer_pb->set_member_type(RaftPeerPB::VOTER);
     peer_pb->set_permanent_uuid(Substitute("peer-$0", i));
     HostPortPB* hp = peer_pb->mutable_last_known_addr();
     hp->set_host(Substitute("peer-$0.fake-domain-for-tests", i));
     hp->set_port(0);
   }
+  return raft_config;
 }
 
 // Abstract base class to build PeerProxy implementations on top of for testing.

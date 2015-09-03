@@ -27,7 +27,8 @@ using log::LogOptions;
 using log::LogAnchorRegistry;
 
 const char* kTabletId = "test-peers-tablet";
-const char* kLeaderUuid = "test-peers-leader";
+const char* kLeaderUuid = "peer-0";
+const char* kFollowerUuid = "peer-1";
 
 class ConsensusPeersTest : public KuduTest {
  public:
@@ -131,15 +132,14 @@ class ConsensusPeersTest : public KuduTest {
 TEST_F(ConsensusPeersTest, TestRemotePeer) {
   // We use a majority size of 2 since we make one fake remote peer
   // in addition to our real local log.
-  const int kMajoritySize = 2;
   message_queue_->Init(MinimumOpId());
   message_queue_->SetLeaderMode(MinimumOpId(),
                                 MinimumOpId().term(),
-                                kMajoritySize);
+                                BuildRaftConfigPBForTests(3));
 
   gscoped_ptr<Peer> remote_peer;
   DelayablePeerProxy<NoOpTestPeerProxy>* proxy =
-      NewRemotePeer("remote-peer", &remote_peer);
+      NewRemotePeer(kFollowerUuid, &remote_peer);
 
   // Append a bunch of messages to the queue
   AppendReplicateMessagesToQueue(message_queue_.get(), clock_, 1, 20);
@@ -160,20 +160,19 @@ TEST_F(ConsensusPeersTest, TestRemotePeer) {
 }
 
 TEST_F(ConsensusPeersTest, TestRemotePeers) {
-  const int kMajoritySize = 2;
   message_queue_->Init(MinimumOpId());
   message_queue_->SetLeaderMode(MinimumOpId(),
                                 MinimumOpId().term(),
-                                kMajoritySize);
+                                BuildRaftConfigPBForTests(3));
 
   // Create a set of remote peers
   gscoped_ptr<Peer> remote_peer1;
   DelayablePeerProxy<NoOpTestPeerProxy>* remote_peer1_proxy =
-      NewRemotePeer("remote-peer1", &remote_peer1);
+      NewRemotePeer("peer-1", &remote_peer1);
 
   gscoped_ptr<Peer> remote_peer2;
   DelayablePeerProxy<NoOpTestPeerProxy>* remote_peer2_proxy =
-      NewRemotePeer("remote-peer2", &remote_peer2);
+      NewRemotePeer("peer-2", &remote_peer2);
 
   // Delay the response from the second remote peer.
   remote_peer2_proxy->DelayResponse();
@@ -223,13 +222,13 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
   message_queue_->Init(MinimumOpId());
   message_queue_->SetLeaderMode(MinimumOpId(),
                                 MinimumOpId().term(),
-                                1);
+                                BuildRaftConfigPBForTests(3));
 
   MockedPeerProxy* mock_proxy = new MockedPeerProxy(pool_.get());
   gscoped_ptr<Peer> peer;
-  ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB("test-peer"),
-                                "fake-tablet",
-                                "fake-leader-uuid",
+  ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
+                                kTabletId,
+                                kLeaderUuid,
                                 message_queue_.get(),
                                 pool_.get(),
                                 gscoped_ptr<PeerProxy>(mock_proxy),
@@ -239,7 +238,7 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
   // that it has only replicated op 0.0. When we see the response, we always
   // decide that more data is pending, and we want to send another request.
   ConsensusResponsePB peer_resp;
-  peer_resp.set_responder_uuid("test-peer");
+  peer_resp.set_responder_uuid(kFollowerUuid);
   peer_resp.set_responder_term(0);
   peer_resp.mutable_status()->mutable_last_received()->CopyFrom(
       MakeOpId(0, 0));
@@ -261,13 +260,13 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
   message_queue_->Init(MinimumOpId());
   message_queue_->SetLeaderMode(MinimumOpId(),
                                 MinimumOpId().term(),
-                                1);
+                                BuildRaftConfigPBForTests(3));
 
   MockedPeerProxy* mock_proxy = new MockedPeerProxy(pool_.get());
   gscoped_ptr<Peer> peer;
-  ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB("test-peer"),
-                                "fake-tablet",
-                                "fake-leader-uuid",
+  ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
+                                kTabletId,
+                                kLeaderUuid,
                                 message_queue_.get(),
                                 pool_.get(),
                                 gscoped_ptr<PeerProxy>(mock_proxy),
@@ -276,7 +275,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
   // Initial response has to be successful -- otherwise we'll consider the peer
   // "new" and only send heartbeat RPCs.
   ConsensusResponsePB initial_resp;
-  initial_resp.set_responder_uuid("test-peer");
+  initial_resp.set_responder_uuid(kFollowerUuid);
   initial_resp.set_responder_term(0);
   initial_resp.mutable_status()->mutable_last_received()->CopyFrom(
       MakeOpId(1, 1));
@@ -289,9 +288,8 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
   peer->SignalRequest(true);
 
   // Now wait for the message to be replicated, this should succeed since
-  // majority = 1.
+  // the local (leader) peer always acks and the follower also acked this time.
   WaitForMajorityReplicatedIndex(1);
-
 
   // Set up the peer to respond with an error.
   ConsensusResponsePB error_resp;

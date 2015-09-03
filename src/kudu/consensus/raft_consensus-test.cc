@@ -52,7 +52,7 @@ class MockQueue : public PeerMessageQueue {
   MOCK_METHOD1(Init, void(const OpId& locally_replicated_index));
   MOCK_METHOD3(SetLeaderMode, void(const OpId& committed_opid,
                                    int64_t current_term,
-                                   int majority_size));
+                                   const RaftConfigPB& active_config));
   MOCK_METHOD0(SetNonLeaderMode, void());
   virtual Status AppendOperations(const vector<ReplicateRefPtr>& msgs,
                                   const StatusCallback& callback) OVERRIDE {
@@ -182,7 +182,7 @@ class RaftConsensusTest : public KuduTest {
   }
 
   void SetUpConsensus(int64_t initial_term = consensus::kMinimumTerm, int num_peers = 1) {
-    BuildRaftConfigPBForTests(num_peers, &config_);
+    config_ = BuildRaftConfigPBForTests(num_peers);
     config_.set_opid_index(kInvalidOpIdIndex);
 
     gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(NULL));

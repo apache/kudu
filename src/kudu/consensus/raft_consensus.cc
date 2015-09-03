@@ -1466,12 +1466,15 @@ Status RaftConsensus::ReplicateConfigChangeUnlocked(const RaftConfigPB& old_conf
 Status RaftConsensus::RefreshConsensusQueueAndPeersUnlocked() {
   DCHECK_EQ(RaftPeerPB::LEADER, state_->GetActiveRoleUnlocked());
   const RaftConfigPB& active_config = state_->GetActiveConfigUnlocked();
+
+  // Change the peers so that we're able to replicate messages remotely and
+  // locally. The peer manager must be closed before updating the active config
+  // in the queue -- when the queue is in LEADER mode, it checks that all
+  // registered peers are a part of the active config.
+  peer_manager_->Close();
   queue_->SetLeaderMode(state_->GetCommittedOpIdUnlocked(),
                         state_->GetCurrentTermUnlocked(),
-                        MajoritySize(CountVoters(active_config)));
-
-  // Create the peers so that we're able to replicate messages remotely and locally.
-  peer_manager_->Close();
+                        active_config);
   RETURN_NOT_OK(peer_manager_->UpdateRaftConfig(active_config));
   return Status::OK();
 }

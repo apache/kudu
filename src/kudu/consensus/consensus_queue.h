@@ -119,11 +119,11 @@ class PeerMessageQueue {
   // 'current_term' corresponds to the leader's current term, this is different
   // from 'committed_index.term()' if the leader has not yet committed an
   // operation in the current term.
-  // Majority size corresponds to the number of peers that must have replicated
-  // a certain operation for it to be considered committed.
+  // 'active_config' is the currently-active Raft config. This must always be
+  // a superset of the tracked peers, and that is enforced with runtime CHECKs.
   virtual void SetLeaderMode(const OpId& committed_index,
                              int64_t current_term,
-                             int majority_size);
+                             const RaftConfigPB& active_config);
 
   // Changes the queue to non-leader mode. Currently tracked peers will still
   // be tracked so that the cache is only evicted when the peers no longer need
@@ -275,13 +275,15 @@ class PeerMessageQueue {
     int64_t current_term;
 
     // The size of the majority for the queue.
-    // TODO support changing majority sizes when configurations change.
     int majority_size_;
 
     State state;
 
     // The current mode of the queue.
     Mode mode;
+
+    // The currently-active raft config. Only set if in LEADER mode.
+    gscoped_ptr<RaftConfigPB> active_config;
 
     std::string ToString() const;
   };
@@ -319,6 +321,11 @@ class PeerMessageQueue {
 
   void TrackPeerUnlocked(const std::string& uuid);
 
+  // Checks that if the queue is in LEADER mode then all registered peers are
+  // in the active config. Crashes with a FATAL log message if this invariant
+  // does not hold. If the queue is in NON_LEADER mode, does nothing.
+  void CheckPeersInActiveConfigIfLeaderUnlocked() const;
+
   // Callback when a REPLICATE message has finished appending to the local log.
   void LocalPeerAppendFinished(const OpId& id,
                                const StatusCallback& callback,
@@ -329,7 +336,8 @@ class PeerMessageQueue {
                              OpId* watermark,
                              const OpId& replicated_before,
                              const OpId& replicated_after,
-                             int num_peers_required);
+                             int num_peers_required,
+                             const TrackedPeer* who_caused);
 
   std::vector<PeerMessageQueueObserver*> observers_;
 
