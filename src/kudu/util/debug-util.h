@@ -17,6 +17,11 @@ namespace kudu {
 // Not async-safe.
 Status ListThreads(std::vector<pid_t>* tids);
 
+// Set which POSIX signal number should be used internally for triggering
+// stack traces. If the specified signal handler is already in use, this
+// returns an error, and stack traces will be disabled.
+Status SetStackTraceSignal(int signum);
+
 // Return the stack trace of the given thread, stringified and symbolized.
 //
 // Note that the symbolization happens on the calling thread, not the target

@@ -38,6 +38,16 @@ extern void DumpStackTraceToString(std::string *s);
 // For some environments, add two extra bytes for the leading "0x".
 static const int kPrintfPointerFieldWidth = 2 + 2 * sizeof(void*);
 
+// The signal that we'll use to communicate with our other threads.
+// This can't be in used by other libraries in the process.
+static int g_stack_trace_signum = SIGUSR2;
+
+// We only allow a single dumper thread to run at a time. This simplifies the synchronization
+// between the dumper and the target thread.
+//
+// This lock also protects changes to the signal handler.
+static base::SpinLock g_dumper_thread_lock(base::LINKER_INITIALIZED);
+
 namespace kudu {
 
 namespace {
@@ -80,7 +90,7 @@ struct SignalCommunication::Lock {
   }
 };
 
-// Signal handler for SIGUSR1.
+// Signal handler for our stack trace signal.
 // We expect that the signal is only sent from DumpThreadStack() -- not by a user.
 void HandleStackTraceSignal(int signum) {
   SignalCommunication::Lock l;
@@ -99,20 +109,73 @@ void HandleStackTraceSignal(int signum) {
   base::subtle::Release_Store(&g_comm.result_ready, 1);
 }
 
+bool InitSignalHandlerUnlocked(int signum) {
+  enum InitState {
+    UNINITIALIZED,
+    INIT_ERROR,
+    INITIALIZED
+  };
+  static InitState state = UNINITIALIZED;
+
+  // If we've already registered a handler, but we're being asked to
+  // change our signal, unregister the old one.
+  if (signum != g_stack_trace_signum &&
+      state == INITIALIZED) {
+    struct sigaction old_act;
+    PCHECK(sigaction(g_stack_trace_signum, NULL, &old_act) == 0);
+    if (old_act.sa_handler == &HandleStackTraceSignal) {
+      signal(g_stack_trace_signum, SIG_DFL);
+    }
+  }
+
+  // If we'd previously had an error, but the signal number
+  // is changing, we should mark ourselves uninitialized.
+  if (signum != g_stack_trace_signum) {
+    g_stack_trace_signum = signum;
+    state = UNINITIALIZED;
+  }
+
+  if (state == UNINITIALIZED) {
+    struct sigaction old_act;
+    PCHECK(sigaction(g_stack_trace_signum, NULL, &old_act) == 0);
+    if (old_act.sa_handler != SIG_DFL &&
+        old_act.sa_handler != SIG_IGN) {
+      state = INIT_ERROR;
+      LOG(WARNING) << "signal handler for stack trace signal "
+                   << g_stack_trace_signum
+                   << " is already in use: "
+                   << "Kudu will not produce thread stack traces.";
+    } else {
+      // No one appears to be using the signal. This is racy, but there is no
+      // atomic swap capability.
+      sighandler_t old_handler = signal(g_stack_trace_signum, HandleStackTraceSignal);
+      if (old_handler != SIG_IGN &&
+          old_handler != SIG_DFL) {
+        LOG(FATAL) << "raced against another thread installing a signal handler";
+      }
+      state = INITIALIZED;
+    }
+  }
+  return state == INITIALIZED;
+}
+
 } // namespace
 
-std::string DumpThreadStack(pid_t tid) {
-  // We only allow a single dumper thread to run at a time. This simplifies the synchronization
-  // between the dumper and the target thread.
-  static base::SpinLock dumper_thread_lock_(base::LINKER_INITIALIZED);
-  base::SpinLockHolder h(&dumper_thread_lock_);
+Status SetStackTraceSignal(int signum) {
+  base::SpinLockHolder h(&g_dumper_thread_lock);
+  if (!InitSignalHandlerUnlocked(signum)) {
+    return Status::InvalidArgument("unable to install signal handler");
+  }
+  return Status::OK();
+}
 
-  // Ensure that our SIGUSR1 handler is installed. We don't need any fancy GoogleOnce here
+std::string DumpThreadStack(pid_t tid) {
+  base::SpinLockHolder h(&g_dumper_thread_lock);
+
+  // Ensure that our signal handler is installed. We don't need any fancy GoogleOnce here
   // because of the mutex above.
-  static bool initialized = false;
-  if (!initialized) {
-    PCHECK(signal(SIGUSR1, HandleStackTraceSignal) == 0);
-    initialized = true;
+  if (!InitSignalHandlerUnlocked(g_stack_trace_signum)) {
+    return "<unable to take thread stack: signal handler unavailable>";
   }
 
   // Set the target TID in our communication structure, so if we end up with any
@@ -126,7 +189,7 @@ std::string DumpThreadStack(pid_t tid) {
   // We use the raw syscall here instead of kill() to ensure that we don't accidentally
   // send a signal to some other process in the case that the thread has exited and
   // the TID been recycled.
-  if (syscall(SYS_tgkill, getpid(), tid, SIGUSR1) != 0) {
+  if (syscall(SYS_tgkill, getpid(), tid, g_stack_trace_signum) != 0) {
     {
       SignalCommunication::Lock l;
       g_comm.target_tid = 0;

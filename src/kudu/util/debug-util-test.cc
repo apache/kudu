@@ -42,6 +42,7 @@ TEST_F(DebugUtilTest, TestStackTraceMainThread) {
   ASSERT_STR_CONTAINS(s, "kudu::DebugUtilTest_TestStackTraceMainThread_Test::TestBody()");
 }
 
+namespace {
 void SleeperThread(CountDownLatch* l) {
   // We use an infinite loop around WaitFor() instead of a normal Wait()
   // so that this test passes in TSAN. Without this, we run into this TSAN
@@ -50,6 +51,15 @@ void SleeperThread(CountDownLatch* l) {
   while (!l->WaitFor(MonoDelta::FromMilliseconds(10))) {
   }
 }
+
+void fake_signal_handler(int signum) {}
+
+bool IsSignalHandlerRegistered(int signum) {
+  struct sigaction cur_action;
+  CHECK_EQ(0, sigaction(signum, NULL, &cur_action));
+  return cur_action.sa_handler != SIG_DFL;
+}
+} // anonymous namespace
 
 TEST_F(DebugUtilTest, TestSignalStackTrace) {
   CountDownLatch l(1);
@@ -65,6 +75,43 @@ TEST_F(DebugUtilTest, TestSignalStackTrace) {
     SleepFor(MonoDelta::FromMicroseconds(100));
   }
   ASSERT_STR_CONTAINS(stack, "SleeperThread");
+
+  // Test that we can change the signal and that the stack traces still work,
+  // on the new signal.
+  ASSERT_FALSE(IsSignalHandlerRegistered(SIGUSR1));
+  ASSERT_OK(SetStackTraceSignal(SIGUSR1));
+
+  // Should now be registered.
+  ASSERT_TRUE(IsSignalHandlerRegistered(SIGUSR1));
+
+  // SIGUSR2 should be relinquished.
+  ASSERT_FALSE(IsSignalHandlerRegistered(SIGUSR2));
+
+  // Stack traces should work using the new handler.
+  ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread");
+
+  // Switch back to SIGUSR2 and ensure it changes back.
+  ASSERT_OK(SetStackTraceSignal(SIGUSR2));
+  ASSERT_TRUE(IsSignalHandlerRegistered(SIGUSR2));
+  ASSERT_FALSE(IsSignalHandlerRegistered(SIGUSR1));
+
+  // Stack traces should work using the new handler.
+  ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "SleeperThread");
+
+  // Register our own signal handler on SIGUSR1, and ensure that
+  // we get a bad Status if we try to use it.
+  signal(SIGUSR1, &fake_signal_handler);
+  ASSERT_STR_CONTAINS(SetStackTraceSignal(SIGUSR1).ToString(),
+                      "unable to install signal handler");
+  signal(SIGUSR1, SIG_IGN);
+
+  // Stack traces should be disabled
+  ASSERT_STR_CONTAINS(DumpThreadStack(t->tid()), "unable to take thread stack");
+
+  // Re-enable so that other tests pass.
+  ASSERT_OK(SetStackTraceSignal(SIGUSR2));
+
+  // Allow the thread to finish.
   l.CountDown();
   t->Join();
 }

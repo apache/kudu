@@ -84,6 +84,11 @@ void KUDU_EXPORT UninstallLoggingCallback();
 // This may be called safely at any point during usage of the library.
 void KUDU_EXPORT SetVerboseLogLevel(int level);
 
+// The Kudu client library uses signals internally in some cases. By default, it uses
+// SIGUSR2. If your application makes use of SIGUSR2, this advanced API can help
+// workaround conflicts.
+Status KUDU_EXPORT SetInternalSignalNumber(int signum);
+
 // Creates a new KuduClient with the desired options.
 //
 // Note that KuduClients are shared amongst multiple threads and, as such,

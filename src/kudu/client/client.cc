@@ -139,6 +139,10 @@ void SetVerboseLogLevel(int level) {
   FLAGS_v = level;
 }
 
+Status SetInternalSignalNumber(int signum) {
+  return SetStackTraceSignal(signum);
+}
+
 KuduClientBuilder::KuduClientBuilder()
   : data_(new KuduClientBuilder::Data()) {
 }
