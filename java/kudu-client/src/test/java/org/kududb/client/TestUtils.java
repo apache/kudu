@@ -10,9 +10,11 @@ import com.sun.security.auth.module.UnixSystem;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.lang.reflect.Field;
 import java.net.ServerSocket;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -49,7 +51,7 @@ public class TestUtils {
       throw new RuntimeException("Unable to find 'flags' file");
     }
     if (u.getProtocol() == "file") {
-      return u.getPath();
+      return urlToPath(u);
     }
     // If the flags are inside a JAR, extract them into our temporary
     // test directory.
@@ -77,9 +79,22 @@ public class TestUtils {
     return addr;
   }
 
+  /**
+   * Return the path portion of a file URL, after decoding the escaped
+   * components. This fixes issues when trying to build within a
+   * working directory with special characters.
+   */
+  private static String urlToPath(URL u) {
+    try {
+      return URLDecoder.decode(u.getPath(), "UTF-8");
+    } catch (UnsupportedEncodingException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   private static String findBuildDir() {
     URL myUrl = BaseKuduTest.class.getProtectionDomain().getCodeSource().getLocation();
-    File myPath = new File(myUrl.getPath());
+    File myPath = new File(urlToPath(myUrl));
     while (myPath != null) {
       if (new File(myPath, ".git").isDirectory()) {
         return new File(myPath, "build/latest").getAbsolutePath();
