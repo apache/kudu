@@ -71,6 +71,21 @@ kudu::Status GetClockTime(ntptimeval* timeval) {
   return kudu::Status::OK();
 }
 
+Status CheckDeadlineNotWithinMicros(const MonoTime& deadline, int64_t wait_for_usec) {
+  if (!deadline.Initialized()) {
+    // No deadline.
+    return Status::OK();
+  }
+  int64_t us_until_deadline = deadline.GetDeltaSince(
+      MonoTime::Now(MonoTime::FINE)).ToMicroseconds();
+  if (us_until_deadline <= wait_for_usec) {
+    return Status::TimedOut(Substitute(
+        "specified time is $0us in the future, but deadline expires in $1us",
+        wait_for_usec, us_until_deadline));
+  }
+  return Status::OK();
+}
+
 }  // anonymous namespace
 
 // Left shifting 12 bits gives us 12 bits for the logical value
@@ -249,7 +264,8 @@ bool HybridClock::SupportsExternalConsistencyMode(ExternalConsistencyMode mode) 
   return true;
 }
 
-Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
+Status HybridClock::WaitUntilAfter(const Timestamp& then_latest,
+                                   const MonoTime& deadline) {
   Timestamp now;
   uint64_t error;
   {
@@ -278,40 +294,21 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest) {
   // to account for the worst case clock skew while we're sleeping.
   wait_for_usec *= tolerance_adjustment_;
 
-  timespec requested;
-  requested.tv_sec = wait_for_usec / 1000000;
-  requested.tv_nsec = wait_for_usec * 1000 - (requested.tv_sec * 1000000000);
+  // Check that sleeping wouldn't sleep longer than our deadline.
+  RETURN_NOT_OK(CheckDeadlineNotWithinMicros(deadline, wait_for_usec));
+
+  SleepFor(MonoDelta::FromMicroseconds(wait_for_usec));
+
 
   VLOG(1) << "WaitUntilAfter(): Incoming time(latest): " << then_latest_usec
           << " Now(earliest): " << now_earliest_usec << " error: " << error
           << " Waiting for: " << wait_for_usec;
 
-  while (true) {
-    timespec remaining;
-    int rc = clock_nanosleep(CLOCK_MONOTONIC, 0, &requested, &remaining);
-    if (PREDICT_TRUE(rc == 0)) {
-      break;
-    }
-    // If clock_nanosleep() caught a signal we might have to wait more time.
-    // We check if the return code is EINTR and if 'remaining' has any time
-    // set in the seconds or nanoseconds fields. If so, we set 'requested' to
-    // it and reset 'remaining', if not we got an interrupt signal but
-    // have waited enough, proceed.
-    if (rc == EINTR) {
-      if (remaining.tv_sec != 0 || remaining.tv_nsec != 0) {
-        requested = remaining;
-        continue;
-      }
-      break;
-    }
-    // Any other return code and something went seriously wrong, abort!
-    LOG(FATAL) << Substitute("Could not wait out the error. Return code: $0", ErrnoToString(rc));
-  }
-
   return Status::OK();
 }
 
-Status HybridClock::WaitUntilAfterLocally(const Timestamp& then) {
+  Status HybridClock::WaitUntilAfterLocally(const Timestamp& then,
+                                            const MonoTime& deadline) {
   while (true) {
     Timestamp now;
     uint64_t error;
@@ -323,7 +320,9 @@ Status HybridClock::WaitUntilAfterLocally(const Timestamp& then) {
       return Status::OK();
     }
     uint64_t wait_for_usec = GetPhysicalValueMicros(then) - GetPhysicalValueMicros(now);
-    SleepFor(MonoDelta::FromMicroseconds(wait_for_usec));
+
+    // Check that sleeping wouldn't sleep longer than our deadline.
+    RETURN_NOT_OK(CheckDeadlineNotWithinMicros(deadline, wait_for_usec));
   }
 }
 

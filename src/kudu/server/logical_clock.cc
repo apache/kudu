@@ -7,6 +7,7 @@
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -48,12 +49,14 @@ Status LogicalClock::Update(const Timestamp& to_update) {
   return Status::OK();
 }
 
-Status LogicalClock::WaitUntilAfter(const Timestamp& then) {
+Status LogicalClock::WaitUntilAfter(const Timestamp& then,
+                                    const MonoTime& deadline) {
   return Status::ServiceUnavailable(
       "Logical clock does not support WaitUntilAfter()");
 }
 
-Status LogicalClock::WaitUntilAfterLocally(const Timestamp& then) {
+Status LogicalClock::WaitUntilAfterLocally(const Timestamp& then,
+                                           const MonoTime& deadline) {
   return Status::ServiceUnavailable(
       "Logical clock does not support WaitUntilAfterLocally()");
 }

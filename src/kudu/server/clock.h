@@ -9,6 +9,7 @@
 #include "kudu/common/common.pb.h"
 #include "kudu/common/timestamp.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/status.h"
 
 namespace kudu {
@@ -60,11 +61,13 @@ class Clock : public RefCountedThreadSafe<Clock> {
   // Waits until the clock on all machines has advanced past 'then'.
   // Can also be used to implement 'external consistency' in the same sense as
   // Google's Spanner.
-  virtual Status WaitUntilAfter(const Timestamp& then) = 0;
+  virtual Status WaitUntilAfter(const Timestamp& then,
+                                const MonoTime& deadline) = 0;
 
   // Waits until the clock on this machine advances past 'then'. Unlike
   // WaitUntilAfter(), this does not make any global guarantees.
-  virtual Status WaitUntilAfterLocally(const Timestamp& then) = 0;
+  virtual Status WaitUntilAfterLocally(const Timestamp& then,
+                                       const MonoTime& deadline) = 0;
 
   // Return true if the given time has definitely passed (i.e any future call
   // to Now() would return a higher value than t).

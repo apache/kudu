@@ -919,7 +919,7 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
     }
     string scanner_id;
     Timestamp scan_timestamp;
-    Status s = HandleNewScanRequest(tablet_peer.get(), req, context->requestor_string(),
+    Status s = HandleNewScanRequest(tablet_peer.get(), req, context,
                                     &collector, &scanner_id, &scan_timestamp, &has_more_results,
                                     &error_code);
     if (PREDICT_FALSE(!s.ok())) {
@@ -1022,7 +1022,7 @@ void TabletServiceImpl::Checksum(const ChecksumRequestPB* req,
 
     string scanner_id;
     Timestamp snap_timestamp;
-    Status s = HandleNewScanRequest(tablet_peer.get(), &scan_req, context->requestor_string(),
+    Status s = HandleNewScanRequest(tablet_peer.get(), &scan_req, context,
                                     &collector, &scanner_id, &snap_timestamp, &has_more,
                                     &error_code);
     if (PREDICT_FALSE(!s.ok())) {
@@ -1210,7 +1210,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
 // Start a new scan.
 Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
                                                const ScanRequestPB* req,
-                                               const std::string& requestor_string,
+                                               const RpcContext* rpc_context,
                                                ScanResultCollector* result_collector,
                                                std::string* scanner_id,
                                                Timestamp* snap_timestamp,
@@ -1227,7 +1227,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
 
   SharedScanner scanner;
   server_->scanner_manager()->NewScanner(tablet_peer,
-                                         requestor_string,
+                                         rpc_context->requestor_string(),
                                          &scanner);
 
   // If we early-exit out of this function, automatically unregister
@@ -1306,7 +1306,7 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
         break;
       }
       case READ_AT_SNAPSHOT: {
-        s = HandleScanAtSnapshot(scan_pb, projection, tablet, &iter, snap_timestamp);
+        s = HandleScanAtSnapshot(scan_pb, rpc_context, projection, tablet, &iter, snap_timestamp);
         if (!s.ok()) {
           tmp_error_code = TabletServerErrorPB::INVALID_SNAPSHOT;
         }
@@ -1505,6 +1505,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 }
 
 Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
+                                               const RpcContext* rpc_context,
                                                const Schema& projection,
                                                const shared_ptr<Tablet>& tablet,
                                                gscoped_ptr<RowwiseIterator>* iter,
@@ -1547,7 +1548,8 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                      server_->clock()->Stringify(max_allowed_ts)));
     }
     // TODO: consolidate this call into Mvcc::WaitForCleanSnapshotAtTimestamp
-    RETURN_NOT_OK(server_->clock()->WaitUntilAfterLocally(tmp_snap_timestamp));
+    RETURN_NOT_OK(server_->clock()->WaitUntilAfterLocally(tmp_snap_timestamp,
+                                                          rpc_context->GetClientDeadline()));
   }
 
   tablet::MvccSnapshot snap;

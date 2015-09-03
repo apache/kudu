@@ -65,14 +65,28 @@ class HybridClock : public Clock {
   // 'then' <= now.earliest()
   //
   // Returns OK if it waited long enough or if no wait was necessary.
+  //
   // Returns Status::ServiceUnavailable if the system clock was not
   // synchronized and therefore it couldn't wait out the error.
-  virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
+  //
+  // Returns Status::TimedOut() if 'deadline' will pass before the specified
+  // timestamp. NOTE: unlike most "wait" methods, this may return _immediately_
+  // with a timeout, rather than actually waiting for the timeout to expire.
+  // This is because, by looking at the current clock, we can know how long
+  // we'll have to wait, in contrast to most Wait() methods which are waiting
+  // on some external condition to become true.
+  virtual Status WaitUntilAfter(const Timestamp& then,
+                                const MonoTime& deadline) OVERRIDE;
 
   // Blocks the caller thread until the local time is after 'then'.
   // This is in contrast to the above method, which waits until the time
   // on _all_ machines is past the given time.
-  virtual Status WaitUntilAfterLocally(const Timestamp& then) OVERRIDE;
+  //
+  // Returns Status::TimedOut() if 'deadline' will pass before the specified
+  // timestamp. NOTE: unlike most "wait" methods, this may return _immediately_
+  // with a timeout. See WaitUntilAfter() for details.
+  virtual Status WaitUntilAfterLocally(const Timestamp& then,
+                                       const MonoTime& deadline) OVERRIDE;
 
   // Return true if the given time has passed (i.e any future call
   // to Now() would return a higher value than t).

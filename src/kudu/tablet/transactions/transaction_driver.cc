@@ -389,8 +389,11 @@ void TransactionDriver::SetResponseTimestamp(TransactionState* transaction_state
 Status TransactionDriver::CommitWait() {
   MonoTime before = MonoTime::Now(MonoTime::FINE);
   DCHECK(mutable_state()->external_consistency_mode() == COMMIT_WAIT);
+  // TODO: we could plumb the RPC deadline in here, and not bother commit-waiting
+  // if the deadline is already expired.
   RETURN_NOT_OK(
-      mutable_state()->tablet_peer()->clock()->WaitUntilAfter(mutable_state()->timestamp()));
+      mutable_state()->tablet_peer()->clock()->WaitUntilAfter(mutable_state()->timestamp(),
+                                                              MonoTime::Max()));
   mutable_state()->mutable_metrics()->commit_wait_duration_usec =
       MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
   return Status::OK();

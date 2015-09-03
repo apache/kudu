@@ -12,6 +12,7 @@
 
 namespace kudu {
 class MonoDelta;
+class MonoTime;
 namespace server {
 
 // An implementation of Clock that behaves as a plain Lamport Clock.
@@ -38,8 +39,10 @@ class LogicalClock : public Clock {
   virtual Status Update(const Timestamp& to_update) OVERRIDE;
 
   // The Wait*() functions are not available for this clock.
-  virtual Status WaitUntilAfter(const Timestamp& then) OVERRIDE;
-  virtual Status WaitUntilAfterLocally(const Timestamp& then) OVERRIDE;
+  virtual Status WaitUntilAfter(const Timestamp& then,
+                                const MonoTime& deadline) OVERRIDE;
+  virtual Status WaitUntilAfterLocally(const Timestamp& then,
+                                       const MonoTime& deadline) OVERRIDE;
 
   virtual bool IsAfter(Timestamp t) OVERRIDE;
 

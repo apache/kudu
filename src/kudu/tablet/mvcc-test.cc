@@ -178,7 +178,7 @@ TEST_F(MvccTest, TestOutOfOrderTxns) {
   EXPECT_FALSE(s2.IsCommitted(normal_txn_2));
 
   // Commit the commit-wait one once it is time.
-  ASSERT_OK(hybrid_clock->WaitUntilAfter(cw_txn));
+  ASSERT_OK(hybrid_clock->WaitUntilAfter(cw_txn, MonoTime::Max()));
   mgr.StartApplyingTransaction(cw_txn);
   mgr.CommitTransaction(cw_txn);
 

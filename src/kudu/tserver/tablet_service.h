@@ -58,7 +58,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
  private:
   Status HandleNewScanRequest(tablet::TabletPeer* tablet_peer,
                               const ScanRequestPB* req,
-                              const std::string& requestor_string,
+                              const rpc::RpcContext* rpc_context,
                               ScanResultCollector* result_collector,
                               std::string* scanner_id,
                               Timestamp* snap_timestamp,
@@ -71,6 +71,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
                                    TabletServerErrorPB::Code* error_code);
 
   Status HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
+                              const rpc::RpcContext* rpc_context,
                               const Schema& projection,
                               const std::tr1::shared_ptr<tablet::Tablet>& tablet,
                               gscoped_ptr<RowwiseIterator>* iter,

@@ -48,7 +48,8 @@ TEST_F(LogicalClockTest, TestUpdate_LogicalValueDoesNotIncrease) {
 }
 
 TEST_F(LogicalClockTest, TestWaitUntilAfterIsUnavailable) {
-  Status status = clock_->WaitUntilAfter(Timestamp(10));
+  Status status = clock_->WaitUntilAfter(
+      Timestamp(10), MonoTime::Now(MonoTime::FINE));
   ASSERT_TRUE(status.IsServiceUnavailable());
 }
 
