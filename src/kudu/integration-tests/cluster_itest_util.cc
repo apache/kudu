@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include <algorithm>
+#include <boost/optional.hpp>
 #include <boost/foreach.hpp>
 #include <glog/stl_logging.h>
 
@@ -438,7 +439,9 @@ Status AddServer(const TServerDetails* leader,
                  const std::string& tablet_id,
                  const TServerDetails* replica_to_add,
                  consensus::RaftPeerPB::MemberType member_type,
-                 const MonoDelta& timeout) {
+                 boost::optional<int64_t> cas_config_opid_index,
+                 const MonoDelta& timeout,
+                 TabletServerErrorPB::Code* error_code) {
   ChangeConfigRequestPB req;
   ChangeConfigResponsePB resp;
   RpcController rpc;
@@ -451,9 +454,13 @@ Status AddServer(const TServerDetails* leader,
   peer->set_permanent_uuid(replica_to_add->uuid());
   peer->set_member_type(member_type);
   *peer->mutable_last_known_addr() = replica_to_add->registration.rpc_addresses(0);
+  if (cas_config_opid_index) {
+    req.set_cas_config_opid_index(*cas_config_opid_index);
+  }
 
   RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
+    if (error_code) *error_code = resp.error().code();
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();
@@ -462,7 +469,9 @@ Status AddServer(const TServerDetails* leader,
 Status RemoveServer(const TServerDetails* leader,
                     const std::string& tablet_id,
                     const TServerDetails* replica_to_remove,
-                    const MonoDelta& timeout) {
+                    boost::optional<int64_t> cas_config_opid_index,
+                    const MonoDelta& timeout,
+                    TabletServerErrorPB::Code* error_code) {
   ChangeConfigRequestPB req;
   ChangeConfigResponsePB resp;
   RpcController rpc;
@@ -471,11 +480,15 @@ Status RemoveServer(const TServerDetails* leader,
   req.set_dest_uuid(leader->uuid());
   req.set_tablet_id(tablet_id);
   req.set_type(consensus::REMOVE_SERVER);
+  if (cas_config_opid_index) {
+    req.set_cas_config_opid_index(*cas_config_opid_index);
+  }
   RaftPeerPB* peer = req.mutable_server();
   peer->set_permanent_uuid(replica_to_remove->uuid());
 
   RETURN_NOT_OK(leader->consensus_proxy->ChangeConfig(req, &resp, &rpc));
   if (resp.has_error()) {
+    if (error_code) *error_code = resp.error().code();
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();

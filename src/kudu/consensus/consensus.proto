@@ -119,6 +119,13 @@ message ChangeConfigRequestPB {
   // When 'type' == ADD_SERVER, both the permanent_uuid and last_known_addr
   // fields must be set. Otherwise, only the permanent_uuid field is required.
   optional RaftPeerPB server = 3;
+
+  // The OpId index of the committed config to replace.
+  // This optional parameter is here to provide an atomic (compare-and-swap)
+  // ChangeConfig operation. The ChangeConfig() operation will fail if this
+  // parameter is specified and the committed config does not have a matching
+  // opid_index. See also the definition of RaftConfigPB.
+  optional int64 cas_config_opid_index = 5;
 }
 
 // The configuration change response. If any immediate error occurred

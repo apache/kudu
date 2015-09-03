@@ -13,6 +13,7 @@
 #ifndef KUDU_INTEGRATION_TESTS_CLUSTER_ITEST_UTIL_H_
 #define KUDU_INTEGRATION_TESTS_CLUSTER_ITEST_UTIL_H_
 
+#include <boost/optional/optional_fwd.hpp>
 #include <string>
 #include <tr1/memory>
 #include <tr1/unordered_map>
@@ -184,14 +185,18 @@ Status AddServer(const TServerDetails* leader,
                  const std::string& tablet_id,
                  const TServerDetails* replica_to_add,
                  consensus::RaftPeerPB::MemberType member_type,
-                 const MonoDelta& timeout);
+                 boost::optional<int64_t> cas_config_opid_index,
+                 const MonoDelta& timeout,
+                 tserver::TabletServerErrorPB::Code* error_code = NULL);
 
 // Run a ConfigChange to REMOVE_SERVER on 'replica_to_remove'.
 // The RPC request is sent to 'leader'.
 Status RemoveServer(const TServerDetails* leader,
                     const std::string& tablet_id,
                     const TServerDetails* replica_to_remove,
-                    const MonoDelta& timeout);
+                    boost::optional<int64_t> cas_config_opid_index,
+                    const MonoDelta& timeout,
+                    tserver::TabletServerErrorPB::Code* error_code = NULL);
 
 // Get the list of tablets from the remote server.
 Status ListTablets(const TServerDetails* ts,

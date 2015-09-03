@@ -124,7 +124,6 @@ bool CheckUuidMatchOrRespond(TabletPeerLookupIf* tablet_manager,
   const string& local_uuid = tablet_manager->NodeInstance().permanent_uuid();
   if (PREDICT_FALSE(!req->has_dest_uuid())) {
     // Maintain compat in release mode, but complain.
-
     string msg = Substitute("$0: Missing destination UUID in request from $1: $2",
                             method_name, context->requestor_string(), req->ShortDebugString());
 #ifdef NDEBUG
@@ -754,22 +753,16 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
     return;
   }
 
-  // All currently-supported requests require server to be set.
-  if (PREDICT_FALSE(!req->has_server())) {
-    SetupErrorAndRespond(
-        resp->mutable_error(),
-        Status::InvalidArgument("The server argument must be specified in a ChangeConfigRequestPB"),
-        TabletServerErrorPB::INVALID_CONFIG,
-        context);
-    return;
-  }
-
   scoped_refptr<Consensus> consensus;
   if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
-  Status s = consensus->ChangeConfig(req->type(), req->server(), resp,
-                                                    BindHandleResponse(req, resp, context));
+  boost::optional<TabletServerErrorPB::Code> error_code;
+  Status s = consensus->ChangeConfig(*req, BindHandleResponse(req, resp, context), &error_code);
   if (PREDICT_FALSE(!s.ok())) {
-    HandleUnknownError(req, resp, context, s);
+    if (error_code) {
+      SetupErrorAndRespond(resp->mutable_error(), s, *error_code, context);
+    } else {
+      HandleUnknownError(req, resp, context, s);
+    }
     return;
   }
   // The success case is handled when the callback fires.

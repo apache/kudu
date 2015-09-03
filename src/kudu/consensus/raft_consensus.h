@@ -104,10 +104,10 @@ class RaftConsensus : public Consensus,
   virtual Status RequestVote(const VoteRequestPB* request,
                              VoteResponsePB* response) OVERRIDE;
 
-  virtual Status ChangeConfig(ChangeConfigType type,
-                              const RaftPeerPB& server,
-                              ChangeConfigResponsePB* resp,
-                              const StatusCallback& client_cb) OVERRIDE;
+  virtual Status ChangeConfig(const ChangeConfigRequestPB& req,
+                              const StatusCallback& client_cb,
+                              boost::optional<tserver::TabletServerErrorPB::Code>* error_code)
+                              OVERRIDE;
 
   virtual RaftPeerPB::Role role() const OVERRIDE;
 

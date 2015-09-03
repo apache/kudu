@@ -1157,10 +1157,20 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
   return RequestVoteRespondVoteGranted(request, response);
 }
 
-Status RaftConsensus::ChangeConfig(ChangeConfigType type,
-                                   const RaftPeerPB& server,
-                                   ChangeConfigResponsePB* resp,
-                                   const StatusCallback& client_cb) {
+Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
+                                   const StatusCallback& client_cb,
+                                   boost::optional<TabletServerErrorPB::Code>* error_code) {
+  if (PREDICT_FALSE(!req.has_type())) {
+    return Status::InvalidArgument("Must specify 'type' argument to ChangeConfig()",
+                                   req.ShortDebugString());
+  }
+  if (PREDICT_FALSE(!req.has_server())) {
+    *error_code = TabletServerErrorPB::INVALID_CONFIG;
+    return Status::InvalidArgument("Must specify 'server' argument to ChangeConfig()",
+                                   req.ShortDebugString());
+  }
+  ChangeConfigType type = req.type();
+  const RaftPeerPB& server = req.server();
   {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForConfigChange(&lock));
@@ -1168,15 +1178,28 @@ Status RaftConsensus::ChangeConfig(ChangeConfigType type,
     RETURN_NOT_OK(state_->CheckNoConfigChangePendingUnlocked());
     if (!server.has_permanent_uuid()) {
       return Status::InvalidArgument("server must have permanent_uuid specified",
-                                     server.ShortDebugString());
+                                     req.ShortDebugString());
     }
     const RaftConfigPB& committed_config = state_->GetCommittedConfigUnlocked();
+
+    // Support atomic ChangeConfig requests.
+    if (req.has_cas_config_opid_index()) {
+      if (committed_config.opid_index() != req.cas_config_opid_index()) {
+        *error_code = TabletServerErrorPB::CAS_FAILED;
+        return Status::IllegalState(Substitute("Request specified cas_config_opid_index "
+                                               "of $0 but the committed config has opid_index "
+                                               "of $1",
+                                               req.cas_config_opid_index(),
+                                               committed_config.opid_index()));
+      }
+    }
+
     RaftConfigPB new_config = committed_config;
     new_config.clear_opid_index();
-    // Ensure the server we are adding is not already a member of the configuration.
     const string& server_uuid = server.permanent_uuid();
     switch (type) {
       case ADD_SERVER:
+        // Ensure the server we are adding is not already a member of the configuration.
         if (IsRaftConfigMember(server_uuid, committed_config)) {
           return Status::InvalidArgument(
               Substitute("Server with UUID $0 is already a member of the config. RaftConfig: $1",
@@ -1184,11 +1207,11 @@ Status RaftConsensus::ChangeConfig(ChangeConfigType type,
         }
         if (!server.has_member_type()) {
           return Status::InvalidArgument("server must have member_type specified",
-                                         server.ShortDebugString());
+                                         req.ShortDebugString());
         }
         if (!server.has_last_known_addr()) {
           return Status::InvalidArgument("server must have last_known_addr specified",
-                                         server.ShortDebugString());
+                                         req.ShortDebugString());
         }
         *new_config.add_peers() = server;
         break;

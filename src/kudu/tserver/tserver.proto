@@ -68,6 +68,9 @@ message TabletServerErrorPB {
 
     // The destination UUID in the request does not match this server.
     WRONG_SERVER_UUID = 16;
+
+    // The compare-and-swap specified by an atomic RPC operation failed.
+    CAS_FAILED = 17;
   }
 
   // The error code.

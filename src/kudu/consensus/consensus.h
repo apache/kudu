@@ -3,6 +3,7 @@
 #ifndef KUDO_QUORUM_CONSENSUS_H_
 #define KUDO_QUORUM_CONSENSUS_H_
 
+#include <boost/optional/optional_fwd.hpp>
 #include <iosfwd>
 #include <string>
 #include <tr1/memory>
@@ -32,6 +33,10 @@ class Clock;
 
 namespace tablet {
 class TabletPeer;
+}
+
+namespace tserver {
+class TabletServerErrorPB;
 }
 
 namespace consensus {
@@ -199,10 +204,9 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
                              VoteResponsePB* response) = 0;
 
   // Implement a ChangeConfig() request.
-  virtual Status ChangeConfig(ChangeConfigType type,
-                              const RaftPeerPB& server,
-                              ChangeConfigResponsePB* resp,
-                              const StatusCallback& client_cb) {
+  virtual Status ChangeConfig(const ChangeConfigRequestPB& req,
+                              const StatusCallback& client_cb,
+                              boost::optional<tserver::TabletServerErrorPB::Code>* error) {
     return Status::NotSupported("Not implemented.");
   }
 

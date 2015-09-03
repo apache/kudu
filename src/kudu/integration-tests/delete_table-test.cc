@@ -3,6 +3,7 @@
 
 #include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
+#include <boost/optional.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
 #include <tr1/memory>
@@ -451,7 +452,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterCrashDuringRemoteBootstrap) {
   string leader_uuid = GetLeaderUUID(cluster_->tablet_server(1)->uuid(), tablet_id);
   TServerDetails* leader = DCHECK_NOTNULL(ts_map_[leader_uuid]);
   TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
-  ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, timeout));
+  ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, boost::none, timeout));
   NO_FATALS(WaitForTSToCrash(kTsIndex));
 
   // The superblock should be in TABLET_DATA_COPYING state on disk.
@@ -525,7 +526,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   ASSERT_OK(cluster_->tablet_server(kTsIndex)->Restart());
   TServerDetails* leader = ts_map_[leader_uuid];
   TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
-  ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, timeout));
+  ASSERT_OK(itest::AddServer(leader, tablet_id, ts, RaftPeerPB::VOTER, boost::none, timeout));
   NO_FATALS(WaitForTSToCrash(leader_index));
 
   // The tablet server will detect that the leader failed, and automatically
