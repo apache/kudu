@@ -246,8 +246,9 @@ class MvccManager {
   //
   // REQUIRES: 'timestamp' must be in the past according to the configured
   // clock.
-  void WaitForCleanSnapshotAtTimestamp(Timestamp timestamp,
-                                       MvccSnapshot* snapshot) const;
+  Status WaitForCleanSnapshotAtTimestamp(Timestamp timestamp,
+                                         MvccSnapshot* snapshot,
+                                         const MonoTime& deadline) const WARN_UNUSED_RESULT;
 
   // Take a snapshot at the current timestamp, and then wait for any
   // currently running transactions at an earlier timestamp to finish.
@@ -325,7 +326,8 @@ class MvccManager {
   bool AnyApplyingAtOrBeforeUnlocked(Timestamp ts) const;
 
   // Waits until all transactions before the given time are committed.
-  void WaitUntil(WaitFor wait_for, Timestamp ts) const;
+  Status WaitUntil(WaitFor wait_for, Timestamp ts,
+                   const MonoTime& deadline) const WARN_UNUSED_RESULT;
 
   // Return true if the condition that the given waiter is waiting on has
   // been achieved.

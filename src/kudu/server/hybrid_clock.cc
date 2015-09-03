@@ -10,6 +10,7 @@
 
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/locks.h"
@@ -266,6 +267,7 @@ bool HybridClock::SupportsExternalConsistencyMode(ExternalConsistencyMode mode) 
 
 Status HybridClock::WaitUntilAfter(const Timestamp& then_latest,
                                    const MonoTime& deadline) {
+  TRACE_EVENT0("clock", "HybridClock::WaitUntilAfter");
   Timestamp now;
   uint64_t error;
   {

@@ -27,7 +27,7 @@ class MvccTest : public KuduTest {
 
   void WaitForSnapshotAtTSThread(MvccManager* mgr, Timestamp ts) {
     MvccSnapshot s;
-    mgr->WaitForCleanSnapshotAtTimestamp(ts, &s);
+    CHECK_OK(mgr->WaitForCleanSnapshotAtTimestamp(ts, &s, MonoTime::Max()));
     CHECK(s.is_clean()) << "verifying postcondition";
     boost::lock_guard<simple_spinlock> lock(lock_);
     result_snapshot_.reset(new MvccSnapshot(s));
@@ -585,6 +585,21 @@ TEST_F(MvccTest, TestIllegalStateTransitionsCrash) {
 
   // We can commit it successfully.
   mgr.CommitTransaction(t);
+}
+
+TEST_F(MvccTest, TestWaitUntilCleanDeadline) {
+  MvccManager mgr(clock_.get());
+
+  // Transactions with timestamp 1 through 3
+  Timestamp tx1 = mgr.StartTransaction();
+
+  // Wait until the 'tx1' timestamp is clean -- this won't happen because the
+  // transaction isn't committed yet.
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(10));
+  MvccSnapshot snap;
+  Status s = mgr.WaitForCleanSnapshotAtTimestamp(tx1, &snap, deadline);
+  ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 }
 
 } // namespace tablet

@@ -1548,19 +1548,36 @@ Status TabletServiceImpl::HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                      server_->clock()->Stringify(tmp_snap_timestamp),
                      server_->clock()->Stringify(max_allowed_ts)));
     }
-    // TODO: consolidate this call into Mvcc::WaitForCleanSnapshotAtTimestamp
-    RETURN_NOT_OK(server_->clock()->WaitUntilAfterLocally(tmp_snap_timestamp,
-                                                          rpc_context->GetClientDeadline()));
   }
 
   tablet::MvccSnapshot snap;
 
   // Wait for the in-flights in the snapshot to be finished.
-  // TODO(KUDU-689): this can wait forever if the follower has been abandoned by its
-  // leader!
+  // We'll use the client-provided deadline, but not if it's more than 5 seconds from
+  // now -- it's better to make the client retry than hold RPC threads busy.
+  //
+  // TODO(KUDU-1127): even this may not be sufficient -- perhaps we should check how long it
+  // has been since the MVCC manager was able to advance its safe time. If it has been
+  // a long time, it's likely that the majority of voters for this tablet are down
+  // and some writes are "stuck" and therefore won't be committed.
+  MonoTime client_deadline = rpc_context->GetClientDeadline();
+  // Subtract a little bit from the client deadline so that it's more likely we actually
+  // have time to send our response sent back before it times out.
+  client_deadline.AddDelta(MonoDelta::FromMilliseconds(-10));
+
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromSeconds(5));
+  if (client_deadline.ComesBefore(deadline)) {
+    deadline = client_deadline;
+  }
+
   TRACE("Waiting for operations in snapshot to commit");
   MonoTime before = MonoTime::Now(MonoTime::FINE);
-  tablet->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(tmp_snap_timestamp, &snap);
+  RETURN_NOT_OK_PREPEND(
+      tablet->mvcc_manager()->WaitForCleanSnapshotAtTimestamp(
+          tmp_snap_timestamp, &snap, deadline),
+      "could not wait for desired snapshot timestamp to be consistent");
+
   uint64_t duration_usec = MonoTime::Now(MonoTime::FINE).GetDeltaSince(before).ToMicroseconds();
   tablet->metrics()->snapshot_read_inflight_wait_duration->Increment(duration_usec);
   TRACE("All operations in snapshot committed. Waited for $0 microseconds", duration_usec);

@@ -2,11 +2,11 @@
 // Confidential Cloudera Information: Covered by NDA.
 // All rights reserved.
 
+#include <algorithm>
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
-#include <algorithm>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/mathlimits.h"
@@ -277,7 +277,8 @@ void MvccManager::AdjustCleanTime() {
   }
 }
 
-void MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts) const {
+Status MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts,
+                              const MonoTime& deadline) const {
   TRACE_EVENT2("tablet", "MvccManager::WaitUntil",
                "wait_for", wait_for == ALL_COMMITTED ? "all_committed" : "none_applying",
                "ts", ts.ToUint64())
@@ -290,10 +291,26 @@ void MvccManager::WaitUntil(WaitFor wait_for, Timestamp ts) const {
     waiting_state.wait_for = wait_for;
 
     boost::lock_guard<LockType> l(lock_);
-    if (IsDoneWaitingUnlocked(waiting_state)) return;
+    if (IsDoneWaitingUnlocked(waiting_state)) return Status::OK();
     waiters_.push_back(&waiting_state);
   }
-  waiting_state.latch->Wait();
+  if (waiting_state.latch->WaitUntil(deadline)) {
+    return Status::OK();
+  }
+  // We timed out. We need to clean up our entry in the waiters_ array.
+
+  boost::lock_guard<LockType> l(lock_);
+  // It's possible that while we were re-acquiring the lock, we did get
+  // notified. In that case, we have no cleanup to do.
+  if (waiting_state.latch->count() == 0) {
+    return Status::OK();
+  }
+
+  waiters_.erase(std::find(waiters_.begin(), waiters_.end(), &waiting_state));
+  return Status::TimedOut(strings::Substitute(
+      "Timed out waiting for all transactions with ts < $0 to $1",
+      clock_->Stringify(ts),
+      wait_for == ALL_COMMITTED ? "commit" : "finish applying"));
 }
 
 bool MvccManager::IsDoneWaitingUnlocked(const WaitingState& waiter) const {
@@ -329,15 +346,18 @@ void MvccManager::TakeSnapshot(MvccSnapshot *snap) const {
   *snap = cur_snap_;
 }
 
-void MvccManager::WaitForCleanSnapshotAtTimestamp(Timestamp timestamp, MvccSnapshot *snap) const {
-  DCHECK(clock_->IsAfter(timestamp))
-    << "timestamp " << timestamp.ToString() << " must be in the past";
-  WaitUntil(ALL_COMMITTED, timestamp);
+Status MvccManager::WaitForCleanSnapshotAtTimestamp(Timestamp timestamp,
+                                                    MvccSnapshot *snap,
+                                                    const MonoTime& deadline) const {
+  TRACE_EVENT0("tablet", "MvccManager::WaitForCleanSnapshotAtTimestamp");
+  RETURN_NOT_OK(clock_->WaitUntilAfterLocally(timestamp, deadline));
+  RETURN_NOT_OK(WaitUntil(ALL_COMMITTED, timestamp, deadline));
   *snap = MvccSnapshot(timestamp);
+  return Status::OK();
 }
 
 void MvccManager::WaitForCleanSnapshot(MvccSnapshot* snap) const {
-  WaitForCleanSnapshotAtTimestamp(clock_->Now(), snap);
+  CHECK_OK(WaitForCleanSnapshotAtTimestamp(clock_->Now(), snap, MonoTime::Max()));
 }
 
 void MvccManager::WaitForApplyingTransactionsToCommit() const {
@@ -362,7 +382,7 @@ void MvccManager::WaitForApplyingTransactionsToCommit() const {
     // None were APPLYING: we can just return.
     return;
   }
-  WaitUntil(NONE_APPLYING, wait_for);
+  CHECK_OK(WaitUntil(NONE_APPLYING, wait_for, MonoTime::Max()));
 }
 
 bool MvccManager::AreAllTransactionsCommitted(Timestamp ts) const {
