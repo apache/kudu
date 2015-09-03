@@ -66,6 +66,20 @@ class ExternalMiniClusterFsInspector {
                                     tablet::TabletDataState data_state,
                                     const MonoDelta& timeout = MonoDelta::FromSeconds(30));
 
+  // Loop and check for certain filenames in the WAL directory of the specified
+  // tablet. This function returns OK if we reach a state where:
+  // * For each string in 'substrings_required', we find *at least one file*
+  //   whose name contains that string, and:
+  // * For each string in 'substrings_disallowed', we find *no files* whose name
+  //   contains that string, even if the file also matches a string in the
+  //   'substrings_required'.
+  Status WaitForFilePatternInTabletWalDirOnTs(
+      int ts_index,
+      const std::string& tablet_id,
+      const std::vector<std::string>& substrings_required,
+      const std::vector<std::string>& substrings_disallowed,
+      const MonoDelta& timeout = MonoDelta::FromSeconds(30));
+
  private:
   Env* const env_;
   ExternalMiniCluster* const cluster_;

@@ -16,6 +16,7 @@
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
+#include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/tserver/tablet_server-test-base.h"
 #include "kudu/util/random.h"
@@ -107,6 +108,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
     cluster_.reset(new ExternalMiniCluster(opts));
     CHECK_OK(cluster_->Start());
+    inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
     CreateTSProxies();
   }
 
@@ -431,6 +433,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
  protected:
   gscoped_ptr<ExternalMiniCluster> cluster_;
+  gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
+
   // Maps server uuid to TServerDetails
   TabletServerMap tablet_servers_;
   // Maps tablet to all replicas.

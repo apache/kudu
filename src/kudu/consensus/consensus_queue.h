@@ -295,12 +295,17 @@ class PeerMessageQueue {
   bool IsOpInLog(const OpId& desired_op) const;
 
   void NotifyObserversOfMajorityReplOpChange(const OpId new_majority_replicated_op);
-
   void NotifyObserversOfMajorityReplOpChangeTask(const OpId new_majority_replicated_op);
 
   void NotifyObserversOfTermChange(int64_t term);
-
   void NotifyObserversOfTermChangeTask(int64_t term);
+
+  void NotifyObserversOfFailedFollower(const std::string& uuid,
+                                       int64_t term,
+                                       const std::string& reason);
+  void NotifyObserversOfFailedFollowerTask(const std::string& uuid,
+                                           int64_t term,
+                                           const std::string& reason);
 
   typedef std::tr1::unordered_map<std::string, TrackedPeer*> PeersMap;
 
@@ -384,6 +389,12 @@ class PeerMessageQueueObserver {
   // Notify the Consensus implementation that a follower replied with a term
   // higher than that established in the queue.
   virtual void NotifyTermChange(int64_t term) = 0;
+
+  // Notify Consensus that a peer is unable to catch up due to falling behind
+  // the leader's log GC threshold.
+  virtual void NotifyFailedFollower(const std::string& peer_uuid,
+                                    int64_t term,
+                                    const std::string& reason) = 0;
 
   virtual ~PeerMessageQueueObserver() {}
 };

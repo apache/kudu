@@ -845,6 +845,9 @@ class TestRaftConsensusQueueIface : public PeerMessageQueueObserver {
     committed_index->CopyFrom(majority_replicated);
   }
   virtual void NotifyTermChange(int64_t term) OVERRIDE {}
+  virtual void NotifyFailedFollower(const std::string& uuid,
+                                    int64_t term,
+                                    const std::string& reason) OVERRIDE {}
 
  private:
   mutable simple_spinlock lock_;

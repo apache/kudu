@@ -137,7 +137,6 @@ void PeerMessageQueue::TrackPeer(const string& uuid) {
   TrackPeerUnlocked(uuid);
 }
 
-
 void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
   CHECK(!uuid.empty()) << "Got request to track peer with empty UUID";
   DCHECK_EQ(queue_state_.state, kQueueOpen);
@@ -294,14 +293,11 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
       if (PREDICT_FALSE(!s.IsNotFound())) {
         LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error while reading the log: " << s.ToString();
       }
-      LOG_WITH_PREFIX_UNLOCKED(WARNING)
-        << "The logs necessary to catch up peer " << uuid << " have been "
-        << "garbage collected. The follower will never be able to catch up ("
-        << s.ToString() << "). Instructing remote peer to remotely bootstrap.";
+      string msg = Substitute("The logs necessary to catch up peer $0 have been "
+                              "garbage collected. The follower will never be able "
+                              "to catch up ($1)", uuid, s.ToString());
+      NotifyObserversOfFailedFollower(uuid, queue_state_.current_term, msg);
       return s;
-      // TODO: Record that the peer requires a "catch-up" remote bootstrap after
-      // tablet delete is working.
-      // peer->needs_remote_bootstrap = true;
     }
 
     // We use AddAllocated rather than copy, because we pin the log cache at the
@@ -714,14 +710,15 @@ void PeerMessageQueue::NotifyObserversOfMajorityReplOpChange(
   WARN_NOT_OK(observers_pool_->SubmitClosure(
       Bind(&PeerMessageQueue::NotifyObserversOfMajorityReplOpChangeTask,
            Unretained(this), new_majority_replicated_op)),
-              LogPrefixUnlocked() + " Unable to notify peers of majority replicated op change.");
+              LogPrefixUnlocked() + "Unable to notify RaftConsensus of "
+                                    "majority replicated op change.");
 }
 
 void PeerMessageQueue::NotifyObserversOfTermChange(int64_t term) {
   WARN_NOT_OK(observers_pool_->SubmitClosure(
       Bind(&PeerMessageQueue::NotifyObserversOfTermChangeTask,
            Unretained(this), term)),
-              LogPrefixUnlocked() + " Unable to notify peers of term change.");
+              LogPrefixUnlocked() + "Unable to notify RaftConsensus of term change.");
 }
 
 void PeerMessageQueue::NotifyObserversOfMajorityReplOpChangeTask(
@@ -757,6 +754,29 @@ void PeerMessageQueue::NotifyObserversOfTermChangeTask(int64_t term) {
   OpId new_committed_index;
   BOOST_FOREACH(PeerMessageQueueObserver* observer, copy) {
     observer->NotifyTermChange(term);
+  }
+}
+
+void PeerMessageQueue::NotifyObserversOfFailedFollower(const string& uuid,
+                                                       int64_t term,
+                                                       const string& reason) {
+  WARN_NOT_OK(observers_pool_->SubmitClosure(
+      Bind(&PeerMessageQueue::NotifyObserversOfFailedFollowerTask,
+           Unretained(this), uuid, term, reason)),
+              LogPrefixUnlocked() + "Unable to notify RaftConsensus of abandoned follower.");
+}
+
+void PeerMessageQueue::NotifyObserversOfFailedFollowerTask(const string& uuid,
+                                                           int64_t term,
+                                                           const string& reason) {
+  std::vector<PeerMessageQueueObserver*> observers_copy;
+  {
+    boost::lock_guard<simple_spinlock> lock(queue_lock_);
+    observers_copy = observers_;
+  }
+  OpId new_committed_index;
+  BOOST_FOREACH(PeerMessageQueueObserver* observer, observers_copy) {
+    observer->NotifyFailedFollower(uuid, term, reason);
   }
 }
 

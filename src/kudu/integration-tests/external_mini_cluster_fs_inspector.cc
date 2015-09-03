@@ -3,9 +3,11 @@
 
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 
+#include <algorithm>
 #include <boost/foreach.hpp>
 
 #include "kudu/consensus/metadata.pb.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
@@ -27,7 +29,7 @@ using tablet::TabletSuperBlockPB;
 
 ExternalMiniClusterFsInspector::ExternalMiniClusterFsInspector(ExternalMiniCluster* cluster)
     : env_(Env::Default()),
-      cluster_(cluster) {
+      cluster_(CHECK_NOTNULL(cluster)) {
 }
 
 ExternalMiniClusterFsInspector::~ExternalMiniClusterFsInspector() {}
@@ -245,6 +247,70 @@ Status ExternalMiniClusterFsInspector::WaitForTabletDataStateOnTS(int index,
   return Status::TimedOut(Substitute("Timed out after $0 waiting for tablet data state $1: $2",
                                      MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
                                      TabletDataState_Name(expected), s.ToString()));
+}
+
+Status ExternalMiniClusterFsInspector::WaitForFilePatternInTabletWalDirOnTs(
+    int ts_index, const string& tablet_id,
+    const vector<string>& substrings_required,
+    const vector<string>& substrings_disallowed,
+    const MonoDelta& timeout) {
+  Status s;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+
+  string data_dir = cluster_->tablet_server(ts_index)->data_dir();
+  string ts_wal_dir = JoinPathSegments(data_dir, FsManager::kWalDirName);
+  string tablet_wal_dir = JoinPathSegments(ts_wal_dir, tablet_id);
+
+  string error_msg;
+  vector<string> entries;
+  while (true) {
+    Status s = ListFilesInDir(tablet_wal_dir, &entries);
+    std::sort(entries.begin(), entries.end());
+
+    error_msg = "";
+    bool any_missing_required = false;
+    BOOST_FOREACH(const string& required_filter, substrings_required) {
+      bool filter_matched = false;
+      BOOST_FOREACH(const string& entry, entries) {
+        if (entry.find(required_filter) != string::npos) {
+          filter_matched = true;
+          break;
+        }
+      }
+      if (!filter_matched) {
+        any_missing_required = true;
+        error_msg += "missing from substrings_required: " + required_filter + "; ";
+        break;
+      }
+    }
+
+    bool any_present_disallowed = false;
+    BOOST_FOREACH(const string& entry, entries) {
+      if (any_present_disallowed) break;
+      BOOST_FOREACH(const string& disallowed_filter, substrings_disallowed) {
+        if (entry.find(disallowed_filter) != string::npos) {
+          any_present_disallowed = true;
+          error_msg += "present from substrings_disallowed: " + entry +
+                       " (" + disallowed_filter + "); ";
+          break;
+        }
+      }
+    }
+
+    if (!any_missing_required && !any_present_disallowed) {
+      return Status::OK();
+    }
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
+      break;
+    }
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+
+  return Status::TimedOut(Substitute("Timed out waiting for file pattern on "
+                                     "tablet $0 on TS $1 in directory $2",
+                                     tablet_id, ts_index, tablet_wal_dir),
+                          error_msg + "entries: " + JoinStrings(entries, ", "));
 }
 
 } // namespace itest

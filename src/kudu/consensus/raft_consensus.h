@@ -142,6 +142,10 @@ class RaftConsensus : public Consensus,
 
   virtual void NotifyTermChange(int64_t term) OVERRIDE;
 
+  virtual void NotifyFailedFollower(const std::string& uuid,
+                                    int64_t term,
+                                    const std::string& reason) OVERRIDE;
+
   virtual Status GetLastReceivedOpId(OpId* id) OVERRIDE;
 
  protected:
@@ -379,6 +383,18 @@ class RaftConsensus : public Consensus,
   void MarkDirtyOnSuccess(const std::string& reason,
                           const StatusCallback& client_cb,
                           const Status& status);
+
+  // Attempt to remove the follower with the specified 'uuid' from the config,
+  // if the 'committed_config' is still the committed config and if the current
+  // node is the leader.
+  //
+  // Since this is inherently an asynchronous operation run on a thread pool,
+  // it may fail due to the configuration changing, the local node losing
+  // leadership, or the tablet shutting down.
+  // Logs a warning on failure.
+  void TryRemoveFollowerTask(const std::string& uuid,
+                             const RaftConfigPB& committed_config,
+                             const std::string& reason);
 
   // Threadpool for constructing requests to peers, handling RPC callbacks,
   // etc.

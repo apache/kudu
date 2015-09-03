@@ -58,6 +58,10 @@ DEFINE_bool(enable_leader_failure_detection, true,
             "Whether to enable failure detection of tablet leaders. If enabled, attempts will be "
             "made to fail over to a follower when the leader is detected to have failed.");
 
+DEFINE_bool(evict_failed_followers, false,
+            "Whether to evict followers from the Raft config that have fallen "
+            "too far behind the leader's log to catch up normally.");
+
 METRIC_DEFINE_counter(tablet, follower_memory_pressure_rejections,
                       "Follower Memory Pressure Rejections",
                       kudu::MetricUnit::kRequests,
@@ -514,6 +518,68 @@ void RaftConsensus::NotifyTermChange(int64_t term) {
   WARN_NOT_OK(HandleTermAdvanceUnlocked(term), "Couldn't advance consensus term.");
 }
 
+void RaftConsensus::NotifyFailedFollower(const string& uuid,
+                                         int64_t term,
+                                         const std::string& reason) {
+  // Common info used in all of the log messages within this method.
+  string fail_msg = Substitute("Processing failure of peer $0 in term $1 ($2): ",
+                               uuid, term, reason);
+
+  if (!FLAGS_evict_failed_followers) {
+    LOG(INFO) << state_->LogPrefixThreadSafe() << fail_msg
+              << "Eviction of failed followers is disabled. Doing nothing.";
+    return;
+  }
+
+  RaftConfigPB committed_config;
+  {
+    ReplicaState::UniqueLock lock;
+    Status s = state_->LockForRead(&lock);
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG(WARNING) << state_->LogPrefixThreadSafe() << fail_msg
+                   << "Unable to lock ReplicaState for read: " << s.ToString();
+      return;
+    }
+
+    int64_t current_term = state_->GetCurrentTermUnlocked();
+    if (current_term != term) {
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << fail_msg << "Notified about a follower failure in "
+                                     << "previous term " << term << ", but a leader election "
+                                     << "likely occurred since the failure was detected. "
+                                     << "Doing nothing.";
+      return;
+    }
+
+    if (state_->IsConfigChangePendingUnlocked()) {
+      LOG_WITH_PREFIX_UNLOCKED(INFO) << fail_msg << "There is already a config change operation "
+                                     << "in progress. Unable to evict follower until it completes. "
+                                     << "Doing nothing.";
+      return;
+    }
+    committed_config = state_->GetCommittedConfigUnlocked();
+  }
+
+  // Run config change on thread pool after dropping ReplicaState lock.
+  WARN_NOT_OK(thread_pool_->SubmitClosure(Bind(&RaftConsensus::TryRemoveFollowerTask,
+                                               this, uuid, committed_config, reason)),
+              state_->LogPrefixThreadSafe() + "Unable to start RemoteFollowerTask");
+}
+
+void RaftConsensus::TryRemoveFollowerTask(const string& uuid,
+                                          const RaftConfigPB& committed_config,
+                                          const std::string& reason) {
+  ChangeConfigRequestPB req;
+  req.set_tablet_id(tablet_id());
+  req.mutable_server()->set_permanent_uuid(uuid);
+  req.set_type(REMOVE_SERVER);
+  req.set_cas_config_opid_index(committed_config.opid_index());
+  LOG(INFO) << state_->LogPrefixThreadSafe() << "Attempting to remove follower "
+            << uuid << " from the Raft config. Reason: " << reason;
+  boost::optional<TabletServerErrorPB::Code> error_code;
+  WARN_NOT_OK(ChangeConfig(req, Bind(&DoNothingStatusCB), &error_code),
+              state_->LogPrefixThreadSafe() + "Unable to remove follower " + uuid);
+}
+
 Status RaftConsensus::Update(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response) {
   RETURN_NOT_OK(ExecuteHook(PRE_UPDATE));
@@ -526,8 +592,8 @@ Status RaftConsensus::Update(const ConsensusRequestPB* request,
   Status s = UpdateReplica(request, response);
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     if (request->ops_size() == 0) {
-      VLOG(1) << state_->LogPrefix() << "Replica replied to status only request. Replica: "
-              << state_->ToString() << ". Response: " << response->ShortDebugString();
+      VLOG_WITH_PREFIX(1) << "Replica replied to status only request. Replica: "
+                          << state_->ToString() << ". Response: " << response->ShortDebugString();
     }
   }
   RETURN_NOT_OK(s);

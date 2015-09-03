@@ -46,17 +46,12 @@ namespace kudu {
 namespace tserver {
 
 using boost::assign::list_of;
-using consensus::ChangeConfigRequestPB;
-using consensus::ChangeConfigResponsePB;
 using consensus::ConsensusResponsePB;
 using consensus::ConsensusRequestPB;
 using consensus::ConsensusServiceProxy;
 using consensus::MajoritySize;
 using consensus::MakeOpId;
-using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
-using consensus::ADD_SERVER;
-using consensus::REMOVE_SERVER;
 using consensus::ReplicateMsg;
 using client::KuduInsert;
 using client::KuduSession;
@@ -70,10 +65,7 @@ using itest::WaitUntilLeader;
 using itest::WriteSimpleTestRow;
 using master::GetTabletLocationsRequestPB;
 using master::GetTabletLocationsResponsePB;
-using master::GetTabletLocationsResponsePB_Error;
-using master::TableIdentifierPB;
 using master::TabletLocationsPB;
-using master::TSInfoPB;
 using rpc::RpcController;
 using server::SetFlagRequestPB;
 using server::SetFlagResponsePB;
@@ -82,8 +74,6 @@ using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using std::tr1::unordered_set;
 using strings::Substitute;
-using tablet::TabletPeer;
-using tserver::TabletServer;
 
 static const int kConsensusRpcTimeoutForTests = 50;
 
@@ -335,13 +325,6 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
   // has a payload of around 128KB. Causes a gtest failure on error.
   void Write128KOpsToLeader(int num_writes);
 
-  // Wait until the given tablet server has GCed its logs such that it has
-  // 'max_expected' or fewer remaining segments.
-  //
-  // If the target number of segments is not achieved within 10 seconds,
-  // causes a gtest failure.
-  void WaitForLogGC(TServerDetails* leader, int max_expected);
-
   // Check for and restart any TS that have crashed.
   // Returns the number of servers restarted.
   int RestartAnyCrashedTabletServers();
@@ -377,10 +360,41 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
 
 
  protected:
+  // Flags needed for CauseFollowerToFallBehindLogGC() to work well.
+  void AddFlagsForLogRolls(vector<string>* extra_tserver_flags);
+
+  // Pause one of the followers and write enough data to the remaining replicas
+  // to cause log GC, then resume the paused follower. On success,
+  // 'leader_uuid' will be set to the UUID of the leader, 'orig_term' will be
+  // set to the term of the leader before un-pausing the follower, and
+  // 'fell_behind_uuid' will be set to the UUID of the follower that was paused
+  // and caused to fall behind. These can be used for verification purposes.
+  //
+  // Certain flags should be set. You can add the required flags with
+  // AddFlagsForLogRolls() before starting the cluster.
+  void CauseFollowerToFallBehindLogGC(string* leader_uuid,
+                                      int64_t* orig_term,
+                                      string* fell_behind_uuid);
+
   shared_ptr<KuduTable> table_;
   std::vector<scoped_refptr<kudu::Thread> > threads_;
   CountDownLatch inserters_;
 };
+
+void RaftConsensusITest::AddFlagsForLogRolls(vector<string>* extra_tserver_flags) {
+  // We configure a small log segment size so that we roll frequently,
+  // configure a small cache size so that we evict data from the cache, and
+  // retain as few segments as possible. We also turn off async segment
+  // allocation -- this ensures that we roll many segments of logs (with async
+  // allocation, it's possible that the preallocation is slow and we wouldn't
+  // roll deterministically).
+  extra_tserver_flags->push_back("--log_cache_size_limit_mb=1");
+  extra_tserver_flags->push_back("--log_segment_size_mb=1");
+  extra_tserver_flags->push_back("--log_async_preallocate_segments=false");
+  extra_tserver_flags->push_back("--log_min_segments_to_retain=1");
+  extra_tserver_flags->push_back("--log_min_seconds_to_retain=0");
+  extra_tserver_flags->push_back("--maintenance_manager_polling_interval_ms=100");
+}
 
 // Test that we can retrieve the permanent uuid of a server running
 // consensus service via RPC.
@@ -629,63 +643,9 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
   ASSERT_ALL_REPLICAS_AGREE(kNumWrites);
 }
 
-void RaftConsensusITest::WaitForLogGC(TServerDetails* leader, int max_expected) {
-  ExternalTabletServer* ets = cluster_->tablet_server_by_uuid(leader->uuid());
-  MonoTime deadline = MonoTime::Now(MonoTime::COARSE);
-  deadline.AddDelta(MonoDelta::FromSeconds(10));
-
-  while (true) {
-    vector<string> children;
-    string wal_dir = JoinPathSegments(ets->data_dir(), "wals");
-    wal_dir = JoinPathSegments(wal_dir, tablet_id_);
-    ASSERT_OK(Env::Default()->GetChildren(wal_dir, &children));
-    int num_wals = 0;
-    BOOST_FOREACH(const string& child, children) {
-      if (HasPrefixString(child, "wal-")) {
-        num_wals++;
-      }
-    }
-    ASSERT_GE(num_wals, 1);
-    if (num_wals <= max_expected) {
-      return;
-    }
-    if (deadline.ComesBefore(MonoTime::Now(MonoTime::COARSE))) {
-      FAIL() << "Never GCed down to expected number of WALs " << max_expected
-             << ". Current contents of " << wal_dir << ":\n"
-             << children;
-    }
-    SleepFor(MonoDelta::FromMilliseconds(100));
-  }
-  LOG(FATAL) << "Should not reach here";
-}
-
-// Test that the leader doesn't crash if one of its followers has
-// fallen behind so far that the logs necessary to catch it up
-// have been GCed.
-//
-// In a real cluster, this will eventually cause the follower to be
-// evicted/replaced. In any case, the leader should not crash.
-//
-// We also ensure that, when the leader stops writing to the follower,
-// the follower won't disturb the other nodes when it attempts to elect
-// itself.
-//
-// This is a regression test for KUDU-775 and KUDU-562.
-TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
-  // Configure a small log segment size so that we can roll
-  // frequently. Additionally configure a small cache size so that
-  // we evict data from the cache.
-  // We also turn off async segment allocation -- this ensures that
-  // we roll many segments of logs (with async allocation, it's possible
-  // that the preallocation is slow and we wouldn't roll enough).
-  vector<string> extra_flags;
-  extra_flags.push_back("--log_cache_size_limit_mb=1");
-  extra_flags.push_back("--log_segment_size_mb=1");
-  extra_flags.push_back("--log_min_seconds_to_retain=0");
-  extra_flags.push_back("--log_async_preallocate_segments=false");
-  extra_flags.push_back("--enable_remote_bootstrap=false");
-  BuildAndStart(extra_flags);
-
+void RaftConsensusITest::CauseFollowerToFallBehindLogGC(string* leader_uuid,
+                                                        int64_t* orig_term,
+                                                        string* fell_behind_uuid) {
   // Wait for all of the replicas to have acknowledged the elected
   // leader and logged the first NO_OP.
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_,
@@ -707,15 +667,29 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
+  *leader_uuid = leader->uuid();
+  int leader_index = cluster_->tablet_server_index_by_uuid(*leader_uuid);
 
-  // Write ~12.8MB worth of data to the leader, and wait for the logs
-  // to GC.
-  const int kNumWrites = 100;
-  NO_FATALS(Write128KOpsToLeader(kNumWrites));
+  TestWorkload workload(cluster_.get());
+  workload.set_table_name(kTableId);
+  workload.set_timeout_allowed(true);
+  workload.set_payload_bytes(128 * 1024); // Write ops of size 128KB.
+  workload.set_write_batch_size(1);
+  workload.set_num_write_threads(4);
+  workload.Setup();
+  workload.Start();
+
+  LOG(INFO) << "Waiting until we've written at least 4MB...";
+  while (workload.rows_inserted() < 8 * 4) {
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  workload.StopAndJoin();
 
   LOG(INFO) << "Waiting for log GC on " << leader->uuid();
-  // Wait for the leader to GC its logs.
-  NO_FATALS(WaitForLogGC(leader, 2));
+  // Some WAL segments must exist, but wal segment 1 must not exist.
+  ASSERT_OK(inspect_->WaitForFilePatternInTabletWalDirOnTs(
+      leader_index, tablet_id_, list_of("wal-"), list_of("wal-000000001")));
+
   LOG(INFO) << "Log GC complete on " << leader->uuid();
 
   // Then wait another couple of seconds to be sure that it has bothered to try
@@ -727,12 +701,11 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
 
   // Make a note of whatever the current term of the cluster is,
   // before we resume the follower.
-  int64_t orig_term;
   {
     OpId op_id;
     ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, &op_id));
-    orig_term = op_id.term();
-    LOG(INFO) << "Servers converged with original term " << orig_term;
+    *orig_term = op_id.term();
+    LOG(INFO) << "Servers converged with original term " << *orig_term;
   }
 
   // Resume the follower.
@@ -745,9 +718,38 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
     ASSERT_TRUE(cluster_->tablet_server(i)->IsProcessAlive())
       << "Tablet server " << i << " crashed";
   }
+  *fell_behind_uuid = replica->uuid();
+}
 
-  // NOTE: we can't assert that they eventually converge, because the delayed
-  // follower can never catch up!
+// Test that the leader doesn't crash if one of its followers has
+// fallen behind so far that the logs necessary to catch it up
+// have been GCed.
+//
+// In a real cluster, this will eventually cause the follower to be
+// evicted/replaced. In any case, the leader should not crash.
+//
+// We also ensure that, when the leader stops writing to the follower,
+// the follower won't disturb the other nodes when it attempts to elect
+// itself.
+//
+// This is a regression test for KUDU-775 and KUDU-562.
+TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
+  // Disable follower eviction to maintain the original intent of this test.
+  vector<string> extra_flags = list_of("--evict_failed_followers=true");
+  AddFlagsForLogRolls(&extra_flags); // For CauseFollowerToFallBehindLogGC().
+  BuildAndStart(extra_flags);
+
+  string leader_uuid;
+  int64_t orig_term;
+  string follower_uuid;
+  NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
+
+  // Wait for remaining majority to agree.
+  TabletServerMap active_tablet_servers = tablet_servers_;
+  ASSERT_EQ(3, active_tablet_servers.size());
+  ASSERT_EQ(1, active_tablet_servers.erase(follower_uuid));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(30), active_tablet_servers, tablet_id_,
+                                  1));
 
   if (AllowSlowTests()) {
     // Sleep long enough that the "abandoned" server's leader election interval
@@ -758,6 +760,7 @@ TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
     // abandoned replica, and wait until it has incremented a couple of times.
     SleepFor(MonoDelta::FromSeconds(5));
     OpId op_id;
+    TServerDetails* leader = tablet_servers_[leader_uuid];
     ASSERT_OK(GetLastOpIdForReplica(tablet_id_, leader, &op_id));
     ASSERT_EQ(orig_term, op_id.term())
       << "expected the leader to have not advanced terms but has op " << op_id;
@@ -2199,6 +2202,29 @@ TEST_F(RaftConsensusITest, TestHammerOneRow) {
   workload.Setup();
   workload.Start();
   SleepFor(MonoDelta::FromSeconds(60));
+}
+
+// Test that followers that fall behind the leader's log GC threshold are
+// evicted from the config.
+TEST_F(RaftConsensusITest, TestEvictAbandonedFollowers) {
+  vector<string> extra_flags = list_of("--evict_failed_followers=true");
+  AddFlagsForLogRolls(&extra_flags); // For CauseFollowerToFallBehindLogGC().
+  BuildAndStart(extra_flags);
+
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+  TabletServerMap active_tablet_servers = tablet_servers_;
+  ASSERT_EQ(3, active_tablet_servers.size());
+
+  string leader_uuid;
+  int64_t orig_term;
+  string follower_uuid;
+  NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
+
+  // Wait for the abandoned follower to be evicted.
+  ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(2, tablet_servers_[leader_uuid],
+                                                tablet_id_, timeout));
+  ASSERT_EQ(1, active_tablet_servers.erase(follower_uuid));
+  ASSERT_OK(WaitForServersToAgree(timeout, active_tablet_servers, tablet_id_, 2));
 }
 
 }  // namespace tserver
