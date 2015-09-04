@@ -2,8 +2,12 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class OperationResponse extends KuduRpcResponse {
 
   private final long writeTimestamp;

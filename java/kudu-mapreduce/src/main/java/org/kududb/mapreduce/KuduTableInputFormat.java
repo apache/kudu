@@ -20,6 +20,8 @@ import com.google.common.base.Objects;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import org.kududb.Schema;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.*;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
@@ -59,6 +61,8 @@ import java.util.Map;
  * the object won't be used again and the AsyncKuduClient is shut down.
  * </p>
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     implements Configurable {
 

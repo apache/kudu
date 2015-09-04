@@ -4,11 +4,16 @@ package org.kududb.client;
 
 import org.kududb.ColumnSchema;
 import org.kududb.Type;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+
 import static org.kududb.master.Master.AlterTableRequestPB;
 
 /**
  * This builder must be used to alter a table. At least one change must be specified.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Unstable
 public class AlterTableBuilder {
 
   AlterTableRequestPB.Builder pb = AlterTableRequestPB.newBuilder();

@@ -3,6 +3,8 @@
 package org.kududb;
 
 import com.google.common.collect.ImmutableList;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.Bytes;
 import org.kududb.client.PartialRow;
 
@@ -14,6 +16,8 @@ import java.util.Map;
  * Represents table's schema which is essentially a list of columns.
  * This class offers a few utility methods for querying it.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class Schema {
 
   /**

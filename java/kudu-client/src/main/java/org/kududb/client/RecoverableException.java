@@ -27,6 +27,9 @@
  */
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+
 /**
  * An exception for which it's typically useful to retry
  * <p>
@@ -34,6 +37,8 @@ package org.kududb.client;
  * upper bound on the number of retries and to use some kind of an exponential
  * backoff.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 @SuppressWarnings("serial")
 public abstract class RecoverableException extends KuduException {
 

@@ -21,6 +21,7 @@
 package org.kududb.util;
 
 import com.google.common.base.Preconditions;
+import org.kududb.annotations.InterfaceAudience;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -34,6 +35,7 @@ import java.nio.charset.CodingErrorAction;
 import java.util.IdentityHashMap;
 import java.util.Map;
 
+@InterfaceAudience.Private
 public final class Slices
 {
   /**

@@ -5,6 +5,8 @@ package org.kududb.client;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.util.Slice;
 
 import java.nio.ByteBuffer;
@@ -13,6 +15,8 @@ import java.util.BitSet;
 /**
  * RowResult represents one row from a scanner. Do not reuse or store the objects.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class RowResult {
 
   private static final int INDEX_RESET_LOCATION = -1;

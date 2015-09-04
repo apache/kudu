@@ -3,7 +3,9 @@
 package org.kududb.util;
 
 import com.google.common.base.Objects;
+import org.kududb.annotations.InterfaceAudience;
 
+@InterfaceAudience.Private
 public class Pair<A, B> {
   private final A first;
   private final B second;

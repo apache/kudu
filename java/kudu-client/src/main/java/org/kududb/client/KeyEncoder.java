@@ -4,6 +4,7 @@ package org.kududb.client;
 
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
+import org.kududb.annotations.InterfaceAudience;
 
 import java.io.ByteArrayOutputStream;
 
@@ -11,6 +12,7 @@ import java.io.ByteArrayOutputStream;
  * Utility class used to encode row keys in a format that is mainly used for tablet lookups.
  * Converts the non-string columns to big-endian order to facilitate memcmp
  */
+@InterfaceAudience.Private
 class KeyEncoder {
 
   private final ByteArrayOutputStream buf = new ByteArrayOutputStream();

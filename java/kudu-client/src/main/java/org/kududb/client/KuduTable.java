@@ -3,6 +3,8 @@
 package org.kududb.client;
 
 import org.kududb.Schema;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 
 import java.util.List;
 
@@ -16,6 +18,8 @@ import java.util.List;
  *
  * This class is thread-safe.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class KuduTable {
 
   private final Schema schema;
@@ -54,7 +58,7 @@ public class KuduTable {
    * Get the async client that created this instance.
    * @return an async kudu client
    */
-  public AsyncKuduClient getClient() {
+  public AsyncKuduClient getAsyncClient() {
     return this.client;
   }
 

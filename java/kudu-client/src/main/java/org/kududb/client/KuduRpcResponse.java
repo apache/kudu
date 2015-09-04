@@ -2,9 +2,12 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+
 /**
  * Base class for RPC responses.
  */
+@InterfaceAudience.Private
 abstract class KuduRpcResponse {
   private final long elapsedMillis;
   private final String tsUUID;

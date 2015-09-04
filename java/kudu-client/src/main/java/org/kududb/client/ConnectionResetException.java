@@ -27,10 +27,15 @@
  */
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+
 /**
  * Exception thrown when an RPC was in flight while we got disconnected.
  */
 @SuppressWarnings("serial")
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public final class ConnectionResetException extends RecoverableException {
 
   ConnectionResetException(final String msg) {

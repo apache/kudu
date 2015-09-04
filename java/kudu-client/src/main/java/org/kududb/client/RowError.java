@@ -3,11 +3,15 @@
 package org.kududb.client;
 
 import org.kududb.WireProtocol;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 
 /**
  * Wrapper class for a single row error.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class RowError {
   private final String status;
   private final String message;

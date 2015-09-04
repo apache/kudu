@@ -11,6 +11,8 @@ import com.google.common.primitives.Longs;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 
 /**
  * Class used to represent parts of row along with its schema.
@@ -18,6 +20,8 @@ import org.kududb.Type;
  * Each PartialRow is backed by an byte array where all the cells (except strings) are written. The
  * strings are kept in a List.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class PartialRow {
 
   private final Schema schema;

@@ -18,6 +18,8 @@ package org.kududb.mapreduce.tools;
 
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.*;
 import org.kududb.mapreduce.KuduTableMapReduceUtil;
 import org.apache.hadoop.conf.Configuration;
@@ -32,6 +34,8 @@ import java.io.IOException;
 /**
  * Mapper that ingests CSV lines and turns them into Kudu Inserts.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Evolving
 public class ImportCsvMapper extends Mapper<LongWritable, Text, NullWritable, Operation> {
 
   private static final NullWritable NULL_KEY = NullWritable.get();

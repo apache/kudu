@@ -22,13 +22,15 @@ package org.kududb.client;
 
 import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.Message;
+import org.kududb.annotations.InterfaceAudience;
 
 import java.io.IOException;
 import java.io.OutputStream;
 
 /**
- *
+ * Helper methods for RPCs.
  */
+@InterfaceAudience.Private
 public class IPCUtil {
   /**
    * Write out header, param, and cell block if there is one.

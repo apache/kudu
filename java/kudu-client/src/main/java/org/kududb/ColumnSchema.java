@@ -3,11 +3,15 @@
 package org.kududb;
 
 import org.kududb.Common.EncodingType;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 
 /**
  * Represents a Kudu Table column. Use {@link ColumnSchema.ColumnSchemaBuilder} in order to
  * create columns.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class ColumnSchema {
 
   private final String name;

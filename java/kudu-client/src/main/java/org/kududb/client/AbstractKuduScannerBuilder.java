@@ -5,13 +5,16 @@ package org.kududb.client;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 
 /**
  * Abstract class to extend in order to create builders for scanners.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public abstract class AbstractKuduScannerBuilder
     <S extends AbstractKuduScannerBuilder<? super S, T>, T> {
   protected final AsyncKuduClient client;
@@ -123,7 +126,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    * @throws IllegalArgumentException if the timestamp is less than 0
    */
-  @VisibleForTesting
+  @InterfaceAudience.Private
   public S snapshotTimestamp(long htTimestamp) {
     this.htTimestamp = htTimestamp;
     return (S) this;

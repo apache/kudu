@@ -5,12 +5,16 @@ package org.kududb;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.common.primitives.Shorts;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 
 import static org.kududb.Common.DataType;
 
 /**
  * Describes all the types available to build table schemas.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public enum Type {
 
   INT8 (DataType.INT8, "int8"),

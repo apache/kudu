@@ -2,8 +2,13 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+
 import java.util.List;
 
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class ListTabletServersResponse extends KuduRpcResponse {
 
   private final int tabletServersCount;

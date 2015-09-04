@@ -6,6 +6,7 @@ import com.google.common.net.HostAndPort;
 import com.google.protobuf.ByteString;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.consensus.Metadata;
 import org.kududb.master.Master;
 import org.kududb.util.NetUtil;
@@ -22,6 +23,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Class grouping the callback and the errback for GetMasterRegistration calls
  * made in getMasterTableLocationsPB.
  */
+@InterfaceAudience.Private
 final class GetMasterRegistrationReceived {
 
   private static final Logger LOG = LoggerFactory.getLogger(GetMasterRegistrationReceived.class);

@@ -3,11 +3,15 @@
 package org.kududb.client;
 
 import org.kududb.WireProtocol;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.rpc.RpcHeader;
 
 /**
  * This class is used for errors sent in response to a RPC.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 @SuppressWarnings("serial")
 public class KuduServerException extends KuduException {
 

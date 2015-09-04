@@ -3,6 +3,7 @@
 package org.kududb.client;
 
 import com.google.protobuf.Message;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.master.Master;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -10,6 +11,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * RPC to delete tables
  */
+@InterfaceAudience.Private
 class DeleteTableRequest extends KuduRpc<DeleteTableResponse> {
 
   static final String DELETE_TABLE = "DeleteTable";

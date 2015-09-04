@@ -2,11 +2,14 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.util;
 
+import org.kududb.annotations.InterfaceAudience;
+
 import java.util.concurrent.TimeUnit;
 
 /**
  * Set of common utility methods to handle HybridTime and related timestamps.
  */
+@InterfaceAudience.Private
 public class HybridTimeUtil {
 
   public static final int hybridTimeNumBitsToShift = 12;

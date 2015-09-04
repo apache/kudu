@@ -3,6 +3,8 @@
 package org.kududb.client;
 
 import com.google.common.collect.Lists;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.master.Master;
 
 import java.util.List;
@@ -10,6 +12,8 @@ import java.util.List;
 /**
  * This is a builder class for all the options that can be provided while creating a table.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class CreateTableBuilder {
 
   private Master.CreateTableRequestPB.Builder pb = Master.CreateTableRequestPB.newBuilder();

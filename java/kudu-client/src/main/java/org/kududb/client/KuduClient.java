@@ -4,6 +4,8 @@ package org.kududb.client;
 
 import com.stumbleupon.async.Deferred;
 import org.kududb.Schema;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,6 +19,8 @@ import java.util.List;
  * joined against using the default admin operation timeout
  * (see {@link org.kududb.client.KuduClient.KuduClientBuilder#defaultAdminOperationTimeoutMs(long)} (long)}).
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class KuduClient {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);

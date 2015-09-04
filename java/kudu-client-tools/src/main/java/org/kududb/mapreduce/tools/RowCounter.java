@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.mapreduce.tools;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.mapreduce.CommandLineParser;
 import org.kududb.mapreduce.KuduTableMapReduceUtil;
 import org.kududb.client.RowResult;
@@ -19,6 +21,8 @@ import java.io.IOException;
 /**
  * Map-only job that counts all the rows in the provided table.
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class RowCounter extends Configured implements Tool {
 
   static final String NAME = "rowcounter";

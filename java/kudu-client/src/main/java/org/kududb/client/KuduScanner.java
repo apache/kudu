@@ -3,10 +3,14 @@
 package org.kududb.client;
 
 import com.stumbleupon.async.Deferred;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 
 /**
  * Synchronous version of {@link AsyncKuduScanner}. Offers the same API but with blocking methods.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class KuduScanner {
 
   private final AsyncKuduScanner asyncScanner;

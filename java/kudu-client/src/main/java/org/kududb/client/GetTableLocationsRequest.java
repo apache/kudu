@@ -4,6 +4,7 @@ package org.kududb.client;
 
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.master.Master;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -11,6 +12,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * Package-private RPC that can only go to a master.
  */
+@InterfaceAudience.Private
 class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponsePB> {
 
   private final byte[] startKey;

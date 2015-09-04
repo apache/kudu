@@ -6,12 +6,14 @@ import com.google.protobuf.Message;
 import static org.kududb.consensus.Metadata.*;
 import static org.kududb.master.Master.*;
 
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * Package-private RPC that can only go to master.
  */
+@InterfaceAudience.Private
 public class GetMasterRegistrationRequest extends KuduRpc<GetMasterRegistrationResponse> {
   private static final String GET_MASTER_REGISTRATION = "GetMasterRegistration";
 

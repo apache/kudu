@@ -21,6 +21,8 @@ import com.google.common.collect.ImmutableList;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.*;
 import org.kududb.mapreduce.CommandLineParser;
 import org.kududb.mapreduce.KuduTableMapReduceUtil;
@@ -211,6 +213,8 @@ import java.util.concurrent.atomic.AtomicInteger;
  * </li>
  * </ul>
  */
+@InterfaceAudience.Private
+@InterfaceStability.Unstable
 public class IntegrationTestBigLinkedList extends Configured implements Tool {
   private static final byte[] NO_KEY = new byte[1];
 

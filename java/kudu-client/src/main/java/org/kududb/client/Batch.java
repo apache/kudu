@@ -5,6 +5,7 @@ package org.kududb.client;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.WireProtocol;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -17,6 +18,7 @@ import java.util.List;
 /**
  * Used internally to batch Operations together before sending to the cluster
  */
+@InterfaceAudience.Private
 class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
 
   private static final OperationsComparatorBySequenceNumber SEQUENCE_NUMBER_COMPARATOR =

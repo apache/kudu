@@ -11,6 +11,8 @@ import org.kududb.ColumnSchema;
 import org.kududb.Schema;
 import org.kududb.Type;
 import org.kududb.WireProtocol.RowOperationsPB;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -25,6 +27,8 @@ import java.util.List;
  * Base class for the RPCs that related to WriteRequestPB. It contains almost all the logic
  * and knows how to serialize its child classes.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public abstract class Operation extends KuduRpc<OperationResponse> implements KuduRpc.HasKey {
 
   // Number given by the session when apply()'d for the first time. Necessary to retain operations

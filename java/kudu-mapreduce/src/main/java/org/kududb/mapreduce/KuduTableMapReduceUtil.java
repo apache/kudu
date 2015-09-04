@@ -16,6 +16,8 @@
  */
 package org.kududb.mapreduce;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.AsyncKuduClient;
 import org.kududb.client.KuduTable;
 import org.kududb.client.Operation;
@@ -44,6 +46,8 @@ import java.util.zip.ZipFile;
 /**
  * Utility class to setup MR jobs that use Kudu as an input and/or output.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class KuduTableMapReduceUtil {
   // Mostly lifted from HBase's TableMapReduceUtil
 

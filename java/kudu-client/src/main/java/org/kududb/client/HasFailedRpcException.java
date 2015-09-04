@@ -27,10 +27,15 @@
  */
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+
 /**
  * Interface implemented by {@link KuduException}s that can tell you which
  * RPC failed.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public interface HasFailedRpcException {
 
   /**

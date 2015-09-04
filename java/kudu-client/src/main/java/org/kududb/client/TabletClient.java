@@ -32,6 +32,7 @@ import com.stumbleupon.async.Deferred;
 
 import org.jboss.netty.handler.timeout.ReadTimeoutException;
 import org.kududb.WireProtocol;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.master.Master;
 import org.kududb.rpc.RpcHeader;
 import org.kududb.tserver.Tserver;
@@ -80,6 +81,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * accepting write requests as well as buffering requests if the underlying
  * channel isn't connected.
  */
+@InterfaceAudience.Private
 public class TabletClient extends ReplayingDecoder<VoidEnum> {
 
   public static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);

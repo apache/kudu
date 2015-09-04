@@ -5,12 +5,16 @@ package org.kududb.client;
 import java.util.Iterator;
 import org.kududb.Schema;
 import org.kududb.WireProtocol;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.util.Slice;
 
 /**
  * Class that contains the rows sent by a tablet server, exhausting this iterator only means
  * that all the rows from the last server response were read.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class RowResultIterator extends KuduRpcResponse implements Iterator<RowResult>,
     Iterable<RowResult> {
 

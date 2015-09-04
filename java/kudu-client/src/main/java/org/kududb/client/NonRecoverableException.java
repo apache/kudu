@@ -27,6 +27,11 @@
  */
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 @SuppressWarnings("serial")
 public class NonRecoverableException extends KuduException {
 

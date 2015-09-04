@@ -5,6 +5,8 @@ package org.kududb.client;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
 import org.kududb.Type;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 
 import java.util.Arrays;
@@ -13,6 +15,8 @@ import java.util.Arrays;
  * A range predicate on one of the columns in the underlying data
  * The both boundaries are inclusive
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class ColumnRangePredicate {
 
   final Tserver.ColumnRangePredicatePB.Builder pb = Tserver.ColumnRangePredicatePB

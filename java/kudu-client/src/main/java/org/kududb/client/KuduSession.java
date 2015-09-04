@@ -2,8 +2,11 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import org.kududb.annotations.*;
+
 import com.stumbleupon.async.Deferred;
-import java.util.ArrayList;
+import java.util.List;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -14,6 +17,8 @@ import org.slf4j.LoggerFactory;
  * defined by {@link #setTimeoutMillis(long)} which defaults to getting it from
  * {@link KuduClient#getDefaultOperationTimeoutMs()}.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class KuduSession implements SessionConfiguration {
 
   public static final Logger LOG = LoggerFactory.getLogger(KuduSession.class);
@@ -73,7 +78,7 @@ public class KuduSession implements SessionConfiguration {
    * @throws Exception if anything went wrong. If it's an issue with some or all batches,
    * it will be of type DeferredGroupException.
    */
-  public ArrayList<BatchResponse> flush() throws Exception {
+  public List<BatchResponse> flush() throws Exception {
     return session.flush().join(getTimeoutMillis());
   }
 
@@ -83,7 +88,7 @@ public class KuduSession implements SessionConfiguration {
    * @throws Exception if anything went wrong. If it's an issue with some or all batches,
    * it will be of type DeferredGroupException.
    */
-  public ArrayList<BatchResponse> close() throws Exception {
+  public List<BatchResponse> close() throws Exception {
     return session.close().join(getTimeoutMillis());
   }
 

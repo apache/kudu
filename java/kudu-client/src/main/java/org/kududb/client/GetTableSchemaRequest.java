@@ -5,12 +5,14 @@ package org.kududb.client;
 import com.google.protobuf.Message;
 import static org.kududb.master.Master.*;
 
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * RPC to fetch a table's schema
  */
+@InterfaceAudience.Private
 public class GetTableSchemaRequest extends KuduRpc<GetTableSchemaResponse> {
   static final String GET_TABLE_SCHEMA = "GetTableSchema";
   private final String name;

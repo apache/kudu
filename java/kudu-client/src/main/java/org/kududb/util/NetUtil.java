@@ -8,12 +8,14 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
+import org.kududb.annotations.InterfaceAudience;
 
 import java.util.List;
 
 /**
  * Networking related methods.
  */
+@InterfaceAudience.Private
 public class NetUtil {
 
   /**

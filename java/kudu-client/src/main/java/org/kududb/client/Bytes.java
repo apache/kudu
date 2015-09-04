@@ -29,6 +29,7 @@ package org.kududb.client;
 
 import com.google.protobuf.ByteString;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.util.CharsetUtil;
@@ -51,6 +52,7 @@ import java.util.TreeMap;
 /**
  * Helper functions to manipulate byte arrays.
  */
+@InterfaceAudience.Private
 public final class Bytes {
 
   // Two's complement reference: 2^n .

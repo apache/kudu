@@ -3,6 +3,7 @@
 package org.kududb.client;
 
 import com.google.protobuf.Message;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.master.Master;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -10,6 +11,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import java.util.ArrayList;
 import java.util.List;
 
+@InterfaceAudience.Private
 class ListTablesRequest extends KuduRpc<ListTablesResponse> {
 
   private final String nameFilter;

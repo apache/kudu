@@ -3,6 +3,7 @@
 package org.kududb.client;
 
 import com.google.protobuf.Message;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
@@ -12,6 +13,7 @@ import static org.kududb.master.Master.*;
  * RPC used to alter a table. When it returns it doesn't mean that the table is altered,
  * a success just means that the master accepted it.
  */
+@InterfaceAudience.Private
 class AlterTableRequest extends KuduRpc<AlterTableResponse> {
 
   static final String ALTER_TABLE = "AlterTable";

@@ -31,6 +31,7 @@ import com.google.protobuf.CodedOutputStream;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protobuf.Message;
 import com.stumbleupon.async.Deferred;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Pair;
 import org.kududb.util.Slice;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -55,6 +56,7 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  * unnecessary memory copies when you know you won't be changing (or event
  * holding a reference to) the byte array, which is frequently the case.
  */
+@InterfaceAudience.Private
 public abstract class KuduRpc<R> {
 
   // Service names.

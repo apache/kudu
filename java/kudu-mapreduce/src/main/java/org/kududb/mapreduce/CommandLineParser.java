@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.mapreduce;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.AsyncKuduClient;
 import org.apache.hadoop.conf.Configuration;
 import org.kududb.client.KuduClient;
@@ -18,6 +20,8 @@ import org.kududb.client.KuduClient;
  * Use {@link CommandLineParser#getHelpSnippet()} to provide usage text for the configurations
  * managed by this class.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Unstable
 public class CommandLineParser {
   private final Configuration conf;
   public static final String MASTER_ADDRESSES_KEY = "kudu.master.addresses";

@@ -4,6 +4,7 @@ package org.kududb.client;
 
 import com.google.protobuf.Message;
 import org.kududb.Schema;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.master.Master;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -11,6 +12,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * RPC to create new tables
  */
+@InterfaceAudience.Private
 class CreateTableRequest extends KuduRpc<CreateTableResponse> {
 
   static final String CREATE_TABLE = "CreateTable";

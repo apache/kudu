@@ -4,12 +4,14 @@ package org.kududb.util;
 
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.kududb.annotations.InterfaceAudience;
 
 /**
  * Utility methods for various parts of async, such as Deferred.
  * TODO (KUDU-602): Some of these methods could eventually be contributed back to async or to a
  * custom fork/derivative of async.
  */
+@InterfaceAudience.Private
 public class AsyncUtil {
 
   /**

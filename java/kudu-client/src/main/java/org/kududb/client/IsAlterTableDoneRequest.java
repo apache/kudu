@@ -5,12 +5,14 @@ package org.kududb.client;
 import com.google.protobuf.Message;
 import static org.kududb.master.Master.*;
 
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 /**
  * RPC used to check if an alter is running for the specified table
  */
+@InterfaceAudience.Private
 class IsAlterTableDoneRequest extends KuduRpc<IsAlterTableDoneResponse> {
 
   static final String IS_ALTER_TABLE_DONE = "IsAlterTableDone";

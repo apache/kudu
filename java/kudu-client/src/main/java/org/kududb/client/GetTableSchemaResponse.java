@@ -3,7 +3,9 @@
 package org.kududb.client;
 
 import org.kududb.Schema;
+import org.kududb.annotations.InterfaceAudience;
 
+@InterfaceAudience.Private
 public class GetTableSchemaResponse extends KuduRpcResponse {
 
   private final Schema schema;

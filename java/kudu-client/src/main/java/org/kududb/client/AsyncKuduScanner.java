@@ -38,6 +38,8 @@ import org.kududb.Common;
 import org.kududb.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -72,6 +74,8 @@ import static org.kududb.tserver.Tserver.*;
  * <h1>A note on passing {@code String}s in argument</h1>
  * All strings are assumed to use the platform's default charset.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Unstable
 public final class AsyncKuduScanner {
 
   private static final Logger LOG = LoggerFactory.getLogger(AsyncKuduScanner.class);
@@ -571,8 +575,8 @@ public final class AsyncKuduScanner {
           newBuilder.setReadMode(AsyncKuduScanner.this.getReadMode().pbVersion());
           newBuilder.setCacheBlocks(cacheBlocks);
           // if the last propagated timestamp is set send it with the scan
-          if (table.getClient().getLastPropagatedTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
-            newBuilder.setPropagatedTimestamp(table.getClient().getLastPropagatedTimestamp());
+          if (table.getAsyncClient().getLastPropagatedTimestamp() != AsyncKuduClient.NO_TIMESTAMP) {
+            newBuilder.setPropagatedTimestamp(table.getAsyncClient().getLastPropagatedTimestamp());
           }
           newBuilder.setReadMode(AsyncKuduScanner.this.getReadMode().pbVersion());
 

@@ -5,12 +5,14 @@ package org.kududb.client;
 import com.google.protobuf.Message;
 import static org.kududb.master.Master.*;
 
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
 import java.util.ArrayList;
 import java.util.List;
 
+@InterfaceAudience.Private
 public class ListTabletServersRequest extends KuduRpc<ListTabletServersResponse> {
 
   public ListTabletServersRequest(KuduTable masterTable) {

@@ -3,12 +3,16 @@
 package org.kududb.client;
 
 import org.kududb.Common;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 
 /**
  * The possible external consistency modes on which Kudu operates.
  * See {@code src/kudu/common/common.proto} for a detailed explanations on the
  *      meaning and implications of each mode.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public enum ExternalConsistencyMode {
   CLIENT_PROPAGATED(Common.ExternalConsistencyMode.CLIENT_PROPAGATED),
   COMMIT_WAIT(Common.ExternalConsistencyMode.COMMIT_WAIT);

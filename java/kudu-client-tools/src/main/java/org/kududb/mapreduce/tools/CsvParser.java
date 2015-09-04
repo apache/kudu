@@ -19,6 +19,8 @@ package org.kududb.mapreduce.tools;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.Bytes;
 
 import java.util.ArrayList;
@@ -28,6 +30,8 @@ import java.util.List;
  * Column-separated values parser that gives access to the different columns inside each line of
  * data.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Unstable
 public class CsvParser {
 
   private final byte separatorByte;

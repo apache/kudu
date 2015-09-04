@@ -33,6 +33,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.jboss.netty.buffer.ChannelBuffers;
 import org.jboss.netty.channel.Channel;
 import org.jboss.netty.channel.Channels;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.rpc.RpcHeader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,6 +51,7 @@ import javax.security.sasl.SaslException;
 import java.util.Map;
 import java.util.TreeMap;
 
+@InterfaceAudience.Private
 public class SecureRpcHelper {
 
   public static final Logger LOG = LoggerFactory.getLogger(TabletClient.class);

@@ -16,6 +16,8 @@
  */
 package org.kududb.mapreduce.tools;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.mapreduce.CommandLineParser;
 import org.kududb.mapreduce.KuduTableMapReduceUtil;
 import org.apache.hadoop.conf.Configuration;
@@ -32,6 +34,8 @@ import java.io.IOException;
 /**
  * Map-only job that reads CSV files and inserts them into a single Kudu table.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Unstable
 public class ImportCsv extends Configured implements Tool {
 
   public static enum Counters { BAD_LINES };

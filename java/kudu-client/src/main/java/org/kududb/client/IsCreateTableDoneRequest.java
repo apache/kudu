@@ -3,6 +3,7 @@
 package org.kududb.client;
 
 import com.google.protobuf.Message;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.master.Master;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
@@ -10,6 +11,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 /**
  * Package-private RPC that can only go to a master.
  */
+@InterfaceAudience.Private
 class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponsePB> {
 
   private final String tableName;

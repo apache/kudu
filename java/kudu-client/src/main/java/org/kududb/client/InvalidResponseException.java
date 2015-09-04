@@ -27,9 +27,14 @@
  */
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+
 /**
  * Exception used when the server sends an invalid response to an RPC.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 @SuppressWarnings("serial")
 public final class InvalidResponseException extends NonRecoverableException {
 

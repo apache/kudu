@@ -5,12 +5,16 @@ package org.kududb.client;
 import com.google.common.base.Functions;
 import com.google.common.base.Joiner;
 import com.google.common.collect.Lists;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 
 import java.util.List;
 
 /**
  * Indicates that the request failed because we couldn't find a leader master server.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public final class NoLeaderMasterFoundException extends RecoverableException {
 
   NoLeaderMasterFoundException(final String msg) {

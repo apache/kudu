@@ -27,9 +27,14 @@
  */
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+
 /**
  * The parent class of all {@link RuntimeException} created by this package.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 @SuppressWarnings("serial")
 public abstract class KuduException extends RuntimeException {
 

@@ -39,6 +39,8 @@ import com.stumbleupon.async.Deferred;
 import org.kududb.ColumnSchema;
 import org.kududb.Common;
 import org.kududb.Schema;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.consensus.Metadata;
 import org.kududb.master.Master;
 import org.kududb.util.AsyncUtil;
@@ -111,6 +113,8 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  * handle in your errback.  Asynchronous exceptions will be indicated as such
  * in the javadoc with "(deferred)".
  */
+@InterfaceAudience.Public
+@InterfaceStability.Unstable
 public class AsyncKuduClient {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);

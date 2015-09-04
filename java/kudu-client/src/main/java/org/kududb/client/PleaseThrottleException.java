@@ -28,6 +28,8 @@
 package org.kududb.client;
 
 import com.stumbleupon.async.Deferred;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 
 /**
  * This exception notifies the application to throttle its use of Kudu.
@@ -58,6 +60,8 @@ import com.stumbleupon.async.Deferred;
  * Note that low-throughput applications will typically rarely (if ever)
  * hit this exception, so they don't need complex throttling logic.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 @SuppressWarnings("serial")
 public final class PleaseThrottleException extends NonRecoverableException
     implements HasFailedRpcException {

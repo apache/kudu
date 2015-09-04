@@ -3,12 +3,14 @@
 package org.kududb.client;
 
 import org.kududb.WireProtocol;
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.consensus.Metadata;
 import org.kududb.master.Master;
 
 /**
  * Response for {@link GetMasterRegistrationRequest}.
  */
+@InterfaceAudience.Private
 public class GetMasterRegistrationResponse extends KuduRpcResponse {
 
   private final Metadata.RaftPeerPB.Role role;

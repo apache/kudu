@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.mapreduce;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.client.*;
 import org.apache.hadoop.conf.Configurable;
 import org.apache.hadoop.conf.Configuration;
@@ -37,6 +39,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * have been called that the object won't be used again and the KuduClient is shut down.
  * </p>
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
     implements Configurable {
 
@@ -185,7 +189,7 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
       }
     }
 
-    private void processRowErrors(ArrayList<BatchResponse> responses) {
+    private void processRowErrors(List<BatchResponse> responses) {
       List<RowError> errors = BatchResponse.collectErrors(responses);
       if (!errors.isEmpty()) {
         int rowErrorsCount = errors.size();

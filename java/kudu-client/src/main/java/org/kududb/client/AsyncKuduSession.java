@@ -8,6 +8,8 @@ import com.google.common.collect.Ranges;
 import com.google.common.collect.Sets;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.master.Master;
 import org.kududb.util.Slice;
 import org.jboss.netty.util.Timeout;
@@ -64,6 +66,8 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  * operations upon flush()'ing. It means that in a situation with a timeout of 500ms and a flush
  * interval of 1000ms, an operation can be oustanding for up to 1500ms before being timed out.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Unstable
 public class AsyncKuduSession implements SessionConfiguration {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduSession.class);

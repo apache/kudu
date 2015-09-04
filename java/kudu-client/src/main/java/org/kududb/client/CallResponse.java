@@ -4,6 +4,7 @@ package org.kududb.client;
 
 import java.util.List;
 
+import org.kududb.annotations.InterfaceAudience;
 import org.kududb.rpc.RpcHeader;
 import org.kududb.util.Slice;
 
@@ -13,6 +14,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
  * This class handles information received from an RPC response, providing
  * access to sidecars and decoded protobufs from the message.
  */
+@InterfaceAudience.Private
 final class CallResponse {
   private final ChannelBuffer buf;
   private final RpcHeader.ResponseHeader header;

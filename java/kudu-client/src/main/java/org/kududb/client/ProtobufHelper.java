@@ -9,11 +9,13 @@ import org.kududb.ColumnSchema;
 import org.kududb.Common;
 import org.kududb.Schema;
 import org.kududb.Type;
+import org.kududb.annotations.InterfaceAudience;
 
 import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.List;
 
+@InterfaceAudience.Private
 public class ProtobufHelper {
 
   /**

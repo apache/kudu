@@ -5,12 +5,17 @@ package org.kududb.client;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 
 /**
  * Response type for Batch (which is used internally by AsyncKuduSession).
  * Provides the Hybrid Time write timestamp returned by the Tablet Server.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class BatchResponse extends KuduRpcResponse {
 
   private final long writeTimestamp;

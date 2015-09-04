@@ -2,10 +2,15 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
+
 /**
  * Interface that defines the methods used to configure a session. It also exposes ways to
  * query its state.
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public interface SessionConfiguration {
 
   public enum FlushMode {

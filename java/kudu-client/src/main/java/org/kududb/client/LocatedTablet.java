@@ -8,6 +8,8 @@ import java.util.List;
 
 import com.google.common.collect.Lists;
 import com.google.common.collect.ImmutableList;
+import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 import org.kududb.consensus.Metadata.RaftPeerPB.Role;
 import org.kududb.master.Master.TabletLocationsPB;
 import org.kududb.master.Master.TabletLocationsPB.ReplicaPB;
@@ -17,6 +19,8 @@ import org.kududb.master.Master.TabletLocationsPB.ReplicaPB;
  * This should be treated as immutable data (it does not reflect
  * any updates the client may have heard since being constructed).
  */
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class LocatedTablet {
   private final byte[] startKey;
   private final byte[] endKey;

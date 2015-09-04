@@ -21,6 +21,7 @@ import com.google.common.base.Preconditions;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.common.primitives.Shorts;
+import org.kududb.annotations.InterfaceAudience;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -38,6 +39,7 @@ import static java.nio.ByteOrder.LITTLE_ENDIAN;
 /**
  * Little Endian slice of a byte array.
  */
+@InterfaceAudience.Private
 public final class Slice implements Comparable<Slice>
 {
   private final byte[] data;
