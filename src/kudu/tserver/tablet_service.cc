@@ -35,6 +35,7 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/monotime.h"
@@ -49,6 +50,13 @@ DEFINE_int32(scanner_max_batch_size_bytes, 8 * 1024 * 1024,
              "scan results.");
 DEFINE_int32(scanner_batch_size_rows, 100,
              "The number of rows to batch for servicing scan requests.");
+
+// Fault injection flags.
+DEFINE_int32(scanner_inject_latency_on_each_batch_ms, 0,
+             "If set, the scanner will pause the specified number of milliesconds "
+             "before reading each batch of data on the tablet server. "
+             "Used for tests.");
+TAG_FLAG(scanner_inject_latency_on_each_batch_ms, unsafe);
 
 namespace kudu {
 namespace tserver {
@@ -1427,6 +1435,10 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
 
   int64_t rows_scanned = 0;
   while (iter->HasNext()) {
+    if (PREDICT_FALSE(FLAGS_scanner_inject_latency_on_each_batch_ms > 0)) {
+      SleepFor(MonoDelta::FromMilliseconds(FLAGS_scanner_inject_latency_on_each_batch_ms));
+    }
+
     Status s = iter->NextBlock(&block);
     if (PREDICT_FALSE(!s.ok())) {
       LOG(WARNING) << "Copying rows from internal iterator for request " << req->ShortDebugString();

@@ -978,14 +978,28 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
     // More data is available in this tablet.
     VLOG(1) << "Continuing scan " << ToString();
 
-    MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-    MonoTime rpc_deadline = deadline;
-    deadline.AddDelta(data_->timeout_);
-    rpc_deadline.AddDelta(data_->table_->client()->default_rpc_timeout());
-    MonoTime actual_deadline = MonoTime::Earliest(deadline, rpc_deadline);
+    // The user has specified a timeout 'data_->timeout_' which should
+    // apply to the total time for each call to NextBatch(). However,
+    // if this is a fault-tolerant scan, it's preferable to set a shorter
+    // timeout (the "default RPC timeout" for each individual RPC call --
+    // so that if the server is hung we have time to fail over and try a
+    // different server.
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+
+    MonoTime batch_deadline = now;
+    batch_deadline.AddDelta(data_->timeout_);
+
+    MonoTime rpc_deadline;
+    if (data_->order_mode_ == ORDERED) {
+      rpc_deadline = now;
+      rpc_deadline.AddDelta(data_->table_->client()->default_rpc_timeout());
+      rpc_deadline = MonoTime::Earliest(batch_deadline, rpc_deadline);
+    } else {
+      rpc_deadline = batch_deadline;
+    }
 
     data_->controller_.Reset();
-    data_->controller_.set_deadline(actual_deadline);
+    data_->controller_.set_deadline(rpc_deadline);
     data_->PrepareRequest(KuduScanner::Data::CONTINUE);
     Status rpc_status = data_->proxy_->Scan(data_->next_req_,
                                             &data_->last_response_,
@@ -1006,12 +1020,12 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
         << (!rpc_status.ok() ? rpc_status.ToString() : server_status.ToString());
     set<string> blacklist;
     vector<internal::RemoteTabletServer*> candidates;
-    RETURN_NOT_OK(data_->CanBeRetried(false, rpc_status, server_status, actual_deadline, deadline,
-                                      candidates, &blacklist));
+    RETURN_NOT_OK(data_->CanBeRetried(false, rpc_status, server_status, rpc_deadline,
+                                      batch_deadline, candidates, &blacklist));
 
     LOG(WARNING) << "Attempting to retry scan of tablet " << ToString() << " elsewhere.";
     // Use the start key of the current tablet as the start key.
-    return data_->OpenTablet(data_->remote_->start_key(), deadline, &blacklist);
+    return data_->OpenTablet(data_->remote_->start_key(), batch_deadline, &blacklist);
   } else if (data_->MoreTablets()) {
     // More data may be available in other tablets.
     // No need to close the current tablet; we scanned all the data so the

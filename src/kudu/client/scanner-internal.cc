@@ -250,11 +250,21 @@ Status KuduScanner::Data::OpenTablet(const Slice& key,
     RETURN_NOT_OK(lookup_status);
 
     // Recalculate the deadlines.
-    MonoTime rpc_deadline = MonoTime::Now(MonoTime::FINE);
-    rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
-    MonoTime actual_deadline = MonoTime::Earliest(rpc_deadline, deadline);
+    // If we have other replicas beyond this one to try, then we'll try to
+    // open the scanner with the default RPC timeout. That gives us time to
+    // try other replicas later. Otherwise, we open the scanner using the
+    // full remaining deadline for the user's call.
+    MonoTime rpc_deadline;
+    if (static_cast<int>(candidates.size()) - blacklist->size() > 1) {
+      rpc_deadline = MonoTime::Now(MonoTime::FINE);
+      rpc_deadline.AddDelta(table_->client()->default_rpc_timeout());
+      rpc_deadline = MonoTime::Earliest(deadline, rpc_deadline);
+    } else {
+      rpc_deadline = deadline;
+    }
+
     controller_.Reset();
-    controller_.set_deadline(actual_deadline);
+    controller_.set_deadline(rpc_deadline);
 
     CHECK(ts->proxy());
     ts_ = CHECK_NOTNULL(ts);
@@ -264,7 +274,7 @@ Status KuduScanner::Data::OpenTablet(const Slice& key,
     if (rpc_status.ok() && server_status.ok()) {
       break;
     }
-    RETURN_NOT_OK(CanBeRetried(true, rpc_status, server_status, actual_deadline, deadline,
+    RETURN_NOT_OK(CanBeRetried(true, rpc_status, server_status, rpc_deadline, deadline,
                                candidates, blacklist));
   }
 

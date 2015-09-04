@@ -39,6 +39,7 @@
 #include "kudu/tserver/scanners.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
@@ -47,7 +48,11 @@
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(max_create_tablets_per_ts);
+DECLARE_int32(scanner_max_batch_size_bytes);
+DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
+
+METRIC_DECLARE_counter(scans_started);
 
 using boost::assign::list_of;
 using std::string;
@@ -1224,6 +1229,17 @@ TEST_F(ClientTest, TestCloseScanner) {
 }
 
 TEST_F(ClientTest, TestScanTimeout) {
+  // If we set the RPC timeout to be 0, we'll time out in the GetTableLocations
+  // code path and not even discover where the tablet is hosted.
+  {
+    client_->data_->default_rpc_timeout_ = MonoDelta::FromSeconds(0);
+    KuduScanner scanner(client_table_.get());
+    Status s = scanner.Open();
+    EXPECT_TRUE(s.IsTimedOut()) << s.ToString();
+    EXPECT_FALSE(scanner.data_->remote_) << "should not have located any tablet";
+    client_->data_->default_rpc_timeout_ = MonoDelta::FromSeconds(5);
+  }
+
   // Warm the cache so that the subsequent timeout occurs within the scan,
   // not the lookup.
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1));
@@ -1233,19 +1249,33 @@ TEST_F(ClientTest, TestScanTimeout) {
     KuduScanner scanner(client_table_.get());
     ASSERT_OK(scanner.SetTimeoutMillis(0));
     ASSERT_TRUE(scanner.Open().IsTimedOut());
-    ASSERT_TRUE(scanner.data_->remote_);
+    ASSERT_TRUE(scanner.data_->remote_) << "We should have located a tablet";
     ASSERT_EQ(0, scanner.data_->remote_->GetNumFailedReplicas());
   }
 
-  // If we set the RPC timeout to be low, we'll time out in the GetTableLocations
-  // code path and mark the tablet bad.
+  // Insert some more rows so that the scan takes multiple batches, instead of
+  // fetching all the data on the 'Open()' call.
+  client_->data_->default_rpc_timeout_ = MonoDelta::FromSeconds(5);
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1000, 1));
   {
-    client_->data_->default_rpc_timeout_ = MonoDelta::FromSeconds(0);
+    google::FlagSaver saver;
+    FLAGS_scanner_max_batch_size_bytes = 100;
     KuduScanner scanner(client_table_.get());
-    Status s = scanner.Open();
-    EXPECT_TRUE(s.IsTimedOut()) << s.ToString();
-    EXPECT_TRUE(scanner.data_->remote_);
-    EXPECT_EQ(1, scanner.data_->remote_->GetNumFailedReplicas());
+
+    // Set the single-RPC timeout low. Since we only have a single replica of this
+    // table, we'll ignore this timeout for the actual scan calls, and use the
+    // scanner timeout instead.
+    FLAGS_scanner_inject_latency_on_each_batch_ms = 50;
+    client_->data_->default_rpc_timeout_ = MonoDelta::FromMilliseconds(1);
+    scanner.SetTimeoutMillis(5000);
+
+    // Should successfully scan.
+    ASSERT_OK(scanner.Open());
+    ASSERT_TRUE(scanner.HasMoreRows());
+    while (scanner.HasMoreRows()) {
+      vector<KuduRowResult> batch;
+      ASSERT_OK(scanner.NextBatch(&batch));
+    }
   }
 }
 
