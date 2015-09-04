@@ -479,8 +479,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
                               const ReportedTabletPB& report,
                               ReportedTabletUpdatesPB *report_updates);
 
-  void ResetTabletReplicasFromReportedConfig(TSDescriptor* ts_desc,
-                                             const ReportedTabletPB& report,
+  void ResetTabletReplicasFromReportedConfig(const ReportedTabletPB& report,
                                              const scoped_refptr<TabletInfo>& tablet,
                                              TabletMetadataLock* tablet_lock);
 
@@ -492,6 +491,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   void AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
                                     const ReportedTabletPB& report,
                                     const scoped_refptr<TabletInfo>& tablet);
+
+  void NewReplica(TSDescriptor* ts_desc, const ReportedTabletPB& report, TabletReplica* replica);
 
   // Extract the set of tablets that can be deleted and the set of tablets
   // that must be processed because not running yet.

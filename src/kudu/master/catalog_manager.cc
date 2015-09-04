@@ -1462,7 +1462,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
               << final_report->committed_consensus_state().current_term();
 
       *tablet_lock.mutable_data()->pb.mutable_committed_consensus_state() = cstate;
-      ResetTabletReplicasFromReportedConfig(ts_desc, *final_report, tablet, &tablet_lock);
+      ResetTabletReplicasFromReportedConfig(*final_report, tablet, &tablet_lock);
 
     } else {
       // Report opid_index is equal to the previous opid_index. If some
@@ -1499,14 +1499,14 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   return Status::OK();
 }
 
-void CatalogManager::ResetTabletReplicasFromReportedConfig(TSDescriptor* ts_desc,
-                                                           const ReportedTabletPB& report,
+void CatalogManager::ResetTabletReplicasFromReportedConfig(const ReportedTabletPB& report,
                                                            const scoped_refptr<TabletInfo>& tablet,
                                                            TabletMetadataLock* tablet_lock) {
   vector<TabletReplica> replicas;
   BOOST_FOREACH(const consensus::RaftPeerPB& peer,
                 report.committed_consensus_state().config().peers()) {
     std::tr1::shared_ptr<TSDescriptor> ts_desc;
+    CHECK(peer.has_permanent_uuid()) << "Missing UUID: " << peer.ShortDebugString();
     Status status = master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc);
     if (status.IsNotFound()) {
       LOG(WARNING) << "Cannot find TabletServer descriptor for tablet replica. Tablet: "
@@ -1514,11 +1514,9 @@ void CatalogManager::ResetTabletReplicasFromReportedConfig(TSDescriptor* ts_desc
       continue;
     }
     CHECK_OK(status);
+
     TabletReplica replica;
-    replica.state = report.state();
-    CHECK(peer.has_permanent_uuid()) << "Missing UUID: " << peer.ShortDebugString();
-    replica.role = GetConsensusRole(peer.permanent_uuid(), report.committed_consensus_state());
-    replica.ts_desc = ts_desc.get();
+    NewReplica(ts_desc.get(), report, &replica);
     replicas.push_back(replica);
   }
   tablet->ResetReplicas(replicas);
@@ -1529,26 +1527,26 @@ void CatalogManager::AddReplicaToTabletIfNotFound(TSDescriptor* ts_desc,
                                                   const scoped_refptr<TabletInfo>& tablet) {
   vector<TabletReplica> locations;
   tablet->GetLocations(&locations);
-  bool found_replica = false;
   BOOST_FOREACH(const TabletReplica& replica, locations) {
     if (replica.ts_desc->permanent_uuid() == ts_desc->permanent_uuid()) {
-      found_replica = true;
-      break;
+      return; // This is not a new replica.
     }
   }
-  if (!found_replica) {
-    TabletReplica replica;
-    replica.state = report.state();
-    if (report.has_committed_consensus_state()) {
-      replica.role = GetConsensusRole(ts_desc->permanent_uuid(),
-                                      report.committed_consensus_state());
-    } else {
-      replica.role = RaftPeerPB::NON_PARTICIPANT;
-    }
-    replica.ts_desc = ts_desc;
-    locations.push_back(replica);
-    tablet->ResetReplicas(locations);
-  }
+
+  // Register the new replica.
+  TabletReplica replica;
+  NewReplica(ts_desc, report, &replica);
+  locations.push_back(replica);
+  tablet->ResetReplicas(locations);
+}
+
+void CatalogManager::NewReplica(TSDescriptor* ts_desc,
+                                const ReportedTabletPB& report,
+                                TabletReplica* replica) {
+  CHECK(report.has_committed_consensus_state()) << "No cstate: " << report.ShortDebugString();
+  replica->state = report.state();
+  replica->role = GetConsensusRole(ts_desc->permanent_uuid(), report.committed_consensus_state());
+  replica->ts_desc = ts_desc;
 }
 
 Status CatalogManager::GetTabletPeer(const string& tablet_id,
@@ -2153,7 +2151,7 @@ void CatalogManager::ExtractTabletsToProcess(
 
     TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
 
-    // If the table is deleted or the tablet was replaced.
+    // If the table is deleted or the tablet was replaced at table creation time.
     if (tablet_lock.data().is_deleted() || table_lock.data().is_deleted()) {
       tablets_to_delete->push_back(tablet);
       continue;
