@@ -598,6 +598,7 @@ void MetaCache::LookupTabletByKey(const KuduTable* table,
 
 void MetaCache::LookupTabletByID(const string& tablet_id,
                                  scoped_refptr<RemoteTablet>* remote_tablet) {
+  shared_lock<rw_spinlock> l(&lock_);
   *remote_tablet = FindOrDie(tablets_by_id_, tablet_id);
 }
 

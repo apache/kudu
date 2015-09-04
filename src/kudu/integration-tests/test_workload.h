@@ -68,6 +68,13 @@ class TestWorkload {
     num_replicas_ = r;
   }
 
+  // Set the number of tablets for the table created by this workload.
+  // The split points are evenly distributed through positive int32s.
+  void set_num_tablets(int tablets) {
+    CHECK_GT(tablets, 1);
+    num_tablets_ = tablets;
+  }
+
   void set_table_name(const std::string& table_name) {
     table_name_ = table_name;
   }
@@ -118,6 +125,7 @@ class TestWorkload {
   bool pathological_one_row_enabled_;
 
   int num_replicas_;
+  int num_tablets_;
   std::string table_name_;
 
   CountDownLatch start_latch_;

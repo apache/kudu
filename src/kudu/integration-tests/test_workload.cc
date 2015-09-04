@@ -47,6 +47,7 @@ TestWorkload::TestWorkload(ExternalMiniCluster* cluster)
     not_found_allowed_(false),
     pathological_one_row_enabled_(false),
     num_replicas_(3),
+    num_tablets_(1),
     table_name_(kDefaultTableName),
     start_latch_(0),
     should_run_(false),
@@ -167,10 +168,18 @@ void TestWorkload::Setup() {
   if (!table_exists) {
     KuduSchema client_schema(KuduSchemaFromSchema(GetSimpleTestSchema()));
 
+    vector<const KuduPartialRow*> splits;
+    for (int i = 1; i < num_tablets_; i++) {
+      KuduPartialRow* r = client_schema.NewRow();
+      CHECK_OK(r->SetInt32("key", MathLimits<int32_t>::kMax / num_tablets_ * i));
+      splits.push_back(r);
+    }
+
     gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
     CHECK_OK(table_creator->table_name(table_name_)
              .schema(&client_schema)
              .num_replicas(num_replicas_)
+             .split_rows(splits)
              // NOTE: this is quite high as a timeout, but the default (5 sec) does not
              // seem to be high enough in some cases (see KUDU-550). We should remove
              // this once that ticket is addressed.

@@ -2,12 +2,19 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
 
+#include <tr1/memory>
+#include <vector>
+
+#include "kudu/client/client-test-util.h"
+#include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/pstack_watcher.h"
+#include "kudu/util/random.h"
 #include "kudu/util/test_util.h"
 
 METRIC_DECLARE_entity(tablet);
@@ -15,8 +22,15 @@ METRIC_DECLARE_counter(leader_memory_pressure_rejections);
 METRIC_DECLARE_counter(follower_memory_pressure_rejections);
 
 using strings::Substitute;
+using std::tr1::shared_ptr;
+using std::vector;
 
 namespace kudu {
+
+using client::KuduClient;
+using client::KuduClientBuilder;
+using client::KuduScanner;
+using client::KuduTable;
 
 class ClientStressTest : public KuduTest {
  public:
@@ -40,6 +54,20 @@ class ClientStressTest : public KuduTest {
   }
 
  protected:
+  void ScannerThread(KuduClient* client, const CountDownLatch* go_latch, int32_t start_key) {
+    shared_ptr<KuduTable> table;
+    CHECK_OK(client->OpenTable(TestWorkload::kDefaultTableName, &table));
+    vector<string> rows;
+
+    go_latch->Wait();
+
+    KuduScanner scanner(table.get());
+    CHECK_OK(scanner.AddConjunctPredicate(table->NewComparisonPredicate(
+        "key", client::KuduPredicate::GREATER_EQUAL,
+        client::KuduValue::FromInt(start_key))));
+    ScanToStrings(&scanner, &rows);
+  }
+
   virtual bool multi_master() const {
     return false;
   }
@@ -64,6 +92,54 @@ TEST_F(ClientStressTest, TestLookupTimeouts) {
   work.Setup();
   work.Start();
   SleepFor(MonoDelta::FromMilliseconds(kSleepMillis));
+}
+
+// Regression test for KUDU-1104, a race in which multiple scanners racing to populate a
+// cold meta cache on a shared Client would crash.
+//
+// This test creates a table with a lot of tablets (so that we require many round-trips to
+// the master to populate the meta cache) and then starts a bunch of parallel threads which
+// scan starting at random points in the key space.
+TEST_F(ClientStressTest, TestStartScans) {
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    cluster_->SetFlag(cluster_->tablet_server(i), "log_preallocate_segments", "0");
+  }
+  TestWorkload work(cluster_.get());
+  work.set_num_tablets(40);
+  work.set_num_replicas(1);
+  work.Setup();
+
+  // We run the guts of the test several times -- it takes a while to build
+  // the 40 tablets above, but the actual scans are very fast since the table
+  // is empty.
+  for (int run = 1; run <= (AllowSlowTests() ? 10 : 2); run++) {
+    LOG(INFO) << "Starting run " << run;
+    KuduClientBuilder builder;
+    shared_ptr<KuduClient> client;
+    CHECK_OK(cluster_->CreateClient(builder, &client));
+
+    CountDownLatch go_latch(1);
+    vector<scoped_refptr<Thread> > threads;
+    const int kNumThreads = 60;
+    Random rng(run);
+    for (int i = 0; i < kNumThreads; i++) {
+      int32_t start_key = rng.Next32();
+      scoped_refptr<kudu::Thread> new_thread;
+      CHECK_OK(kudu::Thread::Create(
+          "test", strings::Substitute("test-scanner-$0", i),
+          &ClientStressTest_TestStartScans_Test::ScannerThread, this,
+          client.get(), &go_latch, start_key,
+          &new_thread));
+      threads.push_back(new_thread);
+    }
+    SleepFor(MonoDelta::FromMilliseconds(50));
+
+    go_latch.CountDown();
+
+    BOOST_FOREACH(const scoped_refptr<kudu::Thread>& thr, threads) {
+      CHECK_OK(ThreadJoiner(thr.get()).Join());
+    }
+  }
 }
 
 // Override the base test to run in multi-master mode.
