@@ -18,21 +18,22 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.classification.tools;
+package org.kududb.annotations.tools;
 
 import com.sun.javadoc.DocErrorReporter;
 import com.sun.javadoc.LanguageVersion;
 import com.sun.javadoc.RootDoc;
 import com.sun.tools.doclets.standard.Standard;
+import org.kududb.annotations.InterfaceAudience;
 
 /**
  * A <a href="http://java.sun.com/javase/6/docs/jdk/api/javadoc/doclet/">Doclet</a>
  * that only includes class-level elements that are annotated with
- * {@link org.apache.hadoop.classification.InterfaceAudience.Public}.
+ * {@link InterfaceAudience.Public}.
  * Class-level elements with no annotation are excluded.
  * In addition, all elements that are annotated with
- * {@link org.apache.hadoop.classification.InterfaceAudience.Private} or
- * {@link org.apache.hadoop.classification.InterfaceAudience.LimitedPrivate}
+ * {@link InterfaceAudience.Private} or
+ * {@link InterfaceAudience.LimitedPrivate}
  * are also excluded.
  * It delegates to the Standard Doclet, and takes the same options.
  */

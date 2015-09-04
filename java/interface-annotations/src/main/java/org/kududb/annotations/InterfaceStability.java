@@ -18,15 +18,15 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.classification;
+package org.kududb.annotations;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
-import org.apache.hadoop.classification.InterfaceAudience.LimitedPrivate;
-import org.apache.hadoop.classification.InterfaceAudience.Private;
-import org.apache.hadoop.classification.InterfaceAudience.Public;
+import org.kududb.annotations.InterfaceAudience.LimitedPrivate;
+import org.kududb.annotations.InterfaceAudience.Private;
+import org.kududb.annotations.InterfaceAudience.Public;
 
 /**
  * Annotation to inform users of how much to rely on a particular package,
@@ -40,7 +40,7 @@ import org.apache.hadoop.classification.InterfaceAudience.Public;
  * <li>Incompatible changes must not be made to classes marked as stable.</li>
  * </ul>
  */
-@InterfaceAudience.Public
+@Public
 @InterfaceStability.Evolving
 public class InterfaceStability {
   /**

@@ -18,7 +18,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.classification;
+package org.kududb.annotations;
 
 import java.lang.annotation.Documented;
 import java.lang.annotation.Retention;
@@ -66,7 +66,7 @@ public class InterfaceAudience {
   };
   
   /**
-   * Intended for use only within Hadoop itself.
+   * Intended for use only within Kudu itself.
    */
   @Documented
   @Retention(RetentionPolicy.RUNTIME)

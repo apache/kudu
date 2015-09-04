@@ -18,8 +18,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-@InterfaceAudience.LimitedPrivate({"Common", "Avro", "Chukwa", "HBase", "HDFS",
-  "Hive", "MapReduce", "Pig", "ZooKeeper"})
-package org.apache.hadoop.classification.tools;
+@InterfaceAudience.Private
+package org.kududb.annotations.tools;
 
-import org.apache.hadoop.classification.InterfaceAudience;
+import org.kududb.annotations.InterfaceAudience;

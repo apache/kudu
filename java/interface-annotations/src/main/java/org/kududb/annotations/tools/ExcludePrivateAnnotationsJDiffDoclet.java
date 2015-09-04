@@ -18,21 +18,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.classification.tools;
+package org.kududb.annotations.tools;
 
 import com.sun.javadoc.DocErrorReporter;
 import com.sun.javadoc.LanguageVersion;
 import com.sun.javadoc.RootDoc;
-import com.sun.tools.doclets.standard.Standard;
+
+import jdiff.JDiff;
+import org.kududb.annotations.InterfaceAudience;
 
 /**
  * A <a href="http://java.sun.com/javase/6/docs/jdk/api/javadoc/doclet/">Doclet</a>
  * for excluding elements that are annotated with
- * {@link org.apache.hadoop.classification.InterfaceAudience.Private} or
- * {@link org.apache.hadoop.classification.InterfaceAudience.LimitedPrivate}.
- * It delegates to the Standard Doclet, and takes the same options.
+ * {@link InterfaceAudience.Private} or
+ * {@link InterfaceAudience.LimitedPrivate}.
+ * It delegates to the JDiff Doclet, and takes the same options.
  */
-public class ExcludePrivateAnnotationsStandardDoclet {
+public class ExcludePrivateAnnotationsJDiffDoclet {
   
   public static LanguageVersion languageVersion() {
     return LanguageVersion.JAVA_1_5;
@@ -40,8 +42,8 @@ public class ExcludePrivateAnnotationsStandardDoclet {
   
   public static boolean start(RootDoc root) {
     System.out.println(
-        ExcludePrivateAnnotationsStandardDoclet.class.getSimpleName());
-    return Standard.start(RootDocProcessor.process(root));
+        ExcludePrivateAnnotationsJDiffDoclet.class.getSimpleName());
+    return JDiff.start(RootDocProcessor.process(root));
   }
   
   public static int optionLength(String option) {
@@ -49,13 +51,13 @@ public class ExcludePrivateAnnotationsStandardDoclet {
     if (length != null) {
       return length;
     }
-    return Standard.optionLength(option);
+    return JDiff.optionLength(option);
   }
   
   public static boolean validOptions(String[][] options,
       DocErrorReporter reporter) {
     StabilityOptions.validOptions(options, reporter);
     String[][] filteredOptions = StabilityOptions.filterOptions(options);
-    return Standard.validOptions(filteredOptions, reporter);
+    return JDiff.validOptions(filteredOptions, reporter);
   }
 }

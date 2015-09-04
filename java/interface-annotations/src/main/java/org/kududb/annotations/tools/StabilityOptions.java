@@ -18,7 +18,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.hadoop.classification.tools;
+package org.kududb.annotations.tools;
 
 import com.sun.javadoc.DocErrorReporter;
 
