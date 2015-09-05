@@ -38,7 +38,8 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
   int num_tservers = 5;
-  NO_FATALS(StartCluster(ts_flags, num_tservers));
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags, num_tservers));
 
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(num_tservers);
@@ -105,7 +106,8 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
 TEST_F(TabletReplacementITest, TestMasterTombstoneOldReplicaOnReport) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
-  NO_FATALS(StartCluster(ts_flags));
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());
   workload.Setup(); // Easy way to create a new tablet.

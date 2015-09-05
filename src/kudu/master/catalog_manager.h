@@ -475,7 +475,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
 
   Status ResetTabletReplicasFromReportedConfig(const ReportedTabletPB& report,
                                                const scoped_refptr<TabletInfo>& tablet,
-                                               TabletMetadataLock* tablet_lock);
+                                               TabletMetadataLock* tablet_lock,
+                                               TableMetadataLock* table_lock);
 
   // Register a tablet server whenever it heartbeats with a consensus configuration. This is
   // needed because we have logic in the Master that states that if a tablet
@@ -557,6 +558,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
                                const scoped_refptr<TableInfo>& table,
                                TSDescriptor* ts_desc,
                                const std::string& reason);
+
+  // Start a task to change the config to add an additional voter because the
+  // specified tablet is under-replicated.
+  void SendAddServerRequest(const scoped_refptr<TabletInfo>& tablet,
+                            const consensus::ConsensusStatePB& cstate);
+
   std::string GenerateId() { return oid_generator_.Next(); }
 
   // Abort creation of 'table': abort all mutation for TabletInfo and

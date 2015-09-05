@@ -70,7 +70,7 @@ DEFINE_bool(enable_leader_failure_detection, true,
             "made to elect a follower as a new leader when the leader is detected to have failed.");
 TAG_FLAG(enable_leader_failure_detection, unsafe);
 
-DEFINE_bool(evict_failed_followers, false,
+DEFINE_bool(evict_failed_followers, true,
             "Whether to evict followers from the Raft config that have fallen "
             "too far behind the leader's log to catch up normally.");
 

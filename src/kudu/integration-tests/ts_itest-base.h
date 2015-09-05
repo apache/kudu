@@ -107,7 +107,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     AddExtraFlags(FLAGS_master_flags, &opts.extra_master_flags);
 
     cluster_.reset(new ExternalMiniCluster(opts));
-    CHECK_OK(cluster_->Start());
+    ASSERT_OK(cluster_->Start());
     inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
     CreateTSProxies();
   }
@@ -418,8 +418,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   void BuildAndStart(const vector<string>& ts_flags = vector<string>(),
                      const vector<string>& master_flags = vector<string>()) {
     CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
-    CreateClient(&client_);
-    CreateTable();
+    NO_FATALS(CreateClient(&client_));
+    NO_FATALS(CreateTable());
     WaitForTSAndReplicas();
     CHECK_GT(tablet_replicas_.size(), 0);
     tablet_id_ = (*tablet_replicas_.begin()).first;

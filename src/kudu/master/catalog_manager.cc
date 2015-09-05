@@ -39,6 +39,7 @@
 #include "kudu/common/partition.h"
 #include "kudu/common/row_operations.h"
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/macros.h"
@@ -111,6 +112,16 @@ DEFINE_bool(master_tombstone_evicted_tablet_replicas, true,
             "are no longer part of the latest reported raft config.");
 TAG_FLAG(master_tombstone_evicted_tablet_replicas, hidden);
 
+DEFINE_bool(master_add_server_when_underreplicated, true,
+            "Whether the master should attempt to add a new server to a tablet "
+            "config when it detects that the tablet is under-replicated.");
+
+DEFINE_int32(tserver_unresponsive_timeout_ms, 10 * 1000,
+             "The period of time that a Master can go without receiving a heartbeat from a "
+             "tablet server before considering it ineligible for hosting a replacement replica "
+             "when under-replication is detected.");
+TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
+
 namespace kudu {
 namespace master {
 
@@ -119,6 +130,7 @@ using base::subtle::NoBarrier_CompareAndSwap;
 using cfile::TypeEncodingInfo;
 using consensus::kMinimumTerm;
 using consensus::Consensus;
+using consensus::ConsensusServiceProxy;
 using consensus::ConsensusStatePB;
 using consensus::GetConsensusRole;
 using consensus::OpId;
@@ -1382,8 +1394,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
     return Status::OK();
   }
 
-  // The report will not have a committed_consensus_state if it is in the middle of
-  // starting up.
+  // The report will not have a committed_consensus_state if it is in the
+  // middle of starting up, such as during tablet bootstrap.
   if (report.has_committed_consensus_state()) {
     const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.committed_consensus_state();
     ConsensusStatePB cstate = report.committed_consensus_state();
@@ -1478,7 +1490,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
               << " with leader state from term "
               << final_report->committed_consensus_state().current_term();
 
-      RETURN_NOT_OK(ResetTabletReplicasFromReportedConfig(*final_report, tablet, &tablet_lock));
+      RETURN_NOT_OK(ResetTabletReplicasFromReportedConfig(*final_report, tablet,
+                                                          &tablet_lock, &table_lock));
 
     } else {
       // Report opid_index is equal to the previous opid_index. If some
@@ -1517,7 +1530,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 Status CatalogManager::ResetTabletReplicasFromReportedConfig(
     const ReportedTabletPB& report,
     const scoped_refptr<TabletInfo>& tablet,
-    TabletMetadataLock* tablet_lock) {
+    TabletMetadataLock* tablet_lock,
+    TableMetadataLock* table_lock) {
 
   DCHECK(tablet_lock->is_write_locked());
   ConsensusStatePB prev_cstate = tablet_lock->mutable_data()->pb.committed_consensus_state();
@@ -1560,6 +1574,12 @@ Status CatalogManager::ResetTabletReplicasFromReportedConfig(
                                            peer_uuid, cstate.config().opid_index()));
       }
     }
+  }
+
+  // If the config is under-replicated, add a server to the config.
+  if (FLAGS_master_add_server_when_underreplicated &&
+      CountVoters(cstate.config()) < table_lock->data().pb.num_replicas()) {
+    SendAddServerRequest(tablet, cstate);
   }
 
   return Status::OK();
@@ -1709,7 +1729,11 @@ class RetryingTSRpcTask : public MonitoredTask {
     const MonoTime& deadline = MonoTime::Earliest(timeout, deadline_);
     rpc_.set_deadline(deadline);
 
-    SendRequest(++attempt_);
+    if (!SendRequest(++attempt_)) {
+      if (!RescheduleWithBackoffDelay()) {
+        UnregisterAsyncTask();  // May call 'delete this'.
+      }
+    }
     return Status::OK();
   }
 
@@ -1727,7 +1751,9 @@ class RetryingTSRpcTask : public MonitoredTask {
 
  protected:
   // Send an RPC request and register a callback.
-  virtual void SendRequest(int attempt) = 0;
+  // The implementation must return true if the callback was registered, and
+  // false if an error occurred and no callback will occur.
+  virtual bool SendRequest(int attempt) = 0;
 
   // Handle the response from the RPC request. On success, MarkSuccess() must
   // be called to mutate the state_ variable. If retry is desired, then
@@ -1737,6 +1763,11 @@ class RetryingTSRpcTask : public MonitoredTask {
 
   // Return the id of the tablet that is the subject of the async request.
   virtual string tablet_id() const = 0;
+
+  // Overridable log prefix with reasonable default.
+  virtual string LogPrefix() const {
+    return Substitute("$0: ", description());
+  }
 
   // Transition from running -> complete.
   void MarkComplete() {
@@ -1775,34 +1806,8 @@ class RetryingTSRpcTask : public MonitoredTask {
     }
 
     // Schedule a retry if the RPC call was not successful.
-    if (state() == kStateRunning) {
-      MonoTime now = MonoTime::Now(MonoTime::FINE);
-      // We assume it might take 10ms to process the request in the best case,
-      // fail if we have less than that amount of time remaining.
-      int64_t millis_remaining = deadline_.GetDeltaSince(now).ToMilliseconds() - 10;
-      // Exponential backoff with jitter.
-      int64_t base_delay_ms;
-      if (attempt_ <= 12) {
-        base_delay_ms = 1 << (attempt_ + 3);  // 1st retry delayed 2^4 ms, 2nd 2^5, etc.
-      } else {
-        base_delay_ms = 60 * 1000; // cap at 1 minute
-      }
-      int64_t jitter_ms = rand() % 50;              // Add up to 50ms of additional random delay.
-      int64_t delay_millis = std::min<int64_t>(base_delay_ms + jitter_ms, millis_remaining);
-
-      if (delay_millis <= 0) {
-        LOG(WARNING) << "Request timed out: " << description();
-        MarkFailed();
-      } else {
-        MonoTime new_start_time = now;
-        new_start_time.AddDelta(MonoDelta::FromMilliseconds(delay_millis));
-        LOG(INFO) << "Scheduling retry of " << description() << " with a delay"
-                  << " of " << delay_millis << "ms (attempt = " << attempt_ << ")...";
-        master_->messenger()->ScheduleOnReactor(
-            boost::bind(&RetryingTSRpcTask::RunDelayedTask, this, _1),
-            MonoDelta::FromMilliseconds(delay_millis));
-        return;
-      }
+    if (RescheduleWithBackoffDelay()) {
+      return;
     }
 
     UnregisterAsyncTask();  // May call 'delete this'.
@@ -1821,8 +1826,45 @@ class RetryingTSRpcTask : public MonitoredTask {
   rpc::RpcController rpc_;
   TSDescriptor* target_ts_desc_;
   std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy_;
+  std::tr1::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
 
  private:
+  // Reschedules the current task after a backoff delay.
+  // Returns false if the task was not rescheduled due to reaching the maximum
+  // timeout or because the task is no longer in a running state.
+  // Returns true if rescheduling the task was successful.
+  bool RescheduleWithBackoffDelay() {
+    if (state() != kStateRunning) return false;
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    // We assume it might take 10ms to process the request in the best case,
+    // fail if we have less than that amount of time remaining.
+    int64_t millis_remaining = deadline_.GetDeltaSince(now).ToMilliseconds() - 10;
+    // Exponential backoff with jitter.
+    int64_t base_delay_ms;
+    if (attempt_ <= 12) {
+      base_delay_ms = 1 << (attempt_ + 3);  // 1st retry delayed 2^4 ms, 2nd 2^5, etc.
+    } else {
+      base_delay_ms = 60 * 1000; // cap at 1 minute
+    }
+    int64_t jitter_ms = rand() % 50;              // Add up to 50ms of additional random delay.
+    int64_t delay_millis = std::min<int64_t>(base_delay_ms + jitter_ms, millis_remaining);
+
+    if (delay_millis <= 0) {
+      LOG(WARNING) << "Request timed out: " << description();
+      MarkFailed();
+    } else {
+      MonoTime new_start_time = now;
+      new_start_time.AddDelta(MonoDelta::FromMilliseconds(delay_millis));
+      LOG(INFO) << "Scheduling retry of " << description() << " with a delay"
+                << " of " << delay_millis << "ms (attempt = " << attempt_ << ")...";
+      master_->messenger()->ScheduleOnReactor(
+          boost::bind(&RetryingTSRpcTask::RunDelayedTask, this, _1),
+          MonoDelta::FromMilliseconds(delay_millis));
+      return true;
+    }
+    return false;
+  }
+
   // Callback for Reactor delayed task mechanism. Called either when it is time
   // to execute the delayed task (with status == OK) or when the task
   // is cancelled, i.e. when the scheduling timer is shut down (status != OK).
@@ -1841,7 +1883,7 @@ class RetryingTSRpcTask : public MonitoredTask {
     }
   }
 
-  // Clean up request and release resources.
+  // Clean up request and release resources. May call 'delete this'.
   void UnregisterAsyncTask() {
     end_ts_ = MonoTime::Now(MonoTime::FINE);
     if (table_ != NULL) {
@@ -1856,9 +1898,15 @@ class RetryingTSRpcTask : public MonitoredTask {
   Status ResetTSProxy() {
     // TODO: if there is no replica available, should we still keep the task running?
     RETURN_NOT_OK(replica_picker_->PickReplica(&target_ts_desc_));
+
     std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy;
     RETURN_NOT_OK(target_ts_desc_->GetTSAdminProxy(master_->messenger(), &ts_proxy));
     ts_proxy_.swap(ts_proxy);
+
+    std::tr1::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy;
+    RETURN_NOT_OK(target_ts_desc_->GetConsensusProxy(master_->messenger(), &consensus_proxy));
+    consensus_proxy_.swap(consensus_proxy);
+
     rpc_.Reset();
     return Status::OK();
   }
@@ -1939,12 +1987,13 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     }
   }
 
-  virtual void SendRequest(int attempt) OVERRIDE {
+  virtual bool SendRequest(int attempt) OVERRIDE {
     ts_proxy_->CreateTabletAsync(req_, &resp_, &rpc_,
                                  boost::bind(&AsyncCreateReplica::RpcCallback, this));
     VLOG(1) << "Send create tablet request to " << permanent_uuid_ << ":\n"
             << " (attempt " << attempt << "):\n"
             << req_.DebugString();
+    return true;
   }
 
  private:
@@ -2016,7 +2065,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
     }
   }
 
-  virtual void SendRequest(int attempt) OVERRIDE {
+  virtual bool SendRequest(int attempt) OVERRIDE {
     tserver::DeleteTabletRequestPB req;
     req.set_dest_uuid(permanent_uuid_);
     req.set_tablet_id(tablet_id_);
@@ -2031,6 +2080,7 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
     VLOG(1) << "Send delete tablet request to " << permanent_uuid_
             << " (attempt " << attempt << "):\n"
             << req.DebugString();
+    return true;
   }
 
   const std::string tablet_id_;
@@ -2101,7 +2151,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
     }
   }
 
-  virtual void SendRequest(int attempt) OVERRIDE {
+  virtual bool SendRequest(int attempt) OVERRIDE {
     TableMetadataLock l(tablet_->table().get(), TableMetadataLock::READ);
 
     tserver::AlterSchemaRequestPB req;
@@ -2119,12 +2169,157 @@ class AsyncAlterTable : public RetryingTSRpcTask {
     VLOG(1) << "Send alter table request to " << permanent_uuid()
             << " (attempt " << attempt << "):\n"
             << req.DebugString();
+    return true;
   }
 
   uint32_t schema_version_;
   scoped_refptr<TabletInfo> tablet_;
   tserver::AlterSchemaResponsePB resp_;
 };
+
+namespace {
+
+// Select a random TS not in the 'exclude_uuids' list.
+// Will not select tablet servers that have not heartbeated recently.
+// Returns true iff it was possible to select a replica.
+bool SelectRandomTSForReplica(const TSDescriptorVector& ts_descs,
+                              const unordered_set<string>& exclude_uuids,
+                              shared_ptr<TSDescriptor>* selection) {
+  TSDescriptorVector tablet_servers;
+  BOOST_FOREACH(const shared_ptr<TSDescriptor>& ts, ts_descs) {
+    if (!ContainsKey(exclude_uuids, ts->permanent_uuid()) &&
+        ts->TimeSinceHeartbeat().ToMilliseconds() < FLAGS_tserver_unresponsive_timeout_ms) {
+      tablet_servers.push_back(ts);
+    }
+  }
+  if (tablet_servers.empty()) {
+    return false;
+  }
+  *selection = tablet_servers[rand() % tablet_servers.size()];
+  return true;
+}
+
+} // anonymous namespace
+
+class AsyncAddServerTask : public RetryingTSRpcTask {
+ public:
+  AsyncAddServerTask(Master *master,
+                     ThreadPool* callback_pool,
+                     const scoped_refptr<TabletInfo>& tablet,
+                     const ConsensusStatePB& cstate)
+    : RetryingTSRpcTask(master,
+                        callback_pool,
+                        gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
+                        tablet->table()),
+      tablet_(tablet),
+      cstate_(cstate) {
+    deadline_ = MonoTime::Max(); // Never time out.
+  }
+
+  virtual string type_name() const OVERRIDE { return "AddServer ChangeConfig"; }
+
+  virtual string description() const OVERRIDE {
+    return Substitute("AddServer ChangeConfig RPC for tablet $0 with cas_config_opid_index $1",
+                      tablet_->tablet_id(), cstate_.config().opid_index());
+  }
+
+ protected:
+  virtual bool SendRequest(int attempt) OVERRIDE;
+  virtual void HandleResponse(int attempt) OVERRIDE;
+
+ private:
+  virtual string tablet_id() const OVERRIDE { return tablet_->tablet_id(); }
+  string permanent_uuid() const {
+    return target_ts_desc_->permanent_uuid();
+  }
+
+  const scoped_refptr<TabletInfo> tablet_;
+  const ConsensusStatePB cstate_;
+
+  consensus::ChangeConfigRequestPB req_;
+  consensus::ChangeConfigResponsePB resp_;
+};
+
+bool AsyncAddServerTask::SendRequest(int attempt) {
+  // Bail if we're retrying in vain.
+  int64_t latest_index;
+  {
+    TabletMetadataLock tablet_lock(tablet_.get(), TabletMetadataLock::READ);
+    latest_index = tablet_lock.data().pb.committed_consensus_state().config().opid_index();
+  }
+  if (latest_index > cstate_.config().opid_index()) {
+    LOG_WITH_PREFIX(INFO) << "Latest config for has opid_index of " << latest_index
+                          << " while this task has opid_index of "
+                          << cstate_.config().opid_index() << ". Aborting task.";
+    MarkAborted();
+    return false;
+  }
+
+  // Select the replica we wish to add to the config.
+  // Do not include current members of the config.
+  unordered_set<string> replica_uuids;
+  BOOST_FOREACH(const RaftPeerPB& peer, cstate_.config().peers()) {
+    InsertOrDie(&replica_uuids, peer.permanent_uuid());
+  }
+  TSDescriptorVector ts_descs;
+  master_->ts_manager()->GetAllDescriptors(&ts_descs);
+  shared_ptr<TSDescriptor> replacement_replica;
+  if (PREDICT_FALSE(!SelectRandomTSForReplica(ts_descs, replica_uuids, &replacement_replica))) {
+    KLOG_EVERY_N(WARNING, 100) << LogPrefix() << "No candidate replacement replica found "
+                               << "for tablet " << tablet_->ToString();
+    return false;
+  }
+
+  req_.set_dest_uuid(permanent_uuid());
+  req_.set_tablet_id(tablet_->tablet_id());
+  req_.set_type(consensus::ADD_SERVER);
+  req_.set_cas_config_opid_index(cstate_.config().opid_index());
+  RaftPeerPB* peer = req_.mutable_server();
+  peer->set_permanent_uuid(replacement_replica->permanent_uuid());
+  TSRegistrationPB peer_reg;
+  replacement_replica->GetRegistration(&peer_reg);
+  if (peer_reg.rpc_addresses_size() == 0) {
+    KLOG_EVERY_N(WARNING, 100) << LogPrefix() << "Candidate replacement "
+                               << replacement_replica->permanent_uuid()
+                               << " has no registered rpc address: "
+                               << peer_reg.ShortDebugString();
+    return false;
+  }
+  *peer->mutable_last_known_addr() = peer_reg.rpc_addresses(0);
+  peer->set_member_type(RaftPeerPB::VOTER);
+  consensus_proxy_->ChangeConfigAsync(req_, &resp_, &rpc_,
+                                      boost::bind(&AsyncAddServerTask::RpcCallback, this));
+  VLOG(1) << "Sent AddServer ChangeConfig request to " << permanent_uuid() << ":\n"
+          << req_.DebugString();
+  return true;
+}
+
+void AsyncAddServerTask::HandleResponse(int attempt) {
+  if (!resp_.has_error()) {
+    MarkComplete();
+    LOG_WITH_PREFIX(INFO) << "Change config succeeded";
+    return;
+  }
+
+  Status status = StatusFromPB(resp_.error().status());
+
+  // Do not retry on a CAS error, otherwise retry forever or until cancelled.
+  switch (resp_.error().code()) {
+    case TabletServerErrorPB::CAS_FAILED:
+      LOG_WITH_PREFIX(WARNING) << "ChangeConfig() failed with leader " << permanent_uuid()
+                               << " due to CAS failure. No further retry: "
+                               << status.ToString();
+      MarkFailed();
+      break;
+    default:
+      LOG_WITH_PREFIX(INFO) << "ChangeConfig() failed with leader " << permanent_uuid()
+                            << " due to error "
+                            << TabletServerErrorPB::Code_Name(resp_.error().code())
+                            << ". This operation will be retried. Error detail: "
+                            << status.ToString();
+      break;
+  }
+}
 
 void CatalogManager::SendAlterTableRequest(const scoped_refptr<TableInfo>& table) {
   vector<scoped_refptr<TabletInfo> > tablets;
@@ -2187,6 +2382,17 @@ void CatalogManager::SendDeleteTabletRequest(
   WARN_NOT_OK(call->Run(), "Failed to send delete tablet request");
 }
 
+void CatalogManager::SendAddServerRequest(const scoped_refptr<TabletInfo>& tablet,
+                                          const ConsensusStatePB& cstate) {
+  AsyncAddServerTask* task = new AsyncAddServerTask(master_,
+                                                    worker_pool_.get(),
+                                                    tablet,
+                                                    cstate);
+  tablet->table()->AddTask(task);
+  WARN_NOT_OK(task->Run(), "Failed to send new AddServer request");
+  LOG(INFO) << "Started AddServer task: " << task->description();
+}
+
 void CatalogManager::ExtractTabletsToProcess(
     std::vector<scoped_refptr<TabletInfo> > *tablets_to_delete,
     std::vector<scoped_refptr<TabletInfo> > *tablets_to_process) {
@@ -2215,10 +2421,9 @@ void CatalogManager::ExtractTabletsToProcess(
       continue;
     }
 
-    // Nothing to do with the running tablets
+    // Running tablets.
     if (tablet_lock.data().is_running()) {
       // TODO: handle last update > not responding timeout?
-      //tablets_not_reporting->push_back(tablet);
       continue;
     }
 

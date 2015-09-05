@@ -736,7 +736,7 @@ void RaftConsensusITest::CauseFollowerToFallBehindLogGC(string* leader_uuid,
 // This is a regression test for KUDU-775 and KUDU-562.
 TEST_F(RaftConsensusITest, TestFollowerFallsBehindLeaderGC) {
   // Disable follower eviction to maintain the original intent of this test.
-  vector<string> extra_flags = list_of("--evict_failed_followers=true");
+  vector<string> extra_flags = list_of("--evict_failed_followers=false");
   AddFlagsForLogRolls(&extra_flags); // For CauseFollowerToFallBehindLogGC().
   BuildAndStart(extra_flags);
 
@@ -1491,9 +1491,9 @@ void RaftConsensusITest::WaitForReplicasReportedToMaster(
 TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=false");
-  BuildAndStart(flags);
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
@@ -1572,9 +1572,9 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
 TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=false");
-  BuildAndStart(flags);
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
@@ -1765,9 +1765,9 @@ void DoWriteTestRows(const TServerDetails* leader_tserver,
 TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 3;
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=false");
-  BuildAndStart(flags);
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  BuildAndStart(ts_flags, master_flags);
 
   vector<TServerDetails*> tservers;
   AppendValuesFromMap(tablet_servers_, &tservers);
@@ -1777,9 +1777,6 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   TServerDetails* leader_tserver = tservers[0];
   ASSERT_OK(StartElection(leader_tserver, tablet_id_, MonoDelta::FromSeconds(10)));
   ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
-
-  // Pause the master, so we can change the config without interference.
-  ASSERT_OK(cluster_->master()->Pause());
 
   TabletServerMap active_tablet_servers = tablet_servers_;
 
@@ -1849,10 +1846,6 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
                                   active_tablet_servers, tablet_id_,
                                   min_log_index));
 
-  LOG(INFO) << "Resuming master...";
-  // Resume the master so we can use ksck to verify the inserted rows.
-  ASSERT_OK(cluster_->master()->Resume());
-
   LOG(INFO) << "Number of rows inserted: " << rows_inserted.Load();
   ASSERT_ALL_REPLICAS_AGREE(rows_inserted.Load());
 }
@@ -1861,7 +1854,9 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   FLAGS_num_tablet_servers = 3;
   FLAGS_num_replicas = 2;
-  BuildAndStart();
+  vector<string> ts_flags;
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   LOG(INFO) << "Finding tablet leader and waiting for things to start...";
   string tablet_id = tablet_replicas_.begin()->first;
@@ -2232,9 +2227,10 @@ TEST_F(RaftConsensusITest, TestHammerOneRow) {
 // Test that followers that fall behind the leader's log GC threshold are
 // evicted from the config.
 TEST_F(RaftConsensusITest, TestEvictAbandonedFollowers) {
-  vector<string> extra_flags = list_of("--evict_failed_followers=true");
-  AddFlagsForLogRolls(&extra_flags); // For CauseFollowerToFallBehindLogGC().
-  BuildAndStart(extra_flags);
+  vector<string> ts_flags;
+  AddFlagsForLogRolls(&ts_flags); // For CauseFollowerToFallBehindLogGC().
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
 
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   TabletServerMap active_tablet_servers = tablet_servers_;
@@ -2250,6 +2246,29 @@ TEST_F(RaftConsensusITest, TestEvictAbandonedFollowers) {
                                                 tablet_id_, timeout));
   ASSERT_EQ(1, active_tablet_servers.erase(follower_uuid));
   ASSERT_OK(WaitForServersToAgree(timeout, active_tablet_servers, tablet_id_, 2));
+}
+
+// Test that followers that fall behind the leader's log GC threshold are
+// evicted from the config.
+TEST_F(RaftConsensusITest, TestMasterReplacesEvictedFollowers) {
+  vector<string> extra_flags;
+  AddFlagsForLogRolls(&extra_flags); // For CauseFollowerToFallBehindLogGC().
+  BuildAndStart(extra_flags);
+
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+
+  string leader_uuid;
+  int64_t orig_term;
+  string follower_uuid;
+  NO_FATALS(CauseFollowerToFallBehindLogGC(&leader_uuid, &orig_term, &follower_uuid));
+
+  // The follower will be evicted. Now wait for the master to cause it to be
+  // remotely bootstrapped.
+  ASSERT_OK(WaitForServersToAgree(timeout, tablet_servers_, tablet_id_, 2));
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(kTableId, ClusterVerifier::AT_LEAST, 1));
 }
 
 }  // namespace tserver

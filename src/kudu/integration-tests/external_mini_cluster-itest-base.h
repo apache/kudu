@@ -48,6 +48,7 @@ class ExternalMiniClusterITestBase : public KuduTest {
 
  protected:
   void StartCluster(const std::vector<std::string>& extra_ts_flags = std::vector<std::string>(),
+                    const std::vector<std::string>& extra_master_flags = std::vector<std::string>(),
                     int num_tablet_servers = 3);
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
@@ -57,9 +58,11 @@ class ExternalMiniClusterITestBase : public KuduTest {
 };
 
 void ExternalMiniClusterITestBase::StartCluster(const std::vector<std::string>& extra_ts_flags,
+                                                const std::vector<std::string>& extra_master_flags,
                                                 int num_tablet_servers) {
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = num_tablet_servers;
+  opts.extra_master_flags = extra_master_flags;
   opts.extra_tserver_flags = extra_ts_flags;
   opts.extra_tserver_flags.push_back("--never_fsync"); // fsync causes flakiness on EC2.
   cluster_.reset(new ExternalMiniCluster(opts));
