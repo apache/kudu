@@ -17,6 +17,13 @@
 #include <stdint.h>
 #include <string>
 
+#ifdef KUDU_HEADERS_NO_STUBS
+#include "kudu/gutil/macros.h"
+#include "kudu/gutil/port.h"
+#else
+#include "kudu/client/stubs.h"
+#endif
+
 #include "kudu/util/kudu_export.h"
 #include "kudu/util/slice.h"
 
@@ -306,6 +313,7 @@ class KUDU_EXPORT Status {
     //
     // TODO: Move error codes into an error_code.proto or something similar.
   };
+  COMPILE_ASSERT(sizeof(Code) == 4, code_enum_size_is_part_of_abi);
 
   Code code() const {
     return (state_ == NULL) ? kOk : static_cast<Code>(state_[4]);

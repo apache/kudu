@@ -40,6 +40,39 @@
 #endif
 #endif
 
+#if (defined(__GNUC__) || defined(__APPLE__)) && !defined(SWIG)
+#undef ATTRIBUTE_UNUSED
+#define ATTRIBUTE_UNUSED __attribute__ ((unused))
+#else
+#ifndef ATTRIBUTE_UNUSED
+#define ATTRIBUTE_UNUSED
+#endif
+#endif
+
+#ifndef COMPILE_ASSERT
+// The COMPILE_ASSERT macro can be used to verify that a compile time
+// expression is true. For example, you could use it to verify the
+// size of a static array:
+//
+//   COMPILE_ASSERT(ARRAYSIZE(content_type_names) == CONTENT_NUM_TYPES,
+//                  content_type_names_incorrect_size);
+//
+// or to make sure a struct is smaller than a certain size:
+//
+//   COMPILE_ASSERT(sizeof(foo) < 128, foo_too_large);
+//
+// The second argument to the macro is the name of the variable. If
+// the expression is false, most compilers will issue a warning/error
+// containing the name of the variable.
+
+template <bool>
+struct StubsCompileAssert {
+};
+
+#define COMPILE_ASSERT(expr, msg) \
+  typedef StubsCompileAssert<(bool(expr))> msg[bool(expr) ? 1 : -1] ATTRIBUTE_UNUSED // NOLINT(*)
+#endif
+
 // Annotate a virtual method indicating it must be overriding a virtual
 // method in the parent class.
 // Use like:
