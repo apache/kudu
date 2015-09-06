@@ -56,7 +56,7 @@ class FromMapPeerProxyFactory : public PeerProxyFactory {
   virtual Status NewProxy(const RaftPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) {
     PeerProxy* proxy_ptr = FindPtrOrNull(*proxy_map_, peer_pb.permanent_uuid());
-    if (!proxy) return Status::NotFound("No proxy for peer.");
+    if (!proxy_ptr) return Status::NotFound("No proxy for peer.");
     proxy->reset(proxy_ptr);
     return Status::OK();
   }
@@ -373,6 +373,39 @@ TEST_F(LeaderElectionTest, TestWithErrorVotes) {
   LOG(INFO) << "Election denied.";
 
   pool_->Wait(); // Wait for the election callbacks to finish before we destroy proxies.
+}
+
+// Count errors as denied votes.
+TEST_F(LeaderElectionTest, TestFailToCreateProxy) {
+  const ConsensusTerm kElectionTerm = 2;
+  const int kNumVoters = 3;
+  const int kMajoritySize = 2;
+
+  // Initialize the UUIDs and the proxies (which also sets up the config PB).
+  InitUUIDs(kNumVoters);
+  InitNoOpPeerProxies();
+
+  // Remove all the proxies. This will make our peer factory return a bad Status.
+  STLDeleteValues(&proxies_);
+
+  // Our election should now fail as if the votes were denied.
+  VoteRequestPB request;
+  request.set_candidate_uuid(candidate_uuid_);
+  request.set_candidate_term(kElectionTerm);
+  request.set_tablet_id(tablet_id_);
+
+  gscoped_ptr<VoteCounter> counter = InitVoteCounter(kNumVoters, kMajoritySize);
+  scoped_refptr<LeaderElection> election(
+      new LeaderElection(config_, proxy_factory_.get(), request, counter.Pass(),
+                         MonoDelta::FromSeconds(kLeaderElectionTimeoutSecs),
+                         Bind(&LeaderElectionTest::ElectionCallback,
+                              Unretained(this))));
+  election->Run();
+  latch_.Wait();
+  ASSERT_EQ(kElectionTerm, result_->election_term);
+  ASSERT_EQ(VOTE_DENIED, result_->decision);
+  ASSERT_FALSE(result_->has_higher_term);
+  ASSERT_TRUE(result_->message.empty());
 }
 
 ////////////////////////////////////////

@@ -154,9 +154,12 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   friend class RefCountedThreadSafe<LeaderElection>;
 
   struct VoterState {
-    explicit VoterState(gscoped_ptr<PeerProxy> proxy);
-
     gscoped_ptr<PeerProxy> proxy;
+
+    // If constructing the proxy failed (e.g. due to a DNS resolution issue)
+    // then 'proxy' will be NULL, and 'proxy_status' will contain the error.
+    Status proxy_status;
+
     rpc::RpcController rpc;
     VoteRequestPB request;
     VoteResponsePB response;

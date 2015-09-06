@@ -153,9 +153,9 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
   BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
     if (request.candidate_uuid() == peer.permanent_uuid()) continue;
     follower_uuids_.push_back(peer.permanent_uuid());
-    gscoped_ptr<PeerProxy> proxy;
-    CHECK_OK(proxy_factory->NewProxy(peer, &proxy));
-    gscoped_ptr<VoterState> state(new VoterState(proxy.Pass()));
+
+    gscoped_ptr<VoterState> state(new VoterState());
+    state->proxy_status = proxy_factory->NewProxy(peer, &state->proxy);
     InsertOrDie(&voter_state_, peer.permanent_uuid(), state.release());
   }
 
@@ -191,6 +191,20 @@ void LeaderElection::Run() {
       state = FindOrDie(voter_state_, voter_uuid);
       // Safe to drop the lock because voter_state_ is not mutated outside of
       // the constructor / destructor. We do this to avoid deadlocks below.
+    }
+
+    // If we failed to construct the proxy, just record a 'NO' vote with the status
+    // that indicates why it failed.
+    if (!state->proxy_status.ok()) {
+      LOG_WITH_PREFIX(WARNING) << "Was unable to construct an RPC proxy to peer "
+                               << voter_uuid << ": " << state->proxy_status.ToString()
+                               << ". Counting it as a 'NO' vote.";
+      {
+        lock_guard<Lock> guard(&lock_);
+        RecordVoteUnlocked(voter_uuid, VOTE_DENIED);
+      }
+      CheckForDecision();
+      continue;
     }
 
     // Send the RPC request.
@@ -342,10 +356,6 @@ std::string LeaderElection::LogPrefix() const {
                     request_.tablet_id(),
                     request_.candidate_uuid(),
                     request_.candidate_term());
-}
-
-LeaderElection::VoterState::VoterState(gscoped_ptr<PeerProxy> proxy)
-  : proxy(proxy.Pass()) {
 }
 
 } // namespace consensus
