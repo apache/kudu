@@ -46,7 +46,12 @@ endif()
 #  -Wno-deprecated: some of the gutil code includes old things like ext/hash_set, ignore that
 #  - pthread: enable multithreaded malloc
 #  - -D__STDC_FORMAT_MACROS: for PRI* print format macros
-set(CXX_COMMON_FLAGS "-msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread -D__STDC_FORMAT_MACROS")
+#  -fno-strict-aliasing
+#     Assume programs do not follow strict aliasing rules.
+#     GCC cannot always verify whether strict aliasing rules are indeed followed due to
+#     fundamental limitations in escape analysis, which can result in subtle bad code generation.
+#     This has a small perf hit but worth it to avoid hard to debug crashes.
+set(CXX_COMMON_FLAGS "-fno-strict-aliasing -msse4.2 -Wall -Wno-sign-compare -Wno-deprecated -pthread -D__STDC_FORMAT_MACROS")
 
 # We want short macros from util/status.h.
 add_definitions(-DKUDU_HEADERS_USE_SHORT_STATUS_MACROS=1)
