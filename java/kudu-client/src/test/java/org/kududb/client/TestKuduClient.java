@@ -75,6 +75,8 @@ public class TestKuduClient extends BaseKuduTest {
 
     // Check that the block size parameter we specified in the schema is respected.
     assertEquals(4096, newSchema.getColumn("column3_s").getDesiredBlockSize());
+    assertEquals(ColumnSchema.Encoding.DICT_ENCODING,
+                 newSchema.getColumn("column3_s").getEncoding());
   }
 
   /**

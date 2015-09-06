@@ -2,6 +2,8 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb;
 
+import org.kududb.Common.EncodingType;
+
 /**
  * Represents a Kudu Table column. Use {@link ColumnSchema.ColumnSchemaBuilder} in order to
  * create columns.
@@ -14,15 +16,44 @@ public class ColumnSchema {
   private final boolean nullable;
   private final Object defaultValue;
   private final int desiredBlockSize;
+  private final Encoding encoding;
+
+  /**
+   * Specifies the encoding of data for a column on disk.
+   * Not all encodings are available for all data types.
+   * Refer to the Kudu documentation for more information on each encoding.
+   */
+  public static enum Encoding {
+    UNKNOWN(EncodingType.UNKNOWN_ENCODING),
+    AUTO_ENCODING(EncodingType.AUTO_ENCODING),
+    PLAIN_ENCODING(EncodingType.PLAIN_ENCODING),
+    PREFIX_ENCODING(EncodingType.PREFIX_ENCODING),
+    GROUP_VARINT(EncodingType.GROUP_VARINT),
+    RLE(EncodingType.RLE),
+    DICT_ENCODING(EncodingType.DICT_ENCODING),
+    BIT_SHUFFLE(EncodingType.BIT_SHUFFLE);
+
+    final EncodingType internalPbType;
+
+    private Encoding(EncodingType internalPbType) {
+      this.internalPbType = internalPbType;
+    }
+
+    // @InterfaceAudience.Private
+    public EncodingType getInternalPbType() {
+      return internalPbType;
+    }
+  };
 
   private ColumnSchema(String name, Type type, boolean key, boolean nullable,
-                       Object defaultValue, int desiredBlockSize) {
+                       Object defaultValue, int desiredBlockSize, Encoding encoding) {
     this.name = name;
     this.type = type;
     this.key = key;
     this.nullable = nullable;
     this.defaultValue = defaultValue;
     this.desiredBlockSize = desiredBlockSize;
+    this.encoding = encoding;
   }
 
   /**
@@ -76,6 +107,14 @@ public class ColumnSchema {
     return desiredBlockSize;
   }
 
+  /**
+   * Return the encoding of this column, or null if it is not known.
+   */
+  public Encoding getEncoding() {
+    if (encoding == null) return null;
+    return encoding;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) return true;
@@ -113,6 +152,7 @@ public class ColumnSchema {
     private boolean nestedNullable = false;
     private Object nestedDefaultValue = null;
     private int nestedBlockSize = 0;
+    private Encoding nestedEncoding = null;
 
     /**
      * Constructor for the required parameters.
@@ -179,13 +219,22 @@ public class ColumnSchema {
     }
 
     /**
+     * Set the block encoding for this column. See the documentation for the list
+     * of valid options.
+     */
+    public ColumnSchemaBuilder encoding(Encoding encoding) {
+      this.nestedEncoding = encoding;
+      return this;
+    }
+
+    /**
      * Builds a {@link ColumnSchema} using the passed parameters.
      * @return a new {@link ColumnSchema}
      */
     public ColumnSchema build() {
       return new ColumnSchema(nestedName, nestedType,
                               nestedKey, nestedNullable, nestedDefaultValue,
-                              nestedBlockSize);
+                              nestedBlockSize, nestedEncoding);
     }
   }
 }

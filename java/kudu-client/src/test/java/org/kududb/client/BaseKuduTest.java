@@ -399,6 +399,7 @@ public class BaseKuduTest {
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column3_s", Type.STRING)
         .nullable(true)
         .desiredBlockSize(4096)
+        .encoding(ColumnSchema.Encoding.DICT_ENCODING)
         .build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column4_b", Type.BOOL).build());
     return new Schema(columns);

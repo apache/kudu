@@ -50,6 +50,9 @@ public class ProtobufHelper {
         .setIsKey(column.isKey())
         .setIsNullable(column.isNullable())
         .setCfileBlockSize(column.getDesiredBlockSize());
+    if (column.getEncoding() != null) {
+      schemaBuilder.setEncoding(column.getEncoding().getInternalPbType());
+    }
     if (column.getDefaultValue() != null) schemaBuilder.setReadDefaultValue
         (ZeroCopyLiteralByteString.wrap(objectToWireFormat(column, column.getDefaultValue())));
     return schemaBuilder.build();
