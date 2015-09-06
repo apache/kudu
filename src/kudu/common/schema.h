@@ -339,7 +339,7 @@ class Schema {
   // This size does not include any indirected (variable length) data (eg strings)
   size_t byte_size() const {
     DCHECK(initialized());
-    return col_offsets_[num_columns()];
+    return col_offsets_.back();
   }
 
   // Return the number of bytes needed to represent
