@@ -203,6 +203,12 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
     }
   }
 
+  // If we had a filter, and we didn't either match this entity or any metrics inside
+  // it, don't print the entity at all.
+  if (!requested_metrics.empty() && !select_all && metrics.empty()) {
+    return Status::OK();
+  }
+
   writer->StartObject();
 
   writer->String("type");

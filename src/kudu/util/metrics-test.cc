@@ -181,6 +181,11 @@ TEST_F(MetricsTest, JsonPrintTest) {
   string attr_value;
   ASSERT_OK(reader.ExtractString(attributes, "test_attr", &attr_value));
   ASSERT_EQ("attr_val", attr_value);
+
+  // Verify that, if we filter for a metric that isn't in this entity, we get no result.
+  out.str("");
+  ASSERT_OK(entity_->WriteAsJson(&writer, list_of("not_a_matching_metric"), MetricJsonOptions()));
+  ASSERT_EQ("", out.str());
 }
 
 // Test that metrics are retired when they are no longer referenced.
