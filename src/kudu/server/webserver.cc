@@ -381,7 +381,7 @@ static const char* const NAVIGATION_BAR_PREFIX =
 "      <div class='navbar-inner'>"
 "        <div class='container-fluid'>"
 "          <a href='/'>"
-"            <img src=\"/logo.png\" width='55' height='52' alt=\"Kudu\" style=\"float:left\"/>"
+"            <img src=\"/logo.png\" width='61' height='45' alt=\"Kudu\" style=\"float:left\"/>"
 "          </a>"
 "          <div class='nav-collapse collapse'>"
 "            <ul class='nav'>";

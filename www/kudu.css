@@ -7,6 +7,10 @@ body {
   padding-top: 60px;
 }
 
+.navbar-inverse .nav>li>a {
+  color: #eee;
+}
+
 /* Sticky footer styles
 -------------------------------------------------- */
 html {
