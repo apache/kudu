@@ -340,7 +340,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
 
   string str = output.str();
   // Without styling, render the page as plain text
-  if (req.parsed_args.find("raw") != req.parsed_args.end()) {
+  if (!use_style) {
     sq_printf(connection, "HTTP/1.1 200 OK\r\n"
               "Content-Type: text/plain\r\n"
               "Content-Length: %zd\r\n"
