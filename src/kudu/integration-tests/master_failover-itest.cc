@@ -58,7 +58,7 @@ class MasterFailoverTest : public KuduTest {
     // Set the TS->master heartbeat timeout to 1 second (down from 15 seconds).
     opts_.extra_tserver_flags.push_back("--heartbeat_rpc_timeout_ms=1000");
     // Allow one TS heartbeat failure before retrying with back-off (down from 3).
-    opts_.extra_tserver_flags.push_back("--max_consecutive_failed_heartbeats=1");
+    opts_.extra_tserver_flags.push_back("--heartbeat_max_failures_before_backoff=1");
     // Wait for 500 ms after 'max_consecutive_failed_heartbeats'
     // before trying again (down from 1 second).
     opts_.extra_tserver_flags.push_back("--heartbeat_interval_ms=500");

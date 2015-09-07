@@ -15,6 +15,7 @@
 //
 
 #include "kudu/util/alignment.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/memory/memory.h"
 #include "kudu/util/mem_tracker.h"
 
@@ -102,6 +103,7 @@ void BufferAllocator::LogAllocation(size_t requested,
 DEFINE_bool(allocator_aligned_mode, false,
             "Use 16-byte alignment instead of 8-byte, "
             "unless explicitly specified otherwise - to boost SIMD");
+TAG_FLAG(allocator_aligned_mode, hidden);
 
 HeapBufferAllocator::HeapBufferAllocator()
   : aligned_mode_(FLAGS_allocator_aligned_mode) {

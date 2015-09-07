@@ -36,6 +36,7 @@
 
 DEFINE_int32(consensus_max_batch_size_bytes, 1024 * 1024,
              "The maximum per-tablet RPC batch size when updating peers.");
+TAG_FLAG(consensus_max_batch_size_bytes, advanced);
 
 namespace kudu {
 namespace consensus {

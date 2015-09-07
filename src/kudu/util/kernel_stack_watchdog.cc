@@ -12,6 +12,7 @@
 
 #include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/status.h"
 #include "kudu/gutil/map-util.h"
@@ -19,6 +20,7 @@
 
 DEFINE_int32(hung_task_check_interval_ms, 200,
              "Number of milliseconds in between checks for hung threads");
+TAG_FLAG(hung_task_check_interval_ms, hidden);
 
 using std::tr1::unordered_set;
 using strings::Substitute;

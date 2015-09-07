@@ -42,10 +42,12 @@
 DEFINE_uint64(remote_bootstrap_idle_timeout_ms, 180000,
               "Amount of time without activity before a remote bootstrap "
               "session will expire, in millis");
+TAG_FLAG(remote_bootstrap_idle_timeout_ms, hidden);
 
 DEFINE_uint64(remote_bootstrap_timeout_poll_period_ms, 10000,
               "How often the remote_bootstrap service polls for expired "
               "remote bootstrap sessions, in millis");
+TAG_FLAG(remote_bootstrap_timeout_poll_period_ms, hidden);
 
 DEFINE_double(fault_crash_on_handle_rb_fetch_data, 0.0,
               "Fraction of the time when the tablet will crash while "

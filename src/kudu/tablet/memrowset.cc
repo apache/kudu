@@ -17,10 +17,12 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/gutil/dynamic_annotations.h"
 #include "kudu/tablet/compaction.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/mem_tracker.h"
 
 DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
             "generation for iteration");
+TAG_FLAG(mrs_use_codegen, hidden);
 
 namespace kudu { namespace tablet {
 

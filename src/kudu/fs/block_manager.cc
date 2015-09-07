@@ -14,6 +14,7 @@
 // When all conditions hold, this value ensures low latency for WAL writes.
 DEFINE_bool(block_coalesce_close, false,
             "Coalesce synchronization of data during CloseBlocks()");
+TAG_FLAG(block_coalesce_close, experimental);
 
 DEFINE_bool(block_manager_lock_dirs, true,
             "Lock the data block directories to prevent concurrent usage. "

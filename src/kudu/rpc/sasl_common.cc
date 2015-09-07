@@ -14,6 +14,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/sockaddr.h"
 
 using std::set;
@@ -23,6 +24,8 @@ using std::set;
 // same name.
 DEFINE_string(krpc_sasl_path, "/usr/lib/sasl2:/usr/lib64/sasl2:/usr/lib/x86_64-linux-gnu/sasl2",
     "Colon separated list of paths to look for SASL security library plugins.");
+TAG_FLAG(krpc_sasl_path, advanced);
+TAG_FLAG(krpc_sasl_path, experimental); // SASL not really tested yet.
 
 namespace kudu {
 namespace rpc {

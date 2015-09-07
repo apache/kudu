@@ -26,10 +26,12 @@
 
 #include "kudu/gutil/callback.h"
 #include "kudu/gutil/spinlock.h"
+#include "kudu/util/flag_tags.h"
 
 DEFINE_string(log_filename, "",
     "Prefix of log filename - "
     "full path is <log_dir>/<log_filename>.[INFO|WARN|ERROR|FATAL]");
+TAG_FLAG(log_filename, stable);
 
 #define PROJ_NAME "kudu"
 

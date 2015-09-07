@@ -16,6 +16,7 @@
 #include "kudu/rpc/rpc_introspection.pb.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/rpc/transfer.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/kernel_stack_watchdog.h"
 
 namespace kudu {
@@ -34,6 +35,8 @@ DEFINE_int64(rpc_callback_max_cycles, 100 * 1000 * 1000,
              "The maximum number of cycles for which an RPC callback "
              "should be allowed to run without emitting a warning."
              " (Advanced debugging option)");
+TAG_FLAG(rpc_callback_max_cycles, advanced);
+TAG_FLAG(rpc_callback_max_cycles, runtime);
 
 ///
 /// OutboundCall

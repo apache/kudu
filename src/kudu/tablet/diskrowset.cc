@@ -23,15 +23,19 @@
 #include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/multi_column_writer.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(tablet_delta_store_minor_compact_max, 1000,
              "How many delta stores are required before forcing a minor delta compaction "
              "(Advanced option)");
+TAG_FLAG(tablet_delta_store_minor_compact_max, experimental);
+
 DEFINE_double(tablet_delta_store_major_compact_min_ratio, 0.1f,
              "Minimum ratio of sizeof(deltas) to sizeof(base data) before a major compaction "
              "can run (Advanced option)");
+TAG_FLAG(tablet_delta_store_major_compact_min_ratio, experimental);
 
 namespace kudu {
 namespace tablet {

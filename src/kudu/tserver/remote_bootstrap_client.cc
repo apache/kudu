@@ -23,12 +23,14 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
 
 DEFINE_int32(remote_bootstrap_begin_session_timeout_ms, 3000,
              "Tablet server RPC client timeout for BeginRemoteBootstrapSession calls. "
              "Also used for EndRemoteBootstrapSession calls.");
+TAG_FLAG(remote_bootstrap_begin_session_timeout_ms, hidden);
 
 // RETURN_NOT_OK_PREPEND() with a remote-error unwinding step.
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \

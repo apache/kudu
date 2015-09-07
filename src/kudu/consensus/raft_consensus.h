@@ -348,7 +348,7 @@ class RaftConsensus : public Consensus,
   // The failure detector must currently be enabled.
   // When this is called a failure is guaranteed not to be detected
   // before 'FLAGS_leader_failure_max_missed_heartbeat_periods' *
-  // 'FLAGS_leader_heartbeat_interval_ms' has elapsed.
+  // 'FLAGS_raft_heartbeat_interval_ms' has elapsed.
   Status SnoozeFailureDetectorUnlocked();
 
   // Like the above but adds 'additional_delta' to the default timeout

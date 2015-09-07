@@ -10,7 +10,7 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_int32(scanner_ttl_millis);
+DECLARE_int32(scanner_ttl_ms);
 
 namespace kudu {
 
@@ -51,7 +51,7 @@ TEST(ScannersTest, TestManager) {
 
 TEST(ScannerTest, TestExpire) {
   scoped_refptr<TabletPeer> null_peer(NULL);
-  FLAGS_scanner_ttl_millis = 100;
+  FLAGS_scanner_ttl_ms = 100;
   MetricRegistry registry;
   ScannerManager mgr(METRIC_ENTITY_server.Instantiate(&registry, "test"));
   SharedScanner s1, s2;

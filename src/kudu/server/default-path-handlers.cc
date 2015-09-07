@@ -32,6 +32,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/server/pprof-path-handlers.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/histogram.pb.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
@@ -47,6 +48,8 @@ using strings::Substitute;
 
 DEFINE_int64(web_log_bytes, 1024 * 1024,
     "The maximum number of bytes to display on the debug webserver's log page");
+TAG_FLAG(web_log_bytes, advanced);
+TAG_FLAG(web_log_bytes, runtime);
 
 namespace kudu {
 

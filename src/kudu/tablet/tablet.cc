@@ -59,18 +59,19 @@ DEFINE_bool(tablet_do_dup_key_checks, true,
 TAG_FLAG(tablet_do_dup_key_checks, unsafe);
 
 DEFINE_int32(tablet_compaction_budget_mb, 128,
-             "Budget for a single compaction, if the 'budget' compaction "
-             "algorithm is selected");
+             "Budget for a single compaction");
+TAG_FLAG(tablet_compaction_budget_mb, experimental);
 
 DEFINE_int32(tablet_bloom_block_size, 4096,
-             "Block size of the bloom filters used for tablet keys. "
-             "(Advanced option)");
+             "Block size of the bloom filters used for tablet keys.");
+TAG_FLAG(tablet_bloom_block_size, advanced);
 
 DEFINE_double(tablet_bloom_target_fp_rate, 0.01f,
               "Target false-positive rate (between 0 and 1) to size tablet key bloom filters. "
               "A lower false positive rate may reduce the number of disk seeks required "
               "in heavy insert workloads, at the expense of more space and RAM "
-              "required for bloom filters. (Advanced option)");
+              "required for bloom filters.");
+TAG_FLAG(tablet_bloom_target_fp_rate, advanced);
 
 METRIC_DEFINE_entity(tablet);
 METRIC_DEFINE_gauge_uint64(tablet, memrowset_size, "MemRowSet Memory Usage",

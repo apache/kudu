@@ -16,7 +16,7 @@
 #include "kudu/util/memenv/memenv.h"
 #include "kudu/util/test_macros.h"
 
-DECLARE_int32(deltafile_block_size);
+DECLARE_int32(deltafile_default_block_size);
 DECLARE_bool(log_block_manager_test_hole_punching);
 DEFINE_int32(first_row_to_update, 10000, "the first row to update");
 DEFINE_int32(last_row_to_update, 100000, "the last row to update");
@@ -244,7 +244,7 @@ TEST_F(TestDeltaFile, TestRoundTripTinyDeltaBlocks) {
   // of the case where multiple delta blocks correspond to a
   // single underlying data block.
   google::FlagSaver saver;
-  FLAGS_deltafile_block_size = 256;
+  FLAGS_deltafile_default_block_size = 256;
   DoTestRoundTrip();
 }
 

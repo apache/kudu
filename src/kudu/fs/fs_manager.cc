@@ -29,6 +29,7 @@
 #include "kudu/gutil/strtoint.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/oid_generator.h"
@@ -38,18 +39,21 @@
 DEFINE_bool(enable_data_block_fsync, true,
             "Whether to enable fsync() of data blocks, metadata, and their parent directories. "
             "Disabling this flag may cause data loss in the event of a system crash.");
+TAG_FLAG(enable_data_block_fsync, unsafe);
 
 DEFINE_string(block_manager, "log", "Which block manager to use for storage. "
               "Valid options are 'file' and 'log'.");
-
+TAG_FLAG(block_manager, advanced);
 
 DEFINE_string(fs_wal_dir, "",
               "Directory with write-ahead logs. If this is not specified, the "
               "program will not start. May be the same as fs_data_dirs");
+TAG_FLAG(fs_wal_dir, stable);
 DEFINE_string(fs_data_dirs, "",
               "Comma-separated list of directories with data blocks. If this "
               "is not specified, fs_wal_dir will be used as the sole data "
               "block directory.");
+TAG_FLAG(fs_data_dirs, stable);
 
 using boost::assign::list_of;
 using google::protobuf::Message;

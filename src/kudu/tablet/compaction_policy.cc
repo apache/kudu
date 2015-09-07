@@ -17,6 +17,7 @@
 #include "kudu/tablet/rowset_info.h"
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/tablet/svg_dump.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/knapsack_solver.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -26,6 +27,8 @@ using std::vector;
 DEFINE_int32(budgeted_compaction_target_rowset_size, 32*1024*1024,
              "The target size for DiskRowSets during flush/compact when the "
              "budgeted compaction policy is used");
+TAG_FLAG(budgeted_compaction_target_rowset_size, experimental);
+TAG_FLAG(budgeted_compaction_target_rowset_size, advanced);
 
 namespace kudu {
 namespace tablet {

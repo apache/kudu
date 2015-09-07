@@ -12,13 +12,13 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tablet/tablet_metrics.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 
 DEFINE_int32(flush_threshold_mb, 64,
              "Size at which MemRowSet flushes are triggered. "
              "A MRS can still flush below this threshold if it if hasn't flushed in a while");
-DEFINE_int32(log_gc_sleep_delay_ms, 10000,
-    "Minimum number of milliseconds that the maintenance manager will wait between log GC runs.");
+TAG_FLAG(flush_threshold_mb, experimental);
 
 METRIC_DEFINE_gauge_uint32(tablet, log_gc_running,
                            "Log GCs Running",

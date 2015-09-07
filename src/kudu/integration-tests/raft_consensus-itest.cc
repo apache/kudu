@@ -821,7 +821,7 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
 
   // Make leader elections faster so we get through more cycles of
   // leaders.
-  ts_flags.push_back("--leader_heartbeat_interval_ms=100");
+  ts_flags.push_back("--raft_heartbeat_interval_ms=100");
   ts_flags.push_back("--leader_failure_monitor_check_mean_ms=50");
   ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=25");
 
@@ -887,7 +887,7 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
 TEST_F(RaftConsensusITest, TestChurnyElections) {
   vector<string> ts_flags, master_flags;
 
-  ts_flags.push_back("--leader_heartbeat_interval_ms=1");
+  ts_flags.push_back("--raft_heartbeat_interval_ms=1");
   ts_flags.push_back("--leader_failure_monitor_check_mean_ms=1");
   ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
   CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);

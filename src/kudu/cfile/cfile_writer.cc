@@ -16,6 +16,7 @@
 #include "kudu/cfile/type_encodings.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/hexdump.h"
 
@@ -25,8 +26,11 @@ using kudu::fs::WritableBlock;
 using std::string;
 
 DEFINE_int32(cfile_default_block_size, 256*1024, "The default block size to use in cfiles");
+TAG_FLAG(cfile_default_block_size, advanced);
+
 DEFINE_string(cfile_default_compression_codec, "none",
               "Default cfile block compression codec.");
+TAG_FLAG(cfile_default_compression_codec, advanced);
 
 // The default value is optimized for the case where:
 // 1. the cfile blocks are colocated with the WALs.
@@ -38,6 +42,7 @@ DEFINE_string(cfile_default_compression_codec, "none",
 DEFINE_string(cfile_do_on_finish, "close",
               "What to do to cfile blocks when writing is finished. "
               "Possible values are 'close', 'flush', or 'nothing'.");
+TAG_FLAG(cfile_do_on_finish, experimental);
 
 namespace kudu {
 namespace cfile {

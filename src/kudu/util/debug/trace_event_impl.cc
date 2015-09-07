@@ -30,11 +30,13 @@
 
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/debug/trace_event_synthetic_delay.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/thread.h"
 
 DEFINE_string(trace_to_console, "",
               "Trace pattern specifying which trace events should be dumped "
               "directly to the console");
+TAG_FLAG(trace_to_console, experimental);
 
 // The thread buckets for the sampling profiler.
 BASE_EXPORT TRACE_EVENT_API_ATOMIC_WORD g_trace_state[3];

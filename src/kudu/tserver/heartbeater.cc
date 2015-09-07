@@ -18,23 +18,25 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/ts_tablet_manager.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(heartbeat_rpc_timeout_ms, 15000,
-             "Timeout used for the TS->Master heartbeat RPCs. "
-             "(Advanced option)");
+             "Timeout used for the TS->Master heartbeat RPCs.");
+TAG_FLAG(heartbeat_rpc_timeout_ms, advanced);
 
 DEFINE_int32(heartbeat_interval_ms, 1000,
-             "Interval at which the TS heartbeats to the master. "
-             "(Advanced option)");
+             "Interval at which the TS heartbeats to the master.");
+TAG_FLAG(heartbeat_interval_ms, advanced);
 
-DEFINE_int32(max_consecutive_failed_heartbeats, 3,
-             "Maximum number of consecutive heartbeat failures until "
-             "TS backs off to the normal heartbeat interval, rather than retrying."
-             "(Advanced option)");
+DEFINE_int32(heartbeat_max_failures_before_backoff, 3,
+             "Maximum number of consecutive heartbeat failures until the "
+             "Tablet Server backs off to the normal heartbeat interval, "
+             "rather than retrying.");
+TAG_FLAG(heartbeat_max_failures_before_backoff, advanced);
 
 using google::protobuf::RepeatedPtrField;
 using kudu::HostPortPB;
@@ -267,12 +269,12 @@ Status Heartbeater::Thread::SetupRegistration(master::TSRegistrationPB* reg) {
 int Heartbeater::Thread::GetMinimumHeartbeatMillis() const {
   // If we've failed a few heartbeats in a row, back off to the normal
   // interval, rather than retrying in a loop.
-  if (consecutive_failed_heartbeats_ == FLAGS_max_consecutive_failed_heartbeats) {
+  if (consecutive_failed_heartbeats_ == FLAGS_heartbeat_max_failures_before_backoff) {
     LOG(WARNING) << "Failed " << consecutive_failed_heartbeats_  <<" heartbeats "
                  << "in a row: no longer allowing fast heartbeat attempts.";
   }
 
-  return consecutive_failed_heartbeats_ > FLAGS_max_consecutive_failed_heartbeats ?
+  return consecutive_failed_heartbeats_ > FLAGS_heartbeat_max_failures_before_backoff ?
     FLAGS_heartbeat_interval_ms : 0;
 }
 
@@ -399,7 +401,7 @@ void Heartbeater::Thread::RunThread() {
         // refused) and there's more than one master available, try
         // determining the leader master again.
         if (s.IsNetworkError() ||
-            consecutive_failed_heartbeats_ == FLAGS_max_consecutive_failed_heartbeats) {
+            consecutive_failed_heartbeats_ == FLAGS_heartbeat_max_failures_before_backoff) {
           proxy_.reset();
         }
       }

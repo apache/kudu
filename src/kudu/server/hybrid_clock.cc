@@ -12,17 +12,21 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
 
 DEFINE_int32(max_clock_sync_error_usec, 10 * 1000 * 1000, // 10 secs
-             "Maximum possible clock synchronization error before reporting"
-             " clock synchronization dependent services as unavailable");
+             "Maximum allowed clock synchronization error as reported by NTP "
+             "before the server will abort.");
+TAG_FLAG(max_clock_sync_error_usec, advanced);
+TAG_FLAG(max_clock_sync_error_usec, runtime);
 
 DEFINE_bool(use_hybrid_clock, true,
             "Whether HybridClock should be used as the default clock"
             " implementation. This should be disabled for testing purposes only.");
+TAG_FLAG(use_hybrid_clock, hidden);
 
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",

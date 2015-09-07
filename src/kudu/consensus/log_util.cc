@@ -25,19 +25,24 @@
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env_util.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/pb_util.h"
 
 DEFINE_int32(log_segment_size_mb, 64,
              "The default segment size for log roll-overs, in MB");
+TAG_FLAG(log_segment_size_mb, advanced);
 
 DEFINE_bool(log_force_fsync_all, false,
             "Whether the Log/WAL should explicitly call fsync() after each write.");
+TAG_FLAG(log_force_fsync_all, stable);
 
 DEFINE_bool(log_preallocate_segments, true,
             "Whether the WAL should preallocate the entire segment before writing to it");
+TAG_FLAG(log_preallocate_segments, advanced);
 
 DEFINE_bool(log_async_preallocate_segments, true,
             "Whether the WAL segments preallocation should happen asynchronously");
+TAG_FLAG(log_async_preallocate_segments, advanced);
 
 namespace kudu {
 namespace log {

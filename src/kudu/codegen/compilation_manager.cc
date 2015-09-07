@@ -18,6 +18,7 @@
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/faststring.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -26,8 +27,10 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 
-DEFINE_bool(time_codegen, false, "Whether to print time that each code "
+DEFINE_bool(codegen_time_compilation, false, "Whether to print time that each code "
             "generation request took.");
+TAG_FLAG(codegen_time_compilation, experimental);
+TAG_FLAG(codegen_time_compilation, runtime);
 
 METRIC_DEFINE_gauge_int64(server, code_cache_hits, "Codegen Cache Hits",
                           kudu::MetricUnit::kCacheHits,
@@ -79,7 +82,7 @@ class CompilationTask : public Runnable {
     if (cache_->Lookup(key)) return Status::OK();
 
     scoped_refptr<RowProjectorFunctions> functions;
-    LOG_TIMING_IF(INFO, FLAGS_time_codegen, "code-generating row projector") {
+    LOG_TIMING_IF(INFO, FLAGS_codegen_time_compilation, "code-generating row projector") {
       RETURN_NOT_OK(generator_->CompileRowProjector(base_, proj_, &functions));
     }
 

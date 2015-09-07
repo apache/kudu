@@ -32,12 +32,19 @@ using strings::Substitute;
 DEFINE_string(rpc_bind_addresses, "0.0.0.0",
               "Comma-separated list of addresses to bind to for RPC connections. "
               "Currently, ephemeral ports (i.e. port 0) are not allowed.");
+TAG_FLAG(rpc_bind_addresses, stable);
+
 DEFINE_int32(rpc_num_acceptors_per_address, 1,
              "Number of RPC acceptor threads for each bound address");
+TAG_FLAG(rpc_num_acceptors_per_address, advanced);
+
 DEFINE_int32(rpc_num_service_threads, 10,
              "Number of RPC worker threads to run");
+TAG_FLAG(rpc_num_service_threads, advanced);
+
 DEFINE_int32(rpc_service_queue_length, 50,
              "Default length of queue for incoming RPC requests");
+TAG_FLAG(rpc_service_queue_length, advanced);
 
 DEFINE_bool(rpc_server_allow_ephemeral_ports, false,
             "Allow binding to ephemeral ports. This can cause problems, so currently "

@@ -24,6 +24,7 @@
 #include "kudu/server/rpc_server.h"
 #include "kudu/tablet/maintenance_manager.h"
 #include "kudu/tserver/tablet_service.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
@@ -31,6 +32,7 @@
 
 DEFINE_int32(master_registration_rpc_timeout_ms, 1500,
              "Timeout for retrieving master registration over RPC.");
+TAG_FLAG(master_registration_rpc_timeout_ms, experimental);
 
 using std::min;
 using std::tr1::shared_ptr;

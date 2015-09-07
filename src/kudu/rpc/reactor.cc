@@ -29,6 +29,7 @@
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
@@ -39,7 +40,10 @@
 using std::string;
 using std::tr1::shared_ptr;
 
-DEFINE_int64(server_negotiation_timeout, 3000, "server negotiation timeout, in milliseconds");
+DEFINE_int64(rpc_negotiation_timeout_ms, 3000,
+             "Timeout for negotiating an RPC connection.");
+TAG_FLAG(rpc_negotiation_timeout_ms, advanced);
+TAG_FLAG(rpc_negotiation_timeout_ms, runtime);
 
 namespace kudu {
 namespace rpc {
@@ -179,7 +183,7 @@ void ReactorThread::RegisterConnection(const scoped_refptr<Connection>& conn) {
 
   // Set a limit on how long the server will negotiate with a new client.
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_server_negotiation_timeout));
+  deadline.AddDelta(MonoDelta::FromMilliseconds(FLAGS_rpc_negotiation_timeout_ms));
 
   Status s = StartConnectionNegotiation(conn, deadline);
   if (!s.ok()) {

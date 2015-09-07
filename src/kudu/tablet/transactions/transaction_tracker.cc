@@ -13,6 +13,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -23,6 +24,7 @@ DEFINE_int64(tablet_transaction_memory_limit_mb, 64,
              "is reached, new transactions will be rejected and clients will "
              "be forced to retry them. If -1, transaction memory tracking is "
              "disabled.");
+TAG_FLAG(tablet_transaction_memory_limit_mb, advanced);
 
 METRIC_DEFINE_gauge_uint64(tablet, all_transactions_inflight,
                            "Transactions In Flight",

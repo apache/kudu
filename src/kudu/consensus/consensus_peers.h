@@ -201,7 +201,7 @@ class Peer {
 
   // Heartbeater for remote peer implementations.
   // This will send status only requests to the remote peers
-  // whenever we go more than 'FLAGS_leader_heartbeat_interval_ms'
+  // whenever we go more than 'FLAGS_raft_heartbeat_interval_ms'
   // without sending actual data.
   ResettableHeartbeater heartbeater_;
 

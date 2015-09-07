@@ -32,7 +32,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/test_util.h"
 
-DECLARE_int32(leader_heartbeat_interval_ms);
+DECLARE_int32(raft_heartbeat_interval_ms);
 DECLARE_bool(enable_leader_failure_detection);
 
 METRIC_DECLARE_entity(tablet);
@@ -843,7 +843,7 @@ TEST_F(RaftConsensusQuorumTest, TestLeaderHeartbeats) {
 
   // Now wait for about 4 times the hearbeat period the counters
   // should have increased 3/4 times.
-  SleepFor(MonoDelta::FromMilliseconds(FLAGS_leader_heartbeat_interval_ms * 4));
+  SleepFor(MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms * 4));
 
   int repl0_final_count = counter_hook_rpl0->num_pre_update_calls();
   int repl1_final_count = counter_hook_rpl1->num_pre_update_calls();

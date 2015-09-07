@@ -15,6 +15,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/debug/trace_logging.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/stopwatch.h"
@@ -28,13 +29,20 @@ DEFINE_int32(maintenance_manager_num_threads, 1,
        "Size of the maintenance manager thread pool. Beyond a value of '1', one thread is "
        "reserved for emergency flushes. For spinning disks, the number of threads should "
        "not be above the number of devices.");
+TAG_FLAG(maintenance_manager_num_threads, stable);
+
 DEFINE_int32(maintenance_manager_polling_interval_ms, 250,
        "Polling interval for the maintenance manager scheduler, "
        "in milliseconds.");
+TAG_FLAG(maintenance_manager_polling_interval_ms, hidden);
+
 DEFINE_int32(maintenance_manager_history_size, 8,
        "Number of completed operations the manager is keeping track of.");
+TAG_FLAG(maintenance_manager_history_size, hidden);
+
 DEFINE_bool(enable_maintenance_manager, true,
        "Enable the maintenance manager, runs compaction and tablet cleaning tasks.");
+TAG_FLAG(enable_maintenance_manager, unsafe);
 
 namespace kudu {
 

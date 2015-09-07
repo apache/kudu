@@ -33,13 +33,17 @@ DEFINE_bool(dump_metrics_json, false,
             "by this binary.");
 TAG_FLAG(dump_metrics_json, hidden);
 
-DEFINE_bool(enable_process_lifetime_heap_profiling, false, "(Advanced) Enables heap "
+DEFINE_bool(enable_process_lifetime_heap_profiling, false, "Enables heap "
     "profiling for the lifetime of the process. Profile output will be stored in the "
     "directory specified by -heap_profile_path. Enabling this option will disable the "
     "on-demand/remote server profile handlers.");
+TAG_FLAG(enable_process_lifetime_heap_profiling, stable);
+TAG_FLAG(enable_process_lifetime_heap_profiling, advanced);
 
 DEFINE_string(heap_profile_path, "", "Output path to store heap profiles. If not set " \
     "profiles are stored in /tmp/<process-name>.<pid>.<n>.heap.");
+TAG_FLAG(heap_profile_path, stable);
+TAG_FLAG(heap_profile_path, advanced);
 
 // Tag a bunch of the flags that we inherit from glog/gflags.
 
@@ -49,9 +53,6 @@ DEFINE_string(heap_profile_path, "", "Output path to store heap profiles. If not
 // Most of these are considered stable. The ones related to email are
 // marked unsafe because sending email inline from a server is a pretty
 // bad idea.
-DECLARE_string(log_filename);
-TAG_FLAG(log_filename, stable);
-
 DECLARE_string(alsologtoemail);
 TAG_FLAG(alsologtoemail, hidden);
 TAG_FLAG(alsologtoemail, unsafe);

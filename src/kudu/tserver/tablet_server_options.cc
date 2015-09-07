@@ -8,6 +8,7 @@
 
 #include "kudu/master/master.h"
 #include "kudu/tserver/tablet_server.h"
+#include "kudu/util/flag_tags.h"
 
 namespace kudu {
 namespace tserver {
@@ -17,6 +18,7 @@ DEFINE_string(tserver_master_addrs, "127.0.0.1:7051",
               "tablet server should connect to. The masters do not "
               "read this flag -- configure the masters separately "
               "using 'rpc_bind_addresses'.");
+TAG_FLAG(tserver_master_addrs, stable);
 
 
 TabletServerOptions::TabletServerOptions() {

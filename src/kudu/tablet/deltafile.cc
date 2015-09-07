@@ -17,13 +17,15 @@
 #include "kudu/tablet/mutation.h"
 #include "kudu/tablet/mvcc.h"
 #include "kudu/util/coding-inl.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/pb_util.h"
 
 DECLARE_bool(cfile_lazy_open);
-DEFINE_int32(deltafile_block_size, 32*1024,
-            "Block size for delta files. TODO: this should be configurable "
-             "on a per-table basis");
+DEFINE_int32(deltafile_default_block_size, 32*1024,
+            "Block size for delta files. In the future, this may become configurable "
+             "on a per-table basis.");
+TAG_FLAG(deltafile_default_block_size, experimental);
 
 namespace kudu {
 
@@ -51,7 +53,7 @@ DeltaFileWriter::DeltaFileWriter(gscoped_ptr<WritableBlock> block)
 { // NOLINT(*)
   cfile::WriterOptions opts;
   opts.write_validx = true;
-  opts.storage_attributes.cfile_block_size = FLAGS_deltafile_block_size;
+  opts.storage_attributes.cfile_block_size = FLAGS_deltafile_default_block_size;
   opts.storage_attributes.encoding = PLAIN_ENCODING;
   writer_.reset(new cfile::CFileWriter(opts, GetTypeInfo(BINARY), false, block.Pass()));
 }

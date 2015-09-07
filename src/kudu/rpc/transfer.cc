@@ -15,11 +15,14 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
 
 DEFINE_int32(rpc_max_message_size, (8 * 1024 * 1024),
              "The maximum size of a message that any RPC that the server will accept.");
+TAG_FLAG(rpc_max_message_size, advanced);
+TAG_FLAG(rpc_max_message_size, runtime);
 
 namespace kudu {
 namespace rpc {

@@ -65,13 +65,14 @@
 #include "kudu/util/trace.h"
 #include "kudu/cfile/type_encodings.h"
 
-DEFINE_int32(async_rpc_timeout_ms, 10 * 1000, // 10 sec
+DEFINE_int32(master_ts_rpc_timeout_ms, 10 * 1000, // 10 sec
              "Timeout used for the Master->TS async rpc calls.");
-TAG_FLAG(async_rpc_timeout_ms, advanced);
+TAG_FLAG(master_ts_rpc_timeout_ms, advanced);
 
-DEFINE_int32(assignment_timeout_ms, 10 * 1000, // 10 sec
-             "Timeout used for Master->TS assignment requests.");
-TAG_FLAG(assignment_timeout_ms, advanced);
+DEFINE_int32(tablet_creation_timeout_ms, 10 * 1000, // 10 sec
+             "Timeout used by the master when attempting to create tablet "
+             "replicas during table creation.");
+TAG_FLAG(tablet_creation_timeout_ms, advanced);
 
 DEFINE_int32(unresponsive_ts_rpc_timeout_ms, 60 * 60 * 1000, // 1 hour
              "After this amount of time, the master will stop attempting to contact "
@@ -100,6 +101,7 @@ DEFINE_int32(master_failover_catchup_timeout_ms, 30 * 1000, // 30 sec
              " the previous master's metadata and become active. If this time"
              " is exceeded, the node crashes.");
 TAG_FLAG(master_failover_catchup_timeout_ms, advanced);
+TAG_FLAG(master_failover_catchup_timeout_ms, experimental);
 
 namespace kudu {
 namespace master {
@@ -1669,7 +1671,7 @@ class RetryingTSRpcTask : public MonitoredTask {
 
     // Calculate and set the timeout deadline.
     MonoTime timeout = MonoTime::Now(MonoTime::FINE);
-    timeout.AddDelta(MonoDelta::FromMilliseconds(FLAGS_async_rpc_timeout_ms));
+    timeout.AddDelta(MonoDelta::FromMilliseconds(FLAGS_master_ts_rpc_timeout_ms));
     const MonoTime& deadline = MonoTime::Earliest(timeout, deadline_);
     rpc_.set_deadline(deadline);
 
@@ -1862,7 +1864,7 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
     : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, tablet->table()),
       tablet_id_(tablet->tablet_id()) {
     deadline_ = start_ts_;
-    deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_assignment_timeout_ms));
+    deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_tablet_creation_timeout_ms));
 
     TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
     const SysTabletsEntryPB& tablet_pb = tablet->metadata().dirty().pb;
@@ -2190,7 +2192,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
                                                 DeferredAssignmentActions* deferred,
                                                 vector<scoped_refptr<TabletInfo> >* new_tablets) {
   MonoTime now = MonoTime::Now(MonoTime::FINE);
-  int64_t remaining_timeout_ms = FLAGS_assignment_timeout_ms -
+  int64_t remaining_timeout_ms = FLAGS_tablet_creation_timeout_ms -
     tablet->TimeSinceLastUpdate(now).ToMilliseconds();
 
   // Skip the tablet if the assignment timeout is not yet expired

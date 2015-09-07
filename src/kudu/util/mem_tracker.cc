@@ -17,6 +17,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
@@ -25,12 +26,15 @@ DEFINE_int64(memory_limit_hard_mb, 0,
              "Maximum amount of memory this daemon should use, in megabytes. "
              "A value of 0 autosizes based on the total system memory. "
              "A value of -1 disables all memory limiting.");
+TAG_FLAG(memory_limit_hard_mb, stable);
+
 DEFINE_int32(memory_limit_soft_percentage, 60,
              "Percentage of the hard memory limit that this daemon may "
              "consume before memory throttling of writes begins. The greater "
              "the excess, the higher the chance of throttling. In general, a "
              "lower soft limit leads to smoother write latencies but "
              "decreased throughput, and vice versa for a higher soft limit.");
+TAG_FLAG(memory_limit_hard_mb, advanced);
 
 
 namespace kudu {

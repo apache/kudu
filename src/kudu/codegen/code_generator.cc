@@ -33,12 +33,17 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/ref_counted.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/status.h"
 
 DEFINE_bool(codegen_dump_functions, false, "Whether to print the LLVM IR"
             " for generated functions");
+TAG_FLAG(codegen_dump_functions, experimental);
+TAG_FLAG(codegen_dump_functions, runtime);
 DEFINE_bool(codegen_dump_mc, false, "Whether to dump the disassembly of the"
             " machine code for generated functions.");
+TAG_FLAG(codegen_dump_mc, experimental);
+TAG_FLAG(codegen_dump_mc, runtime);
 
 namespace llvm {
 class MCAsmInfo;

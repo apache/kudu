@@ -25,12 +25,14 @@
 #include "kudu/util/threadpool.h"
 
 DEFINE_int32(consensus_rpc_timeout_ms, 1000,
-             "Timeout used for all consensus internal RPC comms.");
+             "Timeout used for all consensus internal RPC communications.");
+TAG_FLAG(consensus_rpc_timeout_ms, advanced);
 
 DEFINE_int32(raft_get_node_instance_timeout_ms, 30000,
              "Timeout for retrieving node instance data over RPC.");
+TAG_FLAG(consensus_rpc_timeout_ms, hidden);
 
-DECLARE_int32(leader_heartbeat_interval_ms);
+DECLARE_int32(raft_heartbeat_interval_ms);
 
 DEFINE_double(fault_crash_on_leader_request_fraction, 0.0,
               "Fraction of the time when the leader will crash just before sending an "
@@ -89,7 +91,7 @@ Peer::Peer(const RaftPeerPB& peer_pb,
       failed_attempts_(0),
       sem_(1),
       heartbeater_(peer_pb.permanent_uuid(),
-                   MonoDelta::FromMilliseconds(FLAGS_leader_heartbeat_interval_ms),
+                   MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms),
                    boost::bind(&Peer::SignalRequest, this, true)),
       thread_pool_(thread_pool),
       state_(kPeerCreated) {

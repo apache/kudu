@@ -20,6 +20,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
@@ -28,6 +29,7 @@ DEFINE_string(local_ip_for_outbound_sockets, "",
               "IP to bind to when making outgoing socket connections. "
               "This must be an IP address of the form A.B.C.D, not a hostname. "
               "Advanced parameter, subject to change.");
+TAG_FLAG(local_ip_for_outbound_sockets, experimental);
 
 namespace kudu {
 

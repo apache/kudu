@@ -17,6 +17,9 @@ DEFINE_string(server_dump_info_path, "",
 DEFINE_string(server_dump_info_format, "json",
               "Format for --server_dump_info_path. This may be either "
               "'pb' or 'json'.");
+TAG_FLAG(server_dump_info_path, hidden);
+TAG_FLAG(server_dump_info_format, hidden);
+
 DEFINE_int32(metrics_log_interval_ms, 0,
              "Interval (in milliseconds) at which the server will dump its "
              "metrics to a local log file. The log files are located in the same "

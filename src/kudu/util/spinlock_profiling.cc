@@ -12,6 +12,7 @@
 #include "kudu/gutil/spinlock.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/striped64.h"
 #include "kudu/util/trace.h"
@@ -21,6 +22,7 @@ DEFINE_int32(lock_contention_trace_threshold_cycles,
              "If acquiring a spinlock takes more than this number of "
              "cycles, and a Trace is currently active, then the current "
              "stack trace is logged to the trace buffer.");
+TAG_FLAG(lock_contention_trace_threshold_cycles, hidden);
 
 METRIC_DEFINE_gauge_uint64(server, spinlock_contention_time,
     "Spinlock Contention Time", kudu::MetricUnit::kMicroseconds,

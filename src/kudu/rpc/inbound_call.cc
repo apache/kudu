@@ -14,6 +14,7 @@
 #include "kudu/rpc/rpc_sidecar.h"
 #include "kudu/rpc/serialization.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/trace.h"
 
@@ -27,6 +28,9 @@ using strings::Substitute;
 
 DEFINE_bool(rpc_dump_all_traces, false,
             "If true, dump all RPC traces at INFO level");
+TAG_FLAG(rpc_dump_all_traces, advanced);
+TAG_FLAG(rpc_dump_all_traces, runtime);
+
 
 namespace kudu {
 namespace rpc {

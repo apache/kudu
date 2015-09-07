@@ -29,6 +29,7 @@
 #include "kudu/server/tracing-path-handlers.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/env.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/jsonwriter.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -40,8 +41,9 @@
 #include "kudu/util/thread.h"
 #include "kudu/util/version_info.h"
 
-DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start."
-             " (Advanced option).");
+DEFINE_int32(num_reactor_threads, 4, "Number of libev reactor threads to start.");
+TAG_FLAG(num_reactor_threads, advanced);
+
 DECLARE_bool(use_hybrid_clock);
 
 using std::string;

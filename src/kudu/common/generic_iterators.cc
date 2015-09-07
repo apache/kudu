@@ -11,11 +11,12 @@
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/gutil/gscoped_ptr.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/memory/arena.h"
 
 DEFINE_bool(materializing_iterator_do_pushdown, true,
-            "Should MaterializingIterator do predicate pushdown"
-            " (advanced option, only for debugging)");
+            "Should MaterializingIterator do predicate pushdown");
+TAG_FLAG(materializing_iterator_do_pushdown, hidden);
 
 namespace kudu {
 

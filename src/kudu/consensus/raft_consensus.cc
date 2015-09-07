@@ -23,6 +23,7 @@
 #include "kudu/server/clock.h"
 #include "kudu/server/metadata.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
@@ -32,32 +33,42 @@
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
 
-DEFINE_int32(leader_heartbeat_interval_ms, 500,
-             "The LEADER's heartbeat interval to the replicas.");
+DEFINE_int32(raft_heartbeat_interval_ms, 500,
+             "The heartbeat interval for Raft replication. The leader produces heartbeats "
+             "to followers at this interval. The followers expect a heartbeat at this interval "
+             "and consider a leader to have failed if it misses several in a row.");
+TAG_FLAG(raft_heartbeat_interval_ms, advanced);
 
 // Defaults to be the same value as the leader heartbeat interval.
-DEFINE_int32(leader_failure_monitor_check_mean_ms, 500,
-             "The mean failure-checking interval of the randomized failure monitor.");
+DEFINE_int32(leader_failure_monitor_check_mean_ms, -1,
+             "The mean failure-checking interval of the randomized failure monitor. If this "
+             "is configured to -1 (the default), uses the value of 'raft_heartbeat_interval_ms'.");
+TAG_FLAG(leader_failure_monitor_check_mean_ms, experimental);
 
 // Defaults to half of the mean (above).
-DEFINE_int32(leader_failure_monitor_check_stddev_ms, 250,
+DEFINE_int32(leader_failure_monitor_check_stddev_ms, -1,
              "The standard deviation of the failure-checking interval of the randomized "
-             "failure monitor.");
+             "failure monitor. If this is configured to -1 (the default), this is set to "
+             "half of the mean check interval.");
+TAG_FLAG(leader_failure_monitor_check_stddev_ms, experimental);
 
 DEFINE_double(leader_failure_max_missed_heartbeat_periods, 3.0,
              "Maximum heartbeat periods that the leader can fail to heartbeat in before we "
              "consider the leader to be failed. The total failure timeout in milliseconds is "
-             "leader_heartbeat_interval_ms times leader_failure_max_missed_heartbeat_periods. "
+             "raft_heartbeat_interval_ms times leader_failure_max_missed_heartbeat_periods. "
              "The value passed to this flag may be fractional.");
+TAG_FLAG(leader_failure_max_missed_heartbeat_periods, advanced);
 
 DEFINE_int32(leader_failure_exp_backoff_max_delta_ms, 20 * 1000,
              "Maximum time to sleep in between leader election retries, in addition to the "
              "regular timeout. When leader election fails the interval in between retries "
              "increases exponentially, up to this value.");
+TAG_FLAG(leader_failure_exp_backoff_max_delta_ms, experimental);
 
 DEFINE_bool(enable_leader_failure_detection, true,
             "Whether to enable failure detection of tablet leaders. If enabled, attempts will be "
-            "made to fail over to a follower when the leader is detected to have failed.");
+            "made to elect a follower as a new leader when the leader is detected to have failed.");
+TAG_FLAG(enable_leader_failure_detection, unsafe);
 
 DEFINE_bool(evict_failed_followers, false,
             "Whether to evict followers from the Raft config that have fallen "
@@ -73,6 +84,30 @@ METRIC_DEFINE_gauge_int64(tablet, raft_term,
                           kudu::MetricUnit::kUnits,
                           "Current Term of the Raft Consensus algorithm. This number increments "
                           "each time a leader election is started.");
+
+namespace  {
+
+// Return the mean interval at which to check for failures of the
+// leader.
+int GetFailureMonitorCheckMeanMs() {
+  int val = FLAGS_leader_failure_monitor_check_mean_ms;
+  if (val < 0) {
+    val = FLAGS_raft_heartbeat_interval_ms;
+  }
+  return val;
+}
+
+// Return the standard deviation for the interval at which to check
+// for failures of the leader.
+int GetFailureMonitorCheckStddevMs() {
+  int val = FLAGS_leader_failure_monitor_check_stddev_ms;
+  if (val < 0) {
+    val = GetFailureMonitorCheckMeanMs() / 2;
+  }
+  return val;
+}
+
+} // anonymous namespace
 
 namespace kudu {
 namespace consensus {
@@ -160,11 +195,11 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
       queue_(queue.Pass()),
       rng_(GetRandomSeed32()),
       failure_monitor_(GetRandomSeed32(),
-                       FLAGS_leader_failure_monitor_check_mean_ms,
-                       FLAGS_leader_failure_monitor_check_stddev_ms),
+                       GetFailureMonitorCheckMeanMs(),
+                       GetFailureMonitorCheckStddevMs()),
       failure_detector_(new TimedFailureDetector(
           MonoDelta::FromMilliseconds(
-              FLAGS_leader_heartbeat_interval_ms *
+              FLAGS_raft_heartbeat_interval_ms *
               FLAGS_leader_failure_max_missed_heartbeat_periods))),
       withhold_votes_until_(MonoTime::Min()),
       mark_dirty_clbk_(mark_dirty_clbk),
@@ -1105,7 +1140,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     Status s;
     do {
       s = log_synchronizer.WaitFor(
-      MonoDelta::FromMilliseconds(FLAGS_leader_heartbeat_interval_ms));
+      MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms));
       // If just waiting for our log append to finish lets snooze the timer.
       // We don't want to fire leader election because we're waiting on our own log.
       if (s.IsTimedOut()) {
@@ -1788,7 +1823,7 @@ Status RaftConsensus::SnoozeFailureDetectorUnlocked(const MonoDelta& additional_
 
 MonoDelta RaftConsensus::MinimumElectionTimeout() const {
   int32_t failure_timeout = FLAGS_leader_failure_max_missed_heartbeat_periods *
-      FLAGS_leader_heartbeat_interval_ms;
+      FLAGS_raft_heartbeat_interval_ms;
   return MonoDelta::FromMilliseconds(failure_timeout);
 }
 

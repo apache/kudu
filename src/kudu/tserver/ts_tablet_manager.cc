@@ -53,6 +53,7 @@ TAG_FLAG(num_tablets_to_open_simultaneously, advanced);
 DEFINE_int32(tablet_start_warn_threshold_ms, 500,
              "If a tablet takes more than this number of millis to start, issue "
              "a warning with a trace.");
+TAG_FLAG(tablet_start_warn_threshold_ms, hidden);
 
 DEFINE_double(fault_crash_after_blocks_deleted, 0.0,
               "Fraction of the time when the tablet will crash immediately "

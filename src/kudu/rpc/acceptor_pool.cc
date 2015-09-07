@@ -17,6 +17,7 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
@@ -32,7 +33,14 @@ METRIC_DEFINE_counter(server, rpc_connections_accepted,
                       kudu::MetricUnit::kConnections,
                       "Number of incoming TCP connections made to the RPC server");
 
-DEFINE_int32(accept_backlog, 128, "backlog parameter to use for accept");
+DEFINE_int32(rpc_acceptor_listen_backlog, 128,
+             "Socket backlog parameter used when listening for RPC connections. "
+             "This defines the maximum length to which the queue of pending "
+             "TCP connections inbound to the RPC server may grow. If a connection "
+             "request arrives when the queue is full, the client may receive "
+             "an error. Higher values may help the server ride over bursts of "
+             "new inbound connection requests.");
+TAG_FLAG(rpc_acceptor_listen_backlog, advanced);
 
 namespace kudu {
 namespace rpc {
@@ -52,7 +60,7 @@ AcceptorPool::~AcceptorPool() {
 }
 
 Status AcceptorPool::Start(int num_threads) {
-  RETURN_NOT_OK(socket_.Listen(FLAGS_accept_backlog));
+  RETURN_NOT_OK(socket_.Listen(FLAGS_rpc_acceptor_listen_backlog));
 
   for (int i = 0; i < num_threads; i++) {
     scoped_refptr<kudu::Thread> new_thread;

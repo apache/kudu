@@ -30,10 +30,12 @@
 // TODO: How should this be configured? Should provide some guidance.
 DEFINE_uint64(log_container_max_size, 10LU * 1024 * 1024 * 1024,
               "Maximum size (soft) of a log container");
+TAG_FLAG(log_container_max_size, advanced);
 
 DEFINE_uint64(log_container_preallocate_bytes, 32LU * 1024 * 1024,
               "Number of bytes to preallocate in a log container when "
               "creating new blocks. Set to 0 to disable preallocation");
+TAG_FLAG(log_container_preallocate_bytes, advanced);
 
 DEFINE_bool(log_block_manager_test_hole_punching, true,
             "Ensure hole punching is supported by the underlying filesystem");

@@ -33,10 +33,15 @@
 #include "kudu/util/trace.h"
 #include "kudu/util/stopwatch.h"
 
+// Log retention configuration.
+// -----------------------------
 DEFINE_int32(log_min_segments_to_retain, 2,
              "The minimum number of past log segments to keep at all times,"
              " regardless of what is required for durability. "
              "Must be at least 1.");
+TAG_FLAG(log_min_segments_to_retain, runtime);
+TAG_FLAG(log_min_segments_to_retain, advanced);
+
 DEFINE_int32(log_min_seconds_to_retain, 300,
              "The minimum number of seconds for which to keep log segments to keep at all times, "
              "regardless of what is required for durability. Logs may be still retained for "
@@ -45,13 +50,17 @@ DEFINE_int32(log_min_seconds_to_retain, 300,
              "restarted within the given time period. If a server is down for longer than this "
              "amount of time, it is possible that its tablets will be re-replicated on other "
              "machines.");
-
 TAG_FLAG(log_min_seconds_to_retain, runtime);
 TAG_FLAG(log_min_seconds_to_retain, advanced);
 
+// Group commit configuration.
+// -----------------------------
 DEFINE_int32(group_commit_queue_size_bytes, 4 * 1024 * 1024,
              "Maximum size of the group commit queue in bytes");
+TAG_FLAG(group_commit_queue_size_bytes, advanced);
 
+// Fault/latency injection flags.
+// -----------------------------
 DEFINE_bool(log_inject_latency, false,
             "If true, injects artificial latency in log sync operations. "
             "Advanced option. Use at your own risk -- has a negative effect "
@@ -62,10 +71,12 @@ DEFINE_int32(log_inject_latency_ms_mean, 100,
 DEFINE_int32(log_inject_latency_ms_stddev, 100,
              "The standard deviation of latency to inject in the log. "
              "Only takes effect if --log_inject_latency is true");
-
 DEFINE_double(fault_crash_before_append_commit, 0.0,
               "Fraction of the time when the server will crash just before appending a "
               "COMMIT message to the log. (For testing only!)");
+TAG_FLAG(log_inject_latency, unsafe);
+TAG_FLAG(log_inject_latency_ms_mean, unsafe);
+TAG_FLAG(log_inject_latency_ms_stddev, unsafe);
 TAG_FLAG(fault_crash_before_append_commit, unsafe);
 
 // Validate that log_min_segments_to_retain >= 1

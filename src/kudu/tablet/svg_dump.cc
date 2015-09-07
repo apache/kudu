@@ -19,6 +19,7 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/tablet/rowset_info.h"
+#include "kudu/util/flag_tags.h"
 
 using std::ostream;
 using std::tr1::unordered_set;
@@ -40,6 +41,7 @@ DEFINE_string(compaction_policy_dump_svgs_pattern, "",
               "the context of unit tests and benchmarks. "
               "The special string 'TIME' will be substituted "
               "with the compaction selection timestamp.");
+TAG_FLAG(compaction_policy_dump_svgs_pattern, hidden);
 
 namespace {
 

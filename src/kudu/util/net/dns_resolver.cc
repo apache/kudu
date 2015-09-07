@@ -8,18 +8,22 @@
 #include <glog/logging.h>
 #include <vector>
 
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
 
-DEFINE_int32(num_dns_threads, 1, "The number of threads to use for DNS resolution");
+DEFINE_int32(dns_num_resolver_threads, 1, "The number of threads to use for DNS resolution");
+TAG_FLAG(dns_num_resolver_threads, advanced);
 
 using std::vector;
 
 namespace kudu {
 
 DnsResolver::DnsResolver() {
-  CHECK_OK(ThreadPoolBuilder("dns-resolver").set_max_threads(FLAGS_num_dns_threads).Build(&pool_));
+  CHECK_OK(ThreadPoolBuilder("dns-resolver")
+           .set_max_threads(FLAGS_dns_num_resolver_threads)
+           .Build(&pool_));
 }
 
 DnsResolver::~DnsResolver() {

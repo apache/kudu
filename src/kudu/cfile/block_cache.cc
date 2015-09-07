@@ -12,6 +12,7 @@
 #include "kudu/util/string_case.h"
 
 DEFINE_int64(block_cache_capacity_mb, 512, "block cache capacity in MB");
+TAG_FLAG(block_cache_capacity_mb, stable);
 
 DEFINE_string(block_cache_type, "DRAM",
               "Which type of block cache to use for caching data. "

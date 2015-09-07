@@ -17,9 +17,10 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/cfile_set.h"
-
+#include "kudu/util/flag_tags.h"
 
 DEFINE_bool(consult_bloom_filters, true, "Whether to consult bloom filters on row presence checks");
+TAG_FLAG(consult_bloom_filters, hidden);
 
 namespace kudu {
 namespace tablet {

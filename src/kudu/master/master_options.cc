@@ -7,13 +7,17 @@
 #include <gflags/gflags.h>
 
 #include "kudu/master/master.h"
+#include "kudu/util/flag_tags.h"
 
 namespace kudu {
 namespace master {
 
 DEFINE_string(master_addresses, "",
-              "Comma-separated list of all the RPC addresses for Master config."
-              " NOTE: if not specified, assumes a standalone Master.");
+              "Comma-separated list of all the RPC addresses for Master config. "
+              "This is used to configure the replicated Master process "
+              "(currently considered experimental). "
+              "NOTE: if not specified, configures a non-replicated Master.");
+TAG_FLAG(master_addresses, experimental);
 
 MasterOptions::MasterOptions() {
   rpc_opts.default_port = Master::kDefaultPort;

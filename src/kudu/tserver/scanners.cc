@@ -12,12 +12,14 @@
 #include "kudu/common/scan_spec.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/tserver/scanner_metrics.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/metrics.h"
 
-DEFINE_int32(scanner_ttl_millis, 60000,
+DEFINE_int32(scanner_ttl_ms, 60000,
              "Number of milliseconds of inactivity allowed for a scanner"
              "before it may be expired");
+TAG_FLAG(scanner_ttl_ms, advanced);
 
 // TODO: would be better to scope this at a tablet level instead of
 // server level.
@@ -37,7 +39,7 @@ static const uint64_t kRemovalThreadIntervalUs = 5000000;
 
 ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
   : scanner_ttl_(MonoDelta::FromMilliseconds(
-                   FLAGS_scanner_ttl_millis)),
+                   FLAGS_scanner_ttl_ms)),
     shutdown_(false) {
   if (metric_entity) {
     metrics_.reset(new ScannerMetrics(metric_entity));

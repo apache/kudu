@@ -21,7 +21,7 @@ DEFINE_int32(sleep_between_flushes_ms, 100,
              "number of milliseconds to sleep between flushing or compacting");
 DEFINE_int32(update_delete_ratio, 4, "ratio of update:delete when mutating existing rows");
 
-DECLARE_int32(deltafile_block_size);
+DECLARE_int32(deltafile_default_block_size);
 
 using std::string;
 using std::vector;
@@ -71,7 +71,7 @@ class TestRandomAccess : public KuduTabletTest {
 
     // Set a small block size to increase chances that a single update will span
     // multiple delta blocks.
-    FLAGS_deltafile_block_size = 1024;
+    FLAGS_deltafile_default_block_size = 1024;
     expected_tablet_state_.resize(FLAGS_keyspace_size);
   }
 
