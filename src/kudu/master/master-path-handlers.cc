@@ -349,13 +349,13 @@ Status MasterPathHandlers::Register(Webserver* server) {
   server->RegisterPathHandler("/tablet-servers", "Tablet Servers",
                               boost::bind(&MasterPathHandlers::HandleTabletServers, this, _1, _2),
                               is_styled, is_on_nav_bar);
-  server->RegisterPathHandler("/tablez", "Tables",
+  server->RegisterPathHandler("/tables", "Tables",
                               boost::bind(&MasterPathHandlers::HandleCatalogManager, this, _1, _2),
                               is_styled, is_on_nav_bar);
   server->RegisterPathHandler("/table", "",
                               boost::bind(&MasterPathHandlers::HandleTablePage, this, _1, _2),
                               is_styled, false);
-  server->RegisterPathHandler("/masterz", "Masters",
+  server->RegisterPathHandler("/masters", "Masters",
                               boost::bind(&MasterPathHandlers::HandleMasters, this, _1, _2),
                               is_styled, is_on_nav_bar);
   server->RegisterPathHandler("/dump-entities", "Dump Entities",

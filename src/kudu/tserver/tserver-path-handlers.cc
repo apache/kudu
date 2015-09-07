@@ -49,7 +49,7 @@ TabletServerPathHandlers::~TabletServerPathHandlers() {
 
 Status TabletServerPathHandlers::Register(Webserver* server) {
   server->RegisterPathHandler(
-    "/scanz", "Scans",
+    "/scans", "Scans",
     boost::bind(&TabletServerPathHandlers::HandleScansPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
@@ -61,7 +61,7 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     boost::bind(&TabletServerPathHandlers::HandleTabletPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
-    "/transactionz", "",
+    "/transactions", "",
     boost::bind(&TabletServerPathHandlers::HandleTransactionsPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
@@ -73,7 +73,7 @@ Status TabletServerPathHandlers::Register(Webserver* server) {
     boost::bind(&TabletServerPathHandlers::HandleConsensusStatusPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
-    "/log-anchorz", "",
+    "/log-anchors", "",
     boost::bind(&TabletServerPathHandlers::HandleLogAnchorsPage, this, _1, _2),
     true /* styled */, false /* is_on_nav_bar */);
   server->RegisterPathHandler(
@@ -457,8 +457,8 @@ void TabletServerPathHandlers::HandleDashboardsPage(const Webserver::WebRequest&
   *output << "<h3>Dashboards</h3>\n";
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Dashboard</th><th>Description</th></tr>\n";
-  *output << GetDashboardLine("scanz", "Scans", "List of scanners that are currently running.");
-  *output << GetDashboardLine("transactionz", "Transactions", "List of transactions that are "
+  *output << GetDashboardLine("scans", "Scans", "List of scanners that are currently running.");
+  *output << GetDashboardLine("transactions", "Transactions", "List of transactions that are "
                                                               "currently running.");
   *output << GetDashboardLine("maintenance-manager", "Maintenance Manager",
                               "List of operations that are currently running and those "

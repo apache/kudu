@@ -131,7 +131,7 @@ static void MemUsageHandler(const Webserver::WebRequest& req, std::stringstream*
 #endif
 }
 
-// Registered to handle "/memtrackerz", and prints out to handle memory tracker information.
+// Registered to handle "/mem-trackers", and prints out to handle memory tracker information.
 static void MemTrackersHandler(const Webserver::WebRequest& req, std::stringstream* output) {
   *output << "<h1>Memory usage by subsystem</h1>\n";
   *output << "<table class='table table-striped'>\n";
@@ -158,7 +158,7 @@ void AddDefaultPathHandlers(Webserver* webserver) {
   webserver->RegisterPathHandler("/logs", "Logs", LogsHandler);
   webserver->RegisterPathHandler("/varz", "Flags", FlagsHandler);
   webserver->RegisterPathHandler("/memz", "Memory (total)", MemUsageHandler);
-  webserver->RegisterPathHandler("/memtrackerz", "Memory (detail)", MemTrackersHandler);
+  webserver->RegisterPathHandler("/mem-trackers", "Memory (detail)", MemTrackersHandler);
 
   AddPprofPathHandlers(webserver);
 }
@@ -200,9 +200,14 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
 
 void RegisterMetricsJsonHandler(Webserver* webserver, const MetricRegistry* const metrics) {
   Webserver::PathHandlerCallback callback = boost::bind(WriteMetricsAsJson, metrics, _1, _2);
-  bool is_styled = false;
+  bool not_styled = false;
+  bool not_on_nav_bar = false;
   bool is_on_nav_bar = true;
-  webserver->RegisterPathHandler("/jsonmetricz", "Metrics", callback, is_styled, is_on_nav_bar);
+  webserver->RegisterPathHandler("/metrics", "Metrics", callback, not_styled, is_on_nav_bar);
+
+  // The old name -- this is preserved for compatibility with older releases of
+  // monitoring software which expects the old name.
+  webserver->RegisterPathHandler("/jsonmetricz", "Metrics", callback, not_styled, not_on_nav_bar);
 }
 
 } // namespace kudu

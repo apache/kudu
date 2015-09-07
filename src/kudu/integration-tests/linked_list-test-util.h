@@ -281,15 +281,15 @@ class PeriodicWebUIChecker {
     // List of master and ts web pages to fetch
     vector<std::string> master_pages, ts_pages;
 
-    master_pages.push_back("/jsonmetricz");
-    master_pages.push_back("/masterz");
-    master_pages.push_back("/tablez");
+    master_pages.push_back("/metrics");
+    master_pages.push_back("/masters");
+    master_pages.push_back("/tables");
     master_pages.push_back("/dump-entities");
     master_pages.push_back("/tablet-servers");
 
-    ts_pages.push_back("/jsonmetricz");
+    ts_pages.push_back("/metrics");
     ts_pages.push_back("/tablets");
-    ts_pages.push_back(strings::Substitute("/transactionz?tablet_id=$0", tablet_id));
+    ts_pages.push_back(strings::Substitute("/transactions?tablet_id=$0", tablet_id));
 
     // Generate list of urls for each master and tablet server
     for (int i = 0; i < cluster.num_masters(); i++) {
