@@ -365,9 +365,31 @@ data source is Kudu.
 
 === Altering Table Properties
 
-To change the Kudu master address, change the table from internal to external or vice
-versa, change the Kudu table name in the Impala mapping, you need to alter the table
-properties. TBD pending KUDU-1029.
+You can change Impala's metadata relating to a given Kudu table by altering the table's
+properties. These properties include the table name, the list of Kudu master addresses,
+and whether the table is managed by Impala (internal) or externally. You cannot modify
+a table's split rows after table creation.
+
+IMPORTANT: Altering table properties only changes Impala's metadata about the table,
+not the underlying table itself. These statements do not modify any table metadata
+in Kudu.
+.Rename a Table
+[source,sql]
+----
+ALTER TABLE my_table RENAME TO my_new_table;
+----
+
+.Change the Kudu Master Address
+[source,sql]
+----
+ALTER TABLE my_table SET TBLPROPERTIES('kudu.master_addresses' = 'kudu-original-master.example.com:7051,kudu-new-master.example.com:7051');
+----
+
+.Change an Internally-Managed Table to External
+[source,sql]
+----
+ALTER TABLE my_table SET TBLPROPERTIES('EXTERNAL' = 'TRUE');
+----
 
 === Dropping a Kudu Table Using Impala
 
