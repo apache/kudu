@@ -11,7 +11,9 @@
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/mini_master.h"
+#include "kudu/tserver/mini_tablet_server.h"
 #include "kudu/util/countdown_latch.h"
+#include "kudu/util/curl_util.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_macros.h"
@@ -86,7 +88,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
   void InsertBaseData();
 
   // Starts the update and scan threads then stops them after seconds_to_run.
-  void RunUpdateAndScanThreads();
+  void RunThreads();
 
  private:
   enum {
@@ -118,6 +120,9 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
 
   // Continuously scans the data until 'stop_latch' drops to 0.
   void ScanRows(CountDownLatch* stop_latch) const;
+
+  // Continuously fetch various web pages on the TS.
+  void CurlWebPages(CountDownLatch* stop_latch) const;
 
   // Sets the passed values on the row.
   // TODO randomize the string column.
@@ -154,7 +159,7 @@ TEST_F(UpdateScanDeltaCompactionTest, TestAll) {
 
   ASSERT_NO_FATAL_FAILURE(CreateTable());
   ASSERT_NO_FATAL_FAILURE(InsertBaseData());
-  ASSERT_NO_FATAL_FAILURE(RunUpdateAndScanThreads());
+  ASSERT_NO_FATAL_FAILURE(RunThreads());
 }
 
 void UpdateScanDeltaCompactionTest::InsertBaseData() {
@@ -176,27 +181,46 @@ void UpdateScanDeltaCompactionTest::InsertBaseData() {
   }
 }
 
-void UpdateScanDeltaCompactionTest::RunUpdateAndScanThreads() {
-  scoped_refptr<Thread> update_thread;
-  scoped_refptr<Thread> scan_thread;
-  CountDownLatch stop_latch(1);
-  ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
-                           StrCat(CURRENT_TEST_CASE_NAME(), "-update"),
-                           &UpdateScanDeltaCompactionTest::UpdateRows, this,
-                           &stop_latch, &update_thread));
+void UpdateScanDeltaCompactionTest::RunThreads() {
+  vector<scoped_refptr<Thread> > threads;
 
-  ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
-                           StrCat(CURRENT_TEST_CASE_NAME(), "-scan"),
-                           &UpdateScanDeltaCompactionTest::ScanRows, this,
-                           &stop_latch, &scan_thread));
+  CountDownLatch stop_latch(1);
+
+  {
+    scoped_refptr<Thread> t;
+    ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
+                             StrCat(CURRENT_TEST_CASE_NAME(), "-update"),
+                             &UpdateScanDeltaCompactionTest::UpdateRows, this,
+                             &stop_latch, &t));
+    threads.push_back(t);
+  }
+
+  {
+    scoped_refptr<Thread> t;
+    ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
+                             StrCat(CURRENT_TEST_CASE_NAME(), "-scan"),
+                             &UpdateScanDeltaCompactionTest::ScanRows, this,
+                             &stop_latch, &t));
+    threads.push_back(t);
+  }
+
+  {
+    scoped_refptr<Thread> t;
+    ASSERT_OK(Thread::Create(CURRENT_TEST_NAME(),
+                             StrCat(CURRENT_TEST_CASE_NAME(), "-curl"),
+                             &UpdateScanDeltaCompactionTest::CurlWebPages, this,
+                             &stop_latch, &t));
+    threads.push_back(t);
+  }
+
   SleepFor(MonoDelta::FromSeconds(FLAGS_seconds_to_run * 1.0));
   stop_latch.CountDown();
-  ASSERT_OK(ThreadJoiner(update_thread.get())
-            .warn_every_ms(500)
-            .Join());
-  ASSERT_OK(ThreadJoiner(scan_thread.get())
-            .warn_every_ms(500)
-            .Join());
+
+  BOOST_FOREACH(const scoped_refptr<Thread>& thread, threads) {
+    ASSERT_OK(ThreadJoiner(thread.get())
+              .warn_every_ms(500)
+              .Join());
+  }
 }
 
 void UpdateScanDeltaCompactionTest::UpdateRows(CountDownLatch* stop_latch) {
@@ -229,6 +253,25 @@ void UpdateScanDeltaCompactionTest::ScanRows(CountDownLatch* stop_latch) const {
       while (scanner.HasMoreRows()) {
         CHECK_OK(scanner.NextBatch(&rows));
         rows.clear();
+      }
+    }
+  }
+}
+
+void UpdateScanDeltaCompactionTest::CurlWebPages(CountDownLatch* stop_latch) const {
+  vector<string> urls;
+  string base_url = cluster_->mini_tablet_server(0)->bound_http_addr().ToString();
+  urls.push_back(base_url + "/scans");
+  urls.push_back(base_url + "/transactions");
+
+  EasyCurl curl;
+  faststring dst;
+  while (stop_latch->count() > 0) {
+    BOOST_FOREACH(const string& url, urls) {
+      VLOG(1) << "Curling URL " << url;
+      Status status = curl.FetchURL(url, &dst);
+      if (status.ok()) {
+        CHECK_GT(dst.length(), 0);
       }
     }
   }

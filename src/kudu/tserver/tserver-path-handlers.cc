@@ -386,21 +386,27 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
   uint64_t time_since_last_access_us =
       scanner.TimeSinceLastAccess(MonoTime::Now(MonoTime::COARSE)).ToMicroseconds();
 
+  html << Substitute("<tr><td>$0</td><td>$1</td><td>$2 us.</td><td>$3 us.</td><td>$4</td>",
+                     EscapeForHtmlToString(scanner.tablet_id()), // $0
+                     EscapeForHtmlToString(scanner.id()), // $1
+                     time_in_flight_us, time_since_last_access_us, // $2, $3
+                     EscapeForHtmlToString(scanner.requestor_string())); // $4
+
+
+  if (!scanner.IsInitialized()) {
+    html << "<td colspan=\"3\">&lt;not yet initialized&gt;</td></tr>";
+    return html.str();
+  }
+
   const Schema* projection = &scanner.iter()->schema();
 
   vector<IteratorStats> stats;
   scanner.GetIteratorStats(&stats);
   CHECK_EQ(stats.size(), projection->num_columns());
-  html << Substitute("<tr><td>$0</td><td>$1</td><td>$2 us.</td><td>$3 us.</td><td>$4</td>"
-                     "<td>$5</td>",
-                     EscapeForHtmlToString(scanner.tablet_id()), // $0
-                     EscapeForHtmlToString(scanner.id()), // $1
-                     time_in_flight_us, time_since_last_access_us, // $2, $3
-                     EscapeForHtmlToString(scanner.requestor_string()), // $4
-                     IteratorStatsToHtml(*projection, stats)); // $5
+  html << Substitute("<td>$0</td>", IteratorStatsToHtml(*projection, stats));
   scoped_refptr<TabletPeer> tablet_peer;
   if (!tserver_->tablet_manager()->LookupTablet(scanner.tablet_id(), &tablet_peer)) {
-    html << Substitute("<td><b>Tablet $0 is no longer valid.</b></td></tr>\n",
+    html << Substitute("<td colspan=\"2\"><b>Tablet $0 is no longer valid.</b></td></tr>\n",
                        scanner.tablet_id());
   } else {
     string range_pred_str;

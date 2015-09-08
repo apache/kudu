@@ -171,6 +171,7 @@ void Scanner::UpdateAccessTime() {
 
 void Scanner::Init(gscoped_ptr<RowwiseIterator> iter,
                    gscoped_ptr<ScanSpec> spec) {
+  boost::lock_guard<simple_spinlock> l(lock_);
   CHECK(!iter_) << "Already initialized";
   iter_.reset(iter.release());
   spec_.reset(spec.release());

@@ -159,6 +159,14 @@ class Scanner {
   void Init(gscoped_ptr<RowwiseIterator> iter,
             gscoped_ptr<ScanSpec> spec);
 
+  // Return true if the scanner has been initialized (i.e has an iterator).
+  // Once a Scanner is initialized, it is safe to assume that iter() and spec()
+  // return non-NULL for the lifetime of the Scanner object.
+  bool IsInitialized() const {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    return iter_ != NULL;
+  }
+
   RowwiseIterator* iter() {
     return DCHECK_NOTNULL(iter_.get());
   }
@@ -262,7 +270,7 @@ class Scanner {
   // The current call sequence ID.
   uint32_t call_seq_id_;
 
-  // Protects last_access_time_ and call_seq_id_.
+  // Protects last_access_time_ call_seq_id_, iter_, and spec_.
   mutable simple_spinlock lock_;
 
   // The time the scanner was started.
