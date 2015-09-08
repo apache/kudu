@@ -11,11 +11,8 @@
 :experimental:
 
 Kudu is a columnar storage manager developed for the Hadoop platform.  Kudu shares
-the common technical properties of Hadoop ecosystem applications:
-
-* Runs on commodity hardware
-* Horizontally scalable
-* Supports highly available operation
+the common technical properties of Hadoop ecosystem applications: it runs on commodity
+hardware, is horizontally scalable, and supports highly available operation.
 
 Kudu's design sets it apart. Some of Kudu's benefits include:
 
@@ -142,15 +139,53 @@ INSERT DIAGRAM HERE
 == Example Use Cases
 .Streaming Input with Near Real Time Availability
 
-TODO give an example of how Kudu helps here.
+A common challenge in data analysis is one where new data arrives rapidly and constantly,
+and the same data needs to be available in near real time for reads, scans, and
+updates. Kudu offers the powerful combination of fast inserts and updates with
+efficient columnar scans to enable real-time analytics use cases on a single storage layer.
 
 .Time-series application with widely varying access patterns
 
-TODO give an example of how Kudu helps here.
+A time-series schema is one in which data points are organized and keyed according
+to the time at which they occurred. This can be useful for investigating the
+performance of metrics over time or attempting to predict future behavior based
+on past data. For instance, time-series customer data might be used both to store
+purchase click-stream history and to predict future purchases, or for use by a
+customer support representative. While these different types of analysis are occurring,
+inserts and mutations may also be occurring individually and in bulk, and become available
+immediately to read workloads. Kudu can handle all of these access patterns
+simultaneously in a scalable and efficient manner.
 
-.Iterative predictive learning
+Kudu is a good fit for time-series workloads for several reasons. With Kudu's support for
+hash-based partitioning, combined with its native support for compound row keys, it is
+simple to set up a table spread across many servers without the risk of "hotspotting"
+that is commonly observed when range partitioning is used. Kudu's columar storage engine
+is also beneficial in this context, because many time-series workloads read only a few columns,
+as opposed to the whole row.
 
-TODO give an example of how Kudu helps here.
+In the past, you might have needed to use multiple data stores to handle different
+data access patterns. This practice adds complexity to your application and operations, and
+duplicates storage. Kudu can handle all of these access patterns natively and efficiently,
+without the need to off-load work to other data stores.
+
+.Predictive Modeling
+
+Data analysts often develop predictive learning models from large sets of data. The
+model and the data may need to be updated or modified often as the learning takes
+place or as the situation being modeled changes. In addition, the scientist may want
+to change one or more factors in the model to see what happens over time. Updating
+a large set of data stored in files in HDFS is resource-intensive, as each file needs
+to be completely rewritten. In Kudu, updates happen in near real time. The scientist
+can tweak the value, re-run the query, and refresh the graph in seconds or minutes,
+rather than hours or days. In addition, batch or incremental algorithms can be run
+across the data at any time, with near-real-time results.
+
+.Combining Data In Kudu With Legacy Systems
+
+Companies generate data from multiple sources and store it in a variety of systems
+and formats. For instance, some of your data may be stored in Kudu, some in a traditional
+RDBMS, and some in files in HDFS. You can access and query all of these sources and
+formats using Impala, without the need to change your legacy systems.
 
 == Next Steps
 - link:quickstart.html[Get Started With Kudu]
