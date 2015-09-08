@@ -145,6 +145,21 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   ASSERT_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
   ASSERT_EQ(ts_desc, descs[0]);
 
+  // If the tablet server somehow lost the response to its registration RPC, it would
+  // attempt to register again. In that case, we shouldn't reject it -- we should
+  // just respond the same.
+  {
+    TSHeartbeatRequestPB req;
+    TSHeartbeatResponsePB resp;
+    RpcController rpc;
+    req.mutable_common()->CopyFrom(common);
+    req.mutable_registration()->CopyFrom(fake_reg);
+    ASSERT_OK(proxy_->TSHeartbeat(req, &resp, &rpc));
+
+    ASSERT_FALSE(resp.needs_reregister());
+    ASSERT_TRUE(resp.needs_full_tablet_report());
+  }
+
   // Now send a tablet report
   {
     TSHeartbeatRequestPB req;

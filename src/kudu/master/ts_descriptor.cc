@@ -41,12 +41,17 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   boost::lock_guard<simple_spinlock> l(lock_);
   CHECK_EQ(instance.permanent_uuid(), permanent_uuid_);
 
-  if (instance.instance_seqno() <= latest_seqno_) {
+  if (instance.instance_seqno() < latest_seqno_) {
     return Status::AlreadyPresent(
       strings::Substitute("Cannot register with sequence number $0:"
                           " Already have a registration from sequence number $1",
                           instance.instance_seqno(),
                           latest_seqno_));
+  } else if (instance.instance_seqno() == latest_seqno_) {
+    // It's possible that the TS registered, but our response back to it
+    // got lost, so it's trying to register again with the same sequence
+    // number. That's fine.
+    LOG(INFO) << "Processing retry of TS registration from " << instance.ShortDebugString();
   }
 
   latest_seqno_ = instance.instance_seqno();
