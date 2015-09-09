@@ -24,8 +24,27 @@ which are not part of public APIs have no stability guarantees.
 include::installation.adoc[tags=view_api]
 
 == Working Examples
-Working example applications are provided in a separate Git repository, at
-https://github.com/cloudera/kudu-examples. Each example includes
-a `README` which includes how to build and run it. You are welcome to submit
-examples of your own. See link:contributing.html [Contributing to Kudu] for guidelines,
-and model the structure of your examples upon the structure of existing examples.
+
+Several example applications are provided in the
+link:https://github.com/cloudera/kudu-examples [kudu-examples] Github
+repository. Each example includes a `README` that shows how to compile and run
+it. These examples illustrate correct usage of the Kudu APIs, as well as how to
+set up a virtual machine to run Kudu. The following list includes a few of the
+examples that are available today.
+
+`java-example`::
+  A simple Java application which connects to a Kudu instance, creates a table, writes data to it, then drops the table.
+`collectl`::
+  A small Java application which listens on a TCP socket for time series data corresponding to the Collectl wire protocol.
+  The commonly-available collectl tool can be used to send example data to the server.
+`clients/python`::
+  An experimental Python client for Kudu.
+`demo-vm-setup`::
+  Scripts to download and run a VirtualBox virtual machine with Kudu already installed.
+
+These examples should serve as helpful starting points for your own Kudu applications and integrations.
+
+== Example Impala Commands With Kudu
+
+See link:kudu_impala_integration.html[Using Impala With Kudu] for guidance on installing
+and using Impala with Kudu, including several `impala-shell` examples.
