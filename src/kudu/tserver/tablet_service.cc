@@ -4,6 +4,7 @@
 #include "kudu/tserver/tablet_service.h"
 
 #include <algorithm>
+#include <boost/optional.hpp>
 #include <string>
 #include <tr1/memory>
 #include <vector>
