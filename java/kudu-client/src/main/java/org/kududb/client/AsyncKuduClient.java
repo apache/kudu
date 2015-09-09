@@ -33,6 +33,7 @@ import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
 import org.kududb.ColumnSchema;
@@ -220,17 +221,14 @@ public class AsyncKuduClient {
 
   private volatile boolean closed;
 
-  private AsyncKuduClient(List<HostAndPort> masterAddresses,
-                          long defaultOperationTimeoutMs,
-                          long defaultAdminOperationTimeoutMs,
-                          long defaultSocketReadTimeoutMs) {
-    this.channelFactory = defaultChannelFactory();
-    this.masterAddresses = masterAddresses;
+  private AsyncKuduClient(AsyncKuduClientBuilder b) {
+    this.channelFactory = b.createChannelFactory();
+    this.masterAddresses = b.masterAddresses;
     this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER,
        new Schema(new ArrayList<ColumnSchema>(0)));
-    this.defaultOperationTimeoutMs = defaultOperationTimeoutMs;
-    this.defaultAdminOperationTimeoutMs = defaultAdminOperationTimeoutMs;
-    this.defaultSocketReadTimeoutMs = defaultSocketReadTimeoutMs;
+    this.defaultOperationTimeoutMs = b.defaultOperationTimeoutMs;
+    this.defaultAdminOperationTimeoutMs = b.defaultAdminOperationTimeoutMs;
+    this.defaultSocketReadTimeoutMs = b.defaultSocketReadTimeoutMs;
   }
 
   /**
@@ -1562,12 +1560,6 @@ public class AsyncKuduClient {
 
   }
 
-  /** Creates a default channel factory in case we haven't been given one.  */
-  private static NioClientSocketChannelFactory defaultChannelFactory() {
-    final Executor executor = Executors.newCachedThreadPool();
-    return new NioClientSocketChannelFactory(executor, executor);
-  }
-
   /**
    * Gets a hostname or an IP address and returns the textual representation
    * of the IP address.
@@ -1884,17 +1876,20 @@ public class AsyncKuduClient {
   public final static class AsyncKuduClientBuilder {
     private static final int DEFAULT_MASTER_PORT = 7051;
 
-    private final List<HostAndPort> nestedMasterAddresses;
-    private long nestedDefaultAdminOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
-    private long nestedDefaultOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
-    private long nestedDefaultSocketReadTimeoutMs = DEFAULT_SOCKET_READ_TIMEOUT_MS;
+    private final List<HostAndPort> masterAddresses;
+    private long defaultAdminOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
+    private long defaultOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
+    private long defaultSocketReadTimeoutMs = DEFAULT_SOCKET_READ_TIMEOUT_MS;
+
+    private Executor bossExecutor;
+    private Executor workerExecutor;
 
     /**
      * Creates a new builder for a client that will connect to the specified masters.
      * @param masterAddresses comma-separated list of "host:port" pairs of the masters
      */
     public AsyncKuduClientBuilder(String masterAddresses) {
-      this.nestedMasterAddresses =
+      this.masterAddresses =
           NetUtil.parseStrings(masterAddresses, DEFAULT_MASTER_PORT);
     }
 
@@ -1915,10 +1910,10 @@ public class AsyncKuduClient {
      * @param masterAddresses list of master addresses
      */
     public AsyncKuduClientBuilder(List<String> masterAddresses) {
-      this.nestedMasterAddresses =
+      this.masterAddresses =
           Lists.newArrayListWithCapacity(masterAddresses.size());
       for (String address : masterAddresses) {
-        this.nestedMasterAddresses.add(
+        this.masterAddresses.add(
             NetUtil.parseString(address, DEFAULT_MASTER_PORT));
       }
     }
@@ -1933,7 +1928,7 @@ public class AsyncKuduClient {
      * @return this builder
      */
     public AsyncKuduClientBuilder defaultAdminOperationTimeoutMs(long timeoutMs) {
-      this.nestedDefaultAdminOperationTimeoutMs = timeoutMs;
+      this.defaultAdminOperationTimeoutMs = timeoutMs;
       return this;
     }
 
@@ -1946,7 +1941,7 @@ public class AsyncKuduClient {
      * @return this builder
      */
     public AsyncKuduClientBuilder defaultOperationTimeoutMs(long timeoutMs) {
-      this.nestedDefaultOperationTimeoutMs = timeoutMs;
+      this.defaultOperationTimeoutMs = timeoutMs;
       return this;
     }
 
@@ -1959,8 +1954,36 @@ public class AsyncKuduClient {
      * @return this builder
      */
     public AsyncKuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
-      this.nestedDefaultSocketReadTimeoutMs = timeoutMs;
+      this.defaultSocketReadTimeoutMs = timeoutMs;
       return this;
+    }
+
+    /**
+     * Set the executors which will be used for the embedded Netty boss and workers.
+     * Optional.
+     * If not provided, uses a simple cached threadpool. If either argument is null,
+     * then such a thread pool will be used in place of that argument.
+     */
+    public AsyncKuduClientBuilder nioExecutors(Executor bossExecutor, Executor workerExecutor) {
+      this.bossExecutor = bossExecutor;
+      this.workerExecutor = workerExecutor;
+      return this;
+    }
+
+    /**
+     * Creates the channel factory for Netty. The user can specify the executors, but
+     * if they don't, we'll use a simple thread pool.
+     */
+    private NioClientSocketChannelFactory createChannelFactory() {
+      Executor boss = bossExecutor;
+      Executor worker = workerExecutor;
+      if (boss == null || worker == null) {
+        Executor defaultExec = Executors.newCachedThreadPool(
+            new ThreadFactoryBuilder().setNameFormat("kudu-nio-%d").build());
+        if (boss == null) boss = defaultExec;
+        if (worker == null) worker = defaultExec;
+      }
+      return new NioClientSocketChannelFactory(boss, worker);
     }
 
     /**
@@ -1969,11 +1992,7 @@ public class AsyncKuduClient {
      * @return a new asynchronous Kudu client
      */
     public AsyncKuduClient build() {
-      return new AsyncKuduClient(nestedMasterAddresses,
-          nestedDefaultOperationTimeoutMs,
-          nestedDefaultAdminOperationTimeoutMs,
-          nestedDefaultSocketReadTimeoutMs);
+      return new AsyncKuduClient(this);
     }
   }
-
 }
