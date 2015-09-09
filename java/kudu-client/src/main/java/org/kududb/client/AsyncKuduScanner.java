@@ -680,9 +680,9 @@ public final class AsyncKuduScanner {
      */
     public AsyncKuduScanner build() {
       return new AsyncKuduScanner(
-          nestedClient, nestedTable, nestedProjectedColumnNames, nestedReadMode,
-          nestedScanRequestTimeout, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
-          nestedPrefetching, nestedLowerBound, nestedUpperBound, nestedHtTimestamp, nestedMaxNumBytes);
+          client, table, projectedColumnNames, readMode,
+          scanRequestTimeout, columnRangePredicates, limit, cacheBlocks,
+          prefetching, lowerBound, upperBound, htTimestamp, maxNumBytes);
     }
   }
 }

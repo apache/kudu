@@ -14,26 +14,26 @@ import org.kududb.tserver.Tserver;
  */
 public abstract class AbstractKuduScannerBuilder
     <S extends AbstractKuduScannerBuilder<? super S, T>, T> {
-  protected final AsyncKuduClient nestedClient;
-  protected final KuduTable nestedTable;
-  protected final List<Tserver.ColumnRangePredicatePB> nestedColumnRangePredicates;
+  protected final AsyncKuduClient client;
+  protected final KuduTable table;
+  protected final List<Tserver.ColumnRangePredicatePB> columnRangePredicates;
 
-  protected AsyncKuduScanner.ReadMode nestedReadMode = AsyncKuduScanner.ReadMode.READ_LATEST;
-  protected int nestedMaxNumBytes = 1024*1024;
-  protected long nestedLimit = Long.MAX_VALUE;
-  protected boolean nestedPrefetching = false;
-  protected boolean nestedCacheBlocks = true;
-  protected long nestedHtTimestamp = AsyncKuduClient.NO_TIMESTAMP;
-  protected byte[] nestedLowerBound = AsyncKuduClient.EMPTY_ARRAY;
-  protected byte[] nestedUpperBound = AsyncKuduClient.EMPTY_ARRAY;
-  protected List<String> nestedProjectedColumnNames = null;
-  protected long nestedScanRequestTimeout;
+  protected AsyncKuduScanner.ReadMode readMode = AsyncKuduScanner.ReadMode.READ_LATEST;
+  protected int maxNumBytes = 1024*1024;
+  protected long limit = Long.MAX_VALUE;
+  protected boolean prefetching = false;
+  protected boolean cacheBlocks = true;
+  protected long htTimestamp = AsyncKuduClient.NO_TIMESTAMP;
+  protected byte[] lowerBound = AsyncKuduClient.EMPTY_ARRAY;
+  protected byte[] upperBound = AsyncKuduClient.EMPTY_ARRAY;
+  protected List<String> projectedColumnNames = null;
+  protected long scanRequestTimeout;
 
   AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
-    this.nestedClient = client;
-    this.nestedTable = table;
-    this.nestedColumnRangePredicates = new ArrayList<>();
-    this.nestedScanRequestTimeout = client.getDefaultOperationTimeoutMs();
+    this.client = client;
+    this.table = table;
+    this.columnRangePredicates = new ArrayList<>();
+    this.scanRequestTimeout = client.getDefaultOperationTimeoutMs();
   }
 
   /**
@@ -42,7 +42,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S readMode(AsyncKuduScanner.ReadMode readMode) {
-    this.nestedReadMode = readMode;
+    this.readMode = readMode;
     return (S) this;
   }
 
@@ -53,7 +53,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S addColumnRangePredicate(ColumnRangePredicate predicate) {
-    nestedColumnRangePredicates.add(predicate.pb.build());
+    columnRangePredicates.add(predicate.pb.build());
     return (S) this;
   }
 
@@ -64,9 +64,9 @@ public abstract class AbstractKuduScannerBuilder
    */
   public S setProjectedColumnNames(List<String> columnNames) {
     if (columnNames != null) {
-      nestedProjectedColumnNames = ImmutableList.copyOf(columnNames);
+      projectedColumnNames = ImmutableList.copyOf(columnNames);
     } else {
-      nestedProjectedColumnNames = null;
+      projectedColumnNames = null;
     }
     return (S) this;
   }
@@ -80,7 +80,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S maxNumBytes(int maxNumBytes) {
-    this.nestedMaxNumBytes = maxNumBytes;
+    this.maxNumBytes = maxNumBytes;
     return (S) this;
   }
 
@@ -91,7 +91,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S limit(long limit) {
-    this.nestedLimit = limit;
+    this.limit = limit;
     return (S) this;
   }
 
@@ -101,7 +101,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S prefetching(boolean prefetching) {
-    this.nestedPrefetching = prefetching;
+    this.prefetching = prefetching;
     return (S) this;
   }
 
@@ -112,7 +112,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S cacheBlocks(boolean cacheBlocks) {
-    this.nestedCacheBlocks = cacheBlocks;
+    this.cacheBlocks = cacheBlocks;
     return (S) this;
   }
 
@@ -125,7 +125,7 @@ public abstract class AbstractKuduScannerBuilder
    */
   @VisibleForTesting
   public S snapshotTimestamp(long htTimestamp) {
-    this.nestedHtTimestamp = htTimestamp;
+    this.htTimestamp = htTimestamp;
     return (S) this;
   }
 
@@ -136,7 +136,7 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S scanRequestTimeout(long scanRequestTimeout) {
-    this.nestedScanRequestTimeout = scanRequestTimeout;
+    this.scanRequestTimeout = scanRequestTimeout;
     return (S) this;
   }
 
@@ -156,9 +156,9 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S lowerBoundRaw(byte[] encodedStartKey) {
-    if (nestedLowerBound == AsyncKuduClient.EMPTY_ARRAY ||
-        Bytes.memcmp(encodedStartKey, nestedLowerBound) > 0) {
-      this.nestedLowerBound = encodedStartKey;
+    if (lowerBound == AsyncKuduClient.EMPTY_ARRAY ||
+        Bytes.memcmp(encodedStartKey, lowerBound) > 0) {
+      this.lowerBound = encodedStartKey;
     }
     return (S) this;
   }
@@ -179,9 +179,9 @@ public abstract class AbstractKuduScannerBuilder
    * @return this instance
    */
   public S exclusiveUpperBoundRaw(byte[] encodedEndKey) {
-    if (nestedUpperBound == AsyncKuduClient.EMPTY_ARRAY ||
-        Bytes.memcmp(encodedEndKey, nestedUpperBound) < 0) {
-      this.nestedUpperBound = encodedEndKey;
+    if (upperBound == AsyncKuduClient.EMPTY_ARRAY ||
+        Bytes.memcmp(encodedEndKey, upperBound) < 0) {
+      this.upperBound = encodedEndKey;
     }
     return (S) this;
   }

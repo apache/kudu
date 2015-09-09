@@ -146,13 +146,13 @@ public class ColumnSchema {
    * Builder for ColumnSchema.
    */
   public static class ColumnSchemaBuilder {
-    private final String nestedName;
-    private final Type nestedType;
-    private boolean nestedKey = false;
-    private boolean nestedNullable = false;
-    private Object nestedDefaultValue = null;
-    private int nestedBlockSize = 0;
-    private Encoding nestedEncoding = null;
+    private final String name;
+    private final Type type;
+    private boolean key = false;
+    private boolean nullable = false;
+    private Object defaultValue = null;
+    private int blockSize = 0;
+    private Encoding encoding = null;
 
     /**
      * Constructor for the required parameters.
@@ -160,8 +160,8 @@ public class ColumnSchema {
      * @param type column's type
      */
     public ColumnSchemaBuilder(String name, Type type) {
-      this.nestedName = name;
-      this.nestedType = type;
+      this.name = name;
+      this.type = type;
     }
 
     /**
@@ -170,7 +170,7 @@ public class ColumnSchema {
      * @return this instance
      */
     public ColumnSchemaBuilder key(boolean key) {
-      this.nestedKey = key;
+      this.key = key;
       return this;
     }
 
@@ -180,7 +180,7 @@ public class ColumnSchema {
      * @return this instance
      */
     public ColumnSchemaBuilder nullable(boolean nullable) {
-      this.nestedNullable = nullable;
+      this.nullable = nullable;
       return this;
     }
 
@@ -190,7 +190,7 @@ public class ColumnSchema {
      * @return this instance
      */
     public ColumnSchemaBuilder defaultValue(Object defaultValue) {
-      this.nestedDefaultValue = defaultValue;
+      this.defaultValue = defaultValue;
       return this;
     }
 
@@ -214,7 +214,7 @@ public class ColumnSchema {
      * <!-- TODO(KUDU-1107): move the above info to docs -->
      */
     public ColumnSchemaBuilder desiredBlockSize(int blockSize) {
-      this.nestedBlockSize = blockSize;
+      this.blockSize = blockSize;
       return this;
     }
 
@@ -223,7 +223,7 @@ public class ColumnSchema {
      * of valid options.
      */
     public ColumnSchemaBuilder encoding(Encoding encoding) {
-      this.nestedEncoding = encoding;
+      this.encoding = encoding;
       return this;
     }
 
@@ -232,9 +232,9 @@ public class ColumnSchema {
      * @return a new {@link ColumnSchema}
      */
     public ColumnSchema build() {
-      return new ColumnSchema(nestedName, nestedType,
-                              nestedKey, nestedNullable, nestedDefaultValue,
-                              nestedBlockSize, nestedEncoding);
+      return new ColumnSchema(name, type,
+                              key, nullable, defaultValue,
+                              blockSize, encoding);
     }
   }
 }

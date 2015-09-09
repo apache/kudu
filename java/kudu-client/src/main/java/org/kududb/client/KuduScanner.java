@@ -64,10 +64,10 @@ public class KuduScanner {
      */
     public KuduScanner build() {
       return new KuduScanner(new AsyncKuduScanner(
-          nestedClient, nestedTable, nestedProjectedColumnNames, nestedReadMode,
-          nestedScanRequestTimeout, nestedColumnRangePredicates, nestedLimit, nestedCacheBlocks,
-          nestedPrefetching, nestedLowerBound, nestedUpperBound,
-          nestedHtTimestamp, nestedMaxNumBytes));
+          client, table, projectedColumnNames, readMode,
+          scanRequestTimeout, columnRangePredicates, limit, cacheBlocks,
+          prefetching, lowerBound, upperBound,
+          htTimestamp, maxNumBytes));
     }
   }
 }
