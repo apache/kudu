@@ -96,9 +96,7 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
   TabletInfo(const scoped_refptr<TableInfo>& table, const std::string& tablet_id);
 
   const std::string& tablet_id() const { return tablet_id_; }
-
-  TableInfo *table() { return table_.get(); }
-  const TableInfo *table() const { return table_.get(); }
+  const scoped_refptr<TableInfo>& table() const { return table_; }
 
   // Access the persistent metadata. Typically you should use
   // TabletMetadataLock to gain access to this data.

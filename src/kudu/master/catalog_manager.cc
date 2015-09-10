@@ -1326,7 +1326,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
 
   // TODO: we don't actually need to do the COW here until we see we're going
   // to change the state. Can we change CowedObject to lazily do the copy?
-  TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
+  TableMetadataLock table_lock(tablet->table().get(), TableMetadataLock::READ);
   TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::WRITE);
 
   // If the TS is reporting a tablet which has been deleted, or a tablet from
@@ -1861,12 +1861,12 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
                      ThreadPool *callback_pool,
                      const string& permanent_uuid,
                      const scoped_refptr<TabletInfo>& tablet)
-    : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, tablet->table()),
+    : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, tablet->table().get()),
       tablet_id_(tablet->tablet_id()) {
     deadline_ = start_ts_;
     deadline_.AddDelta(MonoDelta::FromMilliseconds(FLAGS_tablet_creation_timeout_ms));
 
-    TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
+    TableMetadataLock table_lock(tablet->table().get(), TableMetadataLock::READ);
     const SysTabletsEntryPB& tablet_pb = tablet->metadata().dirty().pb;
 
     req_.set_dest_uuid(permanent_uuid);
@@ -2006,7 +2006,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
     : RetryingTSRpcTask(master,
                         callback_pool,
                         gscoped_ptr<TSPicker>(new PickLeaderReplica(tablet)),
-                        tablet->table()),
+                        tablet->table().get()),
       tablet_(tablet) {
   }
 
@@ -2053,7 +2053,7 @@ class AsyncAlterTable : public RetryingTSRpcTask {
   }
 
   virtual void SendRequest(int attempt) OVERRIDE {
-    TableMetadataLock l(tablet_->table(), TableMetadataLock::READ);
+    TableMetadataLock l(tablet_->table().get(), TableMetadataLock::READ);
 
     tserver::AlterSchemaRequestPB req;
     req.set_dest_uuid(permanent_uuid());
@@ -2146,12 +2146,12 @@ void CatalogManager::ExtractTabletsToProcess(
     scoped_refptr<TabletInfo> tablet = entry.second;
     TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::READ);
 
-    if (tablet->table() == NULL) {
+    if (!tablet->table()) {
       // Tablet is orphaned or in preparing state, continue.
       continue;
     }
 
-    TableMetadataLock table_lock(tablet->table(), TableMetadataLock::READ);
+    TableMetadataLock table_lock(tablet->table().get(), TableMetadataLock::READ);
 
     // If the table is deleted or the tablet was replaced at table creation time.
     if (tablet_lock.data().is_deleted() || table_lock.data().is_deleted()) {
@@ -2207,7 +2207,7 @@ void CatalogManager::HandleAssignCreatingTablet(TabletInfo* tablet,
 
   // The "tablet creation" was already sent, but we didn't receive an answer
   // within the timeout. So the tablet will be replaced by a new one.
-  TabletInfo *replacement = CreateTabletInfo(tablet->table(),
+  TabletInfo *replacement = CreateTabletInfo(tablet->table().get(),
                                              old_info.pb.start_key(),
                                              old_info.pb.end_key());
   LOG(WARNING) << "Tablet " << tablet->ToString() << " was not created within "
@@ -2248,7 +2248,7 @@ Status CatalogManager::HandleTabletSchemaVersionReport(TabletInfo *tablet, uint3
   tablet->set_reported_schema_version(version);
 
   // Verify if it's the last tablet report, and the alter completed.
-  TableInfo *table = tablet->table();
+  TableInfo *table = tablet->table().get();
   TableMetadataLock l(table, TableMetadataLock::WRITE);
   if (l.data().is_deleted() || l.data().pb.state() != SysTablesEntryPB::ALTERING) {
     return Status::OK();
@@ -2391,7 +2391,7 @@ Status CatalogManager::ProcessPendingAssignments(
     // current task.
     vector<string> tablet_ids_to_remove;
     BOOST_FOREACH(scoped_refptr<TabletInfo>& new_tablet, new_tablets) {
-      TableInfo* table = new_tablet->table();
+      TableInfo* table = new_tablet->table().get();
       TableMetadataLock l_table(table, TableMetadataLock::WRITE);
       if (table->RemoveTablet(new_tablet->tablet_id())) {
         VLOG(1) << "Removed tablet " << new_tablet->tablet_id() << " from "
@@ -2416,7 +2416,7 @@ Status CatalogManager::ProcessPendingAssignments(
 
 Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_descs,
                                                TabletInfo* tablet) {
-  TableMetadataLock table_guard(tablet->table(), TableMetadataLock::READ);
+  TableMetadataLock table_guard(tablet->table().get(), TableMetadataLock::READ);
 
   if (!table_guard.data().pb.IsInitialized()) {
     return Status::InvalidArgument(
