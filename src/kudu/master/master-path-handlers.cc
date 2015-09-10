@@ -86,6 +86,15 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
   *output << "</table>\n";
 }
 
+namespace {
+
+bool CompareByRole(const TabletReplica& a, const TabletReplica& b) {
+  return a.role < b.role;
+}
+
+} // anonymous namespace
+
+
 void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
                                          stringstream *output) {
   // Parse argument.
@@ -132,8 +141,12 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   *output << "  <tr><th>Tablet ID</th><th>Start-Key</th><th>End-Key</th><th>State</th>"
       "<th>RaftConfig</th></tr>\n";
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
-    vector<TabletReplica> locations;
-    tablet->GetLocations(&locations);
+    TabletInfo::ReplicaMap locations;
+    tablet->GetReplicaLocations(&locations);
+    vector<TabletReplica> sorted_locations;
+    AppendValuesFromMap(locations, &sorted_locations);
+    std::sort(sorted_locations.begin(), sorted_locations.end(), &CompareByRole);
+
     TabletMetadataLock l(tablet.get(), TabletMetadataLock::READ);
     string start_key = schema.DebugEncodedRowKey(l.data().pb.start_key(), Schema::START_KEY);
     string end_key = schema.DebugEncodedRowKey(l.data().pb.end_key(), Schema::END_KEY);
@@ -146,7 +159,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
         EscapeForHtmlToString(end_key),
         state,
         EscapeForHtmlToString(l.data().pb.state_msg()),
-        RaftConfigToHtml(locations));
+        RaftConfigToHtml(sorted_locations));
   }
   *output << "</table>\n";
 
@@ -364,23 +377,11 @@ Status MasterPathHandlers::Register(Webserver* server) {
   return Status::OK();
 }
 
-namespace {
-
-bool CompareByRole(const TabletReplica& a, const TabletReplica& b) {
-  return a.role < b.role;
-}
-
-} // anonymous namespace
-
 string MasterPathHandlers::RaftConfigToHtml(const std::vector<TabletReplica>& locations) const {
   stringstream html;
-  vector<TabletReplica> sorted_locations;
-  sorted_locations.assign(locations.begin(), locations.end());
-
-  std::sort(sorted_locations.begin(), sorted_locations.end(), &CompareByRole);
 
   html << "<ul>\n";
-  BOOST_FOREACH(const TabletReplica& location, sorted_locations) {
+  BOOST_FOREACH(const TabletReplica& location, locations) {
     string location_html = TSDescriptorToHtml(*location.ts_desc);
     if (location.role == RaftPeerPB::LEADER) {
       html << Substitute("  <li><b>LEADER: $0</b></li>\n", location_html);

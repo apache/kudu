@@ -22,7 +22,7 @@ Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
                                  gscoped_ptr<TSDescriptor>* desc) {
   gscoped_ptr<TSDescriptor> ret(new TSDescriptor(instance.permanent_uuid()));
   RETURN_NOT_OK(ret->Register(instance, registration));
-  desc->reset(ret.release());
+  desc->swap(ret);
   return Status::OK();
 }
 

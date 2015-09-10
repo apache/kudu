@@ -184,6 +184,10 @@ class CowLock {
     }
   }
 
+  bool is_write_locked() const {
+    return mode_ == WRITE;
+  }
+
   // Drop the lock. If the lock is held in WRITE mode, and the
   // lock has not yet been released, aborts the mutation, restoring
   // the underlying object to its original data.

@@ -52,7 +52,7 @@ struct PersistentTabletInfo {
 
   bool is_deleted() const {
     return pb.state() == SysTabletsEntryPB::REPLACED ||
-      pb.state() == SysTabletsEntryPB::DELETED;
+           pb.state() == SysTabletsEntryPB::DELETED;
   }
 
   // Helper to set the state of the tablet with a custom message.
@@ -91,62 +91,67 @@ struct TabletReplica {
 class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
  public:
   typedef PersistentTabletInfo cow_state;
+  typedef std::tr1::unordered_map<std::string, TabletReplica> ReplicaMap;
 
   TabletInfo(const scoped_refptr<TableInfo>& table, const std::string& tablet_id);
 
-  // Resets the replicas in this tablet info.
-  void ResetReplicas(const std::vector<TabletReplica>& replicas);
-
-  std::string ToString() const;
+  const std::string& tablet_id() const { return tablet_id_; }
 
   TableInfo *table() { return table_.get(); }
   const TableInfo *table() const { return table_.get(); }
-
-  // Does not require synchronization.
-  const std::string& tablet_id() const { return tablet_id_; }
-
-  void GetLocations(std::vector<TabletReplica>* locations) const;
-
-  MonoDelta TimeSinceLastUpdate(const MonoTime& now) const {
-    return now.GetDeltaSince(last_update_ts_);
-  }
-
-  void set_last_update_ts(const MonoTime& ts) {
-    last_update_ts_ = ts;
-  }
-
-  // Update the Reported schema version
-  bool set_reported_schema_version(uint32_t version);
-  uint32_t reported_schema_version() const {
-    return reported_schema_version_;
-  }
 
   // Access the persistent metadata. Typically you should use
   // TabletMetadataLock to gain access to this data.
   const CowObject<PersistentTabletInfo>& metadata() const { return metadata_; }
   CowObject<PersistentTabletInfo>* mutable_metadata() { return &metadata_; }
 
+  // Accessors for the latest known tablet replica locations.
+  // These locations include only the members of the latest-reported Raft
+  // configuration whose tablet servers have ever heartbeated to this Master.
+  void SetReplicaLocations(const ReplicaMap& replica_locations);
+  void GetReplicaLocations(ReplicaMap* replica_locations) const;
+
+  // Adds the given replica to the replica_locations_ map.
+  // Returns true iff the replica was inserted.
+  bool AddToReplicaLocations(const TabletReplica& replica);
+
+  // Returns true iff peer_uuid is one of the replica locations for the tablet.
+  bool InReplicaLocations(const std::string& peer_uuid) const;
+
+  // Accessors for the last time the replica locations were updated.
+  void set_last_update_time(const MonoTime& ts);
+  MonoTime last_update_time() const;
+
+  // Accessors for the last reported schema version
+  bool set_reported_schema_version(uint32_t version);
+  uint32_t reported_schema_version() const;
+
+  // No synchronization needed.
+  std::string ToString() const;
+
  private:
   friend class RefCountedThreadSafe<TabletInfo>;
   ~TabletInfo();
 
   const std::string tablet_id_;
-  scoped_refptr<TableInfo> table_;
-  MonoTime last_update_ts_;
+  const scoped_refptr<TableInfo> table_;
 
-  // The locations where this tablet has been reported.
-  // TODO: this probably will turn into a struct which also includes
-  // some state information at some point.
-  std::vector<TabletReplica> locations_;
+  CowObject<PersistentTabletInfo> metadata_;
 
-  // Reported schema version (in-memory only)
-  uint32_t reported_schema_version_;
-
-  // Lock protecting locations_ and last_update_ts_.
+  // Lock protecting the below mutable fields.
   // This doesn't protect metadata_ (the on-disk portion).
   mutable simple_spinlock lock_;
 
-  CowObject<PersistentTabletInfo> metadata_;
+  // The last time the replica locations were updated.
+  // Also set when the Master first attempts to create the tablet.
+  MonoTime last_update_time_;
+
+  // The locations in the latest raft config where this tablet has been
+  // reported. The map is keyed by tablet server UUID.
+  ReplicaMap replica_locations_;
+
+  // Reported schema version (in-memory only).
+  uint32_t reported_schema_version_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletInfo);
 };
@@ -479,9 +484,9 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
                               const ReportedTabletPB& report,
                               ReportedTabletUpdatesPB *report_updates);
 
-  void ResetTabletReplicasFromReportedConfig(const ReportedTabletPB& report,
-                                             const scoped_refptr<TabletInfo>& tablet,
-                                             TabletMetadataLock* tablet_lock);
+  Status ResetTabletReplicasFromReportedConfig(const ReportedTabletPB& report,
+                                               const scoped_refptr<TabletInfo>& tablet,
+                                               TabletMetadataLock* tablet_lock);
 
   // Register a tablet server whenever it heartbeats with a consensus configuration. This is
   // needed because we have logic in the Master that states that if a tablet
