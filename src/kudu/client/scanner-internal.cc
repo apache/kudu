@@ -39,7 +39,7 @@ KuduScanner::Data::Data(KuduTable* table)
     batch_size_bytes_(0),
     selection_(KuduClient::CLOSEST_REPLICA),
     read_mode_(READ_LATEST),
-    order_mode_(UNORDERED),
+    is_fault_tolerant_(false),
     snapshot_timestamp_(kNoTimestamp),
     table_(DCHECK_NOTNULL(table)),
     projection_(table->schema().schema_),
@@ -98,9 +98,10 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
     }
   }
 
-  // If we're in the middle of a batch and doing an uordered scan, then we cannot retry.
-  // Unordered scans can still be retried on a tablet boundary (i.e. an OpenTablet call).
-  if (!isNewScan && order_mode_ == KuduScanner::UNORDERED) {
+  // If we're in the middle of a batch and doing a non fault-tolerant scan, then
+  // we cannot retry. Non fault-tolerant scans can still be retried on a tablet
+  // boundary (i.e. an OpenTablet call).
+  if (!isNewScan && !is_fault_tolerant_) {
     return !rpc_status.ok() ? rpc_status : server_status;
   }
 
@@ -157,10 +158,10 @@ Status KuduScanner::Data::OpenTablet(const Slice& key,
     default: LOG(FATAL) << "Unexpected read mode.";
   }
 
-  switch (order_mode_) {
-    case UNORDERED: scan->set_order_mode(kudu::UNORDERED); break;
-    case ORDERED: scan->set_order_mode(kudu::ORDERED); break;
-    default: LOG(FATAL) << "Unexpected order mode.";
+  if (is_fault_tolerant_) {
+    scan->set_order_mode(kudu::ORDERED);
+  } else {
+    scan->set_order_mode(kudu::UNORDERED);
   }
 
   if (encoded_last_row_key_.length() > 0) {
@@ -293,7 +294,7 @@ Status KuduScanner::Data::OpenTablet(const Slice& key,
   // If present in the response, set the snapshot timestamp and the encoded last row key.
   // This is used when retrying the scan elsewhere.
   // The last row key is also updated on each scan response.
-  if (order_mode_ == ORDERED) {
+  if (is_fault_tolerant_) {
     CHECK(last_response_.has_snap_timestamp());
     snapshot_timestamp_ = last_response_.snap_timestamp();
     if (last_response_.has_encoded_last_row_key()) {

@@ -788,7 +788,15 @@ Status KuduScanner::SetOrderMode(OrderMode order_mode) {
   if (!tight_enum_test<OrderMode>(order_mode)) {
     return Status::InvalidArgument("Bad order mode");
   }
-  data_->order_mode_ = order_mode;
+  data_->is_fault_tolerant_ = order_mode == ORDERED;
+  return Status::OK();
+}
+
+Status KuduScanner::SetFaultTolerant() {
+  if (data_->open_) {
+    return Status::IllegalState("Fault-tolerance must be set before Open()");
+  }
+  data_->is_fault_tolerant_ = true;
   return Status::OK();
 }
 
@@ -990,7 +998,7 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
     batch_deadline.AddDelta(data_->timeout_);
 
     MonoTime rpc_deadline;
-    if (data_->order_mode_ == ORDERED) {
+    if (data_->is_fault_tolerant_) {
       rpc_deadline = now;
       rpc_deadline.AddDelta(data_->table_->client()->default_rpc_timeout());
       rpc_deadline = MonoTime::Earliest(batch_deadline, rpc_deadline);

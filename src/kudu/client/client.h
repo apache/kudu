@@ -867,8 +867,19 @@ class KUDU_EXPORT KuduScanner {
   // Sets the ReadMode. Default is READ_LATEST.
   Status SetReadMode(ReadMode read_mode) WARN_UNUSED_RESULT;
 
-  // Sets the OrderMode. Default is UNORDERED.
+  // DEPRECATED: use SetFaultTolerant.
   Status SetOrderMode(OrderMode order_mode) WARN_UNUSED_RESULT;
+
+  // Scans are by default non fault-tolerant, and scans will fail if scanning an
+  // individual tablet fails (for example, if a tablet server crashes in the
+  // middle of a tablet scan).
+  //
+  // If this method is called, the scan will be resumed at another tablet server
+  // in the case of failure.
+  //
+  // Fault tolerant scans typically have lower throughput than non
+  // fault-tolerant scans. Fault tolerant scans must use READ_AT_SNAPSHOT mode.
+  Status SetFaultTolerant() WARN_UNUSED_RESULT;
 
   // Sets the snapshot timestamp, in microseconds since the epoch, for scans in
   // READ_AT_SNAPSHOT mode.

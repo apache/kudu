@@ -572,7 +572,7 @@ Status LinkedListTester::VerifyLinkedListRemote(
 
   if (snapshot_timestamp != kNoSnapshot) {
     RETURN_NOT_OK(scanner.SetReadMode(client::KuduScanner::READ_AT_SNAPSHOT));
-    RETURN_NOT_OK(scanner.SetOrderMode(client::KuduScanner::ORDERED));
+    RETURN_NOT_OK(scanner.SetFaultTolerant());
     RETURN_NOT_OK(scanner.SetSnapshotRaw(snapshot_timestamp));
   }
 

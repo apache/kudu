@@ -91,7 +91,7 @@ class KuduScanner::Data {
   KuduClient::ReplicaSelection selection_;
 
   ReadMode read_mode_;
-  OrderMode order_mode_;
+  bool is_fault_tolerant_;
   int64_t snapshot_timestamp_;
 
   // The encoded last row key from the most recent scan response.

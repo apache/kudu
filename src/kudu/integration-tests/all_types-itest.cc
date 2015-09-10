@@ -357,7 +357,7 @@ class AllTypesItest : public KuduTest {
 
       RETURN_NOT_OK(scanner.SetProjectedColumns(projection));
       RETURN_NOT_OK(scanner.SetBatchSizeBytes(KMaxBatchSize));
-      RETURN_NOT_OK(scanner.SetOrderMode(KuduScanner::ORDERED));
+      RETURN_NOT_OK(scanner.SetFaultTolerant());
       RETURN_NOT_OK(scanner.SetReadMode(KuduScanner::READ_AT_SNAPSHOT));
       RETURN_NOT_OK(scanner.SetTimeoutMillis(5000));
       RETURN_NOT_OK(scanner.Open());
