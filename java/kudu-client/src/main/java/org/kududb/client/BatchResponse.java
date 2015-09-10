@@ -7,15 +7,13 @@ import java.util.Collections;
 import java.util.List;
 
 import org.kududb.annotations.InterfaceAudience;
-import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 
 /**
  * Response type for Batch (which is used internally by AsyncKuduSession).
  * Provides the Hybrid Time write timestamp returned by the Tablet Server.
  */
-@InterfaceAudience.Public
-@InterfaceStability.Evolving
+@InterfaceAudience.Private
 public class BatchResponse extends KuduRpcResponse {
 
   private final long writeTimestamp;
@@ -64,7 +62,6 @@ public class BatchResponse extends KuduRpcResponse {
     assert (individualResponses.size() == operations.size());
   }
 
-
   /**
    * Gives the write timestamp that was returned by the Tablet Server.
    * @return a timestamp in milliseconds, 0 if the external consistency mode set in AsyncKuduSession
@@ -80,37 +77,6 @@ public class BatchResponse extends KuduRpcResponse {
    */
   List<OperationResponse> getIndividualResponses() {
     return individualResponses;
-  }
-
-  /**
-   * Returns an immutable list of errors, which can be empty.
-   * @return an immutable list of row errors
-   */
-  public List<RowError> getRowErrors() {
-    return Collections.unmodifiableList(rowErrors);
-  }
-
-  /**
-   * Tells if this operation response contains any row errors.
-   * @return true if this operation response has errors, else false
-   */
-  public boolean hasRowErrors() {
-    return !rowErrors.isEmpty();
-  }
-
-  /**
-   * Utility method that collects all the row errors from the given list of responses.
-   * @param responses a list of operation responses to collect the row errors from
-   * @return a combined list of row errors
-   */
-  public static List<RowError> collectErrors(List<BatchResponse> responses) {
-    List<RowError> errors = new ArrayList<>();
-    for (BatchResponse resp : responses) {
-      if (resp.hasRowErrors()) {
-        errors.addAll(resp.getRowErrors());
-      }
-    }
-    return errors;
   }
 
 }

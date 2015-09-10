@@ -44,9 +44,9 @@ public class KuduSession implements SessionConfiguration {
    * else it throws an exception such as a NonRecoverableException if the buffer is full.
    * </ul>
    *
-   * @param operation operation to apply.
-   * @return A BatchResponse for the applied Operation.
-   * @throws Exception if anything went wrong.
+   * @param operation operation to apply
+   * @return an OperationResponse for the applied Operation
+   * @throws Exception if anything went wrong
    */
   public OperationResponse apply(Operation operation) throws Exception {
     while (true) {
@@ -74,21 +74,21 @@ public class KuduSession implements SessionConfiguration {
   /**
    * Blocking call that force flushes this session's buffers. Data is persisted when this call
    * returns, else it will throw an exception.
-   * @return List of BatchResponse, one per tablet for which a batch was flushed.
+   * @return a list of OperationResponse, one per operation that was flushed
    * @throws Exception if anything went wrong. If it's an issue with some or all batches,
    * it will be of type DeferredGroupException.
    */
-  public List<BatchResponse> flush() throws Exception {
+  public List<OperationResponse> flush() throws Exception {
     return session.flush().join(getTimeoutMillis());
   }
 
   /**
    * Blocking call that flushes the buffers (see {@link #flush()} and closes the sessions.
-   * @return List of BatchResponse, one per tablet for which a batch was flushed.
+   * @return List of OperationResponse, one per operation that was flushed
    * @throws Exception if anything went wrong. If it's an issue with some or all batches,
    * it will be of type DeferredGroupException.
    */
-  public List<BatchResponse> close() throws Exception {
+  public List<OperationResponse> close() throws Exception {
     return session.close().join(getTimeoutMillis());
   }
 

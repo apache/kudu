@@ -1277,8 +1277,8 @@ public class AsyncKuduClient {
 
     // 2. Terminate all connections.
     final class DisconnectCB implements Callback<Deferred<ArrayList<Void>>,
-        ArrayList<ArrayList<BatchResponse>>> {
-      public Deferred<ArrayList<Void>> call(final ArrayList<ArrayList<BatchResponse>> arg) {
+        ArrayList<List<OperationResponse>>> {
+      public Deferred<ArrayList<Void>> call(final ArrayList<List<OperationResponse>> arg) {
         return disconnectEverything().addCallback(new ReleaseResourcesCB());
       }
       public String toString() {
@@ -1295,7 +1295,7 @@ public class AsyncKuduClient {
     }
   }
 
-  private Deferred<ArrayList<ArrayList<BatchResponse>>> closeAllSessions() {
+  private Deferred<ArrayList<List<OperationResponse>>> closeAllSessions() {
     // We create a copy because AsyncKuduSession.close will call removeSession which would get us a
     // concurrent modification during the iteration.
     Set<AsyncKuduSession> copyOfSessions;
@@ -1306,8 +1306,7 @@ public class AsyncKuduClient {
       return Deferred.fromResult(null);
     }
     // Guaranteed that we'll have at least one session to close.
-    ArrayList<Deferred<ArrayList<BatchResponse>>> deferreds =
-        new ArrayList<Deferred<ArrayList<BatchResponse>>>(copyOfSessions.size());
+    List<Deferred<List<OperationResponse>>> deferreds = new ArrayList<>(copyOfSessions.size());
     for (AsyncKuduSession session : copyOfSessions ) {
       deferreds.add(session.close());
     }

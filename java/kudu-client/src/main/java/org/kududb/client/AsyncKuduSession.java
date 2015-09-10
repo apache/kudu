@@ -18,11 +18,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.concurrent.GuardedBy;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Random;
-import java.util.Set;
+import java.util.*;
 
 import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
 
@@ -224,7 +220,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @return a Deferred whose callback chain will be invoked when.
    * everything that was buffered at the time of the call has been flushed.
    */
-  public Deferred<ArrayList<BatchResponse>> close() {
+  public Deferred<List<OperationResponse>> close() {
     closed = true;
     client.removeSession(this);
     return flush();
@@ -235,15 +231,17 @@ public class AsyncKuduSession implements SessionConfiguration {
    * @return a Deferred whose callback chain will be invoked when
    * everything that was buffered at the time of the call has been flushed.
    */
-  public Deferred<ArrayList<BatchResponse>> flush() {
+  public Deferred<List<OperationResponse>> flush() {
     LOG.trace("Flushing all tablets");
     synchronized (this) {
       if (!operationsInLookup.isEmpty()) {
-        lookupsDone = new Deferred<Void>();
-        return lookupsDone.addCallbackDeferring(new OperationsInLookupDoneCB());
+        lookupsDone = new Deferred<>();
+        return lookupsDone
+            .addCallbackDeferring(new OperationsInLookupDoneCB())
+            .addCallbackDeferring(new ConvertBatchToListOfResponsesCB());
       }
     }
-    return flushAllBatches();
+    return flushAllBatches().addCallbackDeferring(new ConvertBatchToListOfResponsesCB());
   }
 
   class OperationsInLookupDoneCB implements
@@ -256,13 +254,38 @@ public class AsyncKuduSession implements SessionConfiguration {
   }
 
   /**
+   * Deferring callback used to send a list of OperationResponse instead of BatchResponse since the
+   * latter is an implementation detail.
+   */
+  class ConvertBatchToListOfResponsesCB implements
+      Callback<Deferred<List<OperationResponse>>, ArrayList<BatchResponse>> {
+    @Override
+    public Deferred<List<OperationResponse>> call(ArrayList<BatchResponse> batchResponsesList)
+        throws Exception {
+      Deferred<List<OperationResponse>> deferred = new Deferred<>();
+      if (batchResponsesList == null || batchResponsesList.isEmpty()) {
+        return deferred;
+      }
+
+      // TODO scan the batch responses first to determine the real size instead of guessing.
+      ArrayList<OperationResponse> responsesList =
+          new ArrayList<>(batchResponsesList.size() * mutationBufferSpace);
+      for (BatchResponse batchResponse : batchResponsesList) {
+        responsesList.addAll(batchResponse.getIndividualResponses());
+      }
+      deferred.callback(responsesList);
+      return deferred;
+    }
+  }
+
+  /**
    * This will flush all the batches but not the operations that are currently in lookup.
    */
   private Deferred<ArrayList<BatchResponse>> flushAllBatches() {
     HashMap<Slice, Batch> copyOfOps;
     final ArrayList<Deferred<BatchResponse>> d = new ArrayList<>(operations.size());
     synchronized (this) {
-      copyOfOps = new HashMap<Slice, Batch>(operations);
+      copyOfOps = new HashMap<>(operations);
     }
     for (Map.Entry<Slice, Batch> entry: copyOfOps.entrySet()) {
       d.add(flushTablet(entry.getKey(), entry.getValue()));

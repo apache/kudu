@@ -6,6 +6,9 @@ import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 import org.kududb.tserver.Tserver;
 
+import java.util.ArrayList;
+import java.util.List;
+
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
 public class OperationResponse extends KuduRpcResponse {
@@ -42,6 +45,21 @@ public class OperationResponse extends KuduRpcResponse {
     this.writeTimestamp = writeTimestamp;
     this.rowError = rowError;
     this.operation = operation;
+  }
+
+  /**
+   * Utility method that collects all the row errors from the given list of responses.
+   * @param responses a list of operation responses to collect the row errors from
+   * @return a combined list of row errors
+   */
+  public static List<RowError> collectErrors(List<OperationResponse> responses) {
+    List<RowError> errors = new ArrayList<>(responses.size());
+    for (OperationResponse resp : responses) {
+      if (resp.hasRowError()) {
+        errors.add(resp.getRowError());
+      }
+    }
+    return errors;
   }
 
   /**

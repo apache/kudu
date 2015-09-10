@@ -49,8 +49,8 @@ public class TestRowErrors extends BaseKuduTest {
     session.apply(dupeForTwo);
     session.apply(createInsert(4));
 
-    List<BatchResponse> responses = session.flush().join(DEFAULT_SLEEP);
-    List<RowError> errors = BatchResponse.collectErrors(responses);
+    List<OperationResponse> responses = session.flush().join(DEFAULT_SLEEP);
+    List<RowError> errors = OperationResponse.collectErrors(responses);
     assertEquals(2, errors.size());
     assertTrue(errors.get(0).getOperation() == dupeForZero);
     assertTrue(errors.get(1).getOperation() == dupeForTwo);

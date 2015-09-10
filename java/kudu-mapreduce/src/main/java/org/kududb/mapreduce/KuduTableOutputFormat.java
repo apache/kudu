@@ -17,7 +17,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
@@ -189,8 +188,8 @@ public class KuduTableOutputFormat extends OutputFormat<NullWritable,Operation>
       }
     }
 
-    private void processRowErrors(List<BatchResponse> responses) {
-      List<RowError> errors = BatchResponse.collectErrors(responses);
+    private void processRowErrors(List<OperationResponse> responses) {
+      List<RowError> errors = OperationResponse.collectErrors(responses);
       if (!errors.isEmpty()) {
         int rowErrorsCount = errors.size();
         rowsWithErrors.addAndGet(rowErrorsCount);
