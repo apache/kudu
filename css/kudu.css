@@ -6,3 +6,8 @@
 .btn-info :hover {
     background-color: #25aae1;
 }
+
+#toc.affix {
+  position: fixed;
+  top: 20px;
+}

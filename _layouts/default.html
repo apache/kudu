@@ -8,13 +8,14 @@
     <meta name="author" content="Cloudera" />
     <title>Kudu - {{ page.title }}</title>
     <!-- Bootstrap core CSS -->
-    <link href="css/bootstrap.min.css" rel="stylesheet" />
+    <link href="{{site.github.url}}/css/bootstrap.min.css" rel="stylesheet" />
 
     <!-- Custom styles for this template -->
-    <link href="css/justified-nav.css" rel="stylesheet" />
+    <link href="{{site.github.url}}/css/justified-nav.css" rel="stylesheet" />
 
-    <link href="css/kudu.css" rel="stylesheet"/>
-    <link rel="shortcut icon" href="img/logo-favicon.ico" />
+    <link href="{{site.github.url}}/css/kudu.css" rel="stylesheet"/>
+    <link href="{{site.github.url}}/css/asciidoc.css" rel="stylesheet"/>
+    <link rel="shortcut icon" href="{{site.github.url}}/img/logo-favicon.ico" />
 
 
     <!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
@@ -41,22 +42,22 @@
           <div id="navbar" class="navbar-collapse collapse">
             <ul class="nav navbar-nav">
               <li {% if page.active_nav == 'home' %}class="active"{% endif %}>
-                <a href="index.html">Home</a>
+                <a href="{{site.github.url}}/index.html">Home</a>
               </li>
               <li {% if page.active_nav == 'overview' %}class="active"{% endif %}>
-                <a href="overview.html">Overview</a>
+                <a href="{{site.github.url}}/overview.html">Overview</a>
               </li>
               <li {% if page.active_nav == 'docs' %}class="active"{% endif %}>
-                <a href="docs/index.html">Docs</a>
+                <a href="{{site.github.url}}/docs/index.html">Docs</a>
               </li>
               <li {% if page.active_nav == 'repository' %}class="active"{% endif %}>
                 <a href="http://github.com/cloudera/kudu/">Repository</a>
               </li>
               <li {% if page.active_nav == 'contributions' %}class="active"{% endif %}>
-                <a href="docs/contributing.html">Contributions</a>
+                <a href="{{site.github.url}}/docs/contributing.html">Contributions</a>
               </li>
               <li {% if page.active_nav == 'community' %}class="active"{% endif %}>
-                <a href="community.html">Community</a>
+                <a href="{{site.github.url}}/community.html">Community</a>
               </li>
             </li>
           </ul>
@@ -66,14 +67,16 @@
 
     {{content}}
 
-    <hr>
-
       <footer class="footer">
-        <p class="pull-right"><a href="http://www.cloudera.com"><img src="img/cloudera_logo_blue.png" width="120" height="22" align="right"></a></p>
+        <p class="pull-right"><a href="http://www.cloudera.com"><img src="{{site.github.url}}/img/cloudera_logo_blue.png" width="120" height="22" align="right"></a></p>
+        {% if page.last_updated %}
+          {{ page.last_updated }}
+        {% endif %}
         <p class="small">Copyright &copy; 2015 Cloudera. All rights reserved.</p>
       </footer>
     </div>
-    <script src="js/bootstrap.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.11.3/jquery.min.js"></script>
+    <script src="{{site.github.url}}/js/bootstrap.js"></script>
   </body>
 </html>
 
