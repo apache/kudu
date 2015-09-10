@@ -92,7 +92,7 @@ message SysTabletsEntryPB {
   optional consensus.ConsensusStatePB committed_consensus_state = 3;
 
   // Debug state for the tablet.
-  required State state = 4;
+  optional State state = 4 [ default = UNKNOWN ];
   optional bytes state_msg = 5;
 
   // The table id for the tablet.
@@ -134,7 +134,7 @@ message SysTablesEntryPB {
   required int32 num_replicas = 5;
 
   // Debug state for the table.
-  required State state = 6;
+  optional State state = 6 [ default = UNKNOWN ];
   optional bytes state_msg = 7;
 }
 
@@ -160,7 +160,7 @@ message TSRegistrationPB {
 
 message ReportedTabletPB {
   required bytes tablet_id = 1;
-  required tablet.TabletStatePB state = 2;
+  optional tablet.TabletStatePB state = 2 [ default = UNKNOWN ];
   optional tablet.TabletDataState tablet_data_state = 6 [ default = TABLET_DATA_UNKNOWN ];
 
   // The latest _committed_ consensus state.
@@ -403,7 +403,7 @@ message AlterTableRequestPB {
   }
 
   message Step {
-    required StepType type = 1;
+    optional StepType type = 1 [ default = UNKNOWN ];
 
     // Exactly one of the following must be set, based on 'type'
     optional AddColumn add_column = 2;

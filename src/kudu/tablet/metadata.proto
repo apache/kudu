@@ -89,7 +89,7 @@ message TabletSuperBlockPB {
   required uint32 schema_version = 9;
 
   // The current state of the tablet's data.
-  required TabletDataState tablet_data_state = 10;
+  optional TabletDataState tablet_data_state = 10 [ default = TABLET_DATA_UNKNOWN ];
 
   // Blocks that became orphans after flushing this superblock. In other
   // words, the set difference of the blocks belonging to the previous
