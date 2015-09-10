@@ -182,6 +182,36 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>2.10.3</version>
+                <configuration>
+                    <maxmemory>2048m</maxmemory>
+                    <notimestamp>true</notimestamp>
+                    <doclet>
+                        org.kududb.annotations.tools.IncludePublicAnnotationsStandardDoclet
+                    </doclet>
+                    <docletArtifact>
+                        <groupId>org.kududb</groupId>
+                        <artifactId>interface-annotations</artifactId>
+                        <version>${project.version}</version>
+                    </docletArtifact>
+                    <destDir>apidocs</destDir>
+                    <name>User API</name>
+                    <description>The Kudu Application Programmer's API</description>
+                    <excludePackageNames>
+                        com.google:org.kududb.cfile:org.kududb.consensus:org.kududb.log:org.kududb.master:org.kududb.rpc:org.kududb.server:org.kududb.tablet:org.kududb.tserver
+                    </excludePackageNames>
+                    <includeDependencySources>false</includeDependencySources>
+
+                    <dependencySourceIncludes>
+                        <dependencySourceInclude>
+                            org.kududb:interface-annotations
+                        </dependencySourceInclude>
+                    </dependencySourceIncludes>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 
