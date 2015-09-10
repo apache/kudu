@@ -395,15 +395,12 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
   }
 
-  // This method returns a Callback with a KuduRpcResponse since it's possible for an
-  // OperationResponse to make its way here, even though we'd only expect BatchResponses. This is
-  // due to the call returning a Deferred<OperationResponse>. The actual type doesn't matter, we
-  // just want to be called back in order to retry.
-  Callback<Deferred<OperationResponse>, KuduRpcResponse>
+  // This method takes an Object since we use it for both callback and errback.
+  // The actual type doesn't matter, we just want to be called back in order to retry.
+  Callback<Deferred<OperationResponse>, Object>
   getRetryOpInLookupCB(final Operation operation) {
-    final class RetryOpInFlightCB implements Callback<Deferred<OperationResponse>,
-        KuduRpcResponse> {
-      public Deferred<OperationResponse> call(final KuduRpcResponse arg) {
+    final class RetryOpInFlightCB implements Callback<Deferred<OperationResponse>, Object> {
+      public Deferred<OperationResponse> call(final Object arg) {
         return handleOperationInLookup(operation);
       }
 
