@@ -1,8 +1,6 @@
 [[configuration]]
 = Configuring Kudu
 
-include::index.adoc[tags=start_nav]
-
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font
@@ -99,9 +97,8 @@ place its write-ahead logs. May be the same as _one of_ the directories listed i
 |--block_cache_capacity_mb | integer | 512 | block cache capacity in MB
 |===
 
-For the full list of flags for masters, see the link:configuration_reference.html#master_configuration_reference
-[Kudu
-Master Configuration Reference].
+For the full list of flags for masters, see the
+link:configuration_reference.html#master_configuration_reference[Kudu Master Configuration Reference].
 
 === Configuring Tablet Servers
 To see all available configuration options for the `kudu-tserver` executable,
@@ -124,8 +121,8 @@ addresses of the masters which the tablet server should connect to. The masters
 do not read this flag.
 |===
 
-For the full list of flags for tablet servers, see the link:configuration_reference.html#tablet_server_configuration_reference
-[Kudu Tablet Server Configuration Reference].
+For the full list of flags for tablet servers, see the
+link:configuration_reference.html#tablet_server_configuration_reference[Kudu Tablet Server Configuration Reference].
 
 === Configuring the Kudu Web Interface
 The Kudu web interface is available on each master at port 8051 and each tablet server

@@ -1,0 +1,73 @@
+---
+title: <%= doctitle(:sanitize => true) || (attr 'untitled-label') %>
+layout: default
+<% if attr? :active_nav %>
+active_nav: <%= attr :active_nav %>
+<% end %>
+last_updated: '<%= %(#{attr 'last-update-label'} #{attr :docdatetime}) %>'
+---
+<%
+case attr 'source-highlighter'
+when 'coderay'
+  if (attr 'coderay-css', 'class') == 'class'
+    if @safe >= Asciidoctor::SafeMode::SECURE || (attr? :linkcss) %>
+<link rel="stylesheet" href="<%= normalize_web_path('asciidoctor-coderay.css', (attr :stylesdir, '')) %>"><%
+    else %>
+<%= Asciidoctor::Stylesheets.embed_coderay_stylesheet %>
+<%
+    end
+  end
+when 'pygments'
+  if (attr 'pygments-css', 'class') == 'class'
+    if @safe >= Asciidoctor::SafeMode::SECURE || (attr? :linkcss) %>
+<link rel="stylesheet" href="<%= normalize_web_path('asciidoctor-pygments.css', (attr :stylesdir, '')) %>"><%
+    else %>
+<%= Asciidoctor::Stylesheets.embed_pygments_stylesheet(attr 'pygments-style') %>
+<%
+    end
+  end
+when 'highlightjs' %>
+<link rel="stylesheet" href="<%= attr 'highlightjsdir', 'http://cdnjs.cloudflare.com/ajax/libs/highlight.js/7.4' %>/styles/<%= attr 'highlightjs-theme', 'googlecode' %>.min.css">
+<script src="<%= attr 'highlightjsdir', 'http://cdnjs.cloudflare.com/ajax/libs/highlight.js/7.4' %>/highlight.min.js"></script>
+<script src="<%= attr 'highlightjsdir', 'http://cdnjs.cloudflare.com/ajax/libs/highlight.js/7.4' %>/lang/common.min.js"></script>
+<script>hljs.initHighlightingOnLoad()</script><%
+when 'prettify' %>
+<link rel="stylesheet" href="<%= attr 'prettifydir', 'http://cdnjs.cloudflare.com/ajax/libs/prettify/r298' %>/<%= attr 'prettify-theme', 'prettify' %>.min.css">
+<script src="<%= attr 'prettifydir', 'http://cdnjs.cloudflare.com/ajax/libs/prettify/r298' %>/prettify.min.js"></script>
+<script>document.addEventListener('DOMContentLoaded', prettyPrint)</script><%
+end %>
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+<%
+      unless notitle %>
+<h1><%= @header.title %></h1><%
+      end
+%>
+      <%= content %>
+    </div>
+    <div class="col-md-3">
+<%  if (attr? :toc) %>
+  <div id="toc" data-spy="affix" data-offset-top="70">
+    <%= converter.convert self, 'outline' %>
+  </div><%
+    end
+%>
+    </div>
+  </div>
+</div>
+
+<%
+unless footnotes.empty? || !footnotes? || attr?(:nofootnotes) %>
+  <div id="footnotes">
+  <hr><%
+    footnotes.each do |fn| %>
+      <div class="footnote" id="_footnote_<%= fn.index %>">
+      <a href="#_footnoteref_<%= fn.index %>"><%= fn.index %></a>. <%= fn.text %>
+      </div><%
+    end %>
+  </div><%
+end #footnotes
+%>
+

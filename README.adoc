@@ -323,6 +323,34 @@ something like this (make sure to replace 2.1.0 with your Ruby version):
 $ PATH=$HOME/.gem/ruby/2.1.0/bin:$PATH make docs
 ----
 
+=== Updating the documentation in the Kudu web site
+
+To update the documentation that is integrated into the Kudu web site, you
+need to first check out another copy of this repository, with the 'gh-pages'
+branch checked out.
+
+For example, you can check out a shallow clone which shares its objects with
+your main repository using a command like:
+
+[source,bash]
+----
+$ git clone $(git config --get remote.origin.url) --reference $(pwd) -b gh-pages --depth 1 /tmp/kudu-pages
+----
+
+Additionally, you'll need to ensure that the `tilt` and `jekyll` Ruby gems are
+installed on your machine. Refer to the `asciidoctor` instructions above for
+instructions.
+
+Now you can build the docs and pass the path to this checked-out repository:
+
+[source,bash]
+----
+$ ./docs/support/scripts/make_docs.sh  --site /tmp/kudu-pages/
+----
+
+You can proceed to commit the changes in the pages repository and send a code
+review for your changes. In the future, this step will be automated whenever
+changes are checked into the main Kudu repository.
 
 == Improving build times
 

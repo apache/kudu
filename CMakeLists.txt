@@ -868,7 +868,7 @@ if (UNIX)
   add_custom_command(
     OUTPUT ${DOCS_BUILD_DIRECTORY}
     # We want the docs output HTML to go in a docs/ subdir of the output dir
-    COMMAND docs/support/scripts/make_docs.sh ${DOCS_BUILD_DIRECTORY}/docs)
+    COMMAND docs/support/scripts/make_docs.sh)
   add_custom_target(docs
     DEPENDS ${DOCS_BUILD_DIRECTORY})
 endif (UNIX)

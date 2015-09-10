@@ -1,13 +1,11 @@
 [[configuration_reference]]
 = Kudu Configuration Reference
 
-include::index.adoc[tags=start_nav]
-
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font
 :toc: left
-:toclevels: 3
+:toclevels: 2
 :doctype: book
 :backend: html5
 :sectlinks:

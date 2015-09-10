@@ -18,7 +18,7 @@
 :imagesdir: ./images
 :icons: font
 :toc: left
-:toclevels: 3
+:toclevels: 2
 :doctype: book
 :backend: html5
 :sectlinks:

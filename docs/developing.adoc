@@ -1,8 +1,6 @@
 [[developing]]
 = Developing Applications With Kudu
 
-include::index.adoc[tags=start_nav]
-
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font
