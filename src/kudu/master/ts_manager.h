@@ -47,9 +47,9 @@ class TSManager {
                   std::tr1::shared_ptr<TSDescriptor>* desc);
 
   // Lookup the tablet server descriptor for the given UUID.
-  // If the TS has never registered, then a NotFound status is returned.
-  // Otherwise, *desc is set and OK is returned.
-  Status LookupTSByUUID(const std::string& uuid,
+  // Returns false if the TS has never registered.
+  // Otherwise, *desc is set and returns true.
+  bool LookupTSByUUID(const std::string& uuid,
                         std::tr1::shared_ptr<TSDescriptor>* desc);
 
   // Register or re-register a tablet server with the manager.

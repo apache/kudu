@@ -50,6 +50,7 @@ using consensus::RunLeaderElectionRequestPB;
 using consensus::kInvalidOpIdIndex;
 using master::ListTabletServersResponsePB;
 using master::MasterServiceProxy;
+using master::TabletLocationsPB;
 using rpc::Messenger;
 using rpc::RpcController;
 using std::min;
@@ -521,6 +522,59 @@ Status ListRunningTabletIds(const TServerDetails* ts,
     if (t.tablet_status().state() == tablet::RUNNING) {
       tablet_ids->push_back(t.tablet_status().tablet_id());
     }
+  }
+  return Status::OK();
+}
+
+Status GetTabletLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
+                          const string& tablet_id,
+                          const MonoDelta& timeout,
+                          master::TabletLocationsPB* tablet_locations) {
+  master::GetTabletLocationsResponsePB resp;
+  master::GetTabletLocationsRequestPB req;
+  *req.add_tablet_ids() = tablet_id;
+  rpc::RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(master_proxy->GetTabletLocations(req, &resp, &rpc));
+  if (resp.has_error()) {
+    return StatusFromPB(resp.error().status());
+  }
+  if (resp.errors_size() > 0) {
+    CHECK_EQ(1, resp.errors_size()) << resp.ShortDebugString();
+    return StatusFromPB(resp.errors(0).status());
+  }
+  CHECK_EQ(1, resp.tablet_locations_size()) << resp.ShortDebugString();
+  *tablet_locations = resp.tablet_locations(0);
+  return Status::OK();
+}
+
+Status WaitForNumVotersInConfigOnMaster(const shared_ptr<MasterServiceProxy>& master_proxy,
+                                        const std::string& tablet_id,
+                                        int num_voters,
+                                        const MonoDelta& timeout) {
+  Status s;
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(timeout);
+  int num_voters_found = 0;
+  while (true) {
+    TabletLocationsPB tablet_locations;
+    MonoDelta time_remaining = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    s = GetTabletLocations(master_proxy, tablet_id, time_remaining, &tablet_locations);
+    if (s.ok()) {
+      num_voters_found = 0;
+      BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& r, tablet_locations.replicas()) {
+        if (r.role() == RaftPeerPB::LEADER || r.role() == RaftPeerPB::FOLLOWER) num_voters_found++;
+      }
+      if (num_voters_found == num_voters) break;
+    }
+    if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) break;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  RETURN_NOT_OK(s);
+  if (num_voters_found != num_voters) {
+    return Status::IllegalState(
+        Substitute("Did not find exactly $0 voters, found $1 voters",
+                   num_voters, num_voters_found));
   }
   return Status::OK();
 }

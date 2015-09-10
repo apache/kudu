@@ -22,8 +22,9 @@
 
 #include "kudu/master/catalog_manager.h"
 
-#include <boost/foreach.hpp>
 #include <boost/assign/list_of.hpp>
+#include <boost/foreach.hpp>
+#include <boost/optional.hpp>
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
@@ -105,6 +106,11 @@ DEFINE_int32(master_failover_catchup_timeout_ms, 30 * 1000, // 30 sec
 TAG_FLAG(master_failover_catchup_timeout_ms, advanced);
 TAG_FLAG(master_failover_catchup_timeout_ms, experimental);
 
+DEFINE_bool(master_tombstone_evicted_tablet_replicas, true,
+            "Whether the Master should tombstone (delete) tablet replicas that "
+            "are no longer part of the latest reported raft config.");
+TAG_FLAG(master_tombstone_evicted_tablet_replicas, hidden);
+
 namespace kudu {
 namespace master {
 
@@ -122,6 +128,9 @@ using rpc::RpcContext;
 using std::string;
 using std::vector;
 using strings::Substitute;
+using tablet::TABLET_DATA_DELETED;
+using tablet::TABLET_DATA_TOMBSTONED;
+using tablet::TabletDataState;
 using tablet::TabletPeer;
 using tablet::TabletStatePB;
 using tserver::TabletServerErrorPB;
@@ -1288,7 +1297,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   scoped_refptr<TabletInfo> tablet;
   {
     boost::shared_lock<LockType> l(lock_);
-    ignore_result(FindCopy(tablet_map_, report.tablet_id(), &tablet));
+    tablet = FindPtrOrNull(tablet_map_, report.tablet_id());
   }
   RETURN_NOT_OK_PREPEND(CheckIsLeaderAndReady(),
       Substitute("This master is no longer the leader, unable to handle report for tablet $0",
@@ -1296,13 +1305,13 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (!tablet) {
     LOG(INFO) << "Got report from unknown tablet " << report.tablet_id()
               << ": Sending delete request for this orphan tablet";
-    SendDeleteTabletRequest(report.tablet_id(), NULL, ts_desc,
+    SendDeleteTabletRequest(report.tablet_id(), TABLET_DATA_DELETED, boost::none, NULL, ts_desc,
                             "Report from unknown tablet");
     return Status::OK();
   }
   if (!tablet->table()) {
     LOG(INFO) << "Got report from an orphaned tablet " << report.tablet_id();
-    SendDeleteTabletRequest(report.tablet_id(), NULL, ts_desc,
+    SendDeleteTabletRequest(report.tablet_id(), TABLET_DATA_DELETED, boost::none, NULL, ts_desc,
                             "Report from an orphaned tablet");
     return Status::OK();
   }
@@ -1326,7 +1335,8 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
               << " (" << msg << "): Sending delete request for this tablet";
     // TODO: Cancel tablet creation, instead of deleting, in cases where
     // that might be possible (tablet creation timeout & replacement).
-    SendDeleteTabletRequest(tablet->tablet_id(), tablet->table(), ts_desc,
+    SendDeleteTabletRequest(tablet->tablet_id(), TABLET_DATA_DELETED, boost::none,
+                            tablet->table(), ts_desc,
                             Substitute("Tablet deleted: $0", msg));
     return Status::OK();
   }
@@ -1375,6 +1385,28 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   // The report will not have a committed_consensus_state if it is in the middle of
   // starting up.
   if (report.has_committed_consensus_state()) {
+    const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.committed_consensus_state();
+    ConsensusStatePB cstate = report.committed_consensus_state();
+
+    // Check if we got a report from a tablet that is no longer part of the raft
+    // config. If so, tombstone it. We only tombstone replicas that include a
+    // committed raft config in their report that has an opid_index strictly
+    // less than the latest reported committed config, and (obviously) who are
+    // not members of the latest config. This prevents us from spuriously
+    // deleting replicas that have just been added to a pending config and are
+    // in the process of catching up to the log entry where they were added to
+    // the config.
+    if (FLAGS_master_tombstone_evicted_tablet_replicas &&
+        cstate.config().opid_index() < prev_cstate.config().opid_index() &&
+        !IsRaftConfigMember(ts_desc->permanent_uuid(), prev_cstate.config())) {
+      SendDeleteTabletRequest(report.tablet_id(), TABLET_DATA_TOMBSTONED,
+                              prev_cstate.config().opid_index(), tablet->table(), ts_desc,
+                              Substitute("Replica from old config with index $0 (latest is $1)",
+                                         cstate.config().opid_index(),
+                                         prev_cstate.config().opid_index()));
+      return Status::OK();
+    }
+
     // If the tablet was not RUNNING mark it as such
     if (!tablet_lock.data().is_running() && report.state() == tablet::RUNNING) {
       DCHECK_EQ(SysTabletsEntryPB::CREATING, tablet_lock.data().pb.state())
@@ -1388,8 +1420,6 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                                             "Tablet reported by leader");
     }
 
-    const ConsensusStatePB& prev_cstate = tablet_lock.data().pb.committed_consensus_state();
-    ConsensusStatePB cstate = report.committed_consensus_state();
     // The Master only accepts committed consensus configurations since it needs the committed index
     // to only cache the most up-to-date config.
     if (PREDICT_FALSE(!cstate.config().has_opid_index())) {
@@ -1454,7 +1484,6 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       // Report opid_index is equal to the previous opid_index. If some
       // replica is reporting the same consensus configuration we already know about and hasn't
       // been added as replica, add it.
-      // TODO: Investigate this logic when we implement RemoveServer().
       DVLOG(2) << "Peer " << ts_desc->permanent_uuid() << " sent full tablet report"
               << " with data we have already received. Ensuring replica is being tracked."
               << " Replica consensus state: " << cstate.ShortDebugString();
@@ -1491,6 +1520,7 @@ Status CatalogManager::ResetTabletReplicasFromReportedConfig(
     TabletMetadataLock* tablet_lock) {
 
   DCHECK(tablet_lock->is_write_locked());
+  ConsensusStatePB prev_cstate = tablet_lock->mutable_data()->pb.committed_consensus_state();
   const ConsensusStatePB& cstate = report.committed_consensus_state();
   *tablet_lock->mutable_data()->pb.mutable_committed_consensus_state() = cstate;
 
@@ -1500,20 +1530,38 @@ Status CatalogManager::ResetTabletReplicasFromReportedConfig(
     if (!peer.has_permanent_uuid()) {
       return Status::InvalidArgument("Missing UUID for peer", peer.ShortDebugString());
     }
-    Status status = master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc);
-    if (status.IsNotFound()) {
+    if (!master_->ts_manager()->LookupTSByUUID(peer.permanent_uuid(), &ts_desc)) {
       LOG_WITH_PREFIX(WARNING) << "Tablet server has never reported in. "
-          << "Not including in active replica locations yet. Peer: " << peer.ShortDebugString()
+          << "Not including in replica locations map yet. Peer: " << peer.ShortDebugString()
           << "; Tablet: " << tablet->ToString();
       continue;
     }
-    RETURN_NOT_OK(status);
 
     TabletReplica replica;
     NewReplica(ts_desc.get(), report, &replica);
     InsertOrDie(&replica_locations, replica.ts_desc->permanent_uuid(), replica);
   }
   tablet->SetReplicaLocations(replica_locations);
+
+  if (FLAGS_master_tombstone_evicted_tablet_replicas) {
+    unordered_set<string> current_member_uuids;
+    BOOST_FOREACH(const consensus::RaftPeerPB& peer, cstate.config().peers()) {
+      InsertOrDie(&current_member_uuids, peer.permanent_uuid());
+    }
+    // Send a DeleteTablet() request to peers that are not in the new config.
+    BOOST_FOREACH(const consensus::RaftPeerPB& prev_peer, prev_cstate.config().peers()) {
+      const string& peer_uuid = prev_peer.permanent_uuid();
+      if (!ContainsKey(current_member_uuids, peer_uuid)) {
+        std::tr1::shared_ptr<TSDescriptor> ts_desc;
+        if (!master_->ts_manager()->LookupTSByUUID(peer_uuid, &ts_desc)) continue;
+        SendDeleteTabletRequest(report.tablet_id(), TABLET_DATA_TOMBSTONED,
+                                prev_cstate.config().opid_index(), tablet->table(), ts_desc.get(),
+                                Substitute("TS $0 not found in new config with opid_index $1",
+                                           peer_uuid, cstate.config().opid_index()));
+      }
+    }
+  }
+
   return Status::OK();
 }
 
@@ -1586,7 +1634,9 @@ class PickSpecificUUID : public TSPicker {
 
   virtual Status PickReplica(TSDescriptor** ts_desc) OVERRIDE {
     shared_ptr<TSDescriptor> ts;
-    RETURN_NOT_OK(master_->ts_manager()->LookupTSByUUID(ts_uuid_, &ts));
+    if (!master_->ts_manager()->LookupTSByUUID(ts_uuid_, &ts)) {
+      return Status::NotFound("unknown tablet server ID", ts_uuid_);
+    }
     *ts_desc = ts.get();
     return Status::OK();
   }
@@ -1911,9 +1961,13 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
                      const string& permanent_uuid,
                      const scoped_refptr<TableInfo>& table,
                      const std::string& tablet_id,
+                     TabletDataState delete_type,
+                     const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
                      const string& reason)
     : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, table),
       tablet_id_(tablet_id),
+      delete_type_(delete_type),
+      cas_config_opid_index_less_or_equal_(cas_config_opid_index_less_or_equal),
       reason_(reason) {
   }
 
@@ -1934,7 +1988,13 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
       switch (resp_.error().code()) {
         case TabletServerErrorPB::TABLET_NOT_FOUND:
           LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
-                       << " no further retry: " << status.ToString();
+                       << " because the tablet was not found. No further retry: "
+                       << status.ToString();
+          MarkComplete();
+          break;
+        case TabletServerErrorPB::CAS_FAILED:
+          LOG(WARNING) << "TS " << permanent_uuid_ << ": delete failed for tablet " << tablet_id_
+                       << " due to a CAS failure. No further retry: " << status.ToString();
           MarkComplete();
           break;
         default:
@@ -1961,7 +2021,10 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
     req.set_dest_uuid(permanent_uuid_);
     req.set_tablet_id(tablet_id_);
     req.set_reason(reason_);
-    req.set_delete_type(tablet::TABLET_DATA_DELETED);
+    req.set_delete_type(delete_type_);
+    if (cas_config_opid_index_less_or_equal_) {
+      req.set_cas_config_opid_index_less_or_equal(*cas_config_opid_index_less_or_equal_);
+    }
 
     ts_proxy_->DeleteTabletAsync(req, &resp_, &rpc_,
                                  boost::bind(&AsyncDeleteReplica::RpcCallback, this));
@@ -1971,6 +2034,8 @@ class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
   }
 
   const std::string tablet_id_;
+  const TabletDataState delete_type_;
+  const boost::optional<int64_t> cas_config_opid_index_less_or_equal_;
   const std::string reason_;
   tserver::DeleteTabletResponsePB resp_;
 };
@@ -2088,7 +2153,8 @@ void CatalogManager::DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>
     LOG(INFO) << "Sending DeleteTablet for " << locations.size()
               << " replicas of tablet " << tablet->tablet_id();
     BOOST_FOREACH(const TabletInfo::ReplicaMap::value_type& r, locations) {
-      SendDeleteTabletRequest(tablet->tablet_id(), table, r.second.ts_desc, deletion_msg);
+      SendDeleteTabletRequest(tablet->tablet_id(), TABLET_DATA_DELETED,
+                              boost::none, table, r.second.ts_desc, deletion_msg);
     }
 
     TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::WRITE);
@@ -2098,13 +2164,19 @@ void CatalogManager::DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>
   }
 }
 
-void CatalogManager::SendDeleteTabletRequest(const std::string& tablet_id,
-                                             const scoped_refptr<TableInfo>& table,
-                                             TSDescriptor* ts_desc,
-                                             const string& reason) {
-  AsyncDeleteReplica* call = new AsyncDeleteReplica(master_, worker_pool_.get(),
-                                                    ts_desc->permanent_uuid(),
-                                                    table, tablet_id, reason);
+void CatalogManager::SendDeleteTabletRequest(
+    const std::string& tablet_id,
+    TabletDataState delete_type,
+    const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
+    const scoped_refptr<TableInfo>& table,
+    TSDescriptor* ts_desc,
+    const string& reason) {
+  LOG_WITH_PREFIX(INFO) << Substitute("Deleting tablet $0 with delete type $1 ($2)",
+                                      tablet_id, TabletDataState_Name(delete_type), reason);
+  AsyncDeleteReplica* call =
+      new AsyncDeleteReplica(master_, worker_pool_.get(), ts_desc->permanent_uuid(), table,
+                             tablet_id, delete_type, cas_config_opid_index_less_or_equal,
+                             reason);
   if (table != NULL) {
     table->AddTask(call);
   } else {
@@ -2701,11 +2773,6 @@ void TabletInfo::GetReplicaLocations(ReplicaMap* replica_locations) const {
 bool TabletInfo::AddToReplicaLocations(const TabletReplica& replica) {
   boost::lock_guard<simple_spinlock> l(lock_);
   return InsertIfNotPresent(&replica_locations_, replica.ts_desc->permanent_uuid(), replica);
-}
-
-bool TabletInfo::InReplicaLocations(const std::string& peer_uuid) const {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  return ContainsKey(replica_locations_, peer_uuid);
 }
 
 void TabletInfo::set_last_update_time(const MonoTime& ts) {

@@ -383,11 +383,13 @@ TEST_F(DeleteTableTest, TestAtomicDeleteTablet) {
   ASSERT_EQ(1, tablets.size());
   const string& tablet_id = tablets[0];
 
-  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+  const int kTsIndex = 0;
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
 
   // The committed config starts off with an opid_index of -1, so choose something lower.
   boost::optional<int64_t> opid_index(-2);
   tserver::TabletServerErrorPB::Code error_code;
+  ASSERT_OK(itest::WaitUntilTabletRunning(ts, tablet_id, timeout));
   Status s = itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, opid_index, timeout,
                                  &error_code);
   ASSERT_EQ(TabletServerErrorPB::CAS_FAILED, error_code);

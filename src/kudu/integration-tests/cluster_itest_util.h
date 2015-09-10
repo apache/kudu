@@ -208,6 +208,20 @@ Status ListRunningTabletIds(const TServerDetails* ts,
                             const MonoDelta& timeout,
                             std::vector<std::string>* tablet_ids);
 
+// Get the list of tablet locations for the specified tablet from the Master.
+Status GetTabletLocations(const std::tr1::shared_ptr<master::MasterServiceProxy>& master_proxy,
+                          const std::string& tablet_id,
+                          const MonoDelta& timeout,
+                          master::TabletLocationsPB* tablet_locations);
+
+// Wait for the specified number of voters to be reported to the config on the
+// master for the specified tablet.
+Status WaitForNumVotersInConfigOnMaster(
+    const std::tr1::shared_ptr<master::MasterServiceProxy>& master_proxy,
+    const std::string& tablet_id,
+    int num_voters,
+    const MonoDelta& timeout);
+
 // Repeatedly invoke ListTablets(), waiting for up to 'timeout' time for the
 // specified 'count' number of replicas.
 Status WaitForNumTabletsOnTS(

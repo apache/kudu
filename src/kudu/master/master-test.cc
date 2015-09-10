@@ -115,8 +115,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   ASSERT_EQ(0, descs.size()) << "Should not have registered anything";
 
   shared_ptr<TSDescriptor> ts_desc;
-  Status s = master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc);
-  ASSERT_TRUE(s.IsNotFound());
+  ASSERT_FALSE(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
 
   // Register the fake TS, without sending any tablet report.
   TSRegistrationPB fake_reg;
@@ -142,7 +141,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   descs[0]->GetRegistration(&reg);
   ASSERT_EQ(fake_reg.DebugString(), reg.DebugString()) << "Master got different registration";
 
-  ASSERT_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
+  ASSERT_TRUE(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
   ASSERT_EQ(ts_desc, descs[0]);
 
   // If the tablet server somehow lost the response to its registration RPC, it would
@@ -179,7 +178,7 @@ TEST_F(MasterTest, TestRegisterAndHeartbeat) {
   master_->ts_manager()->GetAllDescriptors(&descs);
   ASSERT_EQ(1, descs.size()) << "Should still only have one TS registered";
 
-  ASSERT_OK(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
+  ASSERT_TRUE(master_->ts_manager()->LookupTSByUUID(kTsUUID, &ts_desc));
   ASSERT_EQ(ts_desc, descs[0]);
 
   // Ensure that the ListTabletServers shows the faked server.

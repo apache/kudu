@@ -4,6 +4,7 @@
 #define KUDU_MASTER_CATALOG_MANAGER_H
 
 #include <boost/thread/mutex.hpp>
+#include <boost/optional/optional_fwd.hpp>
 #include <map>
 #include <string>
 #include <tr1/unordered_map>
@@ -113,9 +114,6 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
   // Adds the given replica to the replica_locations_ map.
   // Returns true iff the replica was inserted.
   bool AddToReplicaLocations(const TabletReplica& replica);
-
-  // Returns true iff peer_uuid is one of the replica locations for the tablet.
-  bool InReplicaLocations(const std::string& peer_uuid) const;
 
   // Accessors for the last time the replica locations were updated.
   void set_last_update_time(const MonoTime& ts);
@@ -554,6 +552,8 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // Send the "delete tablet request" to the specified TS/tablet.
   // The specified 'reason' will be logged on the TS.
   void SendDeleteTabletRequest(const std::string& tablet_id,
+                               tablet::TabletDataState delete_type,
+                               const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
                                const scoped_refptr<TableInfo>& table,
                                TSDescriptor* ts_desc,
                                const std::string& reason);
