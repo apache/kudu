@@ -1,9 +1,6 @@
 --max_message_size=67108864
 --minloglevel=0
 --block_cache_capacity_mb=512
---log_force_fsync_all=false
 --v=0
 --memrowset_throttle_mb=768
---enable_leader_failure_detection=true
---log_min_segments_to_retain=200
 --metrics_log_interval_ms=1000
