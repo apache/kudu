@@ -99,7 +99,15 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Delete the specified tablet.
   // 'delete_type' must be one of TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED
   // or else returns Status::IllegalArgument.
-  Status DeleteTablet(const std::string& tablet_id, tablet::TabletDataState delete_type);
+  // 'cas_config_opid_index_less_or_equal' is optionally specified to enable an
+  // atomic DeleteTablet operation that only occurs if the latest committed
+  // raft config change op has an opid_index equal to or less than the specified
+  // value. If not, 'error_code' is set to CAS_FAILED and a non-OK Status is
+  // returned.
+  Status DeleteTablet(const std::string& tablet_id,
+                      tablet::TabletDataState delete_type,
+                      const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
+                      boost::optional<TabletServerErrorPB::Code>* error_code);
 
   // Lookup the given tablet peer by its ID.
   // Returns true if the tablet is found successfully.
@@ -177,7 +185,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   std::string LogPrefix(const std::string& tablet_id) const;
 
   // Returns Status::OK() iff state_ == MANAGER_RUNNING.
-  Status CheckRunningUnlocked() const;
+  Status CheckRunningUnlocked(boost::optional<TabletServerErrorPB::Code>* error_code) const;
 
   // Open a tablet meta from the local file system by loading its superblock.
   Status OpenTabletMeta(const std::string& tablet_id,

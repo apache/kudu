@@ -66,6 +66,17 @@ message DeleteTabletRequestPB {
   // Must be one of TABLET_DATA_DELETED (for table deletes) or
   // TABLET_DATA_TOMBSTONED (for replica retirement).
   optional tablet.TabletDataState delete_type = 3 [ default = TABLET_DATA_TOMBSTONED ];
+
+  // The highest allowed OpId index of the latest known committed config.
+  // This optional parameter is here to provide an atomic (compare-and-swap)
+  // DeleteTablet operation. If this parameter is specified, the DeleteTablet()
+  // operation will succeed only if the committed config has an opid_index that
+  // is less than or equal to this value.
+  // See also the definition of RaftConfigPB.
+  // Note: At the time of this writing, there is a small race between checking
+  // the value of the committed config opid index and shutting down the tablet
+  // for deletion. See comments in ts_tablet_manager.cc
+  optional int64 cas_config_opid_index_less_or_equal = 5;
 }
 
 message DeleteTabletResponsePB {

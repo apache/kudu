@@ -234,6 +234,18 @@ static void SetupErrorAndRespond(TabletServerErrorPB* error,
   context->RespondSuccess();
 }
 
+template <class ReqType, class RespType>
+void HandleErrorResponse(const ReqType* req, RespType* resp, RpcContext* context,
+                         const boost::optional<TabletServerErrorPB::Code>& error_code,
+                         const Status& s) {
+  resp->Clear();
+  if (error_code) {
+    SetupErrorAndRespond(resp->mutable_error(), s, *error_code, context);
+  } else {
+    HandleUnknownError(req, resp, context, s);
+  }
+}
+
 // A transaction completion callback that responds to the client when transactions
 // complete and sets the client error if there is one to set.
 template<class Response>
@@ -599,17 +611,17 @@ void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
             << " from " << context->requestor_string();
   VLOG(1) << "Full request: " << req->DebugString();
 
-  Status s = server_->tablet_manager()->DeleteTablet(req->tablet_id(), delete_type);
+  boost::optional<int64_t> cas_config_opid_index_less_or_equal;
+  if (req->has_cas_config_opid_index_less_or_equal()) {
+    cas_config_opid_index_less_or_equal = req->cas_config_opid_index_less_or_equal();
+  }
+  boost::optional<TabletServerErrorPB::Code> error_code;
+  Status s = server_->tablet_manager()->DeleteTablet(req->tablet_id(),
+                                                     delete_type,
+                                                     cas_config_opid_index_less_or_equal,
+                                                     &error_code);
   if (PREDICT_FALSE(!s.ok())) {
-    TabletServerErrorPB::Code code;
-    if (s.IsNotFound()) {
-      code = TabletServerErrorPB::TABLET_NOT_FOUND;
-    } else if (s.IsServiceUnavailable()) {
-      code = TabletServerErrorPB::TABLET_NOT_RUNNING;
-    } else {
-      code = TabletServerErrorPB::UNKNOWN_ERROR;
-    }
-    SetupErrorAndRespond(resp->mutable_error(), s, code, context);
+    HandleErrorResponse(req, resp, context, error_code, s);
     return;
   }
   context->RespondSuccess();
@@ -775,11 +787,7 @@ void ConsensusServiceImpl::ChangeConfig(const ChangeConfigRequestPB* req,
   boost::optional<TabletServerErrorPB::Code> error_code;
   Status s = consensus->ChangeConfig(*req, BindHandleResponse(req, resp, context), &error_code);
   if (PREDICT_FALSE(!s.ok())) {
-    if (error_code) {
-      SetupErrorAndRespond(resp->mutable_error(), s, *error_code, context);
-    } else {
-      HandleUnknownError(req, resp, context, s);
-    }
+    HandleErrorResponse(req, resp, context, error_code, s);
     return;
   }
   // The success case is handled when the callback fires.

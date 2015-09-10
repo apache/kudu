@@ -456,8 +456,12 @@ scoped_refptr<TabletPeer> TSTabletManager::CreateAndRegisterTabletPeer(
   return tablet_peer;
 }
 
-Status TSTabletManager::DeleteTablet(const string& tablet_id,
-                                     TabletDataState delete_type) {
+Status TSTabletManager::DeleteTablet(
+    const string& tablet_id,
+    TabletDataState delete_type,
+    const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
+    boost::optional<TabletServerErrorPB::Code>* error_code) {
+
   if (delete_type != TABLET_DATA_DELETED && delete_type != TABLET_DATA_TOMBSTONED) {
     return Status::InvalidArgument("DeleteTablet() requires an argument that is one of "
                                    "TABLET_DATA_DELETED or TABLET_DATA_TOMBSTONED",
@@ -473,19 +477,42 @@ Status TSTabletManager::DeleteTablet(const string& tablet_id,
     // transition_in_progress_ set.
     boost::lock_guard<rw_spinlock> lock(lock_);
     TRACE("Acquired tablet manager lock");
-    RETURN_NOT_OK(CheckRunningUnlocked());
+    RETURN_NOT_OK(CheckRunningUnlocked(error_code));
 
     if (!LookupTabletUnlocked(tablet_id, &tablet_peer)) {
+      *error_code = TabletServerErrorPB::TABLET_NOT_FOUND;
       return Status::NotFound("Tablet not found", tablet_id);
     }
     // Sanity check that the tablet's creation isn't already in progress
     if (!InsertIfNotPresent(&transition_in_progress_, tablet_id)) {
+      *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
       return Status::AlreadyPresent("Maintenance of tablet already in progress",
                                     tablet_id);
     }
   }
   scoped_refptr<TransitionInProgressDeleter> deleter(
       new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
+
+  // They specified an "atomic" delete. Check the committed config's opid_index.
+  // TODO: There's actually a race here between the check and shutdown, but
+  // it's tricky to fix. We could try checking again after the shutdown and
+  // restarting the tablet if the local replica committed a higher config
+  // change op during that time, or potentially something else more invasive.
+  if (cas_config_opid_index_less_or_equal) {
+    scoped_refptr<consensus::Consensus> consensus = tablet_peer->shared_consensus();
+    if (!consensus) {
+      *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+      return Status::IllegalState("Consensus not available. Tablet shutting down");
+    }
+    RaftConfigPB committed_config = consensus->CommittedConfig();
+    if (committed_config.opid_index() > *cas_config_opid_index_less_or_equal) {
+      *error_code = TabletServerErrorPB::CAS_FAILED;
+      return Status::IllegalState(Substitute("Request specified cas_config_opid_index_less_or_equal"
+                                             " of $0 but the committed config has opid_index of $1",
+                                             *cas_config_opid_index_less_or_equal,
+                                             committed_config.opid_index()));
+    }
+  }
 
   tablet_peer->Shutdown();
 
@@ -507,7 +534,7 @@ Status TSTabletManager::DeleteTablet(const string& tablet_id,
   // We only remove DELETED tablets from the tablet map.
   if (delete_type == TABLET_DATA_DELETED) {
     boost::lock_guard<rw_spinlock> lock(lock_);
-    RETURN_NOT_OK(CheckRunningUnlocked());
+    RETURN_NOT_OK(CheckRunningUnlocked(error_code));
     CHECK_EQ(1, tablet_map_.erase(tablet_id)) << tablet_id;
   }
 
@@ -518,12 +545,14 @@ string TSTabletManager::LogPrefix(const string& tablet_id) const {
   return "T " + tablet_id + " P " + fs_manager_->uuid() + ": ";
 }
 
-Status TSTabletManager::CheckRunningUnlocked() const {
+Status TSTabletManager::CheckRunningUnlocked(
+    boost::optional<TabletServerErrorPB::Code>* error_code) const {
   if (state_ == MANAGER_RUNNING) {
     return Status::OK();
   }
-  return Status::IllegalState(Substitute("Tablet Manager is not running: $0",
-                                         TSTabletManagerStatePB_Name(state_)));
+  *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
+  return Status::ServiceUnavailable(Substitute("Tablet Manager is not running: $0",
+                                               TSTabletManagerStatePB_Name(state_)));
 }
 
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,

@@ -439,7 +439,7 @@ Status AddServer(const TServerDetails* leader,
                  const std::string& tablet_id,
                  const TServerDetails* replica_to_add,
                  consensus::RaftPeerPB::MemberType member_type,
-                 boost::optional<int64_t> cas_config_opid_index,
+                 const boost::optional<int64_t>& cas_config_opid_index,
                  const MonoDelta& timeout,
                  TabletServerErrorPB::Code* error_code) {
   ChangeConfigRequestPB req;
@@ -469,7 +469,7 @@ Status AddServer(const TServerDetails* leader,
 Status RemoveServer(const TServerDetails* leader,
                     const std::string& tablet_id,
                     const TServerDetails* replica_to_remove,
-                    boost::optional<int64_t> cas_config_opid_index,
+                    const boost::optional<int64_t>& cas_config_opid_index,
                     const MonoDelta& timeout,
                     TabletServerErrorPB::Code* error_code) {
   ChangeConfigRequestPB req;
@@ -589,7 +589,9 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
 Status DeleteTablet(const TServerDetails* ts,
                     const std::string& tablet_id,
                     const tablet::TabletDataState delete_type,
-                    const MonoDelta& timeout) {
+                    const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
+                    const MonoDelta& timeout,
+                    tserver::TabletServerErrorPB::Code* error_code) {
   DeleteTabletRequestPB req;
   DeleteTabletResponsePB resp;
   RpcController rpc;
@@ -598,9 +600,15 @@ Status DeleteTablet(const TServerDetails* ts,
   req.set_dest_uuid(ts->uuid());
   req.set_tablet_id(tablet_id);
   req.set_delete_type(delete_type);
+  if (cas_config_opid_index_less_or_equal) {
+    req.set_cas_config_opid_index_less_or_equal(*cas_config_opid_index_less_or_equal);
+  }
 
   RETURN_NOT_OK(ts->tserver_admin_proxy->DeleteTablet(req, &resp, &rpc));
   if (resp.has_error()) {
+    if (error_code) {
+      *error_code = resp.error().code();
+    }
     return StatusFromPB(resp.error().status());
   }
   return Status::OK();

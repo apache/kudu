@@ -185,7 +185,7 @@ Status AddServer(const TServerDetails* leader,
                  const std::string& tablet_id,
                  const TServerDetails* replica_to_add,
                  consensus::RaftPeerPB::MemberType member_type,
-                 boost::optional<int64_t> cas_config_opid_index,
+                 const boost::optional<int64_t>& cas_config_opid_index,
                  const MonoDelta& timeout,
                  tserver::TabletServerErrorPB::Code* error_code = NULL);
 
@@ -194,7 +194,7 @@ Status AddServer(const TServerDetails* leader,
 Status RemoveServer(const TServerDetails* leader,
                     const std::string& tablet_id,
                     const TServerDetails* replica_to_remove,
-                    boost::optional<int64_t> cas_config_opid_index,
+                    const boost::optional<int64_t>& cas_config_opid_index,
                     const MonoDelta& timeout,
                     tserver::TabletServerErrorPB::Code* error_code = NULL);
 
@@ -225,7 +225,9 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
 Status DeleteTablet(const TServerDetails* ts,
                     const std::string& tablet_id,
                     const tablet::TabletDataState delete_type,
-                    const MonoDelta& timeout);
+                    const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
+                    const MonoDelta& timeout,
+                    tserver::TabletServerErrorPB::Code* error_code = NULL);
 
 // Cause the remote to initiate remote bootstrap using the specified host as a
 // source.

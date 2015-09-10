@@ -43,6 +43,7 @@ using kudu::tablet::TABLET_DATA_READY;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tablet::TabletSuperBlockPB;
 using kudu::tserver::ListTabletsResponsePB;
+using kudu::tserver::TabletServerErrorPB;
 using std::numeric_limits;
 using std::string;
 using std::tr1::shared_ptr;
@@ -264,7 +265,7 @@ void DeleteTableTest::DeleteTabletWithRetries(const TServerDetails* ts,
   deadline.AddDelta(timeout);
   Status s;
   while (true) {
-    s = itest::DeleteTablet(ts, tablet_id, delete_type, timeout);
+    s = itest::DeleteTablet(ts, tablet_id, delete_type, boost::none, timeout);
     if (s.ok()) return;
     if (deadline.ComesBefore(MonoTime::Now(MonoTime::FINE))) {
       break;
@@ -364,6 +365,38 @@ TEST_F(DeleteTableTest, TestDeleteTableDestUuidValidation) {
       << resp.ShortDebugString();
   ASSERT_STR_CONTAINS(StatusFromPB(resp.error().status()).ToString(),
                       "Wrong destination UUID");
+}
+
+// Test the atomic CAS argument to DeleteTablet().
+TEST_F(DeleteTableTest, TestAtomicDeleteTablet) {
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+  NO_FATALS(StartCluster());
+  // Create a table on the cluster. We're just using TestWorkload
+  // as a convenient way to create it.
+  TestWorkload(cluster_.get()).Setup();
+
+  // The table should have replicas on all three tservers.
+  ASSERT_OK(inspect_->WaitForReplicaCount(3));
+
+  // Grab the tablet ID (used later).
+  vector<string> tablets = inspect_->ListTabletsOnTS(1);
+  ASSERT_EQ(1, tablets.size());
+  const string& tablet_id = tablets[0];
+
+  TServerDetails* ts = ts_map_[cluster_->tablet_server(0)->uuid()];
+
+  // The committed config starts off with an opid_index of -1, so choose something lower.
+  boost::optional<int64_t> opid_index(-2);
+  tserver::TabletServerErrorPB::Code error_code;
+  Status s = itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, opid_index, timeout,
+                                 &error_code);
+  ASSERT_EQ(TabletServerErrorPB::CAS_FAILED, error_code);
+  ASSERT_STR_CONTAINS(s.ToString(), "of -2 but the committed config has opid_index of -1");
+
+  // Now use the "latest", which is -1.
+  opid_index = -1;
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, opid_index, timeout,
+                                &error_code));
 }
 
 TEST_F(DeleteTableTest, TestDeleteTableWithConcurrentWrites) {
@@ -550,7 +583,7 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
   // Now pause the other replicas and tombstone our replica again.
   ASSERT_OK(cluster_->tablet_server(1)->Pause());
   ASSERT_OK(cluster_->tablet_server(2)->Pause());
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_NOT_EXPECTED));
 
   // Bring them back again, let them yet again bootstrap our tombstoned replica.
@@ -622,7 +655,7 @@ TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
   ASSERT_EQ(ts->uuid(), cmeta_pb.voted_for());
 
   // Tombstone our special little guy, then shut him down.
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
   cluster_->tablet_server(kTsIndex)->Shutdown();
 
@@ -737,7 +770,7 @@ TEST_F(DeleteTableTest, TestDeleteFollowerWithReplicatingTransaction) {
   // Now tombstone the follower tablet. This should succeed even though there
   // are uncommitted operations on the replica.
   LOG(INFO) << "Tombstoning tablet " << tablet_id << " on TS " << ts->uuid();
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
 }
 
 // Parameterized test case for TABLET_DATA_DELETED deletions.
@@ -864,7 +897,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   string tablet_id = tablets[0].tablet_status().tablet_id();
   LOG(INFO) << "Tombstoning first tablet " << tablet_id << "...";
   ASSERT_TRUE(inspect_->DoesConsensusMetaExistForTabletOnTS(kTsIndex, tablet_id)) << tablet_id;
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
   LOG(INFO) << "Waiting for first tablet to be tombstoned...";
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
 
@@ -872,7 +905,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex), fault_flag, "1.0"));
   tablet_id = tablets[1].tablet_status().tablet_id();
   LOG(INFO) << "Tombstoning second tablet " << tablet_id << "...";
-  ignore_result(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  ignore_result(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
   NO_FATALS(WaitForTSToCrash(kTsIndex));
 
   // Restart the tablet server and wait for the WALs to be deleted and for the

@@ -185,7 +185,7 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
 
   // Now kill the new leader and tombstone the replica on TS 0.
   cluster_->tablet_server(new_leader_index)->Shutdown();
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
 
   // Zombies!!! Resume the rogue zombie leader.
   // He should attempt to remote bootstrap TS 0 but fail.
@@ -277,7 +277,7 @@ TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
                              &meta));
 
   // Tombstone the tablet on the remote!
-  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  ASSERT_OK(itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none, timeout));
 
   // Now finish bootstrapping!
   tablet::TabletStatusListener listener(meta);
@@ -348,7 +348,8 @@ TEST_F(RemoteBootstrapITest, TestRemoteBootstrapFollowerWithHigherTerm) {
   ASSERT_EQ(2, term);
 
   // Now tombstone the follower.
-  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
+                                timeout));
 
   // Restart the follower's TS so that the leader's TS won't get its queued
   // vote request messages. This is a hack but seems to work.
@@ -450,8 +451,8 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
 
   BOOST_FOREACH(const string& tablet_id, tablet_ids) {
     LOG(INFO) << "Tombstoning tablet " << tablet_id << " on TS " << target_ts->uuid();
-    ASSERT_OK(itest::DeleteTablet(target_ts, tablet_id, TABLET_DATA_TOMBSTONED,
-              MonoDelta::FromSeconds(10)));
+    ASSERT_OK(itest::DeleteTablet(target_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
+                                  MonoDelta::FromSeconds(10)));
   }
 
   // Unpause the leader TS and wait for it to remotely bootstrap the tombstoned
@@ -529,7 +530,8 @@ TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
 
     // Tombstone the follower.
     LOG(INFO) << "Tombstoning follower tablet " << tablet_id << " on TS " << follower_ts->uuid();
-    ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+    ASSERT_OK(itest::DeleteTablet(follower_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
+                                  timeout));
 
     // Wait for remote bootstrap to start.
     ASSERT_OK(inspect_->WaitForTabletDataStateOnTS(follower_index, tablet_id,
@@ -537,7 +539,8 @@ TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
 
     // Tombstone the leader.
     LOG(INFO) << "Tombstoning leader tablet " << tablet_id << " on TS " << leader_ts->uuid();
-    ASSERT_OK(itest::DeleteTablet(leader_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+    ASSERT_OK(itest::DeleteTablet(leader_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
+                                  timeout));
 
     // Quiesce and rebuild to full strength. This involves electing a new
     // leader from the remaining three, which requires a unanimous vote, and
@@ -637,7 +640,8 @@ TEST_F(RemoteBootstrapITest, TestDisableRemoteBootstrap_NoTightLoopWhenTabletDel
   }
 
   // Tombstone the tablet on one of the servers (TS 1)
-  ASSERT_OK(itest::DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, timeout));
+  ASSERT_OK(itest::DeleteTablet(replica_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
+                                timeout));
 
   // Ensure that, if we sleep for a second while still doing writes to the leader:
   // a) we don't spew logs on the leader side
