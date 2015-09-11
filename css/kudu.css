@@ -11,3 +11,28 @@
   position: fixed;
   top: 20px;
 }
+
+.row.header {
+    border-bottom: 1px solid #25aae1;
+    margin-bottom: 30px
+}
+
+.row.overview {
+    margin-bottom: 30px;
+    padding: 10px 0;
+    border-bottom: 1px solid #ccccff;
+    font-size: 120%;
+}
+
+.row.overview.noborder {
+    border-bottom: none;
+}
+
+.row.overview h3 {
+    margin-top: 0;
+}
+
+.row.overview img {
+    display: block;
+    margin: auto;
+}

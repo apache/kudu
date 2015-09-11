@@ -2,15 +2,247 @@
 title: Overview
 layout: default
 active_nav: overview
+TODO: attributions for CC-A
 ---
-<div class="row">
-  <div class="col-lg-12">
-    <h2><a name="arch">Kudu Architecture</a></h2>
-    <p>[this is where a technical overview of Kudu design principles and architecture will be, including a high-level software architecture diagram]</p>
-    <h2><a name="perf">Kudu Performance</a></h2>
-    <p>[this is where performance is discussed]</p>
-    <h2><a name="roadmap">Kudu Roadmap</a></h2>
-    <p>[this is where roadmap is described -- not tied to CDH releases and no more granular that calendar quarter]</p>
 
+<!------------------------------------------------------------->
+<div class="row header">
+  <div class="col-lg-12">
+    <h2><a>Kudu Overview</a></h2>
   </div>
 </div>
+
+<div class="row overview">
+  <div class="col-md-6">
+    <h3>Data Model</h3>
+    <p>
+      A Kudu cluster stores tables that look just like tables you're used to from relational (SQL) databases.
+      A table can be as simple as an binary <code>key</code> and <code>value</code>, or as complex
+      as a few hundred different strongly-typed attributes.
+    </p>
+    <p>
+      Just like SQL, every table has a <code>PRIMARY KEY</code> made up of one or more columns.
+      This might be a single column like a unique user identifier, or a compound key such as a
+      <code>(host, metric, timestamp)</code> tuple for a machine time series database. Rows can be efficiently
+      read, updated, or deleted by their primary key.
+    </p>
+    <p>
+      Kudu's simple data model makes it breeze to port legacy applications or build new ones:
+      no need to worry about how to encode your data into binary blobs or make sense of a
+      huge database full of hard-to-interpret JSON. Tables are self-describing, so you can
+      use standard tools like SQL engines or Spark to analyze your data.
+    </p>
+    <ul>
+      <li><a href="#">TODO: link to data modeling docs</a></li>
+    </ul>
+  </div>
+  <div class="col-md-6">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/9/9b/Social_Network_Analysis_Visualization.png"/>
+    TODO: placeholder image
+  </div>
+</div>
+
+<div class="row overview">
+  <div class="col-md-6">
+    <img src="{{site.github.url}}/img/java-code.png" />
+  </div>
+  <div class="col-md-6">
+    <h3>Low-latency random access</h3>
+    <p>
+      Unlike other storage for big data analytics, Kudu isn't just a file format. It's a live storage
+      system which supports low-latency millisecond-scale access to individual rows. You can choose
+      between Java or C++ APIs, with Python support under development. And of course these random access
+      APIs can be used in conjunction with batch access for machine learning or analytics.
+    </p>
+    <p>
+      Kudu's APIs are designed to be easy to use. The data model is fully typed, so you don't
+      need to worry about binary encodings or exotic serialization. You can just store primitive
+      types, like when you use JDBC or ODBC.
+    </p>
+    <p>
+      Kudu isn't designed to be an OLTP system, but if you have some subset of data which fits
+      in memory, it offers competitive random access performance. We've measured 99th percentile
+      latencies of 6ms or below using YCSB with a uniform random access workload over a billion
+      rows. Being able to run low-latency online workloads on the same storage as back-end
+      data analytics can dramatically simplifiy application architecture.
+    </p>
+    <ul>
+      <li><a href="#">TODO: link to API docs</a></li>
+      <li><a href="#">TODO: link to some perf results from YCSB?</a></li>
+    </ul>
+  </div>
+</div>
+
+
+<div class="row overview">
+  <div class="col-md-6">
+    <h3>Integration with the Hadoop Ecosystem</h3>
+    <p>
+      Kudu was designed to fit in with the Hadoop ecosystem, so integrating it with other
+      data processing frameworks is simple. Stream data in from live real-time data sources
+      using the Java client, and then process it immediately upon arrival using Spark, Impala,
+      or MapReduce, even transparently joining Kudu tables with data stored in other Hadoop
+      storage such as HDFS or HBase.
+    </p>
+    <p>
+      Kudu is a good citizen on a Hadoop cluster: it can easily share data
+      disks with HDFS DataNodes, and can operate in a RAM footprint as small as 1GB for
+      light workloads.
+    </p>
+    <ul>
+      <li><a href="#">TODO: link to Impala tutorial</a></li>
+      <li><a href="#">TODO: link to Spark setup/tutorial?</a></li>
+    </ul>
+  </div>
+  <div class="col-md-6">
+    <img src="{{site.github.url}}/img/impala.png" />
+  </div>
+</div>
+
+<div class="row overview">
+  <div class="col-md-6">
+    <img src="{{site.github.url}}/img/tracing.png" />
+  </div>
+  <div class="col-md-6">
+    <h3>Built by and for Operators</h3>
+    <p>
+      Kudu was built by a group of engineers who've spent many late nights providing
+      on-call production support for critical Hadoop clusters across hundreds of
+      enterprise use cases. We know how frustrating it is to debug software
+      without good metrics, tracing, or administrative tools.
+    </p>
+    <p>
+      Even in its first beta release, Kudu includes advanced in-process tracing capabilities,
+      extensive metrics support, and even watchdog threads which check for latency
+      outliers and dump "smoking gun" stack traces to get to the root of the problem
+      quickly.
+    </p>
+    <ul>
+      <li><a href="#">Link to tracing docs</a></li>
+    </ul>
+  </div>
+</div>
+
+
+<div class="row overview noborder">
+  <div class="col-md-6">
+    <h3><a name="opensource">Open Source</a></h3>
+    <p>
+      Kudu is Open Source software, licensed under the Apache 2.0 license. Although
+      most of the contributions have been from developers from a single company
+      up to this point, we believe that Kudu's long term success depends on
+      building a vibrant community of developers and users outside of a single
+      organization.
+    </p>
+    <p>
+      Our first order of business is to migrate all of our code reviews and
+      daily development discussions into the open. We're also working on proposing
+      Kudu for inclusion in the Apache Software Foundation's Incubator. With
+      several Apache Members and Committers on the development team, we are
+      familiar with the Apache Way and looking forward to contributing this
+      project to the ASF.
+    </p>
+    <ul>
+      <li><a href="https://github.com/cloudera/kudu">View the Kudu github repository</a></li>
+      <li><a href="#">TODO: link to Kudu gerrit, dev-list, etc</a></li>
+    </ul>
+  </div>
+  <div class="col-md-6">
+    <img src="{{site.github.url}}/img/github.png" size="75%"/>
+  </div>
+</div>
+
+<!------------------------------------------------------------->
+
+<div class="row header">
+  <div class="col-lg-12">
+    <h2><a name="architecture">Kudu Architecture</a></h2>
+  </div>
+</div>
+
+<div class="row overview">
+  <div class="col-md-6">
+    <h3>Super-fast Columnar Storage</h3>
+    <p>
+      Like most modern analytic data stores, Kudu internally organizes its data by column rather than
+      row. Columnar storage allows efficient encoding and compression. For example, a string field with
+      only a few unique values can use only a few bits per row of storage. With techniques such as
+      run-length encoding, differential encoding, and vectorized bit-packing, Kudu is as fast at
+      reading the data as it is space-efficient at storing it.
+    </p>
+    <p>
+      Columnar storage also dramatically reduces the amount of data IO required to service analytic
+      queries. Using techniques such as lazy data materialization and predicate pushdown, Kudu can perform
+      drill-down and needle-in-a-haystack queries over billions of rows and terabytes of data in seconds.
+    </p>
+  </div>
+  <div class="col-md-6">
+    <img src="{{site.github.url}}/img/ssd.jpg" />
+  </div>
+</div>
+
+<div class="row overview">
+  <div class="col-md-6">
+    <img src="{{site.github.url}}/img/raft.png" width="400"/>
+  </div>
+  <div class="col-md-6">
+    <h3>Distribution and Fault Tolerance</h3>
+    <p>
+      In order to scale out to large datasets and large clusters, Kudu splits tables
+      into smaller units called <em>tablets</em>. This splitting can be configured
+      on a per-table basis to be based on hashing, range partitioning, or a combination
+      thereof. This allows the operator to easily trade off between parallelism for
+      analytic workloads and high concurrency for more online ones.
+    </p>
+    <p>
+      In order to keep your data safe and available at all times, Kudu uses the
+      <a href="http://raft.github.io">Raft</a> consensus algorithm to replicate
+      all operations for a given tablet. Raft, like Paxos, ensures that every
+      write is persisted by at least two nodes before responding to
+      the client request, ensuring that no data is ever lost due to a
+      machine failure. When machines do fail, replicas reconfigure
+      themselves within a few seconds to maintain extremely high system
+      availability.
+    </p>
+    <p>
+      The use of majority consensus provides very low tail latencies
+      even when some nodes may be stressed by concurrent workloads such as
+      MapReduce jobs or heavy Impala queries. But unlike eventual
+      consistency systems, Raft consensus ensures that all replicas will
+      come to agreement around the state of the data, and by using a
+      combination of logical and physical clocks, Kudu can offer strict
+      snapshot consistency to clients that demand it.
+    </p>
+    <ul>
+      <li><a href="http://raft.github.io/">Learn more about Raft Consensus</a></li>
+      <li><a href="#">TODO: link to docs Learn more about how Kudu uses Raft</a></li>
+    </ul>
+  </div>
+</div>
+
+<div class="row overview noborder">
+  <div class="col-md-6">
+    <h3>Designed for Next-Generation Hardware</h3>
+    <p>
+      The Kudu team has worked closely with engineers at Intel to harness the power
+      of the next generation of hardware technologies.
+      Kudu's storage is designed to take advantage of the IO
+      characteristics of solid state drives, and it includes an
+      experimental cache implementation which can store data in 3DXpoint Optane
+      persistent memory.
+    </p>
+    <p>
+      Kudu is implemented in C++, so it can scale easily to large amounts
+      of memory per node. And because key storage data structures are designed to
+      be highly concurrent, it can scale easily to tens of cores. With an
+      in-memory columnar execution path, Kudu achieves good instruction-level
+      parallelism using SIMD operations from the SSE4 and AVX instruction sets.
+    </p>
+  </div>
+  <div class="col-md-6">
+    <img src="{{site.github.url}}/img/intel_logo.jpg" size="75%"/>
+  </div>
+</div>
+
+
+<!------------------------------------------------------------->
