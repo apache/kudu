@@ -1,0 +1,670 @@
+---
+title: cfile-dump Unsupported Flags
+layout: default
+
+last_updated: 'Last updated 2015-09-10 22:21:59 PDT'
+---
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1><code>cfile-dump</code> Unsupported Flags</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Flags marked <code>advanced</code> or <code>experimental</code> and not marked <code>stable</code>, or flags with no stability tag, are <strong>unsupported</strong> and are included
+for informational purposes only. They are subject to change or be removed without notice.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_block_cache_type"><a class="link" href="#cfile-dump_block_cache_type"><code>--block_cache_type</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Which type of block cache to use for caching data. Valid choices are 'DRAM' or 'NVM'. DRAM, the default, caches data in regular memory. 'NVM' caches data in a memory-mapped file using the NVML library.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>DRAM</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_cfile_default_block_size"><a class="link" href="#cfile-dump_cfile_default_block_size"><code>--cfile_default_block_size</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The default block size to use in cfiles</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>262144</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_cfile_default_compression_codec"><a class="link" href="#cfile-dump_cfile_default_compression_codec"><code>--cfile_default_compression_codec</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Default cfile block compression codec.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>none</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_cfile_do_on_finish"><a class="link" href="#cfile-dump_cfile_do_on_finish"><code>--cfile_do_on_finish</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>What to do to cfile blocks when writing is finished. Possible values are 'close', 'flush', or 'nothing'.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>close</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_block_coalesce_close"><a class="link" href="#cfile-dump_block_coalesce_close"><code>--block_coalesce_close</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Coalesce synchronization of data during CloseBlocks()</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_block_manager"><a class="link" href="#cfile-dump_block_manager"><code>--block_manager</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Which block manager to use for storage. Valid options are 'file' and 'log'.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>log</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_log_block_manager_test_hole_punching"><a class="link" href="#cfile-dump_log_block_manager_test_hole_punching"><code>--log_block_manager_test_hole_punching</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Ensure hole punching is supported by the underlying filesystem</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">unsafe,advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_log_container_max_size"><a class="link" href="#cfile-dump_log_container_max_size"><code>--log_container_max_size</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Maximum size (soft) of a log container</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10737418240</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_log_container_preallocate_bytes"><a class="link" href="#cfile-dump_log_container_preallocate_bytes"><code>--log_container_preallocate_bytes</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Number of bytes to preallocate in a log container when creating new blocks. Set to 0 to disable preallocation</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>33554432</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_trace_to_console"><a class="link" href="#cfile-dump_trace_to_console"><code>--trace_to_console</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Trace pattern specifying which trace events should be dumped directly to the console</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_never_fsync"><a class="link" href="#cfile-dump_never_fsync"><code>--never_fsync</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Never fsync() anything to disk. This is used by certain test cases to speed up runtime. This is very unsafe to use in production.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">unsafe,advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_suicide_on_eio"><a class="link" href="#cfile-dump_suicide_on_eio"><code>--suicide_on_eio</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kill the process if an I/O operation results in EIO</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_writable_file_use_fsync"><a class="link" href="#cfile-dump_writable_file_use_fsync"><code>--writable_file_use_fsync</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Use fsync(2) instead of fdatasync(2) for synchronizing dirty data to disk.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_metrics_retirement_age_ms"><a class="link" href="#cfile-dump_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The minimum number of milliseconds a metric will be kept for after it is no longer active. (Advanced option)</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>120000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_dns_num_resolver_threads"><a class="link" href="#cfile-dump_dns_num_resolver_threads"><code>--dns_num_resolver_threads</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The number of threads to use for DNS resolution</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_local_ip_for_outbound_sockets"><a class="link" href="#cfile-dump_local_ip_for_outbound_sockets"><code>--local_ip_for_outbound_sockets</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>IP to bind to when making outgoing socket connections. This must be an IP address of the form A.B.C.D, not a hostname. Advanced parameter, subject to change.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_nvm_cache_allocation_retry_count"><a class="link" href="#cfile-dump_nvm_cache_allocation_retry_count"><code>--nvm_cache_allocation_retry_count</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The number of times that the NVM cache will retry attempts to allocate memory for new entries. In between attempts, a cache entry will be evicted.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_nvm_cache_path"><a class="link" href="#cfile-dump_nvm_cache_path"><code>--nvm_cache_path</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The path at which the NVM cache will try to allocate its memory. This can be a tmpfs or ramfs for testing purposes.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/vmem</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_drop_log_memory"><a class="link" href="#cfile-dump_drop_log_memory"><code>--drop_log_memory</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Drop in-memory buffers of log contents. Logs can grow very quickly and they are rarely read before they need to be evicted from memory. Instead, drop them from memory as soon as they are flushed to disk.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_log_backtrace_at"><a class="link" href="#cfile-dump_log_backtrace_at"><code>--log_backtrace_at</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Emit a backtrace when logging at file:linenum.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_logbuflevel"><a class="link" href="#cfile-dump_logbuflevel"><code>--logbuflevel</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Buffer log messages logged at this level or lower (-1 means don&#8217;t buffer; 0 means buffer INFO only; &#8230;&#8203;)</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="cfile-dump_logbufsecs"><a class="link" href="#cfile-dump_logbufsecs"><code>--logbufsecs</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Buffer log messages for at most this many seconds</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>30</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+<hr>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+    <ul class="sectlevel1">
+<li><a href="#cfile-dump_block_cache_type"><code>--block_cache_type</code></a></li>
+<li><a href="#cfile-dump_cfile_default_block_size"><code>--cfile_default_block_size</code></a></li>
+<li><a href="#cfile-dump_cfile_default_compression_codec"><code>--cfile_default_compression_codec</code></a></li>
+<li><a href="#cfile-dump_cfile_do_on_finish"><code>--cfile_do_on_finish</code></a></li>
+<li><a href="#cfile-dump_block_coalesce_close"><code>--block_coalesce_close</code></a></li>
+<li><a href="#cfile-dump_block_manager"><code>--block_manager</code></a></li>
+<li><a href="#cfile-dump_log_block_manager_test_hole_punching"><code>--log_block_manager_test_hole_punching</code></a></li>
+<li><a href="#cfile-dump_log_container_max_size"><code>--log_container_max_size</code></a></li>
+<li><a href="#cfile-dump_log_container_preallocate_bytes"><code>--log_container_preallocate_bytes</code></a></li>
+<li><a href="#cfile-dump_trace_to_console"><code>--trace_to_console</code></a></li>
+<li><a href="#cfile-dump_never_fsync"><code>--never_fsync</code></a></li>
+<li><a href="#cfile-dump_suicide_on_eio"><code>--suicide_on_eio</code></a></li>
+<li><a href="#cfile-dump_writable_file_use_fsync"><code>--writable_file_use_fsync</code></a></li>
+<li><a href="#cfile-dump_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></li>
+<li><a href="#cfile-dump_dns_num_resolver_threads"><code>--dns_num_resolver_threads</code></a></li>
+<li><a href="#cfile-dump_local_ip_for_outbound_sockets"><code>--local_ip_for_outbound_sockets</code></a></li>
+<li><a href="#cfile-dump_nvm_cache_allocation_retry_count"><code>--nvm_cache_allocation_retry_count</code></a></li>
+<li><a href="#cfile-dump_nvm_cache_path"><code>--nvm_cache_path</code></a></li>
+<li><a href="#cfile-dump_drop_log_memory"><code>--drop_log_memory</code></a></li>
+<li><a href="#cfile-dump_log_backtrace_at"><code>--log_backtrace_at</code></a></li>
+<li><a href="#cfile-dump_logbuflevel"><code>--logbuflevel</code></a></li>
+<li><a href="#cfile-dump_logbufsecs"><code>--logbufsecs</code></a></li>
+</ul>
+  </div>
+    </div>
+  </div>
+</div>

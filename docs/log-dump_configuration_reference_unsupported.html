@@ -1,0 +1,1018 @@
+---
+title: log-dump Unsupported Flags
+layout: default
+
+last_updated: 'Last updated 2015-09-10 22:22:00 PDT'
+---
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1><code>log-dump</code> Unsupported Flags</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Flags marked <code>advanced</code> or <code>experimental</code> and not marked <code>stable</code>, or flags with no stability tag, are <strong>unsupported</strong> and are included
+for informational purposes only. They are subject to change or be removed without notice.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_codegen_dump_functions"><a class="link" href="#log-dump_codegen_dump_functions"><code>--codegen_dump_functions</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to print the LLVM IR for generated functions</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_codegen_dump_mc"><a class="link" href="#log-dump_codegen_dump_mc"><code>--codegen_dump_mc</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to dump the disassembly of the machine code for generated functions.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_codegen_time_compilation"><a class="link" href="#log-dump_codegen_time_compilation"><code>--codegen_time_compilation</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to print time that each code generation request took.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_group_commit_queue_size_bytes"><a class="link" href="#log-dump_group_commit_queue_size_bytes"><code>--group_commit_queue_size_bytes</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Maximum size of the group commit queue in bytes</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>4194304</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_log_min_seconds_to_retain"><a class="link" href="#log-dump_log_min_seconds_to_retain"><code>--log_min_seconds_to_retain</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The minimum number of seconds for which to keep log segments to keep at all times, regardless of what is required for durability. Logs may be still retained for a longer amount of time if they are necessary for correct restart. This should be set long enough such that a tablet server which has temporarily failed can be restarted within the given time period. If a server is down for longer than this amount of time, it is possible that its tablets will be re-replicated on other machines.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>300</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_log_min_segments_to_retain"><a class="link" href="#log-dump_log_min_segments_to_retain"><code>--log_min_segments_to_retain</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The minimum number of past log segments to keep at all times, regardless of what is required for durability. Must be at least 1.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>2</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_log_async_preallocate_segments"><a class="link" href="#log-dump_log_async_preallocate_segments"><code>--log_async_preallocate_segments</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether the WAL segments preallocation should happen asynchronously</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_log_preallocate_segments"><a class="link" href="#log-dump_log_preallocate_segments"><code>--log_preallocate_segments</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether the WAL should preallocate the entire segment before writing to it</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_log_segment_size_mb"><a class="link" href="#log-dump_log_segment_size_mb"><code>--log_segment_size_mb</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The default segment size for log roll-overs, in MB</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>64</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_block_coalesce_close"><a class="link" href="#log-dump_block_coalesce_close"><code>--block_coalesce_close</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Coalesce synchronization of data during CloseBlocks()</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_block_manager"><a class="link" href="#log-dump_block_manager"><code>--block_manager</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Which block manager to use for storage. Valid options are 'file' and 'log'.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>log</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_log_block_manager_test_hole_punching"><a class="link" href="#log-dump_log_block_manager_test_hole_punching"><code>--log_block_manager_test_hole_punching</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Ensure hole punching is supported by the underlying filesystem</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">unsafe,advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_log_container_max_size"><a class="link" href="#log-dump_log_container_max_size"><code>--log_container_max_size</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Maximum size (soft) of a log container</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10737418240</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_log_container_preallocate_bytes"><a class="link" href="#log-dump_log_container_preallocate_bytes"><code>--log_container_preallocate_bytes</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Number of bytes to preallocate in a log container when creating new blocks. Set to 0 to disable preallocation</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">uint64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>33554432</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_rpc_acceptor_listen_backlog"><a class="link" href="#log-dump_rpc_acceptor_listen_backlog"><code>--rpc_acceptor_listen_backlog</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Socket backlog parameter used when listening for RPC connections. This defines the maximum length to which the queue of pending TCP connections inbound to the RPC server may grow. If a connection request arrives when the queue is full, the client may receive an error. Higher values may help the server ride over bursts of new inbound connection requests.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>128</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_rpc_dump_all_traces"><a class="link" href="#log-dump_rpc_dump_all_traces"><code>--rpc_dump_all_traces</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If true, dump all RPC traces at INFO level</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_rpc_callback_max_cycles"><a class="link" href="#log-dump_rpc_callback_max_cycles"><code>--rpc_callback_max_cycles</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The maximum number of cycles for which an RPC callback should be allowed to run without emitting a warning. (Advanced debugging option)</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>100000000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_rpc_negotiation_timeout_ms"><a class="link" href="#log-dump_rpc_negotiation_timeout_ms"><code>--rpc_negotiation_timeout_ms</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Timeout for negotiating an RPC connection.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>3000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_krpc_sasl_path"><a class="link" href="#log-dump_krpc_sasl_path"><code>--krpc_sasl_path</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Colon separated list of paths to look for SASL security library plugins.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/usr/lib/sasl2:/usr/lib64/sasl2:/usr/lib/x86_64-linux-gnu/sasl2</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_rpc_max_message_size"><a class="link" href="#log-dump_rpc_max_message_size"><code>--rpc_max_message_size</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The maximum size of a message that any RPC that the server will accept.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>8388608</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_max_clock_sync_error_usec"><a class="link" href="#log-dump_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Maximum allowed clock synchronization error as reported by NTP before the server will abort.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_trace_to_console"><a class="link" href="#log-dump_trace_to_console"><code>--trace_to_console</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Trace pattern specifying which trace events should be dumped directly to the console</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_never_fsync"><a class="link" href="#log-dump_never_fsync"><code>--never_fsync</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Never fsync() anything to disk. This is used by certain test cases to speed up runtime. This is very unsafe to use in production.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">unsafe,advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_suicide_on_eio"><a class="link" href="#log-dump_suicide_on_eio"><code>--suicide_on_eio</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kill the process if an I/O operation results in EIO</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_writable_file_use_fsync"><a class="link" href="#log-dump_writable_file_use_fsync"><code>--writable_file_use_fsync</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Use fsync(2) instead of fdatasync(2) for synchronizing dirty data to disk.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_metrics_retirement_age_ms"><a class="link" href="#log-dump_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The minimum number of milliseconds a metric will be kept for after it is no longer active. (Advanced option)</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>120000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_dns_num_resolver_threads"><a class="link" href="#log-dump_dns_num_resolver_threads"><code>--dns_num_resolver_threads</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The number of threads to use for DNS resolution</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_local_ip_for_outbound_sockets"><a class="link" href="#log-dump_local_ip_for_outbound_sockets"><code>--local_ip_for_outbound_sockets</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>IP to bind to when making outgoing socket connections. This must be an IP address of the form A.B.C.D, not a hostname. Advanced parameter, subject to change.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_nvm_cache_allocation_retry_count"><a class="link" href="#log-dump_nvm_cache_allocation_retry_count"><code>--nvm_cache_allocation_retry_count</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The number of times that the NVM cache will retry attempts to allocate memory for new entries. In between attempts, a cache entry will be evicted.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_nvm_cache_path"><a class="link" href="#log-dump_nvm_cache_path"><code>--nvm_cache_path</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The path at which the NVM cache will try to allocate its memory. This can be a tmpfs or ramfs for testing purposes.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/vmem</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_drop_log_memory"><a class="link" href="#log-dump_drop_log_memory"><code>--drop_log_memory</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Drop in-memory buffers of log contents. Logs can grow very quickly and they are rarely read before they need to be evicted from memory. Instead, drop them from memory as soon as they are flushed to disk.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_log_backtrace_at"><a class="link" href="#log-dump_log_backtrace_at"><code>--log_backtrace_at</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Emit a backtrace when logging at file:linenum.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_logbuflevel"><a class="link" href="#log-dump_logbuflevel"><code>--logbuflevel</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Buffer log messages logged at this level or lower (-1 means don&#8217;t buffer; 0 means buffer INFO only; &#8230;&#8203;)</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_logbufsecs"><a class="link" href="#log-dump_logbufsecs"><code>--logbufsecs</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Buffer log messages for at most this many seconds</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>30</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+<hr>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+    <ul class="sectlevel1">
+<li><a href="#log-dump_codegen_dump_functions"><code>--codegen_dump_functions</code></a></li>
+<li><a href="#log-dump_codegen_dump_mc"><code>--codegen_dump_mc</code></a></li>
+<li><a href="#log-dump_codegen_time_compilation"><code>--codegen_time_compilation</code></a></li>
+<li><a href="#log-dump_group_commit_queue_size_bytes"><code>--group_commit_queue_size_bytes</code></a></li>
+<li><a href="#log-dump_log_min_seconds_to_retain"><code>--log_min_seconds_to_retain</code></a></li>
+<li><a href="#log-dump_log_min_segments_to_retain"><code>--log_min_segments_to_retain</code></a></li>
+<li><a href="#log-dump_log_async_preallocate_segments"><code>--log_async_preallocate_segments</code></a></li>
+<li><a href="#log-dump_log_preallocate_segments"><code>--log_preallocate_segments</code></a></li>
+<li><a href="#log-dump_log_segment_size_mb"><code>--log_segment_size_mb</code></a></li>
+<li><a href="#log-dump_block_coalesce_close"><code>--block_coalesce_close</code></a></li>
+<li><a href="#log-dump_block_manager"><code>--block_manager</code></a></li>
+<li><a href="#log-dump_log_block_manager_test_hole_punching"><code>--log_block_manager_test_hole_punching</code></a></li>
+<li><a href="#log-dump_log_container_max_size"><code>--log_container_max_size</code></a></li>
+<li><a href="#log-dump_log_container_preallocate_bytes"><code>--log_container_preallocate_bytes</code></a></li>
+<li><a href="#log-dump_rpc_acceptor_listen_backlog"><code>--rpc_acceptor_listen_backlog</code></a></li>
+<li><a href="#log-dump_rpc_dump_all_traces"><code>--rpc_dump_all_traces</code></a></li>
+<li><a href="#log-dump_rpc_callback_max_cycles"><code>--rpc_callback_max_cycles</code></a></li>
+<li><a href="#log-dump_rpc_negotiation_timeout_ms"><code>--rpc_negotiation_timeout_ms</code></a></li>
+<li><a href="#log-dump_krpc_sasl_path"><code>--krpc_sasl_path</code></a></li>
+<li><a href="#log-dump_rpc_max_message_size"><code>--rpc_max_message_size</code></a></li>
+<li><a href="#log-dump_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></li>
+<li><a href="#log-dump_trace_to_console"><code>--trace_to_console</code></a></li>
+<li><a href="#log-dump_never_fsync"><code>--never_fsync</code></a></li>
+<li><a href="#log-dump_suicide_on_eio"><code>--suicide_on_eio</code></a></li>
+<li><a href="#log-dump_writable_file_use_fsync"><code>--writable_file_use_fsync</code></a></li>
+<li><a href="#log-dump_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></li>
+<li><a href="#log-dump_dns_num_resolver_threads"><code>--dns_num_resolver_threads</code></a></li>
+<li><a href="#log-dump_local_ip_for_outbound_sockets"><code>--local_ip_for_outbound_sockets</code></a></li>
+<li><a href="#log-dump_nvm_cache_allocation_retry_count"><code>--nvm_cache_allocation_retry_count</code></a></li>
+<li><a href="#log-dump_nvm_cache_path"><code>--nvm_cache_path</code></a></li>
+<li><a href="#log-dump_drop_log_memory"><code>--drop_log_memory</code></a></li>
+<li><a href="#log-dump_log_backtrace_at"><code>--log_backtrace_at</code></a></li>
+<li><a href="#log-dump_logbuflevel"><code>--logbuflevel</code></a></li>
+<li><a href="#log-dump_logbufsecs"><code>--logbufsecs</code></a></li>
+</ul>
+  </div>
+    </div>
+  </div>
+</div>
