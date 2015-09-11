@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 
 #include "kudu/common/wire_protocol.h"
+#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/master.pb.h"
@@ -13,6 +14,8 @@
 #include <boost/thread/mutex.hpp>
 
 #include <vector>
+
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace master {
@@ -59,7 +62,8 @@ Status TSDescriptor::Register(const NodeInstancePB& instance,
   has_tablet_report_ = false;
 
   registration_.reset(new TSRegistrationPB(registration));
-  proxy_.reset();
+  ts_admin_proxy_.reset();
+  consensus_proxy_.reset();
 
   return Status::OK();
 }
@@ -102,31 +106,78 @@ void TSDescriptor::GetNodeInstancePB(NodeInstancePB* instance_pb) const {
   instance_pb->set_instance_seqno(latest_seqno_);
 }
 
-Status TSDescriptor::GetProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-                              std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy>* proxy) {
-  boost::lock_guard<simple_spinlock> l(lock_);
-  if (proxy_ == NULL) {
-    HostPort hostport;
-    vector<Sockaddr> addrs;
+Status TSDescriptor::ResolveSockaddr(Sockaddr* addr) const {
+  vector<HostPort> hostports;
+  {
+    boost::lock_guard<simple_spinlock> l(lock_);
     BOOST_FOREACH(const HostPortPB& addr, registration_->rpc_addresses()) {
-      hostport = HostPort(addr.host(), addr.port());
-      RETURN_NOT_OK(hostport.ResolveAddresses(&addrs));
-      if (addrs.size() > 0) break;
+      hostports.push_back(HostPort(addr.host(), addr.port()));
     }
-
-    if (addrs.size() == 0) {
-      return Status::NetworkError("Unable to find the TS address: ", registration_->DebugString());
-    }
-
-    if (addrs.size() > 1) {
-      LOG(WARNING) << "TS address " << hostport.ToString()
-                   << " resolves to " << addrs.size() << " different addresses. Using "
-                   << addrs[0].ToString();
-    }
-
-    proxy_.reset(new tserver::TabletServerAdminServiceProxy(messenger, addrs[0]));
   }
-  *proxy = proxy_;
+
+  // Resolve DNS outside the lock.
+  HostPort last_hostport;
+  vector<Sockaddr> addrs;
+  BOOST_FOREACH(const HostPort& hostport, hostports) {
+    RETURN_NOT_OK(hostport.ResolveAddresses(&addrs));
+    if (!addrs.empty()) {
+      last_hostport = hostport;
+      break;
+    }
+  }
+
+  if (addrs.size() == 0) {
+    return Status::NetworkError("Unable to find the TS address: ", registration_->DebugString());
+  }
+
+  if (addrs.size() > 1) {
+    LOG(WARNING) << "TS address " << last_hostport.ToString()
+                  << " resolves to " << addrs.size() << " different addresses. Using "
+                  << addrs[0].ToString();
+  }
+  *addr = addrs[0];
+  return Status::OK();
+}
+
+Status TSDescriptor::GetTSAdminProxy(const shared_ptr<rpc::Messenger>& messenger,
+                                     shared_ptr<tserver::TabletServerAdminServiceProxy>* proxy) {
+  {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    if (ts_admin_proxy_) {
+      *proxy = ts_admin_proxy_;
+      return Status::OK();
+    }
+  }
+
+  Sockaddr addr;
+  RETURN_NOT_OK(ResolveSockaddr(&addr));
+
+  boost::lock_guard<simple_spinlock> l(lock_);
+  if (!ts_admin_proxy_) {
+    ts_admin_proxy_.reset(new tserver::TabletServerAdminServiceProxy(messenger, addr));
+  }
+  *proxy = ts_admin_proxy_;
+  return Status::OK();
+}
+
+Status TSDescriptor::GetConsensusProxy(const shared_ptr<rpc::Messenger>& messenger,
+                                       shared_ptr<consensus::ConsensusServiceProxy>* proxy) {
+  {
+    boost::lock_guard<simple_spinlock> l(lock_);
+    if (consensus_proxy_) {
+      *proxy = consensus_proxy_;
+      return Status::OK();
+    }
+  }
+
+  Sockaddr addr;
+  RETURN_NOT_OK(ResolveSockaddr(&addr));
+
+  boost::lock_guard<simple_spinlock> l(lock_);
+  if (!consensus_proxy_) {
+    consensus_proxy_.reset(new consensus::ConsensusServiceProxy(messenger, addr));
+  }
+  *proxy = consensus_proxy_;
   return Status::OK();
 }
 

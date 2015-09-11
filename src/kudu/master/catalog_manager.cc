@@ -1823,7 +1823,7 @@ class RetryingTSRpcTask : public MonitoredTask {
     // TODO: if there is no replica available, should we still keep the task running?
     RETURN_NOT_OK(replica_picker_->PickReplica(&target_ts_desc_));
     std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_proxy;
-    RETURN_NOT_OK(target_ts_desc_->GetProxy(master_->messenger(), &ts_proxy));
+    RETURN_NOT_OK(target_ts_desc_->GetTSAdminProxy(master_->messenger(), &ts_proxy));
     ts_proxy_.swap(ts_proxy);
     rpc_.Reset();
     return Status::OK();

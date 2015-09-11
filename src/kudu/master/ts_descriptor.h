@@ -14,6 +14,11 @@
 namespace kudu {
 
 class NodeInstancePB;
+class Sockaddr;
+
+namespace consensus {
+class ConsensusServiceProxy;
+}
 
 namespace rpc {
 class Messenger;
@@ -63,12 +68,19 @@ class TSDescriptor {
 
   void GetNodeInstancePB(NodeInstancePB* instance_pb) const;
 
-  // Return an RPC proxy to the Tablet Server.
-  Status GetProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-                  std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy>* proxy);
+  // Return an RPC proxy to the tablet server admin service.
+  Status GetTSAdminProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                         std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy>* proxy);
+
+  // Return an RPC proxy to the consensus service.
+  Status GetConsensusProxy(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                           std::tr1::shared_ptr<consensus::ConsensusServiceProxy>* proxy);
 
  private:
   explicit TSDescriptor(const std::string& perm_id);
+
+  // Uses DNS to resolve registered hosts to a single Sockaddr.
+  Status ResolveSockaddr(Sockaddr* addr) const;
 
   mutable simple_spinlock lock_;
 
@@ -83,7 +95,8 @@ class TSDescriptor {
 
   gscoped_ptr<TSRegistrationPB> registration_;
 
-  std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> proxy_;
+  std::tr1::shared_ptr<tserver::TabletServerAdminServiceProxy> ts_admin_proxy_;
+  std::tr1::shared_ptr<consensus::ConsensusServiceProxy> consensus_proxy_;
 
   DISALLOW_COPY_AND_ASSIGN(TSDescriptor);
 };
