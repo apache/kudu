@@ -38,6 +38,12 @@ DEFINE_int32(consensus_max_batch_size_bytes, 1024 * 1024,
              "The maximum per-tablet RPC batch size when updating peers.");
 TAG_FLAG(consensus_max_batch_size_bytes, advanced);
 
+DEFINE_int32(follower_unavailable_considered_failed_sec, 300,
+             "Seconds that a leader is unable to successfully heartbeat to a "
+             "follower after which the follower is considered to be failed and "
+             "evicted from the config.");
+TAG_FLAG(follower_unavailable_considered_failed_sec, advanced);
+
 namespace kudu {
 namespace consensus {
 
@@ -122,6 +128,13 @@ void PeerMessageQueue::SetLeaderMode(const OpId& committed_index,
   LOG_WITH_PREFIX_UNLOCKED(INFO) << "Queue going to LEADER mode. State: "
       << queue_state_.ToString();
   CheckPeersInActiveConfigIfLeaderUnlocked();
+
+  // Reset last communication time with all peers to reset the clock on the
+  // failure timeout.
+  MonoTime now(MonoTime::Now(MonoTime::FINE));
+  BOOST_FOREACH(const PeersMap::value_type& entry, peers_map_) {
+    entry.second->last_successful_communication_time = now;
+  }
 }
 
 void PeerMessageQueue::SetNonLeaderMode() {
@@ -267,6 +280,21 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     request->set_caller_term(queue_state_.current_term);
   }
 
+  MonoDelta unreachable_time =
+      MonoTime::Now(MonoTime::FINE).GetDeltaSince(peer->last_successful_communication_time);
+  if (unreachable_time.ToSeconds() > FLAGS_follower_unavailable_considered_failed_sec) {
+    if (CountVoters(*queue_state_.active_config) > 2) {
+      // We never drop from 2 to 1 automatically, at least for now. We may want
+      // to revisit this later, we're just being cautious with this.
+      string msg = Substitute("Leader has been unable to successfully communicate "
+                              "with Peer $0 for more than $1 seconds ($2)",
+                              uuid,
+                              FLAGS_follower_unavailable_considered_failed_sec,
+                              unreachable_time.ToString());
+      NotifyObserversOfFailedFollower(uuid, queue_state_.current_term, msg);
+    }
+  }
+
   if (PREDICT_FALSE(peer->needs_remote_bootstrap)) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Peer needs remote bootstrap: " << peer->ToString();
     *needs_remote_bootstrap = true;
@@ -409,6 +437,13 @@ void PeerMessageQueue::AdvanceQueueWatermark(const char* type,
   }
 }
 
+void PeerMessageQueue::NotifyPeerIsResponsiveDespiteError(const std::string& peer_uuid) {
+  lock_guard<simple_spinlock> l(&queue_lock_);
+  TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
+  if (!peer) return;
+  peer->last_successful_communication_time = MonoTime::Now(MonoTime::FINE);
+}
+
 void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
                                         const ConsensusResponsePB& response,
                                         bool* more_pending) {
@@ -430,7 +465,6 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     }
 
     // Remotely bootstrap the peer if the tablet is not found or deleted.
-    // TODO: Support DELETED. See KUDU-867.
     if (response.has_error()) {
       // We only let special types of errors through to this point from the peer.
       CHECK_EQ(tserver::TabletServerErrorPB::TABLET_NOT_FOUND, response.error().code())
@@ -468,6 +502,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     // Update the peer status based on the response.
     peer->is_new = false;
     peer->last_known_committed_idx = status.last_committed_idx();
+    peer->last_successful_communication_time = MonoTime::Now(MonoTime::FINE);
 
     // If the reported last-received op for the replica is in our local log,
     // then resume sending entries from that point onward. Otherwise, resume

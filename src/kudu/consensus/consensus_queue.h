@@ -61,6 +61,7 @@ class PeerMessageQueue {
         last_received(MinimumOpId()),
         last_known_committed_idx(MinimumOpId().index()),
         is_last_exchange_successful(false),
+        last_successful_communication_time(MonoTime::Now(MonoTime::FINE)),
         needs_remote_bootstrap(false),
         last_seen_term_(0) {
     }
@@ -93,6 +94,11 @@ class PeerMessageQueue {
 
     // Whether the last exchange with this peer was successful.
     bool is_last_exchange_successful;
+
+    // The time of the last communication with the peer.
+    // Defaults to the time of construction, so does not necessarily mean that
+    // successful communication ever took place.
+    MonoTime last_successful_communication_time;
 
     // Whether the follower was detected to need remote bootstrap.
     bool needs_remote_bootstrap;
@@ -180,6 +186,12 @@ class PeerMessageQueue {
   // On success, also internally resets peer->needs_remote_bootstrap to false.
   virtual Status GetRemoteBootstrapRequestForPeer(const std::string& uuid,
                                                   StartRemoteBootstrapRequestPB* req);
+
+  // Update the last successful communication timestamp for the given peer
+  // to the current time. This should be called when a non-network related
+  // error is received from the peer, indicating that it is alive, even if it
+  // may not be fully up and running or able to accept updates.
+  void NotifyPeerIsResponsiveDespiteError(const std::string& peer_uuid);
 
   // Updates the request queue with the latest response of a peer, returns
   // whether this peer has more requests pending.

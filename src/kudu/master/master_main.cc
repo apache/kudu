@@ -13,6 +13,7 @@ using kudu::master::Master;
 
 DECLARE_string(rpc_bind_addresses);
 DECLARE_int32(webserver_port);
+DECLARE_bool(evict_failed_followers);
 
 namespace kudu {
 namespace master {
@@ -22,6 +23,11 @@ static int MasterMain(int argc, char** argv) {
   FLAGS_rpc_bind_addresses = strings::Substitute("0.0.0.0:$0",
                                                  Master::kDefaultPort);
   FLAGS_webserver_port = Master::kDefaultWebPort;
+
+  // A multi-node Master leader should not evict failed Master followers
+  // because there is no-one to assign replacement servers in order to maintain
+  // the desired replication factor. (It's not turtles all the way down!)
+  FLAGS_evict_failed_followers = false;
 
   ParseCommandLineFlags(&argc, &argv, true);
   if (argc != 1) {

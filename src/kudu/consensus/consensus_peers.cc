@@ -213,6 +213,15 @@ void Peer::ProcessResponse() {
     << "Got a response when nothing was pending";
 
   if (!controller_.status().ok()) {
+    if (controller_.status().IsRemoteError()) {
+      // Most controller errors are caused by network issues or corner cases
+      // like shutdown and failure to serialize a protobuf. Therefore, we
+      // generally consider these errors to indicate an unreachable peer.
+      // However, a RemoteError wraps some other error propagated from the
+      // remote peer, so we know the remote is alive. Therefore, we will let
+      // the queue know that the remote is responsive.
+      queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
+    }
     ProcessResponseError(controller_.status());
     return;
   }
@@ -221,6 +230,9 @@ void Peer::ProcessResponse() {
   // we will need to remotely bootstrap. TODO: Handle DELETED response once implemented.
   if (response_.has_error() &&
       response_.error().code() != tserver::TabletServerErrorPB::TABLET_NOT_FOUND) {
+    // Again, let the queue know that the remote is still responsive, since we
+    // will not be sending this error response through to the queue.
+    queue_->NotifyPeerIsResponsiveDespiteError(peer_pb_.permanent_uuid());
     ProcessResponseError(StatusFromPB(response_.error().status()));
     return;
   }

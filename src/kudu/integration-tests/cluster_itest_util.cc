@@ -297,6 +297,33 @@ Status WaitUntilCommittedConfigNumVotersIs(int config_size,
                                      cstate.ShortDebugString(), s.ToString()));
 }
 
+Status WaitUntilCommittedConfigOpidIndexIs(int64_t opid_index,
+                                           const TServerDetails* replica,
+                                           const std::string& tablet_id,
+                                           const MonoDelta& timeout) {
+  MonoTime start = MonoTime::Now(MonoTime::FINE);
+  MonoTime deadline = start;
+  deadline.AddDelta(timeout);
+
+  Status s;
+  ConsensusStatePB cstate;
+  while (true) {
+    MonoDelta remaining_timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
+    s = GetCommittedConsensusState(replica, tablet_id, remaining_timeout, &cstate);
+    if (s.ok() && cstate.config().opid_index() == opid_index) {
+      return Status::OK();
+    }
+    if (MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).MoreThan(timeout)) break;
+    SleepFor(MonoDelta::FromMilliseconds(10));
+  }
+  return Status::TimedOut(Substitute("Committed consensus opid_index does not equal $0 "
+                                     "after waiting for $1. "
+                                     "Last consensus state: $2. Last status: $3",
+                                     opid_index,
+                                     MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
+                                     cstate.ShortDebugString(), s.ToString()));
+}
+
 Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
                                         const string& tablet_id,
                                         const MonoDelta& timeout) {

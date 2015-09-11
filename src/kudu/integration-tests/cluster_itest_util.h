@@ -129,6 +129,13 @@ Status WaitUntilCommittedConfigNumVotersIs(int config_size,
                                            const std::string& tablet_id,
                                            const MonoDelta& timeout);
 
+// Wait until the the opid_index of the committed consensus config on the
+// specified tablet is 'opid_index'.
+Status WaitUntilCommittedConfigOpidIndexIs(int64_t opid_index,
+                                           const TServerDetails* replica,
+                                           const std::string& tablet_id,
+                                           const MonoDelta& timeout);
+
 // Returns:
 // Status::OK() if the replica is alive and leader of the consensus configuration.
 // Status::NotFound() if the replica is not part of the consensus configuration or is dead.

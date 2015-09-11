@@ -154,4 +154,46 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneOldReplicaOnReport) {
                                                  timeout));
 }
 
+// Test that unreachable followers are evicted and replaced.
+TEST_F(TabletReplacementITest, TestEvictAndReplaceDeadFollower) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipping test in fast-test mode.";
+    return;
+  }
+
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=false")
+                                   ("--follower_unavailable_considered_failed_sec=5");
+  NO_FATALS(StartCluster(ts_flags));
+
+  TestWorkload workload(cluster_.get());
+  workload.Setup(); // Easy way to create a new tablet.
+
+  const int kLeaderIndex = 0;
+  TServerDetails* leader_ts = ts_map_[cluster_->tablet_server(kLeaderIndex)->uuid()];
+  const int kFollowerIndex = 2;
+
+  // Figure out the tablet id of the created tablet.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(itest::WaitForNumTabletsOnTS(leader_ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, timeout));
+  }
+
+  // Elect a leader (TS 0)
+  ASSERT_OK(itest::StartElection(leader_ts, tablet_id, timeout));
+  ASSERT_OK(itest::WaitForServersToAgree(timeout, ts_map_, tablet_id, 1)); // Wait for NO_OP.
+
+  // Shut down the follower to be removed. It should be evicted.
+  cluster_->tablet_server(kFollowerIndex)->Shutdown();
+
+  // With a RemoveServer and AddServer, the opid_index of the committed config will be 3.
+  ASSERT_OK(itest::WaitUntilCommittedConfigOpidIndexIs(3, leader_ts, tablet_id, timeout));
+  ASSERT_OK(cluster_->tablet_server(kFollowerIndex)->Restart());
+}
+
 } // namespace kudu
