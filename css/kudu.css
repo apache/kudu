@@ -36,3 +36,8 @@
     display: block;
     margin: auto;
 }
+
+nav:after {
+    display: block;
+    clear: both;
+}
