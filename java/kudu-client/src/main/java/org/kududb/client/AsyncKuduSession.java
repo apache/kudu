@@ -264,6 +264,7 @@ public class AsyncKuduSession implements SessionConfiguration {
         throws Exception {
       Deferred<List<OperationResponse>> deferred = new Deferred<>();
       if (batchResponsesList == null || batchResponsesList.isEmpty()) {
+        deferred.callback(null);
         return deferred;
       }
 
