@@ -468,6 +468,9 @@ message GetTableSchemaResponsePB {
 
   // The ID of the table.
   optional bytes table_id = 4;
+
+  // True if the create operation is completed, false otherwise.
+  optional bool create_table_done = 6;
 }
 
 // ============================================================================

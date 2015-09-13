@@ -91,6 +91,14 @@ void CreateTabletForTesting(MiniMaster* mini_master,
   }
   ASSERT_TRUE(is_table_created);
 
+  {
+    GetTableSchemaRequestPB req;
+    GetTableSchemaResponsePB resp;
+    req.mutable_table()->set_table_name(table_name);
+    ASSERT_OK(mini_master->master()->catalog_manager()->GetTableSchema(&req, &resp));
+    ASSERT_TRUE(resp.create_table_done());
+  }
+
   GetTableLocationsResponsePB resp;
   ASSERT_OK(WaitForRunningTabletCount(mini_master, table_name, 1, &resp));
   *tablet_id = resp.tablet_locations(0).tablet_id();
