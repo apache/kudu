@@ -68,7 +68,7 @@ Status RemoteBootstrapSession::Init() {
       MinimumOpId().index(), anchor_owner_token, &log_anchor_);
 
   // Read the SuperBlock from disk.
-  const TabletMetadata* metadata = tablet_peer_->shared_tablet()->metadata();
+  const scoped_refptr<TabletMetadata>& metadata = tablet_peer_->tablet_metadata();
   RETURN_NOT_OK_PREPEND(metadata->ReadSuperBlockFromDisk(&tablet_superblock_),
                         Substitute("Unable to access superblock for tablet $0",
                                    tablet_id));
