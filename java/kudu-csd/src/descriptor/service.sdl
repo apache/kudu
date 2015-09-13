@@ -131,9 +131,9 @@
         {
           "name" : "log_force_fsync_all",
           "label" : "Kudu Master WAL Fsyncs All Entries",
-          "description" : "If true, the Master will use the fsync system call to ensure that all modifications to the catalog table are durably written to disk.",
+          "description" : "If true, the Master will use the fsync system call to ensure that all modifications to the catalog table are durably written to disk. WARNING: In this release, enabling this option can cause serious issues.",
           "required" : "true",
-          "default" : "true",
+          "default" : "false",
           "type" : "boolean"
         }
       ],
