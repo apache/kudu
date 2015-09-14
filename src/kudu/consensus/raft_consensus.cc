@@ -328,9 +328,15 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
     ReplicaState::UniqueLock lock;
     RETURN_NOT_OK(state_->LockForConfigChange(&lock));
 
-    if (state_->GetActiveRoleUnlocked() == RaftPeerPB::LEADER) {
+    RaftPeerPB::Role active_role = state_->GetActiveRoleUnlocked();
+    if (active_role == RaftPeerPB::LEADER) {
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Not starting election -- already leader";
       return Status::OK();
+    } else if (PREDICT_FALSE(active_role == RaftPeerPB::NON_PARTICIPANT)) {
+      SnoozeFailureDetectorUnlocked(); // Avoid excessive election noise while in this state.
+      return Status::IllegalState("Not starting election: Node is currently "
+                                  "a non-participant in the raft config",
+                                  state_->GetActiveConfigUnlocked().ShortDebugString());
     }
 
     if (state_->HasLeaderUnlocked()) {
