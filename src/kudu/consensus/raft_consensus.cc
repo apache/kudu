@@ -328,6 +328,16 @@ Status RaftConsensus::StartElection(ElectionMode mode) {
       return Status::OK();
     }
 
+    if (state_->HasLeaderUnlocked()) {
+      LOG_WITH_PREFIX_UNLOCKED(INFO)
+          << "Failure of leader " << state_->GetLeaderUuidUnlocked()
+          << " detected. Triggering leader election";
+    } else {
+      LOG_WITH_PREFIX_UNLOCKED(INFO)
+          << "No leader contacted us within the election timeout. "
+          << "Triggering leader election";
+    }
+
     // Increment the term.
     RETURN_NOT_OK(IncrementTermUnlocked());
 
@@ -391,8 +401,7 @@ Status RaftConsensus::StepDown(LeaderStepDownResponsePB* resp) {
 }
 
 void RaftConsensus::ReportFailureDetected(const std::string& name, const Status& msg) {
-  LOG_WITH_PREFIX(INFO) << "Failure of peer " << name << " detected. Triggering leader election";
-
+  DCHECK_EQ(name, kTimerId);
   // Start an election.
   Status s = StartElection(NORMAL_ELECTION);
   if (PREDICT_FALSE(!s.ok())) {
