@@ -84,9 +84,9 @@ message SysTabletsEntryPB {
     DELETED = 4;
   }
 
-  // DEPRECATED.
-  optional bytes start_key = 1;
-  optional bytes end_key   = 2;
+  // DEPRECATED. Replaced by 'partition'.
+  optional bytes DEPRECATED_start_key = 1;
+  optional bytes DEPRECATED_end_key   = 2;
 
   // Tablet partition.
   optional PartitionPB partition = 7;

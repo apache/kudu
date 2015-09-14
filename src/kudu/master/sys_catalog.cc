@@ -549,6 +549,16 @@ Status SysCatalogTable::VisitTabletFromRow(const RowBlockRow& row, TabletVisitor
   RETURN_NOT_OK_PREPEND(pb_util::ParseFromArray(&metadata, data->data(), data->size()),
                         "Unable to parse metadata field for tablet " + tablet_id->ToString());
 
+  // Upgrade from the deprecated start/end-key fields to the 'partition' field.
+  if (!metadata.has_partition()) {
+    metadata.mutable_partition()->set_partition_key_start(
+        metadata.deprecated_start_key());
+    metadata.mutable_partition()->set_partition_key_end(
+        metadata.deprecated_end_key());
+    metadata.clear_deprecated_start_key();
+    metadata.clear_deprecated_end_key();
+  }
+
   RETURN_NOT_OK(visitor->VisitTablet(metadata.table_id(), tablet_id->ToString(), metadata));
   return Status::OK();
 }
