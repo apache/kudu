@@ -2373,8 +2373,11 @@ void CatalogManager::SendDeleteTabletRequest(
     const scoped_refptr<TableInfo>& table,
     TSDescriptor* ts_desc,
     const string& reason) {
-  LOG_WITH_PREFIX(INFO) << Substitute("Deleting tablet $0 with delete type $1 ($2)",
-                                      tablet_id, TabletDataState_Name(delete_type), reason);
+  LOG_WITH_PREFIX(INFO) << Substitute("Deleting tablet $0 on peer $1 "
+                                      "with delete type $2 ($3)",
+                                      tablet_id, ts_desc->permanent_uuid(),
+                                      TabletDataState_Name(delete_type),
+                                      reason);
   AsyncDeleteReplica* call =
       new AsyncDeleteReplica(master_, worker_pool_.get(), ts_desc->permanent_uuid(), table,
                              tablet_id, delete_type, cas_config_opid_index_less_or_equal,
