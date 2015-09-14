@@ -1212,16 +1212,27 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
   TRACE_EVENT2("consensus", "RaftConsensus::RequestVote",
                "peer", peer_uuid(),
                "tablet", tablet_id());
+  response->set_responder_uuid(state_->GetPeerUuid());
+
   // We must acquire the update lock in order to ensure that this vote action
   // takes place between requests.
   // Lock ordering: The update lock must be acquired before the ReplicaState lock.
-  lock_guard<simple_spinlock> update_guard(&update_lock_);
+  boost::unique_lock<simple_spinlock> update_guard(update_lock_, boost::try_to_lock);
+  if (!update_guard.owns_lock()) {
+    // There is another vote or update concurrent with the vote. In that case, that
+    // other request is likely to reset the timer, and we'll end up just voting
+    // "NO" after waiting. To avoid starving RPC handlers and causing cascading
+    // timeouts, just vote a quick NO.
+    //
+    // We still need to take the state lock in order to respond with term info, etc.
+    ReplicaState::UniqueLock state_guard;
+    RETURN_NOT_OK(state_->LockForConfigChange(&state_guard));
+    return RequestVoteRespondIsBusy(request, response);
+  }
 
   // Acquire the replica state lock so we can read / modify the consensus state.
   ReplicaState::UniqueLock state_guard;
   RETURN_NOT_OK(state_->LockForConfigChange(&state_guard));
-
-  response->set_responder_uuid(state_->GetPeerUuid());
 
   // If the node is not in the configuration, allow the vote (this is required by Raft)
   // but log an informational message anyway.
@@ -1544,6 +1555,21 @@ Status RaftConsensus::RequestVoteRespondLeaderIsAlive(const VoteRequestPB* reque
                           request->candidate_term());
   LOG(INFO) << msg;
   StatusToPB(Status::InvalidArgument(msg), response->mutable_consensus_error()->mutable_status());
+  return Status::OK();
+}
+
+Status RaftConsensus::RequestVoteRespondIsBusy(const VoteRequestPB* request,
+                                               VoteResponsePB* response) {
+  FillVoteResponseVoteDenied(ConsensusErrorPB::CONSENSUS_BUSY, response);
+  string msg = Substitute("$0: Denying vote to candidate $1 for term $2 because "
+                          "replica is already servicing an update from a current leader "
+                          "or another vote.",
+                          GetRequestVoteLogPrefixUnlocked(),
+                          request->candidate_uuid(),
+                          request->candidate_term());
+  LOG(INFO) << msg;
+  StatusToPB(Status::ServiceUnavailable(msg),
+             response->mutable_consensus_error()->mutable_status());
   return Status::OK();
 }
 

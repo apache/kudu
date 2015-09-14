@@ -214,6 +214,7 @@ class ReplicaState {
   ReplicaTransactionFactory* GetReplicaTransactionFactoryUnlocked() const;
 
   // Returns the uuid of the peer to which this replica state belongs.
+  // Safe to call with or without locks held.
   const std::string& GetPeerUuid() const;
 
   const ConsensusOptions& GetOptions() const;

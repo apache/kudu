@@ -317,6 +317,11 @@ class RaftConsensus : public Consensus,
   Status RequestVoteRespondLeaderIsAlive(const VoteRequestPB* request,
                                          VoteResponsePB* response);
 
+  // Respond to VoteRequest that the replica is already in the middle of servicing
+  // another vote request or an update from a valid leader.
+  Status RequestVoteRespondIsBusy(const VoteRequestPB* request,
+                                  VoteResponsePB* response);
+
   // Respond to VoteRequest that the vote is granted for candidate.
   Status RequestVoteRespondVoteGranted(const VoteRequestPB* request,
                                        VoteResponsePB* response);

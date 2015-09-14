@@ -1422,6 +1422,8 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     }
   }
 
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(20), tablet_servers, tablet_id_, 1));
+
   // Now an election should succeed.
   ASSERT_OK(StartElection(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));
   ASSERT_OK(WaitUntilLeader(initial_leader, tablet_id_, MonoDelta::FromSeconds(10)));

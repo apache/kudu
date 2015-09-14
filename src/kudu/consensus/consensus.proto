@@ -47,6 +47,10 @@ message ConsensusErrorPB {
     // The local replica is either a leader, or has heard from a valid leader
     // more recently than the election timeout, so believes the leader to be alive.
     LEADER_IS_ALIVE = 7;
+
+    // The local replica is in the middle of servicing either another vote
+    // or an update from a valid leader.
+    CONSENSUS_BUSY = 8;
   }
 
   // The error code.
