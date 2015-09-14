@@ -2399,8 +2399,8 @@ void CatalogManager::SendAddServerRequest(const scoped_refptr<TabletInfo>& table
                                                     tablet,
                                                     cstate);
   tablet->table()->AddTask(task);
+  LOG(INFO) << "Starting AddServer task: " << task->description();
   WARN_NOT_OK(task->Run(), "Failed to send new AddServer request");
-  LOG(INFO) << "Started AddServer task: " << task->description();
 }
 
 void CatalogManager::ExtractTabletsToProcess(
