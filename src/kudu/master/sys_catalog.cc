@@ -26,6 +26,7 @@
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/tserver/tserver.pb.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
@@ -274,6 +275,7 @@ std::string SysCatalogTable::LogPrefix() const {
 }
 
 Status SysCatalogTable::WaitUntilRunning() {
+  TRACE_EVENT0("master", "SysCatalogTable::WaitUntilRunning");
   int seconds_waited = 0;
   while (true) {
     Status status = tablet_peer_->WaitUntilConsensusRunning(MonoDelta::FromSeconds(1));
@@ -343,6 +345,8 @@ Schema SysCatalogTable::BuildTableSchema() {
 // ==================================================================
 
 Status SysCatalogTable::AddTable(const TableInfo *table) {
+  TRACE_EVENT1("master", "SysCatalogTable::AddTable",
+               "table", table->ToString());
   faststring metadata_buf;
   if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
     return Status::Corruption("Unable to serialize SysCatalogTablesEntryPB for tablet",
@@ -366,6 +370,9 @@ Status SysCatalogTable::AddTable(const TableInfo *table) {
 }
 
 Status SysCatalogTable::UpdateTable(const TableInfo *table) {
+  TRACE_EVENT1("master", "SysCatalogTable::UpdateTable",
+               "table", table->ToString());
+
   faststring metadata_buf;
   if (!pb_util::SerializeToString(table->metadata().dirty().pb, &metadata_buf)) {
     return Status::Corruption("Unable to serialize SysCatalogTablesEntryPB for tablet",
@@ -389,6 +396,8 @@ Status SysCatalogTable::UpdateTable(const TableInfo *table) {
 }
 
 Status SysCatalogTable::DeleteTable(const TableInfo *table) {
+  TRACE_EVENT1("master", "SysCatalogTable::DeleteTable",
+               "table", table->ToString());
   WriteRequestPB req;
   WriteResponsePB resp;
   req.set_tablet_id(kSysCatalogTableColMetadata);
@@ -406,6 +415,8 @@ Status SysCatalogTable::DeleteTable(const TableInfo *table) {
 }
 
 Status SysCatalogTable::VisitTables(TableVisitor* visitor) {
+  TRACE_EVENT0("master", "SysCatalogTable::VisitTables");
+
   const int8_t tables_entry = TABLES_ENTRY;
   const int type_col_idx = schema_.find_column(kSysCatalogTableColType);
   CHECK(type_col_idx != Schema::kColumnNotFound);
@@ -473,6 +484,10 @@ Status SysCatalogTable::AddTabletsToPB(const vector<TabletInfo*>& tablets,
 
 Status SysCatalogTable::AddAndUpdateTablets(const vector<TabletInfo*>& tablets_to_add,
                                             const vector<TabletInfo*>& tablets_to_update) {
+  TRACE_EVENT2("master", "AddAndUpdateTablets",
+               "num_add", tablets_to_add.size(),
+               "num_update", tablets_to_update.size());
+
   WriteRequestPB req;
   WriteResponsePB resp;
   req.set_tablet_id(kSysCatalogTabletId);
@@ -505,6 +520,8 @@ Status SysCatalogTable::UpdateTablets(const vector<TabletInfo*>& tablets) {
 }
 
 Status SysCatalogTable::DeleteTablets(const vector<TabletInfo*>& tablets) {
+  TRACE_EVENT1("master", "DeleteTablets",
+               "num_tablets", tablets.size());
   WriteRequestPB req;
   WriteResponsePB resp;
   req.set_tablet_id(kSysCatalogTabletId);
@@ -537,6 +554,7 @@ Status SysCatalogTable::VisitTabletFromRow(const RowBlockRow& row, TabletVisitor
 }
 
 Status SysCatalogTable::VisitTablets(TabletVisitor* visitor) {
+  TRACE_EVENT0("master", "SysCatalogTable::VisitTablets");
   const int8_t tablets_entry = TABLETS_ENTRY;
   const int type_col_idx = schema_.find_column(kSysCatalogTableColType);
   CHECK(type_col_idx != Schema::kColumnNotFound);

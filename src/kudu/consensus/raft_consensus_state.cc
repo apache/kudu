@@ -11,6 +11,7 @@
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
@@ -91,6 +92,7 @@ Status ReplicaState::LockForReplicate(UniqueLock* lock, const ReplicateMsg& msg)
 }
 
 Status ReplicaState::LockForCommit(UniqueLock* lock) const {
+  TRACE_EVENT0("consensus", "ReplicaState::LockForCommit");
   ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning && state_ != kShuttingDown)) {
@@ -101,6 +103,7 @@ Status ReplicaState::LockForCommit(UniqueLock* lock) const {
 }
 
 Status ReplicaState::LockForMajorityReplicatedIndexUpdate(UniqueLock* lock) const {
+  TRACE_EVENT0("consensus", "ReplicaState::LockForMajorityReplicatedIndexUpdate");
   ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
 
@@ -131,6 +134,8 @@ Status ReplicaState::CheckActiveLeaderUnlocked() const {
 }
 
 Status ReplicaState::LockForConfigChange(UniqueLock* lock) const {
+  TRACE_EVENT0("consensus", "ReplicaState::LockForConfigChange");
+
   ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   // Can only change the config on running replicas.
@@ -143,6 +148,7 @@ Status ReplicaState::LockForConfigChange(UniqueLock* lock) const {
 }
 
 Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
+  TRACE_EVENT0("consensus", "ReplicaState::LockForUpdate");
   ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   if (PREDICT_FALSE(state_ != kRunning)) {
@@ -156,6 +162,7 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
 }
 
 Status ReplicaState::LockForShutdown(UniqueLock* lock) {
+  TRACE_EVENT0("consensus", "ReplicaState::LockForShutdown");
   ThreadRestrictions::AssertWaitAllowed();
   UniqueLock l(&update_lock_);
   if (state_ != kShuttingDown && state_ != kShutDown) {
@@ -217,6 +224,7 @@ const RaftConfigPB& ReplicaState::GetPendingConfigUnlocked() const {
 }
 
 Status ReplicaState::SetCommittedConfigUnlocked(const RaftConfigPB& committed_config) {
+  TRACE_EVENT0("consensus", "ReplicaState::SetCommittedConfigUnlocked");
   DCHECK(update_lock_.is_locked());
   DCHECK(committed_config.IsInitialized());
   RETURN_NOT_OK_PREPEND(VerifyRaftConfig(committed_config, COMMITTED_QUORUM),
@@ -273,6 +281,8 @@ bool ReplicaState::IsOpCommittedOrPending(const OpId& op_id, bool* term_mismatch
 }
 
 Status ReplicaState::SetCurrentTermUnlocked(int64_t new_term) {
+  TRACE_EVENT1("consensus", "ReplicaState::SetCurrentTermUnlocked",
+               "term", new_term);
   DCHECK(update_lock_.is_locked());
   if (PREDICT_FALSE(new_term <= GetCurrentTermUnlocked())) {
     return Status::IllegalState(
@@ -308,6 +318,8 @@ const bool ReplicaState::HasVotedCurrentTermUnlocked() const {
 }
 
 Status ReplicaState::SetVotedForCurrentTermUnlocked(const std::string& uuid) {
+  TRACE_EVENT1("consensus", "ReplicaState::SetVotedForCurrentTermUnlocked",
+               "uuid", uuid);
   DCHECK(update_lock_.is_locked());
   cmeta_->set_voted_for(uuid);
   CHECK_OK(cmeta_->Flush());

@@ -60,6 +60,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/tserver/tserver_admin.proxy.h"
+#include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
@@ -1272,6 +1273,10 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
                                            const TabletReportPB& report,
                                            TabletReportUpdatesPB *report_update,
                                            RpcContext* rpc) {
+  TRACE_EVENT2("master", "ProcessTabletReport",
+               "requestor", rpc->requestor_string(),
+               "num_tablets", report.updated_tablets_size());
+
   if (VLOG_IS_ON(2)) {
     VLOG(2) << "Received tablet report from " <<
       RequestorString(rpc) << ": " << report.DebugString();
@@ -1306,6 +1311,8 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
 Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                                             const ReportedTabletPB& report,
                                             ReportedTabletUpdatesPB *report_updates) {
+  TRACE_EVENT1("master", "HandleReportedTablet",
+               "tablet_id", report.tablet_id());
   scoped_refptr<TabletInfo> tablet;
   {
     boost::shared_lock<LockType> l(lock_);

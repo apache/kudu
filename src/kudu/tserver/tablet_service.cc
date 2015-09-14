@@ -612,6 +612,9 @@ void TabletServiceAdminImpl::DeleteTablet(const DeleteTabletRequestPB* req,
   if (!CheckUuidMatchOrRespond(server_->tablet_manager(), "DeleteTablet", req, resp, context)) {
     return;
   }
+  TRACE_EVENT2("tserver", "DeleteTablet",
+               "tablet_id", req->tablet_id(),
+               "reason", req->reason());
 
   tablet::TabletDataState delete_type = tablet::TABLET_DATA_UNKNOWN;
   if (req->has_delete_type()) {
