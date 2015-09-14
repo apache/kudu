@@ -62,3 +62,6 @@ www/tracing.*
 python/kudu/*.so
 python/kudu/*.cpp
 *.py[ocd]
+
+# JavaDoc
+apidocs/

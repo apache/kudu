@@ -837,25 +837,43 @@ class KUDU_EXPORT KuduScanner {
   // The Scanner takes ownership of 'pred', even if a bad Status is returned.
   Status AddConjunctPredicate(KuduPredicate* pred) WARN_UNUSED_RESULT;
 
-  // Add a lower bound (inclusive) for the scan.
+  // Add a lower bound (inclusive) primary key for the scan.
   // If any bound is already added, this bound is intersected with that one.
   //
   // The scanner does not take ownership of 'key'; the caller may free it afterward.
   Status AddLowerBound(const KuduPartialRow& key);
 
-  // Like AddLowerBound(), but the encoded key is an opaque slice of data
+  // Like AddLowerBound(), but the encoded primary key is an opaque slice of data
   // obtained elsewhere.
+  //
+  // DEPRECATED: use AddLowerBound
   Status AddLowerBoundRaw(const Slice& key);
 
-  // Add an upper bound (exclusive) for the scan.
+  // Add an upper bound (exclusive) primary key for the scan.
   // If any bound is already added, this bound is intersected with that one.
   //
   // The scanner makes a copy of 'key'; the caller may free it afterward.
   Status AddExclusiveUpperBound(const KuduPartialRow& key);
 
-  // Like AddExclusiveUpperBound(), but the encoded key is an opaque slice of data
+  // Like AddExclusiveUpperBound(), but the encoded primary key is an opaque slice of data
   // obtained elsewhere.
+  //
+  // DEPRECATED: use AddExclusiveUpperBound
   Status AddExclusiveUpperBoundRaw(const Slice& key);
+
+  // Add a lower bound (inclusive) partition key for the scan.
+  //
+  // The scanner makes a copy of 'partition_key'; the caller may free it afterward.
+  //
+  // This method is unstable, and for internal use only.
+  Status AddLowerBoundPartitionKeyRaw(const Slice& partition_key);
+
+  // Add an upper bound (exclusive) partition key for the scan.
+  //
+  // The scanner makes a copy of 'partition_key'; the caller may free it afterward.
+  //
+  // This method is unstable, and for internal use only.
+  Status AddExclusiveUpperBoundPartitionKeyRaw(const Slice& partition_key);
 
   // Set the block caching policy for this scanner. If true, scanned data blocks will be cached
   // in memory and made available for future scans. Default is true.

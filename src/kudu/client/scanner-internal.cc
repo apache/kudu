@@ -379,6 +379,12 @@ bool KuduScanner::Data::MoreTablets() const {
     return false;
   }
 
+  if (!spec_.exclusive_upper_bound_partition_key().empty() &&
+      spec_.exclusive_upper_bound_partition_key() <= remote_->partition().partition_key_end()) {
+    // We are not past the scan's upper bound partition key.
+    return false;
+  }
+
   if (!table_->partition_schema().IsSimplePKRangePartitioning(*table_->schema().schema_)) {
     // We can't do culling yet if the partitioning isn't simple.
     return true;

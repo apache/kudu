@@ -926,6 +926,16 @@ Status KuduScanner::AddExclusiveUpperBoundRaw(const Slice& key) {
   return Status::OK();
 }
 
+Status KuduScanner::AddLowerBoundPartitionKeyRaw(const Slice& partition_key) {
+  data_->spec_.SetLowerBoundPartitionKey(partition_key);
+  return Status::OK();
+}
+
+Status KuduScanner::AddExclusiveUpperBoundPartitionKeyRaw(const Slice& partition_key) {
+  data_->spec_.SetExclusiveUpperBoundPartitionKey(partition_key);
+  return Status::OK();
+}
+
 Status KuduScanner::SetCacheBlocks(bool cache_blocks) {
   if (data_->open_) {
     return Status::IllegalState("Block caching must be set before Open()");
@@ -975,14 +985,35 @@ Status KuduScanner::Open() {
   deadline.AddDelta(data_->timeout_);
   set<string> blacklist;
 
-  string start_partition_key;
-  if (data_->spec_.lower_bound_key() != NULL &&
-      data_->table_->partition_schema().IsSimplePKRangePartitioning(
-          *data_->table_->schema().schema_)) {
-    start_partition_key = data_->spec_.lower_bound_key()->encoded_key().ToString();
+  bool is_simple_range_partitioned =
+    data_->table_->partition_schema().IsSimplePKRangePartitioning(*data_->table_->schema().schema_);
+
+  if (is_simple_range_partitioned) {
+    // If the table is simple range partitioned, then the partition key space is
+    // isomorphic to the primary key space. We can potentially reduce the scan
+    // length by only scanning the intersection of the primary key range and the
+    // partition key range. This is a stop-gap until real partition pruning is
+    // in place that will work across any partition type.
+    Slice start_primary_key = data_->spec_.lower_bound_key() == NULL ? Slice()
+                            : data_->spec_.lower_bound_key()->encoded_key();
+    Slice end_primary_key = data_->spec_.exclusive_upper_bound_key() == NULL ? Slice()
+                          : data_->spec_.exclusive_upper_bound_key()->encoded_key();
+    Slice start_partition_key = data_->spec_.lower_bound_partition_key();
+    Slice end_partition_key = data_->spec_.exclusive_upper_bound_partition_key();
+
+    if ((!end_partition_key.empty() && start_primary_key.compare(end_partition_key) >= 0) ||
+        (!end_primary_key.empty() && start_partition_key.compare(end_primary_key) >= 0)) {
+      // The primary key range and the partition key range do not intersect;
+      // the scan will be empty. Keep the existing partition key range.
+    } else {
+      // Assign the scan's partition key range to the intersection of the
+      // primary key and partition key ranges.
+      data_->spec_.SetLowerBoundPartitionKey(start_primary_key);
+      data_->spec_.SetExclusiveUpperBoundPartitionKey(end_primary_key);
+    }
   }
 
-  RETURN_NOT_OK(data_->OpenTablet(start_partition_key, deadline, &blacklist));
+  RETURN_NOT_OK(data_->OpenTablet(data_->spec_.lower_bound_partition_key(), deadline, &blacklist));
 
   data_->open_ = true;
   return Status::OK();

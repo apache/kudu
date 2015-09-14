@@ -23,6 +23,7 @@
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
+#include "kudu/gutil/strings/escaping.h"
 
 namespace kudu {
 namespace itest {
@@ -147,6 +148,11 @@ class FlexPartitioningITest : public KuduTest {
   // scan between 'inserted_rows_[lower]' (inclusive) and 'inserted_rows_[upper]'
   // (exclusive).
   void CheckPKRangeScan(int lower, int upper);
+  void CheckPartitionKeyRangeScanWithPKRange(int lower, int upper);
+
+  // Performs a series of scans, each over a single tablet in the table, and
+  // verifies that the aggregated results match up with 'inserted_rows_'.
+  void CheckPartitionKeyRangeScan();
 
   // Inserts data into the table, then performs a number of scans to verify that
   // the data can be retrieved.
@@ -228,6 +234,75 @@ void FlexPartitioningITest::CheckPKRangeScan(int lower, int upper) {
   ASSERT_EQ(rows, expected_rows);
 }
 
+void FlexPartitioningITest::CheckPartitionKeyRangeScan() {
+  master::GetTableLocationsResponsePB table_locations;
+  ASSERT_OK(GetTableLocations(cluster_->master_proxy(),
+                    table_->name(),
+                    MonoDelta::FromSeconds(32),
+                    &table_locations));
+
+  vector<string> rows;
+
+  BOOST_FOREACH(const master::TabletLocationsPB& tablet_locations,
+                table_locations.tablet_locations()) {
+
+    string partition_key_start = tablet_locations.partition().partition_key_start();
+    string partition_key_end = tablet_locations.partition().partition_key_end();
+
+    KuduScanner scanner(table_.get());
+    scanner.SetTimeoutMillis(60000);
+    ASSERT_OK(scanner.AddLowerBoundPartitionKeyRaw(partition_key_start));
+    ASSERT_OK(scanner.AddExclusiveUpperBoundPartitionKeyRaw(partition_key_end));
+    ScanToStrings(&scanner, &rows);
+  }
+  std::sort(rows.begin(), rows.end());
+
+  vector<string> expected_rows;
+  BOOST_FOREACH(KuduPartialRow* row, inserted_rows_) {
+    expected_rows.push_back("(" + row->ToString() + ")");
+  }
+  std::sort(expected_rows.begin(), expected_rows.end());
+
+  ASSERT_EQ(rows.size(), expected_rows.size());
+  ASSERT_EQ(rows, expected_rows);
+}
+
+void FlexPartitioningITest::CheckPartitionKeyRangeScanWithPKRange(int lower, int upper) {
+  master::GetTableLocationsResponsePB table_locations;
+  ASSERT_OK(GetTableLocations(cluster_->master_proxy(),
+                    table_->name(),
+                    MonoDelta::FromSeconds(32),
+                    &table_locations));
+
+  vector<string> rows;
+
+  BOOST_FOREACH(const master::TabletLocationsPB& tablet_locations,
+                table_locations.tablet_locations()) {
+
+    string partition_key_start = tablet_locations.partition().partition_key_start();
+    string partition_key_end = tablet_locations.partition().partition_key_end();
+
+    KuduScanner scanner(table_.get());
+    scanner.SetTimeoutMillis(60000);
+    ASSERT_OK(scanner.AddLowerBoundPartitionKeyRaw(partition_key_start));
+    ASSERT_OK(scanner.AddExclusiveUpperBoundPartitionKeyRaw(partition_key_end));
+    ASSERT_OK(scanner.AddLowerBound(*inserted_rows_[lower]));
+    ASSERT_OK(scanner.AddExclusiveUpperBound(*inserted_rows_[upper]));
+    int pre_count = rows.size();
+    ScanToStrings(&scanner, &rows);
+  }
+  std::sort(rows.begin(), rows.end());
+
+  vector<string> expected_rows;
+  for (int i = lower; i < upper; i++) {
+    expected_rows.push_back("(" + inserted_rows_[i]->ToString() + ")");
+  }
+  std::sort(expected_rows.begin(), expected_rows.end());
+
+  ASSERT_EQ(rows.size(), expected_rows.size());
+  ASSERT_EQ(rows, expected_rows);
+}
+
 void FlexPartitioningITest::InsertAndVerifyScans() {
   ASSERT_OK(InsertRandomRows());
 
@@ -279,6 +354,43 @@ void FlexPartitioningITest::InsertAndVerifyScans() {
     NO_FATALS(CheckPKRangeScan(499, 500));
     NO_FATALS(CheckPKRangeScan(500, 501));
   }
+
+  // 4) Use the Per-tablet "partition key range" API.
+  {
+    NO_FATALS(CheckPartitionKeyRangeScan());
+  }
+
+  // 5) Use the Per-tablet "partition key range" API with primary key range.
+  {
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(100, 120));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(200, 400));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(490, 610));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(499, 499));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(500, 500));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(501, 501));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(499, 501));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(499, 500));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(500, 501));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(650, 700));
+    NO_FATALS(CheckPartitionKeyRangeScanWithPKRange(700, 800));
+  }
+}
+
+// CREATE TABLE t (
+//   c0 INT32,
+//   c1 INT32,
+//   PRIMARY KEY (c0, c1)
+//   RANGE PARTITION BY (c0, c1),
+// );
+TEST_F(FlexPartitioningITest, TestSimplePartitioning) {
+  NO_FATALS(CreateTable(1, // 2 columns
+                        vector<string>(), 0, // No hash buckets
+                        vector<string>(), 0, // No hash buckets
+                        list_of<string>("c0"), // no range partitioning
+                        2)); // 1 split;
+  ASSERT_EQ(2, CountTablets());
+
+  InsertAndVerifyScans();
 }
 
 // CREATE TABLE t (

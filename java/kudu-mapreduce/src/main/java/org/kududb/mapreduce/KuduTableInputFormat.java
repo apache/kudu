@@ -286,15 +286,15 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
   static class TableSplit extends InputSplit implements Writable, Comparable<TableSplit> {
 
-    private byte[] startKey;
-    private byte[] endKey;
+    private byte[] startPartitionKey;
+    private byte[] endPartitionKey;
     private String[] locations;
 
     public TableSplit() { } // Writable
 
-    public TableSplit(byte[] startKey, byte[] endKey, String[] locations) {
-      this.startKey = startKey;
-      this.endKey = endKey;
+    public TableSplit(byte[] startPartitionKey, byte[] endPartitionKey, String[] locations) {
+      this.startPartitionKey = startPartitionKey;
+      this.endPartitionKey = endPartitionKey;
       this.locations = locations;
     }
 
@@ -309,34 +309,34 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       return locations;
     }
 
-    public byte[] getStartKey() {
-      return startKey;
+    public byte[] getStartPartitionKey() {
+      return startPartitionKey;
     }
 
-    public byte[] getEndKey() {
-      return endKey;
+    public byte[] getEndPartitionKey() {
+      return endPartitionKey;
     }
 
     @Override
     public int compareTo(TableSplit tableSplit) {
-      return Bytes.memcmp(startKey, tableSplit.getStartKey());
+      return Bytes.memcmp(startPartitionKey, tableSplit.getStartPartitionKey());
     }
 
     @Override
     public void write(DataOutput dataOutput) throws IOException {
-      Bytes.writeByteArray(dataOutput, startKey);
-      Bytes.writeByteArray(dataOutput, endKey);
+      Bytes.writeByteArray(dataOutput, startPartitionKey);
+      Bytes.writeByteArray(dataOutput, endPartitionKey);
       dataOutput.writeInt(locations.length);
       for (String location : locations) {
         byte[] str = Bytes.fromString(location);
-        Bytes.writeByteArray(dataOutput,str);
+        Bytes.writeByteArray(dataOutput, str);
       }
     }
 
     @Override
     public void readFields(DataInput dataInput) throws IOException {
-      startKey = Bytes.readByteArray(dataInput);
-      endKey = Bytes.readByteArray(dataInput);
+      startPartitionKey = Bytes.readByteArray(dataInput);
+      endPartitionKey = Bytes.readByteArray(dataInput);
       locations = new String[dataInput.readInt()];
       for (int i = 0; i < locations.length; i++) {
         byte[] str = Bytes.readByteArray(dataInput);
@@ -347,7 +347,7 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
     @Override
     public int hashCode() {
       // We currently just care about the row key since we're within the same table
-      return Objects.hashCode(startKey);
+      return Arrays.hashCode(startPartitionKey);
     }
 
     @Override
@@ -362,14 +362,11 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
 
     @Override
     public String toString() {
-      StringBuilder sb = new StringBuilder("startKey=");
-      sb.append(Bytes.pretty(startKey));
-      sb.append(", endKey=");
-      sb.append(Bytes.pretty(endKey));
-      sb.append(" at ");
-      sb.append("locations=");
-      sb.append(Arrays.toString(locations));
-      return sb.toString();
+      return Objects.toStringHelper(this)
+                    .add("startPartitionKey", Bytes.pretty(startPartitionKey))
+                    .add("endPartitionKey", Bytes.pretty(endPartitionKey))
+                    .add("locations", Arrays.toString(locations))
+                    .toString();
     }
   }
 
@@ -390,8 +387,8 @@ public class KuduTableInputFormat extends InputFormat<NullWritable, RowResult>
       split = (TableSplit) inputSplit;
       scanner = client.newScannerBuilder(table)
           .setProjectedColumnNames(projectedCols)
-          .lowerBoundRaw(split.getStartKey())
-          .exclusiveUpperBoundRaw(split.getEndKey())
+          .lowerBoundPartitionKeyRaw(split.getStartPartitionKey())
+          .exclusiveUpperBoundPartitionKeyRaw(split.getEndPartitionKey())
           .cacheBlocks(cacheBlocks)
           .addColumnRangePredicatesRaw(rawPredicates)
           .build();

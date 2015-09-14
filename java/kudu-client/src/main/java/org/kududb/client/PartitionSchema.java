@@ -22,10 +22,12 @@ import java.util.List;
  * Each hash bucket component includes one or more columns from the primary key
  * column set, with the restriction that an individual primary key column may
  * only be included in a single hash component.
+ *
+ * This class is new, and not considered stable or suitable for public use.
  */
-@InterfaceAudience.Public
+@InterfaceAudience.LimitedPrivate("Impala")
 @InterfaceStability.Unstable
-class PartitionSchema {
+public class PartitionSchema {
 
   private final RangeSchema rangeSchema;
   private final List<HashBucketSchema> hashBucketSchemas;

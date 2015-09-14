@@ -27,8 +27,10 @@ public abstract class AbstractKuduScannerBuilder
   boolean prefetching = false;
   boolean cacheBlocks = true;
   long htTimestamp = AsyncKuduClient.NO_TIMESTAMP;
-  byte[] lowerBound = AsyncKuduClient.EMPTY_ARRAY;
-  byte[] upperBound = AsyncKuduClient.EMPTY_ARRAY;
+  byte[] lowerBoundPrimaryKey = AsyncKuduClient.EMPTY_ARRAY;
+  byte[] upperBoundPrimaryKey = AsyncKuduClient.EMPTY_ARRAY;
+  byte[] lowerBoundPartitionKey = AsyncKuduClient.EMPTY_ARRAY;
+  byte[] upperBoundPartitionKey = AsyncKuduClient.EMPTY_ARRAY;
   List<String> projectedColumnNames = null;
   long scanRequestTimeout;
 
@@ -157,7 +159,7 @@ public abstract class AbstractKuduScannerBuilder
   }
 
   /**
-   * Add a lower bound (inclusive) for the scan.
+   * Add a lower bound (inclusive) primary key for the scan.
    * If any bound is already added, this bound is intersected with that one.
    * @param partialRow a partial row with specified key columns
    * @return this instance
@@ -167,20 +169,22 @@ public abstract class AbstractKuduScannerBuilder
   }
 
   /**
-   * Like lowerBound() but the encoded key is an opaque byte array obtained elsewhere.
-   * @param encodedStartKey bytes containing an encoded start key
+   * Like lowerBoundPrimaryKey() but the encoded primary key is an opaque byte array obtained elsewhere.
+   * @param startPrimaryKey bytes containing an encoded start key
    * @return this instance
+   * @deprecated use {@link #lowerBound(PartialRow)}
    */
-  public S lowerBoundRaw(byte[] encodedStartKey) {
-    if (lowerBound == AsyncKuduClient.EMPTY_ARRAY ||
-        Bytes.memcmp(encodedStartKey, lowerBound) > 0) {
-      this.lowerBound = encodedStartKey;
+  @Deprecated
+  public S lowerBoundRaw(byte[] startPrimaryKey) {
+    if (lowerBoundPrimaryKey == AsyncKuduClient.EMPTY_ARRAY ||
+        Bytes.memcmp(startPrimaryKey, lowerBoundPrimaryKey) > 0) {
+      this.lowerBoundPrimaryKey = startPrimaryKey;
     }
     return (S) this;
   }
 
   /**
-   * Add an upper bound (exclusive) for the scan.
+   * Add an upper bound (exclusive) primary key for the scan.
    * If any bound is already added, this bound is intersected with that one.
    * @param partialRow a partial row with specified key columns
    * @return this instance
@@ -190,18 +194,47 @@ public abstract class AbstractKuduScannerBuilder
   }
 
   /**
-   * Like exclusiveUpperBound() but the encoded key is an opaque byte array obtained elsewhere.
-   * @param encodedEndKey bytes containing an encoded end key
+   * Like exclusiveUpperBound() but the encoded primary key is an opaque byte array obtained elsewhere.
+   * @param endPrimaryKey bytes containing an encoded end key
+   * @return this instance
+   * @deprecated use {@link #exclusiveUpperBound(PartialRow)}
+   */
+  @Deprecated
+  public S exclusiveUpperBoundRaw(byte[] endPrimaryKey) {
+    if (upperBoundPrimaryKey == AsyncKuduClient.EMPTY_ARRAY ||
+        Bytes.memcmp(endPrimaryKey, upperBoundPrimaryKey) < 0) {
+      this.upperBoundPrimaryKey = endPrimaryKey;
+    }
+    return (S) this;
+  }
+
+  /**
+   * Set an encoded (inclusive) start partition key for the scan.
+   *
+   * @param partitionKey the encoded partition key
    * @return this instance
    */
-  public S exclusiveUpperBoundRaw(byte[] encodedEndKey) {
-    if (upperBound == AsyncKuduClient.EMPTY_ARRAY ||
-        Bytes.memcmp(encodedEndKey, upperBound) < 0) {
-      this.upperBound = encodedEndKey;
+  @InterfaceAudience.LimitedPrivate("Impala")
+  public S lowerBoundPartitionKeyRaw(byte[] partitionKey) {
+    if (Bytes.memcmp(partitionKey, lowerBoundPartitionKey) > 0) {
+      this.lowerBoundPartitionKey = partitionKey;
+    }
+    return (S) this;
+  }
+
+  /**
+   * Set an encoded (exclusive) end partition key for the scan.
+   *
+   * @param partitionKey the encoded partition key
+   * @return this instance
+   */
+  @InterfaceAudience.LimitedPrivate("Impala")
+  public S exclusiveUpperBoundPartitionKeyRaw(byte[] partitionKey) {
+    if (upperBoundPartitionKey.length == 0 || Bytes.memcmp(partitionKey, upperBoundPartitionKey) < 0) {
+      this.upperBoundPartitionKey = partitionKey;
     }
     return (S) this;
   }
 
   public abstract T build();
 }
-

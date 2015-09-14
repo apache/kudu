@@ -20,9 +20,11 @@ import java.util.List;
  * In addition to the start and end partition keys, a Partition holds metadata
  * to determine if a scan can prune, or skip, a partition based on the scan's
  * start and end primary keys, and predicates.
+ *
+ * This class is new, and not considered stable or suitable for public use.
  */
-@InterfaceAudience.Public
-@InterfaceStability.Evolving
+@InterfaceAudience.LimitedPrivate("Impala")
+@InterfaceStability.Unstable
 public class Partition implements Comparable<Partition> {
   final byte[] partitionKeyStart;
   final byte[] partitionKeyEnd;

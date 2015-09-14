@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "kudu/gutil/strings/join.h"
+#include "kudu/gutil/strings/escaping.h"
 
 using std::vector;
 using std::string;
@@ -28,6 +29,19 @@ void ScanSpec::SetExclusiveUpperBoundKey(const EncodedKey* key) {
   if (exclusive_upper_bound_key_ == NULL ||
       key->encoded_key().compare(exclusive_upper_bound_key_->encoded_key()) < 0) {
     exclusive_upper_bound_key_ = key;
+  }
+}
+
+void ScanSpec::SetLowerBoundPartitionKey(const Slice& partitionKey) {
+  if (partitionKey.compare(lower_bound_partition_key_) > 0) {
+    lower_bound_partition_key_ = partitionKey.ToString();
+  }
+}
+
+void ScanSpec::SetExclusiveUpperBoundPartitionKey(const Slice& partitionKey) {
+  if (exclusive_upper_bound_partition_key_.empty() ||
+      (!partitionKey.empty() && partitionKey.compare(exclusive_upper_bound_partition_key_) < 0)) {
+    exclusive_upper_bound_partition_key_ = partitionKey.ToString();
   }
 }
 

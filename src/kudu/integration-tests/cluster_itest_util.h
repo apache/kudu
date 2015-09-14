@@ -222,6 +222,12 @@ Status GetTabletLocations(const std::tr1::shared_ptr<master::MasterServiceProxy>
                           const MonoDelta& timeout,
                           master::TabletLocationsPB* tablet_locations);
 
+// Get the list of tablet locations for all tablets in the specified table from the Master.
+Status GetTableLocations(const std::tr1::shared_ptr<master::MasterServiceProxy>& master_proxy,
+                         const std::string& table_name,
+                         const MonoDelta& timeout,
+                         master::GetTableLocationsResponsePB* table_locations);
+
 // Wait for the specified number of voters to be reported to the config on the
 // master for the specified tablet.
 Status WaitForNumVotersInConfigOnMaster(

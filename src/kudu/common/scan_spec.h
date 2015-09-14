@@ -19,13 +19,14 @@ class ScanSpec {
   ScanSpec()
     : lower_bound_key_(NULL),
       exclusive_upper_bound_key_(NULL),
+      lower_bound_partition_key_(),
+      exclusive_upper_bound_partition_key_(),
       cache_blocks_(true) {
   }
 
   typedef vector<ColumnRangePredicate> PredicateList;
 
   void AddPredicate(const ColumnRangePredicate &pred);
-
 
   // Set the lower bound (inclusive) primary key for the scan.
   // Does not take ownership of 'key', which must remain valid.
@@ -36,6 +37,20 @@ class ScanSpec {
   // Does not take ownership of 'key', which must remain valid.
   // If called multiple times, the most restrictive key will be used.
   void SetExclusiveUpperBoundKey(const EncodedKey* key);
+
+  // Sets the lower bound (inclusive) partition key for the scan.
+  //
+  // The scan spec makes a copy of 'slice'; the caller may free it afterward.
+  //
+  // Only used in the client.
+  void SetLowerBoundPartitionKey(const Slice& slice);
+
+  // Sets the upper bound (exclusive) partition key for the scan.
+  //
+  // The scan spec makes a copy of 'slice'; the caller may free it afterward.
+  //
+  // Only used in the client.
+  void SetExclusiveUpperBoundPartitionKey(const Slice& slice);
 
   const vector<ColumnRangePredicate> &predicates() const {
     return predicates_;
@@ -57,6 +72,13 @@ class ScanSpec {
     return exclusive_upper_bound_key_;
   }
 
+  const string& lower_bound_partition_key() const {
+    return lower_bound_partition_key_;
+  }
+  const string& exclusive_upper_bound_partition_key() const {
+    return exclusive_upper_bound_partition_key_;
+  }
+
   bool cache_blocks() const {
     return cache_blocks_;
   }
@@ -75,9 +97,10 @@ class ScanSpec {
   vector<ColumnRangePredicate> predicates_;
   const EncodedKey* lower_bound_key_;
   const EncodedKey* exclusive_upper_bound_key_;
+  std::string lower_bound_partition_key_;
+  std::string exclusive_upper_bound_partition_key_;
   bool cache_blocks_;
 };
-
 
 } // namespace kudu
 

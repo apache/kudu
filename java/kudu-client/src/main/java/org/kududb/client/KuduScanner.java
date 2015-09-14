@@ -72,7 +72,8 @@ public class KuduScanner {
       return new KuduScanner(new AsyncKuduScanner(
           client, table, projectedColumnNames, readMode,
           scanRequestTimeout, columnRangePredicates, limit, cacheBlocks,
-          prefetching, lowerBound, upperBound,
+          prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
+          lowerBoundPartitionKey, upperBoundPartitionKey,
           htTimestamp, maxNumBytes));
     }
   }

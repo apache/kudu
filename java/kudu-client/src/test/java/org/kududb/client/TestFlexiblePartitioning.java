@@ -15,6 +15,7 @@ import org.kududb.Type;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
@@ -81,7 +82,6 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     syncClient.createTable(tableName, schema, tableBuilder);
 
     KuduTable table = syncClient.openTable(tableName);
-    assertFalse(table.getPartitionSchema().isSimpleRangePartitioning());
 
     Set<Row> rows = rows();
     insertRows(table, rows);
@@ -135,6 +135,52 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
 
       assertEquals(expected, results);
     }
+
+    List<LocatedTablet> tablets = table.getTabletsLocations(TestTimeouts.DEFAULT_SLEEP);
+
+    { // Per-tablet scan
+      Set<Row> results = new HashSet<>();
+
+      for (LocatedTablet tablet : tablets) {
+        KuduScanner scanner = syncClient.newScannerBuilder(table)
+                                        .lowerBoundPartitionKeyRaw(tablet.getPartition().getPartitionKeyStart())
+                                        .exclusiveUpperBoundPartitionKeyRaw(tablet.getPartition().getPartitionKeyEnd())
+                                        .build();
+        Set<Row> tabletResults = collectRows(scanner);
+        Set<Row> intersection = Sets.intersection(results, tabletResults);
+        assertEquals(new HashSet<>(), intersection);
+        results.addAll(tabletResults);
+      }
+
+      assertEquals(rows, results);
+    }
+
+    { // Per-tablet scan with lower & upper bounds
+      Row minRow = new Row("1", "3", "5");
+      Row maxRow = new Row("2", "4", "");
+      PartialRow lowerBound = schema.newPartialRow();
+      minRow.fillPartialRow(lowerBound);
+      PartialRow upperBound = schema.newPartialRow();
+      maxRow.fillPartialRow(upperBound);
+
+      Set<Row> expected = Sets.filter(rows, Predicates.and(minRow.gtePred(), maxRow.ltPred()));
+      Set<Row> results = new HashSet<>();
+
+      for (LocatedTablet tablet : tablets) {
+        KuduScanner scanner = syncClient.newScannerBuilder(table)
+                                        .lowerBound(lowerBound)
+                                        .exclusiveUpperBound(upperBound)
+                                        .lowerBoundPartitionKeyRaw(tablet.getPartition().getPartitionKeyStart())
+                                        .exclusiveUpperBoundPartitionKeyRaw(tablet.getPartition().getPartitionKeyEnd())
+                                        .build();
+        Set<Row> tabletResults = collectRows(scanner);
+        Set<Row> intersection = Sets.intersection(results, tabletResults);
+        assertEquals(new HashSet<>(), intersection);
+        results.addAll(tabletResults);
+      }
+
+      assertEquals(expected, results);
+    }
   }
 
   @Test
@@ -175,6 +221,21 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     split.addString("c", "3");
     tableBuilder.addSplitRow(split);
 
+    split.addString("c", "3");
+    split.addString("b", "3");
+    tableBuilder.addSplitRow(split);
+
+    testPartitionSchema(tableBuilder);
+  }
+
+  @Test
+  public void testSimplePartitionedTable() throws Exception {
+    Schema schema = createSchema();
+    CreateTableBuilder tableBuilder = new CreateTableBuilder();
+
+    PartialRow split = schema.newPartialRow();
+    split.addString("c", "3");
+    tableBuilder.addSplitRow(split);
     split.addString("c", "3");
     split.addString("b", "3");
     tableBuilder.addSplitRow(split);

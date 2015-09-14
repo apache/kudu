@@ -5,6 +5,7 @@
 #include <boost/optional.hpp>
 #include <boost/foreach.hpp>
 #include <glog/stl_logging.h>
+#include <limits>
 
 #include "kudu/client/client.h"
 #include "kudu/common/wire_protocol.h"
@@ -580,6 +581,22 @@ Status GetTabletLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
   }
   CHECK_EQ(1, resp.tablet_locations_size()) << resp.ShortDebugString();
   *tablet_locations = resp.tablet_locations(0);
+  return Status::OK();
+}
+
+Status GetTableLocations(const shared_ptr<MasterServiceProxy>& master_proxy,
+                         const string& table_name,
+                         const MonoDelta& timeout,
+                         master::GetTableLocationsResponsePB* table_locations) {
+  master::GetTableLocationsRequestPB req;
+  req.mutable_table()->set_table_name(table_name);
+  req.set_max_returned_locations(1000);
+  rpc::RpcController rpc;
+  rpc.set_timeout(timeout);
+  RETURN_NOT_OK(master_proxy->GetTableLocations(req, table_locations, &rpc));
+  if (table_locations->has_error()) {
+    return StatusFromPB(table_locations->error().status());
+  }
   return Status::OK();
 }
 

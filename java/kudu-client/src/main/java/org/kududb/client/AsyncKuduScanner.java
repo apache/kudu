@@ -123,11 +123,16 @@ public final class AsyncKuduScanner {
   private final long limit;
 
   /**
-   * The partition key of the next tablet to scan.
+   * The start partition key of the next tablet to scan.
    *
    * Each time the scan exhausts a tablet, this is updated to that tablet's end partition key.
    */
   private byte[] nextPartitionKey;
+
+  /**
+   * The end partition key of the last tablet to scan.
+   */
+  private final byte[] endPartitionKey;
 
   /**
    * Set in the builder. If it's not set by the user, it will default to EMPTY_ARRAY.
@@ -193,6 +198,7 @@ public final class AsyncKuduScanner {
                    List<Tserver.ColumnRangePredicatePB> columnRangePredicates, long limit,
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
+                   byte[] startPartitionKey, byte[] endPartitionKey,
                    long htTimestamp, int maxNumBytes) {
     Preconditions.checkArgument(maxNumBytes > 0, "Need a strictly positive number of bytes, " +
         "got %s", maxNumBytes);
@@ -217,11 +223,35 @@ public final class AsyncKuduScanner {
     this.maxNumBytes = maxNumBytes;
 
     if (table.getPartitionSchema().isSimpleRangePartitioning()) {
-      // For tables with default partitioning, we can optimize the tablet lookup
-      // to skip tablets with partition keys below the start primary key.
-      this.nextPartitionKey = this.startPrimaryKey;
+      // If the table is simple range partitioned, then the partition key space
+      // is isomorphic to the primary key space. We can potentially reduce the
+      // scan length by only scanning the intersection of the primary key range
+      // and the partition key range. This is a stop-gap until real partition
+      // pruning is in place that can work across any partitioning type.
+
+      if ((endPartitionKey.length != 0 && Bytes.memcmp(startPrimaryKey, endPartitionKey) >= 0) ||
+          (endPrimaryKey.length != 0 && Bytes.memcmp(startPartitionKey, endPrimaryKey) >= 0)) {
+        // The primary key range and the partition key range do not intersect;
+        // the scan will be empty.
+        this.nextPartitionKey = startPartitionKey;
+        this.endPartitionKey = endPartitionKey;
+      } else {
+        // Assign the scan's partition key range to the intersection of the
+        // primary key and partition key ranges.
+        if (Bytes.memcmp(startPartitionKey, startPrimaryKey) < 0) {
+          this.nextPartitionKey = startPrimaryKey;
+        } else {
+          this.nextPartitionKey = startPartitionKey;
+        }
+        if (endPrimaryKey.length != 0 && Bytes.memcmp(endPartitionKey, endPrimaryKey) > 0) {
+          this.endPartitionKey = endPrimaryKey;
+        } else {
+          this.endPartitionKey = endPartitionKey;
+        }
+      }
     } else {
-      this.nextPartitionKey = AsyncKuduClient.EMPTY_ARRAY;
+      this.nextPartitionKey = startPartitionKey;
+      this.endPartitionKey = endPartitionKey;
     }
 
     // Map the column names to actual columns in the table schema.
@@ -240,7 +270,6 @@ public final class AsyncKuduScanner {
       this.schema = table.getSchema();
     }
   }
-
 
   /**
    * Returns the maximum number of rows that this scanner was configured to return.
@@ -387,14 +416,11 @@ public final class AsyncKuduScanner {
   }
 
   void scanFinished() {
-    // We're done if
-    // 1) the last tablet has been scanned, or
-    // 2) the table is using default partitioning and we're past the end primary key.
     Partition partition = tablet.getPartition();
+    // Stop scanning if we have scanned until or past the end partition key.
     if (partition.isEndPartition()
-        || (this.table.getPartitionSchema().isSimpleRangePartitioning()
-            && this.endPrimaryKey != AsyncKuduClient.EMPTY_ARRAY
-            && Bytes.memcmp(this.endPrimaryKey, partition.getPartitionKeyEnd()) <= 0)) {
+        || (this.endPartitionKey != AsyncKuduClient.EMPTY_ARRAY
+            && Bytes.memcmp(this.endPartitionKey, partition.getPartitionKeyEnd()) <= 0)) {
       hasMore = false;
       closed = true; // the scanner is closed on the other side at this point
       return;
@@ -711,7 +737,9 @@ public final class AsyncKuduScanner {
       return new AsyncKuduScanner(
           client, table, projectedColumnNames, readMode,
           scanRequestTimeout, columnRangePredicates, limit, cacheBlocks,
-          prefetching, lowerBound, upperBound, htTimestamp, maxNumBytes);
+          prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
+          lowerBoundPartitionKey, upperBoundPartitionKey,
+          htTimestamp, maxNumBytes);
     }
   }
 }
