@@ -628,7 +628,7 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
   //   is space available in the buffer.
   // MANUAL_FLUSH:
   //   if the buffer space is exhausted, then write calls will return an error.
-  void SetMutationBufferSpace(size_t size);
+  Status SetMutationBufferSpace(size_t size) WARN_UNUSED_RESULT;
 
   // Set the timeout for writes made in this session.
   void SetTimeoutMillis(int millis);

@@ -677,8 +677,12 @@ Status KuduSession::Apply(KuduWriteOperation* write_op) {
     return status;
   }
 
-  gscoped_ptr<KuduWriteOperation> owned_write_op(write_op);
-  data_->batcher_->Add(owned_write_op.Pass());
+  Status s = data_->batcher_->Add(write_op);
+  if (!PREDICT_FALSE(s.ok())) {
+    data_->error_collector_->AddError(gscoped_ptr<KuduError>(
+        new KuduError(write_op, s)));
+    return s;
+  }
 
   if (data_->flush_mode_ == AUTO_FLUSH_SYNC) {
     return Flush();

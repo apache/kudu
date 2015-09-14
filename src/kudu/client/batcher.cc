@@ -26,6 +26,7 @@
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
@@ -450,7 +451,9 @@ Batcher::Batcher(KuduClient* client,
     had_errors_(false),
     flush_callback_(NULL),
     next_op_sequence_number_(0),
-    outstanding_lookups_(0) {
+    outstanding_lookups_(0),
+    max_buffer_size_(7 * 1024 * 1024),
+    buffer_bytes_used_(0) {
 }
 
 void Batcher::Abort() {
@@ -564,16 +567,29 @@ void Batcher::FlushAsync(KuduStatusCallback* cb) {
   FlushBuffersIfReady();
 }
 
-Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
+Status Batcher::Add(KuduWriteOperation* write_op) {
+  int64_t required_size = write_op->SizeInBuffer();
+  int64_t size_after_adding = buffer_bytes_used_.IncrementBy(required_size);
+  if (PREDICT_FALSE(size_after_adding > max_buffer_size_)) {
+    buffer_bytes_used_.IncrementBy(-required_size);
+    int64_t size_before_adding = size_after_adding - required_size;
+    return Status::Incomplete(Substitute(
+        "not enough space remaining in buffer for op (required $0, "
+        "$1 already used",
+        HumanReadableNumBytes::ToString(required_size),
+        HumanReadableNumBytes::ToString(size_before_adding)));
+  }
+
+
   // As soon as we get the op, start looking up where it belongs,
   // so that when the user calls Flush, we are ready to go.
-  InFlightOp* op = new InFlightOp;
+  gscoped_ptr<InFlightOp> op(new InFlightOp());
   RETURN_NOT_OK(write_op->table_->partition_schema()
-                                 .EncodeKey(write_op->row(), &op->partition_key));
-  op->write_op.reset(write_op.release());
+                .EncodeKey(write_op->row(), &op->partition_key));
+  op->write_op.reset(write_op);
   op->state = InFlightOp::kLookingUpTablet;
 
-  AddInFlightOp(op);
+  AddInFlightOp(op.get());
   VLOG(3) << "Looking up tablet for " << op->write_op->ToString();
 
   // Increment our reference count for the outstanding callback.
@@ -583,11 +599,13 @@ Status Batcher::Add(gscoped_ptr<KuduWriteOperation> write_op) {
   MonoTime deadline = MonoTime::Now(MonoTime::FINE);
   deadline.AddDelta(timeout_);
   base::RefCountInc(&outstanding_lookups_);
-  client_->data_->meta_cache_->LookupTabletByKey(op->write_op->table(),
-                                                 op->partition_key,
-                                                 deadline,
-                                                 &op->tablet,
-                                                 Bind(&Batcher::TabletLookupFinished, this, op));
+  client_->data_->meta_cache_->LookupTabletByKey(
+      op->write_op->table(),
+      op->partition_key,
+      deadline,
+      &op->tablet,
+      Bind(&Batcher::TabletLookupFinished, this, op.get()));
+  IgnoreResult(op.release());
   return Status::OK();
 }
 

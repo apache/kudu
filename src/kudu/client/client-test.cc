@@ -1557,6 +1557,40 @@ TEST_F(ClientTest, TestApplyToSessionWithoutFlushing_OpsBuffered) {
   DoApplyWithoutFlushTest(10000);
 }
 
+// Apply a large amount of data without calling Flush(), and ensure
+// that we get an error on Apply() rather than sending a too-large
+// RPC to the server.
+TEST_F(ClientTest, TestApplyTooMuchWithoutFlushing) {
+
+  // Applying a bunch of small rows without a flush should result
+  // in an error.
+  {
+    bool got_expected_error = false;
+    shared_ptr<KuduSession> session = client_->NewSession();
+    ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+    for (int i = 0; i < 1000000; i++) {
+      Status s = ApplyInsertToSession(session.get(), client_table_, 1, 1, "x");
+      if (s.IsIncomplete()) {
+        ASSERT_STR_CONTAINS(s.ToString(), "not enough space remaining in buffer");
+        got_expected_error = true;
+        break;
+      } else {
+        ASSERT_OK(s);
+      }
+    }
+    ASSERT_TRUE(got_expected_error);
+  }
+
+  // Writing a single very large row should also result in an error.
+  {
+    string huge_string(10 * 1024 * 1024, 'x');
+
+    shared_ptr<KuduSession> session = client_->NewSession();
+    Status s = ApplyInsertToSession(session.get(), client_table_, 1, 1, huge_string.c_str());
+    ASSERT_TRUE(s.IsIncomplete()) << "got unexpected status: " << s.ToString();
+  }
+}
+
 // Test that update updates and delete deletes with expected use
 TEST_F(ClientTest, TestMutationsWork) {
   shared_ptr<KuduSession> session = client_->NewSession();

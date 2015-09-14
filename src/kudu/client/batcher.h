@@ -12,6 +12,7 @@
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/async_util.h"
+#include "kudu/util/atomic.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/status.h"
@@ -66,7 +67,9 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // Add a new operation to the batch. Requires that the batch has not yet been flushed.
   // TODO: in other flush modes, this may not be the case -- need to
   // update this when they're implemented.
-  Status Add(gscoped_ptr<KuduWriteOperation> write_op);
+  //
+  // NOTE: If this returns not-OK, does not take ownership of 'write_op'.
+  Status Add(KuduWriteOperation* write_op) WARN_UNUSED_RESULT;
 
   // Return true if any operations are still pending. An operation is no longer considered
   // pending once it has either errored or succeeded.  Operations are considering pending
@@ -171,6 +174,13 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   //
   // Note: _not_ protected by lock_!
   Atomic32 outstanding_lookups_;
+
+  // The maximum number of bytes of encoded operations which will be allowed to
+  // be buffered.
+  int64_t max_buffer_size_;
+
+  // The number of bytes used in the buffer for pending operations.
+  AtomicInt<int64_t> buffer_bytes_used_;
 
   DISALLOW_COPY_AND_ASSIGN(Batcher);
 };

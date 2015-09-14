@@ -63,6 +63,10 @@ class KUDU_EXPORT KuduWriteOperation {
 
   const KuduTable* table() const { return table_.get(); }
 
+  // Return the number of bytes required to buffer this operation,
+  // including direct and indirect data.
+  int64_t SizeInBuffer() const;
+
   DISALLOW_COPY_AND_ASSIGN(KuduWriteOperation);
 };
 

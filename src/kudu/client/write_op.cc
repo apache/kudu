@@ -41,6 +41,29 @@ EncodedKey* KuduWriteOperation::CreateKey() const {
   return key.release();
 }
 
+int64_t KuduWriteOperation::SizeInBuffer() const {
+  const Schema* schema = row_.schema();
+  int size = 1; // for the operation type
+
+  // Add size of isset bitmap (always present).
+  size += BitmapSize(schema->num_columns());
+  // Add size of null bitmap (present if the schema has nullables)
+  size += ContiguousRowHelper::null_bitmap_size(*schema);
+  // The column data itself:
+  for (int i = 0; i < schema->num_columns(); i++) {
+    if (row_.IsColumnSet(i) && !row_.IsNull(i)) {
+      size += schema->column(i).type_info()->size();
+      if (schema->column(i).type_info()->physical_type() == BINARY) {
+        ContiguousRow row(schema, row_.row_data_);
+        Slice bin;
+        memcpy(&bin, row.cell_ptr(i), sizeof(bin));
+        size += bin.size();
+      }
+    }
+  }
+  return size;
+}
+
 // Insert -----------------------------------------------------------------------
 
 KuduInsert::KuduInsert(const shared_ptr<KuduTable>& table)
