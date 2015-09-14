@@ -138,7 +138,7 @@ if [ -n "$SITE" ]; then
   # Now rebuild the site itself.
   echo Attempting to re-build via Jekyll...
   cd $SITE
-  jekyll build --no-watch --config $TMP_CONFIG
+  jekyll build --config $TMP_CONFIG
   jekyll_result=$?
   if [ $jekyll_result -eq 0 ]; then
     # Output the URL so it's easy to click on from the terminal.
