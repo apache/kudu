@@ -31,7 +31,8 @@ class RemoteBootstrapClientTest : public RemoteBootstrapTest {
                                             fs_manager_.get(),
                                             messenger_,
                                             fs_manager_->uuid()));
-    ASSERT_OK(GetRaftConfigLeader(tablet_peer_->consensus()->CommittedConsensusState(), &leader_));
+    ASSERT_OK(GetRaftConfigLeader(tablet_peer_->consensus()
+        ->ConsensusState(consensus::CONSENSUS_CONFIG_COMMITTED), &leader_));
 
     HostPort host_port;
     HostPortFromPB(leader_.last_known_addr(), &host_port);

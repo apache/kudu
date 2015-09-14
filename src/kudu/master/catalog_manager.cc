@@ -130,6 +130,7 @@ using base::subtle::NoBarrier_Load;
 using base::subtle::NoBarrier_CompareAndSwap;
 using cfile::TypeEncodingInfo;
 using consensus::kMinimumTerm;
+using consensus::CONSENSUS_CONFIG_COMMITTED;
 using consensus::Consensus;
 using consensus::ConsensusServiceProxy;
 using consensus::ConsensusStatePB;
@@ -451,7 +452,7 @@ Status CatalogManager::ElectedAsLeaderCb() {
 Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
   string uuid = master_->fs_manager()->uuid();
   Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
-  ConsensusStatePB cstate = consensus->CommittedConsensusState();
+  ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   if (!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid) {
     return Status::IllegalState(
         Substitute("Node $0 not leader. Consensus state: $1",
@@ -466,7 +467,7 @@ Status CatalogManager::WaitUntilCaughtUpAsLeader(const MonoDelta& timeout) {
 void CatalogManager::VisitTablesAndTabletsTask() {
 
   Consensus* consensus = sys_catalog_->tablet_peer()->consensus();
-  int64_t term = consensus->CommittedConsensusState().current_term();
+  int64_t term = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
   Status s = WaitUntilCaughtUpAsLeader(
       MonoDelta::FromMilliseconds(FLAGS_master_failover_catchup_timeout_ms));
   if (!s.ok()) {
@@ -481,7 +482,7 @@ void CatalogManager::VisitTablesAndTabletsTask() {
 
   {
     boost::lock_guard<LockType> lock(lock_);
-    int64_t term_after_wait = consensus->CommittedConsensusState().current_term();
+    int64_t term_after_wait = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED).current_term();
     if (term_after_wait != term) {
       // If we got elected leader again while waiting to catch up then we will
       // get another callback to visit the tables and tablets, so bail.
@@ -543,7 +544,7 @@ Status CatalogManager::CheckIsLeaderAndReady() const {
         Substitute("Catalog manager is shutting down. State: $0", state_));
   }
   Consensus* consensus = sys_catalog_->tablet_peer_->consensus();
-  ConsensusStatePB cstate = consensus->CommittedConsensusState();
+  ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   string uuid = master_->fs_manager()->uuid();
   if (PREDICT_FALSE(!cstate.has_leader_uuid() || cstate.leader_uuid() != uuid)) {
     return Status::IllegalState(

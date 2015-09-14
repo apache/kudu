@@ -42,11 +42,6 @@ namespace consensus {
 // This class is not thread-safe and requires external synchronization.
 class ConsensusMetadata {
  public:
-  enum ConfigType {
-    ACTIVE,   // Active config (pending or committed).
-    COMMITTED // Committed config.
-  };
-
   // Create a ConsensusMetadata object with provided initial state.
   // Encoded PB is flushed to disk before returning.
   static Status Create(FsManager* fs_manager,
@@ -109,7 +104,7 @@ class ConsensusMetadata {
   // ConsensusStatePB using only the committed configuration. In this case, if the
   // current leader is not a member of the committed configuration, then the
   // leader_uuid field of the returned ConsensusStatePB will be cleared.
-  ConsensusStatePB ToConsensusStatePB(ConfigType type) const;
+  ConsensusStatePB ToConsensusStatePB(ConsensusConfigType type) const;
 
   // Merge the committed consensus state from the source node during remote
   // bootstrap.

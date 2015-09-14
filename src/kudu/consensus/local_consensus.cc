@@ -153,9 +153,9 @@ Status LocalConsensus::RequestVote(const VoteRequestPB* request,
   return Status::NotSupported("LocalConsensus does not support RequestVote() calls.");
 }
 
-ConsensusStatePB LocalConsensus::CommittedConsensusState() const {
+ConsensusStatePB LocalConsensus::ConsensusState(ConsensusConfigType type) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  return cmeta_->ToConsensusStatePB(ConsensusMetadata::COMMITTED);
+  return cmeta_->ToConsensusStatePB(type);
 }
 
 RaftConfigPB LocalConsensus::CommittedConfig() const {

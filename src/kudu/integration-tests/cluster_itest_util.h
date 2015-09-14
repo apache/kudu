@@ -116,11 +116,12 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
                                   const std::vector<TServerDetails*>& replicas,
                                   const MonoDelta& timeout);
 
-// Get the committed consensus state from the given replica.
-Status GetCommittedConsensusState(const TServerDetails* replica,
-                                  const std::string& tablet_id,
-                                  const MonoDelta& timeout,
-                                  consensus::ConsensusStatePB* consensus_state);
+// Get the consensus state from the given replica.
+Status GetConsensusState(const TServerDetails* replica,
+                         const std::string& tablet_id,
+                         consensus::ConsensusConfigType type,
+                         const MonoDelta& timeout,
+                         consensus::ConsensusStatePB* consensus_state);
 
 // Wait until the number of voters in the committed consensus configuration is
 // 'quorum_size', according to the specified replica.

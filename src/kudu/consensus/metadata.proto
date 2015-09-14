@@ -50,6 +50,20 @@ message RaftPeerPB {
   optional HostPortPB last_known_addr = 3;
 }
 
+enum ConsensusConfigType {
+  CONSENSUS_CONFIG_UNKNOWN = 999;
+
+  // Committed consensus config. This includes the consensus configuration that
+  // has been serialized through consensus and committed, thus having a valid
+  // opid_index field set.
+  CONSENSUS_CONFIG_COMMITTED = 1;
+
+  // Active consensus config. This could be a pending consensus config that
+  // has not yet been committed. If the config is not committed, its opid_index
+  // field will not be set.
+  CONSENSUS_CONFIG_ACTIVE = 2;
+}
+
 // A set of peers, serving a single tablet.
 message RaftConfigPB {
   // The index of the operation which serialized this RaftConfigPB through

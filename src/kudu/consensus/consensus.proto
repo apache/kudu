@@ -400,6 +400,9 @@ message GetConsensusStateRequestPB {
 
   // The id of the tablet.
   required bytes tablet_id = 1;
+
+  // Whether to fetch the committed or active consensus state.
+  optional ConsensusConfigType type = 3 [ default = CONSENSUS_CONFIG_COMMITTED ];
 }
 
 message GetConsensusStateResponsePB {

@@ -142,7 +142,7 @@ class ReplicaState {
   Status ShutdownUnlocked() WARN_UNUSED_RESULT;
 
   // Return current consensus state summary.
-  ConsensusStatePB ConsensusStateUnlocked(ConsensusMetadata::ConfigType type) const {
+  ConsensusStatePB ConsensusStateUnlocked(ConsensusConfigType type) const {
     return cmeta_->ToConsensusStatePB(type);
   }
 

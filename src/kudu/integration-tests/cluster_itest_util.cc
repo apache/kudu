@@ -33,8 +33,11 @@ using client::KuduClient;
 using client::KuduSchema;
 using client::KuduSchemaBuilder;
 using client::KuduTable;
+using consensus::CONSENSUS_CONFIG_ACTIVE;
+using consensus::CONSENSUS_CONFIG_COMMITTED;
 using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
+using consensus::ConsensusConfigType;
 using consensus::ConsensusStatePB;
 using consensus::CountVoters;
 using consensus::GetConsensusStateRequestPB;
@@ -245,16 +248,18 @@ Status CreateTabletServerMap(MasterServiceProxy* master_proxy,
   return Status::OK();
 }
 
-Status GetCommittedConsensusState(const TServerDetails* replica,
-                                  const string& tablet_id,
-                                  const MonoDelta& timeout,
-                                  ConsensusStatePB* consensus_state) {
+Status GetConsensusState(const TServerDetails* replica,
+                         const string& tablet_id,
+                         consensus::ConsensusConfigType type,
+                         const MonoDelta& timeout,
+                         ConsensusStatePB* consensus_state) {
   GetConsensusStateRequestPB req;
   GetConsensusStateResponsePB resp;
   RpcController controller;
   controller.set_timeout(timeout);
   req.set_dest_uuid(replica->uuid());
   req.set_tablet_id(tablet_id);
+  req.set_type(type);
 
   RETURN_NOT_OK(replica->consensus_proxy->GetConsensusState(req, &resp, &controller));
   if (resp.has_error()) {
@@ -278,7 +283,8 @@ Status WaitUntilCommittedConfigNumVotersIs(int config_size,
   ConsensusStatePB cstate;
   while (true) {
     MonoDelta remaining_timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
-    s = GetCommittedConsensusState(replica, tablet_id, remaining_timeout, &cstate);
+    s = GetConsensusState(replica, tablet_id, CONSENSUS_CONFIG_COMMITTED,
+                          remaining_timeout, &cstate);
     if (s.ok()) {
       if (CountVoters(cstate.config()) == config_size) {
         return Status::OK();
@@ -309,7 +315,8 @@ Status WaitUntilCommittedConfigOpidIndexIs(int64_t opid_index,
   ConsensusStatePB cstate;
   while (true) {
     MonoDelta remaining_timeout = deadline.GetDeltaSince(MonoTime::Now(MonoTime::FINE));
-    s = GetCommittedConsensusState(replica, tablet_id, remaining_timeout, &cstate);
+    s = GetConsensusState(replica, tablet_id, CONSENSUS_CONFIG_COMMITTED,
+                          remaining_timeout, &cstate);
     if (s.ok() && cstate.config().opid_index() == opid_index) {
       return Status::OK();
     }
@@ -328,7 +335,8 @@ Status GetReplicaStatusAndCheckIfLeader(const TServerDetails* replica,
                                         const string& tablet_id,
                                         const MonoDelta& timeout) {
   ConsensusStatePB cstate;
-  Status s = GetCommittedConsensusState(replica, tablet_id, timeout, &cstate);
+  Status s = GetConsensusState(replica, tablet_id, CONSENSUS_CONFIG_ACTIVE,
+                               timeout, &cstate);
   if (PREDICT_FALSE(!s.ok())) {
     VLOG(1) << "Error getting consensus state from replica: "
             << replica->instance_id.permanent_uuid();

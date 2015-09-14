@@ -59,7 +59,7 @@ class LocalConsensus : public Consensus {
     return options_.tablet_id;
   }
 
-  virtual ConsensusStatePB CommittedConsensusState() const OVERRIDE;
+  virtual ConsensusStatePB ConsensusState(ConsensusConfigType type) const OVERRIDE;
 
   virtual RaftConfigPB CommittedConfig() const OVERRIDE;
 

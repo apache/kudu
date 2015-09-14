@@ -27,6 +27,7 @@
 #include "kudu/util/url-coding.h"
 
 using kudu::consensus::GetConsensusRole;
+using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::consensus::TransactionStatusPB;
@@ -204,7 +205,8 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
         tablet_id_or_link, // $1
         EscapeForHtmlToString(partition), // $2
         state, n_bytes, // $3, $4
-        consensus ? ConsensusStatePBToHtml(consensus->CommittedConsensusState()) : "", // $5
+        consensus ? ConsensusStatePBToHtml(consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED))
+                  : "", // $5
         EscapeForHtmlToString(status.last_status())); // $6
   }
   *output << "</table>\n";

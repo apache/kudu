@@ -40,6 +40,7 @@ using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
+using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
@@ -341,7 +342,8 @@ TEST_F(RemoteBootstrapITest, TestRemoteBootstrapFollowerWithHigherTerm) {
   int64_t term = 0;
   for (int i = 0; i < 1000; i++) {
     consensus::ConsensusStatePB cstate;
-    ASSERT_OK(itest::GetCommittedConsensusState(follower_ts, tablet_id, timeout, &cstate));
+    ASSERT_OK(itest::GetConsensusState(follower_ts, tablet_id, CONSENSUS_CONFIG_COMMITTED,
+                                       timeout, &cstate));
     term = cstate.current_term();
     if (term == 2) break;
     SleepFor(MonoDelta::FromMilliseconds(10));

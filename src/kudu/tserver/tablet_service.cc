@@ -71,7 +71,10 @@ namespace tserver {
 
 using consensus::ChangeConfigRequestPB;
 using consensus::ChangeConfigResponsePB;
+using consensus::CONSENSUS_CONFIG_ACTIVE;
+using consensus::CONSENSUS_CONFIG_COMMITTED;
 using consensus::Consensus;
+using consensus::ConsensusConfigType;
 using consensus::ConsensusRequestPB;
 using consensus::ConsensusResponsePB;
 using consensus::GetNodeInstanceRequestPB;
@@ -189,9 +192,8 @@ Status GetTabletRef(const scoped_refptr<TabletPeer>& tablet_peer,
   return Status::OK();
 }
 
-template <class ReqType, class RespType>
-void HandleUnknownError(const ReqType* req, RespType* resp,
-                        RpcContext* context, const Status& s) {
+template <class RespType>
+void HandleUnknownError(const Status& s, RespType* resp, RpcContext* context) {
   resp->Clear();
   SetupErrorAndRespond(resp->mutable_error(), s,
                        TabletServerErrorPB::UNKNOWN_ERROR,
@@ -202,7 +204,7 @@ template <class ReqType, class RespType>
 void HandleResponse(const ReqType* req, RespType* resp,
                     RpcContext* context, const Status& s) {
   if (PREDICT_FALSE(!s.ok())) {
-    HandleUnknownError(req, resp, context, s);
+    HandleUnknownError(s, resp, context);
   }
   context->RespondSuccess();
 }
@@ -242,7 +244,7 @@ void HandleErrorResponse(const ReqType* req, RespType* resp, RpcContext* context
   if (error_code) {
     SetupErrorAndRespond(resp->mutable_error(), s, *error_code, context);
   } else {
-    HandleUnknownError(req, resp, context, s);
+    HandleUnknownError(s, resp, context);
   }
 }
 
@@ -909,7 +911,15 @@ void ConsensusServiceImpl::GetConsensusState(const consensus::GetConsensusStateR
 
   scoped_refptr<Consensus> consensus;
   if (!GetConsensusOrRespond(tablet_peer, resp, context, &consensus)) return;
-  *resp->mutable_cstate() = consensus->CommittedConsensusState();
+  ConsensusConfigType type = req->type();
+  if (PREDICT_FALSE(type != CONSENSUS_CONFIG_ACTIVE && type != CONSENSUS_CONFIG_COMMITTED)) {
+    HandleUnknownError(
+        Status::InvalidArgument(Substitute("Unsupported ConsensusConfigType $0 ($1)",
+                                           ConsensusConfigType_Name(type), type)),
+        resp, context);
+    return;
+  }
+  *resp->mutable_cstate() = consensus->ConsensusState(req->type());
   context->RespondSuccess();
 }
 

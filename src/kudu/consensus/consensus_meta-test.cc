@@ -197,21 +197,21 @@ TEST_F(ConsensusMetadataTest, TestToConsensusStatePB) {
   // the active consensus state.
   cmeta->set_pending_config(pending_config);
   cmeta->set_leader_uuid(peer_uuid);
-  ConsensusStatePB active_cstate = cmeta->ToConsensusStatePB(ConsensusMetadata::ACTIVE);
+  ConsensusStatePB active_cstate = cmeta->ToConsensusStatePB(CONSENSUS_CONFIG_ACTIVE);
   ASSERT_TRUE(active_cstate.has_leader_uuid());
   ASSERT_OK(VerifyConsensusState(active_cstate, UNCOMMITTED_QUORUM));
 
   // Without changing anything, ask for the committed consensus state.
   // Since the current leader is not a voter in the committed configuration, the
   // returned consensus state should not list a leader.
-  ConsensusStatePB committed_cstate = cmeta->ToConsensusStatePB(ConsensusMetadata::COMMITTED);
+  ConsensusStatePB committed_cstate = cmeta->ToConsensusStatePB(CONSENSUS_CONFIG_COMMITTED);
   ASSERT_FALSE(committed_cstate.has_leader_uuid());
   ASSERT_OK(VerifyConsensusState(committed_cstate, COMMITTED_QUORUM));
 
   // Set a new leader to be a member of the committed configuration. Now the committed
   // consensus state should list a leader.
   cmeta->set_leader_uuid("a");
-  ConsensusStatePB new_committed_cstate = cmeta->ToConsensusStatePB(ConsensusMetadata::COMMITTED);
+  ConsensusStatePB new_committed_cstate = cmeta->ToConsensusStatePB(CONSENSUS_CONFIG_COMMITTED);
   ASSERT_TRUE(new_committed_cstate.has_leader_uuid());
   ASSERT_OK(VerifyConsensusState(new_committed_cstate, COMMITTED_QUORUM));
 }

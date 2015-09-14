@@ -31,6 +31,7 @@
 #include "kudu/util/pb_util.h"
 #include "kudu/util/threadpool.h"
 
+using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusMetadata;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
@@ -209,7 +210,7 @@ void SysCatalogTable::SysCatalogStateChanged(const string& tablet_id, const stri
                              << tablet_id << ". Reason: " << reason;
     return;
   }
-  consensus::ConsensusStatePB cstate = consensus->CommittedConsensusState();
+  consensus::ConsensusStatePB cstate = consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED);
   LOG_WITH_PREFIX(INFO) << "SysCatalogTable state changed. Reason: " << reason << ". "
                         << "Latest consensus state: " << cstate.ShortDebugString();
   RaftPeerPB::Role new_role = GetConsensusRole(tablet_peer_->permanent_uuid(), cstate);

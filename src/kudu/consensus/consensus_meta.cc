@@ -137,10 +137,12 @@ RaftPeerPB::Role ConsensusMetadata::active_role() const {
   return active_role_;
 }
 
-ConsensusStatePB ConsensusMetadata::ToConsensusStatePB(ConfigType type) const {
+ConsensusStatePB ConsensusMetadata::ToConsensusStatePB(ConsensusConfigType type) const {
+  CHECK(type == CONSENSUS_CONFIG_ACTIVE || type == CONSENSUS_CONFIG_COMMITTED)
+      << "Unsupported ConsensusConfigType: " << ConsensusConfigType_Name(type) << ": " << type;
   ConsensusStatePB cstate;
   cstate.set_current_term(pb_.current_term());
-  if (type == ACTIVE) {
+  if (type == CONSENSUS_CONFIG_ACTIVE) {
     *cstate.mutable_config() = active_config();
     cstate.set_leader_uuid(leader_uuid_);
   } else {
@@ -211,7 +213,7 @@ std::string ConsensusMetadata::LogPrefix() const {
 }
 
 void ConsensusMetadata::UpdateActiveRole() {
-  ConsensusStatePB cstate = ToConsensusStatePB(ACTIVE);
+  ConsensusStatePB cstate = ToConsensusStatePB(CONSENSUS_CONFIG_ACTIVE);
   active_role_ = GetConsensusRole(peer_uuid_, cstate);
   VLOG_WITH_PREFIX(1) << "Updating active role to " << RaftPeerPB::Role_Name(active_role_)
                       << ". Consensus state: " << cstate.ShortDebugString();

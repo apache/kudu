@@ -1337,7 +1337,7 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
                          "Force another leader to be elected to remove this server. "
                          "Active consensus state: $1",
                          server_uuid,
-                         state_->ConsensusStateUnlocked(ConsensusMetadata::ACTIVE)
+                         state_->ConsensusStateUnlocked(CONSENSUS_CONFIG_ACTIVE)
                             .ShortDebugString()));
         }
         if (!RemoveFromRaftConfig(&new_config, server_uuid)) {
@@ -1554,7 +1554,7 @@ RaftPeerPB::Role RaftConsensus::role() const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
   return GetConsensusRole(state_->GetPeerUuid(),
-                          state_->ConsensusStateUnlocked(ConsensusMetadata::ACTIVE));
+                          state_->ConsensusStateUnlocked(CONSENSUS_CONFIG_ACTIVE));
 }
 
 std::string RaftConsensus::LogPrefixUnlocked() {
@@ -1624,10 +1624,10 @@ string RaftConsensus::tablet_id() const {
   return state_->GetOptions().tablet_id;
 }
 
-ConsensusStatePB RaftConsensus::CommittedConsensusState() const {
+ConsensusStatePB RaftConsensus::ConsensusState(ConsensusConfigType type) const {
   ReplicaState::UniqueLock lock;
   CHECK_OK(state_->LockForRead(&lock));
-  return state_->ConsensusStateUnlocked(ConsensusMetadata::COMMITTED);
+  return state_->ConsensusStateUnlocked(type);
 }
 
 RaftConfigPB RaftConsensus::CommittedConfig() const {

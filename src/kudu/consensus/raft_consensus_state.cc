@@ -124,7 +124,7 @@ Status ReplicaState::CheckActiveLeaderUnlocked() const {
     case RaftPeerPB::LEADER:
       return Status::OK();
     default:
-      ConsensusStatePB cstate = ConsensusStateUnlocked(ConsensusMetadata::ACTIVE);
+      ConsensusStatePB cstate = ConsensusStateUnlocked(CONSENSUS_CONFIG_ACTIVE);
       return Status::IllegalState(Substitute("Replica $0 is not leader of this config. Role: $1. "
                                              "Consensus state: $2",
                                              peer_uuid_,
@@ -154,7 +154,7 @@ Status ReplicaState::LockForUpdate(UniqueLock* lock) const {
   if (PREDICT_FALSE(state_ != kRunning)) {
     return Status::IllegalState("Replica not in running state");
   }
-  if (!IsRaftConfigVoter(peer_uuid_, ConsensusStateUnlocked(ConsensusMetadata::ACTIVE).config())) {
+  if (!IsRaftConfigVoter(peer_uuid_, ConsensusStateUnlocked(CONSENSUS_CONFIG_ACTIVE).config())) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << "Allowing update even though not a member of the config";
   }
   lock->swap(&l);

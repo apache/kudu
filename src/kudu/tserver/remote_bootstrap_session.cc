@@ -107,7 +107,7 @@ Status RemoteBootstrapSession::Init() {
                                 "for tablet $0. Consensus is not available. Tablet state: $1 ($2)",
                                 tablet_id, tablet::TabletStatePB_Name(tablet_state), tablet_state));
   }
-  initial_committed_cstate_ = consensus->CommittedConsensusState();
+  initial_committed_cstate_ = consensus->ConsensusState(consensus::CONSENSUS_CONFIG_COMMITTED);
 
   // Re-anchor on the highest OpId that was in the log right before we
   // snapshotted the log segments. This helps ensure that we don't end up in a

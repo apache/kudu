@@ -801,7 +801,8 @@ void TSTabletManager::CreateReportedTabletPB(const string& tablet_id,
   // We cannot get consensus state information unless the TabletPeer is running.
   scoped_refptr<consensus::Consensus> consensus = tablet_peer->shared_consensus();
   if (consensus) {
-    *reported_tablet->mutable_committed_consensus_state() = consensus->CommittedConsensusState();
+    *reported_tablet->mutable_committed_consensus_state() =
+        consensus->ConsensusState(consensus::CONSENSUS_CONFIG_COMMITTED);
   }
 }
 

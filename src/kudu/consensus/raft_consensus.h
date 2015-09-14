@@ -115,7 +115,7 @@ class RaftConsensus : public Consensus,
 
   virtual std::string tablet_id() const OVERRIDE;
 
-  virtual ConsensusStatePB CommittedConsensusState() const OVERRIDE;
+  virtual ConsensusStatePB ConsensusState(ConsensusConfigType type) const OVERRIDE;
 
   virtual RaftConfigPB CommittedConfig() const OVERRIDE;
 

@@ -32,6 +32,7 @@ using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
+using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
@@ -157,8 +158,8 @@ void DeleteTableTest::StartCluster(const vector<string>& extra_tserver_flags,
 
 string DeleteTableTest::GetLeaderUUID(const string& ts_uuid, const string& tablet_id) {
   ConsensusStatePB cstate;
-  CHECK_OK(itest::GetCommittedConsensusState(ts_map_[ts_uuid], tablet_id,
-                                             MonoDelta::FromSeconds(10), &cstate));
+  CHECK_OK(itest::GetConsensusState(ts_map_[ts_uuid], tablet_id, CONSENSUS_CONFIG_COMMITTED,
+                                    MonoDelta::FromSeconds(10), &cstate));
   return cstate.leader_uuid();
 }
 

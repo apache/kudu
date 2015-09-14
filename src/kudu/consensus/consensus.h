@@ -220,7 +220,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   virtual std::string tablet_id() const = 0;
 
   // Returns a copy of the committed state of the Consensus system.
-  virtual ConsensusStatePB CommittedConsensusState() const = 0;
+  virtual ConsensusStatePB ConsensusState(ConsensusConfigType type) const = 0;
 
   // Returns a copy of the current committed Raft configuration.
   virtual RaftConfigPB CommittedConfig() const = 0;
