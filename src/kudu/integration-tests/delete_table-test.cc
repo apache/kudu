@@ -392,7 +392,7 @@ TEST_F(DeleteTableTest, TestAtomicDeleteTablet) {
   ASSERT_OK(itest::WaitUntilTabletRunning(ts, tablet_id, timeout));
   Status s = itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, opid_index, timeout,
                                  &error_code);
-  ASSERT_EQ(TabletServerErrorPB::CAS_FAILED, error_code);
+  ASSERT_EQ(TabletServerErrorPB::CAS_FAILED, error_code) << "unexpected error: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "of -2 but the committed config has opid_index of -1");
 
   // Now use the "latest", which is -1.
