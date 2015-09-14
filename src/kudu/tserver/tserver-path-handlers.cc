@@ -33,6 +33,7 @@ using kudu::consensus::TransactionStatusPB;
 using kudu::tablet::MaintenanceManagerStatusPB;
 using kudu::tablet::MaintenanceManagerStatusPB_CompletedOpPB;
 using kudu::tablet::MaintenanceManagerStatusPB_MaintenanceOpPB;
+using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::TabletStatusPB;
 using kudu::tablet::Transaction;
@@ -193,6 +194,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
                                                   peer->tablet_metadata()->schema());
 
     // TODO: would be nice to include some other stuff like memory usage
+    scoped_refptr<consensus::Consensus> consensus = peer->shared_consensus();
     (*output) << Substitute(
         // Table name, tablet id, partition
         "<tr><td>$0</td><td>$1</td><td>$2</td>"
@@ -202,8 +204,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
         tablet_id_or_link, // $1
         EscapeForHtmlToString(partition), // $2
         state, n_bytes, // $3, $4
-        peer->consensus() == NULL ? "" : ConsensusStatePBToHtml(
-                                             peer->consensus()->CommittedConsensusState()), // $5
+        consensus ? ConsensusStatePBToHtml(consensus->CommittedConsensusState()) : "", // $5
         EscapeForHtmlToString(status.last_status())); // $6
   }
   *output << "</table>\n";
@@ -299,8 +300,8 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
 
   // Output schema in tabular format.
   *output << "<h2>Schema</h2>\n";
-  const Schema* schema = peer->tablet()->schema();
-  HtmlOutputSchemaTable(*schema, output);
+  const Schema& schema = peer->tablet_metadata()->schema();
+  HtmlOutputSchemaTable(schema, output);
 
   *output << "<h2>Other Tablet Info Pages</h2>" << endl;
 
@@ -334,10 +335,15 @@ void TabletServerPathHandlers::HandleTabletSVGPage(const Webserver::WebRequest& 
   string id;
   scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, req, &id, &peer, output)) return;
+  shared_ptr<Tablet> tablet = peer->shared_tablet();
+  if (!tablet) {
+    *output << "Tablet " << EscapeForHtmlToString(id) << " not running";
+    return;
+  }
 
   *output << "<h1>Rowset Layout Diagram for Tablet "
           << TabletLink(id) << "</h1>\n";
-  peer->tablet()->PrintRSLayout(output);
+  tablet->PrintRSLayout(output);
 
 }
 
@@ -359,8 +365,12 @@ void TabletServerPathHandlers::HandleConsensusStatusPage(const Webserver::WebReq
   string id;
   scoped_refptr<TabletPeer> peer;
   if (!LoadTablet(tserver_, req, &id, &peer, output)) return;
-
-  peer->consensus()->DumpStatusHtml(*output);
+  scoped_refptr<consensus::Consensus> consensus = peer->shared_consensus();
+  if (!consensus) {
+    *output << "Tablet " << EscapeForHtmlToString(id) << " not running";
+    return;
+  }
+  consensus->DumpStatusHtml(*output);
 }
 
 void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& req,
