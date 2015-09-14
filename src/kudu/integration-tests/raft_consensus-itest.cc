@@ -1860,18 +1860,18 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
 
   LOG(INFO) << "Finding tablet leader and waiting for things to start...";
   string tablet_id = tablet_replicas_.begin()->first;
-  TServerDetails* leader_ts;
-  ASSERT_OK(FindTabletLeader(tablet_servers_, tablet_id, timeout, &leader_ts));
 
-  // Determine the server to add to the config.
-  unordered_set<string> active;
+  // Determine the list of tablet servers currently in the config.
+  TabletServerMap active_tablet_servers;
   for (itest::TabletReplicaMap::const_iterator iter = tablet_replicas_.find(tablet_id);
        iter != tablet_replicas_.end(); ++iter) {
-    InsertOrDie(&active, iter->second->uuid());
+    InsertOrDie(&active_tablet_servers, iter->second->uuid(), iter->second);
   }
+
+  // Determine the server to add to the config.
   string uuid_to_add;
   BOOST_FOREACH(const TabletServerMap::value_type& entry, tablet_servers_) {
-    if (!ContainsKey(active, entry.second->uuid())) {
+    if (!ContainsKey(active_tablet_servers, entry.second->uuid())) {
       uuid_to_add = entry.second->uuid();
     }
   }
@@ -1884,6 +1884,11 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   NO_FATALS(WaitForReplicasReportedToMaster(2, tablet_id, timeout, WAIT_FOR_LEADER,
                                             &has_leader, &tablet_locations));
   LOG(INFO) << "Tablet locations:\n" << tablet_locations.DebugString();
+
+  // Wait for initial NO_OP to be committed by the leader.
+  TServerDetails* leader_ts;
+  ASSERT_OK(FindTabletLeader(tablet_servers_, tablet_id, timeout, &leader_ts));
+  ASSERT_OK(WaitForServersToAgree(timeout, active_tablet_servers, tablet_id, 1));
 
   // Change the config.
   TServerDetails* tserver_to_add = tablet_servers_[uuid_to_add];
@@ -1903,7 +1908,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
   // Change the config again.
   LOG(INFO) << "Removing tserver with uuid " << tserver_to_add->uuid();
   ASSERT_OK(RemoveServer(leader_ts, tablet_id_, tserver_to_add, boost::none, timeout));
-  TabletServerMap active_tablet_servers = tablet_servers_;
+  active_tablet_servers = tablet_servers_;
   ASSERT_EQ(1, active_tablet_servers.erase(tserver_to_add->uuid()));
   ASSERT_OK(WaitForServersToAgree(timeout, active_tablet_servers, tablet_id_, 3));
 
@@ -2269,6 +2274,43 @@ TEST_F(RaftConsensusITest, TestMasterReplacesEvictedFollowers) {
   ClusterVerifier v(cluster_.get());
   NO_FATALS(v.CheckCluster());
   NO_FATALS(v.CheckRowCount(kTableId, ClusterVerifier::AT_LEAST, 1));
+}
+
+// Test that a ChangeConfig() request is rejected unless the leader has
+// replicated one of its own log entries during the current term.
+// This is required for correctness of Raft config change. For details,
+// see https://groups.google.com/forum/#!topic/raft-dev/t4xj6dJTP6E
+TEST_F(RaftConsensusITest, TestChangeConfigRejectedUnlessNoopReplicated) {
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
+  BuildAndStart(ts_flags);
+
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+
+  int kLeaderIndex = 0;
+  TServerDetails* leader_ts = tablet_servers_[cluster_->tablet_server(kLeaderIndex)->uuid()];
+
+  // Prevent followers from accepting UpdateConsensus requests from the leader,
+  // even though they will vote. This will allow us to get the distributed
+  // system into a state where there is a valid leader (based on winning an
+  // election) but that leader will be unable to commit any entries from its
+  // own term, making it illegal to accept ChangeConfig() requests.
+  for (int i = 1; i <= 2; i++) {
+    ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(i),
+              "follower_reject_update_consensus_requests", "true"));
+  }
+
+  // Elect the leader.
+  ASSERT_OK(StartElection(leader_ts, tablet_id_, timeout));
+  ASSERT_OK(WaitUntilLeader(leader_ts, tablet_id_, timeout));
+
+  // Now attempt to do a config change. It should be rejected because there
+  // have not been any ops (notably the initial NO_OP) from the leader's term
+  // that have been committed yet.
+  Status s = itest::RemoveServer(leader_ts, tablet_id_,
+                                 tablet_servers_[cluster_->tablet_server(1)->uuid()],
+                                 boost::none, timeout);
+  ASSERT_TRUE(!s.ok()) << s.ToString();
+  ASSERT_STR_CONTAINS(s.ToString(), "Latest committed op is not from this term");
 }
 
 }  // namespace tserver

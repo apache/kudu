@@ -576,6 +576,15 @@ const OpId& ReplicaState::GetCommittedOpIdUnlocked() const {
   return last_committed_index_;
 }
 
+Status ReplicaState::CheckHasCommittedOpInCurrentTermUnlocked() const {
+  int64_t term = GetCurrentTermUnlocked();
+  const OpId& opid = GetCommittedOpIdUnlocked();
+  if (opid.term() != term) {
+    return Status::IllegalState("Latest committed op is not from this term", OpIdToString(opid));
+  }
+  return Status::OK();
+}
+
 void ReplicaState::UpdateLastReceivedOpIdUnlocked(const OpId& op_id) {
   DCHECK(update_lock_.is_locked());
   DCHECK_LE(OpIdCompare(last_received_op_id_, op_id), 0)

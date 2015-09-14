@@ -77,6 +77,11 @@ DEFINE_bool(evict_failed_followers, true,
             "follower_unavailable_considered_failed_sec");
 TAG_FLAG(evict_failed_followers, advanced);
 
+DEFINE_bool(follower_reject_update_consensus_requests, false,
+            "Whether a follower will return an error for all UpdateConsensus() requests. "
+            "Warning! This is only intended for testing.");
+TAG_FLAG(follower_reject_update_consensus_requests, unsafe);
+
 METRIC_DEFINE_counter(tablet, follower_memory_pressure_rejections,
                       "Follower Memory Pressure Rejections",
                       kudu::MetricUnit::kRequests,
@@ -630,6 +635,12 @@ void RaftConsensus::TryRemoveFollowerTask(const string& uuid,
 
 Status RaftConsensus::Update(const ConsensusRequestPB* request,
                              ConsensusResponsePB* response) {
+
+  if (PREDICT_FALSE(FLAGS_follower_reject_update_consensus_requests)) {
+    return Status::IllegalState("Rejected: --follower_reject_update_consensus_requests "
+                                "is set to true.");
+  }
+
   RETURN_NOT_OK(ExecuteHook(PRE_UPDATE));
   response->set_responder_uuid(state_->GetPeerUuid());
 
@@ -1290,6 +1301,10 @@ Status RaftConsensus::ChangeConfig(const ChangeConfigRequestPB& req,
     RETURN_NOT_OK(state_->LockForConfigChange(&lock));
     RETURN_NOT_OK(state_->CheckActiveLeaderUnlocked());
     RETURN_NOT_OK(state_->CheckNoConfigChangePendingUnlocked());
+    // We are required by Raft to reject config change operations until we have
+    // committed at least one operation in our current term as leader.
+    // See https://groups.google.com/forum/#!topic/raft-dev/t4xj6dJTP6E
+    RETURN_NOT_OK(state_->CheckHasCommittedOpInCurrentTermUnlocked());
     if (!server.has_permanent_uuid()) {
       return Status::InvalidArgument("server must have permanent_uuid specified",
                                      req.ShortDebugString());

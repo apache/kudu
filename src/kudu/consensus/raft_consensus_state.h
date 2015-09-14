@@ -247,6 +247,9 @@ class ReplicaState {
   // This must be called under a lock.
   const OpId& GetCommittedOpIdUnlocked() const;
 
+  // Returns OK iff an op from the current term has been committed.
+  Status CheckHasCommittedOpInCurrentTermUnlocked() const;
+
   // Updates the last received operation.
   // This must be called under a lock.
   void UpdateLastReceivedOpIdUnlocked(const OpId& op_id);
