@@ -117,16 +117,6 @@ void HtmlOutputImpalaSchema(const std::string& table_name,
   *output << "</pre></code>\n";
 }
 
-string HumanElapsedTime(int64_t msec) {
-  if (msec >= 60000000) {
-    StringPrintf("%.2fmin", msec / 60000000.0);
-  } else if (msec >= 1000000) {
-    StringPrintf("%.2fsec", msec / 1000000.0);
-  }
-  return StringPrintf("%.2fmsec", msec / 1000.0);
-}
-
-
 void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
                         std::stringstream* output) {
   *output << "<table class='table table-striped'>\n";
@@ -151,20 +141,20 @@ void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
         break;
     }
 
-    int64_t runningTime = 0;
+    double running_secs = 0;
     if (task->completion_timestamp().Initialized()) {
-      runningTime = task->completion_timestamp().GetDeltaSince(
-        task->start_timestamp()).ToMilliseconds();
+      running_secs = task->completion_timestamp().GetDeltaSince(
+        task->start_timestamp()).ToSeconds();
     } else if (task->start_timestamp().Initialized()) {
-      runningTime = MonoTime::Now(MonoTime::FINE).GetDeltaSince(
-        task->start_timestamp()).ToMilliseconds();
+      running_secs = MonoTime::Now(MonoTime::FINE).GetDeltaSince(
+        task->start_timestamp()).ToSeconds();
     }
 
     *output << Substitute(
         "<tr><th>$0</th><td>$1</td><td>$2</td><td>$3</td></tr>\n",
         EscapeForHtmlToString(task->type_name()),
         EscapeForHtmlToString(state),
-        EscapeForHtmlToString(HumanElapsedTime(runningTime)),
+        EscapeForHtmlToString(HumanReadableElapsedTime::ToShortString(running_secs)),
         EscapeForHtmlToString(task->description()));
   }
   *output << "</table>\n";
