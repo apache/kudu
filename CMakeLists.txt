@@ -20,7 +20,7 @@ set(CMAKE_SKIP_INSTALL_ALL_DEPENDENCY true)
 # Make sure thirdparty stuff is up-to-date.
 if ("$ENV{NO_REBUILD_THIRDPARTY}" STREQUAL "")
   execute_process(
-    COMMAND thirdparty/build-if-necessary.sh
+    COMMAND ${CMAKE_SOURCE_DIR}/thirdparty/build-if-necessary.sh
     RESULT_VARIABLE THIRDPARTY_SCRIPT_RESULT)
   if (NOT (${THIRDPARTY_SCRIPT_RESULT} EQUAL 0))
     message(FATAL_ERROR "Thirdparty was built unsuccessfully, terminating.")
