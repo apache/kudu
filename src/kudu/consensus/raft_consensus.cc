@@ -72,7 +72,10 @@ TAG_FLAG(enable_leader_failure_detection, unsafe);
 
 DEFINE_bool(evict_failed_followers, true,
             "Whether to evict followers from the Raft config that have fallen "
-            "too far behind the leader's log to catch up normally.");
+            "too far behind the leader's log to catch up normally or have been "
+            "unreachable by the leader for longer than "
+            "follower_unavailable_considered_failed_sec");
+TAG_FLAG(evict_failed_followers, advanced);
 
 METRIC_DEFINE_counter(tablet, follower_memory_pressure_rejections,
                       "Follower Memory Pressure Rejections",
