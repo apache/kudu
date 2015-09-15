@@ -49,6 +49,9 @@
       "default" : "/var/log/kudu"
     }
   ],
+  "rolesWithExternalLinks" : [
+    "KUDU_MASTER"
+  ],
   "roles" : [
     {
       "name" : "KUDU_MASTER",
