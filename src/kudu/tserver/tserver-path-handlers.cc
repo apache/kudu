@@ -321,7 +321,7 @@ void TabletServerPathHandlers::HandleTabletPage(const Webserver::WebRequest& req
           << "</li>" << endl;
 
   // Log anchors info page.
-  *output << "<li>" << Substitute("<a href=\"/log-anchorz?id=$0\">$1</a>",
+  *output << "<li>" << Substitute("<a href=\"/log-anchors?id=$0\">$1</a>",
                                   UrlEncodeToString(tablet_id),
                                   "Tablet Log Anchors")
           << "</li>" << endl;
