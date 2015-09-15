@@ -994,14 +994,7 @@ public class AsyncKuduClient {
   }
 
   <R> void handleRetryableError(final KuduRpc<R> rpc, KuduException ex) {
-    // TODO we don't always need to sleep, maybe another replica can serve this RPC
-
-    boolean cannotRetry = cannotRetryRequest(rpc);
-    if (cannotRetry) {
-      // This is a callback
-      tooManyAttemptsOrTimeout(rpc, ex);
-    }
-
+    // TODO we don't always need to sleep, maybe another replica can serve this RPC.
     delayedSendRpcToTablet(rpc, ex);
   }
 
@@ -1016,8 +1009,10 @@ public class AsyncKuduClient {
       }
     }
     long sleepTime = getSleepTimeForRpc(rpc);
-    if (rpc.deadlineTracker.wouldSleepingTimeout(sleepTime)) {
+    if (cannotRetryRequest(rpc) || rpc.deadlineTracker.wouldSleepingTimeout(sleepTime)) {
       tooManyAttemptsOrTimeout(rpc, ex);
+      // Don't let it retry.
+      return;
     }
     newTimeout(new RetryTimer(), sleepTime);
   }
