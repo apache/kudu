@@ -747,8 +747,15 @@ public class AsyncKuduClient {
 
 
   long getSleepTimeForRpc(KuduRpc<?> rpc) {
+    byte attemptCount = rpc.attempt;
+    assert (attemptCount > 0);
+    if (attemptCount == 0) {
+      LOG.warn("Possible bug: attempting to retry an RPC with no attempts. RPC: " + rpc,
+          new Exception("Exception created to collect stack trace"));
+      attemptCount = 1;
+    }
     // TODO backoffs? Sleep in increments of 500 ms, plus some random time up to 50
-    long sleepTime = (rpc.attempt * SLEEP_TIME) + sleepRandomizer.nextInt(50);
+    long sleepTime = (attemptCount * SLEEP_TIME) + sleepRandomizer.nextInt(50);
     if (LOG.isDebugEnabled()) {
       LOG.debug("Going to sleep for " + sleepTime + " at retry " + rpc.attempt);
     }
