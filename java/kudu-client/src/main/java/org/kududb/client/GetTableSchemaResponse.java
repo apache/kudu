@@ -10,6 +10,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
 
   private final Schema schema;
   private final PartitionSchema partitionSchema;
+  private final boolean createTableDone;
 
   /**
    * @param ellapsedMillis Time in milliseconds since RPC creation to now
@@ -19,10 +20,12 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
   GetTableSchemaResponse(long ellapsedMillis,
                          String tsUUID,
                          Schema schema,
-                         PartitionSchema partitionSchema) {
+                         PartitionSchema partitionSchema,
+                         boolean createTableDone) {
     super(ellapsedMillis, tsUUID);
     this.schema = schema;
     this.partitionSchema = partitionSchema;
+    this.createTableDone = createTableDone;
   }
 
   /**
@@ -39,5 +42,13 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    */
   public PartitionSchema getPartitionSchema() {
     return partitionSchema;
+  }
+
+  /**
+   * Tells if the original CreateTable call has completed and the tablets are ready.
+   * @return true if the table is created, otherwise false
+   */
+  public boolean isCreateTableDone() {
+    return createTableDone;
   }
 }

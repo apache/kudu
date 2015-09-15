@@ -31,13 +31,13 @@ package org.kududb.client;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
 import com.google.common.collect.ComparisonChain;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.google.protobuf.Message;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import org.kududb.ColumnSchema;
+import org.jboss.netty.buffer.ChannelBuffer;
 import org.kududb.Common;
 import org.kududb.Schema;
 import org.kududb.annotations.InterfaceAudience;
@@ -46,6 +46,7 @@ import org.kududb.consensus.Metadata;
 import org.kududb.master.Master;
 import org.kududb.util.AsyncUtil;
 import org.kududb.util.NetUtil;
+import org.kududb.util.Pair;
 import org.kududb.util.Slice;
 import org.jboss.netty.channel.ChannelEvent;
 import org.jboss.netty.channel.ChannelStateEvent;
@@ -384,19 +385,88 @@ public class AsyncKuduClient {
   }
 
   /**
-   * Open the table with the given name.
+   * Open the table with the given name. If the table was just created, the Deferred will only get
+   * called back when all the tablets have been successfully created.
    * @param name table to open
    * @return a KuduTable if the table exists, else a MasterErrorException
    */
   public Deferred<KuduTable> openTable(final String name) {
     checkIsClosed();
-    return getTableSchema(name).addCallback(new Callback<KuduTable, GetTableSchemaResponse>() {
+
+    // We create an RPC that we're never going to send, and will instead use it to keep track of
+    // timeouts and use its Deferred.
+    final KuduRpc<KuduTable> fakeRpc = new KuduRpc<KuduTable>(null) {
       @Override
-      public KuduTable call(GetTableSchemaResponse response) throws Exception {
-        return new KuduTable(AsyncKuduClient.this, name, response.getSchema(),
-                             response.getPartitionSchema());
+      ChannelBuffer serialize(Message header) { return null; }
+
+      @Override
+      String serviceName() { return null; }
+
+      @Override
+      String method() {
+        return "IsCreateTableDone";
+      }
+
+      @Override
+      Pair<KuduTable, Object> deserialize(CallResponse callResponse, String tsUUID)
+          throws Exception { return null; }
+    };
+    fakeRpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
+
+    return getTableSchema(name).addCallbackDeferring(new Callback<Deferred<KuduTable>,
+        GetTableSchemaResponse>() {
+      @Override
+      public Deferred<KuduTable> call(GetTableSchemaResponse response) throws Exception {
+        KuduTable table = new KuduTable(AsyncKuduClient.this, name, response.getSchema(),
+            response.getPartitionSchema());
+        // We grab the Deferred first because calling callback on the RPC will reset it and we'd
+        // return a different, non-triggered Deferred.
+        Deferred<KuduTable> d = fakeRpc.getDeferred();
+        if (response.isCreateTableDone()) {
+          LOG.debug("Opened table {}", name);
+          fakeRpc.callback(table);
+        } else {
+          LOG.debug("Delaying opening table {}, its tablets aren't fully created", name);
+          fakeRpc.attempt++;
+          delayedIsCreateTableDone(
+              name,
+              fakeRpc,
+              getOpenTableCB(fakeRpc, table),
+              getDelayedIsCreateTableDoneErrback(fakeRpc));
+        }
+        return d;
       }
     });
+  }
+
+  /**
+   * This callback will be repeatadly used when opening a table until it is done being created.
+   */
+  Callback<Deferred<KuduTable>, Master.IsCreateTableDoneResponsePB> getOpenTableCB(
+      final KuduRpc<KuduTable> rpc, final KuduTable table) {
+    return new Callback<Deferred<KuduTable>, Master.IsCreateTableDoneResponsePB>() {
+      @Override
+      public Deferred<KuduTable> call(
+          Master.IsCreateTableDoneResponsePB isCreateTableDoneResponsePB) throws Exception {
+        String tableName = table.getName();
+        Deferred<KuduTable> d = rpc.getDeferred();
+        if (isCreateTableDoneResponsePB.getDone()) {
+          LOG.debug("Table {}'s tablets are now created", tableName);
+          rpc.callback(table);
+        } else {
+          rpc.attempt++;
+          LOG.debug("Table {}'s tablets are still not created, further delaying opening it",
+              tableName);
+
+          delayedIsCreateTableDone(
+              tableName,
+              rpc,
+              getOpenTableCB(rpc, table),
+              getDelayedIsCreateTableDoneErrback(rpc));
+        }
+        return d;
+      }
+    };
   }
 
   /**

@@ -160,7 +160,8 @@ public class KuduClient {
   }
 
   /**
-   * Open the table with the given name.
+   * Open the table with the given name. If the table was just created, this method will block until
+   * all its tablets have also been created.
    * @param name table to open
    * @return a KuduTable if the table exists, else a MasterErrorException
    */

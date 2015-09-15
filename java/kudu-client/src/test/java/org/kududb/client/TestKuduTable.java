@@ -85,6 +85,9 @@ public class TestKuduTable extends BaseKuduTest {
     // Make sure the table's schema includes column IDs.
     assertTrue(kuduTable.getSchema().hasColumnIds());
 
+    // Test we can open a table that was already created.
+    openTable(tableWithDefault);
+
     // Test splitting and reading those splits
     KuduTable kuduTableWithoutDefaults = createTableWithSplitsAndTest(0);
     // finish testing read defaults
