@@ -50,9 +50,14 @@ public class KuduTable {
 
   /**
    * Gets the table's partition schema.
+   *
+   * This method is new, and not considered stable or suitable for public use.
+   *
    * @return the table's partition schema.
    */
-  PartitionSchema getPartitionSchema() {
+  @InterfaceAudience.LimitedPrivate("Impala")
+  @InterfaceStability.Unstable
+  public PartitionSchema getPartitionSchema() {
     return partitionSchema;
   }
 
