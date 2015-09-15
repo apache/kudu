@@ -202,10 +202,14 @@ public class TestKuduClient extends BaseKuduTest {
 
     KuduSession session = syncClient.newSession();
     KuduTable table = syncClient.openTable(tableName);
+    long lastTimestamp = 0;
     for (int i = 0; i < 100; i++) {
       Insert insert = table.newInsert();
       PartialRow row = insert.getRow();
       long timestamp = System.currentTimeMillis() * 1000;
+      while(timestamp == lastTimestamp) {
+        timestamp = System.currentTimeMillis() * 1000;
+      }
       timestamps.add(timestamp);
       row.addLong("key", timestamp);
       if (i % 2 == 1) {
@@ -215,6 +219,7 @@ public class TestKuduClient extends BaseKuduTest {
       if (i % 50 == 0) {
         session.flush();
       }
+      lastTimestamp = timestamp;
     }
     session.flush();
 
