@@ -10,6 +10,7 @@
 #include "kudu/gutil/basictypes.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/spinlock.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/sysinfo.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/flag_tags.h"
@@ -36,7 +37,6 @@ using base::SpinLockHolder;
 
 namespace kudu {
 
-static const double kNanosPerSecond = 1000000000.0;
 static const double kMicrosPerSecond = 1000000.0;
 
 static LongAdder* g_contended_cycles = NULL;
@@ -211,12 +211,11 @@ void SubmitSpinLockProfileData(const void *contendedlock, int64 wait_cycles) {
   if (PREDICT_FALSE(long_wait_time)) {
     Trace* t = Trace::CurrentTrace();
     if (t) {
-      double nanos = static_cast<double>(wait_cycles) / base::CyclesPerSecond()
-        * kNanosPerSecond;
+      double seconds = static_cast<double>(wait_cycles) / base::CyclesPerSecond();
       char backtrace_buffer[1024];
       stack.StringifyToHex(backtrace_buffer, arraysize(backtrace_buffer));
-      TRACE_TO(t, "Waited $0ns on lock $1. stack: $2",
-               nanos, contendedlock,
+      TRACE_TO(t, "Waited $0 on lock $1. stack: $2",
+               HumanReadableElapsedTime::ToShortString(seconds), contendedlock,
                backtrace_buffer);
     }
   }
