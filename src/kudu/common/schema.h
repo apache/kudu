@@ -424,6 +424,11 @@ class Schema {
     return !col_offsets_.empty();
   }
 
+  // Returns the highest column id in this Schema.
+  size_t max_col_id() const {
+    return max_col_id_;
+  }
+
   // Extract a given column from a row where the type is
   // known at compile-time. The type is checked with a debug
   // assertion -- but if the wrong type is used and these assertions
@@ -719,6 +724,7 @@ class Schema {
 
   vector<ColumnSchema> cols_;
   size_t num_key_columns_;
+  size_t max_col_id_;
   vector<size_t> col_ids_;
   vector<size_t> col_offsets_;
 

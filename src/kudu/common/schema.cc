@@ -160,7 +160,11 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   // Initialize IDs mapping
   col_ids_ = ids;
   id_to_index_.clear();
+  max_col_id_ = 0;
   for (int i = 0; i < ids.size(); ++i) {
+    if (ids[i] > max_col_id_) {
+      max_col_id_ = ids[i];
+    }
     id_to_index_.set(ids[i], i);
   }
 

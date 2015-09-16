@@ -832,6 +832,7 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
   metadata->set_state(SysTablesEntryPB::PREPARING);
   metadata->set_name(req->name());
   metadata->set_version(0);
+  metadata->set_next_column_id(schema.max_col_id() + 1);
   if (req->has_num_replicas()) {
     metadata->set_num_replicas(req->num_replicas());
   } else {
@@ -1059,7 +1060,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 
   // 2. Calculate new schema for the on-disk state, not persisted yet
   Schema new_schema;
-  int32_t next_col_id = 0;
+  int32_t next_col_id = l.data().pb.next_column_id();
   if (req->alter_schema_steps_size()) {
     TRACE("Apply alter schema");
     Status s = ApplyAlterSteps(l.data().pb, req, &new_schema, &next_col_id);

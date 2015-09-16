@@ -522,6 +522,17 @@ TEST_F(AlterTableTest, TestDropAndAddNewColumn) {
   VerifyRows(0, kNumRows, C1_IS_DEADBEEF);
 }
 
+// Tests that a renamed table can still be altered. This is a regression test, we used to not carry
+// over column ids after a table rename.
+TEST_F(AlterTableTest, TestRenameTableAndAdd) {
+  gscoped_ptr<KuduTableAlterer> table_alterer(client_->NewTableAlterer(kTableName));
+  string new_name = "someothername";
+  ASSERT_OK(table_alterer->RenameTo(new_name)
+            ->Alter());
+
+  ASSERT_OK(AddNewI32Column(new_name, "new", 0xdeadbeef));
+}
+
 // Test restarting a tablet server several times after various
 // schema changes.
 // This is a regression test for KUDU-462.
