@@ -2023,7 +2023,10 @@ public class AsyncKuduClient {
       Executor worker = workerExecutor;
       if (boss == null || worker == null) {
         Executor defaultExec = Executors.newCachedThreadPool(
-            new ThreadFactoryBuilder().setNameFormat("kudu-nio-%d").build());
+            new ThreadFactoryBuilder()
+                .setNameFormat("kudu-nio-%d")
+                .setDaemon(true)
+                .build());
         if (boss == null) boss = defaultExec;
         if (worker == null) worker = defaultExec;
       }
