@@ -7,6 +7,8 @@ import org.kududb.Schema;
 import org.kududb.Type;
 import org.junit.BeforeClass;
 import org.junit.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -14,6 +16,8 @@ import java.util.List;
 import static org.junit.Assert.*;
 
 public class TestKuduTable extends BaseKuduTest {
+
+  private static final Logger LOG = LoggerFactory.getLogger(TestKuduTable.class);
 
   private static final String BASE_TABLE_NAME = TestKuduTable.class.getName();
 
@@ -33,6 +37,67 @@ public class TestKuduTable extends BaseKuduTest {
         .key(true)
         .build());
     new Schema(badColumns);
+  }
+
+  @Test(timeout = 100000)
+  public void testAlterTable() throws Exception {
+    String tableName = BASE_TABLE_NAME + System.currentTimeMillis();
+    createTable(tableName, basicSchema, null);
+
+    // Add a col.
+    AlterTableBuilder atb = new AlterTableBuilder();
+    atb.addColumn("testaddint", Type.INT32, 4);
+    submitAlterAndCheck(atb, tableName);
+
+    // Rename that col.
+    atb = new AlterTableBuilder();
+    atb.renameColumn("testaddint", "newtestaddint");
+    submitAlterAndCheck(atb, tableName);
+
+    // Delete it.
+    atb = new AlterTableBuilder();
+    atb.dropColumn("newtestaddint");
+    submitAlterAndCheck(atb, tableName);
+
+    String newTableName = tableName +"new";
+
+    // Rename our table.
+    atb = new AlterTableBuilder();
+    atb.renameTable(newTableName);
+    submitAlterAndCheck(atb, tableName, newTableName);
+
+    // Rename it back.
+    atb = new AlterTableBuilder();
+    atb.renameTable(tableName);
+    submitAlterAndCheck(atb, newTableName, tableName);
+
+    // Try adding two columns, where one is nullable.
+    atb = new AlterTableBuilder();
+    atb.addColumn("testaddmulticolnotnull", Type.INT32, 4);
+    atb.addNullableColumn("testaddmulticolnull", Type.STRING);
+    submitAlterAndCheck(atb, tableName);
+  }
+
+  /**
+   * Helper method to submit an Alter and wait for it to happen, using the default table name to
+   * check.
+   */
+  private void submitAlterAndCheck(AlterTableBuilder atb, String tableToAlter)
+      throws Exception {
+    submitAlterAndCheck(atb, tableToAlter, tableToAlter);
+  }
+
+  private void submitAlterAndCheck(AlterTableBuilder atb,
+                                         String tableToAlter, String tableToCheck) throws
+      Exception {
+    if (masterHostPorts.size() > 1) {
+      LOG.info("Alter table is not yet supported with multiple masters. Specify " +
+          "-DnumMasters=1 on the command line to start a single-master cluster to run this test.");
+      return;
+    }
+    AlterTableResponse alterResponse = syncClient.alterTable(tableToAlter, atb);
+    boolean done  = syncClient.isAlterTableDone(tableToCheck);
+    assertTrue(done);
   }
 
   /**
@@ -126,7 +191,7 @@ public class TestKuduTable extends BaseKuduTest {
     assertEquals(0, client.getTablesList(table1).join(DEFAULT_SLEEP).getTablesList().size());
     assertEquals(1, client.getTablesList(tableWithDefault)
                           .join(DEFAULT_SLEEP).getTablesList().size());
-    assertEquals(5, client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
+    assertEquals(6, client.getTablesList().join(DEFAULT_SLEEP).getTablesList().size());
     assertFalse(client.getTablesList(tableWithDefault).
         join(DEFAULT_SLEEP).getTablesList().isEmpty());
 

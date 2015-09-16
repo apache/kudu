@@ -5,11 +5,8 @@ package org.kududb.client;
 import org.kududb.Schema;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
-import org.kududb.Type;
 import org.junit.BeforeClass;
 import org.junit.Test;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -31,7 +28,6 @@ import static org.junit.Assert.*;
  */
 public class TestAsyncKuduSession extends BaseKuduTest {
   // Generate a unique table name
-  private static final Logger LOG = LoggerFactory.getLogger(TestAsyncKuduSession.class);
   private static final String TABLE_NAME =
       TestAsyncKuduSession.class.getName()+"-"+System.currentTimeMillis();
 
@@ -264,63 +260,6 @@ public class TestAsyncKuduSession extends BaseKuduTest {
     session.flush().join(DEFAULT_SLEEP);
     assertEquals(20, countInRange(151, 171));
     assertTrue(gotException);
-
-    // Test Alter
-    // Add a col
-    AlterTableBuilder atb = new AlterTableBuilder();
-    atb.addColumn("testaddint", Type.INT32, 4);
-    submitAlterAndCheck(atb);
-
-    // rename that col
-    atb = new AlterTableBuilder();
-    atb.renameColumn("testaddint", "newtestaddint");
-    submitAlterAndCheck(atb);
-
-    // delete it
-    atb = new AlterTableBuilder();
-    atb.dropColumn("newtestaddint");
-    submitAlterAndCheck(atb);
-
-    String newTableName = TABLE_NAME +"new";
-
-    // rename our table
-    atb = new AlterTableBuilder();
-    atb.renameTable(newTableName);
-    submitAlterAndCheck(atb, TABLE_NAME, newTableName);
-
-    // rename it back
-    atb = new AlterTableBuilder();
-    atb.renameTable(TABLE_NAME);
-    submitAlterAndCheck(atb, newTableName, TABLE_NAME);
-
-    // try adding two columns, where one is nullable
-    atb = new AlterTableBuilder();
-    atb.addColumn("testaddmulticolnotnull", Type.INT32, 4);
-    atb.addNullableColumn("testaddmulticolnull", Type.STRING);
-    submitAlterAndCheck(atb);
-  }
-
-  /**
-   * Helper method to submit an Alter and wait for it to happen, using the default table name
-   */
-  public static void submitAlterAndCheck(AlterTableBuilder atb) throws Exception {
-    submitAlterAndCheck(atb, TABLE_NAME, TABLE_NAME);
-  }
-
-  public static void submitAlterAndCheck(AlterTableBuilder atb,
-                                         String tableToAlter, String tableToCheck) throws
-      Exception {
-    // TODO: Right now we're no longer running this test by default, as the default is to
-    // start 3 masters. Once multi-master alter table is implemented remove this.
-    if (masterHostPorts.size() > 1) {
-      LOG.info("Alter table is not yet supported with multiple masters. Specify " +
-          "-DnumMasters=1 on the command line to start a single-master cluster to run this test.");
-      return;
-    }
-    Deferred<AlterTableResponse> alterDeffered = client.alterTable(tableToAlter, atb);
-    alterDeffered.join(DEFAULT_SLEEP);
-    boolean done  = syncClient.isAlterTableDone(tableToCheck);
-    assertTrue(done);
   }
 
   private Insert createInsert(int key) {

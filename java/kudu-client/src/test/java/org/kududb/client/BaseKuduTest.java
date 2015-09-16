@@ -53,7 +53,7 @@ public class BaseKuduTest {
 
   protected static final int DEFAULT_SLEEP = 50000;
   protected static final int NUM_TABLET_SERVERS = 3;
-  protected static final int DEFAULT_NUM_MASTERS = 3;
+  protected static final int DEFAULT_NUM_MASTERS = 1;
 
   static final List<Thread> PROCESS_INPUT_PRINTERS = new ArrayList<>();
 

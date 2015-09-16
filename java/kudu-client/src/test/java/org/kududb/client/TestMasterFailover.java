@@ -3,6 +3,7 @@
 package org.kududb.client;
 
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -24,7 +25,11 @@ public class TestMasterFailover extends BaseKuduTest {
     createTable(TABLE_NAME, basicSchema, new CreateTableBuilder());
   }
 
+  /**
+   * This test is disabled as we're not supporting multi-master just yet.
+   */
   @Test(timeout = 30000)
+  @Ignore
   public void testKillLeader() throws Exception {
     int countMasters = masterHostPorts.size();
     if (countMasters < 3) {
