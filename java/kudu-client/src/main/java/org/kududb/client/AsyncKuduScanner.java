@@ -28,6 +28,7 @@
 package org.kududb.client;
 
 import java.util.ArrayList;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.List;
 
 import com.google.common.base.Preconditions;
@@ -193,6 +194,8 @@ public final class AsyncKuduScanner {
 
   final long scanRequestTimeout;
 
+  private static final AtomicBoolean PARTITION_PRUNE_WARN = new AtomicBoolean(true);
+
   AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedCols,
                    ReadMode readMode, long scanRequestTimeout,
                    List<Tserver.ColumnRangePredicatePB> columnRangePredicates, long limit,
@@ -221,6 +224,14 @@ public final class AsyncKuduScanner {
     this.endPrimaryKey = endPrimaryKey;
     this.htTimestamp = htTimestamp;
     this.maxNumBytes = maxNumBytes;
+
+    if (!table.getPartitionSchema().isSimpleRangePartitioning() &&
+        (startPrimaryKey != AsyncKuduClient.EMPTY_ARRAY ||
+         endPrimaryKey != AsyncKuduClient.EMPTY_ARRAY) &&
+        PARTITION_PRUNE_WARN.getAndSet(false)) {
+      LOG.warn("Starting full table scan. " +
+               "In the future this scan may be automatically optimized with partition pruning.");
+    }
 
     if (table.getPartitionSchema().isSimpleRangePartitioning()) {
       // If the table is simple range partitioned, then the partition key space

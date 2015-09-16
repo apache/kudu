@@ -988,6 +988,14 @@ Status KuduScanner::Open() {
   bool is_simple_range_partitioned =
     data_->table_->partition_schema().IsSimplePKRangePartitioning(*data_->table_->schema().schema_);
 
+  if (!is_simple_range_partitioned &&
+      (data_->spec_.lower_bound_key() != NULL ||
+       data_->spec_.exclusive_upper_bound_key() != NULL ||
+       !data_->spec_.predicates().empty())) {
+    KLOG_FIRST_N(WARNING, 1) << "Starting full table scan. In the future this scan may be "
+                                "automatically optimized with partition pruning.";
+  }
+
   if (is_simple_range_partitioned) {
     // If the table is simple range partitioned, then the partition key space is
     // isomorphic to the primary key space. We can potentially reduce the scan
