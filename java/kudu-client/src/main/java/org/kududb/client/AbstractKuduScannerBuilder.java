@@ -17,20 +17,20 @@ import org.kududb.tserver.Tserver;
 @InterfaceStability.Evolving
 public abstract class AbstractKuduScannerBuilder
     <S extends AbstractKuduScannerBuilder<? super S, T>, T> {
-  protected final AsyncKuduClient client;
-  protected final KuduTable table;
-  protected final List<Tserver.ColumnRangePredicatePB> columnRangePredicates;
+  final AsyncKuduClient client;
+  final KuduTable table;
+  final List<Tserver.ColumnRangePredicatePB> columnRangePredicates;
 
-  protected AsyncKuduScanner.ReadMode readMode = AsyncKuduScanner.ReadMode.READ_LATEST;
-  protected int maxNumBytes = 1024*1024;
-  protected long limit = Long.MAX_VALUE;
-  protected boolean prefetching = false;
-  protected boolean cacheBlocks = true;
-  protected long htTimestamp = AsyncKuduClient.NO_TIMESTAMP;
-  protected byte[] lowerBound = AsyncKuduClient.EMPTY_ARRAY;
-  protected byte[] upperBound = AsyncKuduClient.EMPTY_ARRAY;
-  protected List<String> projectedColumnNames = null;
-  protected long scanRequestTimeout;
+  AsyncKuduScanner.ReadMode readMode = AsyncKuduScanner.ReadMode.READ_LATEST;
+  int maxNumBytes = 1024*1024;
+  long limit = Long.MAX_VALUE;
+  boolean prefetching = false;
+  boolean cacheBlocks = true;
+  long htTimestamp = AsyncKuduClient.NO_TIMESTAMP;
+  byte[] lowerBound = AsyncKuduClient.EMPTY_ARRAY;
+  byte[] upperBound = AsyncKuduClient.EMPTY_ARRAY;
+  List<String> projectedColumnNames = null;
+  long scanRequestTimeout;
 
   AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
     this.client = client;

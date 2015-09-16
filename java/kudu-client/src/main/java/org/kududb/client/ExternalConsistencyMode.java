@@ -21,6 +21,7 @@ public enum ExternalConsistencyMode {
   private ExternalConsistencyMode(Common.ExternalConsistencyMode pbVersion) {
     this.pbVersion = pbVersion;
   }
+  @InterfaceAudience.Private
   public Common.ExternalConsistencyMode pbVersion() {
     return pbVersion;
   }

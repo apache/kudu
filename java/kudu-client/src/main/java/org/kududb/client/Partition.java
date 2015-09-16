@@ -4,23 +4,25 @@ package org.kududb.client;
 
 import com.google.common.base.Objects;
 import org.kududb.annotations.InterfaceAudience;
+import org.kududb.annotations.InterfaceStability;
 
 import java.util.Arrays;
 import java.util.List;
 
 /**
  * A Partition describes the set of rows that a Tablet is responsible for
- * serving. Each tablet is assigned a single Partition.
+ * serving. Each tablet is assigned a single Partition.<p>
  *
  * Partitions consist primarily of a start and end partition key. Every row with
  * a partition key that falls in a Tablet's Partition will be served by that
- * tablet.
+ * tablet.<p>
  *
  * In addition to the start and end partition keys, a Partition holds metadata
  * to determine if a scan can prune, or skip, a partition based on the scan's
  * start and end primary keys, and predicates.
  */
-@InterfaceAudience.Private
+@InterfaceAudience.Public
+@InterfaceStability.Evolving
 public class Partition implements Comparable<Partition> {
   final byte[] partitionKeyStart;
   final byte[] partitionKeyEnd;

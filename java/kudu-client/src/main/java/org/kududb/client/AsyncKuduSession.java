@@ -27,13 +27,13 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  * which all read/write data access should take place. Within a session,
  * multiple operations may be accumulated and batched together for better
  * efficiency. Settings like timeouts, priorities, and trace IDs are also set
- * per session.
+ * per session.<p>
  *
  * AsyncKuduSession is separate from KuduTable because a given batch or transaction
  * may span multiple tables. This is particularly important in the future when
  * we add ACID support, but even in the context of batching, we may be able to
  * coalesce writes to different tables hosted on the same server into the same
- * RPC.
+ * RPC.<p>
  *
  * AsyncKuduSession is separate from AsyncKuduClient because, in a multi-threaded
  * application, different threads may need to concurrently execute
@@ -41,7 +41,7 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  * delineated on a per-session basis -- in between a "BeginTransaction" and
  * "Commit" call on a given session, all operations will be part of the same
  * transaction. Meanwhile another concurrent Session object can safely run
- * non-transactional work or other transactions without interfering.
+ * non-transactional work or other transactions without interfering.<p>
  *
  * Additionally, there is a guarantee that writes from different sessions do not
  * get batched together into the same RPCs -- this means that latency-sensitive
@@ -49,12 +49,12 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  * clients, perhaps by setting the latency-sensitive session's timeouts low and
  * priorities high. Without the separation of batches, a latency-sensitive
  * single-row insert might get batched along with 10MB worth of inserts from the
- * batch writer, thus delaying the response significantly.
+ * batch writer, thus delaying the response significantly.<p>
  *
  * Though we currently do not have transactional support, users will be forced
  * to use a AsyncKuduSession to instantiate reads as well as writes.  This will make
  * it more straight-forward to add RW transactions in the future without
- * significant modifications to the API.
+ * significant modifications to the API.<p>
  *
  * Timeouts are handled differently depending on the flush mode.
  * With AUTO_FLUSH_SYNC, the timeout is set on each apply()'d operation.

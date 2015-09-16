@@ -55,6 +55,8 @@ public class KuduScanner {
    * A Builder class to build {@link KuduScanner}.
    * Use {@link KuduClient#newScannerBuilder} in order to get a builder instance.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public static class KuduScannerBuilder
       extends AbstractKuduScannerBuilder<KuduScannerBuilder, KuduScanner> {
 

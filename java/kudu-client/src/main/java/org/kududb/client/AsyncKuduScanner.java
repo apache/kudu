@@ -86,6 +86,8 @@ public final class AsyncKuduScanner {
    * See {@code src/kudu/common/common.proto} for a detailed explanations on
    * the meaning and implications of each mode.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public enum ReadMode {
     READ_LATEST(Common.ReadMode.READ_LATEST),
     READ_AT_SNAPSHOT(Common.ReadMode.READ_AT_SNAPSHOT);
@@ -94,6 +96,8 @@ public final class AsyncKuduScanner {
     private ReadMode(Common.ReadMode pbVersion) {
       this.pbVersion = pbVersion;
     }
+
+    @InterfaceAudience.Private
     public Common.ReadMode pbVersion() {
       return this.pbVersion;
     }

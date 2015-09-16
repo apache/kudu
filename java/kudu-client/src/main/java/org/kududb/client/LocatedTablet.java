@@ -91,6 +91,8 @@ public class LocatedTablet {
   /**
    * One of the replicas of the tablet.
    */
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public static class Replica {
     private final ReplicaPB pb;
 

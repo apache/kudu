@@ -13,6 +13,8 @@ import org.kududb.annotations.InterfaceStability;
 @InterfaceStability.Evolving
 public interface SessionConfiguration {
 
+  @InterfaceAudience.Public
+  @InterfaceStability.Evolving
   public enum FlushMode {
     // Every write will be sent to the server in-band with the Apply()
     // call. No batching will occur. This is the default flush mode. In this
