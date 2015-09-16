@@ -65,4 +65,13 @@ TEST(TestIdMapping, TestBadSequence) {
   m.set(131, 0); // 3
 }
 
+TEST(TestIdMapping, TestReinsert) {
+  IdMapping m;
+  m.set(0, 0);
+  ASSERT_DEATH({
+    m.set(0, 1);
+  },
+  "Cannot insert duplicate keys");
+}
+
 } // namespace kudu

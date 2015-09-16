@@ -95,6 +95,7 @@ class IdMapping {
     while (true) {
       for (int i = 0; i < kNumProbes; i++) {
         int s = slot(key + i);
+        CHECK_NE(entries_[s].first, key) << "Cannot insert duplicate keys";
         if (entries_[s].first == kNoEntry) {
           entries_[s].first = key;
           entries_[s].second = val;
