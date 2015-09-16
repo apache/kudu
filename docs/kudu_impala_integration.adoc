@@ -52,10 +52,10 @@ If you use Cloudera Manager, you can install Impala_Kudu using
 instance, you must use parcels and you should use the instructions provided in
 <<install_impala_kudu_parcels_side_by_side,procedure>>, rather than these instructions.
 
-[install_impala_kudu_parcels]
+[[install_impala_kudu_parcels]]
 === Installing the Impala_Kudu Service Using Parcels
 
-[install_impala_kudu_parcels_side_by_side]
+[[install_impala_kudu_parcels_side_by_side]]
 ==== Manual Installation
 
 Manual installation of Impala_Kudu is only supported where there is no other Impala
@@ -318,6 +318,235 @@ the primary key can never be null when inserting or updating a row.
 
 All properties in the `TBLPROPERTIES` subclause are required, and the `kudu.key_columns`
 must contain at least one column.
+
+=== Partitioning Tables
+
+Tables are partitioned into tablets according to a partition schema on the primary
+key columns. Each tablet is served by at least one tablet server. Ideally, a table
+should be split into tablets that are distributed across a number of tablet servers
+to maximize parallel operations. The details of the partitioning schema you use
+will depend entirely on the type of data you store and how you access it.
+
+Kudu currently has no mechanism for splitting or merging tablets after the table has
+been created. Until this feature has been implemented, you must provide a partition
+schema for your table when you create it. When designing your tables, consider using
+primary keys that will allow you to partition your table into tablets which grow
+at similar rates.
+
+You can partition your table using Impala's `DISTRIBUTE BY` keyword, which
+supports distribution by `RANGE` or `HASH`. The partition scheme can contain zero
+or more `HASH` definitions, followed by an optional `RANGE` definition. The `RANGE`
+definition can refer to one or more primary key columns.
+Examples of <<basic_partitioning,basic>> and <<advanced_partitioning, advanced>>
+partitioning are shown below.
+
+NOTE: Impala keywords, such as `group`, are enclosed by back-tick characters when
+they are used as identifiers, rather than as keywords.
+
+[[basic_partitioning]]
+==== Basic Partitioning
+
+.`DISTRIBUTE BY RANGE`
+You can specify split rows for one or more primary key columns that contain integer
+or string values. Range partitioning in Kudu allows splitting a table based based
+on the lexicographic order of its primary keys. This allows you to balance parallelism
+in writes with scan efficiency.
+
+The split row does not need to exist. It defines an exclusive bound in the form of:
+`(START_KEY, SplitRow), [SplitRow, STOP_KEY)` In other words, the split row, if
+it exists, is included in the tablet after the split point. For instance, if you
+specify a split row `abc`, a row `abca` would be in the second tablet, while a row
+`abb` would be in the first.
+
+Suppose you have a table that has columns `state`, `name`, and `purchase_count`. The
+following example creates 50 tablets, one per US state.
+
+[NOTE]
+.Monotonically Increasing Values
+====
+If you partition by range on a column whose values are monotonically increasing,
+the last tablet will grow much larger than the others. Additionally, all data
+being inserted will be written to a single tablet at a time, limiting the scalability
+of data ingest. In that case, consider distributing by `HASH` instead of, or in
+addition to, `RANGE`.
+====
+
+[source,sql]
+----
+CREATE TABLE customers (
+  state STRING,
+  name STRING,
+  purchase_count int32,
+) DISTRIBUTE BY RANGE(state)
+SPLIT ROWS(('al'), ('ak'), ('ar'), .., ('wv'), ('wy'))
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'customers',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'state, name'
+);
+----
+
+[[distribute_by_hash]]
+.`DISTRIBUTE BY HASH`
+
+Instead of distributing by an explicit range, or in combination with range distribution,
+you can distribute into a specific number of 'buckets' by hash. You specify the primary
+key columns you want to partition by, and the number of buckets you want to use. Rows are
+distributed by hashing the specified key columns. Assuming that the values being
+hashed do not themselves exhibit significant skew, this will serve to distribute
+the data evenly across buckets.
+
+You can specify multiple definitions, and you can specify definitions which
+use compound primary keys. However, one column cannot be mentioned in multiple hash
+definitions. Consider two columns, `a` and `b`:
+* icon:check[pro, role="green"] `HASH(a)`, `HASH(b)`
+* icon:check[pro, role="green"] `HASH(a,b)`
+* icon:times[pro, role="red"] `HASH(a), HASH(a,b)`
+
+NOTE: `DISTRIBUTE BY HASH` with no column specified is a shortcut to create the desired
+number of buckets by hashing all primary key columns.
+
+Hash partitioning is a reasonable approach if primary key values are evenly
+distributed in their domain and no data skew is apparent, such as timestamps or
+serial IDs.
+
+The following example creates 16 tablets by hashing the `id` column. A maximum of
+16 tablets can be written to in parallel. In this example, a query for a range of `sku` values
+is likely to need to read all 16 tablets, so this may not be the optimum schema for
+this table. See <<advanced_partitioning>> for an extended example.
+
+[source,sql]
+----
+CREATE TABLE cust_behavior (
+  id BIGINT,
+  sku STRING,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  rating INT,
+  fulfilled_date BIGINT
+)
+DISTRIBUTE BY HASH (id) INTO 16 BUCKETS
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'cust_behavior',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'id, sku'
+);
+----
+
+
+[[advanced_partitioning]]
+==== Advanced Partitioning
+
+You can use zero or more `HASH` definitions, followed by zero or one `RANGE` definitions
+to partition a table. Each definition can encompass one or more columns.
+While every possible distribution schema is out of the scope of this document, a few
+demonstrations follow.
+
+.`DISTRIBUTE BY RANGE` Using Compound Split Rows
+
+This example creates 100 tablets, two for each US state. Per state, the first tablet
+holds names starting with characters before 'm', and the second tablet holds names
+starting with `m-z`. At least 50 tablets (and up to 100) can be written to in parallel.
+A query for a range of names in a given state is likely to only need to read from
+one tablet, while a query for a range of names across every state will likely only
+read from 50 tablets.
+
+[source,sql]
+----
+CREATE TABLE customers (
+  state STRING,
+  name STRING,
+  purchase_count int32,
+) DISTRIBUTE BY RANGE(state, name)
+SPLIT ROWS(('al', ''), ('al', 'm'), ('ak', ''), ('ak', 'm'), .., ('wy', ''), ('wy', 'm'))
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'customers',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'state, name'
+);
+----
+
+==== `DISTRIBUTE BY HASH` and `RANGE`
+
+Let's go back to the hashing example above. If you often query for a range of `sku`
+values, you can optimize the example by combining hash partitioning with range partitioning.
+The following example still creates 16 tablets, by first hashing the `id` column into 4
+buckets, and then applying range partitioning to split each bucket into four tablets,
+based upon the value of the `sku` string. At least four tablets (and possibly up to 16) can
+be written to in parallel, and when you query for a contiguous range of `sku` values, you have a
+good chance of only needing to read from 1/4 of the tablets to fulfill the query.
+
+[source,sql]
+----
+CREATE TABLE cust_behavior (
+  id BIGINT,
+  sku STRING,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  rating INT,
+  fulfilled_date BIGINT
+)
+DISTRIBUTE BY HASH (id) INTO 4 BUCKETS,
+RANGE (sku) SPLIT ROWS(('g'), ('o'), ('u'))
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'cust_behavior',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'id, sku'
+);
+----
+
+.Multiple `DISTRIBUTE BY HASH` Definitions
+Again expanding the example above, suppose that the query pattern will be unpredictable,
+but you want to maximimize parallelism of writes. You can achieve even distribution
+across the entire primary key by hashing on both primary key columns.
+
+[source,sql]
+----
+CREATE TABLE cust_behavior (
+  id BIGINT,
+  sku STRING,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  rating INT,
+  fulfilled_date BIGINT
+)
+DISTRIBUTE BY HASH (id) INTO 4 BUCKETS, HASH (sku) INTO 4 BUCKETS
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'cust_behavior',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'id, sku'
+);
+----
+
+The example creates 16 buckets. You could also use `HASH (id, sku) INTO 16 BUCKETS`.
+However, a scan for `sku` values would almost always impact all 16 buckets, rather
+than possibly being limited to 4.
 
 === Inserting A Row
 
