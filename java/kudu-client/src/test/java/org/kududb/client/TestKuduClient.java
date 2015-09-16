@@ -237,4 +237,25 @@ public class TestKuduClient extends BaseKuduTest {
     }
   }
 
+  /**
+   * Creates a local client that we auto-close while buffering one row, then makes sure that after
+   * closing that we can read the row.
+   */
+  @Test(timeout = 100000)
+  public void testAutoClose() throws Exception {
+    try (KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses).build()) {
+      localClient.createTable(tableName, basicSchema);
+      KuduTable table = localClient.openTable(tableName);
+      KuduSession session = localClient.newSession();
+
+      session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);
+      Insert insert = createBasicSchemaInsert(table, 0);
+      session.apply(insert);
+    }
+
+    KuduTable table = syncClient.openTable(tableName);
+    AsyncKuduScanner scanner = new AsyncKuduScanner.AsyncKuduScannerBuilder(client, table).build();
+    assertEquals(1, countRowsInScan(scanner));
+  }
+
 }

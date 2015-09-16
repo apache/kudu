@@ -21,7 +21,7 @@ import java.util.List;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class KuduClient {
+public class KuduClient implements AutoCloseable {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);
 
@@ -189,6 +189,15 @@ public class KuduClient {
    */
   public KuduScanner.KuduScannerBuilder newScannerBuilder(KuduTable table) {
     return new KuduScanner.KuduScannerBuilder(asyncClient, table);
+  }
+
+  /**
+   * Analogous to {@link #shutdown()}.
+   * @throws Exception if an error happens while closing the connections
+   */
+  @Override
+  public void close() throws Exception {
+    asyncClient.close();
   }
 
   /**

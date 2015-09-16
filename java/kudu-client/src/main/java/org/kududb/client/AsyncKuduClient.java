@@ -117,7 +117,7 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Unstable
-public class AsyncKuduClient {
+public class AsyncKuduClient implements AutoCloseable {
 
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);
   public static final int SLEEP_TIME = 500;
@@ -1291,6 +1291,16 @@ public class AsyncKuduClient {
     config.setKeepAlive(true);
     chan.connect(new InetSocketAddress(host, port));  // Won't block.
     return client;
+  }
+
+  /**
+   * Invokes {@link #shutdown()} and waits for the configured admin timeout. This method returns
+   * void, so consider invoking shutdown directly if there's a need to handle dangling RPCs.
+   * @throws Exception if an error happens while closing the connections
+   */
+  @Override
+  public void close() throws Exception {
+    shutdown().join(defaultAdminOperationTimeoutMs);
   }
 
   /**
