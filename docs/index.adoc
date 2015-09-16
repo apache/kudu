@@ -16,6 +16,10 @@
 link:introduction.html[Introducing Kudu]::
   Get familiar with what sets Kudu apart.
 
+link:release_notes.html[Kudu Beta Release Notes]::
+  Find out what to expect in Kudu public beta releases, as well as known issues, workarounds,
+  and limitations.
+
 link:quickstart.html[Getting Started With Kudu]::
   Deploy a simple proof-of-concept Kudu cluster to try it out for yourself.
 
