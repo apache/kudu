@@ -264,6 +264,7 @@ is the address of your Kudu master.
 Copy the entire statement.
 . Paste the statement into Impala. Impala now has a mapping to your Kudu table.
 
+[[kudu_impala_create_table]]
 === Creating a New Kudu Table From Impala
 Creating a new table in Kudu from Impala is similar to mapping an existing Kudu table
 to an Impala table, except that you need to write the `CREATE` statement yourself.
@@ -284,7 +285,91 @@ TBLPROPERTIES(
 );
 ----
 
-NOTE: Impala uses a database containment model. You can create a table within a specific
+In the `CREATE TABLE` statement, the columns that comprise the primary key must
+be listed first. Additionally, primary key columns are implicitly marked `NOT NULL`.
+
+The following table properties are required, and the `kudu.key_columns` property must
+contain at least one column.
+
+`storage_handler`:: the mechanism used by Impala to determine the type of data source.
+For Kudu tables, this must be `com.cloudera.kudu.hive.KuduStorageHandler`.
+`kudu.table_name`:: the name of the table that Impala will create (or map to) in Kudu.
+`kudu.master_addresses`:: the list of Kudu masters Impala should communicate with.
+`kudu.key_columns`:: the comma-separated list of primary key columns, whose contents
+should not be nullable.
+
+==== `CREATE TABLE AS SELECT`
+You can create a table by querying any other table or tables in Impala, using a `CREATE
+TABLE AS SELECT` query. The following example imports all rows from an existing table
+`old_table` into a Kudu table `new_table`. The columns in `new_table` will have the
+same names and types as the columns in `old_table`, but you need to populate the `kudu.key_columns`
+property. In this example, the primary key columns are `ts` and `name`.
+
+[source,sql]
+----
+CREATE TABLE new_table AS
+SELECT * FROM old_table
+TBLPROPERTIES(
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'new_table',
+  'kudu.master_addresses' = 'kudu-master.example.com:7051',
+  'kudu.key_columns' = 'ts, name'
+);
+----
+
+You can refine the `SELECT` statement to only match the rows and columns you want
+to be inserted into the new table. You can also rename the columns by using syntax
+like `SELECT name as new_name`.
+
+==== Pre-Splitting Tables
+
+Tables are divided into tablets which are each served by one or more tablet
+servers. Ideally, tablets should split a table's data relatively equally. Kudu currently
+has no mechanism for automatically (or manually) splitting a pre-existing tablet.
+Until this feature has been implemented, you must pre-split your table when you create
+it, When designing your table schema, consider primary keys that will allow you to
+pre-split your table into tablets which grow at similar rates. You can provide split
+points using the `kudu.split_keys` table property when creating a table using Impala:
+
+NOTE: Impala keywords, such as `group`, are enclosed by back-tick characters when
+they are not used in their keyword sense.
+
+[source,sql]
+----
+CREATE TABLE cust_behavior (
+  _id BIGINT,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  sku STRING,
+  rating INT,
+  fulfilled_date BIGINT
+)
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'cust_behavior',
+'kudu.master_addresses' = 'a1216.halxg.cloudera.com:7051',
+'kudu.key_columns' = '_id',
+'kudu.num_tablet_replicas' = '3',
+'kudu.split_keys' =
+'[[1439560049342], [1439566253755], [1439572458168], [1439578662581], [1439584866994], [1439591071407]],'
+
+);
+----
+
+If you have multiple primary key columns, you can specify split points by separating
+them with commas within the inner brackets: `[['va',1],['ab',2]]`. The expression
+must be valid JSON.
+
+==== Impala Databases and Kudu
+
+Impala uses a database containment model. In Impala, you can create a table within a specific
 scope, referred to as a _database_. To create the database, use a `CREATE DATABASE`
 statement. To use the database for further Impala operations such as `CREATE TABLE`,
 use the `USE` statement. For example, to create a table in a database called `impala_kudu`,
@@ -313,11 +398,31 @@ refer to the table using `<database>:<table>` syntax. For example, to specify th
 the same name in another database, use `impala_kudu:my_first_table`. This also applies
 to `INSERT`, `UPDATE`, `DELETE`, and `DROP` statements.
 
-In the `CREATE TABLE` statement, the first column must be the primary key. Additionally,
-the primary key can never be null when inserting or updating a row.
+WARNING: Currently, Kudu does not encode the Impala database into the table name
+in any way. This means that even though you can create Kudu tables within Impala databases,
+the actual Kudu tables need to be unique within Kudu. For example, if you create `database_1:my_kudu_table`
+and `database_2:my_kudu_table`, you will have a naming collision within Kudu, even
+though this would not cause a problem in Impala. This can be resolved by specifying
+a unique Kudu table name in the `kudu.table_name` property.
 
-All properties in the `TBLPROPERTIES` subclause are required, and the `kudu.key_columns`
-must contain at least one column.
+==== Impala Keywords Not Supported for Kudu Tables
+
+The following Impala keywords are not supported when creating Kudu tables:
+- `PARTITIONED`
+- `STORED AS`
+- `LOCATION`
+- `ROWFORMAT`
+
+=== Optimizing Performance for Evaluating SQL Predicates
+
+If the `WHERE` clause of your query includes comparisons with the operators
+`=`, `<=`, or `>=`, Kudu evaluates the condition directly and only returns the
+relevant results. This provides optimum performance, because Kudu only returns the
+relevant results to Impala. For predicates `<`, `>`, `!=`, or any other predicate
+type supported by Impala, Kudu does not evaluate the predicates directly, but returns
+all results to Impala and relies on Impala to evaluate the remaining predicates and
+filter the results accordingly. This may cause differences in performance, depending
+on the delta of the result set before and after evaluating the `WHERE` clause.
 
 === Partitioning Tables
 
@@ -560,10 +665,71 @@ INSERT INTO my_first_table VALUES (99, "sarah");
 INSERT INTO my_first_table VALUES (1, "john"), (2, "jane"), (3, "jim");
 ----
 
-=== Inserting In Bulk
+[[kudu_impala_insert_bulk]]
+==== Inserting In Bulk
 
-In general, the Impala documentation discourages adding rows by using multiple `INSERT`
-statements due to ineffiency. Exceptions to this rule are HBase and Kudu.
+When inserting in bulk, there are at least three common choices. Each may have advantages
+and disadvantages, depending on your data and circumstances.
+
+Multiple single `INSERT` statements:: This approach has the advantage of being easy to
+understand and implement. This approach is likely to be inefficient because Impala
+has a high query start-up cost compared to Kudu's insertion performance. This will
+lead to relatively high latency and poor throughput.
+
+Single `INSERT` statement with multiple `VALUES` subclauses:: If you include more
+than 1024 `VALUES` statements, Impala batches them into groups of 1024 (or the value
+of `batch_size`) before sending the requests to Kudu. This approach may perform
+slightly better than multiple sequential `INSERT` statements by amortizing the query start-up
+penalties on the Impala side. To set the batch size for the current Impala
+Shell session, use the following syntax: `set batch_size=10000;`
++
+NOTE: Increasing the Impala batch size causes Impala to use more memory. You should
+verify the impact on your cluster and tune accordingly.
+
+Batch Insert:: The approach that usually performs best, from the standpoint of
+both Impala and Kudu, is usually to import the data using a `SELECT FROM` subclause
+in Impala.
++
+. If your data is not already in Impala, one strategy is
+to link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_txtfile.html
+[import it from a text file], such as a TSV or CSV file.
++
+. <<kudu_impala_create_table,Create the Kudu table>>, being mindful that the columns
+designated as primary keys cannot have null values.
++
+. Insert values into the Kudu table by querying the table containing the original
+data, as in the following example:
++
+[source,sql]
+----
+INSERT INTO my_kudu_table
+  SELECT * FROM legacy_data_import_table;
+----
+
+Ingest using the C++ or Java API:: In many cases, the appropriate ingest path is to
+use the C++ or Java API to insert directly into Kudu tables. Unlike other Impala tables,
+data inserted into Kudu tables via the API becomes available for query in Impala without
+the need for any `INVALIDATE METADATA` statements or other statements needed for other
+Impala storage types.
+
+[[insert_ignore]]
+==== `INSERT` and the `IGNORE` Keyword
+
+Normally, if you try to insert a row that has already been inserted, the insertion
+will fail because the primary key would be duplicated. See <<impala_insertion_caveat>>.
+If an insert fails part of the way through, you can re-run the insert, using the
+`IGNORE` keyword, which will ignore only those errors returned from Kudu indicating
+a duplicate key..
+
+The first example will cause an error if a row with the primary key `99` already exists.
+The second example will still not insert the row, but will ignore any error and continue
+on to the next SQL statement.
+
+[source,sql]
+----
+INSERT INTO my_first_table VALUES (99, "sarah");
+INSERT IGNORE INTO my_first_table VALUES (99, "sarah");
+----
 
 === Updating a Row
 
@@ -572,25 +738,69 @@ statements due to ineffiency. Exceptions to this rule are HBase and Kudu.
 UPDATE my_first_table SET name="bob" where id = 3;
 ----
 
-IMPORTANT: The `UPDATE` statement only works in Impala when the underlying
-data source is Kudu.
+IMPORTANT: The `UPDATE` statement only works in Impala when the target table is in
+Kudu.
+
+==== Updating In Bulk
+
+You can update in bulk using the same approaches outlined in
+<<kudu_impala_insert_bulk>>.
+
+==== `UPDATE` and the `IGNORE` Keyword
+
+Similar to <<insert_ignore>>You can use the `IGNORE` operation to ignore an `UPDATE`
+which would otherwise fail. For instance, a row may be deleted while you are
+attempting to update it. In Impala, this would cause an error. The `IGNORE`
+keyword causes the error to be ignored.
+
+[source,sql]
+----
+UPDATE IGNORE my_first_table SET name="bob" where id = 3;
+----
 
 === Deleting a Row
 
 [source,sql]
 ----
-DELETE FROM my_first_table WHERE id = 3;
+DELETE FROM my_first_table WHERE id < 3;
 ----
 
 You can also delete using more complex syntax. A comma in the `FROM` sub-clause is
-one way that Impala specifies a join query.
+one way that Impala specifies a join query. For more information about Impala joins,
+see http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_joins.html.
 [source,sql]
 ----
 DELETE c FROM my_second_table c, stock_symbols s WHERE c.name = s.symbol;
 ----
 
-IMPORTANT: The `DELETE` statement only works in Impala when the underlying
-data source is Kudu.
+IMPORTANT: The `DELETE` statement only works in Impala when the target table is in
+Kudu.
+
+==== Deleting In Bulk
+
+You can delete in bulk using the same approaches outlined in
+<<kudu_impala_insert_bulk>>.
+
+==== `DELETE` and the `IGNORE` Keyword
+
+Similar to <<insert_ignore>>You can use the `IGNORE` operation to ignore an `DELETE`
+which would otherwise fail. For instance, a row may be deleted by another process
+while you are attempting to delete it. In Impala, this would cause an error. The
+`IGNORE` keyword causes the error to be ignored.
+
+[source,sql]
+----
+DELETE IGNORE FROM my_first_table WHERE id < 3;
+----
+
+[[impala_insertion_caveat]]
+=== Failures During `INSERT`, `UPDATE`, and `DELETE` Operations
+
+`INSERT`, `UPDATE`, and `DELETE` statements cannot be considered transactional as
+a whole. If one of these operations fails part of the way through, the keys may
+have already been created (in the case of `INSERT`) or the records may have already
+been modified or removed by another process (in the case of `UPDATE` or `DELETE`).
+You should design your application with this in mind. See <<insert_ignore>>.
 
 === Altering Table Properties
 
@@ -602,6 +812,7 @@ a table's split rows after table creation.
 IMPORTANT: Altering table properties only changes Impala's metadata about the table,
 not the underlying table itself. These statements do not modify any table metadata
 in Kudu.
+
 .Rename a Table
 [source,sql]
 ----
@@ -611,7 +822,8 @@ ALTER TABLE my_table RENAME TO my_new_table;
 .Change the Kudu Master Address
 [source,sql]
 ----
-ALTER TABLE my_table SET TBLPROPERTIES('kudu.master_addresses' = 'kudu-original-master.example.com:7051,kudu-new-master.example.com:7051');
+ALTER TABLE my_table
+SET TBLPROPERTIES('kudu.master_addresses' = 'kudu-new-master.example.com:7051');
 ----
 
 .Change an Internally-Managed Table to External
