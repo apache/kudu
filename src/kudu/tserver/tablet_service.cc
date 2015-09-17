@@ -939,6 +939,22 @@ void ConsensusServiceImpl::StartRemoteBootstrap(const StartRemoteBootstrapReques
   context->RespondSuccess();
 }
 
+void TabletServiceImpl::ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
+                                         ScannerKeepAliveResponsePB *resp,
+                                         rpc::RpcContext *context) {
+  DCHECK(req->has_scanner_id());
+  SharedScanner scanner;
+  if (!server_->scanner_manager()->LookupScanner(req->scanner_id(), &scanner)) {
+      resp->mutable_error()->set_code(TabletServerErrorPB::SCANNER_EXPIRED);
+      StatusToPB(Status::NotFound("Scanner not found"),
+                 resp->mutable_error()->mutable_status());
+      return;
+  }
+  scanner->UpdateAccessTime();
+  context->RespondSuccess();
+}
+
+
 void TabletServiceImpl::Scan(const ScanRequestPB* req,
                              ScanResponsePB* resp,
                              rpc::RpcContext* context) {
@@ -976,7 +992,11 @@ void TabletServiceImpl::Scan(const ScanRequestPB* req,
       SetupErrorAndRespond(resp->mutable_error(), s, error_code, context);
       return;
     }
-    resp->set_scanner_id(scanner_id);
+
+    // Only set the scanner id if we have more results.
+    if (has_more_results) {
+      resp->set_scanner_id(scanner_id);
+    }
     if (scan_timestamp != Timestamp::kInvalidTimestamp) {
       resp->set_snap_timestamp(scan_timestamp.ToUint64());
     }

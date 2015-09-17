@@ -302,3 +302,14 @@ message ScanResponsePB {
   // key of the last row returned in the response.
   optional bytes last_primary_key = 7;
 }
+
+// A scanner keep-alive request.
+// Updates the scanner access time, increasing its time-to-live.
+message ScannerKeepAliveRequestPB {
+  required bytes scanner_id = 1;
+}
+
+message ScannerKeepAliveResponsePB {
+  // The error, if an error occurred with this request.
+  optional TabletServerErrorPB error = 1;
+}

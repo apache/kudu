@@ -45,6 +45,10 @@ class TabletServiceImpl : public TabletServerServiceIf {
                     ScanResponsePB* resp,
                     rpc::RpcContext* context) OVERRIDE;
 
+  virtual void ScannerKeepAlive(const ScannerKeepAliveRequestPB *req,
+                                ScannerKeepAliveResponsePB *resp,
+                                rpc::RpcContext *context) OVERRIDE;
+
   virtual void ListTablets(const ListTabletsRequestPB* req,
                            ListTabletsResponsePB* resp,
                            rpc::RpcContext* context) OVERRIDE;

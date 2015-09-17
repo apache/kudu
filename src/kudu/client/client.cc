@@ -1019,6 +1019,10 @@ Status KuduScanner::Open() {
   return Status::OK();
 }
 
+Status KuduScanner::KeepAlive() {
+  return data_->KeepAlive();
+}
+
 void KuduScanner::Close() {
   if (!data_->open_) return;
   CHECK(data_->proxy_);

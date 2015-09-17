@@ -61,6 +61,8 @@ class KuduScanner::Data {
                             tserver::ScanResponsePB* resp,
                             std::vector<KuduRowResult>* rows);
 
+  Status KeepAlive();
+
   // Returns whether there exist more tablets we should scan.
   //
   // Note: there may not be any actual matching rows in subsequent tablets,

@@ -309,6 +309,26 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
   return Status::OK();
 }
 
+Status KuduScanner::Data::KeepAlive() {
+  if (!open_) return Status::IllegalState("Scanner was not open.");
+  // If there is no scanner to keep alive, we still return Status::OK().
+  if (!last_response_.IsInitialized() || !last_response_.has_scanner_id() ||
+      !last_response_.has_more_results()) {
+    return Status::OK();
+  }
+
+  RpcController controller;
+  controller.set_timeout(timeout_);
+  tserver::ScannerKeepAliveRequestPB request;
+  request.set_scanner_id(last_response_.scanner_id());
+  tserver::ScannerKeepAliveResponsePB response;
+  RETURN_NOT_OK(proxy_->ScannerKeepAlive(request, &response, &controller));
+  if (response.has_error()) {
+    return StatusFromPB(response.error().status());
+  }
+  return Status::OK();
+}
+
 Status KuduScanner::Data::ExtractRows(vector<KuduRowResult>* rows) {
   return ExtractRows(controller_, projection_, &last_response_, rows);
 }

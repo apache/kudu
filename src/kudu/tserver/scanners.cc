@@ -20,6 +20,9 @@ DEFINE_int32(scanner_ttl_ms, 60000,
              "Number of milliseconds of inactivity allowed for a scanner"
              "before it may be expired");
 TAG_FLAG(scanner_ttl_ms, advanced);
+DEFINE_int32(scanner_gc_check_interval_us, 5 * 1000L *1000L, // 5 seconds
+             "Number of microseconds in the interval at which we remove expired scanners");
+TAG_FLAG(scanner_ttl_ms, hidden);
 
 // TODO: would be better to scope this at a tablet level instead of
 // server level.
@@ -33,9 +36,6 @@ namespace kudu {
 using tablet::TabletPeer;
 
 namespace tserver {
-
-// The interval at which we remove expired scanners.
-static const uint64_t kRemovalThreadIntervalUs = 5000000;
 
 ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
   : scanner_ttl_(MonoDelta::FromMilliseconds(
@@ -77,7 +77,7 @@ void ScannerManager::RunRemovalThread() {
         return;
       }
       boost::system_time wtime = boost::get_system_time() +
-          boost::posix_time::microseconds(kRemovalThreadIntervalUs);
+          boost::posix_time::microseconds(FLAGS_scanner_gc_check_interval_us);
       shutdown_cv_.timed_wait(l, wtime);
     }
     RemoveExpiredScanners();

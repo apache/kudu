@@ -50,6 +50,8 @@ DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(max_create_tablets_per_ts);
 DECLARE_int32(scanner_max_batch_size_bytes);
 DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
+DECLARE_int32(scanner_ttl_ms);
+DECLARE_int32(scanner_gc_check_interval_us);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 METRIC_DECLARE_counter(scans_started);
@@ -94,6 +96,7 @@ class ClientTest : public KuduTest {
 
     // Reduce the TS<->Master heartbeat interval
     FLAGS_heartbeat_interval_ms = 10;
+    FLAGS_scanner_gc_check_interval_us = 50 * 1000; // 50 milliseconds.
 
     // Start minicluster and wait for tablet servers to connect to master.
     cluster_.reset(new MiniCluster(env_.get(), MiniClusterOptions()));
@@ -1177,6 +1180,69 @@ static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
     SleepFor(MonoDelta::FromMilliseconds(i < 10 ? 2 : 20));
   }
   FAIL() << "Waited too long for the scanner to close";
+}
+
+TEST_F(ClientTest, TestScannerKeepAlive) {
+  ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1000));
+  // Set the scanner ttl really low
+  FLAGS_scanner_ttl_ms = 100; // 100 milliseconds
+  // Start a scan but don't get the whole data back
+  KuduScanner scanner(client_table_.get());
+  // This will make sure we have to do multiple NextBatch calls to the second tablet.
+  ASSERT_OK(scanner.SetBatchSizeBytes(100));
+  ASSERT_OK(scanner.Open());
+
+  vector<KuduRowResult> results;
+  int64_t sum = 0;
+
+  ASSERT_TRUE(scanner.HasMoreRows());
+  ASSERT_OK(scanner.NextBatch(&results));
+
+  // We should get only nine rows back (from the first tablet).
+  ASSERT_EQ(results.size(), 9);
+  BOOST_FOREACH(const KuduRowResult row, results) {
+    int32_t val;
+    ASSERT_OK(row.GetInt32(0, &val));
+    sum += val;
+  }
+
+  ASSERT_TRUE(scanner.HasMoreRows());
+
+  // We're in between tablets but even if there isn't a live scanner the client should
+  // still return OK to the keep alive call.
+  ASSERT_OK(scanner.KeepAlive());
+
+  // Start scanning the second tablet, but break as soon as we have some data so that
+  // we have a live remote scanner on the second tablet.
+  while (scanner.HasMoreRows()) {
+    ASSERT_OK(scanner.NextBatch(&results));
+    if (results.size() > 0) break;
+  }
+  BOOST_FOREACH(const KuduRowResult row, results) {
+    int32_t val;
+    ASSERT_OK(row.GetInt32(0, &val));
+    sum += val;
+  }
+  ASSERT_TRUE(scanner.HasMoreRows());
+
+  // Now loop while keeping the scanner alive. Each time we loop we sleep 1/2 a scanner
+  // ttl interval (the garbage collector is running each 50 msecs too.).
+  for (int i = 0; i < 5; i++) {
+    SleepFor(MonoDelta::FromMilliseconds(50));
+    ASSERT_OK(scanner.KeepAlive());
+  }
+
+  // Loop to get the remaining rows.
+  while (scanner.HasMoreRows()) {
+    ASSERT_OK(scanner.NextBatch(&results));
+    BOOST_FOREACH(const KuduRowResult row, results) {
+      int32_t val;
+      ASSERT_OK(row.GetInt32(0, &val));
+      sum += val;
+    }
+  }
+  ASSERT_FALSE(scanner.HasMoreRows());
+  ASSERT_EQ(sum, 499500);
 }
 
 // Test cleanup of scanners on the server side when closed.
