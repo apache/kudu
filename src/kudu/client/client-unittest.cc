@@ -104,6 +104,17 @@ TEST(ClientUnitTest, TestSchemaBuilder_DefaultValues) {
   ASSERT_EQ("OK", b.Build(&s).ToString());
 }
 
+TEST(ClientUnitTest, TestSchemaBuilder_DefaultValueString) {
+  KuduSchema s;
+  KuduSchemaBuilder b;
+  b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull()->PrimaryKey();
+  b.AddColumn("b")->Type(KuduColumnSchema::STRING)->NotNull()
+    ->Default(KuduValue::CopyString("abc"));
+  b.AddColumn("c")->Type(KuduColumnSchema::BINARY)->NotNull()
+    ->Default(KuduValue::CopyString("def"));
+  ASSERT_EQ("OK", b.Build(&s).ToString());
+}
+
 TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_KeyNotFirst) {
   KuduSchema s;
   KuduSchemaBuilder b;

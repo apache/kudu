@@ -85,7 +85,7 @@ Status KuduValue::Data::CheckTypeAndGetPointer(const string& col_name,
                                                DataType t,
                                                void** val_void) {
   const TypeInfo* ti = GetTypeInfo(t);
-  switch (t) {
+  switch (ti->physical_type()) {
     case kudu::INT8:
     case kudu::INT16:
     case kudu::INT32:
