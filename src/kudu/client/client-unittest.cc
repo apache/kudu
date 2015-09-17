@@ -4,11 +4,13 @@
 // Tests for the client which are true unit tests and don't require a cluster, etc.
 
 #include <boost/assign/list_of.hpp>
+#include <boost/bind.hpp>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>
 
 #include "kudu/client/client.h"
+#include "kudu/client/client-internal.h"
 
 using boost::assign::list_of;
 using std::string;
@@ -135,6 +137,25 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_BadColumnName) {
   b.SetPrimaryKey(list_of<string>("foo"));
   ASSERT_EQ("Invalid argument: primary key column not defined: foo",
             b.Build(&s).ToString());
+}
+
+namespace {
+Status TestFunc(const MonoTime& deadline, bool* retry, int* counter) {
+  (*counter)++;
+  *retry = true;
+  return Status::RuntimeError("x");
+}
+} // anonymous namespace
+
+TEST(ClientUnitTest, TestRetryFunc) {
+  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
+  deadline.AddDelta(MonoDelta::FromMilliseconds(100));
+  int counter = 0;
+  Status s = RetryFunc(deadline, "retrying test func", "timed out",
+                       boost::bind(TestFunc, _1, _2, &counter));
+  ASSERT_TRUE(s.IsTimedOut());
+  ASSERT_GT(counter, 5);
+  ASSERT_LT(counter, 20);
 }
 
 } // namespace client

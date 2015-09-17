@@ -11,6 +11,7 @@
 #include "kudu/client/client.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 
 namespace kudu {
@@ -206,6 +207,16 @@ class KuduClient::Data {
 
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
+
+// Retry helper, takes a function like: Status funcName(const MonoTime& deadline, bool *retry, ...)
+// The function should set the retry flag (default true) if the function should
+// be retried again. On retry == false the return status of the function will be
+// returned to the caller, otherwise a Status::Timeout() will be returned.
+// If the deadline is already expired, no attempt will be made.
+Status RetryFunc(const MonoTime& deadline,
+                 const std::string& retry_msg,
+                 const std::string& timeout_msg,
+                 const boost::function<Status(const MonoTime&, bool*)>& func);
 
 } // namespace client
 } // namespace kudu

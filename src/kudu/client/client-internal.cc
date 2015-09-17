@@ -13,6 +13,7 @@
 #include "kudu/common/schema.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
@@ -62,15 +63,10 @@ using internal::GetTableSchemaRpc;
 using internal::RemoteTablet;
 using internal::RemoteTabletServer;
 
-// Retry helper, takes a function like: Status funcName(const MonoTime& deadline, bool *retry, ...)
-// The function should set the retry flag (default true) if the function should
-// be retried again. On retry == false the return status of the function will be
-// returned to the caller, otherwise a Status::Timeout() will be returned.
-// If the deadline is already expired, no attempt will be made.
-static Status RetryFunc(const MonoTime& deadline,
-                        const string& retry_msg,
-                        const string& timeout_msg,
-                        const boost::function<Status(const MonoTime&, bool*)>& func) {
+Status RetryFunc(const MonoTime& deadline,
+                 const string& retry_msg,
+                 const string& timeout_msg,
+                 const boost::function<Status(const MonoTime&, bool*)>& func) {
   DCHECK(deadline.Initialized());
 
   MonoTime now = MonoTime::Now(MonoTime::FINE);
@@ -78,34 +74,37 @@ static Status RetryFunc(const MonoTime& deadline,
     return Status::TimedOut(timeout_msg);
   }
 
-  int64_t wait_time = 1;
+  double wait_secs = 0.001;
+  const double kMaxSleepSecs = 2;
   while (1) {
-    MonoTime stime = now;
+    MonoTime func_stime = now;
     bool retry = true;
     Status s = func(deadline, &retry);
     if (!retry) {
       return s;
     }
-
-    if (deadline.Initialized()) {
-      now = MonoTime::Now(MonoTime::FINE);
-      if (!now.ComesBefore(deadline)) {
-        break;
-      }
-    }
+    now = MonoTime::Now(MonoTime::FINE);
+    MonoDelta func_time = now.GetDeltaSince(func_stime);
 
     VLOG(1) << retry_msg << " status=" << s.ToString();
-    int64_t timeout_millis = std::numeric_limits<uint64_t>::max();
+    double secs_remaining = std::numeric_limits<double>::max();
     if (deadline.Initialized()) {
-      timeout_millis = deadline.GetDeltaSince(now).ToMilliseconds() -
-                     now.GetDeltaSince(stime).ToMilliseconds();
+      secs_remaining = deadline.GetDeltaSince(now).ToSeconds();
     }
-    if (timeout_millis > 0) {
-      wait_time = std::min(wait_time * 5 / 4, timeout_millis);
-      VLOG(1) << "Waiting for " << wait_time << " ms before retrying...";
-      base::SleepForMilliseconds(wait_time);
-      now = MonoTime::Now(MonoTime::FINE);
+    wait_secs = std::min(wait_secs * 1.25, kMaxSleepSecs);
+
+    // We assume that the function will take the same amount of time to run
+    // as it did in the previous attempt. If we don't have enough time left
+    // to sleep and run it again, we don't bother sleeping and retrying.
+    if (wait_secs + func_time.ToSeconds() > secs_remaining) {
+      break;
     }
+
+    VLOG(1) << "Waiting for " << HumanReadableElapsedTime::ToShortString(wait_secs)
+            << " before retrying...";
+    SleepFor(MonoDelta::FromSeconds(wait_secs));
+    now = MonoTime::Now(MonoTime::FINE);
+
   }
 
   return Status::TimedOut(timeout_msg);
