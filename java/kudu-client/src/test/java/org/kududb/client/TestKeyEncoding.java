@@ -67,7 +67,7 @@ public class TestKeyEncoding {
   public void testBoolPrimaryKeys() {
     Schema schema = buildSchema(new ColumnSchema.ColumnSchemaBuilder("key", Type.BOOL).key(true));
 
-    KuduTable table = new KuduTable(null, "one", schema, defaultPartitionSchema(schema));
+    KuduTable table = new KuduTable(null, "one", "one", schema, defaultPartitionSchema(schema));
     Insert oneKeyInsert = new Insert(table);
     PartialRow row = oneKeyInsert.getRow();
     row.addBoolean("key", true);
@@ -83,7 +83,7 @@ public class TestKeyEncoding {
   public void testPrimaryKeys() {
     Schema schemaOneString =
         buildSchema(new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING).key(true));
-    KuduTable table = new KuduTable(null, "one", schemaOneString,
+    KuduTable table = new KuduTable(null, "one", "one", schemaOneString,
                                     defaultPartitionSchema(schemaOneString));
     Insert oneKeyInsert = new Insert(table);
     PartialRow row = oneKeyInsert.getRow();
@@ -93,7 +93,7 @@ public class TestKeyEncoding {
     Schema schemaTwoString = buildSchema(
         new ColumnSchema.ColumnSchemaBuilder("key", Type.STRING).key(true),
         new ColumnSchema.ColumnSchemaBuilder("key2", Type.STRING).key(true));
-    KuduTable table2 = new KuduTable(null, "two", schemaTwoString,
+    KuduTable table2 = new KuduTable(null, "two", "two", schemaTwoString,
                                      defaultPartitionSchema(schemaTwoString));
     Insert twoKeyInsert = new Insert(table2);
     row = twoKeyInsert.getRow();
@@ -112,7 +112,8 @@ public class TestKeyEncoding {
         new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true),
         new ColumnSchema.ColumnSchemaBuilder("key2", Type.STRING).key(true));
     PartitionSchema partitionSchemaIntString = defaultPartitionSchema(schemaIntString);
-    KuduTable table3 = new KuduTable(null, "three", schemaIntString, partitionSchemaIntString);
+    KuduTable table3 = new KuduTable(null, "three", "three",
+        schemaIntString, partitionSchemaIntString);
     Insert small = new Insert(table3);
     row = small.getRow();
     row.addInt("key", 20);

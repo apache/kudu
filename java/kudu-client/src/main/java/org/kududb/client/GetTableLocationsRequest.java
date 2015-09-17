@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.annotations.InterfaceAudience;
@@ -17,10 +18,10 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
 
   private final byte[] startPartitionKey;
   private final byte[] endKey;
-  private final String tableName;
+  private final String tableId;
 
   GetTableLocationsRequest(KuduTable table, byte[] startPartitionKey,
-                           byte[] endPartitionKey, String tableName) {
+                           byte[] endPartitionKey, String tableId) {
     super(table);
     if (startPartitionKey != null && endPartitionKey != null
         && Bytes.memcmp(startPartitionKey, endPartitionKey) > 0) {
@@ -29,7 +30,7 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
     }
     this.startPartitionKey = startPartitionKey;
     this.endKey = endPartitionKey;
-    this.tableName = tableName;
+    this.tableId = tableId;
   }
 
   @Override
@@ -56,7 +57,8 @@ class GetTableLocationsRequest extends KuduRpc<Master.GetTableLocationsResponseP
   ChannelBuffer serialize(Message header) {
     final Master.GetTableLocationsRequestPB.Builder builder = Master
         .GetTableLocationsRequestPB.newBuilder();
-    builder.setTable(Master.TableIdentifierPB.newBuilder().setTableName(tableName));
+    builder.setTable(Master.TableIdentifierPB.newBuilder().
+        setTableId(ByteString.copyFromUtf8(tableId)));
     if (startPartitionKey != null) {
       builder.setPartitionKeyStart(ZeroCopyLiteralByteString.wrap(startPartitionKey));
     }

@@ -2,6 +2,7 @@
 // Confidential Cloudera Information: Covered by NDA.
 package org.kududb.client;
 
+import com.google.protobuf.ByteString;
 import com.google.protobuf.Message;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.master.Master;
@@ -14,11 +15,11 @@ import org.jboss.netty.buffer.ChannelBuffer;
 @InterfaceAudience.Private
 class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponsePB> {
 
-  private final String tableName;
+  private final String tableId;
 
-  IsCreateTableDoneRequest(KuduTable table, String tableName) {
+  IsCreateTableDoneRequest(KuduTable table, String tableId) {
     super(table);
-    this.tableName = tableName;
+    this.tableId = tableId;
   }
 
   @Override
@@ -44,7 +45,8 @@ class IsCreateTableDoneRequest extends KuduRpc<Master.IsCreateTableDoneResponseP
   ChannelBuffer serialize(Message header) {
     final Master.IsCreateTableDoneRequestPB.Builder builder = Master
         .IsCreateTableDoneRequestPB.newBuilder();
-    builder.setTable(Master.TableIdentifierPB.newBuilder().setTableName(tableName));
+    builder.setTable(Master.TableIdentifierPB.newBuilder().setTableId(
+        ByteString.copyFromUtf8(tableId)));
     return toChannelBuffer(header, builder.build());
   }
 }

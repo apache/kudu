@@ -336,9 +336,9 @@ public class AsyncKuduSession implements SessionConfiguration {
       operation.setSequenceNumber(nextSequenceNumber++);
     }
 
-    String table = operation.getTable().getName();
+    String tableId = operation.getTable().getTableId();
     byte[] partitionKey = operation.partitionKey();
-    AsyncKuduClient.RemoteTablet tablet = client.getTablet(table, partitionKey);
+    AsyncKuduClient.RemoteTablet tablet = client.getTablet(tableId, partitionKey);
     // We go straight to the buffer if we know the tabletSlice
     if (tablet != null) {
       operation.setTablet(tablet);
@@ -351,13 +351,15 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
     // TODO starts looking a lot like sendRpcToTablet
     operation.attempt++;
-    if (client.isTableNotServed(table)) {
+    if (client.isTableNotServed(tableId)) {
       Callback<Deferred<OperationResponse>, Master.IsCreateTableDoneResponsePB> cb =
           new TabletLookupCB<>(operation);
-      return client.delayedIsCreateTableDone(table, operation, cb, getOpInLookupErrback(operation));
+      return client.delayedIsCreateTableDone(operation.getTable(), operation,
+          cb, getOpInLookupErrback(operation));
     }
 
-    Deferred<Master.GetTableLocationsResponsePB> d = client.locateTablet(table, partitionKey);
+    Deferred<Master.GetTableLocationsResponsePB> d =
+        client.locateTablet(operation.getTable(), partitionKey);
     d.addErrback(getOpInLookupErrback(operation));
     return d.addCallbackDeferring(
         new TabletLookupCB<Master.GetTableLocationsResponsePB>(operation));

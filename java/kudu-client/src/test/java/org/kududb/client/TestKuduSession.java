@@ -65,7 +65,7 @@ public class TestKuduSession extends BaseKuduTest {
       session.apply(del);
       session.flush();
       if (i % 2 == 0) {
-        client.emptyTabletsCacheForTable(tableName);
+        client.emptyTabletsCacheForTable(table.getTableId());
       }
     }
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));

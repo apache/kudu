@@ -26,6 +26,7 @@ public class KuduTable {
   private final PartitionSchema partitionSchema;
   private final AsyncKuduClient client;
   private final String name;
+  private final String tableId;
 
   /**
    * Package-private constructor, use {@link KuduClient#openTable(String)} to get an instance.
@@ -33,11 +34,13 @@ public class KuduTable {
    * @param name this table's name
    * @param schema this table's schema
    */
-  KuduTable(AsyncKuduClient client, String name, Schema schema, PartitionSchema partitionSchema) {
+  KuduTable(AsyncKuduClient client, String name, String tableId,
+            Schema schema, PartitionSchema partitionSchema) {
     this.schema = schema;
     this.partitionSchema = partitionSchema;
     this.client = client;
     this.name = name;
+    this.tableId = tableId;
   }
 
   /**
@@ -67,6 +70,14 @@ public class KuduTable {
    */
   public String getName() {
     return this.name;
+  }
+
+  /**
+   * Get this table's unique identifier.
+   * @return this table's tableId
+   */
+  public String getTableId() {
+    return tableId;
   }
 
   /**
@@ -128,7 +139,7 @@ public class KuduTable {
    */
   public List<LocatedTablet> getTabletsLocations(
       byte[] startKey, byte[] endKey, long deadline) throws Exception {
-    return client.syncLocateTable(name, startKey, endKey, deadline);
+    return client.syncLocateTable(tableId, startKey, endKey, deadline);
   }
 
 }

@@ -109,7 +109,9 @@ public class TestAsyncKuduClient extends BaseKuduTest {
 
     // Test that a tablet full of unreachable replicas won't make us retry.
     try {
-      client.discoverTablets("Invalid table", builder.build());
+      KuduTable badTable = new KuduTable(client, "Invalid table name",
+          "Invalid table ID", null, null);
+      client.discoverTablets(badTable, builder.build());
       fail("This should have failed quickly");
     } catch (Exception ex) {
       assertTrue(ex instanceof NonRecoverableException);

@@ -138,6 +138,8 @@ public class AsyncKuduClient implements AutoCloseable {
    * tablet2client, because it comes second in the fast-path
    * of every requests that need to locate a tablet. The third map
    * is only used to handle TabletServer disconnections gracefully.
+   *
+   * This map is keyed by table ID.
    */
   private final ConcurrentHashMap<String, ConcurrentSkipListMap<byte[],
       RemoteTablet>> tabletsCache = new ConcurrentHashMap<>();
@@ -203,7 +205,8 @@ public class AsyncKuduClient implements AutoCloseable {
   private long lastPropagatedTimestamp = NO_TIMESTAMP;
 
   // A table is considered not served when we get an empty list of locations but know
-  // that a tablet exists. This is currently only used for new tables.
+  // that a tablet exists. This is currently only used for new tables. The objects stored are
+  // table IDs.
   private final Set<String> tablesNotServed = Collections.newSetFromMap(new
       ConcurrentHashMap<String, Boolean>());
 
@@ -228,7 +231,8 @@ public class AsyncKuduClient implements AutoCloseable {
   private AsyncKuduClient(AsyncKuduClientBuilder b) {
     this.channelFactory = b.createChannelFactory();
     this.masterAddresses = b.masterAddresses;
-    this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER, null, null);
+    this.masterTable = new KuduTable(this, MASTER_TABLE_NAME_PLACEHOLDER,
+        MASTER_TABLE_NAME_PLACEHOLDER, null, null);
     this.defaultOperationTimeoutMs = b.defaultOperationTimeoutMs;
     this.defaultAdminOperationTimeoutMs = b.defaultAdminOperationTimeoutMs;
     this.defaultSocketReadTimeoutMs = b.defaultSocketReadTimeoutMs;
@@ -417,7 +421,10 @@ public class AsyncKuduClient implements AutoCloseable {
         GetTableSchemaResponse>() {
       @Override
       public Deferred<KuduTable> call(GetTableSchemaResponse response) throws Exception {
-        KuduTable table = new KuduTable(AsyncKuduClient.this, name, response.getSchema(),
+        KuduTable table = new KuduTable(AsyncKuduClient.this,
+            name,
+            response.getTableId(),
+            response.getSchema(),
             response.getPartitionSchema());
         // We grab the Deferred first because calling callback on the RPC will reset it and we'd
         // return a different, non-triggered Deferred.
@@ -429,7 +436,7 @@ public class AsyncKuduClient implements AutoCloseable {
           LOG.debug("Delaying opening table {}, its tablets aren't fully created", name);
           fakeRpc.attempt++;
           delayedIsCreateTableDone(
-              name,
+              table,
               fakeRpc,
               getOpenTableCB(fakeRpc, table),
               getDelayedIsCreateTableDoneErrback(fakeRpc));
@@ -459,7 +466,7 @@ public class AsyncKuduClient implements AutoCloseable {
               tableName);
 
           delayedIsCreateTableDone(
-              tableName,
+              table,
               rpc,
               getOpenTableCB(rpc, table),
               getDelayedIsCreateTableDoneErrback(rpc));
@@ -606,12 +613,12 @@ public class AsyncKuduClient implements AutoCloseable {
       return tooManyAttemptsOrTimeout(request, null);
     }
     request.attempt++;
-    final String tableName = request.getTable().getName();
+    final String tableId = request.getTable().getTableId();
     byte[] partitionKey = null;
     if (request instanceof KuduRpc.HasKey) {
        partitionKey = ((KuduRpc.HasKey)request).partitionKey();
     }
-    final RemoteTablet tablet = getTablet(tableName, partitionKey);
+    final RemoteTablet tablet = getTablet(tableId, partitionKey);
 
     // Set the propagated timestamp so that the next time we send a message to
     // the server the message includes the last propagated timestamp.
@@ -636,14 +643,15 @@ public class AsyncKuduClient implements AutoCloseable {
     // then on retry we'll fall into the following block. It will sleep, then call the master to
     // see if the table was created. We'll spin like this until the table is created and then
     // we'll try to locate the tablet again.
-    if (tablesNotServed.contains(tableName)) {
-      return delayedIsCreateTableDone(tableName, request,
+    if (tablesNotServed.contains(tableId)) {
+      return delayedIsCreateTableDone(request.getTable(), request,
           new RetryRpcCB<R, Master.IsCreateTableDoneResponsePB>(request),
           getDelayedIsCreateTableDoneErrback(request));
     }
     Callback<Deferred<R>, Master.GetTableLocationsResponsePB> cb = new RetryRpcCB<>(request);
     Callback<Deferred<R>, Exception> eb = new RetryRpcErrback<>(request);
-    Deferred<Master.GetTableLocationsResponsePB> returnedD = locateTablet(tableName, partitionKey);
+    Deferred<Master.GetTableLocationsResponsePB> returnedD =
+        locateTablet(request.getTable(), partitionKey);
     return AsyncUtil.addCallbacksDeferring(returnedD, cb, eb);
   }
 
@@ -732,25 +740,26 @@ public class AsyncKuduClient implements AutoCloseable {
    * This method will call IsCreateTableDone on the master after sleeping for
    * getSleepTimeForRpc() based on the provided KuduRpc's number of attempts. Once this is done,
    * the provided callback will be called.
-   * @param tableName Table to lookup.
-   * @param rpc Original KuduRpc that needs to access the table.
-   * @param retryCB Callback to call on completion.
-   * @param errback Errback to call if something goes wrong when calling IsCreateTableDone.
+   * @param table the table to lookup
+   * @param rpc the original KuduRpc that needs to access the table
+   * @param retryCB the callback to call on completion
+   * @param errback the errback to call if something goes wrong when calling IsCreateTableDone
    * @return Deferred used to track the provided KuduRpc
    */
-  <R> Deferred<R> delayedIsCreateTableDone(final String tableName, final KuduRpc<R> rpc,
+  <R> Deferred<R> delayedIsCreateTableDone(final KuduTable table, final KuduRpc<R> rpc,
                                            final Callback<Deferred<R>,
                                                Master.IsCreateTableDoneResponsePB> retryCB,
                                            final Callback<Exception, Exception> errback) {
 
     final class RetryTimer implements TimerTask {
       public void run(final Timeout timeout) {
+        String tableId = table.getTableId();
         final boolean has_permit = acquireMasterLookupPermit();
         if (!has_permit) {
           // If we failed to acquire a permit, it's worth checking if someone
           // looked up the tablet we're interested in.  Every once in a while
           // this will save us a Master lookup.
-          if (!tablesNotServed.contains(tableName)) {
+          if (!tablesNotServed.contains(tableId)) {
             try {
               retryCB.call(null);
               return;
@@ -759,10 +768,10 @@ public class AsyncKuduClient implements AutoCloseable {
             }
           }
         }
-        IsCreateTableDoneRequest rpc = new IsCreateTableDoneRequest(masterTable, tableName);
+        IsCreateTableDoneRequest rpc = new IsCreateTableDoneRequest(masterTable, tableId);
         rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
         final Deferred<Master.IsCreateTableDoneResponsePB> d =
-            sendRpcToTablet(rpc).addCallback(new IsCreateTableDoneCB(tableName));
+            sendRpcToTablet(rpc).addCallback(new IsCreateTableDoneCB(tableId));
         if (has_permit) {
           // The errback is needed here to release the lookup permit
           d.addCallbacks(new ReleaseMasterLookupPermit<Master.IsCreateTableDoneResponsePB>(),
@@ -793,26 +802,26 @@ public class AsyncKuduClient implements AutoCloseable {
   /** Callback executed when IsCreateTableDone completes.  */
   private final class IsCreateTableDoneCB implements Callback<Master.IsCreateTableDoneResponsePB,
       Master.IsCreateTableDoneResponsePB> {
-    final String table;
-    IsCreateTableDoneCB(String table) {
-      this.table = table;
+    final String tableName;
+    IsCreateTableDoneCB(String tableName) {
+      this.tableName = tableName;
     }
     public Master.IsCreateTableDoneResponsePB call(final Master.IsCreateTableDoneResponsePB response) {
       if (response.getDone()) {
-        LOG.debug("Table " + table + " was created");
-        tablesNotServed.remove(table);
+        LOG.debug("Table {} was created", tableName);
+        tablesNotServed.remove(tableName);
       } else {
-        LOG.debug("Table " + table + " is still being created");
+        LOG.debug("Table {} is still being created", tableName);
       }
       return response;
     }
     public String toString() {
-      return "ask the master if " + table + " was created";
+      return "ask the master if " + tableName + " was created";
     }
   }
 
-  boolean isTableNotServed(String tableName) {
-    return tablesNotServed.contains(tableName);
+  boolean isTableNotServed(String tableId) {
+    return tablesNotServed.contains(tableId);
   }
 
 
@@ -849,14 +858,14 @@ public class AsyncKuduClient implements AutoCloseable {
   /**
    * This method first clears tabletsCache and then tablet2client without any regards for
    * calls to {@link #discoverTablets}. Call only when AsyncKuduClient is in a steady state.
-   * @param tableName Table for which we remove all the RemoteTablet entries
+   * @param tableId table for which we remove all the RemoteTablet entries
    */
   @VisibleForTesting
-  void emptyTabletsCacheForTable(String tableName) {
-    tabletsCache.remove(tableName);
+  void emptyTabletsCacheForTable(String tableId) {
+    tabletsCache.remove(tableId);
     Set<Map.Entry<Slice, RemoteTablet>> tablets = tablet2client.entrySet();
     for (Map.Entry<Slice, RemoteTablet> entry : tablets) {
-      if (entry.getValue().getTable().equals(tableName)) {
+      if (entry.getValue().getTableId().equals(tableId)) {
         tablets.remove(entry);
       }
     }
@@ -918,29 +927,30 @@ public class AsyncKuduClient implements AutoCloseable {
 
   /**
    * Sends a getTableLocations RPC to the master to find the table's tablets.
-   * @param table table's name, in the future this will use a tablet ID
+   * @param table table to lookup
    * @param partitionKey can be null, if not we'll find the exact tablet that contains it
    * @return Deferred to track the progress
    */
-  Deferred<Master.GetTableLocationsResponsePB> locateTablet(String table, byte[] partitionKey) {
+  Deferred<Master.GetTableLocationsResponsePB> locateTablet(KuduTable table, byte[] partitionKey) {
     final boolean has_permit = acquireMasterLookupPermit();
+    String tableId = table.getTableId();
     if (!has_permit) {
       // If we failed to acquire a permit, it's worth checking if someone
       // looked up the tablet we're interested in.  Every once in a while
       // this will save us a Master lookup.
-      RemoteTablet tablet = getTablet(table, partitionKey);
+      RemoteTablet tablet = getTablet(tableId, partitionKey);
       if (tablet != null && clientFor(tablet) != null) {
         return Deferred.fromResult(null);  // Looks like no lookup needed.
       }
     }
     GetTableLocationsRequest rpc =
-        new GetTableLocationsRequest(masterTable, partitionKey, partitionKey, table);
+        new GetTableLocationsRequest(masterTable, partitionKey, partitionKey, tableId);
     rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     final Deferred<Master.GetTableLocationsResponsePB> d;
 
     // If we know this is going to the master, check the master consensus configuration (as specified by
     // 'masterAddresses' field) to determine and cache the current leader.
-    if (isMasterTable(table)) {
+    if (isMasterTable(tableId)) {
       d = getMasterTableLocationsPB();
     } else {
       d = sendRpcToTablet(rpc);
@@ -986,7 +996,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * Get all or some tablets for a given table. This may query the master multiple times if there
    * are a lot of tablets.
    * This method blocks until it gets all the tablets.
-   * @param table Table name
+   * @param tableId the table to locate tablets from
    * @param startPartitionKey where to start in the table, pass null to start at the beginning
    * @param endPartitionKey where to stop in the table, pass null to get all the tablets until the
    *                        end of the table
@@ -995,7 +1005,7 @@ public class AsyncKuduClient implements AutoCloseable {
    *         each tablet
    * @throws Exception MasterErrorException if the table doesn't exist
    */
-  List<LocatedTablet> syncLocateTable(String table,
+  List<LocatedTablet> syncLocateTable(String tableId,
                                       byte[] startPartitionKey,
                                       byte[] endPartitionKey,
                                       long deadline) throws Exception {
@@ -1010,7 +1020,7 @@ public class AsyncKuduClient implements AutoCloseable {
             "deadline=" + deadline);
       }
       GetTableLocationsRequest rpc =
-          new GetTableLocationsRequest(masterTable, startPartitionKey, endPartitionKey, table);
+          new GetTableLocationsRequest(masterTable, startPartitionKey, endPartitionKey, tableId);
       rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
       final Deferred<Master.GetTableLocationsResponsePB> d = sendRpcToTablet(rpc);
       Master.GetTableLocationsResponsePB response =
@@ -1100,8 +1110,8 @@ public class AsyncKuduClient implements AutoCloseable {
   /** Callback executed when a master lookup completes.  */
   private final class MasterLookupCB implements Callback<Object,
       Master.GetTableLocationsResponsePB> {
-    final String table;
-    MasterLookupCB(String table) {
+    final KuduTable table;
+    MasterLookupCB(KuduTable table) {
       this.table = table;
     }
     public Object call(final Master.GetTableLocationsResponsePB arg) {
@@ -1114,7 +1124,7 @@ public class AsyncKuduClient implements AutoCloseable {
       return null;
     }
     public String toString() {
-      return "get tablet locations from the master";
+      return "get tablet locations from the master for table " + table.getName();
     }
   };
 
@@ -1138,23 +1148,25 @@ public class AsyncKuduClient implements AutoCloseable {
   }
 
   @VisibleForTesting
-  void discoverTablets(String table, Master.GetTableLocationsResponsePB response)
+  void discoverTablets(KuduTable table, Master.GetTableLocationsResponsePB response)
       throws NonRecoverableException {
+    String tableId = table.getTableId();
+    String tableName = table.getName();
     if (response.getTabletLocationsCount() == 0) {
-      // Keep a note that the table exists but it's not served yet, we'll retry
+      // Keep a note that the table exists but it's not served yet, we'll retry.
       if (LOG.isDebugEnabled()) {
-        LOG.debug("Table {} has not been created yet", table);
+        LOG.debug("Table {} has not been created yet", tableName);
       }
-      tablesNotServed.add(table);
+      tablesNotServed.add(tableId);
       return;
     }
     // Doing a get first instead of putIfAbsent to avoid creating unnecessary CSLMs because in
     // the most common case the table should already be present
-    ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(table);
+    ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(tableId);
     if (tablets == null) {
       tablets = new ConcurrentSkipListMap<>(Bytes.MEMCMP);
       ConcurrentSkipListMap<byte[], RemoteTablet> oldTablets = tabletsCache.putIfAbsent
-          (table, tablets);
+          (tableId, tablets);
       if (oldTablets != null) {
         tablets = oldTablets;
       }
@@ -1162,7 +1174,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
     for (Master.TabletLocationsPB tabletPb : response.getTabletLocationsList()) {
       // Early creating the tablet so that it parses out the pb
-      RemoteTablet rt = createTabletFromPb(table, tabletPb);
+      RemoteTablet rt = createTabletFromPb(tableId, tabletPb);
       Slice tabletId = rt.tabletId;
 
       // If we already know about this one, just refresh the locations
@@ -1180,7 +1192,7 @@ public class AsyncKuduClient implements AutoCloseable {
         continue;
       }
       LOG.info("Discovered tablet {} for table {} with partition {}",
-               tabletId.toString(Charset.defaultCharset()), table, rt.getPartition());
+               tabletId.toString(Charset.defaultCharset()), tableName, rt.getPartition());
       rt.refreshServers(tabletPb);
       // This is making this tablet available
       // Even if two clients were racing in this method they are putting the same RemoteTablet
@@ -1189,27 +1201,27 @@ public class AsyncKuduClient implements AutoCloseable {
     }
   }
 
-  RemoteTablet createTabletFromPb(String table, Master.TabletLocationsPB tabletPb) {
+  RemoteTablet createTabletFromPb(String tableId, Master.TabletLocationsPB tabletPb) {
     Partition partition = ProtobufHelper.pbToPartition(tabletPb.getPartition());
     Slice tabletId = new Slice(tabletPb.getTabletId().toByteArray());
-    return new RemoteTablet(table, tabletId, partition);
+    return new RemoteTablet(tableId, tabletId, partition);
   }
 
   /**
-   * Gives the tablet's ID for the table name. In the future there will be multiple tablets
-   * and this method will find the right one.
-   * @param tableName table to find the tablet
+   * Gives the tablet's ID for the table ID and partition key.
+   * In the future there will be multiple tablets and this method will find the right one.
+   * @param tableId table to find the tablet for
    * @return a tablet ID as a slice or null if not found
    */
-  RemoteTablet getTablet(String tableName, byte[] partitionKey) {
-    ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(tableName);
+  RemoteTablet getTablet(String tableId, byte[] partitionKey) {
+    ConcurrentSkipListMap<byte[], RemoteTablet> tablets = tabletsCache.get(tableId);
 
     if (tablets == null) {
       return null;
     }
 
     // We currently only have one master tablet.
-    if (isMasterTable(tableName)) {
+    if (isMasterTable(tableId)) {
       if (tablets.firstEntry() == null) {
         return null;
       }
@@ -1550,10 +1562,10 @@ public class AsyncKuduClient implements AutoCloseable {
     }
   }
 
-  private boolean isMasterTable(String tableName) {
-    // Checking that it's the same instance so that we don't to reserve the placeholder's name as
-    // a restricted name.
-    return MASTER_TABLE_NAME_PLACEHOLDER == tableName;
+  private boolean isMasterTable(String tableId) {
+    // Checking that it's the same instance so there's absolutely no chance of confusing the master
+    // 'table' for a user one.
+    return MASTER_TABLE_NAME_PLACEHOLDER == tableId;
   }
 
   private final class TabletClientPipeline extends DefaultChannelPipeline {
@@ -1730,15 +1742,15 @@ public class AsyncKuduClient implements AutoCloseable {
   public class RemoteTablet implements Comparable<RemoteTablet> {
 
     private static final int NO_LEADER_INDEX = -1;
-    private final String table;
+    private final String tableId;
     private final Slice tabletId;
     private final ArrayList<TabletClient> tabletServers = new ArrayList<TabletClient>();
     private final Partition partition;
     private int leaderIndex = NO_LEADER_INDEX;
 
-    RemoteTablet(String table, Slice tabletId, Partition partition) {
+    RemoteTablet(String tableId, Slice tabletId, Partition partition) {
       this.tabletId = tabletId;
-      this.table = table;
+      this.tableId = tableId;
       this.partition = partition;
     }
 
@@ -1867,8 +1879,8 @@ public class AsyncKuduClient implements AutoCloseable {
       }
     }
 
-    public String getTable() {
-      return table;
+    public String getTableId() {
+      return tableId;
     }
 
     Slice getTabletId() {
@@ -1903,7 +1915,7 @@ public class AsyncKuduClient implements AutoCloseable {
       }
 
       return ComparisonChain.start()
-          .compare(this.table, remoteTablet.table)
+          .compare(this.tableId, remoteTablet.tableId)
           .compare(this.partition, remoteTablet.partition).result();
     }
 
@@ -1919,7 +1931,7 @@ public class AsyncKuduClient implements AutoCloseable {
 
     @Override
     public int hashCode() {
-      return Objects.hashCode(table, partition);
+      return Objects.hashCode(tableId, partition);
     }
   }
 

@@ -11,6 +11,7 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
   private final Schema schema;
   private final PartitionSchema partitionSchema;
   private final boolean createTableDone;
+  private final String tableId;
 
   /**
    * @param ellapsedMillis Time in milliseconds since RPC creation to now
@@ -20,12 +21,14 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
   GetTableSchemaResponse(long ellapsedMillis,
                          String tsUUID,
                          Schema schema,
+                         String tableId,
                          PartitionSchema partitionSchema,
                          boolean createTableDone) {
     super(ellapsedMillis, tsUUID);
     this.schema = schema;
     this.partitionSchema = partitionSchema;
     this.createTableDone = createTableDone;
+    this.tableId = tableId;
   }
 
   /**
@@ -50,5 +53,13 @@ public class GetTableSchemaResponse extends KuduRpcResponse {
    */
   public boolean isCreateTableDone() {
     return createTableDone;
+  }
+
+  /**
+   * Get the table's unique identifier.
+   * @return the table's tableId
+   */
+  public String getTableId() {
+    return tableId;
   }
 }

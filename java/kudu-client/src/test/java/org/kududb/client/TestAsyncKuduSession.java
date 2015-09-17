@@ -219,7 +219,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
 
     // Test a tablet going missing or encountering a new tablet while inserting a lot
     // of data. This code used to fail in many different ways.
-    client.emptyTabletsCacheForTable(TABLE_NAME);
+    client.emptyTabletsCacheForTable(table.getTableId());
     for (int i = 101; i < 151; i++) {
       Insert insert = createInsert(i);
       while (true) {
