@@ -365,7 +365,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     RpcController controller;
     BOOST_FOREACH(const TabletServerMap::value_type& entry, tablet_servers_) {
       controller.Reset();
-      controller.set_timeout(MonoDelta::FromSeconds(1));
+      controller.set_timeout(MonoDelta::FromSeconds(10));
       PingRequestPB req;
       PingResponsePB resp;
       Status s = entry.second->tserver_proxy->Ping(req, &resp, &controller);
