@@ -274,7 +274,12 @@ If installing Kudu using parcels or packages does not provide the flexibility yo
 need, you can build Kudu from source. You can build from source on any operating system
 supported by Cloudera.
 
-NOTE: It is not possible to build Kudu on OSX.
+[WARNING]
+.Known Build Issues
+====
+* It is not possible to build Kudu on OSX.
+* Do not build Kudu using `gcc` 4.6. It is known to cause runtime and test failures.
+====
 
 === RHEL or CentOS
 . Install the prerequisite libraries, if they are not installed:
