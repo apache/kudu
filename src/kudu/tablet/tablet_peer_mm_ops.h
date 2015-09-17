@@ -16,6 +16,19 @@ class AtomicGauge;
 
 namespace tablet {
 
+class FlushOpPerfImprovementPolicy {
+ public:
+  ~FlushOpPerfImprovementPolicy() {}
+
+  // Sets the performance improvement based on the anchored ram if it's over the threshold,
+  // else it will set it based on how long it has been since the last flush.
+  static void SetPerfImprovementForFlush(MaintenanceOpStats* stats,
+                                         double elapsed_ms, bool is_empty);
+
+ private:
+  FlushOpPerfImprovementPolicy() {}
+};
+
 // Maintenance op for MRS flush. Only one can happen at a time.
 class FlushMRSOp : public MaintenanceOp {
  public:

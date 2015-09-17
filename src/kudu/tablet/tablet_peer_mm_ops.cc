@@ -35,28 +35,38 @@ namespace tablet {
 using std::map;
 using strings::Substitute;
 
-const int64_t kFlushDueToTimeMs = 120 * 1000;
+// How long we wait before considering a time-based flush.
+const double kFlushDueToTimeMs = 2 * 60 * 1000;
+// Upper bound for how long it takes to reach "full perf improvement" in time-based flushing.
+const double kFlushUpperBoundMs = 60 * 60 * 1000;
 
-// Common method for MRS and DMS flush. Sets the performance improvement based on the anchored ram
-// if it's over the threshold, else it will set it based on how long it has been since the last
-// flush.
-static void SetPerfImprovementForFlush(MaintenanceOpStats* stats,
-                                       double elapsed_ms, bool is_empty) {
+//
+// FlushOpPerfImprovementPolicy.
+//
+
+void FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(MaintenanceOpStats* stats,
+                                                              double elapsed_ms, bool is_empty) {
   if (stats->ram_anchored() > FLAGS_flush_threshold_mb * 1024 * 1024) {
     // If we're over the user-specified flush threshold, then consider the perf
     // improvement to be 1 for every extra MB.  This produces perf_improvement results
     // which are much higher than any compaction would produce, and means that, when
     // there is an MRS over threshold, a flush will almost always be selected instead of
-    // a compaction.  That's not necessarily a good thing, but in the absense of better
+    // a compaction.  That's not necessarily a good thing, but in the absence of better
     // heuristics, it will do for now.
-    double extra_mb = static_cast<double>(stats->ram_anchored()) / (1024 * 1024);
+    double extra_mb =
+        static_cast<double>(FLAGS_flush_threshold_mb - (stats->ram_anchored()) / (1024 * 1024));
     stats->set_perf_improvement(extra_mb);
   } else if (!is_empty && elapsed_ms > kFlushDueToTimeMs) {
     // Even if we aren't over the threshold, consider flushing if we haven't flushed
     // in a long time. But, don't give it a large perf_improvement score. We should
-    // only do this if we really don't have much else to do.
-    double extra_millis = elapsed_ms - 60 * 1000;
-    stats->set_perf_improvement(std::min(600000.0 / extra_millis, 0.05));
+    // only do this if we really don't have much else to do, and if we've already waited a bit.
+    // The following will give an improvement that's between 0.0 and 1.0, gradually growing
+    // as 'elapsed_ms' approaches 'kFlushUpperBoundMs'.
+    double perf = elapsed_ms / kFlushUpperBoundMs;
+    if (perf > 1.0) {
+      perf = 1.0;
+    }
+    stats->set_perf_improvement(perf);
   }
 }
 
@@ -84,9 +94,10 @@ void FlushMRSOp::UpdateStats(MaintenanceOpStats* stats) {
 
   // TODO: use workload statistics here to find out how "hot" the tablet has
   // been in the last 5 minutes.
-  SetPerfImprovementForFlush(stats,
-                             time_since_flush_.elapsed().wall_millis(),
-                             tablet_peer_->tablet()->MemRowSetEmpty());
+  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(
+      stats,
+      time_since_flush_.elapsed().wall_millis(),
+      tablet_peer_->tablet()->MemRowSetEmpty());
 }
 
 bool FlushMRSOp::Prepare() {
@@ -135,10 +146,10 @@ void FlushDeltaMemStoresOp::UpdateStats(MaintenanceOpStats* stats) {
   stats->set_runnable(true);
   stats->set_logs_retained_bytes(retention_size);
 
-  SetPerfImprovementForFlush(stats,
-                             time_since_flush_.elapsed().wall_millis(),
-                             tablet_peer_->tablet()->DeltaMemRowSetEmpty());
-
+  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(
+      stats,
+      time_since_flush_.elapsed().wall_millis(),
+      tablet_peer_->tablet()->DeltaMemRowSetEmpty());
 }
 
 void FlushDeltaMemStoresOp::Perform() {
