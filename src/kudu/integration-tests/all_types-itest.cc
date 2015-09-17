@@ -6,6 +6,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/client/row_result.h"
 #include "kudu/common/wire_protocol-test-util.h"
+#include "kudu/integration-tests/cluster_verifier.h"
 #include "kudu/integration-tests/ts_itest-base.h"
 
 DEFINE_int32(num_rows_per_tablet, 100, "The number of rows to be inserted into each tablet");
@@ -385,6 +386,11 @@ class AllTypesItest : public KuduTest {
     ASSERT_OK(CreateCluster());
     ASSERT_OK(CreateTable());
     ASSERT_OK(InsertRows());
+    // Check that all of the replicas agree on the inserted data. This retries until
+    // all replicas are up-to-date, which is important to ensure that the following
+    // Verify always passes.
+    NO_FATALS(ClusterVerifier(cluster_.get()).CheckCluster());
+    // Check that the inserted data matches what we thought we inserted.
     ASSERT_OK(VerifyRows());
   }
 
