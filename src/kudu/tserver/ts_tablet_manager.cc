@@ -189,12 +189,11 @@ Status TSTabletManager::Init() {
 
   // Now submit the "Open" task for each.
   BOOST_FOREACH(const scoped_refptr<TabletMetadata>& meta, metas) {
+    scoped_refptr<TransitionInProgressDeleter> deleter;
     {
       boost::lock_guard<rw_spinlock> lock(lock_);
-      InsertOrDie(&transition_in_progress_, meta->tablet_id());
+      CHECK_OK(StartTabletStateTransitionUnlocked(meta->tablet_id(), "opening tablet", &deleter));
     }
-    scoped_refptr<TransitionInProgressDeleter> deleter(
-        new TransitionInProgressDeleter(&transition_in_progress_, &lock_, meta->tablet_id()));
 
     scoped_refptr<TabletPeer> tablet_peer = CreateAndRegisterTabletPeer(meta, NEW_PEER);
     RETURN_NOT_OK(open_tablet_pool_->SubmitFunc(boost::bind(&TSTabletManager::OpenTablet,
@@ -248,6 +247,7 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
   // Set the initial opid_index for a RaftConfigPB to -1.
   config.set_opid_index(consensus::kInvalidOpIdIndex);
 
+  scoped_refptr<TransitionInProgressDeleter> deleter;
   {
     // acquire the lock in exclusive mode as we'll add a entry to the
     // transition_in_progress_ set if the lookup fails.
@@ -261,14 +261,8 @@ Status TSTabletManager::CreateNewTablet(const string& table_id,
     }
 
     // Sanity check that the tablet's creation isn't already in progress
-    if (!InsertIfNotPresent(&transition_in_progress_, tablet_id)) {
-      return Status::AlreadyPresent("Maintenance of tablet already in progress",
-                                    tablet_id);
-    }
+    RETURN_NOT_OK(StartTabletStateTransitionUnlocked(tablet_id, "creating tablet", &deleter));
   }
-
-  scoped_refptr<TransitionInProgressDeleter> deleter(
-      new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
 
   // Create the metadata.
   TRACE("Creating new metadata...");
@@ -341,20 +335,16 @@ Status TSTabletManager::StartRemoteBootstrap(const StartRemoteBootstrapRequestPB
   scoped_refptr<TabletPeer> old_tablet_peer;
   scoped_refptr<TabletMetadata> meta;
   bool replacing_tablet = false;
+  scoped_refptr<TransitionInProgressDeleter> deleter;
   {
     boost::lock_guard<rw_spinlock> lock(lock_);
     if (LookupTabletUnlocked(tablet_id, &old_tablet_peer)) {
       meta = old_tablet_peer->tablet_metadata();
       replacing_tablet = true;
     }
-    if (!InsertIfNotPresent(&transition_in_progress_, tablet_id)) {
-      return Status::AlreadyPresent("Maintenance of tablet already in progress",
-                                    tablet_id);
-    }
+    RETURN_NOT_OK(StartTabletStateTransitionUnlocked(tablet_id, "remote bootstrapping tablet",
+                                                     &deleter));
   }
-
-  scoped_refptr<TransitionInProgressDeleter> deleter(
-      new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
 
   if (replacing_tablet) {
     // Make sure the existing tablet peer is shut down and tombstoned.
@@ -473,9 +463,10 @@ Status TSTabletManager::DeleteTablet(
   TRACE("Deleting tablet $0", tablet_id);
 
   scoped_refptr<TabletPeer> tablet_peer;
+  scoped_refptr<TransitionInProgressDeleter> deleter;
   {
     // Acquire the lock in exclusive mode as we'll add a entry to the
-    // transition_in_progress_ set.
+    // transition_in_progress_ map.
     boost::lock_guard<rw_spinlock> lock(lock_);
     TRACE("Acquired tablet manager lock");
     RETURN_NOT_OK(CheckRunningUnlocked(error_code));
@@ -484,15 +475,13 @@ Status TSTabletManager::DeleteTablet(
       *error_code = TabletServerErrorPB::TABLET_NOT_FOUND;
       return Status::NotFound("Tablet not found", tablet_id);
     }
-    // Sanity check that the tablet's creation isn't already in progress
-    if (!InsertIfNotPresent(&transition_in_progress_, tablet_id)) {
+    // Sanity check that the tablet's deletion isn't already in progress
+    Status s = StartTabletStateTransitionUnlocked(tablet_id, "deleting tablet", &deleter);
+    if (PREDICT_FALSE(!s.ok())) {
       *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
-      return Status::AlreadyPresent("Maintenance of tablet already in progress",
-                                    tablet_id);
+      return s;
     }
   }
-  scoped_refptr<TransitionInProgressDeleter> deleter(
-      new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
 
   // They specified an "atomic" delete. Check the committed config's opid_index.
   // TODO: There's actually a race here between the check and shutdown, but
@@ -554,6 +543,20 @@ Status TSTabletManager::CheckRunningUnlocked(
   *error_code = TabletServerErrorPB::TABLET_NOT_RUNNING;
   return Status::ServiceUnavailable(Substitute("Tablet Manager is not running: $0",
                                                TSTabletManagerStatePB_Name(state_)));
+}
+
+Status TSTabletManager::StartTabletStateTransitionUnlocked(
+    const string& tablet_id,
+    const string& reason,
+    scoped_refptr<TransitionInProgressDeleter>* deleter) {
+  DCHECK(lock_.is_write_locked());
+  if (!InsertIfNotPresent(&transition_in_progress_, tablet_id, reason)) {
+    return Status::IllegalState(
+        Substitute("State transition of tablet $0 already in progress: $1",
+                    tablet_id, transition_in_progress_[tablet_id]));
+  }
+  deleter->reset(new TransitionInProgressDeleter(&transition_in_progress_, &lock_, tablet_id));
+  return Status::OK();
 }
 
 Status TSTabletManager::OpenTabletMeta(const string& tablet_id,
@@ -946,17 +949,17 @@ void TSTabletManager::LogAndTombstone(const scoped_refptr<TabletMetadata>& meta,
   }
 }
 
-TransitionInProgressDeleter::TransitionInProgressDeleter(TransitionInProgressSet* set,
+TransitionInProgressDeleter::TransitionInProgressDeleter(TransitionInProgressMap* map,
                                                          rw_spinlock* lock,
                                                          const string& entry)
-    : set_(set),
+    : in_progress_(map),
       lock_(lock),
       entry_(entry) {
 }
 
 TransitionInProgressDeleter::~TransitionInProgressDeleter() {
   boost::lock_guard<rw_spinlock> lock(*lock_);
-  CHECK(set_->erase(entry_));
+  CHECK(in_progress_->erase(entry_));
 }
 
 } // namespace tserver

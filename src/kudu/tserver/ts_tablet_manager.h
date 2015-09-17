@@ -49,7 +49,8 @@ class TabletStatusListener;
 namespace tserver {
 class TabletServer;
 
-typedef std::tr1::unordered_set<std::string> TransitionInProgressSet;
+// Map of tablet id -> transition reason string.
+typedef std::tr1::unordered_map<std::string, std::string> TransitionInProgressMap;
 
 class TransitionInProgressDeleter;
 
@@ -189,6 +190,18 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Returns Status::OK() iff state_ == MANAGER_RUNNING.
   Status CheckRunningUnlocked(boost::optional<TabletServerErrorPB::Code>* error_code) const;
 
+  // Registers the start of a tablet state transition by inserting the tablet
+  // id and reason string into the transition_in_progress_ map.
+  // 'reason' is a string included in the Status return when there is
+  // contention indicating why the tablet is currently already transitioning.
+  // Returns IllegalState if the tablet is already "locked" for a state
+  // transition by some other operation.
+  // On success, returns OK and populates 'deleter' with an object that removes
+  // the map entry on destruction.
+  Status StartTabletStateTransitionUnlocked(const std::string& tablet_id,
+                                            const std::string& reason,
+                                            scoped_refptr<TransitionInProgressDeleter>* deleter);
+
   // Open a tablet meta from the local file system by loading its superblock.
   Status OpenTabletMeta(const std::string& tablet_id,
                         scoped_refptr<tablet::TabletMetadata>* metadata);
@@ -290,8 +303,9 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
   // Map from tablet ID to tablet
   TabletMap tablet_map_;
 
-  // Set of tablet ids whose bootstrap, creation, or deletion is in-progress
-  TransitionInProgressSet transition_in_progress_;
+  // Map of tablet ids -> reason strings where the keys are tablets whose
+  // bootstrap, creation, or deletion is in-progress
+  TransitionInProgressMap transition_in_progress_;
 
   // Tablets to include in the next incremental tablet report.
   // When a tablet is added/removed/added locally and needs to be
@@ -318,7 +332,7 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 // when tablet boostrap, create, and delete operations complete.
 class TransitionInProgressDeleter : public RefCountedThreadSafe<TransitionInProgressDeleter> {
  public:
-  TransitionInProgressDeleter(TransitionInProgressSet* set,
+  TransitionInProgressDeleter(TransitionInProgressMap* map,
                               rw_spinlock* lock,
                               const string& entry);
 
@@ -326,7 +340,7 @@ class TransitionInProgressDeleter : public RefCountedThreadSafe<TransitionInProg
   friend class RefCountedThreadSafe<TransitionInProgressDeleter>;
   ~TransitionInProgressDeleter();
 
-  TransitionInProgressSet* const set_;
+  TransitionInProgressMap* const in_progress_;
   rw_spinlock* const lock_;
   const std::string entry_;
 };
