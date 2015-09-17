@@ -3,6 +3,7 @@
 
 #include "kudu/master/ts_manager.h"
 
+#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <vector>
@@ -10,9 +11,17 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_descriptor.h"
+#include "kudu/util/flag_tags.h"
+
+DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
+             "The period of time that a Master can go without receiving a heartbeat from a "
+             "tablet server before considering it unresponsive. Unresponsive servers are not "
+             "selected when assigning replicas during table creation or re-replication.");
+TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
 
 using std::string;
 using std::tr1::shared_ptr;
+using std::vector;
 
 namespace kudu {
 namespace master {
@@ -69,10 +78,23 @@ Status TSManager::RegisterTS(const NodeInstancePB& instance,
   return Status::OK();
 }
 
-void TSManager::GetAllDescriptors(std::vector<std::tr1::shared_ptr<TSDescriptor> > *descs) const {
-  boost::shared_lock<rw_spinlock> l(lock_);
+void TSManager::GetAllDescriptors(vector<shared_ptr<TSDescriptor> > *descs) const {
   descs->clear();
+  boost::shared_lock<rw_spinlock> l(lock_);
   AppendValuesFromMap(servers_by_id_, descs);
+}
+
+void TSManager::GetAllLiveDescriptors(vector<shared_ptr<TSDescriptor> > *descs) const {
+  descs->clear();
+
+  boost::shared_lock<rw_spinlock> l(lock_);
+  descs->reserve(servers_by_id_.size());
+  BOOST_FOREACH(const TSDescriptorMap::value_type& entry, servers_by_id_) {
+    const shared_ptr<TSDescriptor>& ts = entry.second;
+    if (ts->TimeSinceHeartbeat().ToMilliseconds() < FLAGS_tserver_unresponsive_timeout_ms) {
+      descs->push_back(ts);
+    }
+  }
 }
 
 int TSManager::GetCount() const {

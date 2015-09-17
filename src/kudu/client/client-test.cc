@@ -2523,14 +2523,36 @@ TEST_F(ClientTest, TestCreateTableWithTooManyTablets) {
   ASSERT_OK(split1->SetInt32("key", 1));
 
   KuduPartialRow* split2 = schema_.NewRow();
-  ASSERT_OK(split1->SetInt32("key", 2));
+  ASSERT_OK(split2->SetInt32("key", 2));
 
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
-  ASSERT_TRUE(table_creator->table_name("foobar")
-              .schema(&schema_)
-              .split_rows(list_of(split1)(split2))
-              .num_replicas(3)
-              .Create().IsInvalidArgument());
+  Status s = table_creator->table_name("foobar")
+      .schema(&schema_)
+      .split_rows(list_of(split1)(split2))
+      .num_replicas(3)
+      .Create();
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "The requested number of tablets is over the permitted maximum (1)");
+}
+
+TEST_F(ClientTest, TestCreateTableWithTooManyReplicas) {
+  KuduPartialRow* split1 = schema_.NewRow();
+  ASSERT_OK(split1->SetInt32("key", 1));
+
+  KuduPartialRow* split2 = schema_.NewRow();
+  ASSERT_OK(split2->SetInt32("key", 2));
+
+  gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
+  Status s = table_creator->table_name("foobar")
+      .schema(&schema_)
+      .split_rows(list_of(split1)(split2))
+      .num_replicas(3)
+      .Create();
+  ASSERT_TRUE(s.IsInvalidArgument());
+  ASSERT_STR_CONTAINS(s.ToString(),
+                      "Not enough live tablet servers to create a table with the requested "
+                      "replication factor 3. 1 tablet servers are alive");
 }
 
 TEST_F(ClientTest, TestLatestObservedTimestamp) {

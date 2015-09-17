@@ -42,6 +42,10 @@ message MasterErrorPB {
     // leader or a single non-distributed master, which this node
     // isn't.
     NOT_THE_LEADER = 7;
+
+    // The number of replicas requested is greater than the number of live servers
+    // in the cluster.
+    REPLICATION_FACTOR_TOO_HIGH = 8;
   }
 
   // The error code.

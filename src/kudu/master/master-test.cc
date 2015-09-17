@@ -31,6 +31,8 @@ using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 
+DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
+
 namespace kudu {
 namespace master {
 
@@ -38,6 +40,10 @@ class MasterTest : public KuduTest {
  protected:
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
+
+    // In this test, we create tables to test catalog manager behavior,
+    // but we have no tablet servers. Typically this would be disallowed.
+    FLAGS_catalog_manager_check_ts_count_for_create_table = false;
 
     // Start master
     mini_master_.reset(new MiniMaster(Env::Default(), GetTestPath("Master"), 0));

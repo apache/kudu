@@ -448,7 +448,7 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   // Helper for creating the initial TableInfo state
   // Leaves the table "write locked" with the new info in the
   // "dirty" state field.
-  TableInfo *CreateTableInfo(const CreateTableRequestPB* req,
+  TableInfo* CreateTableInfo(const CreateTableRequestPB& req,
                              const Schema& schema,
                              const PartitionSchema& partition_schema);
 

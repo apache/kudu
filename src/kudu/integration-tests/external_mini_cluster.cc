@@ -158,6 +158,10 @@ Status ExternalMiniCluster::Restart() {
     }
   }
 
+  RETURN_NOT_OK(WaitForTabletServerCount(
+      tablet_servers_.size(),
+      MonoDelta::FromSeconds(kTabletServerRegistrationTimeoutSeconds)));
+
   return Status::OK();
 }
 

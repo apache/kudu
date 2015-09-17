@@ -63,13 +63,19 @@ class TSManager {
   // list.
   void GetAllDescriptors(std::vector<std::tr1::shared_ptr<TSDescriptor> >* descs) const;
 
+  // Return all of the currently registered TS descriptors that have sent a
+  // heartbeat recently, indicating that they're alive and well.
+  void GetAllLiveDescriptors(std::vector<std::tr1::shared_ptr<TSDescriptor> >* descs) const;
+
   // Get the TS count.
   int GetCount() const;
 
  private:
   mutable rw_spinlock lock_;
 
-  std::tr1::unordered_map<std::string, std::tr1::shared_ptr<TSDescriptor> > servers_by_id_;
+  typedef std::tr1::unordered_map<
+    std::string, std::tr1::shared_ptr<TSDescriptor> > TSDescriptorMap;
+  TSDescriptorMap servers_by_id_;
 
   DISALLOW_COPY_AND_ASSIGN(TSManager);
 };

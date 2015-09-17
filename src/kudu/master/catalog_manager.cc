@@ -116,12 +116,13 @@ TAG_FLAG(master_tombstone_evicted_tablet_replicas, hidden);
 DEFINE_bool(master_add_server_when_underreplicated, true,
             "Whether the master should attempt to add a new server to a tablet "
             "config when it detects that the tablet is under-replicated.");
+TAG_FLAG(master_add_server_when_underreplicated, hidden);
 
-DEFINE_int32(tserver_unresponsive_timeout_ms, 10 * 1000,
-             "The period of time that a Master can go without receiving a heartbeat from a "
-             "tablet server before considering it ineligible for hosting a replacement replica "
-             "when under-replication is detected.");
-TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
+DEFINE_bool(catalog_manager_check_ts_count_for_create_table, true,
+            "Whether the master should ensure that there are enough live tablet "
+            "servers to satisfy the provided replication count before allowing "
+            "a table to be created.");
+TAG_FLAG(catalog_manager_check_ts_count_for_create_table, hidden);
 
 namespace kudu {
 namespace master {
@@ -641,15 +642,20 @@ void CatalogManager::AbortTableCreation(TableInfo* table,
 
 // Create a new table.
 // See README file in this directory for a description of the design.
-Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
+Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
                                    CreateTableResponsePB* resp,
                                    rpc::RpcContext* rpc) {
   RETURN_NOT_OK(CheckOnline());
   Status s;
 
+  // Copy the request, so we can fill in some defaults.
+  CreateTableRequestPB req = *orig_req;
+  LOG(INFO) << "CreateTable from " << RequestorString(rpc)
+            << ":\n" << req.DebugString();
+
   // a. Validate the user request.
   Schema client_schema;
-  RETURN_NOT_OK(SchemaFromPB(req->schema(), &client_schema));
+  RETURN_NOT_OK(SchemaFromPB(req.schema(), &client_schema));
   if (client_schema.has_column_ids()) {
     s = Status::InvalidArgument("User requests should not have Column IDs");
     SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
@@ -674,15 +680,16 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
   // the default partition schema (no hash bucket components and a range
   // partitioned on the primary key columns) will be used.
   PartitionSchema partition_schema;
-  s = PartitionSchema::FromPB(req->partition_schema(), schema, &partition_schema);
+  s = PartitionSchema::FromPB(req.partition_schema(), schema, &partition_schema);
   if (!s.ok()) {
     SetupError(resp->mutable_error(), MasterErrorPB::INVALID_SCHEMA, s);
     return s;
   }
 
+  // Decode split rows.
   vector<KuduPartialRow> split_rows;
 
-  RowOperationsPBDecoder decoder(&req->split_rows(), &client_schema, &schema, NULL);
+  RowOperationsPBDecoder decoder(&req.split_rows(), &client_schema, &schema, NULL);
   vector<DecodedRowOperation> ops;
   RETURN_NOT_OK(decoder.DecodeOperations(&ops));
 
@@ -697,19 +704,38 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     split_rows.push_back(*op.split_row);
   }
 
+  // Create partitions based on specified partition schema and split rows.
   vector<Partition> partitions;
   RETURN_NOT_OK(partition_schema.CreatePartitions(split_rows, schema, &partitions));
 
-  int max_tablets = FLAGS_max_create_tablets_per_ts * master_->ts_manager()->GetCount();
-  if (req->num_replicas() > 1 && max_tablets > 0 && partitions.size() > max_tablets) {
-    s = Status::InvalidArgument(Substitute("The number of tablets requested is over the "
+  // If they didn't specify a num_replicas, set it based on the default.
+  if (!req.has_num_replicas()) {
+    req.set_num_replicas(FLAGS_default_num_replicas);
+  }
+
+  // Verify that the total number of tablets is reasonable, relative to the number
+  // of live tablet servers.
+  TSDescriptorVector ts_descs;
+  master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
+  int num_live_tservers = ts_descs.size();
+  int max_tablets = FLAGS_max_create_tablets_per_ts * num_live_tservers;
+  if (req.num_replicas() > 1 && max_tablets > 0 && partitions.size() > max_tablets) {
+    s = Status::InvalidArgument(Substitute("The requested number of tablets is over the "
                                            "permitted maximum ($0)", max_tablets));
     SetupError(resp->mutable_error(), MasterErrorPB::TOO_MANY_TABLETS, s);
     return s;
   }
 
-  LOG(INFO) << "CreateTable from " << RequestorString(rpc)
-            << ":\n" << req->DebugString();
+  // Verify that the number of replicas isn't larger than the number of live tablet
+  // servers.
+  if (FLAGS_catalog_manager_check_ts_count_for_create_table &&
+      req.num_replicas() > num_live_tservers) {
+    s = Status::InvalidArgument(Substitute(
+        "Not enough live tablet servers to create a table with the requested replication "
+        "factor $0. $1 tablet servers are alive.", req.num_replicas(), num_live_tservers));
+    SetupError(resp->mutable_error(), MasterErrorPB::REPLICATION_FACTOR_TOO_HIGH, s);
+    return s;
+  }
 
   scoped_refptr<TableInfo> table;
   vector<TabletInfo*> tablets;
@@ -718,7 +744,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     TRACE("Acquired catalog manager lock");
 
     // b. Verify that the table does not exist.
-    table = FindPtrOrNull(table_names_map_, req->name());
+    table = FindPtrOrNull(table_names_map_, req.name());
     if (table != NULL) {
       s = Status::AlreadyPresent("Table already exists", table->id());
       SetupError(resp->mutable_error(), MasterErrorPB::TABLE_ALREADY_PRESENT, s);
@@ -728,7 +754,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* req,
     // c. Add the new table in "preparing" state.
     table = CreateTableInfo(req, schema, partition_schema);
     table_ids_map_[table->id()] = table;
-    table_names_map_[req->name()] = table;
+    table_names_map_[req.name()] = table;
 
     // d. Create the TabletInfo objects in state PREPARING.
     BOOST_FOREACH(const Partition& partition, partitions) {
@@ -822,7 +848,7 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   return Status::OK();
 }
 
-TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
+TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB& req,
                                            const Schema& schema,
                                            const PartitionSchema& partition_schema) {
   DCHECK(schema.has_column_ids());
@@ -830,14 +856,10 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB* req,
   table->mutable_metadata()->StartMutation();
   SysTablesEntryPB *metadata = &table->mutable_metadata()->mutable_dirty()->pb;
   metadata->set_state(SysTablesEntryPB::PREPARING);
-  metadata->set_name(req->name());
+  metadata->set_name(req.name());
   metadata->set_version(0);
   metadata->set_next_column_id(schema.max_col_id() + 1);
-  if (req->has_num_replicas()) {
-    metadata->set_num_replicas(req->num_replicas());
-  } else {
-    metadata->set_num_replicas(FLAGS_default_num_replicas);
-  }
+  metadata->set_num_replicas(req.num_replicas());
   // Use the Schema object passed in, since it has the column IDs already assigned,
   // whereas the user request PB does not.
   CHECK_OK(SchemaToPB(schema, metadata->mutable_schema()));
@@ -2197,8 +2219,7 @@ bool SelectRandomTSForReplica(const TSDescriptorVector& ts_descs,
                               shared_ptr<TSDescriptor>* selection) {
   TSDescriptorVector tablet_servers;
   BOOST_FOREACH(const shared_ptr<TSDescriptor>& ts, ts_descs) {
-    if (!ContainsKey(exclude_uuids, ts->permanent_uuid()) &&
-        ts->TimeSinceHeartbeat().ToMilliseconds() < FLAGS_tserver_unresponsive_timeout_ms) {
+    if (!ContainsKey(exclude_uuids, ts->permanent_uuid())) {
       tablet_servers.push_back(ts);
     }
   }
@@ -2272,7 +2293,7 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
     InsertOrDie(&replica_uuids, peer.permanent_uuid());
   }
   TSDescriptorVector ts_descs;
-  master_->ts_manager()->GetAllDescriptors(&ts_descs);
+  master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
   shared_ptr<TSDescriptor> replacement_replica;
   if (PREDICT_FALSE(!SelectRandomTSForReplica(ts_descs, replica_uuids, &replacement_replica))) {
     KLOG_EVERY_N(WARNING, 100) << LogPrefix() << "No candidate replacement replica found "
@@ -2633,7 +2654,7 @@ Status CatalogManager::ProcessPendingAssignments(
 
   // For those tablets which need to be created in this round, assign replicas.
   TSDescriptorVector ts_descs;
-  master_->ts_manager()->GetAllDescriptors(&ts_descs);
+  master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
 
   Status s;
   BOOST_FOREACH(TabletInfo *tablet, deferred.needs_create_rpc) {
