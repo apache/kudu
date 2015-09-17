@@ -49,7 +49,8 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
   Pair<CreateTableResponse, Object> deserialize(final CallResponse callResponse,
                                                 String tsUUID) throws Exception {
     final Master.CreateTableResponsePB.Builder builder = Master.CreateTableResponsePB.newBuilder();
-    readProtobuf(callResponse.getPBMessage(), builder);    CreateTableResponse response =
+    readProtobuf(callResponse.getPBMessage(), builder);
+    CreateTableResponse response =
         new CreateTableResponse(deadlineTracker.getElapsedMillis(), tsUUID);
     return new Pair<CreateTableResponse, Object>(
         response, builder.hasError() ? builder.getError() : null);

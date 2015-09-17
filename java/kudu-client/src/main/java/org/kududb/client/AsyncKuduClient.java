@@ -263,9 +263,10 @@ public class AsyncKuduClient implements AutoCloseable {
    * configurations are used, mainly the table will have one tablet.
    * @param name the table's name
    * @param schema the table's schema
-   * @return a deferred object to track the progress of the createTable command
+   * @return a deferred object to track the progress of the createTable command that gives
+   * an object to communicate with the created table
    */
-  public Deferred<CreateTableResponse> createTable(String name, Schema schema) {
+  public Deferred<KuduTable> createTable(String name, Schema schema) {
     return this.createTable(name, schema, new CreateTableBuilder());
   }
 
@@ -274,9 +275,11 @@ public class AsyncKuduClient implements AutoCloseable {
    * @param name the table's name
    * @param schema the table's schema
    * @param builder a builder containing the table's configurations
-   * @return a deferred object to track the progress of the createTable command
+   * @return a deferred object to track the progress of the createTable command that gives
+   * an object to communicate with the created table
    */
-  public Deferred<CreateTableResponse> createTable(String name, Schema schema, CreateTableBuilder builder) {
+  public Deferred<KuduTable> createTable(final String name, Schema schema,
+                                         CreateTableBuilder builder) {
     checkIsClosed();
     if (builder == null) {
       builder = new CreateTableBuilder();
@@ -284,7 +287,13 @@ public class AsyncKuduClient implements AutoCloseable {
     CreateTableRequest create = new CreateTableRequest(this.masterTable, name, schema,
         builder);
     create.setTimeoutMillis(defaultAdminOperationTimeoutMs);
-    return sendRpcToTablet(create);
+    return sendRpcToTablet(create).addCallbackDeferring(
+        new Callback<Deferred<KuduTable>, CreateTableResponse>() {
+      @Override
+      public Deferred<KuduTable> call(CreateTableResponse createTableResponse) throws Exception {
+        return openTable(name);
+      }
+    });
   }
 
   /**

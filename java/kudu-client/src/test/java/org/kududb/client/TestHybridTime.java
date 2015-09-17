@@ -42,9 +42,7 @@ public class TestHybridTime extends BaseKuduTest {
     // Using multiple tablets doesn't work with the current way this test works since we could
     // jump from one TS to another which changes the logical clock.
     CreateTableBuilder builder = new CreateTableBuilder();
-    createTable(TABLE_NAME, schema, builder);
-
-    table = openTable(TABLE_NAME);
+    table = createTable(TABLE_NAME, schema, builder);
   }
 
   private static Schema getSchema() {

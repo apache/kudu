@@ -36,9 +36,9 @@ public class KuduClient implements AutoCloseable {
    * configurations are used, mainly the table will have one tablet.
    * @param name Table's name
    * @param schema Table's schema
-   * @return an rpc response object
+   * @return an object to communicate with the created table
    */
-  public CreateTableResponse createTable(String name, Schema schema) throws Exception {
+  public KuduTable createTable(String name, Schema schema) throws Exception {
     return createTable(name, schema, new CreateTableBuilder());
   }
 
@@ -47,11 +47,11 @@ public class KuduClient implements AutoCloseable {
    * @param name the table's name
    * @param schema the table's schema
    * @param builder a builder containing the table's configurations
-   * @return an rpc response object
+   * @return an object to communicate with the created table
    */
-  public CreateTableResponse createTable(String name, Schema schema, CreateTableBuilder builder)
+  public KuduTable createTable(String name, Schema schema, CreateTableBuilder builder)
       throws Exception {
-    Deferred<CreateTableResponse> d = asyncClient.createTable(name, schema, builder);
+    Deferred<KuduTable> d = asyncClient.createTable(name, schema, builder);
     return d.join(getDefaultAdminOperationTimeoutMs());
   }
 

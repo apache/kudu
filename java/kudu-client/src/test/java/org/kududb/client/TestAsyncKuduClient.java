@@ -22,9 +22,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    createTable(TABLE_NAME, basicSchema, new CreateTableBuilder());
-
-    table = openTable(TABLE_NAME);
+    table = createTable(TABLE_NAME, basicSchema, new CreateTableBuilder());
   }
 
   @Test(timeout = 100000)

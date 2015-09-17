@@ -16,9 +16,8 @@ public class TestKuduSession extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testBasicOps() throws Exception {
     String tableName = TABLE_NAME_PREFIX + "-testBasicOps";
-    createTable(tableName, basicSchema, new CreateTableBuilder());
+    table = createTable(tableName, basicSchema, new CreateTableBuilder());
 
-    table = openTable(tableName);
     KuduSession session = syncClient.newSession();
     for (int i = 0; i < 10; i++) {
       session.apply(createInsert(i));
@@ -40,9 +39,7 @@ public class TestKuduSession extends BaseKuduTest {
   @Test(timeout = 100000)
   public void testBatchWithSameRow() throws Exception {
     String tableName = TABLE_NAME_PREFIX + "-testBatchWithSameRow";
-    createTable(tableName, basicSchema, new CreateTableBuilder());
-
-    table = openTable(tableName);
+    table = createTable(tableName, basicSchema, new CreateTableBuilder());
 
     KuduSession session = syncClient.newSession();
     session.setFlushMode(SessionConfiguration.FlushMode.MANUAL_FLUSH);

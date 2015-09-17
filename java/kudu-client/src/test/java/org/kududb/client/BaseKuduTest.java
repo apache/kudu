@@ -277,9 +277,10 @@ public class BaseKuduTest {
     }
   }
 
-  protected static void createTable(String tableName, Schema schema, CreateTableBuilder builder) {
+  protected static KuduTable createTable(String tableName, Schema schema,
+                                         CreateTableBuilder builder) {
     LOG.info("Creating table: {}", tableName);
-    Deferred<CreateTableResponse> d = client.createTable(tableName, schema, builder);
+    Deferred<KuduTable> d = client.createTable(tableName, schema, builder);
     final AtomicBoolean gotError = new AtomicBoolean(false);
     d.addErrback(new Callback<Object, Object>() {
       @Override
@@ -289,8 +290,9 @@ public class BaseKuduTest {
         return null;
       }
     });
+    KuduTable table = null;
     try {
-      d.join(DEFAULT_SLEEP);
+      table = d.join(DEFAULT_SLEEP);
     } catch (Exception e) {
       fail("Timed out");
     }
@@ -299,6 +301,7 @@ public class BaseKuduTest {
           masterAddresses + "?");
     }
     tableNames.add(tableName);
+    return table;
   }
 
   /**
@@ -352,11 +355,10 @@ public class BaseKuduTest {
       splitRow.addInt(0, i);
       builder.addSplitRow(splitRow);
     }
-    createTable(tableName, basicSchema, builder);
+    KuduTable table = createTable(tableName, basicSchema, builder);
     AsyncKuduSession session = client.newSession();
 
     // create a table with on empty tablet and 3 tablets of 3 rows each
-    KuduTable table = openTable(tableName);
     for (int key1 : KEYS) {
       for (int key2 = 1; key2 <= 3; key2++) {
         Insert insert = table.newInsert();

@@ -139,8 +139,7 @@ public class TestKuduTable extends BaseKuduTest {
               .defaultValue(defaultValue).build());
     }
     Schema schemaWithDefault = new Schema(columns);
-    createTable(tableWithDefault, schemaWithDefault, builder);
-    KuduTable kuduTable = openTable(tableWithDefault);
+    KuduTable kuduTable = createTable(tableWithDefault, schemaWithDefault, builder);
     assertEquals(defaultInt, kuduTable.getSchema().getColumnByIndex(0).getDefaultValue());
     assertEquals(defaultString,
         kuduTable.getSchema().getColumnByIndex(columns.size() - 2).getDefaultValue());
@@ -216,9 +215,8 @@ public class TestKuduTable extends BaseKuduTest {
         builder.addSplitRow(row);
       }
     }
-    createTable(tableName, schema, builder);
+    KuduTable table = createTable(tableName, schema, builder);
 
-    KuduTable table = openTable(tableName);
     // calling getTabletsLocation won't wait on the table to be assigned so we trigger the wait
     // by scanning
     countRowsInScan(client.newScannerBuilder(table).build());
