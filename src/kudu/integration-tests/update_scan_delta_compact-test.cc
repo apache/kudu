@@ -252,7 +252,6 @@ void UpdateScanDeltaCompactionTest::ScanRows(CountDownLatch* stop_latch) const {
       vector<KuduRowResult> rows;
       while (scanner.HasMoreRows()) {
         CHECK_OK(scanner.NextBatch(&rows));
-        rows.clear();
       }
     }
   }

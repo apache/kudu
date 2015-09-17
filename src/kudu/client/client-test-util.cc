@@ -52,7 +52,6 @@ void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
     BOOST_FOREACH(const KuduRowResult& row, rows) {
       row_strings->push_back(row.ToString());
     }
-    rows.clear();
   }
 }
 

@@ -238,7 +238,6 @@ class ClientTest : public KuduTest {
           ASSERT_OK(row.GetInt32(0, &value));
           sum += value;
         }
-        rows.clear();
       }
       // The sum should be the sum of the arithmetic series from
       // 0..FLAGS_test_scan_num_rows-1
@@ -272,7 +271,6 @@ class ClientTest : public KuduTest {
             FAIL() << row.ToString();
           }
         }
-        rows.clear();
       }
     }
   }
@@ -301,7 +299,6 @@ class ClientTest : public KuduTest {
             FAIL() << row.ToString();
           }
         }
-        rows.clear();
       }
     }
   }
@@ -337,7 +334,6 @@ class ClientTest : public KuduTest {
     while (scanner.HasMoreRows()) {
       CHECK_OK(scanner.NextBatch(&rows));
       count += rows.size();
-      rows.clear();
     }
     return count;
   }
@@ -525,7 +521,6 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
   while (scanner.HasMoreRows()) {
     ASSERT_OK(scanner.NextBatch(&rows));
     sum += rows.size();
-    rows.clear();
   }
 
   ASSERT_EQ(FLAGS_test_scan_num_rows, sum);
@@ -541,7 +536,6 @@ TEST_F(ClientTest, TestScanAtSnapshot) {
   while (scanner.HasMoreRows()) {
     ASSERT_OK(scanner.NextBatch(&rows));
     sum += rows.size();
-    rows.clear();
   }
 
   ASSERT_EQ(half_the_rows, sum);
@@ -718,7 +712,6 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
     while (scanner.HasMoreRows()) {
       ASSERT_OK(scanner.NextBatch(&rows));
       count += rows.size();
-      rows.clear();
     }
     ASSERT_EQ(FLAGS_test_scan_num_rows, count);
   }
@@ -767,7 +760,6 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
         nrows++;
         curr_key++;
       }
-      rows.clear();
     }
   }
   ASSERT_EQ(nrows, 6);
@@ -806,7 +798,6 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
         nrows++;
         curr_key += 2;
       }
-      rows.clear();
     }
   }
   ASSERT_EQ(nrows, 6);
@@ -2144,7 +2135,6 @@ void CheckCorrectness(KuduScanner* scanner, int expected[], int nrows) {
       ASSERT_EQ(strval.size(), 0) << "Incorrect string value for key " << key;
       ++readrows;
     }
-    rows.clear();
   }
   ASSERT_EQ(readrows, nrows);
   scanner->Close();
@@ -2343,7 +2333,6 @@ namespace {
         CHECK_EQ(12345, val2);
         ++cnt;
       }
-      rows.clear();
     }
     return cnt;
   }
@@ -2509,7 +2498,6 @@ TEST_F(ClientTest, TestClonePredicates) {
   while (scanner->HasMoreRows()) {
     ASSERT_OK(scanner->NextBatch(&rows));
     count += rows.size();
-    rows.clear();
   }
 
   ASSERT_EQ(count, 1);
@@ -2522,7 +2510,6 @@ TEST_F(ClientTest, TestClonePredicates) {
   while (scanner->HasMoreRows()) {
     ASSERT_OK(scanner->NextBatch(&rows));
     count += rows.size();
-    rows.clear();
   }
 
   ASSERT_EQ(count, 1);

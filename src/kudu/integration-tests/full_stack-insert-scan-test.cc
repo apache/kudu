@@ -397,7 +397,6 @@ void FullStackInsertScanTest::ScanProjection(const vector<string>& cols,
     while (scanner.HasMoreRows()) {
       ASSERT_OK(scanner.NextBatch(&rows));
       nrows += rows.size();
-      rows.clear();
     }
   }
   ASSERT_EQ(nrows, kNumRows);

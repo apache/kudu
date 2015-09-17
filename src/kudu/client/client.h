@@ -901,7 +901,9 @@ class KUDU_EXPORT KuduScanner {
   // NextBatch is called for the first time.
   bool HasMoreRows() const;
 
-  // Appends the next batch of rows to the 'rows' vector.
+  // Clears 'rows' and populates it with the next batch of rows from the tablet server.
+  // A call to NextBatch() invalidates all previously fetched results which might
+  // now be pointing to garbage memory.
   Status NextBatch(std::vector<KuduRowResult>* rows);
 
   // Get the KuduTabletServer that is currently handling the scan.

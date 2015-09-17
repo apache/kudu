@@ -620,7 +620,6 @@ Status LinkedListTester::VerifyLinkedListRemote(
 
       verifier.RegisterResult(key, link, updated);
     }
-    rows.clear();
   }
 
   Status s = verifier.VerifyData(verified_count, log_errors);

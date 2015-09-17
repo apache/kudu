@@ -107,7 +107,6 @@ Status ClusterVerifier::DoCheckRowCount(const std::string& table_name,
   while (scanner.HasMoreRows()) {
     RETURN_NOT_OK_PREPEND(scanner.NextBatch(&rows), "Unable to read from scanner");
     count += rows.size();
-    rows.clear();
   }
 
   if (mode == AT_LEAST && count < expected_row_count) {

@@ -460,7 +460,6 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
   int verified = 0;
   vector<KuduRowResult> results;
   while (scanner.HasMoreRows()) {
-    results.clear();
     CHECK_OK(scanner.NextBatch(&results));
 
     BOOST_FOREACH(const KuduRowResult& row, results) {
@@ -849,7 +848,6 @@ void AlterTableTest::ScannerThread() {
     int count = 0;
     vector<KuduRowResult> results;
     while (scanner.HasMoreRows()) {
-      results.clear();
       CHECK_OK(scanner.NextBatch(&results));
       count += results.size();
     }

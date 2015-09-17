@@ -1060,6 +1060,8 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
   CHECK(data_->open_);
   CHECK(data_->proxy_);
 
+  rows->clear();
+
   if (data_->data_in_open_) {
     // We have data from a previous scan.
     VLOG(1) << "Extracting data from scan " << ToString();
