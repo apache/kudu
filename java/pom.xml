@@ -34,7 +34,7 @@
         <schema-validator-maven-plugin.version>5.5.0-SNAPSHOT</schema-validator-maven-plugin.version>
 
         <!-- Library dependencies -->
-        <async.version>1.4.0</async.version>
+        <async.version>1.4.1</async.version>
         <guava.version>12.0.1</guava.version>
         <hadoop.version>2.5.0-cdh5.3.2</hadoop.version>
         <junit.version>4.11</junit.version>
