@@ -29,6 +29,7 @@ Kudu's design sets it apart. Some of Kudu's benefits include:
   availability even if _f_ nodes failing, given _2f+1_ nodes in the cluster.
   Reads can be serviced by read-only follower tablets, even in the event of a
   leader tablet failure.
+- Structured data model.
 
 By combining all of these properties, Kudu targets support for families of
 applications that are difficult or impossible to implement on current generation

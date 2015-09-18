@@ -26,35 +26,29 @@ https://github.com/cloudera/kudu-examples/ and start using Kudu in minutes.
 * Write access to the `/opt/cloudera/csd` directory on the Cloudera Manager server.
 
 [[how_many_hosts]]
+== How Many Masters?
+- Currently Kudu only supports a single master.
+////
+Uncomment once we officially support multi-master.
+- For production use, three masters are recommended. With three masters,
+  Kudu can survive a single master going offline or becoming unavailable.
+////
+
 // == How Many Hosts?
 // .How many masters?
-// - If you run three masters and one fails, the other two can continue. If the leader
-// failed, one of the other masters can become the leader.
-// - If you run two masters and one fails, the other master cannot achieve a
-//  quorum to become leader. With no lead master, your cluster will not function
-//  correctly.
-//- You must have an odd number of masters, to avoid a "split brain" scenario
-//  where half the masters are on either side of the partition and neither side
-//  has the majority.
 
-//.How many tablet servers?
 == How Many Tablet Servers?
-- If you run three tablet servers and one fails, the other two can continue. If
-  the leader failed, one of the other tablet servers can become the
-  leader.
-- If you run two tablet servers and one fails, the other tablet server cannot
-  achieve a quorum to become leader. With no leader, no writes can occur.
-- You must have an odd number of tablet servers, to avoid a "split brain"
-  scenario where half the tablet servers are on either side of the partition
-  and neither side has the majority.
+- A minimum of three tablet servers is recommended in order to support a tablet
+  replication factor of three. If a single tablet server fails, the tablet
+  replicas on the remaining tablet servers can continue to service read and
+  write requests.
+- Each additional tablet server will improve performance and throughput.
 
 One host can run both master and tablet server processes.
 
 == Install Kudu Using Parcels
 
 include::installation.adoc[tags=quickstart_parcels]
-
-
 
 [[qs_access_web_ui]]
 == Access the Web UIs
@@ -78,19 +72,17 @@ TBD
 
 == Test Fault Tolerance
 
-If you are running at least three masters and at least three tablet servers are
-serving each tablet, you can stop any master or tablet server and the Kudu
-cluster will recover. See <<how_many_hosts>>. If all masters disappear, tablet
-servers will continue to serve cached data. If too many tablet servers disappear and
-a quorum cannot be achieved, writes to that tablet will fail.
+If you are using a replication factor of at least three, and at least three
+tablet servers, you can stop any tablet server and the Kudu cluster will remain
+available for all operations. See <<how_many_hosts>>. If too many tablet servers
+disappear and a quorum cannot be achieved on any tablet, writes to that tablet
+will fail.
 
 To stop a process running in the foreground, interrupt it with Ctrl-C.
 Otherwise, kill the process using operating system utilities. Monitor the log
 files and the Web UIs to see what happens when a failure is detected, and what
 happens when a new master or tablet server joins the cluster.
 
-
 == Next Steps
 - link:quickstart.html[Get Started With Kudu]
 - link:installation.html[Kudu Installation Guide]
-
