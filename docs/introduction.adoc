@@ -76,8 +76,7 @@ operation.
 .Table
 
 A _table_ is where your data is stored in Kudu. A table has a schema and
-a totally ordered primary key. A table is split into segments called tablets, by
-primary key.
+a totally ordered primary key. A table is split into segments called tablets.
 
 .Tablet
 
