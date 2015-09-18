@@ -2,7 +2,7 @@
 title: Installing Kudu
 layout: default
 
-last_updated: 'Last updated 2015-09-10 00:29:19 PDT'
+last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
 ---
 
 
@@ -531,29 +531,17 @@ configuration steps are required on each host before you can start Kudu services
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p>Create a flagfile in <code>/etc/kudu/conf/gflagfile</code> with at least the following contents,
-modified to match your environment. It should be world-readable.</p>
-<div class="listingblock">
-<div class="content">
-<pre># Minimum configuration for masters
---master_data_dirs=/data/kudu
---master_wal_dir=/data/kudu
-# Uncomment this if your system does not support hole punching.
-#--block_manager=file
-
-# Minimum configuration for tablet servers
---tserver_data_dirs=/data/kudu
---tserver_wal_dir=/data/kudu
---tserver_master_addrs=kudu_master.example.com
-# Uncomment this if your system does not support hole punching.
-#--block_manager=file</pre>
+<p>The packages create a <code>kudu-conf</code> entry in the operating system&#8217;s alternatives database,
+and they ship the built-in <code>conf.dist</code> alternative. To adjust your configuration,
+you can either edit the files in <code>/etc/kudu/conf/</code> directly, or create a new alternative
+using the operating system utilities, make sure it is the link pointed to by <code>/etc/kudu/conf/</code>,
+and create custom configuration files there. Some parts of the configuration are configured
+in <code>/etc/default/kudu-master</code> and <code>/etc/default/kudu-tserver</code> files as well. You
+should include or duplicate these configuration options if you create custom configuration files.</p>
+<div class="paragraph">
+<p>Review the configuration, including the default WAL and data directory locations,
+and adjust them according to your requirements.</p>
 </div>
-</div>
-</li>
-<li>
-<p>Adjust the Kudu default settings to use this flagfile. Edit <code>/etc/default/kudu</code>
-and add the following argument to the list of arguments for <code>KUDU_MASTER_ARGS</code> and
-<code>KUDU_TSERVER_ARGS</code>: <code>--flagfile=/etc/kudu/conf/gflagfile</code></p>
 </li>
 <li>
 <p>Start Kudu services using the following commands:</p>
@@ -579,10 +567,10 @@ them to the default runlevel.</p>
 <div class="listingblock">
 <div class="content">
 <pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo chkconfig kudu-master on                # RHEL / CentOS
-$ sudo chkconfig kudu-tserver on         # RHEL / CentOS
+$ sudo chkconfig kudu-tserver on               # RHEL / CentOS
 
 $ sudo update-rc.d kudu-master defaults        # Debian / Ubuntu
-$ sudo update-rc.d kudu-tserver defaults # Debian / Ubuntu</code></pre>
+$ sudo update-rc.d kudu-tserver defaults       # Debian / Ubuntu</code></pre>
 </div>
 </div>
 </li>

@@ -2,7 +2,7 @@
 title: kudu-ts-cli Flags
 layout: default
 
-last_updated: 'Last updated 2015-09-10 22:21:59 PDT'
+last_updated: 'Last updated 2015-09-17 17:23:10 PDT'
 ---
 
 
@@ -17,110 +17,6 @@ last_updated: 'Last updated 2015-09-10 22:21:59 PDT'
 <div class="paragraph">
 <p>Flags tagged <code>stable</code> and not <code>advanced</code> are safe to use for common
 configuration tasks.</p>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_flagfile"><a class="link" href="#kudu-ts-cli_flagfile"><code>--flagfile</code></a></h3>
-<div class="paragraph">
-<p>load flags from file</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_help"><a class="link" href="#kudu-ts-cli_help"><code>--help</code></a></h3>
-<div class="paragraph">
-<p>show help on all flags [tip: all flags can have two dashes]</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_version"><a class="link" href="#kudu-ts-cli_version"><code>--version</code></a></h3>
-<div class="paragraph">
-<p>show version and build info and exit</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_block_cache_capacity_mb"><a class="link" href="#kudu-ts-cli_block_cache_capacity_mb"><code>--block_cache_capacity_mb</code></a></h3>
-<div class="paragraph">
-<p>block cache capacity in MB</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>512</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
 </div>
 <div class="sect2">
 <h3 id="kudu-ts-cli_log_force_fsync_all"><a class="link" href="#kudu-ts-cli_log_force_fsync_all"><code>--log_force_fsync_all</code></a></h3>
@@ -201,110 +97,6 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect2">
-<h3 id="kudu-ts-cli_rpc_bind_addresses"><a class="link" href="#kudu-ts-cli_rpc_bind_addresses"><code>--rpc_bind_addresses</code></a></h3>
-<div class="paragraph">
-<p>Comma-separated list of addresses to bind to for RPC connections. Currently, ephemeral ports (i.e. port 0) are not allowed.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0.0.0.0</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_webserver_port"><a class="link" href="#kudu-ts-cli_webserver_port"><code>--webserver_port</code></a></h3>
-<div class="paragraph">
-<p>Port to bind to for the web server</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_maintenance_manager_num_threads"><a class="link" href="#kudu-ts-cli_maintenance_manager_num_threads"><code>--maintenance_manager_num_threads</code></a></h3>
-<div class="paragraph">
-<p>Size of the maintenance manager thread pool. Beyond a value of '1', one thread is reserved for emergency flushes. For spinning disks, the number of threads should not be above the number of devices.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_tserver_master_addrs"><a class="link" href="#kudu-ts-cli_tserver_master_addrs"><code>--tserver_master_addrs</code></a></h3>
-<div class="paragraph">
-<p>Comma separated addresses of the masters which the tablet server should connect to. The masters do not read this flag&#8201;&#8212;&#8201;configure the masters separately using 'rpc_bind_addresses'.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>127.0.0.1:7051</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
 <h3 id="kudu-ts-cli_log_filename"><a class="link" href="#kudu-ts-cli_log_filename"><code>--log_filename</code></a></h3>
 <div class="paragraph">
 <p>Prefix of log filename - full path is &lt;log_dir&gt;/&lt;log_filename&gt;.[INFO|WARN|ERROR|FATAL]</p>
@@ -331,6 +123,84 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect2">
+<h3 id="kudu-ts-cli_flagfile"><a class="link" href="#kudu-ts-cli_flagfile"><code>--flagfile</code></a></h3>
+<div class="paragraph">
+<p>load flags from file</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="kudu-ts-cli_help"><a class="link" href="#kudu-ts-cli_help"><code>--help</code></a></h3>
+<div class="paragraph">
+<p>show help on all flags [tip: all flags can have two dashes]</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="kudu-ts-cli_version"><a class="link" href="#kudu-ts-cli_version"><code>--version</code></a></h3>
+<div class="paragraph">
+<p>show version and build info and exit</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
 <h3 id="kudu-ts-cli_colorlogtostderr"><a class="link" href="#kudu-ts-cli_colorlogtostderr"><code>--colorlogtostderr</code></a></h3>
 <div class="paragraph">
 <p>color messages logged to stderr (if supported by terminal)</p>
@@ -347,7 +217,7 @@ configuration tasks.</p>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -442,6 +312,84 @@ configuration tasks.</p>
 <div class="paragraph">
 <p>Flags tagged <code>stable</code> and <code>advanced</code> are supported, but should be considered
 "expert" options and should be used carefully and after thorough testing.</p>
+</div>
+<div class="sect2">
+<h3 id="kudu-ts-cli_enable_process_lifetime_heap_profiling"><a class="link" href="#kudu-ts-cli_enable_process_lifetime_heap_profiling"><code>--enable_process_lifetime_heap_profiling</code></a></h3>
+<div class="paragraph">
+<p>Enables heap profiling for the lifetime of the process. Profile output will be stored in the directory specified by -heap_profile_path. Enabling this option will disable the on-demand/remote server profile handlers.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="kudu-ts-cli_heap_profile_path"><a class="link" href="#kudu-ts-cli_heap_profile_path"><code>--heap_profile_path</code></a></h3>
+<div class="paragraph">
+<p>Output path to store heap profiles. If not set profiles are stored in /tmp/&lt;process-name&gt;.&lt;pid&gt;.&lt;n&gt;.heap.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="kudu-ts-cli_memory_limit_hard_mb"><a class="link" href="#kudu-ts-cli_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h3>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 <div class="sect2">
 <h3 id="kudu-ts-cli_fromenv"><a class="link" href="#kudu-ts-cli_fromenv"><code>--fromenv</code></a></h3>
@@ -643,84 +591,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_enable_process_lifetime_heap_profiling"><a class="link" href="#kudu-ts-cli_enable_process_lifetime_heap_profiling"><code>--enable_process_lifetime_heap_profiling</code></a></h3>
-<div class="paragraph">
-<p>Enables heap profiling for the lifetime of the process. Profile output will be stored in the directory specified by -heap_profile_path. Enabling this option will disable the on-demand/remote server profile handlers.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_heap_profile_path"><a class="link" href="#kudu-ts-cli_heap_profile_path"><code>--heap_profile_path</code></a></h3>
-<div class="paragraph">
-<p>Output path to store heap profiles. If not set profiles are stored in /tmp/&lt;process-name&gt;.&lt;pid&gt;.&lt;n&gt;.heap.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-ts-cli_memory_limit_hard_mb"><a class="link" href="#kudu-ts-cli_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h3>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -947,18 +817,13 @@ configuration tasks.</p>
     <ul class="sectlevel1">
 <li><a href="#_stable_flags">Stable Flags</a>
 <ul class="sectlevel2">
-<li><a href="#kudu-ts-cli_flagfile"><code>--flagfile</code></a></li>
-<li><a href="#kudu-ts-cli_help"><code>--help</code></a></li>
-<li><a href="#kudu-ts-cli_version"><code>--version</code></a></li>
-<li><a href="#kudu-ts-cli_block_cache_capacity_mb"><code>--block_cache_capacity_mb</code></a></li>
 <li><a href="#kudu-ts-cli_log_force_fsync_all"><code>--log_force_fsync_all</code></a></li>
 <li><a href="#kudu-ts-cli_fs_data_dirs"><code>--fs_data_dirs</code></a></li>
 <li><a href="#kudu-ts-cli_fs_wal_dir"><code>--fs_wal_dir</code></a></li>
-<li><a href="#kudu-ts-cli_rpc_bind_addresses"><code>--rpc_bind_addresses</code></a></li>
-<li><a href="#kudu-ts-cli_webserver_port"><code>--webserver_port</code></a></li>
-<li><a href="#kudu-ts-cli_maintenance_manager_num_threads"><code>--maintenance_manager_num_threads</code></a></li>
-<li><a href="#kudu-ts-cli_tserver_master_addrs"><code>--tserver_master_addrs</code></a></li>
 <li><a href="#kudu-ts-cli_log_filename"><code>--log_filename</code></a></li>
+<li><a href="#kudu-ts-cli_flagfile"><code>--flagfile</code></a></li>
+<li><a href="#kudu-ts-cli_help"><code>--help</code></a></li>
+<li><a href="#kudu-ts-cli_version"><code>--version</code></a></li>
 <li><a href="#kudu-ts-cli_colorlogtostderr"><code>--colorlogtostderr</code></a></li>
 <li><a href="#kudu-ts-cli_log_dir"><code>--log_dir</code></a></li>
 <li><a href="#kudu-ts-cli_logtostderr"><code>--logtostderr</code></a></li>
@@ -967,6 +832,9 @@ configuration tasks.</p>
 </li>
 <li><a href="#kudu-ts-cli_stable_advanced">Stable, Advanced Flags</a>
 <ul class="sectlevel2">
+<li><a href="#kudu-ts-cli_enable_process_lifetime_heap_profiling"><code>--enable_process_lifetime_heap_profiling</code></a></li>
+<li><a href="#kudu-ts-cli_heap_profile_path"><code>--heap_profile_path</code></a></li>
+<li><a href="#kudu-ts-cli_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></li>
 <li><a href="#kudu-ts-cli_fromenv"><code>--fromenv</code></a></li>
 <li><a href="#kudu-ts-cli_tryfromenv"><code>--tryfromenv</code></a></li>
 <li><a href="#kudu-ts-cli_undefok"><code>--undefok</code></a></li>
@@ -975,9 +843,6 @@ configuration tasks.</p>
 <li><a href="#kudu-ts-cli_helppackage"><code>--helppackage</code></a></li>
 <li><a href="#kudu-ts-cli_helpshort"><code>--helpshort</code></a></li>
 <li><a href="#kudu-ts-cli_helpxml"><code>--helpxml</code></a></li>
-<li><a href="#kudu-ts-cli_enable_process_lifetime_heap_profiling"><code>--enable_process_lifetime_heap_profiling</code></a></li>
-<li><a href="#kudu-ts-cli_heap_profile_path"><code>--heap_profile_path</code></a></li>
-<li><a href="#kudu-ts-cli_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></li>
 <li><a href="#kudu-ts-cli_log_link"><code>--log_link</code></a></li>
 <li><a href="#kudu-ts-cli_log_prefix"><code>--log_prefix</code></a></li>
 <li><a href="#kudu-ts-cli_minloglevel"><code>--minloglevel</code></a></li>

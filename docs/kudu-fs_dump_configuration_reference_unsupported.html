@@ -2,7 +2,7 @@
 title: kudu-fs_dump Unsupported Flags
 layout: default
 
-last_updated: 'Last updated 2015-09-10 22:21:59 PDT'
+last_updated: 'Last updated 2015-09-17 17:23:10 PDT'
 ---
 
 
@@ -244,6 +244,34 @@ for informational purposes only. They are subject to change or be removed withou
 </div>
 </div>
 <div class="sect1">
+<h2 id="kudu-fs_dump_follower_unavailable_considered_failed_sec"><a class="link" href="#kudu-fs_dump_follower_unavailable_considered_failed_sec"><code>--follower_unavailable_considered_failed_sec</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Seconds that a leader is unable to successfully heartbeat to a follower after which the follower is considered to be failed and evicted from the config.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>300</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
 <h2 id="kudu-fs_dump_group_commit_queue_size_bytes"><a class="link" href="#kudu-fs_dump_group_commit_queue_size_bytes"><code>--group_commit_queue_size_bytes</code></a></h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -458,6 +486,34 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>64</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-fs_dump_evict_failed_followers"><a class="link" href="#kudu-fs_dump_evict_failed_followers"><code>--evict_failed_followers</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to evict followers from the Raft config that have fallen too far behind the leader&#8217;s log to catch up normally or have been unreachable by the leader for longer than follower_unavailable_considered_failed_sec</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -916,34 +972,6 @@ for informational purposes only. They are subject to change or be removed withou
 </div>
 </div>
 <div class="sect1">
-<h2 id="kudu-fs_dump_web_log_bytes"><a class="link" href="#kudu-fs_dump_web_log_bytes"><code>--web_log_bytes</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The maximum number of bytes to display on the debug webserver&#8217;s log page</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1048576</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
 <h2 id="kudu-fs_dump_max_clock_sync_error_usec"><a class="link" href="#kudu-fs_dump_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -966,286 +994,6 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_rpc_num_acceptors_per_address"><a class="link" href="#kudu-fs_dump_rpc_num_acceptors_per_address"><code>--rpc_num_acceptors_per_address</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Number of RPC acceptor threads for each bound address</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_rpc_num_service_threads"><a class="link" href="#kudu-fs_dump_rpc_num_service_threads"><code>--rpc_num_service_threads</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Number of RPC worker threads to run</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_rpc_service_queue_length"><a class="link" href="#kudu-fs_dump_rpc_service_queue_length"><code>--rpc_service_queue_length</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Default length of queue for incoming RPC requests</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>50</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_num_reactor_threads"><a class="link" href="#kudu-fs_dump_num_reactor_threads"><code>--num_reactor_threads</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Number of libev reactor threads to start.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>4</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_metrics_log_interval_ms"><a class="link" href="#kudu-fs_dump_metrics_log_interval_ms"><code>--metrics_log_interval_ms</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Interval (in milliseconds) at which the server will dump its metrics to a local log file. The log files are located in the same directory as specified by the -log_dir flag. If this is not a positive value, then metrics logging will be disabled.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_webserver_max_post_length_bytes"><a class="link" href="#kudu-fs_dump_webserver_max_post_length_bytes"><code>--webserver_max_post_length_bytes</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The maximum length of a POST request that will be accepted by the embedded web server.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1048576</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_webserver_doc_root"><a class="link" href="#kudu-fs_dump_webserver_doc_root"><code>--webserver_doc_root</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Files under &lt;webserver_doc_root&gt; are accessible via the debug webserver. Defaults to $KUDU_HOME/www, or if $KUDU_HOME is not set, disables the document root</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_webserver_enable_doc_root"><a class="link" href="#kudu-fs_dump_webserver_enable_doc_root"><code>--webserver_enable_doc_root</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>If true, webserver may serve static files from the webserver_doc_root</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_webserver_interface"><a class="link" href="#kudu-fs_dump_webserver_interface"><code>--webserver_interface</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Interface to start debug webserver on. If blank, webserver binds to 0.0.0.0</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_webserver_num_worker_threads"><a class="link" href="#kudu-fs_dump_webserver_num_worker_threads"><code>--webserver_num_worker_threads</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Maximum number of threads to start for handling web server requests</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>50</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
 </tr>
 </tbody>
 </table>
@@ -1494,230 +1242,6 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>64</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_heartbeat_interval_ms"><a class="link" href="#kudu-fs_dump_heartbeat_interval_ms"><code>--heartbeat_interval_ms</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Interval at which the TS heartbeats to the master.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_heartbeat_max_failures_before_backoff"><a class="link" href="#kudu-fs_dump_heartbeat_max_failures_before_backoff"><code>--heartbeat_max_failures_before_backoff</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Maximum number of consecutive heartbeat failures until the Tablet Server backs off to the normal heartbeat interval, rather than retrying.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>3</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_heartbeat_rpc_timeout_ms"><a class="link" href="#kudu-fs_dump_heartbeat_rpc_timeout_ms"><code>--heartbeat_rpc_timeout_ms</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Timeout used for the TS&#8594;Master heartbeat RPCs.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>15000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_scanner_ttl_ms"><a class="link" href="#kudu-fs_dump_scanner_ttl_ms"><code>--scanner_ttl_ms</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Number of milliseconds of inactivity allowed for a scannerbefore it may be expired</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_scanner_batch_size_rows"><a class="link" href="#kudu-fs_dump_scanner_batch_size_rows"><code>--scanner_batch_size_rows</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The number of rows to batch for servicing scan requests.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>100</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_scanner_default_batch_size_bytes"><a class="link" href="#kudu-fs_dump_scanner_default_batch_size_bytes"><code>--scanner_default_batch_size_bytes</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The default size for batches of scan results</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1048576</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_scanner_max_batch_size_bytes"><a class="link" href="#kudu-fs_dump_scanner_max_batch_size_bytes"><code>--scanner_max_batch_size_bytes</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>The maximum batch size that a client may request for scan results.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>8388608</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="kudu-fs_dump_num_tablets_to_open_simultaneously"><a class="link" href="#kudu-fs_dump_num_tablets_to_open_simultaneously"><code>--num_tablets_to_open_simultaneously</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Number of threads available to open tablets during startup. If this is set to 0 (the default), then the number of bootstrap threads will be set based on the number of data directories. If the data directories are on some very fast storage device such as SSD or a RAID array, it may make sense to manually tune this.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -2105,6 +1629,7 @@ for informational purposes only. They are subject to change or be removed withou
 <li><a href="#kudu-fs_dump_codegen_dump_mc"><code>--codegen_dump_mc</code></a></li>
 <li><a href="#kudu-fs_dump_codegen_time_compilation"><code>--codegen_time_compilation</code></a></li>
 <li><a href="#kudu-fs_dump_consensus_max_batch_size_bytes"><code>--consensus_max_batch_size_bytes</code></a></li>
+<li><a href="#kudu-fs_dump_follower_unavailable_considered_failed_sec"><code>--follower_unavailable_considered_failed_sec</code></a></li>
 <li><a href="#kudu-fs_dump_group_commit_queue_size_bytes"><code>--group_commit_queue_size_bytes</code></a></li>
 <li><a href="#kudu-fs_dump_log_min_seconds_to_retain"><code>--log_min_seconds_to_retain</code></a></li>
 <li><a href="#kudu-fs_dump_log_min_segments_to_retain"><code>--log_min_segments_to_retain</code></a></li>
@@ -2113,6 +1638,7 @@ for informational purposes only. They are subject to change or be removed withou
 <li><a href="#kudu-fs_dump_log_async_preallocate_segments"><code>--log_async_preallocate_segments</code></a></li>
 <li><a href="#kudu-fs_dump_log_preallocate_segments"><code>--log_preallocate_segments</code></a></li>
 <li><a href="#kudu-fs_dump_log_segment_size_mb"><code>--log_segment_size_mb</code></a></li>
+<li><a href="#kudu-fs_dump_evict_failed_followers"><code>--evict_failed_followers</code></a></li>
 <li><a href="#kudu-fs_dump_leader_failure_exp_backoff_max_delta_ms"><code>--leader_failure_exp_backoff_max_delta_ms</code></a></li>
 <li><a href="#kudu-fs_dump_leader_failure_max_missed_heartbeat_periods"><code>--leader_failure_max_missed_heartbeat_periods</code></a></li>
 <li><a href="#kudu-fs_dump_leader_failure_monitor_check_mean_ms"><code>--leader_failure_monitor_check_mean_ms</code></a></li>
@@ -2129,18 +1655,7 @@ for informational purposes only. They are subject to change or be removed withou
 <li><a href="#kudu-fs_dump_rpc_negotiation_timeout_ms"><code>--rpc_negotiation_timeout_ms</code></a></li>
 <li><a href="#kudu-fs_dump_krpc_sasl_path"><code>--krpc_sasl_path</code></a></li>
 <li><a href="#kudu-fs_dump_rpc_max_message_size"><code>--rpc_max_message_size</code></a></li>
-<li><a href="#kudu-fs_dump_web_log_bytes"><code>--web_log_bytes</code></a></li>
 <li><a href="#kudu-fs_dump_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></li>
-<li><a href="#kudu-fs_dump_rpc_num_acceptors_per_address"><code>--rpc_num_acceptors_per_address</code></a></li>
-<li><a href="#kudu-fs_dump_rpc_num_service_threads"><code>--rpc_num_service_threads</code></a></li>
-<li><a href="#kudu-fs_dump_rpc_service_queue_length"><code>--rpc_service_queue_length</code></a></li>
-<li><a href="#kudu-fs_dump_num_reactor_threads"><code>--num_reactor_threads</code></a></li>
-<li><a href="#kudu-fs_dump_metrics_log_interval_ms"><code>--metrics_log_interval_ms</code></a></li>
-<li><a href="#kudu-fs_dump_webserver_max_post_length_bytes"><code>--webserver_max_post_length_bytes</code></a></li>
-<li><a href="#kudu-fs_dump_webserver_doc_root"><code>--webserver_doc_root</code></a></li>
-<li><a href="#kudu-fs_dump_webserver_enable_doc_root"><code>--webserver_enable_doc_root</code></a></li>
-<li><a href="#kudu-fs_dump_webserver_interface"><code>--webserver_interface</code></a></li>
-<li><a href="#kudu-fs_dump_webserver_num_worker_threads"><code>--webserver_num_worker_threads</code></a></li>
 <li><a href="#kudu-fs_dump_budgeted_compaction_target_rowset_size"><code>--budgeted_compaction_target_rowset_size</code></a></li>
 <li><a href="#kudu-fs_dump_deltafile_default_block_size"><code>--deltafile_default_block_size</code></a></li>
 <li><a href="#kudu-fs_dump_tablet_delta_store_major_compact_min_ratio"><code>--tablet_delta_store_major_compact_min_ratio</code></a></li>
@@ -2150,14 +1665,6 @@ for informational purposes only. They are subject to change or be removed withou
 <li><a href="#kudu-fs_dump_tablet_compaction_budget_mb"><code>--tablet_compaction_budget_mb</code></a></li>
 <li><a href="#kudu-fs_dump_flush_threshold_mb"><code>--flush_threshold_mb</code></a></li>
 <li><a href="#kudu-fs_dump_tablet_transaction_memory_limit_mb"><code>--tablet_transaction_memory_limit_mb</code></a></li>
-<li><a href="#kudu-fs_dump_heartbeat_interval_ms"><code>--heartbeat_interval_ms</code></a></li>
-<li><a href="#kudu-fs_dump_heartbeat_max_failures_before_backoff"><code>--heartbeat_max_failures_before_backoff</code></a></li>
-<li><a href="#kudu-fs_dump_heartbeat_rpc_timeout_ms"><code>--heartbeat_rpc_timeout_ms</code></a></li>
-<li><a href="#kudu-fs_dump_scanner_ttl_ms"><code>--scanner_ttl_ms</code></a></li>
-<li><a href="#kudu-fs_dump_scanner_batch_size_rows"><code>--scanner_batch_size_rows</code></a></li>
-<li><a href="#kudu-fs_dump_scanner_default_batch_size_bytes"><code>--scanner_default_batch_size_bytes</code></a></li>
-<li><a href="#kudu-fs_dump_scanner_max_batch_size_bytes"><code>--scanner_max_batch_size_bytes</code></a></li>
-<li><a href="#kudu-fs_dump_num_tablets_to_open_simultaneously"><code>--num_tablets_to_open_simultaneously</code></a></li>
 <li><a href="#kudu-fs_dump_trace_to_console"><code>--trace_to_console</code></a></li>
 <li><a href="#kudu-fs_dump_never_fsync"><code>--never_fsync</code></a></li>
 <li><a href="#kudu-fs_dump_suicide_on_eio"><code>--suicide_on_eio</code></a></li>

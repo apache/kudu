@@ -1,0 +1,767 @@
+---
+title: Using Impala With Kudu
+layout: default
+
+last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
+---
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Using Impala With Kudu</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu has tight integration with Impala, allowing you to use Impala
+to insert, query, update, and delete data from Kudu tablets using Impala&#8217;s SQL
+syntax, as an alternative to using the <a href="installation.html#view_api">Kudu APIs</a>
+to build a custom Kudu application. In addition, you can use JDBC or ODBC to connect
+existing or new applications written in any language, framework, or business intelligence
+tool to your Kudu data, using Impala as the broker.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_requirements_and_implications"><a class="link" href="#_requirements_and_implications">Requirements and Implications</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This integration relies on features that released versions of Impala do not have yet,
+as of Impala 2.3, which is expected to ship in CDH 5.5. In the interim, you need
+to install a fork of Impala, which this document will refer to as <em>Impala_Kudu</em>.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>You can install Impala_Kudu using parcels or packages.</p>
+</li>
+<li>
+<p>Impala_Kudu depends upon CDH 5.4 or later. To use Cloudera Manager with Impala_Kudu,
+you need Cloudera Manager 5.4.3 or later.</p>
+</li>
+<li>
+<p>If you have an existing Impala instance on your cluster, you can install Impala_Kudu
+alongside the existing Impala instance <strong>if you use parcels</strong>. The new instance does
+not share configurations with the existing instance and is completely independent.
+A script is provided to automate this type of installation.</p>
+</li>
+<li>
+<p>It is especially important that the cluster has adequate
+unreserved RAM for the Impala_Kudu instance.</p>
+</li>
+<li>
+<p>Consider shutting down the original Impala service when testing Impala_Kudu if you
+want to be sure it is not impacted.</p>
+</li>
+<li>
+<p>Before installing Impala_Kudu, you must have already installed and configured
+services for HDFS, Hive, and <a href="installation.html">Kudu</a>. You may need HBase, YARN,
+Sentry, and ZooKeeper services as well.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_installing_impala_kudu_using_cloudera_manager"><a class="link" href="#_installing_impala_kudu_using_cloudera_manager">Installing Impala_Kudu Using Cloudera Manager</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If you use Cloudera Manager, you can install Impala_Kudu using
+<a href="#install_impala_kudu_parcels">parcels</a> or
+<a href="#install_impala_kudu_packages">packages</a>. However, if you have an existing Impala
+instance, you must use parcels and you should use the instructions provided in
+<a href="#install_impala_kudu_parcels_side_by_side">procedure</a>, rather than these instructions.</p>
+</div>
+<div class="sect2">
+<h3 id="_installing_the_impala_kudu_service_using_parcels"><a class="link" href="#_installing_the_impala_kudu_service_using_parcels">Installing the Impala_Kudu Service Using Parcels</a></h3>
+<div class="sect3">
+<h4 id="_manual_installation"><a class="link" href="#_manual_installation">Manual Installation</a></h4>
+<div class="paragraph">
+<p>Manual installation of Impala_Kudu is only supported where there is no other Impala
+service already running in the cluster, and when you use parcels.</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Obtain the Impala_Kudu parcel either by using the parcel repository or downloading it manually.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>To use the parcel repository:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Go to <strong>Hosts / Parcels</strong>.</p>
+</li>
+<li>
+<p>Click <strong>Edit Settings</strong>. Add <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/parcels/latest/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/parcels/latest/</a>
+as a <strong>Remote Parcel Repository URL</strong>. Click <strong>Save Changes</strong>.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>To download the parcel manually:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Download the parcel for your operating system from
+<a href="http://repos.jenkins.cloudera.com/kimpala-nightly/parcels/latest/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/parcels/latest/</a> and upload
+it to <code>/opt/cloudera/parcel-repo/</code> on the Cloudera Manager server.</p>
+</li>
+<li>
+<p>Create a SHA1 file for the parcel. Cloudera Manager expects the SHA1 to be named
+with the exact same name as the parcel, with a <code>.sha</code> ending added, and to only
+contain the SHA1 itself, not the name of the parcel.</p>
+<div class="listingblock">
+<div class="content">
+<pre>sha1sum &lt;name_of_parcel_file&gt; | awk {'print $1'} &gt; &lt;name_of_parcel_file&gt;.sha</pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Go to <strong>Hosts / Parcels</strong>. Click <strong>Check for New Parcels.</strong> Verify that <strong>Impala_Kudu</strong>
+is in the list.</p>
+</li>
+<li>
+<p>Download (if necessary), distribute, and activate the <strong>Impala_Kudu</strong> parcel.</p>
+</li>
+<li>
+<p>Add a new Impala service. This service will use the Impala_Kudu parcel.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Go to the cluster and click <strong>Actions / Add a Service</strong>.</p>
+</li>
+<li>
+<p>Choose one host to run the Catalog Server, one to run the StateServer, and one
+or more to run Impala Daemon instances. Click <strong>Continue</strong>.</p>
+</li>
+<li>
+<p>Choose one or more Impala scratch directories. Click <strong>Continue</strong>. The Impala service
+starts. <strong>However, the features that Impala needs in order to work with Kudu are not
+enabled yet.</strong></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Enable the features that allow Impala to work with Kudu.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Go to the new Impala service. Click <strong>Configuration</strong>.</p>
+</li>
+<li>
+<p>Search for the <strong>Impala Service Environment Advanced Configuration Snippet (Safety
+Valve)</strong> configuration item. Add the following to the text field and save your changes: <code>IMPALA_NEXT=1</code></p>
+</li>
+<li>
+<p>Restart the Impala service.</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_installation_using_the_code_deploy_py_code_script"><a class="link" href="#_installation_using_the_code_deploy_py_code_script">Installation using the <code>deploy.py</code> Script</a></h4>
+<div class="paragraph">
+<p>If you use parcels, Cloudera recommends using the included <code>deploy.py</code> script to
+install and deploy the Impala_Kudu service into your cluster. If your cluster does
+not have an existing Impala instance, the script is optional. However, if you do
+have an existing Impala instance, you must use the script.</p>
+</div>
+<div class="ulist">
+<div class="title">Prerequisites</div>
+<ul>
+<li>
+<p>The script depends upon the Cloudera Manager API Python bindings. Install the bindings
+using <code>sudo pip install cm-api</code> (or as an unprivileged user, with the <code>--user</code>
+option to <code>pip</code>), or see <a href="http://cloudera.github.io/cm_api/docs/python-client/" class="bare">http://cloudera.github.io/cm_api/docs/python-client/</a>
+for more details.</p>
+</li>
+<li>
+<p>You need the following information to run the script:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>The IP address or hostname of the Cloudera Manager server.</p>
+</li>
+<li>
+<p>The cluster name, if Cloudera Manager manages multiple clusters.</p>
+</li>
+<li>
+<p>If you have an existing Impala service and want to clone its configuration, you
+need to know the name of the existing service.</p>
+</li>
+<li>
+<p>If your cluster has more than one instance of a HDFS, Hive, HBase, or other CDH
+service that this Impala_Kudu service depends upon, the name of the service this new
+Impala_Kudu service should use.</p>
+</li>
+<li>
+<p>A name for the new Impala service.</p>
+</li>
+<li>
+<p>A username and password with <strong>Full Administrator</strong> privileges in Cloudera Manager.</p>
+</li>
+<li>
+<p>The IP address or hostname of the host where the new Impala_Kudu service&#8217;s master role
+should be deployed, if not the Cloudera Manager server.</p>
+</li>
+<li>
+<p>A comma-separated list of local (not HDFS) scratch directories which the new
+Impala_Kudu service should use, if you are not cloning an existing Impala service.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Your Cloudera Manager server needs network access to reach the parcel repository
+hosted on <code>cloudera.com</code>.</p>
+</li>
+</ul>
+</div>
+<div class="ulist">
+<div class="title">Procedure</div>
+<ul>
+<li>
+<p>Run the <code>deploy.py</code> script with the following syntax to create a standalone IMPALA_KUDU
+service called <code>IMPALA_KUDU-1</code> on a cluster called `Cluster 1. Exactly one HDFS, Hive,
+and HBase service exist in Cluster 1, so service dependencies are not required.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1'</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>If two HDFS services are available, called <code>HDFS-1</code> and <code>HDFS-2</code>, use the following
+syntax to create the same <code>IMPALA_KUDU-1</code> service using <code>HDFS-2</code>. You can specify
+multiple types of dependencies; use the <code>deploy.py create -h</code> command for details.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1' --hdfs_dependency HDFS-2</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Run the <code>deploy.py</code> script with the following syntax to clone an existing IMPALA
+service called <code>IMPALA-1</code> to a new IMPALA_KUDU service called <code>IMPALA_KUDU-1</code>, where
+Cloudera Manager only manages a single cluster:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ python deploy.py clone IMPALA_KUDU-1 IMPALA-1</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Additional parameters are available for <code>deploy.py</code>. To view them, use the <code>-h</code>
+argument.  You can also use commands such as <code>deploy.py create -h</code> or
+<code>deploy.py clone -h</code> to get information about additional arguments for individual operations.</p>
+</li>
+<li>
+<p>The service is created <strong>but not started</strong>. Review the configuration in Cloudera Manager
+and start the service.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="install_impala_kudu_packages"><a class="link" href="#install_impala_kudu_packages">Installing Impala_Kudu Using Packages</a></h3>
+<div class="paragraph">
+<p>Before installing Impala_Kudu packages, you need to uninstall any existing Impala
+packages, using operating system utilities. For this reason, you cannot use Impala_Kudu
+alongside another Impala instance if you use packages.</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Obtain the Impala_Kudu packages for your operating system from one of the following
+locations:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>RHEL 6: <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/redhat/6/x86_64/kimpala/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/redhat/6/x86_64/kimpala/</a></p>
+</li>
+<li>
+<p>Ubuntu Trusty: <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/ubuntu/trusty/amd64/kimpala/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/ubuntu/trusty/amd64/kimpala/</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Install the packages on each host which will run a role in the Impala_Kudu service,
+using your operating system&#8217;s utilities.</p>
+</li>
+<li>
+<p>Add a new Impala service in Cloudera Manager.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Go to the cluster and click <strong>Actions / Add a Service</strong>.</p>
+</li>
+<li>
+<p>Choose one host to run the Catalog Server, one to run the Statestore, and at
+least three to run Impala Daemon instances. Click <strong>Continue</strong>.</p>
+</li>
+<li>
+<p>Choose one or more Impala scratch directories. Click <strong>Continue</strong>.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>The Impala service starts.</p>
+</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_installing_impala_kudu_using_the_command_line"><a class="link" href="#_installing_impala_kudu_using_the_command_line">Installing Impala_Kudu Using the Command Line</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Before installing Impala_Kudu packages, you need to uninstall any existing Impala
+packages, using operating system utilities. For this reason, you cannot use Impala_Kudu
+alongside another Impala instance if you use packages.</p>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+Do not use these command-line instructions if you use Cloudera Manager.
+Instead, follow <a href="#install_impala_kudu_packages">Installing Impala_Kudu Using Packages</a>.
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Obtain the Impala_Kudu packages for your operating system from one of the following
+locations:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>RHEL 6: <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/redhat/6/x86_64/kimpala/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/redhat/6/x86_64/kimpala/</a></p>
+</li>
+<li>
+<p>Ubuntu Trusty: <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/ubuntu/trusty/amd64/kimpala/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/ubuntu/trusty/amd64/kimpala/</a></p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Install the packages on each host which will run a role in the Impala_Kudu service,
+using your operating system&#8217;s utilities.</p>
+</li>
+<li>
+<p>Use the Impala start-up scripts to start each service on the relevant hosts:</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo service impala-state-store start
+
+$ sudo service impala-catalog start
+
+$ sudo service impala-server start</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_using_the_impala_shell"><a class="link" href="#_using_the_impala_shell">Using the Impala Shell</a></h2>
+<div class="sectionbody">
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+This is only a small sub-set of Impala Shell functionality. For more details, see the
+link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_impala_shell.html
+[Impala Shell] documentation.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Neither Kudu nor Impala need special configuration in order for you to use the Impala
+Shell or the Impala API to insert, update, delete, or query Kudu data using Impala.
+However, you do need to create a mapping between the Impala and Kudu tables. Kudu
+provides the Impala query to map to an existing Kudu table in the web UI.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Be sure you are using the <code>impala-shell</code> binary provided by the Impala_Kudu package,
+rather than the default CDH Impala binary. The following shows how to verify this
+using the <code>alternatives</code> command on a RHEL 6 host.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo alternatives --display impala-shell
+
+impala-shell - status is auto.
+ link currently points to /opt/cloudera/parcels/CDH-5.5.0-1.cdh5.5.0.p0.1007/bin/impala-shell
+/opt/cloudera/parcels/CDH-5.5.0-1.cdh5.5.0.p0.1007/bin/impala-shell - priority 10
+/opt/cloudera/parcels/IMPALA_KUDU-2.3.0-1.cdh5.5.0.p0.119/bin/impala-shell - priority 5
+Current `best' version is /opt/cloudera/parcels/CDH-5.5.0-1.cdh5.5.0.p0.1007/bin/impala-shell.
+
+$ sudo alternatives --set impala-shell /opt/cloudera/parcels/IMPALA_KUDU-2.3.0-1.cdh5.5.0.p0.119/bin/impala-shell</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Start Impala Shell using the <code>impala-shell</code> command. By default, <code>impala-shell</code>
+attempts to connect to the Impala daemon on <code>localhost</code> on port 21000. To connect
+to a different host,, use the <code>-i &lt;host:port&gt;</code> option. To automatically connect to
+a specific Impala database, use the <code>-d &lt;database&gt;</code> option. For instance, if all your
+Kudu tables are in Impala in the database <code>impala_kudu</code>, use <code>-d impala_kudu</code> to use
+this database.</p>
+</li>
+<li>
+<p>To quit the Impala Shell, use the following command: <code>quit;</code></p>
+</li>
+</ul>
+</div>
+<div class="sect2">
+<h3 id="_internal_and_external_impala_tables"><a class="link" href="#_internal_and_external_impala_tables">Internal and External Impala Tables</a></h3>
+<div class="paragraph">
+<p>When creating a new Kudu table using Impala, you can create the table as an internal
+table or an external table.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Internal</dt>
+<dd>
+<p>An internal table is managed by Impala, and when you drop it from Impala,
+the data and the table truly are dropped. When you create a new table using Impala,
+it is generally a internal table.</p>
+</dd>
+<dt class="hdlist1">External</dt>
+<dd>
+<p>An external table (created by <code>CREATE EXTERNAL TABLE</code>) is not managed by
+Impala, and dropping such a table does not drop the table from its source location
+(here, Kudu). Instead, it only removes the mapping between Impala and Kudu. This is
+the mode used in the syntax provided by Kudu for mapping an existing table to Impala.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>See link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_tables.html
+for more information about internal and external tables.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_querying_an_existing_kudu_table_in_impala"><a class="link" href="#_querying_an_existing_kudu_table_in_impala">Querying an Existing Kudu Table In Impala</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Go to <a href="http://kudu-master.example.com:8051/tables/" class="bare">http://kudu-master.example.com:8051/tables/</a>, where <em>kudu-master.example.com</em>
+is the address of your Kudu master.</p>
+</li>
+<li>
+<p>Click the table ID for the relevant table.</p>
+</li>
+<li>
+<p>Scroll to the bottom of the page, or search for <code>Impala CREATE TABLE statement</code>.
+Copy the entire statement.</p>
+</li>
+<li>
+<p>Paste the statement into Impala. Impala now has a mapping to your Kudu table.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_creating_a_new_kudu_table_from_impala"><a class="link" href="#_creating_a_new_kudu_table_from_impala">Creating a New Kudu Table From Impala</a></h3>
+<div class="paragraph">
+<p>Creating a new table in Kudu from Impala is similar to mapping an existing Kudu table
+to an Impala table, except that you need to write the <code>CREATE</code> statement yourself.
+Use the following example as a guideline. Impala first creates the table, then creates
+the mapping.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE my_first_table (
+id BIGINT,
+name STRING
+)
+TBLPROPERTIES(
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'my_first_table',
+  'kudu.master_addresses' = 'kudu-master.example.com:7051',
+  'kudu.key_columns' = 'id'
+);</code></pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Impala uses a database containment model. You can create a table within a specific
+scope, referred to as a <em>database</em>. To create the database, use a <code>CREATE DATABASE</code>
+statement. To use the database for further Impala operations such as <code>CREATE TABLE</code>,
+use the <code>USE</code> statement. For example, to create a table in a database called <code>impala_kudu</code>,
+use the following statements:
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>+</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE DATABASE impala_kudu
+USE impala_kudu;
+CREATE TABLE my_first_table (
+id BIGINT,
+name STRING
+)
+TBLPROPERTIES(
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'my_first_table',
+  'kudu.master_addresses' = 'kudu-master.example.com:7051',
+  'kudu.key_columns' = 'id'
+);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>+
+The <code>my_first_table</code> table is created within the <code>impala_kudu</code> database. To refer
+to this database in the future, without using a specific <code>USE</code> statement, you can
+refer to the table using <code>&lt;database&gt;:&lt;table&gt;</code> syntax. For example, to specify the
+<code>my_first_table</code> table in database <code>impala_kudu</code>, as opposed to any other table with
+the same name in another database, use <code>impala_kudu:my_first_table</code>. This also applies
+to <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, and <code>DROP</code> statements.</p>
+</div>
+<div class="paragraph">
+<p>In the <code>CREATE TABLE</code> statement, the first column must be the primary key. Additionally,
+the primary key can never be null when inserting or updating a row.</p>
+</div>
+<div class="paragraph">
+<p>All properties in the <code>TBLPROPERTIES</code> subclause are required, and the <code>kudu.key_columns</code>
+must contain at least one column.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_inserting_a_row"><a class="link" href="#_inserting_a_row">Inserting A Row</a></h3>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_first_table VALUES (99, "sarah");</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_first_table VALUES (1, "john"), (2, "jane"), (3, "jim");</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_inserting_in_bulk"><a class="link" href="#_inserting_in_bulk">Inserting In Bulk</a></h3>
+<div class="paragraph">
+<p>In general, the Impala documentation discourages adding rows by using multiple <code>INSERT</code>
+statements due to ineffiency. Exceptions to this rule are HBase and Kudu.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_updating_a_row"><a class="link" href="#_updating_a_row">Updating a Row</a></h3>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">UPDATE my_first_table SET name="bob" where id = 3;</code></pre>
+</div>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+The <code>UPDATE</code> statement only works in Impala when the underlying
+data source is Kudu.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_deleting_a_row"><a class="link" href="#_deleting_a_row">Deleting a Row</a></h3>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">DELETE FROM my_first_table WHERE id = 3;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You can also delete using more complex syntax. A comma in the <code>FROM</code> sub-clause is
+one way that Impala specifies a join query.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">DELETE c FROM my_second_table c, stock_symbols s WHERE c.name = s.symbol;</code></pre>
+</div>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+The <code>DELETE</code> statement only works in Impala when the underlying
+data source is Kudu.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_altering_table_properties"><a class="link" href="#_altering_table_properties">Altering Table Properties</a></h3>
+<div class="paragraph">
+<p>You can change Impala&#8217;s metadata relating to a given Kudu table by altering the table&#8217;s
+properties. These properties include the table name, the list of Kudu master addresses,
+and whether the table is managed by Impala (internal) or externally. You cannot modify
+a table&#8217;s split rows after table creation.</p>
+</div>
+<div class="admonitionblock important">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-important" title="Important"></i>
+</td>
+<td class="content">
+Altering table properties only changes Impala&#8217;s metadata about the table,
+not the underlying table itself. These statements do not modify any table metadata
+in Kudu.
+.Rename a Table
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_table RENAME TO my_new_table;</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Change the Kudu Master Address</div>
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_table SET TBLPROPERTIES('kudu.master_addresses' = 'kudu-original-master.example.com:7051,kudu-new-master.example.com:7051');</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="title">Change an Internally-Managed Table to External</div>
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_table SET TBLPROPERTIES('EXTERNAL' = 'TRUE');</code></pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_dropping_a_kudu_table_using_impala"><a class="link" href="#_dropping_a_kudu_table_using_impala">Dropping a Kudu Table Using Impala</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>If the table was created as an internal table in Impala, using <code>CREATE TABLE</code>, the
+standard <code>DROP TABLE</code> syntax drops the underlying Kudu table and all its data. If
+the table was created as an external table, using <code>CREATE EXTERNAL TABLE</code>, the mapping
+between Impala and Kudu is dropped, but the Kudu table is left intact, with all its
+data.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">DROP TABLE my_first_table;</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_what_s_next"><a class="link" href="#_what_s_next">What&#8217;s Next?</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The examples above have only explored a fraction of what you can do with Impala Shell.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Learn about the <a href="http://impala.io">Impala project</a>.</p>
+</li>
+<li>
+<p>Read the link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala.html
+[Impala documentation].</p>
+</li>
+<li>
+<p>View the link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_langref.html
+[Impala SQL reference].</p>
+</li>
+<li>
+<p>Read about Impala internals or learn how to contribute to Impala on the <a href="https://github.com/cloudera/Impala/wiki">Impala Wiki</a>.</p>
+</li>
+<li>
+<p>Read about the native <a href="installation.html#view_api">Kudu APIs</a>.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+    <ul class="sectlevel1">
+<li><a href="#_requirements_and_implications">Requirements and Implications</a></li>
+<li><a href="#_installing_impala_kudu_using_cloudera_manager">Installing Impala_Kudu Using Cloudera Manager</a>
+<ul class="sectlevel2">
+<li><a href="#_installing_the_impala_kudu_service_using_parcels">Installing the Impala_Kudu Service Using Parcels</a>
+<ul class="sectlevel3">
+<li><a href="#_manual_installation">Manual Installation</a></li>
+<li><a href="#_installation_using_the_code_deploy_py_code_script">Installation using the <code>deploy.py</code> Script</a></li>
+</ul>
+</li>
+<li><a href="#install_impala_kudu_packages">Installing Impala_Kudu Using Packages</a></li>
+</ul>
+</li>
+<li><a href="#_installing_impala_kudu_using_the_command_line">Installing Impala_Kudu Using the Command Line</a></li>
+<li><a href="#_using_the_impala_shell">Using the Impala Shell</a>
+<ul class="sectlevel2">
+<li><a href="#_internal_and_external_impala_tables">Internal and External Impala Tables</a></li>
+<li><a href="#_querying_an_existing_kudu_table_in_impala">Querying an Existing Kudu Table In Impala</a></li>
+<li><a href="#_creating_a_new_kudu_table_from_impala">Creating a New Kudu Table From Impala</a></li>
+<li><a href="#_inserting_a_row">Inserting A Row</a></li>
+<li><a href="#_inserting_in_bulk">Inserting In Bulk</a></li>
+<li><a href="#_updating_a_row">Updating a Row</a></li>
+<li><a href="#_deleting_a_row">Deleting a Row</a></li>
+<li><a href="#_altering_table_properties">Altering Table Properties</a></li>
+<li><a href="#_dropping_a_kudu_table_using_impala">Dropping a Kudu Table Using Impala</a></li>
+</ul>
+</li>
+<li><a href="#_what_s_next">What&#8217;s Next?</a></li>
+</ul>
+  </div>
+    </div>
+  </div>
+</div>

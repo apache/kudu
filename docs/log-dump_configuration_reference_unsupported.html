@@ -2,7 +2,7 @@
 title: log-dump Unsupported Flags
 layout: default
 
-last_updated: 'Last updated 2015-09-10 22:22:00 PDT'
+last_updated: 'Last updated 2015-09-17 17:23:10 PDT'
 ---
 
 
@@ -17,90 +17,6 @@ last_updated: 'Last updated 2015-09-10 22:22:00 PDT'
 <p>Flags marked <code>advanced</code> or <code>experimental</code> and not marked <code>stable</code>, or flags with no stability tag, are <strong>unsupported</strong> and are included
 for informational purposes only. They are subject to change or be removed without notice.</p>
 </div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="log-dump_codegen_dump_functions"><a class="link" href="#log-dump_codegen_dump_functions"><code>--codegen_dump_functions</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Whether to print the LLVM IR for generated functions</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="log-dump_codegen_dump_mc"><a class="link" href="#log-dump_codegen_dump_mc"><code>--codegen_dump_mc</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Whether to dump the disassembly of the machine code for generated functions.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
-<h2 id="log-dump_codegen_time_compilation"><a class="link" href="#log-dump_codegen_time_compilation"><code>--codegen_time_compilation</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Whether to print time that each code generation request took.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
-</tr>
-</tbody>
-</table>
 </div>
 </div>
 <div class="sect1">
@@ -580,34 +496,6 @@ for informational purposes only. They are subject to change or be removed withou
 </div>
 </div>
 <div class="sect1">
-<h2 id="log-dump_max_clock_sync_error_usec"><a class="link" href="#log-dump_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>Maximum allowed clock synchronization error as reported by NTP before the server will abort.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-</div>
-<div class="sect1">
 <h2 id="log-dump_trace_to_console"><a class="link" href="#log-dump_trace_to_console"><code>--trace_to_console</code></a></h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -977,9 +865,6 @@ for informational purposes only. They are subject to change or be removed withou
 
   <div id="toc" data-spy="affix" data-offset-top="70">
     <ul class="sectlevel1">
-<li><a href="#log-dump_codegen_dump_functions"><code>--codegen_dump_functions</code></a></li>
-<li><a href="#log-dump_codegen_dump_mc"><code>--codegen_dump_mc</code></a></li>
-<li><a href="#log-dump_codegen_time_compilation"><code>--codegen_time_compilation</code></a></li>
 <li><a href="#log-dump_group_commit_queue_size_bytes"><code>--group_commit_queue_size_bytes</code></a></li>
 <li><a href="#log-dump_log_min_seconds_to_retain"><code>--log_min_seconds_to_retain</code></a></li>
 <li><a href="#log-dump_log_min_segments_to_retain"><code>--log_min_segments_to_retain</code></a></li>
@@ -997,7 +882,6 @@ for informational purposes only. They are subject to change or be removed withou
 <li><a href="#log-dump_rpc_negotiation_timeout_ms"><code>--rpc_negotiation_timeout_ms</code></a></li>
 <li><a href="#log-dump_krpc_sasl_path"><code>--krpc_sasl_path</code></a></li>
 <li><a href="#log-dump_rpc_max_message_size"><code>--rpc_max_message_size</code></a></li>
-<li><a href="#log-dump_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></li>
 <li><a href="#log-dump_trace_to_console"><code>--trace_to_console</code></a></li>
 <li><a href="#log-dump_never_fsync"><code>--never_fsync</code></a></li>
 <li><a href="#log-dump_suicide_on_eio"><code>--suicide_on_eio</code></a></li>

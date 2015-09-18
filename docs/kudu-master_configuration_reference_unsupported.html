@@ -2,7 +2,7 @@
 title: kudu-master Unsupported Flags
 layout: default
 
-last_updated: 'Last updated 2015-09-10 22:21:59 PDT'
+last_updated: 'Last updated 2015-09-17 17:23:10 PDT'
 ---
 
 
@@ -244,6 +244,34 @@ for informational purposes only. They are subject to change or be removed withou
 </div>
 </div>
 <div class="sect1">
+<h2 id="kudu-master_follower_unavailable_considered_failed_sec"><a class="link" href="#kudu-master_follower_unavailable_considered_failed_sec"><code>--follower_unavailable_considered_failed_sec</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Seconds that a leader is unable to successfully heartbeat to a follower after which the follower is considered to be failed and evicted from the config.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>300</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
 <h2 id="kudu-master_group_commit_queue_size_bytes"><a class="link" href="#kudu-master_group_commit_queue_size_bytes"><code>--group_commit_queue_size_bytes</code></a></h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -458,6 +486,34 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>64</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_evict_failed_followers"><a class="link" href="#kudu-master_evict_failed_followers"><code>--evict_failed_followers</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to evict followers from the Raft config that have fallen too far behind the leader&#8217;s log to catch up normally or have been unreachable by the leader for longer than follower_unavailable_considered_failed_sec</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -864,6 +920,34 @@ for informational purposes only. They are subject to change or be removed withou
 <div class="sectionbody">
 <div class="paragraph">
 <p>Timeout used by the master when attempting to create tablet replicas during table creation.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="kudu-master_tserver_unresponsive_timeout_ms"><a class="link" href="#kudu-master_tserver_unresponsive_timeout_ms"><code>--tserver_unresponsive_timeout_ms</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The period of time that a Master can go without receiving a heartbeat from a tablet server before considering it ineligible for hosting a replacement replica when under-replication is detected.</p>
 </div>
 <table class="tableblock frame-all grid-all" style="width: 50%;">
 <colgroup>
@@ -2329,6 +2413,7 @@ for informational purposes only. They are subject to change or be removed withou
 <li><a href="#kudu-master_codegen_dump_mc"><code>--codegen_dump_mc</code></a></li>
 <li><a href="#kudu-master_codegen_time_compilation"><code>--codegen_time_compilation</code></a></li>
 <li><a href="#kudu-master_consensus_max_batch_size_bytes"><code>--consensus_max_batch_size_bytes</code></a></li>
+<li><a href="#kudu-master_follower_unavailable_considered_failed_sec"><code>--follower_unavailable_considered_failed_sec</code></a></li>
 <li><a href="#kudu-master_group_commit_queue_size_bytes"><code>--group_commit_queue_size_bytes</code></a></li>
 <li><a href="#kudu-master_log_min_seconds_to_retain"><code>--log_min_seconds_to_retain</code></a></li>
 <li><a href="#kudu-master_log_min_segments_to_retain"><code>--log_min_segments_to_retain</code></a></li>
@@ -2337,6 +2422,7 @@ for informational purposes only. They are subject to change or be removed withou
 <li><a href="#kudu-master_log_async_preallocate_segments"><code>--log_async_preallocate_segments</code></a></li>
 <li><a href="#kudu-master_log_preallocate_segments"><code>--log_preallocate_segments</code></a></li>
 <li><a href="#kudu-master_log_segment_size_mb"><code>--log_segment_size_mb</code></a></li>
+<li><a href="#kudu-master_evict_failed_followers"><code>--evict_failed_followers</code></a></li>
 <li><a href="#kudu-master_leader_failure_exp_backoff_max_delta_ms"><code>--leader_failure_exp_backoff_max_delta_ms</code></a></li>
 <li><a href="#kudu-master_leader_failure_max_missed_heartbeat_periods"><code>--leader_failure_max_missed_heartbeat_periods</code></a></li>
 <li><a href="#kudu-master_leader_failure_monitor_check_mean_ms"><code>--leader_failure_monitor_check_mean_ms</code></a></li>
@@ -2352,6 +2438,7 @@ for informational purposes only. They are subject to change or be removed withou
 <li><a href="#kudu-master_master_ts_rpc_timeout_ms"><code>--master_ts_rpc_timeout_ms</code></a></li>
 <li><a href="#kudu-master_max_create_tablets_per_ts"><code>--max_create_tablets_per_ts</code></a></li>
 <li><a href="#kudu-master_tablet_creation_timeout_ms"><code>--tablet_creation_timeout_ms</code></a></li>
+<li><a href="#kudu-master_tserver_unresponsive_timeout_ms"><code>--tserver_unresponsive_timeout_ms</code></a></li>
 <li><a href="#kudu-master_unresponsive_ts_rpc_timeout_ms"><code>--unresponsive_ts_rpc_timeout_ms</code></a></li>
 <li><a href="#kudu-master_master_registration_rpc_timeout_ms"><code>--master_registration_rpc_timeout_ms</code></a></li>
 <li><a href="#kudu-master_master_addresses"><code>--master_addresses</code></a></li>
