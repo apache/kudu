@@ -49,6 +49,8 @@ class ResettableHeartbeater {
   Status Stop();
 
   // Resets the heartbeat period.
+  // When this is called, the subsequent heartbeat has some built-in jitter and
+  // may trigger before a full period (as specified to the constructor).
   void Reset();
 
   ~ResettableHeartbeater();

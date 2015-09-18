@@ -9,6 +9,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/random.h"
 #include "kudu/util/status.h"
 #include "kudu/util/thread.h"
 
@@ -32,10 +33,10 @@ class ResettableHeartbeaterThread {
   const string name_;
 
   // The heartbeat period.
-  MonoDelta period_;
+  const MonoDelta period_;
 
   // The function to call to perform the heartbeat
-  HeartbeatFunction function_;
+  const HeartbeatFunction function_;
 
   // The actual running thread (NULL before it is started)
   scoped_refptr<kudu::Thread> thread_;
@@ -86,9 +87,23 @@ void ResettableHeartbeaterThread::RunThread() {
   CHECK(IsCurrentThread());
   VLOG(1) << "Heartbeater: " << name_ << " thread starting";
 
+  bool prev_reset_was_manual = false;
+  Random rng(random());
   while (true) {
-    if (run_latch_.WaitFor(period_)) {
-      // CountDownLatch reached 0
+    MonoDelta wait_period = period_;
+    if (prev_reset_was_manual) {
+      // When the caller does a manual reset, we randomize the subsequent wait
+      // timeout between period_/2 and period_. This builds in some jitter so
+      // multiple tablets on the same TS don't end up heartbeating in lockstep.
+      int64_t half_period_ms = period_.ToMilliseconds() / 2;
+      wait_period = MonoDelta::FromMilliseconds(
+          half_period_ms +
+          rng.NextDoubleFraction() * half_period_ms);
+      prev_reset_was_manual = false;
+    }
+    if (run_latch_.WaitFor(wait_period)) {
+      // CountDownLatch reached 0 -- this means there was a manual reset.
+      prev_reset_was_manual = true;
       lock_guard<simple_spinlock> lock(&lock_);
       // check if we were told to shutdown
       if (shutdown_) {
