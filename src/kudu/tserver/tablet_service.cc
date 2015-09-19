@@ -205,6 +205,7 @@ void HandleResponse(const ReqType* req, RespType* resp,
                     RpcContext* context, const Status& s) {
   if (PREDICT_FALSE(!s.ok())) {
     HandleUnknownError(s, resp, context);
+    return;
   }
   context->RespondSuccess();
 }

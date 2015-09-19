@@ -1570,6 +1570,62 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
   }
 }
 
+// Regression test for KUDU-1169: a crash when a Config Change operation is replaced
+// by a later leader.
+TEST_F(RaftConsensusITest, TestReplaceChangeConfigOperation) {
+  FLAGS_num_tablet_servers = 3;
+  FLAGS_num_replicas = 3;
+  vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
+  vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  NO_FATALS(BuildAndStart(ts_flags, master_flags));
+
+  vector<TServerDetails*> tservers;
+  AppendValuesFromMap(tablet_servers_, &tservers);
+  ASSERT_EQ(FLAGS_num_tablet_servers, tservers.size());
+
+
+  // Elect server 0 as leader and wait for log index 1 to propagate to all servers.
+  TServerDetails* leader_tserver = tservers[0];
+
+  TabletServerMap original_followers = tablet_servers_;
+  ASSERT_EQ(1, original_followers.erase(leader_tserver->uuid()));
+
+
+  ASSERT_OK(StartElection(leader_tserver, tablet_id_, MonoDelta::FromSeconds(10)));
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), tablet_servers_, tablet_id_, 1));
+
+  // Shut down servers 1 and 2, so that server 1 can't replicate anything.
+  cluster_->tablet_server_by_uuid(tservers[1]->uuid())->Shutdown();
+  cluster_->tablet_server_by_uuid(tservers[2]->uuid())->Shutdown();
+
+  // Now try to replicate a ChangeConfig operation. This should get stuck and time out
+  // because the server can't replicate any operations.
+  TabletServerErrorPB::Code error_code;
+  Status s = RemoveServer(leader_tserver, tablet_id_, tservers[1],
+                          -1, MonoDelta::FromSeconds(1),
+                          &error_code);
+  ASSERT_TRUE(s.IsTimedOut());
+
+  // Pause the leader, and restart the other servers.
+  cluster_->tablet_server_by_uuid(tservers[0]->uuid())->Pause();
+  ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[1]->uuid())->Restart());
+  ASSERT_OK(cluster_->tablet_server_by_uuid(tservers[2]->uuid())->Restart());
+
+  ASSERT_OK(WaitForServersToAgree(MonoDelta::FromSeconds(10), original_followers, tablet_id_, 1));
+
+  // Elect one of the other servers.
+  ASSERT_OK(StartElection(tservers[1], tablet_id_, MonoDelta::FromSeconds(10)));
+
+  // Resume the original leader. Its change-config operation will now be aborted
+  // since it was never replicated to the majority, and the new leader will have
+  // replaced the operation.
+  cluster_->tablet_server_by_uuid(tservers[0]->uuid())->Resume();
+
+  // Insert some data and verify that it propagates to all servers.
+  NO_FATALS(InsertTestRowsRemoteThread(0, 10, 1, vector<CountDownLatch*>()));
+  ASSERT_ALL_REPLICAS_AGREE(10);
+}
+
 // Test the atomic CAS arguments to ChangeConfig() add server and remove server.
 TEST_F(RaftConsensusITest, TestAtomicAddRemoveServer) {
   FLAGS_num_tablet_servers = 3;
