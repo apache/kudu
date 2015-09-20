@@ -4,6 +4,7 @@
 #include "kudu/master/master_service.h"
 
 #include <boost/foreach.hpp>
+#include <gflags/gflags.h>
 #include <string>
 #include <tr1/memory>
 #include <vector>
@@ -15,6 +16,14 @@
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/webserver.h"
+#include "kudu/util/flag_tags.h"
+
+
+DEFINE_int32(master_inject_latency_on_tablet_lookups_ms, 0,
+             "Number of milliseconds that the master will sleep before responding to "
+             "requests for tablet locations.");
+TAG_FLAG(master_inject_latency_on_tablet_lookups_ms, unsafe);
+TAG_FLAG(master_inject_latency_on_tablet_lookups_ms, hidden);
 
 namespace kudu {
 namespace master {
@@ -188,6 +197,10 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
     return;
   }
 
+  if (PREDICT_FALSE(FLAGS_master_inject_latency_on_tablet_lookups_ms > 0)) {
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_master_inject_latency_on_tablet_lookups_ms));
+  }
+
   TSRegistrationPB reg;
   vector<TSDescriptor*> locs;
   BOOST_FOREACH(const string& tablet_id, req->tablet_ids()) {
@@ -284,7 +297,9 @@ void MasterServiceImpl::GetTableLocations(const GetTableLocationsRequestPB* req,
   if (!CheckLeaderAndCatalogManagerInitializedOrRespond(server_, resp, rpc)) {
     return;
   }
-
+  if (PREDICT_FALSE(FLAGS_master_inject_latency_on_tablet_lookups_ms > 0)) {
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_master_inject_latency_on_tablet_lookups_ms));
+  }
   Status s = server_->catalog_manager()->GetTableLocations(req, resp);
   CheckRespErrorOrSetUnknown(s, resp);
   rpc->RespondSuccess();

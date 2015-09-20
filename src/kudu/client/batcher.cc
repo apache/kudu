@@ -435,7 +435,18 @@ void WriteRpc::SendRpcCb(const Status& status) {
   }
 
   if (!new_status.ok()) {
-    LOG(WARNING) << ToString() << " failed: " << new_status.ToString();
+    string current_ts_string;
+    if (current_ts_) {
+      current_ts_string = Substitute("on tablet server $0", current_ts_->ToString());
+    } else {
+      current_ts_string = "(no tablet server available)";
+    }
+    new_status = new_status.CloneAndPrepend(
+        Substitute("Failed to write batch of $0 ops to tablet $1 "
+                   "$2 after $3 attempt(s)",
+                   ops_.size(), tablet_->tablet_id(),
+                   current_ts_string, num_attempts()));
+    LOG(WARNING) << new_status.ToString();
   }
   batcher_->ProcessWriteResponse(*this, new_status);
   delete this;

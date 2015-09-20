@@ -129,7 +129,12 @@ shared_ptr<TabletServerServiceProxy> RemoteTabletServer::proxy() const {
 }
 
 string RemoteTabletServer::ToString() const {
-  return uuid_;
+  string ret = uuid_;
+  lock_guard<simple_spinlock> l(&lock_);
+  if (!rpc_hostports_.empty()) {
+    strings::SubstituteAndAppend(&ret, " ($0)", rpc_hostports_[0].ToString());
+  }
+  return ret;
 }
 
 void RemoteTabletServer::GetHostPorts(vector<HostPort>* host_ports) const {
@@ -503,7 +508,8 @@ void LookupRpc::SendRpcCb(const Status& status) {
       *remote_tablet_ = result;
     }
   } else {
-    LOG(WARNING) << ToString() << " failed: " << new_status.ToString();
+    new_status = new_status.CloneAndPrepend(Substitute("$0 failed", ToString()));
+    LOG(WARNING) << new_status.ToString();
   }
   user_cb_.Run(new_status);
 }

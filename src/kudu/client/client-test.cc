@@ -47,6 +47,10 @@
 
 DECLARE_bool(enable_data_block_fsync);
 DECLARE_int32(heartbeat_interval_ms);
+DECLARE_bool(log_inject_latency);
+DECLARE_int32(log_inject_latency_ms_mean);
+DECLARE_int32(log_inject_latency_ms_stddev);
+DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 DECLARE_int32(max_create_tablets_per_ts);
 DECLARE_int32(scanner_max_batch_size_bytes);
 DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
@@ -1336,6 +1340,19 @@ TEST_F(ClientTest, TestScanTimeout) {
   }
 }
 
+static gscoped_ptr<KuduError> GetSingleErrorFromSession(KuduSession* session) {
+  CHECK_EQ(1, session->CountPendingErrors());
+  vector<KuduError*> errors;
+  ElementDeleter d(&errors);
+  bool overflow;
+  session->GetPendingErrors(&errors, &overflow);
+  CHECK(!overflow);
+  CHECK_EQ(1, errors.size());
+  KuduError* error = errors[0];
+  errors.clear();
+  return gscoped_ptr<KuduError>(error);
+}
+
 // Simplest case of inserting through the client API: a single row
 // with manual batching.
 TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
@@ -1357,12 +1374,8 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
 
   // Get error
   ASSERT_EQ(session->CountPendingErrors(), 1) << "Should report bad key to error container";
-  vector<KuduError*> errs;
-  ElementDeleter del_errs(&errs);
-  bool overflow;
-  session->GetPendingErrors(&errs, &overflow);
-  ASSERT_EQ(errs.size(), 1);
-  KuduWriteOperation* failed_op = errs.front()->release_failed_op();
+  gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+  KuduWriteOperation* failed_op = error->release_failed_op();
   ASSERT_EQ(failed_op, ptr) << "Should be able to retrieve failed operation";
   insert.reset(ptr);
 
@@ -1403,6 +1416,44 @@ static Status ApplyDeleteToSession(KuduSession* session,
   gscoped_ptr<KuduDelete> del(table->NewDelete());
   RETURN_NOT_OK(del->mutable_row()->SetInt32("key", row_key));
   return session->Apply(del.release());
+}
+
+TEST_F(ClientTest, TestWriteTimeout) {
+  shared_ptr<KuduSession> session = client_->NewSession();
+  ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
+
+  // First time out the lookup on the master side.
+  {
+    google::FlagSaver saver;
+    FLAGS_master_inject_latency_on_tablet_lookups_ms = 110;
+    session->SetTimeoutMillis(100);
+    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+    Status s = session->Flush();
+    ASSERT_TRUE(s.IsIOError()) << "unexpected status: " << s.ToString();
+    gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+    ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
+    ASSERT_STR_CONTAINS(error->status().ToString(),
+                        "GetTableLocations(client-testtb, int32 key=1, 1) "
+                        "failed: GetTableLocations RPC");
+  }
+
+  // Next time out the actual write on the tablet server.
+  {
+    google::FlagSaver saver;
+    FLAGS_log_inject_latency = true;
+    FLAGS_log_inject_latency_ms_mean = 110;
+    FLAGS_log_inject_latency_ms_stddev = 0;
+
+    ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "row"));
+    Status s = session->Flush();
+    ASSERT_TRUE(s.IsIOError());
+    gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+    ASSERT_TRUE(error->status().IsTimedOut()) << error->status().ToString();
+    ASSERT_STR_CONTAINS(error->status().ToString(),
+                        "Failed to write batch of 1 ops to tablet");
+    ASSERT_STR_CONTAINS(error->status().ToString(), "Write RPC to 127.0.0.1:");
+    ASSERT_STR_CONTAINS(error->status().ToString(), "after 1 attempt");
+  }
 }
 
 // Test which does an async flush and then drops the reference
@@ -1502,15 +1553,9 @@ TEST_F(ClientTest, TestBatchWithPartialError) {
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
 
   // Fetch and verify the reported error.
-  ASSERT_EQ(1, session->CountPendingErrors());
-  vector<KuduError*> errors;
-  ElementDeleter d(&errors);
-  bool overflow;
-  session->GetPendingErrors(&errors, &overflow);
-  ASSERT_FALSE(overflow);
-  ASSERT_EQ(1, errors.size());
-  ASSERT_TRUE(errors[0]->status().IsAlreadyPresent());
-  ASSERT_EQ(errors[0]->failed_op().ToString(),
+  gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+  ASSERT_TRUE(error->status().IsAlreadyPresent());
+  ASSERT_EQ(error->failed_op().ToString(),
             "INSERT int32 key=1, int32 int_val=1, string string_val=Attempted dup");
 
   // Verify that the other row was successfully inserted
@@ -1550,25 +1595,19 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
   ASSERT_OK(ApplyInsertToSession(session.get(), client_table_, 1, 1, "x"));
   Status s = session->Flush();
   ASSERT_TRUE(s.IsIOError()) << s.ToString();
-  ASSERT_EQ(1, session->CountPendingErrors());
 
-  vector<KuduError*> errors;
-  ElementDeleter d(&errors);
-  bool overflow;
-  session->GetPendingErrors(&errors, &overflow);
-  ASSERT_FALSE(overflow);
-  ASSERT_EQ(1, errors.size());
+  gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
   switch (which) {
     case DEAD_MASTER:
       // Only one master, so no retry for finding the new leader master.
-      ASSERT_TRUE(errors[0]->status().IsNetworkError());
+      ASSERT_TRUE(error->status().IsNetworkError());
       break;
     case DEAD_TSERVER:
-      ASSERT_TRUE(errors[0]->status().IsTimedOut());
+      ASSERT_TRUE(error->status().IsTimedOut());
       break;
   }
 
-  ASSERT_EQ(errors[0]->failed_op().ToString(),
+  ASSERT_EQ(error->failed_op().ToString(),
             "INSERT int32 key=1, int32 int_val=1, string string_val=x");
 }
 
@@ -1687,14 +1726,8 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
   // verify error
-  ASSERT_EQ(1, session->CountPendingErrors());
-  vector<KuduError*> errors;
-  ElementDeleter d(&errors);
-  bool overflow;
-  session->GetPendingErrors(&errors, &overflow);
-  ASSERT_FALSE(overflow);
-  ASSERT_EQ(1, errors.size());
-  ASSERT_EQ(errors[0]->failed_op().ToString(),
+  gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+  ASSERT_EQ(error->failed_op().ToString(),
             "UPDATE int32 key=1, int32 int_val=2");
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
@@ -1705,13 +1738,8 @@ TEST_F(ClientTest, TestMutateDeletedRow) {
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
   // verify error
-  ASSERT_EQ(1, session->CountPendingErrors());
-  vector<KuduError*> errors2;
-  ElementDeleter d2(&errors2);
-  session->GetPendingErrors(&errors2, &overflow);
-  ASSERT_FALSE(overflow);
-  ASSERT_EQ(1, errors2.size());
-  ASSERT_EQ(errors2[0]->failed_op().ToString(),
+  error = GetSingleErrorFromSession(session.get());
+  ASSERT_EQ(error->failed_op().ToString(),
             "DELETE int32 key=1");
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
@@ -1728,14 +1756,8 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
   // verify error
-  ASSERT_EQ(1, session->CountPendingErrors());
-  vector<KuduError*> errors;
-  ElementDeleter d(&errors);
-  bool overflow;
-  session->GetPendingErrors(&errors, &overflow);
-  ASSERT_FALSE(overflow);
-  ASSERT_EQ(1, errors.size());
-  ASSERT_EQ(errors[0]->failed_op().ToString(),
+  gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+  ASSERT_EQ(error->failed_op().ToString(),
             "UPDATE int32 key=1, int32 int_val=2");
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
@@ -1746,13 +1768,8 @@ TEST_F(ClientTest, TestMutateNonexistentRow) {
   ASSERT_FALSE(s.ok());
   ASSERT_STR_CONTAINS(s.ToString(), "Some errors occurred");
   // verify error
-  ASSERT_EQ(1, session->CountPendingErrors());
-  vector<KuduError*> errors2;
-  ElementDeleter d2(&errors2);
-  session->GetPendingErrors(&errors2, &overflow);
-  ASSERT_FALSE(overflow);
-  ASSERT_EQ(1, errors2.size());
-  ASSERT_EQ(errors2[0]->failed_op().ToString(),
+  error = GetSingleErrorFromSession(session.get());
+  ASSERT_EQ(error->failed_op().ToString(),
             "DELETE int32 key=1");
   ScanTableToStrings(client_table_.get(), &rows);
   ASSERT_EQ(0, rows.size());
@@ -1794,17 +1811,12 @@ TEST_F(ClientTest, TestWriteWithBadSchema) {
   ASSERT_FALSE(s.ok());
 
   // Verify the specific error.
-  vector<KuduError*> errors;
-  ElementDeleter d(&errors);
-  bool overflow;
-  session->GetPendingErrors(&errors, &overflow);
-  ASSERT_FALSE(overflow);
-  ASSERT_EQ(1, errors.size());
-  ASSERT_TRUE(errors[0]->status().IsInvalidArgument());
-  ASSERT_EQ(errors[0]->status().ToString(),
-            "Invalid argument: Client provided column int_val[int32 NOT NULL] "
+  gscoped_ptr<KuduError> error = GetSingleErrorFromSession(session.get());
+  ASSERT_TRUE(error->status().IsInvalidArgument());
+  ASSERT_STR_CONTAINS(error->status().ToString(),
+            "Client provided column int_val[int32 NOT NULL] "
             "not present in tablet");
-  ASSERT_EQ(errors[0]->failed_op().ToString(),
+  ASSERT_EQ(error->failed_op().ToString(),
             "INSERT int32 key=12345, int32 int_val=12345, string string_val=x");
 }
 

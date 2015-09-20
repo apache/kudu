@@ -765,7 +765,7 @@ TEST_F(DeleteTableTest, TestDeleteFollowerWithReplicatingTransaction) {
   Status s = WriteSimpleTestRow(leader, tablet_id, RowOperationsPB::INSERT,
                                 1, 1, "hola, world", MonoDelta::FromSeconds(5));
   ASSERT_TRUE(s.IsTimedOut());
-  ASSERT_STR_CONTAINS(s.ToString(), "Call timed out");
+  ASSERT_STR_CONTAINS(s.ToString(), "timed out");
 
   LOG(INFO) << "Killing the leader...";
   cluster_->tablet_server(kLeaderIndex)->Shutdown();

@@ -243,9 +243,11 @@ void OutboundCall::SetFailed(const Status &status,
 void OutboundCall::SetTimedOut() {
   {
     lock_guard<simple_spinlock> l(&lock_);
-    // TODO: have a better error message which includes the call timeout,
-    // remote host, how long it spent in the queue, other useful stuff.
-    status_ = Status::TimedOut("Call timed out");
+    status_ = Status::TimedOut(Substitute(
+        "$0 RPC to $1 timed out after $2",
+        remote_method_.method_name(),
+        conn_id_.remote().ToString(),
+        controller_->timeout().ToString()));
     set_state_unlocked(TIMED_OUT);
   }
   CallCallback();
