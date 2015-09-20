@@ -413,7 +413,8 @@ Status FsTool::DumpCFileBlock(const std::string& block_id_str,
                               const DumpOptions &opts,
                               int indent) {
   uint64_t numeric_id;
-  if (!safe_strtou64(block_id_str, &numeric_id)) {
+  if (!safe_strtou64(block_id_str, &numeric_id) &&
+      !safe_strtou64_base(block_id_str, &numeric_id, 16)) {
     return Status::InvalidArgument(Substitute("block '$0' could not be parsed",
                                               block_id_str));
   }
