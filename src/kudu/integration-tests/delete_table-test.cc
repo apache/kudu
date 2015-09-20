@@ -391,8 +391,20 @@ TEST_F(DeleteTableTest, TestAtomicDeleteTablet) {
   boost::optional<int64_t> opid_index(-2);
   tserver::TabletServerErrorPB::Code error_code;
   ASSERT_OK(itest::WaitUntilTabletRunning(ts, tablet_id, timeout));
-  Status s = itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, opid_index, timeout,
-                                 &error_code);
+
+  Status s;
+  for (int i = 0; i < 100; i++) {
+    s = itest::DeleteTablet(ts, tablet_id, TABLET_DATA_TOMBSTONED, opid_index, timeout,
+                            &error_code);
+    if (error_code == TabletServerErrorPB::CAS_FAILED) break;
+    // If we didn't get the expected CAS_FAILED error, it's OK to get 'TABLET_NOT_RUNNING'
+    // because the "creating" maintenance state persists just slightly after it starts to
+    // expose 'RUNNING' state in ListTablets()
+    ASSERT_EQ(TabletServerErrorPB::TABLET_NOT_RUNNING, error_code)
+        << "unexpected error: " << s.ToString();
+    SleepFor(MonoDelta::FromMilliseconds(100));
+  }
+
   ASSERT_EQ(TabletServerErrorPB::CAS_FAILED, error_code) << "unexpected error: " << s.ToString();
   ASSERT_STR_CONTAINS(s.ToString(), "of -2 but the committed config has opid_index of -1");
 
