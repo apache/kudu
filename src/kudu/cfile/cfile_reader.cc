@@ -625,12 +625,34 @@ Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
     prepared_block_pool_.Construct());
   RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_, b.get()));
 
+  Status dblk_seek_status;
   if (key.num_key_columns() > 1) {
     Slice slice = key.encoded_key();
-    RETURN_NOT_OK(b->dblk_->SeekAtOrAfterValue(&slice, exact_match));
+    dblk_seek_status = b->dblk_->SeekAtOrAfterValue(&slice, exact_match);
   } else {
-    RETURN_NOT_OK(b->dblk_->SeekAtOrAfterValue(key.raw_keys()[0],
-                                               exact_match));
+    dblk_seek_status = b->dblk_->SeekAtOrAfterValue(key.raw_keys()[0],
+                                                    exact_match);
+  }
+
+  // If seeking within the data block results in NotFound, then that indicates that the
+  // value we're looking for fell after all the data in that block.
+  // If this is not the last block, then the search key was 'in the cracks' between
+  // two consecutive blocks, so we need to advance to the next one. If it was the
+  // last block in the file, then we just return NotFound(), since there is no
+  // value "at or after".
+  if (PREDICT_FALSE(dblk_seek_status.IsNotFound())) {
+    *exact_match = false;
+    if (PREDICT_FALSE(!validx_iter_->HasNext())) {
+      return Status::NotFound("key after last block in file",
+                              key.encoded_key().ToDebugString());
+    }
+    RETURN_NOT_OK(validx_iter_->Next());
+    RETURN_NOT_OK(ReadCurrentDataBlock(*validx_iter_, b.get()));
+    SeekToPositionInBlock(b.get(), 0);
+  } else {
+    // It's possible we got some other error seeking in our data block --
+    // still need to propagate those.
+    RETURN_NOT_OK(dblk_seek_status);
   }
 
   last_prepare_idx_ = b->first_row_idx() + b->dblk_->GetCurrentIndex();

@@ -489,21 +489,35 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding) {
 
   gscoped_ptr<EncodedKey> encoded_key;
   bool exact;
-  s = "hello 5000.5";
-  EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
-  ASSERT_FALSE(exact);
-  ASSERT_EQ(5001u, iter->GetCurrentOrdinal());
-  CopyOne<STRING>(iter.get(), &s, &arena);
-  ASSERT_EQ(string("hello 5001"), s.ToString());
 
-  s = "hello 9000";
-  EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
-  ASSERT_TRUE(exact);
-  ASSERT_EQ(9000u, iter->GetCurrentOrdinal());
-  CopyOne<STRING>(iter.get(), &s, &arena);
-  ASSERT_EQ(string("hello 9000"), s.ToString());
+  // Seek in between each key
+  for (int i = 1; i < 10000; i++) {
+    SCOPED_TRACE(i);
+    char buf[100];
+    snprintf(buf, sizeof(buf), "hello %04d.5", i - 1);
+    s = Slice(buf);
+    EncodeStringKey(schema, s, &encoded_key);
+    ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
+    ASSERT_FALSE(exact);
+    ASSERT_EQ(i, iter->GetCurrentOrdinal());
+    CopyOne<STRING>(iter.get(), &s, &arena);
+    ASSERT_EQ(StringPrintf("hello %04d", i), s.ToString());
+  }
+
+  // Seek exactly to each key
+  for (int i = 0; i < 9999; i++) {
+    SCOPED_TRACE(i);
+    char buf[100];
+    snprintf(buf, sizeof(buf), "hello %04d", i);
+    s = Slice(buf);
+    EncodeStringKey(schema, s, &encoded_key);
+    ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
+    ASSERT_TRUE(exact);
+    ASSERT_EQ(i, iter->GetCurrentOrdinal());
+    Slice read_back;
+    CopyOne<STRING>(iter.get(), &read_back, &arena);
+    ASSERT_EQ(read_back.ToString(), s.ToString());
+  }
 
   // after last entry
   s = "hello 9999x";
@@ -519,16 +533,7 @@ void TestCFile::TestReadWriteStrings(EncodingType encoding) {
   CopyOne<STRING>(iter.get(), &s, &arena);
   ASSERT_EQ(string("hello 0000"), s.ToString());
 
-  // to last entry
-  s = "hello 9999";
-  EncodeStringKey(schema, s, &encoded_key);
-  ASSERT_OK(iter->SeekAtOrAfter(*encoded_key, &exact));
-  ASSERT_TRUE(exact);
-  ASSERT_EQ(9999u, iter->GetCurrentOrdinal());
-  CopyOne<STRING>(iter.get(), &s, &arena);
-  ASSERT_EQ(string("hello 9999"), s.ToString());
-
-  // Seek to start of file
+  // Seek to start of file by ordinal
   ASSERT_OK(iter->SeekToFirst());
   ASSERT_EQ(0u, iter->GetCurrentOrdinal());
   CopyOne<STRING>(iter.get(), &s, &arena);
