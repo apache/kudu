@@ -57,6 +57,10 @@ while [[ $# > 0 ]] ; do
         SITE=$(cd $SITE && pwd)
         OUTPUT_DIR=$SITE/docs
         ;;
+      --no-jekyll)
+        NO_JEKYLL=1
+        shift
+        ;;
       *)
         echo unknown argument: $arg
         exit 1
@@ -127,7 +131,7 @@ echo "Docs built in $OUTPUT_DIR."
 
 # If we're building the site, try to run Jekyll for them to make
 # it a bit easier to quickly preview the results.
-if [ -n "$SITE" ]; then
+if [ -n "$SITE" ] && ! [ -n "$NO_JEKYLL" ]; then
   # We need to generate a config file which fakes the "github.url" property
   # so that relative links within the site work.
   BASE_URL="file://$SITE/_site/"

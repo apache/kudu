@@ -50,7 +50,33 @@ end %>
     <div class="col-md-3">
 <%  if (attr? :toc) %>
   <div id="toc" data-spy="affix" data-offset-top="70">
-    <%= converter.convert self, 'outline' %>
+  <ul>
+<%
+      toplevels = {
+        :introduction => "Introducing Kudu",
+        :quickstart => "Getting Started with Kudu",
+        :installation => "Installation Guide",
+        :kudu_impala_integration => "Using Impala with Kudu",
+        :administration => "Administering Kudu",
+        :troubleshooting => "Troubleshooting Kudu",
+        :developing => "Developing Applications with Kudu",
+        :contributing => "Contributing to Kudu",
+        :style_guide => "Kudu Style Guide",
+        :configuration_reference => "Kudu Configuration Reference",
+        :resources => "Kudu Resources"
+      }
+      toplevels.each do |page, pagename|
+%>
+      <li>
+<%       if page.to_s == (attr 'docname')
+          %><span class="active-toc"><%= pagename %></span>
+            <%= converter.convert self, 'outline' %> <%
+        else %>
+          <a href="<%= page %>.html"><%= pagename %></a> <%
+        end %>
+      </li> <%
+      end %>
+  </ul>
   </div><%
     end
 %>
