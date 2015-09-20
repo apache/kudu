@@ -283,8 +283,11 @@ class TestCFileBothCacheTypes : public TestCFile,
         FLAGS_block_cache_type = "NVM";
         break;
     }
-    Singleton<BlockCache>::UnsafeReset();
     CFileTestBase::SetUp();
+  }
+
+  void TearDown() OVERRIDE {
+    Singleton<BlockCache>::UnsafeReset();
   }
 };
 INSTANTIATE_TEST_CASE_P(CacheTypes, TestCFileBothCacheTypes,
