@@ -232,7 +232,7 @@ h3 > a.link,
 h4 > a.link,
 h5 > a.link,
 h6 > a.link {
-  color: #333333;
+  color: #337ab7;
   text-decoration: none;
 }
 #content h1 > a.link:hover,
@@ -288,25 +288,6 @@ table.tableblock > .title,
   white-space: nowrap;
   overflow: visible;
   max-width: 0;
-}
-/***********************************************************
- * Lead paragraph
- */
-.paragraph.lead > p,
-#preamble > .sectionbody > .paragraph:first-of-type p {
-  margin-bottom: 20px;
-  font-size: 16px;
-  font-weight: 300;
-  line-height: 1.4;
-}
-@media (min-width: 768px) {
-  .paragraph.lead > p,
-  #preamble > .sectionbody > .paragraph:first-of-type p {
-    font-size: 21px;
-  }
-}
-table.tableblock #preamble > .sectionbody > .paragraph:first-of-type p {
-  font-size: inherit;
 }
 /***********************************************************
  * Admonition block

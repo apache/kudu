@@ -8,8 +8,14 @@
 }
 
 #toc.affix {
-  position: fixed;
   top: 20px;
+  margin-top: 0;
+  width: 262.5px;
+}
+#toc {
+    margin-top: 30px;
+    padding: 10px;
+    border: 1px solid #dddddd;
 }
 
 .row.header {
@@ -40,4 +46,8 @@
 nav:after {
     display: block;
     clear: both;
+}
+
+nav a {
+    font-size: 110%;
 }
