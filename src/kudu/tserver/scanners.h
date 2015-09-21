@@ -89,10 +89,6 @@ class ScannerManager {
   // (Optional) scanner metrics for this instance.
   gscoped_ptr<ScannerMetrics> metrics_;
 
-  // The amount of time that any given scanner should live after its
-  // last access.
-  MonoDelta scanner_ttl_;
-
   // If true, removal thread should shut itself down. Protected
   // by 'shutdown_lock_' and 'shutdown_cv_'.
   bool shutdown_;

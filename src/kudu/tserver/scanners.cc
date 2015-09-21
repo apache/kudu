@@ -38,9 +38,7 @@ using tablet::TabletPeer;
 namespace tserver {
 
 ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
-  : scanner_ttl_(MonoDelta::FromMilliseconds(
-                   FLAGS_scanner_ttl_ms)),
-    shutdown_(false) {
+  : shutdown_(false) {
   if (metric_entity) {
     metrics_.reset(new ScannerMetrics(metric_entity));
     METRIC_active_scanners.InstantiateFunctionGauge(
@@ -125,17 +123,19 @@ void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) {
 
 void ScannerManager::RemoveExpiredScanners() {
   boost::lock_guard<boost::shared_mutex> l(lock_);
+  MonoDelta scanner_ttl = MonoDelta::FromMilliseconds(FLAGS_scanner_ttl_ms);
+
   for (ScannerMap::iterator it = scanners_by_id_.begin();
        it != scanners_by_id_.end(); ) {
     SharedScanner& scanner = it->second;
     MonoDelta time_live =
         scanner->TimeSinceLastAccess(MonoTime::Now(MonoTime::COARSE));
-    if (time_live.MoreThan(scanner_ttl_)) {
+    if (time_live.MoreThan(scanner_ttl)) {
       // TODO: once we have a metric for the number of scanners expired, make this a
       // VLOG(1).
       LOG(INFO) << "Expiring scanner id: " << it->first << ", after "
                 << time_live.ToMicroseconds() << " us of inactivity, which is > TTL ("
-                << scanner_ttl_.ToMicroseconds() << " us).";
+                << scanner_ttl.ToMicroseconds() << " us).";
       it = scanners_by_id_.erase(it);
       if (metrics_) {
         metrics_->scanners_expired->Increment();

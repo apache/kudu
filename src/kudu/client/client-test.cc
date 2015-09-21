@@ -1186,9 +1186,24 @@ static void AssertScannersDisappear(const tserver::ScannerManager* manager) {
   FAIL() << "Waited too long for the scanner to close";
 }
 
+namespace {
+
+int64_t SumResults(const vector<KuduRowResult>& results) {
+  int64_t sum = 0;
+  BOOST_FOREACH(const KuduRowResult row, results) {
+    int32_t val;
+    CHECK_OK(row.GetInt32(0, &val));
+    sum += val;
+  }
+  return sum;
+}
+
+} // anonymous namespace
+
 TEST_F(ClientTest, TestScannerKeepAlive) {
   ASSERT_NO_FATAL_FAILURE(InsertTestRows(client_table_.get(), 1000));
   // Set the scanner ttl really low
+  ANNOTATE_BENIGN_RACE(&FLAGS_scanner_ttl_ms, "Set at runtime, for tests.");
   FLAGS_scanner_ttl_ms = 100; // 100 milliseconds
   // Start a scan but don't get the whole data back
   KuduScanner scanner(client_table_.get());
@@ -1204,11 +1219,7 @@ TEST_F(ClientTest, TestScannerKeepAlive) {
 
   // We should get only nine rows back (from the first tablet).
   ASSERT_EQ(results.size(), 9);
-  BOOST_FOREACH(const KuduRowResult row, results) {
-    int32_t val;
-    ASSERT_OK(row.GetInt32(0, &val));
-    sum += val;
-  }
+  sum += SumResults(results);
 
   ASSERT_TRUE(scanner.HasMoreRows());
 
@@ -1222,11 +1233,7 @@ TEST_F(ClientTest, TestScannerKeepAlive) {
     ASSERT_OK(scanner.NextBatch(&results));
     if (results.size() > 0) break;
   }
-  BOOST_FOREACH(const KuduRowResult row, results) {
-    int32_t val;
-    ASSERT_OK(row.GetInt32(0, &val));
-    sum += val;
-  }
+  sum += SumResults(results);
   ASSERT_TRUE(scanner.HasMoreRows());
 
   // Now loop while keeping the scanner alive. Each time we loop we sleep 1/2 a scanner
@@ -1236,14 +1243,25 @@ TEST_F(ClientTest, TestScannerKeepAlive) {
     ASSERT_OK(scanner.KeepAlive());
   }
 
+  // Get a second batch before sleeping/keeping alive some more. This is test for a bug
+  // where we would only actually perform a KeepAlive() rpc after the first request and
+  // not on subsequent ones.
+  while (scanner.HasMoreRows()) {
+    ASSERT_OK(scanner.NextBatch(&results));
+    if (results.size() > 0) break;
+  }
+
+  ASSERT_TRUE(scanner.HasMoreRows());
+  for (int i = 0; i < 5; i++) {
+    SleepFor(MonoDelta::FromMilliseconds(50));
+    ASSERT_OK(scanner.KeepAlive());
+  }
+  sum += SumResults(results);
+
   // Loop to get the remaining rows.
   while (scanner.HasMoreRows()) {
     ASSERT_OK(scanner.NextBatch(&results));
-    BOOST_FOREACH(const KuduRowResult row, results) {
-      int32_t val;
-      ASSERT_OK(row.GetInt32(0, &val));
-      sum += val;
-    }
+    sum += SumResults(results);
   }
   ASSERT_FALSE(scanner.HasMoreRows());
   ASSERT_EQ(sum, 499500);
