@@ -114,7 +114,9 @@ class LogCache {
   // If it is not in the cache, this consults the on-disk log index and thus
   // may take a non-trivial amount of time due to IO.
   //
-  // Returns a bad Status if the log index fails to load (eg. due to an IO error).
+  // Returns "Incomplete" if the op has not yet been written.
+  // Returns "NotFound" if the op has been GCed.
+  // Returns another bad Status if the log index fails to load (eg. due to an IO error).
   Status LookupOpId(int64_t op_index, OpId* op_id) const;
 
  private:

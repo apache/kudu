@@ -9,6 +9,7 @@
 
 #include "kudu/gutil/once.h"
 #include "kudu/util/debug/leakcheck_disabler.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 
@@ -57,6 +58,11 @@ void DoMaybeFault(const char* fault_str, double fraction) {
   }
 
   LOG(FATAL) << "Injected fault: " << fault_str;
+}
+
+void DoInjectRandomLatency(double max_ms) {
+  GoogleOnceInit(&g_random_once, InitRandom);
+  SleepFor(MonoDelta::FromMilliseconds(g_random->NextDoubleFraction() * max_ms));
 }
 
 } // namespace fault_injection

@@ -359,6 +359,9 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
                                        bool* has_leader,
                                        master::TabletLocationsPB* tablet_locations);
 
+  static const bool WITH_NOTIFICATION_LATENCY = true;
+  static const bool WITHOUT_NOTIFICATION_LATENCY = false;
+  void DoTestChurnyElections(bool with_latency);
 
  protected:
   // Flags needed for CauseFollowerToFallBehindLogGC() to work well.
@@ -885,11 +888,27 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
 // in a lot of churn. We expect to make some progress and not diverge or
 // crash, despite the frequent re-elections and races.
 TEST_F(RaftConsensusITest, TestChurnyElections) {
+  DoTestChurnyElections(WITHOUT_NOTIFICATION_LATENCY);
+}
+
+// The same test, except inject artificial latency when propagating notifications
+// from the queue back to consensus. This can reproduce bugs like KUDU-1078 which
+// normally only appear under high load. TODO: Re-enable once we get to the
+// bottom of KUDU-1078.
+TEST_F(RaftConsensusITest, DISABLED_TestChurnyElections_WithNotificationLatency) {
+  DoTestChurnyElections(WITH_NOTIFICATION_LATENCY);
+}
+
+void RaftConsensusITest::DoTestChurnyElections(bool with_latency) {
   vector<string> ts_flags, master_flags;
 
   ts_flags.push_back("--raft_heartbeat_interval_ms=1");
   ts_flags.push_back("--leader_failure_monitor_check_mean_ms=1");
   ts_flags.push_back("--leader_failure_monitor_check_stddev_ms=1");
+  if (with_latency) {
+    ts_flags.push_back("--consensus_inject_latency_ms_in_notifications=50");
+  }
+
   CreateCluster("raft_consensus-itest-cluster", ts_flags, master_flags);
 
   TestWorkload workload(cluster_.get());
@@ -923,6 +942,7 @@ TEST_F(RaftConsensusITest, TestChurnyElections) {
   NO_FATALS(v.CheckCluster());
   NO_FATALS(v.CheckRowCount(workload.table_name(), ClusterVerifier::AT_LEAST,
                             workload.rows_inserted()));
+  NO_FATALS(AssertNoTabletServersCrashed());
 }
 
 TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {

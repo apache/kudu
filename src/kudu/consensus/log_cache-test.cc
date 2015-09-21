@@ -187,7 +187,7 @@ TEST_F(LogCacheTest, TestCacheEdgeCases) {
   // Now test the case when 'after_op_index' is after the last index
   // in the cache.
   Status s = cache_->ReadOps(2, 100, &messages, &preceding);
-  ASSERT_TRUE(s.IsNotFound()) << "unexpected status: " << s.ToString();
+  ASSERT_TRUE(s.IsIncomplete()) << "unexpected status: " << s.ToString();
   ASSERT_EQ(0, messages.size());
   ASSERT_FALSE(preceding.IsInitialized());
 

@@ -26,6 +26,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/strcat.h"
 #include "kudu/gutil/strings/human_readable.h"
+#include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
@@ -43,6 +44,13 @@ DEFINE_int32(follower_unavailable_considered_failed_sec, 300,
              "follower after which the follower is considered to be failed and "
              "evicted from the config.");
 TAG_FLAG(follower_unavailable_considered_failed_sec, advanced);
+
+DEFINE_int32(consensus_inject_latency_ms_in_notifications, 0,
+             "Injects a random sleep between 0 and this many milliseconds into "
+             "asynchronous notifications from the consensus queue back to the "
+             "consensus implementation.");
+TAG_FLAG(consensus_inject_latency_ms_in_notifications, hidden);
+TAG_FLAG(consensus_inject_latency_ms_in_notifications, unsafe);
 
 namespace kudu {
 namespace consensus {
@@ -319,14 +327,25 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     if (PREDICT_FALSE(!s.ok())) {
       // It's normal to have a NotFound() here if a follower falls behind where
       // the leader has GCed its logs.
-      if (PREDICT_FALSE(!s.IsNotFound())) {
-        LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error while reading the log: " << s.ToString();
+      if (PREDICT_TRUE(s.IsNotFound())) {
+        string msg = Substitute("The logs necessary to catch up peer $0 have been "
+                                "garbage collected. The follower will never be able "
+                                "to catch up ($1)", uuid, s.ToString());
+        NotifyObserversOfFailedFollower(uuid, queue_state_.current_term, msg);
+        return s;
+      // IsIncomplete() means that we tried to read beyond the head of the log
+      // (in the future). See KUDU-1078.
+      } else if (s.IsIncomplete()) {
+        LOG_WITH_PREFIX_UNLOCKED(DFATAL) << "Error trying to read ahead of the log "
+                                         << "while preparing peer request: "
+                                         << s.ToString() << ". Destination peer: "
+                                         << peer->ToString();
+        return s;
+      } else {
+        LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error reading the log while preparing peer request: "
+                                        << s.ToString() << ". Destination peer: "
+                                        << peer->ToString();
       }
-      string msg = Substitute("The logs necessary to catch up peer $0 have been "
-                              "garbage collected. The follower will never be able "
-                              "to catch up ($1)", uuid, s.ToString());
-      NotifyObserversOfFailedFollower(uuid, queue_state_.current_term, msg);
-      return s;
     }
 
     // We use AddAllocated rather than copy, because we pin the log cache at the
@@ -737,7 +756,7 @@ bool PeerMessageQueue::IsOpInLog(const OpId& desired_op) const {
   if (PREDICT_TRUE(s.ok())) {
     return OpIdEquals(desired_op, log_op);
   }
-  if (PREDICT_TRUE(s.IsNotFound())) {
+  if (PREDICT_TRUE(s.IsNotFound() || s.IsIncomplete())) {
     return false;
   }
   LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error while reading the log: " << s.ToString();
@@ -785,6 +804,7 @@ void PeerMessageQueue::NotifyObserversOfMajorityReplOpChangeTask(
 }
 
 void PeerMessageQueue::NotifyObserversOfTermChangeTask(int64_t term) {
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_consensus_inject_latency_ms_in_notifications);
   std::vector<PeerMessageQueueObserver*> copy;
   {
     boost::lock_guard<simple_spinlock> lock(queue_lock_);
@@ -808,6 +828,7 @@ void PeerMessageQueue::NotifyObserversOfFailedFollower(const string& uuid,
 void PeerMessageQueue::NotifyObserversOfFailedFollowerTask(const string& uuid,
                                                            int64_t term,
                                                            const string& reason) {
+  MAYBE_INJECT_RANDOM_LATENCY(FLAGS_consensus_inject_latency_ms_in_notifications);
   std::vector<PeerMessageQueueObserver*> observers_copy;
   {
     boost::lock_guard<simple_spinlock> lock(queue_lock_);

@@ -227,7 +227,9 @@ Status LogCache::LookupOpId(int64_t op_index, OpId* op_id) const {
     // the log reader, since it might actually race against the writing
     // of the op.
     if (op_index >= next_sequential_op_index_) {
-      return Status::NotFound("op in future");
+      return Status::Incomplete(Substitute("Op with index $0 is ahead of the local log "
+                                           "(next sequential op: $1)",
+                                           op_index, next_sequential_op_index_));
     }
     MessageCache::const_iterator iter = cache_.find(op_index);
     if (iter != cache_.end()) {

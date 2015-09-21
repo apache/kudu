@@ -165,8 +165,10 @@ class PeerMessageQueue {
 
   // Assembles a request for a peer, adding entries past 'op_id' up to
   // 'consensus_max_batch_size_bytes'.
-  // Returns OK if the request was assembled or Status::NotFound() if the
+  // Returns OK if the request was assembled, or Status::NotFound() if the
   // peer with 'uuid' was not tracked, of if the queue is not in leader mode.
+  // Returns Status::Incomplete if we try to read an operation index from the
+  // log that has not been written.
   //
   // WARNING: In order to avoid copying the same messages to every peer,
   // entries are added to 'request' via AddAllocated() methods.
