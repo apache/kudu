@@ -1,4 +1,4 @@
-[[schema design]]
+[[schema_design]]
 = Kudu Schema Design
 :author: Kudu Team
 :imagesdir: ./images
@@ -10,9 +10,6 @@
 :sectlinks:
 :experimental:
 
-[[Overview]]
-.Overview
-
 Kudu tables have a structured data model similar to tables in a traditional
 RDBMS. Like relational databases, schema design is critical for achieving the
 best performance and operational stability from Kudu. Every workload is unique,
@@ -23,12 +20,10 @@ schemas. At a high level, there are three concerns in Kudu schema design:
 <<column-design,column design>>, <<primary-keys,primary keys>>, and
 <<data-distribution,data distribution>>. Of these, only data distribution will
 be a new concept for those familiar with traditional relational databases. The
-next sections discuss <<transactions,transactions>> in the context of schema
-design, <<alter-schema,altering the schema>> of an existing table, and
-<<known-limitations,known limitations>> with regard to schema design.
+next sections discuss <<alter-schema,altering the schema>> of an existing table,
+and <<known-limitations,known limitations>> with regard to schema design.
 
 [[column-design]]
-.Column Design
 
 A Kudu Table consists of one or more columns, each with a predefined type.
 Columns that are not part of the primary key may optionally be nullable.
@@ -54,11 +49,10 @@ features. However, the data must be specified as the appropriate type (as
 opposed to simulating a 'schemaless' table using string or binary columns for
 data which may otherwise be structured).
 
-TODO: discuss how to choose / when to choose a specific encoding and block size
-for a column.
+// TODO: discuss how to choose / when to choose a specific encoding and block
+// size for a column.
 
 [[primary-key]]
-.Primary Keys
 
 Each Kudu table must declare a primary key comprised of one or more columns.
 Primary key columns must be non-nullable, and may not be a boolean or
@@ -77,7 +71,7 @@ data among tablets (through the techniques discussed in <<data-distribution>>),
 while retaining a consistent ordering in intra-tablet scans.
 
 [[data-distribution]]
-.Data Distribution
+== Data Distribution
 
 Kudu tables, unlike traditional relational tables, are partitioned into tablets
 and distributed across many tablet servers. A row always belongs to a single
@@ -99,7 +93,7 @@ after creation, so you must design your partition schema ahead of time to ensure
 a sufficient number of tablets are created.
 
 [[range-partitioning]
-.Range Partitioning
+=== Range Partitioning
 
 Range partitioning distributes rows into tablets using a totally-ordered
 distribution key. Every tablet is assigned a contiguous segment of the table's
@@ -120,7 +114,7 @@ CREATE TABLE customers (
 )
 ----
 
-Specifying the split rows as `(("b", ""), ("c", ""), ("d", ""), .., ("z", ""))`
+Specifying the split rows as `\(("b", ""), ("c", ""), ("d", ""), .., ("z", ""))`
 (25 split rows total) will result in the creation of 26 tablets, with each
 tablet responsible for a range of customer surnames all beggining with the same
 first character. This is an effective partition schema for a workload where
@@ -135,7 +129,7 @@ customers with the same last name would fall into the same tablet, regardless of
 the provided split rows.
 
 [[hash-bucketing]
-.Hash Bucketing
+=== Hash Bucketing
 
 Hash bucketing distributes rows by hash value into one of many buckets. Each
 tablet is responsible for the rows falling into a single bucket. The number of
@@ -180,7 +174,7 @@ tablets, leaving a total of just 4 tablets to scan (this optimization is not yet
 implemented, see <<known-limitations,known limitations>> for details).
 
 [[hash-and-range]]
-/Hash Bucketing and Range Partitioning
+=== Hash Bucketing and Range Partitioning
 
 Hash bucketing can be combined with range partitioning. Adding hash bucketing to
 a range partitioned table has the effect of parallelizing operations that would
@@ -188,7 +182,7 @@ otherwise operate sequentially over the range. The total number of tablets is
 the product of the number of hash buckets and the number of split rows plus one.
 
 [[alter-schema]]
-.Schema Alterations
+== Schema Alterations
 
 You can rename Kudu tables, as well as rename, add, or drop columns in an
 existing table. You can rename primary key columns, but you cannot drop them,
@@ -196,7 +190,7 @@ and new columns cannot be added to the primary key after table creation. You
 cannot modify the partition schema after table creation.
 
 [[known-limitations]]
-.Known Limitations
+== Known Limitations
 
 Kudu currently has some known limitations that may factor into schema design:
 

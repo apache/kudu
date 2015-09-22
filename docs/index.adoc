@@ -41,6 +41,9 @@ link:troubleshooting.html[Troubleshooting Kudu]::
 link:developing.html[Developing Applications With Kudu]::
   Information about Kudu APIs and links to working example code.
 
+link:schema_design.html[Kudu Schema Design]::
+  Information about designing Kudu table schemas.
+
 link:contributing.html[Contributing to Kudu]::
   Get involved in the Kudu community.
 
