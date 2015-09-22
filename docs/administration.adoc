@@ -25,6 +25,10 @@
 :sectlinks:
 :experimental:
 
+NOTE: Kudu is easier to manage with link:http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.htm[Cloudera Manager]
+than in a standalone installation. If you do not use Cloudera Manager, follow the these instructions
+to accomplish common administration tasks.
+
 == TBD Administration Tasks
 
 == Next Steps

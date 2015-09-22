@@ -25,3 +25,34 @@
 :sectlinks:
 :experimental:
 
+== Errors During Hole Punching Test
+[[req_hole_punching]]
+. Error during hole punch test
+ - Kudu requires hole punching capabilities in order to be efficient.
+ - RHEL or CentOS 6.4 or later, patched to kernel version of 2.6.32-358 or later.
+  Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole punching.
+  - Ubuntu 14.04 includes version 3.13 of the Linux kernel, which supports hole punching.
+  - Newer versions of the EXT4 or XFS filesystems support hole punching, but EXT3 does
+  not. Older versions of XFS that do not support hole punching return a `EOPNOTSUPP`
+  (operation not supported) error. Older versions of either EXT4 or XFS that do
+  not support hole punching cause Kudu to emit an error message such as the following
+  and to fail to start:
++
+----
+Error during hole punch test. The log block manager requires a
+filesystem with hole punching support such as ext4 or xfs. On el6,
+kernel version 2.6.32-358 or newer is required. To run without hole
+punching (at the cost of some efficiency and scalability), reconfigure
+Kudu with --block_manager=file. Refer to the Kudu documentation for more
+details. Raw error message follows.
+----
+ - Without hole punching support, the log block manager is unsafe to use. It won't
+  ever delete blocks, consuming ever more space on disk.
+ - If you can't use hole punching in your environment, you can still
+  try Kudu. Enable the file block manager instead of the log block manager by
+  adding the `--block_manager=file` flag to the commands you use to start the master
+  and tablet servers. The file block manager does not scale as well as the log block
+  manager.
+
+== NTP clock synchronization
+// TODO fill with actual error messages and how to resolve.

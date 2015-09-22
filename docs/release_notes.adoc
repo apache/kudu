@@ -39,7 +39,6 @@ Kudu’s design sets it apart. Some of Kudu’s benefits include:
 using HDFS with Parquet. See link:kudu_impala_integration.html[Kudu Impala Integration].
 * Strong but flexible consistency model.
 * Strong performance for running sequential and random workloads simultaneously.
-* Easy to administer and manage with Cloudera Manager.
 * Efficient utilization of hardware resources.
 * High availability. Tablet Servers and Masters use the Raft Consensus Algorithm.
 Given a replication factor of `2f+1`, if `f` tablet servers serving a given tablet
@@ -147,11 +146,6 @@ or use the Kudu's Java or C++ API.
 keys. Automatic splitting is not yet possible. Instead, add split rows at table creation.
 * Tablets cannot currently be merged. Instead, create a new table with the contents
 of the old tables to be merged.
-
-=== Cloudera Manager Limitations
-* Some metrics, such as latency histograms, are not yet available in Cloudera Manager.
-* Some service and role chart pages are still under development. More charts and
-metrics will be visible in future releases.
 
 === Replication and Backup Limitations
 * Replication and failover of Kudu masters is considered experimental. It is
