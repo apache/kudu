@@ -33,6 +33,7 @@
 #include "kudu/rpc/rpc.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/util/debug-util.h"
+#include "kudu/util/logging.h"
 
 using std::pair;
 using std::set;
@@ -552,16 +553,25 @@ void Batcher::CheckForFinishedFlush() {
   flush_callback_->Run(s);
 }
 
+MonoTime Batcher::ComputeDeadlineUnlocked() const {
+  MonoDelta timeout = timeout_;
+  if (PREDICT_FALSE(!timeout.Initialized())) {
+    KLOG_EVERY_N(WARNING, 1000) << "Client writing with no timeout set, using 60 seconds.\n"
+                                << GetStackTrace();
+    timeout = MonoDelta::FromSeconds(60);
+  }
+  MonoTime ret = MonoTime::Now(MonoTime::FINE);
+  ret.AddDelta(timeout);
+  return ret;
+}
+
 void Batcher::FlushAsync(KuduStatusCallback* cb) {
   {
     lock_guard<simple_spinlock> l(&lock_);
     CHECK_EQ(state_, kGatheringOps);
     state_ = kFlushing;
     flush_callback_ = cb;
-    if (timeout_.Initialized()) {
-      deadline_ = MonoTime::Now(MonoTime::FINE);
-      deadline_.AddDelta(timeout_);
-    }
+    deadline_ = ComputeDeadlineUnlocked();
   }
 
   // In the case that we have nothing buffered, just call the callback
@@ -607,8 +617,7 @@ Status Batcher::Add(KuduWriteOperation* write_op) {
   //
   // deadline_ is set in FlushAsync(), after all Add() calls are done, so
   // here we're forced to create a new deadline.
-  MonoTime deadline = MonoTime::Now(MonoTime::FINE);
-  deadline.AddDelta(timeout_);
+  MonoTime deadline = ComputeDeadlineUnlocked();
   base::RefCountInc(&outstanding_lookups_);
   client_->data_->meta_cache_->LookupTabletByKey(
       op->write_op->table(),

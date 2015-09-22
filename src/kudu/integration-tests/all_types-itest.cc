@@ -260,7 +260,6 @@ class AllTypesItest : public KuduTest {
   Status InsertRows() {
     shared_ptr<KuduSession> session = client_->NewSession();
     RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    session->SetTimeoutMillis(5000);
     int max_rows_per_tablet = setup_.GetRowsPerTablet();
     for (int i = 0; i < kNumTablets; ++i) {
       for (int j = 0; j < max_rows_per_tablet; ++j) {

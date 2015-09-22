@@ -123,6 +123,10 @@ class Batcher : public RefCountedThreadSafe<Batcher> {
   // Async Callbacks.
   void TabletLookupFinished(InFlightOp* op, const Status& s);
 
+  // Compute a new deadline based on timeout_. If no timeout_ has been set,
+  // uses a hard-coded default and issues periodic warnings.
+  MonoTime ComputeDeadlineUnlocked() const;
+
   // See note about lock ordering in batcher.cc
   mutable simple_spinlock lock_;
 
