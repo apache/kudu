@@ -22,7 +22,7 @@
 
 #include <stdint.h>
 #include <string>
-#include <string.h>
+
 #include "kudu/common/common.pb.h"
 #include "kudu/gutil/mathlimits.h"
 #include "kudu/gutil/strings/escaping.h"
@@ -345,19 +345,34 @@ struct DataTypeTraits<STRING> : public DerivedTypeTraits<BINARY>{
   }
 };
 
+static const char* kDateFormat = "%Y-%m-%d %H:%M:%S";
+static const char* kDateMicrosAndTzFormat = "%s.%06d GMT";
+
 template<>
 struct DataTypeTraits<TIMESTAMP> : public DerivedTypeTraits<INT64>{
+  static const int US_TO_S = 1000L * 1000L;
+
   static const char* name() {
     return "timestamp";
   }
 
   static void AppendDebugStringForValue(const void* val, string* str) {
-    // TODO KUDU-980 - This only stringifies down to seconds,
-    // we should also print the micros.
-    time_t time = *reinterpret_cast<const int64_t *>(val);
-    char time_as_string[kFastToBufferSize];
-    FastTimeToBuffer(time, &time_as_string[0]);
-    str->append(time_as_string);
+    int64_t timestamp_micros = *reinterpret_cast<const int64_t *>(val);
+    time_t secs_since_epoch = timestamp_micros / US_TO_S;
+    // If the time is negative we need to take into account that any microseconds
+    // will actually decrease the time in seconds by one.
+    int remaining_micros = timestamp_micros % US_TO_S;
+    if (remaining_micros < 0) {
+      secs_since_epoch--;
+      remaining_micros = US_TO_S - std::abs(remaining_micros);
+    }
+    struct tm tm_info;
+    gmtime_r(&secs_since_epoch, &tm_info);
+    char time_up_to_secs[24];
+    strftime(time_up_to_secs, sizeof(time_up_to_secs), kDateFormat, &tm_info);
+    char time[34];
+    snprintf(time, sizeof(time), kDateMicrosAndTzFormat, time_up_to_secs, remaining_micros);
+    str->append(time);
   }
 };
 
