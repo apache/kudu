@@ -5,7 +5,7 @@
 cmake_minimum_required(VERSION 3.2.3)
 
 # TODO: can we somehow pass this into the java build?
-set(KUDU_VERSION_NUMBER "0.1.0")
+set(KUDU_VERSION_NUMBER "0.5.0")
 
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_SOURCE_DIR}/cmake_modules")
 include(CMakeParseArguments)

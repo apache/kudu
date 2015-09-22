@@ -80,7 +80,7 @@ configuration snippet to configure the file block manager. See <<req_hole_punchi
 +
 ----
 $ cd /opt/cloudera/csd
-$ wget http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/lastSuccessfulBuild/artifact/java/kudu-csd/target/KUDU-0.1.0.jar
+$ wget http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/lastSuccessfulBuild/artifact/java/kudu-csd/target/KUDU-0.5.0.jar
 ----
 // TODO: CHANGE TO EXTERNAL
 
@@ -154,7 +154,7 @@ using Cloudera Manager, but you can manage it manually via operating system util
 .Kudu Package Locations
 |===
 | OS  | Repository  | Individual Packages
-| RHEL | link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/cloudera-kudu.repo[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6] |  link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/0.1.0/RPMS/x86_64/[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/0.1.0/RPMS/x86_64/[RHEL 6]
+| RHEL | link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/cloudera-kudu.repo[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6] |  link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/0.5.0/RPMS/x86_64/[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/0.5.0/RPMS/x86_64/[RHEL 6]
 | SLES | link:http://repos.jenkins.cloudera.com/kudu-nightly/sles/11/x86_64/kudu/cloudera-kudu.repo[SLES 11]  |   TBD
 | Ubuntu | link:http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/precise/amd64/kudu/cloudera.list[Precise] or link:http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/trusty/amd64/kudu/cloudera.list[Trusty] |  TBD
 | Debian | link:http://repos.jenkins.cloudera.com/kudu-nightly/debian/wheezy/amd64/kudu/cloudera.list[Wheezy] | TBD
