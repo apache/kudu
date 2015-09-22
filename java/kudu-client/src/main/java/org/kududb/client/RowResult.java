@@ -10,7 +10,11 @@ import org.kududb.annotations.InterfaceStability;
 import org.kududb.util.Slice;
 
 import java.nio.ByteBuffer;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.BitSet;
+import java.util.Date;
+import java.util.TimeZone;
 
 /**
  * RowResult represents one row from a scanner. Do not reuse or store the objects.
@@ -20,6 +24,12 @@ import java.util.BitSet;
 public class RowResult {
 
   private static final int INDEX_RESET_LOCATION = -1;
+  private static final DateFormat DATE_FORMAT = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+  {
+    DATE_FORMAT.setTimeZone(TimeZone.getTimeZone("GMT"));
+  }
+  private static final long MS_IN_S = 1000L;
+  private static final long US_IN_S = 1000L * 1000L;
   private int index = INDEX_RESET_LOCATION;
   private int offset;
   private BitSet nullsBitSet;
@@ -461,6 +471,21 @@ public class RowResult {
   }
 
   /**
+   * Transforms a timestamp into a string, whose formatting and timezone is consistent
+   * across kudu.
+   * @param timestamp the timestamp, in microseconds
+   * @return a string, in the format: YYYY-MM-DD HH:MM:SS.ssssss GMT
+   */
+  static String timestampToString(long timestamp) {
+    long tsMillis = timestamp / MS_IN_S;
+    long tsMicros = timestamp % US_IN_S;
+    StringBuffer formattedTs = new StringBuffer();
+    formattedTs.append(DATE_FORMAT.format(new Date(tsMillis)));
+    formattedTs.append(String.format(".%06d GMT", tsMicros));
+    return formattedTs.toString();
+  }
+
+  /**
    * Return the actual data from this row in a stringified key=value
    * form.
    */
@@ -482,7 +507,9 @@ public class RowResult {
             break;
           case INT32: buf.append(getInt(i)); break;
           case INT64: buf.append(getLong(i)); break;
-          case TIMESTAMP: buf.append(getLong(i)); break;
+          case TIMESTAMP: {
+            buf.append(timestampToString(getLong(i)));
+          } break;
           case STRING: buf.append(getString(i)); break;
           case BINARY: buf.append(Bytes.pretty(getBinaryCopy(i))); break;
           case FLOAT: buf.append(getFloat(i)); break;

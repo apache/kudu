@@ -5,6 +5,7 @@ package org.kududb.client;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.kududb.client.RowResult.timestampToString;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -227,9 +228,10 @@ public class TestKuduClient extends BaseKuduTest {
     assertEquals(100, rowStrings.size());
     for (int i = 0; i < rowStrings.size(); i++) {
       StringBuilder expectedRow = new StringBuilder();
-      expectedRow.append(String.format("TIMESTAMP key=%d, TIMESTAMP c1=", timestamps.get(i)));
+      expectedRow.append(String.format("TIMESTAMP key=%s, TIMESTAMP c1=",
+          timestampToString(timestamps.get(i))));
       if (i % 2 == 1) {
-        expectedRow.append(timestamps.get(i));
+        expectedRow.append(timestampToString(timestamps.get(i)));
       } else {
         expectedRow.append("NULL");
       }
