@@ -83,6 +83,7 @@ class RemoteBootstrapITest : public KuduTest {
 
  protected:
   void StartCluster(const vector<string>& extra_tserver_flags = vector<string>(),
+                    const vector<string>& extra_master_flags = vector<string>(),
                     int num_tablet_servers = 3);
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
@@ -92,11 +93,13 @@ class RemoteBootstrapITest : public KuduTest {
 };
 
 void RemoteBootstrapITest::StartCluster(const vector<string>& extra_tserver_flags,
+                                        const vector<string>& extra_master_flags,
                                         int num_tablet_servers) {
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_tserver_flags = extra_tserver_flags;
   opts.extra_tserver_flags.push_back("--never_fsync"); // fsync causes flakiness on EC2.
+  opts.extra_master_flags = extra_master_flags;
   cluster_.reset(new ExternalMiniCluster(opts));
   ASSERT_OK(cluster_->Start());
   inspect_.reset(new itest::ExternalMiniClusterFsInspector(cluster_.get()));
@@ -122,9 +125,10 @@ TEST_F(RemoteBootstrapITest, TestRejectRogueLeader) {
     return;
   }
 
-  vector<string> extra_tserver_flags;
-  extra_tserver_flags.push_back("--enable_leader_failure_detection=false");
-  NO_FATALS(StartCluster(extra_tserver_flags));
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags));
 
   const MonoDelta timeout = MonoDelta::FromSeconds(30);
   const int kTsIndex = 0; // We'll test with the first TS.
@@ -298,10 +302,11 @@ TEST_F(RemoteBootstrapITest, TestDeleteTabletDuringRemoteBootstrap) {
 // as the remote bootstrap source. When a tablet is tombstoned, its last-logged
 // opid is stored in a field its on-disk superblock.
 TEST_F(RemoteBootstrapITest, TestRemoteBootstrapFollowerWithHigherTerm) {
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=false");
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   const int kNumTabletServers = 2;
-  NO_FATALS(StartCluster(flags, kNumTabletServers));
+  NO_FATALS(StartCluster(ts_flags, master_flags, kNumTabletServers));
 
   const MonoDelta timeout = MonoDelta::FromSeconds(30);
   const int kFollowerIndex = 0;
@@ -377,15 +382,16 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
     return;
   }
 
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=false");
-  flags.push_back("--log_cache_size_limit_mb=1");
-  flags.push_back("--log_segment_size_mb=1");
-  flags.push_back("--log_async_preallocate_segments=false");
-  flags.push_back("--log_min_segments_to_retain=100");
-  flags.push_back("--flush_threshold_mb=0"); // Constantly flush.
-  flags.push_back("--maintenance_manager_polling_interval_ms=10");
-  NO_FATALS(StartCluster(flags));
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  ts_flags.push_back("--log_cache_size_limit_mb=1");
+  ts_flags.push_back("--log_segment_size_mb=1");
+  ts_flags.push_back("--log_async_preallocate_segments=false");
+  ts_flags.push_back("--log_min_segments_to_retain=100");
+  ts_flags.push_back("--flush_threshold_mb=0"); // Constantly flush.
+  ts_flags.push_back("--maintenance_manager_polling_interval_ms=10");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags));
 
   const MonoDelta timeout = MonoDelta::FromSeconds(60);
 
@@ -482,7 +488,7 @@ TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
   }
 
   const MonoDelta timeout = MonoDelta::FromSeconds(60);
-  NO_FATALS(StartCluster(vector<string>(), 5));
+  NO_FATALS(StartCluster(vector<string>(), vector<string>(), 5));
 
   TestWorkload workload(cluster_.get());
   workload.set_num_replicas(5);
@@ -607,10 +613,11 @@ int64_t CountLogMessages(ExternalTabletServer* ets) {
 // tablet within consensus in such a way that we'd immediately send another RPC.
 TEST_F(RemoteBootstrapITest, TestDisableRemoteBootstrap_NoTightLoopWhenTabletDeleted) {
   MonoDelta timeout = MonoDelta::FromSeconds(10);
-  vector<string> flags;
-  flags.push_back("--enable_remote_bootstrap=false");
-  flags.push_back("--enable_leader_failure_detection=false");
-  NO_FATALS(StartCluster(flags));
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  ts_flags.push_back("--enable_remote_bootstrap=false");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());
   // TODO(KUDU-1054): the client should handle retrying on different replicas

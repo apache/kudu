@@ -87,6 +87,7 @@ class DeleteTableTest : public KuduTest {
   };
 
   void StartCluster(const vector<string>& extra_tserver_flags = vector<string>(),
+                    const vector<string>& extra_master_flags = vector<string>(),
                     int num_tablet_servers = 3);
 
   // Get the UUID of the leader of the specified tablet, as seen by the TS with
@@ -137,10 +138,12 @@ class DeleteTableTest : public KuduTest {
 };
 
 void DeleteTableTest::StartCluster(const vector<string>& extra_tserver_flags,
+                                   const vector<string>& extra_master_flags,
                                    int num_tablet_servers) {
   ExternalMiniClusterOptions opts;
   opts.num_tablet_servers = num_tablet_servers;
   opts.extra_tserver_flags = extra_tserver_flags;
+  opts.extra_master_flags = extra_master_flags;
 
   // Disable fsyncing, since these tests do a lot of data writing and transfer,
   // and the fsyncs (a) make them slower, and (b) make them flaky since the syncs
@@ -614,9 +617,11 @@ TEST_F(DeleteTableTest, TestAutoTombstoneAfterRemoteBootstrapRemoteFails) {
 
 // Test for correct remote bootstrap merge of consensus metadata.
 TEST_F(DeleteTableTest, TestMergeConsensusMetadata) {
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=false"); // Manual leader selection.
-  NO_FATALS(StartCluster(flags));
+  // Enable manual leader selection.
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags));
   const MonoDelta timeout = MonoDelta::FromSeconds(10);
   const int kTsIndex = 0;
 
@@ -732,11 +737,12 @@ TEST_F(DeleteTableTest, TestDeleteFollowerWithReplicatingTransaction) {
   const MonoDelta timeout = MonoDelta::FromSeconds(10);
 
   const int kNumTabletServers = 5;
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=false");
-  flags.push_back("--flush_threshold_mb=0"); // Always be flushing.
-  flags.push_back("--maintenance_manager_polling_interval_ms=100");
-  NO_FATALS(StartCluster(flags, kNumTabletServers));
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  ts_flags.push_back("--flush_threshold_mb=0"); // Always be flushing.
+  ts_flags.push_back("--maintenance_manager_polling_interval_ms=100");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags, kNumTabletServers));
 
   const int kTsIndex = 0; // We'll test with the first TS.
   TServerDetails* ts = ts_map_[cluster_->tablet_server(kTsIndex)->uuid()];
@@ -792,11 +798,12 @@ TEST_F(DeleteTableTest, TestDeleteFollowerWithReplicatingTransaction) {
 // tombstoned.
 TEST_F(DeleteTableTest, TestOrphanedBlocksClearedOnDelete) {
   const MonoDelta timeout = MonoDelta::FromSeconds(30);
-  vector<string> flags;
-  flags.push_back("--enable_leader_failure_detection=false");
-  flags.push_back("--flush_threshold_mb=0"); // Flush quickly since we wait for a flush to occur.
-  flags.push_back("--maintenance_manager_polling_interval_ms=100");
-  NO_FATALS(StartCluster(flags));
+  vector<string> ts_flags, master_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  ts_flags.push_back("--flush_threshold_mb=0"); // Flush quickly since we wait for a flush to occur.
+  ts_flags.push_back("--maintenance_manager_polling_interval_ms=100");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags));
 
   const int kFollowerIndex = 0;
   TServerDetails* follower_ts = ts_map_[cluster_->tablet_server(kFollowerIndex)->uuid()];

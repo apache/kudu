@@ -39,6 +39,7 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneEvictedReplica) {
   vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
   int num_tservers = 5;
   vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags, num_tservers));
 
   TestWorkload workload(cluster_.get());
@@ -107,6 +108,7 @@ TEST_F(TabletReplacementITest, TestMasterTombstoneOldReplicaOnReport) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags = list_of("--enable_leader_failure_detection=false");
   vector<string> master_flags = list_of("--master_add_server_when_underreplicated=false");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
   NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());
@@ -164,7 +166,9 @@ TEST_F(TabletReplacementITest, TestEvictAndReplaceDeadFollower) {
   MonoDelta timeout = MonoDelta::FromSeconds(30);
   vector<string> ts_flags = list_of("--enable_leader_failure_detection=false")
                                    ("--follower_unavailable_considered_failed_sec=5");
-  NO_FATALS(StartCluster(ts_flags));
+  vector<string> master_flags = list_of(
+      "--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags));
 
   TestWorkload workload(cluster_.get());
   workload.Setup(); // Easy way to create a new tablet.

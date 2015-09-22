@@ -47,7 +47,6 @@ namespace kudu {
 
 const char* kTableName = "test_table";
 
-// Temporarily disabled while working on KUDU-234.
 class CreateTableStressTest : public KuduTest {
  public:
   CreateTableStressTest() {

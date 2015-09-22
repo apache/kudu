@@ -28,6 +28,7 @@
 #include "kudu/util/test_util.h"
 
 DECLARE_bool(enable_leader_failure_detection);
+DECLARE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader);
 DEFINE_int32(num_election_test_loops, 3,
              "Number of random EmulateElection() loops to execute in "
              "TestReportNewLeaderOnLeaderChange");
@@ -96,6 +97,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   // We need to control elections precisely for this test since we're using
   // EmulateElection() with a distributed consensus configuration.
   FLAGS_enable_leader_failure_detection = false;
+  FLAGS_catalog_manager_wait_for_new_tablets_to_elect_leader = false;
 
   // Run a few more iters in slow-test mode.
   OverrideFlagForSlowTests("num_election_test_loops", "10");

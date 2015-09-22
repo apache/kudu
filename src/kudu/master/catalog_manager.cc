@@ -70,14 +70,21 @@
 #include "kudu/util/thread_restrictions.h"
 #include "kudu/util/trace.h"
 
-DEFINE_int32(master_ts_rpc_timeout_ms, 10 * 1000, // 10 sec
+DEFINE_int32(master_ts_rpc_timeout_ms, 30 * 1000, // 30 sec
              "Timeout used for the Master->TS async rpc calls.");
 TAG_FLAG(master_ts_rpc_timeout_ms, advanced);
 
-DEFINE_int32(tablet_creation_timeout_ms, 10 * 1000, // 10 sec
+DEFINE_int32(tablet_creation_timeout_ms, 30 * 1000, // 30 sec
              "Timeout used by the master when attempting to create tablet "
              "replicas during table creation.");
 TAG_FLAG(tablet_creation_timeout_ms, advanced);
+
+DEFINE_bool(catalog_manager_wait_for_new_tablets_to_elect_leader, true,
+            "Whether the catalog manager should wait for a newly created tablet to "
+            "elect a leader before considering it successfully created. "
+            "This is disabled in some tests where we explicitly manage leader "
+            "election.");
+TAG_FLAG(catalog_manager_wait_for_new_tablets_to_elect_leader, hidden);
 
 DEFINE_int32(unresponsive_ts_rpc_timeout_ms, 60 * 60 * 1000, // 1 hour
              "After this amount of time, the master will stop attempting to contact "
@@ -1333,6 +1340,24 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
   return Status::OK();
 }
 
+namespace {
+// Return true if receiving 'report' for a tablet in CREATING state should
+// transition it to the RUNNING state.
+bool ShouldTransitionTabletToRunning(const ReportedTabletPB& report) {
+  if (report.state() != tablet::RUNNING) return false;
+
+  // In many tests, we disable leader election, so newly created tablets
+  // will never elect a leader on their own. In this case, we transition
+  // to RUNNING as soon as we get a single report.
+  if (!FLAGS_catalog_manager_wait_for_new_tablets_to_elect_leader) {
+    return true;
+  }
+
+  // Otherwise, we only transition to RUNNING once a leader is elected.
+  return report.committed_consensus_state().has_leader_uuid();
+}
+} // anonymous namespace
+
 Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
                                             const ReportedTabletPB& report,
                                             ReportedTabletUpdatesPB *report_updates) {
@@ -1451,8 +1476,12 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       return Status::OK();
     }
 
-    // If the tablet was not RUNNING mark it as such
-    if (!tablet_lock.data().is_running() && report.state() == tablet::RUNNING) {
+    // If the tablet was not RUNNING, and we have a leader elected, mark it as RUNNING.
+    // We need to wait for a leader before marking a tablet as RUNNING, or else we
+    // could incorrectly consider a tablet created when only a minority of its replicas
+    // were successful. In that case, the tablet would be stuck in this bad state
+    // forever.
+    if (!tablet_lock.data().is_running() && ShouldTransitionTabletToRunning(report)) {
       DCHECK_EQ(SysTabletsEntryPB::CREATING, tablet_lock.data().pb.state())
           << "Tablet in unexpected state: " << tablet->ToString()
           << ": " << tablet_lock.data().pb.ShortDebugString();
@@ -1461,7 +1490,7 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
       // across multiple tablets in the same report.
       VLOG(1) << "Tablet " << tablet->ToString() << " is now online";
       tablet_lock.mutable_data()->set_state(SysTabletsEntryPB::RUNNING,
-                                            "Tablet reported by leader");
+                                            "Tablet reported with an active leader");
     }
 
     // The Master only accepts committed consensus configurations since it needs the committed index
