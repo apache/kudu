@@ -22,11 +22,11 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/status.h"
 
-DEFINE_int64(memory_limit_hard_mb, 0,
-             "Maximum amount of memory this daemon should use, in megabytes. "
+DEFINE_int64(memory_limit_hard_bytes, 0,
+             "Maximum amount of memory this daemon should use, in bytes. "
              "A value of 0 autosizes based on the total system memory. "
              "A value of -1 disables all memory limiting.");
-TAG_FLAG(memory_limit_hard_mb, stable);
+TAG_FLAG(memory_limit_hard_bytes, stable);
 
 DEFINE_int32(memory_limit_soft_percentage, 60,
              "Percentage of the hard memory limit that this daemon may "
@@ -34,7 +34,7 @@ DEFINE_int32(memory_limit_soft_percentage, 60,
              "the excess, the higher the chance of throttling. In general, a "
              "lower soft limit leads to smoother write latencies but "
              "decreased throughput, and vice versa for a higher soft limit.");
-TAG_FLAG(memory_limit_hard_mb, advanced);
+TAG_FLAG(memory_limit_soft_percentage, advanced);
 
 
 namespace kudu {
@@ -83,7 +83,7 @@ static uint64_t GetTCMallocCurrentAllocatedBytes() {
 #endif
 
 void MemTracker::CreateRootTracker() {
-  int64_t limit = FLAGS_memory_limit_hard_mb * 1024 * 1024;
+  int64_t limit = FLAGS_memory_limit_hard_bytes;
   if (limit == 0) {
     // If no limit is provided, we'll use 80% of system RAM.
     int64_t total_ram;

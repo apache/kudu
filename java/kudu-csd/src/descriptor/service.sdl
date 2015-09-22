@@ -229,14 +229,14 @@
           "pathType" : "localDataDir"
         },
         {
-          "name" : "memory_limit_hard_mb",
+          "name" : "memory_limit_hard_bytes",
           "label" : "Kudu Tablet Server Hard Memory Limit",
           "description" : "Maximum amount of memory that the Kudu Tablet Server will use before it starts rejecting all incoming writes.",
           "required" : "true",
           "type" : "memory",
-          "unit" : "megabytes",
-          "min" : 1024,
-          "default" : 4096,
+          "unit" : "bytes",
+          "min" : 1073741824,
+          "default" : 4294967296,
           "scaleFactor" : 1.3
         },
         {

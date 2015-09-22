@@ -2013,7 +2013,7 @@ TEST_F(RaftConsensusITest, TestEarlyCommitDespiteMemoryPressure) {
   flags.push_back("--enable_leader_failure_detection=false");
 
   // Very low memory limit to ease testing.
-  flags.push_back("--memory_limit_hard_mb=4");
+  flags.push_back("--memory_limit_hard_bytes=4194304");
 
   // Don't let transaction memory tracking get in the way.
   flags.push_back("--tablet_transaction_memory_limit_mb=-1");

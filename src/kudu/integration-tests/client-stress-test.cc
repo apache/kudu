@@ -198,10 +198,10 @@ class ClientStressTest_LowMemory : public ClientStressTest {
     // There's nothing scientific about this number; it must be low enough to
     // trigger memory pressure request rejection yet high enough for the
     // servers to make forward progress.
-    const int kMemLimitMB = 64;
+    const int kMemLimitBytes = 64 * 1024 * 1024;
     ExternalMiniClusterOptions opts;
     opts.extra_tserver_flags.push_back(Substitute(
-        "--memory_limit_hard_mb=$0", kMemLimitMB));
+        "--memory_limit_hard_bytes=$0", kMemLimitBytes));
     opts.extra_tserver_flags.push_back(
         "--memory_limit_soft_percentage=0");
     return opts;
