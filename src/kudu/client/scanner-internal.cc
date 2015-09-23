@@ -3,7 +3,9 @@
 
 #include "kudu/client/scanner-internal.h"
 
+#include <algorithm>
 #include <boost/bind.hpp>
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -45,7 +47,8 @@ KuduScanner::Data::Data(KuduTable* table)
     projection_(table->schema().schema_),
     arena_(1024, 1024*1024),
     spec_encoder_(table->schema().schema_, &arena_),
-    timeout_(MonoDelta::FromMilliseconds(kScanTimeoutMillis)) {
+    timeout_(MonoDelta::FromMilliseconds(kScanTimeoutMillis)),
+    scan_attempts_(0) {
 }
 
 KuduScanner::Data::~Data() {
@@ -83,6 +86,27 @@ Status KuduScanner::Data::CanBeRetried(const bool isNewScan,
                                        const vector<RemoteTabletServer*>& candidates,
                                        set<string>* blacklist) {
   CHECK(!rpc_status.ok() || !server_status.ok());
+
+  // Check for ERROR_SERVER_TOO_BUSY, which should result in a retry after a delay.
+  if (server_status.ok() &&
+      !rpc_status.ok() &&
+      controller_.error_response() &&
+      controller_.error_response()->code() == rpc::ErrorStatusPB::ERROR_SERVER_TOO_BUSY) {
+
+    // Exponential backoff with jitter anchored between 10ms and 20ms, and an
+    // upper bound between 2.5s and 5s.
+    MonoDelta sleep = MonoDelta::FromMilliseconds(
+        (10 + rand() % 10) * static_cast<int>(std::pow(2.0, std::min(8, scan_attempts_ - 1))));
+    MonoTime now = MonoTime::Now(MonoTime::FINE);
+    now.AddDelta(sleep);
+    if (deadline.ComesBefore(now)) {
+      return Status::TimedOut("unable to retry before timeout", rpc_status.ToString());
+    }
+    LOG(INFO) << "Retrying scan to busy tablet server " << ts_->ToString()
+              << " after " << sleep.ToString() << "; attempt " << scan_attempts_;
+    SleepFor(sleep);
+    return Status::OK();
+  }
 
   // Start by checking network errors.
   if (!rpc_status.ok()) {
@@ -273,8 +297,10 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
     const Status rpc_status = proxy_->Scan(next_req_, &last_response_, &controller_);
     const Status server_status = CheckForErrors();
     if (rpc_status.ok() && server_status.ok()) {
+      scan_attempts_ = 0;
       break;
     }
+    scan_attempts_++;
     RETURN_NOT_OK(CanBeRetried(true, rpc_status, server_status, rpc_deadline, deadline,
                                candidates, blacklist));
   }

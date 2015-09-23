@@ -137,6 +137,9 @@ class KuduScanner::Data {
   // Timeout for scanner RPCs.
   MonoDelta timeout_;
 
+  // Number of attempts since the last successful scan.
+  int scan_attempts_;
+
   DISALLOW_COPY_AND_ASSIGN(Data);
 };
 

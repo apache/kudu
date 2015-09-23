@@ -23,8 +23,9 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus.proxy.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/atomicops.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/mini_cluster.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master-test-util.h"
@@ -44,21 +45,24 @@
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/thread.h"
 
 DECLARE_bool(enable_data_block_fsync);
-DECLARE_int32(heartbeat_interval_ms);
 DECLARE_bool(log_inject_latency);
+DECLARE_int32(heartbeat_interval_ms);
 DECLARE_int32(log_inject_latency_ms_mean);
 DECLARE_int32(log_inject_latency_ms_stddev);
 DECLARE_int32(master_inject_latency_on_tablet_lookups_ms);
 DECLARE_int32(max_create_tablets_per_ts);
-DECLARE_int32(scanner_max_batch_size_bytes);
-DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
-DECLARE_int32(scanner_ttl_ms);
+DECLARE_int32(rpc_service_queue_length);
 DECLARE_int32(scanner_gc_check_interval_us);
+DECLARE_int32(scanner_inject_latency_on_each_batch_ms);
+DECLARE_int32(scanner_max_batch_size_bytes);
+DECLARE_int32(scanner_ttl_ms);
 DEFINE_int32(test_scan_num_rows, 1000, "Number of rows to insert and scan");
 
 METRIC_DECLARE_counter(scans_started);
+METRIC_DECLARE_counter(rpcs_queue_overflow);
 
 using boost::assign::list_of;
 using std::string;
@@ -131,6 +135,13 @@ class ClientTest : public KuduTest {
       cluster_.reset();
     }
     KuduTest::TearDown();
+  }
+
+  // Count the rows of a table, checking that the operation succeeds.
+  //
+  // Must be public to use as a thread closure.
+  void CheckRowCount(KuduTable* table) {
+    CountRowsFromClient(table);
   }
 
  protected:
@@ -2631,6 +2642,46 @@ TEST_F(ClientTest, TestClonePredicates) {
   }
 
   ASSERT_EQ(count, 1);
+}
+
+// Test that scanners will retry after receiving ERROR_SERVER_TOO_BUSY from an
+// overloaded tablet server. Regression test for KUDU-1079.
+TEST_F(ClientTest, TestServerTooBusyRetry) {
+  NO_FATALS(InsertTestRows(client_table_.get(), FLAGS_test_scan_num_rows));
+
+  // Introduce latency in each scan to increase the likelihood of
+  // ERROR_SERVER_TOO_BUSY.
+  FLAGS_scanner_inject_latency_on_each_batch_ms = 10;
+
+  // Reduce the service queue length of each tablet server in order to increase
+  // the likelihood of ERROR_SERVER_TOO_BUSY.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    MiniTabletServer* ts = cluster_->mini_tablet_server(i);
+    ts->options()->rpc_opts.service_queue_length = 1;
+    ASSERT_OK(ts->Restart());
+    ASSERT_OK(ts->WaitStarted());
+  }
+
+  bool stop = false;
+  vector<scoped_refptr<kudu::Thread> > threads;
+  int t = 0;
+  while (!stop) {
+    scoped_refptr<kudu::Thread> thread;
+    ASSERT_OK(kudu::Thread::Create("test", strings::Substitute("t$0", t++),
+                                   &ClientTest::CheckRowCount, this, client_table_.get(),
+                                   &thread));
+    threads.push_back(thread);
+
+    for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+      scoped_refptr<Counter> counter = METRIC_rpcs_queue_overflow.Instantiate(
+          cluster_->mini_tablet_server(i)->server()->metric_entity());
+      stop = counter->value() > 0;
+    }
+  }
+
+  BOOST_FOREACH(const scoped_refptr<kudu::Thread>& thread, threads) {
+    thread->Join();
+  }
 }
 
 } // namespace client

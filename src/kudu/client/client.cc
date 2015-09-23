@@ -1116,8 +1116,11 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
       if (data_->last_response_.has_last_primary_key()) {
         data_->last_primary_key_ = data_->last_response_.last_primary_key();
       }
+      data_->scan_attempts_ = 0;
       return data_->ExtractRows(rows);
     }
+
+    data_->scan_attempts_++;
 
     // Error handling.
     LOG(WARNING) << "Scan at tablet server " << data_->ts_->ToString() << " of tablet "
