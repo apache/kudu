@@ -26,7 +26,7 @@
     "group" : "kudu"
   },
   "parcel" : {
-    "repoUrl" : "http://repos.jenkins.cloudera.com/kudu-nightly/parcels/latest/",
+    "repoUrl" : "http://archive.cloudera.com/beta/kudu/parcels/latest/",
     "requiredTags" : [ "kudu" ]
   },
   "icon" : "images/icon.png",

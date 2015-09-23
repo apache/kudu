@@ -80,9 +80,8 @@ configuration snippet to configure the file block manager. See <<req_hole_punchi
 +
 ----
 $ cd /opt/cloudera/csd
-$ wget http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/lastSuccessfulBuild/artifact/java/kudu-csd/target/KUDU-0.5.0.jar
+$ wget http://archive.cloudera.com/beta/kudu/csd/KUDU-0.5.0.jar
 ----
-// TODO: CHANGE TO EXTERNAL
 
 . Restart the Cloudera Manager server to detect the CSD.
 +
@@ -154,13 +153,15 @@ using Cloudera Manager, but you can manage it manually via operating system util
 .Kudu Package Locations
 |===
 | OS  | Repository  | Individual Packages
-| RHEL | link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/cloudera-kudu.repo[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6] |  link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/0.5.0/RPMS/x86_64/[RHEL 5] or link:http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/0.5.0/RPMS/x86_64/[RHEL 6]
-| SLES | link:http://repos.jenkins.cloudera.com/kudu-nightly/sles/11/x86_64/kudu/cloudera-kudu.repo[SLES 11]  |   TBD
-| Ubuntu | link:http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/precise/amd64/kudu/cloudera.list[Precise] or link:http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/trusty/amd64/kudu/cloudera.list[Trusty] |  TBD
-| Debian | link:http://repos.jenkins.cloudera.com/kudu-nightly/debian/wheezy/amd64/kudu/cloudera.list[Wheezy] | TBD
+| RHEL | link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo[RHEL 6] |  link:http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/0.5.0/RPMS/x86_64/[RHEL 6]
+| Ubuntu | link:http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/cloudera.list[Trusty] |  http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/[Trusty]
 |===
 
-=== Install On RHEL or SLES Hosts
+----
+NOTE: For later versions of Ubuntu, the Ubuntu Trusty packages are reported to install, though they have not been extensively tested.
+----
+
+=== Install On RHEL Hosts
 
 . Download and configure the Kudu repositories for your operating system, or manually
 download individual RPMs, the appropriate link from <<kudu_package_locations>>.
