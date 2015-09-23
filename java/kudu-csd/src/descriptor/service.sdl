@@ -97,8 +97,8 @@
         {
           "name" : "master_address",
           "label" : "Master Address",
-          "description" : "Overrides the address where the Master will listen for connections. The default is to assume one standalone master running on localhost at port 7051.",
-          "configName" : "server.address",
+          "description" : "Overrides the addresses where the Master will listen for connections. The default is to assume one standalone master running on localhost at port 7051.",
+          "configName" : "rpc_bind_addresses",
           "required" : "false",
           "type" : "string",
           "default" : ""
@@ -116,7 +116,7 @@
         {
           "name" : "fs_wal_dir",
           "label" : "Kudu Master WAL Directory",
-          "description" : "Directory where Kudu masters will store write-ahead logs.",
+          "description" : "Directory where Kudu masters will store write-ahead logs. Can be the same as one of the data directories. When colocating masters and tablet servers, this directory must be different for each of them and one cannot contain the other.",
           "required" : "true",
           "configurableInWizard" : true,
           "type" : "path",
@@ -213,7 +213,7 @@
         {
           "name" : "fs_wal_dir",
           "label" : "Kudu Tablet Server WAL Directory",
-          "description" : "Directory where Kudu tablet servers will store write-ahead logs.",
+          "description" : "Directory where Kudu tablet servers will store write-ahead logs. Can be the same as one of the data directories. When colocating masters and tablet servers, this directory must be different for each of them and one cannot contain the other.",
           "required" : "true",
           "configurableInWizard" : true,
           "type" : "path",
