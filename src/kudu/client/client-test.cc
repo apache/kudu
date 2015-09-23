@@ -738,7 +738,8 @@ TEST_F(ClientTest, TestScanEmptyProjection) {
 TEST_F(ClientTest, TestProjectInvalidColumn) {
   KuduScanner scanner(client_table_.get());
   Status s = scanner.SetProjectedColumns(list_of<string>("column-doesnt-exist"));
-  ASSERT_EQ("Not found: Column not found: column-doesnt-exist", s.ToString());
+  ASSERT_EQ("Not found: Column: \"column-doesnt-exist\" was not found in the table schema.",
+            s.ToString());
 
   // Test trying to use a projection where a column is used multiple times.
   // TODO: consider fixing this to support returning the column multiple

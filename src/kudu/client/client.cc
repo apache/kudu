@@ -800,7 +800,8 @@ Status KuduScanner::SetProjectedColumns(const vector<string>& col_names) {
   BOOST_FOREACH(const string& col_name, col_names) {
     int idx = table_schema->find_column(col_name);
     if (idx == Schema::kColumnNotFound) {
-      return Status::NotFound("Column not found", col_name);
+      return Status::NotFound(strings::Substitute("Column: \"$0\" was not found in the "
+          "table schema.", col_name));
     }
     cols.push_back(table_schema->column(idx));
   }
