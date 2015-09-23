@@ -119,7 +119,15 @@ class FlexPartitioningITest : public KuduTest {
     int increment = kNumRows / num_splits;
     for (int i = 1; i < num_splits; i++) {
       KuduPartialRow* row = schema.NewRow();
-      tools::GenerateDataForRow(schema, increment * i, &random_, row);
+      for (int j = 0; j < range_cols.size(); j++) {
+        const string& range_col = range_cols[j];
+        if (j == 0) {
+          // Set the first component of the range to a set increment.
+          ASSERT_OK(row->SetInt32(range_col, increment * i));
+        } else {
+          ASSERT_OK(row->SetInt32(range_col, random_.Next32()));
+        }
+      }
       split_rows.push_back(row);
     }
     table_creator->split_rows(split_rows);

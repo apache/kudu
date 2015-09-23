@@ -329,9 +329,9 @@ TEST_F(MasterTest, TestCatalog) {
   }
 }
 
-TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
+TEST_F(MasterTest, TestCreateTableCheckSplitRows) {
   const char *kTableName = "testtb";
-  const Schema kTableSchema(list_of(ColumnSchema("key", INT32)), 1);
+  const Schema kTableSchema(list_of(ColumnSchema("key", INT32))(ColumnSchema("val", INT32)), 1);
 
   // No duplicate split rows.
   {
@@ -353,7 +353,19 @@ TEST_F(MasterTest, TestCreateTableCheckSplitKeys) {
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: Split rows must contain a value for at "
-                        "least one primary key column");
+                        "least one range partition column");
+  }
+
+  // No non-range columns
+  {
+    KuduPartialRow split = KuduPartialRow(&kTableSchema);
+    ASSERT_OK(split.SetInt32("key", 1));
+    ASSERT_OK(split.SetInt32("val", 1));
+    Status s = CreateTable(kTableName, kTableSchema, list_of(split));
+    ASSERT_TRUE(s.IsInvalidArgument());
+    ASSERT_STR_CONTAINS(s.ToString(),
+                        "Invalid argument: Split rows may only contain values "
+                        "for range partitioned columns: val")
   }
 }
 

@@ -495,13 +495,6 @@ Status RowOperationsPBDecoder::DecodeSplitRow(const ClientServerMapping& mapping
     const ColumnSchema& col = tablet_schema_->column(tablet_col_idx);
 
     if (BitmapTest(client_isset_map, client_col_idx)) {
-
-      // All columns must be primary key columns.
-      if (tablet_col_idx >= tablet_schema_->num_key_columns()) {
-        return Status::InvalidArgument(
-            "value set on non-primary key column in split row", col.ToString());
-      }
-
       // If the client provided a value for this column, copy it.
       Slice column_slice;
       RETURN_NOT_OK(GetColumnSlice(col, &column_slice));

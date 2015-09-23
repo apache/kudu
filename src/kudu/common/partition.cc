@@ -11,6 +11,7 @@
 #include "kudu/common/row_key-util.h"
 #include "kudu/common/scan_predicate.h"
 #include "kudu/common/wire_protocol.pb.h"
+#include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/hash_util.h"
@@ -202,23 +203,49 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
     partitions->swap(new_partitions);
   }
 
+  unordered_set<int> range_column_idxs;
+  BOOST_FOREACH(int column_id, range_schema_.column_ids) {
+    int column_idx = schema.find_column_by_id(column_id);
+    if (column_idx == Schema::kColumnNotFound) {
+      return Status::InvalidArgument(Substitute("Range partition column ID $0 "
+                                                "not found in table schema.", column_id));
+    }
+    if (!InsertIfNotPresent(&range_column_idxs, column_idx)) {
+      return Status::InvalidArgument("Duplicate column in range partition",
+                                     schema.column(column_idx).name());
+    }
+  }
+
   // Create the start range keys.
   set<string> start_keys;
   string start_key;
   BOOST_FOREACH(const KuduPartialRow& row, split_rows) {
+    int column_count = 0;
+    for (int column_idx = 0; column_idx < schema.num_columns(); column_idx++) {
+      const ColumnSchema& column = schema.column(column_idx);
+      if (row.IsColumnSet(column_idx)) {
+        if (ContainsKey(range_column_idxs, column_idx)) {
+          column_count++;
+        } else {
+          return Status::InvalidArgument("Split rows may only contain values for "
+                                         "range partitioned columns", column.name());
+        }
+      }
+    }
+
+    // Check for an empty split row.
+    if (column_count == 0) {
+    return Status::InvalidArgument("Split rows must contain a value for at "
+                                   "least one range partition column");
+    }
+
     start_key.clear();
     RETURN_NOT_OK(EncodeColumns(row, range_schema_.column_ids, &start_key));
+
+    // Check for a duplicate split row.
     if (!InsertIfNotPresent(&start_keys, start_key)) {
       return Status::InvalidArgument("Duplicate split row", row.ToString());
     }
-  }
-
-  // Check for the empty start key.
-  start_key.clear();
-  RETURN_NOT_OK(EncodeColumns(KuduPartialRow(&schema), range_schema_.column_ids, &start_key));
-  if (ContainsKey(start_keys, start_key)) {
-    return Status::InvalidArgument(
-        "Split rows must contain a value for at least one primary key column");
   }
 
   // Create a partition per range and hash bucket combination.
