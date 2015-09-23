@@ -336,10 +336,10 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
       // IsIncomplete() means that we tried to read beyond the head of the log
       // (in the future). See KUDU-1078.
       } else if (s.IsIncomplete()) {
-        LOG_WITH_PREFIX_UNLOCKED(DFATAL) << "Error trying to read ahead of the log "
-                                         << "while preparing peer request: "
-                                         << s.ToString() << ". Destination peer: "
-                                         << peer->ToString();
+        LOG_WITH_PREFIX_UNLOCKED(ERROR) << "Error trying to read ahead of the log "
+                                        << "while preparing peer request: "
+                                        << s.ToString() << ". Destination peer: "
+                                        << peer->ToString();
         return s;
       } else {
         LOG_WITH_PREFIX_UNLOCKED(FATAL) << "Error reading the log while preparing peer request: "
