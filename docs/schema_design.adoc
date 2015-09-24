@@ -38,6 +38,7 @@ next sections discuss <<alter-schema,altering the schema>> of an existing table,
 and <<known-limitations,known limitations>> with regard to schema design.
 
 [[column-design]]
+== Column Design
 
 A Kudu Table consists of one or more columns, each with a predefined type.
 Columns that are not part of the primary key may optionally be nullable.
@@ -55,18 +56,70 @@ Supported column types include:
 * binary
 
 Kudu takes advantage of strongly-typed columns and a columnar on-disk storage
-format to provide efficient type-specific compression, encoding, and
-serialization. Dictionary encoding, integer packing, delta encoding, and other
-similar techniques are used to compress values more efficiently than
-general-purpose compression algorithms. In order to take advantage of these
-features. However, the data must be specified as the appropriate type (as
-opposed to simulating a 'schemaless' table using string or binary columns for
-data which may otherwise be structured).
+format to provide efficient encoding and serialization. To utilize these
+features, columns should be specified as the appropriate type, as opposed to
+simulating a 'schemaless' table using string or binary columns for data which
+may otherwise be structured. In addition to encoding, Kudu optionally allows
+compression to be specified on a per-column basis.
 
-// TODO: discuss how to choose / when to choose a specific encoding and block
-// size for a column.
+[[encoding]]
+=== Column Encoding
 
-[[primary-key]]
+Each column in a Kudu table can be created with an encoding, based on the type
+of the column. Columns use plain encoding by default.
+
+.Encoding Types
+|===
+| Column Type        | Encoding
+| integer, timestamp | plain, bitshuffle, run length
+| float              | plain, bitshuffle
+| bool               | plain, dictionary, run length
+| string, binary     | plain, prefix, dictionary
+|===
+
+[[plain]]
+Plain Encoding:: stores data in its natural format. For example, int32 values
+are stored as fixed-size 32 bit little endian integers.
+
+[[bitshuffle]]
+Bitshuffle Encoding:: rearranges data by storing the most significant bit of
+every value, followed by the second most significant bit of every value, and so
+on. Finally, the result is LZ4 compressed. Bitshuffle is a good choice for
+columns that have many repeated values, or values that change by small amounts
+when sorted by primary key. The
+https://github.com/kiyo-masui/bitshuffle[bitshuffle] project has a good
+overview of performance and use cases.
+
+[[run-length]]
+Run Length Encoding:: compresses runs, or consecutive repeated values, in a
+column by storing only the value and the count. Run length encoding is effective
+for columns that have many consecutive repeated values when sorted by primary
+key.
+
+[[dictionary]]
+Dictionary Encoding:: builds a dictionary of unique values and encodes each
+column value as its corresponding index in the dictionary. Dictionary encoding
+is effective for columns with low cardinality. If the column values are unable
+to be compressed because the number of unique values is too high, Kudu will
+automatically fall back to plain encoding.
+
+[[prefix]]
+Prefix Encoding:: compresses common prefixes in consecutive column values. Prefix
+encoding can be effictive for values that share common prefixes, or the first
+column of the primary key, since rows are sorted by primary key within tablets.
+
+[[compression]]
+=== Column Compression
+
+Kudu allows per-column compression using LZ4, snappy, or zlib compression
+codecs. By default, columns are stored uncompressed. Consider using compression
+if reducing storage space is more important than raw scan performance. Every
+data set will compress differently, but in general LZ4 has the least effect on
+performance, while zlib will compress to smallest data sizes. Bitshuffle
+encoded columns are always LZ4 compressed.
+
+[[primary-keys]]
+== Primary Keys
 
 Each Kudu table must declare a primary key comprised of one or more columns.
 Primary key columns must be non-nullable, and may not be a boolean or
@@ -106,7 +159,7 @@ together>>, or independently: <<range-partitioning, range partitioning>> and
 after creation, so you must design your partition schema ahead of time to ensure
 a sufficient number of tablets are created.
 
-[[range-partitioning]
+[[range-partitioning]]
 === Range Partitioning
 
 Range partitioning distributes rows into tablets using a totally-ordered
