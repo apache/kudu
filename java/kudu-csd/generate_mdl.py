@@ -128,7 +128,7 @@ def main():
 
   output = dict(
     name="KUDU",
-    version="0.5.0",
+    version="0.6.0",
     metricDefinitions=[],
     nameForCrossEntityAggregateMetrics="kudus",
     roles=[
