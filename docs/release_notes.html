@@ -1,0 +1,486 @@
+---
+title: Kudu Release Notes
+layout: default
+
+last_updated: 'Last updated 2015-09-24 14:59:54 PDT'
+---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Kudu Release Notes</h1>
+      <div class="sect1">
+<h2 id="_introducing_kudu"><a class="link" href="#_introducing_kudu">Introducing Kudu</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu is a columnar storage manager developed for the Hadoop platform. Kudu shares
+the common technical properties of Hadoop ecosystem applications: it runs on
+commodity hardware, is horizontally scalable, and supports highly available operation.</p>
+</div>
+<div class="paragraph">
+<p>Kudu’s design sets it apart. Some of Kudu’s benefits include:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Fast processing of OLAP workloads.</p>
+</li>
+<li>
+<p>Integration with MapReduce, Spark and other Hadoop ecosystem components.</p>
+</li>
+<li>
+<p>Tight integration with Cloudera Impala, making it a good, mutable alternative to
+using HDFS with Parquet. See <a href="kudu_impala_integration.html">Kudu Impala Integration</a>.</p>
+</li>
+<li>
+<p>Strong but flexible consistency model.</p>
+</li>
+<li>
+<p>Strong performance for running sequential and random workloads simultaneously.</p>
+</li>
+<li>
+<p>Efficient utilization of hardware resources.</p>
+</li>
+<li>
+<p>High availability. Tablet Servers and Masters use the Raft Consensus Algorithm.
+Given a replication factor of <code>2f+1</code>, if <code>f</code> tablet servers serving a given tablet
+fail, the tablet is still available.</p>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+High availability for masters is not supported during the public beta.
+</td>
+</tr>
+</table>
+</div>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>By combining all of these properties, Kudu targets support for families of
+applications that are difficult or impossible to implement on current generation
+Hadoop storage technologies.</p>
+</div>
+<div class="sect2">
+<h3 id="_kudu_impala_integration_features"><a class="link" href="#_kudu_impala_integration_features">Kudu-Impala Integration Features</a></h3>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>CREATE TABLE</code></dt>
+<dd>
+<p>Impala supports creating and dropping tables using Kudu as the persistence layer.
+The tables follow the same internal / external approach as other tables in Impala,
+allowing for flexible data ingestion and querying.</p>
+</dd>
+<dt class="hdlist1"><code>INSERT</code></dt>
+<dd>
+<p>Data can be inserted into Kudu tables from Impala using the same mechanisms as
+any other table with HDFS or HBase persistence.</p>
+</dd>
+<dt class="hdlist1"><code>UPDATE</code> / <code>DELETE</code></dt>
+<dd>
+<p>Impala supports the <code>UPDATE</code> and <code>DELETE</code> SQL commands to modify existing data in
+a Kudu table row-by-row or as a batch. The syntax of the SQL commands is chosen
+to be as compatible as possible to existing solutions. In addition to simple <code>DELETE</code>
+or <code>UPDATE</code> commands, you can specify complex joins in the <code>FROM</code> clause of the query
+using the same syntax as a regular <code>SELECT</code> statement.</p>
+</dd>
+<dt class="hdlist1">Flexible Partitioning</dt>
+<dd>
+<p>Similar to partitioning of tables in Hive, Kudu allows you to dynamically
+pre-split tables by hash or range into a predefined number of tablets, in order
+to distribute writes and queries evenly across your cluster. You can partition by
+any number of primary key columns, by any number of hashes and an optional list of
+split rows.</p>
+</dd>
+<dt class="hdlist1">Parallel Scan</dt>
+<dd>
+<p>To achieve the highest possible performance on modern hardware, the Kudu client
+within Impala parallelizes scans to multiple tablets.</p>
+</dd>
+<dt class="hdlist1">High-efficiency queries</dt>
+<dd>
+<p>Where possible, Impala pushes down predicate evaluation to Kudu, so that predicates
+are evaluated as close as possible to the data. Query performance is comparable
+to Parquet in many workloads.</p>
+</dd>
+</dl>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_about_the_kudu_public_beta"><a class="link" href="#_about_the_kudu_public_beta">About the Kudu Public Beta</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>This release of Kudu is a public beta. Do not run this beta release on production clusters. During the
+public beta period, Kudu will be supported via a link:https://issues.cloudera.org/projects/KUDU
+[public JIRA] and a public mailing list <a href="mailto:kudu-user@cloudera.org">mailing
+list</a>, which will be monitored by the Kudu development team and community members.
+Commercial support is not available at this time.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>You can submit any issues or feedback related to your Kudu experience via either
+the JIRA system or the mailing list. The Kudu development team and community members
+will respond and assist as quickly as possible.</p>
+</li>
+<li>
+<p>The Kudu team will work with early adopters to fix bugs and release new binary drops
+when fixes or features are ready. However, we cannot commit to issue resolution or
+bug fix delivery times during the public beta period, and it is possible that some
+fixes or enhancements will not be selected for a release.</p>
+</li>
+<li>
+<p>We can&#8217;t guarantee timeframes or contents for future beta code drops. However,
+they will be announced to the user group when they occur.</p>
+</li>
+<li>
+<p>No guarantees are made regarding upgrades from this release to follow-on releases.
+While multiple drops of beta code are planned, we can&#8217;t guarantee their schedules
+or contents.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_resources"><a class="link" href="#_resources">Resources</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="http://getkudu.io">Kudu Website</a></p>
+</li>
+<li>
+<p><a href="http://github.com/cloudera/kudu">Kudu Github Repository</a></p>
+</li>
+<li>
+<p><a href="index.html.html">Kudu Documentation</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_installation_options"><a class="link" href="#_installation_options">Installation Options</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p>A Quickstart VM is provided to get you up and running quickly.</p>
+</li>
+<li>
+<p>You can install parcels or packages in clusters managed by Cloudera Manager, or
+packages in standalone CDH clusters.</p>
+</li>
+<li>
+<p>You can build Kudu from source.</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>For full installation details, see <a href="installation.html">Kudu Installation</a>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_limitations_of_the_public_beta"><a class="link" href="#_limitations_of_the_public_beta">Limitations of the Public Beta</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_operating_system_limitations"><a class="link" href="#_operating_system_limitations">Operating System Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>RHEL 6.4 or newer, CentOS 6.4 or newer, and Ubuntu Trusty are are the only
+operating systems supported for installation in the public beta.
+Others may work but have not been tested.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_storage_limitations"><a class="link" href="#_storage_limitations">Storage Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu has been tested with up to 4 TB of data per tablet server. More testing
+is needed for denser storage configurations.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_schema_limitations"><a class="link" href="#_schema_limitations">Schema Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Testing with more than 20 columns has been limited.</p>
+</li>
+<li>
+<p>Multi-kilobyte rows have not been thoroughly tested.</p>
+</li>
+<li>
+<p>The columns which make up the primary key must be listed first in the schema.</p>
+</li>
+<li>
+<p>Key columns cannot be altered. You must drop and recreate a table to change its keys.</p>
+</li>
+<li>
+<p>Key columns must not be null.</p>
+</li>
+<li>
+<p>Columns with <code>DOUBLE</code>, <code>FLOAT</code>, or <code>BOOL</code> types are not allowed as part of a
+primary key definition.</p>
+</li>
+<li>
+<p>Type and nullability of existing columns cannot be changed by altering the table.</p>
+</li>
+<li>
+<p>A table’s primary key cannot be changed.</p>
+</li>
+<li>
+<p>Dropping a column does not immediately reclaim space. Compaction must run first.
+There is no way to run compaction manually, but dropping the table will reclaim the
+space immediately.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_ingest_limitations"><a class="link" href="#_ingest_limitations">Ingest Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Ingest via Sqoop or Flume is not supported in the public beta. The recommended
+approach for bulk ingest is to use Impala’s <code>CREATE TABLE AS SELECT</code> functionality
+or use the Kudu&#8217;s Java or C++ API.</p>
+</li>
+<li>
+<p>Tables must be manually pre-split into tablets using simple or compound primary
+keys. Automatic splitting is not yet possible. Instead, add split rows at table creation.</p>
+</li>
+<li>
+<p>Tablets cannot currently be merged. Instead, create a new table with the contents
+of the old tables to be merged.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_replication_and_backup_limitations"><a class="link" href="#_replication_and_backup_limitations">Replication and Backup Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Replication and failover of Kudu masters is considered experimental. It is
+recommended to run a single master and periodically perform a manual backup of its data directories.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_impala_limitations"><a class="link" href="#_impala_limitations">Impala Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>To use Kudu with Impala, you must install a special release of Impala. Obtaining
+and installing a compatible Impala release is detailed in Kudu&#8217;s
+<a href="kudu_impala_integration.html">Impala Integration</a> documentation.</p>
+</li>
+<li>
+<p>To use Impala_Kudu alongside an existing Impala instance, you must install using parcels.</p>
+</li>
+<li>
+<p>Updates, inserts, and deletes via Impala are non-transactional. If a query
+fails part-way, its partial effects will not be rolled back..</p>
+</li>
+<li>
+<p>All queries will be distributed across all Impala nodes which host a replica
+of the target table(s), even if a predicate on a primary key could correctly
+restrict the query to a single tablet. This limits the maximum concurrency of
+short queries made via Impala.</p>
+</li>
+<li>
+<p>ALTER TABLE on Kudu tables is not yet supported via Impala.</p>
+</li>
+<li>
+<p>No timestamp and decimal type support.</p>
+</li>
+<li>
+<p>The maximum parallelism of a single query is limited to the number of tablets
+in a table. For good analytic performance, aim for 10 or more tablets per host
+or large tables.</p>
+</li>
+<li>
+<p>Impala is only able to push down predicates involving <code>=</code>, <code>&#8656;</code>, <code>&gt;=</code>,
+or <code>BETWEEN</code> comparisons between a column and a literal value. Impala pushes down
+predicates`&lt;` and <code>&gt;</code> for integer columns only. For example, for a table with
+an integer key <code>ts</code>, and a float key <code>income</code>, the predicate <code>WHERE ts &gt;= 12345</code>
+will convert into an efficient range scan, whereas ‘where income &gt; 1000000.0’
+will currently fetch all data from the table and evaluate the predicate within Impala.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_security_limitations"><a class="link" href="#_security_limitations">Security Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Authentication and authorization are not included in the public beta.</p>
+</li>
+<li>
+<p>Data encryption is not included in the public beta.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_client_and_api_limitations"><a class="link" href="#_client_and_api_limitations">Client and API Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>Potentially-incompatible C++ and Java API changes may be required during the
+public beta.</p>
+</li>
+<li>
+<p>ALTER TABLE is not yet fully supported via the client APIs. More ALTER TABLE
+operations will become available in future betas.</p>
+</li>
+<li>
+<p>The Python API is not supported.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_application_integration_limitations"><a class="link" href="#_application_integration_limitations">Application Integration Limitations</a></h3>
+<div class="ulist">
+<ul>
+<li>
+<p>The Spark DataFrame implementation is not yet complete.</p>
+</li>
+</ul>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_other_known_issues"><a class="link" href="#_other_known_issues">Other Known Issues</a></h3>
+<div class="paragraph">
+<p>The following are known bugs and issues with the current beta release. They will
+be addressed in later beta releases.</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Building Kudu from source using <code>gcc</code> 4.6 causes runtime and test failures. Be sure
+you are using a different version of <code>gcc</code> if you build Kudu from source.</p>
+</li>
+<li>
+<p>If the Kudu master is configured with the <code>-log_fsync_all</code> option, tablet servers
+and clients will experience frequent timeouts, and the cluster may become unusable.</p>
+</li>
+<li>
+<p>If a tablet server has a very large number of tablets, it may take several minutes
+to start up. It is recommended to limit the number of tablets per server to 100 or fewer.
+Consider this limitation when pre-splitting your tables. If you notice slow start-up times,
+you can monitor the number of tablets per server in the web UI.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="quickstart.html">Kudu Quickstart</a></p>
+</li>
+<li>
+<p><a href="installation.html">Installing Kudu</a></p>
+</li>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

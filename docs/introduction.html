@@ -2,8 +2,23 @@
 title: Introducing Kudu
 layout: default
 
-last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
+last_updated: 'Last updated 2015-09-24 14:59:54 PDT'
 ---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 
 
 <div class="container">
@@ -49,6 +64,9 @@ serialized consistency.</p>
 availability even if <em>f</em> nodes failing, given <em>2f+1</em> nodes in the cluster.
 Reads can be serviced by read-only follower tablets, even in the event of a
 leader tablet failure.</p>
+</li>
+<li>
+<p>Structured data model.</p>
 </li>
 </ul>
 </div>
@@ -127,8 +145,7 @@ operation.</p>
 <div class="paragraph">
 <div class="title">Table</div>
 <p>A <em>table</em> is where your data is stored in Kudu. A table has a schema and
-a totally ordered primary key. A table is split into segments called tablets, by
-primary key.</p>
+a totally ordered primary key. A table is split into segments called tablets.</p>
 </div>
 <div class="paragraph">
 <div class="title">Tablet</div>
@@ -269,7 +286,7 @@ formats using Impala, without the need to change your legacy systems.</p>
 <p><a href="quickstart.html">Get Started With Kudu</a></p>
 </li>
 <li>
-<p><a href="installation.html">Kudu Installation Guide</a></p>
+<p><a href="installation.html">Installing Kudu</a></p>
 </li>
 </ul>
 </div>
@@ -279,12 +296,58 @@ formats using Impala, without the need to change your legacy systems.</p>
     <div class="col-md-3">
 
   <div id="toc" data-spy="affix" data-offset-top="70">
-    <ul class="sectlevel1">
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Introducing Kudu</span>
+            <ul class="sectlevel1">
 <li><a href="#_concepts_and_terms">Concepts and Terms</a></li>
 <li><a href="#_architectural_overview">Architectural Overview</a></li>
 <li><a href="#kudu_use_cases">Example Use Cases</a></li>
 <li><a href="#_next_steps">Next Steps</a></li>
-</ul>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+  </ul>
   </div>
     </div>
   </div>

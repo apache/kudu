@@ -2,8 +2,23 @@
 title: Troubleshooting
 layout: default
 
-last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
+last_updated: 'Last updated 2015-09-24 14:59:54 PDT'
 ---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 
 
 <div class="container">
@@ -11,10 +26,121 @@ last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
     <div class="col-md-9">
 
 <h1>Troubleshooting</h1>
-      
+      <div class="sect1">
+<h2 id="_errors_during_hole_punching_test"><a class="link" href="#_errors_during_hole_punching_test">Errors During Hole Punching Test</a></h2>
+<div class="sectionbody">
+<div id="req_hole_punching" class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Error during hole punch test</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Kudu requires hole punching capabilities in order to be efficient.</p>
+</li>
+<li>
+<p>RHEL or CentOS 6.4 or later, patched to kernel version of 2.6.32-358 or later.
+Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole punching.</p>
+</li>
+<li>
+<p>Ubuntu 14.04 includes version 3.13 of the Linux kernel, which supports hole punching.</p>
+</li>
+<li>
+<p>Newer versions of the EXT4 or XFS filesystems support hole punching, but EXT3 does
+not. Older versions of XFS that do not support hole punching return a <code>EOPNOTSUPP</code>
+(operation not supported) error. Older versions of either EXT4 or XFS that do
+not support hole punching cause Kudu to emit an error message such as the following
+and to fail to start:</p>
+<div class="listingblock">
+<div class="content">
+<pre>Error during hole punch test. The log block manager requires a
+filesystem with hole punching support such as ext4 or xfs. On el6,
+kernel version 2.6.32-358 or newer is required. To run without hole
+punching (at the cost of some efficiency and scalability), reconfigure
+Kudu with --block_manager=file. Refer to the Kudu documentation for more
+details. Raw error message follows.</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Without hole punching support, the log block manager is unsafe to use. It won&#8217;t
+ever delete blocks, consuming ever more space on disk.</p>
+</li>
+<li>
+<p>If you can&#8217;t use hole punching in your environment, you can still
+try Kudu. Enable the file block manager instead of the log block manager by
+adding the <code>--block_manager=file</code> flag to the commands you use to start the master
+and tablet servers. The file block manager does not scale as well as the log block
+manager.</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_ntp_clock_synchronization"><a class="link" href="#_ntp_clock_synchronization">NTP clock synchronization</a></h2>
+<div class="sectionbody">
+
+</div>
+</div>
     </div>
     <div class="col-md-3">
 
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+<span class="active-toc">Troubleshooting Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#_errors_during_hole_punching_test">Errors During Hole Punching Test</a></li>
+<li><a href="#_ntp_clock_synchronization">NTP clock synchronization</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+  </ul>
+  </div>
     </div>
   </div>
 </div>

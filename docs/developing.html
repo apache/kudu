@@ -2,8 +2,23 @@
 title: Developing Applications With Kudu
 layout: default
 
-last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
+last_updated: 'Last updated 2015-09-24 14:59:54 PDT'
 ---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 
 
 <div class="container">
@@ -107,15 +122,75 @@ and using Impala with Kudu, including several <code>impala-shell</code> examples
 </div>
 </div>
 </div>
+<div class="sect1">
+<h2 id="_integration_with_mapreduce_yarn_and_other_frameworks"><a class="link" href="#_integration_with_mapreduce_yarn_and_other_frameworks">Integration with MapReduce, YARN, and Other Frameworks</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu was designed to integrate with MapReduce, YARN, Spark, and other frameworks in
+the Hadoop ecosystem. See <a href="https://github.com/cloudera/kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/RowCounter.java">RowCounter.java</a>
+and
+<a href="https://github.com/cloudera/kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/ImportCsv.java">ImportCsv.java</a>
+for examples which you can model your own integrations on. Stay tuned for more examples
+using YARN and Spark in the future.</p>
+</div>
+</div>
+</div>
     </div>
     <div class="col-md-3">
 
   <div id="toc" data-spy="affix" data-offset-top="70">
-    <ul class="sectlevel1">
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Developing Applications with Kudu</span>
+            <ul class="sectlevel1">
 <li><a href="#_viewing_the_api_documentation">Viewing the API Documentation</a></li>
 <li><a href="#_working_examples">Working Examples</a></li>
 <li><a href="#_example_impala_commands_with_kudu">Example Impala Commands With Kudu</a></li>
-</ul>
+<li><a href="#_integration_with_mapreduce_yarn_and_other_frameworks">Integration with MapReduce, YARN, and Other Frameworks</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+  </ul>
   </div>
     </div>
   </div>

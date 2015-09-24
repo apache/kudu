@@ -2,8 +2,23 @@
 title: Using Impala With Kudu
 layout: default
 
-last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
+last_updated: 'Last updated 2015-09-24 14:59:54 PDT'
 ---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 
 
 <div class="container">
@@ -14,12 +29,25 @@ last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
       <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>Kudu has tight integration with Impala, allowing you to use Impala
+<p>Kudu has tight integration with Cloudera Impala, allowing you to use Impala
 to insert, query, update, and delete data from Kudu tablets using Impala&#8217;s SQL
 syntax, as an alternative to using the <a href="installation.html#view_api">Kudu APIs</a>
 to build a custom Kudu application. In addition, you can use JDBC or ODBC to connect
 existing or new applications written in any language, framework, or business intelligence
 tool to your Kudu data, using Impala as the broker.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The following instructions assume a <a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.html">Cloudera Manager</a>
+deployment.
+</td>
+</tr>
+</table>
 </div>
 </div>
 </div>
@@ -74,9 +102,9 @@ instance, you must use parcels and you should use the instructions provided in
 <a href="#install_impala_kudu_parcels_side_by_side">procedure</a>, rather than these instructions.</p>
 </div>
 <div class="sect2">
-<h3 id="_installing_the_impala_kudu_service_using_parcels"><a class="link" href="#_installing_the_impala_kudu_service_using_parcels">Installing the Impala_Kudu Service Using Parcels</a></h3>
+<h3 id="install_impala_kudu_parcels"><a class="link" href="#install_impala_kudu_parcels">Installing the Impala_Kudu Service Using Parcels</a></h3>
 <div class="sect3">
-<h4 id="_manual_installation"><a class="link" href="#_manual_installation">Manual Installation</a></h4>
+<h4 id="install_impala_kudu_parcels_side_by_side"><a class="link" href="#install_impala_kudu_parcels_side_by_side">Manual Installation</a></h4>
 <div class="paragraph">
 <p>Manual installation of Impala_Kudu is only supported where there is no other Impala
 service already running in the cluster, and when you use parcels.</p>
@@ -95,7 +123,7 @@ service already running in the cluster, and when you use parcels.</p>
 <p>Go to <strong>Hosts / Parcels</strong>.</p>
 </li>
 <li>
-<p>Click <strong>Edit Settings</strong>. Add <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/parcels/latest/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/parcels/latest/</a>
+<p>Click <strong>Edit Settings</strong>. Add <a href="http://archive.cloudera.com/beta/impala-kudu/parcels/latest/" class="bare">http://archive.cloudera.com/beta/impala-kudu/parcels/latest/</a>
 as a <strong>Remote Parcel Repository URL</strong>. Click <strong>Save Changes</strong>.</p>
 </li>
 </ul>
@@ -107,7 +135,7 @@ as a <strong>Remote Parcel Repository URL</strong>. Click <strong>Save Changes</
 <ul>
 <li>
 <p>Download the parcel for your operating system from
-<a href="http://repos.jenkins.cloudera.com/kimpala-nightly/parcels/latest/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/parcels/latest/</a> and upload
+<a href="http://archive.cloudera.com/beta/impala-kudu/parcels/latest/" class="bare">http://archive.cloudera.com/beta/impala-kudu/parcels/latest/</a> and upload
 it to <code>/opt/cloudera/parcel-repo/</code> on the Cloudera Manager server.</p>
 </li>
 <li>
@@ -292,10 +320,10 @@ locations:</p>
 <div class="ulist">
 <ul>
 <li>
-<p>RHEL 6: <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/redhat/6/x86_64/kimpala/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/redhat/6/x86_64/kimpala/</a></p>
+<p>RHEL 6: <a href="http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/kimpala/" class="bare">http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/kimpala/</a></p>
 </li>
 <li>
-<p>Ubuntu Trusty: <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/ubuntu/trusty/amd64/kimpala/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/ubuntu/trusty/amd64/kimpala/</a></p>
+<p>Ubuntu Trusty: <a href="http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/kimpala/" class="bare">http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/kimpala/</a></p>
 </li>
 </ul>
 </div>
@@ -358,10 +386,10 @@ locations:</p>
 <div class="ulist">
 <ul>
 <li>
-<p>RHEL 6: <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/redhat/6/x86_64/kimpala/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/redhat/6/x86_64/kimpala/</a></p>
+<p>RHEL 6: <a href="http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/kimpala/" class="bare">http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/kimpala/</a></p>
 </li>
 <li>
-<p>Ubuntu Trusty: <a href="http://repos.jenkins.cloudera.com/kimpala-nightly/ubuntu/trusty/amd64/kimpala/" class="bare">http://repos.jenkins.cloudera.com/kimpala-nightly/ubuntu/trusty/amd64/kimpala/</a></p>
+<p>Ubuntu Trusty: <a href="http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/kimpala/" class="bare">http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/kimpala/</a></p>
 </li>
 </ul>
 </div>
@@ -492,7 +520,7 @@ Copy the entire statement.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_creating_a_new_kudu_table_from_impala"><a class="link" href="#_creating_a_new_kudu_table_from_impala">Creating a New Kudu Table From Impala</a></h3>
+<h3 id="kudu_impala_create_table"><a class="link" href="#kudu_impala_create_table">Creating a New Kudu Table From Impala</a></h3>
 <div class="paragraph">
 <p>Creating a new table in Kudu from Impala is similar to mapping an existing Kudu table
 to an Impala table, except that you need to write the <code>CREATE</code> statement yourself.
@@ -513,6 +541,74 @@ TBLPROPERTIES(
 );</code></pre>
 </div>
 </div>
+<div class="paragraph">
+<p>In the <code>CREATE TABLE</code> statement, the columns that comprise the primary key must
+be listed first. Additionally, primary key columns are implicitly marked <code>NOT NULL</code>.</p>
+</div>
+<div class="paragraph">
+<p>The following table properties are required, and the <code>kudu.key_columns</code> property must
+contain at least one column.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>storage_handler</code></dt>
+<dd>
+<p>the mechanism used by Impala to determine the type of data source.
+For Kudu tables, this must be <code>com.cloudera.kudu.hive.KuduStorageHandler</code>.</p>
+</dd>
+<dt class="hdlist1"><code>kudu.table_name</code></dt>
+<dd>
+<p>the name of the table that Impala will create (or map to) in Kudu.</p>
+</dd>
+<dt class="hdlist1"><code>kudu.master_addresses</code></dt>
+<dd>
+<p>the list of Kudu masters Impala should communicate with.</p>
+</dd>
+<dt class="hdlist1"><code>kudu.key_columns</code></dt>
+<dd>
+<p>the comma-separated list of primary key columns, whose contents
+should not be nullable.</p>
+</dd>
+</dl>
+</div>
+<div class="sect3">
+<h4 id="__code_create_table_as_select_code"><a class="link" href="#__code_create_table_as_select_code"><code>CREATE TABLE AS SELECT</code></a></h4>
+<div class="paragraph">
+<p>You can create a table by querying any other table or tables in Impala, using a <code>CREATE
+TABLE AS SELECT</code> query. The following example imports all rows from an existing table
+<code>old_table</code> into a Kudu table <code>new_table</code>. The columns in <code>new_table</code> will have the
+same names and types as the columns in <code>old_table</code>, but you need to populate the <code>kudu.key_columns</code>
+property. In this example, the primary key columns are <code>ts</code> and <code>name</code>.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE new_table AS
+SELECT * FROM old_table
+TBLPROPERTIES(
+  'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+  'kudu.table_name' = 'new_table',
+  'kudu.master_addresses' = 'kudu-master.example.com:7051',
+  'kudu.key_columns' = 'ts, name'
+);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>You can refine the <code>SELECT</code> statement to only match the rows and columns you want
+to be inserted into the new table. You can also rename the columns by using syntax
+like <code>SELECT name as new_name</code>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_pre_splitting_tables"><a class="link" href="#_pre_splitting_tables">Pre-Splitting Tables</a></h4>
+<div class="paragraph">
+<p>Tables are divided into tablets which are each served by one or more tablet
+servers. Ideally, tablets should split a table&#8217;s data relatively equally. Kudu currently
+has no mechanism for automatically (or manually) splitting a pre-existing tablet.
+Until this feature has been implemented, you must pre-split your table when you create
+it, When designing your table schema, consider primary keys that will allow you to
+pre-split your table into tablets which grow at similar rates. You can provide split
+points using the <code>kudu.split_keys</code> table property when creating a table using Impala:</p>
+</div>
 <div class="admonitionblock note">
 <table>
 <tr>
@@ -520,14 +616,55 @@ TBLPROPERTIES(
 <i class="fa icon-note" title="Note"></i>
 </td>
 <td class="content">
-Impala uses a database containment model. You can create a table within a specific
-scope, referred to as a <em>database</em>. To create the database, use a <code>CREATE DATABASE</code>
-statement. To use the database for further Impala operations such as <code>CREATE TABLE</code>,
-use the <code>USE</code> statement. For example, to create a table in a database called <code>impala_kudu</code>,
-use the following statements:
+Impala keywords, such as <code>group</code>, are enclosed by back-tick characters when
+they are not used in their keyword sense.
 </td>
 </tr>
 </table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE cust_behavior (
+  _id BIGINT,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  sku STRING,
+  rating INT,
+  fulfilled_date BIGINT
+)
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'cust_behavior',
+'kudu.master_addresses' = 'a1216.halxg.cloudera.com:7051',
+'kudu.key_columns' = '_id',
+'kudu.num_tablet_replicas' = '3',
+'kudu.split_keys' =
+'[[1439560049342], [1439566253755], [1439572458168], [1439578662581], [1439584866994], [1439591071407]],'
+
+);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you have multiple primary key columns, you can specify split points by separating
+them with commas within the inner brackets: <code>[['va',1],['ab',2]]</code>. The expression
+must be valid JSON.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_impala_databases_and_kudu"><a class="link" href="#_impala_databases_and_kudu">Impala Databases and Kudu</a></h4>
+<div class="paragraph">
+<p>Impala uses a database containment model. In Impala, you can create a table within a specific
+scope, referred to as a <em>database</em>. To create the database, use a <code>CREATE DATABASE</code>
+statement. To use the database for further Impala operations such as <code>CREATE TABLE</code>,
+use the <code>USE</code> statement. For example, to create a table in a database called <code>impala_kudu</code>,
+use the following statements:</p>
 </div>
 <div class="paragraph">
 <p>+</p>
@@ -557,13 +694,317 @@ refer to the table using <code>&lt;database&gt;:&lt;table&gt;</code> syntax. For
 the same name in another database, use <code>impala_kudu:my_first_table</code>. This also applies
 to <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, and <code>DROP</code> statements.</p>
 </div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Currently, Kudu does not encode the Impala database into the table name
+in any way. This means that even though you can create Kudu tables within Impala databases,
+the actual Kudu tables need to be unique within Kudu. For example, if you create <code>database_1:my_kudu_table</code>
+and <code>database_2:my_kudu_table</code>, you will have a naming collision within Kudu, even
+though this would not cause a problem in Impala. This can be resolved by specifying
+a unique Kudu table name in the <code>kudu.table_name</code> property.
+</td>
+</tr>
+</table>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_impala_keywords_not_supported_for_kudu_tables"><a class="link" href="#_impala_keywords_not_supported_for_kudu_tables">Impala Keywords Not Supported for Kudu Tables</a></h4>
 <div class="paragraph">
-<p>In the <code>CREATE TABLE</code> statement, the first column must be the primary key. Additionally,
-the primary key can never be null when inserting or updating a row.</p>
+<p>The following Impala keywords are not supported when creating Kudu tables:
+- <code>PARTITIONED</code>
+- <code>STORED AS</code>
+- <code>LOCATION</code>
+- <code>ROWFORMAT</code></p>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_optimizing_performance_for_evaluating_sql_predicates"><a class="link" href="#_optimizing_performance_for_evaluating_sql_predicates">Optimizing Performance for Evaluating SQL Predicates</a></h3>
+<div class="paragraph">
+<p>If the <code>WHERE</code> clause of your query includes comparisons with the operators
+<code>=</code>, <code>&#8656;</code>, or <code>&gt;=</code>, Kudu evaluates the condition directly and only returns the
+relevant results. This provides optimum performance, because Kudu only returns the
+relevant results to Impala. For predicates <code>&lt;</code>, <code>&gt;</code>, <code>!=</code>, or any other predicate
+type supported by Impala, Kudu does not evaluate the predicates directly, but returns
+all results to Impala and relies on Impala to evaluate the remaining predicates and
+filter the results accordingly. This may cause differences in performance, depending
+on the delta of the result set before and after evaluating the <code>WHERE</code> clause.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_partitioning_tables"><a class="link" href="#_partitioning_tables">Partitioning Tables</a></h3>
+<div class="paragraph">
+<p>Tables are partitioned into tablets according to a partition schema on the primary
+key columns. Each tablet is served by at least one tablet server. Ideally, a table
+should be split into tablets that are distributed across a number of tablet servers
+to maximize parallel operations. The details of the partitioning schema you use
+will depend entirely on the type of data you store and how you access it.</p>
 </div>
 <div class="paragraph">
-<p>All properties in the <code>TBLPROPERTIES</code> subclause are required, and the <code>kudu.key_columns</code>
-must contain at least one column.</p>
+<p>Kudu currently has no mechanism for splitting or merging tablets after the table has
+been created. Until this feature has been implemented, you must provide a partition
+schema for your table when you create it. When designing your tables, consider using
+primary keys that will allow you to partition your table into tablets which grow
+at similar rates.</p>
+</div>
+<div class="paragraph">
+<p>You can partition your table using Impala&#8217;s <code>DISTRIBUTE BY</code> keyword, which
+supports distribution by <code>RANGE</code> or <code>HASH</code>. The partition scheme can contain zero
+or more <code>HASH</code> definitions, followed by an optional <code>RANGE</code> definition. The <code>RANGE</code>
+definition can refer to one or more primary key columns.
+Examples of <a href="#basic_partitioning">basic</a> and <a href="#advanced_partitioning">advanced</a>
+partitioning are shown below.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Impala keywords, such as <code>group</code>, are enclosed by back-tick characters when
+they are used as identifiers, rather than as keywords.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect3">
+<h4 id="basic_partitioning"><a class="link" href="#basic_partitioning">Basic Partitioning</a></h4>
+<div class="paragraph">
+<div class="title"><code>DISTRIBUTE BY RANGE</code></div>
+<p>You can specify split rows for one or more primary key columns that contain integer
+or string values. Range partitioning in Kudu allows splitting a table based based
+on the lexicographic order of its primary keys. This allows you to balance parallelism
+in writes with scan efficiency.</p>
+</div>
+<div class="paragraph">
+<p>The split row does not need to exist. It defines an exclusive bound in the form of:
+<code>(START_KEY, SplitRow), [SplitRow, STOP_KEY)</code> In other words, the split row, if
+it exists, is included in the tablet after the split point. For instance, if you
+specify a split row <code>abc</code>, a row <code>abca</code> would be in the second tablet, while a row
+<code>abb</code> would be in the first.</p>
+</div>
+<div class="paragraph">
+<p>Suppose you have a table that has columns <code>state</code>, <code>name</code>, and <code>purchase_count</code>. The
+following example creates 50 tablets, one per US state.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="title">Monotonically Increasing Values</div>
+<div class="paragraph">
+<p>If you partition by range on a column whose values are monotonically increasing,
+the last tablet will grow much larger than the others. Additionally, all data
+being inserted will be written to a single tablet at a time, limiting the scalability
+of data ingest. In that case, consider distributing by <code>HASH</code> instead of, or in
+addition to, <code>RANGE</code>.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE customers (
+  state STRING,
+  name STRING,
+  purchase_count int32,
+) DISTRIBUTE BY RANGE(state)
+SPLIT ROWS(('al'), ('ak'), ('ar'), .., ('wv'), ('wy'))
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'customers',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'state, name'
+);</code></pre>
+</div>
+</div>
+<div id="distribute_by_hash" class="paragraph">
+<div class="title"><code>DISTRIBUTE BY HASH</code></div>
+<p>Instead of distributing by an explicit range, or in combination with range distribution,
+you can distribute into a specific number of 'buckets' by hash. You specify the primary
+key columns you want to partition by, and the number of buckets you want to use. Rows are
+distributed by hashing the specified key columns. Assuming that the values being
+hashed do not themselves exhibit significant skew, this will serve to distribute
+the data evenly across buckets.</p>
+</div>
+<div class="paragraph">
+<p>You can specify multiple definitions, and you can specify definitions which
+use compound primary keys. However, one column cannot be mentioned in multiple hash
+definitions. Consider two columns, <code>a</code> and <code>b</code>:
+* <span class="icon green"><i class="fa fa-check fa-pro"></i></span> <code>HASH(a)</code>, <code>HASH(b)</code>
+* <span class="icon green"><i class="fa fa-check fa-pro"></i></span> <code>HASH(a,b)</code>
+* <span class="icon red"><i class="fa fa-times fa-pro"></i></span> <code>HASH(a), HASH(a,b)</code></p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<code>DISTRIBUTE BY HASH</code> with no column specified is a shortcut to create the desired
+number of buckets by hashing all primary key columns.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Hash partitioning is a reasonable approach if primary key values are evenly
+distributed in their domain and no data skew is apparent, such as timestamps or
+serial IDs.</p>
+</div>
+<div class="paragraph">
+<p>The following example creates 16 tablets by hashing the <code>id</code> column. A maximum of
+16 tablets can be written to in parallel. In this example, a query for a range of <code>sku</code> values
+is likely to need to read all 16 tablets, so this may not be the optimum schema for
+this table. See <a href="#advanced_partitioning">Advanced Partitioning</a> for an extended example.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE cust_behavior (
+  id BIGINT,
+  sku STRING,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  rating INT,
+  fulfilled_date BIGINT
+)
+DISTRIBUTE BY HASH (id) INTO 16 BUCKETS
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'cust_behavior',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'id, sku'
+);</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="advanced_partitioning"><a class="link" href="#advanced_partitioning">Advanced Partitioning</a></h4>
+<div class="paragraph">
+<p>You can use zero or more <code>HASH</code> definitions, followed by zero or one <code>RANGE</code> definitions
+to partition a table. Each definition can encompass one or more columns.
+While every possible distribution schema is out of the scope of this document, a few
+demonstrations follow.</p>
+</div>
+<div class="paragraph">
+<div class="title"><code>DISTRIBUTE BY RANGE</code> Using Compound Split Rows</div>
+<p>This example creates 100 tablets, two for each US state. Per state, the first tablet
+holds names starting with characters before 'm', and the second tablet holds names
+starting with <code>m-z</code>. At least 50 tablets (and up to 100) can be written to in parallel.
+A query for a range of names in a given state is likely to only need to read from
+one tablet, while a query for a range of names across every state will likely only
+read from 50 tablets.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE customers (
+  state STRING,
+  name STRING,
+  purchase_count int32,
+) DISTRIBUTE BY RANGE(state, name)
+SPLIT ROWS(('al', ''), ('al', 'm'), ('ak', ''), ('ak', 'm'), .., ('wy', ''), ('wy', 'm'))
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'customers',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'state, name'
+);</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="__code_distribute_by_hash_code_and_code_range_code"><a class="link" href="#__code_distribute_by_hash_code_and_code_range_code"><code>DISTRIBUTE BY HASH</code> and <code>RANGE</code></a></h4>
+<div class="paragraph">
+<p>Let&#8217;s go back to the hashing example above. If you often query for a range of <code>sku</code>
+values, you can optimize the example by combining hash partitioning with range partitioning.
+The following example still creates 16 tablets, by first hashing the <code>id</code> column into 4
+buckets, and then applying range partitioning to split each bucket into four tablets,
+based upon the value of the <code>sku</code> string. At least four tablets (and possibly up to 16) can
+be written to in parallel, and when you query for a contiguous range of <code>sku</code> values, you have a
+good chance of only needing to read from 1/4 of the tablets to fulfill the query.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE cust_behavior (
+  id BIGINT,
+  sku STRING,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  rating INT,
+  fulfilled_date BIGINT
+)
+DISTRIBUTE BY HASH (id) INTO 4 BUCKETS,
+RANGE (sku) SPLIT ROWS(('g'), ('o'), ('u'))
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'cust_behavior',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'id, sku'
+);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<div class="title">Multiple <code>DISTRIBUTE BY HASH</code> Definitions</div>
+<p>Again expanding the example above, suppose that the query pattern will be unpredictable,
+but you want to maximimize parallelism of writes. You can achieve even distribution
+across the entire primary key by hashing on both primary key columns.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE cust_behavior (
+  id BIGINT,
+  sku STRING,
+  salary STRING,
+  edu_level INT,
+  usergender STRING,
+  `group` STRING,
+  city STRING,
+  postcode STRING,
+  last_purchase_price FLOAT,
+  last_purchase_date BIGINT,
+  category STRING,
+  rating INT,
+  fulfilled_date BIGINT
+)
+DISTRIBUTE BY HASH (id) INTO 4 BUCKETS, HASH (sku) INTO 4 BUCKETS
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'cust_behavior',
+'kudu.master_addresses' = 'kudu-master.example.com:7051',
+'kudu.key_columns' = 'id, sku'
+);</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The example creates 16 buckets. You could also use <code>HASH (id, sku) INTO 16 BUCKETS</code>.
+However, a scan for <code>sku</code> values would almost always impact all 16 buckets, rather
+than possibly being limited to 4.</p>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -578,12 +1019,103 @@ must contain at least one column.</p>
 <pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_first_table VALUES (1, "john"), (2, "jane"), (3, "jim");</code></pre>
 </div>
 </div>
-</div>
-<div class="sect2">
-<h3 id="_inserting_in_bulk"><a class="link" href="#_inserting_in_bulk">Inserting In Bulk</a></h3>
+<div class="sect3">
+<h4 id="kudu_impala_insert_bulk"><a class="link" href="#kudu_impala_insert_bulk">Inserting In Bulk</a></h4>
 <div class="paragraph">
-<p>In general, the Impala documentation discourages adding rows by using multiple <code>INSERT</code>
-statements due to ineffiency. Exceptions to this rule are HBase and Kudu.</p>
+<p>When inserting in bulk, there are at least three common choices. Each may have advantages
+and disadvantages, depending on your data and circumstances.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Multiple single <code>INSERT</code> statements</dt>
+<dd>
+<p>This approach has the advantage of being easy to
+understand and implement. This approach is likely to be inefficient because Impala
+has a high query start-up cost compared to Kudu&#8217;s insertion performance. This will
+lead to relatively high latency and poor throughput.</p>
+</dd>
+<dt class="hdlist1">Single <code>INSERT</code> statement with multiple <code>VALUES</code> subclauses</dt>
+<dd>
+<p>If you include more
+than 1024 <code>VALUES</code> statements, Impala batches them into groups of 1024 (or the value
+of <code>batch_size</code>) before sending the requests to Kudu. This approach may perform
+slightly better than multiple sequential <code>INSERT</code> statements by amortizing the query start-up
+penalties on the Impala side. To set the batch size for the current Impala
+Shell session, use the following syntax: <code>set batch_size=10000;</code></p>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Increasing the Impala batch size causes Impala to use more memory. You should
+verify the impact on your cluster and tune accordingly.
+</td>
+</tr>
+</table>
+</div>
+</dd>
+<dt class="hdlist1">Batch Insert</dt>
+<dd>
+<p>The approach that usually performs best, from the standpoint of
+both Impala and Kudu, is usually to import the data using a <code>SELECT FROM</code> subclause
+in Impala.</p>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>If your data is not already in Impala, one strategy is
+to link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_txtfile.html
+[import it from a text file], such as a TSV or CSV file.</p>
+</li>
+<li>
+<p><a href="#kudu_impala_create_table">Create the Kudu table</a>, being mindful that the columns
+designated as primary keys cannot have null values.</p>
+</li>
+<li>
+<p>Insert values into the Kudu table by querying the table containing the original
+data, as in the following example:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_kudu_table
+  SELECT * FROM legacy_data_import_table;</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</dd>
+<dt class="hdlist1">Ingest using the C++ or Java API</dt>
+<dd>
+<p>In many cases, the appropriate ingest path is to
+use the C++ or Java API to insert directly into Kudu tables. Unlike other Impala tables,
+data inserted into Kudu tables via the API becomes available for query in Impala without
+the need for any <code>INVALIDATE METADATA</code> statements or other statements needed for other
+Impala storage types.</p>
+</dd>
+</dl>
+</div>
+</div>
+<div class="sect3">
+<h4 id="insert_ignore"><a class="link" href="#insert_ignore"><code>INSERT</code> and the <code>IGNORE</code> Keyword</a></h4>
+<div class="paragraph">
+<p>Normally, if you try to insert a row that has already been inserted, the insertion
+will fail because the primary key would be duplicated. See <a href="#impala_insertion_caveat">Failures During <code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> Operations</a>.
+If an insert fails part of the way through, you can re-run the insert, using the
+<code>IGNORE</code> keyword, which will ignore only those errors returned from Kudu indicating
+a duplicate key..</p>
+</div>
+<div class="paragraph">
+<p>The first example will cause an error if a row with the primary key <code>99</code> already exists.
+The second example will still not insert the row, but will ignore any error and continue
+on to the next SQL statement.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">INSERT INTO my_first_table VALUES (99, "sarah");
+INSERT IGNORE INTO my_first_table VALUES (99, "sarah");</code></pre>
+</div>
+</div>
 </div>
 </div>
 <div class="sect2">
@@ -600,23 +1132,45 @@ statements due to ineffiency. Exceptions to this rule are HBase and Kudu.</p>
 <i class="fa icon-important" title="Important"></i>
 </td>
 <td class="content">
-The <code>UPDATE</code> statement only works in Impala when the underlying
-data source is Kudu.
+The <code>UPDATE</code> statement only works in Impala when the target table is in
+Kudu.
 </td>
 </tr>
 </table>
+</div>
+<div class="sect3">
+<h4 id="_updating_in_bulk"><a class="link" href="#_updating_in_bulk">Updating In Bulk</a></h4>
+<div class="paragraph">
+<p>You can update in bulk using the same approaches outlined in
+<a href="#kudu_impala_insert_bulk">Inserting In Bulk</a>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="__code_update_code_and_the_code_ignore_code_keyword"><a class="link" href="#__code_update_code_and_the_code_ignore_code_keyword"><code>UPDATE</code> and the <code>IGNORE</code> Keyword</a></h4>
+<div class="paragraph">
+<p>Similar to <a href="#insert_ignore"><code>INSERT</code> and the <code>IGNORE</code> Keyword</a>You can use the <code>IGNORE</code> operation to ignore an <code>UPDATE</code>
+which would otherwise fail. For instance, a row may be deleted while you are
+attempting to update it. In Impala, this would cause an error. The <code>IGNORE</code>
+keyword causes the error to be ignored.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">UPDATE IGNORE my_first_table SET name="bob" where id = 3;</code></pre>
+</div>
+</div>
 </div>
 </div>
 <div class="sect2">
 <h3 id="_deleting_a_row"><a class="link" href="#_deleting_a_row">Deleting a Row</a></h3>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-sql" data-lang="sql">DELETE FROM my_first_table WHERE id = 3;</code></pre>
+<pre class="highlight"><code class="language-sql" data-lang="sql">DELETE FROM my_first_table WHERE id &lt; 3;</code></pre>
 </div>
 </div>
 <div class="paragraph">
 <p>You can also delete using more complex syntax. A comma in the <code>FROM</code> sub-clause is
-one way that Impala specifies a join query.</p>
+one way that Impala specifies a join query. For more information about Impala joins,
+see <a href="http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_joins.html" class="bare">http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_joins.html</a>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -630,11 +1184,42 @@ one way that Impala specifies a join query.</p>
 <i class="fa icon-important" title="Important"></i>
 </td>
 <td class="content">
-The <code>DELETE</code> statement only works in Impala when the underlying
-data source is Kudu.
+The <code>DELETE</code> statement only works in Impala when the target table is in
+Kudu.
 </td>
 </tr>
 </table>
+</div>
+<div class="sect3">
+<h4 id="_deleting_in_bulk"><a class="link" href="#_deleting_in_bulk">Deleting In Bulk</a></h4>
+<div class="paragraph">
+<p>You can delete in bulk using the same approaches outlined in
+<a href="#kudu_impala_insert_bulk">Inserting In Bulk</a>.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="__code_delete_code_and_the_code_ignore_code_keyword"><a class="link" href="#__code_delete_code_and_the_code_ignore_code_keyword"><code>DELETE</code> and the <code>IGNORE</code> Keyword</a></h4>
+<div class="paragraph">
+<p>Similar to <a href="#insert_ignore"><code>INSERT</code> and the <code>IGNORE</code> Keyword</a>You can use the <code>IGNORE</code> operation to ignore an <code>DELETE</code>
+which would otherwise fail. For instance, a row may be deleted by another process
+while you are attempting to delete it. In Impala, this would cause an error. The
+<code>IGNORE</code> keyword causes the error to be ignored.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">DELETE IGNORE FROM my_first_table WHERE id &lt; 3;</code></pre>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="impala_insertion_caveat"><a class="link" href="#impala_insertion_caveat">Failures During <code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> Operations</a></h3>
+<div class="paragraph">
+<p><code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> statements cannot be considered transactional as
+a whole. If one of these operations fails part of the way through, the keys may
+have already been created (in the case of <code>INSERT</code>) or the records may have already
+been modified or removed by another process (in the case of <code>UPDATE</code> or <code>DELETE</code>).
+You should design your application with this in mind. See <a href="#insert_ignore"><code>INSERT</code> and the <code>IGNORE</code> Keyword</a>.</p>
 </div>
 </div>
 <div class="sect2">
@@ -655,12 +1240,12 @@ a table&#8217;s split rows after table creation.</p>
 Altering table properties only changes Impala&#8217;s metadata about the table,
 not the underlying table itself. These statements do not modify any table metadata
 in Kudu.
-.Rename a Table
 </td>
 </tr>
 </table>
 </div>
 <div class="listingblock">
+<div class="title">Rename a Table</div>
 <div class="content">
 <pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_table RENAME TO my_new_table;</code></pre>
 </div>
@@ -668,7 +1253,8 @@ in Kudu.
 <div class="listingblock">
 <div class="title">Change the Kudu Master Address</div>
 <div class="content">
-<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_table SET TBLPROPERTIES('kudu.master_addresses' = 'kudu-original-master.example.com:7051,kudu-new-master.example.com:7051');</code></pre>
+<pre class="highlight"><code class="language-sql" data-lang="sql">ALTER TABLE my_table
+SET TBLPROPERTIES('kudu.master_addresses' = 'kudu-new-master.example.com:7051');</code></pre>
 </div>
 </div>
 <div class="listingblock">
@@ -732,13 +1318,29 @@ data.</p>
     <div class="col-md-3">
 
   <div id="toc" data-spy="affix" data-offset-top="70">
-    <ul class="sectlevel1">
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+<span class="active-toc">Using Impala with Kudu</span>
+            <ul class="sectlevel1">
 <li><a href="#_requirements_and_implications">Requirements and Implications</a></li>
 <li><a href="#_installing_impala_kudu_using_cloudera_manager">Installing Impala_Kudu Using Cloudera Manager</a>
 <ul class="sectlevel2">
-<li><a href="#_installing_the_impala_kudu_service_using_parcels">Installing the Impala_Kudu Service Using Parcels</a>
+<li><a href="#install_impala_kudu_parcels">Installing the Impala_Kudu Service Using Parcels</a>
 <ul class="sectlevel3">
-<li><a href="#_manual_installation">Manual Installation</a></li>
+<li><a href="#install_impala_kudu_parcels_side_by_side">Manual Installation</a></li>
 <li><a href="#_installation_using_the_code_deploy_py_code_script">Installation using the <code>deploy.py</code> Script</a></li>
 </ul>
 </li>
@@ -750,17 +1352,77 @@ data.</p>
 <ul class="sectlevel2">
 <li><a href="#_internal_and_external_impala_tables">Internal and External Impala Tables</a></li>
 <li><a href="#_querying_an_existing_kudu_table_in_impala">Querying an Existing Kudu Table In Impala</a></li>
-<li><a href="#_creating_a_new_kudu_table_from_impala">Creating a New Kudu Table From Impala</a></li>
-<li><a href="#_inserting_a_row">Inserting A Row</a></li>
-<li><a href="#_inserting_in_bulk">Inserting In Bulk</a></li>
-<li><a href="#_updating_a_row">Updating a Row</a></li>
-<li><a href="#_deleting_a_row">Deleting a Row</a></li>
+<li><a href="#kudu_impala_create_table">Creating a New Kudu Table From Impala</a>
+<ul class="sectlevel3">
+<li><a href="#__code_create_table_as_select_code"><code>CREATE TABLE AS SELECT</code></a></li>
+<li><a href="#_pre_splitting_tables">Pre-Splitting Tables</a></li>
+<li><a href="#_impala_databases_and_kudu">Impala Databases and Kudu</a></li>
+<li><a href="#_impala_keywords_not_supported_for_kudu_tables">Impala Keywords Not Supported for Kudu Tables</a></li>
+</ul>
+</li>
+<li><a href="#_optimizing_performance_for_evaluating_sql_predicates">Optimizing Performance for Evaluating SQL Predicates</a></li>
+<li><a href="#_partitioning_tables">Partitioning Tables</a>
+<ul class="sectlevel3">
+<li><a href="#basic_partitioning">Basic Partitioning</a></li>
+<li><a href="#advanced_partitioning">Advanced Partitioning</a></li>
+<li><a href="#__code_distribute_by_hash_code_and_code_range_code"><code>DISTRIBUTE BY HASH</code> and <code>RANGE</code></a></li>
+</ul>
+</li>
+<li><a href="#_inserting_a_row">Inserting A Row</a>
+<ul class="sectlevel3">
+<li><a href="#kudu_impala_insert_bulk">Inserting In Bulk</a></li>
+<li><a href="#insert_ignore"><code>INSERT</code> and the <code>IGNORE</code> Keyword</a></li>
+</ul>
+</li>
+<li><a href="#_updating_a_row">Updating a Row</a>
+<ul class="sectlevel3">
+<li><a href="#_updating_in_bulk">Updating In Bulk</a></li>
+<li><a href="#__code_update_code_and_the_code_ignore_code_keyword"><code>UPDATE</code> and the <code>IGNORE</code> Keyword</a></li>
+</ul>
+</li>
+<li><a href="#_deleting_a_row">Deleting a Row</a>
+<ul class="sectlevel3">
+<li><a href="#_deleting_in_bulk">Deleting In Bulk</a></li>
+<li><a href="#__code_delete_code_and_the_code_ignore_code_keyword"><code>DELETE</code> and the <code>IGNORE</code> Keyword</a></li>
+</ul>
+</li>
+<li><a href="#impala_insertion_caveat">Failures During <code>INSERT</code>, <code>UPDATE</code>, and <code>DELETE</code> Operations</a></li>
 <li><a href="#_altering_table_properties">Altering Table Properties</a></li>
 <li><a href="#_dropping_a_kudu_table_using_impala">Dropping a Kudu Table Using Impala</a></li>
 </ul>
 </li>
 <li><a href="#_what_s_next">What&#8217;s Next?</a></li>
-</ul>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+  </ul>
   </div>
     </div>
   </div>

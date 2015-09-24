@@ -2,8 +2,23 @@
 title: kudu-fs_dump Unsupported Flags
 layout: default
 
-last_updated: 'Last updated 2015-09-17 17:23:10 PDT'
+last_updated: 'Last updated 2015-09-24 16:01:47 PDT'
 ---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 
 
 <div class="container">
@@ -1364,6 +1379,34 @@ for informational purposes only. They are subject to change or be removed withou
 </div>
 </div>
 <div class="sect1">
+<h2 id="kudu-fs_dump_memory_limit_soft_percentage"><a class="link" href="#kudu-fs_dump_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
 <h2 id="kudu-fs_dump_metrics_retirement_age_ms"><a class="link" href="#kudu-fs_dump_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -1620,65 +1663,53 @@ for informational purposes only. They are subject to change or be removed withou
     <div class="col-md-3">
 
   <div id="toc" data-spy="affix" data-offset-top="70">
-    <ul class="sectlevel1">
-<li><a href="#kudu-fs_dump_block_cache_type"><code>--block_cache_type</code></a></li>
-<li><a href="#kudu-fs_dump_cfile_default_block_size"><code>--cfile_default_block_size</code></a></li>
-<li><a href="#kudu-fs_dump_cfile_default_compression_codec"><code>--cfile_default_compression_codec</code></a></li>
-<li><a href="#kudu-fs_dump_cfile_do_on_finish"><code>--cfile_do_on_finish</code></a></li>
-<li><a href="#kudu-fs_dump_codegen_dump_functions"><code>--codegen_dump_functions</code></a></li>
-<li><a href="#kudu-fs_dump_codegen_dump_mc"><code>--codegen_dump_mc</code></a></li>
-<li><a href="#kudu-fs_dump_codegen_time_compilation"><code>--codegen_time_compilation</code></a></li>
-<li><a href="#kudu-fs_dump_consensus_max_batch_size_bytes"><code>--consensus_max_batch_size_bytes</code></a></li>
-<li><a href="#kudu-fs_dump_follower_unavailable_considered_failed_sec"><code>--follower_unavailable_considered_failed_sec</code></a></li>
-<li><a href="#kudu-fs_dump_group_commit_queue_size_bytes"><code>--group_commit_queue_size_bytes</code></a></li>
-<li><a href="#kudu-fs_dump_log_min_seconds_to_retain"><code>--log_min_seconds_to_retain</code></a></li>
-<li><a href="#kudu-fs_dump_log_min_segments_to_retain"><code>--log_min_segments_to_retain</code></a></li>
-<li><a href="#kudu-fs_dump_global_log_cache_size_limit_mb"><code>--global_log_cache_size_limit_mb</code></a></li>
-<li><a href="#kudu-fs_dump_log_cache_size_limit_mb"><code>--log_cache_size_limit_mb</code></a></li>
-<li><a href="#kudu-fs_dump_log_async_preallocate_segments"><code>--log_async_preallocate_segments</code></a></li>
-<li><a href="#kudu-fs_dump_log_preallocate_segments"><code>--log_preallocate_segments</code></a></li>
-<li><a href="#kudu-fs_dump_log_segment_size_mb"><code>--log_segment_size_mb</code></a></li>
-<li><a href="#kudu-fs_dump_evict_failed_followers"><code>--evict_failed_followers</code></a></li>
-<li><a href="#kudu-fs_dump_leader_failure_exp_backoff_max_delta_ms"><code>--leader_failure_exp_backoff_max_delta_ms</code></a></li>
-<li><a href="#kudu-fs_dump_leader_failure_max_missed_heartbeat_periods"><code>--leader_failure_max_missed_heartbeat_periods</code></a></li>
-<li><a href="#kudu-fs_dump_leader_failure_monitor_check_mean_ms"><code>--leader_failure_monitor_check_mean_ms</code></a></li>
-<li><a href="#kudu-fs_dump_leader_failure_monitor_check_stddev_ms"><code>--leader_failure_monitor_check_stddev_ms</code></a></li>
-<li><a href="#kudu-fs_dump_raft_heartbeat_interval_ms"><code>--raft_heartbeat_interval_ms</code></a></li>
-<li><a href="#kudu-fs_dump_block_coalesce_close"><code>--block_coalesce_close</code></a></li>
-<li><a href="#kudu-fs_dump_block_manager"><code>--block_manager</code></a></li>
-<li><a href="#kudu-fs_dump_log_block_manager_test_hole_punching"><code>--log_block_manager_test_hole_punching</code></a></li>
-<li><a href="#kudu-fs_dump_log_container_max_size"><code>--log_container_max_size</code></a></li>
-<li><a href="#kudu-fs_dump_log_container_preallocate_bytes"><code>--log_container_preallocate_bytes</code></a></li>
-<li><a href="#kudu-fs_dump_rpc_acceptor_listen_backlog"><code>--rpc_acceptor_listen_backlog</code></a></li>
-<li><a href="#kudu-fs_dump_rpc_dump_all_traces"><code>--rpc_dump_all_traces</code></a></li>
-<li><a href="#kudu-fs_dump_rpc_callback_max_cycles"><code>--rpc_callback_max_cycles</code></a></li>
-<li><a href="#kudu-fs_dump_rpc_negotiation_timeout_ms"><code>--rpc_negotiation_timeout_ms</code></a></li>
-<li><a href="#kudu-fs_dump_krpc_sasl_path"><code>--krpc_sasl_path</code></a></li>
-<li><a href="#kudu-fs_dump_rpc_max_message_size"><code>--rpc_max_message_size</code></a></li>
-<li><a href="#kudu-fs_dump_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></li>
-<li><a href="#kudu-fs_dump_budgeted_compaction_target_rowset_size"><code>--budgeted_compaction_target_rowset_size</code></a></li>
-<li><a href="#kudu-fs_dump_deltafile_default_block_size"><code>--deltafile_default_block_size</code></a></li>
-<li><a href="#kudu-fs_dump_tablet_delta_store_major_compact_min_ratio"><code>--tablet_delta_store_major_compact_min_ratio</code></a></li>
-<li><a href="#kudu-fs_dump_tablet_delta_store_minor_compact_max"><code>--tablet_delta_store_minor_compact_max</code></a></li>
-<li><a href="#kudu-fs_dump_tablet_bloom_block_size"><code>--tablet_bloom_block_size</code></a></li>
-<li><a href="#kudu-fs_dump_tablet_bloom_target_fp_rate"><code>--tablet_bloom_target_fp_rate</code></a></li>
-<li><a href="#kudu-fs_dump_tablet_compaction_budget_mb"><code>--tablet_compaction_budget_mb</code></a></li>
-<li><a href="#kudu-fs_dump_flush_threshold_mb"><code>--flush_threshold_mb</code></a></li>
-<li><a href="#kudu-fs_dump_tablet_transaction_memory_limit_mb"><code>--tablet_transaction_memory_limit_mb</code></a></li>
-<li><a href="#kudu-fs_dump_trace_to_console"><code>--trace_to_console</code></a></li>
-<li><a href="#kudu-fs_dump_never_fsync"><code>--never_fsync</code></a></li>
-<li><a href="#kudu-fs_dump_suicide_on_eio"><code>--suicide_on_eio</code></a></li>
-<li><a href="#kudu-fs_dump_writable_file_use_fsync"><code>--writable_file_use_fsync</code></a></li>
-<li><a href="#kudu-fs_dump_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></li>
-<li><a href="#kudu-fs_dump_dns_num_resolver_threads"><code>--dns_num_resolver_threads</code></a></li>
-<li><a href="#kudu-fs_dump_local_ip_for_outbound_sockets"><code>--local_ip_for_outbound_sockets</code></a></li>
-<li><a href="#kudu-fs_dump_nvm_cache_allocation_retry_count"><code>--nvm_cache_allocation_retry_count</code></a></li>
-<li><a href="#kudu-fs_dump_nvm_cache_path"><code>--nvm_cache_path</code></a></li>
-<li><a href="#kudu-fs_dump_drop_log_memory"><code>--drop_log_memory</code></a></li>
-<li><a href="#kudu-fs_dump_log_backtrace_at"><code>--log_backtrace_at</code></a></li>
-<li><a href="#kudu-fs_dump_logbuflevel"><code>--logbuflevel</code></a></li>
-<li><a href="#kudu-fs_dump_logbufsecs"><code>--logbufsecs</code></a></li>
-</ul>
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+  </ul>
   </div>
     </div>
   </div>

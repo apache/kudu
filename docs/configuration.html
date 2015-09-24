@@ -2,8 +2,23 @@
 title: Configuring Kudu
 layout: default
 
-last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
+last_updated: 'Last updated 2015-09-24 14:59:54 PDT'
 ---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 
 
 <div class="container">
@@ -11,117 +26,34 @@ last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
     <div class="col-md-9">
 
 <h1>Configuring Kudu</h1>
-      <div class="sect1">
-<h2 id="_configure_kudu_using_cloudera_manager"><a class="link" href="#_configure_kudu_using_cloudera_manager">Configure Kudu Using Cloudera Manager</a></h2>
+      <div id="preamble">
 <div class="sectionbody">
-<div class="paragraph">
-<p>These instructions apply to clusters managed by Cloudera Manager. Do
-not use the command-line instructions unless you do not use Cloudera Manager.</p>
-</div>
-<div class="paragraph">
-<p>Cloudera Manager exposes several configuration options for Kudu. In addition, advanced
-configuration snippets are available for more complex customization.</p>
-</div>
-<table class="tableblock frame-all grid-all spread">
-<colgroup>
-<col style="width: 33%;">
-<col style="width: 33%;">
-<col style="width: 33%;">
-</colgroup>
-<thead>
+<div class="admonitionblock note">
+<table>
 <tr>
-<th class="tableblock halign-left valign-top">Option</th>
-<th class="tableblock halign-left valign-top">Configuration Name</th>
-<th class="tableblock halign-left valign-top">Description</th>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Kudu is easier to configure with <a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.htm">Cloudera Manager</a>
+than in a standalone installation.
+</td>
 </tr>
-</thead>
-<tbody>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Master Address</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">server.address</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Overrides the address where the Master will listen for connections.</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Default Number of Replicas</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">default_num_replicas</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Default number of replicas for each tablet. The
-default for this setting is 3.</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">System User</p></td>
-<td class="tableblock halign-left valign-top"></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">The user that this service&#8217;s processes should run as. The
-default for this setting is <code>kudu</code>.</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">System Group</p></td>
-<td class="tableblock halign-left valign-top"></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">The group that this service&#8217;s processes should run as. The
-default for this setting is <code>kudu</code>.</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Kudu Service Environment Advanced Configuration Snippet (Safety Valve)</p></td>
-<td class="tableblock halign-left valign-top"></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">For
-advanced use only, key-value pairs (one on each line) to be inserted into a role&#8217;s
-environment. Applies to configurations of all roles in this service except client
-configuration.</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Automatically Restart Process</p></td>
-<td class="tableblock halign-left valign-top"></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">When set, this role&#8217;s process is automatically
-(and transparently) restarted in the event of an unexpected failure. The default
-for this setting is <code>Master Default Group, Tablet Server Default Group</code>.</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Master Environment Advanced Configuration Snippet (Safety Valve)</p></td>
-<td class="tableblock halign-left valign-top"></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">For
-advanced use only, key-value pairs (one on each line) to be inserted into a
-role&#8217;s environment. Applies to configurations of this role except client configuration.</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Server Environment Advanced Configuration Snippet (Safety Valve)</p></td>
-<td class="tableblock halign-left valign-top"></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">For
-advanced use only, key-value pairs (one on each line) to be inserted into a role&#8217;s
-environment. Applies to configurations of this role except client configuration.</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Master Log Directory</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>log_dir</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">The log directory for log files of the role
-Master. The default for this setting is <code>/var/log/kudu</code>.</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Tablet Server Log Directory</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>log_dir</code></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">The log directory for log files of the
-role Tablet Server.</p></td>
-</tr>
-</tbody>
 </table>
-<div class="paragraph">
-<p>In addition, several alert and health check options specific to Cloudera Manager are
-available.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_configure_kudu_using_the_command_line"><a class="link" href="#_configure_kudu_using_the_command_line">Configure Kudu Using the Command Line</a></h2>
+<h2 id="_configure_kudu"><a class="link" href="#_configure_kudu">Configure Kudu</a></h2>
 <div class="sectionbody">
-<div class="paragraph">
-<p>If you do not use Cloudera Manager to manage your CDH cluster, use these instructions.
-Otherwise, use Cloudera Manager to ensure that your configuration is saved correctly.</p>
-</div>
 <div class="sect2">
 <h3 id="_configuration_basics"><a class="link" href="#_configuration_basics">Configuration Basics</a></h3>
 <div class="paragraph">
 <p>To configure the behavior of each Kudu process, you can pass command-line flags when
 you start it, or read those options from configuration files by passing them using
 one or more <code>--flagfile=&lt;file&gt;</code> options. You can even include the
-<code>--flagfile</code> option within your configuration file to include other files.</p>
+<code>--flagfile</code> option within your configuration file to include other files. Learn more about gflags
+by reading <a href="http://google-gflags.googlecode.com/svn/trunk/doc/gflags.html">its documentation</a>.</p>
 </div>
 <div class="paragraph">
 <p>You can place options for masters and tablet servers into the same configuration
@@ -171,14 +103,14 @@ with the <code>--help</code> option:</p>
 </thead>
 <tbody>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">--fs_data_dirs</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>--fs_data_dirs</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
 <td class="tableblock halign-left valign-top"></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Comma-separated list of
 directories where the Master will place its data blocks.</p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">--fs_wal_dir</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>--fs_wal_dir</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
 <td class="tableblock halign-left valign-top"></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">The directory where the Master will
@@ -186,10 +118,10 @@ place its write-ahead logs. May be the same as <em>one of</em> the directories l
 <code>--fs_data_dirs</code>.</p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">--block_cache_capacity_mb</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">integer</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">512</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">block cache capacity in MB</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>--log_dir</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/var/log/kudu</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The directory to store Master log files.</p></td>
 </tr>
 </tbody>
 </table>
@@ -242,12 +174,30 @@ place its write-ahead logs. May be the same as <em>one of</em> the directories l
 <code>--fs_data_dirs</code>.</p></td>
 </tr>
 <tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">--log_dir</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">/var/log/kudu</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">The directory to store Tablet Server log files</p></td>
+</tr>
+<tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">--tserver_master_addrs</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>127.0.0.1:7051</code></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Comma separated
 addresses of the masters which the tablet server should connect to. The masters
 do not read this flag.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">--block_cache_capacity_mb</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">integer</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">512</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Maximum amount of memory allocated to the Kudu Tablet Server&#8217;s block cache.</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">--memory_limit_hard_bytes</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">integer</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">4294967296</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Maximum amount of memory a Tablet Server can consume before it starts rejecting all incoming writes.</p></td>
 </tr>
 </tbody>
 </table>
@@ -271,7 +221,7 @@ at port 8050.</p>
 <div class="ulist">
 <ul>
 <li>
-<p><a href="administration.html">Get Started With Kudu</a></p>
+<p><a href="quickstart.html">Get Started With Kudu</a></p>
 </li>
 <li>
 <p><a href="developing.html">Developing Applications With Kudu</a></p>
@@ -284,19 +234,53 @@ at port 8050.</p>
     <div class="col-md-3">
 
   <div id="toc" data-spy="affix" data-offset-top="70">
-    <ul class="sectlevel1">
-<li><a href="#_configure_kudu_using_cloudera_manager">Configure Kudu Using Cloudera Manager</a></li>
-<li><a href="#_configure_kudu_using_the_command_line">Configure Kudu Using the Command Line</a>
-<ul class="sectlevel2">
-<li><a href="#_configuration_basics">Configuration Basics</a></li>
-<li><a href="#_discovering_configuration_options">Discovering Configuration Options</a></li>
-<li><a href="#_configuring_masters">Configuring Masters</a></li>
-<li><a href="#_configuring_tablet_servers">Configuring Tablet Servers</a></li>
-<li><a href="#_configuring_the_kudu_web_interface">Configuring the Kudu Web Interface</a></li>
-</ul>
-</li>
-<li><a href="#_next_steps">Next Steps</a></li>
-</ul>
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+  </ul>
   </div>
     </div>
   </div>

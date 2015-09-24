@@ -2,8 +2,23 @@
 title: Kudu Quickstart
 layout: default
 
-last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
+last_updated: 'Last updated 2015-09-24 14:59:54 PDT'
 ---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 
 
 <div class="container">
@@ -14,176 +29,20 @@ last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
       <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>This quickstart guides you through getting, installing, and starting a three-
-node Kudu cluster in CDH using Cloudera Manager, putting some data into it, and
-reading some data from it, without going into details. For more in-depth information, see
-<a href="installation.html">Kudu Installation</a>.</p>
+<p>This quickstart shows how to set up and run a VirtualBox virtual machine pre-installed with Kudu,
+Kudu_Impala, and CDH. This is the quickest way to take Kudu for a spin.</p>
 </div>
 </div>
 </div>
 <div class="sect1">
-<h2 id="quickstart_vm"><a class="link" href="#quickstart_vm">Kudu Quickstart VM</a></h2>
+<h2 id="quickstart_vm"><a class="link" href="#quickstart_vm">Get The Kudu Quickstart VM</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>You can get started even quicker! Check out the Quickstart VM  at
-<a href="https://github.com/cloudera/kudu-examples/" class="bare">https://github.com/cloudera/kudu-examples/</a> and start using Kudu in minutes.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_prerequisites"><a class="link" href="#_prerequisites">Prerequisites</a></h2>
-<div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p>A Cloudera Manager cluster with the <a href="#how_many_hosts">right number of hosts</a>.</p>
-</li>
-<li>
-<p>Write access to the <code>/opt/cloudera/csd</code> directory on the Cloudera Manager server.</p>
-</li>
-</ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="how_many_hosts"><a class="link" href="#how_many_hosts">How Many Tablet Servers?</a></h2>
-<div class="sectionbody">
-<div class="ulist">
-<ul>
-<li>
-<p>If you run three tablet servers and one fails, the other two can continue. If
-the leader failed, one of the other tablet servers can become the
-leader.</p>
-</li>
-<li>
-<p>If you run two tablet servers and one fails, the other tablet server cannot
-achieve a quorum to become leader. With no leader, no writes can occur.</p>
-</li>
-<li>
-<p>You must have an odd number of tablet servers, to avoid a "split brain"
-scenario where half the tablet servers are on either side of the partition
-and neither side has the majority.</p>
-</li>
-</ul>
+<p>Follow these <a href="https://github.com.cloudera/kudu-examples/">instructions</a> to download and set
+up the Kudu Quickstart VM.</p>
 </div>
 <div class="paragraph">
-<p>One host can run both master and tablet server processes.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_install_kudu_using_parcels"><a class="link" href="#_install_kudu_using_parcels">Install Kudu Using Parcels</a></h2>
-<div class="sectionbody">
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>Download the Custom Service Descriptor (CSD) JAR to the <code>/opt/cloudera/csd</code> directory.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ cd /opt/cloudera/csd
-$ wget http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/lastSuccessfulBuild/artifact/java/kudu-csd/target/KUDU-0.1.0.jar</pre>
-</div>
-</div>
-</li>
-<li>
-<p>Restart the Cloudera Manager server to detect the CSD.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ sudo service cloudera-scm-server restart</pre>
-</div>
-</div>
-</li>
-<li>
-<p>In Cloudera Manager, go to <strong>Hosts &gt; Parcels</strong>. Find <code>KUDU</code> in the list, and click <strong>Download</strong>.</p>
-</li>
-<li>
-<p>When the download is complete, select your cluster from the <strong>Locations</strong> selector,
-and click <strong>Distribute</strong>. If you only have one cluster, it is selected automatically.</p>
-</li>
-<li>
-<p>When distribution is complete, click <strong>Activate</strong> to activate the parcel. Restart
-the cluster when prompted. This may take several minutes.</p>
-</li>
-<li>
-<p>Install the Kudu service on your cluster. Go to the cluster where you want to install Kudu.
-Click <strong>Actions &gt; Add a Service</strong>. Select <strong>Kudu</strong> from the list, and click <strong>Continue</strong>.</p>
-</li>
-<li>
-<p>Select a host to be the master and one or more hosts to be tablet servers. A
-host can act as both a master and a tablet server, but this may cause performance
-problems on a large cluster. The Kudu master process is not resource-intensive and
-can be collocated with other similar processes such as the HDFS Namenode or YARN
-ResourceManager.</p>
-<div class="paragraph">
-<p>After selecting hosts, click <strong>Continue</strong>.</p>
-</div>
-</li>
-<li>
-<p>Configure the storage locations for Kudu data and WAL files on masters and tablet
-servers. Cloudera Manager will create the directories.</p>
-<div class="ulist">
-<ul>
-<li>
-<p>You can use the same directory to store data and WALs.</p>
-</li>
-<li>
-<p>You cannot store WALs in a subdirectory of the data directory.</p>
-</li>
-<li>
-<p>If any host is both a master and tablet server, configure different directories
-for master and tablet server. For instance, <code>/data/kudu/master</code> and <code>/data/kudu/tserver</code>.</p>
-</li>
-<li>
-<p>If you choose a filesystem that does not support <a href="#req_hole_punching">hole punching</a>,
-service start-up will fail. Exit the configuration wizard by clicking the <strong>Cloudera</strong>
-logo at the top of the Cloudera Manager interface, and search for the
-<strong>Kudu Service Advanced Configuration Snippet (Safety Valve) for gflagfile</strong> configuration option.
-Add the following line to it, and save your changes: <code>--block_manager=file</code></p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>If you did not need to exit the wizard, click <strong>Continue</strong>. Kudu masters and tablet
-servers are started. Otherwise, go to the Kudu service, and click <strong>Actions &gt; Start</strong>.</p>
-</li>
-<li>
-<p>Verify that services are running using one of the following methods:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Examine the output of the <code>ps</code> command on servers to verify one or both of <code>kudu-master</code>
-or <code>kudu-tserver</code> processes is running.</p>
-</li>
-<li>
-<p>Access the Master or Tablet Server web UI by opening <code>http://&lt;_host_name_&gt;:8051/</code>
-for masters
-or <code>http://&lt;_host_name_&gt;:8050/</code> for tablet servers.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>To manage services, go to the Kudu service and use the <strong>Actions</strong> menu to stop, start, restart, or
-otherwise manage the service.</p>
-</li>
-</ol>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="qs_access_web_ui"><a class="link" href="#qs_access_web_ui">Access the Web UIs</a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>In addition to the Kudu service in Cloudera Manager, each of the masters and tablet
-servers exposes a Web UI. By default, the web UI binds to port <code>8051</code> for masters,
-and <code>8050</code> for tablet servers, on interface
-<code>0.0.0.0</code>.</p>
-</div>
-<div class="paragraph">
-<p>From any host&#8217;s Web UI, you can access the Web UIs for each other master and
-tablet server, as well as logs, memory reports, and a JSON dump of metrics.
-Explore the Web UIs to get an idea of what you might find.</p>
+<p>The VM contains Kudu, Impala, and other Hadoop ecosystem projects, for your convenience.</p>
 </div>
 </div>
 </div>
@@ -204,33 +63,15 @@ Explore the Web UIs to get an idea of what you might find.</p>
 </div>
 </div>
 <div class="sect1">
-<h2 id="_test_fault_tolerance"><a class="link" href="#_test_fault_tolerance">Test Fault Tolerance</a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>If you are running at least three masters and at least three tablet servers are
-serving each tablet, you can stop any master or tablet server and the Kudu
-cluster will recover. See <a href="#how_many_hosts">How Many Tablet Servers?</a>. If all masters disappear, tablet
-servers will continue to serve cached data. If too many tablet servers disappear and
-a quorum cannot be achieved, writes to that tablet will fail.</p>
-</div>
-<div class="paragraph">
-<p>To stop a process running in the foreground, interrupt it with Ctrl-C.
-Otherwise, kill the process using operating system utilities. Monitor the log
-files and the Web UIs to see what happens when a failure is detected, and what
-happens when a new master or tablet server joins the cluster.</p>
-</div>
-</div>
-</div>
-<div class="sect1">
 <h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
 <div class="sectionbody">
 <div class="ulist">
 <ul>
 <li>
-<p><a href="quickstart.html">Get Started With Kudu</a></p>
+<p><a href="installation.html">Installing Kudu</a></p>
 </li>
 <li>
-<p><a href="installation.html">Kudu Installation Guide</a></p>
+<p><a href="configuration.html">Configuring Kudu</a></p>
 </li>
 </ul>
 </div>
@@ -240,17 +81,58 @@ happens when a new master or tablet server joins the cluster.</p>
     <div class="col-md-3">
 
   <div id="toc" data-spy="affix" data-offset-top="70">
-    <ul class="sectlevel1">
-<li><a href="#quickstart_vm">Kudu Quickstart VM</a></li>
-<li><a href="#_prerequisites">Prerequisites</a></li>
-<li><a href="#how_many_hosts">How Many Tablet Servers?</a></li>
-<li><a href="#_install_kudu_using_parcels">Install Kudu Using Parcels</a></li>
-<li><a href="#qs_access_web_ui">Access the Web UIs</a></li>
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Getting Started with Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#quickstart_vm">Get The Kudu Quickstart VM</a></li>
 <li><a href="#_load_some_data">Load Some Data</a></li>
 <li><a href="#_retrieve_some_data">Retrieve Some Data</a></li>
-<li><a href="#_test_fault_tolerance">Test Fault Tolerance</a></li>
 <li><a href="#_next_steps">Next Steps</a></li>
-</ul>
+</ul> 
+      </li> 
+  </ul>
   </div>
     </div>
   </div>

@@ -2,8 +2,23 @@
 title: Kudu Configuration Reference
 layout: default
 
-last_updated: 'Last updated 2015-09-17 17:23:10 PDT'
+last_updated: 'Last updated 2015-09-24 16:01:47 PDT'
 ---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 
 
 <div class="container">
@@ -125,6 +140,32 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="cfile-dump_memory_limit_hard_bytes"><a class="link" href="#cfile-dump_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -366,32 +407,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="cfile-dump_memory_limit_hard_mb"><a class="link" href="#cfile-dump_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -934,6 +949,32 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-admin_memory_limit_hard_bytes"><a class="link" href="#kudu-admin_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-admin_flagfile"><a class="link" href="#kudu-admin_flagfile"><code>--flagfile</code></a></h4>
 <div class="paragraph">
 <p>load flags from file</p>
@@ -1166,32 +1207,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-admin_memory_limit_hard_mb"><a class="link" href="#kudu-admin_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -1786,6 +1801,32 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-fs_dump_memory_limit_hard_bytes"><a class="link" href="#kudu-fs_dump_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-fs_dump_flagfile"><a class="link" href="#kudu-fs_dump_flagfile"><code>--flagfile</code></a></h4>
 <div class="paragraph">
 <p>load flags from file</p>
@@ -2018,32 +2059,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-fs_dump_memory_limit_hard_mb"><a class="link" href="#kudu-fs_dump_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -2638,6 +2653,32 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-fs_list_memory_limit_hard_bytes"><a class="link" href="#kudu-fs_list_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-fs_list_flagfile"><a class="link" href="#kudu-fs_list_flagfile"><code>--flagfile</code></a></h4>
 <div class="paragraph">
 <p>load flags from file</p>
@@ -2870,32 +2911,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-fs_list_memory_limit_hard_mb"><a class="link" href="#kudu-fs_list_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -3360,6 +3375,32 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-ksck_memory_limit_hard_bytes"><a class="link" href="#kudu-ksck_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-ksck_flagfile"><a class="link" href="#kudu-ksck_flagfile"><code>--flagfile</code></a></h4>
 <div class="paragraph">
 <p>load flags from file</p>
@@ -3592,32 +3633,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-ksck_memory_limit_hard_mb"><a class="link" href="#kudu-ksck_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -4290,6 +4305,32 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-master_memory_limit_hard_bytes"><a class="link" href="#kudu-master_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-master_flagfile"><a class="link" href="#kudu-master_flagfile"><code>--flagfile</code></a></h4>
 <div class="paragraph">
 <p>load flags from file</p>
@@ -4522,32 +4563,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-master_memory_limit_hard_mb"><a class="link" href="#kudu-master_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -5038,6 +5053,32 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-pbc-dump_memory_limit_hard_bytes"><a class="link" href="#kudu-pbc-dump_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-pbc-dump_flagfile"><a class="link" href="#kudu-pbc-dump_flagfile"><code>--flagfile</code></a></h4>
 <div class="paragraph">
 <p>load flags from file</p>
@@ -5270,32 +5311,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-pbc-dump_memory_limit_hard_mb"><a class="link" href="#kudu-pbc-dump_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -5968,6 +5983,32 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-tserver_memory_limit_hard_bytes"><a class="link" href="#kudu-tserver_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-tserver_flagfile"><a class="link" href="#kudu-tserver_flagfile"><code>--flagfile</code></a></h4>
 <div class="paragraph">
 <p>load flags from file</p>
@@ -6200,32 +6241,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-tserver_memory_limit_hard_mb"><a class="link" href="#kudu-tserver_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -6768,6 +6783,32 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-ts-cli_memory_limit_hard_bytes"><a class="link" href="#kudu-ts-cli_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-ts-cli_flagfile"><a class="link" href="#kudu-ts-cli_flagfile"><code>--flagfile</code></a></h4>
 <div class="paragraph">
 <p>load flags from file</p>
@@ -7000,32 +7041,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-ts-cli_memory_limit_hard_mb"><a class="link" href="#kudu-ts-cli_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -7568,6 +7583,32 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect3">
+<h4 id="log-dump_memory_limit_hard_bytes"><a class="link" href="#log-dump_memory_limit_hard_bytes"><code>--memory_limit_hard_bytes</code></a></h4>
+<div class="paragraph">
+<p>Maximum amount of memory this daemon should use, in bytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="log-dump_flagfile"><a class="link" href="#log-dump_flagfile"><code>--flagfile</code></a></h4>
 <div class="paragraph">
 <p>load flags from file</p>
@@ -7800,32 +7841,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="log-dump_memory_limit_hard_mb"><a class="link" href="#log-dump_memory_limit_hard_mb"><code>--memory_limit_hard_mb</code></a></h4>
-<div class="paragraph">
-<p>Maximum amount of memory this daemon should use, in megabytes. A value of 0 autosizes based on the total system memory. A value of -1 disables all memory limiting.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int64</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>0</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -8611,6 +8626,32 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="cfile-dump_memory_limit_soft_percentage"><a class="link" href="#cfile-dump_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -9659,6 +9700,32 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="kudu-admin_memory_limit_soft_percentage"><a class="link" href="#kudu-admin_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -11158,6 +11225,32 @@ for informational purposes only. They are subject to change or be removed withou
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-fs_dump_memory_limit_soft_percentage"><a class="link" href="#kudu-fs_dump_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-fs_dump_metrics_retirement_age_ms"><a class="link" href="#kudu-fs_dump_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></h4>
 <div class="paragraph">
 <p>The minimum number of milliseconds a metric will be kept for after it is no longer active. (Advanced option)</p>
@@ -12648,6 +12741,32 @@ for informational purposes only. They are subject to change or be removed withou
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-fs_list_memory_limit_soft_percentage"><a class="link" href="#kudu-fs_list_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-fs_list_metrics_retirement_age_ms"><a class="link" href="#kudu-fs_list_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></h4>
 <div class="paragraph">
 <p>The minimum number of milliseconds a metric will be kept for after it is no longer active. (Advanced option)</p>
@@ -13141,6 +13260,32 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="kudu-ksck_memory_limit_soft_percentage"><a class="link" href="#kudu-ksck_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -14188,7 +14333,7 @@ for informational purposes only. They are subject to change or be removed withou
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>30000</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -14240,33 +14385,7 @@ for informational purposes only. They are subject to change or be removed withou
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-master_tserver_unresponsive_timeout_ms"><a class="link" href="#kudu-master_tserver_unresponsive_timeout_ms"><code>--tserver_unresponsive_timeout_ms</code></a></h4>
-<div class="paragraph">
-<p>The period of time that a Master can go without receiving a heartbeat from a tablet server before considering it ineligible for hosting a replacement replica when under-replication is detected.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>30000</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -14349,6 +14468,32 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">experimental</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="kudu-master_tserver_unresponsive_timeout_ms"><a class="link" href="#kudu-master_tserver_unresponsive_timeout_ms"><code>--tserver_unresponsive_timeout_ms</code></a></h4>
+<div class="paragraph">
+<p>The period of time that a Master can go without receiving a heartbeat from a tablet server before considering it unresponsive. Unresponsive servers are not selected when assigning replicas during table creation or re-replication.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
 </tr>
 </tbody>
 </table>
@@ -15134,32 +15279,6 @@ for informational purposes only. They are subject to change or be removed withou
 </table>
 </div>
 <div class="sect3">
-<h4 id="kudu-master_scanner_ttl_ms"><a class="link" href="#kudu-master_scanner_ttl_ms"><code>--scanner_ttl_ms</code></a></h4>
-<div class="paragraph">
-<p>Number of milliseconds of inactivity allowed for a scannerbefore it may be expired</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
 <h4 id="kudu-master_scanner_batch_size_rows"><a class="link" href="#kudu-master_scanner_batch_size_rows"><code>--scanner_batch_size_rows</code></a></h4>
 <div class="paragraph">
 <p>The number of rows to batch for servicing scan requests.</p>
@@ -15359,6 +15478,32 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="kudu-master_memory_limit_soft_percentage"><a class="link" href="#kudu-master_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -15705,6 +15850,32 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="kudu-pbc-dump_memory_limit_soft_percentage"><a class="link" href="#kudu-pbc-dump_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -17464,32 +17635,6 @@ for informational purposes only. They are subject to change or be removed withou
 </table>
 </div>
 <div class="sect3">
-<h4 id="kudu-tserver_scanner_ttl_ms"><a class="link" href="#kudu-tserver_scanner_ttl_ms"><code>--scanner_ttl_ms</code></a></h4>
-<div class="paragraph">
-<p>Number of milliseconds of inactivity allowed for a scannerbefore it may be expired</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60000</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
 <h4 id="kudu-tserver_scanner_batch_size_rows"><a class="link" href="#kudu-tserver_scanner_batch_size_rows"><code>--scanner_batch_size_rows</code></a></h4>
 <div class="paragraph">
 <p>The number of rows to batch for servicing scan requests.</p>
@@ -17689,6 +17834,32 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
+<h4 id="kudu-tserver_memory_limit_soft_percentage"><a class="link" href="#kudu-tserver_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -18746,6 +18917,32 @@ for informational purposes only. They are subject to change or be removed withou
 </table>
 </div>
 <div class="sect3">
+<h4 id="kudu-ts-cli_memory_limit_soft_percentage"><a class="link" href="#kudu-ts-cli_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="kudu-ts-cli_metrics_retirement_age_ms"><a class="link" href="#kudu-ts-cli_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></h4>
 <div class="paragraph">
 <p>The minimum number of milliseconds a metric will be kept for after it is no longer active. (Advanced option)</p>
@@ -19534,6 +19731,32 @@ for informational purposes only. They are subject to change or be removed withou
 </table>
 </div>
 <div class="sect3">
+<h4 id="log-dump_memory_limit_soft_percentage"><a class="link" href="#log-dump_memory_limit_soft_percentage"><code>--memory_limit_soft_percentage</code></a></h4>
+<div class="paragraph">
+<p>Percentage of the hard memory limit that this daemon may consume before memory throttling of writes begins. The greater the excess, the higher the chance of throttling. In general, a lower soft limit leads to smoother write latencies but decreased throughput, and vice versa for a higher soft limit.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>60</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect3">
 <h4 id="log-dump_metrics_retirement_age_ms"><a class="link" href="#log-dump_metrics_retirement_age_ms"><code>--metrics_retirement_age_ms</code></a></h4>
 <div class="paragraph">
 <p>The minimum number of milliseconds a metric will be kept for after it is no longer active. (Advanced option)</p>
@@ -19775,7 +19998,27 @@ for informational purposes only. They are subject to change or be removed withou
     <div class="col-md-3">
 
   <div id="toc" data-spy="affix" data-offset-top="70">
-    <ul class="sectlevel1">
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Kudu Configuration Reference</span>
+            <ul class="sectlevel1">
 <li><a href="#cfile-dump_stable"><code>cfile-dump</code> Flags</a>
 <ul class="sectlevel2">
 <li><a href="#_stable_flags">Stable Flags</a></li>
@@ -19850,7 +20093,33 @@ for informational purposes only. They are subject to change or be removed withou
 <li><a href="#log-dump_unsupported"><code>log-dump</code> Unsupported Flags</a></li>
 </ul>
 </li>
-</ul>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+  </ul>
   </div>
     </div>
   </div>

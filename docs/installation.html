@@ -2,8 +2,23 @@
 title: Installing Kudu
 layout: default
 
-last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
+last_updated: 'Last updated 2015-09-24 14:59:54 PDT'
 ---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
 
 
 <div class="container">
@@ -14,9 +29,22 @@ last_updated: 'Last updated 2015-09-17 16:59:26 PDT'
       <div id="preamble">
 <div class="sectionbody">
 <div class="paragraph">
-<p>You can deploy Kudu on a CDH cluster using packages or parcels, or you can build Kudu
-from source. To run Kudu without installing anything, use the link:quickstart.html#quickstart_vm
-[Kudu Quickstart VM].</p>
+<p>You can deploy Kudu on a cluster using packages or you can build Kudu
+from source. To run Kudu without installing anything, use the <a href="quickstart.html#quickstart_vm">Kudu Quickstart VM</a>.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Kudu is currently easier to install and manage with <a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.htm">Cloudera Manager</a>,
+version 5.4.7 or newer. Please follow the installation instructions on the
+<a href="http://unittest.jenkins.cloudera.com/job/kudu-master-suitehelp/lastSuccessfulBuild/artifact/cloudera/topics/kudu_installation.html">Cloudera website</a>.
+</td>
+</tr>
+</table>
 </div>
 </div>
 </div>
@@ -27,14 +55,11 @@ from source. To run Kudu without installing anything, use the link:quickstart.ht
 <div class="title">Hardware</div>
 <ul>
 <li>
-<p>A Cloudera Manager or CDH cluster which meets these requirements:</p>
+<p>A host to run the Kudu master.</p>
 </li>
 <li>
-<p>A host to run the Kudu master. // TODO multi-master</p>
-</li>
-<li>
-<p>One or more hosts to run Kudu tablet servers. Production clusters need at least
-three tablet servers.</p>
+<p>One or more hosts to run Kudu tablet servers. When using replication, a minimum of
+three tablet servers is necessary.</p>
 </li>
 </ul>
 </div>
@@ -42,50 +67,16 @@ three tablet servers.</p>
 <div class="title">Operating System</div>
 <ul>
 <li>
-<p>An operating system and version supported by Cloudera.</p>
+<p>RHEL 6 or Ubuntu Trusty</p>
 </li>
 <li>
 <p>A kernel version and filesystem that support <em>hole punching</em>. On Linux, hole punching
 is the use of the <code>fallocate()</code> system call with the <code>FALLOC_FL_PUNCH_HOLE</code> option
-set.</p>
+set. See <a href="troubleshooting.html#req_hole_punching">troubleshooting hole punching</a> for more
+information.</p>
 </li>
 <li>
-<p>RHEL or CentOS 6.4 or later, patched to kernel version of 2.6.32-358 or later.
-Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole punching.</p>
-</li>
-<li>
-<p>Ubuntu 14.04 includes version 3.13 of the Linux kernel, which supports hole punching.</p>
-</li>
-<li>
-<p>Newer versions of the EXT4 or XFS filesystems support hole punching, but EXT3 does
-not. Older versions of XFS that do not support hole punching return a <code>EOPNOTSUPP</code>
-(operation not supported) error. Older versions of either EXT4 or XFS that do
-not support hole punching cause Kudu to emit an error message such as the following
-and to fail to start:</p>
-<div class="listingblock">
-<div class="content">
-<pre>Error during hole punch test. The log block manager requires a
-filesystem with hole punching support such as ext4 or xfs. On el6,
-kernel version 2.6.32-358 or newer is required. To run without hole
-punching (at the cost of some efficiency and scalability), reconfigure
-Kudu with --block_manager=file. Refer to the Kudu documentation for more
-details. Raw error message follows.</pre>
-</div>
-</div>
-</li>
-<li>
-<p>Without hole punching support, the log block manager is unsafe to use. It won&#8217;t
-ever delete blocks, consuming ever more space on disk.</p>
-</li>
-<li>
-<p>If you can&#8217;t use hole punching in your environment, you can still
-try Kudu. Enable the file block manager instead of the log block manager by
-adding the <code>--block_manager=file</code> flag to the commands you use to start the master
-and tablet servers. The file block manager does not scale as well as the log block
-manager.</p>
-</li>
-<li>
-<p>OSX is not supported, even for building from source.</p>
+<p>OSX and Windows are not supported, even for building from source.</p>
 </li>
 </ul>
 </div>
@@ -97,131 +88,7 @@ manager.</p>
 media may significantly improve latency when Kudu is configured for its highest
 durability levels.</p>
 </li>
-<li>
-<p>A filesystem that supports <a href="#req_hole_punching">hole punching</a> is recommended.
-Supported filesystems
-are EXT4 and XFS.</p>
-</li>
 </ul>
-</div>
-</div>
-</div>
-<div class="sect1">
-<h2 id="_install_using_parcels"><a class="link" href="#_install_using_parcels">Install Using Parcels</a></h2>
-<div class="sectionbody">
-<div class="paragraph">
-<p>If you use Cloudera Manager, the easiest way to install Kudu is with parcels. First,
-add the parcel repository to Cloudera Manager. Then distribute Kudu to your cluster.
-Here is the procedure in detail.</p>
-</div>
-<div class="admonitionblock warning">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-warning" title="Warning"></i>
-</td>
-<td class="content">
-If you install Kudu using parcels and your filesystem does not support hole
-punching, the initial service start-up will fail and you will need to use an advanced
-configuration snippet to configure the file block manager. See <a href="#req_hole_punching">Hole Punching</a>.
-</td>
-</tr>
-</table>
-</div>
-<div class="olist arabic">
-<ol class="arabic">
-<li>
-<p>Download the Custom Service Descriptor (CSD) JAR to the <code>/opt/cloudera/csd</code> directory.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ cd /opt/cloudera/csd
-$ wget http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/lastSuccessfulBuild/artifact/java/kudu-csd/target/KUDU-0.1.0.jar</pre>
-</div>
-</div>
-</li>
-<li>
-<p>Restart the Cloudera Manager server to detect the CSD.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ sudo service cloudera-scm-server restart</pre>
-</div>
-</div>
-</li>
-<li>
-<p>In Cloudera Manager, go to <strong>Hosts &gt; Parcels</strong>. Find <code>KUDU</code> in the list, and click <strong>Download</strong>.</p>
-</li>
-<li>
-<p>When the download is complete, select your cluster from the <strong>Locations</strong> selector,
-and click <strong>Distribute</strong>. If you only have one cluster, it is selected automatically.</p>
-</li>
-<li>
-<p>When distribution is complete, click <strong>Activate</strong> to activate the parcel. Restart
-the cluster when prompted. This may take several minutes.</p>
-</li>
-<li>
-<p>Install the Kudu service on your cluster. Go to the cluster where you want to install Kudu.
-Click <strong>Actions &gt; Add a Service</strong>. Select <strong>Kudu</strong> from the list, and click <strong>Continue</strong>.</p>
-</li>
-<li>
-<p>Select a host to be the master and one or more hosts to be tablet servers. A
-host can act as both a master and a tablet server, but this may cause performance
-problems on a large cluster. The Kudu master process is not resource-intensive and
-can be collocated with other similar processes such as the HDFS Namenode or YARN
-ResourceManager.</p>
-<div class="paragraph">
-<p>After selecting hosts, click <strong>Continue</strong>.</p>
-</div>
-</li>
-<li>
-<p>Configure the storage locations for Kudu data and WAL files on masters and tablet
-servers. Cloudera Manager will create the directories.</p>
-<div class="ulist">
-<ul>
-<li>
-<p>You can use the same directory to store data and WALs.</p>
-</li>
-<li>
-<p>You cannot store WALs in a subdirectory of the data directory.</p>
-</li>
-<li>
-<p>If any host is both a master and tablet server, configure different directories
-for master and tablet server. For instance, <code>/data/kudu/master</code> and <code>/data/kudu/tserver</code>.</p>
-</li>
-<li>
-<p>If you choose a filesystem that does not support <a href="#req_hole_punching">hole punching</a>,
-service start-up will fail. Exit the configuration wizard by clicking the <strong>Cloudera</strong>
-logo at the top of the Cloudera Manager interface, and search for the
-<strong>Kudu Service Advanced Configuration Snippet (Safety Valve) for gflagfile</strong> configuration option.
-Add the following line to it, and save your changes: <code>--block_manager=file</code></p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>If you did not need to exit the wizard, click <strong>Continue</strong>. Kudu masters and tablet
-servers are started. Otherwise, go to the Kudu service, and click <strong>Actions &gt; Start</strong>.</p>
-</li>
-<li>
-<p>Verify that services are running using one of the following methods:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Examine the output of the <code>ps</code> command on servers to verify one or both of <code>kudu-master</code>
-or <code>kudu-tserver</code> processes is running.</p>
-</li>
-<li>
-<p>Access the Master or Tablet Server web UI by opening <code>http://&lt;_host_name_&gt;:8051/</code>
-for masters
-or <code>http://&lt;_host_name_&gt;:8050/</code> for tablet servers.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>To manage services, go to the Kudu service and use the <strong>Actions</strong> menu to stop, start, restart, or
-otherwise manage the service.</p>
-</li>
-</ol>
 </div>
 </div>
 </div>
@@ -229,9 +96,7 @@ otherwise manage the service.</p>
 <h2 id="install_packages"><a class="link" href="#install_packages">Install Using Packages</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>If you prefer, you can install Kudu using packages managed by the operating system instead of Cloudera
-Manager parcels. After installing Kudu using packages, Cloudera recommends managing the Kudu service
-using Cloudera Manager, but you can manage it manually via operating system utilities.</p>
+<p>You can install Kudu using packages managed by the operating system.</p>
 </div>
 <table id="kudu_package_locations" class="tableblock frame-all grid-all spread">
 <caption class="title">Table 1. Kudu Package Locations</caption>
@@ -248,28 +113,23 @@ using Cloudera Manager, but you can manage it manually via operating system util
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">RHEL</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/cloudera-kudu.repo">RHEL 5</a> or <a href="http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/cloudera-kudu.repo">RHEL 6</a></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://repos.jenkins.cloudera.com/kudu-nightly/redhat/5/x86_64/kudu/0.1.0/RPMS/x86_64/">RHEL 5</a> or <a href="http://repos.jenkins.cloudera.com/kudu-nightly/redhat/6/x86_64/kudu/0.1.0/RPMS/x86_64/">RHEL 6</a></p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">SLES</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://repos.jenkins.cloudera.com/kudu-nightly/sles/11/x86_64/kudu/cloudera-kudu.repo">SLES 11</a></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">TBD</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo">RHEL 6</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/0.5.0/RPMS/x86_64/">RHEL 6</a></p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Ubuntu</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/precise/amd64/kudu/cloudera.list">Precise</a> or <a href="http://repos.jenkins.cloudera.com/kudu-nightly/ubuntu/trusty/amd64/kudu/cloudera.list">Trusty</a></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">TBD</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Debian</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://repos.jenkins.cloudera.com/kudu-nightly/debian/wheezy/amd64/kudu/cloudera.list">Wheezy</a></p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">TBD</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/cloudera.list">Trusty</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/">Trusty</a></p></td>
 </tr>
 </tbody>
 </table>
+<div class="listingblock">
+<div class="content">
+<pre>NOTE: For later versions of Ubuntu, the Ubuntu Trusty packages are reported to install, though they have not been extensively tested.</pre>
+</div>
+</div>
 <div class="sect2">
-<h3 id="_install_on_rhel_or_sles_hosts"><a class="link" href="#_install_on_rhel_or_sles_hosts">Install On RHEL or SLES Hosts</a></h3>
+<h3 id="_install_on_rhel_hosts"><a class="link" href="#_install_on_rhel_hosts">Install On RHEL Hosts</a></h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -291,105 +151,9 @@ sudo yum install kudu-client-devel            # Kudu C++ client SDK</pre>
 </li>
 <li>
 <p>To manually install the Kudu RPMs, first download them, then use the command
-<code>sudo rpm -ivh &lt;RPM to install&gt;</code>. If you do not use Cloudera Manager, install the
+<code>sudo rpm -ivh &lt;RPM to install&gt;</code> and install the
 <code>kudu-master</code> and <code>kudu-tserver</code> packages on the appropriate hosts. These packages
-provide the operating system commands to start and stop Kudu. Do not attempt to
-use operating system commands to start or stop Kudu if you use Cloudera Manager.</p>
-</li>
-<li>
-<p>Download the Custom Service Descriptor (CSD) JAR to the <code>/opt/cloudera/csd</code> directory.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ cd /opt/cloudera/csd
-$ wget http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/lastSuccessfulBuild/artifact/java/kudu-csd/target/KUDU-0.1.0.jar</pre>
-</div>
-</div>
-</li>
-<li>
-<p>Restart the Cloudera Manager server to detect the CSD.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ sudo service cloudera-scm-server restart</pre>
-</div>
-</div>
-</li>
-<li>
-<p>In Cloudera Manager, go to <strong>Hosts &gt; Parcels</strong>. Find <code>KUDU</code> in the list, and click <strong>Download</strong>.</p>
-</li>
-<li>
-<p>When the download is complete, select your cluster from the <strong>Locations</strong> selector,
-and click <strong>Distribute</strong>. If you only have one cluster, it is selected automatically.</p>
-</li>
-<li>
-<p>When distribution is complete, click <strong>Activate</strong> to activate the parcel. Restart
-the cluster when prompted. This may take several minutes.</p>
-</li>
-<li>
-<p>Install the Kudu service on your cluster. Go to the cluster where you want to install Kudu.
-Click <strong>Actions &gt; Add a Service</strong>. Select <strong>Kudu</strong> from the list, and click <strong>Continue</strong>.</p>
-</li>
-<li>
-<p>Select a host to be the master and one or more hosts to be tablet servers. A
-host can act as both a master and a tablet server, but this may cause performance
-problems on a large cluster. The Kudu master process is not resource-intensive and
-can be collocated with other similar processes such as the HDFS Namenode or YARN
-ResourceManager.</p>
-<div class="paragraph">
-<p>After selecting hosts, click <strong>Continue</strong>.</p>
-</div>
-</li>
-<li>
-<p>Configure the storage locations for Kudu data and WAL files on masters and tablet
-servers. Cloudera Manager will create the directories.</p>
-<div class="ulist">
-<ul>
-<li>
-<p>You can use the same directory to store data and WALs.</p>
-</li>
-<li>
-<p>You cannot store WALs in a subdirectory of the data directory.</p>
-</li>
-<li>
-<p>If any host is both a master and tablet server, configure different directories
-for master and tablet server. For instance, <code>/data/kudu/master</code> and <code>/data/kudu/tserver</code>.</p>
-</li>
-<li>
-<p>If you choose a filesystem that does not support <a href="#req_hole_punching">hole punching</a>,
-service start-up will fail. Exit the configuration wizard by clicking the <strong>Cloudera</strong>
-logo at the top of the Cloudera Manager interface, and search for the
-<strong>Kudu Service Advanced Configuration Snippet (Safety Valve) for gflagfile</strong> configuration option.
-Add the following line to it, and save your changes: <code>--block_manager=file</code></p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>If you did not need to exit the wizard, click <strong>Continue</strong>. Kudu masters and tablet
-servers are started. Otherwise, go to the Kudu service, and click <strong>Actions &gt; Start</strong>.</p>
-</li>
-<li>
-<p>Verify that services are running using one of the following methods:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>Examine the output of the <code>ps</code> command on servers to verify one or both of <code>kudu-master</code>
-or <code>kudu-tserver</code> processes is running.</p>
-</li>
-<li>
-<p>Access the Master or Tablet Server web UI by opening <code>http://&lt;_host_name_&gt;:8051/</code>
-for masters
-or <code>http://&lt;_host_name_&gt;:8050/</code> for tablet servers.</p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>To manage services, go to the Kudu service and use the <strong>Actions</strong> menu to stop, start, restart, or
-otherwise manage the service.</p>
-</li>
-<li>
-<p>To manage Kudu without using Cloudera Manager, continue to <a href="#required_config_without_cm">Required Configuration Without Cloudera Manager</a>.
-Cloudera recommends using Cloudera Manager.</p>
+provide the operating system commands to start and stop Kudu.</p>
 </li>
 </ol>
 </div>
@@ -406,10 +170,8 @@ packages on each host.</p>
 <pre>sudo apt-get install kudu                     # Base Kudu files
 
 sudo apt-get install kudu-master              # Service scripts for managing kudu-master
-                                              # Use ONLY if you do not use Cloudera Manager
 
 sudo apt-get install kudu-tserver             # Service scripts for managing kudu-tserver
-                                              # Use ONLY if you do not use Cloudera Manager
 
 sudo apt-get install libkuduclient0           # Kudu C++ client shared library
 
@@ -419,81 +181,9 @@ sudo apt-get install  libkuduclient-dev       # Kudu C++ client SDK</pre>
 </li>
 <li>
 <p>To manually install individual DEBs, first download them, then use the command
-<code>sudo dpkg -i &lt;DEB to install&gt;</code>. If you do not use Cloudera Manager, install the
+<code>sudo dpkg -i &lt;DEB to install&gt;</code> and install the
 <code>kudu-master</code> and <code>kudu-tserver</code> packages on the appropriate hosts. These packages
-provide the operating system commands to start and stop Kudu. Do not attempt to
-use operating system commands to start or stop Kudu if you use Cloudera Manager.</p>
-</li>
-<li>
-<p>Download the Custom Service Descriptor (CSD) JAR to the <code>/opt/cloudera/csd</code> directory.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ cd /opt/cloudera/csd
-$ wget http://golden.jenkins.sf.cloudera.com/job/Kudu-CSD/lastSuccessfulBuild/artifact/java/kudu-csd/target/KUDU-0.1.0.jar</pre>
-</div>
-</div>
-</li>
-<li>
-<p>Restart the Cloudera Manager server to detect the CSD.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ sudo service cloudera-scm-server restart</pre>
-</div>
-</div>
-</li>
-<li>
-<p>In Cloudera Manager, go to <strong>Hosts &gt; Parcels</strong>. Find <code>KUDU</code> in the list, and click <strong>Download</strong>.</p>
-</li>
-<li>
-<p>When the download is complete, select your cluster from the <strong>Locations</strong> selector,
-and click <strong>Distribute</strong>. If you only have one cluster, it is selected automatically.</p>
-</li>
-<li>
-<p>When distribution is complete, click <strong>Activate</strong> to activate the parcel. Restart
-the cluster when prompted. This may take several minutes.</p>
-</li>
-<li>
-<p>Install the Kudu service on your cluster. Go to the cluster where you want to install Kudu.
-Click <strong>Actions &gt; Add a Service</strong>. Select <strong>Kudu</strong> from the list, and click <strong>Continue</strong>.</p>
-</li>
-<li>
-<p>Select a host to be the master and one or more hosts to be tablet servers. A
-host can act as both a master and a tablet server, but this may cause performance
-problems on a large cluster. The Kudu master process is not resource-intensive and
-can be collocated with other similar processes such as the HDFS Namenode or YARN
-ResourceManager.</p>
-<div class="paragraph">
-<p>After selecting hosts, click <strong>Continue</strong>.</p>
-</div>
-</li>
-<li>
-<p>Configure the storage locations for Kudu data and WAL files on masters and tablet
-servers. Cloudera Manager will create the directories.</p>
-<div class="ulist">
-<ul>
-<li>
-<p>You can use the same directory to store data and WALs.</p>
-</li>
-<li>
-<p>You cannot store WALs in a subdirectory of the data directory.</p>
-</li>
-<li>
-<p>If any host is both a master and tablet server, configure different directories
-for master and tablet server. For instance, <code>/data/kudu/master</code> and <code>/data/kudu/tserver</code>.</p>
-</li>
-<li>
-<p>If you choose a filesystem that does not support <a href="#req_hole_punching">hole punching</a>,
-service start-up will fail. Exit the configuration wizard by clicking the <strong>Cloudera</strong>
-logo at the top of the Cloudera Manager interface, and search for the
-<strong>Kudu Service Advanced Configuration Snippet (Safety Valve) for gflagfile</strong> configuration option.
-Add the following line to it, and save your changes: <code>--block_manager=file</code></p>
-</li>
-</ul>
-</div>
-</li>
-<li>
-<p>If you did not need to exit the wizard, click <strong>Continue</strong>. Kudu masters and tablet
-servers are started. Otherwise, go to the Kudu service, and click <strong>Actions &gt; Start</strong>.</p>
+provide the operating system commands to start and stop Kudu.</p>
 </li>
 <li>
 <p>Verify that services are running using one of the following methods:</p>
@@ -511,22 +201,13 @@ or <code>http://&lt;_host_name_&gt;:8050/</code> for tablet servers.</p>
 </ul>
 </div>
 </li>
-<li>
-<p>To manage services, go to the Kudu service and use the <strong>Actions</strong> menu to stop, start, restart, or
-otherwise manage the service.</p>
-</li>
-<li>
-<p>To manage Kudu without using Cloudera Manager, continue to <a href="#required_config_without_cm">Required Configuration Without Cloudera Manager</a>.
-Cloudera recommends using Cloudera Manager.</p>
-</li>
 </ol>
 </div>
 </div>
 <div class="sect2">
-<h3 id="required_config_without_cm"><a class="link" href="#required_config_without_cm">Required Configuration Without Cloudera Manager</a></h3>
+<h3 id="required_config_without_cm"><a class="link" href="#required_config_without_cm">Required Configuration</a></h3>
 <div class="paragraph">
-<p>If you install Kudu from packages and choose not to use Cloudera Manager, additional
-configuration steps are required on each host before you can start Kudu services.</p>
+<p>Additional configuration steps are required on each host before you can start Kudu services.</p>
 </div>
 <div class="olist arabic">
 <ol class="arabic">
@@ -588,17 +269,26 @@ Kudu</a>.</p>
 <div class="sectionbody">
 <div class="paragraph">
 <p>If installing Kudu using parcels or packages does not provide the flexibility you
-need, you can build Kudu from source. You can build from source on any operating system
-supported by Cloudera.</p>
+need, you can build Kudu from source. You can build from source on any supported operating system.</p>
 </div>
-<div class="admonitionblock note">
+<div class="admonitionblock warning">
 <table>
 <tr>
 <td class="icon">
-<i class="fa icon-note" title="Note"></i>
+<i class="fa icon-warning" title="Warning"></i>
 </td>
 <td class="content">
-It is not possible to build Kudu on OSX.
+<div class="title">Known Build Issues</div>
+<div class="ulist">
+<ul>
+<li>
+<p>It is not possible to build Kudu on OSX or Microsoft Windows.</p>
+</li>
+<li>
+<p>Do not build Kudu using <code>gcc</code> 4.6. It is known to cause runtime and test failures.</p>
+</li>
+</ul>
+</div>
 </td>
 </tr>
 </table>
@@ -802,9 +492,9 @@ make install</code></pre>
 <h2 id="build_cpp_client"><a class="link" href="#build_cpp_client">Installing the C++ Client Libraries</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>If you use Cloudera Manager with parcels, and need the Kudu client libraries to be
-available for local development, install the <code>kudu-client</code> and <code>kudu-client-devel</code>
-package for your platform. See <a href="#install_packages">Install Using Packages</a>.</p>
+<p>If you need access to the Kudu client libraries for development,
+install the <code>kudu-client</code> and <code>kudu-client-devel</code> package for your platform.
+See <a href="#install_packages">Install Using Packages</a>.</p>
 </div>
 <div class="admonitionblock warning">
 <table>
@@ -895,14 +585,21 @@ in <code>java/kudu-client/target/apidocs/index.html</code>.
     <div class="col-md-3">
 
   <div id="toc" data-spy="affix" data-offset-top="70">
-    <ul class="sectlevel1">
+  <ul>
+
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Installation Guide</span>
+            <ul class="sectlevel1">
 <li><a href="#_prerequisites_and_requirements">Prerequisites and Requirements</a></li>
-<li><a href="#_install_using_parcels">Install Using Parcels</a></li>
 <li><a href="#install_packages">Install Using Packages</a>
 <ul class="sectlevel2">
-<li><a href="#_install_on_rhel_or_sles_hosts">Install On RHEL or SLES Hosts</a></li>
+<li><a href="#_install_on_rhel_hosts">Install On RHEL Hosts</a></li>
 <li><a href="#_install_on_ubuntu_or_debian_hosts">Install On Ubuntu or Debian Hosts</a></li>
-<li><a href="#required_config_without_cm">Required Configuration Without Cloudera Manager</a></li>
+<li><a href="#required_config_without_cm">Required Configuration</a></li>
 </ul>
 </li>
 <li><a href="#_build_from_source">Build From Source</a>
@@ -914,7 +611,45 @@ in <code>java/kudu-client/target/apidocs/index.html</code>.
 <li><a href="#build_cpp_client">Installing the C++ Client Libraries</a></li>
 <li><a href="#build_java_client">Build the Java Client</a></li>
 <li><a href="#view_api">View API Documentation</a></li>
-</ul>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+  </ul>
   </div>
     </div>
   </div>
