@@ -1,7 +1,18 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2014, Cloudera, inc.
-# Confidential Cloudera Information: Covered by NDA.
+# Copyright 2014 Cloudera, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 from __future__ import division
 
@@ -35,12 +46,13 @@ class KuduBasicsBase(object):
         os.makedirs("{0}/master/logs".format(local_path))
 
         path = ["{0}/kudu-master".format(bin_path),
-                "-master_rpc_bind_addresses=0.0.0.0:0",
-                "-master_wal_dir={0}/master/data".format(local_path),
-                "-master_data_dirs={0}/master/data".format(local_path),
+                "-rpc_server_allow_ephemeral_ports",
+                "-rpc_bind_addresses=0.0.0.0:0",
+                "-fs_wal_dir={0}/master/data".format(local_path),
+                "-fs_data_dirs={0}/master/data".format(local_path),
                 "-log_dir={0}/master/logs".format(local_path),
                 "-logtostderr",
-                "-master_web_port=0",
+                "-webserver_port=0",
                 "-server_dump_info_path={0}/master/config.json".format(local_path)
               ]
 
@@ -67,17 +79,18 @@ class KuduBasicsBase(object):
             os.makedirs("{0}/ts/{1}".format(local_path, m))
             os.makedirs("{0}/ts/{1}/logs".format(local_path, m))
 
-            path = ["{0}/kudu-tablet_server".format(bin_path),
-                    "-tablet_server_rpc_bind_addresses=0.0.0.0:0",
-                    "-tablet_server_master_addrs=127.0.0.1:{0}".format(master_port),
-                    "-tablet_server_web_port=0",
+            path = ["{0}/kudu-tserver".format(bin_path),
+                    "-rpc_server_allow_ephemeral_ports",
+                    "-rpc_bind_addresses=0.0.0.0:0",
+                    "-tserver_master_addrs=127.0.0.1:{0}".format(master_port),
+                    "-webserver_port=0",
                     "-log_dir={0}/master/logs".format(local_path),
                     "-logtostderr",
-                    "-tablet_server_data_dirs={0}/ts/{1}/data".format(local_path, m),
-                    "-tablet_server_wal_dir={0}/ts/{1}/data".format(local_path, m),
+                    "-fs_data_dirs={0}/ts/{1}/data".format(local_path, m),
+                    "-fs_wal_dir={0}/ts/{1}/data".format(local_path, m),
                   ]
             p = subprocess.Popen(path, shell=False)
-            fid = open("{0}/ts/{1}/kudu-tablet_server.pid".format(local_path, m), "w+")
+            fid = open("{0}/ts/{1}/kudu-tserver.pid".format(local_path, m), "w+")
             fid.write("{0}".format(p.pid))
             fid.close()
 
@@ -294,8 +307,8 @@ class TestScanner(KuduBasicsBase, unittest.TestCase):
         try:
             scanner.add_comparison_predicate("string_val", kudu.GREATER_EQUAL, 1)
         except Exception, e:
-            self.assertEqual("Invalid argument: non-string predicate " +
-                             "on string column: string_val", str(e))
+            self.assertEqual("Invalid argument: non-string value " +
+                             "for string column string_val", str(e))
 
         try:
             scanner.add_comparison_predicate("string_val", kudu.GREATER_EQUAL, None)

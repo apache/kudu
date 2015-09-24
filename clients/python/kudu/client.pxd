@@ -1,5 +1,16 @@
-# Copyright (c) 2014, Cloudera, inc.
-# Confidential Cloudera Information: Covered by NDA.
+# Copyright 2014 Cloudera, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # distutils: language = c++
 
@@ -87,14 +98,11 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         COMPRESSION_LZ4 " kudu::client::KuduColumnStorageAttributes::LZ4"
         COMPRESSION_ZLIB " kudu::client::KuduColumnStorageAttributes::ZLIB"
 
-    cdef cppclass KuduColumnStorageAttributes:
+    cdef struct KuduColumnStorageAttributes:
         KuduColumnStorageAttributes()
-        KuduColumnStorageAttributes(EncodingType encoding)
-        KuduColumnStorageAttributes(EncodingType encoding,
-                                    CompressionType compression)
 
-        EncodingType encoding()
-        CompressionType compression()
+        EncodingType encoding
+        CompressionType compression
         string ToString()
 
     cdef cppclass KuduColumnSchema:
@@ -115,7 +123,7 @@ cdef extern from "kudu/client/schema.h" namespace "kudu::client" nogil:
         KuduSchema()
         KuduSchema(vector[KuduColumnSchema]& columns, int key_columns)
 
-        void Reset(vector[KuduColumnSchema]& columns, int key_columns)
+        Status Reset(vector[KuduColumnSchema]& columns, int key_columns)
 
         bool Equals(KuduSchema& other)
         KuduColumnSchema Column(size_t idx)
