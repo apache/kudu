@@ -82,20 +82,20 @@ end %>
   <div id="toc" data-spy="affix" data-offset-top="70">
   <ul>
 <%
-      toplevels = {
-        :introduction => "Introducing Kudu",
-        :quickstart => "Getting Started with Kudu",
-        :installation => "Installation Guide",
-        :kudu_impala_integration => "Using Impala with Kudu",
-        :administration => "Administering Kudu",
-        :troubleshooting => "Troubleshooting Kudu",
-        :developing => "Developing Applications with Kudu",
-        :contributing => "Contributing to Kudu",
-        :style_guide => "Kudu Style Guide",
-        :configuration_reference => "Kudu Configuration Reference",
-        :resources => "Kudu Resources"
-      }
-      toplevels.each do |page, pagename|
+      toplevels = [
+        :introduction, "Introducing Kudu",
+        :quickstart, "Getting Started with Kudu",
+        :installation, "Installation Guide",
+        :kudu_impala_integration, "Using Impala with Kudu",
+        :administration, "Administering Kudu",
+        :troubleshooting, "Troubleshooting Kudu",
+        :developing, "Developing Applications with Kudu",
+        :contributing, "Contributing to Kudu",
+        :style_guide, "Kudu Style Guide",
+        :configuration_reference, "Kudu Configuration Reference",
+        :resources, "Kudu Resources"
+      ]
+      toplevels.each_slice(2) do |page, pagename|
 %>
       <li>
 <%       if page.to_s == (attr 'docname')
