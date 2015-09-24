@@ -40,11 +40,11 @@ using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 
-DEFINE_string(master_address, "localhost",
-              "Address of master server to run against");
+DEFINE_string(master_address, "",
+              "Address of master server to run against.");
 
 DEFINE_bool(checksum_scan, false,
-            "Perform a checksum scan on data in the cluster");
+            "Perform a checksum scan on data in the cluster.");
 
 DEFINE_string(tables, "",
               "Tables to check (comma-separated list of names). "
@@ -58,9 +58,13 @@ namespace kudu {
 namespace tools {
 
 static string GetKsckUsage(const char* progname) {
-  string msg = Substitute("Usage: $0\n", progname);
-  msg += "The tool defaults to running against a local Master.\n";
-  msg += "Using --vmodule=ksck=1 gives more details at runtime.\n";
+  string msg = Substitute("Usage: $0 --master_address=<addr> <flags>\n\n", progname);
+  msg += "Check the health of a Kudu cluster.\n\n"
+         "By default, ksck checks that master and tablet server processes are running,\n"
+         "and that table metadata is consistent. Use the 'checksum' flag to check that\n"
+         "tablet data is consistent (also see the 'tables' and 'tablets' flags below).\n"
+         "Use the 'checksum_snapshot' along with 'checksum' if the table or tablets are\n"
+         "actively receiving inserts or updates.";
   return msg;
 }
 
@@ -111,6 +115,10 @@ static void RunKsck(vector<string>* error_messages) {
 
 int main(int argc, char** argv) {
   google::SetUsageMessage(kudu::tools::GetKsckUsage(argv[0]));
+  if (argc < 2) {
+    google::ShowUsageWithFlagsRestrict(argv[0], __FILE__);
+    exit(1);
+  }
   kudu::ParseCommandLineFlags(&argc, &argv, true);
   FLAGS_logtostderr = true;
   kudu::InitGoogleLoggingSafe(argv[0]);

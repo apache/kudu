@@ -41,14 +41,14 @@ using std::tr1::unordered_map;
 using strings::Substitute;
 
 DEFINE_int32(checksum_timeout_sec, 120,
-             "Maximum total seconds that we will wait for a checksum scan to "
-             "complete before timing out.");
+             "Maximum total seconds to wait for a checksum scan to complete "
+             "before timing out.");
 DEFINE_int32(checksum_scan_concurrency, 4,
              "Number of concurrent checksum scans to execute per tablet server.");
 DEFINE_bool(checksum_snapshot, true, "Should the checksum scanner use a snapshot scan");
 DEFINE_uint64(checksum_snapshot_timestamp, ChecksumOptions::kCurrentTimestamp,
-              "timestamp to use for snapshot checksum scans, defaults to 0, which means"
-              "use the current timestamp of a tablet server involved in the scan");
+              "timestamp to use for snapshot checksum scans, defaults to 0, which "
+              "uses the current timestamp of a tablet server involved in the scan");
 
 // Print an informational message to cerr.
 static ostream& Info() {
