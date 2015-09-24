@@ -2,7 +2,7 @@
 
 ## TL;DR
 
-    curl -s http://github.mtv.cloudera.com/raw/CDH/kudu-examples/master/demo-vm-setup/bootstrap.sh | bash
+    curl -s https://raw.githubusercontent.com/cloudera/kudu-examples/master/demo-vm-setup/bootstrap.sh | bash
 
 ## Single Steps
 
@@ -10,7 +10,7 @@ To use Kudu with the special Cloudera Quickstart VM follow the below
 instructions:
 
   * Install Oracle VirtualBox
-  * `git clone http://github.mtv.cloudera.com/CDH/kudu-examples.git
+  * `git clone https://github.com/cloudera/kudu-examples.git
   * `cd kudu-examples`
   * `./demo-vm-setup/setup-kudu-demo-vm.sh`
 
