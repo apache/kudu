@@ -1,5 +1,16 @@
-# Copyright (c) 2014, Cloudera, inc.
-# Confidential Cloudera Information: Covered by NDA.
+# Copyright 2014 Cloudera, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 # distutils: language = c++
 # cython: embedsignature = True
@@ -342,7 +353,9 @@ cdef class Schema:
             vcols.push_back(deref(col.schema))
 
         result.num_key_columns = num_key_columns
-        result.schema.Reset(vcols, num_key_columns)
+        # TODO: don't use KuduSchema::Reset (deprecated)
+        cdef Status s = result.schema.Reset(vcols, num_key_columns)
+        raise_on_failure(&s)
 
         return result
 
