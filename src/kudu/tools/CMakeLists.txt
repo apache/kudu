@@ -78,7 +78,7 @@ target_link_libraries(ksck
   ${KUDU_BASE_LIBS}
 )
 
-add_executable(kudu-ksck ksck_main.cc)
+add_executable(kudu-ksck kudu-ksck.cc)
 target_link_libraries(kudu-ksck
   ksck
 )
