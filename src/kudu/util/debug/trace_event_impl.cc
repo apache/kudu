@@ -1,6 +1,5 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
-// Portions copyright (c) 2015 Cloudera, inc. All rights reserved.
-// Confidential Cloudera Information: Covered by NDA.
+// Portions copyright 2015 Cloudera, Inc.
 //
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.

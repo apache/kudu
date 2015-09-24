@@ -113,7 +113,7 @@ def main():
     os.makedirs(d)
   with file(output_path, "w") as f:
     print >>f, """
-// Copyright (c) 2015, Cloudera, inc.
+// Copyright 2015 Cloudera, Inc.
 // THIS FILE IS AUTO-GENERATED! DO NOT EDIT!
 //
 // id_hash=%(identifying_hash)s

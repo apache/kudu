@@ -1,5 +1,4 @@
-# Copyright (c) 2014, Cloudera, inc.
-# Confidential Cloudera Information: Covered by NDA.
+# Copyright 2014 Cloudera, Inc.
 
 # Maven build artifacts
 dependency-reduced-pom.xml
