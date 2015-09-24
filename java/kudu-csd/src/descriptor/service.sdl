@@ -95,8 +95,8 @@
         {
           "name" : "master_address",
           "label" : "Master Address",
-          "description" : "Overrides the addresses where the Master will listen for connections. The default is to assume one standalone master running on localhost at port 7051.",
-          "configName" : "rpc_bind_addresses",
+          "description" : "Configuration that's automatically set by Cloudera Manager to propagate the Master's address to the Tablet Servers.",
+          "configName" : "server.address",
           "required" : "false",
           "type" : "string",
           "default" : ""
