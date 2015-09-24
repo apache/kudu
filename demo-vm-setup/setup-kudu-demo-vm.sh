@@ -1,5 +1,5 @@
 #!/bin/bash
-set -eux
+set -eu
 
 # http://stackoverflow.com/questions/7126580/expand-a-possible-relative-path-in-bash
 dir_resolve()
@@ -8,8 +8,8 @@ dir_resolve()
   echo "`pwd -P`"
 }
 
-: ${VIRTUALBOX_URL:=http://cloudera-kudu-beta.s3.amazonaws.com/cloudera-quickstart-vm-5.4.2-kudu-virtualbox.zip}
 : ${VIRTUALBOX_NAME:=cloudera-quickstart-vm-5.4.2-kudu-virtualbox}
+: ${VIRTUALBOX_URL:=http://cloudera-kudu-beta.s3.amazonaws.com/${VIRTUALBOX_NAME}.ova}
 
 # VM Settings default.
 : ${VM_NAME:=kudu-demo}
@@ -23,17 +23,13 @@ if ! which VBoxManage >/dev/null ; then
 fi
 
 # Download quickstart VM
-if [ -d ${VIRTUALBOX_NAME} ]; then
+OVF=${VIRTUALBOX_NAME}.ova
+if [ -e ${VIRTUALBOX_NAME}.ova ]; then
   echo Using previously downloaded image
 else
   echo "Downloading Virtualbox Image file: ${VIRTUALBOX_URL}"
   curl -O ${VIRTUALBOX_URL}
-  # Unzip
-  unzip ${VIRTUALBOX_NAME}.zip
-  rm -f ${VIRTUALBOX_NAME}.zip
 fi
-
-OVF=${VIRTUALBOX_NAME}/${VIRTUALBOX_NAME}.ova
 
 # Create a host only network interface
 VBoxManage hostonlyif create
@@ -66,12 +62,12 @@ echo "Wait until services become available."
 # Wait until we can access the DFS
 while true; do
     val=`VBoxManage guestproperty get $VM_NAME "/VirtualBox/GuestInfo/Net/0/V4/IP"`
-    if [[ $val != "No value set!" ]]; then
-	ip=`echo $val | awk '{ print $2 }'`
-	curl http://$ip:50070/ &> /dev/null || :
-	if [[ $? -eq 0 ]]; then
-	    break
-	fi
+    if [[ "$val" != "No value set!" ]]; then
+       ip=`echo $val | awk '{ print $2 }'`
+        curl http://$ip:50070/ &> /dev/null || :
+         if [[ $? -eq 0 ]]; then
+            break
+          fi
     fi
     sleep 5
 done
