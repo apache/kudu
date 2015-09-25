@@ -143,6 +143,25 @@ active_nav: faq
           in a future release.
         </p>
       </dd>
+      <dt id="faq_in_memory">
+        Is Kudu an in-memory database?
+      </dt>
+      <dd>
+        <p>
+          Kudu is not an
+          <a href="https://en.wikipedia.org/wiki/In-memory_database">in-memory database</a>
+          since it primarily relies on disk storage. This should not be confused with Kudu's
+          experimental use of
+          <a href="https://en.wikipedia.org/wiki/Non-volatile_memory">persistent memory</a>
+          which is integrated in the block cache. In the future, this integration this will
+          allow the cache to survive tablet server restarts, so that it never starts "cold".
+        </p>
+        <p>
+          In addition, Kudu's C++ implementation can scale to very large heaps. Coupled
+          with its CPU-efficient design, Kudu's heap scalability offer outstanding
+          performance for data sets that fit in memory.
+        </p>
+      </dd>
       <dt id="faq_kudu_shell">
         Where is the Kudu shell?
       </dt>
@@ -201,7 +220,7 @@ active_nav: faq
           background. They operate under a (configurable) budget to prevent tablet servers
           from unexpectedly attempting to rewrite tens of GB of data at a time. Since compactions
           are so predictable, the only tuning knob available is the number of threads dedicated
-          to flushes and compactions in the <strong>compaction maintenance manager</strong>.
+          to flushes and compactions in the <strong>maintenance manager</strong>.
         </p>
       </dd>
       <dt id="faq_security">
@@ -309,10 +328,7 @@ active_nav: faq
         </p>
         <pre>INSERT INTO TABLE some_parquet_table SELECT * FROM kudu_table</pre>
         <p>
-          then use
-        </p>
-        <pre>distcp</pre>
-        <p>
+          then use <a href="http://hadoop.apache.org/docs/r1.2.1/distcp2.html">distcp</a>
           to copy the Parquet data to another cluster. While Kudu is in beta, we’re not
           expecting people to deploy mission-critical workloads on it yet.
         </p>
