@@ -18,16 +18,22 @@ execute_process(COMMAND "${CMAKE_CXX_COMPILER}" -v
                 ERROR_VARIABLE COMPILER_VERSION_FULL)
 message(INFO " ${COMPILER_VERSION_FULL}")
 
-# clang on Linux and Mac OS before 10.9
+# clang on Linux and Mac OS X before 10.9
 if("${COMPILER_VERSION_FULL}" MATCHES ".*clang version.*")
   set(COMPILER_FAMILY "clang")
   string(REGEX REPLACE ".*clang version ([0-9]+\\.[0-9]+).*" "\\1"
     COMPILER_VERSION "${COMPILER_VERSION_FULL}")
-# clang on Mac OS 10.9 and later
+# clang on Mac OS X 10.9 and later
 elseif("${COMPILER_VERSION_FULL}" MATCHES ".*based on LLVM.*")
   set(COMPILER_FAMILY "clang")
   string(REGEX REPLACE ".*based on LLVM ([0-9]+\\.[0.9]+).*" "\\1"
     COMPILER_VERSION "${COMPILER_VERSION_FULL}")
+
+# clang on Mac OS X, XCode 7. No version replacement is done
+# because Apple no longer advertises the upstream LLVM version.
+elseif("${COMPILER_VERSION_FULL}" MATCHES "clang-700\\..*")
+  set(COMPILER_FAMILY "clang")
+
 # gcc
 elseif("${COMPILER_VERSION_FULL}" MATCHES ".*gcc version.*")
   set(COMPILER_FAMILY "gcc")
