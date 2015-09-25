@@ -299,8 +299,9 @@ table.tableblock > .title,
   margin-bottom: 10px;
 }
 .admonitionblock > table td.icon {
-  text-align: center;
-  width: 60px;
+  width: 50px;
+  vertical-align: top;
+  height: 50px;
 }
 .admonitionblock > table td.icon img {
   max-width: none;
