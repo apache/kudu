@@ -77,6 +77,8 @@ configuration tasks.
 | Default | <xsl:choose><xsl:when test="default != ''">`<xsl:value-of select="default"/>`</xsl:when><xsl:otherwise>none</xsl:otherwise></xsl:choose>
 | Tags | <xsl:value-of select="tags"/>
 |===
+{nbsp}
+
 </xsl:if>
 </xsl:for-each>
 
@@ -99,6 +101,8 @@ Flags tagged `stable` and `advanced` are supported, but should be considered
 | Default | <xsl:choose><xsl:when test="default != ''">`<xsl:value-of select="default"/>`</xsl:when><xsl:otherwise>none</xsl:otherwise></xsl:choose>
 | Tags | <xsl:value-of select="tags"/>
 |===
+{nbsp}
+
 </xsl:if>
 </xsl:for-each>
 '''
