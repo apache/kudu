@@ -61,3 +61,13 @@ nav li.active a:hover {
     cursor: default;
     background: none;
 }
+
+.faq dt {
+    color: #337ab7;
+    font-style: italic;
+}
+
+.faq dd {
+    padding-bottom: 20px;
+    border-bottom: 1px solid #dddddd;
+}
