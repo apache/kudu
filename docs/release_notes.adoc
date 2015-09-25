@@ -82,9 +82,10 @@ High-efficiency queries::
 
 This release of Kudu is a public beta. Do not run this beta release on production clusters. During the
 public beta period, Kudu will be supported via a link:https://issues.cloudera.org/projects/KUDU
-[public JIRA] and a public mailing list link:mailto:kudu-user@cloudera.org[mailing
-list], which will be monitored by the Kudu development team and community members.
-Commercial support is not available at this time.
+[public JIRA] and a public
+link:https://groups.google.com/forum/#!forum/kudu-user[mailing list], which will be
+monitored by the Kudu development team and community members. Commercial support
+is not available at this time.
 
 * You can submit any issues or feedback related to your Kudu experience via either
 the JIRA system or the mailing list. The Kudu development team and community members
