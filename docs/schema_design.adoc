@@ -142,7 +142,7 @@ should only include the `last_name` column, then Kudu would guarantee that all
 customers with the same last name would fall into the same tablet, regardless of
 the provided split rows.
 
-[[hash-bucketing]
+[[hash-bucketing]]
 === Hash Bucketing
 
 Hash bucketing distributes rows by hash value into one of many buckets. Each
