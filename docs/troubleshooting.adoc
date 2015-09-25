@@ -19,15 +19,16 @@
 :imagesdir: ./images
 :icons: font
 :toc: left
-:toclevels: 3
+:toclevels: 2
 :doctype: book
 :backend: html5
 :sectlinks:
 :experimental:
 
-== Errors During Hole Punching Test
+== Issues starting the Master or Tablet Server
+
 [[req_hole_punching]]
-. Error during hole punch test
+=== Errors During Hole Punching Test
  - Kudu requires hole punching capabilities in order to be efficient.
  - RHEL or CentOS 6.4 or later, patched to kernel version of 2.6.32-358 or later.
   Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole punching.
@@ -54,5 +55,123 @@ details. Raw error message follows.
   and tablet servers. The file block manager does not scale as well as the log block
   manager.
 
-== NTP clock synchronization
+=== NTP clock synchronization
 // TODO fill with actual error messages and how to resolve.
+
+== Troubleshooting Performance Issues
+
+[[kudu_tracing]]
+=== Kudu Tracing
+
+Every Kudu daemon includes built-in tracing support based on the open source
+link:https://www.chromium.org/developers/how-tos/trace-event-profiling-tool[Chromium Tracing]
+framework. Tracing can be used to help diagnose latency issues or other problems
+on Kudu servers.
+
+==== Accessing the tracing interface
+The tracing interface is accessed via a web browser as part of the
+embedded web server in each of the Kudu daemons.
+
+.Tracing Interface URLs
+|===
+| Daemon | URL
+| Tablet Server | http://tablet-server-1.example.com:8050/tracing.html
+| Master | http://master-1.example.com:8051/tracing.html
+|===
+
+WARNING: The tracing interface is known to work in recent versions of Google Chrome. Other browsers
+may not work as expected.
+
+==== Collecting a trace
+
+After navigating to the tracing interface, click the 'Record' button on the top left corner
+of the screen. When beginning to diagnose a problem, it is easiest to select all categories
+using the provided button. Then hit 'Record' to begin recording a trace.
+
+While the system is recording a trace, events are collected into an in-memory ring buffer.
+This ring buffer is fixed size, so it will eventually fill up to 100%. However, new events
+are still being collected while older events are being removed. While recording the trace,
+trigger whatever behavior or workload you are interested in exploring.
+
+After collecting for several seconds, hit the 'stop' button, which will download and
+display the collected trace. Hitting the '?' key will bring up information on how to
+use the tracing interface to explore the trace.
+
+==== Saving a trace
+
+Collected traces can be saved as JSON files for later analysis. Simply collect a trace
+and hit the 'Save' button at the top of the screen. This results in a JSON document
+which may be later loaded into the same interface using the 'Load' button.
+
+=== RPC Timeout Traces
+
+If client applications are experiencing RPC timeouts, the Kudu tablet server
+`WARNING` level logs should contain a log entry which includes an RPC-level trace. For example:
+
+----
+W0922 00:56:52.313848 10858 inbound_call.cc:193] Call kudu.consensus.ConsensusService.UpdateConsensus
+from 192.168.1.102:43499 (request call id 3555909) took 1464ms (client timeout 1000).
+W0922 00:56:52.314888 10858 inbound_call.cc:197] Trace:
+0922 00:56:50.849505 (+     0us) service_pool.cc:97] Inserting onto call queue
+0922 00:56:50.849527 (+    22us) service_pool.cc:158] Handling call
+0922 00:56:50.849574 (+    47us) raft_consensus.cc:1008] Updating replica for 2 ops
+0922 00:56:50.849628 (+    54us) raft_consensus.cc:1050] Early marking committed up to term: 8 index: 880241
+0922 00:56:50.849968 (+   340us) raft_consensus.cc:1056] Triggering prepare for 2 ops
+0922 00:56:50.850119 (+   151us) log.cc:420] Serialized 1555 byte log entry
+0922 00:56:50.850213 (+    94us) raft_consensus.cc:1131] Marking committed up to term: 8 index: 880241
+0922 00:56:50.850218 (+     5us) raft_consensus.cc:1148] Updating last received op as term: 8 index: 880243
+0922 00:56:50.850219 (+     1us) raft_consensus.cc:1195] Filling consensus response to leader.
+0922 00:56:50.850221 (+     2us) raft_consensus.cc:1169] Waiting on the replicates to finish logging
+0922 00:56:52.313763 (+1463542us) raft_consensus.cc:1182] finished
+0922 00:56:52.313764 (+     1us) raft_consensus.cc:1190] UpdateReplicas() finished
+0922 00:56:52.313788 (+    24us) inbound_call.cc:114] Queueing success response
+----
+
+These traces can give an indication of which part of the request was slow, and are
+useful to include in bug reports related to RPC latency outliers.
+
+=== Kernel Stack Watchdog Traces
+
+Every Kudu server process has a background thread called the Stack Watchdog. This thread monitors the
+other threads in the server for cases where they've blocked for longer-than-expected periods of time.
+These traces can be indicative of operating-system level issues or heavily contended storage.
+When the watchdog thread identifies a case of thread blockage, it logs an entry in the `WARNING`
+log:
+
+----
+W0921 23:51:54.306350 10912 kernel_stack_watchdog.cc:111] Thread 10937 stuck at /data/kudu/consensus/log.cc:505 for 537ms:
+Kernel stack:
+[<ffffffffa00b209d>] do_get_write_access+0x29d/0x520 [jbd2]
+[<ffffffffa00b2471>] jbd2_journal_get_write_access+0x31/0x50 [jbd2]
+[<ffffffffa00fe6d8>] __ext4_journal_get_write_access+0x38/0x80 [ext4]
+[<ffffffffa00d9b23>] ext4_reserve_inode_write+0x73/0xa0 [ext4]
+[<ffffffffa00d9b9c>] ext4_mark_inode_dirty+0x4c/0x1d0 [ext4]
+[<ffffffffa00d9e90>] ext4_dirty_inode+0x40/0x60 [ext4]
+[<ffffffff811ac48b>] __mark_inode_dirty+0x3b/0x160
+[<ffffffff8119c742>] file_update_time+0xf2/0x170
+[<ffffffff8111c1e0>] __generic_file_aio_write+0x230/0x490
+[<ffffffff8111c4c8>] generic_file_aio_write+0x88/0x100
+[<ffffffffa00d3fb1>] ext4_file_write+0x61/0x1e0 [ext4]
+[<ffffffff81180f5b>] do_sync_readv_writev+0xfb/0x140
+[<ffffffff81181ee6>] do_readv_writev+0xd6/0x1f0
+[<ffffffff81182046>] vfs_writev+0x46/0x60
+[<ffffffff81182102>] sys_pwritev+0xa2/0xc0
+[<ffffffff8100b072>] system_call_fastpath+0x16/0x1b
+[<ffffffffffffffff>] 0xffffffffffffffff
+
+User stack:
+    @       0x3a1ace10c4  (unknown)
+    @          0x1262103  (unknown)
+    @          0x12622d4  (unknown)
+    @          0x12603df  (unknown)
+    @           0x8e7bfb  (unknown)
+    @           0x8f478b  (unknown)
+    @           0x8f55db  (unknown)
+    @          0x12a7b6f  (unknown)
+    @       0x3a1b007851  (unknown)
+    @       0x3a1ace894d  (unknown)
+    @              (nil)  (unknown)
+----
+
+These traces can be useful for diagnosing root-cause latency issues when they are caused by systems
+below Kudu, such as disk controllers or filesystems.

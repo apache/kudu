@@ -138,6 +138,7 @@ should include or duplicate these configuration options if you create custom con
 Review the configuration, including the default WAL and data directory locations,
 and adjust them according to your requirements.
 
+// tag::start_stop[]
 . Start Kudu services using the following commands:
 +
 [source,bash]
@@ -153,6 +154,7 @@ $ sudo service kudu-tserver start
 $ sudo service kudu-master stop
 $ sudo service kudu-tserver stop
 ----
+// end::start_stop[]
 
 . Configure the Kudu services to start automatically when the server starts, by adding
 them to the default runlevel.
