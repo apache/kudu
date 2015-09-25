@@ -38,7 +38,7 @@ include::installation.adoc[tags=view_api]
 == Working Examples
 
 Several example applications are provided in the
-link:https://github.com/cloudera/kudu-examples [kudu-examples] Github
+link:https://github.com/cloudera/kudu-examples[kudu-examples] Github
 repository. Each example includes a `README` that shows how to compile and run
 it. These examples illustrate correct usage of the Kudu APIs, as well as how to
 set up a virtual machine to run Kudu. The following list includes a few of the
