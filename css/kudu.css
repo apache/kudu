@@ -62,12 +62,27 @@ nav li.active a:hover {
     background: none;
 }
 
-.faq dt {
-    color: #337ab7;
-    font-style: italic;
+.faq #faq_toc {
+    margin: 20px 0;
 }
 
-.faq dd {
-    padding-bottom: 20px;
-    border-bottom: 1px solid #dddddd;
+.faq dl dt {
+    color: #333;
+    font-size: 18px;
+    font-weight: bold;
+    padding: 20px 0 10px 0;
+    border-top: 1px solid #dddddd;
+}
+
+.faq dl dd {
+    padding: 0 0 20px 0;
+    margin: 0;
+}
+
+.faq dl dd p {
+    margin: 0 0 10px 0;
+}
+
+.faq dl dd p:last-child {
+    margin: 0;
 }
