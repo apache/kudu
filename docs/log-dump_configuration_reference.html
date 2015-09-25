@@ -1,8 +1,8 @@
 ---
 title: log-dump Flags
 layout: default
-
-last_updated: 'Last updated 2015-09-24 16:01:47 PDT'
+active_nav: docs
+last_updated: 'Last updated 2015-09-24 16:13:58 PDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -32,6 +32,84 @@ limitations under the License.
 <div class="paragraph">
 <p>Flags tagged <code>stable</code> and not <code>advanced</code> are safe to use for common
 configuration tasks.</p>
+</div>
+<div class="sect2">
+<h3 id="log-dump_flagfile"><a class="link" href="#log-dump_flagfile"><code>--flagfile</code></a></h3>
+<div class="paragraph">
+<p>load flags from file</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="log-dump_help"><a class="link" href="#log-dump_help"><code>--help</code></a></h3>
+<div class="paragraph">
+<p>show help on all flags [tip: all flags can have two dashes]</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="log-dump_version"><a class="link" href="#log-dump_version"><code>--version</code></a></h3>
+<div class="paragraph">
+<p>show version and build info and exit</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 <div class="sect2">
 <h3 id="log-dump_log_force_fsync_all"><a class="link" href="#log-dump_log_force_fsync_all"><code>--log_force_fsync_all</code></a></h3>
@@ -164,84 +242,6 @@ configuration tasks.</p>
 </table>
 </div>
 <div class="sect2">
-<h3 id="log-dump_flagfile"><a class="link" href="#log-dump_flagfile"><code>--flagfile</code></a></h3>
-<div class="paragraph">
-<p>load flags from file</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="log-dump_help"><a class="link" href="#log-dump_help"><code>--help</code></a></h3>
-<div class="paragraph">
-<p>show help on all flags [tip: all flags can have two dashes]</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="log-dump_version"><a class="link" href="#log-dump_version"><code>--version</code></a></h3>
-<div class="paragraph">
-<p>show version and build info and exit</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
 <h3 id="log-dump_colorlogtostderr"><a class="link" href="#log-dump_colorlogtostderr"><code>--colorlogtostderr</code></a></h3>
 <div class="paragraph">
 <p>color messages logged to stderr (if supported by terminal)</p>
@@ -258,7 +258,7 @@ configuration tasks.</p>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>true</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -353,58 +353,6 @@ configuration tasks.</p>
 <div class="paragraph">
 <p>Flags tagged <code>stable</code> and <code>advanced</code> are supported, but should be considered
 "expert" options and should be used carefully and after thorough testing.</p>
-</div>
-<div class="sect2">
-<h3 id="log-dump_enable_process_lifetime_heap_profiling"><a class="link" href="#log-dump_enable_process_lifetime_heap_profiling"><code>--enable_process_lifetime_heap_profiling</code></a></h3>
-<div class="paragraph">
-<p>Enables heap profiling for the lifetime of the process. Profile output will be stored in the directory specified by -heap_profile_path. Enabling this option will disable the on-demand/remote server profile handlers.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="log-dump_heap_profile_path"><a class="link" href="#log-dump_heap_profile_path"><code>--heap_profile_path</code></a></h3>
-<div class="paragraph">
-<p>Output path to store heap profiles. If not set profiles are stored in /tmp/&lt;process-name&gt;.&lt;pid&gt;.&lt;n&gt;.heap.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
-</tr>
-</tbody>
-</table>
 </div>
 <div class="sect2">
 <h3 id="log-dump_fromenv"><a class="link" href="#log-dump_fromenv"><code>--fromenv</code></a></h3>
@@ -606,6 +554,58 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="log-dump_enable_process_lifetime_heap_profiling"><a class="link" href="#log-dump_enable_process_lifetime_heap_profiling"><code>--enable_process_lifetime_heap_profiling</code></a></h3>
+<div class="paragraph">
+<p>Enables heap profiling for the lifetime of the process. Profile output will be stored in the directory specified by -heap_profile_path. Enabling this option will disable the on-demand/remote server profile handlers.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">stable,advanced</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="sect2">
+<h3 id="log-dump_heap_profile_path"><a class="link" href="#log-dump_heap_profile_path"><code>--heap_profile_path</code></a></h3>
+<div class="paragraph">
+<p>Output path to store heap profiles. If not set profiles are stored in /tmp/&lt;process-name&gt;.&lt;pid&gt;.&lt;n&gt;.heap.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -833,7 +833,11 @@ configuration tasks.</p>
 
       <li>
 
-          <a href="contributing.html">Contributing to Kudu</a> 
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
       </li> 
       <li>
 
@@ -841,15 +845,7 @@ configuration tasks.</p>
       </li> 
       <li>
 
-          <a href="style_guide.html">Kudu Style Guide</a> 
-      </li> 
-      <li>
-
           <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
-      </li> 
-      <li>
-
-          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
       </li> 
       <li>
 
@@ -857,15 +853,7 @@ configuration tasks.</p>
       </li> 
       <li>
 
-          <a href="resources.html">Kudu Resources</a> 
-      </li> 
-      <li>
-
           <a href="troubleshooting.html">Troubleshooting Kudu</a> 
-      </li> 
-      <li>
-
-          <a href="introduction.html">Introducing Kudu</a> 
       </li> 
       <li>
 
@@ -873,7 +861,19 @@ configuration tasks.</p>
       </li> 
       <li>
 
-          <a href="quickstart.html">Getting Started with Kudu</a> 
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>

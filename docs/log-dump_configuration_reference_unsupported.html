@@ -1,8 +1,8 @@
 ---
 title: log-dump Unsupported Flags
 layout: default
-
-last_updated: 'Last updated 2015-09-24 16:01:47 PDT'
+active_nav: docs
+last_updated: 'Last updated 2015-09-24 16:13:58 PDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -32,6 +32,90 @@ limitations under the License.
 <p>Flags marked <code>advanced</code> or <code>experimental</code> and not marked <code>stable</code>, or flags with no stability tag, are <strong>unsupported</strong> and are included
 for informational purposes only. They are subject to change or be removed without notice.</p>
 </div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_codegen_dump_functions"><a class="link" href="#log-dump_codegen_dump_functions"><code>--codegen_dump_functions</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to print the LLVM IR for generated functions</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_codegen_dump_mc"><a class="link" href="#log-dump_codegen_dump_mc"><code>--codegen_dump_mc</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to dump the disassembly of the machine code for generated functions.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
+<h2 id="log-dump_codegen_time_compilation"><a class="link" href="#log-dump_codegen_time_compilation"><code>--codegen_time_compilation</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Whether to print time that each code generation request took.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>false</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">experimental,runtime</p></td>
+</tr>
+</tbody>
+</table>
 </div>
 </div>
 <div class="sect1">
@@ -511,6 +595,34 @@ for informational purposes only. They are subject to change or be removed withou
 </div>
 </div>
 <div class="sect1">
+<h2 id="log-dump_max_clock_sync_error_usec"><a class="link" href="#log-dump_max_clock_sync_error_usec"><code>--max_clock_sync_error_usec</code></a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Maximum allowed clock synchronization error as reported by NTP before the server will abort.</p>
+</div>
+<table class="tableblock frame-all grid-all" style="width: 50%;">
+<colgroup>
+<col style="width: 25%;">
+<col style="width: 75%;">
+</colgroup>
+<tbody>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>10000000</code></p></td>
+</tr>
+<tr>
+<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
+<td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<div class="sect1">
 <h2 id="log-dump_trace_to_console"><a class="link" href="#log-dump_trace_to_console"><code>--trace_to_console</code></a></h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -911,7 +1023,11 @@ for informational purposes only. They are subject to change or be removed withou
 
       <li>
 
-          <a href="contributing.html">Contributing to Kudu</a> 
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
       </li> 
       <li>
 
@@ -919,15 +1035,7 @@ for informational purposes only. They are subject to change or be removed withou
       </li> 
       <li>
 
-          <a href="style_guide.html">Kudu Style Guide</a> 
-      </li> 
-      <li>
-
           <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
-      </li> 
-      <li>
-
-          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
       </li> 
       <li>
 
@@ -935,15 +1043,7 @@ for informational purposes only. They are subject to change or be removed withou
       </li> 
       <li>
 
-          <a href="resources.html">Kudu Resources</a> 
-      </li> 
-      <li>
-
           <a href="troubleshooting.html">Troubleshooting Kudu</a> 
-      </li> 
-      <li>
-
-          <a href="introduction.html">Introducing Kudu</a> 
       </li> 
       <li>
 
@@ -951,7 +1051,19 @@ for informational purposes only. They are subject to change or be removed withou
       </li> 
       <li>
 
-          <a href="quickstart.html">Getting Started with Kudu</a> 
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+      <li>
+
+          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>
