@@ -81,16 +81,8 @@ done
 mkdir -p "$OUTPUT_DIR" "$GEN_DOC_DIR"
 
 # Create config flag references for each of the binaries below
-binaries=("cfile-dump" \
-          "kudu-admin" \
-          "kudu-fs_dump" \
-          "kudu-fs_list" \
-          "kudu-ksck" \
-          "kudu-master" \
-          "kudu-pbc-dump" \
-          "kudu-tserver" \
-          "kudu-ts-cli" \
-          "log-dump")
+binaries=("kudu-master" \
+          "kudu-tserver")
 
 for binary in ${binaries[@]}; do
   echo "Running $(basename $binary) --helpxml"
