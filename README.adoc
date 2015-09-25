@@ -24,7 +24,6 @@ The following dependencies are necessary to build kudu:
   including the following components:
   - boost::thread
   - boost::system (thread depends on it)
-- cmake 2.8.7
 - curl
 - gcc and g++ 4.4 or higher
 - liboauth-dev
@@ -42,7 +41,7 @@ been tested.
 
 Using Debian based distributions you can use the following command to install
 all the required packages:
-sudo apt-get install autoconf automake cmake curl gcc liboauth-dev libssl-dev\
+sudo apt-get install autoconf automake curl gcc liboauth-dev libssl-dev\
 libsasl2-dev libtool patch python ntp unzip libboost-all-dev pkg-config
 
 === Download and build thirdparty dependencies
