@@ -16,9 +16,7 @@
 ---
 title: <%= doctitle(:sanitize => true) || (attr 'untitled-label') %>
 layout: default
-<% if attr? :active_nav %>
-active_nav: <%= attr :active_nav %>
-<% end %>
+active_nav: docs
 last_updated: '<%= %(#{attr 'last-update-label'} #{attr :docdatetime}) %>'
 ---
 <!--
