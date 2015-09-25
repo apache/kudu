@@ -55,8 +55,55 @@ details. Raw error message follows.
   and tablet servers. The file block manager does not scale as well as the log block
   manager.
 
+[[ntp]]
 === NTP clock synchronization
-// TODO fill with actual error messages and how to resolve.
+For the master and tablet server daemons, the server's clock must be synchronized using NTP.
+In addition, the *maximum clock error* (not to be mistaken with the estimated error)
+be below a configurable threshold. The default value is 10 seconds, but it can be set with the flag
+`--max_clock_sync_error_usec`.
+
+If NTP is not installed, or if the clock is reported as unsynchronized, Kudu will not
+start, and will emit a message such as:
+----
+F0924 20:24:36.336809 14550 hybrid_clock.cc:191 Couldn't get the current time: Clock unsynchronized. Status: Service unavailable: Error reading clock. Clock considered unsynchronized.
+----
+If NTP is installed and synchronized, but the maximum clock error is too high,
+the user will see a message such as:
+----
+Sep 17, 8:13:09.873 PM FATAL hybrid_clock.cc:196 Couldn't get the current time: Clock synchronized, but error: 11130000, is past the maximum allowable error: 10000000
+----
+or
+----
+Sep 17, 8:32:31.135 PM FATAL tablet_server_main.cc:38 Check failed: _s.ok() Bad status: Service unavailable: Cannot initialize clock: Cannot initialize HybridClock. Clock synchronized but error was too high (11711000 us).
+----
+
+TIP: If NTP is installed the user can monitor the synchronization status by running
+`ntptime`. The relevant value is what is reported for `maximum error`.
+
+To install NTP, use the appropriate command for your operating system:
+[cols="1,1", options="header"]
+|===
+| OS | Command
+| Debian/Ubuntu | `sudo apt-get install ntp`
+| RHEL/Centos | `sudo yum install ntp`
+|===
+
+If NTP is installed but not running, start it using one of these commands:
+[cols="1,1", options="header"]
+|===
+| OS | Command
+| Debian/Ubuntu | `sudo service ntp restart`
+| RHEL/Centos | `sudo /etc/init.d/ntpd restart`
+|===
+
+TIP: NTP requires a network connection and may take a few minutes to synchronize the clock.
+In some cases a spotty network connection may make NTP report the clock as unsynchronized.
+A common, though temporary, workaround for this is to restart NTP with one of the commands above.
+
+If the clock is being reported as synchronized by NTP, but the maximum error is too high,
+the user can increase the threshold to a higher value by setting the above
+mentioned flag. For example to increase the possible maximum error to
+20 seconds the flag should be set like: `--max_clock_sync_error_usec=20000000`
 
 == Troubleshooting Performance Issues
 
