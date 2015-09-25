@@ -33,7 +33,7 @@ TODO: attributions for CC-A
       use standard tools like SQL engines or Spark to analyze your data.
     </p>
     <ul>
-      <li><a href="#">TODO: link to data modeling docs</a></li>
+      <li><a href="docs/schema_design.html">Learn more about schema design with Kudu</a></li>
     </ul>
   </div>
   <div class="col-md-6">
@@ -66,8 +66,10 @@ TODO: attributions for CC-A
       data analytics can dramatically simplifiy application architecture.
     </p>
     <ul>
-      <li><a href="#">TODO: link to API docs</a></li>
-      <li><a href="#">TODO: link to some perf results from YCSB?</a></li>
+      <li><a href="apidocs/">View the Java API docs</a></li>
+      <li><a href="https://github.com/cloudera/kudu/blob/master/src/kudu/client/client.h">View the C++ client API</a></li>
+      <li><a href="docs/developing.html">Learn more about developing applications with Kudu</a></li>
+      <!-- TODO: include a link to YCSB results -->
     </ul>
   </div>
 </div>
@@ -89,8 +91,10 @@ TODO: attributions for CC-A
       light workloads.
     </p>
     <ul>
-      <li><a href="#">TODO: link to Impala tutorial</a></li>
-      <li><a href="#">TODO: link to Spark setup/tutorial?</a></li>
+      <li><a href="docs/kudu_impala_integration.html">Learn more about integration with Impala</a>
+      <li><a href="https://github.com/cloudera/kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/RowCounter.java">
+        View an example of a MapReduce job on Kudu
+      </a></li>
     </ul>
   </div>
   <div class="col-md-6">
@@ -117,11 +121,11 @@ TODO: attributions for CC-A
       quickly.
     </p>
     <ul>
-      <li><a href="#">Link to tracing docs</a></li>
+      <li><a href="docs/administrationl.html">Learn more about administering Kudu</a></li>
+      <li><a href="docs/troubleshooting.html#kudu_tracing">Learn more about Kudu's tracing capabilities</a></li>
     </ul>
   </div>
 </div>
-
 
 <div class="row overview noborder">
   <div class="col-md-6">
@@ -174,6 +178,9 @@ TODO: attributions for CC-A
       queries. Using techniques such as lazy data materialization and predicate pushdown, Kudu can perform
       drill-down and needle-in-a-haystack queries over billions of rows and terabytes of data in seconds.
     </p>
+    <ul>
+      <li><a href="kudu.pdf">Read the Kudu paper for more details and a performance evaluation</a></li>
+    </ul>
   </div>
   <div class="col-md-6">
     <img src="{{site.github.url}}/img/kudu_vs_parquet.png" />
@@ -214,7 +221,7 @@ TODO: attributions for CC-A
     </p>
     <ul>
       <li><a href="http://raft.github.io/">Learn more about Raft Consensus</a></li>
-      <li><a href="#">TODO: link to docs Learn more about how Kudu uses Raft</a></li>
+      <li><a href="kudu.pdf">Read the Kudu paper for more details on its architecture</a></li>
     </ul>
   </div>
 </div>
@@ -227,8 +234,8 @@ TODO: attributions for CC-A
       of the next generation of hardware technologies.
       Kudu's storage is designed to take advantage of the IO
       characteristics of solid state drives, and it includes an
-      experimental cache implementation which can store data in 3DXpoint Optane
-      persistent memory.
+      experimental cache implementation based on the <a href="http://pmem.io">libpmem</a>
+      library which can store data in persistent memory.
     </p>
     <p>
       Kudu is implemented in C++, so it can scale easily to large amounts

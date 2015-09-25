@@ -587,6 +587,7 @@ table.tableblock > thead > tr > td,
 table.tableblock > tbody > tr > td,
 table.tableblock > tfoot > tr > td {
   border: 1px solid #dddddd;
+  padding: 4px;
 }
 table.tableblock > thead > tr > th,
 table.tableblock > thead > tr > td {
