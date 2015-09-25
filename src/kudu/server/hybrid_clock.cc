@@ -199,12 +199,12 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
   Status s = GetClockTime(&now);
   uint64_t now_usec = GetTimeUsecs(&now);
   if (PREDICT_FALSE(!s.ok())) {
-    LOG(FATAL) << Substitute("Could get the current time: Clock unsynchronized. "
+    LOG(FATAL) << Substitute("Couldn't get the current time: Clock unsynchronized. "
         "Status: $0", s.ToString());
   }
   // Test that the clock error didn't go past a pre-defined maximum error.
   if (PREDICT_FALSE(now.maxerror > FLAGS_max_clock_sync_error_usec)) {
-    LOG(FATAL) << Substitute("Could get the current time: Clock synchronized, "
+    LOG(FATAL) << Substitute("Couldn't get the current time: Clock synchronized, "
         "but error: $0, is past the maximum allowable error: $1",
         now.maxerror, FLAGS_max_clock_sync_error_usec);
   }
