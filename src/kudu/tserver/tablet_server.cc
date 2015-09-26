@@ -15,6 +15,7 @@
 #include "kudu/tserver/tablet_server.h"
 
 #include <boost/foreach.hpp>
+#include <glog/logging.h>
 #include <list>
 #include <vector>
 
@@ -121,6 +122,9 @@ Status TabletServer::Start() {
 
   RETURN_NOT_OK(heartbeater_->Start());
   RETURN_NOT_OK(maintenance_manager_->Init());
+
+  google::FlushLogFiles(google::INFO); // Flush the startup messages.
+
   return Status::OK();
 }
 

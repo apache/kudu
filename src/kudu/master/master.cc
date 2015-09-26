@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
+#include <glog/logging.h>
 #include <list>
 #include <vector>
 #include <tr1/memory>
@@ -95,7 +96,9 @@ Status Master::Init() {
 
 Status Master::Start() {
   RETURN_NOT_OK(StartAsync());
-  return WaitForCatalogManagerInit();
+  RETURN_NOT_OK(WaitForCatalogManagerInit());
+  google::FlushLogFiles(google::INFO); // Flush the startup messages.
+  return Status::OK();
 }
 
 Status Master::StartAsync() {
