@@ -58,6 +58,9 @@ link:developing.html[Developing Applications With Kudu]::
 link:schema_design.html[Kudu Schema Design]::
   Information about designing Kudu table schemas.
 
+link:transaction_semantics.html[Kudu Transaction Semantics]::
+  Information about transaction semantics in Kudu.
+
 link:contributing.html[Contributing to Kudu]::
   Get involved in the Kudu community.
 
