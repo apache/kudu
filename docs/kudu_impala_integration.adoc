@@ -186,8 +186,8 @@ alongside another Impala instance if you use packages.
 
 . Obtain the Impala_Kudu packages for your operating system from one of the following
 locations:
-** RHEL 6: http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/kimpala/
-** Ubuntu Trusty: http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/kimpala/
+** RHEL 6: http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/
+** Ubuntu Trusty: http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/
 . Install the packages on each host which will run a role in the Impala_Kudu service,
 using your operating system's utilities.
 . Add a new Impala service in Cloudera Manager.
@@ -208,8 +208,8 @@ Instead, follow <<install_impala_kudu_packages>>.
 
 . Obtain the Impala_Kudu packages for your operating system from one of the following
 locations:
-** RHEL 6: http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/kimpala/
-** Ubuntu Trusty: http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/kimpala/
+** RHEL 6: http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/
+** Ubuntu Trusty: http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/
 . Install the packages on each host which will run a role in the Impala_Kudu service,
 using your operating system's utilities.
 . Use the Impala start-up scripts to start each service on the relevant hosts:
