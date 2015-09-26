@@ -104,6 +104,11 @@ Status CheckDeadlineNotWithinMicros(const MonoTime& deadline, int64_t wait_for_u
 
 }  // anonymous namespace
 
+Status CheckClockSynchronized() {
+  ntptimeval junk;
+  return GetClockTime(&junk);
+}
+
 // Left shifting 12 bits gives us 12 bits for the logical value
 // and should still keep accurate microseconds time until 2100+
 const int HybridClock::kBitsToShift = 12;

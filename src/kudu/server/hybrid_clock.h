@@ -28,6 +28,9 @@ struct ntptimeval;
 namespace kudu {
 namespace server {
 
+// Returns OK if the clock is considered synchronized.
+Status CheckClockSynchronized();
+
 // The HybridTime clock.
 class HybridClock : public Clock {
  public:

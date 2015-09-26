@@ -151,6 +151,13 @@ Status ServerBase::Init() {
 
   InitSpinLockContentionProfiling();
 
+  // Check for NTP errors so it's less likely to get into a partially
+  // initialized state on disk during startup.
+  // TODO: Remove this check after fully fixing KUDU-1186.
+  if (FLAGS_use_hybrid_clock) {
+    RETURN_NOT_OK_PREPEND(CheckClockSynchronized(), "Clock is not synchronized");
+  }
+
   Status s = fs_manager_->Open();
   if (s.IsNotFound()) {
     LOG(INFO) << "Could not load existing FS layout: " << s.ToString();
