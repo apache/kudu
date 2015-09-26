@@ -30,7 +30,7 @@ Kudu_Impala, and CDH. This is the quickest way to take Kudu for a spin.
 
 [[quickstart_vm]]
 == Get The Kudu Quickstart VM
-Follow these link:https://github.com.cloudera/kudu-examples/[instructions] to download and set
+Follow these link:https://github.com/cloudera/kudu-examples/[instructions] to download and set
 up the Kudu Quickstart VM.
 
 The VM contains Kudu, Impala, and other Hadoop ecosystem projects, for your convenience.
