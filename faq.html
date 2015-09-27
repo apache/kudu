@@ -265,7 +265,19 @@ active_nav: faq
       </dt>
       <dd>
         <p>
-          TODO fill when David is done with his doc and link to it.
+          Yes, Kudu's consistency level is partially tunable, both for writes and reads (scans):
+          <li>Writes to a single tablet are always internally consistent. When writing to multiple tablets,
+              with multiple clients, the user has a choice between no consistency (the default) and
+              enforcing 'external consistency' in two different ways: one that optimizes for latency
+              but requires the user to perform additional work and another that requires no additional
+              work but can result in some additional latency.
+          <li>Scans have "Read Committed" consistency by default. If the user requires strict-serializable
+              scans it can choose the 'READ_AT_SNAPSHOT' mode and, optionally, provide a timestamp. The default
+              option is non-blocking but the 'READ_AT_SNAPSHOT' option may block when reading from non-leader
+              replicas.</li>
+
+          Kudu's transactional semantics are a work in progress, see <a href="docs/transaction_semantics.html">Kudu Transaction Semantics</a>
+          for further information and caveats.
         </p>
       </dd>
       <dt id="faq_jepsen">
@@ -274,8 +286,8 @@ active_nav: faq
       <dd>
         <p>
           No one has yet run <a href="https://github.com/aphyr/jepsen">Jepsen</a> on Kudu, but it
-          would be a very welcome contribution. However, we know of several issues (TODO: need links
-          to JIRAs) that need to be resolved before Kudu can pass a Jepsen serializable consistency
+          would be a very welcome contribution. However, we know of <a href="docs/transaction_semantics.html#known_issues">several issues</a>
+          that need to be resolved before Kudu can pass a Jepsen serializable consistency
           test. We are committed to passing Jepsen, as well as other consistency-focused stress
           tests, before releasing Kudu 1.0.
         </p>
