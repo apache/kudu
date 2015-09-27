@@ -90,7 +90,7 @@ into Impala and then load it into Kudu.
 [source,bash]
 ----
 $ hdfs dfs -mkdir /data
-$ hdfs dfs -put SFO_Passenger_Data/MonthlyPassengerData_200507_to_201506.csv /data
+$ hdfs dfs -put examples/SFO_Passenger_Data/MonthlyPassengerData_200507_to_201506.csv /data
 ----
 2. Create a new external Impala table to access the plain text data. To connect to Impala
 in the virtual machine issue the following command:
@@ -128,7 +128,7 @@ LOCATION '/data/';
 +
 [source,sql]
 ----
-SELECT count(*) FROM passenger_data_raw
+SELECT count(*) FROM passenger_data_raw;
 
 +----------+
 | count(*) |
@@ -176,7 +176,7 @@ lists the airline with the highest passenger volume over the entire reporting ti
 SELECT sum(passenger_count) AS total, operating_airline FROM passenger_data
   GROUP BY operating_airline
   HAVING total IS NOT null
-  ORDER BY total DESC LIMIT 10
+  ORDER BY total DESC LIMIT 10;
 
 +-----------+----------------------------------+
 | total     | operating_airline                |
@@ -205,10 +205,10 @@ UPDATE passenger_data
   SET operating_airline="United Airlines"
   WHERE operating_airline LIKE "United Airlines - Pre%";
 
-SELECT sum(passenger_counter) AS total, operating_airline FROM passenger_data
+SELECT sum(passenger_count) AS total, operating_airline FROM passenger_data
   GROUP BY operating_airline
   HAVING total IS NOT null
-  ORDER BY total DESC LIMIT 10
+  ORDER BY total DESC LIMIT 10;
 
 +-----------+--------------------+
 | total     | operating_airline  |
