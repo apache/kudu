@@ -35,7 +35,7 @@ To drop the table in Kudu and start fresh start the program with:
 To query the data via Impala, create a new Kudu table in Impala using the
 following command in the impala-shell.
 
-    CREATE TABLE dstat (
+    CREATE EXTERNAL TABLE dstat (
     `ts` BIGINT,
     `usr` FLOAT,
     `sys` FLOAT,
