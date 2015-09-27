@@ -117,7 +117,8 @@ or more to run Impala Daemon instances. Click *Continue*.
 If you use parcels, Cloudera recommends using the included `deploy.py` script to
 install and deploy the Impala_Kudu service into your cluster. If your cluster does
 not have an existing Impala instance, the script is optional. However, if you do
-have an existing Impala instance, you must use the script.
+have an existing Impala instance and want to install Impala_Kudu side-by-side,
+you must use the script.
 
 .Prerequisites
 * The script depends upon the Cloudera Manager API Python bindings. Install the bindings
@@ -143,9 +144,17 @@ hosted on `cloudera.com`.
 
 .Procedure
 
+- Download `deploy.py`.
++
+[source,bash]
+----
+$ curl -O https://raw.githubusercontent.com/cloudera/impala-kudu/feature/kudu/infra/deploy/deploy.py
+----
++
 - Run the `deploy.py` script with the following syntax to create a standalone IMPALA_KUDU
 service called `IMPALA_KUDU-1` on a cluster called `Cluster 1. Exactly one HDFS, Hive,
 and HBase service exist in Cluster 1, so service dependencies are not required.
+The cluster should not already have an Impala instance.
 +
 [source,bash]
 ----
@@ -163,7 +172,10 @@ $ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1' --hdfs_dependency 
 +
 - Run the `deploy.py` script with the following syntax to clone an existing IMPALA
 service called `IMPALA-1` to a new IMPALA_KUDU service called `IMPALA_KUDU-1`, where
-Cloudera Manager only manages a single cluster:
+Cloudera Manager only manages a single cluster.  This new `IMPALA_KUDU-1` service
+can run side by side with the `IMPALA-1` service if there is sufficient RAM for both.
+`IMPALA_KUDU-1` should be given at least 16 GB of RAM and possibly more depending
+on the complexity of the workload and the query concurrency level.
 +
 [source,bash]
 ----
