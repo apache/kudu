@@ -1,4 +1,4 @@
-# Cloudera Quickstart VM
+# Kudu Quickstart VM
 
 ## TL;DR
 
@@ -6,7 +6,7 @@
 
 ## Single Steps
 
-To use Kudu with the special Cloudera Quickstart VM follow the below
+To use Kudu with the special Kudu Quickstart VM follow the below
 instructions:
 
   * Install Oracle VirtualBox from https://www.virtualbox.org/wiki/Downloads.
@@ -21,7 +21,7 @@ cd kudu-examples
 
 The setup script will download a VirtualBox appliance image and import it in
 VirtualBox. In addition, it will create a new host-only network adapter with
-DHCP. 
+DHCP.
 
 After the VM is started, it will extract the current IP address and
 add a new `/etc/hosts` entry pointing from the IP of the VM to the hostname
