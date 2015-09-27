@@ -1,6 +1,6 @@
 #!/bin/bash
 HOST=quickstart.cloudera
-USER=cloudera
+USER=demo
 ssh $USER@$HOST <<'ENDSSH'
 set +x
 # Install dependencies
@@ -8,7 +8,7 @@ sudo yum install -y gcc-c++ python-devel python-ipython
 
 # Copy python client
 cp -R /media/sf_examples/clients/python ~/
-sudo chown cloudera:cloudera python
+sudo chown demo python
 sudo chmod -R g+rw python
 sudo chmod -R o+r python
 

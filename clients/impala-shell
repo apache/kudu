@@ -1,4 +1,4 @@
 #!/bin/bash
 HOST=quickstart.cloudera
-USER=cloudera
+USER=demo
 ssh $USER@$HOST -t impala-shell
