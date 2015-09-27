@@ -74,7 +74,7 @@ done
 
 if ! grep -q quickstart.cloudera /etc/hosts ; then
 echo "Updating the /etc/hosts file requires sudo rights."
-sudo bash -e -c 'echo "#Cloudera Quickstart VM" >> /etc/hosts'
+sudo bash -e -c 'echo "#Kudu Quickstart VM" >> /etc/hosts'
 sudo bash -c "echo $ip quickstart.cloudera >> /etc/hosts"
 else
 echo "Hostname setup already done, check if the IP address of the VM"
@@ -84,8 +84,8 @@ cat /etc/hosts
 fi
 
 echo "========================================================================="
-echo "Cloudera Quickstart VM installed successfully"
+echo "Kudu Quickstart VM installed successfully"
 echo "To use the C++ and Python examples from this repository, you have to SSH"
-echo "to the VM using the user 'cloudera' with the password 'cloudera'. "
+echo "to the VM using the user 'demo' with the password 'demo'. "
 echo ""
 echo "You'll find the examples mounted as a shared folder at /media/sf_examples"
