@@ -127,6 +127,9 @@ RESULT=$?
 if [ $RESULT -ne 0 ]; then
   exit $RESULT
 fi
+mkdir -p "$OUTPUT_DIR/images"
+cp $ROOT/docs/images/* "$OUTPUT_DIR/images/"
+
 
 echo
 echo ----------------------------

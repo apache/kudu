@@ -147,7 +147,16 @@ compaction, do not need to transmit the data over the network. This results in a
 substantial reduction in network traffic for heavy write scenarios.
 
 == Architectural Overview
-INSERT DIAGRAM HERE
+
+The following diagram shows a Kudu cluster with three masters and multiple tablet
+servers, each serving multiple tablets. It illustrates how RAFT consensus is used
+to allow for both leaders and followers for both the masters and tablet servers. In
+addition, a tablet server can be a leader for some tablets, and a follower for others.
+Leaders are shown in gold, while followers are shown in blue.
+
+NOTE: Multiple masters are not supported during the Kudu beta period.
+
+image::kudu-architecture-2.png[Kudu Architecture, 800]
 
 [[kudu_use_cases]]
 == Example Use Cases
