@@ -27,7 +27,7 @@
 
 Kudu provides C++ and Java client APIs, as well as reference examples to illustrate
 their use. A Python API is included, but it is currently considered experimental,
-unstable, and is subject to change at any time.
+unstable, and subject to change at any time.
 
 WARNING: Use of server-side or private interfaces is not supported, and interfaces
 which are not part of public APIs have no stability guarantees.
@@ -41,8 +41,9 @@ Several example applications are provided in the
 link:https://github.com/cloudera/kudu-examples[kudu-examples] Github
 repository. Each example includes a `README` that shows how to compile and run
 it. These examples illustrate correct usage of the Kudu APIs, as well as how to
-set up a virtual machine to run Kudu. The following list includes a few of the
-examples that are available today.
+set up a virtual machine to run Kudu. The following list includes some of the
+examples that are available today. Check the repository itself in case this list goes
+out of date.
 
 `java-example`::
   A simple Java application which connects to a Kudu instance, creates a table, writes data to it, then drops the table.
@@ -53,6 +54,7 @@ examples that are available today.
   An experimental Python client for Kudu.
 `demo-vm-setup`::
   Scripts to download and run a VirtualBox virtual machine with Kudu already installed.
+  See link:quickstart.html[Quickstart] for more information.
 
 These examples should serve as helpful starting points for your own Kudu applications and integrations.
 

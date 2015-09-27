@@ -26,7 +26,9 @@
 :experimental:
 
 NOTE: Kudu is easier to configure with link:http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.htm[Cloudera Manager]
-than in a standalone installation.
+than in a standalone installation. See Cloudera's
+link:http://www.cloudera.com/content/cloudera/en/downloads/betas/kudu/0-5-0.html[Kudu documentation]
+for more details about using Kudu with Cloudera Manager.
 
 == Configure Kudu
 
@@ -44,13 +46,15 @@ Flags can be prefixed with either one or two `-` characters. This
 documentation standardizes on two: `--example_flag`.
 
 === Discovering Configuration Options
-Only the most common configuration options are documented here. To see all
-configuration flags for a given executable, run it with the `--help` option.
+Only the most common configuration options are documented here. For a more exhaustive
+list of configuration options, see the link:configuration_reference.html[Configuration Reference].
+
+To see all configuration flags for a given executable, run it with the `--help` option.
 Take care when configuring undocumented flags, as not every possible
 configuration has been tested, and undocumented options are not guaranteed to be
 maintained in future releases.
 
-=== Configuring Masters
+=== Configuring the Kudu Master
 To see all available configuration options for the `kudu-master` executable, run it
 with the `--help` option:
 ----
@@ -101,10 +105,6 @@ do not read this flag.
 
 For the full list of flags for tablet servers, see the
 link:configuration_reference.html#tablet_server_configuration_reference[Kudu Tablet Server Configuration Reference].
-
-=== Configuring the Kudu Web Interface
-The Kudu web interface is available on each master at port 8051 and each tablet server
-at port 8050.
 
 
 == Next Steps

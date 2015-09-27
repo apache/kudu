@@ -24,6 +24,9 @@
 :sectlinks:
 :experimental:
 
+Get familiar with these guidelines so that your contributions can be reviewed and
+integrated quickly and easily.
+
 == Code Style
 
 In general, Kudu follows the
@@ -32,17 +35,17 @@ with the following exceptions:
 
 === Limitations on `boost` Library Use
 
-`boost` libraries can be used in cases where we don't have a suitable
-replacement in our own code-base. However, try to avoid introducing
-dependencies on new `boost` libraries, and use our own code in preference
-to `boost` where available. For example, do not use boost`'s scoped pointer
+`boost` libraries can be used in cases where a suitable
+replacement does not exist in the Kudu code base. However, try to avoid introducing
+dependencies on new `boost` libraries, and use Kudu code in preference
+to `boost` where available. For example, do not use `boost`'s scoped pointer
 implementations.
 
 .Approved `boost` Libraries
 
 - `BOOST_FOREACH`
 - `boost::assign` (container literals)
-- `boost::mutex` and `boost::shared_mutex` (but prefer our own
+- `boost::mutex` and `boost::shared_mutex` (but prefer Kudu's
   spin lock implementation for short critical sections)
 
 Check that any features from `boost` you use are present in *`boost` 1.46*
@@ -51,7 +54,7 @@ or earlier, for compatibility with RHEL 6.
 .`boost` Libraries and the Kudu {cpp} Client
 Do not use `boost` in any public headers for the Kudu {cpp} client, because
 `boost` commonly breaks backward compatibility, and passing data between two `boost`
-versions (one by the user, one by us) causes serious issues.
+versions (one by the user, one by Kudu) causes serious issues.
 
 In addition, do not create dependencies from the Kudu {cpp} client to any `boost`
 libraries. `libboost_system` is particularly troublesome, as any `boost` code
@@ -61,8 +64,8 @@ by the {cpp} client (such as _common/_ and _util/_).
 
 === Line length
 
-We allow 100 charcters per line rather than Google's standard of 80. Try to
-keep under 80 where possible, but you can spill over to ~100 or so if necessary.
+The Kudu team allows line lengths of 100 characters per line, rather than Google's standard of 80. Try to
+keep under 80 where possible, but you can spill over to 100 or so if necessary.
 
 === Pointers
 
@@ -75,9 +78,10 @@ which ensures deletion on scope exit and prevents accidental copying.
 method and also provides emulated `move` semantics (see _gscoped_ptr.h_ for
 example usage).
 
-If an object is singly owned, but referenced from multiple places, such as when the pointed-to object is known to be valid at least as long
-as the pointer itself, associate a comment with the constructor which takes and stores
-the raw pointer, as in the following example.
+If an object is singly owned, but referenced from multiple places, such as when
+the pointed-to object is known to be valid at least as long as the pointer itself,
+associate a comment with the constructor which takes and stores the raw pointer,
+as in the following example.
 
 [source,c++]
 ----
@@ -90,7 +94,7 @@ the raw pointer, as in the following example.
 If you use raw pointers within STL collections or inside of vectors and other containers,
 associate a comment with the container, which explains the ownership
 semantics (owned or un-owned). Use utility code from _gutil/stl_util.h_, such as
-`STLDeleteElements` or `ElementDeleter` to easily handle deletion of the
+`STLDeleteElements` or `ElementDeleter`, to ease handling of deletion of the
 contained elements.
 
 WARNING: Using `std::auto_ptr` is strictly disallowed because of its difficult and
@@ -101,11 +105,11 @@ bug-prone semantics.
 Although single ownership is ideal, sometimes it is not possible, particularly
 when multiple threads are in play and the lifetimes of the pointers are not
 clearly defined. In these cases, you can use either `std::tr1::shared_ptr` or
-our own `scoped_refptr` from _gutil/ref_counted.hpp_. Each of these mechanisms
-relies on reference counting to automatically delete the referrent once no more
+Kudu's own `scoped_refptr` from _gutil/ref_counted.hpp_. Each of these mechanisms
+relies on reference counting to automatically delete the referent once no more
 pointers remain. The key difference between these two types of pointers is that
 `scoped_refptr` requires that the object extend a `RefCounted` base class, and
-stores its reference count inside the object storage itself, while`shared_ptr`
+stores its reference count inside the object storage itself, while `shared_ptr`
 maintains a separate reference count on the heap.
 
 The pros and cons are:
@@ -138,20 +142,20 @@ reference counts when more control is required
 to a `scoped_refptr` safely without worrying about double freeing
 * icon:plus-circle[pro, role="green"] since we control the implementation, we
 can implement features, such as debug builds that capture the stack trace of every
-referrent to help debug leaks.
+referent to help debug leaks.
 * icon:minus-circle[con, role="red"] the referred-to object must inherit
 from `RefCounted`
 * icon:minus-circle[con, role="red"] does not support `weak_ptr<>` use cases
 
 Since `scoped_refptr` is generally faster and smaller, try to use it
-rather than `shared_ptr` in new code. Existing code (as of 12/20/2013) uses `shared_ptr`
-in many places. When interfacing with that code, continued use of `shared_ptr` is fine.
+rather than `shared_ptr` in new code. Existing code uses `shared_ptr`
+in many places. When interfacing with that code, you can continue to use `shared_ptr`.
 
 === Function Binding and Callbacks
 
-Existing code (as of 01/07/2014) uses `boost::bind` and `boost::function` for
-function binding and callbacks. For new code, use the `Callback` and `Bind`
-classes in `gutil` instead. While less full-featured (`Bind` doesn't support argument
+Existing code uses `boost::bind` and `boost::function` for function binding and
+callbacks. For new code, use the `Callback` and `Bind` classes in `gutil` instead.
+While less full-featured (`Bind` doesn't support argument
 place holders, wrapped function pointers, or function objects), they provide
 more options by the way of argument lifecycle management. For example, a
 bound argument whose class extends `RefCounted` will be incremented during `Bind`
@@ -162,7 +166,7 @@ _util/callback_bind-test.cc_ for examples.
 
 === `CMake` Style Guide
 
-`CMake` allows commands in lower, upper, or mixed case. Therefore to keep
+`CMake` allows commands in lower, upper, or mixed case. To keep
 the CMake files consistent, please use the following guidelines:
 
 - *built-in commands* in lowercase
@@ -180,20 +184,20 @@ ADD_KUDU_TEST(some-test)
 
 === GFlags
 
-Kudu uses gflags for both command-line and file-based configuration. Below are
-some guidelines on how to add a new gflag. All new gflags must conform to these
-guidelines; existing non-conformant ones will be made conformant in time.
+Kudu uses gflags for both command-line and file-based configuration. Use these guidelines
+to add a new gflag. All new gflags must conform to these
+guidelines. Existing non-conformant ones will be made conformant in time.
 
 .Name
 
-The gflag's name conveys a lot of information, so care must be taken to pick a
-good name. The name will propagate into other systems, such as the official Kudu
-documentation.
+The gflag's name conveys a lot of information, so choose a good name. The name
+will propagate into other systems, such as the link:configuration_reference.html[Configuration
+Reference].
 - The different parts of a multi-word name should be separated by underscores.
   For example, `fs_data_dirs`.
 - The name should be prefixed with the context that it affects. For example,
   `webserver_num_worker_threads` and `cfile_default_block_size`. Context can be
-  difficult to define, so it's best to bear in mind that this prefix will be
+  difficult to define, so bear in mind that this prefix will be
   used to group similar gflags together. If the gflag affects the entire
   process, it should not be prefixed.
 - If the gflag is for a quantity, the name should be suffixed with the units.
@@ -226,10 +230,10 @@ systems.
 .Tags
 
 Kudu's gflag tagging mechanism adds machine-readable context to each gflag, for
-use in consuming systems such as documentation or CM. See the large block
-comment in flag_tags.h for guidelines.
+use in consuming systems such as documentation or management tools. See the large block
+comment in _flag_tags.h_ for guidelines.
 
-.Misc
+.Miscellaneous
 
 - Avoid creating multiple gflags for the same logical parameter. For
   example, many Kudu binaries need to configure a WAL directory. Rather than
@@ -265,4 +269,5 @@ Commits which may affect performance should include before/after `perf-stat(1)` 
 
 
 == Documentation
-See link:documentation.html[Documentation Style Guide].
+See link:documentation.html[Documentation Style Guide] for guidelines about contributing
+to the official Kudu documentation.

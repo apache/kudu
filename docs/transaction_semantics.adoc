@@ -98,7 +98,7 @@ However you have the option to impose some constraints on the assigned timestamp
 and on how writes to different tablets can be observed by clients.
 
 Kudu, like Spanner, was designed to be externally consistent <<5>>, preserving consistency
-even when operations span multiple tablets and even multiple datacenters. In practice this
+even when operations span multiple tablets and even multiple data centers. In practice this
 means that, if a write operation changes item _x_ at tablet _A_, and a following write
 operation changes item _y_ at tablet _B_, you might want to enforce that if
 the change to _y_ is observed, the change to _x_ must also be observed. There

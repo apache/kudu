@@ -29,9 +29,8 @@ You can deploy Kudu on a cluster using packages or you can build Kudu
 from source. To run Kudu without installing anything, use the link:quickstart.html#quickstart_vm[Kudu Quickstart VM].
 
 NOTE: Kudu is currently easier to install and manage with link:http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.htm[Cloudera Manager],
-version 5.4.7 or newer. Please follow the installation instructions on the
-link:http://unittest.jenkins.cloudera.com/job/kudu-master-suitehelp/lastSuccessfulBuild/artifact/cloudera/topics/kudu_installation.html[Cloudera website].
-// TODO update the above link to the public cloudera docs.
+version 5.4.7 or newer. If you use Cloudera Manager, see also Cloudera's
+link:http://www.cloudera.com/content/cloudera/en/downloads/betas/kudu/0-5-0.html[Kudu documentation].
 
 == Prerequisites and Requirements
 .Hardware
@@ -95,20 +94,14 @@ packages on each host.
 +
 ----
 sudo apt-get install kudu                     # Base Kudu files
-
 sudo apt-get install kudu-master              # Service scripts for managing kudu-master
-
 sudo apt-get install kudu-tserver             # Service scripts for managing kudu-tserver
-
 sudo apt-get install libkuduclient0           # Kudu C++ client shared library
-
-sudo apt-get install  libkuduclient-dev       # Kudu C++ client SDK
+sudo apt-get install libkuduclient-dev       # Kudu C++ client SDK
 ----
 
 . To manually install individual DEBs, first download them, then use the command
-`sudo dpkg -i <DEB to install>` and install the
-`kudu-master` and `kudu-tserver` packages on the appropriate hosts. These packages
-provide the operating system commands to start and stop Kudu.
+`sudo dpkg -i <DEB to install>` to install them.
 
 +
 // tag::verify_install[]
@@ -188,12 +181,6 @@ need, you can build Kudu from source. You can build from source on any supported
 $ sudo yum install boost-static boost-devel openssl-devel cyrus-sasl-devel
 ----
 
-. Optional: Install `liboauth` and `liboauth-devel` if you plan to build the Twitter demo.
-+
-----
-$ sudo yum install liboauth liboauth-devel
-----
-
 . Optional: Install the `asciidoctor` gem if you plan to build documentation.
 +
 ----
@@ -234,16 +221,17 @@ If you do not specify a `DESTDIR`, `/usr/local/` is the default.
 sudo make DESTDIR=/opt/kudu install
 ----
 
-. Optional: Build the documentation.
+. Optional: Build the documentation. NOTE: This command builds local documentation that
+is not appropriate for uploading to the Kudu website.
 +
 ----
 $ make docs
 ----
 
-.RHEL / Centos Build Script
+.RHEL / CentOS Build Script
 ====
 This script provides an overview of the procedure to build Kudu on a
-newly-installed RHEL or Centos host, and can be used as the basis for an
+newly-installed RHEL or CentOS host, and can be used as the basis for an
 automated deployment scenario. It skips the steps marked *Optional* above.
 
 [source,bash]
@@ -267,12 +255,6 @@ make install
 ----
 $ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
   libssl-dev libsasl2-dev libtool ntp
-----
-
-. Optional: Install `liboauth-dev` if you plan to build the Twitter demo.
-+
-----
-$ sudo apt-get -y install liboauth-dev
 ----
 
 . Optional: Install the `asciidoctor` gem if you plan to build documentation.
@@ -304,7 +286,8 @@ thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
 make -j4
 ----
 
-. Optional: Build the documentation.
+. Optional: Build the documentation. NOTE: This command builds local documentation that
+is not appropriate for uploading to the Kudu website.
 +
 ----
 $ make docs
@@ -313,7 +296,7 @@ $ make docs
 .Ubuntu / Debian Build Script
 ====
 This script provides an overview of the procedure to build Kudu on RHEL or
-Centos, and can be used as the basis for an automated deployment scenario. It skips
+CentOS, and can be used as the basis for an automated deployment scenario. It skips
 the steps marked *Optional* above.
 
 [source,bash]

@@ -26,7 +26,9 @@
 :experimental:
 
 NOTE: Kudu is easier to manage with link:http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.htm[Cloudera Manager]
-than in a standalone installation.
+than in a standalone installation. See Cloudera's
+link:http://www.cloudera.com/content/cloudera/en/downloads/betas/kudu/0-5-0.html[Kudu documentation]
+for more details about using Kudu with Cloudera Manager.
 
 == Starting and Stopping Kudu Processes
 
@@ -53,7 +55,7 @@ about maintenance background operations.
 
 === Common Web Interface Pages
 
-Both servers expose a common set of information via their web interfaces:
+Both Kudu masters and tablet servers expose a common set of information via their web interfaces:
 
 - HTTP access to server logs.
 - an `/rpcz` endpoint which lists currently running RPCs via JSON.
@@ -64,7 +66,7 @@ Both servers expose a common set of information via their web interfaces:
 - a JSON endpoint exposing metrics about the server.
 - information on the deployed version number of the daemon.
 
-These interfaces are linked from the landing page of each daemon.
+These interfaces are linked from the landing page of each daemon's web UI.
 
 == Kudu Metrics
 
@@ -110,6 +112,10 @@ For example:
 [source,bash]
 ----
 $ curl -s 'http://example-ts:8050/metrics?include_schema=1&metrics=connections_accepted'
+----
+
+[source,json]
+----
 [
     {
         "type": "server",
@@ -127,7 +133,14 @@ $ curl -s 'http://example-ts:8050/metrics?include_schema=1&metrics=connections_a
         ]
     }
 ]
+
+[source,bash]
+----
 $ curl -s 'http://example-ts:8050/metrics?metrics=log_append_latency'
+----
+
+[source,json]
+----
 [
     {
         "type": "tablet",

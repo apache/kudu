@@ -29,11 +29,13 @@
 
 [[req_hole_punching]]
 === Errors During Hole Punching Test
- - Kudu requires hole punching capabilities in order to be efficient.
+Kudu requires hole punching capabilities in order to be efficient. Hole punching support
+depends upon your operation system kernel version and local filesystem implementation.
+
  - RHEL or CentOS 6.4 or later, patched to kernel version of 2.6.32-358 or later.
   Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole punching.
   - Ubuntu 14.04 includes version 3.13 of the Linux kernel, which supports hole punching.
-  - Newer versions of the EXT4 or XFS filesystems support hole punching, but EXT3 does
+  - Newer versions of the EXT4 or XFS file systems support hole punching, but EXT3 does
   not. Older versions of XFS that do not support hole punching return a `EOPNOTSUPP`
   (operation not supported) error. Older versions of either EXT4 or XFS that do
   not support hole punching cause Kudu to emit an error message such as the following
@@ -47,13 +49,18 @@ punching (at the cost of some efficiency and scalability), reconfigure
 Kudu with --block_manager=file. Refer to the Kudu documentation for more
 details. Raw error message follows.
 ----
- - Without hole punching support, the log block manager is unsafe to use. It won't
-  ever delete blocks, consuming ever more space on disk.
- - If you can't use hole punching in your environment, you can still
-  try Kudu. Enable the file block manager instead of the log block manager by
-  adding the `--block_manager=file` flag to the commands you use to start the master
-  and tablet servers. The file block manager does not scale as well as the log block
-  manager.
+
+Without hole punching support, the log block manager is unsafe to use. It won't
+ever delete blocks, and will consume ever more space on disk.
+
+If you can't use hole punching in your environment, you can still
+try Kudu. Enable the file block manager instead of the log block manager by
+adding the `--block_manager=file` flag to the commands you use to start the master
+and tablet servers. The file block manager does not scale as well as the log block
+manager.
+
+WARNING: The file block manager is known to scale and perform poorly, and should
+only be used for small-scale evaluation and development.
 
 [[ntp]]
 === NTP clock synchronization
@@ -110,9 +117,10 @@ mentioned flag. For example to increase the possible maximum error to
 [[kudu_tracing]]
 === Kudu Tracing
 
-Every Kudu daemon includes built-in tracing support based on the open source
+The `kudu-master` and `kudu-tserver` daemons include built-in tracing support
+based on the open source
 link:https://www.chromium.org/developers/how-tos/trace-event-profiling-tool[Chromium Tracing]
-framework. Tracing can be used to help diagnose latency issues or other problems
+framework. You can use tracing to help diagnose latency issues or other problems
 on Kudu servers.
 
 ==== Accessing the tracing interface
@@ -126,29 +134,29 @@ embedded web server in each of the Kudu daemons.
 | Master | http://master-1.example.com:8051/tracing.html
 |===
 
-WARNING: The tracing interface is known to work in recent versions of Google Chrome. Other browsers
-may not work as expected.
+WARNING: The tracing interface is known to work in recent versions of Google Chrome.
+Other browsers may not work as expected.
 
 ==== Collecting a trace
 
-After navigating to the tracing interface, click the 'Record' button on the top left corner
-of the screen. When beginning to diagnose a problem, it is easiest to select all categories
-using the provided button. Then hit 'Record' to begin recording a trace.
+After navigating to the tracing interface, click the *Record* button on the top left corner
+of the screen. When beginning to diagnose a problem, start by selecting all categories.
+Click *Record* to begin recording a trace.
 
-While the system is recording a trace, events are collected into an in-memory ring buffer.
-This ring buffer is fixed size, so it will eventually fill up to 100%. However, new events
+During the trace collection, events are collected into an in-memory ring buffer.
+This ring buffer is fixed in size, so it will eventually fill up to 100%. However, new events
 are still being collected while older events are being removed. While recording the trace,
-trigger whatever behavior or workload you are interested in exploring.
+trigger the behavior or workload you are interested in exploring.
 
-After collecting for several seconds, hit the 'stop' button, which will download and
-display the collected trace. Hitting the '?' key will bring up information on how to
-use the tracing interface to explore the trace.
+After collecting for several seconds, click *Stop*. The collected trace will be
+downloaded and displayed. Use the *?* key to display help text about using the tracing
+interface to explore the trace.
 
 ==== Saving a trace
 
-Collected traces can be saved as JSON files for later analysis. Simply collect a trace
-and hit the 'Save' button at the top of the screen. This results in a JSON document
-which may be later loaded into the same interface using the 'Load' button.
+You can save collected traces as JSON files for later analysis by clicking *Save*
+after collecting the trace. To load and analyze a saved JSON file, click *Load*
+and choose the file.
 
 === RPC Timeout Traces
 
@@ -174,16 +182,18 @@ W0922 00:56:52.314888 10858 inbound_call.cc:197] Trace:
 0922 00:56:52.313788 (+    24us) inbound_call.cc:114] Queueing success response
 ----
 
-These traces can give an indication of which part of the request was slow, and are
-useful to include in bug reports related to RPC latency outliers.
+These traces can give an indication of which part of the request was slow. Please
+include them in bug reports related to RPC latency outliers.
 
 === Kernel Stack Watchdog Traces
 
-Every Kudu server process has a background thread called the Stack Watchdog. This thread monitors the
-other threads in the server for cases where they've blocked for longer-than-expected periods of time.
-These traces can be indicative of operating-system level issues or heavily contended storage.
-When the watchdog thread identifies a case of thread blockage, it logs an entry in the `WARNING`
-log:
+Each Kudu server process has a background thread called the Stack Watchdog, which
+monitors the other threads in the server in case they have blocked for
+longer-than-expected periods of time. These traces can indicate operating system issues
+or bottlenecked storage.
+
+When the watchdog thread identifies a case of thread blockage, it logs an entry
+in the `WARNING` log like the following:
 
 ----
 W0921 23:51:54.306350 10912 kernel_stack_watchdog.cc:111] Thread 10937 stuck at /data/kudu/consensus/log.cc:505 for 537ms:
@@ -221,4 +231,4 @@ User stack:
 ----
 
 These traces can be useful for diagnosing root-cause latency issues when they are caused by systems
-below Kudu, such as disk controllers or filesystems.
+below Kudu, such as disk controllers or file systems.

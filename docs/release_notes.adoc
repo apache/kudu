@@ -34,7 +34,7 @@ commodity hardware, is horizontally scalable, and supports highly available oper
 Kudu’s design sets it apart. Some of Kudu’s benefits include:
 
 * Fast processing of OLAP workloads.
-* Integration with MapReduce, Spark and other Hadoop ecosystem components.
+* Integration with MapReduce, Spark, and other Hadoop ecosystem components.
 * Tight integration with Cloudera Impala, making it a good, mutable alternative to
 using HDFS with Parquet. See link:kudu_impala_integration.html[Kudu Impala Integration].
 * Strong but flexible consistency model.
@@ -47,7 +47,7 @@ fail, the tablet is still available.
 NOTE: High availability for masters is not supported during the public beta.
 
 By combining all of these properties, Kudu targets support for families of
-applications that are difficult or impossible to implement on current generation
+applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.
 
 === Kudu-Impala Integration Features
@@ -56,7 +56,7 @@ Hadoop storage technologies.
   The tables follow the same internal / external approach as other tables in Impala,
   allowing for flexible data ingestion and querying.
 `INSERT`::
-  Data can be inserted into Kudu tables from Impala using the same mechanisms as
+  Data can be inserted into Kudu tables in Impala using the same mechanisms as
   any other table with HDFS or HBase persistence.
 `UPDATE` / `DELETE`::
   Impala supports the `UPDATE` and `DELETE` SQL commands to modify existing data in
@@ -69,7 +69,7 @@ Flexible Partitioning::
   pre-split tables by hash or range into a predefined number of tablets, in order
   to distribute writes and queries evenly across your cluster. You can partition by
   any number of primary key columns, by any number of hashes and an optional list of
-  split rows.
+  split rows. See link:schema_design.html[Schema Design].
 Parallel Scan::
   To achieve the highest possible performance on modern hardware, the Kudu client
   within Impala parallelizes scans to multiple tablets.
@@ -94,7 +94,7 @@ will respond and assist as quickly as possible.
 when fixes or features are ready. However, we cannot commit to issue resolution or
 bug fix delivery times during the public beta period, and it is possible that some
 fixes or enhancements will not be selected for a release.
-* We can't guarantee timeframes or contents for future beta code drops. However,
+* We can't guarantee time frames or contents for future beta code drops. However,
 they will be announced to the user group when they occur.
 * No guarantees are made regarding upgrades from this release to follow-on releases.
 While multiple drops of beta code are planned, we can't guarantee their schedules
@@ -118,8 +118,8 @@ For full installation details, see link:installation.html[Kudu Installation].
 
 === Operating System Limitations
 * RHEL 6.4 or newer, CentOS 6.4 or newer, and Ubuntu Trusty are are the only
-operating systems supported for installation in the public beta.
-Others may work but have not been tested.
+operating systems supported for installation in the public beta. Others may work
+but have not been tested.
 
 === Storage Limitations
 * Kudu has been tested with up to 4 TB of data per tablet server. More testing
@@ -127,7 +127,8 @@ is needed for denser storage configurations.
 
 === Schema Limitations
 * Testing with more than 20 columns has been limited.
-* Multi-kilobyte rows have not been thoroughly tested.
+*  Kudu is primarily designed for analytic use cases and, in the beta release,
+you are likely to encounter issues if a single row contains multiple kilobytes of data.
 * The columns which make up the primary key must be listed first in the schema.
 * Key columns cannot be altered. You must drop and recreate a table to change its keys.
 * Key columns must not be null.
@@ -142,38 +143,39 @@ space immediately.
 === Ingest Limitations
 * Ingest via Sqoop or Flume is not supported in the public beta. The recommended
 approach for bulk ingest is to use Impala’s `CREATE TABLE AS SELECT` functionality
-or use the Kudu's Java or C++ API.
+or use the Kudu Java or C++ API.
 * Tables must be manually pre-split into tablets using simple or compound primary
-keys. Automatic splitting is not yet possible. Instead, add split rows at table creation.
+keys. Automatic splitting is not yet possible. See
+link:schema_design.html[Schema Design].
 * Tablets cannot currently be merged. Instead, create a new table with the contents
 of the old tables to be merged.
 
 === Replication and Backup Limitations
 * Replication and failover of Kudu masters is considered experimental. It is
-recommended to run a single master and periodically perform a manual backup of its data directories.
+recommended to run a single master and periodically perform a manual backup of
+its data directories.
 
 === Impala Limitations
-* To use Kudu with Impala, you must install a special release of Impala. Obtaining
-and installing a compatible Impala release is detailed in Kudu's
+* To use Kudu with Impala, you must install a special release of Impala called
+Impala_Kudu. Obtaining and installing a compatible Impala release is detailed in Kudu's
 link:kudu_impala_integration.html[Impala Integration] documentation.
 * To use Impala_Kudu alongside an existing Impala instance, you must install using parcels.
 * Updates, inserts, and deletes via Impala are non-transactional. If a query
-fails part-way, its partial effects will not be rolled back..
+fails part of the way through, its partial effects will not be rolled back.
 * All queries will be distributed across all Impala nodes which host a replica
 of the target table(s), even if a predicate on a primary key could correctly
 restrict the query to a single tablet. This limits the maximum concurrency of
 short queries made via Impala.
-* ALTER TABLE on Kudu tables is not yet supported via Impala.
 * No timestamp and decimal type support.
 * The maximum parallelism of a single query is limited to the number of tablets
 in a table. For good analytic performance, aim for 10 or more tablets per host
-or large tables.
+or use large tables.
 * Impala is only able to push down predicates involving `=`, `<=`, `>=`,
-or `BETWEEN` comparisons between a column and a literal value. Impala pushes down
-predicates`<` and `>` for integer columns only. For example, for a table with
-an integer key `ts`, and a float key `income`, the predicate `WHERE ts >= 12345`
-will convert into an efficient range scan, whereas ‘where income > 1000000.0’
-will currently fetch all data from the table and evaluate the predicate within Impala.
+or `BETWEEN` comparisons between any column and a literal value, and `<` and `>`
+for integer columns only. For example, for a table with an integer key `ts`, and
+a string key `name`, the predicate `WHERE ts >= 12345` will convert into an
+efficient range scan, whereas `where name > 'lipcon'` will currently fetch all
+data from the table and evaluate the predicate within Impala.
 
 === Security Limitations
 * Authentication and authorization are not included in the public beta.
@@ -182,9 +184,9 @@ will currently fetch all data from the table and evaluate the predicate within I
 === Client and API Limitations
 * Potentially-incompatible C++ and Java API changes may be required during the
 public beta.
-* ALTER TABLE is not yet fully supported via the client APIs. More ALTER TABLE
+* `ALTER TABLE` is not yet fully supported via the client APIs. More `ALTER TABLE`
 operations will become available in future betas.
-* The Python API is not supported.
+* The Python API is experimental and not supported.
 
 === Application Integration Limitations
 * The Spark DataFrame implementation is not yet complete.
