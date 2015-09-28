@@ -51,6 +51,10 @@ information.
 media may significantly improve latency when Kudu is configured for its highest
 durability levels.
 
+.Management
+- If you use Cloudera Manager and CDH, Cloudera Manager 5.4.3 or newer is required.
+Cloudera Manager 5.4.7 and newer provide better monitoring and administration options.
+
 [[install_packages]]
 == Install Using Packages
 You can install Kudu using packages managed by the operating system.
