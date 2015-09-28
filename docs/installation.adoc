@@ -211,7 +211,6 @@ installed during the `make install` step. The default value is `/usr/local/`.
 thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release -DCMAKE_INSTALL_PREFIX=/opt/kudu
 make -j4
 ----
-
 [[build_install_kudu]]
 . Optional: Install Kudu binaries, libraries, and headers.
 If you do not specify a `DESTDIR`, `/usr/local/` is the default.
