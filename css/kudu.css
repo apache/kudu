@@ -43,6 +43,14 @@
     margin: auto;
 }
 
+.navbar-default {
+    background-color: #fff;
+    border: none;
+}
+.navbar-default .navbar-nav>.active>a {
+    background-color: #fff;
+}
+
 nav:after {
     display: block;
     clear: both;
@@ -86,3 +94,14 @@ nav li.active a:hover {
 .faq dl dd p:last-child {
     margin: 0;
 }
+
+@media (min-width: 768px) { .container-fluid {
+  width: 750px
+} }
+@media (min-width: 992px) { .container-fluid {
+  width: 970px
+} }
+
+@media (min-width: 1200px) { .container-fluid {
+  width: 1170px
+} }
