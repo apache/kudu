@@ -70,10 +70,6 @@ link:style_guide.html[Kudu Style Guide]::
 link:configuration_reference.html[Kudu Configuration Reference]::
   Find out about individual Kudu configuration options.
 
-link:resources.html[Kudu Resources]::
-  Learn more about Kudu, columnar data stores, and other useful material for Kudu
-  users and developers.
-
 ++++
 </div>
 ++++
