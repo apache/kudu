@@ -5,7 +5,7 @@ its table.
 To build and run, do the following:
 
 $ mvn package
-$ java -jar target/kudu-java-sample-1.0-SNAPSHOT.jar 
+$ java -jar target/kudu-java-sample-1.0-SNAPSHOT.jar
 
 This example assumes that you are running the Quickstart VM with the host name
 "quickstart.cloudera". If you are running against a different cluster, pass the
