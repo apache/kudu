@@ -9,7 +9,34 @@ active_nav: faq
     <h2>Frequently Asked Questions</h2>
 
     <!-- A table of contents will be inserted here via Javascript (see below). -->
-    <div id="faq_toc"></div>
+    <div id="faq_toc">
+      <ol>
+        <li><a href="#faq_production">Is Kudu ready to be deployed into production yet?</a></li>
+        <li><a href="#faq_ga">When can I expect GA or version 1.0?</a></li>
+        <li><a href="#faq_hbase">Why build a new storage engine? Why not just improve Apache HBase to increase its scan speed?</a></li>
+        <li><a href="#faq_storage_format">How does Kudu store its data? Is the underlying data storage readable without going through Kudu?</a></li>
+        <li><a href="#faq_hdfs">Why doesn’t Kudu store its data in HDFS?</a></li>
+        <li><a href="#faq_colocate_hdfs">Can I colocate Kudu with HDFS on the same servers?</a></li>
+        <li><a href="#faq_transactions">Does Kudu support multi-row transactions?</a></li>
+        <li><a href="#faq_secondary_indexes">Does Kudu support secondary indexes?</a></li>
+        <li><a href="#faq_geo_distribute">Can a Kudu deployment be geo-distributed?</a></li>
+        <li><a href="#faq_in_memory">Is Kudu an in-memory database?</a></li>
+        <li><a href="#faq_kudu_shell">Where is the Kudu shell?</a></li>
+        <li><a href="#faq_opensource">Is Kudu open source?</a></li>
+        <li><a href="#faq_initial_dev">Why was Kudu developed internally at Cloudera before its release?</a></li>
+        <li><a href="#faq_master_bottleneck">Is the Kudu Master a bottleneck?</a></li>
+        <li><a href="#faq_managed_compactions">Should compactions be managed?</a></li>
+        <li><a href="#faq_security">How is security handled in Kudu?</a></li>
+        <li><a href="#faq_cap">Is Kudu a CP or AP system?</a></li>
+        <li><a href="#faq_consistency_tuning">Is Kudu’s consistency level tunable?</a></li>
+        <li><a href="#faq_jepsen">Where is Kudu’s Jepsen report?</a></li>
+        <li><a href="#faq_dependencies">What are Kudu’s runtime dependencies?</a></li>
+        <li><a href="#faq_bulk_load">What’s the most efficient way to bulk load data into Kudu?</a></li>
+        <li><a href="#faq_oltp">Should I use Kudu for OLTP-type workloads?</a></li>
+        <li><a href="#faq_backup">How can I back up my Kudu data?</a></li>
+        <li><a href="#faq_os">What operating systems does Kudu support?</a></li>
+      </ol>
+    </div>
 
     <dl>
       <dt id="faq_production">
@@ -365,7 +392,7 @@ active_nav: faq
     </dl>
   </div>
 </div>
-
+<!-- commented out because it doesn't work in Firefox
 <script type="text/javascript">
 document.addEventListener('DOMContentLoaded', function() {
   // Dynamically build a table of contents from the entries.
@@ -380,3 +407,4 @@ document.addEventListener('DOMContentLoaded', function() {
   $("#faq_toc").prepend(toc);
 }, false);
 </script>
+-->
