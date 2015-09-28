@@ -739,11 +739,13 @@ if (NOT "${KUDU_USE_ASAN}" AND
 endif()
 
 # libvmem
-find_package(Vmem REQUIRED)
-include_directories(SYSTEM ${VMEM_INCLUDE_DIR})
-ADD_THIRDPARTY_LIB(vmem
-  STATIC_LIB "${VMEM_STATIC_LIB}"
-  SHARED_LIB "${VMEM_SHARED_LIB}")
+if (NOT APPLE)
+  find_package(Vmem REQUIRED)
+  include_directories(SYSTEM ${VMEM_INCLUDE_DIR})
+  ADD_THIRDPARTY_LIB(vmem
+    STATIC_LIB "${VMEM_STATIC_LIB}"
+    SHARED_LIB "${VMEM_SHARED_LIB}")
+endif()
 
 ## curl
 find_package(CURL REQUIRED)
@@ -768,12 +770,14 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 link_directories(${LLVM_LIBRARY_DIRS})
 
 ## librt
-find_library(RT_LIB_PATH rt)
-if(NOT RT_LIB_PATH)
-  message(FATAL_ERROR "Could not find librt on the system path")
+if (NOT APPLE)
+  find_library(RT_LIB_PATH rt)
+  if(NOT RT_LIB_PATH)
+    message(FATAL_ERROR "Could not find librt on the system path")
+  endif()
+  ADD_THIRDPARTY_LIB(rt
+    SHARED_LIB "${RT_LIB_PATH}")
 endif()
-ADD_THIRDPARTY_LIB(rt
-  SHARED_LIB "${RT_LIB_PATH}")
 
 ## Boost
 # It's important that Boost come last in the list of packages, because it's the only
