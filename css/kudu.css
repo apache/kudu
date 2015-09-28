@@ -12,6 +12,13 @@
   margin-top: 0;
   width: 262.5px;
 }
+
+@media (max-width: 991px) {
+  .affix {
+    position: inherit;
+  }
+}
+
 #toc {
     margin-top: 30px;
     padding: 10px;
