@@ -446,17 +446,7 @@ once via a target and once via the raw source file. To fix this, simply delete t
 on writing code, though it may affect your ability to build from within Eclipse.
 
 
-== Building on OSX
+== Building on OS X
 
-It's currently only possible to run `cmake .` on OSX, which will build all the third
-party libraries. Building Kudu itself isn't supported.
-
-Requirements:
-
- - OSX 10.9 and above.
- - Xcode's command line tools (xcode-select --install)
- - Homebrew packages:
-   - autoconf
-   - automake
-   - libtool
-   - coreutils
+Support for https://issues.cloudera.org/browse/KUDU-1185[compiling Kudu on OS X]
+is planned, but not yet complete.
