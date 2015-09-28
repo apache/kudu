@@ -45,8 +45,7 @@
     <repository>
       <id>cdh.repo</id>
       <name>Cloudera Repositories</name>
-      <!-- <url>https://repository.cloudera.com/artifactory/cloudera-repos</url> -->
-      <url>http://maven.jenkins.cloudera.com:8081/artifactory/libs-release-local</url>
+      <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
       <snapshots>
         <enabled>false</enabled>
       </snapshots>
