@@ -6,7 +6,7 @@
   <packaging>jar</packaging>
   <version>1.0-SNAPSHOT</version>
   <name>kudu-collectl-example</name>
-  
+
   <build>
     <plugins>
       <plugin>
@@ -40,19 +40,34 @@
       </plugin>
     </plugins>
   </build>
+
   <repositories>
     <repository>
-      <id>kudu-internal</id>
-      <name>Kudu client on Cloudera network</name>
-      <url>http://d2106.halxg.cloudera.com/kudu-2015-08-13-1/</url>
+      <id>cdh.repo</id>
+      <name>Cloudera Repositories</name>
+      <!-- <url>https://repository.cloudera.com/artifactory/cloudera-repos</url> -->
+      <url>http://maven.jenkins.cloudera.com:8081/artifactory/libs-release-local</url>
+      <snapshots>
+        <enabled>false</enabled>
+      </snapshots>
     </repository>
   </repositories>
-        
+
   <dependencies>
+
     <dependency>
       <groupId>org.kududb</groupId>
       <artifactId>kudu-client</artifactId>
-      <version>0.1.0-SNAPSHOT</version>
+      <version>0.5.0</version>
     </dependency>
+
+    <!-- for logging messages -->
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-simple</artifactId>
+      <version>1.7.12</version>
+    </dependency>
+
   </dependencies>
+
 </project>

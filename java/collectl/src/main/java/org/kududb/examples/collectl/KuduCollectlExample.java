@@ -6,6 +6,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -13,11 +14,11 @@ import org.kududb.ColumnSchema;
 import org.kududb.ColumnSchema.ColumnSchemaBuilder;
 import org.kududb.Schema;
 import org.kududb.Type;
-import org.kududb.client.BatchResponse;
 import org.kududb.client.Insert;
 import org.kududb.client.KuduClient;
 import org.kududb.client.KuduSession;
 import org.kududb.client.KuduTable;
+import org.kududb.client.OperationResponse;
 import org.kududb.client.RowError;
 import org.kududb.client.SessionConfiguration.FlushMode;
 
@@ -160,20 +161,17 @@ public class KuduCollectlExample {
         // If there's more data to read, don't flush yet -- better to accumulate
         // a larger batch.
         if (!br.ready()) {
-          ArrayList<BatchResponse> responses = session.flush();
-          // TODO: the client should not group BatchResponse by tablet, since tablets
-          // are an implementation detail.
-          for (BatchResponse r : responses) {
-            for (RowError e : r.getRowErrors()) {
-              // TODO: the client should offer an enum for different row errors, instead
-              // of string comparison!
-              if ("ALREADY_PRESENT".equals(e.getStatus())) {
-                continue;
-              }
-              System.err.println("Error inserting " + e.getOperation().toString()
-                  + ": " + e.toString());
+          List<OperationResponse> responses = session.flush();
+          for (OperationResponse r : responses) {
+            RowError e = r.getRowError();
+            // TODO: the client should offer an enum for different row errors, instead
+            // of string comparison!
+            if ("ALREADY_PRESENT".equals(e.getStatus())) {
+              continue;
             }
-          }
+            System.err.println("Error inserting " + e.getOperation().toString()
+                + ": " + e.toString());
+            }
         }
       }
     }
