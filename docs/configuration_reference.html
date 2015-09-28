@@ -2,7 +2,7 @@
 title: Kudu Configuration Reference
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-24 23:24:15 PDT'
+last_updated: 'Last updated 2015-09-28 00:36:20 EDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -323,35 +323,6 @@ configuration tasks.</p>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">stable</p></td>
-</tr>
-</tbody>
-</table>
-<div class="paragraph">
-<p>&#160;</p>
-</div>
-</div>
-<div class="sect3">
-<h4 id="kudu-master_tserver_master_addrs"><a class="link" href="#kudu-master_tserver_master_addrs"><code>--tserver_master_addrs</code></a></h4>
-<div class="paragraph">
-<p>Comma separated addresses of the masters which the tablet server should connect to. The masters do not read this flag&#8201;&#8212;&#8201;configure the masters separately using 'rpc_bind_addresses'.</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">string</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>127.0.0.1:7051</code></p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -3475,7 +3446,7 @@ for informational purposes only. They are subject to change or be removed withou
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/home/mpercy/src/kudu/www</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -4130,32 +4101,6 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
-<h4 id="kudu-master_dns_num_resolver_threads"><a class="link" href="#kudu-master_dns_num_resolver_threads"><code>--dns_num_resolver_threads</code></a></h4>
-<div class="paragraph">
-<p>The number of threads to use for DNS resolution</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
 </tr>
 </tbody>
 </table>
@@ -5459,7 +5404,7 @@ for informational purposes only. They are subject to change or be removed withou
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/home/mpercy/src/kudu/www</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -6119,32 +6064,6 @@ for informational purposes only. They are subject to change or be removed withou
 </table>
 </div>
 <div class="sect3">
-<h4 id="kudu-tserver_dns_num_resolver_threads"><a class="link" href="#kudu-tserver_dns_num_resolver_threads"><code>--dns_num_resolver_threads</code></a></h4>
-<div class="paragraph">
-<p>The number of threads to use for DNS resolution</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect3">
 <h4 id="kudu-tserver_local_ip_for_outbound_sockets"><a class="link" href="#kudu-tserver_local_ip_for_outbound_sockets"><code>--local_ip_for_outbound_sockets</code></a></h4>
 <div class="paragraph">
 <p>IP to bind to when making outgoing socket connections. This must be an IP address of the form A.B.C.D, not a hostname. Advanced parameter, subject to change.</p>
@@ -6366,6 +6285,10 @@ for informational purposes only. They are subject to change or be removed withou
       </li> 
       <li>
 
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
           <a href="contributing.html">Contributing to Kudu</a> 
       </li> 
       <li>
@@ -6394,10 +6317,6 @@ for informational purposes only. They are subject to change or be removed withou
 </ul>
 </li>
 </ul> 
-      </li> 
-      <li>
-
-          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>

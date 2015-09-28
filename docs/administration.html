@@ -2,7 +2,7 @@
 title: Kudu Administration
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-24 21:25:48 PDT'
+last_updated: 'Last updated 2015-09-27 23:07:37 EDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -36,7 +36,9 @@ limitations under the License.
 </td>
 <td class="content">
 Kudu is easier to manage with <a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.htm">Cloudera Manager</a>
-than in a standalone installation.
+than in a standalone installation. See Cloudera&#8217;s
+<a href="http://www.cloudera.com/content/cloudera/en/downloads/betas/kudu/0-5-0.html">Kudu documentation</a>
+for more details about using Kudu with Cloudera Manager.
 </td>
 </tr>
 </table>
@@ -107,7 +109,7 @@ about maintenance background operations.</p>
 <div class="sect2">
 <h3 id="_common_web_interface_pages"><a class="link" href="#_common_web_interface_pages">Common Web Interface Pages</a></h3>
 <div class="paragraph">
-<p>Both servers expose a common set of information via their web interfaces:</p>
+<p>Both Kudu masters and tablet servers expose a common set of information via their web interfaces:</p>
 </div>
 <div class="ulist">
 <ul>
@@ -136,7 +138,7 @@ components of the process.</p>
 </ul>
 </div>
 <div class="paragraph">
-<p>These interfaces are linked from the landing page of each daemon.</p>
+<p>These interfaces are linked from the landing page of each daemon&#8217;s web UI.</p>
 </div>
 </div>
 </div>
@@ -199,8 +201,12 @@ enabling accurate aggregation of percentile metrics over time and across nodes.<
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ curl -s 'http://example-ts:8050/metrics?include_schema=1&amp;metrics=connections_accepted'
-[
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ curl -s 'http://example-ts:8050/metrics?include_schema=1&amp;metrics=connections_accepted'</code></pre>
+</div>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-json" data-lang="json">[
     {
         "type": "server",
         "id": "kudu.tabletserver",
@@ -217,14 +223,26 @@ enabling accurate aggregation of percentile metrics over time and across nodes.<
         ]
     }
 ]
-$ curl -s 'http://example-ts:8050/metrics?metrics=log_append_latency'
-[
+
+[source,bash]</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>$ curl -s 'http://example-ts:8050/metrics?metrics=log_append_latency'</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>[source,json]</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>[
     {
         "type": "tablet",
         "id": "c0ebf9fef1b847e2a83c7bd35c2056b1",
         "attributes": {
             "table_name": "lineitem",
-            "partition": "hash buckets: (55), range: [(&lt;start&gt;), (&lt;end&gt;))",
+            "partition": <span class="menuseq"><span class="menu">hash buckets: (55), range: [(&lt;start</span>&#160;&#9656; <span class="submenu">), (&lt;end</span>&#160;&#9656; <span class="menuitem">))</span></span>,
             "table_id": ""
         },
         "metrics": [
@@ -243,54 +261,32 @@ $ curl -s 'http://example-ts:8050/metrics?metrics=log_append_latency'
             }
         ]
     }
-]</code></pre>
+]</p>
 </div>
-</div>
-<div class="admonitionblock note">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-note" title="Note"></i>
-</td>
-<td class="content">
-All histograms and counters are measured since the server start time, and are not reset upon collection.
-</td>
-</tr>
-</table>
-</div>
-</div>
-<div class="sect2">
-<h3 id="_collecting_metrics_to_a_log"><a class="link" href="#_collecting_metrics_to_a_log">Collecting metrics to a log</a></h3>
-<div class="paragraph">
-<p>Kudu may be configured to periodically dump all of its metrics to a local log file using the
-<code>--metrics_log_interval_ms</code> flag. Set this flag to the interval at which metrics should be written
-to a log file.</p>
-</div>
-<div class="paragraph">
-<p>The metrics log will be written to the same directory as the other Kudu log files, with the same
+<div class="listingblock">
+<div class="content">
+<pre>NOTE: All histograms and counters are measured since the server start time, and are not reset upon collection.
+
+=== Collecting metrics to a log
+
+Kudu may be configured to periodically dump all of its metrics to a local log file using the
+`--metrics_log_interval_ms` flag. Set this flag to the interval at which metrics should be written
+to a log file.
+
+The metrics log will be written to the same directory as the other Kudu log files, with the same
 naming format. After any metrics log file reaches 64MB uncompressed, the log will be rolled and
-the previous file will be gzip-compressed.</p>
-</div>
-<div class="paragraph">
-<p>The log file generated has three space-separated fields. The first field is the word
-<code>metrics</code>. The second field is the current timestamp in microseconds since the Unix epoch.
+the previous file will be gzip-compressed.
+
+The log file generated has three space-separated fields. The first field is the word
+`metrics`. The second field is the current timestamp in microseconds since the Unix epoch.
 The third is the current value of all metrics on the server, using a compact JSON encoding.
-The encoding is the same as the metrics fetched via HTTP described above.</p>
-</div>
-<div class="admonitionblock warning">
-<table>
-<tr>
-<td class="icon">
-<i class="fa icon-warning" title="Warning"></i>
-</td>
-<td class="content">
-Although metrics logging automatically rolls and compresses previous log files, it does
+The encoding is the same as the metrics fetched via HTTP described above.
+
+WARNING: Although metrics logging automatically rolls and compresses previous log files, it does
 not remove old ones. Since metrics logging can use significant amounts of disk space,
 consider setting up a system utility to monitor space in the log directory and archive or
-delete old segments.
-</td>
-</tr>
-</table>
+delete old segments.</pre>
+</div>
 </div>
 </div>
 </div>
@@ -332,7 +328,6 @@ delete old segments.
 <ul class="sectlevel2">
 <li><a href="#_listing_available_metrics">Listing available metrics</a></li>
 <li><a href="#_collecting_metrics_via_http">Collecting metrics via HTTP</a></li>
-<li><a href="#_collecting_metrics_to_a_log">Collecting metrics to a log</a></li>
 </ul>
 </li>
 </ul> 
@@ -347,6 +342,10 @@ delete old segments.
       </li> 
       <li>
 
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
           <a href="contributing.html">Contributing to Kudu</a> 
       </li> 
       <li>
@@ -356,10 +355,6 @@ delete old segments.
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
-      </li> 
-      <li>
-
-          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>

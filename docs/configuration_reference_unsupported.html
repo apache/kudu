@@ -2,7 +2,7 @@
 title: Unsupported Configuration Flags
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-24 23:24:15 PDT'
+last_updated: 'Last updated 2015-09-28 00:36:20 EDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -1398,7 +1398,7 @@ for informational purposes only. They are subject to change or be removed withou
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/home/mpercy/src/kudu/www</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -2053,32 +2053,6 @@ for informational purposes only. They are subject to change or be removed withou
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
 <td class="tableblock halign-left valign-top"><p class="tableblock">advanced,runtime</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
-<h3 id="kudu-master_dns_num_resolver_threads"><a class="link" href="#kudu-master_dns_num_resolver_threads"><code>--dns_num_resolver_threads</code></a></h3>
-<div class="paragraph">
-<p>The number of threads to use for DNS resolution</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
 </tr>
 </tbody>
 </table>
@@ -3384,7 +3358,7 @@ for informational purposes only. They are subject to change or be removed withou
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>/home/mpercy/src/kudu/www</code></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">none</p></td>
 </tr>
 <tr>
 <th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
@@ -4044,32 +4018,6 @@ for informational purposes only. They are subject to change or be removed withou
 </table>
 </div>
 <div class="sect2">
-<h3 id="kudu-tserver_dns_num_resolver_threads"><a class="link" href="#kudu-tserver_dns_num_resolver_threads"><code>--dns_num_resolver_threads</code></a></h3>
-<div class="paragraph">
-<p>The number of threads to use for DNS resolution</p>
-</div>
-<table class="tableblock frame-all grid-all" style="width: 50%;">
-<colgroup>
-<col style="width: 25%;">
-<col style="width: 75%;">
-</colgroup>
-<tbody>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Type</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">int32</p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Default</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock"><code>1</code></p></td>
-</tr>
-<tr>
-<th class="tableblock halign-left valign-top"><p class="tableblock">Tags</p></th>
-<td class="tableblock halign-left valign-top"><p class="tableblock">advanced</p></td>
-</tr>
-</tbody>
-</table>
-</div>
-<div class="sect2">
 <h3 id="kudu-tserver_local_ip_for_outbound_sockets"><a class="link" href="#kudu-tserver_local_ip_for_outbound_sockets"><code>--local_ip_for_outbound_sockets</code></a></h3>
 <div class="paragraph">
 <p>IP to bind to when making outgoing socket connections. This must be an IP address of the form A.B.C.D, not a hostname. Advanced parameter, subject to change.</p>
@@ -4290,6 +4238,10 @@ for informational purposes only. They are subject to change or be removed withou
       </li> 
       <li>
 
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
           <a href="contributing.html">Contributing to Kudu</a> 
       </li> 
       <li>
@@ -4299,10 +4251,6 @@ for informational purposes only. They are subject to change or be removed withou
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
-      </li> 
-      <li>
-
-          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>

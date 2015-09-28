@@ -2,7 +2,7 @@
 title: Kudu Documentation Style Guide
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-24 21:25:48 PDT'
+last_updated: 'Last updated 2015-09-27 23:07:37 EDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -30,7 +30,8 @@ limitations under the License.
 <div class="sectionbody">
 <div class="paragraph">
 <p>This document gives you the information you need to get started contributing to Kudu
-documentation.</p>
+documentation. For code contribution guidelines, see
+<a href="contributing.html">Contributing to Kudu</a>.</p>
 </div>
 </div>
 </div>
@@ -49,11 +50,11 @@ toolchain. This provides several advantages. Among them:</p>
 started right away.</p>
 </li>
 <li>
-<p>Github includes support for Asciidoc in its Atom editor, as well as real-time simplified
-HTML rendering.</p>
+<p>Github includes support for Asciidoc in its Atom editor, as well as real-time
+simplified HTML rendering.</p>
 </li>
 <li>
-<p>Patch submissions are smaller and easier to review than XML.</p>
+<p>Patch submissions are small and easy to review.</p>
 </li>
 </ul>
 </div>
@@ -78,8 +79,8 @@ HTML rendering.</p>
 &#8594; Section &#8594; Subsection)</code></p>
 </li>
 <li>
-<p>When possible, provide the language that a code listing is in, using the <code>[source,
-&lt;language&gt;]</code> macro.</p>
+<p>When possible, provide the language that a code listing is in, using the
+<code>[source,&lt;language&gt;]</code> macro. for example, <code>[source,sql]</code></p>
 </li>
 <li>
 <p>In general, do not indent Asciidoc, as indentation is significant. Code listings
@@ -93,21 +94,24 @@ are one exception.</p>
 <h2 id="_building_documentation"><a class="link" href="#_building_documentation">Building Documentation</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>To build the documentation, you need the Asciidoctor Ruby application. To build the
+<p>To build the documentation locally, you need the Asciidoctor Ruby application. To build the
 entire Kudu documentation set, change to the <code>docs/</code> directory and run:</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">asciidoctor -d book -D docs docs.adoc</code></pre>
+<pre class="highlight"><code class="language-bash" data-lang="bash">asciidoctor -d book -D docs *.adoc</code></pre>
 </div>
 </div>
 <div class="paragraph">
 <p>This builds the HTML output in a new <em>docs/</em> directory within the current directory.
-To view the HTML, open <em>docs/docs.html</em> in your local browser.</p>
+Some content, such as the per-daemon configuration reference files, is not populated
+during a local build.</p>
 </div>
 <div class="paragraph">
-<p>The <em>docs.adoc</em> file includes all the chapter files. You can also build only a single
-chapter. such as <em>introduction.adoc</em>, by passing its name instead.</p>
+<p>To view the HTML, open <em>docs/index.html</em> in your local browser.</p>
+</div>
+<div class="paragraph">
+<p>You can also build only a single chapter. such as <em>introduction.adoc</em>, by passing its name instead.</p>
 </div>
 </div>
 </div>
@@ -207,7 +211,7 @@ include::path/to/app.rb[]
 </div></div></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Filenames, directory names, new terms</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">File names, directory names, new terms</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">italic</p></td>
 <td class="tableblock halign-left valign-top"><div><div class="paragraph">
 <p>_hbase-default.xml_</p>
@@ -563,6 +567,10 @@ Nothing between the slashes will show up.
       </li> 
       <li>
 
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
           <a href="contributing.html">Contributing to Kudu</a> 
       </li> 
       <li>
@@ -577,10 +585,6 @@ Nothing between the slashes will show up.
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
-      </li> 
-      <li>
-
-          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>

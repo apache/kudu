@@ -2,7 +2,7 @@
 title: Contributing to Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-24 21:25:48 PDT'
+last_updated: 'Last updated 2015-09-27 23:07:37 EDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -26,7 +26,15 @@ limitations under the License.
     <div class="col-md-9">
 
 <h1>Contributing to Kudu</h1>
-      <div class="sect1">
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Get familiar with these guidelines so that your contributions can be reviewed and
+integrated quickly and easily.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
 <h2 id="_code_style"><a class="link" href="#_code_style">Code Style</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
@@ -37,10 +45,10 @@ with the following exceptions:</p>
 <div class="sect2">
 <h3 id="_limitations_on_code_boost_code_library_use"><a class="link" href="#_limitations_on_code_boost_code_library_use">Limitations on <code>boost</code> Library Use</a></h3>
 <div class="paragraph">
-<p><code>boost</code> libraries can be used in cases where we don&#8217;t have a suitable
-replacement in our own code-base. However, try to avoid introducing
-dependencies on new <code>boost</code> libraries, and use our own code in preference
-to <code>boost</code> where available. For example, do not use boost&#8217;s scoped pointer
+<p><code>boost</code> libraries can be used in cases where a suitable
+replacement does not exist in the Kudu code base. However, try to avoid introducing
+dependencies on new <code>boost</code> libraries, and use Kudu code in preference
+to <code>boost</code> where available. For example, do not use `boost&#8217;s scoped pointer
 implementations.</p>
 </div>
 <div class="ulist">
@@ -53,7 +61,7 @@ implementations.</p>
 <p><code>boost::assign</code> (container literals)</p>
 </li>
 <li>
-<p><code>boost::mutex</code> and <code>boost::shared_mutex</code> (but prefer our own
+<p><code>boost::mutex</code> and <code>boost::shared_mutex</code> (but prefer Kudu&#8217;s
 spin lock implementation for short critical sections)</p>
 </li>
 </ul>
@@ -66,7 +74,7 @@ or earlier, for compatibility with RHEL 6.</p>
 <div class="title"><code>boost</code> Libraries and the Kudu C++ Client</div>
 <p>Do not use <code>boost</code> in any public headers for the Kudu C++ client, because
 <code>boost</code> commonly breaks backward compatibility, and passing data between two <code>boost</code>
-versions (one by the user, one by us) causes serious issues.</p>
+versions (one by the user, one by Kudu) causes serious issues.</p>
 </div>
 <div class="paragraph">
 <p>In addition, do not create dependencies from the Kudu C++ client to any <code>boost</code>
@@ -79,8 +87,8 @@ by the C++ client (such as <em>common/</em> and <em>util/</em>).</p>
 <div class="sect2">
 <h3 id="_line_length"><a class="link" href="#_line_length">Line length</a></h3>
 <div class="paragraph">
-<p>We allow 100 charcters per line rather than Google&#8217;s standard of 80. Try to
-keep under 80 where possible, but you can spill over to ~100 or so if necessary.</p>
+<p>The Kudu team allows line lengths of 100 characters per line, rather than Google&#8217;s standard of 80. Try to
+keep under 80 where possible, but you can spill over to 100 or so if necessary.</p>
 </div>
 </div>
 <div class="sect2">
@@ -95,9 +103,10 @@ method and also provides emulated <code>move</code> semantics (see <em>gscoped_p
 example usage).</p>
 </div>
 <div class="paragraph">
-<p>If an object is singly owned, but referenced from multiple places, such as when the pointed-to object is known to be valid at least as long
-as the pointer itself, associate a comment with the constructor which takes and stores
-the raw pointer, as in the following example.</p>
+<p>If an object is singly owned, but referenced from multiple places, such as when
+the pointed-to object is known to be valid at least as long as the pointer itself,
+associate a comment with the constructor which takes and stores the raw pointer,
+as in the following example.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -111,7 +120,7 @@ the raw pointer, as in the following example.</p>
 <p>If you use raw pointers within STL collections or inside of vectors and other containers,
 associate a comment with the container, which explains the ownership
 semantics (owned or un-owned). Use utility code from <em>gutil/stl_util.h</em>, such as
-<code>STLDeleteElements</code> or <code>ElementDeleter</code> to easily handle deletion of the
+<code>STLDeleteElements</code> or <code>ElementDeleter</code>, to ease handling of deletion of the
 contained elements.</p>
 </div>
 <div class="admonitionblock warning">
@@ -132,11 +141,11 @@ bug-prone semantics.
 <p>Although single ownership is ideal, sometimes it is not possible, particularly
 when multiple threads are in play and the lifetimes of the pointers are not
 clearly defined. In these cases, you can use either <code>std::tr1::shared_ptr</code> or
-our own <code>scoped_refptr</code> from <em>gutil/ref_counted.hpp</em>. Each of these mechanisms
-relies on reference counting to automatically delete the referrent once no more
+Kudu&#8217;s own <code>scoped_refptr</code> from <em>gutil/ref_counted.hpp</em>. Each of these mechanisms
+relies on reference counting to automatically delete the referent once no more
 pointers remain. The key difference between these two types of pointers is that
 <code>scoped_refptr</code> requires that the object extend a <code>RefCounted</code> base class, and
-stores its reference count inside the object storage itself, while`shared_ptr`
+stores its reference count inside the object storage itself, while <code>shared_ptr</code>
 maintains a separate reference count on the heap.</p>
 </div>
 <div class="paragraph">
@@ -193,7 +202,7 @@ to a <code>scoped_refptr</code> safely without worrying about double freeing</p>
 <li>
 <p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> since we control the implementation, we
 can implement features, such as debug builds that capture the stack trace of every
-referrent to help debug leaks.</p>
+referent to help debug leaks.</p>
 </li>
 <li>
 <p><span class="icon red"><i class="fa fa-minus-circle fa-con"></i></span> the referred-to object must inherit
@@ -206,16 +215,16 @@ from <code>RefCounted</code></p>
 </div>
 <div class="paragraph">
 <p>Since <code>scoped_refptr</code> is generally faster and smaller, try to use it
-rather than <code>shared_ptr</code> in new code. Existing code (as of 12/20/2013) uses <code>shared_ptr</code>
-in many places. When interfacing with that code, continued use of <code>shared_ptr</code> is fine.</p>
+rather than <code>shared_ptr</code> in new code. Existing code uses <code>shared_ptr</code>
+in many places. When interfacing with that code, you can continue to use <code>shared_ptr</code>.</p>
 </div>
 </div>
 <div class="sect2">
 <h3 id="_function_binding_and_callbacks"><a class="link" href="#_function_binding_and_callbacks">Function Binding and Callbacks</a></h3>
 <div class="paragraph">
-<p>Existing code (as of 01/07/2014) uses <code>boost::bind</code> and <code>boost::function</code> for
-function binding and callbacks. For new code, use the <code>Callback</code> and <code>Bind</code>
-classes in <code>gutil</code> instead. While less full-featured (<code>Bind</code> doesn&#8217;t support argument
+<p>Existing code uses <code>boost::bind</code> and <code>boost::function</code> for function binding and
+callbacks. For new code, use the <code>Callback</code> and <code>Bind</code> classes in <code>gutil</code> instead.
+While less full-featured (<code>Bind</code> doesn&#8217;t support argument
 place holders, wrapped function pointers, or function objects), they provide
 more options by the way of argument lifecycle management. For example, a
 bound argument whose class extends <code>RefCounted</code> will be incremented during <code>Bind</code>
@@ -229,7 +238,7 @@ and decremented when the <code>Callback</code> goes out of scope.</p>
 <div class="sect2">
 <h3 id="__code_cmake_code_style_guide"><a class="link" href="#__code_cmake_code_style_guide"><code>CMake</code> Style Guide</a></h3>
 <div class="paragraph">
-<p><code>CMake</code> allows commands in lower, upper, or mixed case. Therefore to keep
+<p><code>CMake</code> allows commands in lower, upper, or mixed case. To keep
 the CMake files consistent, please use the following guidelines:</p>
 </div>
 <div class="ulist">
@@ -272,20 +281,20 @@ the CMake files consistent, please use the following guidelines:</p>
 <div class="sect2">
 <h3 id="_gflags"><a class="link" href="#_gflags">GFlags</a></h3>
 <div class="paragraph">
-<p>Kudu uses gflags for both command-line and file-based configuration. Below are
-some guidelines on how to add a new gflag. All new gflags must conform to these
-guidelines; existing non-conformant ones will be made conformant in time.</p>
+<p>Kudu uses gflags for both command-line and file-based configuration. Use these guidelines
+to add a new gflag. All new gflags must conform to these
+guidelines. Existing non-conformant ones will be made conformant in time.</p>
 </div>
 <div class="paragraph">
 <div class="title">Name</div>
-<p>The gflag&#8217;s name conveys a lot of information, so care must be taken to pick a
-good name. The name will propagate into other systems, such as the official Kudu
-documentation.
+<p>The gflag&#8217;s name conveys a lot of information, so choose a good name. The name
+will propagate into other systems, such as the <a href="configuration_reference.html">Configuration
+Reference</a>.
 - The different parts of a multi-word name should be separated by underscores.
   For example, <code>fs_data_dirs</code>.
 - The name should be prefixed with the context that it affects. For example,
   <code>webserver_num_worker_threads</code> and <code>cfile_default_block_size</code>. Context can be
-  difficult to define, so it&#8217;s best to bear in mind that this prefix will be
+  difficult to define, so bear in mind that this prefix will be
   used to group similar gflags together. If the gflag affects the entire
   process, it should not be prefixed.
 - If the gflag is for a quantity, the name should be suffixed with the units.
@@ -318,11 +327,11 @@ systems.
 <div class="paragraph">
 <div class="title">Tags</div>
 <p>Kudu&#8217;s gflag tagging mechanism adds machine-readable context to each gflag, for
-use in consuming systems such as documentation or CM. See the large block
-comment in flag_tags.h for guidelines.</p>
+use in consuming systems such as documentation or management tools. See the large block
+comment in <em>flag_tags.h</em> for guidelines.</p>
 </div>
 <div class="ulist">
-<div class="title">Misc</div>
+<div class="title">Miscellaneous</div>
 <ul>
 <li>
 <p>Avoid creating multiple gflags for the same logical parameter. For
@@ -378,7 +387,8 @@ targeted benchmark.</p>
 <h2 id="_documentation"><a class="link" href="#_documentation">Documentation</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>See <a href="documentation.html">Documentation Style Guide</a>.</p>
+<p>See <a href="documentation.html">Documentation Style Guide</a> for guidelines about contributing
+to the official Kudu documentation.</p>
 </div>
 </div>
 </div>
@@ -417,6 +427,10 @@ targeted benchmark.</p>
           <a href="developing.html">Developing Applications with Kudu</a> 
       </li> 
       <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
 <span class="active-toc">Contributing to Kudu</span>
             <ul class="sectlevel1">
 <li><a href="#_code_style">Code Style</a>
@@ -440,10 +454,6 @@ targeted benchmark.</p>
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
-      </li> 
-      <li>
-
-          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>

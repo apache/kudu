@@ -2,7 +2,7 @@
 title: Installing Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-24 21:25:48 PDT'
+last_updated: 'Last updated 2015-09-28 00:29:00 EDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -39,9 +39,9 @@ from source. To run Kudu without installing anything, use the <a href="quickstar
 <i class="fa icon-note" title="Note"></i>
 </td>
 <td class="content">
-Kudu is currently easier to install and manage with <a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.htm">Cloudera Manager</a>,
-version 5.4.7 or newer. Please follow the installation instructions on the
-<a href="http://unittest.jenkins.cloudera.com/job/kudu-master-suitehelp/lastSuccessfulBuild/artifact/cloudera/topics/kudu_installation.html">Cloudera website</a>.
+Kudu is currently easier to install and manage with <a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.html">Cloudera Manager</a>,
+version 5.4.7 or newer. If you use Cloudera Manager, see also Cloudera&#8217;s
+<a href="http://www.cloudera.com/content/cloudera/en/downloads/betas/kudu/0-5-0.html">Kudu documentation</a>.
 </td>
 </tr>
 </table>
@@ -105,28 +105,37 @@ durability levels.</p>
 <col style="width: 33%;">
 <col style="width: 33%;">
 </colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-right valign-top">OS</th>
+<th class="tableblock halign-left valign-top">Repository</th>
+<th class="tableblock halign-left valign-top">Individual Packages</th>
+</tr>
+</thead>
 <tbody>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">OS</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Repository</p></td>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Individual Packages</p></td>
-</tr>
-<tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">RHEL</p></td>
+<td class="tableblock halign-right valign-top"><p class="tableblock"><strong>RHEL</strong></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo">RHEL 6</a></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/0.5.0/RPMS/x86_64/">RHEL 6</a></p></td>
 </tr>
 <tr>
-<td class="tableblock halign-left valign-top"><p class="tableblock">Ubuntu</p></td>
+<td class="tableblock halign-right valign-top"><p class="tableblock"><strong>Ubuntu</strong></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/cloudera.list">Trusty</a></p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/">Trusty</a></p></td>
 </tr>
 </tbody>
 </table>
-<div class="listingblock">
-<div class="content">
-<pre>NOTE: For later versions of Ubuntu, the Ubuntu Trusty packages are reported to install, though they have not been extensively tested.</pre>
-</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+For later versions of Ubuntu, the Ubuntu Trusty packages are reported to install, though they have not been extensively tested.
+</td>
+</tr>
+</table>
 </div>
 <div class="sect2">
 <h3 id="_install_on_rhel_hosts"><a class="link" href="#_install_on_rhel_hosts">Install On RHEL Hosts</a></h3>
@@ -168,22 +177,16 @@ packages on each host.</p>
 <div class="listingblock">
 <div class="content">
 <pre>sudo apt-get install kudu                     # Base Kudu files
-
 sudo apt-get install kudu-master              # Service scripts for managing kudu-master
-
 sudo apt-get install kudu-tserver             # Service scripts for managing kudu-tserver
-
 sudo apt-get install libkuduclient0           # Kudu C++ client shared library
-
-sudo apt-get install  libkuduclient-dev       # Kudu C++ client SDK</pre>
+sudo apt-get install libkuduclient-dev       # Kudu C++ client SDK</pre>
 </div>
 </div>
 </li>
 <li>
 <p>To manually install individual DEBs, first download them, then use the command
-<code>sudo dpkg -i &lt;DEB to install&gt;</code> and install the
-<code>kudu-master</code> and <code>kudu-tserver</code> packages on the appropriate hosts. These packages
-provide the operating system commands to start and stop Kudu.</p>
+<code>sudo dpkg -i &lt;DEB to install&gt;</code> to install them.</p>
 </li>
 <li>
 <p>Verify that services are running using one of the following methods:</p>
@@ -310,14 +313,6 @@ need, you can build Kudu from source. You can build from source on any supported
 </div>
 </li>
 <li>
-<p>Optional: Install <code>liboauth</code> and <code>liboauth-devel</code> if you plan to build the Twitter demo.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ sudo yum install liboauth liboauth-devel</pre>
-</div>
-</div>
-</li>
-<li>
 <p>Optional: Install the <code>asciidoctor</code> gem if you plan to build documentation.</p>
 <div class="listingblock">
 <div class="content">
@@ -367,7 +362,8 @@ If you do not specify a <code>DESTDIR</code>, <code>/usr/local/</code> is the de
 </div>
 </li>
 <li>
-<p>Optional: Build the documentation.</p>
+<p>Optional: Build the documentation. NOTE: This command builds local documentation that
+is not appropriate for uploading to the Kudu website.</p>
 <div class="listingblock">
 <div class="content">
 <pre>$ make docs</pre>
@@ -377,11 +373,11 @@ If you do not specify a <code>DESTDIR</code>, <code>/usr/local/</code> is the de
 </ol>
 </div>
 <div class="exampleblock">
-<div class="title">Example 1. RHEL / Centos Build Script</div>
+<div class="title">Example 1. RHEL / CentOS Build Script</div>
 <div class="content">
 <div class="paragraph">
 <p>This script provides an overview of the procedure to build Kudu on a
-newly-installed RHEL or Centos host, and can be used as the basis for an
+newly-installed RHEL or CentOS host, and can be used as the basis for an
 automated deployment scenario. It skips the steps marked <strong>Optional</strong> above.</p>
 </div>
 <div class="listingblock">
@@ -410,14 +406,6 @@ make install</code></pre>
 <div class="content">
 <pre>$ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
   libssl-dev libsasl2-dev libtool ntp</pre>
-</div>
-</div>
-</li>
-<li>
-<p>Optional: Install <code>liboauth-dev</code> if you plan to build the Twitter demo.</p>
-<div class="listingblock">
-<div class="content">
-<pre>$ sudo apt-get -y install liboauth-dev</pre>
 </div>
 </div>
 </li>
@@ -456,7 +444,8 @@ make -j4</code></pre>
 </div>
 </li>
 <li>
-<p>Optional: Build the documentation.</p>
+<p>Optional: Build the documentation. NOTE: This command builds local documentation that
+is not appropriate for uploading to the Kudu website.</p>
 <div class="listingblock">
 <div class="content">
 <pre>$ make docs</pre>
@@ -470,7 +459,7 @@ make -j4</code></pre>
 <div class="content">
 <div class="paragraph">
 <p>This script provides an overview of the procedure to build Kudu on RHEL or
-Centos, and can be used as the basis for an automated deployment scenario. It skips
+CentOS, and can be used as the basis for an automated deployment scenario. It skips
 the steps marked <strong>Optional</strong> above.</p>
 </div>
 <div class="listingblock">
@@ -639,6 +628,10 @@ in <code>java/kudu-client/target/apidocs/index.html</code>.
       </li> 
       <li>
 
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
           <a href="contributing.html">Contributing to Kudu</a> 
       </li> 
       <li>
@@ -648,10 +641,6 @@ in <code>java/kudu-client/target/apidocs/index.html</code>.
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
-      </li> 
-      <li>
-
-          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>

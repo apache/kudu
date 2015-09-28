@@ -2,7 +2,7 @@
 title: Troubleshooting
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-24 21:25:48 PDT'
+last_updated: 'Last updated 2015-09-27 23:07:37 EDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -31,11 +31,12 @@ limitations under the License.
 <div class="sectionbody">
 <div class="sect2">
 <h3 id="req_hole_punching"><a class="link" href="#req_hole_punching">Errors During Hole Punching Test</a></h3>
+<div class="paragraph">
+<p>Kudu requires hole punching capabilities in order to be efficient. Hole punching support
+depends upon your operation system kernel version and local filesystem implementation.</p>
+</div>
 <div class="ulist">
 <ul>
-<li>
-<p>Kudu requires hole punching capabilities in order to be efficient.</p>
-</li>
 <li>
 <p>RHEL or CentOS 6.4 or later, patched to kernel version of 2.6.32-358 or later.
 Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole punching.</p>
@@ -44,7 +45,7 @@ Unpatched RHEL or CentOS 6.4 does not include a kernel with support for hole pun
 <p>Ubuntu 14.04 includes version 3.13 of the Linux kernel, which supports hole punching.</p>
 </li>
 <li>
-<p>Newer versions of the EXT4 or XFS filesystems support hole punching, but EXT3 does
+<p>Newer versions of the EXT4 or XFS file systems support hole punching, but EXT3 does
 not. Older versions of XFS that do not support hole punching return a <code>EOPNOTSUPP</code>
 (operation not supported) error. Older versions of either EXT4 or XFS that do
 not support hole punching cause Kudu to emit an error message such as the following
@@ -60,23 +61,150 @@ details. Raw error message follows.</pre>
 </div>
 </div>
 </li>
-<li>
+</ul>
+</div>
+<div class="paragraph">
 <p>Without hole punching support, the log block manager is unsafe to use. It won&#8217;t
-ever delete blocks, consuming ever more space on disk.</p>
-</li>
-<li>
+ever delete blocks, and will consume ever more space on disk.</p>
+</div>
+<div class="paragraph">
 <p>If you can&#8217;t use hole punching in your environment, you can still
 try Kudu. Enable the file block manager instead of the log block manager by
 adding the <code>--block_manager=file</code> flag to the commands you use to start the master
 and tablet servers. The file block manager does not scale as well as the log block
 manager.</p>
-</li>
-</ul>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+The file block manager is known to scale and perform poorly, and should
+only be used for small-scale evaluation and development.
+</td>
+</tr>
+</table>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_ntp_clock_synchronization"><a class="link" href="#_ntp_clock_synchronization">NTP clock synchronization</a></h3>
-
+<h3 id="ntp"><a class="link" href="#ntp">NTP clock synchronization</a></h3>
+<div class="paragraph">
+<p>For the master and tablet server daemons, the server&#8217;s clock must be synchronized using NTP.
+In addition, the <strong>maximum clock error</strong> (not to be mistaken with the estimated error)
+be below a configurable threshold. The default value is 10 seconds, but it can be set with the flag
+<code>--max_clock_sync_error_usec</code>.</p>
+</div>
+<div class="paragraph">
+<p>If NTP is not installed, or if the clock is reported as unsynchronized, Kudu will not
+start, and will emit a message such as:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>F0924 20:24:36.336809 14550 hybrid_clock.cc:191 Couldn't get the current time: Clock unsynchronized. Status: Service unavailable: Error reading clock. Clock considered unsynchronized.</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If NTP is installed and synchronized, but the maximum clock error is too high,
+the user will see a message such as:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Sep 17, 8:13:09.873 PM FATAL hybrid_clock.cc:196 Couldn't get the current time: Clock synchronized, but error: 11130000, is past the maximum allowable error: 10000000</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>or</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>Sep 17, 8:32:31.135 PM FATAL tablet_server_main.cc:38 Check failed: _s.ok() Bad status: Service unavailable: Cannot initialize clock: Cannot initialize HybridClock. Clock synchronized but error was too high (11711000 us).</pre>
+</div>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+If NTP is installed the user can monitor the synchronization status by running
+<code>ntptime</code>. The relevant value is what is reported for <code>maximum error</code>.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>To install NTP, use the appropriate command for your operating system:</p>
+</div>
+<table class="tableblock frame-all grid-all spread">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">OS</th>
+<th class="tableblock halign-left valign-top">Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Debian/Ubuntu</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>sudo apt-get install ntp</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">RHEL/Centos</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>sudo yum install ntp</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="paragraph">
+<p>If NTP is installed but not running, start it using one of these commands:</p>
+</div>
+<table class="tableblock frame-all grid-all spread">
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-left valign-top">OS</th>
+<th class="tableblock halign-left valign-top">Command</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Debian/Ubuntu</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>sudo service ntp restart</code></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">RHEL/Centos</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><code>sudo /etc/init.d/ntpd restart</code></p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+NTP requires a network connection and may take a few minutes to synchronize the clock.
+In some cases a spotty network connection may make NTP report the clock as unsynchronized.
+A common, though temporary, workaround for this is to restart NTP with one of the commands above.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>If the clock is being reported as synchronized by NTP, but the maximum error is too high,
+the user can increase the threshold to a higher value by setting the above
+mentioned flag. For example to increase the possible maximum error to
+20 seconds the flag should be set like: <code>--max_clock_sync_error_usec=20000000</code></p>
+</div>
 </div>
 </div>
 </div>
@@ -86,9 +214,10 @@ manager.</p>
 <div class="sect2">
 <h3 id="kudu_tracing"><a class="link" href="#kudu_tracing">Kudu Tracing</a></h3>
 <div class="paragraph">
-<p>Every Kudu daemon includes built-in tracing support based on the open source
+<p>The <code>kudu-master</code> and <code>kudu-tserver</code> daemons include built-in tracing support
+based on the open source
 <a href="https://www.chromium.org/developers/how-tos/trace-event-profiling-tool">Chromium Tracing</a>
-framework. Tracing can be used to help diagnose latency issues or other problems
+framework. You can use tracing to help diagnose latency issues or other problems
 on Kudu servers.</p>
 </div>
 <div class="sect3">
@@ -125,8 +254,8 @@ embedded web server in each of the Kudu daemons.</p>
 <i class="fa icon-warning" title="Warning"></i>
 </td>
 <td class="content">
-The tracing interface is known to work in recent versions of Google Chrome. Other browsers
-may not work as expected.
+The tracing interface is known to work in recent versions of Google Chrome.
+Other browsers may not work as expected.
 </td>
 </tr>
 </table>
@@ -135,28 +264,28 @@ may not work as expected.
 <div class="sect3">
 <h4 id="_collecting_a_trace"><a class="link" href="#_collecting_a_trace">Collecting a trace</a></h4>
 <div class="paragraph">
-<p>After navigating to the tracing interface, click the 'Record' button on the top left corner
-of the screen. When beginning to diagnose a problem, it is easiest to select all categories
-using the provided button. Then hit 'Record' to begin recording a trace.</p>
+<p>After navigating to the tracing interface, click the <strong>Record</strong> button on the top left corner
+of the screen. When beginning to diagnose a problem, start by selecting all categories.
+Click <strong>Record</strong> to begin recording a trace.</p>
 </div>
 <div class="paragraph">
-<p>While the system is recording a trace, events are collected into an in-memory ring buffer.
-This ring buffer is fixed size, so it will eventually fill up to 100%. However, new events
+<p>During the trace collection, events are collected into an in-memory ring buffer.
+This ring buffer is fixed in size, so it will eventually fill up to 100%. However, new events
 are still being collected while older events are being removed. While recording the trace,
-trigger whatever behavior or workload you are interested in exploring.</p>
+trigger the behavior or workload you are interested in exploring.</p>
 </div>
 <div class="paragraph">
-<p>After collecting for several seconds, hit the 'stop' button, which will download and
-display the collected trace. Hitting the '?' key will bring up information on how to
-use the tracing interface to explore the trace.</p>
+<p>After collecting for several seconds, click <strong>Stop</strong>. The collected trace will be
+downloaded and displayed. Use the <strong>?</strong> key to display help text about using the tracing
+interface to explore the trace.</p>
 </div>
 </div>
 <div class="sect3">
 <h4 id="_saving_a_trace"><a class="link" href="#_saving_a_trace">Saving a trace</a></h4>
 <div class="paragraph">
-<p>Collected traces can be saved as JSON files for later analysis. Simply collect a trace
-and hit the 'Save' button at the top of the screen. This results in a JSON document
-which may be later loaded into the same interface using the 'Load' button.</p>
+<p>You can save collected traces as JSON files for later analysis by clicking <strong>Save</strong>
+after collecting the trace. To load and analyze a saved JSON file, click <strong>Load</strong>
+and choose the file.</p>
 </div>
 </div>
 </div>
@@ -187,18 +316,21 @@ W0922 00:56:52.314888 10858 inbound_call.cc:197] Trace:
 </div>
 </div>
 <div class="paragraph">
-<p>These traces can give an indication of which part of the request was slow, and are
-useful to include in bug reports related to RPC latency outliers.</p>
+<p>These traces can give an indication of which part of the request was slow. Please
+include them in bug reports related to RPC latency outliers.</p>
 </div>
 </div>
 <div class="sect2">
 <h3 id="_kernel_stack_watchdog_traces"><a class="link" href="#_kernel_stack_watchdog_traces">Kernel Stack Watchdog Traces</a></h3>
 <div class="paragraph">
-<p>Every Kudu server process has a background thread called the Stack Watchdog. This thread monitors the
-other threads in the server for cases where they&#8217;ve blocked for longer-than-expected periods of time.
-These traces can be indicative of operating-system level issues or heavily contended storage.
-When the watchdog thread identifies a case of thread blockage, it logs an entry in the <code>WARNING</code>
-log:</p>
+<p>Each Kudu server process has a background thread called the Stack Watchdog, which
+monitors the other threads in the server in case they have blocked for
+longer-than-expected periods of time. These traces can indicate operating system issues
+or bottlenecked storage.</p>
+</div>
+<div class="paragraph">
+<p>When the watchdog thread identifies a case of thread blockage, it logs an entry
+in the <code>WARNING</code> log like the following:</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -238,7 +370,7 @@ User stack:
 </div>
 <div class="paragraph">
 <p>These traces can be useful for diagnosing root-cause latency issues when they are caused by systems
-below Kudu, such as disk controllers or filesystems.</p>
+below Kudu, such as disk controllers or file systems.</p>
 </div>
 </div>
 </div>
@@ -275,7 +407,7 @@ below Kudu, such as disk controllers or filesystems.</p>
 <li><a href="#_issues_starting_the_master_or_tablet_server">Issues starting the Master or Tablet Server</a>
 <ul class="sectlevel2">
 <li><a href="#req_hole_punching">Errors During Hole Punching Test</a></li>
-<li><a href="#_ntp_clock_synchronization">NTP clock synchronization</a></li>
+<li><a href="#ntp">NTP clock synchronization</a></li>
 </ul>
 </li>
 <li><a href="#_troubleshooting_performance_issues">Troubleshooting Performance Issues</a>
@@ -293,6 +425,10 @@ below Kudu, such as disk controllers or filesystems.</p>
       </li> 
       <li>
 
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
           <a href="contributing.html">Contributing to Kudu</a> 
       </li> 
       <li>
@@ -302,10 +438,6 @@ below Kudu, such as disk controllers or filesystems.</p>
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
-      </li> 
-      <li>
-
-          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>

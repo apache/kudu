@@ -2,7 +2,7 @@
 title: Kudu Schema Design
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-24 21:25:48 PDT'
+last_updated: 'Last updated 2015-09-27 23:07:37 EDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -30,19 +30,26 @@ limitations under the License.
 <div class="sectionbody">
 <div class="paragraph">
 <p>Kudu tables have a structured data model similar to tables in a traditional
-RDBMS. Like relational databases, schema design is critical for achieving the
-best performance and operational stability from Kudu. Every workload is unique,
-and there is no single schema design that is best for every table. This document
-outlines effective schema design philosophies for Kudu, paying particular
-attention to where they differ from approaches used for traditional RDBMS
-schemas. At a high level, there are three concerns in Kudu schema design:
+RDBMS. Schema design is critical for achieving the best performance and operational
+stability from Kudu. Every workload is unique, and there is no single schema design
+that is best for every table. This document outlines effective schema design
+philosophies for Kudu, paying particular attention to where they differ from
+approaches used for traditional RDBMS schemas.</p>
+</div>
+<div class="paragraph">
+<p>At a high level, there are three concerns in Kudu schema design:
 <a href="#column-design">column design</a>, <a href="#primary-keys">primary keys</a>, and
 <a href="#data-distribution">data distribution</a>. Of these, only data distribution will
 be a new concept for those familiar with traditional relational databases. The
 next sections discuss <a href="#alter-schema">altering the schema</a> of an existing table,
 and <a href="#known-limitations">known limitations</a> with regard to schema design.</p>
 </div>
-<div id="column-design" class="paragraph">
+</div>
+</div>
+<div class="sect1">
+<h2 id="column-design"><a class="link" href="#column-design">Column Design</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
 <p>A Kudu Table consists of one or more columns, each with a predefined type.
 Columns that are not part of the primary key may optionally be nullable.
 Supported column types include:</p>
@@ -83,32 +90,142 @@ Supported column types include:</p>
 </div>
 <div class="paragraph">
 <p>Kudu takes advantage of strongly-typed columns and a columnar on-disk storage
-format to provide efficient type-specific compression, encoding, and
-serialization. Dictionary encoding, integer packing, delta encoding, and other
-similar techniques are used to compress values more efficiently than
-general-purpose compression algorithms. In order to take advantage of these
-features. However, the data must be specified as the appropriate type (as
-opposed to simulating a 'schemaless' table using string or binary columns for
-data which may otherwise be structured).</p>
+format to provide efficient encoding and serialization. To make the most of these
+features, columns must be specified as the appropriate type, rather than
+simulating a 'schemaless' table using string or binary columns for data which
+may otherwise be structured. In addition to encoding, Kudu optionally allows
+compression to be specified on a per-column basis.</p>
 </div>
-<div id="primary-key" class="paragraph">
+<div class="sect2">
+<h3 id="encoding"><a class="link" href="#encoding">Column Encoding</a></h3>
+<div class="paragraph">
+<p>Each column in a Kudu table can be created with an encoding, based on the type
+of the column. Columns use plain encoding by default.</p>
+</div>
+<table class="tableblock frame-all grid-all spread">
+<caption class="title">Table 1. Encoding Types</caption>
+<colgroup>
+<col style="width: 50%;">
+<col style="width: 50%;">
+</colgroup>
+<tbody>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Column Type</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">Encoding</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">integer, timestamp</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">plain, bitshuffle, run length</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">float</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">plain, bitshuffle</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">bool</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">plain, dictionary, run length</p></td>
+</tr>
+<tr>
+<td class="tableblock halign-left valign-top"><p class="tableblock">string, binary</p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock">plain, prefix, dictionary</p></td>
+</tr>
+</tbody>
+</table>
+<div id="plain" class="dlist">
+<dl>
+<dt class="hdlist1">Plain Encoding</dt>
+<dd>
+<p>Data is stored in its natural format. For example, <code>int32</code> values
+are stored as fixed-size 32-bit little-endian integers.</p>
+</dd>
+</dl>
+</div>
+<div id="bitshuffle" class="dlist">
+<dl>
+<dt class="hdlist1">Bitshuffle Encoding</dt>
+<dd>
+<p>Data is rearranged to store the most significant bit of
+every value, followed by the second most significant bit of every value, and so
+on. Finally, the result is LZ4 compressed. Bitshuffle encoding is a good choice for
+columns that have many repeated values, or values that change by small amounts
+when sorted by primary key. The
+<a href="https://github.com/kiyo-masui/bitshuffle">bitshuffle</a> project has a good
+overview of performance and use cases.</p>
+</dd>
+</dl>
+</div>
+<div id="run-length" class="dlist">
+<dl>
+<dt class="hdlist1">Run Length Encoding</dt>
+<dd>
+<p><em>Runs</em> (consecutive repeated values), are compressed in a
+column by storing only the value and the count. Run length encoding is effective
+for columns with many consecutive repeated values when sorted by primary key.</p>
+</dd>
+</dl>
+</div>
+<div id="dictionary" class="dlist">
+<dl>
+<dt class="hdlist1">Dictionary Encoding</dt>
+<dd>
+<p>A dictionary of unique values is built, and each column value
+is encoded as its corresponding index in the dictionary. Dictionary encoding
+is effective for columns with low cardinality. If the column values of a given row set
+are unable to be compressed because the number of unique values is too high, Kudu will
+transparently fall back to plain encoding for that row set. This is evaluated during
+flush.</p>
+</dd>
+</dl>
+</div>
+<div id="prefix" class="dlist">
+<dl>
+<dt class="hdlist1">Prefix Encoding</dt>
+<dd>
+<p>Common prefixes are compressed in consecutive column values. Prefix
+encoding can be effective for values that share common prefixes, or the first
+column of the primary key, since rows are sorted by primary key within tablets.</p>
+</dd>
+</dl>
+</div>
+</div>
+<div class="sect2">
+<h3 id="compression"><a class="link" href="#compression">Column Compression</a></h3>
+<div class="paragraph">
+<p>Kudu allows per-column compression using LZ4, <code>snappy</code>, or <code>zlib</code> compression
+codecs. By default, columns are stored uncompressed. Consider using compression
+if reducing storage space is more important than raw scan performance.</p>
+</div>
+<div class="paragraph">
+<p>+
+Every data set will compress differently, but in general LZ4 has the least effect on
+performance, while <code>zlib</code> will compress to the smallest data sizes.
+Bitshuffle-encoded columns are inherently compressed using LZ4, so it is not
+typically beneficial to apply additional compression on top of this encoding.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="primary-keys"><a class="link" href="#primary-keys">Primary Keys</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
 <p>Each Kudu table must declare a primary key comprised of one or more columns.
 Primary key columns must be non-nullable, and may not be a boolean or
 floating-point type. Every row in a table must have a unique set of values for
-its primary key columns. As with traditional relational databases, primary key
+its primary key columns. As with a traditional RDBMS, primary key
 selection is critical to ensuring performant database operations.</p>
 </div>
 <div class="paragraph">
 <p>Unlike an RDBMS, Kudu does not provide an auto-incrementing column feature, so
 the application must always provide the full primary key during insert or
-ingestion. Aditionally, Kudu does not allow the primary key values of a row to
+ingestion. In addition, Kudu does not allow the primary key values of a row to
 be updated.</p>
 </div>
 <div class="paragraph">
-<p>Within a tablet, rows are stored sorted in primary key order. Advanced schema
-designs can take advantage of this ordering to achieve good distribution of
-data among tablets (through the techniques discussed in <a href="#data-distribution">Data Distribution</a>),
-while retaining a consistent ordering in intra-tablet scans.</p>
+<p>Within a tablet, rows are stored sorted lexicographically by primary key. Advanced
+schema designs can take advantage of this ordering to achieve good distribution of
+data among tablets, while retaining consistent ordering in intra-tablet scans. See
+<a href="#data-distribution">Data Distribution</a> for more information.</p>
 </div>
 </div>
 </div>
@@ -119,38 +236,36 @@ while retaining a consistent ordering in intra-tablet scans.</p>
 <p>Kudu tables, unlike traditional relational tables, are partitioned into tablets
 and distributed across many tablet servers. A row always belongs to a single
 tablet (and its replicas). The method of assigning rows to tablets is specified
-in a configurable partition schema for each table.</p>
+in a configurable <em>partition schema</em> for each table, during table creation.</p>
 </div>
 <div class="paragraph">
-<p>Choosing a data distribution strategy requires understanding the data model and
+<p>Choosing a data distribution strategy requires you to understand the data model and
 expected workload of a table. For write-heavy workloads, it is important to
 design the distribution such that writes are spread across tablets in order to
-avoid overloading a single tablet. For workloads involving many short scans, it
-can improve performance if all of the data for the scan is located on the same
-tablet. These fundamental tradeoffs are central to designing an effective
+avoid overloading a single tablet. For workloads involving many short scans, performance
+can be improved if all of the data for the scan is located in the same
+tablet. Understanding these fundamental trade-offs is central to designing an effective
 partition schema.</p>
 </div>
 <div class="paragraph">
-<p>Kudu provides two types of partition schema which can be <a href="#hash-and-range">used
-together</a>, or independently: <a href="#range-partitioning">range partitioning</a> and
-<a href="#hash-bucketing">hash bucketing</a>. Kudu does not yet allow tablets to be split
-after creation, so you must design your partition schema ahead of time to ensure
+<p>Kudu provides two types of partition schema: <a href="#range-partitioning">range partitioning</a> and
+<a href="#hash-bucketing">hash bucketing</a>. These schema types can be <a href="#hash-and-range">used
+together</a> or independently. Kudu does not yet allow tablets to be split after
+creation, so you must design your partition schema ahead of time to ensure that
 a sufficient number of tablets are created.</p>
 </div>
+<div class="sect2">
+<h3 id="range-partitioning"><a class="link" href="#range-partitioning">Range Partitioning</a></h3>
 <div class="paragraph">
-<p>[[range-partitioning]
-=== Range Partitioning</p>
-</div>
-<div class="paragraph">
-<p>Range partitioning distributes rows into tablets using a totally-ordered
-distribution key. Every tablet is assigned a contiguous segment of the table&#8217;s
-distribution keyspace. By default, the distribution key uses the columns of the
-primary key, but it may be configured to be any subset of the primary key
+<p>With range partitioning, rows are distributed into tablets using a totally-ordered
+distribution key. Each tablet is assigned a contiguous segment of the table&#8217;s
+distribution keyspace. By default, the distribution key uses all of the columns of the
+primary key, but it may be configured to use any subset of the primary key
 columns.</p>
 </div>
 <div class="paragraph">
-<p>During table creation, tablets boundaries are specified as a sequence of split
-rows. For example, in the following table schema (using SQL syntax for clarity):</p>
+<p>During table creation, tablet boundaries are specified as a sequence of <em>split
+rows</em>. Consider the following table schema (using SQL syntax for clarity):</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -165,34 +280,33 @@ rows. For example, in the following table schema (using SQL syntax for clarity):
 <div class="paragraph">
 <p>Specifying the split rows as <code>(("b", ""), ("c", ""), ("d", ""), .., ("z", ""))</code>
 (25 split rows total) will result in the creation of 26 tablets, with each
-tablet responsible for a range of customer surnames all beggining with the same
-first character. This is an effective partition schema for a workload where
-customers are inserted and updated uniformly by last name, and scans are
-typically over a range of surnames.</p>
+tablet containing a range of customer surnames all beginning with a given letter.
+This is an effective partition schema for a workload where customers are inserted
+and updated uniformly by last name, and scans are typically performed over a range
+of surnames.</p>
 </div>
 <div class="paragraph">
 <p>It may make sense to partition a table by range using only a subset of the
 primary key columns, or with a different ordering than the primary key. For
 instance, you can change the above example to specify that the range partition
-should only include the <code>last_name</code> column, then Kudu would guarantee that all
+should only include the <code>last_name</code> column. In that case, Kudu would guarantee that all
 customers with the same last name would fall into the same tablet, regardless of
 the provided split rows.</p>
 </div>
-<div class="paragraph">
-<p>[[hash-bucketing]
-=== Hash Bucketing</p>
 </div>
+<div class="sect2">
+<h3 id="hash-bucketing"><a class="link" href="#hash-bucketing">Hash Bucketing</a></h3>
 <div class="paragraph">
 <p>Hash bucketing distributes rows by hash value into one of many buckets. Each
 tablet is responsible for the rows falling into a single bucket. The number of
 buckets (and therefore tablets), is specified during table creation. Typically,
-the primary key columns are used as the columns to hash, but as with range
+all of the primary key columns are used as the columns to hash, but as with range
 partitioning, any subset of the primary key columns can be used.</p>
 </div>
 <div class="paragraph">
 <p>Hash partitioning is an effective strategy to increase the amount of parallelism
 for workloads that would otherwise skew writes into a small number of tablets.
-For example, consider the following table schema:</p>
+Consider the following table schema.</p>
 </div>
 <div class="listingblock">
 <div class="content">
@@ -206,27 +320,40 @@ For example, consider the following table schema:</p>
 </div>
 </div>
 <div class="paragraph">
-<p>If the default range partitioning over the primary key columns is used, then
-inserts tend to only go to the tablet covering the current time, which limits
+<p>If you use the default range partitioning over the primary key columns, inserts will
+tend to only go to the tablet covering the current time, which limits the
 maximum write throughput to the throughput of a single tablet. If you use hash
 partitioning, you can guarantee a number of parallel writes equal to the number
-of buckets specified when defining the partition schema. The tradeoff is that a
+of buckets specified when defining the partition schema. The trade-off is that a
 scan over a single time range now must touch each of these tablets, instead of
-(possibly) a single tablet. Hash bucketing can be an effective tool for other
-types of write skew as well, such as monotonically increasing values.</p>
+(possibly) a single tablet. Hash bucketing can be an effective tool for mitigating
+other types of write skew as well, such as monotonically increasing values.</p>
 </div>
 <div class="paragraph">
-<p>As an advanced optimization, Kudu allows tables to be created with more than one
+<p>As an advanced optimization, you can create a table with more than one
 hash bucket component, as long as the column sets included in each are disjoint,
 and all hashed columns are part of the primary key. The total number of tablets
-created will be the product of the hash bucket counts. As an example, the above
+created will be the product of the hash bucket counts. For example, the above
 <code>metrics</code> table could be created with two hash bucket components, one over the
 <code>time</code> column with 4 buckets, and one over the <code>metric</code> and <code>host</code> columns with
 8 buckets. The total number of tablets will be 32. The advantage of using two
-seperate hash bucket components is that scans which specify equality constraints
+separate hash bucket components is that scans which specify equality constraints
 on the <code>metric</code> and <code>host</code> columns will be able to skip 7/8 of the total
-tablets, leaving a total of just 4 tablets to scan (this optimization is not yet
-implemented, see <a href="#known-limitations">known limitations</a> for details).</p>
+tablets, leaving a total of just 4 tablets to scan.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+This optimization is not yet implemented. See
+<a href="#known-limitations">known limitations</a> for details.
+</td>
+</tr>
+</table>
+</div>
 </div>
 <div class="sect2">
 <h3 id="hash-and-range"><a class="link" href="#hash-and-range">Hash Bucketing and Range Partitioning</a></h3>
@@ -243,10 +370,23 @@ the product of the number of hash buckets and the number of split rows plus one.
 <h2 id="alter-schema"><a class="link" href="#alter-schema">Schema Alterations</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>You can rename Kudu tables, as well as rename, add, or drop columns in an
-existing table. You can rename primary key columns, but you cannot drop them,
-and new columns cannot be added to the primary key after table creation. You
-cannot modify the partition schema after table creation.</p>
+<p>You can alter a table&#8217;s schema in the following ways:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p>Rename the table</p>
+</li>
+<li>
+<p>Rename, add, or drop columns</p>
+</li>
+<li>
+<p>Rename (but not drop) primary key columns</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>You cannot modify the partition schema after table creation.</p>
 </div>
 </div>
 </div>
@@ -256,33 +396,41 @@ cannot modify the partition schema after table creation.</p>
 <div class="paragraph">
 <p>Kudu currently has some known limitations that may factor into schema design:</p>
 </div>
-<div class="ulist">
-<ul>
-<li>
-<p><strong>Immutable Primary Keys</strong> Kudu does allow you to update the primary key of a
+<div class="dlist">
+<dl>
+<dt class="hdlist1">Immutable Primary Keys</dt>
+<dd>
+<p>Kudu does allow you to update the primary key of a
 row after insertion.</p>
-</li>
-<li>
-<p><strong>Non-alterable Primary Key</strong> Kudu does not allow you to alter the primary key
+</dd>
+<dt class="hdlist1">Non-alterable Primary Key</dt>
+<dd>
+<p>Kudu does not allow you to alter the primary key
 columns after table creation.</p>
-</li>
-<li>
-<p><strong>Non-alterable Partition Schema</strong> Kudu does not allow you to alter the
+</dd>
+<dt class="hdlist1">Non-alterable Partition Schema</dt>
+<dd>
+<p>Kudu does not allow you to alter the
 partition schema after table creation.</p>
-</li>
-<li>
-<p><strong>Partition Pruning</strong> The Kudu Java and C++ clients do not yet use scan
-predicates to prune tablets for scans over tables with hash buckets. In the
+</dd>
+<dt class="hdlist1">Partition Pruning</dt>
+<dd>
+<p>When tables use hash buckets, the Java and C++ clients do
+not yet use scan predicates to prune tablets for scans over these tables. In the
 future, specifying an equality predicate on all columns in the hash bucket
 component will limit the scan to only the tablets corresponding to the hash
 bucket.</p>
-</li>
-<li>
-<p><strong>Tablet Splitting</strong> You currently cannot split or merge tablets after table
-creation. Instead, you must create the appropriate number of tablets in the
-partition schema at table creation.</p>
-</li>
-</ul>
+</dd>
+<dt class="hdlist1">Tablet Splitting</dt>
+<dd>
+<p>You currently cannot split or merge tablets after table
+creation. You must create the appropriate number of tablets in the
+partition schema at table creation. As a workaround, you can copy the contents
+of one table to another by using a <code>CREATE TABLE AS SELECT</code> statement or creating
+an empty table and using an <code>INSERT</code> query with <code>SELECT</code> in the predicate to
+populate the new table.</p>
+</dd>
+</dl>
 </div>
 </div>
 </div>
@@ -321,6 +469,27 @@ partition schema at table creation.</p>
           <a href="developing.html">Developing Applications with Kudu</a> 
       </li> 
       <li>
+<span class="active-toc">Kudu Schema Design</span>
+            <ul class="sectlevel1">
+<li><a href="#column-design">Column Design</a>
+<ul class="sectlevel2">
+<li><a href="#encoding">Column Encoding</a></li>
+<li><a href="#compression">Column Compression</a></li>
+</ul>
+</li>
+<li><a href="#primary-keys">Primary Keys</a></li>
+<li><a href="#data-distribution">Data Distribution</a>
+<ul class="sectlevel2">
+<li><a href="#range-partitioning">Range Partitioning</a></li>
+<li><a href="#hash-bucketing">Hash Bucketing</a></li>
+<li><a href="#hash-and-range">Hash Bucketing and Range Partitioning</a></li>
+</ul>
+</li>
+<li><a href="#alter-schema">Schema Alterations</a></li>
+<li><a href="#known-limitations">Known Limitations</a></li>
+</ul> 
+      </li> 
+      <li>
 
           <a href="contributing.html">Contributing to Kudu</a> 
       </li> 
@@ -331,10 +500,6 @@ partition schema at table creation.</p>
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
-      </li> 
-      <li>
-
-          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>

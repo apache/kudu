@@ -2,7 +2,7 @@
 title: Configuring Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-24 21:25:48 PDT'
+last_updated: 'Last updated 2015-09-27 23:07:37 EDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -36,7 +36,9 @@ limitations under the License.
 </td>
 <td class="content">
 Kudu is easier to configure with <a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.htm">Cloudera Manager</a>
-than in a standalone installation.
+than in a standalone installation. See Cloudera&#8217;s
+<a href="http://www.cloudera.com/content/cloudera/en/downloads/betas/kudu/0-5-0.html">Kudu documentation</a>
+for more details about using Kudu with Cloudera Manager.
 </td>
 </tr>
 </table>
@@ -67,15 +69,18 @@ documentation standardizes on two: <code>--example_flag</code>.</p>
 <div class="sect2">
 <h3 id="_discovering_configuration_options"><a class="link" href="#_discovering_configuration_options">Discovering Configuration Options</a></h3>
 <div class="paragraph">
-<p>Only the most common configuration options are documented here. To see all
-configuration flags for a given executable, run it with the <code>--help</code> option.
+<p>Only the most common configuration options are documented here. For a more exhaustive
+list of configuration options, see the <a href="configuration_reference.html">Configuration Reference</a>.</p>
+</div>
+<div class="paragraph">
+<p>To see all configuration flags for a given executable, run it with the <code>--help</code> option.
 Take care when configuring undocumented flags, as not every possible
 configuration has been tested, and undocumented options are not guaranteed to be
 maintained in future releases.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_configuring_masters"><a class="link" href="#_configuring_masters">Configuring Masters</a></h3>
+<h3 id="_configuring_the_kudu_master"><a class="link" href="#_configuring_the_kudu_master">Configuring the Kudu Master</a></h3>
 <div class="paragraph">
 <p>To see all available configuration options for the <code>kudu-master</code> executable, run it
 with the <code>--help</code> option:</p>
@@ -206,13 +211,6 @@ do not read this flag.</p></td>
 <a href="configuration_reference.html#tablet_server_configuration_reference">Kudu Tablet Server Configuration Reference</a>.</p>
 </div>
 </div>
-<div class="sect2">
-<h3 id="_configuring_the_kudu_web_interface"><a class="link" href="#_configuring_the_kudu_web_interface">Configuring the Kudu Web Interface</a></h3>
-<div class="paragraph">
-<p>The Kudu web interface is available on each master at port 8051 and each tablet server
-at port 8050.</p>
-</div>
-</div>
 </div>
 </div>
 <div class="sect1">
@@ -266,6 +264,10 @@ at port 8050.</p>
       </li> 
       <li>
 
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
           <a href="contributing.html">Contributing to Kudu</a> 
       </li> 
       <li>
@@ -275,10 +277,6 @@ at port 8050.</p>
       <li>
 
           <a href="configuration_reference.html">Kudu Configuration Reference</a> 
-      </li> 
-      <li>
-
-          <a href="resources.html">Kudu Resources</a> 
       </li> 
   </ul>
   </div>
