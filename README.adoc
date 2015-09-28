@@ -1,0 +1,26 @@
+= Updating the Kudu Website
+
+To update HTML pages in this directory, edit them and commit, and push your changes
+to gerrit by issuing a command like:
+
+----
+git push gerrit HEAD:refs/for/gh-pages --no-thin
+----
+
+== Updating the Site Navigation
+
+To update the site navigation or overall page layout, edit `_layouts/default.html`. Submit your proposed
+changes to Gerrit, as above.
+
+== Updating the CSS
+See the `css/` directory.
+
+`kudu.css`:: Styles for the overall website.
+`asciidoc.css`:: Overrides for the documentation.
+
+== Updating the Documentation
+
+For instructions on updating the Kudu documentation (the contents of the `docs/`
+directory in this branch), and the Java API documentation (the contents of the
+`apidocs/` directory in this branch, see
+https://github.com/cloudera/kudu#building-kudu-documentation.
