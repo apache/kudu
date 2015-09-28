@@ -77,7 +77,7 @@ instance, you must use parcels and you should use the instructions provided in
 [[install_impala_kudu_parcels_side_by_side]]
 ==== Manual Installation
 
-Manual installation of Impala_Kudu is only supported where there is no other Impala
+NOTE: Manual installation of Impala_Kudu is only supported where there is no other Impala
 service already running in the cluster, and when you use parcels.
 
 . Obtain the Impala_Kudu parcel either by using the parcel repository or downloading it manually.
@@ -118,9 +118,9 @@ or more to run Impala Daemon instances. Click *Continue*.
 +
 [source,sql]
 ----
-select if(version() like '%NEXT%', "all set to go!", "check your configs") as s;
+select if(version() like '%KUDU%', "all set to go!", "check your configs") as s;
 
-Query: select if(version() like '%NEXT%', "all set to go!", "check your configs") as s
+Query: select if(version() like '%KUDU%', "all set to go!", "check your configs") as s
 +----------------+
 | s              |
 +----------------+
