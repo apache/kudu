@@ -41,6 +41,10 @@ set -e
 TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 cd $TP_DIR
 
+if [[ "$OSTYPE" =~ ^linux ]]; then
+  OS_LINUX=1
+fi
+
 source vars.sh
 
 delete_if_wrong_patchlevel() {
@@ -210,20 +214,22 @@ if [ ! -d $BITSHUFFLE_DIR ]; then
   fetch_and_expand bitshuffle-${BITSHUFFLE_VERSION}.tar.gz
 fi
 
-if [ ! -d $CLANG_TOOLCHAIN_DIR ]; then
-  fetch_and_expand clang-${CLANG_TOOLCHAIN_VERSION}.tgz
+if [ -n "$OS_LINUX" ]; then
+  if [ ! -d $CLANG_TOOLCHAIN_DIR ]; then
+    fetch_and_expand clang-${CLANG_TOOLCHAIN_VERSION}.tgz
+  fi
+  # Make a link to the current version of the toolchain clang.
+  # We don't want to put this in the thirdparty install directory, because then
+  # clang assumes that it's installed system-wide, and no longer adds 'rpath'
+  # entries for the other thirdparty libraries when building.
+  ln -sf -T $CLANG_TOOLCHAIN_DIR clang-toolchain
 fi
-# Make a link to the current version of the toolchain clang.
-# We don't want to put this in the thirdparty install directory, because then
-# clang assumes that it's installed system-wide, and no longer adds 'rpath'
-# entries for the other thirdparty libraries when building.
-ln -sf -T $CLANG_TOOLCHAIN_DIR clang-toolchain
 
 if [ ! -d $TRACE_VIEWER_DIR ]; then
   fetch_and_expand kudu-trace-viewer-${TRACE_VIEWER_VERSION}.tar.gz
 fi
 
-if [ ! -d $NVML_DIR ]; then
+if [ -n "$OS_LINUX" -a ! -d $NVML_DIR ]; then
   fetch_and_expand nvml-${NVML_VERSION}.tgz
 fi
 
