@@ -31,29 +31,33 @@ else
   curl -O ${VIRTUALBOX_URL}
 fi
 
-# Create a host only network interface
-VBoxManage hostonlyif create
+# Set up the VM for the first time if it doesn't already exist.
+if ! VBoxManage list vms | grep -q '"kudu-demo"'; then
+  # Create a host only network interface
+  VBoxManage hostonlyif create
 
-# Find the last one created
-last_if=`VBoxManage list -l hostonlyifs | grep "^Name:" | tail -n 1 | tr " " "\n" | tail -n 1`
-host_ip=`VBoxManage list -l hostonlyifs | grep "^IPAddress:" | tail -n 1 | tr " " "\n" | tail -n 1`
+  # Find the last one created
+  last_if=`VBoxManage list -l hostonlyifs | grep "^Name:" | tail -n 1 | tr " " "\n" | tail -n 1`
+  host_ip=`VBoxManage list -l hostonlyifs | grep "^IPAddress:" | tail -n 1 | tr " " "\n" | tail -n 1`
 
-lower_ip=`echo $host_ip | sed 's/\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\)\.[0-9]\{1,3\}/\1/g'`
+  lower_ip=`echo $host_ip | sed 's/\([0-9]\{1,3\}\.[0-9]\{1,3\}\.[0-9]\{1,3\}\)\.[0-9]\{1,3\}/\1/g'`
 
-VBoxManage hostonlyif ipconfig $last_if --ip $host_ip
-VBoxManage dhcpserver add --ifname $last_if --ip $host_ip --netmask 255.255.255.0 --lowerip $lower_ip.100 --upperip $lower_ip.200 || :
-VBoxManage dhcpserver modify --ifname $last_if --enable
+  VBoxManage hostonlyif ipconfig $last_if --ip $host_ip
+  VBoxManage dhcpserver add --ifname $last_if --ip $host_ip --netmask 255.255.255.0 --lowerip $lower_ip.100 --upperip $lower_ip.200 || :
+  VBoxManage dhcpserver modify --ifname $last_if --enable
 
-# Import the ovf
-VBoxManage import ${OVF} --vsys 0 --cpus ${VM_NUM_CPUS} --memory ${VM_MEM_MB} --vmname ${VM_NAME} --options keepallmacs
-VBoxManage modifyvm ${VM_NAME} --nic1 hostonly
-VBoxManage modifyvm ${VM_NAME} --hostonlyadapter1 $last_if
-VBoxManage modifyvm ${VM_NAME} --nic2 nat
+  # Import the ovf
+  echo "Importing VM ${OVF}..."
+  VBoxManage import ${OVF} --vsys 0 --cpus ${VM_NUM_CPUS} --memory ${VM_MEM_MB} --vmname ${VM_NAME} --options keepallmacs
+  VBoxManage modifyvm ${VM_NAME} --nic1 hostonly
+  VBoxManage modifyvm ${VM_NAME} --hostonlyadapter1 $last_if
+  VBoxManage modifyvm ${VM_NAME} --nic2 nat
 
-# Create a shared folder with the current checkout available to the VM
-REL_PATH=`pwd`/../
-SHARED_FOLDER_PATH=`dir_resolve $REL_PATH`
-VBoxManage sharedfolder add ${VM_NAME} --name examples --hostpath $SHARED_FOLDER_PATH --automount
+  # Create a shared folder with the current checkout available to the VM
+  REL_PATH=`pwd`/../
+  SHARED_FOLDER_PATH=`dir_resolve $REL_PATH`
+  VBoxManage sharedfolder add ${VM_NAME} --name examples --hostpath $SHARED_FOLDER_PATH --automount
+fi
 
 # Start the VM
 VBoxManage startvm ${VM_NAME}
@@ -72,20 +76,18 @@ while true; do
     sleep 5
 done
 
-if ! grep -q quickstart.cloudera /etc/hosts ; then
 echo "Updating the /etc/hosts file requires sudo rights."
-sudo bash -e -c 'echo "#Kudu Quickstart VM" >> /etc/hosts'
-sudo bash -c "echo $ip quickstart.cloudera >> /etc/hosts"
-else
-echo "Hostname setup already done, check if the IP address of the VM"
-echo "matches the hosts entry."
-echo "IP VM: $ip"
-cat /etc/hosts
+if grep -q quickstart.cloudera /etc/hosts ; then
+  # Strip out the old entry since it's probably wrong now.
+  grep -v quickstart.cloudera /etc/hosts > ./etc-hosts.new
+  sudo mv ./etc-hosts.new /etc/hosts
 fi
+sudo bash -c "echo '$ip quickstart.cloudera # Kudu quickstart VM' >> /etc/hosts"
 
 echo "========================================================================="
 echo "Kudu Quickstart VM installed successfully"
 echo "To use the C++ and Python examples from this repository, you have to SSH"
-echo "to the VM using the user 'demo' with the password 'demo'. "
+echo "to the VM using the user 'demo' with the password 'demo'."
+echo "You can use this command: ssh demo@quickstart.cloudera"
 echo ""
 echo "You'll find the examples mounted as a shared folder at /media/sf_examples"
