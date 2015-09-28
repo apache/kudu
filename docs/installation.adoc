@@ -191,7 +191,7 @@ $ sudo gem install asciidoctor
 +
 [source,bash]
 ----
-$ git clone http://github.mtv.cloudera.com/CDH/kudu
+$ git clone http://github.com/cloudera/kudu
 $ cd kudu
 ----
 
@@ -238,7 +238,7 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 #!/bin/bash
 
 sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel
-git clone http://github.sf.cloudera.com/CDH/kudu
+git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
@@ -266,7 +266,7 @@ $ sudo gem install asciidoctor
 +
 [source,bash]
 ----
-$ git clone http://github.mtv.cloudera.com/CDH/kudu
+$ git clone http://github.com/cloudera/kudu
 $ cd kudu
 ----
 
@@ -304,7 +304,7 @@ the steps marked *Optional* above.
 
 sudo apt-get -y install git autoconf automake libboost-thread-dev curl \
   gcc g++ libssl-dev libsasl2-dev libtool ntp
-git clone http://github.sf.cloudera.com/CDH/kudu
+git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
