@@ -65,10 +65,14 @@ public class KuduCollectlExample {
     }
     
     ArrayList<ColumnSchema> cols = new ArrayList<>();
-    cols.add(new ColumnSchemaBuilder("host", Type.STRING).key(true).build());
-    cols.add(new ColumnSchemaBuilder("metric", Type.STRING).key(true).build());
-    cols.add(new ColumnSchemaBuilder("timestamp", Type.INT32).key(true).build());
-    cols.add(new ColumnSchemaBuilder("value", Type.DOUBLE).build());
+    cols.add(new ColumnSchemaBuilder("host", Type.STRING).key(true).encoding(
+        ColumnSchema.Encoding.DICT_ENCODING).build());
+    cols.add(new ColumnSchemaBuilder("metric", Type.STRING).key(true).encoding(
+        ColumnSchema.Encoding.DICT_ENCODING).build());
+    cols.add(new ColumnSchemaBuilder("timestamp", Type.INT32).key(true).encoding(
+        ColumnSchema.Encoding.BIT_SHUFFLE).build());
+    cols.add(new ColumnSchemaBuilder("value", Type.DOUBLE)
+        .encoding(ColumnSchema.Encoding.BIT_SHUFFLE).build());
 
     client.createTable(TABLE_NAME, new Schema(cols));
   }
@@ -163,15 +167,17 @@ public class KuduCollectlExample {
         if (!br.ready()) {
           List<OperationResponse> responses = session.flush();
           for (OperationResponse r : responses) {
-            RowError e = r.getRowError();
-            // TODO: the client should offer an enum for different row errors, instead
-            // of string comparison!
-            if ("ALREADY_PRESENT".equals(e.getStatus())) {
-              continue;
+            if (r.hasRowError()) {
+              RowError e = r.getRowError();
+              // TODO: the client should offer an enum for different row errors, instead
+              // of string comparison!
+              if ("ALREADY_PRESENT".equals(e.getStatus())) {
+                continue;
+              }
+              System.err.println("Error inserting " + e.getOperation().toString()
+                  + ": " + e.toString());
             }
-            System.err.println("Error inserting " + e.getOperation().toString()
-                + ": " + e.toString());
-            }
+          }
         }
       }
     }
