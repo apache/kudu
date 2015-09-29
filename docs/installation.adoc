@@ -44,6 +44,7 @@ three tablet servers is necessary.
 is the use of the `fallocate()` system call with the `FALLOC_FL_PUNCH_HOLE` option
 set. See link:troubleshooting.html#req_hole_punching[troubleshooting hole punching] for more
 information.
+- ntp.
 - OSX and Windows are not supported, even for building from source.
 
 .Storage
@@ -107,7 +108,8 @@ sudo apt-get install libkuduclient-dev       # Kudu C++ client SDK
 . To manually install individual DEBs, first download them, then use the command
 `sudo dpkg -i <DEB to install>` to install them.
 
-+
+=== Verify the Installation
+
 // tag::verify_install[]
 . Verify that services are running using one of the following methods:
   - Examine the output of the `ps` command on servers to verify one or both of `kudu-master`
@@ -115,7 +117,16 @@ sudo apt-get install libkuduclient-dev       # Kudu C++ client SDK
   - Access the Master or Tablet Server web UI by opening `\http://<_host_name_>:8051/`
   for masters
   or `\http://<_host_name_>:8050/` for tablet servers.
-+
+. If Kudu isn't running, have a look at the log files in '/var/log/kudu', and if there's a file
+  ending with '.FATAL' then it means Kudu wasn't able to start.
+  - If the error is 'Error during hole punch test', it might be a problem
+    link:troubleshooting.html#req_hole_punching[with your OS].
+  - If the error is 'Couldn't get the current time', it's a
+    link:troubleshooting.html#ntp[problem with ntp].
+  - If it's something else that doesn't seem obvious or if you've tried the above solutions without
+    luck, you can ask for help on the
+    link:https://groups.google.com/forum/#!forum/kudu-user[user mailing list].
+
 // end::verify_install[]
 
 [[required_config_without_cm]]
