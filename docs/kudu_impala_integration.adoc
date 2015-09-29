@@ -914,9 +914,7 @@ DROP TABLE my_first_table;
 The examples above have only explored a fraction of what you can do with Impala Shell.
 
 - Learn about the link:http://impala.io[Impala project].
-- Read the link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala.html
-[Impala documentation].
-- View the link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_langref.html
-[Impala SQL reference].
+- Read the link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala.html[Impala documentation].
+- View the link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_langref.html[Impala SQL reference].
 - Read about Impala internals or learn how to contribute to Impala on the link:https://github.com/cloudera/Impala/wiki[Impala Wiki].
 - Read about the native link:installation.html#view_api[Kudu APIs].
