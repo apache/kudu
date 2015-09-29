@@ -237,7 +237,7 @@ string DictionaryInt64Encode(const hash_map<string, int64>* dictionary) {
   vector<string> entries;
   for (hash_map<string, int64>::const_iterator iter = dictionary->begin();
        iter != dictionary->end(); ++iter) {
-    entries.push_back(StringPrintf("%s:%" GG_LL_FORMAT "d",
+    entries.push_back(StringPrintf("%s:%" PRId64,
                                    iter->first.c_str(), iter->second));
   }
 

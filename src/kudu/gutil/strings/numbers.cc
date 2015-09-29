@@ -501,9 +501,9 @@ string FpToString(Fprint fp) {
 // Default arguments
 string Uint128ToHexString(uint128 ui128) {
   char buf[33];
-  snprintf(buf, sizeof(buf), "%016" GG_LL_FORMAT "x",
+  snprintf(buf, sizeof(buf), "%016" PRIx64,
            Uint128High64(ui128));
-  snprintf(buf + 16, sizeof(buf) - 16, "%016" GG_LL_FORMAT "x",
+  snprintf(buf + 16, sizeof(buf) - 16, "%016" PRIx64,
            Uint128Low64(ui128));
   return string(buf);
 }
@@ -1437,7 +1437,7 @@ string ItoaKMGT(int64 i) {
     val = i;
   }
 
-  return StringPrintf("%s%" GG_LL_FORMAT "d%s", sign, val, suffix);
+  return StringPrintf("%s%" PRId64 "%s", sign, val, suffix);
 }
 
 // DEPRECATED(wadetregaskis).

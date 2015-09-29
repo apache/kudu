@@ -10,6 +10,7 @@
 #define BASE_AUXILIARY_ATOMICOPS_INTERNALS_MACOSX_H_
 
 typedef int32_t Atomic32;
+typedef int64_t Atomic64;
 
 // MacOS uses long for intptr_t, AtomicWord and Atomic32 are always different
 // on the Mac, even when they are the same size.  Similarly, on __ppc64__,
@@ -75,6 +76,7 @@ inline int64_t OSAtomicAdd64Barrier(
 namespace base {
 namespace subtle {
 
+typedef int32_t Atomic32;
 typedef int64_t Atomic64;
 
 inline void MemoryBarrier() {
@@ -260,6 +262,13 @@ inline Atomic64 Release_CompareAndSwap(volatile Atomic64 *ptr,
 
 inline void NoBarrier_Store(volatile Atomic64* ptr, Atomic64 value) {
   *ptr = value;
+}
+
+// Issue the x86 "pause" instruction, which tells the CPU that we
+// are in a spinlock wait loop and should allow other hyperthreads
+// to run, not speculate memory access, etc.
+inline void PauseCPU() {
+  __asm__ __volatile__("pause" : : : "memory");
 }
 
 inline void Acquire_Store(volatile Atomic64 *ptr, Atomic64 value) {

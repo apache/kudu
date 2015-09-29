@@ -116,6 +116,10 @@ template<> struct is_integral<__wchar_t> : true_type { };
 #else
 template<> struct is_integral<wchar_t> : true_type { };
 #endif
+#if defined(__APPLE__)
+template<> struct is_integral<int64_t> : true_type { };
+template<> struct is_integral<uint64_t> : true_type { };
+#endif
 template<> struct is_integral<short> : true_type { };
 template<> struct is_integral<unsigned short> : true_type { };
 template<> struct is_integral<int> : true_type { };

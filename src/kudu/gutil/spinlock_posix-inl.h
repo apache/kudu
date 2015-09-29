@@ -33,7 +33,7 @@
  */
 
 #include <errno.h>
-#ifdef HAVE_SCHED_H
+#if defined(HAVE_SCHED_H) || defined(__APPLE__)
 #include <sched.h>      /* For sched_yield() */
 #endif
 #include <time.h>       /* For nanosleep() */

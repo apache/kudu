@@ -122,7 +122,7 @@ string HumanReadableNumBytes::ToString(int64 num_bytes) {
   // Special case for bytes.
   if (num_bytes < GG_LONGLONG(1024)) {
     // No fractions for bytes.
-    return StringPrintf("%s%" GG_LL_FORMAT "dB", neg_str, num_bytes);
+    return StringPrintf("%s%" PRId64 "B", neg_str, num_bytes);
   }
 
   static const char units[] = "KMGTPE";  // int64 only goes up to E.
@@ -163,7 +163,7 @@ string HumanReadableNumBytes::ToStringWithoutRounding(int64 num_bytes) {
 
     num_units = next_units;
   }
-  return StringPrintf("%s%"PRId64"%c", neg_str, num_units, units[unit_type]);
+  return StringPrintf("%s%" PRId64 "%c", neg_str, num_units, units[unit_type]);
 }
 
 string HumanReadableInt::ToString(int64 value) {
@@ -173,7 +173,7 @@ string HumanReadableInt::ToString(int64 value) {
     value = -value;
   }
   if (value < GG_LONGLONG(1000)) {
-    StringAppendF(&s, "%" GG_LL_FORMAT "d", value);
+    StringAppendF(&s, "%" PRId64, value);
   } else if (value >= GG_LONGLONG(1000000000000000)) {
     // Number bigger than 1E15; use that notation.
     StringAppendF(&s, "%0.3G", static_cast<double>(value));

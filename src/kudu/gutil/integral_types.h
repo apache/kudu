@@ -74,19 +74,10 @@ typedef unsigned long      uword_t;
 #define GG_LONGLONG(x) x##I64
 #define GG_ULONGLONG(x) x##UI64
 
-// Length modifier in printf format string for int64's (e.g. within %d)
-#define GG_LL_FORMAT "I64"  // As in printf("%I64d", ...)
-#define GG_LL_FORMAT_W L"I64"
-
 #else   /* not Visual C++ */
 
 #define GG_LONGLONG(x) x##LL
 #define GG_ULONGLONG(x) x##ULL
-
-// Use the following macros for printf formatters in preference to
-// "%lld" or "%q". The "_W" variant is for wide strings.
-#define GG_LL_FORMAT __PRI64_PREFIX
-#define GG_LL_FORMAT_W L""__PRI64_PREFIX
 
 #endif  // _MSC_VER
 

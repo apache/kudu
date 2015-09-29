@@ -50,8 +50,13 @@ set(GUTIL_SRCS
 
 set(GUTIL_LIBS
   glog
-  protobuf
-  rt) # clock_gettime() requires -lrt
+  protobuf)
+
+if (NOT APPLE)
+  set(GUTIL_LIBS
+    ${GUTIL_LIBS}
+    rt) # clock_gettime() requires -lrt
+endif()
 
 ADD_EXPORTABLE_LIBRARY(gutil
   SRCS ${GUTIL_SRCS}
