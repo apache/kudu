@@ -1,6 +1,0 @@
---max_message_size=67108864
---minloglevel=0
---block_cache_capacity_mb=512
---v=0
---memrowset_throttle_mb=768
---metrics_log_interval_ms=1000
