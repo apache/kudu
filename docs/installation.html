@@ -2,7 +2,7 @@
 title: Installing Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-28 00:29:00 EDT'
+last_updated: 'Last updated 2015-09-28 16:59:16 PDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -87,6 +87,15 @@ information.</p>
 <p>If solid state storage is available, storing Kudu WALs on such high-performance
 media may significantly improve latency when Kudu is configured for its highest
 durability levels.</p>
+</li>
+</ul>
+</div>
+<div class="ulist">
+<div class="title">Management</div>
+<ul>
+<li>
+<p>If you use Cloudera Manager and CDH, Cloudera Manager 5.4.3 or newer is required.
+Cloudera Manager 5.4.7 and newer provide better monitoring and administration options.</p>
 </li>
 </ul>
 </div>
@@ -324,7 +333,7 @@ need, you can build Kudu from source. You can build from source on any supported
 <p>Clone the Git repository and change to the new <code>kudu</code> directory.</p>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone http://github.mtv.cloudera.com/CDH/kudu
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone http://github.com/cloudera/kudu
 $ cd kudu</code></pre>
 </div>
 </div>
@@ -348,10 +357,6 @@ make -j4</code></pre>
 </div>
 </div>
 </li>
-</ol>
-</div>
-<div id="build_install_kudu" class="olist arabic">
-<ol class="arabic">
 <li>
 <p>Optional: Install Kudu binaries, libraries, and headers.
 If you do not specify a <code>DESTDIR</code>, <code>/usr/local/</code> is the default.</p>
@@ -385,7 +390,7 @@ automated deployment scenario. It skips the steps marked <strong>Optional</stron
 <pre class="highlight"><code class="language-bash" data-lang="bash">#!/bin/bash
 
 sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel
-git clone http://github.sf.cloudera.com/CDH/kudu
+git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
@@ -421,7 +426,7 @@ make install</code></pre>
 <p>Clone the Git repository and change to the new <code>kudu</code> directory.</p>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone http://github.mtv.cloudera.com/CDH/kudu
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone http://github.com/cloudera/kudu
 $ cd kudu</code></pre>
 </div>
 </div>
@@ -468,7 +473,7 @@ the steps marked <strong>Optional</strong> above.</p>
 
 sudo apt-get -y install git autoconf automake libboost-thread-dev curl \
   gcc g++ libssl-dev libsasl2-dev libtool ntp
-git clone http://github.sf.cloudera.com/CDH/kudu
+git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
 thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
