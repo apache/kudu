@@ -260,10 +260,10 @@ $ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++
   libssl-dev libsasl2-dev libtool ntp
 ----
 
-. Optional: Install the `asciidoctor` gem if you plan to build documentation.
+. Optional: Install the `asciidoctor` gem and xsltproc if you plan to build documentation.
 +
 ----
-$ sudo gem install asciidoctor
+$ sudo apt-get -y install asciidoctor xsltproc
 ----
 
 . Clone the Git repository and change to the new `kudu` directory.
