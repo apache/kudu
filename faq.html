@@ -357,12 +357,25 @@ active_nav: faq
         </p>
       </dd>
       <dt id="faq_oltp">
-        Should I use Kudu for OLTP-type workloads?
+        Should I use Kudu for OLTP-type workloads? How does Kudu relate to Spanner from an OLTP standpoint?
       </dt>
       <dd>
         <p>
+          Kudu is inspired by Spanner in that it uses a consensus-based replication design and
+          timestamps for consistency control, but the on-disk layout is pretty different.
+        </p>
+        <p>
           Kudu was designed and optimized for OLAP workloads and lacks features such as multi-row
           transactions and secondary indexing typically needed to support OLTP.
+        </p>
+        <p>
+          As a true column store, Kudu is not as efficient for OLTP as a row store would be. There are also
+          currently some implementation issues that hurt Kudu's performance on Zipfian distribution
+          updates (see the YCSB results in the performance evaluation of our <a href="/kudu.pdf">draft paper</a>.
+        </p>
+        <p>
+          Our intention with the Kudu beta is that if you have a <i>light</i> OLTP-like workload,
+          it should work, but if you have mostly random accesses something like HBase is probably better.
         </p>
       </dd>
       <dt id="faq_backup">
