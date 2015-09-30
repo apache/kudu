@@ -83,7 +83,7 @@ each host.
 sudo yum install kudu                         # Base Kudu files
 sudo yum install kudu-master                  # Kudu master init.d service script and default configuration
 sudo yum install kudu-tserver                 # Kudu tablet server init.d service script and default configuration
-sudo yum install kudu-client                  # Kudu C++ client shared library
+sudo yum install kudu-client0                 # Kudu C++ client shared library
 sudo yum install kudu-client-devel            # Kudu C++ client SDK
 ----
 
