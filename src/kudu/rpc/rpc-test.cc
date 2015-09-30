@@ -59,7 +59,6 @@ TEST_F(TestRpc, TestMessengerCreateDestroy) {
   shared_ptr<Messenger> messenger(CreateMessenger("TestCreateDestroy"));
   LOG(INFO) << "started messenger " << messenger->name();
   messenger->Shutdown();
-  alarm(0);
 }
 
 // Test starting and stopping a messenger. This is a regression

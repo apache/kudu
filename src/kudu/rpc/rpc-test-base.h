@@ -266,7 +266,6 @@ class RpcTestBase : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    //alarm(60);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -277,7 +276,6 @@ class RpcTestBase : public KuduTest {
     if (server_messenger_) {
       server_messenger_->Shutdown();
     }
-    alarm(0);
     KuduTest::TearDown();
   }
 

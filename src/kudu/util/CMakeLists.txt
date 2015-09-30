@@ -196,7 +196,6 @@ target_link_libraries(kudu_test_util
 #######################################
 
 add_library(kudu_test_main
-  glibc_workaround.cc
   test_main.cc)
 target_link_libraries(kudu_test_main
   gflags
