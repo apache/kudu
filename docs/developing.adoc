@@ -58,6 +58,36 @@ out of date.
 
 These examples should serve as helpful starting points for your own Kudu applications and integrations.
 
+=== Maven Artifacts
+The following Maven `<dependency>` element is valid for the Kudu public beta:
+
+[source,xml]
+----
+<dependency>
+  <groupId>org.kududb</groupId>
+  <artifactId>kudu-client</artifactId>
+  <version>0.5.0</version>
+</dependency>
+----
+
+Because the Maven artifacts are not in Maven Central, use the following `<repository>`
+element:
+
+[source,xml]
+----
+<repository>
+  <id>cdh.repo</id>
+  <name>Cloudera Repositories</name>
+  <url>https://repository.cloudera.com/artifactory/cloudera-repos</url>
+  <snapshots>
+    <enabled>false</enabled>
+  </snapshots>
+</repository>
+----
+
+See subdirectories of https://github.com/cloudera/kudu-examples/tree/master/java for
+example Maven pom.xml files.
+
 == Example Impala Commands With Kudu
 
 See link:kudu_impala_integration.html[Using Impala With Kudu] for guidance on installing
