@@ -2,7 +2,7 @@
 title: Installing Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-28 16:59:16 PDT'
+last_updated: 'Last updated 2015-10-01 13:03:15 PDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -74,6 +74,9 @@ three tablet servers is necessary.</p>
 is the use of the <code>fallocate()</code> system call with the <code>FALLOC_FL_PUNCH_HOLE</code> option
 set. See <a href="troubleshooting.html#req_hole_punching">troubleshooting hole punching</a> for more
 information.</p>
+</li>
+<li>
+<p>ntp.</p>
 </li>
 <li>
 <p>OSX and Windows are not supported, even for building from source.</p>
@@ -162,7 +165,7 @@ each host.</p>
 <pre>sudo yum install kudu                         # Base Kudu files
 sudo yum install kudu-master                  # Kudu master init.d service script and default configuration
 sudo yum install kudu-tserver                 # Kudu tablet server init.d service script and default configuration
-sudo yum install kudu-client                  # Kudu C++ client shared library
+sudo yum install kudu-client0                 # Kudu C++ client shared library
 sudo yum install kudu-client-devel            # Kudu C++ client SDK</pre>
 </div>
 </div>
@@ -197,6 +200,13 @@ sudo apt-get install libkuduclient-dev       # Kudu C++ client SDK</pre>
 <p>To manually install individual DEBs, first download them, then use the command
 <code>sudo dpkg -i &lt;DEB to install&gt;</code> to install them.</p>
 </li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_verify_the_installation"><a class="link" href="#_verify_the_installation">Verify the Installation</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
 <li>
 <p>Verify that services are running using one of the following methods:</p>
 <div class="ulist">
@@ -209,6 +219,27 @@ or <code>kudu-tserver</code> processes is running.</p>
 <p>Access the Master or Tablet Server web UI by opening <code>http://&lt;_host_name_&gt;:8051/</code>
 for masters
 or <code>http://&lt;_host_name_&gt;:8050/</code> for tablet servers.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>If Kudu isn&#8217;t running, have a look at the log files in '/var/log/kudu', and if there&#8217;s a file
+ending with '.FATAL' then it means Kudu wasn&#8217;t able to start.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>If the error is 'Error during hole punch test', it might be a problem
+<a href="troubleshooting.html#req_hole_punching">with your OS</a>.</p>
+</li>
+<li>
+<p>If the error is 'Couldn&#8217;t get the current time', it&#8217;s a
+<a href="troubleshooting.html#ntp">problem with ntp</a>.</p>
+</li>
+<li>
+<p>If it&#8217;s something else that doesn&#8217;t seem obvious or if you&#8217;ve tried the above solutions without
+luck, you can ask for help on the
+<a href="https://groups.google.com/forum/#!forum/kudu-user">user mailing list</a>.</p>
 </li>
 </ul>
 </div>
@@ -415,10 +446,10 @@ make install</code></pre>
 </div>
 </li>
 <li>
-<p>Optional: Install the <code>asciidoctor</code> gem if you plan to build documentation.</p>
+<p>Optional: Install the <code>asciidoctor</code> gem and xsltproc if you plan to build documentation.</p>
 <div class="listingblock">
 <div class="content">
-<pre>$ sudo gem install asciidoctor</pre>
+<pre>$ sudo apt-get -y install asciidoctor xsltproc</pre>
 </div>
 </div>
 </li>
@@ -605,6 +636,7 @@ in <code>java/kudu-client/target/apidocs/index.html</code>.
 <ul class="sectlevel2">
 <li><a href="#_install_on_rhel_hosts">Install On RHEL Hosts</a></li>
 <li><a href="#_install_on_ubuntu_or_debian_hosts">Install On Ubuntu or Debian Hosts</a></li>
+<li><a href="#_verify_the_installation">Verify the Installation</a></li>
 <li><a href="#required_config_without_cm">Required Configuration</a></li>
 </ul>
 </li>

@@ -2,7 +2,7 @@
 title: Configuring Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-09-28 16:59:16 PDT'
+last_updated: 'Last updated 2015-10-01 13:03:15 PDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -120,7 +120,7 @@ directories where the Master will place its data blocks.</p></td>
 <td class="tableblock halign-left valign-top"></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">The directory where the Master will
 place its write-ahead logs. May be the same as <em>one of</em> the directories listed in
-<code>--fs_data_dirs</code>.</p></td>
+<code>--fs_data_dirs</code>, but not a sub-directory of a data directory.</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock"><code>--log_dir</code></p></td>
@@ -176,7 +176,7 @@ of directories where the Tablet Server will place its data blocks.</p></td>
 <td class="tableblock halign-left valign-top"></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">The directory where the Tablet Server will
 place its write-ahead logs. May be the same as <em>one of</em> the directories listed in
-<code>--fs_data_dirs</code>.</p></td>
+<code>--fs_data_dirs</code>, but not a sub-directory of a data directory.</p></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">--log_dir</p></td>
