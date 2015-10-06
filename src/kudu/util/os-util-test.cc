@@ -14,10 +14,7 @@
 
 #include "kudu/util/os-util.h"
 
-#include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <sys/prctl.h>
-#include <sys/syscall.h>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/errno.h"

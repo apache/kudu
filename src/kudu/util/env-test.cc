@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <fcntl.h>
-#include <linux/falloc.h>
 #include <string>
 #include <sys/types.h>
 #include <tr1/memory>
@@ -35,6 +34,9 @@
 #include "kudu/util/malloc.h"
 #include "kudu/util/memenv/memenv.h"
 
+#if !defined(__APPLE__)
+#include <linux/falloc.h>
+#endif  // !defined(__APPLE__)
 // Copied from falloc.h. Useful for older kernels that lack support for
 // hole punching; fallocate(2) will return EOPNOTSUPP.
 #ifndef FALLOC_FL_KEEP_SIZE
@@ -50,7 +52,7 @@ using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
 
-static const uint32_t kOneMb = 1024 * 1024;
+static const uint64_t kOneMb = 1024 * 1024;
 
 class TestEnv : public KuduTest {
  public:
@@ -68,6 +70,7 @@ class TestEnv : public KuduTest {
     static bool checked = false;
     if (checked) return;
 
+#if defined(__linux__)
     int fd = creat(GetTestPath("check-fallocate").c_str(), S_IWUSR);
     PCHECK(fd >= 0);
     int err = fallocate(fd, 0, 0, 4096);
@@ -86,6 +89,7 @@ class TestEnv : public KuduTest {
     }
 
     close(fd);
+#endif
 
     checked = true;
   }

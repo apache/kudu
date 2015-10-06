@@ -75,6 +75,12 @@ add_custom_target(gen_version_info
 # kudu_util
 #######################################
 
+if (APPLE)
+  set(SEMAPHORE_CC "semaphore_macosx.cc")
+else ()
+  set(SEMAPHORE_CC "semaphore.cc")
+endif()
+
 set(UTIL_SRCS
   atomic.cc
   bitmap.cc
@@ -117,7 +123,6 @@ set(UTIL_SRCS
   net/net_util.cc
   net/sockaddr.cc
   net/socket.cc
-  nvm_cache.cc
   oid_generator.cc
   once.cc
   os-util.cc
@@ -128,7 +133,7 @@ set(UTIL_SRCS
   resettable_heartbeater.cc
   rolling_log.cc
   rwc_lock.cc
-  semaphore.cc
+  ${SEMAPHORE_CC}
   slice.cc
   spinlock_profiling.cc
   status.cc
@@ -148,19 +153,31 @@ set(UTIL_SRCS
   version_info.cc
 )
 
+if(NOT APPLE)
+  set(UTIL_SRCS
+    ${UTIL_SRCS}
+    nvm_cache.cc)
+endif()
+
 set(UTIL_LIBS
   boost_system
   boost_thread
   crcutil
+  gflags
   glog
   gutil
   histogram_proto
   pb_util_proto
   protobuf
-  vmem
-  rt
   version_info_proto
   zlib)
+
+if(NOT APPLE)
+  set(UTIL_LIBS
+    ${UTIL_LIBS}
+    rt
+    vmem)
+endif()
 
 # We use MallocExtension and HeapChecker, but not in the exported version of
 # the library.
@@ -188,8 +205,12 @@ target_link_libraries(kudu_test_util
   gflags
   glog
   gmock
-  kudu_util
+  kudu_util)
+
+if(NOT APPLE)
+target_link_libraries(kudu_test_util
   vmem)
+endif()
 
 #######################################
 # kudu_test_main
@@ -203,8 +224,12 @@ target_link_libraries(kudu_test_main
   gmock
   kudu_util
   kudu_test_util
-  dl
-  rt)
+  dl)
+
+if(NOT APPLE)
+  target_link_libraries(kudu_test_main
+    rt)
+endif()
 
 #######################################
 # protoc-gen-insertions

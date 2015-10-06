@@ -135,7 +135,8 @@ fi
 # build gperftools
 if [ -n "$F_ALL" -o -n "$F_GPERFTOOLS" ]; then
   cd $GPERFTOOLS_DIR
-  CXXFLAGS=$EXTRA_CXXFLAGS ./configure --enable-frame-pointers --with-pic --prefix=$PREFIX
+  CXXFLAGS=$EXTRA_CXXFLAGS ./configure \
+    --enable-frame-pointers --enable-heap-checker --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 

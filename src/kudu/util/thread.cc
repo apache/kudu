@@ -20,12 +20,15 @@
 #include <boost/foreach.hpp>
 #include <map>
 #include <set>
-#include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <tr1/memory>
 #include <unistd.h>
 #include <vector>
+
+#if defined(__linux__)
+#include <sys/prctl.h>
+#endif // defined(__linux__)
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
@@ -117,12 +120,12 @@ class ThreadMgr {
 
     const string& name() const { return name_; }
     const string& category() const { return category_; }
-    pthread_t thread_id() const { return thread_id_; }
+    int64_t thread_id() const { return thread_id_; }
 
    private:
     string name_;
     string category_;
-    pthread_t thread_id_;
+    int64_t thread_id_;
   };
 
   // A ThreadCategory is a set of threads that are logically related.
@@ -165,15 +168,19 @@ void ThreadMgr::SetThreadName(const string& name, int64 tid) {
     return;
   }
 
+#if defined(__linux__)
   // http://0pointer.de/blog/projects/name-your-threads.html
   // Set the name for the LWP (which gets truncated to 15 characters).
   // Note that glibc also has a 'pthread_setname_np' api, but it may not be
   // available everywhere and it's only benefit over using prctl directly is
   // that it can set the name of threads other than the current thread.
   int err = prctl(PR_SET_NAME, name.c_str());
+#else
+  int err = pthread_setname_np(name.c_str());
+#endif // defined(__linux__)
   // We expect EPERM failures in sandboxed processes, just ignore those.
   if (err < 0 && errno != EPERM) {
-    PLOG(ERROR) << "prctl(PR_SET_NAME)";
+    PLOG(ERROR) << "SetThreadName";
   }
 }
 

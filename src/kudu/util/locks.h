@@ -167,8 +167,13 @@ class percpu_rwlock {
   }
 
   rw_spinlock &get_lock() {
+#if defined(__APPLE__)
+    // OSX doesn't have a way to get the CPU, so we'll pick a random one.
+    int cpu = reinterpret_cast<uintptr_t>(this) % n_cpus_;
+#else
     int cpu = sched_getcpu();
     CHECK_LT(cpu, n_cpus_);
+#endif  // defined(__APPLE__)
     return locks_[cpu].lock;
   }
 

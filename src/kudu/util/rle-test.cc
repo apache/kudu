@@ -27,13 +27,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 
+// Must come before gtest.h.
+#include "kudu/gutil/mathlimits.h"
+
 #include <boost/utility.hpp>
 #include <gtest/gtest.h>
-#include <math.h>
 #include <string>
 #include <vector>
 
-#include "kudu/gutil/mathlimits.h"
 #include "kudu/util/rle-encoding.h"
 #include "kudu/util/bit-stream-utils.h"
 #include "kudu/util/hexdump.h"

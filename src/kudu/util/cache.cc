@@ -33,7 +33,10 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+
+#if !defined(__APPLE__)
 #include "kudu/util/nvm_cache.h"
+#endif
 
 namespace kudu {
 
@@ -471,8 +474,12 @@ Cache* NewLRUCache(CacheType type, size_t capacity, const string& id) {
   switch (type) {
     case DRAM_CACHE:
       return new ShardedLRUCache(capacity, id);
+#if !defined(__APPLE__)
     case NVM_CACHE:
       return NewLRUNvmCache(capacity, id);
+#endif
+    default:
+      LOG(FATAL) << "Unsupported LRU cache type: " << type;
   }
 }
 

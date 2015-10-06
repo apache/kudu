@@ -13,9 +13,10 @@
 // limitations under the License.
 
 #include <boost/foreach.hpp>
+#include <glog/stl_logging.h>
+#include <signal.h>
 #include <string>
 #include <vector>
-#include <glog/stl_logging.h>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/countdown_latch.h"

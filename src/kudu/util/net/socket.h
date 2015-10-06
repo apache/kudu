@@ -132,6 +132,9 @@ class Socket {
   // Called internally from SetSend/RecvTimeout().
   Status SetTimeout(int opt, std::string optname, const MonoDelta& timeout);
 
+  // Called internally during socket setup.
+  Status SetCloseOnExec();
+
   // Bind the socket to a local address before making an outbound connection,
   // based on the value of FLAGS_local_ip_for_outbound_sockets.
   Status BindForOutgoingConnection();

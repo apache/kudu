@@ -29,6 +29,10 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
 
+#if defined(__APPLE__)
+typedef sig_t sighandler_t;
+#endif
+
 // Evil hack to grab a few useful functions from glog
 namespace google {
 
@@ -130,8 +134,7 @@ bool InitSignalHandlerUnlocked(int signum) {
 
   // If we've already registered a handler, but we're being asked to
   // change our signal, unregister the old one.
-  if (signum != g_stack_trace_signum &&
-      state == INITIALIZED) {
+  if (signum != g_stack_trace_signum && state == INITIALIZED) {
     struct sigaction old_act;
     PCHECK(sigaction(g_stack_trace_signum, NULL, &old_act) == 0);
     if (old_act.sa_handler == &HandleStackTraceSignal) {
@@ -181,6 +184,7 @@ Status SetStackTraceSignal(int signum) {
 }
 
 std::string DumpThreadStack(pid_t tid) {
+#if defined(__linux__)
   base::SpinLockHolder h(&g_dumper_thread_lock);
 
   // Ensure that our signal handler is installed. We don't need any fancy GoogleOnce here
@@ -235,9 +239,13 @@ std::string DumpThreadStack(pid_t tid) {
     g_comm.result_ready = 0;
   }
   return ret;
+#else // defined(__linux__)
+  return "(unsupported platform)";
+#endif
 }
 
 Status ListThreads(vector<pid_t> *tids) {
+#if defined(__linux__)
   DIR *dir = opendir("/proc/self/task/");
   if (dir == NULL) {
     return Status::IOError("failed to open task dir", ErrnoToString(errno), errno);
@@ -254,6 +262,7 @@ Status ListThreads(vector<pid_t> *tids) {
     }
   }
   closedir(dir);
+#endif // defined(__linux__)
   return Status::OK();
 }
 

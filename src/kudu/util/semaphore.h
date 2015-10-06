@@ -15,6 +15,10 @@
 #define KUDU_UTIL_SEMAPHORE_H
 
 #include <semaphore.h>
+#if defined(__APPLE__)
+#include <dispatch/dispatch.h>
+#include "kudu/util/atomic.h"
+#endif  // define(__APPLE__)
 
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
@@ -54,7 +58,12 @@ class Semaphore {
   // as small as possible in terms of code size.
   void Fatal(const char* action) ATTRIBUTE_NORETURN;
 
+#if defined(__APPLE__)
+  dispatch_semaphore_t sem_;
+  AtomicInt<int32_t> count_;
+#else
   sem_t sem_;
+#endif  // define(__APPLE__)
   DISALLOW_COPY_AND_ASSIGN(Semaphore);
 };
 

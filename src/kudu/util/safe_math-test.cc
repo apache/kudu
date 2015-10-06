@@ -13,8 +13,11 @@
 // limitations under the License.
 
 #include <stdint.h>
-#include <gtest/gtest.h>
+
+// Must come before gtest.h.
 #include "kudu/gutil/mathlimits.h"
+
+#include <gtest/gtest.h>
 #include "kudu/util/safe_math.h"
 
 namespace kudu {

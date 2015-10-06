@@ -21,6 +21,10 @@
 #include <tr1/unordered_set>
 #include <string>
 
+#if !defined(__APPLE__)
+#include <syscall.h>
+#endif  // !defined(__APPLE__)
+
 #include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"

@@ -27,7 +27,7 @@ ConditionVariable::ConditionVariable(Mutex* user_lock)
   // non-standard pthread_cond_timedwait_monotonic_np. Newer platform
   // versions have pthread_condattr_setclock.
   // Mac can use relative time deadlines.
-#if !defined(OS_MACOSX) && !defined(OS_NACL) && \
+#if !defined(__APPLE__) && !defined(OS_NACL) && \
       !(defined(OS_ANDROID) && defined(HAVE_PTHREAD_COND_TIMEDWAIT_MONOTONIC))
   pthread_condattr_t attrs;
   rv = pthread_condattr_init(&attrs);
@@ -74,7 +74,7 @@ bool ConditionVariable::TimedWait(const MonoDelta& max_time) const {
   user_lock_->CheckHeldAndUnmark();
 #endif
 
-#if defined(OS_MACOSX)
+#if defined(__APPLE__)
   int rv = pthread_cond_timedwait_relative_np(
       &condition_, user_mutex_, &relative_time);
 #else
@@ -105,7 +105,7 @@ bool ConditionVariable::TimedWait(const MonoDelta& max_time) const {
 #else
   int rv = pthread_cond_timedwait(&condition_, user_mutex_, &absolute_time);
 #endif  // OS_ANDROID && HAVE_PTHREAD_COND_TIMEDWAIT_MONOTONIC
-#endif  // OS_MACOSX
+#endif  // __APPLE__
 
   DCHECK(rv == 0 || rv == ETIMEDOUT)
     << "unexpected pthread_cond_timedwait return value: " << rv;

@@ -212,10 +212,18 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // NOTE: this is _not_ the TID, but rather a unique value assigned by the pthread library.
   // So, this value should not be presented to the user in log messages, etc.
   static int64_t PlatformThreadId() {
-    // This cast is a little bit ugly, and not likely to be portable, but
-    // it is significantly faster than calling syscall(SYS_gettid). In particular,
-    // this speeds up some code paths in the tracing implementation.
+#if defined(__linux__)
+    // This cast is a little bit ugly, but it is significantly faster than
+    // calling syscall(SYS_gettid). In particular, this speeds up some code
+    // paths in the tracing implementation.
     return static_cast<int64_t>(pthread_self());
+#elif defined(__APPLE__)
+    uint64_t tid;
+    CHECK_EQ(0, pthread_threadid_np(NULL, &tid));
+    return tid;
+#else
+#error Unsupported platform
+#endif
   }
 
  private:

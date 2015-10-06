@@ -39,6 +39,11 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/subprocess.h"
 
+// Mac OS 10.9 does not appear to define HOST_NAME_MAX in unistd.h
+#ifndef HOST_NAME_MAX
+#define HOST_NAME_MAX 64
+#endif
+
 using std::tr1::unordered_set;
 using std::vector;
 using strings::Substitute;

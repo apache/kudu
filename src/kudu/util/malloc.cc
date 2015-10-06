@@ -13,12 +13,20 @@
 // limitations under the License.
 #include "kudu/util/malloc.h"
 
+#if defined(__linux__)
 #include <malloc.h>
+#else
+#include <malloc/malloc.h>
+#endif // defined(__linux__)
 
 namespace kudu {
 
 int64_t kudu_malloc_usable_size(const void* obj) {
+#if defined(__linux__)
   return malloc_usable_size(const_cast<void*>(obj));
+#else
+  return malloc_size(obj);
+#endif // defined(__linux__)
 }
 
 } // namespace kudu

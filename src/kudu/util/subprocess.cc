@@ -23,9 +23,12 @@
 #include <vector>
 #include <signal.h>
 #include <unistd.h>
-#include <sys/prctl.h>
 #include <sys/types.h>
 #include <sys/wait.h>
+
+#if defined(__linux__)
+#include <sys/prctl.h>
+#endif
 
 #include "kudu/gutil/once.h"
 #include "kudu/gutil/port.h"
@@ -45,7 +48,20 @@ namespace kudu {
 
 namespace {
 
-static const char* kProcSelfFd = "/proc/self/fd";
+static const char* kProcSelfFd =
+#if defined(__APPLE__)
+  "/def/fd";
+#else
+  "/proc/self/fd";
+#endif // defined(__APPLE__)
+
+#if defined(__linux__)
+#define READDIR readdir64
+#define DIRENT dirent64
+#else
+#define READDIR readdir
+#define DIRENT dirent
+#endif
 
 void DisableSigPipe() {
   struct sigaction act;
@@ -88,9 +104,6 @@ void CloseProcFdDir(DIR* dir) {
 // The rule of thumb is to only call async-signal-safe functions in such cases
 // if at all possible.
 void CloseNonStandardFDs(DIR* fd_dir) {
-#ifndef __linux__
-#error This function is Linux-specific.
-#endif
   // This is implemented by iterating over the open file descriptors
   // rather than using sysconf(SC_OPEN_MAX) -- the latter is error prone
   // since it may not represent the highest open fd if the fd soft limit
@@ -105,7 +118,7 @@ void CloseNonStandardFDs(DIR* fd_dir) {
   PCHECK(fd_dir != NULL);
   int dir_fd = dirfd(fd_dir);
 
-  struct dirent64 *ent;
+  struct DIRENT* ent;
   // readdir64() is not reentrant (it uses a static buffer) and it also
   // locks fd_dir->lock, so it must not be called in a multi-threaded
   // environment and is certainly not async-signal-safe.
@@ -114,7 +127,7 @@ void CloseNonStandardFDs(DIR* fd_dir) {
   // malloc() or free(). We could use readdir64_r() instead, but all that
   // buys us is reentrancy, and not async-signal-safety, due to the use of
   // dir->lock, so seems not worth the added complexity in lifecycle & plumbing.
-  while ((ent = readdir64(fd_dir)) != NULL) {
+  while ((ent = READDIR(fd_dir)) != NULL) {
     uint32_t fd;
     if (!safe_strtou32(ent->d_name, &fd)) continue;
     if (!(fd == STDIN_FILENO  ||
@@ -190,6 +203,30 @@ static void RedirectToDevNull(int fd) {
   }
 }
 
+#if defined(__APPLE__)
+static int pipe2(int pipefd[2], int flags) {
+  DCHECK_EQ(O_CLOEXEC, flags);
+
+  int new_fds[2];
+  if (pipe(new_fds) == -1) {
+    return -1;
+  }
+  if (fcntl(new_fds[0], F_SETFD, O_CLOEXEC) == -1) {
+    close(new_fds[0]);
+    close(new_fds[1]);
+    return -1;
+  }
+  if (fcntl(new_fds[1], F_SETFD, O_CLOEXEC) == -1) {
+    close(new_fds[0]);
+    close(new_fds[1]);
+    return -1;
+  }
+  pipefd[0] = new_fds[0];
+  pipefd[1] = new_fds[1];
+  return 0;
+}
+#endif
+
 Status Subprocess::Start() {
   CHECK_EQ(state_, kNotStarted);
   EnsureSigPipeDisabled();
@@ -235,10 +272,11 @@ Status Subprocess::Start() {
     // Send the child a SIGTERM when the parent dies. This is done as early
     // as possible in the child's life to prevent any orphaning whatsoever
     // (e.g. from KUDU-402).
-    //
+#if defined(__linux__)
     // TODO: prctl(PR_SET_PDEATHSIG) is Linux-specific, look into portable ways
     // to prevent orphans when parent is killed.
     prctl(PR_SET_PDEATHSIG, SIGTERM);
+#endif
 
     // stdin
     if (fd_state_[STDIN_FILENO] == PIPED) {

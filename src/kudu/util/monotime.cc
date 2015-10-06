@@ -11,18 +11,19 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+#include "kudu/util/monotime.h"
+
+#include <glog/logging.h>
+#include <limits>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/time.h>
 #include <time.h>
 
-#include <limits>
-
-#include <glog/logging.h>
-
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/sysinfo.h"
-#include "kudu/util/monotime.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/thread_restrictions.h"
 
 namespace kudu {
@@ -160,6 +161,9 @@ void MonoDelta::ToTimeSpec(struct timespec *ts) const {
 ///
 
 MonoTime MonoTime::Now(enum Granularity granularity) {
+#if defined(__APPLE__)
+  return MonoTime(walltime_internal::GetMonoTimeNanos());
+# else
   struct timespec ts;
   clockid_t clock;
 
@@ -171,6 +175,7 @@ MonoTime MonoTime::Now(enum Granularity granularity) {
 #endif
   PCHECK(clock_gettime(clock, &ts) == 0);
   return MonoTime(ts);
+#endif // defined(__APPLE__)
 }
 
 MonoTime MonoTime::Max() {
