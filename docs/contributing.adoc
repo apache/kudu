@@ -24,10 +24,120 @@
 :sectlinks:
 :experimental:
 
-Get familiar with these guidelines so that your contributions can be reviewed and
-integrated quickly and easily.
+== Contributing Patches Using Gerrit
+
+The Kudu team uses Gerrit for code review, rather than Github pull requests. Typically,
+you pull from Github but push to Gerrit, and Gerrit is used to review code and merge
+it into Github.
+
+See the link:https://www.mediawiki.org/wiki/Gerrit/Tutorial[Gerrit Tutorial]
+for an overview of using Gerrit for code review.
+
+=== Initial Setup for Gerrit
+
+. Sign in to link:http://gerrit.cloudera.org:8080[Gerrit] using your Github username.
+
+. Go to link:http://gerrit.cloudera.org:8080/#/settings/[Settings]. Update your name
+and email address on the *Contact Information* page, and upload a SSH public key.
+If you do not update your name, it will show up as "Anonymous Coward" in Gerrit reviews.
+
+. If you have not done so, clone the main Kudu repository. By default, the main remote
+is called `origin`. When you fetch or pull, you will do so from `origin`.
++
+[source,bash]
+----
+git clone https://github.com/cloudera/kudu
+----
+
+. Change to the new `kudu` directory.
+
+. Add a `gerrit` remote. In the following command, substitute <username> with your
+Github username.
++
+[source,bash]
+----
+git remote add gerrit ssh://<username>@gerrit.cloudera.org:29418/kudu
+----
+
+. Run the following command to install the
+Gerrit `commit-msg` hook. Use the following command, replacing `<username>` with your
+Github username.
++
+----
+gitdir=$(git rev-parse --git-dir); scp -p -P 29418 <username>@gerrit.cloudera.org:hooks/commit-msg ${gitdir}/hooks/
+----
+
+. Be sure you have set the Kudu repository to use `pull --rebase` by default. You
+can use the following two commands, assuming you have only ever checked out `master`
+so far:
++
+----
+git config branch.autosetuprebase always
+git config branch.master.rebase true
+----
++
+If for some reason you had already checked out branches other than `master`, substitute
+`master` for the other branch names in the second command above.
+
+=== Submitting Patches
+
+To submit a patch, first commit your change (using a descriptive multi-line
+commit message if possible), then push the request to the `gerrit` remote. For instance, to push a change
+to the `master` branch:
+----
+git push gerrit HEAD:refs/for/master --no-thin
+----
+
+or to push a change to the `gh-pages` branch (to update the website):
+----
+git push gerrit HEAD:refs/for/gh-pages --no-thin
+----
+
+NOTE: The `--no-thin` argument is a workaround to prevent an error in Gerrit. See
+https://code.google.com/p/gerrit/issues/detail?id=1582.
+
+TIP: Consider creating Git aliases for the above commands. Gerrit also includes
+a command-line tool called
+link:https://www.mediawiki.org/wiki/Gerrit/Tutorial#Installing_git-review[git-review],
+which you may find helpful.
+
+Gerrit will add a change ID to your commit message and will create a Gerrit review,
+whose URL will be emitted as part of the push reply. If desired, you can send a message
+to the `kudu-dev` mailing list, explaining your patch and requesting review.
+
+After getting feedback, you can update or amend your commit, (for instance, using
+a command like `git commit --amend`) while leaving the Change
+ID intact. Push your change to Gerrit again, and this will create a new patch set
+in Gerrit and notify all reviewers about the change.
+
+When your code has been reviewed and is ready to be merged into the Kudu code base,
+a Kudu committer will merge it using Gerrit. You can discard your local branch.
+
+=== Abandoning a Review
+
+If your patch is not accepted or you decide to pull it from consideration, you can
+use the Gerrit UI to *Abandon* the patch. It will still show in Gerrit's history,
+but will not be listed as a pending review.
+
+=== Reviewing Patches In Gerrit
+
+You can view a unified or side-by-side diff of changes in Gerrit using the web UI.
+To leave a comment, click the relevant line number or highlight the relevant part
+of the line, and type 'c' to bring up a comment box. To submit your comments and/or
+your review status, go up to the top level of the review and click *Reply*. You can
+add additional top-level comments here, and submit them.
+
+To check out code from a Gerrit review, click *Download* and paste the relevant Git
+commands into your Git client. You can then update the commit and push to Gerrit to
+submit a patch to the review, even if you were not the original reviewer.
+
+Gerrit allows you to vote on a review. A vote of `+2` from at least one committer
+(besides the submitter) is required before the patch can be merged.
 
 == Code Style
+
+Get familiar with these guidelines so that your contributions can be reviewed and
+integrated quickly and easily.
 
 In general, Kudu follows the
 link:http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml[Google {cpp} Style Guide],
