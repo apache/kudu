@@ -80,9 +80,9 @@ High-efficiency queries::
 
 == About the Kudu Public Beta
 
-This release of Kudu is a public beta. Do not run this beta release on production clusters. During the
-public beta period, Kudu will be supported via a link:https://issues.cloudera.org/projects/KUDU
-[public JIRA] and a public
+This release of Kudu is a public beta. Do not run this beta release on production clusters.
+During the public beta period, Kudu will be supported via a
+link:https://issues.cloudera.org/projects/KUDU[public JIRA] and a public
 link:https://groups.google.com/forum/#!forum/kudu-user[mailing list], which will be
 monitored by the Kudu development team and community members. Commercial support
 is not available at this time.
@@ -104,12 +104,12 @@ or contents.
 
 - link:http://getkudu.io[Kudu Website]
 - link:http://github.com/cloudera/kudu[Kudu Github Repository]
-- link:index.html.html[Kudu Documentation]
+- link:index.html[Kudu Documentation]
 
 == Installation Options
 * A Quickstart VM is provided to get you up and running quickly.
-* You can install parcels or packages in clusters managed by Cloudera Manager, or
-packages in standalone CDH clusters.
+* You can install Kudu using provided deb/yum packages.
+* You can install Kudu, in clusters managed by Cloudera Manager, using parcels or deb/yum packages.
 * You can build Kudu from source.
 
 For full installation details, see link:installation.html[Kudu Installation].
