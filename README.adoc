@@ -13,67 +13,18 @@
 // limitations under the License.
 = Kudu Developer Documentation
 
-== Building Kudu
+== Building and installing Kudu
 
-=== System Requirements
-The following dependencies are necessary to build kudu:
-
-- autoconf
-- automake
-- boost >= 1.41, on CentOS boost-devel and boost-static,
-  including the following components:
-  - boost::thread
-  - boost::system (thread depends on it)
-- curl
-- gcc and g++ 4.4 or higher
-- liboauth-dev
-- libssl-dev (Ubuntu) or openssl-devel (CentOS)
-- libsasl2-dev (Ubuntu) or cyrus-sasl-devel (CentOS)
-- libtool
-- patch
-- python 2.6 or later
-- ntp
-- unzip
-- pkg-config
-
-Earlier versions of each of these may work, but have not recently
-been tested.
-
-Using Debian based distributions you can use the following command to install
-all the required packages:
-sudo apt-get install autoconf automake curl gcc liboauth-dev libssl-dev\
-libsasl2-dev libtool patch python ntp unzip libboost-all-dev pkg-config
-
-=== Download and build thirdparty dependencies
-
-Kudu depends on a number of third-party libraries and tools. In order to ensure
-that developers have consistent versions of these libraries, the Kudu repository
-includes scripts to automatically download and build these dependencies,
-installing them into a source-tree-local install prefix.
-
-To download, build, and install the thirdparty dependencies, you can issue the
-following command:
-
-[source,bash]
-----
-$ thirdparty/build-if-necessary.sh
-----
-
-When this command completes, the dependencies will be installed in
-_thirdparty/installed/_. If you are looking to manually run the protobuf compiler `protoc`,
-the `pprof` tool, etc, you can find these in _thirdparty/installed/bin/_
-
-NOTE: The _build-if-necessary.sh_ script requires that it be run from within a git
-repository in order to determine if the dependencies have changed. If you are building
-from a source tarball, you must manually run the download and build steps yourself.
+Follow the steps in the http://getkudu.io/docs/installation.html#_build_from_source[documentation]
+to build and install Kudu from source
 
 === Automatic rebuilding of dependencies
 
-The script is also invoked by cmake, so new thirdparty
-dependencies added by other developers will be downloaded and built
-automatically in subsequent builds if necessary.
+The script `thirdparty/build-if-necessary.sh` is invoked by cmake, so
+new thirdparty dependencies added by other developers will be downloaded
+and built automatically in subsequent builds if necessary.
 
-To disable the automatic invocation of build-if-necessary.sh, set the
+To disable the automatic invocation of `build-if-necessary.sh`, set the
 `NO_REBUILD_THIRDPARTY` environment variable:
 
 [source,bash]
@@ -83,20 +34,6 @@ $ NO_REBUILD_THIRDPARTY=1 cmake .
 
 This can be particularly useful when trying to run tools like `git bisect`
 between two commits which may have different dependencies.
-
-
-=== Building Kudu itself
-
-
-[source,bash]
-----
-# Add <root of kudu tree>/thirdparty/installed/bin to your $PATH
-# before other parts of $PATH that may contain cmake, such as /usr/bin
-# For example: "export PATH=$HOME/git/kudu/thirdparty/installed/bin:$PATH"
-# if using bash
-$ cmake .
-$ make -j8  # or whatever level of parallelism your machine can handle
-----
 
 The build artifacts, including the test binaries, will be stored in
 _build/latest/_, which itself is a symlink to a build-type specific
