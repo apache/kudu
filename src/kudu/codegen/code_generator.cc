@@ -180,7 +180,7 @@ int DumpAsm(FuncPtr fptr, const TargetMachine& tm,
       // identical RTTI settings between LLVM and Kudu (see:
       // http://llvm.org/docs/Packaging.html#c-features).
       string opname = printer->getOpcodeName(inst.getOpcode());
-      std::transform(opname.begin(), opname.end(), opname.begin(), toupper);
+      std::transform(opname.begin(), opname.end(), opname.begin(), ::toupper);
       if (opname.find("RET") != string::npos) return i + 1;
     }
     addr += size;

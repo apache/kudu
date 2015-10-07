@@ -293,7 +293,7 @@ void BlockManagerStressTest<T>::ReaderThread() {
 
     // Read it fully into memory.
     string block_id = block->id().ToString();
-    size_t block_size;
+    uint64_t block_size;
     CHECK_OK(block->Size(&block_size));
     Slice data;
     gscoped_ptr<uint8_t[]> scratch(new uint8_t[block_size]);

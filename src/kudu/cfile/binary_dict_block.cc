@@ -150,7 +150,7 @@ Status BinaryDictBlockBuilder::AppendExtraInfo(CFileWriter* c_writer, CFileFoote
   return Status::OK();
 }
 
-uint64_t BinaryDictBlockBuilder::Count() const {
+size_t BinaryDictBlockBuilder::Count() const {
   return data_builder_->Count();
 }
 

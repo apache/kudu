@@ -928,7 +928,7 @@ class LogReadableBlock : public ReadableBlock {
 
   virtual const BlockId& id() const OVERRIDE;
 
-  virtual Status Size(size_t* sz) const OVERRIDE;
+  virtual Status Size(uint64_t* sz) const OVERRIDE;
 
   virtual Status Read(uint64_t offset, size_t length,
                       Slice* result, uint8_t* scratch) const OVERRIDE;
@@ -980,7 +980,7 @@ const BlockId& LogReadableBlock::id() const {
   return log_block_->block_id();
 }
 
-Status LogReadableBlock::Size(size_t* sz) const {
+Status LogReadableBlock::Size(uint64_t* sz) const {
   DCHECK(!closed_.Load());
 
   *sz = log_block_->length();

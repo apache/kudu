@@ -20,12 +20,12 @@
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/endian.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
-
 
 DEFINE_int32(bloom_size_bytes, 4*1024, "Size of each bloom filter");
 DEFINE_int32(n_keys, 10*1000, "Number of keys to insert into the file");
@@ -96,7 +96,7 @@ class BloomFileTestBase : public KuduTest {
   uint64_t ReadBenchmark() {
     Random rng(GetRandomSeed32());
     uint64_t count_present = 0;
-    LOG_TIMING(INFO, StringPrintf("Running %ld queries", FLAGS_benchmark_queries)) {
+    LOG_TIMING(INFO, strings::Substitute("Running $0 queries", FLAGS_benchmark_queries)) {
 
       for (uint64_t i = 0; i < FLAGS_benchmark_queries; i++) {
         uint64_t key = rng.Uniform(FLAGS_n_keys);

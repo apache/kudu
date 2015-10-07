@@ -302,7 +302,7 @@ if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_INSTALL_PREFIX=$PREFIX \
     -DLLVM_TARGETS_TO_BUILD=X86 \
-    -DCMAKE_CXX_FLAGS=$EXTRA_CXXFLAGS \
+    -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS" \
     $LLVM_DIR
 
   if [ -n "$old_cc" ]; then

@@ -74,15 +74,17 @@ inline uint64 ghtonll(uint64 x) { return x; }
 #error "Unsupported bytesex: Either IS_BIG_ENDIAN or IS_LITTLE_ENDIAN must be defined"  // NOLINT
 #endif  // bytesex
 
-// This one is safe to take as it's an extension
-#define htonll(x) ghtonll(x)
 
 // ntoh* and hton* are the same thing for any size and bytesex,
 // since the function is an involution, i.e., its own inverse.
 #define gntohl(x) ghtonl(x)
 #define gntohs(x) ghtons(x)
 #define gntohll(x) ghtonll(x)
+#if !defined(__APPLE__)
+// This one is safe to take as it's an extension
+#define htonll(x) ghtonll(x)
 #define ntohll(x) htonll(x)
+#endif
 
 // Utilities to convert numbers between the current hosts's native byte
 // order and little-endian byte order

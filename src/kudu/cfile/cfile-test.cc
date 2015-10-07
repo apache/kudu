@@ -32,10 +32,13 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/stopwatch.h"
 
-DECLARE_string(nvm_cache_path);
 DECLARE_string(block_cache_type);
 DECLARE_string(cfile_do_on_finish);
+
+#if defined(__linux__)
+DECLARE_string(nvm_cache_path);
 DECLARE_bool(nvm_cache_simulate_allocation_failure);
+#endif
 
 METRIC_DECLARE_counter(block_cache_hits_caching);
 
@@ -279,6 +282,7 @@ class TestCFileBothCacheTypes : public TestCFile,
                                 public ::testing::WithParamInterface<CacheType> {
  public:
   void SetUp() OVERRIDE {
+#if defined(__linux__)
     // The NVM cache can run using any directory as its path -- it doesn't have
     // a lot of practical use outside of an actual NVM device, but for testing
     // purposes, we'll point it at our test dir, unless otherwise specified.
@@ -286,13 +290,18 @@ class TestCFileBothCacheTypes : public TestCFile,
       FLAGS_nvm_cache_path = GetTestPath("nvm-cache");
       ASSERT_OK(Env::Default()->CreateDir(FLAGS_nvm_cache_path));
     }
+#endif
     switch (GetParam()) {
       case DRAM_CACHE:
         FLAGS_block_cache_type = "DRAM";
         break;
+#if defined(__linux__)
       case NVM_CACHE:
         FLAGS_block_cache_type = "NVM";
         break;
+#endif
+      default:
+        LOG(FATAL) << "Unknown block cache type: '" << GetParam();
     }
     CFileTestBase::SetUp();
   }
@@ -301,8 +310,13 @@ class TestCFileBothCacheTypes : public TestCFile,
     Singleton<BlockCache>::UnsafeReset();
   }
 };
+
+#if defined(__linux__)
 INSTANTIATE_TEST_CASE_P(CacheTypes, TestCFileBothCacheTypes,
                         ::testing::Values(DRAM_CACHE, NVM_CACHE));
+#else
+INSTANTIATE_TEST_CASE_P(CacheTypes, TestCFileBothCacheTypes, ::testing::Values(DRAM_CACHE));
+#endif
 
 template<DataType type>
 void CopyOne(CFileIterator *it,
@@ -808,13 +822,14 @@ TEST_P(TestCFileBothCacheTypes, TestCacheKeysAreStable) {
   }
 }
 
+#if defined(__linux__)
 // Inject failures in nvm allocation and ensure that we can still read a file.
 TEST_P(TestCFileBothCacheTypes, TestNvmAllocationFailure) {
   if (GetParam() != NVM_CACHE) return;
   FLAGS_nvm_cache_simulate_allocation_failure = true;
   TestReadWriteFixedSizeTypes<UInt32DataGenerator<false> >(PLAIN_ENCODING);
 }
-
+#endif
 
 } // namespace cfile
 } // namespace kudu

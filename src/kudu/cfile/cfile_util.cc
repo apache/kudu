@@ -43,7 +43,7 @@ Status DumpIterator(const CFileReader& reader,
   ColumnBlock cb(type, reader.is_nullable() ? nulls : NULL, buf, max_rows, &arena);
 
   string strbuf;
-  uint64_t count = 0;
+  size_t count = 0;
   while (it->HasNext()) {
     size_t n = opts.nrows == 0 ? max_rows : std::min(max_rows, opts.nrows - count);
     if (n == 0) break;

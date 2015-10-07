@@ -15,7 +15,6 @@
 #include "kudu/cfile/cfile_writer.h"
 
 #include <boost/foreach.hpp>
-#include <endian.h>
 #include <glog/logging.h>
 #include <string>
 #include <utility>
@@ -23,13 +22,14 @@
 #include "kudu/cfile/block_pointer.h"
 #include "kudu/cfile/index_block.h"
 #include "kudu/cfile/index_btree.h"
-#include "kudu/common/key_encoder.h"
 #include "kudu/cfile/type_encodings.h"
+#include "kudu/common/key_encoder.h"
+#include "kudu/gutil/endian.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/pb_util.h"
 #include "kudu/util/hexdump.h"
+#include "kudu/util/pb_util.h"
 
 using google::protobuf::RepeatedPtrField;
 using kudu::fs::ScopedWritableBlockCloser;

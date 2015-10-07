@@ -52,7 +52,7 @@ class CountingReadableBlock : public ReadableBlock {
     return block_->Close();
   }
 
-  virtual Status Size(size_t* sz) const OVERRIDE {
+  virtual Status Size(uint64_t* sz) const OVERRIDE {
     return block_->Size(sz);
   }
 

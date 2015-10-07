@@ -183,7 +183,7 @@ struct VersionField {
   }
 
   static string Stringify(AtomicVersion v) {
-    return StringPrintf("[flags=%c%c%c vins=%ld vsplit=%ld]",
+    return StringPrintf("[flags=%c%c%c vins=%" PRIu64 " vsplit=%" PRIu64 "]",
                         (v & BTREE_LOCK_MASK) ? 'L':' ',
                         (v & BTREE_SPLITTING_MASK) ? 'S':' ',
                         (v & BTREE_INSERTING_MASK) ? 'I':' ',

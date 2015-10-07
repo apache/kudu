@@ -18,6 +18,7 @@
 #include <string>
 
 #include "kudu/cfile/cfile.pb.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/coding-inl.h"
 #include "kudu/util/coding.h"
 #include "kudu/util/status.h"
@@ -43,10 +44,7 @@ class BlockPointer {
     size_(size) {}
 
   string ToString() const {
-    char tmp[100];
-    snprintf(tmp, sizeof(tmp), "offset=%ld size=%d",
-             offset_, size_);
-    return string(tmp);
+    return strings::Substitute("offset=$0 size=$1", offset_, size_);
   }
 
   template<class StrType>

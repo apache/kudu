@@ -382,7 +382,7 @@ class FileReadableBlock : public ReadableBlock {
 
   virtual const BlockId& id() const OVERRIDE;
 
-  virtual Status Size(size_t* sz) const OVERRIDE;
+  virtual Status Size(uint64_t* sz) const OVERRIDE;
 
   virtual Status Read(uint64_t offset, size_t length,
                       Slice* result, uint8_t* scratch) const OVERRIDE;
@@ -439,7 +439,7 @@ const BlockId& FileReadableBlock::id() const {
   return block_id_;
 }
 
-Status FileReadableBlock::Size(size_t* sz) const {
+Status FileReadableBlock::Size(uint64_t* sz) const {
   DCHECK(!closed_.Load());
 
   return reader_->Size(sz);

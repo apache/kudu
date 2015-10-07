@@ -40,10 +40,13 @@ target_link_libraries(rle
   ${KUDU_TEST_LINK_LIBS})
 
 # wal_hiccup
-add_executable(wal_hiccup wal_hiccup.cc)
-target_link_libraries(wal_hiccup
-  kudu_util
-  ${KUDU_TEST_LINK_LIBS})
+# Disabled on OS X since it relies on fdatasync and sync_file_range.
+if(NOT APPLE)
+  add_executable(wal_hiccup wal_hiccup.cc)
+  target_link_libraries(wal_hiccup
+    kudu_util
+    ${KUDU_TEST_LINK_LIBS})
+endif()
 
 # Tests
 set(KUDU_TEST_LINK_LIBS tpch ${KUDU_TEST_LINK_LIBS})

@@ -15,12 +15,10 @@
 #ifndef KUDU_COMMON_KEYENCODER_H
 #define KUDU_COMMON_KEYENCODER_H
 
-
 #include <arpa/inet.h>
-#include <string.h>
 #include <climits>
-#include <bits/endian.h>
 #include <nmmintrin.h>
+#include <string.h>
 
 #include "kudu/common/types.h"
 #include "kudu/gutil/endian.h"
@@ -39,7 +37,6 @@ namespace kudu {
 template<DataType Type, typename Buffer, class Enable = void>
 struct KeyEncoderTraits {
 };
-
 
 // This complicated-looking template magic defines a specialization of the
 // KeyEncoderTraits struct for any integral type. This avoids a bunch of

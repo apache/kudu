@@ -435,7 +435,7 @@ string FsManager::GetWalSegmentFileName(const string& tablet_id,
   return JoinPathSegments(GetTabletWalDir(tablet_id),
                           strings::Substitute("$0-$1",
                                               kWalFileNamePrefix,
-                                              StringPrintf("%09lu", sequence_number)));
+                                              StringPrintf("%09" PRIu64, sequence_number)));
 }
 
 

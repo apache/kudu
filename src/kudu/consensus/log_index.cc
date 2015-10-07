@@ -155,7 +155,7 @@ LogIndex::~LogIndex() {
 }
 
 string LogIndex::GetChunkPath(int64_t chunk_idx) {
-  return StringPrintf("%s/index.%09lu", base_dir_.c_str(), chunk_idx);
+  return StringPrintf("%s/index.%09" PRId64, base_dir_.c_str(), chunk_idx);
 }
 
 Status LogIndex::OpenChunk(int64_t chunk_idx, scoped_refptr<IndexChunk>* chunk) {

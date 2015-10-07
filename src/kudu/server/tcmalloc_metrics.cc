@@ -67,7 +67,7 @@ METRIC_DEFINE_gauge_uint64(server, tcmalloc_current_total_thread_cache_bytes,
 namespace kudu {
 namespace tcmalloc {
 
-static size_t GetTCMallocPropValue(const char* prop) {
+static uint64_t GetTCMallocPropValue(const char* prop) {
   size_t value = 0;
 #ifdef TCMALLOC_ENABLED
   if (!MallocExtension::instance()->GetNumericProperty(prop, &value)) {

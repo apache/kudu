@@ -16,6 +16,7 @@
 
 #include "kudu/cfile/cfile_writer.h"
 #include "kudu/cfile/index_btree.h"
+#include "kudu/gutil/endian.h"
 #include "kudu/util/hexdump.h"
 #include "kudu/util/status.h"
 #include "kudu/util/test_macros.h"
@@ -62,7 +63,7 @@ static uint32_t SliceAsUInt32(const Slice &slice) {
   CHECK_EQ(slice.size(), 4);
   uint32_t val;
   memcpy(&val, slice.data(), slice.size());
-  val = htobe32(val);
+  val = BigEndian::FromHost32(val);
   return val;
 }
 

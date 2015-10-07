@@ -103,7 +103,7 @@ int BinaryPlainBlockBuilder::Add(const uint8_t *vals, size_t count) {
 }
 
 
-uint64_t BinaryPlainBlockBuilder::Count() const {
+size_t BinaryPlainBlockBuilder::Count() const {
   return offsets_.size();
 }
 

@@ -236,7 +236,12 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
                                         bool *maybe_present) {
   DCHECK(init_once_.initted());
 
+#if defined(__linux__)
   int cpu = sched_getcpu();
+#else
+  // Use just one lock if on OS X.
+  int cpu = 0;
+#endif
   BlockPointer bblk_ptr;
   {
     boost::unique_lock<simple_spinlock> lock;

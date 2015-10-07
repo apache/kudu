@@ -362,7 +362,7 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
   // Read the data back.
   gscoped_ptr<ReadableBlock> read_block;
   ASSERT_OK(this->bm_->OpenBlock(written_block->id(), &read_block));
-  size_t sz;
+  uint64_t sz;
   ASSERT_OK(read_block->Size(&sz));
   ASSERT_EQ(test_data.length(), sz);
   Slice data;
@@ -548,7 +548,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   // Test that the state of all three blocks is properly reflected.
   gscoped_ptr<ReadableBlock> read_block;
   ASSERT_OK(new_bm->OpenBlock(written_block1->id(), &read_block));
-  size_t sz;
+  uint64_t sz;
   ASSERT_OK(read_block->Size(&sz));
   ASSERT_EQ(0, sz);
   ASSERT_OK(read_block->Close());

@@ -133,7 +133,7 @@ class ReadableBlock : public Block {
   virtual Status Close() = 0;
 
   // Returns the on-disk size of a written block.
-  virtual Status Size(size_t* sz) const = 0;
+  virtual Status Size(uint64_t* sz) const = 0;
 
   // Reads exactly 'length' bytes beginning from 'offset' in the block,
   // returning an error if fewer bytes exist. A slice referencing the

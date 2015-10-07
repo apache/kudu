@@ -105,11 +105,16 @@ set(CLIENT_VERSION_MAJOR 0)
 set(CLIENT_VERSION_MINOR 1)
 set(CLIENT_VERSION_PATCH 0)
 
+if(NOT APPLE)
+  # Localize thirdparty symbols using a linker version script. This hides them
+  # from the client application. The OS X linker does not support the
+  # version-script option.
+  set(LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map")
+endif()
+
 set_target_properties(kudu_client_exported
   PROPERTIES
-  # Localize thirdparty symbols using a linker version script. This hides them
-  # from the client application.
-  LINK_FLAGS "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/symbols.map"
+  LINK_FLAGS "${LINK_FLAGS}"
   # This version is appended to the filename.
   #
   # For example: libkudu_client.so.1.2.3
@@ -204,7 +209,9 @@ install(SCRIPT MungeExportedInstallTargets.cmake)
 # and therefore don't need to worry about export strictness)
 add_library(kudu_client_test_util
   client-test-util.cc)
-target_link_libraries(kudu_client_test_util kudu_client)
+target_link_libraries(kudu_client_test_util
+  gmock
+  kudu_client)
 
 # Tests
 

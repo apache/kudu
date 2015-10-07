@@ -50,7 +50,7 @@ class BlockId {
   bool IsNull() const { return id_ == kInvalidId; }
 
   std::string ToString() const {
-    return StringPrintf("%016lx", id_);
+    return StringPrintf("%016" PRIu64, id_);
   }
 
   bool operator==(const BlockId& other) const {

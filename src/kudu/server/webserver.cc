@@ -54,6 +54,10 @@
 #include "kudu/util/url-coding.h"
 #include "kudu/util/version_info.h"
 
+#if defined(__APPLE__)
+typedef sig_t sighandler_t;
+#endif
+
 using std::string;
 using std::stringstream;
 using std::vector;
