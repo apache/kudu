@@ -59,8 +59,12 @@ unreserved RAM for the Impala_Kudu instance.
 want to be sure it is not impacted.
 
 * Before installing Impala_Kudu, you must have already installed and configured
-services for HDFS, Hive, and link:installation.html[Kudu]. You may need HBase, YARN,
-Sentry, and ZooKeeper services as well.
+services for HDFS (though it is not used by Kudu), the Hive Metastore (where Impala
+stores its metadata), and link:installation.html[Kudu]. You may need HBase, YARN,
+Sentry, and ZooKeeper services as well. Meeting the Impala installation requirements
+is out of the scope of this document. See
+link:http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_prereqs.html[Impala Prequisites]
+in the official Impala documentation for more information.
 
 
 == Installing Impala_Kudu Using Cloudera Manager
