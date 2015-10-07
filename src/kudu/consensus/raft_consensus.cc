@@ -1230,7 +1230,14 @@ Status RaftConsensus::RequestVote(const VoteRequestPB* request, VoteResponsePB* 
   // We must acquire the update lock in order to ensure that this vote action
   // takes place between requests.
   // Lock ordering: The update lock must be acquired before the ReplicaState lock.
-  boost::unique_lock<simple_spinlock> update_guard(update_lock_, boost::try_to_lock);
+  boost::unique_lock<simple_spinlock> update_guard(update_lock_, boost::defer_lock);
+  if (FLAGS_enable_leader_failure_detection) {
+    update_guard.try_lock();
+  } else {
+    // If failure detection is not enabled, then we can't just reject the vote,
+    // because there will be no automatic retry later. So, block for the lock.
+    update_guard.lock();
+  }
   if (!update_guard.owns_lock()) {
     // There is another vote or update concurrent with the vote. In that case, that
     // other request is likely to reset the timer, and we'll end up just voting
