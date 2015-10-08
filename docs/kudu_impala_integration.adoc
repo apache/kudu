@@ -151,7 +151,9 @@ using `sudo pip install cm-api` (or as an unprivileged user, with the `--user`
 option to `pip`), or see http://cloudera.github.io/cm_api/docs/python-client/
 for more details.
 * You need the following information to run the script:
-** The IP address or host name of the Cloudera Manager server.
+** The IP address or fully-qualified domain name of the Cloudera Manager server.
+** The IP address or fully-qualified domain name of the host that should run the Kudu
+master process, if different from the Cloudera Manager server.
 ** The cluster name, if Cloudera Manager manages multiple clusters.
 ** If you have an existing Impala service and want to clone its configuration, you
   need to know the name of the existing service.
@@ -184,18 +186,24 @@ The cluster should not already have an Impala instance.
 +
 [source,bash]
 ----
-$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1'
+$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1' \
+  --master_host <FQDN_of_Kudu_master_server> \
+  --host <FQDN_of_cloudera_manager_server>
 ----
-+
+
+NOTE: If you do not specify `--master_host`, the Kudu master is configured to run
+on the Cloudera Manager server (the value specified by the `--host` parameter).
+
 - If two HDFS services are available, called `HDFS-1` and `HDFS-2`, use the following
 syntax to create the same `IMPALA_KUDU-1` service using `HDFS-2`. You can specify
 multiple types of dependencies; use the `deploy.py create -h` command for details.
 +
 [source,bash]
 ----
-$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1' --hdfs_dependency HDFS-2
+$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1' --hdfs_dependency HDFS-2 \
+  --host <FQDN_of_cloudera_manager_server>
 ----
-+
+
 - Run the `deploy.py` script with the following syntax to clone an existing IMPALA
 service called `IMPALA-1` to a new IMPALA_KUDU service called `IMPALA_KUDU-1`, where
 Cloudera Manager only manages a single cluster.  This new `IMPALA_KUDU-1` service
@@ -205,9 +213,9 @@ on the complexity of the workload and the query concurrency level.
 +
 [source,bash]
 ----
-$ python deploy.py clone IMPALA_KUDU-1 IMPALA-1
+$ python deploy.py clone IMPALA_KUDU-1 IMPALA-1 --host <FQDN_of_cloudera_manager_server>
 ----
-+
+
 - Additional parameters are available for `deploy.py`. To view them, use the `-h`
 argument.  You can also use commands such as `deploy.py create -h` or
 `deploy.py clone -h` to get information about additional arguments for individual operations.
