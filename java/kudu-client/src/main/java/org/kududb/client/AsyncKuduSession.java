@@ -279,9 +279,14 @@ public class AsyncKuduSession implements SessionConfiguration {
         return deferred;
       }
 
-      // TODO scan the batch responses first to determine the real size instead of guessing.
-      ArrayList<OperationResponse> responsesList =
-          new ArrayList<>(batchResponsesList.size() * mutationBufferSpace);
+      // First compute the size of the union of all the lists so that we don't trigger expensive
+      // list growths while adding responses to it.
+      int size = 0;
+      for (BatchResponse batchResponse : batchResponsesList) {
+        size += batchResponse.getIndividualResponses().size();
+      }
+
+      ArrayList<OperationResponse> responsesList = new ArrayList<>(size);
       for (BatchResponse batchResponse : batchResponsesList) {
         responsesList.addAll(batchResponse.getIndividualResponses());
       }
