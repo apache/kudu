@@ -18,19 +18,6 @@
 ################################################################################
 
 #######################################
-# codegen
-#######################################
-
-add_library(codegen
-  code_cache.cc
-  code_generator.cc
-  compilation_manager.cc
-  jit_wrapper.cc
-  module_builder.cc
-  row_projector.cc
-)
-
-#######################################
 # Configure LLVM-specific dependencies
 #######################################
 
@@ -60,11 +47,6 @@ if (${LLVM_PACKAGE_VERSION} VERSION_LESS 3.5)
 else()
   llvm_map_components_to_libnames(llvm_LIBRARIES "${LLVM_REQ_COMPONENETS}")
 endif()
-target_link_libraries(codegen
-  ${llvm_LIBRARIES}
-  kudu_common
-  kudu_util
-  gutil)
 
 #######################################
 # Precompiling to LLVM bytecode
@@ -74,7 +56,7 @@ target_link_libraries(codegen
 set(CLANG_EXEC ${THIRDPARTY_PREFIX}/bin/clang++)
 set(IR_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/precompiled.cc)
 set(IR_OUTPUT ${BUILD_OUTPUT_ROOT_DIRECTORY}/precompiled.ll)
-set(IR_OUTPUT_ELF ${IR_OUTPUT}.o)
+set(IR_OUTPUT_CC ${IR_OUTPUT}.cc)
 # Retrieve all includes directories needed for precompilation
 set(IR_INCLUDES
   -I ${CMAKE_SOURCE_DIR}/src
@@ -148,28 +130,32 @@ add_custom_command(
     -o ${IR_OUTPUT}
   DEPENDS ir_fake_target)
 
-# Use 'ld' to create an ELF wrapper around the precompiled IR. This creates
-# an elf file which exposes the following symbols:
-#   extern char _binary_precompiled_ll_start;
-#   extern char _binary_precompiled_ll_end;
-# which point to the beginning and end of the IR data, respectively.
+# Use 'xxd' to create a cc file containing the precompiled bitcode as a literal array.
 # See http://stackoverflow.com/questions/4158900/embedding-resources-in-executable-using-gcc
 add_custom_command(
-  OUTPUT ${IR_OUTPUT_ELF}
-  COMMAND ${CMAKE_SOURCE_DIR}/build-support/embed-data-in-elf.sh
-          ${IR_OUTPUT} ${IR_OUTPUT_ELF}
-  DEPENDS ${IR_OUTPUT}
-)
+  OUTPUT ${IR_OUTPUT_CC}
+  COMMAND ${CMAKE_SOURCE_DIR}/build-support/generate_precompiled_xxd.sh ${IR_OUTPUT} ${IR_OUTPUT_CC}
+  DEPENDS ${IR_OUTPUT})
 
-# Link the generated IR into an archive, and make the codegen library
-# include it.
-add_library(codegen_ir STATIC ${IR_OUTPUT_ELF})
-target_link_libraries(codegen codegen_ir)
+#######################################
+# codegen
+#######################################
 
-# We have to explicitly set the linkage language for the library since
-# it doesn't have any source files. CMake needs this in order to know
-# how to link it.
-set_target_properties(codegen_ir PROPERTIES LINKER_LANGUAGE C)
+add_library(codegen
+  code_cache.cc
+  code_generator.cc
+  compilation_manager.cc
+  jit_wrapper.cc
+  module_builder.cc
+  row_projector.cc
+  ${IR_OUTPUT_CC})
+
+target_link_libraries(codegen
+  ${llvm_LIBRARIES}
+  kudu_common
+  kudu_util
+  gutil
+  kudu_common_proto)
 
 #######################################
 # Unit tests
