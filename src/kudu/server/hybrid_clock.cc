@@ -15,18 +15,22 @@
 #include <algorithm>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
-#include <sys/timex.h>
 
 #include "kudu/server/hybrid_clock.h"
 
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
+
+#if !defined(__APPLE__)
+#include <sys/timex.h>
+#endif // !defined(__APPLE__)
 
 DEFINE_int32(max_clock_sync_error_usec, 10 * 1000 * 1000, // 10 secs
              "Maximum allowed clock synchronization error as reported by NTP "
@@ -56,6 +60,7 @@ namespace server {
 
 namespace {
 
+#if !defined(__APPLE__)
 // Returns the clock modes and checks if the clock is synchronized.
 Status GetClockModes(timex* timex) {
   // this makes ntp_adjtime a read-only call
@@ -86,6 +91,7 @@ kudu::Status GetClockTime(ntptimeval* timeval) {
   }
   return kudu::Status::OK();
 }
+#endif // !defined(__APPLE__)
 
 Status CheckDeadlineNotWithinMicros(const MonoTime& deadline, int64_t wait_for_usec) {
   if (!deadline.Initialized()) {
@@ -105,8 +111,12 @@ Status CheckDeadlineNotWithinMicros(const MonoTime& deadline, int64_t wait_for_u
 }  // anonymous namespace
 
 Status CheckClockSynchronized() {
-  ntptimeval junk;
-  return GetClockTime(&junk);
+#if defined(__APPLE__)
+  return Status::OK();
+#else
+  ntptimeval dummy;
+  return GetClockTime(&dummy);
+#endif // defined(__APPLE__)
 }
 
 // Left shifting 12 bits gives us 12 bits for the logical value
@@ -120,23 +130,28 @@ const uint64_t HybridClock::kNanosPerSec = 1000000;
 const double HybridClock::kAdjtimexScalingFactor = 65536;
 
 HybridClock::HybridClock()
-    : divisor_(0),
-      tolerance_adjustment_(0),
+    : divisor_(1),
+      tolerance_adjustment_(1),
       last_usec_(0),
       next_logical_(0),
       state_(kNotInitialized) {
 }
 
 Status HybridClock::Init() {
+#if defined(__APPLE__)
+  LOG(WARNING) << "HybridClock initialized in local mode (OS X only). "
+               << "Not suitable for distributed clusters.";
+#else
   timex timex;
   RETURN_NOT_OK(GetClockModes(&timex));
 
   // if the clock is synchronized but has max_error beyond max_clock_sync_error_usec
   // we still abort
-  ntptimeval now;
-  RETURN_NOT_OK(GetClockTime(&now));
+  uint64_t now_usec;
+  uint64_t error_usec;
+  RETURN_NOT_OK(WalltimeWithError(&now_usec, &error_usec));
 
-  if (now.maxerror > FLAGS_max_clock_sync_error_usec) {
+  if (error_usec > FLAGS_max_clock_sync_error_usec) {
     return Status::ServiceUnavailable(Substitute("Cannot initialize HybridClock. "
         "Clock synchronized but error was too high ($0 us).", timex.maxerror));
   }
@@ -157,7 +172,8 @@ Status HybridClock::Init() {
 
   LOG(INFO) << "HybridClock initialized. Resolution in nanos?: " << (divisor_ == 1000)
             << " Wait times tolerance adjustment: " << tolerance_adjustment_
-            << " Current error: " << now.maxerror;
+            << " Current error: " << error_usec;
+#endif // defined(__APPLE__)
 
   state_ = kInitialized;
 
@@ -200,18 +216,18 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
 
   DCHECK_EQ(state_, kInitialized) << "Clock not initialized. Must call Init() first.";
 
-  ntptimeval now;
-  Status s = GetClockTime(&now);
-  uint64_t now_usec = GetTimeUsecs(&now);
+  uint64_t now_usec;
+  uint64_t error_usec;
+  Status s = WalltimeWithError(&now_usec, &error_usec);
   if (PREDICT_FALSE(!s.ok())) {
     LOG(FATAL) << Substitute("Couldn't get the current time: Clock unsynchronized. "
         "Status: $0", s.ToString());
   }
   // Test that the clock error didn't go past a pre-defined maximum error.
-  if (PREDICT_FALSE(now.maxerror > FLAGS_max_clock_sync_error_usec)) {
+  if (PREDICT_FALSE(error_usec > FLAGS_max_clock_sync_error_usec)) {
     LOG(FATAL) << Substitute("Couldn't get the current time: Clock synchronized, "
         "but error: $0, is past the maximum allowable error: $1",
-        now.maxerror, FLAGS_max_clock_sync_error_usec);
+        error_usec, FLAGS_max_clock_sync_error_usec);
   }
 
   // If the current time surpasses the last update just return it
@@ -219,11 +235,11 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
     last_usec_ = now_usec;
     next_logical_ = 1;
     *timestamp = TimestampFromMicroseconds(last_usec_);
-    *max_error_usec = now.maxerror;
+    *max_error_usec = error_usec;
     if (PREDICT_FALSE(VLOG_IS_ON(2))) {
       VLOG(2) << "Current clock is higher than the last one. Resetting logical values."
           << " Physical Value: " << now_usec << " usec Logical Value: 0  Error: "
-          << now.maxerror;
+          << error_usec;
     }
     return;
   }
@@ -246,9 +262,8 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
   // This broadens the error interval for both cases but always returns
   // a correct error interval.
 
-  *max_error_usec = last_usec_ - (now_usec - now.maxerror);
-  *timestamp = TimestampFromMicrosecondsAndLogicalValue(last_usec_,
-                                                        next_logical_);
+  *max_error_usec = last_usec_ - (now_usec - error_usec);
+  *timestamp = TimestampFromMicrosecondsAndLogicalValue(last_usec_, next_logical_);
   if (PREDICT_FALSE(VLOG_IS_ON(2))) {
     VLOG(2) << "Current clock is lower than the last one. Returning last read and incrementing"
         " logical values. Physical Value: " << now_usec << " usec Logical Value: "
@@ -349,11 +364,11 @@ Status HybridClock::WaitUntilAfter(const Timestamp& then_latest,
 }
 
 bool HybridClock::IsAfter(Timestamp t) {
-  // Manually get the time, rather than using Now(), so we don't end up
-  // causing a time update.
-  ntptimeval now_ntp;
-  CHECK_OK(GetClockTime(&now_ntp));
-  uint64_t now_usec = GetTimeUsecs(&now_ntp);
+  // Manually get the time, rather than using Now(), so we don't end up causing
+  // a time update.
+  uint64_t now_usec;
+  uint64_t error_usec;
+  CHECK_OK(WalltimeWithError(&now_usec, &error_usec));
 
   boost::lock_guard<simple_spinlock> lock(lock_);
   now_usec = std::max(now_usec, last_usec_);
@@ -368,6 +383,19 @@ bool HybridClock::IsAfter(Timestamp t) {
   }
 
   return t.value() < now.value();
+}
+
+kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
+#if defined(__APPLE__)
+  *now_usec = GetCurrentTimeMicros();
+  *error_usec = 0;
+#else
+  ntptimeval timeval;
+  RETURN_NOT_OK(GetClockTime(&timeval));
+  *now_usec = timeval.time.tv_sec * kNanosPerSec + timeval.time.tv_usec / divisor_;
+  *error_usec = timeval.maxerror;
+#endif // defined(__APPLE__)
+  return kudu::Status::OK();
 }
 
 // Used to get the timestamp for metrics.
@@ -400,10 +428,6 @@ string HybridClock::Stringify(Timestamp timestamp) {
   return StringifyTimestamp(timestamp);
 }
 
-uint64_t HybridClock::GetTimeUsecs(ntptimeval* timeval) {
-  return timeval->time.tv_sec * kNanosPerSec + timeval->time.tv_usec / divisor_;
-}
-
 uint64_t HybridClock::GetLogicalValue(const Timestamp& timestamp) {
   return timestamp.value() & kLogicalBitMask;
 }
@@ -434,7 +458,6 @@ string HybridClock::StringifyTimestamp(const Timestamp& timestamp) {
                     GetPhysicalValueMicros(timestamp),
                     GetLogicalValue(timestamp));
 }
-
 
 }  // namespace server
 }  // namespace kudu

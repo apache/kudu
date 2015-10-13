@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -88,19 +89,15 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase1) {
       past_ts,
       MonoDelta::FromMicroseconds(-3 * max_error));
 
-  Timestamp current_ts;
-  uint64_t current_max_error;
-  clock_->NowWithError(&current_ts, &current_max_error);
-
   Status s = clock_->WaitUntilAfter(past_ts_changed, no_deadline);
 
   ASSERT_OK(s);
 
   MonoTime after = MonoTime::Now(MonoTime::FINE);
   MonoDelta delta = after.GetDeltaSince(before);
-  // Actually this should be close to 0, but we are sure it can't be bigger than
-  // current_ts.physical_ts.max_error_usec
-  ASSERT_LT(delta.ToMicroseconds(), current_max_error);
+  // The delta should be close to 0, but it takes some time for the hybrid
+  // logical clock to decide that it doesn't need to wait.
+  ASSERT_LT(delta.ToMicroseconds(), 25000);
 }
 
 // The normal case for transactions. Obtain a timestamp and then wait until
@@ -113,6 +110,9 @@ TEST_F(HybridClockTest, TestWaitUntilAfter_TestCase2) {
   Timestamp past_ts;
   uint64_t past_max_error;
   clock_->NowWithError(&past_ts, &past_max_error);
+  // Make sure the error is at least a small number of microseconds, to ensure
+  // that we always have to wait.
+  past_max_error = std::max(past_max_error, static_cast<uint64_t>(20));
   Timestamp wait_until = HybridClock::AddPhysicalTimeToTimestamp(
       past_ts,
       MonoDelta::FromMicroseconds(past_max_error));

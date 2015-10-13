@@ -23,8 +23,6 @@
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
-struct ntptimeval;
-
 namespace kudu {
 namespace server {
 
@@ -32,6 +30,9 @@ namespace server {
 Status CheckClockSynchronized();
 
 // The HybridTime clock.
+//
+// HybridTime should not be used on a distributed cluster running on OS X hosts,
+// since NTP clock error is not available.
 class HybridClock : public Clock {
  public:
   HybridClock();
@@ -144,7 +145,12 @@ class HybridClock : public Clock {
   static std::string StringifyTimestamp(const Timestamp& timestamp);
 
  private:
-  uint64_t GetTimeUsecs(ntptimeval* timeval);
+
+  // Obtains the current wallclock time and maximum error in microseconds,
+  // and checks if the clock is synchronized.
+  //
+  // On OS X, the error will always be 0.
+  kudu::Status WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec);
 
   // Used to get the timestamp for metrics.
   uint64_t NowForMetrics();
