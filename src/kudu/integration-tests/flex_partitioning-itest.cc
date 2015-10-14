@@ -307,7 +307,6 @@ void FlexPartitioningITest::CheckPartitionKeyRangeScanWithPKRange(int lower, int
     ASSERT_OK(scanner.AddExclusiveUpperBoundPartitionKeyRaw(partition_key_end));
     ASSERT_OK(scanner.AddLowerBound(*inserted_rows_[lower]));
     ASSERT_OK(scanner.AddExclusiveUpperBound(*inserted_rows_[upper]));
-    int pre_count = rows.size();
     ScanToStrings(&scanner, &rows);
   }
   std::sort(rows.begin(), rows.end());

@@ -823,7 +823,7 @@ void LogTest::GenerateTestSequence(Random* rng, int seq_len,
   for (int i = 0; i < seq_len; i++) {
     if (rng->OneIn(5)) {
       // Reset term - it may stay the same, or go up/down
-      id.set_term(std::max(1L, id.term() + rng->Uniform(5) - 2));
+      id.set_term(std::max(static_cast<int64_t>(1), id.term() + rng->Uniform(5) - 2));
     }
 
     // Advance index by exactly one

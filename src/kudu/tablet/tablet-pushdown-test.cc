@@ -64,7 +64,7 @@ class TabletPushdownTest : public KuduTabletTest,
     for (int64_t i = 0; i < nrows_; i++) {
       CHECK_OK(row.SetInt32(0, i));
       CHECK_OK(row.SetInt32(1, i * 10));
-      CHECK_OK(row.SetStringCopy(2, StringPrintf("%08ld", i)));
+      CHECK_OK(row.SetStringCopy(2, StringPrintf("%08" PRId64, i)));
       ASSERT_OK_FAST(writer.Insert(row));
 
       if (i == 205 && GetParam() == SPLIT_MEMORY_DISK) {

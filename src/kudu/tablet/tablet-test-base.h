@@ -81,7 +81,7 @@ struct StringKeyTestSetup {
   }
 
   static void FormatKey(char *buf, size_t buf_size, int64_t key_idx) {
-    snprintf(buf, buf_size, "hello %ld", key_idx);
+    snprintf(buf, buf_size, "hello %" PRId64, key_idx);
   }
 
   string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {
@@ -118,7 +118,7 @@ struct CompositeKeyTestSetup {
   }
 
   static void FormatKey(char *buf, size_t buf_size, int64_t key_idx) {
-    snprintf(buf, buf_size, "hello %ld", key_idx);
+    snprintf(buf, buf_size, "hello %" PRId64, key_idx);
   }
 
   string FormatDebugRow(int64_t key_idx, int32_t val, bool updated) {

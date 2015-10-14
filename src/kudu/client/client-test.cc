@@ -986,17 +986,15 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
     // Restarting and waiting should result in a SCANNER_EXPIRED error.
     LOG(INFO) << "Doing a scan while restarting a tserver and waiting for it to come up...";
     ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
-        boost::bind<Status>(
-            &ClientTest_TestScanFaultTolerance_Test::RestartTServerAndWait,
-            this, _1)));
+        boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAndWait,
+                    this, _1)));
 
     // Restarting and not waiting means the tserver is hopefully bootstrapping, leading to
     // a TABLET_NOT_RUNNING error.
     LOG(INFO) << "Doing a scan while restarting a tserver...";
     ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
-        boost::bind<Status>(
-            &ClientTest_TestScanFaultTolerance_Test::RestartTServerAsync,
-            this, _1)));
+        boost::bind(&ClientTest_TestScanFaultTolerance_Test::RestartTServerAsync,
+                    this, _1)));
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
       MiniTabletServer* ts = cluster_->mini_tablet_server(i);
       ASSERT_OK(ts->WaitStarted());
@@ -1005,9 +1003,8 @@ TEST_F(ClientTest, TestScanFaultTolerance) {
     // Killing the tserver should lead to an RPC timeout.
     LOG(INFO) << "Doing a scan while killing a tserver...";
     ASSERT_NO_FATAL_FAILURE(internal::DoScanWithCallback(table.get(), expected_rows,
-        boost::bind<Status>(
-            &ClientTest_TestScanFaultTolerance_Test::KillTServer,
-            this, _1)));
+        boost::bind(&ClientTest_TestScanFaultTolerance_Test::KillTServer,
+                    this, _1)));
 
     // Restart the server that we killed.
     for (int i = 0; i < cluster_->num_tablet_servers(); i++) {

@@ -108,7 +108,8 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   // On error, Status is set to a non-OK value and error_code is filled in.
   //
   // This method is thread-safe.
-  Status GetBlockPiece(const BlockId& block_id, size_t offset, int64_t client_maxlen,
+  Status GetBlockPiece(const BlockId& block_id,
+                       uint64_t offset, int64_t client_maxlen,
                        std::string* data, int64_t* block_file_size,
                        RemoteBootstrapErrorPB::Code* error_code);
 
@@ -116,7 +117,7 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
   // The behavior and params are very similar to GetBlockPiece(), but this one
   // is only for sending WAL segment files.
   Status GetLogSegmentPiece(uint64_t segment_seqno,
-                            size_t offset, int64_t client_maxlen,
+                            uint64_t offset, int64_t client_maxlen,
                             std::string* data, int64_t* log_file_size,
                             RemoteBootstrapErrorPB::Code* error_code);
 
