@@ -154,6 +154,12 @@ template<> void JsonWriter::Value(const string& val) {
   String(val);
 }
 
+#if defined(__APPLE__)
+template<> void JsonWriter::Value(const size_t& val) {
+  Uint64(val);
+}
+#endif
+
 void JsonWriter::Protobuf(const Message& pb) {
   const Reflection* reflection = pb.GetReflection();
   vector<const FieldDescriptor*> fields;

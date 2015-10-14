@@ -36,10 +36,10 @@ TAG_FLAG(scanner_ttl_ms, hidden);
 
 // TODO: would be better to scope this at a tablet level instead of
 // server level.
-METRIC_DEFINE_gauge_uint64(server, active_scanners,
-                           "Active Scanners",
-                           kudu::MetricUnit::kScanners,
-                           "Number of scanners that are currently active");
+METRIC_DEFINE_gauge_size(server, active_scanners,
+                         "Active Scanners",
+                         kudu::MetricUnit::kScanners,
+                         "Number of scanners that are currently active");
 
 namespace kudu {
 

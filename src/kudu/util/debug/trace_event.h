@@ -1142,6 +1142,9 @@ INTERNAL_DECLARE_SET_TRACE_VALUE(const char*, arg, as_string,
                                  TRACE_VALUE_TYPE_STRING)
 INTERNAL_DECLARE_SET_TRACE_VALUE(const TraceStringWithCopy&, arg.str(),
                                  as_string, TRACE_VALUE_TYPE_COPY_STRING)
+#if defined(__APPLE__)
+INTERNAL_DECLARE_SET_TRACE_VALUE_INT(size_t, TRACE_VALUE_TYPE_UINT)
+#endif
 
 #undef INTERNAL_DECLARE_SET_TRACE_VALUE
 #undef INTERNAL_DECLARE_SET_TRACE_VALUE_INT

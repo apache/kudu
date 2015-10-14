@@ -85,12 +85,12 @@ DEFINE_double(tablet_bloom_target_fp_rate, 0.01f,
 TAG_FLAG(tablet_bloom_target_fp_rate, advanced);
 
 METRIC_DEFINE_entity(tablet);
-METRIC_DEFINE_gauge_uint64(tablet, memrowset_size, "MemRowSet Memory Usage",
-                           kudu::MetricUnit::kBytes,
-                           "Size of this tablet's memrowset");
-METRIC_DEFINE_gauge_uint64(tablet, on_disk_size, "Tablet Size On Disk",
-                           kudu::MetricUnit::kBytes,
-                           "Size of this tablet on disk.");
+METRIC_DEFINE_gauge_size(tablet, memrowset_size, "MemRowSet Memory Usage",
+                         kudu::MetricUnit::kBytes,
+                         "Size of this tablet's memrowset");
+METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
+                         kudu::MetricUnit::kBytes,
+                         "Size of this tablet on disk.");
 
 namespace kudu {
 namespace tablet {
