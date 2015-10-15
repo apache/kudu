@@ -29,10 +29,10 @@ elseif("${COMPILER_VERSION_FULL}" MATCHES ".*based on LLVM.*")
   string(REGEX REPLACE ".*based on LLVM ([0-9]+\\.[0.9]+).*" "\\1"
     COMPILER_VERSION "${COMPILER_VERSION_FULL}")
 
-# clang on Mac OS X, XCode 7. No version replacement is done
-# because Apple no longer advertises the upstream LLVM version.
-elseif("${COMPILER_VERSION_FULL}" MATCHES "clang-700\\..*")
+# clang on Mac OS X, XCode 7.
+elseif("${COMPILER_VERSION_FULL}" MATCHES ".*clang-700\\..*")
   set(COMPILER_FAMILY "clang")
+  set(COMPILER_VERSION "3.7.0svn")
 
 # gcc
 elseif("${COMPILER_VERSION_FULL}" MATCHES ".*gcc version.*")
