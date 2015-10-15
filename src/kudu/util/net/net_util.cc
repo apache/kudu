@@ -237,6 +237,14 @@ Status HostPortFromSockaddrReplaceWildcard(const Sockaddr& addr, HostPort* hp) {
 }
 
 void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
+#if defined(__APPLE__)
+  string cmd = strings::Substitute(
+      "lsof -n -i 'TCP:$0' -sTCP:LISTEN ; "
+      "for pid in $$(lsof -F p -n -i 'TCP:$0' -sTCP:LISTEN | cut -f 2 -dp) ; do"
+      "  pstree $$pid || ps h -p $$pid;"
+      "done",
+      addr.port());
+#else
   // Little inline bash script prints the full ancestry of any pid listening
   // on the same port as 'addr'. We could use 'pstree -s', but that option
   // doesn't exist on el6.
@@ -251,6 +259,7 @@ void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
       "  done ; "
       "done",
       addr.port());
+#endif // defined(__APPLE__)
 
   LOG_STRING(WARNING, log) << "Failed to bind to " << addr.ToString() << ". "
                            << "Trying to use lsof to find any processes listening "
