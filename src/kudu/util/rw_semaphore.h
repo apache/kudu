@@ -124,7 +124,7 @@ class rw_semaphore {
     WaitPendingReaders();
 
 #ifndef NDEBUG
-    writer_tid_ = Thread::PlatformThreadId();
+    writer_tid_ = Thread::CurrentThreadId();
 #endif // NDEBUG
     RecordLockHolderStack();
   }

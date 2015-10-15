@@ -17,10 +17,10 @@
 #include <glog/logging.h>
 
 #ifndef NDEBUG
-#include <sys/syscall.h>
 #include "kudu/gutil/walltime.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
+#include "kudu/util/thread.h"
 #endif // NDEBUG
 
 namespace kudu {
@@ -65,7 +65,7 @@ bool RWCLock::HasReaders() const {
 bool RWCLock::HasWriteLock() const {
   MutexLock l(lock_);
 #ifndef NDEBUG
-  return last_writer_tid_ == static_cast<pid_t>(syscall(SYS_gettid));
+  return last_writer_tid_ == Thread::CurrentThreadId();
 #else
   return write_locked_;
 #endif
@@ -79,7 +79,7 @@ void RWCLock::WriteLock() {
   }
 #ifndef NDEBUG
   last_writelock_acquire_time_ = GetCurrentTimeMicros();
-  last_writer_tid_ = static_cast<pid_t>(syscall(SYS_gettid));
+  last_writer_tid_ = Thread::CurrentThreadId();
   HexStackTraceToString(last_writer_backtrace_, kBacktraceBufSize);
 #endif // NDEBUG
   write_locked_ = true;

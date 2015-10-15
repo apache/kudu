@@ -201,17 +201,17 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // This call is signal-safe.
   static Thread* current_thread() { return tls_; }
 
-  // Return a unique identifier assigned by the platform for this thread. Note that
-  // this is a static method and thus can be used on any thread, including the main
-  // thread of the process. This is in contrast to Thread::tid() which is at least as fast,
-  // but only works on kudu::Threads.
+  // Returns a unique, stable identifier for this thread. Note that this is a static
+  // method and thus can be used on any thread, including the main thread of the
+  // process.
   //
-  // In general, this should be used when a value is required that is unique to a thread
-  // and must work on any thread including the main process thread.
+  // In general, this should be used when a value is required that is unique to
+  // a thread and must work on any thread including the main process thread.
   //
-  // NOTE: this is _not_ the TID, but rather a unique value assigned by the pthread library.
-  // So, this value should not be presented to the user in log messages, etc.
-  static int64_t PlatformThreadId() {
+  // NOTE: this is _not_ the TID, but rather a unique value assigned by the
+  // thread implementation. So, this value should not be presented to the user
+  // in log messages, etc.
+  static int64_t UniqueThreadId() {
 #if defined(__linux__)
     // This cast is a little bit ugly, but it is significantly faster than
     // calling syscall(SYS_gettid). In particular, this speeds up some code
@@ -223,6 +223,25 @@ class Thread : public RefCountedThreadSafe<Thread> {
     return tid;
 #else
 #error Unsupported platform
+#endif
+  }
+
+  // Returns the system thread ID (tid on Linux) for the current thread. Note
+  // that this is a static method and thus can be used from any thread,
+  // including the main thread of the process. This is in contrast to
+  // Thread::tid(), which only works on kudu::Threads.
+  //
+  // Thread::tid() will return the same value, but the value is cached in the
+  // Thread object, so will be faster to call.
+  //
+  // Thread::UniqueThreadId() (or Thread::tid()) should be preferred for
+  // performance sensistive code, however it is only guaranteed to return a
+  // unique and stable thread ID, not necessarily the system thread ID.
+  static int64_t CurrentThreadId() {
+#if defined(__linux__)
+    return syscall(SYS_gettid);
+#else
+    return UniqueThreadId();
 #endif
   }
 

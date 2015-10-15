@@ -464,7 +464,7 @@ Status Thread::StartThread(const std::string& category, const std::string& name,
 
 void* Thread::SuperviseThread(void* arg) {
   Thread* t = static_cast<Thread*>(arg);
-  int64_t system_tid = syscall(SYS_gettid);
+  int64_t system_tid = Thread::CurrentThreadId();
   if (system_tid == -1) {
     string error_msg = ErrnoToString(errno);
     KLOG_EVERY_N(INFO, 100) << "Could not determine thread ID: " << error_msg;

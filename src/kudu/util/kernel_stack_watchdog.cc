@@ -21,10 +21,6 @@
 #include <tr1/unordered_set>
 #include <string>
 
-#if !defined(__APPLE__)
-#include <syscall.h>
-#endif  // !defined(__APPLE__)
-
 #include "kudu/util/debug-util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/flag_tags.h"
@@ -74,13 +70,15 @@ vector<string> KernelStackWatchdog::LoggedMessagesForTests() const {
 }
 
 void KernelStackWatchdog::Register(TLS* tls) {
+  int64_t tid = Thread::CurrentThreadId();
   MutexLock l(lock_);
-  InsertOrDie(&tls_by_tid_, syscall(SYS_gettid), tls);
+  InsertOrDie(&tls_by_tid_, tid, tls);
 }
 
 void KernelStackWatchdog::Unregister(TLS* tls) {
+  int64_t tid = Thread::CurrentThreadId();
   MutexLock l(lock_);
-  CHECK(tls_by_tid_.erase(syscall(SYS_gettid)));
+  CHECK(tls_by_tid_.erase(tid));
 }
 
 Status GetKernelStack(pid_t p, string* ret) {

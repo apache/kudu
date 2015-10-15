@@ -28,6 +28,7 @@
 #include "kudu/util/env.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/monotime.h"
+#include "kudu/util/thread.h"
 
 #if defined(__APPLE__)
 typedef sig_t sighandler_t;
@@ -115,7 +116,7 @@ void HandleStackTraceSignal(int signum) {
   // case the dumper thread would have already timed out and moved on with
   // its life. In that case, we don't want to race with some other thread's
   // dump.
-  pid_t my_tid = syscall(SYS_gettid);
+  int64_t my_tid = Thread::CurrentThreadId();
   if (g_comm.target_tid != my_tid) {
     return;
   }
@@ -183,7 +184,7 @@ Status SetStackTraceSignal(int signum) {
   return Status::OK();
 }
 
-std::string DumpThreadStack(pid_t tid) {
+std::string DumpThreadStack(int64_t tid) {
 #if defined(__linux__)
   base::SpinLockHolder h(&g_dumper_thread_lock);
 

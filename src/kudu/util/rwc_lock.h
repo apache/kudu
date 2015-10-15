@@ -121,7 +121,7 @@ class RWCLock {
 
 #ifndef NDEBUG
   static const int kBacktraceBufSize = 1024;
-  uint64_t last_writer_tid_;
+  int64_t last_writer_tid_;
   int64_t last_writelock_acquire_time_;
   char last_writer_backtrace_[kBacktraceBufSize];
 #endif // NDEBUG

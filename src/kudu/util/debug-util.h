@@ -44,7 +44,7 @@ Status SetStackTraceSignal(int signum);
 //
 // This function is thread-safe but coarsely synchronized: only one "dumper" thread
 // may be active at a time.
-std::string DumpThreadStack(pid_t tid);
+std::string DumpThreadStack(int64_t tid);
 
 // Return the current stack trace, stringified.
 std::string GetStackTrace();

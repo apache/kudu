@@ -1022,7 +1022,7 @@ class TraceLog::ThreadLocalEventBuffer {
  private:
   // Check that the current thread is the one that constructed this trace buffer.
   void CheckIsOwnerThread() const {
-    DCHECK_EQ(kudu::Thread::PlatformThreadId(), owner_tid_);
+    DCHECK_EQ(kudu::Thread::UniqueThreadId(), owner_tid_);
   }
 
   // Since TraceLog is a leaky singleton, trace_log_ will always be valid
@@ -1046,7 +1046,7 @@ TraceLog::ThreadLocalEventBuffer::ThreadLocalEventBuffer(TraceLog* trace_log)
       chunk_index_(0),
       event_count_(0),
       generation_(trace_log->generation()),
-      owner_tid_(kudu::Thread::PlatformThreadId()) {
+      owner_tid_(kudu::Thread::UniqueThreadId()) {
 }
 
 TraceLog::ThreadLocalEventBuffer::~ThreadLocalEventBuffer() {
@@ -1058,7 +1058,7 @@ TraceEvent* TraceLog::ThreadLocalEventBuffer::AddTraceEvent(
 
   if (chunk_ && chunk_->IsFull()) {
     SpinLockHolder lock(&trace_log_->lock_);
-    Flush(Thread::PlatformThreadId());
+    Flush(Thread::UniqueThreadId());
     chunk_.reset();
   }
   if (!chunk_) {
@@ -1093,7 +1093,7 @@ void TraceLog::ThreadLocalEventBuffer::ReportOverhead(
     TraceEvent* trace_event = AddTraceEvent(NULL);
     if (trace_event) {
       trace_event->Initialize(
-        kudu::Thread::PlatformThreadId(),
+        kudu::Thread::UniqueThreadId(),
           event_timestamp, event_thread_timestamp,
           TRACE_EVENT_PHASE_COMPLETE,
           &g_category_group_enabled[g_category_trace_event_overhead],
@@ -1732,7 +1732,7 @@ TraceEventHandle TraceLog::AddTraceEvent(
     const uint64_t* arg_values,
     const scoped_refptr<ConvertableToTraceFormat>* convertable_values,
     unsigned char flags) {
-  int thread_id = static_cast<int>(kudu::Thread::PlatformThreadId());
+  int thread_id = static_cast<int>(kudu::Thread::UniqueThreadId());
   MicrosecondsInt64 now = GetMonoTimeMicros();
   return AddTraceEventWithThreadIdAndTimestamp(phase, category_group_enabled,
                                                name, id, thread_id, now,
@@ -1742,7 +1742,7 @@ TraceEventHandle TraceLog::AddTraceEvent(
 }
 
 TraceLog::PerThreadInfo* TraceLog::SetupThreadLocalBuffer() {
-  int64_t cur_tid = Thread::PlatformThreadId();
+  int64_t cur_tid = Thread::UniqueThreadId();
 
   PerThreadInfo* thr_info = new PerThreadInfo();
   thr_info->event_buffer_ = NULL;
@@ -1767,7 +1767,7 @@ void TraceLog::ThreadExiting() {
     return;
   }
 
-  int64_t cur_tid = Thread::PlatformThreadId();
+  int64_t cur_tid = Thread::UniqueThreadId();
 
   // Flush our own buffer back to the central event buffer.
   // We do the atomic exchange because a flusher thread may
@@ -1776,7 +1776,7 @@ void TraceLog::ThreadExiting() {
   ThreadLocalEventBuffer* buf = thr_info->AtomicTakeBuffer();
   if (buf) {
     SpinLockHolder lock(&lock_);
-    buf->Flush(Thread::PlatformThreadId());
+    buf->Flush(Thread::UniqueThreadId());
   }
   delete buf;
 
@@ -1841,7 +1841,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
 
   // Check and update the current thread name only if the event is for the
   // current thread to avoid locks in most cases.
-  if (thread_id == static_cast<int>(Thread::PlatformThreadId())) {
+  if (thread_id == static_cast<int>(Thread::UniqueThreadId())) {
     Thread* kudu_thr = Thread::current_thread();
     if (kudu_thr) {
       const char* new_name = kudu_thr->name().c_str();
@@ -1952,7 +1952,7 @@ std::string TraceLog::EventToConsoleMessage(unsigned char phase,
 
   MicrosecondsInt64 duration;
   int thread_id = trace_event ?
-      trace_event->thread_id() : Thread::PlatformThreadId();
+      trace_event->thread_id() : Thread::UniqueThreadId();
   if (phase == TRACE_EVENT_PHASE_END) {
     duration = timestamp - thread_event_start_times_[thread_id].top();
     thread_event_start_times_[thread_id].pop();
@@ -2093,7 +2093,7 @@ void TraceLog::AddMetadataEventsWhileLocked() {
 #endif
 
 
-  int current_thread_id = static_cast<int>(kudu::Thread::PlatformThreadId());
+  int current_thread_id = static_cast<int>(kudu::Thread::UniqueThreadId());
   if (process_sort_index_ != 0) {
     InitializeMetadataEvent(AddEventToThreadSharedChunkWhileLocked(NULL, false),
                             current_thread_id,
@@ -2448,7 +2448,7 @@ ScopedTraceBinaryEfficient::ScopedTraceBinaryEfficient(
         TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_THREAD_ID_AND_TIMESTAMP(
             TRACE_EVENT_PHASE_COMPLETE, category_group_enabled_, name,
             trace_event_internal::kNoEventId,
-            static_cast<int>(kudu::Thread::PlatformThreadId()),
+            static_cast<int>(kudu::Thread::UniqueThreadId()),
             GetMonoTimeMicros(),
             0, NULL, NULL, NULL, NULL, TRACE_EVENT_FLAG_NONE);
   }
