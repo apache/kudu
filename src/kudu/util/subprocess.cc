@@ -50,7 +50,7 @@ namespace {
 
 static const char* kProcSelfFd =
 #if defined(__APPLE__)
-  "/def/fd";
+  "/dev/fd";
 #else
   "/proc/self/fd";
 #endif // defined(__APPLE__)
