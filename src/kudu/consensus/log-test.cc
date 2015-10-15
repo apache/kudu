@@ -1033,6 +1033,12 @@ TEST_F(LogTest, TestGetMaxIndexesToSegmentSizeMap) {
   // we get 0 segments back.
   log_->GetMaxIndexesToSegmentSizeMap(35, &max_idx_to_segment_size);
   ASSERT_EQ(0, max_idx_to_segment_size.size());
+
+  // Check that logs that would normally count for log retention won't be returned since they are
+  // too young.
+  FLAGS_log_min_seconds_to_retain = 500;
+  log_->GetMaxIndexesToSegmentSizeMap(10, &max_idx_to_segment_size);
+  ASSERT_EQ(0, max_idx_to_segment_size.size());
 }
 } // namespace log
 } // namespace kudu

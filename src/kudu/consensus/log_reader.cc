@@ -231,6 +231,7 @@ int64_t LogReader::GetMinReplicateIndex() const {
 }
 
 void LogReader::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx, int32_t segments_count,
+                                              int64_t max_close_time_us,
                                               std::map<int64_t, int64_t>*
                                               max_idx_to_segment_size) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
@@ -244,6 +245,13 @@ void LogReader::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx, int32_t segmen
       // This means we found a log we can GC. Adjust the expected number of logs.
       segments_count--;
       continue;
+    }
+
+    if (max_close_time_us < segment->footer().close_timestamp_micros()) {
+      int64_t age_seconds = segment->footer().close_timestamp_micros() / 1000000;
+      VLOG(2) << "Segment " << segment->path() << " is only " << age_seconds << "s old: "
+          << "won't be counted towards log retention";
+      break;
     }
     (*max_idx_to_segment_size)[segment->footer().max_replicate_index()] = segment->file_size();
   }

@@ -777,7 +777,10 @@ void Log::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx,
   if (segments_count == 0) {
     return;
   }
-  reader_->GetMaxIndexesToSegmentSizeMap(min_op_idx, segments_count,
+
+  int64_t now = GetCurrentTimeMicros();
+  int64_t max_close_time_us = now - (FLAGS_log_min_seconds_to_retain * 1000000);
+  reader_->GetMaxIndexesToSegmentSizeMap(min_op_idx, segments_count, max_close_time_us,
                                          max_idx_to_segment_size);
 }
 

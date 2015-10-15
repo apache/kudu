@@ -77,7 +77,11 @@ class LogReader {
   // 'segments_count' is the number of segments we'll add to the map. It _must_ be sized so that
   // we don't add the last segment. If we find logs that can be GCed, we'll decrease the number of
   // elements we'll add to the map by 1 since they.
+  //
+  // 'max_close_time_us' is the timestamp in microseconds from which we don't want to evict,
+  // meaning that log segments that we closed after that time must not be added to the map.
   void GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx, int32_t segments_count,
+                                     int64_t max_close_time_us,
                                      std::map<int64_t, int64_t>* max_idx_to_segment_size) const;
 
   // Return a readable segment with the given sequence number, or NULL if it
