@@ -2,7 +2,7 @@
 title: Using Impala With Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-10-01 13:03:15 PDT'
+last_updated: 'Last updated 2015-10-15 15:57:58 PDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -86,8 +86,12 @@ want to be sure it is not impacted.</p>
 </li>
 <li>
 <p>Before installing Impala_Kudu, you must have already installed and configured
-services for HDFS, Hive, and <a href="installation.html">Kudu</a>. You may need HBase, YARN,
-Sentry, and ZooKeeper services as well.</p>
+services for HDFS (though it is not used by Kudu), the Hive Metastore (where Impala
+stores its metadata), and <a href="installation.html">Kudu</a>. You may need HBase, YARN,
+Sentry, and ZooKeeper services as well. Meeting the Impala installation requirements
+is out of the scope of this document. See
+<a href="http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_prereqs.html">Impala Prequisites</a>
+in the official Impala documentation for more information.</p>
 </li>
 </ul>
 </div>
@@ -256,7 +260,11 @@ for more details.</p>
 <div class="ulist">
 <ul>
 <li>
-<p>The IP address or host name of the Cloudera Manager server.</p>
+<p>The IP address or fully-qualified domain name of the Cloudera Manager server.</p>
+</li>
+<li>
+<p>The IP address or fully-qualified domain name of the host that should run the Kudu
+master process, if different from the Cloudera Manager server.</p>
 </li>
 <li>
 <p>The cluster name, if Cloudera Manager manages multiple clusters.</p>
@@ -312,17 +320,37 @@ and HBase service exist in Cluster 1, so service dependencies are not required.
 The cluster should not already have an Impala instance.</p>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1'</code></pre>
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1' \
+  --master_host &lt;FQDN_of_Kudu_master_server&gt; \
+  --host &lt;FQDN_of_cloudera_manager_server&gt;</code></pre>
 </div>
 </div>
 </li>
+</ul>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+If you do not specify <code>--master_host</code>, the Kudu master is configured to run
+on the Cloudera Manager server (the value specified by the <code>--host</code> parameter).
+</td>
+</tr>
+</table>
+</div>
+<div class="ulist">
+<ul>
 <li>
 <p>If two HDFS services are available, called <code>HDFS-1</code> and <code>HDFS-2</code>, use the following
 syntax to create the same <code>IMPALA_KUDU-1</code> service using <code>HDFS-2</code>. You can specify
 multiple types of dependencies; use the <code>deploy.py create -h</code> command for details.</p>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1' --hdfs_dependency HDFS-2</code></pre>
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ python deploy.py create IMPALA_KUDU-1 --cluster 'Cluster 1' --hdfs_dependency HDFS-2 \
+  --host &lt;FQDN_of_cloudera_manager_server&gt;</code></pre>
 </div>
 </div>
 </li>
@@ -335,7 +363,7 @@ can run side by side with the <code>IMPALA-1</code> service if there is sufficie
 on the complexity of the workload and the query concurrency level.</p>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-bash" data-lang="bash">$ python deploy.py clone IMPALA_KUDU-1 IMPALA-1</code></pre>
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ python deploy.py clone IMPALA_KUDU-1 IMPALA-1 --host &lt;FQDN_of_cloudera_manager_server&gt;</code></pre>
 </div>
 </div>
 </li>

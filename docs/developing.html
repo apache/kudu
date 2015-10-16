@@ -2,7 +2,7 @@
 title: Developing Applications With Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-10-01 13:03:15 PDT'
+last_updated: 'Last updated 2015-10-15 15:57:58 PDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -113,6 +113,41 @@ See <a href="quickstart.html">Quickstart</a> for more information.</p>
 <div class="paragraph">
 <p>These examples should serve as helpful starting points for your own Kudu applications and integrations.</p>
 </div>
+<div class="sect2">
+<h3 id="_maven_artifacts"><a class="link" href="#_maven_artifacts">Maven Artifacts</a></h3>
+<div class="paragraph">
+<p>The following Maven <code>&lt;dependency&gt;</code> element is valid for the Kudu public beta:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml">&lt;dependency&gt;
+  &lt;groupId&gt;org.kududb&lt;/groupId&gt;
+  &lt;artifactId&gt;kudu-client&lt;/artifactId&gt;
+  &lt;version&gt;0.5.0&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Because the Maven artifacts are not in Maven Central, use the following <code>&lt;repository&gt;</code>
+element:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml">&lt;repository&gt;
+  &lt;id&gt;cdh.repo&lt;/id&gt;
+  &lt;name&gt;Cloudera Repositories&lt;/name&gt;
+  &lt;url&gt;https://repository.cloudera.com/artifactory/cloudera-repos&lt;/url&gt;
+  &lt;snapshots&gt;
+    &lt;enabled&gt;false&lt;/enabled&gt;
+  &lt;/snapshots&gt;
+&lt;/repository&gt;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>See subdirectories of <a href="https://github.com/cloudera/kudu-examples/tree/master/java" class="bare">https://github.com/cloudera/kudu-examples/tree/master/java</a> for
+example Maven pom.xml files.</p>
+</div>
+</div>
 </div>
 </div>
 <div class="sect1">
@@ -179,7 +214,11 @@ using YARN and Spark in the future.</p>
 <span class="active-toc">Developing Applications with Kudu</span>
             <ul class="sectlevel1">
 <li><a href="#_viewing_the_api_documentation">Viewing the API Documentation</a></li>
-<li><a href="#_working_examples">Working Examples</a></li>
+<li><a href="#_working_examples">Working Examples</a>
+<ul class="sectlevel2">
+<li><a href="#_maven_artifacts">Maven Artifacts</a></li>
+</ul>
+</li>
 <li><a href="#_example_impala_commands_with_kudu">Example Impala Commands With Kudu</a></li>
 <li><a href="#_integration_with_mapreduce_yarn_and_other_frameworks">Integration with MapReduce, YARN, and Other Frameworks</a></li>
 </ul> 
