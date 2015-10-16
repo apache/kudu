@@ -36,7 +36,9 @@ static void InvokeDestructors(void* t) {
   PerThreadDestructorList* d = reinterpret_cast<PerThreadDestructorList*>(t);
   while (d != NULL) {
     d->destructor(d->arg);
-    d = d->next;
+    PerThreadDestructorList* next = d->next;
+    delete d;
+    d = next;
   }
 }
 
