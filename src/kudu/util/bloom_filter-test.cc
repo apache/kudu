@@ -22,7 +22,7 @@ namespace kudu {
 static const int kRandomSeed = 0xdeadbeef;
 
 static void AddRandomKeys(int random_seed, int n_keys, BloomFilterBuilder *bf) {
-  srand(random_seed);
+  srandom(random_seed);
   for (int i = 0; i < n_keys; i++) {
     uint64_t key = random();
     Slice key_slice(reinterpret_cast<const uint8_t *>(&key), sizeof(key));
@@ -32,7 +32,7 @@ static void AddRandomKeys(int random_seed, int n_keys, BloomFilterBuilder *bf) {
 }
 
 static void CheckRandomKeys(int random_seed, int n_keys, const BloomFilter &bf) {
-  srand(random_seed);
+  srandom(random_seed);
   for (int i = 0; i < n_keys; i++) {
     uint64_t key = random();
     Slice key_slice(reinterpret_cast<const uint8_t *>(&key), sizeof(key));

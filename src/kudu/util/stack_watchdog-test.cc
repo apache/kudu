@@ -43,6 +43,9 @@ class StackWatchdogTest : public KuduTest {
   }
 };
 
+// The KernelStackWatchdog is only enabled on Linux, since we can't get kernel
+// stack traces on other platforms.
+#if defined(__linux__)
 TEST_F(StackWatchdogTest, TestWatchdog) {
   vector<string> log;
   {
@@ -61,6 +64,7 @@ TEST_F(StackWatchdogTest, TestWatchdog) {
   ASSERT_STR_CONTAINS(s, "TestWatchdog_Test::TestBody()");
   ASSERT_STR_CONTAINS(s, "nanosleep");
 }
+#endif
 
 // Test that SCOPED_WATCH_STACK scopes can be nested.
 TEST_F(StackWatchdogTest, TestNestedScopes) {

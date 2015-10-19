@@ -24,13 +24,25 @@ else
   exit 1
 fi
 
-ROOT=$(readlink -f $(dirname "$BASH_SOURCE"))/../../..
-LIB=$ROOT/build/latest/exported/libkudu_client.so
+if [[ "$OSTYPE" =~ ^linux ]]; then
+  DYLIB_SUFFIX="so"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  DYLIB_SUFFIX="dylib"
+fi
+
+ROOT=$(cd $(dirname "$BASH_SOURCE")/../../..; pwd)
+LIB=$ROOT/build/latest/exported/libkudu_client.$DYLIB_SUFFIX
 if [ -r $LIB ]; then
   echo "Found kudu client library: $LIB"
 else
   echo "Can't read kudu client library at $LIB"
   exit 1
+fi
+
+if [[ "$OSTYPE" =~ ^linux ]]; then
+  NM_COMMAND="${NM} -D --defined-only --demangle ${LIB}"
+elif [[ "$OSTYPE" == "darwin"* ]]; then
+  NM_COMMAND="${NM} -U ${LIB} | c++filt"
 fi
 
 NUM_BAD_SYMS=0
@@ -62,7 +74,7 @@ while read ADDR TYPE SYMBOL; do
   # Any left over symbol is bad.
   echo "Found bad symbol '$SYMBOL'"
   NUM_BAD_SYMS=$((NUM_BAD_SYMS + 1))
-done < <($NM -D --defined-only --demangle $LIB)
+done < <($NM_COMMAND)
 
 if [ $NUM_BAD_SYMS -gt 0 ]; then
   echo "Kudu client library contains $NUM_BAD_SYMS bad symbols"

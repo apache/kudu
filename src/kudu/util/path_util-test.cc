@@ -38,7 +38,14 @@ TEST(TestPathUtil, DirNameTest) {
   ASSERT_EQ(".", DirName("."));
   ASSERT_EQ(".", DirName(".."));
   ASSERT_EQ("/", DirName("/"));
+#if defined(__linux__)
+  // On OS X this test case returns "/", while Linux returns "//". On both
+  // platforms dirname(1) returns "/". The difference is unlikely to matter in
+  // practice.
   ASSERT_EQ("//", DirName("//"));
+#else
+  ASSERT_EQ("/", DirName("//"));
+#endif // defined(__linux__)
   ASSERT_EQ(".", DirName("a"));
   ASSERT_EQ(".", DirName("ab"));
   ASSERT_EQ(".", DirName("ab/"));

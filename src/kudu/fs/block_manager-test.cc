@@ -684,6 +684,8 @@ TYPED_TEST(BlockManagerTest, MemTrackerTest) {
   ASSERT_NO_FATAL_FAILURE(this->RunMemTrackerTest());
 }
 
+// The LogBlockManager is only supported on Linux, since it requires hole punching.
+#if defined(__linux__)
 // LogBlockManager-specific tests
 class LogBlockManagerTest : public BlockManagerTest<LogBlockManager> {
 };
@@ -746,6 +748,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
       list_of(GetTestDataDirectory()),
       false));
 }
+#endif // defined(__linux__)
 
 } // namespace fs
 } // namespace kudu

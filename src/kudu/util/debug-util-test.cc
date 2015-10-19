@@ -39,21 +39,6 @@ TEST_F(DebugUtilTest, TestStackTrace) {
   ASSERT_STR_CONTAINS(trace, "kudu::DebugUtilTest_TestStackTrace_Test::TestBody");
 }
 
-TEST_F(DebugUtilTest, TestStackTraceInvalidTid) {
-  string s = DumpThreadStack(1);
-  ASSERT_STR_CONTAINS(s, "unable to deliver signal");
-}
-
-TEST_F(DebugUtilTest, TestStackTraceSelf) {
-  string s = DumpThreadStack(Thread::CurrentThreadId());
-  ASSERT_STR_CONTAINS(s, "kudu::DebugUtilTest_TestStackTraceSelf_Test::TestBody()");
-}
-
-TEST_F(DebugUtilTest, TestStackTraceMainThread) {
-  string s = DumpThreadStack(getpid());
-  ASSERT_STR_CONTAINS(s, "kudu::DebugUtilTest_TestStackTraceMainThread_Test::TestBody()");
-}
-
 namespace {
 void SleeperThread(CountDownLatch* l) {
   // We use an infinite loop around WaitFor() instead of a normal Wait()
@@ -72,6 +57,25 @@ bool IsSignalHandlerRegistered(int signum) {
   return cur_action.sa_handler != SIG_DFL;
 }
 } // anonymous namespace
+
+// DumpThreadStack is only supported on Linux, since the implementation relies
+// on the tgkill syscall which is not portable.
+#if defined(__linux__)
+
+TEST_F(DebugUtilTest, TestStackTraceInvalidTid) {
+  string s = DumpThreadStack(1);
+  ASSERT_STR_CONTAINS(s, "unable to deliver signal");
+}
+
+TEST_F(DebugUtilTest, TestStackTraceSelf) {
+  string s = DumpThreadStack(Thread::CurrentThreadId());
+  ASSERT_STR_CONTAINS(s, "kudu::DebugUtilTest_TestStackTraceSelf_Test::TestBody()");
+}
+
+TEST_F(DebugUtilTest, TestStackTraceMainThread) {
+  string s = DumpThreadStack(getpid());
+  ASSERT_STR_CONTAINS(s, "kudu::DebugUtilTest_TestStackTraceMainThread_Test::TestBody()");
+}
 
 TEST_F(DebugUtilTest, TestSignalStackTrace) {
   CountDownLatch l(1);
@@ -138,5 +142,6 @@ TEST_F(DebugUtilTest, TestDumpAllThreads) {
     LOG(INFO) << DumpThreadStack(tid);
   }
 }
+#endif
 
 } // namespace kudu

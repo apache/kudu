@@ -35,7 +35,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../../..)
+ROOT=$(cd $(dirname "$BASH_SOURCE")/../../..; pwd)
 
 # Install the client library to a temporary directory.
 # Try to detect whether we're building using Ninja or Make.
