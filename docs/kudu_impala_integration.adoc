@@ -230,12 +230,23 @@ Before installing Impala_Kudu packages, you need to uninstall any existing Impal
 packages, using operating system utilities. For this reason, you cannot use Impala_Kudu
 alongside another Impala instance if you use packages.
 
-. Obtain the Impala_Kudu packages for your operating system from one of the following
-locations:
-** RHEL 6: http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/
-** Ubuntu Trusty: http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/
-. Install the packages on each host which will run a role in the Impala_Kudu service,
-using your operating system's utilities.
+[[impala_kudu_package_locations]]
+.Impala_Kudu Package Locations
+[cols=">s,<,<",options="header"]
+|===
+| OS  | Repository  | Individual Packages
+| RHEL | link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/cloudera-impala-kudu.repo[RHEL 6] |  link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/0.5.0/RPMS/x86_64/[RHEL 6]
+| Ubuntu | link:http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/cloudera.list[Trusty] |  http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/pool/contrib/i/impala-kudu/[Trusty]
+|===
+
+. Download and configure the Impala_Kudu repositories for your operating system, or manually
+download individual RPMs, the appropriate link from <<impala_kudu_package_locations>>.
+
+. An Impala cluster has at least one `impala-kudu-server` and at most one `impala-kudu-catalog`
+and `impala-kudu-state-store`.  To connect to Impala from the command line, install
+the `impala-kudu-shell` package.
+
+=== Adding Impala service in Cloudera Manager
 . Add a new Impala service in Cloudera Manager.
 ** Go to the cluster and click *Actions / Add a Service*.
 ** Choose one host to run the Catalog Server, one to run the Statestore, and at
@@ -252,12 +263,23 @@ alongside another Impala instance if you use packages.
 IMPORTANT: Do not use these command-line instructions if you use Cloudera Manager.
 Instead, follow <<install_impala_kudu_packages>>.
 
-. Obtain the Impala_Kudu packages for your operating system from one of the following
-locations:
-** RHEL 6: http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/
-** Ubuntu Trusty: http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/
-. Install the packages on each host which will run a role in the Impala_Kudu service,
-using your operating system's utilities.
+[[impala_kudu_non-cm_locations]]
+.Impala_Kudu Package Locations
+[cols=">s,<,<",options="header"]
+|===
+| OS  | Repository  | Individual Packages
+| RHEL | link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/cloudera-impala-kudu.repo[RHEL 6] |  link:http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/0.5.0/RPMS/x86_64/[RHEL 6]
+| Ubuntu | link:http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/cloudera.list[Trusty] |  http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/pool/contrib/i/impala-kudu/[Trusty]
+|===
+
+. Download and configure the Impala_Kudu repositories for your operating system, or manually
+download individual RPMs, the appropriate link from <<impala_kudu_non-cm_locations>>.
+
+. An Impala cluster has at least one `impala-kudu-server` and at most one `impala-kudu-catalog`
+and `impala-kudu-state-store`.  To connect to Impala from the command line, install
+the `impala-kudu-shell` package.
+
+=== Starting Impala_Kudu Services
 . Use the Impala start-up scripts to start each service on the relevant hosts:
 +
 ----
