@@ -28,8 +28,7 @@
 # If KUDU_REPORT_TEST_RESULTS is non-zero, then tests are reported to the
 # central test server.
 
-ME=$(dirname $BASH_SOURCE)
-ROOT=$(readlink -f $ME/..)
+ROOT=$(cd $(dirname $BASH_SOURCE)/..; pwd)
 
 TEST_LOGDIR=$ROOT/build/test-logs
 mkdir -p $TEST_LOGDIR
@@ -37,9 +36,11 @@ mkdir -p $TEST_LOGDIR
 TEST_DEBUGDIR=$ROOT/build/test-debug
 mkdir -p $TEST_DEBUGDIR
 
-TEST_EXECUTABLE=$(readlink -f $1)
+TEST_DIRNAME=$(cd $(dirname $1); pwd)
+TEST_FILENAME=$(basename $1)
 shift
-TEST_NAME=$(basename $TEST_EXECUTABLE | perl -pe 's/\..+?$//') # Remove path and extension (if any).
+TEST_EXECUTABLE="$TEST_DIRNAME/$TEST_FILENAME"
+TEST_NAME=$(echo $TEST_FILENAME | perl -pe 's/\..+?$//') # Remove path and extension (if any).
 
 # Determine whether the test is a known flaky by comparing against the user-specified
 # list.

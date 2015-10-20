@@ -90,7 +90,7 @@ if [ ! -w "$TEST_TMPDIR" ]; then
   exit 1
 fi
 
-ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
+ROOT=$(cd $(dirname "$BASH_SOURCE")/../..; pwd)
 cd $ROOT
 
 list_flaky_tests() {
@@ -203,7 +203,7 @@ if [ -d "$TEST_TMPDIR" ]; then
 fi
 
 # actually do the build
-NUM_PROCS=$(cat /proc/cpuinfo | grep processor | wc -l)
+NUM_PROCS=$(getconf _NPROCESSORS_ONLN)
 make -j$NUM_PROCS 2>&1 | tee build.log
 
 # If compilation succeeds, try to run all remaining steps despite any failures.
