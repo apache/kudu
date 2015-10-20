@@ -54,9 +54,11 @@ class Semaphore {
   bool try_lock() { return TryAcquire(); }
 
  private:
+#if !defined(__APPLE__)
   // Log a fatal error message. Separated out to keep the main functions
   // as small as possible in terms of code size.
   void Fatal(const char* action) ATTRIBUTE_NORETURN;
+#endif  // !define(__APPLE__)
 
 #if defined(__APPLE__)
   dispatch_semaphore_t sem_;
