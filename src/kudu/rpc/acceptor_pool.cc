@@ -18,6 +18,7 @@
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <inttypes.h>
+#include <pthread.h>
 #include <stdint.h>
 #include <tr1/memory>
 
@@ -29,11 +30,11 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/thread.h"
+#include "kudu/util/metrics.h"
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/net/socket.h"
-#include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
+#include "kudu/util/thread.h"
 
 using google::protobuf::Message;
 using std::tr1::shared_ptr;
@@ -93,11 +94,20 @@ void AcceptorPool::Shutdown() {
     return;
   }
 
+#if defined(__linux__)
   // Closing the socket will break us out of accept() if we're in it, and
   // prevent future accepts.
   WARN_NOT_OK(socket_.Shutdown(true, true),
               strings::Substitute("Could not shut down acceptor socket on $0",
                                   bind_address_.ToString()));
+#else
+  // Calling shutdown on an accepting (non-connected) socket is illegal on most
+  // platforms (but not Linux). Instead, the accepting threads are interrupted
+  // forcefully.
+  BOOST_FOREACH(const scoped_refptr<kudu::Thread>& thread, threads_) {
+    pthread_cancel(thread.get()->pthread_id());
+  }
+#endif
 
   BOOST_FOREACH(const scoped_refptr<kudu::Thread>& thread, threads_) {
     CHECK_OK(ThreadJoiner(thread.get()).Join());

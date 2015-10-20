@@ -191,6 +191,9 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // support retrieving the tid, returns Thread::INVALID_TID.
   int64_t tid() const { return tid_; }
 
+  // Returns the thread's pthread ID.
+  pthread_t pthread_id() const { return thread_; }
+
   const std::string& name() const { return name_; }
   const std::string& category() const { return category_; }
 
