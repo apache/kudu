@@ -40,13 +40,13 @@
               <span class="icon-bar"></span>
             </button>
             {% if page.active_nav != 'home' %}
-              <img src="{{site.github.url}}/img/logo_small.png" width="80" />
+            <a href="{{site.github.url}}/"><img src="{{site.github.url}}/img/logo_small.png" width="80" /></a>
             {% endif %}
           </div>
           <div id="navbar" class="navbar-collapse collapse navbar-right">
             <ul class="nav navbar-nav">
               <li {% if page.active_nav == 'home' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/index.html">Home</a>
+                <a href="{{site.github.url}}/">Home</a>
               </li>
               <li {% if page.active_nav == 'overview' %}class="active"{% endif %}>
                 <a href="{{site.github.url}}/overview.html">Overview</a>
@@ -55,7 +55,7 @@
                 <a href="{{site.github.url}}/faq.html">FAQ</a>
               </li>
               <li {% if page.active_nav == 'docs' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/docs/index.html">Documentation</a>
+                <a href="{{site.github.url}}/docs/">Documentation</a>
               </li>
               <li {% if page.active_nav == 'contributing' %}class="active"{% endif %}>
                 <a href="{{site.github.url}}/contributing.html">Contributing</a>
