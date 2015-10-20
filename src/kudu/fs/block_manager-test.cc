@@ -345,7 +345,11 @@ void BlockManagerTest<LogBlockManager>::RunMemTrackerTest() {
 }
 
 // What kinds of BlockManagers are supported?
+#if defined(__linux__)
 typedef ::testing::Types<FileBlockManager, LogBlockManager> BlockManagers;
+#else
+typedef ::testing::Types<FileBlockManager> BlockManagers;
+#endif
 TYPED_TEST_CASE(BlockManagerTest, BlockManagers);
 
 // Test the entire lifecycle of a block.
