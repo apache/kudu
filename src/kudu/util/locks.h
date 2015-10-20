@@ -67,6 +67,10 @@ class simple_spinlock {
   DISALLOW_COPY_AND_ASSIGN(simple_spinlock);
 };
 
+struct padded_spinlock : public simple_spinlock {
+  char padding[CACHELINE_SIZE - (sizeof(simple_spinlock) % CACHELINE_SIZE)];
+};
+
 // Reader-writer lock.
 // This is functionally equivalent to rw_semaphore in rw_semaphore.h, but should be
 // used whenever the lock is expected to only be acquired on a single thread.

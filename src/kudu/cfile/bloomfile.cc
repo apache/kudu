@@ -195,7 +195,7 @@ Status BloomFileReader::InitOnce() {
     index_iters_.push_back(
       IndexTreeIterator::Create(reader_.get(), validx_root));
   }
-  iter_locks_.reset(new simple_spinlock[n_cpus]);
+  iter_locks_.reset(new padded_spinlock[n_cpus]);
 
   // The memory footprint has changed.
   mem_consumption_.Reset(memory_footprint_excluding_reader());
@@ -239,7 +239,16 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
   int cpu = sched_getcpu();
   BlockPointer bblk_ptr;
   {
-    boost::lock_guard<simple_spinlock> lock(iter_locks_[cpu]);
+    boost::unique_lock<simple_spinlock> lock;
+    while (true) {
+      boost::unique_lock<simple_spinlock> l(iter_locks_[cpu], boost::try_to_lock);
+      if (l.owns_lock()) {
+        lock.swap(l);
+        break;
+      }
+      cpu = (cpu + 1) % index_iters_.size();
+    }
+
     cfile::IndexTreeIterator *index_iter = &index_iters_[cpu];
 
     Status s = index_iter->SeekAtOrBefore(probe.key());

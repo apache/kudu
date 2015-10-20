@@ -126,7 +126,7 @@ class BloomFileReader {
   // to avoid this... Instead we'll use a per-CPU iterator as a
   // lame hack.
   boost::ptr_vector<cfile::IndexTreeIterator> index_iters_;
-  gscoped_ptr<simple_spinlock[]> iter_locks_;
+  gscoped_ptr<padded_spinlock[]> iter_locks_;
 
   KuduOnceDynamic init_once_;
 
