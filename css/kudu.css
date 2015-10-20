@@ -50,31 +50,35 @@
     margin: auto;
 }
 
-.navbar-default {
+.kudu-site .navbar-default {
     background-color: #fff;
     border: none;
 }
-.navbar-default .navbar-nav>.active>a {
-    background-color: #fff;
+
+.kudu-site .navbar-default .navbar-nav a {
+    font-size: 110%;
+    background: none;
 }
 
-nav:after {
+.kudu-site .navbar-default .navbar-nav a:hover {
+    color: #fdfdfd;
+    background: #1f99d5;
+}
+
+.kudu-site .navbar-default .navbar-nav .active a {
+    color: #555;
+    font-weight: bold;
+    background: none;
+}
+
+.kudu-site .navbar-default .navbar-nav .active a:hover {
+    cursor: default;
+    color: #555;
+}
+
+.kudu-site .navbar-default:after {
     display: block;
     clear: both;
-}
-
-nav a {
-    font-size: 110%;
-}
-
-nav li.active a {
-    color: #333;
-    font-weight: bold;
-}
-
-nav li.active a:hover {
-    cursor: default;
-    background: none;
 }
 
 .faq #faq_toc {
