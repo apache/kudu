@@ -31,6 +31,7 @@
 #include "kudu/util/user.h"
 
 DEFINE_bool(is_panic_test_child, false, "Used by TestRpcPanic");
+DECLARE_bool(socket_inject_short_recvs);
 
 using boost::ptr_vector;
 using std::vector;
@@ -46,20 +47,36 @@ class RpcStubTest : public RpcTestBase {
     client_messenger_ = CreateMessenger("Client");
   }
  protected:
+  void SendSimpleCall() {
+    CalculatorServiceProxy p(client_messenger_, server_addr_);
+
+    RpcController controller;
+    AddRequestPB req;
+    req.set_x(10);
+    req.set_y(20);
+    AddResponsePB resp;
+    ASSERT_OK(p.Add(req, &resp, &controller));
+    ASSERT_EQ(30, resp.result());
+  }
+
   Sockaddr server_addr_;
   shared_ptr<Messenger> client_messenger_;
 };
 
 TEST_F(RpcStubTest, TestSimpleCall) {
+  SendSimpleCall();
+}
+
+// Regression test for a bug in which we would not properly parse a call
+// response when recv() returned a 'short read'. This injects such short
+// reads and then makes a number of calls.
+TEST_F(RpcStubTest, TestShortRecvs) {
+  FLAGS_socket_inject_short_recvs = true;
   CalculatorServiceProxy p(client_messenger_, server_addr_);
 
-  RpcController controller;
-  AddRequestPB req;
-  req.set_x(10);
-  req.set_y(20);
-  AddResponsePB resp;
-  ASSERT_OK(p.Add(req, &resp, &controller));
-  ASSERT_EQ(30, resp.result());
+  for (int i = 0; i < 100; i++) {
+    NO_FATALS(SendSimpleCall());
+  }
 }
 
 // Test calls which are rather large.

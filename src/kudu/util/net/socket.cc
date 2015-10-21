@@ -35,6 +35,8 @@
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/net_util.h"
 #include "kudu/util/net/sockaddr.h"
+#include "kudu/util/random.h"
+#include "kudu/util/random_util.h"
 #include "kudu/util/subprocess.h"
 
 DEFINE_string(local_ip_for_outbound_sockets, "",
@@ -42,6 +44,12 @@ DEFINE_string(local_ip_for_outbound_sockets, "",
               "This must be an IP address of the form A.B.C.D, not a hostname. "
               "Advanced parameter, subject to change.");
 TAG_FLAG(local_ip_for_outbound_sockets, experimental);
+
+DEFINE_bool(socket_inject_short_recvs, false,
+            "Inject short recv() responses which return less data than "
+            "requested");
+TAG_FLAG(socket_inject_short_recvs, hidden);
+TAG_FLAG(socket_inject_short_recvs, unsafe);
 
 namespace kudu {
 
@@ -455,6 +463,16 @@ Status Socket::Recv(uint8_t *buf, int32_t amt, int32_t *nread) {
     return Status::NetworkError(
           StringPrintf("invalid recv of %d bytes", amt), Slice(), EINVAL);
   }
+
+  // The recv() call can return fewer than the requested number of bytes.
+  // Especially when 'amt' is small, this is very unlikely to happen in
+  // the context of unit tests. So, we provide an injection hook which
+  // simulates the same behavior.
+  if (PREDICT_FALSE(FLAGS_socket_inject_short_recvs && amt > 1)) {
+    Random r(GetRandomSeed32());
+    amt = 1 + r.Uniform(amt - 1);
+  }
+
   DCHECK_GE(fd_, 0);
   int res = ::recv(fd_, buf, amt, 0);
   if (res <= 0) {

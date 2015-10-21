@@ -70,19 +70,28 @@ Status InboundTransfer::ReceiveBuffer(Socket &socket) {
     }
     DCHECK_GE(nread, 0);
     cur_offset_ += nread;
-    if (cur_offset_ == kMsgLengthPrefixLength) {
-      // Finished reading the length prefix
-
-      // The length prefix doesn't include its own 4 bytes, so we have to
-      // add that back in.
-      total_length_ = NetworkByteOrder::Load32(&buf_[0]) + kMsgLengthPrefixLength;
-      if (total_length_ > FLAGS_rpc_max_message_size) {
-        return Status::NetworkError(StringPrintf("the frame had a "
-                 "length of %d, but we only support messages up to %d bytes "
-                 "long.", total_length_, FLAGS_rpc_max_message_size));
-      }
-      buf_.resize(total_length_);
+    if (cur_offset_ < kMsgLengthPrefixLength) {
+      // If we still don't have the full length prefix, we can't continue
+      // reading yet.
+      return Status::OK();
     }
+    // Since we only read 'rem' bytes above, we should now have exactly
+    // the length prefix in our buffer and no more.
+    DCHECK_EQ(cur_offset_, kMsgLengthPrefixLength);
+
+    // The length prefix doesn't include its own 4 bytes, so we have to
+    // add that back in.
+    total_length_ = NetworkByteOrder::Load32(&buf_[0]) + kMsgLengthPrefixLength;
+    if (total_length_ > FLAGS_rpc_max_message_size) {
+      return Status::NetworkError(StringPrintf("the frame had a "
+               "length of %d, but we only support messages up to %d bytes "
+               "long.", total_length_, FLAGS_rpc_max_message_size));
+    }
+    if (total_length_ <= kMsgLengthPrefixLength) {
+      return Status::NetworkError(StringPrintf("the frame had a "
+               "length of %d, which is invalid", total_length_));
+    }
+    buf_.resize(total_length_);
 
     // Fall through to receive the message body, which is likely to be already
     // available on the socket.
