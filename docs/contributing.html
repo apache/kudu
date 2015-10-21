@@ -2,7 +2,7 @@
 title: Contributing to Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-10-15 15:57:58 PDT'
+last_updated: 'Last updated 2015-10-21 13:00:43 PDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -26,17 +26,179 @@ limitations under the License.
     <div class="col-md-9">
 
 <h1>Contributing to Kudu</h1>
-      <div id="preamble">
+      <div class="sect1">
+<h2 id="_contributing_patches_using_gerrit"><a class="link" href="#_contributing_patches_using_gerrit">Contributing Patches Using Gerrit</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Get familiar with these guidelines so that your contributions can be reviewed and
-integrated quickly and easily.</p>
+<p>The Kudu team uses Gerrit for code review, rather than Github pull requests. Typically,
+you pull from Github but push to Gerrit, and Gerrit is used to review code and merge
+it into Github.</p>
+</div>
+<div class="paragraph">
+<p>See the <a href="https://www.mediawiki.org/wiki/Gerrit/Tutorial">Gerrit Tutorial</a>
+for an overview of using Gerrit for code review.</p>
+</div>
+<div class="sect2">
+<h3 id="_initial_setup_for_gerrit"><a class="link" href="#_initial_setup_for_gerrit">Initial Setup for Gerrit</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Sign in to <a href="http://gerrit.cloudera.org:8080">Gerrit</a> using your Github username.</p>
+</li>
+<li>
+<p>Go to <a href="http://gerrit.cloudera.org:8080/#/settings/">Settings</a>. Update your name
+and email address on the <strong>Contact Information</strong> page, and upload a SSH public key.
+If you do not update your name, it will show up as "Anonymous Coward" in Gerrit reviews.</p>
+</li>
+<li>
+<p>If you have not done so, clone the main Kudu repository. By default, the main remote
+is called <code>origin</code>. When you fetch or pull, you will do so from <code>origin</code>.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">git clone https://github.com/cloudera/kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Change to the new <code>kudu</code> directory.</p>
+</li>
+<li>
+<p>Add a <code>gerrit</code> remote. In the following command, substitute &lt;username&gt; with your
+Github username.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">git remote add gerrit ssh://&lt;username&gt;@gerrit.cloudera.org:29418/kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Run the following command to install the
+Gerrit <code>commit-msg</code> hook. Use the following command, replacing <code>&lt;username&gt;</code> with your
+Github username.</p>
+<div class="listingblock">
+<div class="content">
+<pre>gitdir=$(git rev-parse --git-dir); scp -p -P 29418 &lt;username&gt;@gerrit.cloudera.org:hooks/commit-msg ${gitdir}/hooks/</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Be sure you have set the Kudu repository to use <code>pull --rebase</code> by default. You
+can use the following two commands, assuming you have only ever checked out <code>master</code>
+so far:</p>
+<div class="listingblock">
+<div class="content">
+<pre>git config branch.autosetuprebase always
+git config branch.master.rebase true</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If for some reason you had already checked out branches other than <code>master</code>, substitute
+<code>master</code> for the other branch names in the second command above.</p>
+</div>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_submitting_patches"><a class="link" href="#_submitting_patches">Submitting Patches</a></h3>
+<div class="paragraph">
+<p>To submit a patch, first commit your change (using a descriptive multi-line
+commit message if possible), then push the request to the <code>gerrit</code> remote. For instance, to push a change
+to the <code>master</code> branch:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>git push gerrit HEAD:refs/for/master --no-thin</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>or to push a change to the <code>gh-pages</code> branch (to update the website):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>git push gerrit HEAD:refs/for/gh-pages --no-thin</pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The <code>--no-thin</code> argument is a workaround to prevent an error in Gerrit. See
+<a href="https://code.google.com/p/gerrit/issues/detail?id=1582" class="bare">https://code.google.com/p/gerrit/issues/detail?id=1582</a>.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Consider creating Git aliases for the above commands. Gerrit also includes
+a command-line tool called
+<a href="https://www.mediawiki.org/wiki/Gerrit/Tutorial#Installing_git-review">git-review</a>,
+which you may find helpful.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Gerrit will add a change ID to your commit message and will create a Gerrit review,
+whose URL will be emitted as part of the push reply. If desired, you can send a message
+to the <code>kudu-dev</code> mailing list, explaining your patch and requesting review.</p>
+</div>
+<div class="paragraph">
+<p>After getting feedback, you can update or amend your commit, (for instance, using
+a command like <code>git commit --amend</code>) while leaving the Change
+ID intact. Push your change to Gerrit again, and this will create a new patch set
+in Gerrit and notify all reviewers about the change.</p>
+</div>
+<div class="paragraph">
+<p>When your code has been reviewed and is ready to be merged into the Kudu code base,
+a Kudu committer will merge it using Gerrit. You can discard your local branch.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_abandoning_a_review"><a class="link" href="#_abandoning_a_review">Abandoning a Review</a></h3>
+<div class="paragraph">
+<p>If your patch is not accepted or you decide to pull it from consideration, you can
+use the Gerrit UI to <strong>Abandon</strong> the patch. It will still show in Gerrit&#8217;s history,
+but will not be listed as a pending review.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_reviewing_patches_in_gerrit"><a class="link" href="#_reviewing_patches_in_gerrit">Reviewing Patches In Gerrit</a></h3>
+<div class="paragraph">
+<p>You can view a unified or side-by-side diff of changes in Gerrit using the web UI.
+To leave a comment, click the relevant line number or highlight the relevant part
+of the line, and type 'c' to bring up a comment box. To submit your comments and/or
+your review status, go up to the top level of the review and click <strong>Reply</strong>. You can
+add additional top-level comments here, and submit them.</p>
+</div>
+<div class="paragraph">
+<p>To check out code from a Gerrit review, click <strong>Download</strong> and paste the relevant Git
+commands into your Git client. You can then update the commit and push to Gerrit to
+submit a patch to the review, even if you were not the original reviewer.</p>
+</div>
+<div class="paragraph">
+<p>Gerrit allows you to vote on a review. A vote of <code>+2</code> from at least one committer
+(besides the submitter) is required before the patch can be merged.</p>
+</div>
 </div>
 </div>
 </div>
 <div class="sect1">
 <h2 id="_code_style"><a class="link" href="#_code_style">Code Style</a></h2>
 <div class="sectionbody">
+<div class="paragraph">
+<p>Get familiar with these guidelines so that your contributions can be reviewed and
+integrated quickly and easily.</p>
+</div>
 <div class="paragraph">
 <p>In general, Kudu follows the
 <a href="http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml">Google C++ Style Guide</a>,
@@ -445,6 +607,14 @@ to the official Kudu documentation.</p>
       <li>
 <span class="active-toc">Contributing to Kudu</span>
             <ul class="sectlevel1">
+<li><a href="#_contributing_patches_using_gerrit">Contributing Patches Using Gerrit</a>
+<ul class="sectlevel2">
+<li><a href="#_initial_setup_for_gerrit">Initial Setup for Gerrit</a></li>
+<li><a href="#_submitting_patches">Submitting Patches</a></li>
+<li><a href="#_abandoning_a_review">Abandoning a Review</a></li>
+<li><a href="#_reviewing_patches_in_gerrit">Reviewing Patches In Gerrit</a></li>
+</ul>
+</li>
 <li><a href="#_code_style">Code Style</a>
 <ul class="sectlevel2">
 <li><a href="#_limitations_on_code_boost_code_library_use">Limitations on <code>boost</code> Library Use</a></li>
