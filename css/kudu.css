@@ -1,3 +1,9 @@
+/* Override <code> to match <pre> instead of being red. */
+code {
+    color: #333;
+    background-color: #f5f5f5;
+}
+
 .row-fluid .col-lg-12 {
     padding-bottom: 20px;
 }
