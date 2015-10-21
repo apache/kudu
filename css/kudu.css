@@ -1,3 +1,11 @@
+.row-fluid .col-lg-12 {
+    padding-bottom: 20px;
+}
+
+footer {
+    clear: both;
+}
+
 .btn-info {
     background-color: #1f99d5;
     border-color: #0e76bc;
