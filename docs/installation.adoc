@@ -387,6 +387,8 @@ You can view the link:../apidocs/index.html[Java API documentation] online. Alte
 after <<build_java_client,building the Java client>>, Java API documentation is available
 in `java/kudu-client/target/apidocs/index.html`.
 // end::view_api[]
+
+[[next_steps]]
 == Next Steps
 - link:configuration.html[Configuring Kudu]
 - link:administration.html[Kudu Administration]
