@@ -31,19 +31,22 @@ public class AlterTableBuilder {
 
   /**
    * Change a table's name.
-   * @param newName New table's name, must be used to check progress
+   * @param newName new table's name, must be used to check progress
+   * @return this instance
    */
-  public void renameTable(String newName) {
+  public AlterTableBuilder renameTable(String newName) {
     pb.setNewTableName(newName);
+    return this;
   }
 
   /**
-   * Add a new column that's not nullable
-   * @param name Name of the new column
-   * @param type Type of the new column
-   * @param defaultVal Default value used for the currently existing rows
+   * Add a new column that's not nullable.
+   * @param name name of the new column
+   * @param type type of the new column
+   * @param defaultVal default value used for the currently existing rows
+   * @return this instance
    */
-  public void addColumn(String name, Type type, Object defaultVal) {
+  public AlterTableBuilder addColumn(String name, Type type, Object defaultVal) {
     if (defaultVal == null) {
       throw new IllegalArgumentException("A new column must have a default value, " +
           "use addNullableColumn() to add a NULLABLE column");
@@ -54,41 +57,48 @@ public class AlterTableBuilder {
         .columnToPb(new ColumnSchema.ColumnSchemaBuilder(name, type)
             .defaultValue(defaultVal)
             .build())));
+    return this;
   }
 
   /**
-   * Add a new column that's nullable, thus has no default value
-   * @param name Name of the new column
-   * @param type Type of the new column
+   * Add a new column that's nullable, thus has no default value.
+   * @param name name of the new column
+   * @param type type of the new column
+   * @return this instance
    */
-  public void addNullableColumn(String name, Type type) {
+  public AlterTableBuilder addNullableColumn(String name, Type type) {
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.ADD_COLUMN);
     step.setAddColumn(AlterTableRequestPB.AddColumn.newBuilder().setSchema(ProtobufHelper
         .columnToPb(new ColumnSchema.ColumnSchemaBuilder(name, type)
             .nullable(true)
             .build())));
+    return this;
   }
 
   /**
-   * Drop a column
-   * @param name Name of the column
+   * Drop a column.
+   * @param name name of the column
+   * @return this instance
    */
-  public void dropColumn(String name) {
+  public AlterTableBuilder dropColumn(String name) {
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.DROP_COLUMN);
     step.setDropColumn(AlterTableRequestPB.DropColumn.newBuilder().setName(name));
+    return this;
   }
 
   /**
-   * Change the name of a column
-   * @param oldName Old column's name, must exist
-   * @param newName New name to use
+   * Change the name of a column.
+   * @param oldName old column's name, must exist
+   * @param newName new name to use
+   * @return this instance
    */
-  public void renameColumn(String oldName, String newName) {
+  public AlterTableBuilder renameColumn(String oldName, String newName) {
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.RENAME_COLUMN);
     step.setRenameColumn(AlterTableRequestPB.RenameColumn.newBuilder().setOldName(oldName)
         .setNewName(newName));
+    return this;
   }
 }

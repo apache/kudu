@@ -36,9 +36,11 @@ public class CreateTableBuilder {
    * The row may be reused or modified safely after this call without changing the split point.
    *
    * @param row a key row for the split point
+   * @return this instance
    */
-  public void addSplitRow(PartialRow row) {
+  public CreateTableBuilder addSplitRow(PartialRow row) {
     splitRows.add(new PartialRow(row));
+    return this;
   }
 
   /**
@@ -55,9 +57,11 @@ public class CreateTableBuilder {
    *
    * @param columns the columns to hash
    * @param buckets the number of buckets to hash into
+   * @return this instance
    */
-  public void addHashPartitions(List<String> columns, int buckets) {
+  public CreateTableBuilder addHashPartitions(List<String> columns, int buckets) {
     addHashPartitions(columns, buckets, 0);
+    return this;
   }
 
   /**
@@ -71,8 +75,9 @@ public class CreateTableBuilder {
    * @param columns the columns to hash
    * @param buckets the number of buckets to hash into
    * @param seed a hash seed
+   * @return this instance
    */
-  public void addHashPartitions(List<String> columns, int buckets, int seed) {
+  public CreateTableBuilder addHashPartitions(List<String> columns, int buckets, int seed) {
     Common.PartitionSchemaPB.HashBucketSchemaPB.Builder hashBucket =
         pb.getPartitionSchemaBuilder().addHashBucketSchemasBuilder();
     for (String column : columns) {
@@ -80,6 +85,7 @@ public class CreateTableBuilder {
     }
     hashBucket.setNumBuckets(buckets);
     hashBucket.setSeed(seed);
+    return this;
   }
 
   /**
@@ -91,22 +97,26 @@ public class CreateTableBuilder {
    * range partitioning.
    *
    * @param columns the range partitioned columns
+   * @return this instance
    */
-  public void setRangePartitionColumns(List<String> columns) {
+  public CreateTableBuilder setRangePartitionColumns(List<String> columns) {
     Common.PartitionSchemaPB.RangeSchemaPB.Builder rangePartition =
         pb.getPartitionSchemaBuilder().getRangeSchemaBuilder();
     for (String column : columns) {
       rangePartition.addColumnsBuilder().setName(column);
     }
+    return this;
   }
 
   /**
    * Sets the number of replicas that each tablet will have. If not specified, it defaults to 1
    * replica which isn't safe for production usage.
    * @param numReplicas the number of replicas to use
+   * @return this instance
    */
-  public void setNumReplicas(int numReplicas) {
+  public CreateTableBuilder setNumReplicas(int numReplicas) {
     pb.setNumReplicas(numReplicas);
+    return this;
   }
 
   Master.CreateTableRequestPB.Builder getBuilder() {

@@ -56,36 +56,31 @@ public class TestKuduTable extends BaseKuduTest {
     createTable(tableName, basicSchema, null);
 
     // Add a col.
-    AlterTableBuilder atb = new AlterTableBuilder();
-    atb.addColumn("testaddint", Type.INT32, 4);
+    AlterTableBuilder atb = new AlterTableBuilder().addColumn("testaddint", Type.INT32, 4);
     submitAlterAndCheck(atb, tableName);
 
     // Rename that col.
-    atb = new AlterTableBuilder();
-    atb.renameColumn("testaddint", "newtestaddint");
+    atb = new AlterTableBuilder().renameColumn("testaddint", "newtestaddint");
     submitAlterAndCheck(atb, tableName);
 
     // Delete it.
-    atb = new AlterTableBuilder();
-    atb.dropColumn("newtestaddint");
+    atb = new AlterTableBuilder().dropColumn("newtestaddint");
     submitAlterAndCheck(atb, tableName);
 
     String newTableName = tableName +"new";
 
     // Rename our table.
-    atb = new AlterTableBuilder();
-    atb.renameTable(newTableName);
+    atb = new AlterTableBuilder().renameTable(newTableName);
     submitAlterAndCheck(atb, tableName, newTableName);
 
     // Rename it back.
-    atb = new AlterTableBuilder();
-    atb.renameTable(tableName);
+    atb = new AlterTableBuilder().renameTable(tableName);
     submitAlterAndCheck(atb, newTableName, tableName);
 
     // Try adding two columns, where one is nullable.
-    atb = new AlterTableBuilder();
-    atb.addColumn("testaddmulticolnotnull", Type.INT32, 4);
-    atb.addNullableColumn("testaddmulticolnull", Type.STRING);
+    atb = new AlterTableBuilder()
+        .addColumn("testaddmulticolnotnull", Type.INT32, 4)
+        .addNullableColumn("testaddmulticolnull", Type.STRING);
     submitAlterAndCheck(atb, tableName);
   }
 
