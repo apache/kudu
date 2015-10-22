@@ -27,7 +27,13 @@ class Random {
  private:
   uint32_t seed_;
  public:
-  explicit Random(uint32_t s) : seed_(s & 0x7fffffffu) {
+  explicit Random(uint32_t s) {
+    Reset(s);
+  }
+
+  // Reset the RNG to the given seed value.
+  void Reset(uint32_t s) {
+    seed_ = s & 0x7fffffffu;
     // Avoid bad seeds.
     if (seed_ == 0 || seed_ == random_internal::M) {
       seed_ = 1;
@@ -119,6 +125,11 @@ class ThreadSafeRandom {
  public:
   explicit ThreadSafeRandom(uint32_t s)
       : random_(s) {
+  }
+
+  void Reset(uint32_t s) {
+    lock_guard<simple_spinlock> l(&lock_);
+    random_.Reset(s);
   }
 
   uint32_t Next() {

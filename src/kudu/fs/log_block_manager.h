@@ -16,6 +16,7 @@
 #define KUDU_FS_LOG_BLOCK_MANAGER_H
 
 #include <deque>
+#include <gtest/gtest_prod.h>
 #include <tr1/memory>
 #include <tr1/unordered_map>
 #include <tr1/unordered_set>
@@ -168,7 +169,25 @@ class LogBlockManager : public BlockManager {
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
 
  private:
+  FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
   friend class internal::LogBlockContainer;
+
+  // Simpler typedef for a block map which isn't tracked in the memory tracker.
+  // Used during startup.
+  typedef std::tr1::unordered_map<
+      const BlockId,
+      scoped_refptr<internal::LogBlock>,
+      BlockIdHash,
+      BlockIdEqual> UntrackedBlockMap;
+
+  typedef MemTrackerAllocator<
+      std::pair<const BlockId, scoped_refptr<internal::LogBlock> > > BlockAllocator;
+  typedef std::tr1::unordered_map<
+      const BlockId,
+      scoped_refptr<internal::LogBlock>,
+      BlockIdHash,
+      BlockIdEqual,
+      BlockAllocator> BlockMap;
 
   // Adds an as of yet unseen container to this block manager.
   void AddNewContainerUnlocked(internal::LogBlockContainer* container);
@@ -205,11 +224,9 @@ class LogBlockManager : public BlockManager {
                    int64_t offset,
                    int64_t length);
 
-  // Unlocked variant of AddLogblock(); must hold 'lock_'.
-  bool AddLogBlockUnlocked(internal::LogBlockContainer* container,
-                           const BlockId& block_id,
-                           int64_t offset,
-                           int64_t length);
+  // Unlocked variant of AddLogBlock() for an already-constructed LogBlock object.
+  // Must hold 'lock_'.
+  bool AddLogBlockUnlocked(const scoped_refptr<internal::LogBlock>& lb);
 
   // Removes a LogBlock from in-memory data structures.
   //
@@ -220,11 +237,11 @@ class LogBlockManager : public BlockManager {
   // Unlocked variant of RemoveLogBlock(); must hold 'lock_'.
   scoped_refptr<internal::LogBlock> RemoveLogBlockUnlocked(const BlockId& block_id);
 
-  // Parse a block record and use it to update in-memory maps.
-  //
-  // Must be called with 'lock_' held.
-  void ProcessBlockRecordUnlocked(internal::LogBlockContainer* container,
-                                  const BlockRecordPB& record);
+  // Parse a block record, adding or removing it in 'block_map', and
+  // accounting for it in the metadata for 'container'.
+  void ProcessBlockRecord(const BlockRecordPB& record,
+                          internal::LogBlockContainer* container,
+                          UntrackedBlockMap* block_map);
 
   // Open a particular root path belonging to the block manager.
   //
@@ -256,14 +273,6 @@ class LogBlockManager : public BlockManager {
   // Maps block IDs to blocks that are now readable, either because they
   // already existed on disk when the block manager was opened, or because
   // they're WritableBlocks that were closed.
-  typedef MemTrackerAllocator<
-      std::pair<const BlockId, scoped_refptr<internal::LogBlock> > > BlockAllocator;
-  typedef std::tr1::unordered_map<
-      const BlockId,
-      scoped_refptr<internal::LogBlock>,
-      BlockIdHash,
-      BlockIdEqual,
-      BlockAllocator> BlockMap;
   BlockMap blocks_by_block_id_;
 
   // Contains block IDs for WritableBlocks that are still open for writing.

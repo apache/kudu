@@ -79,7 +79,7 @@ class BlockManagerTest : public KuduTest {
   }
 
  protected:
-  BlockManager* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
+  T* CreateBlockManager(const scoped_refptr<MetricEntity>& metric_entity,
                                    const shared_ptr<MemTracker>& parent_mem_tracker,
                                    const vector<string>& paths) {
     BlockManagerOptions opts;
@@ -110,7 +110,7 @@ class BlockManagerTest : public KuduTest {
 
   void RunMemTrackerTest();
 
-  gscoped_ptr<BlockManager> bm_;
+  gscoped_ptr<T> bm_;
 };
 
 template <>
@@ -682,6 +682,69 @@ TYPED_TEST(BlockManagerTest, LogContainerPreallocationTest) {
 
 TYPED_TEST(BlockManagerTest, MemTrackerTest) {
   ASSERT_NO_FATAL_FAILURE(this->RunMemTrackerTest());
+}
+
+// LogBlockManager-specific tests
+class LogBlockManagerTest : public BlockManagerTest<LogBlockManager> {
+};
+
+// Regression test for KUDU-1190, a crash at startup when a block ID has been
+// reused.
+TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
+  // Set a deterministic random seed, so that we can reproduce the sequence
+  // of random numbers.
+  bm_->rand_.Reset(1);
+  vector<BlockId> block_ids;
+
+  // Create 4 containers, with the first four block IDs in the random sequence.
+  {
+    ScopedWritableBlockCloser closer;
+    for (int i = 0; i < 4; i++) {
+      gscoped_ptr<WritableBlock> writer;
+      ASSERT_OK(bm_->CreateBlock(&writer));
+      block_ids.push_back(writer->id());
+      closer.AddBlock(writer.Pass());
+    }
+    ASSERT_OK(closer.CloseBlocks());
+  }
+
+  // Create one more block, which should reuse the first container.
+  {
+    gscoped_ptr<WritableBlock> writer;
+    ASSERT_OK(bm_->CreateBlock(&writer));
+    ASSERT_OK(writer->Close());
+  }
+
+  ASSERT_EQ(4, bm_->available_containers_.size());
+
+  // Delete the original blocks.
+  BOOST_FOREACH(const BlockId& b, block_ids) {
+    ASSERT_OK(bm_->DeleteBlock(b));
+  }
+
+  // Reset the random seed and re-create new blocks which should reuse the same
+  // block IDs (allowed since the blocks were deleted).
+  bm_->rand_.Reset(1);
+  for (int i = 0; i < 4; i++) {
+    gscoped_ptr<WritableBlock> writer;
+    ASSERT_OK(bm_->CreateBlock(&writer));
+    ASSERT_EQ(writer->id(), block_ids[i]);
+    ASSERT_OK(writer->Close());
+  }
+
+  // Now we have 4 containers with the following metadata:
+  //   1: CREATE(1) CREATE (5) DELETE(1) CREATE(4)
+  //   2: CREATE(2) DELETE(2) CREATE(1)
+  //   3: CREATE(3) DELETE(3) CREATE(2)
+  //   4: CREATE(4) DELETE(4) CREATE(3)
+
+  // Re-open the block manager and make sure it can deal with this case where
+  // block IDs have been reused.
+  NO_FATALS(ReopenBlockManager(
+      scoped_refptr<MetricEntity>(),
+      shared_ptr<MemTracker>(),
+      list_of(GetTestDataDirectory()),
+      false));
 }
 
 } // namespace fs

@@ -83,4 +83,12 @@ TEST_F(RandomTest, TestUseOfBits) {
   ASSERT_EQ(expected_bits_62, zeroes64);
 }
 
+TEST_F(RandomTest, TestResetSeed) {
+  rng_.Reset(1);
+  uint64_t first = rng_.Next64();
+  rng_.Reset(1);
+  uint64_t second = rng_.Next64();
+  ASSERT_EQ(first, second);
+}
+
 } // namespace kudu

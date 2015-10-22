@@ -1367,26 +1367,23 @@ bool LogBlockManager::AddLogBlock(LogBlockContainer* container,
                                   int64_t offset,
                                   int64_t length) {
   lock_guard<simple_spinlock> l(&lock_);
-  return AddLogBlockUnlocked(container, block_id, offset, length);
+  scoped_refptr<LogBlock> lb(new LogBlock(container, block_id, offset, length));
+  return AddLogBlockUnlocked(lb);
 }
 
-bool LogBlockManager::AddLogBlockUnlocked(LogBlockContainer* container,
-                                          const BlockId& block_id,
-                                          int64_t offset,
-                                          int64_t length) {
+bool LogBlockManager::AddLogBlockUnlocked(const scoped_refptr<LogBlock>& lb) {
   DCHECK(lock_.is_locked());
 
-  scoped_refptr<LogBlock> lb(new LogBlock(container, block_id, offset, length));
-  if (!InsertIfNotPresent(&blocks_by_block_id_, block_id, lb)) {
+  if (!InsertIfNotPresent(&blocks_by_block_id_, lb->block_id(), lb)) {
     return false;
   }
 
   // There may already be an entry in open_block_ids_ (e.g. we just finished
   // writing out a block).
-  open_block_ids_.erase(block_id);
+  open_block_ids_.erase(lb->block_id());
   if (metrics()) {
     metrics()->blocks_under_management->Increment();
-    metrics()->bytes_under_management->IncrementBy(length);
+    metrics()->bytes_under_management->IncrementBy(lb->length());
   }
   return true;
 }
@@ -1475,11 +1472,33 @@ void LogBlockManager::OpenRootPath(const string& root_path,
           "Could not read records from container $0", container->ToString()));
       return;
     }
+
+    // Process the records, building a container-local map.
+    //
+    // It's important that we don't try to add these blocks to the global map
+    // incrementally as we see each record, since it's possible that one container
+    // has a "CREATE <b>" while another has a "CREATE <b> ; DELETE <b>" pair.
+    // If we processed those two containers in this order, then upon processing
+    // the second container, we'd think there was a duplicate block. Building
+    // the container-local map first ensures that we discount deleted blocks
+    // before checking for duplicate IDs.
+    UntrackedBlockMap blocks_in_container;
+    BOOST_FOREACH(const BlockRecordPB& r, records) {
+      ProcessBlockRecord(r, container.get(), &blocks_in_container);
+    }
+
+    // Under the lock, merge this map into the main block map and add
+    // the container.
     {
       lock_guard<simple_spinlock> l(&lock_);
-      BOOST_FOREACH(const BlockRecordPB& r, records) {
-        ProcessBlockRecordUnlocked(container.get(), r);
+      BOOST_FOREACH(const UntrackedBlockMap::value_type& e, blocks_in_container) {
+        if (!AddLogBlockUnlocked(e.second)) {
+          LOG(FATAL) << "Found duplicate CREATE record for block " << e.first
+                     << " which already is alive from another container when "
+                     << " processing container " << container->ToString();
+        }
       }
+
       AddNewContainerUnlocked(container.get());
       MakeContainerAvailableUnlocked(container.release());
     }
@@ -1489,16 +1508,18 @@ void LogBlockManager::OpenRootPath(const string& root_path,
   *result_metadata = metadata.release();
 }
 
-void LogBlockManager::ProcessBlockRecordUnlocked(LogBlockContainer* container,
-                                                 const BlockRecordPB& record) {
-  DCHECK(lock_.is_locked());
-
+void LogBlockManager::ProcessBlockRecord(const BlockRecordPB& record,
+                                         LogBlockContainer* container,
+                                         UntrackedBlockMap* block_map) {
   BlockId block_id(BlockId::FromPB(record.block_id()));
   switch (record.op_type()) {
     case CREATE: {
-      if (!AddLogBlockUnlocked(container, block_id,
-                               record.offset(), record.length())) {
-        LOG(FATAL) << "Found already existent block record: "
+      scoped_refptr<LogBlock> lb(new LogBlock(container, block_id,
+                                              record.offset(), record.length()));
+      if (!InsertIfNotPresent(block_map, block_id, lb)) {
+        LOG(FATAL) << "Found duplicate CREATE record for block "
+                   << block_id.ToString() << " in container "
+                   << container->ToString() << ": "
                    << record.DebugString();
       }
 
@@ -1517,8 +1538,10 @@ void LogBlockManager::ProcessBlockRecordUnlocked(LogBlockContainer* container,
       break;
     }
     case DELETE:
-      if (!RemoveLogBlockUnlocked(block_id)) {
-        LOG(FATAL) << "Found already non-existent block record: "
+      if (block_map->erase(block_id) != 1) {
+        LOG(FATAL) << "Found DELETE record for invalid block "
+                   << block_id.ToString() << " in container "
+                   << container->ToString() << ": "
                    << record.DebugString();
       }
       VLOG(2) << Substitute("Found DELETE block $0", block_id.ToString());
