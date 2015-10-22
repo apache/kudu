@@ -2,7 +2,7 @@
 title: Kudu Documentation Style Guide
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-10-21 13:00:43 PDT'
+last_updated: 'Last updated 2015-10-21 20:58:02 PDT'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -207,7 +207,7 @@ include::path/to/app.rb[]
 <td class="tableblock halign-left valign-top"><p class="tableblock">Include only part of a separate file</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Similar to Javadoc</p></td>
 <td class="tableblock halign-left valign-top"><div><div class="paragraph">
-<p>See link:http://asciidoctor.org/docs/user-manual/#by-tagged-regions</p>
+<p>See <a href="http://asciidoctor.org/docs/user-manual/#by-tagged-regions" class="bare">http://asciidoctor.org/docs/user-manual/#by-tagged-regions</a></p>
 </div></div></td>
 </tr>
 <tr>
@@ -222,7 +222,7 @@ include::path/to/app.rb[]
 <td class="tableblock halign-left valign-top"><p class="tableblock">A link with the URL as link text</p></td>
 <td class="tableblock halign-left valign-top"><div><div class="listingblock">
 <div class="content">
-<pre>link:http://www.google.com</pre>
+<pre>http://www.google.com</pre>
 </div>
 </div></div></td>
 </tr>
@@ -336,7 +336,9 @@ include::path/to/app.rb[]
 <pre>.The Title
 [NOTE]
 ====
-Here is the note text. Everything until the second set of four equals signs is part of the note.
+Here is the note text.
+Everything until the second set of four equals signs
+is part of the note.
 ----
 some source code
 ----
@@ -434,7 +436,7 @@ Title::
 <td class="tableblock halign-left valign-top"><p class="tableblock">Sidebars, quotes, or other blocks of text</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">a block of text, formatted differently from the default</p></td>
 <td class="tableblock halign-left valign-top"><div><div class="paragraph">
-<p>Delimited using different delimiters, see link:http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary. Some of the examples above use delimiters like ...., ----,====.</p>
+<p>Delimited using different delimiters, see <a href="http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary" class="bare">http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary</a>. Some of the examples above use delimiters like ...., ----,====.</p>
 </div>
 <div class="literalblock">
 <div class="content">
@@ -468,7 +470,7 @@ ____</pre>
 <td class="tableblock halign-left valign-top"><p class="tableblock">chapter, section, sub-section, etc</p></td>
 <td class="tableblock halign-left valign-top"><div><div class="listingblock">
 <div class="content">
-<pre>= Book (or chapter if the chapter can be built alone, see the leveloffset info below)
+<pre>= Book (or chapter if the chapter can be built alone, see leveloffset below)
 
 == Chapter (or section if the chapter is standalone)
 
@@ -586,7 +588,7 @@ Nothing between the slashes will show up.
           <a href="contributing.html">Contributing to Kudu</a> 
       </li> 
       <li>
-<span class="active-toc">Kudu Style Guide</span>
+<span class="active-toc">Kudu Documentation Style Guide</span>
             <ul class="sectlevel1">
 <li><a href="#_asciidoc">Asciidoc</a></li>
 <li><a href="#_code_standards">Code Standards</a></li>
