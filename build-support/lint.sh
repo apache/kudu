@@ -13,8 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ME=$(dirname $BASH_SOURCE)
-ROOT=$(readlink -f $ME/..)
+ROOT=$(cd $(dirname $BASH_SOURCE)/..; pwd)
 
 TMP=$(mktemp)
 trap "rm $TMP" EXIT

@@ -20,7 +20,7 @@
 # space in the Jenkins workspace disk. This can help prevent our EC2
 # slaves from filling up and causing spurious failures.
 
-ROOT=$(readlink -f $(dirname "$BASH_SOURCE")/../..)
+ROOT=$(cd $(dirname "$BASH_SOURCE")/../..; pwd)
 cd $ROOT
 
 # Note that we use simple shell commands instead of "make clean"
