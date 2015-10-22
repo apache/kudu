@@ -25,6 +25,7 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/locks.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/status.h"
 
@@ -80,16 +81,20 @@ Status GetClockModes(timex* timex) {
 // Returns the current time/max error and checks if the clock is synchronized.
 kudu::Status GetClockTime(ntptimeval* timeval) {
   int rc = ntp_gettime(timeval);
-  if (PREDICT_FALSE(rc == TIME_ERROR)) {
-    return Status::ServiceUnavailable(
-        Substitute("Error reading clock. Clock considered unsynchronized. Errno: $0",
-                   ErrnoToString(errno)));
+  switch (rc) {
+    case TIME_OK:
+      return Status::OK();
+    case -1: // generic error
+      return Status::ServiceUnavailable("Error reading clock. ntp_gettime() failed",
+                                        ErrnoToString(errno));
+    case TIME_ERROR:
+      return Status::ServiceUnavailable("Error reading clock. Clock considered unsynchronized");
+    default:
+      // TODO what to do about leap seconds? see KUDU-146
+      KLOG_FIRST_N(ERROR, 1) << "Server undergoing leap second. This may cause consistency issues "
+        << "(rc=" << rc << ")";
+      return Status::OK();
   }
-  // TODO what to do about leap seconds? see KUDU-146
-  if (PREDICT_FALSE(rc != TIME_OK)) {
-    LOG(ERROR) << Substitute("TODO Server undergoing leap second. Return code: $0", rc);
-  }
-  return kudu::Status::OK();
 }
 #endif // !defined(__APPLE__)
 
