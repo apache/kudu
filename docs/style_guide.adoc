@@ -97,11 +97,11 @@ link:https://hbase.apache.org/book.html#_hbase_reference_guide_style_guide_and_c
 \include::path/to/app.rb[]
 ----
 ................
-| Include only part of a separate file | Similar to Javadoc | See link:http://asciidoctor.org/docs/user-manual/#by-tagged-regions
+| Include only part of a separate file | Similar to Javadoc | See http://asciidoctor.org/docs/user-manual/#by-tagged-regions
 | File names, directory names, new terms | italic | \_hbase-default.xml_
 | External naked URLs | A link with the URL as link text |
 ----
-link:http://www.google.com
+http://www.google.com
 ----
 
 | External URLs with text | A link with arbitrary link text |
@@ -154,7 +154,9 @@ WARNING: My warning here
 .The Title
 [NOTE]
 ====
-Here is the note text. Everything until the second set of four equals signs is part of the note.
+Here is the note text.
+Everything until the second set of four equals signs
+is part of the note.
 ----
 some source code
 ----
@@ -201,7 +203,7 @@ Title::
 *File -> Print*
 ........
 renders like *File -> Print*
-| Sidebars, quotes, or other blocks of text | a block of text, formatted differently from the default | Delimited using different delimiters, see link:http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary. Some of the examples above use delimiters like \...., ----,====.
+| Sidebars, quotes, or other blocks of text | a block of text, formatted differently from the default | Delimited using different delimiters, see http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary. Some of the examples above use delimiters like \...., ----,====.
 ........
 [example]
 ====
@@ -227,7 +229,7 @@ ____
 *If you want to insert literal Asciidoc content that keeps being interpreted, when in doubt, use eight dots as the delimiter at the top and bottom.*
 | Nested Sections | chapter, section, sub-section, etc |
 ----
-= Book (or chapter if the chapter can be built alone, see the leveloffset info below)
+= Book (or chapter if the chapter can be built alone, see leveloffset below)
 
 == Chapter (or section if the chapter is standalone)
 
