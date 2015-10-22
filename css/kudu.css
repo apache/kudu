@@ -12,6 +12,21 @@ footer {
     clear: both;
 }
 
+.fork-me-on-github img {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 149px;
+    height: 149px;
+    border: 0;
+}
+
+@media (max-width: 1400px) {
+  .fork-me-on-github {
+    display: none;
+  }
+}
+
 .btn-info {
     background-color: #1f99d5;
     border-color: #0e76bc;
@@ -82,6 +97,7 @@ footer {
 
 .kudu-site .navbar-default {
     background-color: #fff;
+    padding-right:20px;
     border: none;
 }
 
