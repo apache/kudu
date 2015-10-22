@@ -4,8 +4,10 @@ layout: default
 active_nav: contributing
 ---
 
-<div class="row header">
+<div class="contributing">
+<div class="row">
   <div class="col-lg-12">
+
     <h2>Contributing to Kudu</h2>
     <p>
       There are lots of ways to get involved with the Kudu project. Some of
@@ -16,82 +18,66 @@ active_nav: contributing
       If you want to do something not listed here, or you see a gap that needs to be filled,
       <a href="https://groups.google.com/forum/#!forum/kudu-dev">let us know</a>.
     </p>
-  </div>
-</div>
 
-<div class="row overview">
-  <div class="col-md-12">
     <h3>Participate in the community.</h3>
     <p>
-      Community is the core of any open source project, and Kudu is no exception. Participate in
-      mailing lists, requests for comment, chat sessions, bug reports, and other communication mechanisms.
+      Community is the core of any open source project, and Kudu is no exception. Participate in the
+      mailing lists, requests for comment, chat sessions, and bug reports.
       See <a href="community.html">Community</a> to get started.
     </p>
-  </div>
-</div>
 
-<div class="row overview">
-  <div class="col-md-12">
     <h3>Talk about how you use Kudu.</h3>
     <p>
       Let us know what you think of Kudu and how you are using it. Send blogs or presentation links
-      to the <a href="https://groups.google.com/forum/#!forum/kudu-user">kudu-user mailing list</a> so that we can feature them.
+      to the <a href="https://groups.google.com/forum/#!forum/kudu-user">kudu-user mailing list</a>
+      so that we can feature them.
     </p>
-  </div>
-</div>
 
-<div class="row overview">
-  <div class="col-md-12">
-    <h3>Write code.</h3>
-    <p>
-      You can write and submit code for the core Kudu project or extend your existing code base or API
-      to work with Kudu. Follow the <a href="docs/contributing.html">code guidelines</a> to be sure
-      your submission is easy to review and integrate.
-    </p>
-  </div>
-</div>
-
-<div class="row overview">
-  <div class="col-md-12">
     <h3>File bugs and enhancement requests.</h3>
     <p>
-      If you see problems in Kudu or you think a feature would make Kudu more useful to you, let us
-      know by filing a bug or request for enhancement on the
-      <a href="https://issues.cloudera.org/projects/KUDU">Kudu issue tracker</a>. The more
+      If you see problems in Kudu or if a missing feature would make Kudu more useful to you,
+      let us know by filing a bug or request for enhancement on the
+      <a href="https://issues.cloudera.org/projects/KUDU/issues">Kudu JIRA issue tracker</a>. The more
       information you can provide about how to reproduce an issue or
       how you'd like a new feature to work, the better.
     </p>
-  </div>
-</div>
 
-<div class="row overview">
-  <div class="col-md-12">
-    <h3>Review patches and test code.</h3>
+    <h3>Write code and submit patches.</h3>
+    <p>
+      You can submit patches to the core Kudu project or extend your existing codebase and APIs
+      to work with Kudu. The Kudu project uses
+      <a href="http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu">Gerrit</a>
+      for code reviews.
+
+      Please read the details of
+      <a href="docs/contributing.html#_contributing_patches_using_gerrit">how to use submit patches</a>
+      and what the project <a href="docs/contributing.html#_code_style">coding guidelines</a>
+      are before your submit your patch, so that your contribution will be easy for others to
+      review and integrate.
+    </p>
+
+    <h3>Review patches and test new code.</h3>
     <p>
       In order for patches to be integrated into Kudu as quickly as possible, they must be reviewed
-      and tested. The more eyes, the better. Even if you are not a committer, your input is extremely
+      and tested. The more eyes, the better. Even if you are not a committer your review input is extremely
       valuable. Keep an eye on the
       <a href="http://gerrit.cloudera.org:8080/#/q/status:open+project:kudu">Kudu gerrit instance</a>
       for patches that need review or testing.
     </p>
-  </div>
-</div>
 
-<div class="row overview">
-  <div class="col-md-12">
     <h3>Write and review documentation.</h3>
     <p>
-      Good documentation makes great software even better. Where you see gaps in the documentation,
-      submit suggestions, corrections, or documentation patches. You can also correct or edit error messages,
-      log messages, or API documentation. If you'd like to translate the Kudu documentation into a different
-      language or you'd like to help in some other way, let us know. Review the
-      <a href="docs/style_guide.html">documentation guidelines</a> before you get started.
+      Making good documentation is critical to making great, usable software. If you see gaps in
+      the documentation, please submit suggestions or corrections to the mailing list
+      or submit documentation patches through Gerrit.
+      You can also correct or improve error messages, log messages, or API docs.
     </p>
-  </div>
-</div>
+    <p>
+      If you'd like to translate the Kudu documentation into a different
+      language or you'd like to help in some other way, please <a href="community.html">let us know</a>.
+      It's best to review the <a href="docs/style_guide.html">documentation guidelines</a> before you get started.
+    </p>
 
-<div class="row overview">
-  <div class="col-md-12">
     <h3>Request and review examples.</h3>
     <p>
       The <a href="https://github.com/cloudera/kudu-examples">kudu-examples</a> repository includes
@@ -100,3 +86,4 @@ active_nav: contributing
     </p>
   </div>
 </div>
+</div> <!-- .contributing -->

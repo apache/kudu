@@ -68,6 +68,18 @@ footer {
     margin: auto;
 }
 
+.contributing h3 {
+    padding-top: 20px;
+    border-top: 1px solid #bdf;
+    margin-top: 20px;
+}
+
+.contributing h3:first-of-type {
+    padding-top: 15px;
+    border-top: none;
+    margin-top: 0;
+}
+
 .kudu-site .navbar-default {
     background-color: #fff;
     border: none;
