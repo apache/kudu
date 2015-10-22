@@ -64,8 +64,8 @@ link:transaction_semantics.html[Kudu Transaction Semantics]::
 link:contributing.html[Contributing to Kudu]::
   Get involved in the Kudu community.
 
-link:style_guide.html[Kudu Style Guide]::
-  Get familiar with the guidelines for development and documentation contributions to the Kudu project.
+link:style_guide.html[Kudu Documentation Style Guide]::
+  Get familiar with the guidelines for documentation contributions to the Kudu project.
 
 link:configuration_reference.html[Kudu Configuration Reference]::
   Find out about individual Kudu configuration options.
