@@ -168,12 +168,19 @@ string TabletLink(const string& id) {
                     UrlEncodeToString(id),
                     EscapeForHtmlToString(id));
 }
+
+bool CompareByTabletId(const scoped_refptr<TabletPeer>& a,
+                       const scoped_refptr<TabletPeer>& b) {
+  return a->tablet_id() < b->tablet_id();
+}
+
 } // anonymous namespace
 
 void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& req,
                                                  std::stringstream *output) {
   vector<scoped_refptr<TabletPeer> > peers;
   tserver_->tablet_manager()->GetTabletPeers(&peers);
+  std::sort(peers.begin(), peers.end(), &CompareByTabletId);
 
   *output << "<h1>Tablets</h1>\n";
   *output << "<table class='table table-striped'>\n";
