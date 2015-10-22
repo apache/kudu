@@ -274,7 +274,16 @@ public class AsyncKuduSession implements SessionConfiguration {
     public Deferred<List<OperationResponse>> call(ArrayList<BatchResponse> batchResponsesList)
         throws Exception {
       Deferred<List<OperationResponse>> deferred = new Deferred<>();
-      if (batchResponsesList == null || batchResponsesList.isEmpty()) {
+      if (batchResponsesList == null) {
+        deferred.callback(null);
+        return deferred;
+      }
+
+      // flushTablet() can return null when a tablet we wanted to flush was already flushed. Those
+      // nulls along with BatchResponses are then put in a list by Deferred.group(). We first need
+      // to filter the nulls out.
+      batchResponsesList.removeAll(Collections.singleton(null));
+      if (batchResponsesList.isEmpty()) {
         deferred.callback(null);
         return deferred;
       }

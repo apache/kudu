@@ -79,6 +79,41 @@ public class TestKuduSession extends BaseKuduTest {
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
   }
 
+  /**
+   * Regression test for KUDU-1226. Calls to session.flush() concurrent with AUTO_FLUSH_BACKGROUND
+   * can end up giving ConvertBatchToListOfResponsesCB a list with nulls if a tablet was already
+   * flushed. Only happens with multiple tablets.
+   */
+  @Test(timeout = 10000)
+  public void testConcurrentFlushes() throws Exception {
+    String tableName = TABLE_NAME_PREFIX + "-testConcurrentFlushes";
+    CreateTableBuilder builder = new CreateTableBuilder();
+    int numTablets = 4;
+    int numRowsPerTablet = 100;
+
+    // Create a 4 tablets table split on 1000, 2000, and 3000.
+    for (int i = 1; i < numTablets; i++) {
+      PartialRow split = basicSchema.newPartialRow();
+      split.addInt(0, i * numRowsPerTablet);
+      builder.addSplitRow(split);
+    }
+    table = createTable(tableName, basicSchema, builder);
+
+    // Configure the session to background flush as often as it can (every 1ms).
+    KuduSession session = syncClient.newSession();
+    session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_BACKGROUND);
+    session.setFlushInterval(1);
+
+    // Fill each tablet in parallel 1 by 1 then flush. Without the fix this would quickly get an
+    // NPE.
+    for (int i = 0; i < numRowsPerTablet; i++) {
+      for (int j = 0; j < numTablets; j++) {
+        session.apply(createInsert(i + (numRowsPerTablet * j)));
+      }
+      session.flush();
+    }
+  }
+
   private Insert createInsert(int key) {
     return createBasicSchemaInsert(table, key);
   }
