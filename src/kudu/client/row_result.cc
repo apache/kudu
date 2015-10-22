@@ -185,6 +185,71 @@ const void* KuduRowResult::cell(int col_idx) const {
   return row_data_ + schema_->column_offset(col_idx);
 }
 
+//------------------------------------------------------------
+// Template instantiations: We instantiate all possible templates to avoid linker issues.
+// see: https://isocpp.org/wiki/faq/templates#separate-template-fn-defn-from-decl
+// TODO We can probably remove this when we move to c++11 and can use "extern template"
+//------------------------------------------------------------
+
+template
+Status KuduRowResult::Get<TypeTraits<BOOL> >(const Slice& col_name, bool* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<INT8> >(const Slice& col_name, int8_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<INT16> >(const Slice& col_name, int16_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<INT32> >(const Slice& col_name, int32_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<INT64> >(const Slice& col_name, int64_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<TIMESTAMP> >(const Slice& col_name, int64_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<FLOAT> >(const Slice& col_name, float* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<DOUBLE> >(const Slice& col_name, double* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<STRING> >(const Slice& col_name, Slice* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<BINARY> >(const Slice& col_name, Slice* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<BOOL> >(int col_idx, bool* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<INT8> >(int col_idx, int8_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<INT16> >(int col_idx, int16_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<INT32> >(int col_idx, int32_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<INT64> >(int col_idx, int64_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<TIMESTAMP> >(int col_idx, int64_t* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<FLOAT> >(int col_idx, float* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<DOUBLE> >(int col_idx, double* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<STRING> >(int col_idx, Slice* val) const;
+
+template
+Status KuduRowResult::Get<TypeTraits<BINARY> >(int col_idx, Slice* val) const;
 
 string KuduRowResult::ToString() const {
   string ret;
