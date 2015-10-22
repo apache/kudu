@@ -39,6 +39,10 @@ footer {
     border: 1px solid #dddddd;
 }
 
+#toc ul {
+    padding-left: 3px;
+}
+
 .row.header {
     border-bottom: 1px solid #25aae1;
     margin-bottom: 30px
