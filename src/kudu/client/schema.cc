@@ -303,7 +303,7 @@ KuduSchemaBuilder* KuduSchemaBuilder::SetPrimaryKey(
 
 Status KuduSchemaBuilder::Build(KuduSchema* schema) {
   vector<KuduColumnSchema> cols;
-  cols.resize(data_->specs.size());
+  cols.resize(data_->specs.size(), KuduColumnSchema());
   for (int i = 0; i < cols.size(); i++) {
     RETURN_NOT_OK(data_->specs[i]->ToColumnSchema(&cols[i]));
   }

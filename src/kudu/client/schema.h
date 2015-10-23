@@ -131,10 +131,10 @@ class KUDU_EXPORT KuduColumnSchema {
  private:
   friend class KuduColumnSpec;
   friend class KuduSchema;
+  friend class KuduSchemaBuilder;
   // KuduTableAlterer::Data needs to be a friend. Friending the parent class
   // is transitive to nested classes. See http://tiny.cloudera.com/jwtui
   friend class KuduTableAlterer;
-  friend class std::vector<KuduColumnSchema>;
 
   KuduColumnSchema();
 
