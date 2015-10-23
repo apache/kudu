@@ -269,7 +269,7 @@ You cannot modify the partition schema after table creation.
 
 Kudu currently has some known limitations that may factor into schema design:
 
-Immutable Primary Keys:: Kudu does allow you to update the primary key of a
+Immutable Primary Keys:: Kudu does not allow you to update the primary key of a
   row after insertion.
 
 Non-alterable Primary Key:: Kudu does not allow you to alter the primary key
