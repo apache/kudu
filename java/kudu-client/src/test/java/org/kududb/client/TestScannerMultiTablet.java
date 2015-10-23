@@ -13,6 +13,7 @@
 // limitations under the License.
 package org.kududb.client;
 
+import com.google.common.collect.Lists;
 import com.stumbleupon.async.Deferred;
 import org.kududb.ColumnSchema;
 import org.kududb.Schema;
@@ -143,6 +144,26 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     assertEquals(9, countRowsInScan(getScanner(null, null, null, null, predicate)));
   }
 
+  @Test(timeout = 100000)
+  public void testProjections() throws Exception {
+    // Test with column names.
+    AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table);
+    builder.setProjectedColumnNames(Lists.newArrayList(schema.getColumnByIndex(0).getName(),
+        schema.getColumnByIndex(1).getName()));
+    buildScannerAndCheckColumnsCount(builder, 2);
+
+    // Test with column indexes.
+    builder = client.newScannerBuilder(table);
+    builder.setProjectedColumnIndexes(Lists.newArrayList(0, 1));
+    buildScannerAndCheckColumnsCount(builder, 2);
+
+    // Test with column names overriding indexes.
+    builder = client.newScannerBuilder(table);
+    builder.setProjectedColumnIndexes(Lists.newArrayList(0, 1));
+    builder.setProjectedColumnNames(Lists.newArrayList(schema.getColumnByIndex(0).getName()));
+    buildScannerAndCheckColumnsCount(builder, 1);
+  }
+
   private AsyncKuduScanner getScanner(String lowerBoundKeyOne,
                                       String lowerBoundKeyTwo,
                                       String exclusiveUpperBoundKeyOne,
@@ -177,6 +198,14 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     }
 
     return builder.build();
+  }
+
+  private void buildScannerAndCheckColumnsCount(AsyncKuduScanner.AsyncKuduScannerBuilder builder,
+                                                int count) throws Exception {
+    AsyncKuduScanner scanner = builder.build();
+    scanner.nextRows().join(DEFAULT_SLEEP);
+    RowResultIterator rri = scanner.nextRows().join(DEFAULT_SLEEP);
+    assertEquals(count, rri.next().getSchema().getColumns().size());
   }
 
   private static Schema getSchema() {

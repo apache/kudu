@@ -43,6 +43,7 @@ public abstract class AbstractKuduScannerBuilder
   byte[] lowerBoundPartitionKey = AsyncKuduClient.EMPTY_ARRAY;
   byte[] upperBoundPartitionKey = AsyncKuduClient.EMPTY_ARRAY;
   List<String> projectedColumnNames = null;
+  List<Integer> projectedColumnIndexes = null;
   long scanRequestTimeout;
 
   AbstractKuduScannerBuilder(AsyncKuduClient client, KuduTable table) {
@@ -88,14 +89,34 @@ public abstract class AbstractKuduScannerBuilder
 
   /**
    * Set which columns will be read by the Scanner.
+   * Calling this method after {@link #setProjectedColumnIndexes(List)} will reset the projected
+   * columns to those specified in {@code columnNames}.
    * @param columnNames the names of columns to read, or 'null' to read all columns
    * (the default)
    */
   public S setProjectedColumnNames(List<String> columnNames) {
+    projectedColumnIndexes = null;
     if (columnNames != null) {
       projectedColumnNames = ImmutableList.copyOf(columnNames);
     } else {
       projectedColumnNames = null;
+    }
+    return (S) this;
+  }
+
+  /**
+   * Set which columns will be read by the Scanner.
+   * Calling this method after {@link #setProjectedColumnNames(List)} will reset the projected
+   * columns to those specified in {@code columnIndexes}.
+   * @param columnIndexes the indexes of columns to read, or 'null' to read all columns
+   * (the default)
+   */
+  public S setProjectedColumnIndexes(List<Integer> columnIndexes) {
+    projectedColumnNames = null;
+    if (columnIndexes != null) {
+      projectedColumnIndexes = ImmutableList.copyOf(columnIndexes);
+    } else {
+      projectedColumnIndexes = null;
     }
     return (S) this;
   }

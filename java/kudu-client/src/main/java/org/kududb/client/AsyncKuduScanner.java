@@ -195,8 +195,8 @@ public final class AsyncKuduScanner {
 
   private static final AtomicBoolean PARTITION_PRUNE_WARN = new AtomicBoolean(true);
 
-  AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedCols,
-                   ReadMode readMode, long scanRequestTimeout,
+  AsyncKuduScanner(AsyncKuduClient client, KuduTable table, List<String> projectedNames,
+                   List<Integer> projectedIndexes, ReadMode readMode, long scanRequestTimeout,
                    List<Tserver.ColumnRangePredicatePB> columnRangePredicates, long limit,
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
@@ -266,12 +266,22 @@ public final class AsyncKuduScanner {
 
     // Map the column names to actual columns in the table schema.
     // If the user set this to 'null', we scan all columns.
-    if (projectedCols != null) {
+    if (projectedNames != null) {
       List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
-      for (String columnName : projectedCols) {
+      for (String columnName : projectedNames) {
         ColumnSchema columnSchema = table.getSchema().getColumn(columnName);
         if (columnSchema == null) {
           throw new IllegalArgumentException("Unknown column " + columnName);
+        }
+        columns.add(columnSchema);
+      }
+      this.schema = new Schema(columns);
+    } else if (projectedIndexes != null) {
+      List<ColumnSchema> columns = new ArrayList<ColumnSchema>();
+      for (Integer columnIndex : projectedIndexes) {
+        ColumnSchema columnSchema = table.getSchema().getColumnByIndex(columnIndex);
+        if (columnSchema == null) {
+          throw new IllegalArgumentException("Unknown column index " + columnIndex);
         }
         columns.add(columnSchema);
       }
@@ -745,7 +755,7 @@ public final class AsyncKuduScanner {
      */
     public AsyncKuduScanner build() {
       return new AsyncKuduScanner(
-          client, table, projectedColumnNames, readMode,
+          client, table, projectedColumnNames, projectedColumnIndexes, readMode,
           scanRequestTimeout, columnRangePredicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
           lowerBoundPartitionKey, upperBoundPartitionKey,

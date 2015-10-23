@@ -81,7 +81,7 @@ public class KuduScanner {
      */
     public KuduScanner build() {
       return new KuduScanner(new AsyncKuduScanner(
-          client, table, projectedColumnNames, readMode,
+          client, table, projectedColumnNames, projectedColumnIndexes, readMode,
           scanRequestTimeout, columnRangePredicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
           lowerBoundPartitionKey, upperBoundPartitionKey,
