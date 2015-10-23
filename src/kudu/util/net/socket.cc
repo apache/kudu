@@ -283,7 +283,7 @@ Status Socket::Bind(const Sockaddr& bind_addr) {
   struct sockaddr_in addr = bind_addr.addr();
 
   DCHECK_GE(fd_, 0);
-  if (PREDICT_FALSE(bind(fd_, (struct sockaddr*) &addr, sizeof(addr)))) {
+  if (PREDICT_FALSE(::bind(fd_, (struct sockaddr*) &addr, sizeof(addr)))) {
     int err = errno;
     Status s = Status::NetworkError(
         strings::Substitute("error binding socket to $0: $1",
