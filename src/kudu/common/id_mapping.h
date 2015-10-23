@@ -51,7 +51,7 @@ class IdMapping {
   typedef std::pair<int, int> value_type;
 
  public:
-  static const int kNoEntry = -1;
+  static const int kNoEntry;
 
   IdMapping() :
     mask_(kInitialCapacity - 1),

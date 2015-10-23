@@ -18,6 +18,8 @@
 
 namespace kudu {
 
+const int IdMapping::kNoEntry = -1;
+
 size_t IdMapping::memory_footprint_excluding_this() const {
   return kudu_malloc_usable_size(entries_.data());
 }
