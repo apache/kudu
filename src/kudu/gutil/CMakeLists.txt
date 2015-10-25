@@ -16,6 +16,7 @@ set(GUTIL_SRCS
   atomicops-internals-x86.cc
   bits.cc
   callback_internal.cc
+  cpu.cc
   dynamic_annotations.c
   hash/city.cc
   hash/hash.cc

@@ -18,6 +18,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/master/master.h"
 #include "kudu/util/flags.h"
+#include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 
 using kudu::master::Master;
@@ -30,6 +31,8 @@ namespace kudu {
 namespace master {
 
 static int MasterMain(int argc, char** argv) {
+  InitKuduOrDie();
+
   // Reset some default values before parsing gflags.
   FLAGS_rpc_bind_addresses = strings::Substitute("0.0.0.0:$0",
                                                  Master::kDefaultPort);

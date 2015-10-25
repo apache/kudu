@@ -7,12 +7,10 @@
 
 #include <string>
 
-#include "base/base_export.h"
-
 namespace base {
 
 // Query information about the processor.
-class BASE_EXPORT CPU {
+class CPU {
  public:
   // Constructor
   CPU();

@@ -48,6 +48,7 @@
 #include "kudu/master/master.pb.h"
 #include "kudu/master/master.proxy.h"
 #include "kudu/rpc/messenger.h"
+#include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 
@@ -192,6 +193,8 @@ KuduClientBuilder& KuduClientBuilder::default_rpc_timeout(const MonoDelta& timeo
 }
 
 Status KuduClientBuilder::Build(shared_ptr<KuduClient>* client) {
+  RETURN_NOT_OK(CheckCPUFlags());
+
   shared_ptr<KuduClient> c(new KuduClient());
 
   // Init messenger.

@@ -2,22 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/cpu.h"
+#include "kudu/gutil/cpu.h"
 
 #include <stdlib.h>
 #include <string.h>
 
 #include <algorithm>
 
-#include "base/basictypes.h"
-#include "base/strings/stringpiece.h"
+#include "kudu/gutil/basictypes.h"
+#include "kudu/gutil/strings/stringpiece.h"
 
-#if defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) || defined(OS_LINUX))
-#include "base/files/file_util.h"
-#include "base/lazy_instance.h"
-#endif
-
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(__x86_64__)
 #if defined(_MSC_VER)
 #include <intrin.h>
 #include <immintrin.h>  // For _xgetbv()
@@ -52,7 +47,7 @@ CPU::CPU()
 
 namespace {
 
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(__x86_64__)
 #ifndef _MSC_VER
 
 #if defined(__pic__) && defined(__i386__)
@@ -90,7 +85,7 @@ uint64 _xgetbv(uint32 xcr) {
 }
 
 #endif  // !_MSC_VER
-#endif  // ARCH_CPU_X86_FAMILY
+#endif  // __x86_64__
 
 #if defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) || defined(OS_LINUX))
 class LazyCpuInfoValue {
@@ -192,7 +187,7 @@ base::LazyInstance<LazyCpuInfoValue>::Leaky g_lazy_cpuinfo =
 }  // anonymous namespace
 
 void CPU::Initialize() {
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(__x86_64__)
   int cpu_info[4] = {-1};
   char cpu_string[48];
 
@@ -274,6 +269,8 @@ void CPU::Initialize() {
 #elif defined(ARCH_CPU_ARM_FAMILY) && (defined(OS_ANDROID) || defined(OS_LINUX))
   cpu_brand_.assign(g_lazy_cpuinfo.Get().brand());
   has_broken_neon_ = g_lazy_cpuinfo.Get().has_broken_neon();
+#else
+  #error unknown architecture
 #endif
 }
 

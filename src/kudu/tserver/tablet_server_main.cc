@@ -18,6 +18,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/flags.h"
+#include "kudu/util/init.h"
 #include "kudu/util/logging.h"
 
 using kudu::tserver::TabletServer;
@@ -30,6 +31,8 @@ namespace kudu {
 namespace tserver {
 
 static int TabletServerMain(int argc, char** argv) {
+  InitKuduOrDie();
+
   // Reset some default values before parsing gflags.
   FLAGS_rpc_bind_addresses = strings::Substitute("0.0.0.0:$0",
                                                  TabletServer::kDefaultPort);
