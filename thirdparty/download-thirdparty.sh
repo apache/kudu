@@ -231,7 +231,7 @@ if [ ! -d $TRACE_VIEWER_DIR ]; then
 fi
 
 if [ -n "$OS_LINUX" -a ! -d $NVML_DIR ]; then
-  fetch_and_expand nvml-${NVML_VERSION}.tgz
+  fetch_and_expand nvml-${NVML_VERSION}.tar.gz
 fi
 
 echo "---------------"
