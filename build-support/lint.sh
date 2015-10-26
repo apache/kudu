@@ -33,7 +33,7 @@ for flag in "$@" ; do
 done
 
 if $ONLY_CHANGED; then
-  FILES=$(git diff --name-only $($ME/get-upstream-commit.sh)  \
+  FILES=$(git diff --name-only $($ROOT/build-support/get-upstream-commit.sh)  \
     | egrep  '\.(cc|h)$' | grep -v "gutil\|trace_event")
   if [ -z "$FILES" ]; then
     echo No source files changed
