@@ -1,4 +1,4 @@
-Cloudera Kudu
+Kudu
 Copyright 2015 Cloudera, Inc.
 
 Portions of this software were developed at

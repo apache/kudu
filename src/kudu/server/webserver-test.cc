@@ -59,7 +59,7 @@ TEST_F(WebserverTest, TestIndexPage) {
   ASSERT_OK(curl_.FetchURL(strings::Substitute("http://$0/", addr_.ToString()),
                            &buf_));
   // Should have expected title.
-  ASSERT_STR_CONTAINS(buf_.ToString(), "Cloudera Kudu");
+  ASSERT_STR_CONTAINS(buf_.ToString(), "Kudu");
 
   // Should have link to default path handlers (e.g memz)
   ASSERT_STR_CONTAINS(buf_.ToString(), "memz");

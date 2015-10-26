@@ -385,7 +385,7 @@ void Webserver::RegisterPathHandler(const string& path, const string& alias,
 
 const char* const PAGE_HEADER = "<!DOCTYPE html>"
 " <html>"
-"   <head><title>Cloudera Kudu</title>"
+"   <head><title>Kudu</title>"
 " <link href='/bootstrap/css/bootstrap.min.css' rel='stylesheet' media='screen' />"
 " <link href='/kudu.css' rel='stylesheet' />"
 " </head>"
