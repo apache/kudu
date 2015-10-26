@@ -1221,17 +1221,19 @@ class PosixEnv : public Env {
   }
 
   virtual Status GetTestDirectory(std::string* result) OVERRIDE {
+    string dir;
     const char* env = getenv("TEST_TMPDIR");
     if (env && env[0] != '\0') {
-      *result = env;
+      dir = env;
     } else {
       char buf[100];
       snprintf(buf, sizeof(buf), "/tmp/kudutest-%d", static_cast<int>(geteuid()));
-      *result = buf;
+      dir = buf;
     }
     // Directory may already exist
     ignore_result(CreateDir(*result));
-    return Status::OK();
+    // /tmp may be a symlink, so canonicalize the path.
+    return Canonicalize(dir, result);
   }
 
   virtual uint64_t gettid() OVERRIDE {
