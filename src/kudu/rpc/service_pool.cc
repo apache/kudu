@@ -144,7 +144,7 @@ Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   // Queue message on service queue
   boost::optional<InboundCall*> evicted;
   auto queue_status = service_queue_.Put(c, &evicted);
-  if (queue_status == ServiceQueue::QUEUE_FULL) {
+  if (queue_status == QUEUE_FULL) {
     RejectTooBusy(c);
     return Status::OK();
   }
@@ -153,7 +153,7 @@ Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
     RejectTooBusy(*evicted);
   }
 
-  if (PREDICT_TRUE(queue_status == ServiceQueue::QUEUE_SUCCESS)) {
+  if (PREDICT_TRUE(queue_status == QUEUE_SUCCESS)) {
     // NB: do not do anything with 'c' after it is successfully queued --
     // a service thread may have already dequeued it, processed it, and
     // responded by this point, in which case the pointer would be invalid.
@@ -161,7 +161,7 @@ Status ServicePool::QueueInboundCall(gscoped_ptr<InboundCall> call) {
   }
 
   Status status = Status::OK();
-  if (queue_status == ServiceQueue::QUEUE_SHUTDOWN) {
+  if (queue_status == QUEUE_SHUTDOWN) {
     status = Status::ServiceUnavailable("Service is shutting down");
     c->RespondFailure(ErrorStatusPB::FATAL_SERVER_SHUTTING_DOWN, status);
   } else {

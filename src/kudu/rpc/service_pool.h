@@ -81,7 +81,7 @@ class ServicePool : public RpcService {
 
   gscoped_ptr<ServiceIf> service_;
   std::vector<scoped_refptr<kudu::Thread> > threads_;
-  ServiceQueue service_queue_;
+  LifoServiceQueue service_queue_;
   scoped_refptr<Histogram> incoming_queue_time_;
   scoped_refptr<Counter> rpcs_timed_out_in_queue_;
   scoped_refptr<Counter> rpcs_queue_overflow_;

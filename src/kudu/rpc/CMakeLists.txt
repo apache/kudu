@@ -64,6 +64,7 @@ set(KRPC_SRCS
     serialization.cc
     service_if.cc
     service_pool.cc
+    service_queue.cc
     transfer.cc
 )
 
@@ -116,3 +117,5 @@ ADD_KUDU_TEST(rpc-bench RUN_SERIAL true)
 ADD_KUDU_TEST(rpc-test)
 ADD_KUDU_TEST(rpc_stub-test)
 ADD_KUDU_TEST(sasl_rpc-test)
+ADD_KUDU_TEST(service_queue-test)
+

@@ -25,6 +25,7 @@ race:kudu::tablet::ScopedRowLock::Release
 # on an unprotected global variable. Given that init() invokes
 # local_addr_space_init(), suppressing init() suppresses both races.
 race:_ULx86_64_init
+race:_ULx86_64_local_addr_space_init
 
 # libev uses some lock-free synchronization, but doesn't have TSAN annotations.
 # See http://lists.schmorp.de/pipermail/libev/2013q2/002178.html or KUDU-366
