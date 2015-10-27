@@ -21,6 +21,7 @@ import org.kududb.annotations.InterfaceStability;
 /**
  * Class of Operation for whole row removals.
  * Only columns which are part of the key can be set.
+ * Instances of this class should not be reused.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving

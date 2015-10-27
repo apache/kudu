@@ -17,7 +17,7 @@ import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 
 /**
- * Represents a single row insert.
+ * Represents a single row insert. Instances of this class should not be reused.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving

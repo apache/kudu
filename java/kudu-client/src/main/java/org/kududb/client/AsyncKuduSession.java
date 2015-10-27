@@ -344,6 +344,9 @@ public class AsyncKuduSession implements SessionConfiguration {
       return AsyncKuduClient.tooManyAttemptsOrTimeout(operation, null);
     }
 
+    // This can be called multiple times but it's fine, we don't allow "thawing".
+    operation.getRow().freeze();
+
     // If we autoflush, just send it to the TS
     if (flushMode == FlushMode.AUTO_FLUSH_SYNC) {
       if (timeoutMs != 0) {

@@ -110,8 +110,7 @@ class KeyEncoder {
     final Type type = column.getType();
 
     if (type == Type.STRING || type == Type.BINARY) {
-      final long varLenIdx = Bytes.getLong(row.getRowAlloc(), schema.getColumnOffset(columnIdx));
-      addComponent(row.getVarLengthData().get((int) varLenIdx), type, isLast);
+      addComponent(row.getVarLengthData().get(columnIdx), type, isLast);
     } else {
       addComponent(row.getRowAlloc(),
                    schema.getColumnOffset(columnIdx),

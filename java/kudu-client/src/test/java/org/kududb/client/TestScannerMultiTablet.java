@@ -39,17 +39,13 @@ public class TestScannerMultiTablet extends BaseKuduTest {
     BaseKuduTest.setUpBeforeClass();
     // create a 4-tablets table for scanning
     CreateTableBuilder builder = new CreateTableBuilder();
-    PartialRow splitRow = schema.newPartialRow();
-    splitRow.addString("key2", "");
 
-    splitRow.addString("key1", "1");
-    builder.addSplitRow(splitRow);
-
-    splitRow.addString("key1", "2");
-    builder.addSplitRow(splitRow);
-
-    splitRow.addString("key1", "3");
-    builder.addSplitRow(splitRow);
+    for (int i = 1; i < 4; i++){
+      PartialRow splitRow = schema.newPartialRow();
+      splitRow.addString("key1", "" + i);
+      splitRow.addString("key2", "");
+      builder.addSplitRow(splitRow);
+    }
 
     createTable(TABLE_NAME, schema, builder);
 

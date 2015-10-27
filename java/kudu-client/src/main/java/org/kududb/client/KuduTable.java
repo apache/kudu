@@ -100,7 +100,7 @@ public class KuduTable {
   }
 
   /**
-   * Get a new insert configured with this table's schema.
+   * Get a new insert configured with this table's schema. The returned object should not be reused.
    * @return an insert with this table's schema
    */
   public Insert newInsert() {
@@ -108,7 +108,7 @@ public class KuduTable {
   }
 
   /**
-   * Get a new update configured with this table's schema.
+   * Get a new update configured with this table's schema. The returned object should not be reused.
    * @return an update with this table's schema
    */
   public Update newUpdate() {
@@ -116,7 +116,7 @@ public class KuduTable {
   }
 
   /**
-   * Get a new delete configured with this table's schema.
+   * Get a new delete configured with this table's schema. The returned object should not be reused.
    * @return a delete with this table's schema
    */
   public Delete newDelete() {

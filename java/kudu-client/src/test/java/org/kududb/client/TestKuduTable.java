@@ -215,8 +215,8 @@ public class TestKuduTable extends BaseKuduTest {
     CreateTableBuilder builder = new CreateTableBuilder();
 
     if (splitsCount != 0) {
-      PartialRow row = schema.newPartialRow();
       for (int i = 1; i <= splitsCount; i++) {
+        PartialRow row = schema.newPartialRow();
         row.addInt(0, i);
         builder.addSplitRow(row);
       }

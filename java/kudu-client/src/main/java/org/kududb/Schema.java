@@ -283,7 +283,7 @@ public class Schema {
 
   /**
    * Creates a new partial row for the schema.
-   * @return a new partial row.
+   * @return a new partial row
    */
   public PartialRow newPartialRow() {
     return new PartialRow(this);

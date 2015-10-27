@@ -232,9 +232,7 @@ public abstract class Operation extends KuduRpc<OperationResponse> implements Ku
         // Keys should always be specified, maybe check?
         if (row.isSet(colIdx) && !row.isSetToNull(colIdx)) {
           if (col.getType() == Type.STRING || col.getType() == Type.BINARY) {
-            int stringIndex = (int)Bytes.getLong(rowData, currentRowOffset);
-            byte[] varLengthData = row.getVarLengthData().get(stringIndex);
-            assert varLengthData.length == Bytes.getLong(rowData, currentRowOffset + Longs.BYTES);
+            byte[] varLengthData = row.getVarLengthData().get(colIdx);
             rows.putLong(indirect.size());
             rows.putLong(varLengthData.length);
             try {

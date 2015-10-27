@@ -361,8 +361,8 @@ public class BaseKuduTest {
   protected static KuduTable createFourTabletsTableWithNineRows(String tableName) throws
       Exception {
     CreateTableBuilder builder = new CreateTableBuilder();
-    PartialRow splitRow = basicSchema.newPartialRow();
     for (int i : KEYS) {
+      PartialRow splitRow = basicSchema.newPartialRow();
       splitRow.addInt(0, i);
       builder.addSplitRow(splitRow);
     }
@@ -405,7 +405,7 @@ public class BaseKuduTest {
   }
 
   public static Schema getBasicSchema() {
-    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(4);
+    ArrayList<ColumnSchema> columns = new ArrayList<ColumnSchema>(5);
     columns.add(new ColumnSchema.ColumnSchemaBuilder("key", Type.INT32).key(true).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column1_i", Type.INT32).build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column2_i", Type.INT32).build());

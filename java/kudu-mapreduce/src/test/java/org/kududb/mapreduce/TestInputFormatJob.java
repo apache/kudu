@@ -61,7 +61,7 @@ public class TestInputFormatJob extends BaseKuduTest {
   @SuppressWarnings("deprecation")
   public void test() throws Exception {
 
-    KuduTable table = createFourTabletsTableWithNineRows(TABLE_NAME);
+    createFourTabletsTableWithNineRows(TABLE_NAME);
 
     Configuration conf = new Configuration();
     HADOOP_UTIL.setupAndGetTestDir(TestInputFormatJob.class.getName(), conf).getAbsolutePath();

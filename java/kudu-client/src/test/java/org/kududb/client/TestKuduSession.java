@@ -114,6 +114,43 @@ public class TestKuduSession extends BaseKuduTest {
     }
   }
 
+  @Test(timeout = 10000)
+  public void testOverWritingValues() throws Exception {
+    String tableName = TABLE_NAME_PREFIX + "-OverridingValues";
+    table = createTable(tableName, basicSchema, null);
+    KuduSession session = syncClient.newSession();
+    Insert insert = createInsert(0);
+    PartialRow row = insert.getRow();
+
+    // Overwrite all the normal columns.
+    int magicNumber = 9999;
+    row.addInt(1, magicNumber);
+    row.addInt(2, magicNumber);
+    row.addBoolean(4, false);
+    // Spam the string column since it's backed by an array.
+    for (int i = 0; i <= magicNumber; i++) {
+      row.addString(3, i + "");
+    }
+    // We're supposed to keep a constant size.
+    assertEquals(5, row.getVarLengthData().size());
+    session.apply(insert);
+
+    KuduScanner scanner = syncClient.newScannerBuilder(table).build();
+    RowResult rr = scanner.nextRows().next();
+    assertEquals(magicNumber, rr.getInt(1));
+    assertEquals(magicNumber, rr.getInt(2));
+    assertEquals(magicNumber + "", rr.getString(3));
+    assertEquals(false, rr.getBoolean(4));
+
+    // Test setting a value post-apply.
+    try {
+      row.addInt(1, 0);
+      fail("Row should be frozen and throw");
+    } catch (IllegalStateException ex) {
+      // Ok.
+    }
+  }
+
   private Insert createInsert(int key) {
     return createBasicSchemaInsert(table, key);
   }

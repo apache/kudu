@@ -213,6 +213,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     split.addString("c", "3");
     tableBuilder.addSplitRow(split);
 
+    split = schema.newPartialRow();
     split.addString("c", "3");
     split.addString("b", "3");
     tableBuilder.addSplitRow(split);
@@ -232,6 +233,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     split.addString("c", "3");
     tableBuilder.addSplitRow(split);
 
+    split = schema.newPartialRow();
     split.addString("c", "3");
     split.addString("b", "3");
     tableBuilder.addSplitRow(split);
@@ -247,6 +249,8 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     PartialRow split = schema.newPartialRow();
     split.addString("c", "3");
     tableBuilder.addSplitRow(split);
+
+    split = schema.newPartialRow();
     split.addString("c", "3");
     split.addString("b", "3");
     tableBuilder.addSplitRow(split);

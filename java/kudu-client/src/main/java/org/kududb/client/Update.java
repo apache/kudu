@@ -17,7 +17,7 @@ import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
 
 /**
- * Operation to update columns on an existing row
+ * Operation to update columns on an existing row. Instances of this class should not be reused.
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
