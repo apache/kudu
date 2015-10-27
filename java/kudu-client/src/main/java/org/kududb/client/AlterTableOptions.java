@@ -25,7 +25,7 @@ import static org.kududb.master.Master.AlterTableRequestPB;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Unstable
-public class AlterTableBuilder {
+public class AlterTableOptions {
 
   AlterTableRequestPB.Builder pb = AlterTableRequestPB.newBuilder();
 
@@ -34,7 +34,7 @@ public class AlterTableBuilder {
    * @param newName new table's name, must be used to check progress
    * @return this instance
    */
-  public AlterTableBuilder renameTable(String newName) {
+  public AlterTableOptions renameTable(String newName) {
     pb.setNewTableName(newName);
     return this;
   }
@@ -46,7 +46,7 @@ public class AlterTableBuilder {
    * @param defaultVal default value used for the currently existing rows
    * @return this instance
    */
-  public AlterTableBuilder addColumn(String name, Type type, Object defaultVal) {
+  public AlterTableOptions addColumn(String name, Type type, Object defaultVal) {
     if (defaultVal == null) {
       throw new IllegalArgumentException("A new column must have a default value, " +
           "use addNullableColumn() to add a NULLABLE column");
@@ -66,7 +66,7 @@ public class AlterTableBuilder {
    * @param type type of the new column
    * @return this instance
    */
-  public AlterTableBuilder addNullableColumn(String name, Type type) {
+  public AlterTableOptions addNullableColumn(String name, Type type) {
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.ADD_COLUMN);
     step.setAddColumn(AlterTableRequestPB.AddColumn.newBuilder().setSchema(ProtobufHelper
@@ -81,7 +81,7 @@ public class AlterTableBuilder {
    * @param name name of the column
    * @return this instance
    */
-  public AlterTableBuilder dropColumn(String name) {
+  public AlterTableOptions dropColumn(String name) {
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.DROP_COLUMN);
     step.setDropColumn(AlterTableRequestPB.DropColumn.newBuilder().setName(name));
@@ -94,7 +94,7 @@ public class AlterTableBuilder {
    * @param newName new name to use
    * @return this instance
    */
-  public AlterTableBuilder renameColumn(String oldName, String newName) {
+  public AlterTableOptions renameColumn(String oldName, String newName) {
     AlterTableRequestPB.Step.Builder step = pb.addAlterSchemaStepsBuilder();
     step.setType(AlterTableRequestPB.StepType.RENAME_COLUMN);
     step.setRenameColumn(AlterTableRequestPB.RenameColumn.newBuilder().setOldName(oldName)

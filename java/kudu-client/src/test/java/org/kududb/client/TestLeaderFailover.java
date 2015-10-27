@@ -28,7 +28,7 @@ public class TestLeaderFailover extends BaseKuduTest {
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
 
-    CreateTableBuilder builder = new CreateTableBuilder().setNumReplicas(3);
+    CreateTableOptions builder = new CreateTableOptions().setNumReplicas(3);
     createTable(TABLE_NAME, basicSchema, builder);
 
     table = openTable(TABLE_NAME);

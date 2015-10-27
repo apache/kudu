@@ -266,7 +266,7 @@ public class AsyncKuduClient implements AutoCloseable {
    * an object to communicate with the created table
    */
   public Deferred<KuduTable> createTable(String name, Schema schema) {
-    return this.createTable(name, schema, new CreateTableBuilder());
+    return this.createTable(name, schema, new CreateTableOptions());
   }
 
   /**
@@ -278,10 +278,10 @@ public class AsyncKuduClient implements AutoCloseable {
    * an object to communicate with the created table
    */
   public Deferred<KuduTable> createTable(final String name, Schema schema,
-                                         CreateTableBuilder builder) {
+                                         CreateTableOptions builder) {
     checkIsClosed();
     if (builder == null) {
-      builder = new CreateTableBuilder();
+      builder = new CreateTableOptions();
     }
     CreateTableRequest create = new CreateTableRequest(this.masterTable, name, schema,
         builder);
@@ -313,12 +313,12 @@ public class AsyncKuduClient implements AutoCloseable {
    * When the returned deferred completes it only indicates that the master accepted the alter
    * command, use {@link AsyncKuduClient#isAlterTableDone(String)} to know when the alter finishes.
    * @param name the table's name, if this is a table rename then the old table name must be passed
-   * @param atb the alter table builder
+   * @param ato the alter table builder
    * @return a deferred object to track the progress of the alter command
    */
-  public Deferred<AlterTableResponse> alterTable(String name, AlterTableBuilder atb) {
+  public Deferred<AlterTableResponse> alterTable(String name, AlterTableOptions ato) {
     checkIsClosed();
-    AlterTableRequest alter = new AlterTableRequest(this.masterTable, name, atb);
+    AlterTableRequest alter = new AlterTableRequest(this.masterTable, name, ato);
     alter.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     return sendRpcToTablet(alter);
   }

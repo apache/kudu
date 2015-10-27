@@ -26,7 +26,7 @@ import java.util.List;
  */
 @InterfaceAudience.Public
 @InterfaceStability.Evolving
-public class CreateTableBuilder {
+public class CreateTableOptions {
 
   private Master.CreateTableRequestPB.Builder pb = Master.CreateTableRequestPB.newBuilder();
   private final List<PartialRow> splitRows = Lists.newArrayList();
@@ -38,7 +38,7 @@ public class CreateTableBuilder {
    * @param row a key row for the split point
    * @return this instance
    */
-  public CreateTableBuilder addSplitRow(PartialRow row) {
+  public CreateTableOptions addSplitRow(PartialRow row) {
     splitRows.add(new PartialRow(row));
     return this;
   }
@@ -59,7 +59,7 @@ public class CreateTableBuilder {
    * @param buckets the number of buckets to hash into
    * @return this instance
    */
-  public CreateTableBuilder addHashPartitions(List<String> columns, int buckets) {
+  public CreateTableOptions addHashPartitions(List<String> columns, int buckets) {
     addHashPartitions(columns, buckets, 0);
     return this;
   }
@@ -77,7 +77,7 @@ public class CreateTableBuilder {
    * @param seed a hash seed
    * @return this instance
    */
-  public CreateTableBuilder addHashPartitions(List<String> columns, int buckets, int seed) {
+  public CreateTableOptions addHashPartitions(List<String> columns, int buckets, int seed) {
     Common.PartitionSchemaPB.HashBucketSchemaPB.Builder hashBucket =
         pb.getPartitionSchemaBuilder().addHashBucketSchemasBuilder();
     for (String column : columns) {
@@ -99,7 +99,7 @@ public class CreateTableBuilder {
    * @param columns the range partitioned columns
    * @return this instance
    */
-  public CreateTableBuilder setRangePartitionColumns(List<String> columns) {
+  public CreateTableOptions setRangePartitionColumns(List<String> columns) {
     Common.PartitionSchemaPB.RangeSchemaPB.Builder rangePartition =
         pb.getPartitionSchemaBuilder().getRangeSchemaBuilder();
     for (String column : columns) {
@@ -114,7 +114,7 @@ public class CreateTableBuilder {
    * @param numReplicas the number of replicas to use
    * @return this instance
    */
-  public CreateTableBuilder setNumReplicas(int numReplicas) {
+  public CreateTableOptions setNumReplicas(int numReplicas) {
     pb.setNumReplicas(numReplicas);
     return this;
   }

@@ -87,7 +87,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
     return rows;
   }
 
-  private void testPartitionSchema(CreateTableBuilder tableBuilder) throws Exception {
+  private void testPartitionSchema(CreateTableOptions tableBuilder) throws Exception {
     Schema schema = createSchema();
 
     syncClient.createTable(tableName, schema, tableBuilder);
@@ -196,7 +196,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
 
   @Test
   public void testHashBucketedTable() throws Exception {
-    CreateTableBuilder tableBuilder = new CreateTableBuilder();
+    CreateTableOptions tableBuilder = new CreateTableOptions();
     tableBuilder.addHashPartitions(ImmutableList.of("a"), 3);
     tableBuilder.addHashPartitions(ImmutableList.of("b", "c"), 3, 42);
     tableBuilder.setRangePartitionColumns(ImmutableList.<String>of());
@@ -206,7 +206,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
   @Test
   public void testNonDefaultRangePartitionedTable() throws Exception {
     Schema schema = createSchema();
-    CreateTableBuilder tableBuilder = new CreateTableBuilder();
+    CreateTableOptions tableBuilder = new CreateTableOptions();
     tableBuilder.setRangePartitionColumns(ImmutableList.of("c", "b"));
 
     PartialRow split = schema.newPartialRow();
@@ -224,7 +224,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
   @Test
   public void testHashBucketedAndRangePartitionedTable() throws Exception {
     Schema schema = createSchema();
-    CreateTableBuilder tableBuilder = new CreateTableBuilder();
+    CreateTableOptions tableBuilder = new CreateTableOptions();
     tableBuilder.addHashPartitions(ImmutableList.of("a"), 3);
     tableBuilder.addHashPartitions(ImmutableList.of("b", "c"), 3, 42);
     tableBuilder.setRangePartitionColumns(ImmutableList.of("c", "b"));
@@ -244,7 +244,7 @@ public class TestFlexiblePartitioning extends BaseKuduTest {
   @Test
   public void testSimplePartitionedTable() throws Exception {
     Schema schema = createSchema();
-    CreateTableBuilder tableBuilder = new CreateTableBuilder();
+    CreateTableOptions tableBuilder = new CreateTableOptions();
 
     PartialRow split = schema.newPartialRow();
     split.addString("c", "3");

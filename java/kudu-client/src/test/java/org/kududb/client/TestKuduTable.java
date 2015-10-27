@@ -56,44 +56,44 @@ public class TestKuduTable extends BaseKuduTest {
     createTable(tableName, basicSchema, null);
 
     // Add a col.
-    AlterTableBuilder atb = new AlterTableBuilder().addColumn("testaddint", Type.INT32, 4);
-    submitAlterAndCheck(atb, tableName);
+    AlterTableOptions ato = new AlterTableOptions().addColumn("testaddint", Type.INT32, 4);
+    submitAlterAndCheck(ato, tableName);
 
     // Rename that col.
-    atb = new AlterTableBuilder().renameColumn("testaddint", "newtestaddint");
-    submitAlterAndCheck(atb, tableName);
+    ato = new AlterTableOptions().renameColumn("testaddint", "newtestaddint");
+    submitAlterAndCheck(ato, tableName);
 
     // Delete it.
-    atb = new AlterTableBuilder().dropColumn("newtestaddint");
-    submitAlterAndCheck(atb, tableName);
+    ato = new AlterTableOptions().dropColumn("newtestaddint");
+    submitAlterAndCheck(ato, tableName);
 
     String newTableName = tableName +"new";
 
     // Rename our table.
-    atb = new AlterTableBuilder().renameTable(newTableName);
-    submitAlterAndCheck(atb, tableName, newTableName);
+    ato = new AlterTableOptions().renameTable(newTableName);
+    submitAlterAndCheck(ato, tableName, newTableName);
 
     // Rename it back.
-    atb = new AlterTableBuilder().renameTable(tableName);
-    submitAlterAndCheck(atb, newTableName, tableName);
+    ato = new AlterTableOptions().renameTable(tableName);
+    submitAlterAndCheck(ato, newTableName, tableName);
 
     // Try adding two columns, where one is nullable.
-    atb = new AlterTableBuilder()
+    ato = new AlterTableOptions()
         .addColumn("testaddmulticolnotnull", Type.INT32, 4)
         .addNullableColumn("testaddmulticolnull", Type.STRING);
-    submitAlterAndCheck(atb, tableName);
+    submitAlterAndCheck(ato, tableName);
   }
 
   /**
    * Helper method to submit an Alter and wait for it to happen, using the default table name to
    * check.
    */
-  private void submitAlterAndCheck(AlterTableBuilder atb, String tableToAlter)
+  private void submitAlterAndCheck(AlterTableOptions ato, String tableToAlter)
       throws Exception {
-    submitAlterAndCheck(atb, tableToAlter, tableToAlter);
+    submitAlterAndCheck(ato, tableToAlter, tableToAlter);
   }
 
-  private void submitAlterAndCheck(AlterTableBuilder atb,
+  private void submitAlterAndCheck(AlterTableOptions ato,
                                          String tableToAlter, String tableToCheck) throws
       Exception {
     if (masterHostPorts.size() > 1) {
@@ -101,7 +101,7 @@ public class TestKuduTable extends BaseKuduTest {
           "-DnumMasters=1 on the command line to start a single-master cluster to run this test.");
       return;
     }
-    AlterTableResponse alterResponse = syncClient.alterTable(tableToAlter, atb);
+    AlterTableResponse alterResponse = syncClient.alterTable(tableToAlter, ato);
     boolean done  = syncClient.isAlterTableDone(tableToCheck);
     assertTrue(done);
   }
@@ -123,7 +123,7 @@ public class TestKuduTable extends BaseKuduTest {
     }
     // Test with defaults
     String tableWithDefault = BASE_TABLE_NAME + "WithDefault" + System.currentTimeMillis();
-    CreateTableBuilder builder = new CreateTableBuilder();
+    CreateTableOptions builder = new CreateTableOptions();
     List<ColumnSchema> columns = new ArrayList<ColumnSchema>(schema.getColumnCount());
     int defaultInt = 30;
     String defaultString = "data";
@@ -212,7 +212,7 @@ public class TestKuduTable extends BaseKuduTest {
 
   public KuduTable createTableWithSplitsAndTest(int splitsCount) throws Exception {
     String tableName = BASE_TABLE_NAME + System.currentTimeMillis();
-    CreateTableBuilder builder = new CreateTableBuilder();
+    CreateTableOptions builder = new CreateTableOptions();
 
     if (splitsCount != 0) {
       for (int i = 1; i <= splitsCount; i++) {

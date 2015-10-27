@@ -48,7 +48,7 @@ public class TestAsyncKuduSession extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    table = createTable(TABLE_NAME, schema, new CreateTableBuilder());
+    table = createTable(TABLE_NAME, schema, new CreateTableOptions());
   }
 
   @Test(timeout = 100000)

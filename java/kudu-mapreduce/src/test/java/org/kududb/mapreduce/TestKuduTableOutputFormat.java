@@ -34,7 +34,7 @@ public class TestKuduTableOutputFormat extends BaseKuduTest {
 
   @Test
   public void test() throws Exception {
-    createTable(TABLE_NAME, getBasicSchema(), new CreateTableBuilder());
+    createTable(TABLE_NAME, getBasicSchema(), new CreateTableOptions());
 
     KuduTableOutputFormat output = new KuduTableOutputFormat();
     Configuration conf = new Configuration();

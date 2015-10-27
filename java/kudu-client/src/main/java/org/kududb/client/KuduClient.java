@@ -50,7 +50,7 @@ public class KuduClient implements AutoCloseable {
    * @return an object to communicate with the created table
    */
   public KuduTable createTable(String name, Schema schema) throws Exception {
-    return createTable(name, schema, new CreateTableBuilder());
+    return createTable(name, schema, new CreateTableOptions());
   }
 
   /**
@@ -60,7 +60,7 @@ public class KuduClient implements AutoCloseable {
    * @param builder a builder containing the table's configurations
    * @return an object to communicate with the created table
    */
-  public KuduTable createTable(String name, Schema schema, CreateTableBuilder builder)
+  public KuduTable createTable(String name, Schema schema, CreateTableOptions builder)
       throws Exception {
     Deferred<KuduTable> d = asyncClient.createTable(name, schema, builder);
     return d.join(getDefaultAdminOperationTimeoutMs());
@@ -82,11 +82,11 @@ public class KuduClient implements AutoCloseable {
    * When the method returns it only indicates that the master accepted the alter
    * command, use {@link KuduClient#isAlterTableDone(String)} to know when the alter finishes.
    * @param name the table's name, if this is a table rename then the old table name must be passed
-   * @param atb the alter table builder
+   * @param ato the alter table builder
    * @return an rpc response object
    */
-  public AlterTableResponse alterTable(String name, AlterTableBuilder atb) throws Exception {
-    Deferred<AlterTableResponse> d = asyncClient.alterTable(name, atb);
+  public AlterTableResponse alterTable(String name, AlterTableOptions ato) throws Exception {
+    Deferred<AlterTableResponse> d = asyncClient.alterTable(name, ato);
     return d.join(getDefaultAdminOperationTimeoutMs());
   }
 

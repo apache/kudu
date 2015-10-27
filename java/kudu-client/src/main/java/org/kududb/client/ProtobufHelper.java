@@ -68,6 +68,9 @@ public class ProtobufHelper {
     if (column.getEncoding() != null) {
       schemaBuilder.setEncoding(column.getEncoding().getInternalPbType());
     }
+    if (column.getCompressionAlgorithm() != null) {
+      schemaBuilder.setCompression(column.getCompressionAlgorithm().getInternalPbType());
+    }
     if (column.getDefaultValue() != null) schemaBuilder.setReadDefaultValue
         (ZeroCopyLiteralByteString.wrap(objectToWireFormat(column, column.getDefaultValue())));
     return schemaBuilder.build();
@@ -80,10 +83,15 @@ public class ProtobufHelper {
       Type type = Type.getTypeForDataType(columnPb.getType());
       Object defaultValue = columnPb.hasReadDefaultValue() ? byteStringToObject(type,
           columnPb.getReadDefaultValue()) : null;
+      ColumnSchema.Encoding encoding = ColumnSchema.Encoding.valueOf(columnPb.getEncoding().name());
+      ColumnSchema.CompressionAlgorithm compressionAlgorithm =
+          ColumnSchema.CompressionAlgorithm.valueOf(columnPb.getCompression().name());
       ColumnSchema column = new ColumnSchema.ColumnSchemaBuilder(columnPb.getName(), type)
           .key(columnPb.getIsKey())
           .nullable(columnPb.getIsNullable())
           .defaultValue(defaultValue)
+          .encoding(encoding)
+          .compressionAlgorithm(compressionAlgorithm)
           .build();
       columns.add(column);
       int id = columnPb.getId();

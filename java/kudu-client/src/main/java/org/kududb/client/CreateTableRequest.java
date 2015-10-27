@@ -33,7 +33,7 @@ class CreateTableRequest extends KuduRpc<CreateTableResponse> {
   private final Master.CreateTableRequestPB.Builder builder;
 
   CreateTableRequest(KuduTable masterTable, String name, Schema schema,
-                     CreateTableBuilder builder) {
+                     CreateTableOptions builder) {
     super(masterTable);
     this.schema = schema;
     this.name = name;

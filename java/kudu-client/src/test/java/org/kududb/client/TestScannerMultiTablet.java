@@ -38,7 +38,7 @@ public class TestScannerMultiTablet extends BaseKuduTest {
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
     // create a 4-tablets table for scanning
-    CreateTableBuilder builder = new CreateTableBuilder();
+    CreateTableOptions builder = new CreateTableOptions();
 
     for (int i = 1; i < 4; i++){
       PartialRow splitRow = schema.newPartialRow();

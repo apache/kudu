@@ -31,10 +31,10 @@ class AlterTableRequest extends KuduRpc<AlterTableResponse> {
   private final String name;
   private final AlterTableRequestPB.Builder builder;
 
-  AlterTableRequest(KuduTable masterTable, String name, AlterTableBuilder atb) {
+  AlterTableRequest(KuduTable masterTable, String name, AlterTableOptions ato) {
     super(masterTable);
     this.name = name;
-    this.builder = atb.pb;
+    this.builder = ato.pb;
   }
 
   @Override

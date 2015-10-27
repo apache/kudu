@@ -13,6 +13,7 @@
 // limitations under the License.
 package org.kududb;
 
+import org.kududb.Common.CompressionType;
 import org.kududb.Common.EncodingType;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.annotations.InterfaceStability;
@@ -32,13 +33,14 @@ public class ColumnSchema {
   private final Object defaultValue;
   private final int desiredBlockSize;
   private final Encoding encoding;
+  private final CompressionAlgorithm compressionAlgorithm;
 
   /**
    * Specifies the encoding of data for a column on disk.
    * Not all encodings are available for all data types.
    * Refer to the Kudu documentation for more information on each encoding.
    */
-  public static enum Encoding {
+  public enum Encoding {
     UNKNOWN(EncodingType.UNKNOWN_ENCODING),
     AUTO_ENCODING(EncodingType.AUTO_ENCODING),
     PLAIN_ENCODING(EncodingType.PLAIN_ENCODING),
@@ -50,18 +52,42 @@ public class ColumnSchema {
 
     final EncodingType internalPbType;
 
-    private Encoding(EncodingType internalPbType) {
+    Encoding(EncodingType internalPbType) {
       this.internalPbType = internalPbType;
     }
 
-    // @InterfaceAudience.Private
+    @InterfaceAudience.Private
     public EncodingType getInternalPbType() {
       return internalPbType;
     }
   };
 
+  /**
+   * Specifies the compression algorithm of data for a column on disk.
+   */
+  public enum CompressionAlgorithm {
+    UNKNOWN(CompressionType.UNKNOWN_COMPRESSION),
+    DEFAULT_COMPRESSION(CompressionType.DEFAULT_COMPRESSION),
+    NO_COMPRESSION(CompressionType.NO_COMPRESSION),
+    SNAPPY(CompressionType.SNAPPY),
+    LZ4(CompressionType.LZ4),
+    ZLIB(CompressionType.ZLIB);
+
+    final CompressionType internalPbType;
+
+    CompressionAlgorithm(CompressionType internalPbType) {
+      this.internalPbType = internalPbType;
+    }
+
+    @InterfaceAudience.Private
+    public CompressionType getInternalPbType() {
+      return internalPbType;
+    }
+  };
+
   private ColumnSchema(String name, Type type, boolean key, boolean nullable,
-                       Object defaultValue, int desiredBlockSize, Encoding encoding) {
+                       Object defaultValue, int desiredBlockSize, Encoding encoding,
+                       CompressionAlgorithm compressionAlgorithm) {
     this.name = name;
     this.type = type;
     this.key = key;
@@ -69,6 +95,7 @@ public class ColumnSchema {
     this.defaultValue = defaultValue;
     this.desiredBlockSize = desiredBlockSize;
     this.encoding = encoding;
+    this.compressionAlgorithm = compressionAlgorithm;
   }
 
   /**
@@ -126,8 +153,14 @@ public class ColumnSchema {
    * Return the encoding of this column, or null if it is not known.
    */
   public Encoding getEncoding() {
-    if (encoding == null) return null;
     return encoding;
+  }
+
+  /**
+   * Return the compression algorithm of this column, or null if it is not known.
+   */
+  public CompressionAlgorithm getCompressionAlgorithm() {
+    return compressionAlgorithm;
   }
 
   @Override
@@ -168,6 +201,7 @@ public class ColumnSchema {
     private Object defaultValue = null;
     private int blockSize = 0;
     private Encoding encoding = null;
+    private CompressionAlgorithm compressionAlgorithm = null;
 
     /**
      * Constructor for the required parameters.
@@ -243,13 +277,22 @@ public class ColumnSchema {
     }
 
     /**
+     * Set the compression algorithm for this column. See the documentation for the list
+     * of valid options.
+     */
+    public ColumnSchemaBuilder compressionAlgorithm(CompressionAlgorithm compressionAlgorithm) {
+      this.compressionAlgorithm = compressionAlgorithm;
+      return this;
+    }
+
+    /**
      * Builds a {@link ColumnSchema} using the passed parameters.
      * @return a new {@link ColumnSchema}
      */
     public ColumnSchema build() {
       return new ColumnSchema(name, type,
                               key, nullable, defaultValue,
-                              blockSize, encoding);
+                              blockSize, encoding, compressionAlgorithm);
     }
   }
 }

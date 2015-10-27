@@ -41,7 +41,7 @@ public class TestTimeouts extends BaseKuduTest {
       // Expected.
     }
 
-    createTable(TABLE_NAME, basicSchema, new CreateTableBuilder());
+    createTable(TABLE_NAME, basicSchema, new CreateTableOptions());
     KuduTable table = openTable(TABLE_NAME);
 
     KuduSession lowTimeoutSession = lowTimeoutsClient.newSession();

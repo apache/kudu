@@ -33,7 +33,7 @@ public class TestMasterFailover extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    createTable(TABLE_NAME, basicSchema, new CreateTableBuilder());
+    createTable(TABLE_NAME, basicSchema, new CreateTableOptions());
   }
 
   /**
@@ -56,7 +56,7 @@ public class TestMasterFailover extends BaseKuduTest {
 
     // Test that we can create a new table when one of the masters is down.
     String newTableName = TABLE_NAME + "-afterLeaderIsDead";
-    createTable(newTableName, basicSchema, new CreateTableBuilder());
+    createTable(newTableName, basicSchema, new CreateTableOptions());
     table = openTable(newTableName);
     assertEquals(0, countRowsInScan(client.newScannerBuilder(table).build()));
 

@@ -31,7 +31,7 @@ public class TestRowErrors extends BaseKuduTest {
   @BeforeClass
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
-    createTable(TABLE_NAME, basicSchema, new CreateTableBuilder());
+    createTable(TABLE_NAME, basicSchema, new CreateTableOptions());
 
     table = openTable(TABLE_NAME);
   }

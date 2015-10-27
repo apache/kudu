@@ -19,7 +19,7 @@ import org.kududb.Type;
 import org.kududb.mapreduce.CommandLineParser;
 import org.kududb.mapreduce.HadoopTestingUtility;
 import org.kududb.client.BaseKuduTest;
-import org.kududb.client.CreateTableBuilder;
+import org.kududb.client.CreateTableOptions;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.util.GenericOptionsParser;
@@ -63,7 +63,7 @@ public class ITImportCsv extends BaseKuduTest {
         .build());
     schema = new Schema(columns);
 
-    createTable(TABLE_NAME, schema, new CreateTableBuilder());
+    createTable(TABLE_NAME, schema, new CreateTableOptions());
   }
 
   @AfterClass

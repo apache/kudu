@@ -289,7 +289,7 @@ public class BaseKuduTest {
   }
 
   protected static KuduTable createTable(String tableName, Schema schema,
-                                         CreateTableBuilder builder) {
+                                         CreateTableOptions builder) {
     LOG.info("Creating table: {}", tableName);
     Deferred<KuduTable> d = client.createTable(tableName, schema, builder);
     final AtomicBoolean gotError = new AtomicBoolean(false);
@@ -360,7 +360,7 @@ public class BaseKuduTest {
   private static final int[] KEYS = new int[] {10, 20, 30};
   protected static KuduTable createFourTabletsTableWithNineRows(String tableName) throws
       Exception {
-    CreateTableBuilder builder = new CreateTableBuilder();
+    CreateTableOptions builder = new CreateTableOptions();
     for (int i : KEYS) {
       PartialRow splitRow = basicSchema.newPartialRow();
       splitRow.addInt(0, i);
@@ -413,6 +413,7 @@ public class BaseKuduTest {
         .nullable(true)
         .desiredBlockSize(4096)
         .encoding(ColumnSchema.Encoding.DICT_ENCODING)
+        .compressionAlgorithm(ColumnSchema.CompressionAlgorithm.LZ4)
         .build());
     columns.add(new ColumnSchema.ColumnSchemaBuilder("column4_b", Type.BOOL).build());
     return new Schema(columns);
