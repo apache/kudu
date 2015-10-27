@@ -36,17 +36,18 @@
 #include <sys/stat.h>
 #include <vector>
 
-#include "kudu/server/webserver.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/numbers.h"
-#include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/strings/split.h"
+#include "kudu/gutil/strings/stringpiece.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/sysinfo.h"
+#include "kudu/server/webserver.h"
 #include "kudu/util/env.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/spinlock_profiling.h"
+#include "kudu/util/status.h"
 
 DECLARE_bool(enable_process_lifetime_heap_profiling);
 DECLARE_string(heap_profile_path);
@@ -72,20 +73,12 @@ namespace kudu {
 const int PPROF_DEFAULT_SAMPLE_SECS = 30; // pprof default sample time in seconds.
 
 // pprof asks for the url /pprof/cmdline to figure out what application it's profiling.
-// The server should respond by reading the contents of /proc/self/cmdline.
+// The server should respond by sending the executable path.
 static void PprofCmdLineHandler(const Webserver::WebRequest& req, stringstream* output) {
-  ifstream cmd_line_file("/proc/self/cmdline", std::ios::in);
-  if (!cmd_line_file.is_open()) {
-    (*output) << "Unable to open file: /proc/self/cmdline";
-    return;
-  }
-  string cmdline;
-  cmd_line_file >> cmdline;
-  size_t size = cmdline.size();
-  // The result should not be NULL terminated.
-  if (size > 0 && cmdline[size - 1] == 0) --size;
-  output->write(cmdline.data(), size);
-  cmd_line_file.close();
+  string executable_path;
+  Env* env = Env::Default();
+  WARN_NOT_OK(env->GetExecutablePath(&executable_path), "Failed to get executable path");
+  *output << executable_path;
 }
 
 // pprof asks for the url /pprof/heap to get heap information. This should be implemented
