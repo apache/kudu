@@ -135,6 +135,7 @@ class BlockingQueue {
     }
     list_.push_back(val);
     increment_size_unlocked(val);
+    l.Unlock();
     not_empty_.Signal();
     return QUEUE_SUCCESS;
   }
@@ -161,6 +162,7 @@ class BlockingQueue {
       if (size_ < max_size_) {
         list_.push_back(val);
         increment_size_unlocked(val);
+        l.Unlock();
         not_empty_.Signal();
         return true;
       }
