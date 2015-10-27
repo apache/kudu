@@ -408,5 +408,50 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
   }
 }
 
+// Regression test for KUDU-253/KUDU-592: crash if the schema passed to CreateTable
+// is invalid.
+TEST_F(MasterTest, TestCreateTableInvalidSchema) {
+  CreateTableRequestPB req;
+  CreateTableResponsePB resp;
+  RpcController controller;
+
+  req.set_name("table");
+  for (int i = 0; i < 2; i++) {
+    ColumnSchemaPB* col = req.mutable_schema()->add_columns();
+    col->set_name("col");
+    col->set_type(INT32);
+    col->set_is_key(true);
+  }
+
+  ASSERT_OK(proxy_->CreateTable(req, &resp, &controller));
+  SCOPED_TRACE(resp.DebugString());
+  ASSERT_TRUE(resp.has_error());
+  ASSERT_EQ("code: INVALID_ARGUMENT message: \"Duplicate column name: col\"",
+            resp.error().status().ShortDebugString());
+}
+
+// Regression test for KUDU-253/KUDU-592: crash if the GetTableLocations RPC call is
+// invalid.
+TEST_F(MasterTest, TestInvalidGetTableLocations) {
+  const string kTableName = "test";
+  Schema schema(list_of(ColumnSchema("key", INT32)), 1);
+  ASSERT_OK(CreateTable(kTableName, schema));
+  {
+    GetTableLocationsRequestPB req;
+    GetTableLocationsResponsePB resp;
+    RpcController controller;
+    req.mutable_table()->set_table_name(kTableName);
+    // Set the "start" key greater than the "end" key.
+    req.set_partition_key_start("zzzz");
+    req.set_partition_key_end("aaaa");
+    ASSERT_OK(proxy_->GetTableLocations(req, &resp, &controller));
+    SCOPED_TRACE(resp.DebugString());
+    ASSERT_TRUE(resp.has_error());
+    ASSERT_EQ("code: INVALID_ARGUMENT message: "
+              "\"start partition key is greater than the end partition key\"",
+              resp.error().status().ShortDebugString());
+  }
+}
+
 } // namespace master
 } // namespace kudu
