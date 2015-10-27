@@ -118,6 +118,20 @@ TEST(TestSchema, TestReset) {
   ASSERT_TRUE(schema2.initialized());
 }
 
+// Test for KUDU-943, a bug where we suspected that Variant didn't behave
+// correctly with empty strings.
+TEST(TestSchema, TestEmptyVariant) {
+  Slice empty_val("");
+  Slice nonempty_val("test");
+
+  Variant v(STRING, &nonempty_val);
+  ASSERT_EQ("test", (static_cast<const Slice*>(v.value()))->ToString());
+  v.Reset(STRING, &empty_val);
+  ASSERT_EQ("", (static_cast<const Slice*>(v.value()))->ToString());
+  v.Reset(STRING, &nonempty_val);
+  ASSERT_EQ("test", (static_cast<const Slice*>(v.value()))->ToString());
+}
+
 TEST(TestSchema, TestProjectSubset) {
   Schema schema1(boost::assign::list_of
                  (ColumnSchema("col1", STRING))

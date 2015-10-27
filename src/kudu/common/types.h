@@ -433,6 +433,9 @@ class Variant {
       case BINARY:
         {
           const Slice *str = static_cast<const Slice *>(value);
+          // In the case that str->size() == 0, then the 'Clear()' above has already
+          // set vstr_ to Slice(""). Otherwise, we need to allocate and copy the
+          // user's data.
           if (str->size() > 0) {
             uint8_t *blob = new uint8_t[str->size()];
             memcpy(blob, str->data(), str->size());
@@ -504,6 +507,9 @@ class Variant {
   DISALLOW_COPY_AND_ASSIGN(Variant);
 
   void Clear() {
+    // No need to delete[] zero-length vstr_, because we always ensure that
+    // such a string would point to a constant "" rather than an allocated piece
+    // of memory.
     if (vstr_.size() > 0) {
       delete[] vstr_.mutable_data();
       vstr_.clear();
