@@ -252,7 +252,9 @@ TEST_F(RpcStubTest, TestRpcPanic) {
     // it aborted. gtest death tests don't work here because
     // there are already threads started up.
     vector<string> argv;
-    argv.push_back(strings::Substitute("/proc/$0/exe", getpid()));
+    string executable_path;
+    CHECK_OK(env_->GetExecutablePath(&executable_path));
+    argv.push_back(executable_path);
     argv.push_back("--is_panic_test_child");
     argv.push_back("--gtest_filter=RpcStubTest.TestRpcPanic");
 

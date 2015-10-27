@@ -22,6 +22,7 @@
 #include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/util/env.h"
 #include "kudu/util/errno.h"
 #include "kudu/util/status.h"
 #include "kudu/util/subprocess.h"
@@ -144,7 +145,10 @@ Status PstackWatcher::RunGdbStackDump(pid_t pid, int flags) {
     argv.push_back("-ex");
     argv.push_back("thread apply all bt full");
   }
-  argv.push_back(Substitute("/proc/$0/exe", pid));
+  string executable;
+  EnvWrapper env(Env::Default());
+  env.GetExecutablePath(&executable);
+  argv.push_back(executable);
   argv.push_back(Substitute("$0", pid));
   return RunStackDump(prog, argv);
 }
