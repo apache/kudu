@@ -84,6 +84,8 @@ struct ExternalMiniClusterOptions {
   // 'ip addr | grep 127.0.0.1' and checking that the address is listed as
   // '127.0.0.1/8'.
   //
+  // This option is disabled by default on OS X.
+  //
   // NOTE: this does not currently affect the HTTP server.
   //
   // Default: true

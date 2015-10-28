@@ -63,10 +63,16 @@ static const char* const kTabletServerBinaryName = "kudu-tserver";
 static double kProcessStartTimeoutSeconds = 30.0;
 static double kTabletServerRegistrationTimeoutSeconds = 10.0;
 
+#if defined(__APPLE__)
+static bool kBindToUniqueLoopbackAddress = false;
+#else
+static bool kBindToUniqueLoopbackAddress = true;
+#endif
+
 ExternalMiniClusterOptions::ExternalMiniClusterOptions()
     : num_masters(1),
       num_tablet_servers(1),
-      bind_to_unique_loopback_addresses(true) {
+      bind_to_unique_loopback_addresses(kBindToUniqueLoopbackAddress) {
 }
 
 ExternalMiniClusterOptions::~ExternalMiniClusterOptions() {
