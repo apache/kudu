@@ -163,7 +163,7 @@ The created table uses a simple single column primary key. See
 introduction to the extended SQL syntax for Impala.
 +
 The columns of the created table are copied from the `passenger_data_raw` base table. See
-http://www.cloudera.com/content/cloudera/en/documentation/cloudera-impala/latest/topics/impala_create_table.html[Impala's
+http://www.cloudera.com/content/www/en-us/documentation/enterprise/latest/topics/impala_create_table.html[Impala's
 documentation] for more details about the extended SQL syntax for Impala.
 
 == Read and Modify Data

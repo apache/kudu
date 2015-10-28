@@ -28,9 +28,9 @@
 You can deploy Kudu on a cluster using packages or you can build Kudu
 from source. To run Kudu without installing anything, use the link:quickstart.html#quickstart_vm[Kudu Quickstart VM].
 
-NOTE: Kudu is currently easier to install and manage with link:http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.html[Cloudera Manager],
+NOTE: Kudu is currently easier to install and manage with link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager],
 version 5.4.7 or newer. If you use Cloudera Manager, see also Cloudera's
-link:http://www.cloudera.com/content/cloudera/en/downloads/betas/kudu/0-5-0.html[Kudu documentation].
+link:http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/0-5-0/topics/kudu_installation.html[Kudu documentation].
 
 == Prerequisites and Requirements
 .Hardware
