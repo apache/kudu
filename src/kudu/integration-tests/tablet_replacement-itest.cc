@@ -20,6 +20,8 @@
 #include <tr1/memory>
 #include <tr1/unordered_map>
 
+#include "kudu/common/wire_protocol.h"
+#include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/external_mini_cluster-itest-base.h"
 #include "kudu/integration-tests/cluster_verifier.h"
@@ -209,6 +211,99 @@ TEST_F(TabletReplacementITest, TestEvictAndReplaceDeadFollower) {
   // With a RemoveServer and AddServer, the opid_index of the committed config will be 3.
   ASSERT_OK(itest::WaitUntilCommittedConfigOpidIndexIs(3, leader_ts, tablet_id, timeout));
   ASSERT_OK(cluster_->tablet_server(kFollowerIndex)->Restart());
+}
+
+// Regression test for KUDU-1233. This test creates a situation in which tablet
+// bootstrap will attempt to replay committed (and applied) config change
+// operations. This is achieved by delaying application of a write at the
+// tablet level that precedes the config change operations in the WAL, then
+// initiating a remote bootstrap to a follower. The follower will not have the
+// COMMIT for the write operation, so will ignore COMMIT messages for the
+// applied config change operations. At startup time, the newly
+// remotely-bootstrapped tablet should detect that these config change
+// operations have already been applied and skip them.
+TEST_F(TabletReplacementITest, TestRemoteBoostrapWithPendingConfigChangeCommits) {
+  if (!AllowSlowTests()) {
+    LOG(INFO) << "Skipping test in fast-test mode.";
+    return;
+  }
+
+  MonoDelta timeout = MonoDelta::FromSeconds(30);
+  vector<string> ts_flags;
+  ts_flags.push_back("--enable_leader_failure_detection=false");
+  vector<string> master_flags;
+  // We will manage doing the AddServer() manually, in order to make this test
+  // more deterministic.
+  master_flags.push_back("--master_add_server_when_underreplicated=false");
+  master_flags.push_back("--master_tombstone_evicted_tablet_replicas=false");
+  master_flags.push_back("--catalog_manager_wait_for_new_tablets_to_elect_leader=false");
+  NO_FATALS(StartCluster(ts_flags, master_flags));
+
+  TestWorkload workload(cluster_.get());
+  workload.Setup(); // Convenient way to create a table.
+
+  const int kLeaderIndex = 0;
+  TServerDetails* leader_ts = ts_map_[cluster_->tablet_server(kLeaderIndex)->uuid()];
+  const int kFollowerIndex = 2;
+  TServerDetails* ts_to_remove = ts_map_[cluster_->tablet_server(kFollowerIndex)->uuid()];
+
+  // Wait for tablet creation and then identify the tablet id.
+  vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
+  ASSERT_OK(itest::WaitForNumTabletsOnTS(leader_ts, 1, timeout, &tablets));
+  string tablet_id = tablets[0].tablet_status().tablet_id();
+
+  // Wait until all replicas are up and running.
+  for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
+    ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
+                                            tablet_id, timeout));
+  }
+
+  // Elect a leader (TS 0)
+  ASSERT_OK(itest::StartElection(leader_ts, tablet_id, timeout));
+  ASSERT_OK(itest::WaitForServersToAgree(timeout, ts_map_, tablet_id, 1)); // Wait for NO_OP.
+
+  // Write a single row.
+  ASSERT_OK(WriteSimpleTestRow(leader_ts, tablet_id, RowOperationsPB::INSERT, 0, 0, "", timeout));
+
+  // Delay tablet applies in order to delay COMMIT messages to trigger KUDU-1233.
+  // Then insert another row.
+  ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server_by_uuid(leader_ts->uuid()),
+                              "tablet_inject_latency_on_apply_write_txn_ms", "5000"));
+
+  // Kick off an async insert, which will be delayed for 5 seconds. This is
+  // normally enough time to evict a replica, tombstone it, add it back, and
+  // remotely bootstrap it when the log is only a few entries.
+  tserver::WriteRequestPB req;
+  tserver::WriteResponsePB resp;
+  CountDownLatch latch(1);
+  rpc::RpcController rpc;
+  rpc.set_timeout(timeout);
+  req.set_tablet_id(tablet_id);
+  Schema schema = GetSimpleTestSchema();
+  ASSERT_OK(SchemaToPB(schema, req.mutable_schema()));
+  AddTestRowToPB(RowOperationsPB::INSERT, schema, 1, 1, "", req.mutable_row_operations());
+  leader_ts->tserver_proxy->WriteAsync(req, &resp, &rpc,
+                                       boost::bind(&CountDownLatch::CountDown, &latch));
+
+  // Wait for the replicate to show up (this doesn't wait for COMMIT messages).
+  ASSERT_OK(itest::WaitForServersToAgree(timeout, ts_map_, tablet_id, 3));
+
+  // Manually evict the server from the cluster, tombstone the replica, then
+  // add the replica back to the cluster. Without the fix for KUDU-1233, this
+  // will cause the replica to fail to start up.
+  ASSERT_OK(itest::RemoveServer(leader_ts, tablet_id, ts_to_remove, boost::none, timeout));
+  ASSERT_OK(itest::DeleteTablet(ts_to_remove, tablet_id, TABLET_DATA_TOMBSTONED,
+                                boost::none, timeout));
+  ASSERT_OK(itest::AddServer(leader_ts, tablet_id, ts_to_remove, RaftPeerPB::VOTER,
+                             boost::none, timeout));
+  ASSERT_OK(itest::WaitUntilTabletRunning(ts_to_remove, tablet_id, timeout));
+
+  ClusterVerifier v(cluster_.get());
+  NO_FATALS(v.CheckCluster());
+  NO_FATALS(v.CheckRowCount(workload.table_name(),
+                            ClusterVerifier::EXACTLY, 2));
+
+  latch.Wait(); // Avoid use-after-free on the response from the delayed RPC callback.
 }
 
 } // namespace kudu

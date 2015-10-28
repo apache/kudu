@@ -30,7 +30,14 @@
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/trace.h"
+
+DEFINE_int32(tablet_inject_latency_on_apply_write_txn_ms, 0,
+             "How much latency to inject when a write transaction is applied. "
+             "For testing only!");
+TAG_FLAG(tablet_inject_latency_on_apply_write_txn_ms, unsafe);
+TAG_FLAG(tablet_inject_latency_on_apply_write_txn_ms, runtime);
 
 namespace kudu {
 namespace tablet {
@@ -102,6 +109,13 @@ Status WriteTransaction::Start() {
 Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   TRACE_EVENT0("txn", "WriteTransaction::Apply");
   TRACE("APPLY: Starting");
+
+  if (PREDICT_FALSE(
+          ANNOTATE_UNPROTECTED_READ(FLAGS_tablet_inject_latency_on_apply_write_txn_ms) > 0)) {
+    TRACE("Injecting $0ms of latency due to --tablet_inject_latency_on_apply_write_txn_ms",
+          FLAGS_tablet_inject_latency_on_apply_write_txn_ms);
+    SleepFor(MonoDelta::FromMilliseconds(FLAGS_tablet_inject_latency_on_apply_write_txn_ms));
+  }
 
   Tablet* tablet = state()->tablet_peer()->tablet();
 

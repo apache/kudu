@@ -449,6 +449,7 @@ Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& ro
     DCHECK(round->replicate_msg()->change_config_record().old_config().has_opid_index());
     DCHECK(round->replicate_msg()->change_config_record().has_new_config());
     DCHECK(!round->replicate_msg()->change_config_record().new_config().has_opid_index());
+    const RaftConfigPB& old_config = round->replicate_msg()->change_config_record().old_config();
     const RaftConfigPB& new_config = round->replicate_msg()->change_config_record().new_config();
     if (GetActiveRoleUnlocked() != RaftPeerPB::LEADER) {
       // The leader has to mark the configuration as pending before it gets here
@@ -460,7 +461,19 @@ Status ReplicaState::AddPendingOperation(const scoped_refptr<ConsensusRound>& ro
         LOG_WITH_PREFIX_UNLOCKED(INFO) << s.ToString();
         return s;
       }
-      CHECK_OK(SetPendingConfigUnlocked(new_config));
+      // Check if the pending Raft config has an OpId less than the committed
+      // config. If so, this is a replay at startup in which the COMMIT
+      // messages were delayed.
+      const RaftConfigPB& committed_config = GetCommittedConfigUnlocked();
+      if (round->replicate_msg()->id().index() > committed_config.opid_index()) {
+        CHECK_OK(SetPendingConfigUnlocked(new_config));
+      } else {
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << "Ignoring setting pending config change with OpId "
+            << round->replicate_msg()->id() << " because the committed config has OpId index "
+            << committed_config.opid_index() << ". The config change we are ignoring is: "
+            << "Old config: { " << old_config.ShortDebugString() << " }. "
+            << "New config: { " << new_config.ShortDebugString() << " }";
+      }
     }
   }
 
@@ -572,11 +585,23 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index,
       DCHECK(old_config.has_opid_index());
       DCHECK(!new_config.has_opid_index());
       new_config.set_opid_index(current_id.index());
-      LOG_WITH_PREFIX_UNLOCKED(INFO) << "Committing config change with OpId "
-          << current_id << ". "
-          << "Old config: { " << old_config.ShortDebugString() << " }. "
-          << "New config: { " << new_config.ShortDebugString() << " }";
-      CHECK_OK(SetCommittedConfigUnlocked(new_config));
+      // Check if the pending Raft config has an OpId less than the committed
+      // config. If so, this is a replay at startup in which the COMMIT
+      // messages were delayed.
+      const RaftConfigPB& committed_config = GetCommittedConfigUnlocked();
+      if (new_config.opid_index() > committed_config.opid_index()) {
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << "Committing config change with OpId "
+            << current_id << ". "
+            << "Old config: { " << old_config.ShortDebugString() << " }. "
+            << "New config: { " << new_config.ShortDebugString() << " }";
+        CHECK_OK(SetCommittedConfigUnlocked(new_config));
+      } else {
+        LOG_WITH_PREFIX_UNLOCKED(INFO) << "Ignoring commit of config change with OpId "
+            << current_id << " because the committed config has OpId index "
+            << committed_config.opid_index() << ". The config change we are ignoring is: "
+            << "Old config: { " << old_config.ShortDebugString() << " }. "
+            << "New config: { " << new_config.ShortDebugString() << " }";
+      }
     }
 
     prev_id.CopyFrom(round->id());
