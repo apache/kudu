@@ -52,10 +52,6 @@ __thread TraceLog::PerThreadInfo* TraceLog::thread_local_info_ = NULL;
 
 namespace {
 
-// The overhead of TraceEvent above this threshold will be reported in the
-// trace.
-const int kOverheadReportThresholdInMicroseconds = 50;
-
 // Controls the number of trace events we will buffer in-memory
 // before throwing them away.
 const size_t kTraceBufferChunkSize = TraceBufferChunk::kTraceBufferChunkSize;
@@ -81,9 +77,7 @@ const char* g_category_groups[MAX_CATEGORY_GROUPS] = {
   "toplevel",
   "tracing already shutdown",
   "tracing categories exhausted; must increase MAX_CATEGORY_GROUPS",
-  "__metadata",
-  // For reporting trace_event overhead. For thread local event buffers only.
-  "trace_event_overhead"};
+  "__metadata"};
 
 // The enabled flag is char instead of bool so that the API can be used from C.
 unsigned char g_category_group_enabled[MAX_CATEGORY_GROUPS] = { 0 };
@@ -91,8 +85,7 @@ unsigned char g_category_group_enabled[MAX_CATEGORY_GROUPS] = { 0 };
 const int g_category_already_shutdown = 1;
 const int g_category_categories_exhausted = 2;
 const int g_category_metadata = 3;
-const int g_category_trace_event_overhead = 4;
-const int g_num_builtin_categories = 5;
+const int g_num_builtin_categories = 4;
 // Skip default categories.
 AtomicWord g_category_index = g_num_builtin_categories;
 
@@ -1004,9 +997,6 @@ class TraceLog::ThreadLocalEventBuffer {
 
   TraceEvent* AddTraceEvent(TraceEventHandle* handle);
 
-  void ReportOverhead(const MicrosecondsInt64& event_timestamp,
-                      const MicrosecondsInt64& event_thread_timestamp);
-
   TraceEvent* GetEventByHandle(TraceEventHandle handle) {
     if (!chunk_ || handle.chunk_seq != chunk_->seq() ||
         handle.chunk_index != chunk_index_)
@@ -1030,8 +1020,6 @@ class TraceLog::ThreadLocalEventBuffer {
   TraceLog* trace_log_;
   gscoped_ptr<TraceBufferChunk> chunk_;
   size_t chunk_index_;
-  int event_count_;
-  MicrosecondsInt64 overhead_;
   int generation_;
 
   // The TID of the thread that constructed this event buffer. Only this thread
@@ -1044,7 +1032,6 @@ class TraceLog::ThreadLocalEventBuffer {
 TraceLog::ThreadLocalEventBuffer::ThreadLocalEventBuffer(TraceLog* trace_log)
     : trace_log_(trace_log),
       chunk_index_(0),
-      event_count_(0),
       generation_(trace_log->generation()),
       owner_tid_(kudu::Thread::UniqueThreadId()) {
 }
@@ -1077,53 +1064,8 @@ TraceEvent* TraceLog::ThreadLocalEventBuffer::AddTraceEvent(
   return trace_event;
 }
 
-void TraceLog::ThreadLocalEventBuffer::ReportOverhead(
-    const MicrosecondsInt64& event_timestamp,
-    const MicrosecondsInt64& event_thread_timestamp) {
-  if (!g_category_group_enabled[g_category_trace_event_overhead])
-    return;
-
-  CheckIsOwnerThread();
-
-  event_count_++;
-  MicrosecondsInt64 thread_now = GetThreadCpuTimeMicros();
-  MicrosecondsInt64 now = trace_log_->OffsetNow();
-  MicrosecondsInt64 overhead = now - event_timestamp;
-  if (overhead >= kOverheadReportThresholdInMicroseconds) {
-    TraceEvent* trace_event = AddTraceEvent(NULL);
-    if (trace_event) {
-      trace_event->Initialize(
-        kudu::Thread::UniqueThreadId(),
-          event_timestamp, event_thread_timestamp,
-          TRACE_EVENT_PHASE_COMPLETE,
-          &g_category_group_enabled[g_category_trace_event_overhead],
-          "overhead", 0, 0, NULL, NULL, NULL, NULL, 0);
-      trace_event->UpdateDuration(now, thread_now);
-    }
-  }
-  overhead_ += overhead;
-}
-
 void TraceLog::ThreadLocalEventBuffer::Flush(int64_t tid) {
   DCHECK(trace_log_->lock_.IsHeld());
-
-  // TODO: the original Chromium code adds a metadata event including
-  // information on the tracing overhead itself. In our version of
-  // the flush code path, this can deadlock. If we become interested
-  // in measuring tracing overhead, we should restore the following.
-
-  /*
-  // Zero event_count_ happens in either of the following cases:
-  // - no event generated for the thread;
-  // - the thread is not a Kudu thread
-  // - trace_event_overhead is disabled.
-  if (event_count_) {
-    InitializeMetadataEvent(AddTraceEvent(NULL),
-                            tid,
-                            "overhead", "average_overhead",
-                            overhead_ / 1000.0f / event_count_);
-  }
-  */
 
   if (!chunk_)
     return;
@@ -1313,8 +1255,6 @@ const unsigned char* TraceLog::GetCategoryGroupEnabledInternal(
 void TraceLog::GetKnownCategoryGroups(
     std::vector<std::string>* category_groups) {
   SpinLockHolder lock(&lock_);
-  category_groups->push_back(
-      g_category_groups[g_category_trace_event_overhead]);
   int category_index = base::subtle::NoBarrier_Load(&g_category_index);
   for (int i = g_num_builtin_categories; i < category_index; i++)
     category_groups->push_back(g_category_groups[i]);
@@ -1941,9 +1881,6 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
                      flags);
     }
   }
-
-  if (thread_local_event_buffer)
-    thread_local_event_buffer->ReportOverhead(now, thread_now);
 
   return handle;
 }

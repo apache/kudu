@@ -222,7 +222,7 @@ TEST_F(TabletServerTest, TestWebPages) {
   ASSERT_STR_CONTAINS(buf.ToString(), "__metadata");
   ASSERT_OK(c.FetchURL(Substitute("http://$0/tracing/json/categories", addr),
                        &buf));
-  ASSERT_STR_CONTAINS(buf.ToString(), "trace_event_overhead");
+  ASSERT_STR_CONTAINS(buf.ToString(), "\"rpc\"");
 
   // Smoke test the pprof contention profiler handler.
   ASSERT_OK(c.FetchURL(Substitute("http://$0/pprof/contention?seconds=1", addr),
