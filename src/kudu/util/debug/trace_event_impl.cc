@@ -1830,6 +1830,17 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
       base::subtle::NoBarrier_Load(
         reinterpret_cast<AtomicWord*>(&thr_info->event_buffer_)));
 
+  // If we have an event buffer, but it's a left-over from a previous trace,
+  // delete it.
+  if (PREDICT_FALSE(thread_local_event_buffer &&
+                    !CheckGeneration(thread_local_event_buffer->generation()))) {
+    // We might also race against a flusher thread, so we have to atomically
+    // take the buffer.
+    thread_local_event_buffer = thr_info->AtomicTakeBuffer();
+    delete thread_local_event_buffer;
+    thread_local_event_buffer = NULL;
+  }
+
   // If there is no current buffer, create one for this event.
   if (PREDICT_FALSE(!thread_local_event_buffer)) {
     thread_local_event_buffer = new ThreadLocalEventBuffer(this);
@@ -1880,8 +1891,6 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
   std::string console_message;
   if (*category_group_enabled &
       (ENABLED_FOR_RECORDING | ENABLED_FOR_MONITORING)) {
-    OptionalAutoLock lock(lock_);
-
     TraceEvent* trace_event = thread_local_event_buffer->AddTraceEvent(&handle);
 
     if (trace_event) {
