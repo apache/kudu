@@ -216,8 +216,8 @@ Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
   queue_.push_back(e);
   int length_at_submit = queue_size_++;
 
-  not_empty_.Signal();
   guard.Unlock();
+  not_empty_.Signal();
 
   if (queue_length_histogram_) {
     queue_length_histogram_->Increment(length_at_submit);
