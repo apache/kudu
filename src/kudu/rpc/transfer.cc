@@ -24,6 +24,7 @@
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/stringprintf.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/constants.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/util/flag_tags.h"
@@ -113,6 +114,10 @@ bool InboundTransfer::TransferStarted() const {
 
 bool InboundTransfer::TransferFinished() const {
   return cur_offset_ == total_length_;
+}
+
+string InboundTransfer::StatusAsString() const {
+  return strings::Substitute("$0/$1 bytes received", cur_offset_, total_length_);
 }
 
 OutboundTransfer::OutboundTransfer(const std::vector<Slice> &payload,

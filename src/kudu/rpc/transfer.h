@@ -68,6 +68,10 @@ class InboundTransfer {
     return Slice(buf_);
   }
 
+  // Return a string indicating the status of this transfer (number of bytes received, etc)
+  // suitable for logging.
+  std::string StatusAsString() const;
+
  private:
 
   Status ProcessInboundHeader();

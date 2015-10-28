@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "kudu/gutil/map-util.h"
+#include "kudu/gutil/strings/human_readable.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/rpc/auth_store.h"
 #include "kudu/rpc/rpc_introspection.pb.h"
@@ -127,6 +128,15 @@ bool Connection::Idle() const {
 void Connection::Shutdown(const Status &status) {
   DCHECK(reactor_thread_->IsCurrentThread());
   shutdown_status_ = status;
+
+  if (inbound_ && inbound_->TransferStarted()) {
+    double secs_since_active = reactor_thread_->cur_time()
+        .GetDeltaSince(last_activity_time_).ToSeconds();
+    LOG(WARNING) << "Shutting down connection " << ToString() << " with pending inbound data ("
+                 << inbound_->StatusAsString() << ", last active "
+                 << HumanReadableElapsedTime::ToShortString(secs_since_active)
+                 << " ago, status=" << status.ToString() << ")";
+  }
 
   // Clear any calls which have been sent and were awaiting a response.
   BOOST_FOREACH(const car_map_t::value_type &v, awaiting_response_) {
