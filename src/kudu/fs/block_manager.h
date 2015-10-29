@@ -68,6 +68,9 @@ class Block {
 //    during Close().
 // 2. CloseBlocks() on a group of blocks. This at least ensures that, when
 //    waiting on outstanding I/O, the waiting is done in parallel.
+//
+// NOTE: if a WritableBlock is not explicitly Close()ed, it will be aborted
+// (i.e. deleted).
 class WritableBlock : public Block {
  public:
   enum State {
@@ -85,6 +88,8 @@ class WritableBlock : public Block {
     CLOSED
   };
 
+  // Destroy the WritableBlock. If it was not explicitly closed using Close(),
+  // this will Abort() the block.
   virtual ~WritableBlock() {}
 
   // Destroys the in-memory representation of the block and synchronizes

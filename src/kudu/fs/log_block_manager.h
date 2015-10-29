@@ -168,6 +168,9 @@ class LogBlockManager : public BlockManager {
 
   virtual Status CloseBlocks(const std::vector<WritableBlock*>& blocks) OVERRIDE;
 
+  // Return the number of blocks stored in the block manager.
+  int64_t CountBlocksForTests() const;
+
  private:
   FRIEND_TEST(LogBlockManagerTest, TestReuseBlockIds);
   friend class internal::LogBlockContainer;
@@ -268,7 +271,7 @@ class LogBlockManager : public BlockManager {
   std::tr1::shared_ptr<MemTracker> mem_tracker_;
 
   // Protects the block map, container structures, and 'dirty_dirs'.
-  simple_spinlock lock_;
+  mutable simple_spinlock lock_;
 
   // Maps block IDs to blocks that are now readable, either because they
   // already existed on disk when the block manager was opened, or because

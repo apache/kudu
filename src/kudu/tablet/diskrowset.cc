@@ -197,16 +197,19 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   TRACE_EVENT0("tablet", "DiskRowSetWriter::FinishAndReleaseBlocks");
   CHECK(!finished_);
 
+  if (written_count_ == 0) {
+    finished_ = true;
+    return Status::Aborted("no data written");
+  }
+
   // Save the last encoded (max) key
-  if (written_count_ > 0) {
-    CHECK_GT(last_encoded_key_.size(), 0);
-    Slice last_enc_slice(last_encoded_key_);
-    Slice first_enc_slice(key_index_writer()->GetMetaValueOrDie(DiskRowSet::kMinKeyMetaEntryName));
-    CHECK_LE(first_enc_slice.compare(last_enc_slice), 0)
+  CHECK_GT(last_encoded_key_.size(), 0);
+  Slice last_enc_slice(last_encoded_key_);
+  Slice first_enc_slice(key_index_writer()->GetMetaValueOrDie(DiskRowSet::kMinKeyMetaEntryName));
+  CHECK_LE(first_enc_slice.compare(last_enc_slice), 0)
       << "First Key not <= Last key: first_key=" << first_enc_slice.ToDebugString()
       << "   last_key=" << last_enc_slice.ToDebugString();
-    key_index_writer()->AddMetadataPair(DiskRowSet::kMaxKeyMetaEntryName, last_enc_slice);
-  }
+  key_index_writer()->AddMetadataPair(DiskRowSet::kMaxKeyMetaEntryName, last_enc_slice);
 
   // Finish writing the columns themselves.
   RETURN_NOT_OK(col_writer_->FinishAndReleaseBlocks(closer));
@@ -375,33 +378,44 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
   }
   CHECK_EQ(state_, kStarted);
 
-  cur_undo_writer_->WriteDeltaStats(*cur_undo_delta_stats);
-  cur_redo_writer_->WriteDeltaStats(*cur_redo_delta_stats);
+  Status writer_status = cur_writer_->FinishAndReleaseBlocks(&block_closer_);
 
-  RETURN_NOT_OK(cur_writer_->FinishAndReleaseBlocks(&block_closer_));
-  RETURN_NOT_OK(cur_undo_writer_->FinishAndReleaseBlock(&block_closer_));
-  RETURN_NOT_OK(cur_redo_writer_->FinishAndReleaseBlock(&block_closer_));
-
-  // If the writer is not null _AND_ we've written something to the undo
-  // delta store commit the undo delta block.
-  if (cur_undo_writer_.get() != NULL &&
-      cur_undo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
-    cur_drs_metadata_->CommitUndoDeltaDataBlock(cur_undo_ds_block_id_);
-  }
-
-  // If the writer is not null _AND_ we've written something to the redo
-  // delta store commit the redo delta block.
-  if (cur_redo_writer_.get() != NULL &&
-      cur_redo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
-    cur_drs_metadata_->CommitRedoDeltaDataBlock(0, cur_redo_ds_block_id_);
+  // If no rows were written (e.g. due to an empty flush or a compaction with all rows
+  // deleted), FinishAndReleaseBlocks(...) returns Aborted. In that case, we don't
+  // generate a RowSetMetadata.
+  if (writer_status.IsAborted()) {
+    CHECK_EQ(cur_writer_->written_count(), 0);
   } else {
-    // TODO: KUDU-678: the block will get orphaned here, since we're not putting
-    // it in the metadata, nor deleting it.
+    RETURN_NOT_OK(writer_status);
+    CHECK_GT(cur_writer_->written_count(), 0);
+
+    cur_undo_writer_->WriteDeltaStats(*cur_undo_delta_stats);
+    cur_redo_writer_->WriteDeltaStats(*cur_redo_delta_stats);
+
+    RETURN_NOT_OK(cur_undo_writer_->FinishAndReleaseBlock(&block_closer_));
+    RETURN_NOT_OK(cur_redo_writer_->FinishAndReleaseBlock(&block_closer_));
+
+    // If the writer is not null _AND_ we've written something to the undo
+    // delta store commit the undo delta block.
+    if (cur_undo_writer_.get() != NULL &&
+        cur_undo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
+      cur_drs_metadata_->CommitUndoDeltaDataBlock(cur_undo_ds_block_id_);
+    }
+
+    // If the writer is not null _AND_ we've written something to the redo
+    // delta store commit the redo delta block.
+    if (cur_redo_writer_.get() != NULL &&
+        cur_redo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
+      cur_drs_metadata_->CommitRedoDeltaDataBlock(0, cur_redo_ds_block_id_);
+    } else {
+      // TODO: KUDU-678: the block will get orphaned here, since we're not putting
+      // it in the metadata, nor deleting it.
+    }
+
+    written_size_ += cur_writer_->written_size();
+
+    written_drs_metas_.push_back(cur_drs_metadata_);
   }
-
-  written_size_ += cur_writer_->written_size();
-
-  written_drs_metas_.push_back(cur_drs_metadata_);
 
   cur_writer_.reset(NULL);
   cur_undo_writer_.reset(NULL);

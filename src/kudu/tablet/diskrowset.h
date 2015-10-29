@@ -78,9 +78,11 @@ class DiskRowSetWriter {
   Status AppendBlock(const RowBlock &block);
 
   // Closes the CFiles and their underlying writable blocks.
+  // If no rows were written, returns Status::Aborted().
   Status Finish();
 
   // Closes the CFiles, releasing the underlying blocks to 'closer'.
+  // If no rows were written, returns Status::Aborted().
   Status FinishAndReleaseBlocks(fs::ScopedWritableBlockCloser* closer);
 
   // The base DiskRowSetWriter never rolls. This method is necessary for tests
@@ -193,6 +195,9 @@ class RollingDiskRowSetWriter {
 
  private:
   Status RollWriter();
+
+  // Close the current DRS and delta writers, releasing their finished blocks
+  // into block_closer_.
   Status FinishCurrentWriter();
 
   template<DeltaType Type>

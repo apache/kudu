@@ -21,6 +21,8 @@
 #include "kudu/common/partial_row.h"
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
+#include "kudu/fs/fs_manager.h"
+#include "kudu/fs/log_block_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/server/logical_clock.h"
@@ -40,6 +42,8 @@ DEFINE_int32(merge_benchmark_num_rowsets, 3,
              "Number of rowsets as input to the merge");
 DEFINE_int32(merge_benchmark_num_rows_per_rowset, 500000,
              "Number of rowsets as input to the merge");
+
+DECLARE_string(block_manager);
 DECLARE_bool(enable_data_block_fsync);
 
 namespace kudu {
@@ -791,6 +795,26 @@ TEST_F(TestCompaction, TestCompactionFreesDiskSpace) {
     }
     SleepFor(MonoDelta::FromMilliseconds(200));
   }
+}
+
+// Regression test for KUDU-1237, a bug in which empty flushes or compactions
+// would result in orphaning near-empty cfile blocks on the disk.
+TEST_F(TestCompaction, TestEmptyFlushDoesntLeakBlocks) {
+  if (FLAGS_block_manager != "log") {
+    LOG(WARNING) << "Test requires the log block manager";
+    return;
+  }
+
+  // Fetch the metric for the number of on-disk blocks, so we can later verify
+  // that we actually remove data.
+  fs::LogBlockManager* lbm = down_cast<fs::LogBlockManager*>(
+      harness_->fs_manager()->block_manager());
+
+  int64_t before_count = lbm->CountBlocksForTests();
+  ASSERT_OK(tablet()->Flush());
+  int64_t after_count = lbm->CountBlocksForTests();
+
+  ASSERT_EQ(after_count, before_count);
 }
 
 } // namespace tablet

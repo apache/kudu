@@ -193,6 +193,10 @@ class FsManager {
 
   Status CreateDirIfMissing(const std::string& path, bool* created = NULL);
 
+  fs::BlockManager* block_manager() {
+    return block_manager_.get();
+  }
+
  private:
   FRIEND_TEST(FsManagerTestBase, TestDuplicatePaths);
   friend class itest::ExternalMiniClusterFsInspector; // for access to directory names

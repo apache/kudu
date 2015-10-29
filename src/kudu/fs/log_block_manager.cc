@@ -791,8 +791,10 @@ LogWritableBlock::LogWritableBlock(LogBlockContainer* container,
 }
 
 LogWritableBlock::~LogWritableBlock() {
-  WARN_NOT_OK(Close(), Substitute("Failed to close block $0",
-                                  id().ToString()));
+  if (state_ != CLOSED) {
+    WARN_NOT_OK(Abort(), Substitute("Failed to abort block $0",
+                                    id().ToString()));
+  }
 }
 
 Status LogWritableBlock::Close() {
@@ -1288,6 +1290,11 @@ Status LogBlockManager::CloseBlocks(const std::vector<WritableBlock*>& blocks) {
     RETURN_NOT_OK(block->Close());
   }
   return Status::OK();
+}
+
+int64_t LogBlockManager::CountBlocksForTests() const {
+  lock_guard<simple_spinlock> l(&lock_);
+  return blocks_by_block_id_.size();
 }
 
 void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {

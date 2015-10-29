@@ -278,8 +278,10 @@ FileWritableBlock::FileWritableBlock(FileBlockManager* block_manager,
 }
 
 FileWritableBlock::~FileWritableBlock() {
-  WARN_NOT_OK(Close(), Substitute("Failed to close block $0",
-                                  id().ToString()));
+  if (state_ != CLOSED) {
+    WARN_NOT_OK(Abort(), Substitute("Failed to close block $0",
+                                    id().ToString()));
+  }
 }
 
 Status FileWritableBlock::Close() {

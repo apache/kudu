@@ -449,6 +449,7 @@ Status RemoteBootstrapClient::DownloadBlock(const BlockId& old_block_id,
                                    old_block_id.ToString()));
 
   *new_block_id = block->id();
+  RETURN_NOT_OK_PREPEND(block->Close(), "Unable to close block");
   return Status::OK();
 }
 
