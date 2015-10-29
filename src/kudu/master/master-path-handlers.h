@@ -58,11 +58,13 @@ class MasterPathHandlers {
   // Convert location of peers to HTML, indicating the roles
   // of each tablet server in a consensus configuration.
   // This method will display 'locations' in the order given.
-  std::string RaftConfigToHtml(const std::vector<TabletReplica>& locations) const;
+  std::string RaftConfigToHtml(const std::vector<TabletReplica>& locations,
+                               const std::string& tablet_id) const;
 
   // Convert the specified TSDescriptor to HTML, adding a link to the
   // tablet server's own webserver if specified in 'desc'.
-  std::string TSDescriptorToHtml(const TSDescriptor& desc) const;
+  std::string TSDescriptorToHtml(const TSDescriptor& desc,
+                                 const std::string& tablet_id) const;
 
   // Convert the specified server registration to HTML, adding a link
   // to the server's own web server (if specified in 'reg') with

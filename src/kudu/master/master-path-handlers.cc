@@ -157,7 +157,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
 
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Tablet ID</th><th>Partition</th><th>State</th>"
-      "<th>RaftConfig</th></tr>\n";
+      "<th>Message</th><th>RaftConfig</th></tr>\n";
   BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
     TabletInfo::ReplicaMap locations;
     tablet->GetReplicaLocations(&locations);
@@ -178,7 +178,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
         EscapeForHtmlToString(partition_schema.PartitionDebugString(partition, schema)),
         state,
         EscapeForHtmlToString(l.data().pb.state_msg()),
-        RaftConfigToHtml(sorted_locations));
+        RaftConfigToHtml(sorted_locations, tablet->tablet_id()));
   }
   *output << "</table>\n";
 
@@ -396,12 +396,13 @@ Status MasterPathHandlers::Register(Webserver* server) {
   return Status::OK();
 }
 
-string MasterPathHandlers::RaftConfigToHtml(const std::vector<TabletReplica>& locations) const {
+string MasterPathHandlers::RaftConfigToHtml(const std::vector<TabletReplica>& locations,
+                                            const std::string& tablet_id) const {
   stringstream html;
 
   html << "<ul>\n";
   BOOST_FOREACH(const TabletReplica& location, locations) {
-    string location_html = TSDescriptorToHtml(*location.ts_desc);
+    string location_html = TSDescriptorToHtml(*location.ts_desc, tablet_id);
     if (location.role == RaftPeerPB::LEADER) {
       html << Substitute("  <li><b>LEADER: $0</b></li>\n", location_html);
     } else {
@@ -413,15 +414,20 @@ string MasterPathHandlers::RaftConfigToHtml(const std::vector<TabletReplica>& lo
   return html.str();
 }
 
-string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc) const {
+string MasterPathHandlers::TSDescriptorToHtml(const TSDescriptor& desc,
+                                              const std::string& tablet_id) const {
   TSRegistrationPB reg;
   desc.GetRegistration(&reg);
 
-  string link_text = desc.permanent_uuid();
-  if (reg.rpc_addresses().size() > 0) {
-    link_text = reg.rpc_addresses(0).host();
+  if (reg.http_addresses().size() > 0) {
+    return Substitute("<a href=\"http://$0:$1/tablet?id=$2\">$3</a>",
+                      reg.http_addresses(0).host(),
+                      reg.http_addresses(0).port(),
+                      EscapeForHtmlToString(tablet_id),
+                      EscapeForHtmlToString(reg.http_addresses(0).host()));
+  } else {
+    return EscapeForHtmlToString(desc.permanent_uuid());
   }
-  return RegistrationToHtml(reg, link_text);
 }
 
 template<class RegistrationType>
