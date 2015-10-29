@@ -1231,7 +1231,7 @@ class PosixEnv : public Env {
       dir = buf;
     }
     // Directory may already exist
-    ignore_result(CreateDir(*result));
+    ignore_result(CreateDir(dir));
     // /tmp may be a symlink, so canonicalize the path.
     return Canonicalize(dir, result);
   }
