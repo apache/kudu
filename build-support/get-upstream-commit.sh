@@ -22,4 +22,4 @@
 # developer might be working on some local topic branch.
 set -e
 
-git log --grep='Tested-by: jenkins' -n1 --pretty=format:%H
+git log --grep='Tested-by: \(jenkins\|Internal Jenkins\)' -n1 --pretty=format:%H
