@@ -540,33 +540,27 @@ TEST_F(TabletPeerTest, TestFlushOpsPerfImprovements) {
 
   // Just on the threshold and not enough time has passed for a time-based flush.
   stats.set_ram_anchored(64 * 1024 * 1024);
-  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 1, false);
+  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 1);
   ASSERT_EQ(0.0, stats.perf_improvement());
   stats.Clear();
 
   // Just on the threshold and enough time has passed, we'll have a low improvement.
   stats.set_ram_anchored(64 * 1024 * 1024);
-  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 3 * 60 * 1000, false);
+  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 3 * 60 * 1000);
   ASSERT_GT(stats.perf_improvement(), 0.01);
   stats.Clear();
 
   // Way over the threshold, number is much higher than 1.
   stats.set_ram_anchored(128 * 1024 * 1024);
-  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 1, false);
+  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 1);
   ASSERT_LT(1.0, stats.perf_improvement());
   stats.Clear();
 
   // Below the threshold but have been there a long time, closing in to 1.0.
   stats.set_ram_anchored(30 * 1024 * 1024);
-  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 60 * 50 * 1000, false);
+  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 60 * 50 * 1000);
   ASSERT_LT(0.7, stats.perf_improvement());
   ASSERT_GT(1.0, stats.perf_improvement());
-  stats.Clear();
-
-  // Empty, been there a long time, shouldn't have a perf improvement.
-  stats.set_ram_anchored(0);
-  FlushOpPerfImprovementPolicy::SetPerfImprovementForFlush(&stats, 60 * 50 * 1000, true);
-  ASSERT_EQ(0.0, stats.perf_improvement());
   stats.Clear();
 }
 
