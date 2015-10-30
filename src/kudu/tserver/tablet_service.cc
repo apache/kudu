@@ -77,6 +77,8 @@ DEFINE_int32(scanner_inject_latency_on_each_batch_ms, 0,
              "Used for tests.");
 TAG_FLAG(scanner_inject_latency_on_each_batch_ms, unsafe);
 
+DECLARE_int32(memory_limit_warn_threshold_percentage);
+
 namespace kudu {
 namespace tserver {
 
@@ -682,10 +684,15 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
   double capacity_pct;
   if (tablet->mem_tracker()->AnySoftLimitExceeded(&capacity_pct)) {
     tablet->metrics()->leader_memory_pressure_rejections->Increment();
-    Status s = Status::ServiceUnavailable(StringPrintf(
+    string msg = StringPrintf(
         "Soft memory limit exceeded (at %.2f%% of capacity)",
-        capacity_pct));
-    SetupErrorAndRespond(resp->mutable_error(), s,
+        capacity_pct);
+    if (capacity_pct >= FLAGS_memory_limit_warn_threshold_percentage) {
+      KLOG_EVERY_N_SECS(WARNING, 1) << "Rejecting Write request: " << msg << THROTTLE_MSG;
+    } else {
+      KLOG_EVERY_N_SECS(INFO, 1) << "Rejecting Write request: " << msg << THROTTLE_MSG;
+    }
+    SetupErrorAndRespond(resp->mutable_error(), Status::ServiceUnavailable(msg),
                          TabletServerErrorPB::UNKNOWN_ERROR,
                          context);
     return;

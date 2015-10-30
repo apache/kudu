@@ -25,6 +25,7 @@
 #include "kudu/tablet/tablet_peer.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
 #include "kudu/util/flag_tags.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
@@ -98,11 +99,15 @@ Status TransactionTracker::Add(TransactionDriver* driver) {
     // May be null in unit tests.
     TabletPeer* peer = driver->state()->tablet_peer();
 
-    return Status::ServiceUnavailable(Substitute(
+    string msg = Substitute(
         "Transaction failed, tablet $0 transaction memory consumption ($1) "
         "has exceeded its limit ($2) or the limit of an ancestral tracker",
         peer ? peer->tablet()->tablet_id() : "(unknown)",
-            mem_tracker_->consumption(), mem_tracker_->limit()));
+        mem_tracker_->consumption(), mem_tracker_->limit());
+
+    KLOG_EVERY_N_SECS(WARNING, 1) << msg << THROTTLE_MSG;
+
+    return Status::ServiceUnavailable(msg);
   }
 
   IncrementCounters(*driver);

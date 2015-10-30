@@ -47,6 +47,10 @@ DEFINE_int32(memory_limit_soft_percentage, 60,
              "decreased throughput, and vice versa for a higher soft limit.");
 TAG_FLAG(memory_limit_soft_percentage, advanced);
 
+DEFINE_int32(memory_limit_warn_threshold_percentage, 98,
+             "Percentage of the hard memory limit that this daemon may "
+             "consume before WARNING level messages are periodically logged.");
+TAG_FLAG(memory_limit_warn_threshold_percentage, advanced);
 
 namespace kudu {
 

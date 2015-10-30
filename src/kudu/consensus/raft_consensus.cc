@@ -93,6 +93,8 @@ DEFINE_bool(follower_reject_update_consensus_requests, false,
             "Warning! This is only intended for testing.");
 TAG_FLAG(follower_reject_update_consensus_requests, unsafe);
 
+DECLARE_int32(memory_limit_warn_threshold_percentage);
+
 METRIC_DEFINE_counter(tablet, follower_memory_pressure_rejections,
                       "Follower Memory Pressure Rejections",
                       kudu::MetricUnit::kRequests,
@@ -1078,9 +1080,17 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
       double capacity_pct;
       if (parent_mem_tracker_->AnySoftLimitExceeded(&capacity_pct)) {
         follower_memory_pressure_rejections_->Increment();
-        return Status::ServiceUnavailable(StringPrintf(
+        string msg = StringPrintf(
             "Soft memory limit exceeded (at %.2f%% of capacity)",
-            capacity_pct));
+            capacity_pct);
+        if (capacity_pct >= FLAGS_memory_limit_warn_threshold_percentage) {
+          KLOG_EVERY_N_SECS(WARNING, 1) << "Rejecting consensus request: " << msg
+                                        << THROTTLE_MSG;
+        } else {
+          KLOG_EVERY_N_SECS(INFO, 1) << "Rejecting consensus request: " << msg
+                                     << THROTTLE_MSG;
+        }
+        return Status::ServiceUnavailable(msg);
       }
     }
 

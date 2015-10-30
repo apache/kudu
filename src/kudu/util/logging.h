@@ -29,8 +29,34 @@
 #include <string>
 #include <glog/logging.h>
 
+#include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/dynamic_annotations.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/util/logging_callback.h"
+
+////////////////////////////////////////////////////////////////////////////////
+// Throttled logging support
+////////////////////////////////////////////////////////////////////////////////
+
+// Logs a message throttled to appear at most once every 'n_secs' seconds to
+// the given severity.
+//
+// The log message may include the special token 'THROTTLE_MSG' which expands
+// to either an empty string or '[suppressed <n> similar messages]'.
+//
+// Example usage:
+//   KLOG_EVERY_N_SECS(WARNING, 1) << "server is low on memory" << THROTTLE_MSG;
+#define KLOG_EVERY_N_SECS(severity, n_secs) \
+  static logging_internal::LogThrottler LOG_THROTTLER;  \
+  int num_suppressed = 0; \
+  if (LOG_THROTTLER.ShouldLog(n_secs, &num_suppressed)) \
+    google::LogMessage( \
+      __FILE__, __LINE__, google::GLOG_ ## severity, num_suppressed, \
+      &google::LogMessage::SendToLog).stream()
+
+namespace kudu {
+enum PRIVATE_ThrottleMsg {THROTTLE_MSG};
+} // namespace kudu
 
 ////////////////////////////////////////////////////////////////////////////////
 // Versions of glog macros for "LOG_EVERY" and "LOG_FIRST" that annotate the
@@ -119,6 +145,9 @@
 #define LOG_IF_EVERY_N(severity, condition, n) \
   GOOGLE_GLOG_COMPILE_ASSERT(false, "LOG_IF_EVERY_N is deprecated. Please use KLOG_IF_EVERY_N.")
 
+
+
+
 namespace kudu {
 
 // glog doesn't allow multiple invocations of InitGoogleLogging. This method conditionally
@@ -158,6 +187,32 @@ void ShutdownLoggingSafe();
 
 // Writes all command-line flags to the log at level INFO.
 void LogCommandLineFlags();
+
+namespace logging_internal {
+// Internal implementation class used for throttling log messages.
+class LogThrottler {
+ public:
+  LogThrottler() : num_suppressed_(0), last_ts_(0) {
+    ANNOTATE_BENIGN_RACE(&last_ts_, "OK to be sloppy with log throttling");
+  }
+
+  bool ShouldLog(int n_secs, int* num_suppressed) {
+    MicrosecondsInt64 ts = GetMonoTimeMicros();
+    if (ts - last_ts_ < n_secs * 1e6) {
+      *num_suppressed = base::subtle::NoBarrier_AtomicIncrement(&num_suppressed_, 1);
+      return false;
+    }
+    last_ts_ = ts;
+    *num_suppressed = base::subtle::NoBarrier_AtomicExchange(&num_suppressed_, 0);
+    return true;
+  }
+ private:
+  Atomic32 num_suppressed_;
+  uint64_t last_ts_;
+};
+} // namespace logging_internal
+
+std::ostream& operator<<(std::ostream &os, const PRIVATE_ThrottleMsg&);
 
 // Convenience macros to prefix log messages with some prefix, these are the unlocked
 // versions and should not obtain a lock (if one is required to obtain the prefix).
