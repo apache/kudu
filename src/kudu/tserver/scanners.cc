@@ -20,6 +20,7 @@
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"
+#include "kudu/gutil/hash/string_hash.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/tserver/scanner_metrics.h"
 #include "kudu/util/flag_tags.h"
@@ -56,6 +57,9 @@ ScannerManager::ScannerManager(const scoped_refptr<MetricEntity>& metric_entity)
                                Unretained(this)))
       ->AutoDetach(&metric_detacher_);
   }
+  for (size_t i = 0; i < kNumScannerMapStripes; i++) {
+    scanner_maps_.push_back(new ScannerMapStripe());
+  }
 }
 
 ScannerManager::~ScannerManager() {
@@ -67,6 +71,7 @@ ScannerManager::~ScannerManager() {
   if (removal_thread_.get() != NULL) {
     CHECK_OK(ThreadJoiner(removal_thread_.get()).Join());
   }
+  STLDeleteElements(&scanner_maps_);
 }
 
 Status ScannerManager::StartRemovalThread() {
@@ -92,6 +97,11 @@ void ScannerManager::RunRemovalThread() {
   }
 }
 
+ScannerManager::ScannerMapStripe& ScannerManager::GetStripeByScannerId(const string& scanner_id) {
+  size_t slot = HashStringThoroughly(scanner_id.data(), scanner_id.size()) % kNumScannerMapStripes;
+  return *scanner_maps_[slot];
+}
+
 void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
                                 const std::string& requestor_string,
                                 SharedScanner* scanner) {
@@ -104,54 +114,65 @@ void ScannerManager::NewScanner(const scoped_refptr<TabletPeer>& tablet_peer,
     string id = oid_generator_.Next();
     scanner->reset(new Scanner(id, tablet_peer, requestor_string, metrics_.get()));
 
-    boost::lock_guard<boost::shared_mutex> l(lock_);
-    success = InsertIfNotPresent(&scanners_by_id_, id, *scanner);
+    ScannerMapStripe& stripe = GetStripeByScannerId(id);
+    boost::lock_guard<boost::shared_mutex> l(stripe.lock_);
+    success = InsertIfNotPresent(&stripe.scanners_by_id_, id, *scanner);
   }
 }
 
 bool ScannerManager::LookupScanner(const string& scanner_id, SharedScanner* scanner) {
-  boost::shared_lock<boost::shared_mutex> l(lock_);
-  return FindCopy(scanners_by_id_, scanner_id, scanner);
+  ScannerMapStripe& stripe = GetStripeByScannerId(scanner_id);
+  boost::shared_lock<boost::shared_mutex> l(stripe.lock_);
+  return FindCopy(stripe.scanners_by_id_, scanner_id, scanner);
 }
 
 bool ScannerManager::UnregisterScanner(const string& scanner_id) {
-  boost::lock_guard<boost::shared_mutex> l(lock_);
-  return scanners_by_id_.erase(scanner_id) > 0;
+  ScannerMapStripe& stripe = GetStripeByScannerId(scanner_id);
+  boost::lock_guard<boost::shared_mutex> l(stripe.lock_);
+  return stripe.scanners_by_id_.erase(scanner_id) > 0;
 }
 
 size_t ScannerManager::CountActiveScanners() const {
-  boost::shared_lock<boost::shared_mutex> l(lock_);
-  return scanners_by_id_.size();
+  size_t total = 0;
+  BOOST_FOREACH(const ScannerMapStripe* e, scanner_maps_) {
+    boost::shared_lock<boost::shared_mutex> l(e->lock_);
+    total += e->scanners_by_id_.size();
+  }
+  return total;
 }
 
 void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) {
-  boost::shared_lock<boost::shared_mutex> l(lock_);
-  BOOST_FOREACH(const ScannerMapEntry& e, scanners_by_id_) {
-    scanners->push_back(e.second);
+  BOOST_FOREACH(const ScannerMapStripe* stripe, scanner_maps_) {
+    boost::shared_lock<boost::shared_mutex> l(stripe->lock_);
+    BOOST_FOREACH(const ScannerMapEntry& se, stripe->scanners_by_id_) {
+      scanners->push_back(se.second);
+    }
   }
 }
 
 void ScannerManager::RemoveExpiredScanners() {
-  boost::lock_guard<boost::shared_mutex> l(lock_);
   MonoDelta scanner_ttl = MonoDelta::FromMilliseconds(FLAGS_scanner_ttl_ms);
 
-  for (ScannerMap::iterator it = scanners_by_id_.begin();
-       it != scanners_by_id_.end(); ) {
-    SharedScanner& scanner = it->second;
-    MonoDelta time_live =
-        scanner->TimeSinceLastAccess(MonoTime::Now(MonoTime::COARSE));
-    if (time_live.MoreThan(scanner_ttl)) {
-      // TODO: once we have a metric for the number of scanners expired, make this a
-      // VLOG(1).
-      LOG(INFO) << "Expiring scanner id: " << it->first << ", after "
-                << time_live.ToMicroseconds() << " us of inactivity, which is > TTL ("
-                << scanner_ttl.ToMicroseconds() << " us).";
-      it = scanners_by_id_.erase(it);
-      if (metrics_) {
-        metrics_->scanners_expired->Increment();
+  BOOST_FOREACH(ScannerMapStripe* stripe, scanner_maps_) {
+    boost::lock_guard<boost::shared_mutex> l(stripe->lock_);
+    for (ScannerMap::iterator it = stripe->scanners_by_id_.begin();
+         it != stripe->scanners_by_id_.end(); ) {
+      SharedScanner& scanner = it->second;
+      MonoDelta time_live =
+          scanner->TimeSinceLastAccess(MonoTime::Now(MonoTime::COARSE));
+      if (time_live.MoreThan(scanner_ttl)) {
+        // TODO: once we have a metric for the number of scanners expired, make this a
+        // VLOG(1).
+        LOG(INFO) << "Expiring scanner id: " << it->first << ", after "
+                  << time_live.ToMicroseconds() << " us of inactivity, which is > TTL ("
+                  << scanner_ttl.ToMicroseconds() << " us).";
+        it = stripe->scanners_by_id_.erase(it);
+        if (metrics_) {
+          metrics_->scanners_expired->Increment();
+        }
+      } else {
+        ++it;
       }
-    } else {
-      ++it;
     }
   }
 }

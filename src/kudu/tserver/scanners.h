@@ -80,9 +80,13 @@ class ScannerManager {
   bool UnregisterScanner(const std::string& scanner_id);
 
   // Return the number of scanners currently active.
+  // Note this method will not return accurate value
+  // if under concurrent modifications.
   size_t CountActiveScanners() const;
 
   // List all active scanners.
+  // Note this method will not return a consistent view
+  // of all active scanners if under concurrent modifications.
   void ListScanners(std::vector<SharedScanner>* scanners);
 
   // Iterate through scanners and remove any which are past their TTL.
@@ -91,10 +95,25 @@ class ScannerManager {
  private:
   FRIEND_TEST(ScannerTest, TestExpire);
 
+  enum {
+    kNumScannerMapStripes = 32
+  };
+
+  typedef std::tr1::unordered_map<std::string, SharedScanner> ScannerMap;
+
   typedef std::pair<std::string, SharedScanner> ScannerMapEntry;
+
+  struct ScannerMapStripe {
+    // Lock protecting the scanner map.
+    mutable boost::shared_mutex lock_;
+    // Map of the currently active scanners.
+    ScannerMap scanners_by_id_;
+  };
 
   // Periodically call RemoveExpiredScanners().
   void RunRemovalThread();
+
+  ScannerMapStripe& GetStripeByScannerId(const string& scanner_id);
 
   // (Optional) scanner metrics for this instance.
   gscoped_ptr<ScannerMetrics> metrics_;
@@ -105,13 +124,7 @@ class ScannerManager {
   mutable boost::mutex shutdown_lock_;
   boost::condition_variable shutdown_cv_;
 
-  // Lock protecting the scanner map.
-  mutable boost::shared_mutex lock_;
-
-  // Map of the currently active scanners.
-  typedef std::tr1::unordered_map<std::string, SharedScanner> ScannerMap;
-
-  ScannerMap scanners_by_id_;
+  std::vector<ScannerMapStripe*> scanner_maps_;
 
   // Generator for scanner IDs.
   ObjectIdGenerator oid_generator_;
