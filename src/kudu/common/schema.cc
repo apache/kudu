@@ -20,7 +20,6 @@
 #include "kudu/gutil/stringprintf.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strcat.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/status.h"
 #include "kudu/common/row.h"
@@ -38,9 +37,9 @@ using std::tr1::unordered_map;
 // 10, ensuring that if we accidentally mix up IDs and indexes, we're likely to fire an
 // assertion or bad memory access.
 #ifdef NDEBUG
-static const int kFirstColumnId = 0;
+static const ColumnId kFirstColumnId(0);
 #else
-static const int kFirstColumnId = 10;
+static const ColumnId  kFirstColumnId(10);
 #endif
 
 string ColumnStorageAttributes::ToString() const {
@@ -120,7 +119,7 @@ void Schema::swap(Schema& other) {
 }
 
 Status Schema::Reset(const vector<ColumnSchema>& cols,
-                     const vector<size_t>& ids,
+                     const vector<ColumnId>& ids,
                      int key_columns) {
   cols_ = cols;
   num_key_columns_ = key_columns;
@@ -193,7 +192,7 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
 
 Status Schema::CreateProjectionByNames(const std::vector<StringPiece>& col_names,
                                        Schema* out) const {
-  vector<size_t> ids;
+  vector<ColumnId> ids;
   vector<ColumnSchema> cols;
   BOOST_FOREACH(const StringPiece& name, col_names) {
     int idx = find_column(name);
@@ -208,27 +207,26 @@ Status Schema::CreateProjectionByNames(const std::vector<StringPiece>& col_names
   return out->Reset(cols, ids, 0);
 }
 
-Status Schema::CreateProjectionByIdsIgnoreMissing(const std::vector<int>& col_ids,
+Status Schema::CreateProjectionByIdsIgnoreMissing(const std::vector<ColumnId>& col_ids,
                                                   Schema* out) const {
   vector<ColumnSchema> cols;
-  // TODO: this class still uses size_t for col_ids, so we have to convert.
-  vector<size_t> col_ids_size_t;
-  BOOST_FOREACH(int id, col_ids) {
+  vector<ColumnId> filtered_col_ids;
+  BOOST_FOREACH(ColumnId id, col_ids) {
     int idx = find_column_by_id(id);
     if (idx == -1) {
       continue;
     }
     cols.push_back(column(idx));
-    col_ids_size_t.push_back(id);
+    filtered_col_ids.push_back(id);
   }
-  return out->Reset(cols, col_ids_size_t, 0);
+  return out->Reset(cols, filtered_col_ids, 0);
 }
 
 Schema Schema::CopyWithColumnIds() const {
   CHECK(!has_column_ids());
-  vector<size_t> ids;
-  for (int i = 0; i < num_columns(); i++) {
-    ids.push_back(i + kFirstColumnId);
+  vector<ColumnId> ids;
+  for (int32_t i = 0; i < num_columns(); i++) {
+    ids.push_back(ColumnId(kFirstColumnId + i));
   }
   return Schema(cols_, ids, num_key_columns_);
 }
@@ -277,7 +275,7 @@ Status Schema::GetMappedReadProjection(const Schema& projection,
 
   // Get the Projection Mapping
   vector<ColumnSchema> mapped_cols;
-  vector<size_t> mapped_ids;
+  vector<ColumnId> mapped_ids;
 
   mapped_cols.reserve(projection.num_columns());
   mapped_ids.reserve(projection.num_columns());
@@ -385,8 +383,8 @@ void SchemaBuilder::Reset(const Schema& schema) {
   }
 
   if (col_ids_.empty()) {
-    for (int i = 0; i < cols_.size(); ++i) {
-      col_ids_.push_back(i + kFirstColumnId);
+    for (int32_t i = 0; i < cols_.size(); ++i) {
+      col_ids_.push_back(ColumnId(kFirstColumnId + i));
     }
   }
   if (col_ids_.empty()) {
@@ -472,7 +470,7 @@ Status SchemaBuilder::AddColumn(const ColumnSchema& column, bool is_key) {
     col_ids_.push_back(next_id_);
   }
 
-  next_id_++;
+  next_id_ = ColumnId(next_id_ + 1);
   return Status::OK();
 }
 

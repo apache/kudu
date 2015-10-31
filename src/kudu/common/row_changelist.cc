@@ -241,7 +241,7 @@ Status RowChangeListDecoder::ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_c
   DCHECK_EQ(RowChangeList::kUpdate, type_);
 
   const ColumnSchema& col_schema = dst_schema.column(col_idx);
-  int col_id = dst_schema.column_id(col_idx);
+  ColumnId col_id = dst_schema.column_id(col_idx);
 
   while (HasNext()) {
     DecodedUpdate dec;
@@ -265,7 +265,7 @@ Status RowChangeListDecoder::ApplyToOneColumn(size_t row_idx, ColumnBlock* dst_c
 }
 
 Status RowChangeListDecoder::RemoveColumnIdsFromChangeList(const RowChangeList& src,
-                                                           const std::vector<int>& col_ids,
+                                                           const std::vector<ColumnId>& col_ids,
                                                            RowChangeListEncoder* out) {
   RowChangeListDecoder decoder(src);
   RETURN_NOT_OK(decoder.Init());

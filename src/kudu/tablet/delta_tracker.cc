@@ -513,10 +513,10 @@ uint64_t DeltaTracker::EstimateOnDiskSize() const {
   return size;
 }
 
-void DeltaTracker::GetColumnIdsWithUpdates(std::vector<int>* col_ids) const {
+void DeltaTracker::GetColumnIdsWithUpdates(std::vector<ColumnId>* col_ids) const {
   shared_lock<rw_spinlock> lock(&component_lock_);
 
-  set<int> column_ids_with_updates;
+  set<ColumnId> column_ids_with_updates;
   BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
     // We won't force open files just to read their stats.
     if (!ds->Initted()) {

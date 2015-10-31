@@ -341,7 +341,7 @@ class Tablet {
   // a shared_ptr API for now?)
   //
   // TODO: Handle MVCC to support MemRowSet and handle deltas in DeltaMemStore
-  Status DoMajorDeltaCompaction(const std::vector<int>& column_ids,
+  Status DoMajorDeltaCompaction(const std::vector<ColumnId>& column_ids,
                                 shared_ptr<RowSet> input_rowset);
 
   // Method used by tests to retrieve all rowsets of this table. This

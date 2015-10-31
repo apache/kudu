@@ -83,15 +83,16 @@ namespace {
 // Extracts the column IDs from a protobuf repeated field of column identifiers.
 Status ExtractColumnIds(const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>& identifiers,
                         const Schema& schema,
-                        vector<int32_t>* column_ids) {
+                        vector<ColumnId>* column_ids) {
     column_ids->reserve(identifiers.size());
     BOOST_FOREACH(PartitionSchemaPB_ColumnIdentifierPB identifier, identifiers) {
       switch (identifier.identifier_case()) {
         case PartitionSchemaPB_ColumnIdentifierPB::kId: {
-          if (schema.find_column_by_id(identifier.id()) == Schema::kColumnNotFound) {
+          ColumnId column_id(identifier.id());
+          if (schema.find_column_by_id(column_id) == Schema::kColumnNotFound) {
             return Status::InvalidArgument("unknown column id", identifier.DebugString());
           }
-          column_ids->push_back(identifier.id());
+          column_ids->push_back(column_id);
           continue;
         }
         case PartitionSchemaPB_ColumnIdentifierPB::kName: {
@@ -108,10 +109,10 @@ Status ExtractColumnIds(const RepeatedPtrField<PartitionSchemaPB_ColumnIdentifie
     return Status::OK();
 }
 // Sets a repeated field of column identifiers to the provided column IDs.
-void SetColumnIdentifiers(const vector<int32_t>& column_ids,
+void SetColumnIdentifiers(const vector<ColumnId>& column_ids,
                           RepeatedPtrField<PartitionSchemaPB_ColumnIdentifierPB>* identifiers) {
     identifiers->Reserve(column_ids.size());
-    BOOST_FOREACH(int32_t column_id, column_ids) {
+    BOOST_FOREACH(ColumnId column_id, column_ids) {
       identifiers->Add()->set_id(column_id);
     }
 }
@@ -215,7 +216,7 @@ Status PartitionSchema::CreatePartitions(const vector<KuduPartialRow>& split_row
   }
 
   unordered_set<int> range_column_idxs;
-  BOOST_FOREACH(int column_id, range_schema_.column_ids) {
+  BOOST_FOREACH(ColumnId column_id, range_schema_.column_ids) {
     int column_idx = schema.find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
       return Status::InvalidArgument(Substitute("Range partition column ID $0 "
@@ -472,7 +473,7 @@ void PartitionSchema::AppendRangeDebugStringComponentsOrString(const KuduPartial
                                                                vector<string>* components) const {
   ConstContiguousRow const_row(row.schema(), row.row_data_);
 
-  BOOST_FOREACH(int32_t column_id, range_schema_.column_ids) {
+  BOOST_FOREACH(ColumnId column_id, range_schema_.column_ids) {
     string column;
     int32_t column_idx = row.schema()->find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
@@ -496,7 +497,7 @@ void PartitionSchema::AppendRangeDebugStringComponentsOrMin(const KuduPartialRow
                                                             vector<string>* components) const {
   ConstContiguousRow const_row(row.schema(), row.row_data_);
 
-  BOOST_FOREACH(int32_t column_id, range_schema_.column_ids) {
+  BOOST_FOREACH(ColumnId column_id, range_schema_.column_ids) {
     string column;
     int32_t column_idx = row.schema()->find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
@@ -531,7 +532,7 @@ string PartitionSchema::RowDebugString(const ConstContiguousRow& row) const {
     }
   }
 
-  BOOST_FOREACH(int32_t column_id, range_schema_.column_ids) {
+  BOOST_FOREACH(ColumnId column_id, range_schema_.column_ids) {
     string column;
     int32_t column_idx = row.schema()->find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
@@ -598,9 +599,9 @@ namespace {
 // Converts a list of column IDs to a string with the column names seperated by
 // a comma character.
 string ColumnIdsToColumnNames(const Schema& schema,
-                              const vector<int32_t> column_ids) {
+                              const vector<ColumnId> column_ids) {
   vector<string> names;
-  BOOST_FOREACH(int32_t column_id, column_ids) {
+  BOOST_FOREACH(ColumnId column_id, column_ids) {
     names.push_back(schema.column(schema.find_column_by_id(column_id)).name());
   }
 
@@ -665,10 +666,10 @@ bool PartitionSchema::IsSimplePKRangePartitioning(const Schema& schema) const {
 
 // Encodes the specified primary key columns of the supplied row into the buffer.
 Status PartitionSchema::EncodeColumns(const ConstContiguousRow& row,
-                                      const vector<int32_t>& column_ids,
+                                      const vector<ColumnId>& column_ids,
                                       string* buf) {
   for (int i = 0; i < column_ids.size(); i++) {
-    int32_t column_id = column_ids[i];
+    ColumnId column_id = column_ids[i];
     int32_t column_idx = row.schema()->find_column_by_id(column_id);
     const TypeInfo* type = row.schema()->column(column_idx).type_info();
     GetKeyEncoder<string>(type).Encode(row.cell_ptr(column_idx), i + 1 == column_ids.size(), buf);
@@ -678,7 +679,7 @@ Status PartitionSchema::EncodeColumns(const ConstContiguousRow& row,
 
 // Encodes the specified primary key columns of the supplied row into the buffer.
 Status PartitionSchema::EncodeColumns(const KuduPartialRow& row,
-                                      const vector<int32_t>& column_ids,
+                                      const vector<ColumnId>& column_ids,
                                       string* buf) {
   for (int i = 0; i < column_ids.size(); i++) {
     int32_t column_idx = row.schema()->find_column_by_id(column_ids[i]);
@@ -738,7 +739,7 @@ void PartitionSchema::Clear() {
 }
 
 Status PartitionSchema::Validate(const Schema& schema) const {
-  set<int32_t> hash_columns;
+  set<ColumnId> hash_columns;
   BOOST_FOREACH(const PartitionSchema::HashBucketSchema& hash_schema, hash_bucket_schemas_) {
     if (hash_schema.num_buckets < 2) {
       return Status::InvalidArgument("must have at least two hash buckets");
@@ -748,7 +749,7 @@ Status PartitionSchema::Validate(const Schema& schema) const {
       return Status::InvalidArgument("must have at least one hash column");
     }
 
-    BOOST_FOREACH(int32_t hash_column, hash_schema.column_ids) {
+    BOOST_FOREACH(ColumnId hash_column, hash_schema.column_ids) {
       if (!hash_columns.insert(hash_column).second) {
         return Status::InvalidArgument("hash bucket schema components must not "
                                        "contain columns in common");
@@ -764,7 +765,7 @@ Status PartitionSchema::Validate(const Schema& schema) const {
     }
   }
 
-  BOOST_FOREACH(int32_t column_id, range_schema_.column_ids) {
+  BOOST_FOREACH(ColumnId column_id, range_schema_.column_ids) {
     int32_t column_idx = schema.find_column_by_id(column_id);
     if (column_idx == Schema::kColumnNotFound) {
       return Status::InvalidArgument("must specify existing columns for range "

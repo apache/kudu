@@ -39,7 +39,7 @@ class DeltaStats {
   DeltaStats();
 
   // Increment update count for column 'col_id' by 'update_count'.
-  void IncrUpdateCount(int col_id, int64_t update_count);
+  void IncrUpdateCount(ColumnId col_id, int64_t update_count);
 
   // Increment the per-store delete count by 'delete_count'.
   void IncrDeleteCount(int64_t delete_count);
@@ -53,7 +53,7 @@ class DeltaStats {
   int64_t delete_count() const { return delete_count_; }
 
   // Returns number of updates for a given column.
-  int64_t update_count_for_col_id(int col_id) const {
+  int64_t update_count_for_col_id(ColumnId col_id) const {
     return FindWithDefault(update_counts_by_col_id_, col_id, 0);
   }
 
@@ -87,10 +87,10 @@ class DeltaStats {
 
   // For each column which has at least one update, add that column's ID to the
   // set 'col_ids'.
-  void AddColumnIdsWithUpdates(std::set<int>* col_ids) const;
+  void AddColumnIdsWithUpdates(std::set<ColumnId>* col_ids) const;
 
  private:
-  std::tr1::unordered_map<int, int64_t> update_counts_by_col_id_;
+  std::tr1::unordered_map<ColumnId, int64_t> update_counts_by_col_id_;
   uint64_t delete_count_;
   Timestamp max_timestamp_;
   Timestamp min_timestamp_;

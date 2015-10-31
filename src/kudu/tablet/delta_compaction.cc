@@ -57,7 +57,7 @@ MajorDeltaCompaction::MajorDeltaCompaction(FsManager* fs_manager,
                                            CFileSet* base_data,
                                            const shared_ptr<DeltaIterator>& delta_iter,
                                            const vector<shared_ptr<DeltaStore> >& included_stores,
-                                           const vector<int>& col_ids)
+                                           const vector<ColumnId>& col_ids)
   : fs_manager_(fs_manager),
     base_schema_(base_schema),
     column_ids_(col_ids),
@@ -75,7 +75,7 @@ MajorDeltaCompaction::~MajorDeltaCompaction() {
 
 string MajorDeltaCompaction::ColumnNamesToString() const {
   std::string result;
-  BOOST_FOREACH(int col_id, column_ids_) {
+  BOOST_FOREACH(ColumnId col_id, column_ids_) {
     int col_idx = base_schema_.find_column_by_id(col_id);
     if (col_idx != Schema::kColumnNotFound) {
       result += base_schema_.column_by_id(col_id).ToString() + " ";
@@ -295,7 +295,7 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
   // For those deleted columns, we just remove the old column data.
   CHECK_LE(new_column_blocks.size(), column_ids_.size());
 
-  BOOST_FOREACH(int col_id, column_ids_) {
+  BOOST_FOREACH(ColumnId col_id, column_ids_) {
     BlockId new_block;
     if (FindCopy(new_column_blocks, col_id, &new_block)) {
       update->ReplaceColumnId(col_id, new_block);
@@ -305,7 +305,7 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
       // NOTE: It's possible that the base data has no data for this column in the
       // case that the column was added and removed in succession after the base
       // data was flushed.
-      CHECK_EQ(base_schema_.find_column_by_id(col_id), static_cast<int>(Schema::kColumnNotFound))
+      CHECK_EQ(base_schema_.find_column_by_id(col_id), Schema::kColumnNotFound)
         << "major compaction removing column " << col_id << " but still present in Schema!";
       if (base_data_->has_data_for_column_id(col_id)) {
         update->RemoveColumnId(col_id);

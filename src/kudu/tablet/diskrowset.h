@@ -379,12 +379,11 @@ class DiskRowSet : public RowSet {
   Status Open();
 
   // Create a new major delta compaction object to compact the specified columns.
-  Status NewMajorDeltaCompaction(
-      const std::vector<int>& col_ids,
-      gscoped_ptr<MajorDeltaCompaction>* out) const;
+  Status NewMajorDeltaCompaction(const std::vector<ColumnId>& col_ids,
+                                 gscoped_ptr<MajorDeltaCompaction>* out) const;
 
   // Major compacts all the delta files for the specified columns.
-  Status MajorCompactDeltaStoresWithColumnIds(const std::vector<int>& col_ids);
+  Status MajorCompactDeltaStoresWithColumnIds(const std::vector<ColumnId>& col_ids);
 
   shared_ptr<RowSetMetadata> rowset_metadata_;
 

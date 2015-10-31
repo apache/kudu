@@ -50,7 +50,7 @@ class DeltaIteratorMerger : public DeltaIterator {
   virtual Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
   virtual Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
   virtual Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
-  virtual Status FilterColumnIdsAndCollectDeltas(const std::vector<int>& col_ids,
+  virtual Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
                                                  vector<DeltaKeyAndUpdate>* out,
                                                  Arena* arena) OVERRIDE;
   virtual bool HasNext() OVERRIDE;

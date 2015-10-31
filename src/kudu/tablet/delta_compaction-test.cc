@@ -130,10 +130,10 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
       buf.clear();
       RowChangeListEncoder update(&buf);
       for (size_t col_idx = schema.num_key_columns(); col_idx < schema.num_columns(); ++col_idx) {
-        int col_id = schema.column_id(col_idx);
+        ColumnId col_id = schema.column_id(col_idx);
         DCHECK_GE(col_id, 0);
 
-        stats.IncrUpdateCount(col_idx, 1);
+        stats.IncrUpdateCount(col_id, 1);
         const ColumnSchema& col_schema = schema.column(col_idx);
         int update_value = deltafile_idx * 100 + i;
         switch (col_schema.type_info()->physical_type()) {

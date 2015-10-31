@@ -71,7 +71,7 @@ class TestRowSet : public KuduRowSetTest {
   static Schema CreateProjection(const Schema& schema,
                                  const vector<string>& cols) {
     vector<ColumnSchema> col_schemas;
-    vector<size_t> col_ids;
+    vector<ColumnId> col_ids;
     BOOST_FOREACH(const string& col, cols) {
       int idx = schema.find_column(col);
       CHECK_GE(idx, 0);

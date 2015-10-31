@@ -259,7 +259,7 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
                          Schema* schema) {
 
   vector<ColumnSchema> columns;
-  vector<size_t> column_ids;
+  vector<ColumnId> column_ids;
   columns.reserve(column_pbs.size());
   int num_key_columns = 0;
   bool is_handling_key = true;
@@ -275,7 +275,7 @@ Status ColumnPBsToSchema(const RepeatedPtrField<ColumnSchemaPB>& column_pbs,
       is_handling_key = false;
     }
     if (pb.has_id()) {
-      column_ids.push_back(pb.id());
+      column_ids.push_back(ColumnId(pb.id()));
     }
   }
 

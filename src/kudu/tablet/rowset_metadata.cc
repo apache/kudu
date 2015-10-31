@@ -67,7 +67,7 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
 
   // Load Column Files
   BOOST_FOREACH(const ColumnDataPB& col_pb, pb.columns()) {
-    int col_id = col_pb.column_id();
+    ColumnId col_id = ColumnId(col_pb.column_id());
     blocks_by_col_id_[col_id] = BlockId::FromPB(col_pb.block());
   }
 
@@ -94,7 +94,7 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
 
   // Write Column Files
   BOOST_FOREACH(const ColumnIdToBlockIdMap::value_type& e, blocks_by_col_id_) {
-    int col_id = e.first;
+    ColumnId col_id = e.first;
     const BlockId& block_id = e.second;
 
     ColumnDataPB *col_data = pb->add_columns();
@@ -198,7 +198,7 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
       }
     }
 
-    BOOST_FOREACH(int col_id, update.col_ids_to_remove_) {
+    BOOST_FOREACH(ColumnId col_id, update.col_ids_to_remove_) {
       BlockId old = FindOrDie(blocks_by_col_id_, col_id);
       CHECK_EQ(1, blocks_by_col_id_.erase(col_id));
       removed.push_back(old);
@@ -236,13 +236,13 @@ RowSetMetadataUpdate::RowSetMetadataUpdate() {
 RowSetMetadataUpdate::~RowSetMetadataUpdate() {
 }
 
-RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceColumnId(
-    int col_id, const BlockId& block_id) {
+RowSetMetadataUpdate& RowSetMetadataUpdate::ReplaceColumnId(ColumnId col_id,
+                                                            const BlockId& block_id) {
   InsertOrDie(&cols_to_replace_, col_id, block_id);
   return *this;
 }
 
-RowSetMetadataUpdate& RowSetMetadataUpdate::RemoveColumnId(int col_id) {
+RowSetMetadataUpdate& RowSetMetadataUpdate::RemoveColumnId(ColumnId col_id) {
   col_ids_to_remove_.push_back(col_id);
   return *this;
 }

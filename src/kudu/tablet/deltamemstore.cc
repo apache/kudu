@@ -348,7 +348,7 @@ Status DMSIterator::CollectMutations(vector<Mutation *> *dst, Arena *arena) {
   return Status::OK();
 }
 
-Status DMSIterator::FilterColumnIdsAndCollectDeltas(const vector<int>& col_ids,
+Status DMSIterator::FilterColumnIdsAndCollectDeltas(const vector<ColumnId>& col_ids,
                                                     vector<DeltaKeyAndUpdate>* out,
                                                     Arena* arena) {
   LOG(DFATAL) << "Attempt to call FilterColumnIdsAndCollectDeltas on DMS" << GetStackTrace();

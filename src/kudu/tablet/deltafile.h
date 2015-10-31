@@ -193,7 +193,7 @@ class DeltaFileIterator : public DeltaIterator {
   Status ApplyUpdates(size_t col_to_apply, ColumnBlock *dst) OVERRIDE;
   Status ApplyDeletes(SelectionVector *sel_vec) OVERRIDE;
   Status CollectMutations(vector<Mutation *> *dst, Arena *arena) OVERRIDE;
-  Status FilterColumnIdsAndCollectDeltas(const std::vector<int>& col_ids,
+  Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
                                          vector<DeltaKeyAndUpdate>* out,
                                          Arena* arena) OVERRIDE;
   string ToString() const OVERRIDE;

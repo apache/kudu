@@ -412,7 +412,7 @@ TEST(TestSchema, TestCreateProjection) {
                 list_of
                 (schema_with_ids.column_id(0))
                 (schema_with_ids.column_id(1))
-                (1000) // missing column
+                (ColumnId(1000)) // missing column
                 (schema_with_ids.column_id(3)),
                 &partial_schema));
   EXPECT_EQ(Substitute("Schema [\n"

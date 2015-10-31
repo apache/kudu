@@ -265,7 +265,7 @@ class RowChangeListDecoder {
   // Append an entry to *column_ids for each column that is updated
   // in this RCL.
   // This 'consumes' the remainder of the encoded RowChangeList.
-  Status GetIncludedColumnIds(std::vector<int>* column_ids) {
+  Status GetIncludedColumnIds(std::vector<ColumnId>* column_ids) {
     column_ids->clear();
     DCHECK(is_update());
     while (HasNext()) {
@@ -320,12 +320,12 @@ class RowChangeListDecoder {
   // valid for the duration of this method, but not have been
   // previously initialized.
   static Status RemoveColumnIdsFromChangeList(const RowChangeList& src,
-                                              const std::vector<int>& column_ids,
+                                              const std::vector<ColumnId>& column_ids,
                                               RowChangeListEncoder* out);
 
   struct DecodedUpdate {
     // The updated column ID.
-    int col_id;
+    ColumnId col_id;
 
     // If true, this update sets the given column to NULL.
     bool null;

@@ -18,6 +18,7 @@
 #include <tr1/unordered_map>
 #include <vector>
 
+#include "kudu/common/schema.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/macros.h"
 
@@ -73,7 +74,7 @@ class MultiColumnWriter {
   // Return the block IDs of the written columns, keyed by column ID.
   //
   // REQUIRES: Finish() already called.
-  void GetFlushedBlocksByColumnId(std::tr1::unordered_map<int, BlockId>* ret) const;
+  void GetFlushedBlocksByColumnId(std::tr1::unordered_map<ColumnId, BlockId>* ret) const;
 
  private:
   FsManager* const fs_;

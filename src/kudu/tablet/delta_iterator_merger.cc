@@ -84,7 +84,7 @@ struct DeltaKeyUpdateComparator {
 };
 
 Status DeltaIteratorMerger::FilterColumnIdsAndCollectDeltas(
-    const vector<int>& col_ids,
+    const vector<ColumnId>& col_ids,
     vector<DeltaKeyAndUpdate>* out,
     Arena* arena) {
   BOOST_FOREACH(const shared_ptr<DeltaIterator>& iter, iters_) {

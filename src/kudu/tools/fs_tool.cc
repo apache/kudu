@@ -280,7 +280,7 @@ Status FsTool::ListBlocksInRowSet(const Schema& schema,
                                   const RowSetMetadata& rs_meta) {
   RowSetMetadata::ColumnIdToBlockIdMap col_blocks = rs_meta.GetColumnBlocksById();
   BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e, col_blocks) {
-    int col_id = e.first;
+    ColumnId col_id = e.first;
     const BlockId& block_id = e.second;
     std::cout << "Column block for column ID " << col_id;
     int col_idx = schema.find_column_by_id(col_id);
@@ -375,7 +375,7 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
 
   RowSetMetadata::ColumnIdToBlockIdMap col_blocks = rs_meta->GetColumnBlocksById();
   BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e, col_blocks) {
-    int col_id = e.first;
+    ColumnId col_id = e.first;
     const BlockId& block_id = e.second;
 
     std::cout << Indent(indent) << "Dumping column block " << block_id << " for column id "
@@ -551,7 +551,7 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
 
     RETURN_NOT_OK(delta_iter->PrepareBatch(n, DeltaIterator::PREPARE_FOR_COLLECT));
     vector<DeltaKeyAndUpdate> out;
-    RETURN_NOT_OK(delta_iter->FilterColumnIdsAndCollectDeltas(vector<int>(),
+    RETURN_NOT_OK(delta_iter->FilterColumnIdsAndCollectDeltas(vector<ColumnId>(),
                                                               &out,
                                                               &arena));
     BOOST_FOREACH(const DeltaKeyAndUpdate& upd, out) {

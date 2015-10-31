@@ -47,7 +47,7 @@ using strings::Substitute;
 ////////////////////////////////////////////////////////////
 
 static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata,
-                         int col_id,
+                         ColumnId col_id,
                          gscoped_ptr<CFileReader> *new_reader) {
   FsManager* fs = rowset_metadata->fs_manager();
   gscoped_ptr<ReadableBlock> block;
@@ -78,7 +78,7 @@ Status CFileSet::Open() {
   // later, when the first iterator seeks for the first time.
   RowSetMetadata::ColumnIdToBlockIdMap block_map = rowset_metadata_->GetColumnBlocksById();
   BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e, block_map) {
-    int col_id = e.first;
+    ColumnId col_id = e.first;
     DCHECK(!ContainsKey(readers_by_col_id_, col_id)) << "already open";
 
     gscoped_ptr<CFileReader> reader;
@@ -165,7 +165,7 @@ CFileReader* CFileSet::key_index_reader() const {
   return FindOrDie(readers_by_col_id_, key_col_id).get();
 }
 
-Status CFileSet::NewColumnIterator(int col_id, CFileReader::CacheControl cache_blocks,
+Status CFileSet::NewColumnIterator(ColumnId col_id, CFileReader::CacheControl cache_blocks,
                                    CFileIterator **iter) const {
   return FindOrDie(readers_by_col_id_, col_id)->NewIterator(iter, cache_blocks);
 }
@@ -271,7 +271,7 @@ Status CFileSet::Iterator::CreateColumnIterators(const ScanSpec* spec) {
   for (int proj_col_idx = 0;
        proj_col_idx < projection_->num_columns();
        proj_col_idx++) {
-    int col_id = projection_->column_id(proj_col_idx);
+    ColumnId col_id = projection_->column_id(proj_col_idx);
 
     if (!base_data_->has_data_for_column_id(col_id)) {
       // If we have no data for a column, most likely it was added via an ALTER

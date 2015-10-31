@@ -219,7 +219,7 @@ Status CodegenTest::Generate(const Schema* proj, gscoped_ptr<CodegenRP>* out) {
 
 Status CodegenTest::CreatePartialSchema(const vector<size_t>& col_indexes,
                                         Schema* out) {
-  vector<int> col_ids;
+  vector<ColumnId> col_ids;
   BOOST_FOREACH(size_t col_idx, col_indexes) {
     col_ids.push_back(defaults_.column_id(col_idx));
   }

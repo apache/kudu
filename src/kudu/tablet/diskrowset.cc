@@ -499,7 +499,7 @@ Status DiskRowSet::MinorCompactDeltaStores() {
 }
 
 Status DiskRowSet::MajorCompactDeltaStores() {
-  vector<int> col_ids;
+  vector<ColumnId> col_ids;
   delta_tracker_->GetColumnIdsWithUpdates(&col_ids);
 
   if (col_ids.empty()) {
@@ -509,7 +509,7 @@ Status DiskRowSet::MajorCompactDeltaStores() {
   return MajorCompactDeltaStoresWithColumnIds(col_ids);
 }
 
-Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<int>& col_ids) {
+Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<ColumnId>& col_ids) {
   TRACE_EVENT0("tablet", "DiskRowSet::MajorCompactDeltaStores");
   boost::lock_guard<Mutex> l(*delta_tracker()->compact_flush_lock());
 
@@ -537,9 +537,8 @@ Status DiskRowSet::MajorCompactDeltaStoresWithColumnIds(const vector<int>& col_i
   return Status::OK();
 }
 
-Status DiskRowSet::NewMajorDeltaCompaction(
-    const vector<int>& col_ids,
-    gscoped_ptr<MajorDeltaCompaction>* out) const {
+Status DiskRowSet::NewMajorDeltaCompaction(const vector<ColumnId>& col_ids,
+                                           gscoped_ptr<MajorDeltaCompaction>* out) const {
   DCHECK(open_);
   boost::shared_lock<rw_spinlock> lock(component_lock_.get_lock());
 
@@ -704,7 +703,7 @@ double DiskRowSet::DeltaStoresCompactionPerfImprovementScore(DeltaCompactionType
   }
 
   if (type == RowSet::MAJOR_DELTA_COMPACTION) {
-    vector<int> col_ids_with_updates;
+    vector<ColumnId> col_ids_with_updates;
     delta_tracker_->GetColumnIdsWithUpdates(&col_ids_with_updates);
     // If we have files but no updates, we don't want to major compact.
     if (!col_ids_with_updates.empty()) {

@@ -183,11 +183,11 @@ class PartitionSchema {
  private:
 
   struct RangeSchema {
-    std::vector<int32_t> column_ids;
+    std::vector<ColumnId> column_ids;
   };
 
   struct HashBucketSchema {
-    std::vector<int32_t> column_ids;
+    std::vector<ColumnId> column_ids;
     int32_t num_buckets;
     uint32_t seed;
   };
@@ -195,13 +195,13 @@ class PartitionSchema {
   // Encodes the specified columns of a row into lexicographic sort-order
   // preserving format.
   static Status EncodeColumns(const KuduPartialRow& row,
-                              const std::vector<int32_t>& column_ids,
+                              const std::vector<ColumnId>& column_ids,
                               std::string* buf);
 
   // Encodes the specified columns of a row into lexicographic sort-order
   // preserving format.
   static Status EncodeColumns(const ConstContiguousRow& row,
-                              const std::vector<int32_t>& column_ids,
+                              const std::vector<ColumnId>& column_ids,
                               std::string* buf);
 
   // Returns the hash bucket of the encoded hash column. The encoded columns must match the

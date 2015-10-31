@@ -123,8 +123,8 @@ class TestCompaction : public KuduRowSetTest {
   void UpdateRows(RowSet *rowset, int n_rows, int delta, int32_t new_val) {
     char keybuf[256];
     faststring update_buf;
-    size_t col_id = schema_.column_id(schema_.find_column("val"));
-    size_t nullable_col_id = schema_.column_id(schema_.find_column("nullable_val"));
+    ColumnId col_id = schema_.column_id(schema_.find_column("val"));
+    ColumnId nullable_col_id = schema_.column_id(schema_.find_column("nullable_val"));
     for (uint32_t i = 0; i < n_rows; i++) {
       SCOPED_TRACE(i);
       ScopedTransaction tx(&mvcc_);

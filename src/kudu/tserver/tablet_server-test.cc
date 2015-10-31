@@ -860,7 +860,7 @@ TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
   {
     vector<shared_ptr<tablet::RowSet> > rsets;
     tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-    vector<int> col_ids = boost::assign::list_of
+    vector<ColumnId> col_ids = boost::assign::list_of
       (tablet_peer_->tablet()->schema()->column_id(1))
       (tablet_peer_->tablet()->schema()->column_id(2));
     ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]))
@@ -895,7 +895,7 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
   {
     vector<shared_ptr<tablet::RowSet> > rsets;
     tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-    vector<int> col_ids = boost::assign::list_of
+    vector<ColumnId> col_ids = boost::assign::list_of
       (tablet_peer_->tablet()->schema()->column_id(1))
       (tablet_peer_->tablet()->schema()->column_id(2));
     ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]));

@@ -163,7 +163,7 @@ class DeltaIterator {
   // The delta objects will be allocated out the provided Arena which
   // must be non-NULL.
   // Must have called PrepareBatch() with flag = PREPARE_FOR_COLLECT.
-  virtual Status FilterColumnIdsAndCollectDeltas(const std::vector<int>& col_ids,
+  virtual Status FilterColumnIdsAndCollectDeltas(const std::vector<ColumnId>& col_ids,
                                                  vector<DeltaKeyAndUpdate>* out,
                                                  Arena* arena) = 0;
 

@@ -876,7 +876,7 @@ TableInfo *CatalogManager::CreateTableInfo(const CreateTableRequestPB& req,
   metadata->set_state(SysTablesEntryPB::PREPARING);
   metadata->set_name(req.name());
   metadata->set_version(0);
-  metadata->set_next_column_id(schema.max_col_id() + 1);
+  metadata->set_next_column_id(ColumnId(schema.max_col_id() + 1));
   metadata->set_num_replicas(req.num_replicas());
   // Use the Schema object passed in, since it has the column IDs already assigned,
   // whereas the user request PB does not.
@@ -986,14 +986,14 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
 static Status ApplyAlterSteps(const SysTablesEntryPB& current_pb,
                               const AlterTableRequestPB* req,
                               Schema* new_schema,
-                              int32_t* next_col_id) {
+                              ColumnId* next_col_id) {
   const SchemaPB& current_schema_pb = current_pb.schema();
   Schema cur_schema;
   RETURN_NOT_OK(SchemaFromPB(current_schema_pb, &cur_schema));
 
   SchemaBuilder builder(cur_schema);
   if (current_pb.has_next_column_id()) {
-    builder.set_next_column_id(current_pb.next_column_id());
+    builder.set_next_column_id(ColumnId(current_pb.next_column_id()));
   }
 
   BOOST_FOREACH(const AlterTableRequestPB::Step& step, req->alter_schema_steps()) {
@@ -1100,7 +1100,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 
   // 2. Calculate new schema for the on-disk state, not persisted yet
   Schema new_schema;
-  int32_t next_col_id = l.data().pb.next_column_id();
+  ColumnId next_col_id = ColumnId(l.data().pb.next_column_id());
   if (req->alter_schema_steps_size()) {
     TRACE("Apply alter schema");
     Status s = ApplyAlterSteps(l.data().pb, req, &new_schema, &next_col_id);

@@ -84,7 +84,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
                          rowid_t *rowid, ProbeStats* stats) const;
 
   // Return true if there exists a CFile for the given column ID.
-  bool has_data_for_column_id(int col_id) const {
+  bool has_data_for_column_id(ColumnId col_id) const {
     return ContainsKey(readers_by_col_id_, col_id);
   }
 
@@ -100,7 +100,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
   Status OpenAdHocIndexReader();
   Status LoadMinMaxKeys();
 
-  Status NewColumnIterator(int col_id, CFileReader::CacheControl cache_blocks,
+  Status NewColumnIterator(ColumnId col_id, CFileReader::CacheControl cache_blocks,
                            CFileIterator **iter) const;
   Status NewKeyIterator(CFileIterator **iter) const;
 
