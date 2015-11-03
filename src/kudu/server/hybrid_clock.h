@@ -177,7 +177,9 @@ class HybridClock : public Clock {
   // For testing purposes only.
   uint64_t mock_clock_max_error_usec_;
 
+#if !defined(__APPLE__)
   uint64_t divisor_;
+#endif
 
   double tolerance_adjustment_;
 

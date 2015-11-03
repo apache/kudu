@@ -39,6 +39,10 @@ TEST_F(DebugUtilTest, TestStackTrace) {
   ASSERT_STR_CONTAINS(trace, "kudu::DebugUtilTest_TestStackTrace_Test::TestBody");
 }
 
+// DumpThreadStack is only supported on Linux, since the implementation relies
+// on the tgkill syscall which is not portable.
+#if defined(__linux__)
+
 namespace {
 void SleeperThread(CountDownLatch* l) {
   // We use an infinite loop around WaitFor() instead of a normal Wait()
@@ -57,10 +61,6 @@ bool IsSignalHandlerRegistered(int signum) {
   return cur_action.sa_handler != SIG_DFL;
 }
 } // anonymous namespace
-
-// DumpThreadStack is only supported on Linux, since the implementation relies
-// on the tgkill syscall which is not portable.
-#if defined(__linux__)
 
 TEST_F(DebugUtilTest, TestStackTraceInvalidTid) {
   string s = DumpThreadStack(1);

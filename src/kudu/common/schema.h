@@ -296,6 +296,9 @@ class ContiguousRow;
 // Schema::swap() or Schema::Reset() rather than returning by value.
 class Schema {
  public:
+
+  static const int kColumnNotFound = -1;
+
   Schema()
     : num_key_columns_(0),
       name_to_index_bytes_(0),
@@ -717,10 +720,6 @@ class Schema {
     }
     return ret;
   }
-
-  enum {
-    kColumnNotFound = -1
-  };
 
   // Returns the memory usage of this object without the object itself. Should
   // be used when embedded inside another object.

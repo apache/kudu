@@ -131,12 +131,14 @@ const uint64_t HybridClock::kNanosPerSec = 1000000;
 const double HybridClock::kAdjtimexScalingFactor = 65536;
 
 HybridClock::HybridClock()
-    : divisor_(1),
+    : mock_clock_time_usec_(0),
+      mock_clock_max_error_usec_(0),
+#if !defined(__APPLE__)
+      divisor_(1),
+#endif
       tolerance_adjustment_(1),
       last_usec_(0),
       next_logical_(0),
-      mock_clock_time_usec_(0),
-      mock_clock_max_error_usec_(0),
       state_(kNotInitialized) {
 }
 
