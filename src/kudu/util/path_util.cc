@@ -22,6 +22,10 @@
 
 #include "kudu/gutil/gscoped_ptr.h"
 
+#if defined(__APPLE__)
+#include "kudu/util/locks.h"
+#endif // defined(__APPLE__)
+
 using std::string;
 
 namespace kudu {
@@ -41,7 +45,11 @@ std::string JoinPathSegments(const std::string &a,
 
 string DirName(const string& path) {
   gscoped_ptr<char[], FreeDeleter> path_copy(strdup(path.c_str()));
-  return dirname(path_copy.get());
+#if defined(__APPLE__)
+  static Mutex lock;
+  lock_guard<Mutex> l(&lock);
+#endif // defined(__APPLE__)
+  return ::dirname(path_copy.get());
 }
 
 string BaseName(const string& path) {
