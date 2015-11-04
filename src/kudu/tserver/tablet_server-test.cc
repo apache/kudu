@@ -228,7 +228,11 @@ TEST_F(TabletServerTest, TestWebPages) {
   ASSERT_OK(c.FetchURL(Substitute("http://$0/pprof/contention?seconds=1", addr),
                        &buf));
   ASSERT_STR_CONTAINS(buf.ToString(), "discarded samples = 0");
+#if defined(__linux__)
+  // The executable name appears as part of the dump of /proc/self/maps, which
+  // only exists on Linux.
   ASSERT_STR_CONTAINS(buf.ToString(), "tablet_server-test");
+#endif
 }
 
 TEST_F(TabletServerTest, TestInsert) {

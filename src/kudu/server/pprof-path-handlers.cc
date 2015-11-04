@@ -175,9 +175,12 @@ static void PprofContentionHandler(const Webserver::WebRequest& req, stringstrea
   // output.
   *output << "discarded samples = " << discarded_samples << std::endl;
 
+#if defined(__linux__)
+  // procfs only exists on Linux.
   faststring maps;
   ReadFileToString(Env::Default(), "/proc/self/maps", &maps);
   *output << maps.ToString();
+#endif // defined(__linux__)
 }
 
 
