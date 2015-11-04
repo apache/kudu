@@ -215,7 +215,11 @@ target_link_libraries(kudu_client_test_util
 
 # Tests
 
-ADD_KUDU_TEST(client_symbol-test.sh)
+if (NOT APPLE)
+  # The OS X system compiler does not support source symbol maps, so the client
+  # leaks internal symbols globally.
+  ADD_KUDU_TEST(client_symbol-test.sh)
+endif()
 
 # The samples are never built with ASAN/TSAN.
 if(NOT "${KUDU_USE_ASAN}" AND NOT "${KUDU_USE_TSAN}")
