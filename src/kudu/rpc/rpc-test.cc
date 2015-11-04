@@ -401,10 +401,16 @@ TEST_F(TestRpc, TestServerShutsDown) {
     // - Reactor shuts down connection
     // - Reactor sees the 2 remaining calls, makes a new connection
     // - Because the socket is shut down, gets ECONNREFUSED.
+    //
+    // EINVAL is possible if the controller socket had already disconnected by
+    // the time it trys to set the SO_SNDTIMEO socket option as part of the
+    // normal blocking SASL handshake.
     ASSERT_TRUE(s.posix_code() == EPIPE ||
                 s.posix_code() == ECONNRESET ||
                 s.posix_code() == ESHUTDOWN ||
-                s.posix_code() == ECONNREFUSED);
+                s.posix_code() == ECONNREFUSED ||
+                s.posix_code() == EINVAL)
+      << "Unexpected status: " << s.ToString();
   }
 }
 
