@@ -461,15 +461,15 @@ TBLPROPERTIES(
 +
 The `my_first_table` table is created within the `impala_kudu` database. To refer
 to this database in the future, without using a specific `USE` statement, you can
-refer to the table using `<database>:<table>` syntax. For example, to specify the
+refer to the table using `<database>.<table>` syntax. For example, to specify the
 `my_first_table` table in database `impala_kudu`, as opposed to any other table with
 the same name in another database, use `impala_kudu:my_first_table`. This also applies
 to `INSERT`, `UPDATE`, `DELETE`, and `DROP` statements.
 
 WARNING: Currently, Kudu does not encode the Impala database into the table name
 in any way. This means that even though you can create Kudu tables within Impala databases,
-the actual Kudu tables need to be unique within Kudu. For example, if you create `database_1:my_kudu_table`
-and `database_2:my_kudu_table`, you will have a naming collision within Kudu, even
+the actual Kudu tables need to be unique within Kudu. For example, if you create `database_1.my_kudu_table`
+and `database_2.my_kudu_table`, you will have a naming collision within Kudu, even
 though this would not cause a problem in Impala. This can be resolved by specifying
 a unique Kudu table name in the `kudu.table_name` property.
 
