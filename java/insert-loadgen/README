@@ -1,0 +1,17 @@
+Random insert load generator. This will insert as fast as it can using
+AUTO_BACKGROUND_FLUSH with the specified number of threads. All fields are
+randomized, and insert failures (including errors from collisions) are ignored.
+
+To build and run, do the following:
+
+$ mvn package
+$ java -jar target/kudu-insert-loadgen-0.1-SNAPSHOT.jar kudu_master_host kudu_table_name num_threads
+
+For example, if you are running the Quickstart VM with the host name
+"quickstart.cloudera", then you can use:
+
+$ java -jar target/kudu-insert-loadgen-0.1-SNAPSHOT.jar quickstart.cloudera test_table 16
+
+Note: This program will not create the "test_table" table. You must do that
+via other means, such as through impala-shell or using the create-demo-table
+program included in the Kudu source tree.
