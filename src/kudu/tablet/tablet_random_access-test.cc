@@ -27,7 +27,7 @@
 
 DEFINE_int32(keyspace_size, 3000, "number of unique row keys to insert/mutate");
 DEFINE_int32(runtime_seconds, 1, "number of seconds to run the test");
-DEFINE_int32(sleep_between_flushes_ms, 100,
+DEFINE_int32(sleep_between_background_ops_ms, 100,
              "number of milliseconds to sleep between flushing or compacting");
 DEFINE_int32(update_delete_ratio, 4, "ratio of update:delete when mutating existing rows");
 
@@ -43,6 +43,8 @@ enum TestOp {
   TEST_FLUSH_OPS,
   TEST_FLUSH_TABLET,
   TEST_FLUSH_DELTAS,
+  TEST_MINOR_COMPACT_DELTAS,
+  TEST_MAJOR_COMPACT_DELTAS,
   TEST_COMPACT_TABLET,
   TEST_NUM_OP_TYPES // max value for enum
 };
@@ -58,6 +60,8 @@ const char* TestOp_names[] = {
   "TEST_FLUSH_OPS",
   "TEST_FLUSH_TABLET",
   "TEST_FLUSH_DELTAS",
+  "TEST_MINOR_COMPACT_DELTAS",
+  "TEST_MAJOR_COMPACT_DELTAS",
   "TEST_COMPACT_TABLET"
 };
 
@@ -77,7 +81,7 @@ class TestRandomAccess : public KuduTabletTest {
       done_(1) {
     OverrideFlagForSlowTests("keyspace_size", "30000");
     OverrideFlagForSlowTests("runtime_seconds", "10");
-    OverrideFlagForSlowTests("sleep_between_flushes_ms", "1000");
+    OverrideFlagForSlowTests("sleep_between_background_ops_ms", "1000");
 
     // Set a small block size to increase chances that a single update will span
     // multiple delta blocks.
@@ -143,12 +147,21 @@ class TestRandomAccess : public KuduTabletTest {
   }
 
   // Wakes up periodically to perform a flush or compaction.
-  void FlushThread() {
+  void BackgroundOpThread() {
     int n_flushes = 0;
-    while (!done_.WaitFor(MonoDelta::FromMilliseconds(FLAGS_sleep_between_flushes_ms))) {
+    while (!done_.WaitFor(MonoDelta::FromMilliseconds(FLAGS_sleep_between_background_ops_ms))) {
       CHECK_OK(tablet()->Flush());
-      if (++n_flushes % 3 == 0) {
-        CHECK_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+      ++n_flushes;
+      switch (n_flushes % 3) {
+        case 0:
+          CHECK_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
+          break;
+        case 1:
+          CHECK_OK(tablet()->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION));
+          break;
+        case 2:
+          CHECK_OK(tablet()->CompactWorstDeltas(RowSet::MINOR_DELTA_COMPACTION));
+          break;
       }
     }
   }
@@ -246,7 +259,7 @@ class TestRandomAccess : public KuduTabletTest {
 TEST_F(TestRandomAccess, Test) {
   scoped_refptr<Thread> flush_thread;
   CHECK_OK(Thread::Create("test", "flush",
-                          boost::bind(&TestRandomAccess::FlushThread, this),
+                          boost::bind(&TestRandomAccess::BackgroundOpThread, this),
                           &flush_thread));
 
   DoRandomBatches();
@@ -326,6 +339,12 @@ void GenerateTestCase(vector<TestOp>* ops, int len) {
           data_in_dms = false;
         }
         break;
+      case TEST_MAJOR_COMPACT_DELTAS:
+        ops->push_back(TEST_MAJOR_COMPACT_DELTAS);
+        break;
+      case TEST_MINOR_COMPACT_DELTAS:
+        ops->push_back(TEST_MINOR_COMPACT_DELTAS);
+        break;
       default:
         LOG(FATAL);
     }
@@ -382,6 +401,12 @@ void TestRandomAccess::RunFuzzCase(const vector<TestOp>& test_ops,
         break;
       case TEST_FLUSH_DELTAS:
         ASSERT_OK(tablet()->FlushBiggestDMS());
+        break;
+      case TEST_MAJOR_COMPACT_DELTAS:
+        ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MAJOR_DELTA_COMPACTION));
+        break;
+      case TEST_MINOR_COMPACT_DELTAS:
+        ASSERT_OK(tablet()->CompactWorstDeltas(RowSet::MINOR_DELTA_COMPACTION));
         break;
       case TEST_COMPACT_TABLET:
         ASSERT_OK(tablet()->Compact(Tablet::FORCE_COMPACT_ALL));

@@ -90,7 +90,10 @@ Status DeltaIteratorMerger::FilterColumnIdsAndCollectDeltas(
   BOOST_FOREACH(const shared_ptr<DeltaIterator>& iter, iters_) {
     RETURN_NOT_OK(iter->FilterColumnIdsAndCollectDeltas(col_ids, out, arena));
   }
-  std::sort(out->begin(), out->end(), DeltaKeyUpdateComparator());
+  // We use a stable sort here since an input may include multiple deltas for the
+  // same row at the same timestamp, in the case of a user batch which had several
+  // mutations for the same row. Stable sort preserves the user-provided ordering.
+  std::stable_sort(out->begin(), out->end(), DeltaKeyUpdateComparator());
   return Status::OK();
 }
 
