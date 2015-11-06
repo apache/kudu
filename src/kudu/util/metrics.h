@@ -130,7 +130,7 @@
 //    will be plumbed through into other subsystems that want to register server-level
 //    metrics.
 //
-//   metric_entity_ = METRIC_ENTITY_server.Instantiate(registry_, "some server identifier)");
+//   metric_entity_ = METRIC_ENTITY_server.Instantiate(&registry_, "some server identifier)");
 //
 // 3) At the top of your .cc file where you want to emit a metric, define the metric prototype:
 //
