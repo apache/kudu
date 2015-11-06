@@ -541,8 +541,6 @@ IgnoreResult(const Callback<T>& data) {
   return internal::IgnoreResultHelper<Callback<T> >(data);
 }
 
-BASE_EXPORT void DoNothing();
-
 template<typename T>
 void DeletePointer(T* obj) {
   delete obj;
