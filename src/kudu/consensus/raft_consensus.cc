@@ -1839,7 +1839,7 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
                                                   const Status& status) {
   OperationType op_type = round->replicate_msg()->op_type();
   string op_type_str = OperationType_Name(op_type);
-  CHECK(IsConsensusOnlyOperation(op_type)) << "Expected op type: " << op_type_str;
+  CHECK(IsConsensusOnlyOperation(op_type)) << "Unexpected op type: " << op_type_str;
   if (!status.ok()) {
     // TODO: Do something with the status on failure?
     LOG(INFO) << state_->LogPrefixThreadSafe() << op_type_str << " replication failed: "
@@ -1852,6 +1852,7 @@ void RaftConsensus::NonTxRoundReplicationFinished(ConsensusRound* round,
   gscoped_ptr<CommitMsg> commit_msg(new CommitMsg);
   commit_msg->set_op_type(round->replicate_msg()->op_type());
   *commit_msg->mutable_commited_op_id() = round->id();
+
   WARN_NOT_OK(log_->AsyncAppendCommit(commit_msg.Pass(), Bind(&DoNothingStatusCB)),
               "Unable to append commit message");
   client_cb.Run(status);
