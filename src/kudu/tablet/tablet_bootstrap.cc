@@ -75,6 +75,7 @@ using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusRound;
+using consensus::MinimumOpId;
 using consensus::OperationType;
 using consensus::OperationType_Name;
 using consensus::OpId;
@@ -462,8 +463,8 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
     RETURN_NOT_OK(FinishBootstrap("No bootstrap required, opened a new log",
                                   rebuilt_log,
                                   rebuilt_tablet));
-    consensus_info->last_id = consensus::MinimumOpId();
-    consensus_info->last_committed_id = consensus::MinimumOpId();
+    consensus_info->last_id = MinimumOpId();
+    consensus_info->last_committed_id = MinimumOpId();
     return Status::OK();
   }
 
@@ -652,10 +653,9 @@ typedef std::map<int64_t, LogEntryPB*> OpIndexToEntryMap;
 
 // State kept during replay.
 struct ReplayState {
-  ReplayState() {
-    prev_op_id.set_term(0);
-    prev_op_id.set_index(0);
-    committed_op_id = prev_op_id;
+  ReplayState()
+    : prev_op_id(MinimumOpId()),
+      committed_op_id(MinimumOpId()) {
   }
 
   ~ReplayState() {
@@ -664,7 +664,7 @@ struct ReplayState {
   }
 
   // Return true if 'b' is allowed to immediately follow 'a' in the log.
-  static bool valid_sequence(const OpId& a, const OpId& b) {
+  static bool IsValidSequence(const OpId& a, const OpId& b) {
     if (a.term() == 0 && a.index() == 0) {
       // Not initialized - can start with any opid.
       return true;
@@ -683,18 +683,17 @@ struct ReplayState {
   // Return a Corruption status if 'id' seems to be out-of-sequence in the log.
   Status CheckSequentialReplicateId(const ReplicateMsg& msg) {
     DCHECK(msg.has_id());
-    if (PREDICT_FALSE(!valid_sequence(prev_op_id, msg.id()))) {
-      string op_desc = Substitute("$0,$1 REPLICATE (Type: $2)",
-                                  msg.id().term(),
-                                  msg.id().index(),
+    if (PREDICT_FALSE(!IsValidSequence(prev_op_id, msg.id()))) {
+      string op_desc = Substitute("$0 REPLICATE (Type: $1)",
+                                  OpIdToString(msg.id()),
                                   OperationType_Name(msg.op_type()));
       return Status::Corruption(
         Substitute("Unexpected opid following opid $0. Operation: $1",
-                   prev_op_id.ShortDebugString(),
+                   OpIdToString(prev_op_id),
                    op_desc));
     }
 
-    prev_op_id.CopyFrom(msg.id());
+    prev_op_id = msg.id();
     return Status::OK();
   }
 
@@ -703,7 +702,6 @@ struct ReplayState {
       committed_op_id = id;
     }
   }
-
 
   void AddEntriesToStrings(const OpIndexToEntryMap& entries, vector<string>* strings) const {
     BOOST_FOREACH(const OpIndexToEntryMap::value_type& map_entry, entries) {
