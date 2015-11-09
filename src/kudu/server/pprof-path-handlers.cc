@@ -122,13 +122,12 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req, stringstrea
   if (it != req.parsed_args.end()) {
     seconds = atoi(it->second.c_str());
   }
-  ostringstream tmp_prof_file_name;
   // Build a temporary file name that is hopefully unique.
-  tmp_prof_file_name << "/tmp/kudu_cpu_profile." << getpid() << "." << rand();
-  ProfilerStart(tmp_prof_file_name.str().c_str());
+  string tmp_prof_file_name = strings::Substitute("/tmp/kudu_cpu_profile/$0.$1", getpid(), rand());
+  ProfilerStart(tmp_prof_file_name.c_str());
   SleepFor(MonoDelta::FromSeconds(seconds));
   ProfilerStop();
-  ifstream prof_file(tmp_prof_file_name.str().c_str(), std::ios::in);
+  ifstream prof_file(tmp_prof_file_name.c_str(), std::ios::in);
   if (!prof_file.is_open()) {
     (*output) << "Unable to open cpu profile: " << tmp_prof_file_name;
     return;
