@@ -584,6 +584,7 @@ public class AsyncKuduClient implements AutoCloseable {
       // try to re-connect and check if the scanner is still good.
       return sendRpcToTablet(next_request);
     }
+    next_request.attempt++;
     client.sendRpc(next_request);
     return d;
   }
@@ -612,6 +613,7 @@ public class AsyncKuduClient implements AutoCloseable {
     }
     final KuduRpc<AsyncKuduScanner.Response>  close_request = scanner.getCloseRequest();
     final Deferred<AsyncKuduScanner.Response> d = close_request.getDeferred();
+    close_request.attempt++;
     client.sendRpc(close_request);
     return d;
   }
@@ -1264,6 +1266,7 @@ public class AsyncKuduClient implements AutoCloseable {
     GetMasterRegistrationRequest rpc = new GetMasterRegistrationRequest(masterTable);
     rpc.setTimeoutMillis(defaultAdminOperationTimeoutMs);
     Deferred<GetMasterRegistrationResponse> d = rpc.getDeferred();
+    rpc.attempt++;
     masterClient.sendRpc(rpc);
     return d;
   }
