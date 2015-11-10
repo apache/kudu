@@ -167,14 +167,14 @@ Status ParseAddressList(const std::string& addr_list,
     // Only add the unique ones -- the user may have specified
     // some IP addresses in multiple ways
     BOOST_FOREACH(const Sockaddr& addr, this_addresses) {
-      if (!InsertIfNotPresent(&uniqued, addr)) {
+      if (InsertIfNotPresent(&uniqued, addr)) {
+        addresses->push_back(addr);
+      } else {
         LOG(INFO) << "Address " << addr.ToString() << " for " << host_port.ToString()
                   << " duplicates an earlier resolved entry.";
       }
     }
   }
-
-  std::copy(uniqued.begin(), uniqued.end(), std::back_inserter(*addresses));
   return Status::OK();
 }
 

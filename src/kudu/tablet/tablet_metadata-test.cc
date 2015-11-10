@@ -90,5 +90,6 @@ TEST_F(TestTabletMetadata, TestLoadFromSuperBlock) {
             << superblock_pb_1.DebugString();
 }
 
+
 } // namespace tablet
 } // namespace kudu

@@ -121,8 +121,7 @@ Status MultiColumnWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* clos
   return Status::OK();
 }
 
-void MultiColumnWriter::GetFlushedBlocksByColumnId(
-    std::tr1::unordered_map<ColumnId, BlockId>* ret) const {
+void MultiColumnWriter::GetFlushedBlocksByColumnId(std::map<ColumnId, BlockId>* ret) const {
   CHECK(finished_);
   ret->clear();
   for (int i = 0; i < schema_->num_columns(); i++) {
