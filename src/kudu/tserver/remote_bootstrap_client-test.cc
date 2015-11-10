@@ -19,6 +19,8 @@
 #include "kudu/tserver/remote_bootstrap_client.h"
 #include "kudu/util/env_util.h"
 
+using std::tr1::shared_ptr;
+
 namespace kudu {
 namespace tserver {
 

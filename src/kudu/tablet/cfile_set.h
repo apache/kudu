@@ -45,7 +45,6 @@ using kudu::cfile::BloomFileReader;
 using kudu::cfile::CFileIterator;
 using kudu::cfile::CFileReader;
 using kudu::cfile::ColumnIterator;
-using std::tr1::shared_ptr;
 
 // Set of CFiles which make up the base data for a single rowset
 //
@@ -55,7 +54,7 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
  public:
   class Iterator;
 
-  explicit CFileSet(const shared_ptr<RowSetMetadata>& rowset_metadata);
+  explicit CFileSet(const std::tr1::shared_ptr<RowSetMetadata>& rowset_metadata);
 
   Status Open();
 
@@ -110,13 +109,13 @@ class CFileSet : public std::tr1::enable_shared_from_this<CFileSet> {
 
   const Schema &tablet_schema() const { return rowset_metadata_->tablet_schema(); }
 
-  shared_ptr<RowSetMetadata> rowset_metadata_;
+  std::tr1::shared_ptr<RowSetMetadata> rowset_metadata_;
 
   std::string min_encoded_key_;
   std::string max_encoded_key_;
 
   // Map of column ID to reader. These are lazily initialized as needed.
-  typedef std::tr1::unordered_map<int, shared_ptr<CFileReader> > ReaderMap;
+  typedef std::tr1::unordered_map<int, std::tr1::shared_ptr<CFileReader> > ReaderMap;
   ReaderMap readers_by_col_id_;
 
   // A file reader for an ad-hoc index, i.e. an index that sits in its own file
@@ -175,7 +174,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   friend class CFileSet;
 
   // 'projection' must remain valid for the lifetime of this object.
-  Iterator(const shared_ptr<CFileSet const> &base_data,
+  Iterator(const std::tr1::shared_ptr<CFileSet const> &base_data,
            const Schema *projection)
     : base_data_(base_data),
       projection_(projection),
@@ -198,7 +197,7 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   // Prepare the given column if not already prepared.
   Status PrepareColumn(size_t col_idx);
 
-  const shared_ptr<CFileSet const> base_data_;
+  const std::tr1::shared_ptr<CFileSet const> base_data_;
   const Schema* projection_;
 
   // Iterator for the key column in the underlying data.

@@ -17,6 +17,7 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <tr1/memory>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
@@ -40,10 +41,12 @@
 
 METRIC_DECLARE_entity(tablet);
 
+using std::string;
+using std::tr1::shared_ptr;
+
 namespace kudu {
 namespace tserver {
 
-using std::string;
 using consensus::ConsensusMetadata;
 using consensus::OpId;
 using consensus::RaftConfigPB;

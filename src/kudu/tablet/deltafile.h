@@ -43,8 +43,6 @@ class BinaryPlainBlockDecoder;
 
 namespace tablet {
 
-using std::tr1::shared_ptr;
-
 class DeltaFileIterator;
 class DeltaKey;
 template<DeltaType Type>
@@ -157,7 +155,7 @@ class DeltaFileReader : public DeltaStore,
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileReader);
 
-  const shared_ptr<cfile::CFileReader> &cfile_reader() const {
+  const std::tr1::shared_ptr<cfile::CFileReader> &cfile_reader() const {
     return reader_;
   }
 
@@ -170,7 +168,7 @@ class DeltaFileReader : public DeltaStore,
 
   Status ReadDeltaStats();
 
-  shared_ptr<cfile::CFileReader> reader_;
+  std::tr1::shared_ptr<cfile::CFileReader> reader_;
   gscoped_ptr<DeltaStats> delta_stats_;
 
   const BlockId block_id_;

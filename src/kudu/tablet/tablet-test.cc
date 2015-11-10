@@ -28,11 +28,13 @@
 #include "kudu/util/slice.h"
 #include "kudu/util/test_macros.h"
 
+using std::tr1::unordered_set;
+using std::tr1::shared_ptr;
+
 namespace kudu {
 namespace tablet {
 
 using fs::ReadableBlock;
-using std::tr1::unordered_set;
 
 DEFINE_int32(testflush_num_inserts, 1000,
              "Number of rows inserted in TestFlush");

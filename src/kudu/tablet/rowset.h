@@ -16,6 +16,7 @@
 
 #include <boost/thread/mutex.hpp>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/cfile/cfile_util.h"
@@ -120,7 +121,7 @@ class RowSet {
   virtual boost::mutex *compact_flush_lock() = 0;
 
   // Returns the metadata associated with this rowset.
-  virtual shared_ptr<RowSetMetadata> metadata() = 0;
+  virtual std::tr1::shared_ptr<RowSetMetadata> metadata() = 0;
 
   // Get the size of the delta's MemStore
   virtual size_t DeltaMemStoreSize() const = 0;
@@ -162,7 +163,7 @@ class RowSet {
 };
 
 // Used often enough, may as well typedef it.
-typedef vector<shared_ptr<RowSet> > RowSetVector;
+typedef vector<std::tr1::shared_ptr<RowSet> > RowSetVector;
 // Structure which caches an encoded and hashed key, suitable
 // for probing against rowsets.
 class RowSetKeyProbe {
@@ -279,7 +280,7 @@ class DuplicatingRowSet : public RowSet {
 
   virtual Status DebugDump(vector<string> *lines = NULL) OVERRIDE;
 
-  shared_ptr<RowSetMetadata> metadata() OVERRIDE;
+  std::tr1::shared_ptr<RowSetMetadata> metadata() OVERRIDE;
 
   // A flush-in-progress rowset should never be selected for compaction.
   boost::mutex *compact_flush_lock() OVERRIDE {

@@ -24,10 +24,10 @@
 
 DECLARE_int32(cfile_default_block_size);
 
+using std::tr1::shared_ptr;
+
 namespace kudu {
 namespace tablet {
-
-using std::tr1::shared_ptr;
 
 class TestCFileSet : public KuduRowSetTest {
  public:

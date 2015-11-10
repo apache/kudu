@@ -39,7 +39,6 @@
 using std::allocator;
 
 namespace kudu {
-using std::tr1::shared_ptr;
 
 template<bool THREADSAFE> struct ArenaTraits;
 
@@ -182,7 +181,7 @@ class ArenaBase {
   }
 
   BufferAllocator* const buffer_allocator_;
-  vector<shared_ptr<Component> > arena_;
+  vector<std::tr1::shared_ptr<Component> > arena_;
 
   // The current component to allocate from.
   // Use AcquireLoadCurrent and ReleaseStoreCurrent to load/store.

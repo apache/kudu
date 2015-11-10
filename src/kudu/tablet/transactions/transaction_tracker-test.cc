@@ -11,9 +11,10 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
-#include <vector>
 
 #include <gtest/gtest.h>
+#include <tr1/memory>
+#include <vector>
 
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/tablet/transactions/transaction_driver.h"
@@ -25,8 +26,6 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-using std::vector;
-
 DECLARE_int64(tablet_transaction_memory_limit_mb);
 
 METRIC_DECLARE_entity(tablet);
@@ -35,6 +34,9 @@ METRIC_DECLARE_gauge_uint64(all_transactions_inflight);
 METRIC_DECLARE_gauge_uint64(write_transactions_inflight);
 METRIC_DECLARE_gauge_uint64(alter_schema_transactions_inflight);
 METRIC_DECLARE_counter(transaction_memory_pressure_rejections);
+
+using std::vector;
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace tablet {

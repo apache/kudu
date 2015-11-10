@@ -15,15 +15,12 @@
 #define KUDU_CFILE_COMPRESSION_CODEC_H
 
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/cfile/cfile.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
-
-using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace cfile {

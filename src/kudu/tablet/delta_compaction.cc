@@ -34,6 +34,8 @@
 #include "kudu/tablet/multi_column_writer.h"
 #include "kudu/tablet/mvcc.h"
 
+using std::tr1::shared_ptr;
+
 namespace kudu {
 
 using cfile::CFileReader;

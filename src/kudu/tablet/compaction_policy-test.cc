@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
+#include <tr1/memory>
 #include <tr1/unordered_set>
 
 #include "kudu/util/test_util.h"
@@ -21,6 +22,7 @@
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/tablet/compaction_policy.h"
 
+using std::tr1::shared_ptr;
 using std::tr1::unordered_set;
 
 namespace kudu {

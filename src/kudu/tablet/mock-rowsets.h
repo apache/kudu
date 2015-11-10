@@ -15,6 +15,7 @@
 #define KUDU_TABLET_MOCK_ROWSETS_H
 
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -57,11 +58,11 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
-  virtual string ToString() const OVERRIDE {
+  virtual std::string ToString() const OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return "";
   }
-  virtual Status DebugDump(vector<string> *lines = NULL) OVERRIDE {
+  virtual Status DebugDump(vector<std::string> *lines = NULL) OVERRIDE {
     LOG(FATAL) << "Unimplemented";
     return Status::OK();
   }
@@ -77,9 +78,9 @@ class MockRowSet : public RowSet {
     LOG(FATAL) << "Unimplemented";
     return NULL;
   }
-  virtual shared_ptr<RowSetMetadata> metadata() OVERRIDE {
+  virtual std::tr1::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
     LOG(FATAL) << "Unimplemented";
-    return shared_ptr<RowSetMetadata>(
+    return std::tr1::shared_ptr<RowSetMetadata>(
       reinterpret_cast<RowSetMetadata *>(NULL));
   }
 
@@ -122,7 +123,7 @@ class MockRowSet : public RowSet {
 // Mock which implements GetBounds() with constant provided bonuds.
 class MockDiskRowSet : public MockRowSet {
  public:
-  MockDiskRowSet(string first_key, string last_key, int size = 1000000)
+  MockDiskRowSet(std::string first_key, std::string last_key, int size = 1000000)
     : first_key_(first_key),
       last_key_(last_key),
       size_(size) {
@@ -146,8 +147,8 @@ class MockDiskRowSet : public MockRowSet {
   }
 
  private:
-  const string first_key_;
-  const string last_key_;
+  const std::string first_key_;
+  const std::string last_key_;
   const uint64_t size_;
 };
 
@@ -160,8 +161,8 @@ class MockMemRowSet : public MockRowSet {
   }
 
  private:
-  const string first_key_;
-  const string last_key_;
+  const std::string first_key_;
+  const std::string last_key_;
 };
 
 } // namespace tablet

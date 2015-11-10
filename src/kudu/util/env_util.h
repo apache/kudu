@@ -23,21 +23,18 @@
 namespace kudu {
 namespace env_util {
 
-using std::string;
-using std::tr1::shared_ptr;
-
-Status OpenFileForWrite(Env *env, const string &path,
-                        shared_ptr<WritableFile> *file);
+Status OpenFileForWrite(Env *env, const std::string &path,
+                        std::tr1::shared_ptr<WritableFile> *file);
 
 Status OpenFileForWrite(const WritableFileOptions& opts,
-                        Env *env, const string &path,
-                        shared_ptr<WritableFile> *file);
+                        Env *env, const std::string &path,
+                        std::tr1::shared_ptr<WritableFile> *file);
 
-Status OpenFileForRandom(Env *env, const string &path,
-                         shared_ptr<RandomAccessFile> *file);
+Status OpenFileForRandom(Env *env, const std::string &path,
+                         std::tr1::shared_ptr<RandomAccessFile> *file);
 
-Status OpenFileForSequential(Env *env, const string &path,
-                             shared_ptr<SequentialFile> *file);
+Status OpenFileForSequential(Env *env, const std::string &path,
+                             std::tr1::shared_ptr<SequentialFile> *file);
 
 // Read exactly 'n' bytes from the given file. If fewer than 'n' bytes
 // are read, returns an IOError. This differs from the underlying

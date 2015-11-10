@@ -59,6 +59,7 @@ DECLARE_bool(use_hybrid_clock);
 
 using std::string;
 using std::stringstream;
+using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 

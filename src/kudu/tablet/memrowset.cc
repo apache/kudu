@@ -35,11 +35,13 @@ DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
             "generation for iteration");
 TAG_FLAG(mrs_use_codegen, hidden);
 
+using std::pair;
+using std::tr1::shared_ptr;
+
 namespace kudu { namespace tablet {
 
 using consensus::OpId;
 using log::LogAnchorRegistry;
-using std::pair;
 using strings::Substitute;
 
 static const int kInitialArenaSize = 16;

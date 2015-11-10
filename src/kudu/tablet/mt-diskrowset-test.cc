@@ -15,6 +15,7 @@
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/thread/thread.hpp>
+#include <tr1/memory>
 
 #include "kudu/tablet/diskrowset-test-base.h"
 
@@ -24,7 +25,7 @@ namespace kudu {
 namespace tablet {
 
 using std::tr1::unordered_set;
-
+using std::tr1::shared_ptr;
 
 class TestMultiThreadedRowSet : public TestRowSet {
  public:

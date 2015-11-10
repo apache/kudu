@@ -22,6 +22,7 @@
 #include <boost/thread/mutex.hpp>
 #include <gtest/gtest_prod.h>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/row.h"
@@ -216,7 +217,7 @@ class RollingDiskRowSetWriter {
 
   TabletMetadata* tablet_metadata_;
   const Schema schema_;
-  shared_ptr<RowSetMetadata> cur_drs_metadata_;
+  std::tr1::shared_ptr<RowSetMetadata> cur_drs_metadata_;
   const BloomFilterSizing bloom_sizing_;
   const size_t target_rowset_size_;
 
@@ -265,9 +266,9 @@ class DiskRowSet : public RowSet {
 
   // Open a rowset from disk.
   // If successful, sets *rowset to the newly open rowset
-  static Status Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
+  static Status Open(const std::tr1::shared_ptr<RowSetMetadata>& rowset_metadata,
                      log::LogAnchorRegistry* log_anchor_registry,
-                     shared_ptr<DiskRowSet> *rowset,
+                     std::tr1::shared_ptr<DiskRowSet> *rowset,
                      const std::tr1::shared_ptr<MemTracker>& parent_tracker =
                      std::tr1::shared_ptr<MemTracker>());
 
@@ -354,7 +355,7 @@ class DiskRowSet : public RowSet {
     return DCHECK_NOTNULL(delta_tracker_.get());
   }
 
-  shared_ptr<RowSetMetadata> metadata() OVERRIDE {
+  std::tr1::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
     return rowset_metadata_;
   }
 
@@ -372,7 +373,7 @@ class DiskRowSet : public RowSet {
   friend class CompactionInput;
   friend class Tablet;
 
-  DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
+  DiskRowSet(const std::tr1::shared_ptr<RowSetMetadata>& rowset_metadata,
              log::LogAnchorRegistry* log_anchor_registry,
              const std::tr1::shared_ptr<MemTracker>& parent_tracker);
 
@@ -385,7 +386,7 @@ class DiskRowSet : public RowSet {
   // Major compacts all the delta files for the specified columns.
   Status MajorCompactDeltaStoresWithColumnIds(const std::vector<ColumnId>& col_ids);
 
-  shared_ptr<RowSetMetadata> rowset_metadata_;
+  std::tr1::shared_ptr<RowSetMetadata> rowset_metadata_;
 
   bool open_;
 
@@ -395,7 +396,7 @@ class DiskRowSet : public RowSet {
 
   // Base data for this rowset.
   mutable percpu_rwlock component_lock_;
-  shared_ptr<CFileSet> base_data_;
+  std::tr1::shared_ptr<CFileSet> base_data_;
   gscoped_ptr<DeltaTracker> delta_tracker_;
 
   // Lock governing this rowset's inclusion in a compact/flush. If locked,

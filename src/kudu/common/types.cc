@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/shared_ptr.hpp>
+#include <tr1/memory>
 #include <tr1/unordered_map>
 
 #include "kudu/gutil/singleton.h"
@@ -21,8 +21,8 @@
 
 namespace kudu {
 
+using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
-using boost::shared_ptr;
 
 template<typename TypeTraitsClass>
 TypeInfo::TypeInfo(TypeTraitsClass t)

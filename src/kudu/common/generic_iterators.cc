@@ -25,14 +25,14 @@
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/memory/arena.h"
 
+using std::string;
+using std::tr1::shared_ptr;
+
 DEFINE_bool(materializing_iterator_do_pushdown, true,
             "Should MaterializingIterator do predicate pushdown");
 TAG_FLAG(materializing_iterator_do_pushdown, hidden);
 
 namespace kudu {
-
-using std::string;
-using std::tr1::shared_ptr;
 
 ////////////////////////////////////////////////////////////
 // Merge iterator

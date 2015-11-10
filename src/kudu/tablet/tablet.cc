@@ -92,6 +92,12 @@ METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
                          kudu::MetricUnit::kBytes,
                          "Size of this tablet on disk.");
 
+using std::string;
+using std::set;
+using std::vector;
+using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
+
 namespace kudu {
 namespace tablet {
 
@@ -99,11 +105,6 @@ using kudu::MaintenanceManager;
 using consensus::OpId;
 using consensus::MaximumOpId;
 using log::LogAnchorRegistry;
-using std::string;
-using std::set;
-using std::vector;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
 using strings::Substitute;
 using base::subtle::Barrier_AtomicIncrement;
 

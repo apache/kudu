@@ -59,8 +59,6 @@ using kudu::rpc_test::WhoAmIResponsePB;
 using kudu::rpc_test_diff_package::ReqDiffPackagePB;
 using kudu::rpc_test_diff_package::RespDiffPackagePB;
 
-using std::tr1::shared_ptr;
-
 // Implementation of CalculatorService which just implements the generic
 // RPC handler (no generated code).
 class GenericCalculatorService : public ServiceIf {
@@ -280,7 +278,7 @@ class RpcTestBase : public KuduTest {
   }
 
  protected:
-  shared_ptr<Messenger> CreateMessenger(const string &name,
+  std::tr1::shared_ptr<Messenger> CreateMessenger(const string &name,
                                         int n_reactors = 1) {
     MessengerBuilder bld(name);
     bld.set_num_reactors(n_reactors);
@@ -289,7 +287,7 @@ class RpcTestBase : public KuduTest {
     bld.set_coarse_timer_granularity(MonoDelta::FromMilliseconds(
                                        std::min(keepalive_time_ms_, 100)));
     bld.set_metric_entity(metric_entity_);
-    shared_ptr<Messenger> messenger;
+    std::tr1::shared_ptr<Messenger> messenger;
     CHECK_OK(bld.Build(&messenger));
     return messenger;
   }
@@ -394,7 +392,7 @@ class RpcTestBase : public KuduTest {
   template<class ServiceClass>
   void DoStartTestServer(Sockaddr *server_addr) {
     server_messenger_ = CreateMessenger("TestServer", n_server_reactor_threads_);
-    shared_ptr<AcceptorPool> pool;
+    std::tr1::shared_ptr<AcceptorPool> pool;
     ASSERT_OK(server_messenger_->AddAcceptorPool(Sockaddr(), &pool));
     ASSERT_OK(pool->Start(2));
     *server_addr = pool->bind_address();
@@ -409,7 +407,7 @@ class RpcTestBase : public KuduTest {
 
  protected:
   string service_name_;
-  shared_ptr<Messenger> server_messenger_;
+  std::tr1::shared_ptr<Messenger> server_messenger_;
   scoped_refptr<ServicePool> service_pool_;
   int n_worker_threads_;
   int n_server_reactor_threads_;

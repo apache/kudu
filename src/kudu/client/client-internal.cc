@@ -40,6 +40,7 @@
 
 using std::set;
 using std::string;
+using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {

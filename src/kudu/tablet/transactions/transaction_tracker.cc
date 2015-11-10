@@ -57,10 +57,12 @@ METRIC_DEFINE_counter(tablet, transaction_memory_pressure_rejections,
                       "Number of transactions rejected because the tablet's "
                       "transaction memory limit was reached.");
 
+using std::tr1::shared_ptr;
+using std::vector;
+
 namespace kudu {
 namespace tablet {
 
-using std::vector;
 using strings::Substitute;
 
 #define MINIT(x) x(METRIC_##x.Instantiate(entity))

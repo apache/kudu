@@ -17,6 +17,7 @@
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <time.h>
+#include <tr1/memory>
 
 #include "kudu/common/row.h"
 #include "kudu/common/schema.h"
@@ -36,6 +37,8 @@ DECLARE_bool(cfile_lazy_open);
 DECLARE_int32(cfile_default_block_size);
 DECLARE_double(tablet_delta_store_major_compact_min_ratio);
 DECLARE_int32(tablet_delta_store_minor_compact_max);
+
+using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace tablet {

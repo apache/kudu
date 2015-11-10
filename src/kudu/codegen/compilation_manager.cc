@@ -17,8 +17,9 @@
 #include <boost/bind.hpp>
 #include <boost/function.hpp>
 #include <cstdlib>
-#include <glog/logging.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
+#include <memory>
 
 #include "kudu/codegen/code_cache.h"
 #include "kudu/codegen/code_generator.h"
@@ -37,6 +38,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
+
+using std::tr1::shared_ptr;
 
 DEFINE_bool(codegen_time_compilation, false, "Whether to print time that each code "
             "generation request took.");

@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
+#include <tr1/memory>
+#include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/client/row_result.h"
@@ -22,14 +24,15 @@
 
 DEFINE_int32(num_rows_per_tablet, 100, "The number of rows to be inserted into each tablet");
 
+using std::tr1::shared_ptr;
+using std::vector;
+
 namespace kudu {
 namespace client {
 
 static const int kNumTabletServers = 3;
 static const int kNumTablets = 3;
 static const int KMaxBatchSize = 8 * 1024 * 1024;
-
-using std::vector;
 
 template<typename KeyTypeWrapper>
 struct SliceKeysTestSetup {

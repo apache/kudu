@@ -14,13 +14,14 @@
 #ifndef KUDU_COMMON_ROW_OPERATIONS_H
 #define KUDU_COMMON_ROW_OPERATIONS_H
 
+#include <string>
+#include <tr1/memory>
+#include <vector>
+
 #include "kudu/common/row_changelist.h"
 #include "kudu/common/wire_protocol.pb.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/util/status.h"
-
-#include <string>
-#include <vector>
 
 namespace kudu {
 
@@ -55,7 +56,7 @@ struct DecodedRowOperation {
   RowChangeList changelist;
 
   // For SPLIT_ROW, the partial row to split on.
-  shared_ptr<KuduPartialRow> split_row;
+  std::tr1::shared_ptr<KuduPartialRow> split_row;
 
   std::string ToString(const Schema& schema) const;
 };

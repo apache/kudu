@@ -28,6 +28,10 @@
 #include "kudu/tablet/tablet-test-util.h"
 #include "kudu/tablet/tablet_metadata.h"
 
+using std::string;
+using std::tr1::shared_ptr;
+using std::vector;
+
 namespace kudu {
 
 namespace log {
@@ -38,9 +42,6 @@ extern const char* kTestTablet;
 } // namespace log
 
 namespace tablet {
-
-using std::vector;
-using std::string;
 
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;

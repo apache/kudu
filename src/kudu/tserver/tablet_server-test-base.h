@@ -450,7 +450,7 @@ class TabletServerTestBase : public KuduTest {
   Schema key_schema_;
   gscoped_ptr<RowBuilder> rb_;
 
-  shared_ptr<rpc::Messenger> client_messenger_;
+  std::tr1::shared_ptr<rpc::Messenger> client_messenger_;
 
   gscoped_ptr<MiniTabletServer> mini_server_;
   scoped_refptr<tablet::TabletPeer> tablet_peer_;

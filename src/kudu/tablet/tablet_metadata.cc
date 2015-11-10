@@ -35,6 +35,8 @@
 #include "kudu/util/status.h"
 #include "kudu/util/trace.h"
 
+using std::tr1::shared_ptr;
+
 using base::subtle::Barrier_AtomicIncrement;
 using strings::Substitute;
 

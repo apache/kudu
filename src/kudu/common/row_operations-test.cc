@@ -15,6 +15,7 @@
 #include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 #include <string>
+#include <tr1/memory>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row_operations.h"
@@ -22,6 +23,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/test_util.h"
 
+using std::tr1::shared_ptr;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 

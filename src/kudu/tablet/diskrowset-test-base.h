@@ -17,9 +17,10 @@
 #include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <string>
+#include <tr1/memory>
 #include <tr1/unordered_set>
 #include <unistd.h>
-#include <string>
 #include <vector>
 
 #include "kudu/common/iterator.h"
@@ -317,7 +318,7 @@ class TestRowSet : public KuduRowSetTest {
     }
   }
 
-  Status OpenTestRowSet(shared_ptr<DiskRowSet> *rowset) {
+  Status OpenTestRowSet(std::tr1::shared_ptr<DiskRowSet> *rowset) {
     return DiskRowSet::Open(rowset_meta_, new log::LogAnchorRegistry(), rowset);
   }
 

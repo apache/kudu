@@ -44,6 +44,8 @@ METRIC_DECLARE_counter(block_cache_hits_caching);
 
 METRIC_DECLARE_entity(server);
 
+using std::tr1::shared_ptr;
+
 namespace kudu {
 namespace cfile {
 

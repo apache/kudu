@@ -16,6 +16,7 @@
 #define KUDU_TABLET_TRANSACTION_TRACKER_H_
 
 #include <string>
+#include <tr1/memory>
 #include <tr1/unordered_map>
 #include <vector>
 

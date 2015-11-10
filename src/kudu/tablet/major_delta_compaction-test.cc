@@ -30,11 +30,12 @@
 #include "kudu/util/test_util.h"
 #include "kudu/gutil/algorithm.h"
 
+using boost::assign::list_of;
+using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
+
 namespace kudu {
 namespace tablet {
-
-using boost::assign::list_of;
-using std::tr1::unordered_set;
 
 using strings::Substitute;
 using util::gtl::is_sorted;

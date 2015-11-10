@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <gflags/gflags.h>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/iterator.h"
@@ -132,7 +133,7 @@ class KuduRowSetTest : public KuduTabletTest {
   }
 
  protected:
-  shared_ptr<RowSetMetadata> rowset_meta_;
+  std::tr1::shared_ptr<RowSetMetadata> rowset_meta_;
 };
 
 static inline Status IterateToStringList(RowwiseIterator *iter,

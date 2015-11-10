@@ -44,8 +44,6 @@ class RowSetMetadata;
 
 namespace tablet {
 
-using std::tr1::shared_ptr;
-
 class DeltaMemStore;
 class DeltaFileReader;
 class OperationResultPB;
@@ -65,12 +63,12 @@ class DeltaTracker {
     NO_FLUSH_METADATA
   };
 
-  DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
+  DeltaTracker(const std::tr1::shared_ptr<RowSetMetadata>& rowset_metadata,
                rowid_t num_rows,
                log::LogAnchorRegistry* log_anchor_registry,
-               const shared_ptr<MemTracker>& parent_tracker);
+               const std::tr1::shared_ptr<MemTracker>& parent_tracker);
 
-  Status WrapIterator(const shared_ptr<CFileSet::Iterator> &base,
+  Status WrapIterator(const std::tr1::shared_ptr<CFileSet::Iterator> &base,
                       const MvccSnapshot &mvcc_snap,
                       gscoped_ptr<ColumnwiseIterator>* out) const;
 
@@ -190,11 +188,11 @@ class DeltaTracker {
                           DeltaType type);
 
   Status FlushDMS(DeltaMemStore* dms,
-                  shared_ptr<DeltaFileReader>* dfr,
+                  std::tr1::shared_ptr<DeltaFileReader>* dfr,
                   MetadataFlushType flush_type);
 
   // This collects all undo and redo stores.
-  void CollectStores(vector<shared_ptr<DeltaStore> > *stores) const;
+  void CollectStores(vector<std::tr1::shared_ptr<DeltaStore> > *stores) const;
 
   // Performs the actual compaction. Results of compaction are written to "block",
   // while delta stores that underwent compaction are appended to "compacted_stores", while
@@ -205,7 +203,7 @@ class DeltaTracker {
   // method in order to protect 'redo_delta_stores_'.
   Status DoCompactStores(size_t start_idx, size_t end_idx,
                          gscoped_ptr<fs::WritableBlock> block,
-                         vector<shared_ptr<DeltaStore> > *compacted_stores,
+                         vector<std::tr1::shared_ptr<DeltaStore> > *compacted_stores,
                          std::vector<BlockId>* compacted_blocks);
 
   // Creates a merge delta iterator and captures the delta stores and
@@ -219,11 +217,11 @@ class DeltaTracker {
   // race on 'redo_delta_stores_'.
   Status MakeDeltaIteratorMergerUnlocked(size_t start_idx, size_t end_idx,
                                          const Schema* schema,
-                                         vector<shared_ptr<DeltaStore > > *target_stores,
+                                         vector<std::tr1::shared_ptr<DeltaStore > > *target_stores,
                                          vector<BlockId> *target_blocks,
                                          std::tr1::shared_ptr<DeltaIterator> *out);
 
-  shared_ptr<RowSetMetadata> rowset_metadata_;
+  std::tr1::shared_ptr<RowSetMetadata> rowset_metadata_;
 
   // The number of rows in the DiskRowSet that this tracker is associated with.
   // This is just used for assertions to make sure that we don't update a row
@@ -234,10 +232,10 @@ class DeltaTracker {
 
   log::LogAnchorRegistry* log_anchor_registry_;
 
-  shared_ptr<MemTracker> parent_tracker_;
+  std::tr1::shared_ptr<MemTracker> parent_tracker_;
 
   // The current DeltaMemStore into which updates should be written.
-  shared_ptr<DeltaMemStore> dms_;
+  std::tr1::shared_ptr<DeltaMemStore> dms_;
   // The set of tracked REDO delta stores, in increasing timestamp order.
   SharedDeltaStoreVector redo_delta_stores_;
   // The set of tracked UNDO delta stores, in decreasing timestamp order.

@@ -14,11 +14,12 @@
 #ifndef KUDU_TABLET_DELTAMEMSTORE_H
 #define KUDU_TABLET_DELTAMEMSTORE_H
 
+#include <boost/thread/mutex.hpp>
 #include <deque>
 #include <gtest/gtest_prod.h>
 #include <string>
+#include <tr1/memory>
 #include <vector>
-#include <boost/thread/mutex.hpp>
 
 #include "kudu/common/columnblock.h"
 #include "kudu/common/rowblock.h"
@@ -58,9 +59,10 @@ struct DMSTreeTraits : public btree::BTreeTraits {
 class DeltaMemStore : public DeltaStore,
                       public std::tr1::enable_shared_from_this<DeltaMemStore> {
  public:
-  DeltaMemStore(int64_t id, int64_t rs_id,
-                log::LogAnchorRegistry* log_anchor_registry,
-                const std::tr1::shared_ptr<MemTracker>& parent_tracker = shared_ptr<MemTracker>());
+  DeltaMemStore(
+      int64_t id, int64_t rs_id,
+      log::LogAnchorRegistry* log_anchor_registry,
+      const std::tr1::shared_ptr<MemTracker>& parent_tracker = std::tr1::shared_ptr<MemTracker>());
 
   virtual Status Init() OVERRIDE;
 
@@ -210,11 +212,11 @@ class DMSIterator : public DeltaIterator {
   // The projection passed here must be the same as the schema of any
   // RowBlocks which are passed in, or else bad things will happen.
   // The pointer must also remain valid for the lifetime of the iterator.
-  DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
+  DMSIterator(const std::tr1::shared_ptr<const DeltaMemStore> &dms,
               const Schema *projection,
               const MvccSnapshot &snapshot);
 
-  const shared_ptr<const DeltaMemStore> dms_;
+  const std::tr1::shared_ptr<const DeltaMemStore> dms_;
 
   // MVCC state which allows us to ignore uncommitted transactions.
   const MvccSnapshot mvcc_snapshot_;

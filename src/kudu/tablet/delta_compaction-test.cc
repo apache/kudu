@@ -38,13 +38,15 @@
 DEFINE_int32(num_rows, 2100, "the first row to update");
 DEFINE_int32(num_delta_files, 3, "number of delta files");
 
+using std::string;
+using std::tr1::shared_ptr;
+using std::vector;
+
 namespace kudu {
 namespace tablet {
 
 using fs::ReadableBlock;
 using fs::WritableBlock;
-using std::string;
-using std::vector;
 using util::gtl::is_sorted;
 
 class TestDeltaCompaction : public KuduTest {

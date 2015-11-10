@@ -16,6 +16,7 @@
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -26,6 +27,9 @@
 #include "kudu/master/master.h"
 #include "kudu/master/mini_master.h"
 #include "kudu/util/test_util.h"
+
+using std::tr1::shared_ptr;
+using std::vector;
 
 namespace kudu {
 namespace master {
@@ -38,7 +42,6 @@ using client::KuduSchema;
 using client::KuduSchemaBuilder;
 using client::KuduTable;
 using client::KuduTableCreator;
-using std::vector;
 
 const char * const kTableId1 = "testMasterReplication-1";
 const char * const kTableId2 = "testMasterReplication-2";

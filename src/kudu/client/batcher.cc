@@ -48,6 +48,7 @@
 
 using std::pair;
 using std::set;
+using std::tr1::shared_ptr;
 using std::tr1::unordered_map;
 using strings::Substitute;
 

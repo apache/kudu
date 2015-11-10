@@ -28,11 +28,12 @@
 #include "kudu/util/env.h"
 #include "kudu/util/test_util.h"
 
-using std::string;
-using std::tr1::unordered_map;
-
 METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
+
+using std::string;
+using std::tr1::shared_ptr;
+using std::tr1::unordered_map;
 
 namespace kudu {
 namespace rpc {

@@ -23,6 +23,9 @@
 #include "kudu/util/test_graph.h"
 #include "kudu/util/thread.h"
 
+using std::string;
+using std::tr1::shared_ptr;
+
 namespace kudu {
 
 void TimeSeries::AddValue(double val) {

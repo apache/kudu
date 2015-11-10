@@ -33,11 +33,13 @@
 
 DEFINE_int32(benchmark_num_passes, 100, "Number of passes to apply deltas in the benchmark");
 
+using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
+
 namespace kudu {
 namespace tablet {
 
 using fs::WritableBlock;
-using std::tr1::unordered_set;
 
 class TestDeltaMemStore : public KuduTest {
  public:

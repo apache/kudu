@@ -16,6 +16,7 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
+#include <tr1/memory>
 #include <tr1/unordered_set>
 
 #include "kudu/codegen/compilation_manager.h"
@@ -48,10 +49,11 @@ DEFINE_int32(tablet_test_flush_threshold_mb, 0, "Minimum memrowset size to flush
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
 DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of ms to wait between flushes");
 
+using std::tr1::shared_ptr;
+using std::tr1::unordered_set;
+
 namespace kudu {
 namespace tablet {
-
-using std::tr1::unordered_set;
 
 template<class SETUP>
 class MultiThreadedTabletTest : public TabletTestBase<SETUP> {

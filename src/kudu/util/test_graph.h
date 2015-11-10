@@ -28,10 +28,6 @@
 
 namespace kudu {
 
-using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
-
 class TimeSeries {
  public:
   void AddValue(double val);
@@ -54,7 +50,7 @@ class TimeSeries {
 
 class TimeSeriesCollector {
  public:
-  explicit TimeSeriesCollector(const string &scope) :
+  explicit TimeSeriesCollector(const std::string &scope) :
     scope_(scope),
     exit_latch_(0),
     started_(false)
@@ -62,7 +58,7 @@ class TimeSeriesCollector {
 
   ~TimeSeriesCollector();
 
-  shared_ptr<TimeSeries> GetTimeSeries(const string &key);
+  std::tr1::shared_ptr<TimeSeries> GetTimeSeries(const std::string &key);
   void StartDumperThread();
   void StopDumperThread();
 
@@ -72,9 +68,9 @@ class TimeSeriesCollector {
   void DumperThread();
   void BuildMetricsString(WallTime time_since_start, faststring *dst_buf) const;
 
-  string scope_;
+  std::string scope_;
 
-  typedef unordered_map<string, shared_ptr<TimeSeries> > SeriesMap;
+  typedef std::tr1::unordered_map<std::string, std::tr1::shared_ptr<TimeSeries> > SeriesMap;
   SeriesMap series_map_;
   mutable Mutex series_lock_;
 

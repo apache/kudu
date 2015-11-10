@@ -17,6 +17,7 @@
 
 #include <map>
 #include <string>
+#include <tr1/memory>
 #include <vector>
 
 #include "kudu/consensus/consensus.h"

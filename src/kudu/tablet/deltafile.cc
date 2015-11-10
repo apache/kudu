@@ -15,6 +15,7 @@
 #include "kudu/tablet/deltafile.h"
 
 #include <arpa/inet.h>
+#include <memory>
 #include <string>
 
 #include "kudu/common/wire_protocol.h"
@@ -37,6 +38,8 @@ DEFINE_int32(deltafile_default_block_size, 32*1024,
             "Block size for delta files. In the future, this may become configurable "
              "on a per-table basis.");
 TAG_FLAG(deltafile_default_block_size, experimental);
+
+using std::tr1::shared_ptr;
 
 namespace kudu {
 
