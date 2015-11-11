@@ -838,6 +838,14 @@ class KUDU_EXPORT KuduScanner {
   // Set the projection used for this scanner by passing the column names to read.
   //
   // This overrides any previous call to SetProjectedColumns.
+  Status SetProjectedColumnNames(const std::vector<std::string>& col_names) WARN_UNUSED_RESULT;
+
+  // Set the projection used for this scanner by passing the column indexes to read.
+  //
+  // This overrides any previous call to SetProjectedColumns/SetProjectedColumnIndexes.
+  Status SetProjectedColumnIndexes(const std::vector<int>& col_indexes) WARN_UNUSED_RESULT;
+
+  // DEPRECATED: See SetProjectedColumnNames
   Status SetProjectedColumns(const std::vector<std::string>& col_names) WARN_UNUSED_RESULT;
 
   // Add a predicate to this scanner.

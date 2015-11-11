@@ -804,20 +804,43 @@ KuduScanner::~KuduScanner() {
 }
 
 Status KuduScanner::SetProjectedColumns(const vector<string>& col_names) {
+  return SetProjectedColumnNames(col_names);
+}
+
+Status KuduScanner::SetProjectedColumnNames(const vector<string>& col_names) {
   if (data_->open_) {
     return Status::IllegalState("Projection must be set before Open()");
   }
 
   const Schema* table_schema = data_->table_->schema().schema_;
-  vector<ColumnSchema> cols;
-  cols.reserve(col_names.size());
+  vector<int> col_indexes;
+  col_indexes.reserve(col_names.size());
   BOOST_FOREACH(const string& col_name, col_names) {
     int idx = table_schema->find_column(col_name);
     if (idx == Schema::kColumnNotFound) {
       return Status::NotFound(strings::Substitute("Column: \"$0\" was not found in the "
           "table schema.", col_name));
     }
-    cols.push_back(table_schema->column(idx));
+    col_indexes.push_back(idx);
+  }
+
+  return SetProjectedColumnIndexes(col_indexes);
+}
+
+Status KuduScanner::SetProjectedColumnIndexes(const vector<int>& col_indexes) {
+  if (data_->open_) {
+    return Status::IllegalState("Projection must be set before Open()");
+  }
+
+  const Schema* table_schema = data_->table_->schema().schema_;
+  vector<ColumnSchema> cols;
+  cols.reserve(col_indexes.size());
+  BOOST_FOREACH(const int col_index, col_indexes) {
+    if (col_index >= table_schema->columns().size()) {
+      return Status::NotFound(strings::Substitute("Column: \"$0\" was not found in the "
+          "table schema.", col_index));
+    }
+    cols.push_back(table_schema->column(col_index));
   }
 
   gscoped_ptr<Schema> s(new Schema());
