@@ -61,7 +61,7 @@ public class TestAsyncKuduClient extends BaseKuduTest {
 
     // 2. Start a scanner with a small max num bytes.
     AsyncKuduScanner scanner = client.newScannerBuilder(table)
-        .maxNumBytes(1)
+        .batchSizeBytes(1)
         .build();
     Deferred<RowResultIterator> rri = scanner.nextRows();
     // 3. Register the number of rows we get back. We have no control over how many rows are

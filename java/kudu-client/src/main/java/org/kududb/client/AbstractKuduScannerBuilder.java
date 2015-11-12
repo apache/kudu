@@ -33,7 +33,7 @@ public abstract class AbstractKuduScannerBuilder
   final List<Tserver.ColumnRangePredicatePB> columnRangePredicates;
 
   AsyncKuduScanner.ReadMode readMode = AsyncKuduScanner.ReadMode.READ_LATEST;
-  int maxNumBytes = 1024*1024;
+  int batchSizeBytes = 1024*1024;
   long limit = Long.MAX_VALUE;
   boolean prefetching = false;
   boolean cacheBlocks = true;
@@ -122,15 +122,15 @@ public abstract class AbstractKuduScannerBuilder
   }
 
   /**
-   * Sets the maximum number of bytes returned at once by the scanner. The default is 1MB.
+   * Sets the maximum number of bytes returned by the scanner, on each batch. The default is 1MB.
    * <p>
    * Kudu may actually return more than this many bytes because it will not
    * truncate a rowResult in the middle.
-   * @param maxNumBytes a strictly positive number of bytes
+   * @param batchSizeBytes a strictly positive number of bytes
    * @return this instance
    */
-  public S maxNumBytes(int maxNumBytes) {
-    this.maxNumBytes = maxNumBytes;
+  public S batchSizeBytes(int batchSizeBytes) {
+    this.batchSizeBytes = batchSizeBytes;
     return (S) this;
   }
 

@@ -85,7 +85,7 @@ public class KuduScanner {
           scanRequestTimeout, columnRangePredicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
           lowerBoundPartitionKey, upperBoundPartitionKey,
-          htTimestamp, maxNumBytes));
+          htTimestamp, batchSizeBytes));
     }
   }
 }

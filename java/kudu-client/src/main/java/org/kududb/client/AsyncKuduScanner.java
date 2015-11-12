@@ -113,9 +113,9 @@ public final class AsyncKuduScanner {
   private final List<Tserver.ColumnRangePredicatePB> columnRangePredicates;
 
   /**
-   * Maximum number of bytes to fetch at a time.
+   * Maximum number of bytes returned by the scanner, on each batch.
    */
-  private final int maxNumBytes;
+  private final int batchSizeBytes;
 
   /**
    * The maximum number of rows to scan.
@@ -201,9 +201,9 @@ public final class AsyncKuduScanner {
                    boolean cacheBlocks, boolean prefetching,
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
                    byte[] startPartitionKey, byte[] endPartitionKey,
-                   long htTimestamp, int maxNumBytes) {
-    Preconditions.checkArgument(maxNumBytes > 0, "Need a strictly positive number of bytes, " +
-        "got %s", maxNumBytes);
+                   long htTimestamp, int batchSizeBytes) {
+    Preconditions.checkArgument(batchSizeBytes > 0, "Need a strictly positive number of bytes, " +
+        "got %s", batchSizeBytes);
     Preconditions.checkArgument(limit > 0, "Need a strictly positive number for the limit, " +
         "got %s", limit);
     if (htTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
@@ -222,7 +222,7 @@ public final class AsyncKuduScanner {
     this.startPrimaryKey = startPrimaryKey;
     this.endPrimaryKey = endPrimaryKey;
     this.htTimestamp = htTimestamp;
-    this.maxNumBytes = maxNumBytes;
+    this.batchSizeBytes = batchSizeBytes;
 
     if (!table.getPartitionSchema().isSimpleRangePartitioning() &&
         (startPrimaryKey != AsyncKuduClient.EMPTY_ARRAY ||
@@ -316,12 +316,12 @@ public final class AsyncKuduScanner {
   }
 
   /**
-   * Returns the maximum number of bytes returned at once by the scanner.
+   * Returns the maximum number of bytes returned by the scanner, on each batch.
    * @return a long representing the maximum number of bytes that a scanner can receive at once
    * from a tablet server
    */
-  public long getMaxNumBytes() {
-    return maxNumBytes;
+  public long getBatchSizeBytes() {
+    return batchSizeBytes;
   }
 
   /**
@@ -670,12 +670,12 @@ public final class AsyncKuduScanner {
             newBuilder.addAllRangePredicates(columnRangePredicates);
           }
           builder.setNewScanRequest(newBuilder.build())
-                 .setBatchSizeBytes(maxNumBytes);
+                 .setBatchSizeBytes(batchSizeBytes);
           break;
         case NEXT:
           builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
                  .setCallSeqId(sequenceId)
-                 .setBatchSizeBytes(maxNumBytes);
+                 .setBatchSizeBytes(batchSizeBytes);
           break;
         case CLOSING:
           builder.setScannerId(ZeroCopyLiteralByteString.wrap(scannerId))
@@ -759,7 +759,7 @@ public final class AsyncKuduScanner {
           scanRequestTimeout, columnRangePredicates, limit, cacheBlocks,
           prefetching, lowerBoundPrimaryKey, upperBoundPrimaryKey,
           lowerBoundPartitionKey, upperBoundPartitionKey,
-          htTimestamp, maxNumBytes);
+          htTimestamp, batchSizeBytes);
     }
   }
 }
