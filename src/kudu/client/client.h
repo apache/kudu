@@ -615,6 +615,8 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
     // TODO: specify which threads the background activity runs on (probably the
     // messenger IO threads?)
     //
+    // NOTE: This is not implemented yet, see KUDU-456.
+    //
     // The Flush() call can be used to block until the buffer is empty.
     AUTO_FLUSH_BACKGROUND,
 

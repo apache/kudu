@@ -626,6 +626,10 @@ Status KuduSession::Close() {
 }
 
 Status KuduSession::SetFlushMode(FlushMode m) {
+  if (m == AUTO_FLUSH_BACKGROUND) {
+    return Status::NotSupported("AUTO_FLUSH_BACKGROUND has not been implemented in the"
+        " c++ client (see KUDU-456).");
+  }
   if (data_->batcher_->HasPendingOperations()) {
     // TODO: there may be a more reasonable behavior here.
     return Status::IllegalState("Cannot change flush mode when writes are buffered");
