@@ -21,8 +21,12 @@
 #include "kudu/gutil/map-util.h"
 #include "kudu/rpc/rpc_context.h"
 #include "kudu/server/clock.h"
+#include "kudu/server/hybrid_clock.h"
 #include "kudu/server/server_base.h"
 #include "kudu/util/flag_tags.h"
+
+DECLARE_bool(use_mock_wall_clock);
+DECLARE_bool(use_hybrid_clock);
 
 using std::string;
 using std::tr1::unordered_set;
@@ -111,6 +115,26 @@ void GenericServiceImpl::ServerClock(const ServerClockRequestPB* req,
                                      rpc::RpcContext* rpc) {
   resp->set_timestamp(server_->clock()->Now().ToUint64());
   rpc->RespondSuccess();
+}
+
+void GenericServiceImpl::SetServerWallClockForTests(const SetServerWallClockForTestsRequestPB *req,
+                                                   SetServerWallClockForTestsResponsePB *resp,
+                                                   rpc::RpcContext *context) {
+  if (!FLAGS_use_hybrid_clock || !FLAGS_use_mock_wall_clock) {
+    LOG(WARNING) << "Error setting wall clock for tests. Server is not using HybridClock"
+        "or was not started with '--use_mock_wall_clock= true'";
+    resp->set_success(false);
+  }
+
+  server::HybridClock* clock = down_cast<server::HybridClock*>(server_->clock());
+  if (req->has_now_usec()) {
+    clock->SetMockClockWallTimeForTests(req->now_usec());
+  }
+  if (req->has_max_error_usec()) {
+    clock->SetMockMaxClockErrorForTests(req->max_error_usec());
+  }
+  resp->set_success(true);
+  context->RespondSuccess();
 }
 
 void GenericServiceImpl::GetStatus(const GetStatusRequestPB* req,

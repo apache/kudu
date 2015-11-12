@@ -382,6 +382,9 @@ bool HybridClock::IsAfter(Timestamp t) {
 
 kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
   if (PREDICT_FALSE(FLAGS_use_mock_wall_clock)) {
+    VLOG(1) << "Current clock time: " << mock_clock_time_usec_ << " error: "
+            << mock_clock_max_error_usec_ << ". Updating to time: " << now_usec
+            << " and error: " << error_usec;
     *now_usec = mock_clock_time_usec_;
     *error_usec = mock_clock_max_error_usec_;
   } else {
