@@ -646,13 +646,6 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
   // Set the timeout for writes made in this session.
   void SetTimeoutMillis(int millis);
 
-  // Set priority for calls made from this session. Higher priority calls may skip
-  // lower priority calls.
-  // TODO: this is not yet implemented and needs further design work to know what
-  // exactly it will mean in practice. The API is just here to show at what layer
-  // call priorities will be exposed to the client.
-  void SetPriority(int priority);
-
   // TODO: add "doAs" ability here for proxy servers to be able to act on behalf of
   // other users, assuming access rights.
 
