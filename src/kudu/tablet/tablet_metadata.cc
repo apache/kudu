@@ -15,6 +15,7 @@
 #include "kudu/tablet/tablet_metadata.h"
 
 #include <algorithm>
+#include <gflags/gflags.h>
 #include <boost/optional.hpp>
 #include <boost/thread/locks.hpp>
 #include <string>
@@ -31,9 +32,18 @@
 #include "kudu/server/metadata.h"
 #include "kudu/tablet/rowset_metadata.h"
 #include "kudu/util/debug/trace_event.h"
+#include "kudu/util/logging.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/status.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/trace.h"
+
+DEFINE_bool(enable_tablet_orphaned_block_deletion, true,
+            "Whether to enable deletion of orphaned blocks from disk. "
+            "Note: This is only exposed for debugging purposes!");
+TAG_FLAG(enable_tablet_orphaned_block_deletion, advanced);
+TAG_FLAG(enable_tablet_orphaned_block_deletion, hidden);
+TAG_FLAG(enable_tablet_orphaned_block_deletion, runtime);
 
 using std::tr1::shared_ptr;
 
@@ -351,6 +361,13 @@ void TabletMetadata::AddOrphanedBlocksUnlocked(const vector<BlockId>& blocks) {
 }
 
 void TabletMetadata::DeleteOrphanedBlocks(const vector<BlockId>& blocks) {
+  if (PREDICT_FALSE(!FLAGS_enable_tablet_orphaned_block_deletion)) {
+    LOG_WITH_PREFIX(WARNING) << "Not deleting " << blocks.size()
+        << " block(s) from disk. Block deletion disabled via "
+        << "--enable_tablet_orphaned_block_deletion=false";
+    return;
+  }
+
   vector<BlockId> deleted;
   BOOST_FOREACH(const BlockId& b, blocks) {
     Status s = fs_manager()->DeleteBlock(b);
@@ -604,6 +621,10 @@ uint32_t TabletMetadata::schema_version() const {
 void TabletMetadata::set_tablet_data_state(TabletDataState state) {
   boost::lock_guard<LockType> l(data_lock_);
   tablet_data_state_ = state;
+}
+
+string TabletMetadata::LogPrefix() const {
+  return Substitute("T $0 P $1: ", tablet_id_, fs_manager_->uuid());
 }
 
 TabletDataState TabletMetadata::tablet_data_state() const {

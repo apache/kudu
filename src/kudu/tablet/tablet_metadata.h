@@ -100,7 +100,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
     return partition_;
   }
 
-  const std::string& table_id() const {
+  std::string table_id() const {
     DCHECK_NE(state_, kNotLoadedYet);
     return table_id_;
   }
@@ -273,6 +273,9 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   // Failures are logged, but are not fatal.
   void DeleteOrphanedBlocks(const std::vector<BlockId>& blocks);
 
+  // Return standard "T xxx P yyy" log prefix.
+  std::string LogPrefix() const;
+
   enum State {
     kNotLoadedYet,
     kNotWrittenYet,
@@ -293,7 +296,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
 
   Partition partition_;
 
-  FsManager *fs_manager_;
+  FsManager* const fs_manager_;
   RowSetMetadataVector rowsets_;
 
   base::subtle::Atomic64 next_rowset_idx_;
@@ -340,7 +343,7 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   DISALLOW_COPY_AND_ASSIGN(TabletMetadata);
 };
 
-
 } // namespace tablet
 } // namespace kudu
+
 #endif /* KUDU_TABLET_TABLET_METADATA_H */
