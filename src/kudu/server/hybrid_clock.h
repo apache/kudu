@@ -26,9 +26,6 @@
 namespace kudu {
 namespace server {
 
-// Returns OK if the clock is considered synchronized.
-Status CheckClockSynchronized();
-
 // The HybridTime clock.
 //
 // HybridTime should not be used on a distributed cluster running on OS X hosts,

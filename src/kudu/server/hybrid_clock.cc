@@ -115,15 +115,6 @@ Status CheckDeadlineNotWithinMicros(const MonoTime& deadline, int64_t wait_for_u
 
 }  // anonymous namespace
 
-Status CheckClockSynchronized() {
-#if defined(__APPLE__)
-  return Status::OK();
-#else
-  ntptimeval dummy;
-  return GetClockTime(&dummy);
-#endif // defined(__APPLE__)
-}
-
 // Left shifting 12 bits gives us 12 bits for the logical value
 // and should still keep accurate microseconds time until 2100+
 const int HybridClock::kBitsToShift = 12;
@@ -147,20 +138,13 @@ Status HybridClock::Init() {
   LOG(WARNING) << "HybridClock initialized in local mode (OS X only). "
                << "Not suitable for distributed clusters.";
 #else
-  timex timex;
-  RETURN_NOT_OK(GetClockModes(&timex));
-
-  // if the clock is synchronized but has max_error beyond max_clock_sync_error_usec
-  // we still abort
+  // Read the current time. This will return an error if the clock is not synchronized.
   uint64_t now_usec;
   uint64_t error_usec;
   RETURN_NOT_OK(WalltimeWithError(&now_usec, &error_usec));
 
-  if (error_usec > FLAGS_max_clock_sync_error_usec) {
-    return Status::ServiceUnavailable(Substitute("Cannot initialize HybridClock. "
-        "Clock synchronized but error was too high ($0 us).", timex.maxerror));
-  }
-
+  timex timex;
+  RETURN_NOT_OK(GetClockModes(&timex));
   // read whether the STA_NANO bit is set to know whether we'll get back nanos
   // or micros in timeval.time.tv_usec. See:
   // http://stackoverflow.com/questions/16063408/does-ntp-gettime-actually-return-nanosecond-precision
@@ -227,12 +211,6 @@ void HybridClock::NowWithError(Timestamp* timestamp, uint64_t* max_error_usec) {
   if (PREDICT_FALSE(!s.ok())) {
     LOG(FATAL) << Substitute("Couldn't get the current time: Clock unsynchronized. "
         "Status: $0", s.ToString());
-  }
-  // Test that the clock error didn't go past a pre-defined maximum error.
-  if (PREDICT_FALSE(error_usec > FLAGS_max_clock_sync_error_usec)) {
-    LOG(FATAL) << Substitute("Couldn't get the current time: Clock synchronized, "
-        "but error: $0, is past the maximum allowable error: $1",
-        error_usec, FLAGS_max_clock_sync_error_usec);
   }
 
   // If the current time surpasses the last update just return it
@@ -395,10 +373,18 @@ kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_
   *now_usec = GetCurrentTimeMicros();
   *error_usec = 0;
 #else
+  // Read the time. This will return an error if the clock is not synchronized.
   ntptimeval timeval;
   RETURN_NOT_OK(GetClockTime(&timeval));
   *now_usec = timeval.time.tv_sec * kNanosPerSec + timeval.time.tv_usec / divisor_;
   *error_usec = timeval.maxerror;
+
+  // If the clock is synchronized but has max_error beyond max_clock_sync_error_usec
+  // we also return a non-ok status.
+  if (*error_usec > FLAGS_max_clock_sync_error_usec) {
+    return Status::ServiceUnavailable(Substitute("Error: Clock synchronized but error was"
+        "too high ($0 us).", *error_usec));
+  }
 #endif // defined(__APPLE__)
   return kudu::Status::OK();
 }

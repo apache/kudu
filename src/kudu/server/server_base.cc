@@ -152,12 +152,10 @@ Status ServerBase::Init() {
 
   InitSpinLockContentionProfiling();
 
-  // Check for NTP errors so it's less likely to get into a partially
-  // initialized state on disk during startup.
-  // TODO: Remove this check after fully fixing KUDU-1186.
-  if (FLAGS_use_hybrid_clock) {
-    RETURN_NOT_OK_PREPEND(CheckClockSynchronized(), "Clock is not synchronized");
-  }
+  // Initialize the clock immediately. This checks that the clock is synchronized
+  // so we're less likely to get into a partially initialized state on disk during startup
+  // if we're having clock problems.
+  RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
 
   Status s = fs_manager_->Open();
   if (s.IsNotFound()) {
@@ -179,7 +177,6 @@ Status ServerBase::Init() {
 
   RETURN_NOT_OK(rpc_server_->Init(messenger_));
   RETURN_NOT_OK(rpc_server_->Bind());
-  RETURN_NOT_OK_PREPEND(clock_->Init(), "Cannot initialize clock");
   clock_->RegisterMetrics(metric_entity_);
 
   RETURN_NOT_OK_PREPEND(StartMetricsLogging(), "Could not enable metrics logging");
