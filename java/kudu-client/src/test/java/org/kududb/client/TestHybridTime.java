@@ -151,7 +151,7 @@ public class TestHybridTime extends BaseKuduTest {
 
   private int scanAtSnapshot(long time) throws Exception {
     AsyncKuduScanner.AsyncKuduScannerBuilder builder = client.newScannerBuilder(table)
-        .snapshotTimestamp(time)
+        .snapshotTimestampRaw(time)
         .readMode(AsyncKuduScanner.ReadMode.READ_AT_SNAPSHOT);
     return countRowsInScan(builder.build());
   }

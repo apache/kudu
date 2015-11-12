@@ -177,7 +177,7 @@ public abstract class AbstractKuduScannerBuilder
    * @throws IllegalArgumentException if the timestamp is less than 0
    */
   @InterfaceAudience.Private
-  public S snapshotTimestamp(long htTimestamp) {
+  public S snapshotTimestampRaw(long htTimestamp) {
     this.htTimestamp = htTimestamp;
     return (S) this;
   }
