@@ -818,6 +818,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   // the first pending replicate on record this is likely an orphaned commit.
   if (state->pending_replicates.empty() ||
       (*state->pending_replicates.begin()).first > committed_op_id.index()) {
+    VLOG_WITH_PREFIX(2) << "Found orphaned commit for " << committed_op_id;
     RETURN_NOT_OK(CheckOrphanedCommitAlreadyFlushed(commit_entry->commit()));
     stats_.orphaned_commits++;
     delete commit_entry;
@@ -831,6 +832,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
       return Status::Corruption(Substitute("Could not find replicate for commit: $0",
                                            commit_entry->ShortDebugString()));
     }
+    VLOG_WITH_PREFIX(2) << "Adding pending commit for " << committed_op_id;
     InsertOrDie(&state->pending_commits, committed_op_id.index(), commit_entry);
     return Status::OK();
   }
@@ -891,6 +893,7 @@ Status TabletBootstrap::CheckOrphanedCommitAlreadyFlushed(const CommitMsg& commi
 Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commit_entry) {
 
   const OpId& committed_op_id = commit_entry->commit().commited_op_id();
+  VLOG_WITH_PREFIX(2) << "Applying commit for " << committed_op_id;
   gscoped_ptr<LogEntryPB> pending_replicate_entry;
 
   // They should also have an associated replicate index (it may have been in a
