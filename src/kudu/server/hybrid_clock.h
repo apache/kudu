@@ -141,6 +141,20 @@ class HybridClock : public Clock {
   // separated.
   static std::string StringifyTimestamp(const Timestamp& timestamp);
 
+  // Sets the time to be returned by a mock call to the system clock, for tests.
+  // Requires that 'FLAGS_use_mock_wall_clock' is set to true and that 'now_usec' is less
+  // than the previously set time.
+  // NOTE: This refers to the time returned by the system clock, not the time returned
+  // by HybridClock, i.e. 'now_usec' is not a HybridTime timestmap and shouldn't have
+  // a logical component.
+  void SetMockClockWallTimeForTests(uint64_t now_usec);
+
+  // Sets the max. error to be returned by a mock call to the system clock, for tests.
+  // Requires that 'FLAGS_use_mock_wall_clock' is set to true.
+  // This can be used to make HybridClock report the wall clock as unsynchronized, by
+  // setting error to be more than the configured tolerance.
+  void SetMockMaxClockErrorForTests(uint64_t max_error_usec);
+
  private:
 
   // Obtains the current wallclock time and maximum error in microseconds,
@@ -154,6 +168,14 @@ class HybridClock : public Clock {
 
   // Used to get the current error, for metrics.
   uint64_t ErrorForMetrics();
+
+  // Set by calls to SetMockClockWallTimeForTests().
+  // For testing purposes only.
+  uint64_t mock_clock_time_usec_;
+
+  // Set by calls to SetMockClockErrorForTests().
+  // For testing purposes only.
+  uint64_t mock_clock_max_error_usec_;
 
   uint64_t divisor_;
 

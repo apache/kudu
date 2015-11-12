@@ -44,6 +44,11 @@ DEFINE_bool(use_hybrid_clock, true,
             " implementation. This should be disabled for testing purposes only.");
 TAG_FLAG(use_hybrid_clock, hidden);
 
+DEFINE_bool(use_mock_wall_clock, false,
+            "Whether HybridClock should use a mock wall clock which is updated manually"
+            "instead of reading time from the system clock, for tests.");
+TAG_FLAG(use_mock_wall_clock, hidden);
+
 METRIC_DEFINE_gauge_uint64(server, hybrid_clock_timestamp,
                            "Hybrid Clock Timestamp",
                            kudu::MetricUnit::kMicroseconds,
@@ -130,10 +135,17 @@ HybridClock::HybridClock()
       tolerance_adjustment_(1),
       last_usec_(0),
       next_logical_(0),
+      mock_clock_time_usec_(0),
+      mock_clock_max_error_usec_(0),
       state_(kNotInitialized) {
 }
 
 Status HybridClock::Init() {
+  if (PREDICT_FALSE(FLAGS_use_mock_wall_clock)) {
+    LOG(WARNING) << "HybridClock set to mock the wall clock.";
+    state_ = kInitialized;
+    return Status::OK();
+  }
 #if defined(__APPLE__)
   LOG(WARNING) << "HybridClock initialized in local mode (OS X only). "
                << "Not suitable for distributed clusters.";
@@ -369,15 +381,21 @@ bool HybridClock::IsAfter(Timestamp t) {
 }
 
 kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_usec) {
+  if (PREDICT_FALSE(FLAGS_use_mock_wall_clock)) {
+    *now_usec = mock_clock_time_usec_;
+    *error_usec = mock_clock_max_error_usec_;
+  } else {
 #if defined(__APPLE__)
-  *now_usec = GetCurrentTimeMicros();
-  *error_usec = 0;
+    *now_usec = GetCurrentTimeMicros();
+    *error_usec = 0;
+  }
 #else
-  // Read the time. This will return an error if the clock is not synchronized.
-  ntptimeval timeval;
-  RETURN_NOT_OK(GetClockTime(&timeval));
-  *now_usec = timeval.time.tv_sec * kNanosPerSec + timeval.time.tv_usec / divisor_;
-  *error_usec = timeval.maxerror;
+    // Read the time. This will return an error if the clock is not synchronized.
+    ntptimeval timeval;
+    RETURN_NOT_OK(GetClockTime(&timeval));
+    *now_usec = timeval.time.tv_sec * kNanosPerSec + timeval.time.tv_usec / divisor_;
+    *error_usec = timeval.maxerror;
+  }
 
   // If the clock is synchronized but has max_error beyond max_clock_sync_error_usec
   // we also return a non-ok status.
@@ -387,6 +405,19 @@ kudu::Status HybridClock::WalltimeWithError(uint64_t* now_usec, uint64_t* error_
   }
 #endif // defined(__APPLE__)
   return kudu::Status::OK();
+}
+
+void HybridClock::SetMockClockWallTimeForTests(uint64_t now_usec) {
+  CHECK(FLAGS_use_mock_wall_clock);
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  CHECK_GE(now_usec, mock_clock_time_usec_);
+  mock_clock_time_usec_= now_usec;
+}
+
+void HybridClock::SetMockMaxClockErrorForTests(uint64_t max_error_usec) {
+  CHECK(FLAGS_use_mock_wall_clock);
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  mock_clock_max_error_usec_ = max_error_usec;
 }
 
 // Used to get the timestamp for metrics.

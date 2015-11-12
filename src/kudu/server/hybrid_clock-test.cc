@@ -23,6 +23,8 @@
 #include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
 
+DECLARE_bool(use_mock_wall_clock);
+
 namespace kudu {
 namespace server {
 
@@ -34,13 +36,40 @@ class HybridClockTest : public KuduTest {
 
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-
     ASSERT_OK(clock_->Init());
   }
 
  protected:
   scoped_refptr<HybridClock> clock_;
 };
+
+TEST(MockHybridClockTest, TestMockedSystemClock) {
+  google::FlagSaver saver;
+  FLAGS_use_mock_wall_clock = true;
+  scoped_refptr<HybridClock> clock(new HybridClock());
+  clock->Init();
+  Timestamp timestamp;
+  uint64_t max_error_usec;
+  clock->NowWithError(&timestamp, &max_error_usec);
+  ASSERT_EQ(timestamp.ToUint64(), 0);
+  ASSERT_EQ(max_error_usec, 0);
+  // If we read the clock again we should see the logical component be incremented.
+  clock->NowWithError(&timestamp, &max_error_usec);
+  ASSERT_EQ(timestamp.ToUint64(), 1);
+  // Now set an arbitrary time and check that is the time returned by the clock.
+  uint64_t time = 1234;
+  uint64_t error = 100 * 1000;
+  clock->SetMockClockWallTimeForTests(time);
+  clock->SetMockMaxClockErrorForTests(error);
+  clock->NowWithError(&timestamp, &max_error_usec);
+  ASSERT_EQ(timestamp.ToUint64(),
+            HybridClock::TimestampFromMicrosecondsAndLogicalValue(time, 0).ToUint64());
+  ASSERT_EQ(max_error_usec, error);
+  // Perform another read, we should observe the logical component increment, again.
+  clock->NowWithError(&timestamp, &max_error_usec);
+  ASSERT_EQ(timestamp.ToUint64(),
+            HybridClock::TimestampFromMicrosecondsAndLogicalValue(time, 1).ToUint64());
+}
 
 // Test that two subsequent time reads are monotonically increasing.
 TEST_F(HybridClockTest, TestNow_ValuesIncreaseMonotonically) {
