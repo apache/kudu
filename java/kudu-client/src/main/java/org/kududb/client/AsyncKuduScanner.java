@@ -371,7 +371,7 @@ public final class AsyncKuduScanner {
             }
           });
     } else if (prefetching && prefetcherDeferred != null) {
-      // TODO check if prefetching still works
+      // TODO KUDU-1260 - Check if this works and add a test
       prefetcherDeferred.chain(new Deferred<RowResultIterator>().addCallback(prefetch));
       return prefetcherDeferred;
     }

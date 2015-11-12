@@ -146,7 +146,10 @@ public abstract class AbstractKuduScannerBuilder
   }
 
   /**
-   * Enables prefetching of rows for the scanner, disabled by default.
+   * Enables prefetching of rows for the scanner, i.e. whether to send a request for more data
+   * to the server immediately after we receive a response (instead of waiting for the user
+   * to call {@code  nextRows()}). Disabled by default.
+   * NOTE: This is risky until KUDU-1260 is resolved.
    * @param prefetching a boolean that indicates if the scanner should prefetch rows
    * @return this instance
    */
