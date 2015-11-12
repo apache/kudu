@@ -24,6 +24,7 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
+#include "kudu/gutil/walltime.h"
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/tablet/tablet.pb.h"
@@ -34,6 +35,7 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/env.h"
+#include "kudu/util/env_util.h"
 #include "kudu/util/flag_tags.h"
 #include "kudu/util/logging.h"
 #include "kudu/util/net/net_util.h"
@@ -42,6 +44,13 @@ DEFINE_int32(remote_bootstrap_begin_session_timeout_ms, 3000,
              "Tablet server RPC client timeout for BeginRemoteBootstrapSession calls. "
              "Also used for EndRemoteBootstrapSession calls.");
 TAG_FLAG(remote_bootstrap_begin_session_timeout_ms, hidden);
+
+DEFINE_bool(remote_bootstrap_save_downloaded_metadata, false,
+            "Save copies of the downloaded remote bootstrap files for debugging purposes. "
+            "Note: This is only intended for debugging and should not be normally used!");
+TAG_FLAG(remote_bootstrap_save_downloaded_metadata, advanced);
+TAG_FLAG(remote_bootstrap_save_downloaded_metadata, hidden);
+TAG_FLAG(remote_bootstrap_save_downloaded_metadata, runtime);
 
 // RETURN_NOT_OK_PREPEND() with a remote-error unwinding step.
 #define RETURN_NOT_OK_UNWIND_PREPEND(status, controller, msg) \
@@ -55,6 +64,7 @@ using consensus::ConsensusStatePB;
 using consensus::OpId;
 using consensus::RaftConfigPB;
 using consensus::RaftPeerPB;
+using env_util::CopyFile;
 using fs::WritableBlock;
 using rpc::Messenger;
 using std::string;
@@ -83,7 +93,8 @@ RemoteBootstrapClient::RemoteBootstrapClient(const std::string& tablet_id,
     downloaded_blocks_(false),
     replace_tombstoned_tablet_(false),
     status_listener_(NULL),
-    session_idle_timeout_millis_(0) {
+    session_idle_timeout_millis_(0),
+    start_time_micros_(0) {
 }
 
 RemoteBootstrapClient::~RemoteBootstrapClient() {
@@ -131,6 +142,7 @@ Status RemoteBootstrapClient::Start(const string& bootstrap_peer_uuid,
                                     const HostPort& bootstrap_peer_addr,
                                     scoped_refptr<TabletMetadata>* meta) {
   CHECK(!started_);
+  start_time_micros_ = GetCurrentTimeMicros();
 
   Sockaddr addr;
   RETURN_NOT_OK(SockaddrFromHostPort(bootstrap_peer_addr, &addr));
@@ -250,7 +262,17 @@ Status RemoteBootstrapClient::Finish() {
   LOG_WITH_PREFIX(INFO) << "Remote bootstrap complete. Replacing tablet superblock.";
   UpdateStatusMessage("Replacing tablet superblock");
   new_superblock_->set_tablet_data_state(tablet::TABLET_DATA_READY);
-  return meta_->ReplaceSuperBlock(*new_superblock_);
+  RETURN_NOT_OK(meta_->ReplaceSuperBlock(*new_superblock_));
+
+  if (FLAGS_remote_bootstrap_save_downloaded_metadata) {
+    string meta_path = fs_manager_->GetTabletMetadataPath(tablet_id_);
+    string meta_copy_path = Substitute("$0.copy.$1.tmp", meta_path, start_time_micros_);
+    RETURN_NOT_OK_PREPEND(CopyFile(Env::Default(), meta_path, meta_copy_path,
+                                   WritableFileOptions()),
+                          "Unable to make copy of tablet metadata");
+  }
+
+  return Status::OK();
 }
 
 // Decode the remote error into a human-readable Status object.
@@ -415,7 +437,17 @@ Status RemoteBootstrapClient::WriteConsensusMetadata() {
   // Otherwise, update the consensus metadata to reflect the config and term
   // sent by the remote bootstrap source.
   cmeta_->MergeCommittedConsensusStatePB(*remote_committed_cstate_);
-  return cmeta_->Flush();
+  RETURN_NOT_OK(cmeta_->Flush());
+
+  if (FLAGS_remote_bootstrap_save_downloaded_metadata) {
+    string cmeta_path = fs_manager_->GetConsensusMetadataPath(tablet_id_);
+    string cmeta_copy_path = Substitute("$0.copy.$1.tmp", cmeta_path, start_time_micros_);
+    RETURN_NOT_OK_PREPEND(CopyFile(Env::Default(), cmeta_path, cmeta_copy_path,
+                                   WritableFileOptions()),
+                          "Unable to make copy of consensus metadata");
+  }
+
+  return Status::OK();
 }
 
 Status RemoteBootstrapClient::DownloadAndRewriteBlock(BlockIdPB* block_id,

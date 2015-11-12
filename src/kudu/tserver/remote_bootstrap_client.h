@@ -203,6 +203,7 @@ class RemoteBootstrapClient {
   gscoped_ptr<tablet::TabletSuperBlockPB> new_superblock_;
   gscoped_ptr<consensus::ConsensusStatePB> remote_committed_cstate_;
   std::vector<uint64_t> wal_seqnos_;
+  int64_t start_time_micros_;
 
   DISALLOW_COPY_AND_ASSIGN(RemoteBootstrapClient);
 };
