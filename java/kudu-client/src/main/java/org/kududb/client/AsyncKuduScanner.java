@@ -82,14 +82,38 @@ public final class AsyncKuduScanner {
 
   /**
    * The possible read modes for scanners.
-   *
-   * See {@code src/kudu/common/common.proto} for a detailed explanations on
-   * the meaning and implications of each mode.
    */
   @InterfaceAudience.Public
   @InterfaceStability.Evolving
   public enum ReadMode {
+    /**
+     * When READ_LATEST is specified the server will always return committed writes at
+     * the time the request was received. This type of read does not return a snapshot
+     * timestamp and is not repeatable.
+     *
+     * In ACID terms this corresponds to Isolation mode: "Read Committed"
+     *
+     * This is the default mode.
+     */
     READ_LATEST(Common.ReadMode.READ_LATEST),
+
+    /**
+     * When READ_AT_SNAPSHOT is specified the server will attempt to perform a read
+     * at the provided timestamp. If no timestamp is provided the server will take the
+     * current time as the snapshot timestamp. In this mode reads are repeatable, i.e.
+     * all future reads at the same timestamp will yield the same data. This is
+     * performed at the expense of waiting for in-flight transactions whose timestamp
+     * is lower than the snapshot's timestamp to complete, so it might incur a latency
+     * penalty.
+     *
+     * In ACID terms this, by itself, corresponds to Isolation mode "Repeatable
+     * Read". If all writes to the scanned tablet are made externally consistent,
+     * then this corresponds to Isolation mode "Strict-Serializable".
+     *
+     * Note: there currently "holes", which happen in rare edge conditions, by which writes
+     * are sometimes not externally consistent even when action was taken to make them so.
+     * In these cases Isolation may degenerate to mode "Read Committed". See KUDU-430.
+     */
     READ_AT_SNAPSHOT(Common.ReadMode.READ_AT_SNAPSHOT);
 
     private Common.ReadMode pbVersion;
