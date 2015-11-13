@@ -121,7 +121,7 @@ public class AsyncKuduClient implements AutoCloseable {
   public static final Logger LOG = LoggerFactory.getLogger(AsyncKuduClient.class);
   public static final int SLEEP_TIME = 500;
   public static final byte[] EMPTY_ARRAY = new byte[0];
-  public static final int NO_TIMESTAMP = -1;
+  public static final long NO_TIMESTAMP = -1;
   public static final long DEFAULT_OPERATION_TIMEOUT_MS = 10000;
   public static final long DEFAULT_SOCKET_READ_TIMEOUT_MS = 5000;
 

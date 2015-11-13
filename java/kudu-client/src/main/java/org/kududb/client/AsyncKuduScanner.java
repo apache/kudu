@@ -30,7 +30,6 @@ import java.util.ArrayList;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.List;
 
-import com.google.common.base.Preconditions;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
 import org.kududb.ColumnSchema;
@@ -46,6 +45,7 @@ import org.jboss.netty.buffer.ChannelBuffer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static org.kududb.tserver.Tserver.*;
 
 /**
@@ -202,12 +202,14 @@ public final class AsyncKuduScanner {
                    byte[] startPrimaryKey, byte[] endPrimaryKey,
                    byte[] startPartitionKey, byte[] endPartitionKey,
                    long htTimestamp, int batchSizeBytes) {
-    Preconditions.checkArgument(batchSizeBytes > 0, "Need a strictly positive number of bytes, " +
+    checkArgument(batchSizeBytes > 0, "Need a strictly positive number of bytes, " +
         "got %s", batchSizeBytes);
-    Preconditions.checkArgument(limit > 0, "Need a strictly positive number for the limit, " +
+    checkArgument(limit > 0, "Need a strictly positive number for the limit, " +
         "got %s", limit);
     if (htTimestamp != AsyncKuduClient.NO_TIMESTAMP) {
-      Preconditions.checkArgument(readMode == ReadMode.READ_AT_SNAPSHOT, "When specifying a " +
+      checkArgument(htTimestamp >= 0, "Need non-negative number for the scan, " +
+          " timestamp got %s", htTimestamp);
+      checkArgument(readMode == ReadMode.READ_AT_SNAPSHOT, "When specifying a " +
           "HybridClock timestamp, the read mode needs to be set to READ_AT_SNAPSHOT");
     }
 

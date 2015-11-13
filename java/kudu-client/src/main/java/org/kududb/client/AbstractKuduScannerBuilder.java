@@ -174,7 +174,7 @@ public abstract class AbstractKuduScannerBuilder
    * default.
    * @param htTimestamp a long representing a HybridClock-encoded timestamp
    * @return this instance
-   * @throws IllegalArgumentException if the timestamp is less than 0
+   * @throws IllegalArgumentException on build(), if the timestamp is less than 0
    */
   @InterfaceAudience.Private
   public S snapshotTimestampRaw(long htTimestamp) {
