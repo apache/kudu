@@ -771,37 +771,32 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
 // scanners on different threads may share a single KuduTable object.
 class KUDU_EXPORT KuduScanner {
  public:
-  // The possible read modes for clients.
+  // The possible read modes for scanners.
   enum ReadMode {
-    // When READ_LATEST is specified the server will execute the read independently
-    // of the clock and will always return all visible writes at the time the request
-    // was received. This type of read does not return a snapshot timestamp since
-    // it might not be repeatable, i.e. a later read executed at the same snapshot
-    // timestamp might yield rows that were committed by in-flight transactions.
+    // When READ_LATEST is specified the server will always return committed writes at
+    // the time the request was received. This type of read does not return a snapshot
+    // timestamp and is not repeatable.
+    //
+    // In ACID terms this corresponds to Isolation mode: "Read Committed"
     //
     // This is the default mode.
     READ_LATEST,
 
     // When READ_AT_SNAPSHOT is specified the server will attempt to perform a read
-    // at the required snapshot. If no snapshot is defined the server will take the
-    // current time as the snapshot timestamp. Snapshot reads are repeatable, i.e.
-    // all future reads at the same timestamp will yield the same rows. This is
+    // at the provided timestamp. If no timestamp is provided the server will take the
+    // current time as the snapshot timestamp. In this mode reads are repeatable, i.e.
+    // all future reads at the same timestamp will yield the same data. This is
     // performed at the expense of waiting for in-flight transactions whose timestamp
-    // is lower than the snapshot's timestamp to complete.
+    // is lower than the snapshot's timestamp to complete, so it might incur a latency
+    // penalty.
     //
-    // When mixing reads and writes clients that specify COMMIT_WAIT as their
-    // external consistency mode and then use the returned write_timestamp to
-    // to perform snapshot reads are guaranteed that that snapshot time is
-    // considered in the past by all servers and no additional action is
-    // necessary. Clients using CLIENT_PROPAGATED however must forcibly propagate
-    // the timestamps even at read time, so that the server will not generate
-    // any more transactions before the snapshot requested by the client.
-    // The latter option is implemented by allowing the client to specify one or
-    // two timestamps, the first one obtained from the previous CLIENT_PROPAGATED
-    // write, directly or through back-channels, must be signed and will be
-    // checked by the server. The second one, if defined, is the actual snapshot
-    // read time. When selecting both, the latter must be lower than or equal to
-    // the former.
+    // In ACID terms this, by itself, corresponds to Isolation mode "Repeatable
+    // Read". If all writes to the scanned tablet are made externally consistent,
+    // then this corresponds to Isolation mode "Strict-Serializable".
+    //
+    // Note: there currently "holes", which happen in rare edge conditions, by which writes
+    // are sometimes not externally consistent even when action was taken to make them so.
+    // In these cases Isolation may degenerate to mode "Read Committed". See KUDU-430.
     READ_AT_SNAPSHOT
   };
 
