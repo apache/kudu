@@ -81,6 +81,10 @@ MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
                  kudu::client::KuduSession::AUTO_FLUSH_SYNC,
                  kudu::client::KuduSession::MANUAL_FLUSH);
 
+MAKE_ENUM_LIMITS(kudu::client::KuduSession::ExternalConsistencyMode,
+                 kudu::client::KuduSession::CLIENT_PROPAGATED,
+                 kudu::client::KuduSession::COMMIT_WAIT);
+
 MAKE_ENUM_LIMITS(kudu::client::KuduScanner::ReadMode,
                  kudu::client::KuduScanner::READ_LATEST,
                  kudu::client::KuduScanner::READ_AT_SNAPSHOT);
@@ -390,6 +394,10 @@ uint64_t KuduClient::GetLatestObservedTimestamp() const {
   return data_->GetLatestObservedTimestamp();
 }
 
+void KuduClient::SetLatestObservedTimestamp(uint64_t ht_timestamp) {
+  data_->UpdateLatestObservedTimestamp(ht_timestamp);
+}
+
 ////////////////////////////////////////////////////////////
 // KuduTableCreator
 ////////////////////////////////////////////////////////////
@@ -640,6 +648,21 @@ Status KuduSession::SetFlushMode(FlushMode m) {
   }
 
   data_->flush_mode_ = m;
+  return Status::OK();
+}
+
+Status KuduSession::SetExternalConsistencyMode(ExternalConsistencyMode m) {
+  if (data_->batcher_->HasPendingOperations()) {
+    // TODO: there may be a more reasonable behavior here.
+    return Status::IllegalState("Cannot change external consistency mode when writes are "
+        "buffered");
+  }
+  if (!tight_enum_test<ExternalConsistencyMode>(m)) {
+    // Be paranoid in client code.
+    return Status::InvalidArgument("Bad external consistency mode");
+  }
+
+  data_->external_consistency_mode_ = m;
   return Status::OK();
 }
 

@@ -30,6 +30,7 @@ KuduSession::Data::Data(const shared_ptr<KuduClient>& client)
   : client_(client),
     error_collector_(new ErrorCollector()),
     flush_mode_(AUTO_FLUSH_SYNC),
+    external_consistency_mode_(CLIENT_PROPAGATED),
     timeout_ms_(-1) {}
 
 KuduSession::Data::~Data() {
@@ -46,7 +47,8 @@ void KuduSession::Data::NewBatcher(const shared_ptr<KuduSession>& session,
   DCHECK(lock_.is_locked());
 
   scoped_refptr<Batcher> batcher(
-    new Batcher(client_.get(), error_collector_.get(), session));
+    new Batcher(client_.get(), error_collector_.get(), session,
+                external_consistency_mode_));
   if (timeout_ms_ != -1) {
     batcher->SetTimeoutMillis(timeout_ms_);
   }
