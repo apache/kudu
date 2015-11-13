@@ -73,6 +73,7 @@ class KuduSession::Data {
   std::tr1::unordered_set<internal::Batcher*> flushed_batchers_;
 
   FlushMode flush_mode_;
+  kudu::client::KuduSession::ExternalConsistencyMode external_consistency_mode_;
 
   // Timeout for the next batch.
   int timeout_ms_;

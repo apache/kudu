@@ -245,6 +245,15 @@ class KUDU_EXPORT KuduClient : public std::tr1::enable_shared_from_this<KuduClie
   // this client. See KuduScanner for more details on timestamps.
   uint64_t GetLatestObservedTimestamp() const;
 
+  // Sets the latest observed HybridTime timestamp, encoded in the HybridTime format.
+  // This is only useful when forwarding timestamps between clients to enforce
+  // external consistency when using KuduSession::CLIENT_PROPAGATED external consistency
+  // mode.
+  // To use this the user must obtain the HybridTime encoded timestamp from the first
+  // client with KuduClient::GetLatestObservedTimestamp() and the set it in the new
+  // client with this method.
+  void SetLatestObservedTimestamp(uint64_t ht_timestamp);
+
  private:
   class KUDU_NO_EXPORT Data;
 
@@ -629,6 +638,42 @@ class KUDU_EXPORT KuduSession : public std::tr1::enable_shared_from_this<KuduSes
   // Set the flush mode.
   // REQUIRES: there should be no pending writes -- call Flush() first to ensure.
   Status SetFlushMode(FlushMode m) WARN_UNUSED_RESULT;
+
+  // The possible external consistency modes on which Kudu operates.
+  enum ExternalConsistencyMode {
+    // The response to any write will contain a timestamp. Any further calls from the same
+    // client to other servers will update those servers with that timestamp. Following
+    // write operations from the same client will be assigned timestamps that are strictly
+    // higher, enforcing external consistency without having to wait or incur any latency
+    // penalties.
+    //
+    // In order to maintain external consistency for writes between two different clients
+    // in this mode, the user must forward the timestamp from the first client to the
+    // second by using KuduClient::GetLatestObservedTimestamp() and
+    // KuduClient::SetLatestObservedTimestamp().
+    //
+    // WARNING: Failure to propagate timestamp information through back-channels between
+    // two different clients will negate any external consistency guarantee under this
+    // mode.
+    //
+    // This is the default mode.
+    CLIENT_PROPAGATED,
+
+    // The server will guarantee that write operations from the same or from other client
+    // are externally consistent, without the need to propagate timestamps across clients.
+    // This is done by making write operations wait until there is certainty that all
+    // follow up write operations (operations that start after the previous one finishes)
+    // will be assigned a timestamp that is strictly higher, enforcing external consistency.
+    //
+    // WARNING: Depending on the clock synchronization state of TabletServers this may
+    // imply considerable latency. Moreover operations in COMMIT_WAIT external consistency
+    // mode will outright fail if TabletServer clocks are either unsynchronized or
+    // synchronized but with a maximum error which surpasses a pre-configured threshold.
+    COMMIT_WAIT
+  };
+
+  // Set the new external consistency mode for this session.
+  Status SetExternalConsistencyMode(ExternalConsistencyMode m) WARN_UNUSED_RESULT;
 
   // Set the amount of buffer space used by this session for outbound writes.
   // The effect of the buffer size varies based on the flush mode of the

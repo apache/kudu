@@ -249,8 +249,19 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   const Schema* schema = table()->schema().schema_;
 
   req_.set_tablet_id(tablet->tablet_id());
-  // Set up schema
+  switch (batcher->external_consistency_mode()) {
+    case kudu::client::KuduSession::CLIENT_PROPAGATED:
+      req_.set_external_consistency_mode(kudu::CLIENT_PROPAGATED);
+      break;
+    case kudu::client::KuduSession::COMMIT_WAIT:
+      req_.set_external_consistency_mode(kudu::COMMIT_WAIT);
+      break;
+    default:
+      LOG(FATAL) << "Unsupported consistency mode: " << batcher->external_consistency_mode();
 
+  }
+
+  // Set up schema
   CHECK_OK(SchemaToPB(*schema, req_.mutable_schema(),
                       SCHEMA_PB_WITHOUT_STORAGE_ATTRIBUTES | SCHEMA_PB_WITHOUT_IDS));
 
@@ -467,10 +478,12 @@ void WriteRpc::SendRpcCb(const Status& status) {
 
 Batcher::Batcher(KuduClient* client,
                  ErrorCollector* error_collector,
-                 const shared_ptr<KuduSession>& session)
+                 const shared_ptr<KuduSession>& session,
+                 kudu::client::KuduSession::ExternalConsistencyMode consistency_mode)
   : state_(kGatheringOps),
     client_(client),
     weak_session_(session),
+    consistency_mode_(consistency_mode),
     error_collector_(error_collector),
     had_errors_(false),
     flush_callback_(NULL),
