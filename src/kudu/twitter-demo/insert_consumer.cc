@@ -38,6 +38,7 @@
 namespace kudu {
 namespace twitter_demo {
 
+using std::tr1::shared_ptr;
 using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
