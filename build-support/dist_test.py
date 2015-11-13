@@ -36,7 +36,7 @@ import time
 
 TEST_TIMEOUT_SECS = int(os.environ.get('TEST_TIMEOUT_SECS', '400'))
 ISOLATE_SERVER = os.environ.get('ISOLATE_SERVER',
-                                "http://a1228.halxg.cloudera.com:4242/")
+                                "http://isolate.cloudera.org:4242/")
 DIST_TEST_HOME = os.environ.get('DIST_TEST_HOME',
                                 os.path.expanduser("~/dist_test"))
 
