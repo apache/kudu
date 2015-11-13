@@ -723,4 +723,18 @@ TEST_F(TestEnv, TestGetTotalRAMBytes) {
   ASSERT_GT(ram, 0);
 }
 
+// Test that CopyFile() copies all the bytes properly.
+TEST_F(TestEnv, TestCopyFile) {
+  string orig_path = GetTestPath("test");
+  string copy_path = orig_path + ".copy";
+  const int kFileSize = 1024 * 1024 + 11; // Some odd number of bytes.
+
+  Env* env = Env::Default();
+  NO_FATALS(WriteTestFile(env, orig_path, kFileSize));
+  ASSERT_OK(env_util::CopyFile(env, orig_path, copy_path, WritableFileOptions()));
+  gscoped_ptr<RandomAccessFile> copy;
+  ASSERT_OK(env->NewRandomAccessFile(copy_path, &copy));
+  NO_FATALS(ReadAndVerifyTestData(copy.get(), 0, kFileSize));
+}
+
 }  // namespace kudu

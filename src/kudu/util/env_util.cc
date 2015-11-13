@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
 #include <tr1/memory>
 
 #include <glog/logging.h>
@@ -100,6 +101,33 @@ Status CreateDirIfMissing(Env* env, const string& path, bool* created) {
     *created = s.ok();
   }
   return s.IsAlreadyPresent() ? Status::OK() : s;
+}
+
+Status CopyFile(Env* env, const string& source_path, const string& dest_path,
+                WritableFileOptions opts) {
+  opts.mmap_file = false;
+
+  gscoped_ptr<SequentialFile> source;
+  RETURN_NOT_OK(env->NewSequentialFile(source_path, &source));
+  uint64_t size;
+  RETURN_NOT_OK(env->GetFileSize(source_path, &size));
+
+  gscoped_ptr<WritableFile> dest;
+  RETURN_NOT_OK(env->NewWritableFile(opts, dest_path, &dest));
+  RETURN_NOT_OK(dest->PreAllocate(size));
+
+  const int32_t kBufferSize = 1024 * 1024;
+  gscoped_ptr<uint8_t[]> scratch(new uint8_t[kBufferSize]);
+
+  uint64_t bytes_read = 0;
+  while (bytes_read < size) {
+    uint64_t max_bytes_to_read = std::min<uint64_t>(size - bytes_read, kBufferSize);
+    Slice data;
+    RETURN_NOT_OK(source->Read(max_bytes_to_read, &data, scratch.get()));
+    RETURN_NOT_OK(dest->Append(data));
+    bytes_read += data.size();
+  }
+  return Status::OK();
 }
 
 ScopedFileDeleter::ScopedFileDeleter(Env* env, const std::string& path)
