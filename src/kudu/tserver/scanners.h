@@ -215,7 +215,10 @@ class Scanner {
   // Return the ScanSpec associated with this Scanner.
   const ScanSpec& spec() const;
 
-  const std::string& tablet_id() const { return tablet_peer_->tablet_id(); }
+  const std::string tablet_id() const {
+    // scanners-test passes a null tablet_peer.
+    return tablet_peer_ ? tablet_peer_->tablet_id() : "null tablet";
+  }
 
   const scoped_refptr<tablet::TabletPeer>& tablet_peer() const { return tablet_peer_; }
 

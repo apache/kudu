@@ -163,8 +163,9 @@ void ScannerManager::RemoveExpiredScanners() {
       if (time_live.MoreThan(scanner_ttl)) {
         // TODO: once we have a metric for the number of scanners expired, make this a
         // VLOG(1).
-        LOG(INFO) << "Expiring scanner id: " << it->first << ", after "
-                  << time_live.ToMicroseconds() << " us of inactivity, which is > TTL ("
+        LOG(INFO) << "Expiring scanner id: " << it->first << ", of tablet " << scanner->tablet_id()
+                  << ", after " << time_live.ToMicroseconds()
+                  << " us of inactivity, which is > TTL ("
                   << scanner_ttl.ToMicroseconds() << " us).";
         it = stripe->scanners_by_id_.erase(it);
         if (metrics_) {
