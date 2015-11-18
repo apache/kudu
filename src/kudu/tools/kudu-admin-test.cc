@@ -18,6 +18,7 @@
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
+#include "kudu/client/client.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/test_workload.h"
@@ -28,9 +29,13 @@
 namespace kudu {
 namespace tools {
 
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
 using itest::TabletServerMap;
 using itest::TServerDetails;
 using strings::Substitute;
+
+using std::tr1::shared_ptr;
 
 static const char* const kAdminToolName = "kudu-admin";
 
@@ -150,6 +155,35 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
                                                 leader, tablet_id_,
                                                 MonoDelta::FromSeconds(10)));
+}
+
+TEST_F(AdminCliTest, TestDeleteTable) {
+  FLAGS_num_tablet_servers = 1;
+  FLAGS_num_replicas = 1;
+
+  vector<string> ts_flags, master_flags;
+  BuildAndStart(ts_flags, master_flags);
+  string master_address = cluster_->master()->bound_rpc_addr().ToString();
+
+  shared_ptr<KuduClient> client;
+  CHECK_OK(KuduClientBuilder()
+        .add_master_server_addr(master_address)
+        .Build(&client));
+
+  // Default table that gets created;
+  string table_name = "TestTable";
+
+  string exe_path = GetAdminToolPath();
+  string arg_str = Substitute("$0 -master_addresses $1 delete_table $2",
+                              exe_path,
+                              master_address,
+                              table_name);
+
+  ASSERT_OK(Subprocess::Call(arg_str));
+
+  vector<string> tables;
+  ASSERT_OK(client->ListTables(&tables));
+  ASSERT_TRUE(tables.empty());
 }
 
 } // namespace tools
