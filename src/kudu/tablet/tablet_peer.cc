@@ -102,7 +102,7 @@ TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
   : meta_(meta),
     tablet_id_(meta->tablet_id()),
     local_peer_pb_(local_peer_pb),
-    state_(BOOTSTRAPPING),
+    state_(NOT_STARTED),
     status_listener_(new TabletStatusListener(meta)),
     apply_pool_(apply_pool),
     log_anchor_registry_(new LogAnchorRegistry()),
@@ -371,6 +371,24 @@ Status TabletPeer::RunLogGC() {
     LOG(ERROR) << s.ToString();
   }
   return Status::OK();
+}
+
+string TabletPeer::HumanReadableState() const {
+  boost::lock_guard<simple_spinlock> lock(lock_);
+  TabletDataState data_state = meta_->tablet_data_state();
+  // If failed, any number of things could have gone wrong.
+  if (state_ == FAILED) {
+    return Substitute("$0 ($1): $2", TabletStatePB_Name(state_),
+                      TabletDataState_Name(data_state),
+                      error_.ToString());
+  // If it's remotely bootstrapping, or tombstoned, that is the important thing
+  // to show.
+  } else if (data_state != TABLET_DATA_READY) {
+    return TabletDataState_Name(data_state);
+  }
+  // Otherwise, the tablet's data is in a "normal" state, so we just display
+  // the runtime state (BOOTSTRAPPING, RUNNING, etc).
+  return TabletStatePB_Name(state_);
 }
 
 void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,

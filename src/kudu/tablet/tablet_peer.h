@@ -156,6 +156,13 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     return status_listener_.get();
   }
 
+  // Sets the tablet to a BOOTSTRAPPING state, indicating it is starting up.
+  void SetBootstrapping() {
+    boost::lock_guard<simple_spinlock> lock(lock_);
+    CHECK_EQ(NOT_STARTED, state_);
+    state_ = BOOTSTRAPPING;
+  }
+
   // sets the tablet state to FAILED additionally setting the error to the provided
   // one.
   void SetFailed(const Status& error) {
@@ -169,6 +176,11 @@ class TabletPeer : public RefCountedThreadSafe<TabletPeer>,
     boost::lock_guard<simple_spinlock> lock(lock_);
     return error_;
   }
+
+  // Returns a human-readable string indicating the state of the tablet.
+  // Typically this looks like "NOT_STARTED", "TABLET_DATA_COPYING",
+  // etc. For use in places like the Web UI.
+  std::string HumanReadableState() const;
 
   // Adds list of transactions in-flight at the time of the call to
   // 'out'. TransactionStatusPB objects are used to allow this method

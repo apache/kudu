@@ -130,6 +130,7 @@ class TabletPeerTest : public KuduTabletTest {
                                *tablet()->schema(), tablet()->metadata()->schema_version(),
                                metric_entity_.get(), &log));
 
+    tablet_peer_->SetBootstrapping();
     ASSERT_OK(tablet_peer_->Init(tablet(),
                                  clock(),
                                  messenger_,

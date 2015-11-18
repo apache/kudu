@@ -529,8 +529,11 @@ Status TSTabletManager::DeleteTablet(
     s = s.CloneAndPrepend(Substitute("Unable to delete on-disk data from tablet $0",
                                      tablet_id));
     LOG(WARNING) << s.ToString();
+    tablet_peer->SetFailed(s);
     return s;
   }
+
+  tablet_peer->status_listener()->StatusMessage("Deleted tablet blocks from disk");
 
   // We only remove DELETED tablets from the tablet map.
   if (delete_type == TABLET_DATA_DELETED) {
@@ -604,6 +607,7 @@ void TSTabletManager::OpenTablet(const scoped_refptr<TabletMetadata>& meta,
   LOG_TIMING_PREFIX(INFO, LogPrefix(tablet_id), "bootstrapping tablet") {
     // TODO: handle crash mid-creation of tablet? do we ever end up with a
     // partially created tablet here?
+    tablet_peer->SetBootstrapping();
     s = BootstrapTablet(meta,
                         scoped_refptr<server::Clock>(server_->clock()),
                         server_->mem_tracker(),

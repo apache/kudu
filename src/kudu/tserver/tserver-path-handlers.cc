@@ -202,11 +202,6 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
     if (status.has_estimated_on_disk_size()) {
       n_bytes = HumanReadableNumBytes::ToString(status.estimated_on_disk_size());
     }
-    string state = tablet::TabletStatePB_Name(status.state());
-    if (status.state() == tablet::FAILED) {
-      StrAppend(&state, ": ", EscapeForHtmlToString(peer->error().ToString()));
-    }
-
     string partition = peer->tablet_metadata()
                            ->partition_schema()
                             .PartitionDebugString(peer->status_listener()->partition(),
@@ -222,7 +217,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
         EscapeForHtmlToString(table_name), // $0
         tablet_id_or_link, // $1
         EscapeForHtmlToString(partition), // $2
-        state, n_bytes, // $3, $4
+        EscapeForHtmlToString(peer->HumanReadableState()), n_bytes, // $3, $4
         consensus ? ConsensusStatePBToHtml(consensus->ConsensusState(CONSENSUS_CONFIG_COMMITTED))
                   : "", // $5
         EscapeForHtmlToString(status.last_status())); // $6

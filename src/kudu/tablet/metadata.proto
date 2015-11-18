@@ -126,6 +126,9 @@ message TabletSuperBlockPB {
 enum TabletStatePB {
   UNKNOWN = 999;
 
+  // Tablet has not yet started.
+  NOT_STARTED = 5;
+
   // Indicates the Tablet is bootstrapping, i.e. that the Tablet is not
   // available for RPC.
   BOOTSTRAPPING = 0;

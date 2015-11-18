@@ -995,6 +995,15 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   LOG(INFO) << "Waiting for first tablet to be tombstoned...";
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
 
+  ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 2, timeout, &tablets));
+  BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+    if (t.tablet_status().tablet_id() == tablet_id) {
+      ASSERT_EQ(tablet::SHUTDOWN, t.tablet_status().state());
+      ASSERT_EQ(TABLET_DATA_TOMBSTONED, t.tablet_status().tablet_data_state())
+          << t.tablet_status().tablet_id() << " not tombstoned";
+    }
+  }
+
   // Now tombstone the 2nd tablet, causing a fault.
   ASSERT_OK(cluster_->SetFlag(cluster_->tablet_server(kTsIndex), fault_flag, "1.0"));
   tablet_id = tablets[1].tablet_status().tablet_id();
@@ -1010,9 +1019,11 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
 
   // The tombstoned tablets will still show up in ListTablets(),
-  // just with their data state set as TOMBSTONED.
+  // just with their data state set as TOMBSTONED. They should also be listed
+  // as NOT_STARTED because we restarted the server.
   ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 2, timeout, &tablets));
   BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+    ASSERT_EQ(tablet::NOT_STARTED, t.tablet_status().state());
     ASSERT_EQ(TABLET_DATA_TOMBSTONED, t.tablet_status().tablet_data_state())
         << t.tablet_status().tablet_id() << " not tombstoned";
   }
