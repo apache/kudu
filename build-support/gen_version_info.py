@@ -26,15 +26,7 @@ import sys
 import time
 from time import strftime, localtime
 
-def check_output(cmd):
-  """ Simple backport of subprocess.check_output() from python 2.7. """
-  p = subprocess.Popen(cmd,
-                       stdout=subprocess.PIPE,
-                       stderr=subprocess.PIPE, shell=True)
-  out, err = p.communicate()
-  if p.returncode != 0:
-    raise Exception("%s returned %d: %s" % (cmd, p.returncode, err))
-  return out
+from kudu_util import check_output
 
 def output_up_to_date(path, id_hash):
   """
@@ -71,7 +63,7 @@ def main():
 
   output_path = args[0]
 
-  hostname = check_output("hostname -f").strip()
+  hostname = check_output(["hostname", "-f"]).strip()
   build_time = "%s %s" % (strftime("%d %b %Y %H:%M:%S", localtime()), time.tzname[0])
   username = os.getenv("USER")
 
@@ -82,7 +74,7 @@ def main():
   else:
     try:
       # No command line git hash, find it in the local git repository.
-      git_hash = check_output("git rev-parse HEAD").strip()
+      git_hash = check_output(["git", "rev-parse", "HEAD"]).strip()
       clean_repo = subprocess.call("git diff --quiet && git diff --cached --quiet", shell=True) == 0
       clean_repo = str(clean_repo).lower()
     except Exception, e:
