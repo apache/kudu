@@ -29,6 +29,7 @@ package org.kududb.client;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Objects;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.Lists;
 import com.google.common.net.HostAndPort;
@@ -1952,6 +1953,8 @@ public class AsyncKuduClient implements AutoCloseable {
    */
   public final static class AsyncKuduClientBuilder {
     private static final int DEFAULT_MASTER_PORT = 7051;
+    private static final int DEFAULT_BOSS_COUNT = 1;
+    private static final int DEFAULT_WORKER_COUNT = 2 * Runtime.getRuntime().availableProcessors();
 
     private final List<HostAndPort> masterAddresses;
     private long defaultAdminOperationTimeoutMs = DEFAULT_OPERATION_TIMEOUT_MS;
@@ -1960,6 +1963,8 @@ public class AsyncKuduClient implements AutoCloseable {
 
     private Executor bossExecutor;
     private Executor workerExecutor;
+    private int bossCount = DEFAULT_BOSS_COUNT;
+    private int workerCount = DEFAULT_WORKER_COUNT;
 
     /**
      * Creates a new builder for a client that will connect to the specified masters.
@@ -2040,10 +2045,35 @@ public class AsyncKuduClient implements AutoCloseable {
      * Optional.
      * If not provided, uses a simple cached threadpool. If either argument is null,
      * then such a thread pool will be used in place of that argument.
+     * Note: executor's max thread number must be greater or equal to corresponding
+     * worker count, or netty cannot start enough threads, and client will get stuck.
+     * If not sure, please just use CachedThreadPool.
      */
     public AsyncKuduClientBuilder nioExecutors(Executor bossExecutor, Executor workerExecutor) {
       this.bossExecutor = bossExecutor;
       this.workerExecutor = workerExecutor;
+      return this;
+    }
+
+    /**
+     * Set the maximum number of boss threads.
+     * Optional.
+     * If not provided, 1 is used.
+     */
+    public AsyncKuduClientBuilder bossCount(int bossCount) {
+      Preconditions.checkArgument(bossCount > 0, "bossCount should be greater than 0");
+      this.bossCount = bossCount;
+      return this;
+    }
+
+    /**
+     * Set the maximum number of worker threads.
+     * Optional.
+     * If not provided, (2 * the number of available processors) is used.
+     */
+    public AsyncKuduClientBuilder workerCount(int workerCount) {
+      Preconditions.checkArgument(workerCount > 0, "workerCount should be greater than 0");
+      this.workerCount = workerCount;
       return this;
     }
 
@@ -2063,7 +2093,7 @@ public class AsyncKuduClient implements AutoCloseable {
         if (boss == null) boss = defaultExec;
         if (worker == null) worker = defaultExec;
       }
-      return new NioClientSocketChannelFactory(boss, worker);
+      return new NioClientSocketChannelFactory(boss, worker, bossCount, workerCount);
     }
 
     /**

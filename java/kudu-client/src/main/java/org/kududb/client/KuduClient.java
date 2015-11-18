@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executor;
 
 /**
  * A synchronous and thread-safe client for Kudu.
@@ -308,6 +309,40 @@ public class KuduClient implements AutoCloseable {
      */
     public KuduClientBuilder defaultSocketReadTimeoutMs(long timeoutMs) {
       clientBuilder.defaultSocketReadTimeoutMs(timeoutMs);
+      return this;
+    }
+
+    /**
+     * Set the executors which will be used for the embedded Netty boss and workers.
+     * Optional.
+     * If not provided, uses a simple cached threadpool. If either argument is null,
+     * then such a thread pool will be used in place of that argument.
+     * Note: executor's max thread number must be greater or equal to corresponding
+     * worker count, or netty cannot start enough threads, and client will get stuck.
+     * If not sure, please just use CachedThreadPool.
+     */
+    public KuduClientBuilder nioExecutors(Executor bossExecutor, Executor workerExecutor) {
+      clientBuilder.nioExecutors(bossExecutor, workerExecutor);
+      return this;
+    }
+
+    /**
+     * Set the maximum number of boss threads.
+     * Optional.
+     * If not provided, 1 is used.
+     */
+    public KuduClientBuilder bossCount(int bossCount) {
+      clientBuilder.bossCount(bossCount);
+      return this;
+    }
+
+    /**
+     * Set the maximum number of worker threads.
+     * Optional.
+     * If not provided, (2 * the number of available processors) is used.
+     */
+    public KuduClientBuilder workerCount(int workerCount) {
+      clientBuilder.workerCount(workerCount);
       return this;
     }
 

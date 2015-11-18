@@ -16,10 +16,12 @@ package org.kududb.client;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.kududb.client.RowResult.timestampToString;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Executors;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -273,4 +275,42 @@ public class TestKuduClient extends BaseKuduTest {
     assertEquals(1, countRowsInScan(scanner));
   }
 
+  @Test(timeout = 100000)
+  public void testCustomNioExecutor() throws Exception {
+    long startTime = System.nanoTime();
+    final KuduClient localClient = new KuduClient.KuduClientBuilder(masterAddresses)
+        .nioExecutors(Executors.newFixedThreadPool(1), Executors.newFixedThreadPool(2))
+        .bossCount(1)
+        .workerCount(2)
+        .build();
+    long buildTime = (System.nanoTime() - startTime) / 1000000000L;
+    assertTrue("Building KuduClient is slow, maybe netty get stuck", buildTime < 3);
+    localClient.createTable(tableName, basicSchema);
+    Thread[] threads = new Thread[4];
+    for (int t = 0; t < 4; t++) {
+      final int id = t;
+      threads[t] = new Thread(new Runnable() {
+        @Override
+        public void run() {
+          try {
+            KuduTable table = localClient.openTable(tableName);
+            KuduSession session = localClient.newSession();
+            session.setFlushMode(SessionConfiguration.FlushMode.AUTO_FLUSH_SYNC);
+            for (int i = 0; i < 100; i++) {
+              Insert insert = createBasicSchemaInsert(table, id * 100 + i);
+              session.apply(insert);
+            }
+            session.close();
+          } catch (Exception e) {
+            fail("insert thread should not throw exception: " + e);
+          }
+        }
+      });
+      threads[t].start();
+    }
+    for (int t = 0; t< 4;t++) {
+      threads[t].join();
+    }
+    localClient.shutdown();
+  }
 }
