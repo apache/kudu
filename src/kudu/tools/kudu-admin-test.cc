@@ -19,7 +19,6 @@
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
-#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/integration-tests/ts_itest-base.h"
@@ -31,7 +30,6 @@ namespace tools {
 
 using itest::TabletServerMap;
 using itest::TServerDetails;
-using strings::Split;
 using strings::Substitute;
 
 static const char* const kAdminToolName = "kudu-admin";
@@ -112,15 +110,7 @@ TEST_F(AdminCliTest, TestChangeConfig) {
                               exe_path,
                               cluster_->master()->bound_rpc_addr().ToString(),
                               tablet_id_, new_node->uuid());
-  vector<string> args = Split(arg_str, " ");
-  LOG(INFO) << "Invoking command: " << arg_str;
-  {
-    Subprocess proc(args[0], args);
-    ASSERT_OK(proc.Start());
-    int retcode;
-    ASSERT_OK(proc.Wait(&retcode));
-    ASSERT_EQ(0, retcode);
-  }
+  ASSERT_OK(Subprocess::Call(arg_str));
 
   InsertOrDie(&active_tablet_servers, new_node->uuid(), new_node);
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),
@@ -153,15 +143,8 @@ TEST_F(AdminCliTest, TestChangeConfig) {
                        exe_path,
                        cluster_->master()->bound_rpc_addr().ToString(),
                        tablet_id_, new_node->uuid());
-  args = Split(arg_str, " ");
-  LOG(INFO) << "Invoking command: " << arg_str;
-  {
-    Subprocess proc(args[0], args);
-    ASSERT_OK(proc.Start());
-    int retcode;
-    ASSERT_OK(proc.Wait(&retcode));
-    ASSERT_EQ(0, retcode);
-  }
+
+  ASSERT_OK(Subprocess::Call(arg_str));
 
   ASSERT_EQ(1, active_tablet_servers.erase(new_node->uuid()));
   ASSERT_OK(WaitUntilCommittedConfigNumVotersIs(active_tablet_servers.size(),

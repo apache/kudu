@@ -34,6 +34,7 @@
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/numbers.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/util/debug-util.h"
 #include "kudu/util/errno.h"
@@ -42,6 +43,7 @@
 using std::string;
 using std::tr1::shared_ptr;
 using std::vector;
+using strings::Split;
 using strings::Substitute;
 
 namespace kudu {
@@ -361,6 +363,24 @@ Status Subprocess::Kill(int signal) {
                                 errno);
   }
   return Status::OK();
+}
+
+Status Subprocess::Call(const string& arg_str) {
+  LOG(INFO) << "Invoking command: " << arg_str;
+  vector<string> args = Split(arg_str, " ");
+  Subprocess proc(args[0], args);
+  RETURN_NOT_OK(proc.Start());
+  int retcode;
+  RETURN_NOT_OK(proc.Wait(&retcode));
+
+  if (retcode == 0) {
+    return Status::OK();
+  } else {
+    return Status::RuntimeError(Substitute(
+        "Subprocess '$0' terminated with non-zero exit status $1",
+        args[0],
+        retcode));
+  }
 }
 
 int Subprocess::CheckAndOffer(int stdfd) const {
