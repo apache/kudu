@@ -98,4 +98,7 @@ ADD_KUDU_TEST(ksck_remote-test)
 ADD_KUDU_TEST(kudu-admin-test)
 ADD_KUDU_TEST_DEPENDENCIES(kudu-admin-test
   kudu-admin)
+ADD_KUDU_TEST(kudu-ts-cli-test)
+ADD_KUDU_TEST_DEPENDENCIES(kudu-ts-cli-test
+  kudu-ts-cli)
 

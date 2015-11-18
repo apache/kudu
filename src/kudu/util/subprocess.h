@@ -93,6 +93,10 @@ class Subprocess {
   // the return code was 0.
   static Status Call(const std::string& arg_str);
 
+  // Same as above, but accepts a vector that includes the path to the
+  // executable as argv[0] and the arguments to the program in argv[1..n].
+  static Status Call(const std::vector<std::string>& argv);
+
   // Return the pipe fd to the child's standard stream.
   // Stream should not be disabled or shared.
   int to_child_stdin_fd()    const { return CheckAndOffer(STDIN_FILENO); }

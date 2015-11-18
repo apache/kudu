@@ -312,7 +312,7 @@ Status Subprocess::Start() {
     CloseNonStandardFDs(fd_dir);
 
     execvp(program_.c_str(), &argv_ptrs[0]);
-    PLOG(WARNING) << "Couldn't exec";
+    PLOG(WARNING) << "Couldn't exec " << program_;
     _exit(errno);
   } else {
     // We are the parent
@@ -366,9 +366,13 @@ Status Subprocess::Kill(int signal) {
 }
 
 Status Subprocess::Call(const string& arg_str) {
-  LOG(INFO) << "Invoking command: " << arg_str;
-  vector<string> args = Split(arg_str, " ");
-  Subprocess proc(args[0], args);
+  VLOG(2) << "Invoking command: " << arg_str;
+  vector<string> argv = Split(arg_str, " ");
+  return Call(argv);
+}
+
+Status Subprocess::Call(const vector<string>& argv) {
+  Subprocess proc(argv[0], argv);
   RETURN_NOT_OK(proc.Start());
   int retcode;
   RETURN_NOT_OK(proc.Wait(&retcode));
@@ -378,7 +382,7 @@ Status Subprocess::Call(const string& arg_str) {
   } else {
     return Status::RuntimeError(Substitute(
         "Subprocess '$0' terminated with non-zero exit status $1",
-        args[0],
+        argv[0],
         retcode));
   }
 }

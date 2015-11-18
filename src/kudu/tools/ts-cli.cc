@@ -82,9 +82,14 @@ DEFINE_bool(force, false, "If true, allows the set_flag command to set a flag "
 
 // Check that the value of argc matches what's expected, otherwise return a
 // non-zero exit code. Should be used in main().
-#define CHECK_ARGC_OR_RETURN_WITH_USAGE(expected) \
+#define CHECK_ARGC_OR_RETURN_WITH_USAGE(op, expected) \
   do { \
-    if (argc != (expected)) { \
+    const string& _op = (op); \
+    const int _expected = (expected); \
+    if (argc != _expected) { \
+      /* We substract 2 from _expected because we don't want to count argv[0] or [1]. */ \
+      std::cerr << "Invalid number of arguments for " << _op \
+                << ": expected " << (_expected - 2) << " arguments" << std::endl; \
       google::ShowUsageWithFlagsRestrict(argv[0], __FILE__); \
       return 2; \
     } \
@@ -133,8 +138,8 @@ class TsAdminClient {
   // Dump the contents of the given tablet, in key order, to the console.
   Status DumpTablet(const std::string& tablet_id);
 
-  // Delete a replica. The 'reason' string is passed to the tablet server,
-  // used for logging.
+  // Delete a tablet replica from the specified peer.
+  // The 'reason' string is passed to the tablet server, used for logging.
   Status DeleteTablet(const std::string& tablet_id,
                       const std::string& reason);
 
@@ -286,13 +291,17 @@ Status TsAdminClient::DumpTablet(const std::string& tablet_id) {
   return Status::OK();
 }
 
-Status TsAdminClient::DeleteTablet(const std::string& tablet_id,
-                                   const std::string& reason) {
+Status TsAdminClient::DeleteTablet(const string& tablet_id,
+                                   const string& reason) {
+  ServerStatusPB status_pb;
+  RETURN_NOT_OK(GetStatus(&status_pb));
+
   DeleteTabletRequestPB req;
   DeleteTabletResponsePB resp;
   RpcController rpc;
 
   req.set_tablet_id(tablet_id);
+  req.set_dest_uuid(status_pb.node_instance().permanent_uuid());
   req.set_reason(reason);
   req.set_delete_type(tablet::TABLET_DATA_TOMBSTONED);
   rpc.set_timeout(timeout_);
@@ -333,7 +342,7 @@ namespace {
 void SetUsage(const char* argv0) {
   ostringstream str;
 
-  str << argv0 << " [-tserver_address=<addr>] <operation> <flags>\n"
+  str << argv0 << " [--server_address=<addr>] <operation> <flags>\n"
       << "<operation> must be one of:\n"
       << "  " << kListTabletsOp << "\n"
       << "  " << kAreTabletsRunningOp << "\n"
@@ -372,7 +381,7 @@ static int TsCliMain(int argc, char** argv) {
 
   // TODO add other operations here...
   if (op == kListTabletsOp) {
-    CHECK_ARGC_OR_RETURN_WITH_USAGE(2);
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(op, 2);
 
     vector<StatusAndSchemaPB> tablets;
     RETURN_NOT_OK_PREPEND_FROM_MAIN(client.ListTablets(&tablets),
@@ -405,7 +414,7 @@ static int TsCliMain(int argc, char** argv) {
       std::cout << "Schema: " << schema.ToString() << std::endl;
     }
   } else if (op == kAreTabletsRunningOp) {
-    CHECK_ARGC_OR_RETURN_WITH_USAGE(2);
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(op, 2);
 
     vector<StatusAndSchemaPB> tablets;
     RETURN_NOT_OK_PREPEND_FROM_MAIN(client.ListTablets(&tablets),
@@ -427,19 +436,19 @@ static int TsCliMain(int argc, char** argv) {
       return 1;
     }
   } else if (op == kSetFlagOp) {
-    CHECK_ARGC_OR_RETURN_WITH_USAGE(4);
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(op, 4);
 
     RETURN_NOT_OK_PREPEND_FROM_MAIN(client.SetFlag(argv[2], argv[3], FLAGS_force),
                                     "Unable to set flag");
 
   } else if (op == kDumpTabletOp) {
-    CHECK_ARGC_OR_RETURN_WITH_USAGE(3);
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(op, 3);
 
     string tablet_id = argv[2];
     RETURN_NOT_OK_PREPEND_FROM_MAIN(client.DumpTablet(tablet_id),
                                     "Unable to dump tablet");
   } else if (op == kDeleteTabletOp) {
-    CHECK_ARGC_OR_RETURN_WITH_USAGE(4);
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(op, 4);
 
     string tablet_id = argv[2];
     string reason = argv[3];
@@ -447,14 +456,14 @@ static int TsCliMain(int argc, char** argv) {
     RETURN_NOT_OK_PREPEND_FROM_MAIN(client.DeleteTablet(tablet_id, reason),
                                     "Unable to delete tablet");
   } else if (op == kCurrentTimestamp) {
-    CHECK_ARGC_OR_RETURN_WITH_USAGE(2);
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(op, 2);
 
     uint64_t timestamp;
     RETURN_NOT_OK_PREPEND_FROM_MAIN(client.CurrentTimestamp(&timestamp),
                                     "Unable to get timestamp");
     std::cout << timestamp << std::endl;
   } else if (op == kStatus) {
-    CHECK_ARGC_OR_RETURN_WITH_USAGE(2);
+    CHECK_ARGC_OR_RETURN_WITH_USAGE(op, 2);
 
     ServerStatusPB status;
     RETURN_NOT_OK_PREPEND_FROM_MAIN(client.GetStatus(&status),

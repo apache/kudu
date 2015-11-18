@@ -664,9 +664,9 @@ Status WaitForNumTabletsOnTS(TServerDetails* ts,
   return Status::OK();
 }
 
-// Wait until the specified tablet is in RUNNING state.
-Status WaitUntilTabletRunning(TServerDetails* ts,
+Status WaitUntilTabletInState(TServerDetails* ts,
                               const std::string& tablet_id,
+                              tablet::TabletStatePB state,
                               const MonoDelta& timeout) {
   MonoTime start = MonoTime::Now(MonoTime::FINE);
   MonoTime deadline = start;
@@ -682,7 +682,7 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
         if (t.tablet_status().tablet_id() == tablet_id) {
           seen = true;
           last_state = t.tablet_status().state();
-          if (last_state == tablet::RUNNING) {
+          if (last_state == state) {
             return Status::OK();
           }
         }
@@ -696,11 +696,19 @@ Status WaitUntilTabletRunning(TServerDetails* ts,
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
   }
-  return Status::TimedOut(Substitute("T $0 P $1: Tablet not RUNNING after $2: "
-                                     "Tablet state: $3, Status message: $4",
+  return Status::TimedOut(Substitute("T $0 P $1: Tablet not in $2 state after $3: "
+                                     "Tablet state: $4, Status message: $5",
                                      tablet_id, ts->uuid(),
+                                     tablet::TabletStatePB_Name(state),
                                      MonoTime::Now(MonoTime::FINE).GetDeltaSince(start).ToString(),
                                      tablet::TabletStatePB_Name(last_state), s.ToString()));
+}
+
+// Wait until the specified tablet is in RUNNING state.
+Status WaitUntilTabletRunning(TServerDetails* ts,
+                              const std::string& tablet_id,
+                              const MonoDelta& timeout) {
+  return WaitUntilTabletInState(ts, tablet_id, tablet::RUNNING, timeout);
 }
 
 Status DeleteTablet(const TServerDetails* ts,
