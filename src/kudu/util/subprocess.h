@@ -86,6 +86,13 @@ class Subprocess {
   // in order to reap it. Only call after starting.
   Status Kill(int signal);
 
+  // Helper method that creates a Subprocess, issues a Start() then a Wait().
+  // Expects a blank-separated list of arguments, with the first being the
+  // full path to the executable.
+  // The returned Status will only be OK if all steps were successful and
+  // the return code was 0.
+  static Status Call(const std::string& arg_str);
+
   // Return the pipe fd to the child's standard stream.
   // Stream should not be disabled or shared.
   int to_child_stdin_fd()    const { return CheckAndOffer(STDIN_FILENO); }
