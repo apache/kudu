@@ -311,6 +311,7 @@ if [ "$BUILD_PYTHON" == "1" ]; then
   pushd python
 
   # Create a sane test environment
+  rm -Rf test_environment
   virtualenv test_environment
   source test_environment/bin/activate
   pip install --upgrade pip
