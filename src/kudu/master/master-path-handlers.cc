@@ -17,6 +17,7 @@
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -81,6 +82,8 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
 
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Table Name</th><th>Table Id</th><th>State</th></tr>\n";
+  typedef std::map<string, string> StringMap;
+  StringMap ordered_tables;
   BOOST_FOREACH(const scoped_refptr<TableInfo>& table, tables) {
     TableMetadataLock l(table.get(), TableMetadataLock::READ);
     if (!l.data().is_running()) {
@@ -88,12 +91,15 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
     }
     string state = SysTablesEntryPB_State_Name(l.data().pb.state());
     Capitalize(&state);
-    *output << Substitute(
+    ordered_tables[l.data().name()] = Substitute(
         "<tr><th>$0</th><td><a href=\"/table?id=$1\">$1</a></td><td>$2 $3</td></tr>\n",
         EscapeForHtmlToString(l.data().name()),
         EscapeForHtmlToString(table->id()),
         state,
         EscapeForHtmlToString(l.data().pb.state_msg()));
+  }
+  BOOST_FOREACH(const StringMap::value_type& table, ordered_tables) {
+    *output << table.second;
   }
   *output << "</table>\n";
 }
