@@ -525,8 +525,8 @@ std::string Connection::ToString() const {
   // include anything in the output about the current state,
   // which might concurrently change from another thread.
   return strings::Substitute(
-    "$0 Connection to $1",
-    direction_ == SERVER ? "server" : "client",
+    "$0 $1",
+    direction_ == SERVER ? "server connection from" : "client connection to",
     remote_.ToString());
 }
 

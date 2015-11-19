@@ -19,6 +19,7 @@
 
 #include <string>
 
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 
 #include "kudu/gutil/stringprintf.h"
@@ -30,7 +31,15 @@
 #include "kudu/rpc/sasl_client.h"
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/sasl_server.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/status.h"
+#include "kudu/util/trace.h"
+
+DEFINE_bool(rpc_trace_negotiation, false,
+            "If enabled, dump traces of all RPC negotiations to the log");
+TAG_FLAG(rpc_trace_negotiation, runtime);
+TAG_FLAG(rpc_trace_negotiation, advanced);
+TAG_FLAG(rpc_trace_negotiation, experimental);
 
 namespace kudu {
 namespace rpc {
@@ -40,6 +49,7 @@ using strings::Substitute;
 
 // Client: Send ConnectionContextPB message based on information stored in the Connection object.
 static Status SendConnectionContext(Connection* conn, const MonoTime& deadline) {
+  TRACE("Sending connection context");
   RequestHeader header;
   header.set_call_id(kConnectionContextCallId);
 
@@ -54,6 +64,7 @@ static Status SendConnectionContext(Connection* conn, const MonoTime& deadline) 
 // associated Connection object. Perform validation against SASL-negotiated information
 // as needed.
 static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) {
+  TRACE("Waiting for connection context");
   faststring recv_buf(1024); // Should be plenty for a ConnectionContextPB message.
   RequestHeader header;
   Slice param_buf;
@@ -97,6 +108,7 @@ static Status RecvConnectionContext(Connection* conn, const MonoTime& deadline) 
 
 // Wait for the client connection to be established and become ready for writing.
 static Status WaitForClientConnect(Connection* conn, const MonoTime& deadline) {
+  TRACE("Waiting for socket to connect");
   int fd = conn->socket()->GetFd();
   struct pollfd poll_fd;
   poll_fd.fd = fd;
@@ -204,6 +216,18 @@ void Negotiation::RunNegotiation(const scoped_refptr<Connection>& conn,
                             conn->direction() == Connection::SERVER ? "Server" : "Client",
                             conn->ToString());
     s = s.CloneAndPrepend(msg);
+  }
+  TRACE("Negotiation complete: $0", s.ToString());
+
+  bool is_bad = !s.ok() && !(s.IsNetworkError() && s.posix_code() == ECONNREFUSED);
+
+  if (is_bad || FLAGS_rpc_trace_negotiation) {
+    string msg = Trace::CurrentTrace()->DumpToString(true);
+    if (is_bad) {
+      LOG(WARNING) << "Failed RPC negotiation. Trace:\n" << msg;
+    } else {
+      LOG(INFO) << "RPC negotiation tracing enabled. Trace:\n" << msg;
+    }
   }
   conn->CompleteNegotiation(s);
 }

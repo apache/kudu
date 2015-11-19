@@ -45,6 +45,7 @@
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/thread_restrictions.h"
+#include "kudu/util/trace.h"
 #include "kudu/util/status.h"
 #include "kudu/util/net/socket.h"
 
@@ -360,8 +361,11 @@ Status ReactorThread::StartConnectionNegotiation(const scoped_refptr<Connection>
     const MonoTime &deadline) {
   DCHECK(IsCurrentThread());
 
+  scoped_refptr<Trace> trace(new Trace());
+  ADOPT_TRACE(trace.get());
+  TRACE("Submitting negotiation task for $0", conn->ToString());
   RETURN_NOT_OK(reactor()->messenger()->negotiation_pool()->SubmitClosure(
-                  Bind(&Negotiation::RunNegotiation, conn, deadline)));
+      Bind(&Negotiation::RunNegotiation, conn, deadline)));
   return Status::OK();
 }
 
