@@ -244,12 +244,10 @@ More information is available in rpc/rpc_sidecar.h.
 Wire Protocol
 -------------------------------------------------------------------------------
 
-Handshake / framing:
+Connection establishment and connection header
+----------------------------------------------
 
-Write the connection header - this is sent when connection is established.
-See HADOOP-8990 for details on the Hadoop RPC Protocol V9, which is what we are
-approximating here, unless otherwise noted.
-
+After the client connects to a server, the client first sends a connection header.
 The connection header consists of a magic number "hrpc" and three byte flags,
 for a total of 7 bytes:
 
@@ -263,19 +261,30 @@ for a total of 7 bytes:
 |  AuthProtocol (1 byte)           |
 +----------------------------------+
 
-Serialized RPCs come after the initial connection header.
+Currently, the RPC version is 9. The ServiceClass and AuthProtocol fields are unused.
 
-Each call that the clients make is serialized as following:
+
+Message framing and request/response headers
+--------------------------------------------
+Aside from the initial connection header described above, all other messages are
+serialized as follows:
 
   total_size: (32-bit big-endian integer)
     the size of the rest of the message, not including this 4-byte header
 
-  header: varint-prefixed RequestHeader protobuf
-    see rpc_header.proto for fields
+  header: varint-prefixed header protobuf
+    - client->server messages use the RequestHeader protobuf
+    - server->client messages use the ResponseHeader protobuf
 
-  request: varint-prefixed user request protobuf
-    this is the user-defined call parameter
+  body: varint-prefixed protobuf
+    - for typical RPC calls, this is the user-specified request or response
+      protobuf
+    - for RPC calls which caused an error, the response is a ErrorResponsePB
+    - during SASL negotiation, this is a SaslMessagePB
 
+
+Example packet capture
+--------------------------
 An example call (captured with strace on rpc-test.cc) follows:
 
    "\x00\x00\x00\x17"   (total_size: 23 bytes to follow)
@@ -292,17 +301,15 @@ An example call (captured with strace on rpc-test.cc) follows:
       x: 304089172
       y: 1303455736
 
-The response is serialized similarly, with only some small differences:
 
-  - The header is a ResponseHeader protobuf instead of RequestHeader.
-  - If ResponseHeader.is_error is true, then the response protobuf will
-    be an ErrorStatusPB message, instead of the response protobuf type
-    defined by the service.
 
-SASL negotiation:
+SASL negotiation
+------------------
+After the initial connection header is sent, SASL negotiation begins.
+Kudu always uses SASL regardless of security settings. In the case that
+no strong authentication is required, SASL PLAIN is used with no password.
 
-After the initial connection header is sent, if SASL is specified to be used,
-SASL negotiation begins. This SASL negotiation protocol matches the Hadoop protocol.
+This SASL negotiation protocol matches the Hadoop protocol.
 The negotiation proceeds as described in this diagram:
 
                                 CLIENT |        | SERVER
@@ -330,81 +337,26 @@ token=<challenge response> } -----------------> |
                                        |        | { GOTO (4) above
                                        |        |
 
+
+Each of the SaslMessagePBs above is framed as usual using RequestHeader or ResponseHeader
+protobufs. For each SASL message, the CallId should be set to '-33'.
+
+
+
 Connection Context:
-
+------------------
 Once the SASL negotiation is complete, before the first request, the client
-sends the server a size-delimited ConnectionContextPB, which the server does
-not respond to. It is then free to make regular RPC requests. Instead of using
-a per-connection service name that comes through the ConnectionContext (Hadoop
-does this), Kudu uses a per-request service name that is included in each
-RequestHeader PB. See rpc_header.proto for more details.
+sends the server a special call with call_id -3. The body of this call is a
+ConnectionContextPB. The server should not respond to this call.
 
-RPC Request framing:
 
-Each RPC request is prefixed with a size-delimited RPC header. See
-rpc_header.proto for more details.
+Steady state
+------------
+During steady state operation, the client sends call protobufs prefixed by
+RequestHeader protobufs. The server sends responses prefixed by ResponseHeader
+protobufs.
 
--------------------------------------------------------------------------------
-Appendix. Hadoop RPC wire format.
--------------------------------------------------------------------------------
-
-While Kudu is aiming for near-compatibility with the Hadoop RPC V9 mechanism, we have
-intentionally modified or removed message protobufs and/or protobuf fields which were
-implementation-specific to Hadoop or which were difficult to adopt in a C++ implementation.
-A decoded Hadoop RPC request is shown below for informational purposes.
-
-ConnectionContext:
-
-$ protoc --decode=hadoop.common.RpcRequestHeaderProto RpcHeader.proto < cc_hdr.proto.bin
-rpcKind: RPC_PROTOCOL_BUFFER
-rpcOp: RPC_FINAL_PACKET
-callId: 4294967293 == -3 (signed): This denotes a ConnectionContext request
-clientId: "$\220\n\324\2723JA\250\031~z\236=\365\215"   // This is a uuid
-retryCount: -1
-
-$ protoc --decode=hadoop.common.IpcConnectionContextProto IpcConnectionContext.proto < cc.proto.bin
-userInfo {
-  effectiveUser: "mpercy"
-}
-protocol: "org.apache.hadoop.ipc.TestSaslRPC$TestSaslProtocol"
-
--------
-
-Hadoop uses a double-header on its protobuf-based RPC calls, in order to support other
-RPC encodings such as Writable. Fully protobuf-based RPC requests look like this:
-
-Initial fixed 4 byte length of the RPC request:
-00 00 00 3C (len=60 bytes)
-
---
-
-RpcRequestHeaderProto:
-1A (varint, len=26 bytes)
-08 02 10 00 18 00 22 10 28 6A FE 51 FE F4 45 11 B2 60 65 90 5B DA E4 E0 28 00 (serialized protobuf)
-
-$ protoc --decode=hadoop.common.RpcRequestHeaderProto RpcHeader.proto < ipc_hdr.proto.bin
-rpcKind: RPC_PROTOCOL_BUFFER
-rpcOp: RPC_FINAL_PACKET
-callId: 0
-clientId: "(j\376Q\376\364E\021\262`e\220[\332\344\340"
-retryCount: 0
-
---
-
-RequestHeaderProto protobuf-RPC-specific header:
-13 (varint, len=19 bytes)
-0A 04 65 63 68 6F 1A 09 74 65 73 74 50 72 6F 74 6F 20 01 (serialized protobuf)
-
-$ protoc --decode=hadoop.common.RequestHeaderProto ProtobufRpcEngine.proto < pb_rpc_hdr.proto.bin
-methodName: "echo"
-declaringClassProtocolName: "testProto"
-clientProtocolVersion: 1
-
---
-
-Service-specific request parameter:
-0C (varint, len=12 bytes)
-0A 0A 79 61 61 72 64 76 61 72 6B 21 (serialized protobuf)
-
-$ protoc --decode=hadoop.common.EchoRequestProto EchoTest.proto < pb_rpc_req.proto.bin
-message: "yaardvark!"
+The client must send calls in strictly increasing 'call_id' order. The server
+may reject repeated calls or calls with lower IDs. The server's responses may
+arrive out-of-order, and use the 'call_id' in the response to associate a response
+with the correct call.

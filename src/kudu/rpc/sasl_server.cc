@@ -291,7 +291,11 @@ Status SaslServer::SendNegotiateResponse(const set<string>& server_mechs) {
 
   BOOST_FOREACH(const string& mech, server_mechs) {
     SaslMessagePB::SaslAuth* auth = response.add_auths();
-    auth->set_method(""); // TODO: Support "method" in some meaningful way.
+
+    // The 'method' field is deprecated, but older versions of Kudu marked it 'required'.
+    // So, we have to set it to something to keep compatibility. At some point, we can
+    // consider removing it and breaking compatibility with Kudu <=0.6.
+    auth->set_method("");
     auth->set_mechanism(mech);
   }
 
