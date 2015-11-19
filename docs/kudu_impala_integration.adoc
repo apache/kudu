@@ -37,8 +37,8 @@ deployment. However, you can use Kudu with Impala without Cloudera Manager.
 
 == Requirements and Implications
 
-This integration relies on features that released versions of Impala do not have yet,
-as of Impala 2.3, which is expected to ship in CDH 5.5. In the interim, you need
+This integration relies on features that released versions of Impala do not have yet.
+In the interim, you need
 to install a fork of Impala, which this document will refer to as _Impala_Kudu_.
 
 * You can install Impala_Kudu using parcels or packages.
