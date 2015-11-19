@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <boost/foreach.hpp>
+#include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <list>
 #include <set>
@@ -38,6 +39,7 @@
 #include "kudu/rpc/sasl_common.h"
 #include "kudu/rpc/transfer.h"
 #include "kudu/util/errno.h"
+#include "kudu/util/flag_tags.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/net/socket.h"
@@ -49,6 +51,11 @@ using std::string;
 using std::tr1::shared_ptr;
 using strings::Substitute;
 
+DEFINE_int32(rpc_default_keepalive_time_ms, 65000,
+             "If an RPC connection from a client is idle for this amount of time, the server "
+             "will disconnect the client.");
+TAG_FLAG(rpc_default_keepalive_time_ms, advanced);
+
 namespace kudu {
 namespace rpc {
 
@@ -57,7 +64,7 @@ class ServerBuilder;
 
 MessengerBuilder::MessengerBuilder(const std::string &name)
   : name_(name),
-    connection_keepalive_time_(MonoDelta::FromSeconds(10)),
+    connection_keepalive_time_(MonoDelta::FromMilliseconds(FLAGS_rpc_default_keepalive_time_ms)),
     num_reactors_(4),
     num_negotiation_threads_(4),
     coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)) {
