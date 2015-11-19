@@ -42,6 +42,7 @@
 #include "kudu/util/mutex.h"
 #include "kudu/util/url-coding.h"
 #include "kudu/util/os-util.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/web_callback_registry.h"
 
 using boost::bind;
@@ -426,6 +427,9 @@ std::string Thread::ToString() const {
 
 Status Thread::StartThread(const std::string& category, const std::string& name,
                            const ThreadFunctor& functor, scoped_refptr<Thread> *holder) {
+  const string log_prefix = Substitute("$0 ($1) ", name, category);
+  SCOPED_LOG_SLOW_EXECUTION_PREFIX(WARNING, 500 /* ms */, log_prefix, "starting thread");
+
   // Temporary reference for the duration of this function.
   scoped_refptr<Thread> t(new Thread(category, name, functor));
   int ret = pthread_create(&t->thread_, NULL, &Thread::SuperviseThread, t.get());
