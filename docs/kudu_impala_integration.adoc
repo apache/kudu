@@ -384,21 +384,20 @@ should not be nullable.
 
 ==== `CREATE TABLE AS SELECT`
 You can create a table by querying any other table or tables in Impala, using a `CREATE
-TABLE AS SELECT` query. The following example imports all rows from an existing table
+TABLE ... AS SELECT` statement. The following example imports all rows from an existing table
 `old_table` into a Kudu table `new_table`. The columns in `new_table` will have the
 same names and types as the columns in `old_table`, but you need to populate the `kudu.key_columns`
 property. In this example, the primary key columns are `ts` and `name`.
 
 [source,sql]
 ----
-CREATE TABLE new_table AS
-SELECT * FROM old_table
+CREATE TABLE new_table
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'new_table',
   'kudu.master_addresses' = 'kudu-master.example.com:7051',
   'kudu.key_columns' = 'ts, name'
-);
+) AS SELECT * FROM old_table;
 ----
 
 You can refine the `SELECT` statement to only match the rows and columns you want
