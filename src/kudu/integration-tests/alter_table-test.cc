@@ -111,6 +111,7 @@ class AlterTableTest : public KuduTest {
 
     CHECK_OK(KuduClientBuilder()
              .add_master_server_addr(cluster_->mini_master()->bound_rpc_addr_str())
+             .default_admin_operation_timeout(MonoDelta::FromSeconds(60))
              .Build(&client_));
 
     // Add a table, make sure it reports itself.
