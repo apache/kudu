@@ -35,8 +35,7 @@ Kudu's design sets it apart. Some of Kudu's benefits include:
 - Tight integration with Cloudera Impala, making it a good, mutable alternative
   to using HDFS with Parquet.
 - Strong but flexible consistency model, allowing you to choose consistency
-  requirements on a per-request basis, including the option for strict
-  serialized consistency.
+  requirements on a per-request basis, including the option for strict-serializable consistency.
 - Strong performance for running sequential and random workloads simultaneously.
 - Easy to administer and manage with Cloudera Manager.
 - High availability. Tablet Servers and Master use the <<raft>>, which ensures
@@ -78,17 +77,6 @@ types. Combined with the efficiencies of reading data from columns,  compression
 you to fulfill your query while reading even fewer blocks from disk. See
 link:schema_design.html#encoding[Data Compression]
 
-[[raft]]
-.Raft Consensus Algorithm
-
-The link:http://raftconsensus.github.io/[Raft consensus algorithm] provides a
-way to elect a _leader_ for a distributed cluster from a pool of potential
-leaders, or _candidates_. Other cluster members are _followers_, who are not
-candidates or leaders, but always look to the current leader for consensus. Kudu
-uses the Raft Consensus Algorithm for the election of masters and leader
-tablets, as well as determining the success or failure of a given write
-operation.
-
 .Table
 
 A _table_ is where your data is stored in Kudu. A table has a schema and
@@ -127,6 +115,16 @@ other candidate masters.
 
 Tablet servers heartbeat to the master at a set interval (the default is once
 per second).
+
+[[raft]]
+.Raft Consensus Algorithm
+
+Kudu uses the link:https://raft.github.io/[Raft consensus algorithm] as
+a means to guarantee fault-tolerance and consistency, both for regular tablets and for master
+data. Through Raft, multiple replicas of a tablet elect a _leader_, which is responsible
+for accepting and replicating writes to _follower_ replicas. Once a write is persisted
+in a majority of replicas it is acknowledged to the client. A given group of `N` replicas
+(usually 3 or 5) is able to accept writes with at most `(N - 1)/2` faulty replicas.
 
 [[catalog_table]]
 .Catalog Table
