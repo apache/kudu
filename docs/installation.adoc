@@ -30,7 +30,10 @@ from source. To run Kudu without installing anything, use the link:quickstart.ht
 
 NOTE: Kudu is currently easier to install and manage with link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager],
 version 5.4.7 or newer. If you use Cloudera Manager, see also Cloudera's
-link:http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/0-5-0/topics/kudu_installation.html[Kudu documentation].
+link:http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/0-6-0/topics/kudu_installation.html[Kudu documentation].
+
+.Upgrading Kudu
+To upgrade Kudu from a previous version, see <<upgrade>>.
 
 == Prerequisites and Requirements
 .Hardware
@@ -445,6 +448,71 @@ You can view the link:../apidocs/index.html[Java API documentation] online. Alte
 after <<build_java_client,building the Java client>>, Java API documentation is available
 in `java/kudu-client/target/apidocs/index.html`.
 // end::view_api[]
+
+[[upgrade]]
+== Upgrade from 0.5.0 to 0.6.0
+
+Before upgrading, see <<0.6.0_client_compatibility>> and <<0.6.0_api_compatibility>>.
+To upgrade from Kudu 0.5.0 to 0.6.0, perform the following high-level steps, which
+are detailed in <<0.6.0_upgrade_procedure>>:
+
+. Shut down all Kudu services.
+. Install the new Kudu packages or parcels, or install Kudu 0.6.0 from source.
+. Restart all Kudu services.
+
+It is technically possible to upgrade Kudu using rolling restarts, but it has not
+been tested and is not recommended.
+
+[[0.6.0_client_compatibility]]
+=== Client compatibility
+
+Kudu 0.6.0 maintains wire compatibility with Kudu 0.5.0. This means that a Kudu 0.6.0
+client can communicate with a Kudu 0.5.0 cluster, and vice versa. For that reason,
+you do not need to upgrade client JARs at the same time the cluster is upgraded.
+
+The same wire compatibility guarantees apply to the Impala_Kudu fork that was released
+with Kudu 0.5.0.
+
+[[0.6.0_api_compatibility]]
+=== API Compatibility
+
+The Kudu 0.6.0 client API is not compatible with the Kudu 0.5.0 client API. See the
+link:release_notes.html#0.6.0[Kudu 0.6.0 release notes] for details.
+
+[[0.6.0_upgrade_procedure]]
+=== Upgrade procedure
+
+. Stop the Kudu master and tablet server services:
++
+[source,bash]
+----
+$ sudo service kudu-master stop
+$ sudo service kudu-tserver stop
+----
+
+. Upgrade the packages.
+ - On RHEL hosts:
++
+[source,bash]
+----
+sudo yum clean all
+sudo yum upgrade kudu
+----
+ - On Ubuntu or Debian hosts:
++
+[source,bash]
+----
+sudo apt-get update
+sudo apt-get install kudu
+----
+
+. Start the Kudu master and tablet server services:
++
+[source,bash]
+----
+$ sudo service kudu-master start
+$ sudo service kudu-tserver start
+----
 
 [[next_steps]]
 == Next Steps

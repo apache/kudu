@@ -50,6 +50,25 @@ By combining all of these properties, Kudu targets support for families of
 applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.
 
+[0.6.0]
+=== Release notes specific to 0.6.0
+
+The 0.6.0 release contains incremental improvements and bug fixes. The most notable
+changes are:
+
+. The Java client's CreateTableBuilder and AlterTableBuilder classes have been renamed
+to CreateTableOptions and AlterTableOptions. Their methods now also return `this` objects,
+allowing them to be used as builders.
+. The Java client's AbstractKuduScannerBuilder#maxNumBytes() setter is now called
+batchSizeBytes as is the corresponding property in AsyncKuduScanner. This makes it
+consistent with the C++ client.
+. The "kudu-admin" tool can now list and delete tables via its new subcommands
+"list_tables" and "delete_table <table_name>".
+. OSX is now supported for single node development. Please consult its specific installation
+instructions in link:installation.html#osx_from_source[OS X].
+
+The upgrade instructions are situated at link:installation.html#upgrade[Upgrade from 0.5.0 to 0.6.0].
+
 === Kudu-Impala Integration Features
 `CREATE TABLE`::
   Impala supports creating and dropping tables using Kudu as the persistence layer.
