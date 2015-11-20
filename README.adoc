@@ -394,9 +394,3 @@ but one side effect is that nearly every source file appears in the indexer twic
 once via a target and once via the raw source file. To fix this, simply delete the
 [Targets] linked resource via the Project Explorer. Doing this should have no effect
 on writing code, though it may affect your ability to build from within Eclipse.
-
-
-== Building on OS X
-
-Support for https://issues.cloudera.org/browse/KUDU-1185[compiling Kudu on OS X]
-is planned, but not yet complete.
