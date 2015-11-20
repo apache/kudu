@@ -127,29 +127,21 @@ footer {
     clear: both;
 }
 
-.faq #faq_toc {
+.faq ol {
     margin: 20px 0;
 }
 
-.faq dl dt {
+.faq h3 {
     color: #333;
     font-size: 18px;
     font-weight: bold;
-    padding: 20px 0 10px 0;
+    padding: 20px 0 0 0;
     border-top: 1px solid #dddddd;
+    margin: 20px 0 0 0;
 }
 
-.faq dl dd {
-    padding: 0 0 20px 0;
-    margin: 0;
-}
-
-.faq dl dd p {
-    margin: 0 0 10px 0;
-}
-
-.faq dl dd p:last-child {
-    margin: 0;
+.faq p {
+    margin-top: 10px;
 }
 
 @media (min-width: 768px) { .container-fluid {
