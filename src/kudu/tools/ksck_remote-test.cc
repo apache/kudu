@@ -137,7 +137,7 @@ class RemoteKsckTest : public KuduTest {
   vector<const KuduPartialRow*> GenerateSplitRows() {
     vector<const KuduPartialRow*> split_rows;
     vector<int> split_nums = { 33, 66 };
-    BOOST_FOREACH(int i, split_nums) {
+    for (int i : split_nums) {
       KuduPartialRow* row = schema_.NewRow();
       CHECK_OK(row->SetInt32(0, i));
       split_rows.push_back(row);

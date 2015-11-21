@@ -16,7 +16,6 @@
 // under the License.
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -163,16 +162,16 @@ class LmTestThread {
     for (int i = 0; i < FLAGS_num_iterations; i++) {
       std::vector<shared_ptr<ScopedRowLock> > locks;
       // TODO: We don't have an API for multi-row
-      BOOST_FOREACH(const Slice* key, keys_) {
+      for (const Slice* key : keys_) {
         locks.push_back(shared_ptr<ScopedRowLock>(
                           new ScopedRowLock(manager_, my_txn,
                                             *key, LockManager::LOCK_EXCLUSIVE)));
       }
 
-      BOOST_FOREACH(LmTestResource* r, resources_) {
+      for (LmTestResource* r : resources_) {
         r->acquire(tid_);
       }
-      BOOST_FOREACH(LmTestResource* r, resources_) {
+      for (LmTestResource* r : resources_) {
         r->release(tid_);
       }
     }
@@ -199,11 +198,11 @@ static void runPerformanceTest(const char *test_type,
                                vector<shared_ptr<LmTestThread> > *threads) {
   Stopwatch sw(Stopwatch::ALL_THREADS);
   sw.start();
-  BOOST_FOREACH(const shared_ptr<LmTestThread>& t, *threads) {
+  for (const shared_ptr<LmTestThread>& t : *threads) {
     t->Start();
   }
 
-  BOOST_FOREACH(const shared_ptr<LmTestThread>& t, *threads) {
+  for (const shared_ptr<LmTestThread>& t : *threads) {
     t->Join();
   }
   sw.stop();

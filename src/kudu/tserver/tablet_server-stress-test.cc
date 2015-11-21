@@ -66,7 +66,7 @@ class TSStressTest : public TabletServerTestBase {
   }
 
   void JoinThreads() {
-    BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+    for (scoped_refptr<kudu::Thread> thr : threads_) {
      CHECK_OK(ThreadJoiner(thr.get()).Join());
     }
   }

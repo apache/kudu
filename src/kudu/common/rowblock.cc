@@ -98,10 +98,10 @@ RowBlock::RowBlock(const Schema &schema,
 }
 
 RowBlock::~RowBlock() {
-  BOOST_FOREACH(uint8_t *column_data, columns_data_) {
+  for (uint8_t *column_data : columns_data_) {
     delete[] column_data;
   }
-  BOOST_FOREACH(uint8_t *bitmap_data, column_null_bitmaps_) {
+  for (uint8_t *bitmap_data : column_null_bitmaps_) {
     delete[] bitmap_data;
   }
 }

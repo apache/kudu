@@ -125,7 +125,7 @@ class MultiThreadedLogTest : public LogTestBase {
                                         thread_id, FLAGS_num_batches_per_thread)) {
       latch.Wait();
     }
-    BOOST_FOREACH(const Status& status, errors) {
+    for (const Status& status : errors) {
       WARN_NOT_OK(status, "Unexpected failure during AsyncAppend");
     }
     ASSERT_EQ(0, errors.size());
@@ -138,7 +138,7 @@ class MultiThreadedLogTest : public LogTestBase {
           &MultiThreadedLogTest::LogWriterThread, this, i, &new_thread));
       threads_.push_back(new_thread);
     }
-    BOOST_FOREACH(scoped_refptr<kudu::Thread>& thread, threads_) {
+    for (scoped_refptr<kudu::Thread>& thread : threads_) {
       ASSERT_OK(ThreadJoiner(thread.get()).Join());
     }
   }
@@ -161,7 +161,7 @@ TEST_F(MultiThreadedLogTest, TestAppends) {
   SegmentSequence segments;
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
 
-  BOOST_FOREACH(const SegmentSequence::value_type& entry, segments) {
+  for (const SegmentSequence::value_type& entry : segments) {
     ASSERT_OK(entry->ReadEntries(&entries_));
   }
   vector<uint32_t> ids;

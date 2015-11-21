@@ -18,7 +18,6 @@
 // Tests for the kudu-admin command-line tool.
 
 #include <boost/assign/list_of.hpp>
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
@@ -69,7 +68,7 @@ TEST_F(KuduTsCliTest, TestDeleteTablet) {
   workload.Setup(); // Easy way to create a new tablet.
 
   vector<tserver::ListTabletsResponsePB::StatusAndSchemaPB> tablets;
-  BOOST_FOREACH(const itest::TabletServerMap::value_type& entry, ts_map_) {
+  for (const itest::TabletServerMap::value_type& entry : ts_map_) {
     TServerDetails* ts = entry.second;
     ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 1, timeout, &tablets));
   }

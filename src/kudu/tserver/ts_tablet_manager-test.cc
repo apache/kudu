@@ -129,7 +129,7 @@ static void AssertReportHasUpdatedTablet(const TabletReportPB& report,
                                          const string& tablet_id) {
   ASSERT_GE(report.updated_tablets_size(), 0);
   bool found_tablet = false;
-  BOOST_FOREACH(ReportedTabletPB reported_tablet, report.updated_tablets()) {
+  for (ReportedTabletPB reported_tablet : report.updated_tablets()) {
     if (reported_tablet.tablet_id() == tablet_id) {
       found_tablet = true;
       ASSERT_TRUE(reported_tablet.has_committed_consensus_state());
@@ -212,7 +212,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
     tablet_manager_->GenerateIncrementalTabletReport(&report);
     ASSERT_TRUE(report.is_incremental()) << report.ShortDebugString();
     ASSERT_MONOTONIC_REPORT_SEQNO(&seqno, report) << report.ShortDebugString();
-    BOOST_FOREACH(const ReportedTabletPB& reported_tablet, report.updated_tablets()) {
+    for (const ReportedTabletPB& reported_tablet : report.updated_tablets()) {
       if (reported_tablet.tablet_id() == "tablet-2") {
         found_tablet_2  = true;
         break;

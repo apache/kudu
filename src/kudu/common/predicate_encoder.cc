@@ -111,7 +111,7 @@ void RangePredicateEncoder::EncodeRangePredicates(ScanSpec *spec, bool erase_pus
       memcpy(upper_key.mutable_cell_ptr(n_pushed), key_bounds[n_pushed].upper, size);
       upper_len++;
     }
-    BOOST_FOREACH(int pred_idx, key_bounds[n_pushed].orig_predicate_indexes) {
+    for (int pred_idx : key_bounds[n_pushed].orig_predicate_indexes) {
       was_pushed[pred_idx] = true;
     }
   }

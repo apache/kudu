@@ -31,7 +31,6 @@
 
 #include <boost/algorithm/string.hpp>
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <fstream>
 #include <gperftools/malloc_extension.h>
 #include <memory>
@@ -157,7 +156,7 @@ static void MemTrackersHandler(const Webserver::WebRequest& req, std::stringstre
 
   vector<shared_ptr<MemTracker> > trackers;
   MemTracker::ListTrackers(&trackers);
-  BOOST_FOREACH(const shared_ptr<MemTracker>& tracker, trackers) {
+  for (const shared_ptr<MemTracker>& tracker : trackers) {
     string parent = tracker->parent() == NULL ? "none" : tracker->parent()->id();
     string limit_str = tracker->limit() == -1 ? "none" :
                        HumanReadableNumBytes::ToString(tracker->limit());

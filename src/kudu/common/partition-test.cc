@@ -39,7 +39,7 @@ void AddHashBucketComponent(PartitionSchemaPB* partition_schema_pb,
                             uint32_t num_buckets, int32_t seed) {
   PartitionSchemaPB::HashBucketSchemaPB* hash_bucket_schema =
       partition_schema_pb->add_hash_bucket_schemas();
-  BOOST_FOREACH(const string& column, columns) {
+  for (const string& column : columns) {
     hash_bucket_schema->add_columns()->set_name(column);
   }
   hash_bucket_schema->set_num_buckets(num_buckets);
@@ -50,7 +50,7 @@ void SetRangePartitionComponent(PartitionSchemaPB* partition_schema_pb,
                                 const vector<string>& columns) {
   PartitionSchemaPB::RangeSchemaPB* range_schema = partition_schema_pb->mutable_range_schema();
   range_schema->Clear();
-  BOOST_FOREACH(const string& column, columns) {
+  for (const string& column : columns) {
     range_schema->add_columns()->set_name(column);
   }
 }

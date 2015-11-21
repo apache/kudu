@@ -17,7 +17,6 @@
 
 #include "kudu/tablet/compaction_policy.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 
 #include <algorithm>
@@ -229,7 +228,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   inrange_candidates.reserve(asc_min_key.size());
   vector<double> upper_bounds;
 
-  BOOST_FOREACH(const RowSetInfo& cc_a, asc_min_key) {
+  for (const RowSetInfo& cc_a : asc_min_key) {
     chosen_indexes.clear();
     inrange_candidates.clear();
     ub_calc.clear();
@@ -260,7 +259,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
     // problem by adding just a single rowset, meaning that we can reuse the
     // existing dynamic programming state to incrementally update the solution,
     // rather than having to rebuild from scratch.
-    BOOST_FOREACH(const RowSetInfo& cc_b, asc_max_key) {
+    for (const RowSetInfo& cc_b : asc_max_key) {
       if (cc_b.cdf_min_key() < ab_min) {
         // Would expand support to the left.
         // TODO: possible optimization here: binary search to skip to the first
@@ -312,7 +311,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
     // If we came up with a new solution, replace.
     if (!chosen_indexes.empty()) {
       best_chosen.clear();
-      BOOST_FOREACH(int i, chosen_indexes) {
+      for (int i : chosen_indexes) {
         best_chosen.insert(inrange_candidates[i].rowset());
       }
     }
@@ -321,7 +320,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   // Log the input and output of the selection.
   if (VLOG_IS_ON(1) || log != NULL) {
     LOG_STRING(INFO, log) << "Budgeted compaction selection:";
-    BOOST_FOREACH(RowSetInfo &cand, asc_min_key) {
+    for (RowSetInfo &cand : asc_min_key) {
       const char *checkbox = "[ ]";
       if (ContainsKey(best_chosen, cand.rowset())) {
         checkbox = "[x]";

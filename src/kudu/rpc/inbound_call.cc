@@ -17,7 +17,6 @@
 
 #include "kudu/rpc/inbound_call.h"
 
-#include <boost/foreach.hpp>
 #include <memory>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -137,7 +136,7 @@ Status InboundCall::SerializeResponseBuffer(const MessageLite& response,
   resp_hdr.set_call_id(header_.call_id());
   resp_hdr.set_is_error(!is_success);
   uint32_t absolute_sidecar_offset = protobuf_msg_size;
-  BOOST_FOREACH(RpcSidecar* car, sidecars_) {
+  for (RpcSidecar* car : sidecars_) {
     resp_hdr.add_sidecar_offsets(absolute_sidecar_offset);
     absolute_sidecar_offset += car->AsSlice().size();
   }
@@ -159,7 +158,7 @@ void InboundCall::SerializeResponseTo(vector<Slice>* slices) const {
   slices->reserve(slices->size() + 2 + sidecars_.size());
   slices->push_back(Slice(response_hdr_buf_));
   slices->push_back(Slice(response_msg_buf_));
-  BOOST_FOREACH(RpcSidecar* car, sidecars_) {
+  for (RpcSidecar* car : sidecars_) {
     slices->push_back(car->AsSlice());
   }
 }

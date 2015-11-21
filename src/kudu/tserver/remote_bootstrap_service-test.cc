@@ -16,7 +16,6 @@
 // under the License.
 #include "kudu/tserver/remote_bootstrap-test-base.h"
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <limits>
 
@@ -223,7 +222,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidSessionId) {
   bad_session_ids.push_back(GetLocalUUID());
 
   // Fetch a block for a non-existent session.
-  BOOST_FOREACH(const string& session_id, bad_session_ids) {
+  for (const string& session_id : bad_session_ids) {
     FetchDataResponsePB resp;
     RpcController controller;
     DataIdPB data_id;
@@ -235,7 +234,7 @@ TEST_F(RemoteBootstrapServiceTest, TestInvalidSessionId) {
   }
 
   // End a non-existent session.
-  BOOST_FOREACH(const string& session_id, bad_session_ids) {
+  for (const string& session_id : bad_session_ids) {
     EndRemoteBootstrapSessionResponsePB resp;
     RpcController controller;
     Status status = DoEndRemoteBootstrapSession(session_id, true, NULL, &resp, &controller);

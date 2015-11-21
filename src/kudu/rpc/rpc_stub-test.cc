@@ -19,7 +19,6 @@
 
 #include <gtest/gtest.h>
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 
 #include "kudu/gutil/stl_util.h"
@@ -115,7 +114,7 @@ TEST_F(RpcStubTest, TestBigCallData) {
 
   latch.Wait();
 
-  BOOST_FOREACH(RpcController &c, controllers) {
+  for (RpcController &c : controllers) {
     ASSERT_OK(c.status());
   }
 }
@@ -339,7 +338,7 @@ TEST_F(RpcStubTest, TestDontHandleTimedOutCalls) {
   Status s = p.Sleep(req, &resp, &rpc);
   ASSERT_TRUE(s.IsTimedOut()) << s.ToString();
 
-  BOOST_FOREACH(AsyncSleep* s, sleeps) {
+  for (AsyncSleep* s : sleeps) {
     s->latch.Wait();
   }
 

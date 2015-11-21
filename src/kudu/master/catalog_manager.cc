@@ -36,7 +36,6 @@
 
 #include "kudu/master/catalog_manager.h"
 
-#include <boost/foreach.hpp>
 #include <boost/optional.hpp>
 #include <boost/thread/condition_variable.hpp>
 #include <boost/thread/locks.hpp>
@@ -601,7 +600,7 @@ void CatalogManager::Shutdown() {
   }
 
   // Abort and Wait tables task completion
-  BOOST_FOREACH(const TableInfoMap::value_type& e, table_ids_map_) {
+  for (const TableInfoMap::value_type& e : table_ids_map_) {
     e.second->AbortTasks();
     e.second->WaitTasksCompletion();
   }
@@ -631,7 +630,7 @@ void CatalogManager::AbortTableCreation(TableInfo* table,
   string table_id = table->id();
   string table_name = table->mutable_metadata()->mutable_dirty()->pb.name();
   vector<string> tablet_ids_to_erase;
-  BOOST_FOREACH(TabletInfo* tablet, tablets) {
+  for (TabletInfo* tablet : tablets) {
     tablet_ids_to_erase.push_back(tablet->tablet_id());
   }
 
@@ -648,11 +647,11 @@ void CatalogManager::AbortTableCreation(TableInfo* table,
 
   // Call AbortMutation() manually, as otherwise the lock won't be
   // released.
-  BOOST_FOREACH(TabletInfo* tablet, tablets) {
+  for (TabletInfo* tablet : tablets) {
     tablet->mutable_metadata()->AbortMutation();
   }
   table->mutable_metadata()->AbortMutation();
-  BOOST_FOREACH(const string& tablet_id_to_erase, tablet_ids_to_erase) {
+  for (const string& tablet_id_to_erase : tablet_ids_to_erase) {
     CHECK_EQ(tablet_map_.erase(tablet_id_to_erase), 1)
         << "Unable to erase tablet " << tablet_id_to_erase << " from tablet map.";
   }
@@ -715,7 +714,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   vector<DecodedRowOperation> ops;
   RETURN_NOT_OK(decoder.DecodeOperations(&ops));
 
-  BOOST_FOREACH(const DecodedRowOperation& op, ops) {
+  for (const DecodedRowOperation& op : ops) {
     if (op.type != RowOperationsPB::SPLIT_ROW) {
       Status s = Status::InvalidArgument(
           "Split rows must be specified as RowOperationsPB::SPLIT_ROW");
@@ -779,7 +778,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     table_names_map_[req.name()] = table;
 
     // d. Create the TabletInfo objects in state PREPARING.
-    BOOST_FOREACH(const Partition& partition, partitions) {
+    for (const Partition& partition : partitions) {
       PartitionPB partition_pb;
       partition.ToPB(&partition_pb);
       tablets.push_back(CreateTabletInfo(table.get(), partition_pb));
@@ -788,7 +787,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
     // Add the table/tablets to the in-memory map for the assignment.
     resp->set_table_id(table->id());
     table->AddTablets(tablets);
-    BOOST_FOREACH(TabletInfo* tablet, tablets) {
+    for (TabletInfo* tablet : tablets) {
       InsertOrDie(&tablet_map_, tablet->tablet_id(), tablet);
     }
   }
@@ -799,7 +798,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // They will get committed at the end of this function.
   // Sanity check: the tables and tablets should all be in "preparing" state.
   CHECK_EQ(SysTablesEntryPB::PREPARING, table->metadata().dirty().pb.state());
-  BOOST_FOREACH(const TabletInfo *tablet, tablets) {
+  for (const TabletInfo *tablet : tablets) {
     CHECK_EQ(SysTabletsEntryPB::PREPARING, tablet->metadata().dirty().pb.state());
   }
 
@@ -831,7 +830,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // g. Commit the in-memory state.
   table->mutable_metadata()->CommitMutation();
 
-  BOOST_FOREACH(TabletInfo *tablet, tablets) {
+  for (TabletInfo *tablet : tablets) {
     tablet->mutable_metadata()->CommitMutation();
   }
 
@@ -1000,7 +999,7 @@ static Status ApplyAlterSteps(const SysTablesEntryPB& current_pb,
     builder.set_next_column_id(ColumnId(current_pb.next_column_id()));
   }
 
-  BOOST_FOREACH(const AlterTableRequestPB::Step& step, req->alter_schema_steps()) {
+  for (const AlterTableRequestPB::Step& step : req->alter_schema_steps()) {
     switch (step.type()) {
       case AlterTableRequestPB::ADD_COLUMN: {
         if (!step.has_add_column()) {
@@ -1271,7 +1270,7 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
 
   boost::shared_lock<LockType> l(lock_);
 
-  BOOST_FOREACH(const TableInfoMap::value_type& entry, table_names_map_) {
+  for (const TableInfoMap::value_type& entry : table_names_map_) {
     TableMetadataLock ltm(entry.second.get(), TableMetadataLock::READ);
     if (!ltm.data().is_running()) continue;
 
@@ -1299,7 +1298,7 @@ bool CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInf
 void CatalogManager::GetAllTables(std::vector<scoped_refptr<TableInfo> > *tables) {
   tables->clear();
   boost::shared_lock<LockType> l(lock_);
-  BOOST_FOREACH(const TableInfoMap::value_type& e, table_ids_map_) {
+  for (const TableInfoMap::value_type& e : table_ids_map_) {
     tables->push_back(e.second);
   }
 }
@@ -1339,7 +1338,7 @@ Status CatalogManager::ProcessTabletReport(TSDescriptor* ts_desc,
   // the server should have, compare vs the ones being reported, and somehow mark
   // any that have been "lost" (eg somehow the tablet metadata got corrupted or something).
 
-  BOOST_FOREACH(const ReportedTabletPB& reported, report.updated_tablets()) {
+  for (const ReportedTabletPB& reported : report.updated_tablets()) {
     ReportedTabletUpdatesPB *tablet_report = report_update->add_tablets();
     tablet_report->set_tablet_id(reported.tablet_id());
     RETURN_NOT_OK_PREPEND(HandleReportedTablet(ts_desc, reported, tablet_report),
@@ -1615,7 +1614,7 @@ Status CatalogManager::ResetTabletReplicasFromReportedConfig(
   *tablet_lock->mutable_data()->pb.mutable_committed_consensus_state() = cstate;
 
   TabletInfo::ReplicaMap replica_locations;
-  BOOST_FOREACH(const consensus::RaftPeerPB& peer, cstate.config().peers()) {
+  for (const consensus::RaftPeerPB& peer : cstate.config().peers()) {
     shared_ptr<TSDescriptor> ts_desc;
     if (!peer.has_permanent_uuid()) {
       return Status::InvalidArgument("Missing UUID for peer", peer.ShortDebugString());
@@ -1635,11 +1634,11 @@ Status CatalogManager::ResetTabletReplicasFromReportedConfig(
 
   if (FLAGS_master_tombstone_evicted_tablet_replicas) {
     unordered_set<string> current_member_uuids;
-    BOOST_FOREACH(const consensus::RaftPeerPB& peer, cstate.config().peers()) {
+    for (const consensus::RaftPeerPB& peer : cstate.config().peers()) {
       InsertOrDie(&current_member_uuids, peer.permanent_uuid());
     }
     // Send a DeleteTablet() request to peers that are not in the new config.
-    BOOST_FOREACH(const consensus::RaftPeerPB& prev_peer, prev_cstate.config().peers()) {
+    for (const consensus::RaftPeerPB& prev_peer : prev_cstate.config().peers()) {
       const string& peer_uuid = prev_peer.permanent_uuid();
       if (!ContainsKey(current_member_uuids, peer_uuid)) {
         shared_ptr<TSDescriptor> ts_desc;
@@ -1755,7 +1754,7 @@ class PickLeaderReplica : public TSPicker {
   virtual Status PickReplica(TSDescriptor** ts_desc) OVERRIDE {
     TabletInfo::ReplicaMap replica_locations;
     tablet_->GetReplicaLocations(&replica_locations);
-    BOOST_FOREACH(const TabletInfo::ReplicaMap::value_type& r, replica_locations) {
+    for (const TabletInfo::ReplicaMap::value_type& r : replica_locations) {
       if (r.second.role == consensus::RaftPeerPB::LEADER) {
         *ts_desc = r.second.ts_desc;
         return Status::OK();
@@ -2264,7 +2263,7 @@ bool SelectRandomTSForReplica(const TSDescriptorVector& ts_descs,
                               const unordered_set<string>& exclude_uuids,
                               shared_ptr<TSDescriptor>* selection) {
   TSDescriptorVector tablet_servers;
-  BOOST_FOREACH(const shared_ptr<TSDescriptor>& ts, ts_descs) {
+  for (const shared_ptr<TSDescriptor>& ts : ts_descs) {
     if (!ContainsKey(exclude_uuids, ts->permanent_uuid())) {
       tablet_servers.push_back(ts);
     }
@@ -2336,7 +2335,7 @@ bool AsyncAddServerTask::SendRequest(int attempt) {
   // Select the replica we wish to add to the config.
   // Do not include current members of the config.
   unordered_set<string> replica_uuids;
-  BOOST_FOREACH(const RaftPeerPB& peer, cstate_.config().peers()) {
+  for (const RaftPeerPB& peer : cstate_.config().peers()) {
     InsertOrDie(&replica_uuids, peer.permanent_uuid());
   }
   TSDescriptorVector ts_descs;
@@ -2403,7 +2402,7 @@ void CatalogManager::SendAlterTableRequest(const scoped_refptr<TableInfo>& table
   vector<scoped_refptr<TabletInfo> > tablets;
   table->GetAllTablets(&tablets);
 
-  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+  for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     SendAlterTabletRequest(tablet);
   }
 }
@@ -2420,12 +2419,12 @@ void CatalogManager::DeleteTabletsAndSendRequests(const scoped_refptr<TableInfo>
 
   string deletion_msg = "Table deleted at " + LocalTimeAsString();
 
-  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+  for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     TabletInfo::ReplicaMap locations;
     tablet->GetReplicaLocations(&locations);
     LOG(INFO) << "Sending DeleteTablet for " << locations.size()
               << " replicas of tablet " << tablet->tablet_id();
-    BOOST_FOREACH(const TabletInfo::ReplicaMap::value_type& r, locations) {
+    for (const TabletInfo::ReplicaMap::value_type& r : locations) {
       SendDeleteTabletRequest(tablet->tablet_id(), TABLET_DATA_DELETED,
                               boost::none, table, r.second.ts_desc, deletion_msg);
     }
@@ -2488,7 +2487,7 @@ void CatalogManager::ExtractTabletsToProcess(
   //       or just a counter to avoid to take the lock and loop through the tablets
   //       if everything is "stable".
 
-  BOOST_FOREACH(const TabletInfoMap::value_type& entry, tablet_map_) {
+  for (const TabletInfoMap::value_type& entry : tablet_map_) {
     scoped_refptr<TabletInfo> tablet = entry.second;
     TabletMetadataLock tablet_lock(tablet.get(), TabletMetadataLock::READ);
 
@@ -2633,7 +2632,7 @@ class ScopedTabletInfoCommitter {
   // This method is not thread safe. Must be called by the same thread
   // that would destroy this instance.
   void Abort() {
-    BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
+    for (const scoped_refptr<TabletInfo>& tablet : *tablets_) {
       tablet->mutable_metadata()->AbortMutation();
     }
     aborted_ = true;
@@ -2642,7 +2641,7 @@ class ScopedTabletInfoCommitter {
   // Commit the transactions.
   ~ScopedTabletInfoCommitter() {
     if (PREDICT_TRUE(!aborted_)) {
-      BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, *tablets_) {
+      for (const scoped_refptr<TabletInfo>& tablet : *tablets_) {
         tablet->mutable_metadata()->CommitMutation();
       }
     }
@@ -2660,7 +2659,7 @@ Status CatalogManager::ProcessPendingAssignments(
 
   // Take write locks on all tablets to be processed, and ensure that they are
   // unlocked at the end of this scope.
-  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+  for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     tablet->mutable_metadata()->StartMutation();
   }
   ScopedTabletInfoCommitter unlocker_in(&tablets);
@@ -2676,7 +2675,7 @@ Status CatalogManager::ProcessPendingAssignments(
   // Iterate over each of the tablets and handle it, whatever state
   // it may be in. The actions required for the tablet are collected
   // into 'deferred'.
-  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+  for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     SysTabletsEntryPB::State t_state = tablet->metadata().state().pb.state();
 
     switch (t_state) {
@@ -2707,7 +2706,7 @@ Status CatalogManager::ProcessPendingAssignments(
   master_->ts_manager()->GetAllLiveDescriptors(&ts_descs);
 
   Status s;
-  BOOST_FOREACH(TabletInfo *tablet, deferred.needs_create_rpc) {
+  for (TabletInfo *tablet : deferred.needs_create_rpc) {
     // NOTE: if we fail to select replicas on the first pass (due to
     // insufficient Tablet Servers being online), we will still try
     // again unless the tablet/table creation is cancelled.
@@ -2734,7 +2733,7 @@ Status CatalogManager::ProcessPendingAssignments(
     // If there was an error, abort any mutations started by the
     // current task.
     vector<string> tablet_ids_to_remove;
-    BOOST_FOREACH(scoped_refptr<TabletInfo>& new_tablet, new_tablets) {
+    for (scoped_refptr<TabletInfo>& new_tablet : new_tablets) {
       TableInfo* table = new_tablet->table().get();
       TableMetadataLock l_table(table, TableMetadataLock::WRITE);
       if (table->RemoveTablet(new_tablet->tablet_id())) {
@@ -2746,7 +2745,7 @@ Status CatalogManager::ProcessPendingAssignments(
     boost::lock_guard<LockType> l(lock_);
     unlocker_out.Abort();
     unlocker_in.Abort();
-    BOOST_FOREACH(const string& tablet_id_to_remove, tablet_ids_to_remove) {
+    for (const string& tablet_id_to_remove : tablet_ids_to_remove) {
       CHECK_EQ(tablet_map_.erase(tablet_id_to_remove), 1)
           << "Unable to erase " << tablet_id_to_remove << " from tablet map.";
     }
@@ -2794,11 +2793,11 @@ Status CatalogManager::SelectReplicasForTablet(const TSDescriptorVector& ts_desc
 }
 
 void CatalogManager::SendCreateTabletRequests(const vector<TabletInfo*>& tablets) {
-  BOOST_FOREACH(TabletInfo *tablet, tablets) {
+  for (TabletInfo *tablet : tablets) {
     const consensus::RaftConfigPB& config =
         tablet->metadata().dirty().pb.committed_consensus_state().config();
     tablet->set_last_update_time(MonoTime::Now(MonoTime::FINE));
-    BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
+    for (const RaftPeerPB& peer : config.peers()) {
       AsyncCreateReplica* task = new AsyncCreateReplica(master_, worker_pool_.get(),
                                                         peer.permanent_uuid(), tablet);
       tablet->table()->AddTask(task);
@@ -2832,7 +2831,7 @@ void CatalogManager::SelectReplicas(const TSDescriptorVector& ts_descs,
     peer->set_permanent_uuid(ts->permanent_uuid());
 
     // TODO: This is temporary, we will use only UUIDs
-    BOOST_FOREACH(const HostPortPB& addr, reg.rpc_addresses()) {
+    for (const HostPortPB& addr : reg.rpc_addresses()) {
       peer->mutable_last_known_addr()->CopyFrom(addr);
     }
   }
@@ -2867,7 +2866,7 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
 
   // If the locations are cached.
   if (!locs.empty()) {
-    BOOST_FOREACH(const TabletInfo::ReplicaMap::value_type& replica, locs) {
+    for (const TabletInfo::ReplicaMap::value_type& replica : locs) {
       TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
       replica_pb->set_role(replica.second.role);
 
@@ -2883,7 +2882,7 @@ Status CatalogManager::BuildLocationsForTablet(const scoped_refptr<TabletInfo>& 
   // If the locations were not cached.
   // TODO: Why would this ever happen? See KUDU-759.
   if (cstate.IsInitialized()) {
-    BOOST_FOREACH(const consensus::RaftPeerPB& peer, cstate.config().peers()) {
+    for (const consensus::RaftPeerPB& peer : cstate.config().peers()) {
       TabletLocationsPB_ReplicaPB* replica_pb = locs_pb->add_replicas();
       CHECK(peer.has_permanent_uuid()) << "Missing UUID: " << peer.ShortDebugString();
       replica_pb->set_role(GetConsensusRole(peer.permanent_uuid(), cstate));
@@ -2956,7 +2955,7 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
 
   TSRegistrationPB reg;
   vector<TabletReplica> locs;
-  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets_in_range) {
+  for (const scoped_refptr<TabletInfo>& tablet : tablets_in_range) {
     if (!BuildLocationsForTablet(tablet, resp->add_tablet_locations()).ok()) {
       // Not running.
       resp->mutable_tablet_locations()->RemoveLast();
@@ -2979,7 +2978,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
   }
 
   *out << "Tables:\n";
-  BOOST_FOREACH(const TableInfoMap::value_type& e, ids_copy) {
+  for (const TableInfoMap::value_type& e : ids_copy) {
     TableInfo* t = e.second.get();
     TableMetadataLock l(t, TableMetadataLock::READ);
     const string& name = l.data().name();
@@ -2998,7 +2997,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
 
     vector<scoped_refptr<TabletInfo> > table_tablets;
     t->GetAllTablets(&table_tablets);
-    BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, table_tablets) {
+    for (const scoped_refptr<TabletInfo>& tablet : table_tablets) {
       TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
       *out << "    " << tablet->tablet_id() << ": "
            << l_tablet.data().pb.ShortDebugString() << "\n";
@@ -3011,7 +3010,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
 
   if (!tablets_copy.empty()) {
     *out << "Orphaned tablets (not referenced by any table):\n";
-    BOOST_FOREACH(const TabletInfoMap::value_type& entry, tablets_copy) {
+    for (const TabletInfoMap::value_type& entry : tablets_copy) {
       const scoped_refptr<TabletInfo>& tablet = entry.second;
       TabletMetadataLock l_tablet(tablet.get(), TabletMetadataLock::READ);
       *out << "    " << tablet->tablet_id() << ": "
@@ -3021,7 +3020,7 @@ void CatalogManager::DumpState(std::ostream* out) const {
 
   if (!names_copy.empty()) {
     *out << "Orphaned tables (in by-name map, but not id map):\n";
-    BOOST_FOREACH(const TableInfoMap::value_type& e, names_copy) {
+    for (const TableInfoMap::value_type& e : names_copy) {
       *out << e.second->id() << ":\n";
       *out << "  name: \"" << CHexEscape(e.first) << "\"\n";
     }
@@ -3131,7 +3130,7 @@ void TableInfo::AddTablet(TabletInfo *tablet) {
 
 void TableInfo::AddTablets(const vector<TabletInfo*>& tablets) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  BOOST_FOREACH(TabletInfo *tablet, tablets) {
+  for (TabletInfo *tablet : tablets) {
     AddTabletUnlocked(tablet);
   }
 }
@@ -3176,7 +3175,7 @@ void TableInfo::GetTabletsInRange(const GetTableLocationsRequestPB* req,
 
 bool TableInfo::IsAlterInProgress(uint32_t version) const {
   boost::lock_guard<simple_spinlock> l(lock_);
-  BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
+  for (const TableInfo::TabletInfoMap::value_type& e : tablet_map_) {
     if (e.second->reported_schema_version() < version) {
       VLOG(3) << "Table " << table_id_ << " ALTER in progress due to tablet "
               << e.second->ToString() << " because reported schema "
@@ -3189,7 +3188,7 @@ bool TableInfo::IsAlterInProgress(uint32_t version) const {
 
 bool TableInfo::IsCreateInProgress() const {
   boost::lock_guard<simple_spinlock> l(lock_);
-  BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
+  for (const TableInfo::TabletInfoMap::value_type& e : tablet_map_) {
     TabletMetadataLock tablet_lock(e.second, TabletMetadataLock::READ);
     if (!tablet_lock.data().is_running()) {
       return true;
@@ -3212,7 +3211,7 @@ void TableInfo::RemoveTask(MonitoredTask* task) {
 
 void TableInfo::AbortTasks() {
   boost::lock_guard<simple_spinlock> l(lock_);
-  BOOST_FOREACH(MonitoredTask* task, pending_tasks_) {
+  for (MonitoredTask* task : pending_tasks_) {
     task->Abort();
   }
 }
@@ -3233,7 +3232,7 @@ void TableInfo::WaitTasksCompletion() {
 
 void TableInfo::GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *ret) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  BOOST_FOREACH(MonitoredTask* task, pending_tasks_) {
+  for (MonitoredTask* task : pending_tasks_) {
     ret->push_back(make_scoped_refptr(task));
   }
 }
@@ -3241,7 +3240,7 @@ void TableInfo::GetTaskList(std::vector<scoped_refptr<MonitoredTask> > *ret) {
 void TableInfo::GetAllTablets(vector<scoped_refptr<TabletInfo> > *ret) const {
   ret->clear();
   boost::lock_guard<simple_spinlock> l(lock_);
-  BOOST_FOREACH(const TableInfo::TabletInfoMap::value_type& e, tablet_map_) {
+  for (const TableInfo::TabletInfoMap::value_type& e : tablet_map_) {
     ret->push_back(make_scoped_refptr(e.second));
   }
 }

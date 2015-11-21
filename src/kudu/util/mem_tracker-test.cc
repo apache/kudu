@@ -23,7 +23,6 @@
 #include <vector>
 
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <gperftools/malloc_extension.h>
 
 #include "kudu/util/test_util.h"
@@ -227,7 +226,7 @@ TEST(MemTrackerTest, FindFunctionsTakeOwnership) {
     shared_ptr<MemTracker> m = MemTracker::CreateTracker(-1, "test");
     MemTracker::ListTrackers(&refs);
   }
-  BOOST_FOREACH(const shared_ptr<MemTracker>& r, refs) {
+  for (const shared_ptr<MemTracker>& r : refs) {
     LOG(INFO) << r->ToString();
   }
   refs.clear();

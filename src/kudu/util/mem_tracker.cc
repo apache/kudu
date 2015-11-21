@@ -18,7 +18,6 @@
 #include "kudu/util/mem_tracker.h"
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <deque>
 #include <gperftools/malloc_extension.h>
 #include <limits>
@@ -226,7 +225,7 @@ bool MemTracker::FindTrackerUnlocked(const string& id,
                                      const shared_ptr<MemTracker>& parent) {
   DCHECK(parent != NULL);
   parent->child_trackers_lock_.AssertAcquired();
-  BOOST_FOREACH(MemTracker* child, parent->child_trackers_) {
+  for (MemTracker* child : parent->child_trackers_) {
     if (child->id() == id) {
       *tracker = child->shared_from_this();
       return true;
@@ -258,7 +257,7 @@ void MemTracker::ListTrackers(vector<shared_ptr<MemTracker>>* trackers) {
     trackers->push_back(t);
     {
       MutexLock l(t->child_trackers_lock_);
-      BOOST_FOREACH(MemTracker* child, t->child_trackers_) {
+      for (MemTracker* child : t->child_trackers_) {
         to_process.push_back(child->shared_from_this());
       }
     }
@@ -439,7 +438,7 @@ bool MemTracker::SoftLimitExceeded(double* current_capacity_pct) {
 }
 
 bool MemTracker::AnySoftLimitExceeded(double* current_capacity_pct) {
-  BOOST_FOREACH(MemTracker* t, limit_trackers_) {
+  for (MemTracker* t : limit_trackers_) {
     if (t->SoftLimitExceeded(current_capacity_pct)) {
       return true;
     }
@@ -572,7 +571,7 @@ void MemTracker::LogUpdate(bool is_consume, int64_t bytes) const {
 string MemTracker::LogUsage(const string& prefix,
                             const list<MemTracker*>& trackers) {
   vector<string> usage_strings;
-  BOOST_FOREACH(const MemTracker* child, trackers) {
+  for (const MemTracker* child : trackers) {
     usage_strings.push_back(child->LogUsage(prefix));
   }
   return JoinStrings(usage_strings, "\n");

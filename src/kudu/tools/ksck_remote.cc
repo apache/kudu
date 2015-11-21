@@ -241,7 +241,7 @@ Status RemoteKsckMaster::RetrieveTabletServers(TSMap* tablet_servers) {
   rpc.set_timeout(GetDefaultTimeout());
   RETURN_NOT_OK(proxy_->ListTabletServers(req, &resp, &rpc));
   tablet_servers->clear();
-  BOOST_FOREACH(const master::ListTabletServersResponsePB_Entry& e, resp.servers()) {
+  for (const master::ListTabletServersResponsePB_Entry& e : resp.servers()) {
     HostPortPB addr = e.registration().rpc_addresses(0);
     vector<Sockaddr> addresses;
     RETURN_NOT_OK(ParseAddressList(HostPort(addr.host(), addr.port()).ToString(),
@@ -264,7 +264,7 @@ Status RemoteKsckMaster::RetrieveTablesList(vector<shared_ptr<KsckTable> >* tabl
     return StatusFromPB(resp.error().status());
   }
   vector<shared_ptr<KsckTable> > tables_temp;
-  BOOST_FOREACH(const master::ListTablesResponsePB_TableInfo& info, resp.tables()) {
+  for (const master::ListTablesResponsePB_TableInfo& info : resp.tables()) {
     Schema schema;
     int num_replicas;
     RETURN_NOT_OK(GetTableInfo(info.name(), &schema, &num_replicas));
@@ -301,10 +301,10 @@ Status RemoteKsckMaster::GetTabletsBatch(const string& table_name,
 
   rpc.set_timeout(GetDefaultTimeout());
   RETURN_NOT_OK(proxy_->GetTableLocations(req, &resp, &rpc));
-  BOOST_FOREACH(const master::TabletLocationsPB& locations, resp.tablet_locations()) {
+  for (const master::TabletLocationsPB& locations : resp.tablet_locations()) {
     shared_ptr<KsckTablet> tablet(new KsckTablet(locations.tablet_id()));
     vector<shared_ptr<KsckTabletReplica> > replicas;
-    BOOST_FOREACH(const master::TabletLocationsPB_ReplicaPB& replica, locations.replicas()) {
+    for (const master::TabletLocationsPB_ReplicaPB& replica : locations.replicas()) {
       bool is_leader = replica.role() == consensus::RaftPeerPB::LEADER;
       bool is_follower = replica.role() == consensus::RaftPeerPB::FOLLOWER;
       replicas.push_back(shared_ptr<KsckTabletReplica>(

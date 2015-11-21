@@ -78,7 +78,7 @@ Status CFileSet::Open() {
   // Lazily open the column data cfiles. Each one will be fully opened
   // later, when the first iterator seeks for the first time.
   RowSetMetadata::ColumnIdToBlockIdMap block_map = rowset_metadata_->GetColumnBlocksById();
-  BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e, block_map) {
+  for (const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e : block_map) {
     ColumnId col_id = e.first;
     DCHECK(!ContainsKey(readers_by_col_id_, col_id)) << "already open";
 
@@ -188,7 +188,7 @@ Status CFileSet::GetBounds(Slice *min_encoded_key,
 
 uint64_t CFileSet::EstimateOnDiskSize() const {
   uint64_t ret = 0;
-  BOOST_FOREACH(const ReaderMap::value_type& e, readers_by_col_id_) {
+  for (const ReaderMap::value_type& e : readers_by_col_id_) {
     const shared_ptr<CFileReader> &reader = e.second;
     ret += reader->file_size();
   }
@@ -475,7 +475,7 @@ Status CFileSet::Iterator::FinishBatch() {
 void CFileSet::Iterator::GetIteratorStats(vector<IteratorStats>* stats) const {
   stats->clear();
   stats->reserve(col_iters_.size());
-  BOOST_FOREACH(const ColumnIterator* iter, col_iters_) {
+  for (const ColumnIterator* iter : col_iters_) {
     stats->push_back(iter->io_statistics());
   }
 }

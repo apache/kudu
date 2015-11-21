@@ -125,7 +125,7 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
 
   // Add per-row errors to the result, update metrics.
   int i = 0;
-  BOOST_FOREACH(const RowOp* op, state()->row_ops()) {
+  for (const RowOp* op : state()->row_ops()) {
     if (state()->response() != NULL && op->result->has_failed_status()) {
       // Replicas disregard the per row errors, for now
       // TODO check the per-row errors against the leader's, at least in debug mode
@@ -285,7 +285,7 @@ void WriteTransactionState::Commit() {
 void WriteTransactionState::ReleaseTxResultPB(TxResultPB* result) const {
   result->Clear();
   result->mutable_ops()->Reserve(row_ops_.size());
-  BOOST_FOREACH(RowOp* op, row_ops_) {
+  for (RowOp* op : row_ops_) {
     result->mutable_ops()->AddAllocated(CHECK_NOTNULL(op->result.release()));
   }
 }
@@ -312,7 +312,7 @@ void WriteTransactionState::UpdateMetricsForOp(const RowOp& op) {
 
 void WriteTransactionState::release_row_locks() {
   // free the row locks
-  BOOST_FOREACH(RowOp* op, row_ops_) {
+  for (RowOp* op : row_ops_) {
     op->row_lock.Release();
   }
 }

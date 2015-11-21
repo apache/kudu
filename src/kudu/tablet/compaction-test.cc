@@ -214,12 +214,12 @@ class TestCompaction : public KuduRowSetTest {
     vector<shared_ptr<RowSetMetadata> > metas;
     rsw.GetWrittenRowSetMetadata(&metas);
     ASSERT_GE(metas.size(), 1);
-    BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
+    for (const shared_ptr<RowSetMetadata>& meta : metas) {
       ASSERT_TRUE(meta->HasBloomDataBlockForTests());
     }
     if (result_rowsets) {
       // Re-open the outputs
-      BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, metas) {
+      for (const shared_ptr<RowSetMetadata>& meta : metas) {
         shared_ptr<DiskRowSet> rs;
         ASSERT_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &rs));
         result_rowsets->push_back(rs);
@@ -232,7 +232,7 @@ class TestCompaction : public KuduRowSetTest {
                               const Schema& projection,
                               gscoped_ptr<CompactionInput>* out) {
     vector<shared_ptr<CompactionInput> > merge_inputs;
-    BOOST_FOREACH(const shared_ptr<DiskRowSet> &rs, rowsets) {
+    for (const shared_ptr<DiskRowSet> &rs : rowsets) {
       gscoped_ptr<CompactionInput> input;
       RETURN_NOT_OK(CompactionInput::Create(*rs, &projection, merge_snap, &input));
       merge_inputs.push_back(shared_ptr<CompactionInput>(input.release()));
@@ -294,7 +294,7 @@ class TestCompaction : public KuduRowSetTest {
 
     // Create one input rowset for each of the input schemas
     int delta = 0;
-    BOOST_FOREACH(const Schema& schema, schemas) {
+    for (const Schema& schema : schemas) {
       // Create a memrowset with a bunch of rows and updates.
       shared_ptr<MemRowSet> mrs(new MemRowSet(delta, schema, log_anchor_registry_.get()));
       InsertRows(mrs.get(), 1000, delta);
@@ -359,7 +359,7 @@ class TestCompaction : public KuduRowSetTest {
       scoped_refptr<TabletMetadata> input_meta;
       ASSERT_OK(TabletMetadata::Load(&fs_manager, tablet_id, &input_meta));
 
-      BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, input_meta->rowsets()) {
+      for (const shared_ptr<RowSetMetadata>& meta : input_meta->rowsets()) {
         shared_ptr<DiskRowSet> rs;
         CHECK_OK(DiskRowSet::Open(meta, log_anchor_registry_.get(), &rs));
         rowsets.push_back(rs);

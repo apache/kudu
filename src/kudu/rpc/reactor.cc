@@ -19,7 +19,6 @@
 
 #include <arpa/inet.h>
 #include <boost/intrusive/list.hpp>
-#include <boost/foreach.hpp>
 #include <ev++.h>
 #include <netinet/in.h>
 #include <stdlib.h>
@@ -124,7 +123,7 @@ void ReactorThread::ShutdownInternal() {
 
   // Tear down any inbound TCP connections.
   VLOG(1) << name() << ": tearing down inbound TCP connections...";
-  BOOST_FOREACH(const scoped_refptr<Connection>& conn, server_conns_) {
+  for (const scoped_refptr<Connection>& conn : server_conns_) {
     VLOG(1) << name() << ": shutting down " << conn->ToString();
     conn->Shutdown(service_unavailable);
   }
@@ -135,7 +134,7 @@ void ReactorThread::ShutdownInternal() {
   // These won't be found in the ReactorThread's list of pending tasks
   // because they've been "run" (that is, they've been scheduled).
   Status aborted = ShutdownError(true); // aborted
-  BOOST_FOREACH(DelayedTask* task, scheduled_tasks_) {
+  for (DelayedTask* task : scheduled_tasks_) {
     task->Abort(aborted); // should also free the task.
   }
   scheduled_tasks_.clear();
@@ -156,10 +155,10 @@ Status ReactorThread::GetMetrics(ReactorMetrics *metrics) {
 Status ReactorThread::DumpRunningRpcs(const DumpRunningRpcsRequestPB& req,
                                       DumpRunningRpcsResponsePB* resp) {
   DCHECK(IsCurrentThread());
-  BOOST_FOREACH(const scoped_refptr<Connection>& conn, server_conns_) {
+  for (const scoped_refptr<Connection>& conn : server_conns_) {
     RETURN_NOT_OK(conn->DumpPB(req, resp->add_inbound_connections()));
   }
-  BOOST_FOREACH(const conn_map_t::value_type& entry, client_conns_) {
+  for (const conn_map_t::value_type& entry : client_conns_) {
     Connection* conn = entry.second.get();
     RETURN_NOT_OK(conn->DumpPB(req, resp->add_outbound_connections()));
   }

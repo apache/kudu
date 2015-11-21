@@ -281,7 +281,7 @@ TEST_F(MultiThreadedRpcTest, TestShutdownWithIncomingConnections) {
   service_pool_->Shutdown();
   server_messenger_->Shutdown();
 
-  BOOST_FOREACH(scoped_refptr<kudu::Thread>& t, threads) {
+  for (scoped_refptr<kudu::Thread>& t : threads) {
     ASSERT_OK(ThreadJoiner(t.get()).warn_every_ms(500).Join());
   }
 }

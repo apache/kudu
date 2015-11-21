@@ -1001,7 +1001,7 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
   RpcController rpc;
 
   int batch_idx = 1;
-  BOOST_FOREACH(uint64_t write_timestamp, write_timestamps_collector) {
+  for (uint64_t write_timestamp : write_timestamps_collector) {
     req.Clear();
     resp.Clear();
     rpc.Reset();
@@ -1041,7 +1041,7 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
     if (VLOG_IS_ON(2)) {
       VLOG(2) << "Scanner: " << resp.scanner_id() << " performing a snapshot read at: "
               << read_timestamp.ToString() << " got back: ";
-      BOOST_FOREACH(const string& result, results) {
+      for (const string& result : results) {
         VLOG(2) << result;
       }
     }
@@ -2058,7 +2058,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
 
   vector<RowOperationsPB::Type> ops = { RowOperationsPB::INSERT, RowOperationsPB::UPDATE };
 
-  BOOST_FOREACH(const RowOperationsPB::Type &op, ops) {
+  for (const RowOperationsPB::Type &op : ops) {
     RowOperationsPB* data = req.mutable_row_operations();
     AddTestRowToPB(op, schema_, 20, 1, "1", data);
     SCOPED_TRACE(req.DebugString());

@@ -80,7 +80,7 @@ static bool CompareIntervals(const IntInterval &a, const IntInterval &b) {
 static string Stringify(const vector<IntInterval> &intervals) {
   string ret;
   bool first = true;
-  BOOST_FOREACH(const IntInterval &interval, intervals) {
+  for (const IntInterval &interval : intervals) {
     if (!first) {
       ret.append(",");
     }
@@ -93,7 +93,7 @@ static string Stringify(const vector<IntInterval> &intervals) {
 static void FindContainingBruteForce(const vector<IntInterval> &intervals,
                                      int query_point,
                                      vector<IntInterval> *results) {
-  BOOST_FOREACH(const IntInterval &i, intervals) {
+  for (const IntInterval &i : intervals) {
     if (query_point >= i.left && query_point <= i.right) {
       results->push_back(i);
     }
@@ -105,7 +105,7 @@ static void FindContainingBruteForce(const vector<IntInterval> &intervals,
 static void FindIntersectingBruteForce(const vector<IntInterval> &intervals,
                                        IntInterval query_interval,
                                        vector<IntInterval> *results) {
-  BOOST_FOREACH(const IntInterval &i, intervals) {
+  for (const IntInterval &i : intervals) {
     if (query_interval.Intersects(i)) {
       results->push_back(i);
     }

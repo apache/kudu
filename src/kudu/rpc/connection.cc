@@ -17,7 +17,6 @@
 
 #include "kudu/rpc/connection.h"
 
-#include <boost/foreach.hpp>
 #include <boost/intrusive/list.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -142,7 +141,7 @@ void Connection::Shutdown(const Status &status) {
   }
 
   // Clear any calls which have been sent and were awaiting a response.
-  BOOST_FOREACH(const car_map_t::value_type &v, awaiting_response_) {
+  for (const car_map_t::value_type &v : awaiting_response_) {
     CallAwaitingResponse *c = v.second;
     if (c->call) {
       c->call->SetFailed(status);
@@ -602,14 +601,14 @@ Status Connection::DumpPB(const DumpRunningRpcsRequestPB& req,
   }
 
   if (direction_ == CLIENT) {
-    BOOST_FOREACH(const car_map_t::value_type& entry, awaiting_response_) {
+    for (const car_map_t::value_type& entry : awaiting_response_) {
       CallAwaitingResponse *c = entry.second;
       if (c->call) {
         c->call->DumpPB(req, resp->add_calls_in_flight());
       }
     }
   } else if (direction_ == SERVER) {
-    BOOST_FOREACH(const inbound_call_map_t::value_type& entry, calls_being_handled_) {
+    for (const inbound_call_map_t::value_type& entry : calls_being_handled_) {
       InboundCall* c = entry.second;
       c->DumpPB(req, resp->add_calls_in_flight());
     }

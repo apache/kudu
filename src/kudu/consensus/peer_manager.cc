@@ -55,7 +55,7 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
 
   boost::lock_guard<simple_spinlock> lock(lock_);
   // Create new peers
-  BOOST_FOREACH(const RaftPeerPB& peer_pb, config.peers()) {
+  for (const RaftPeerPB& peer_pb : config.peers()) {
     new_peers.insert(peer_pb.permanent_uuid());
     Peer* peer = FindPtrOrNull(peers_, peer_pb.permanent_uuid());
     if (peer != NULL) {
@@ -100,7 +100,7 @@ void PeerManager::SignalRequest(bool force_if_queue_empty) {
 void PeerManager::Close() {
   {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    BOOST_FOREACH(const PeersMap::value_type& entry, peers_) {
+    for (const PeersMap::value_type& entry : peers_) {
       entry.second->Close();
     }
     STLDeleteValues(&peers_);

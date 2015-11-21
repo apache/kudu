@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <cmath>
 #include <memory>
 #include <string>
@@ -99,7 +98,7 @@ class BlockManagerStressTest : public KuduTest {
     if (!FLAGS_block_manager_paths.empty()) {
       vector<string> paths = strings::Split(FLAGS_block_manager_paths, ",",
                                             strings::SkipEmpty());
-      BOOST_FOREACH(const string& path, paths) {
+      for (const string& path : paths) {
         WARN_NOT_OK(env_->DeleteRecursively(path),
                     Substitute("Couldn't recursively delete $0", path));
       }
@@ -155,7 +154,7 @@ class BlockManagerStressTest : public KuduTest {
   }
 
   void JoinThreads() {
-    BOOST_FOREACH(const scoped_refptr<kudu::Thread>& thr, threads_) {
+    for (const scoped_refptr<kudu::Thread>& thr : threads_) {
      CHECK_OK(ThreadJoiner(thr.get()).Join());
     }
   }
@@ -255,7 +254,7 @@ void BlockManagerStressTest<T>::WriterThread() {
     // Publish the now sync'ed blocks to readers and deleters.
     {
       lock_guard<rw_spinlock> l(&lock_);
-      BOOST_FOREACH(WritableBlock* block, dirty_blocks) {
+      for (WritableBlock* block : dirty_blocks) {
         written_blocks_.push_back(block->id());
       }
     }
@@ -352,7 +351,7 @@ void BlockManagerStressTest<T>::DeleterThread() {
     }
 
     // And delete them.
-    BOOST_FOREACH(const BlockId& block_id, to_delete) {
+    for (const BlockId& block_id : to_delete) {
       LOG(INFO) << "Deleting block " << block_id.ToString();
       CHECK_OK(bm_->DeleteBlock(block_id));
     }

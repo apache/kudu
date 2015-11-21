@@ -17,7 +17,6 @@
 
 #include "kudu/twitter-demo/insert_consumer.h"
 
-#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <string>
@@ -104,7 +103,7 @@ void InsertConsumer::BatchFinished(const Status& s) {
     vector<client::KuduError*> errors;
     ElementDeleter d(&errors);
     session_->GetPendingErrors(&errors, &overflow);
-    BOOST_FOREACH(const client::KuduError* error, errors) {
+    for (const client::KuduError* error : errors) {
       LOG(WARNING) << "Failed to insert row " << error->failed_op().ToString()
                    << ": " << error->status().ToString();
     }

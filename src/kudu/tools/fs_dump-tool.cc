@@ -24,7 +24,6 @@
 #include <sstream>
 #include <vector>
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -96,7 +95,7 @@ void PrintUsageToStream(const std::string& prog_name, std::ostream* out) {
        << "-fs_wal_dir <dir> -fs_data_dirs <dirs> <command> <options> "
        << std::endl << std::endl;
   *out << "Commands: " << std::endl;
-  BOOST_FOREACH(const CommandHandler& handler, kCommandHandlers) {
+  for (const CommandHandler& handler : kCommandHandlers) {
     *out << handler.name_ << ": " << handler.desc_ << std::endl;
   }
 }
@@ -110,7 +109,7 @@ bool ValidateCommand(int argc, char** argv, CommandType* out) {
     Usage(argv[0], "At least one command must be specified!");
     return false;
   }
-  BOOST_FOREACH(const CommandHandler& handler, kCommandHandlers) {
+  for (const CommandHandler& handler : kCommandHandlers) {
     if (argv[1] == handler.name_) {
       *out = handler.type_;
       return true;

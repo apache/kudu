@@ -17,7 +17,6 @@
 
 #include "kudu/tserver/tablet_server.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <list>
 #include <vector>
@@ -68,7 +67,7 @@ string TabletServer::ToString() const {
 }
 
 Status TabletServer::ValidateMasterAddressResolution() const {
-  BOOST_FOREACH(const HostPort& master_addr, opts_.master_addresses) {
+  for (const HostPort& master_addr : opts_.master_addresses) {
     RETURN_NOT_OK_PREPEND(master_addr.ResolveAddresses(NULL),
                           strings::Substitute(
                               "Couldn't resolve master service address '$0'",

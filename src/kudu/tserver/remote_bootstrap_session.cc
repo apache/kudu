@@ -92,7 +92,7 @@ Status RemoteBootstrapSession::Init() {
   // All subsequent requests should reuse the opened blocks.
   vector<BlockIdPB> data_blocks;
   TabletMetadata::CollectBlockIdPBs(tablet_superblock_, &data_blocks);
-  BOOST_FOREACH(const BlockIdPB& block_id, data_blocks) {
+  for (const BlockIdPB& block_id : data_blocks) {
     LOG(INFO) << "Opening block " << block_id.DebugString();
     RETURN_NOT_OK(OpenBlockUnlocked(BlockId::FromPB(block_id)));
   }
@@ -105,7 +105,7 @@ Status RemoteBootstrapSession::Init() {
   // The Log doesn't add the active segment to the log reader's list until
   // a header has been written to it (but it will not have a footer).
   RETURN_NOT_OK(tablet_peer_->log()->GetLogReader()->GetSegmentsSnapshot(&log_segments_));
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, log_segments_) {
+  for (const scoped_refptr<ReadableLogSegment>& segment : log_segments_) {
     RETURN_NOT_OK(OpenLogSegmentUnlocked(segment->header().sequence_number()));
   }
   LOG(INFO) << "Got snapshot of " << log_segments_.size() << " log segments";

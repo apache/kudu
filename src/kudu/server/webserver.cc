@@ -36,7 +36,6 @@
 #include <map>
 #include <vector>
 #include <boost/lexical_cast.hpp>
-#include <boost/foreach.hpp>
 #include <boost/bind.hpp>
 #include <boost/mem_fn.hpp>
 #include <boost/algorithm/string.hpp>
@@ -88,7 +87,7 @@ Webserver::~Webserver() {
 
 void Webserver::RootHandler(const Webserver::WebRequest& args, stringstream* output) {
   (*output) << "<h2>Status Pages</h2>";
-  BOOST_FOREACH(const PathHandlerMap::value_type& handler, path_handlers_) {
+  for (const PathHandlerMap::value_type& handler : path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
       (*output) << "<a href=\"" << handler.first << "\">" << handler.second->alias() << "</a><br/>";
     }
@@ -101,7 +100,7 @@ void Webserver::RootHandler(const Webserver::WebRequest& args, stringstream* out
 void Webserver::BuildArgumentMap(const string& args, ArgumentMap* output) {
   vector<StringPiece> arg_pairs = strings::Split(args, "&");
 
-  BOOST_FOREACH(const StringPiece& arg_pair, arg_pairs) {
+  for (const StringPiece& arg_pair : arg_pairs) {
     vector<StringPiece> key_value = strings::Split(arg_pair, "=");
     if (key_value.empty()) continue;
 
@@ -123,7 +122,7 @@ Status Webserver::BuildListenSpec(string* spec) const {
   RETURN_NOT_OK(ParseAddressList(http_address_, 80, &addrs));
 
   vector<string> parts;
-  BOOST_FOREACH(const Sockaddr& addr, addrs) {
+  for (const Sockaddr& addr : addrs) {
     // Mongoose makes sockets with 's' suffixes accept SSL traffic only
     parts.push_back(addr.ToString() + (IsSecure() ? "s" : ""));
   }
@@ -220,7 +219,7 @@ Status Webserver::Start() {
   vector<Sockaddr> addrs;
   RETURN_NOT_OK(GetBoundAddresses(&addrs));
   string bound_addresses_str;
-  BOOST_FOREACH(const Sockaddr& addr, addrs) {
+  for (const Sockaddr& addr : addrs) {
     if (!bound_addresses_str.empty()) {
       bound_addresses_str += ", ";
     }
@@ -353,7 +352,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
 
   stringstream output;
   if (use_style) BootstrapPageHeader(&output);
-  BOOST_FOREACH(const PathHandlerCallback& callback_, handler.callbacks()) {
+  for (const PathHandlerCallback& callback_ : handler.callbacks()) {
     callback_(req, &output);
   }
   if (use_style) BootstrapPageFooter(&output);
@@ -417,7 +416,7 @@ static const char* const NAVIGATION_BAR_SUFFIX =
 void Webserver::BootstrapPageHeader(stringstream* output) {
   (*output) << PAGE_HEADER;
   (*output) << NAVIGATION_BAR_PREFIX;
-  BOOST_FOREACH(const PathHandlerMap::value_type& handler, path_handlers_) {
+  for (const PathHandlerMap::value_type& handler : path_handlers_) {
     if (handler.second->is_on_nav_bar()) {
       (*output) << "<li><a href=\"" << handler.first << "\">" << handler.second->alias()
                 << "</a></li>";

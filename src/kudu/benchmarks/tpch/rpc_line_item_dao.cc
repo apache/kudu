@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <vector>
@@ -85,7 +84,7 @@ class FlushCallback : public KuduStatusCallback {
       if (overflow) {
         LOG(WARNING) << "Error overflow occured";
       }
-      BOOST_FOREACH(KuduError* error, errors) {
+      for (KuduError* error : errors) {
         LOG(WARNING) << "FAILED: " << error->failed_op().ToString();
       }
     }
@@ -169,7 +168,7 @@ void RpcLineItemDAO::OpenScanner(const vector<string>& columns,
   ret->scanner_.reset(new KuduScanner(client_table_.get()));
   ret->scanner_->SetCacheBlocks(FLAGS_tpch_cache_blocks_when_scanning);
   CHECK_OK(ret->scanner_->SetProjectedColumns(columns));
-  BOOST_FOREACH(KuduPredicate* pred, preds) {
+  for (KuduPredicate* pred : preds) {
     CHECK_OK(ret->scanner_->AddConjunctPredicate(pred));
   }
   CHECK_OK(ret->scanner_->Open());

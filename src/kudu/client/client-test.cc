@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
 #include <glog/stl_logging.h>
@@ -261,7 +260,7 @@ class ClientTest : public KuduTest {
       while (scanner.HasMoreRows()) {
         ASSERT_OK(scanner.NextBatch(&rows));
 
-        BOOST_FOREACH(const KuduRowResult& row, rows) {
+        for (const KuduRowResult& row : rows) {
           int32_t value;
           ASSERT_OK(row.GetInt32(0, &value));
           sum += value;
@@ -292,7 +291,7 @@ class ClientTest : public KuduTest {
       while (scanner.HasMoreRows()) {
         ASSERT_OK(scanner.NextBatch(&rows));
 
-        BOOST_FOREACH(const KuduRowResult& row, rows) {
+        for (const KuduRowResult& row : rows) {
           Slice s;
           ASSERT_OK(row.GetString(2, &s));
           if (!s.starts_with("hello 2") && !s.starts_with("hello 3")) {
@@ -320,7 +319,7 @@ class ClientTest : public KuduTest {
       while (scanner.HasMoreRows()) {
         ASSERT_OK(scanner.NextBatch(&rows));
 
-        BOOST_FOREACH(const KuduRowResult& row, rows) {
+        for (const KuduRowResult& row : rows) {
           int32_t k;
           ASSERT_OK(row.GetInt32(0, &k));
           if (k < 5 || k > 10) {
@@ -782,7 +781,7 @@ TEST_F(ClientTest, TestScanPredicateKeyColNotProjected) {
     while (scanner.HasMoreRows()) {
       ASSERT_OK(scanner.NextBatch(&rows));
 
-      BOOST_FOREACH(const KuduRowResult& row, rows) {
+      for (const KuduRowResult& row : rows) {
         int32_t val;
         ASSERT_OK(row.GetInt32(0, &val));
         ASSERT_EQ(curr_key * 2, val);
@@ -820,7 +819,7 @@ TEST_F(ClientTest, TestScanPredicateNonKeyColNotProjected) {
     while (scanner.HasMoreRows()) {
       ASSERT_OK(scanner.NextBatch(&rows));
 
-      BOOST_FOREACH(const KuduRowResult& row, rows) {
+      for (const KuduRowResult& row : rows) {
         int32_t val;
         ASSERT_OK(row.GetInt32(0, &val));
         ASSERT_EQ(curr_key / 2, val);
@@ -915,7 +914,7 @@ static void DoScanWithCallback(KuduTable* table,
     vector<KuduRowResult> result_rows;
     ASSERT_OK(scanner.NextBatch(&result_rows));
     ASSERT_GT(result_rows.size(), 0);
-    BOOST_FOREACH(KuduRowResult& r, result_rows) {
+    for (KuduRowResult& r : result_rows) {
       rows.push_back(r.ToString());
     }
     ASSERT_TRUE(scanner.HasMoreRows());
@@ -937,7 +936,7 @@ static void DoScanWithCallback(KuduTable* table,
   while (scanner.HasMoreRows()) {
     vector<KuduRowResult> result_rows;
     ASSERT_OK(scanner.NextBatch(&result_rows));
-    BOOST_FOREACH(KuduRowResult& r, result_rows) {
+    for (KuduRowResult& r : result_rows) {
       rows.push_back(r.ToString());
     }
   }
@@ -1076,18 +1075,18 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
   selections.push_back(KuduClient::LEADER_ONLY);
   selections.push_back(KuduClient::CLOSEST_REPLICA);
   selections.push_back(KuduClient::FIRST_REPLICA);
-  BOOST_FOREACH(KuduClient::ReplicaSelection selection, selections) {
+  for (KuduClient::ReplicaSelection selection : selections) {
     Status s = client_->data_->GetTabletServer(client_.get(), rt->tablet_id(), selection,
                                                blacklist, &candidates, &rts);
     ASSERT_TRUE(s.IsServiceUnavailable());
   }
 
   // Make sure none of the modes work when all nodes are dead.
-  BOOST_FOREACH(internal::RemoteTabletServer* rt, tservers) {
+  for (internal::RemoteTabletServer* rt : tservers) {
     client_->data_->meta_cache_->MarkTSFailed(rt, Status::NetworkError("test"));
   }
   blacklist.clear();
-  BOOST_FOREACH(KuduClient::ReplicaSelection selection, selections) {
+  for (KuduClient::ReplicaSelection selection : selections) {
     Status s = client_->data_->GetTabletServer(client_.get(), rt->tablet_id(),
                                                selection,
                                                blacklist, &candidates, &rts);
@@ -1209,7 +1208,7 @@ namespace {
 
 int64_t SumResults(const vector<KuduRowResult>& results) {
   int64_t sum = 0;
-  BOOST_FOREACH(const KuduRowResult row, results) {
+  for (const KuduRowResult row : results) {
     int32_t val;
     CHECK_OK(row.GetInt32(0, &val));
     sum += val;
@@ -2239,7 +2238,7 @@ void CheckCorrectness(KuduScanner* scanner, int expected[], int nrows) {
 
   while (scanner->HasMoreRows()) {
     ASSERT_OK(scanner->NextBatch(&rows));
-    BOOST_FOREACH(const KuduRowResult& r, rows) {
+    for (const KuduRowResult& r : rows) {
       int32_t key;
       int32_t val;
       Slice strval;
@@ -2431,7 +2430,7 @@ namespace {
     int cnt = 0;
     while (scanner.HasMoreRows()) {
       CHECK_OK(scanner.NextBatch(&rows));
-      BOOST_FOREACH(const KuduRowResult& row, rows) {
+      for (const KuduRowResult& row : rows) {
         // Check that for every key:
         // 1. Column 1 int32_t value == expected
         // 2. Column 2 string value is empty
@@ -2688,7 +2687,7 @@ TEST_F(ClientTest, TestServerTooBusyRetry) {
     }
   }
 
-  BOOST_FOREACH(const scoped_refptr<kudu::Thread>& thread, threads) {
+  for (const scoped_refptr<kudu::Thread>& thread : threads) {
     thread->Join();
   }
 }

@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
@@ -120,7 +119,7 @@ Status PrintDecodedWriteRequestPB(const string& indent,
   }
 
   int i = 0;
-  BOOST_FOREACH(const DecodedRowOperation& op, ops) {
+  for (const DecodedRowOperation& op : ops) {
     // TODO (KUDU-515): Handle the case when a tablet's schema changes
     // mid-segment.
     cout << indent << "op " << (i++) << ": " << op.ToString(tablet_schema) << endl;
@@ -163,7 +162,7 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   Schema tablet_schema;
   RETURN_NOT_OK(SchemaFromPB(segment->header().schema(), &tablet_schema));
 
-  BOOST_FOREACH(LogEntryPB* entry, entries) {
+  for (LogEntryPB* entry : entries) {
 
     if (print_type == PRINT_PB) {
       if (FLAGS_truncate_data > 0) {
@@ -200,7 +199,7 @@ Status DumpLog(const string& tablet_id) {
   SegmentSequence segments;
   RETURN_NOT_OK(reader->GetSegmentsSnapshot(&segments));
 
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments) {
+  for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
     RETURN_NOT_OK(PrintSegment(segment));
   }
 

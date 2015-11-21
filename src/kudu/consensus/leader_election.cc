@@ -18,7 +18,6 @@
 #include "kudu/consensus/leader_election.h"
 
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 
 #include "kudu/consensus/consensus_peers.h"
 #include "kudu/consensus/metadata.pb.h"
@@ -163,7 +162,7 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
     timeout_(timeout),
     decision_callback_(decision_callback) {
 
-  BOOST_FOREACH(const RaftPeerPB& peer, config.peers()) {
+  for (const RaftPeerPB& peer : config.peers()) {
     if (request.candidate_uuid() == peer.permanent_uuid()) continue;
     follower_uuids_.push_back(peer.permanent_uuid());
 
@@ -197,7 +196,7 @@ void LeaderElection::Run() {
   CheckForDecision();
 
   // The rest of the code below is for a typical multi-node configuration.
-  BOOST_FOREACH(const std::string& voter_uuid, follower_uuids_) {
+  for (const std::string& voter_uuid : follower_uuids_) {
     VoterState* state = NULL;
     {
       lock_guard<Lock> guard(&lock_);

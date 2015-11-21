@@ -71,7 +71,7 @@ Status DebugDumpDeltaIterator(DeltaType type,
                       vector<ColumnId>(),
                       &cells,
                       &arena));
-    BOOST_FOREACH(const DeltaKeyAndUpdate& cell, cells) {
+    for (const DeltaKeyAndUpdate& cell : cells) {
       LOG_STRING(INFO, out) << cell.Stringify(type, schema);
     }
 
@@ -110,7 +110,7 @@ Status WriteDeltaIteratorToFile(DeltaIterator* iter,
     RETURN_NOT_OK(iter->FilterColumnIdsAndCollectDeltas(vector<ColumnId>(),
                                                         &cells,
                                                         &arena));
-    BOOST_FOREACH(const DeltaKeyAndUpdate& cell, cells) {
+    for (const DeltaKeyAndUpdate& cell : cells) {
       RowChangeList rcl(cell.cell);
       RETURN_NOT_OK(out->AppendDelta<Type>(cell.key, rcl));
       RETURN_NOT_OK(stats.UpdateStats(cell.key.timestamp(), rcl));

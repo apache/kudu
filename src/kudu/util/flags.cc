@@ -22,7 +22,6 @@
 #include <unordered_set>
 #include <vector>
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <gperftools/heap-profiler.h>
 
@@ -243,7 +242,7 @@ void DumpFlagsXML() {
       "<usage>$0</usage>",
       EscapeForHtmlToString(google::ProgramUsage())) << endl;
 
-  BOOST_FOREACH(const CommandLineFlagInfo& flag, flags) {
+  for (const CommandLineFlagInfo& flag : flags) {
     cout << DescribeOneFlagInXML(flag) << std::endl;
   }
 

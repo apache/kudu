@@ -20,7 +20,6 @@
 #include <set>
 #include <string>
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/message_lite.h>
 

@@ -269,7 +269,7 @@ Status RaftConsensus::Start(const ConsensusBootstrapInfo& info) {
                                    << info.orphaned_replicates.size()
                                    << " pending transactions. Active config: "
                                    << state_->GetActiveConfigUnlocked().ShortDebugString();
-    BOOST_FOREACH(ReplicateMsg* replicate, info.orphaned_replicates) {
+    for (ReplicateMsg* replicate : info.orphaned_replicates) {
       ReplicateRefPtr replicate_ptr = make_scoped_refptr_replicate(new ReplicateMsg(*replicate));
       RETURN_NOT_OK(StartReplicaTransactionUnlocked(replicate_ptr));
     }
@@ -859,7 +859,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
   // we initialize raft_consensus-state is preventing us from doing so.
   Status s;
   const OpId* prev = deduped_req->preceding_opid;
-  BOOST_FOREACH(const ReplicateRefPtr& message, deduped_req->messages) {
+  for (const ReplicateRefPtr& message : deduped_req->messages) {
     s = ReplicaState::CheckOpInSequence(*prev, message->get()->id());
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Leader request contained out-of-sequence messages. Status: "

@@ -17,7 +17,6 @@
 
 #include "kudu/cfile/binary_prefix_block.h"
 
-#include <boost/foreach.hpp>
 #include <algorithm>
 #include <string>
 
@@ -110,7 +109,7 @@ Slice BinaryPrefixBlockBuilder::Finish(rowid_t ordinal_pos) {
   buffer_.reserve(buffer_.size()
                   + restarts_.size() * sizeof(uint32_t) // the data
                   + sizeof(uint32_t)); // the restart count);
-  BOOST_FOREACH(uint32_t restart, restarts_) {
+  for (uint32_t restart : restarts_) {
     DCHECK_GE(static_cast<int>(restart), header_offset);
     uint32_t relative_to_block = restart - header_offset;
     VLOG(2) << "appending restart " << relative_to_block;

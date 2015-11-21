@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <gflags/gflags.h>
 #include <string>
@@ -116,7 +115,7 @@ class RpcLineItemDAOTest : public KuduTest {
     vector<KuduRowResult> rows;
     while (scanner->HasMore()) {
       scanner->GetNext(&rows);
-      BOOST_FOREACH(const KuduRowResult& row, rows) {
+      for (const KuduRowResult& row : rows) {
         str_rows->push_back(row.ToString());
       }
     }
@@ -155,7 +154,7 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
   vector<KuduRowResult> rows;
   while (scanner->HasMore()) {
     scanner->GetNext(&rows);
-    BOOST_FOREACH(const KuduRowResult& row, rows) {
+    for (const KuduRowResult& row : rows) {
       int32_t l_quantity;
       ASSERT_OK(row.GetInt32(0, &l_quantity));
       ASSERT_EQ(12345, l_quantity);

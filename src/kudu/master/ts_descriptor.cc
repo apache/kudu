@@ -23,7 +23,6 @@
 #include "kudu/tserver/tserver_admin.proxy.h"
 #include "kudu/util/net/net_util.h"
 
-#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 
@@ -124,7 +123,7 @@ Status TSDescriptor::ResolveSockaddr(Sockaddr* addr) const {
   vector<HostPort> hostports;
   {
     boost::lock_guard<simple_spinlock> l(lock_);
-    BOOST_FOREACH(const HostPortPB& addr, registration_->rpc_addresses()) {
+    for (const HostPortPB& addr : registration_->rpc_addresses()) {
       hostports.push_back(HostPort(addr.host(), addr.port()));
     }
   }
@@ -132,7 +131,7 @@ Status TSDescriptor::ResolveSockaddr(Sockaddr* addr) const {
   // Resolve DNS outside the lock.
   HostPort last_hostport;
   vector<Sockaddr> addrs;
-  BOOST_FOREACH(const HostPort& hostport, hostports) {
+  for (const HostPort& hostport : hostports) {
     RETURN_NOT_OK(hostport.ResolveAddresses(&addrs));
     if (!addrs.empty()) {
       last_hostport = hostport;

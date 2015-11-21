@@ -83,7 +83,7 @@ Status LocalConsensus::Start(const ConsensusBootstrapInfo& info) {
 }
 
 Status LocalConsensus::ResubmitOrphanedReplicates(const std::vector<ReplicateMsg*> replicates) {
-  BOOST_FOREACH(ReplicateMsg* msg, replicates) {
+  for (ReplicateMsg* msg : replicates) {
     DCHECK_LT(msg->id().index(), next_op_id_index_)
       << "Orphaned replicate " << OpIdToString(msg->id())
       << " is newer than next op index " << next_op_id_index_;

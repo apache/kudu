@@ -74,7 +74,7 @@ class TestRowSet : public KuduRowSetTest {
                                  const vector<string>& cols) {
     vector<ColumnSchema> col_schemas;
     vector<ColumnId> col_ids;
-    BOOST_FOREACH(const string& col, cols) {
+    for (const string& col : cols) {
       int idx = schema.find_column(col);
       CHECK_GE(idx, 0);
       col_schemas.push_back(schema.column(idx));

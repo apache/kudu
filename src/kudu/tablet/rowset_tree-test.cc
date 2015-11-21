@@ -147,7 +147,7 @@ TEST_F(TestRowSetTree, TestEndpointsConsistency) {
   unordered_set<RowSet*> visited;
 
   Slice prev;
-  BOOST_FOREACH(const RowSetTree::RSEndpoint& rse, tree.key_endpoints()) {
+  for (const RowSetTree::RSEndpoint& rse : tree.key_endpoints()) {
     RowSet* rs = rse.rowset_;
     enum RowSetTree::EndpointType ept = rse.endpoint_;
     const Slice& slice = rse.slice_;

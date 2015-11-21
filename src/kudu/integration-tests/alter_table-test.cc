@@ -16,7 +16,6 @@
 // under the License.
 
 #include <boost/assign.hpp>
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 #include <map>
@@ -447,7 +446,7 @@ void AlterTableTest::UpdateRow(int32_t row_key,
   int32_t key = bswap_32(row_key); // endian swap to match 'InsertRows'
   CHECK_OK(update->mutable_row()->SetInt32(0, key));
   typedef map<string, int32_t>::value_type entry;
-  BOOST_FOREACH(const entry& e, updates) {
+  for (const entry& e : updates) {
     CHECK_OK(update->mutable_row()->SetInt32(e.first, e.second));
   }
   CHECK_OK(session->Apply(update.release()));
@@ -476,7 +475,7 @@ void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern patte
   while (scanner.HasMoreRows()) {
     CHECK_OK(scanner.NextBatch(&results));
 
-    BOOST_FOREACH(const KuduRowResult& row, results) {
+    for (const KuduRowResult& row : results) {
       int32_t key = 0;
       CHECK_OK(row.GetInt32(0, &key));
       int32_t row_idx = bswap_32(key);

@@ -22,7 +22,6 @@
 #include <map>
 #include <unordered_set>
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <glog/stl_logging.h>
 #include <google/protobuf/message.h>
@@ -145,7 +144,7 @@ Status FsManager::Init() {
   // Deduplicate all of the roots.
   set<string> all_roots;
   all_roots.insert(wal_fs_root_);
-  BOOST_FOREACH(const string& data_fs_root, data_fs_roots_) {
+  for (const string& data_fs_root : data_fs_roots_) {
     all_roots.insert(data_fs_root);
   }
 
@@ -153,7 +152,7 @@ Status FsManager::Init() {
   // root a bit as we go.
   typedef map<string, string> RootMap;
   RootMap canonicalized_roots;
-  BOOST_FOREACH(const string& root, all_roots) {
+  for (const string& root : all_roots) {
     if (root.empty()) {
       return Status::IOError("Empty string provided for filesystem root");
     }
@@ -182,7 +181,7 @@ Status FsManager::Init() {
   canonicalized_wal_fs_root_ = FindOrDie(canonicalized_roots, wal_fs_root_);
   if (!data_fs_roots_.empty()) {
     canonicalized_metadata_fs_root_ = FindOrDie(canonicalized_roots, data_fs_roots_[0]);
-    BOOST_FOREACH(const string& data_fs_root, data_fs_roots_) {
+    for (const string& data_fs_root : data_fs_roots_) {
       canonicalized_data_fs_roots_.insert(FindOrDie(canonicalized_roots, data_fs_root));
     }
   } else {
@@ -191,7 +190,7 @@ Status FsManager::Init() {
     canonicalized_metadata_fs_root_ = canonicalized_wal_fs_root_;
     canonicalized_data_fs_roots_.insert(canonicalized_wal_fs_root_);
   }
-  BOOST_FOREACH(const RootMap::value_type& e, canonicalized_roots) {
+  for (const RootMap::value_type& e : canonicalized_roots) {
     canonicalized_all_fs_roots_.insert(e.second);
   }
 
@@ -226,7 +225,7 @@ void FsManager::InitBlockManager() {
 
 Status FsManager::Open() {
   RETURN_NOT_OK(Init());
-  BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
+  for (const string& root : canonicalized_all_fs_roots_) {
     gscoped_ptr<InstanceMetadataPB> pb(new InstanceMetadataPB);
     RETURN_NOT_OK(pb_util::ReadPBContainerFromPath(env_, GetInstanceMetadataPath(root),
                                                    pb.get()));
@@ -251,7 +250,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
   RETURN_NOT_OK(Init());
 
   // It's OK if a root already exists as long as there's nothing in it.
-  BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
+  for (const string& root : canonicalized_all_fs_roots_) {
     if (!env_->FileExists(root)) {
       // We'll create the directory below.
       continue;
@@ -274,7 +273,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
   InstanceMetadataPB metadata;
   CreateInstanceMetadata(&metadata);
   unordered_set<string> to_sync;
-  BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
+  for (const string& root : canonicalized_all_fs_roots_) {
     bool created;
     RETURN_NOT_OK_PREPEND(CreateDirIfMissing(root, &created),
                           "Unable to create FSManager root");
@@ -292,7 +291,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
   vector<string> ancillary_dirs = { GetWalsRootDir(),
                                     GetTabletMetadataDir(),
                                     GetConsensusMetadataDir() };
-  BOOST_FOREACH(const string& dir, ancillary_dirs) {
+  for (const string& dir : ancillary_dirs) {
     bool created;
     RETURN_NOT_OK_PREPEND(CreateDirIfMissing(dir, &created),
                           Substitute("Unable to create directory $0", dir));
@@ -304,7 +303,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
 
   // Ensure newly created directories are synchronized to disk.
   if (FLAGS_enable_data_block_fsync) {
-    BOOST_FOREACH(const string& dir, to_sync) {
+    for (const string& dir : to_sync) {
       RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
                             Substitute("Unable to synchronize directory $0", dir));
     }
@@ -314,7 +313,7 @@ Status FsManager::CreateInitialFileSystemLayout() {
   RETURN_NOT_OK_PREPEND(block_manager_->Create(), "Unable to create block manager");
 
   // Success: don't delete any files.
-  BOOST_FOREACH(ScopedFileDeleter* deleter, delete_on_failure) {
+  for (ScopedFileDeleter* deleter : delete_on_failure) {
     deleter->Cancel();
   }
   return Status::OK();
@@ -351,7 +350,7 @@ Status FsManager::WriteInstanceMetadata(const InstanceMetadataPB& metadata,
 Status FsManager::IsDirectoryEmpty(const string& path, bool* is_empty) {
   vector<string> children;
   RETURN_NOT_OK(env_->GetChildren(path, &children));
-  BOOST_FOREACH(const string& child, children) {
+  for (const string& child : children) {
     if (child == "." || child == "..") {
       continue;
     } else {
@@ -374,7 +373,7 @@ const string& FsManager::uuid() const {
 vector<string> FsManager::GetDataRootDirs() const {
   // Add the data subdirectory to each data root.
   std::vector<std::string> data_paths;
-  BOOST_FOREACH(const string& data_fs_root, canonicalized_data_fs_roots_) {
+  for (const string& data_fs_root : canonicalized_data_fs_roots_) {
     data_paths.push_back(JoinPathSegments(data_fs_root, kDataDirName));
   }
   return data_paths;
@@ -414,7 +413,7 @@ Status FsManager::ListTabletIds(vector<string>* tablet_ids) {
                         Substitute("Couldn't list tablets in metadata directory $0", dir));
 
   vector<string> tablets;
-  BOOST_FOREACH(const string& child, children) {
+  for (const string& child : children) {
     if (!IsValidTabletId(child)) {
       continue;
     }
@@ -449,7 +448,7 @@ string FsManager::GetWalSegmentFileName(const string& tablet_id,
 void FsManager::DumpFileSystemTree(ostream& out) {
   DCHECK(initted_);
 
-  BOOST_FOREACH(const string& root, canonicalized_all_fs_roots_) {
+  for (const string& root : canonicalized_all_fs_roots_) {
     out << "File-System Root: " << root << std::endl;
 
     std::vector<string> objects;
@@ -465,7 +464,7 @@ void FsManager::DumpFileSystemTree(ostream& out) {
 
 void FsManager::DumpFileSystemTree(ostream& out, const string& prefix,
                                    const string& path, const vector<string>& objects) {
-  BOOST_FOREACH(const string& name, objects) {
+  for (const string& name : objects) {
     if (name == "." || name == "..") continue;
 
     std::vector<string> sub_objects;

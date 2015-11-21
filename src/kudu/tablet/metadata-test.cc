@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <string>
 #include <vector>

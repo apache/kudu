@@ -1071,7 +1071,7 @@ void TabletServiceImpl::ListTablets(const ListTabletsRequestPB* req,
   vector<scoped_refptr<TabletPeer> > peers;
   server_->tablet_manager()->GetTabletPeers(&peers);
   RepeatedPtrField<StatusAndSchemaPB>* peer_status = resp->mutable_status_and_schema();
-  BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers) {
+  for (const scoped_refptr<TabletPeer>& peer : peers) {
     StatusAndSchemaPB* status = peer_status->Add();
     peer->GetTabletStatusPB(status->mutable_tablet_status());
     CHECK_OK(SchemaToPB(peer->status_listener()->schema(),
@@ -1238,7 +1238,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
   unordered_set<string> missing_col_names;
 
   // First the column range predicates.
-  BOOST_FOREACH(const ColumnRangePredicatePB& pred_pb, scan_pb.range_predicates()) {
+  for (const ColumnRangePredicatePB& pred_pb : scan_pb.range_predicates()) {
     if (!pred_pb.has_lower_bound() && !pred_pb.has_upper_bound()) {
       return Status::InvalidArgument(
         string("Invalid predicate ") + pred_pb.ShortDebugString() +
@@ -1369,10 +1369,10 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
   // sure to set whether the column is a key column appropriately.
   SchemaBuilder projection_builder;
   vector<ColumnSchema> projection_columns = projection.columns();
-  BOOST_FOREACH(const ColumnSchema& col, missing_cols) {
+  for (const ColumnSchema& col : missing_cols) {
     projection_columns.push_back(col);
   }
-  BOOST_FOREACH(const ColumnSchema& col, projection_columns) {
+  for (const ColumnSchema& col : projection_columns) {
     CHECK_OK(projection_builder.AddColumn(col, tablet_schema.is_key_column(col.name())));
   }
   projection = projection_builder.BuildWithoutIds();
@@ -1575,7 +1575,7 @@ Status TabletServiceImpl::HandleContinueScanRequest(const ScanRequestPB* req,
   vector<IteratorStats> stats_by_col;
   scanner->GetIteratorStats(&stats_by_col);
   IteratorStats total_stats;
-  BOOST_FOREACH(const IteratorStats& stats, stats_by_col) {
+  for (const IteratorStats& stats : stats_by_col) {
     total_stats.AddStats(stats);
   }
   IteratorStats delta_stats = total_stats;

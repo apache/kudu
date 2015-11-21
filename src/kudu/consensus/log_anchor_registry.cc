@@ -18,7 +18,6 @@
 #include "kudu/consensus/log_anchor_registry.h"
 #include "kudu/consensus/opid_util.h"
 
-#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <string>
 
@@ -89,7 +88,7 @@ std::string LogAnchorRegistry::DumpAnchorInfo() const {
   string buf;
   boost::lock_guard<simple_spinlock> l(lock_);
   MonoTime now = MonoTime::Now(MonoTime::FINE);
-  BOOST_FOREACH(const AnchorMultiMap::value_type& entry, anchors_) {
+  for (const AnchorMultiMap::value_type& entry : anchors_) {
     const LogAnchor* anchor = entry.second;
     DCHECK(anchor->is_registered);
     if (!buf.empty()) buf += ", ";

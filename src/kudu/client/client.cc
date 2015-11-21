@@ -177,7 +177,7 @@ KuduClientBuilder& KuduClientBuilder::clear_master_server_addrs() {
 }
 
 KuduClientBuilder& KuduClientBuilder::master_server_addrs(const vector<string>& addrs) {
-  BOOST_FOREACH(const string& addr, addrs) {
+  for (const string& addr : addrs) {
     data_->master_server_addrs_.push_back(addr);
   }
   return *this;
@@ -338,7 +338,7 @@ Status KuduClient::ListTables(vector<string>* tables,
 Status KuduClient::TableExists(const string& table_name, bool* exists) {
   std::vector<std::string> tables;
   RETURN_NOT_OK(ListTables(&tables, table_name));
-  BOOST_FOREACH(const string& table, tables) {
+  for (const string& table : tables) {
     if (table == table_name) {
       *exists = true;
       return Status::OK();
@@ -431,7 +431,7 @@ KuduTableCreator& KuduTableCreator::add_hash_partitions(const std::vector<std::s
                                                         int32_t num_buckets, int32_t seed) {
   PartitionSchemaPB::HashBucketSchemaPB* bucket_schema =
     data_->partition_schema_.add_hash_bucket_schemas();
-  BOOST_FOREACH(const string& col_name, columns) {
+  for (const string& col_name : columns) {
     bucket_schema->add_columns()->set_name(col_name);
   }
   bucket_schema->set_num_buckets(num_buckets);
@@ -444,7 +444,7 @@ KuduTableCreator& KuduTableCreator::set_range_partition_columns(
   PartitionSchemaPB::RangeSchemaPB* range_schema =
     data_->partition_schema_.mutable_range_schema();
   range_schema->Clear();
-  BOOST_FOREACH(const string& col_name, columns) {
+  for (const string& col_name : columns) {
     range_schema->add_columns()->set_name(col_name);
   }
 
@@ -490,7 +490,7 @@ Status KuduTableCreator::Create() {
 
   RowOperationsPBEncoder encoder(req.mutable_split_rows());
 
-  BOOST_FOREACH(const KuduPartialRow* row, data_->split_rows_) {
+  for (const KuduPartialRow* row : data_->split_rows_) {
     encoder.Add(RowOperationsPB::SPLIT_ROW, *row);
   }
   req.mutable_partition_schema()->CopyFrom(data_->partition_schema_);
@@ -704,7 +704,7 @@ bool KuduSession::HasPendingOperations() const {
   if (data_->batcher_->HasPendingOperations()) {
     return true;
   }
-  BOOST_FOREACH(Batcher* b, data_->flushed_batchers_) {
+  for (Batcher* b : data_->flushed_batchers_) {
     if (b->HasPendingOperations()) {
       return true;
     }
@@ -844,7 +844,7 @@ Status KuduScanner::SetProjectedColumnNames(const vector<string>& col_names) {
   const Schema* table_schema = data_->table_->schema().schema_;
   vector<int> col_indexes;
   col_indexes.reserve(col_names.size());
-  BOOST_FOREACH(const string& col_name, col_names) {
+  for (const string& col_name : col_names) {
     int idx = table_schema->find_column(col_name);
     if (idx == Schema::kColumnNotFound) {
       return Status::NotFound(strings::Substitute("Column: \"$0\" was not found in the "
@@ -864,7 +864,7 @@ Status KuduScanner::SetProjectedColumnIndexes(const vector<int>& col_indexes) {
   const Schema* table_schema = data_->table_->schema().schema_;
   vector<ColumnSchema> cols;
   cols.reserve(col_indexes.size());
-  BOOST_FOREACH(const int col_index, col_indexes) {
+  for (const int col_index : col_indexes) {
     if (col_index >= table_schema->columns().size()) {
       return Status::NotFound(strings::Substitute("Column: \"$0\" was not found in the "
           "table schema.", col_index));

@@ -17,7 +17,6 @@
 
 #include "kudu/util/subprocess.h"
 
-#include <boost/foreach.hpp>
 #include <dirent.h>
 #include <fcntl.h>
 #include <glog/logging.h>
@@ -241,7 +240,7 @@ Status Subprocess::Start() {
   }
 
   vector<char*> argv_ptrs;
-  BOOST_FOREACH(const string& arg, argv_) {
+  for (const string& arg : argv_) {
     argv_ptrs.push_back(const_cast<char*>(arg.c_str()));
   }
   argv_ptrs.push_back(NULL);

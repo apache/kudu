@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <boost/function.hpp>
 #include <glog/stl_logging.h>
 #include <vector>
@@ -364,7 +363,7 @@ TEST_F(LogTest, TestSegmentRollover) {
   ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
   ASSERT_TRUE(segments.back()->HasFooter());
 
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& entry, segments) {
+  for (const scoped_refptr<ReadableLogSegment>& entry : segments) {
     Status s = entry->ReadEntries(&entries_);
     if (!s.ok()) {
       FAIL() << "Failed to read entries in segment: " << entry->path()
@@ -693,7 +692,7 @@ TEST_F(LogTest, TestWriteManyBatches) {
     vector<scoped_refptr<ReadableLogSegment> > segments;
     ASSERT_OK(log_->GetLogReader()->GetSegmentsSnapshot(&segments));
 
-    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment> entry, segments) {
+    for (const scoped_refptr<ReadableLogSegment> entry : segments) {
       STLDeleteElements(&entries_);
       ASSERT_OK(entry->ReadEntries(&entries_));
       num_entries += entries_.size();
@@ -865,7 +864,7 @@ void LogTest::GenerateTestSequence(Random* rng, int seq_len,
 }
 
 void LogTest::AppendTestSequence(const vector<TestLogSequenceElem>& seq) {
-  BOOST_FOREACH(const TestLogSequenceElem& e, seq) {
+  for (const TestLogSequenceElem& e : seq) {
     VLOG(1) << "Appending: " << e;
     switch (e.type) {
       case TestLogSequenceElem::REPLICATE:
@@ -941,7 +940,7 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
                     start_index, end_index, LogReader::kNoSizeLimit, &repls));
         ASSERT_EQ(end_index - start_index + 1, repls.size());
         int expected_index = start_index;
-        BOOST_FOREACH(const ReplicateMsg* repl, repls) {
+        for (const ReplicateMsg* repl : repls) {
           ASSERT_EQ(expected_index, repl->id().index());
           ASSERT_EQ(terms_by_index[expected_index], repl->id().term());
           expected_index++;
@@ -966,7 +965,7 @@ TEST_F(LogTest, TestReadLogWithReplacedReplicates) {
         ASSERT_LE(repls.size(), end_index - start_index + 1);
         int total_size = 0;
         int expected_index = start_index;
-        BOOST_FOREACH(const ReplicateMsg* repl, repls) {
+        for (const ReplicateMsg* repl : repls) {
           ASSERT_EQ(expected_index, repl->id().index());
           ASSERT_EQ(terms_by_index[expected_index], repl->id().term());
           expected_index++;

@@ -19,7 +19,6 @@
 
 #include "kudu/consensus/log.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -172,7 +171,7 @@ class LogTestBase : public KuduTest {
                                         kTestTablet),
                        &files));
     int count = 0;
-    BOOST_FOREACH(const string& s, files) {
+    for (const string& s : files) {
       if (HasPrefixString(s, FsManager::kWalFileNamePrefix)) {
         count++;
       }
@@ -181,7 +180,7 @@ class LogTestBase : public KuduTest {
   }
 
   void EntriesToIdList(vector<uint32_t>* ids) {
-    BOOST_FOREACH(const LogEntryPB* entry, entries_) {
+    for (const LogEntryPB* entry : entries_) {
       VLOG(2) << "Entry contents: " << entry->DebugString();
       if (entry->type() == REPLICATE) {
         ids->push_back(entry->replicate().id().index());
@@ -314,7 +313,7 @@ class LogTestBase : public KuduTest {
 
   string DumpSegmentsToString(const SegmentSequence& segments) {
     string dump;
-    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments) {
+    for (const scoped_refptr<ReadableLogSegment>& segment : segments) {
       dump.append("------------\n");
       strings::SubstituteAndAppend(&dump, "Segment: $0, Path: $1\n",
                                    segment->header().sequence_number(), segment->path());

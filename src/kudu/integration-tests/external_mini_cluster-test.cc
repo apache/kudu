@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <sys/types.h>

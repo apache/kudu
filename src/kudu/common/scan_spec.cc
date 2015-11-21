@@ -82,7 +82,7 @@ string ScanSpec::ToStringWithOptionalSchema(const Schema* s) const {
     }
   }
 
-  BOOST_FOREACH(const ColumnRangePredicate& pred, predicates_) {
+  for (const ColumnRangePredicate& pred : predicates_) {
     preds.push_back(pred.ToString());
   }
   return JoinStrings(preds, "\n");

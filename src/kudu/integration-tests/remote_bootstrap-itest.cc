@@ -433,13 +433,13 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
   ASSERT_OK(WaitForNumTabletsOnTS(target_ts, kNumTablets, timeout, &tablets));
 
   vector<string> tablet_ids;
-  BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+  for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
     tablet_ids.push_back(t.tablet_status().tablet_id());
   }
 
   // Wait until all replicas are up and running.
   for (int i = 0; i < cluster_->num_tablet_servers(); i++) {
-    BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+    for (const string& tablet_id : tablet_ids) {
       ASSERT_OK(itest::WaitUntilTabletRunning(ts_map_[cluster_->tablet_server(i)->uuid()],
                                               tablet_id, timeout));
     }
@@ -448,7 +448,7 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
   // Elect leaders on each tablet for term 1. All leaders will be on TS 1.
   const int kLeaderIndex = 1;
   const string kLeaderUuid = cluster_->tablet_server(kLeaderIndex)->uuid();
-  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+  for (const string& tablet_id : tablet_ids) {
     ASSERT_OK(itest::StartElection(ts_map_[kLeaderUuid], tablet_id, timeout));
   }
 
@@ -464,14 +464,14 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
   }
   workload.StopAndJoin();
 
-  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+  for (const string& tablet_id : tablet_ids) {
     ASSERT_OK(WaitForServersToAgree(timeout, ts_map_, tablet_id, 1));
   }
 
   // Now pause the leader so we can tombstone the tablets.
   ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Pause());
 
-  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+  for (const string& tablet_id : tablet_ids) {
     LOG(INFO) << "Tombstoning tablet " << tablet_id << " on TS " << target_ts->uuid();
     ASSERT_OK(itest::DeleteTablet(target_ts, tablet_id, TABLET_DATA_TOMBSTONED, boost::none,
                                   MonoDelta::FromSeconds(10)));
@@ -480,7 +480,7 @@ TEST_F(RemoteBootstrapITest, TestConcurrentRemoteBootstraps) {
   // Unpause the leader TS and wait for it to remotely bootstrap the tombstoned
   // tablets, in parallel.
   ASSERT_OK(cluster_->tablet_server(kLeaderIndex)->Resume());
-  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+  for (const string& tablet_id : tablet_ids) {
     ASSERT_OK(itest::WaitUntilTabletRunning(target_ts, tablet_id, timeout));
   }
 

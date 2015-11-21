@@ -16,7 +16,6 @@
 // under the License.
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <glog/logging.h>
@@ -347,7 +346,7 @@ bool MvccManager::AreAllTransactionsCommittedUnlocked(Timestamp ts) const {
 }
 
 bool MvccManager::AnyApplyingAtOrBeforeUnlocked(Timestamp ts) const {
-  BOOST_FOREACH(const InFlightMap::value_type entry, timestamps_in_flight_) {
+  for (const InFlightMap::value_type entry : timestamps_in_flight_) {
     if (entry.first <= ts.value()) {
       return true;
     }
@@ -381,7 +380,7 @@ void MvccManager::WaitForApplyingTransactionsToCommit() const {
   Timestamp wait_for = Timestamp::kMin;
   {
     boost::lock_guard<LockType> l(lock_);
-    BOOST_FOREACH(const InFlightMap::value_type entry, timestamps_in_flight_) {
+    for (const InFlightMap::value_type entry : timestamps_in_flight_) {
       if (entry.second == APPLYING) {
         wait_for = Timestamp(std::max(entry.first, wait_for.value()));
       }
@@ -417,7 +416,7 @@ Timestamp MvccManager::GetCleanTimestamp() const {
 void MvccManager::GetApplyingTransactionsTimestamps(std::vector<Timestamp>* timestamps) const {
   boost::lock_guard<LockType> l(lock_);
   timestamps->reserve(timestamps_in_flight_.size());
-  BOOST_FOREACH(const InFlightMap::value_type entry, timestamps_in_flight_) {
+  for (const InFlightMap::value_type entry : timestamps_in_flight_) {
     if (entry.second == APPLYING) {
       timestamps->push_back(Timestamp(entry.first));
     }
@@ -455,7 +454,7 @@ MvccSnapshot MvccSnapshot::CreateSnapshotIncludingNoTransactions() {
 }
 
 bool MvccSnapshot::IsCommittedFallback(const Timestamp& timestamp) const {
-  BOOST_FOREACH(const Timestamp::val_type& v, committed_timestamps_) {
+  for (const Timestamp::val_type& v : committed_timestamps_) {
     if (v == timestamp.value()) return true;
   }
 
@@ -486,7 +485,7 @@ std::string MvccSnapshot::ToString() const {
             " or (T in {");
 
   bool first = true;
-  BOOST_FOREACH(Timestamp::val_type t, committed_timestamps_) {
+  for (Timestamp::val_type t : committed_timestamps_) {
     if (!first) {
       ret.push_back(',');
     }
@@ -498,7 +497,7 @@ std::string MvccSnapshot::ToString() const {
 }
 
 void MvccSnapshot::AddCommittedTimestamps(const std::vector<Timestamp>& timestamps) {
-  BOOST_FOREACH(const Timestamp& ts, timestamps) {
+  for (const Timestamp& ts : timestamps) {
     AddCommittedTimestamp(ts);
   }
 }

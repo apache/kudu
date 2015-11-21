@@ -17,7 +17,6 @@
 
 #include "kudu/tools/ksck.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <iostream>
 #include <unordered_set>
@@ -96,7 +95,7 @@ Status KsckCluster::FetchTableAndTabletInfo() {
   RETURN_NOT_OK(master_->Connect());
   RETURN_NOT_OK(RetrieveTablesList());
   RETURN_NOT_OK(RetrieveTabletServers());
-  BOOST_FOREACH(const shared_ptr<KsckTable>& table, tables()) {
+  for (const shared_ptr<KsckTable>& table : tables()) {
     RETURN_NOT_OK(RetrieveTabletsList(table));
   }
   return Status::OK();
@@ -140,7 +139,7 @@ Status Ksck::CheckTabletServersRunning() {
 
   int bad_servers = 0;
   VLOG(1) << "Connecting to all the Tablet Servers";
-  BOOST_FOREACH(const KsckMaster::TSMap::value_type& entry, cluster_->tablet_servers()) {
+  for (const KsckMaster::TSMap::value_type& entry : cluster_->tablet_servers()) {
     Status s = ConnectToTabletServer(entry.second);
     if (!s.ok()) {
       bad_servers++;
@@ -180,7 +179,7 @@ Status Ksck::CheckTablesConsistency() {
 
   VLOG(1) << "Verifying each table";
   int bad_tables_count = 0;
-  BOOST_FOREACH(const shared_ptr<KsckTable> &table, cluster_->tables()) {
+  for (const shared_ptr<KsckTable> &table : cluster_->tables()) {
     if (!VerifyTable(table)) {
       bad_tables_count++;
     }
@@ -293,10 +292,10 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   TabletTableMap tablet_table_map;
 
   int num_tablet_replicas = 0;
-  BOOST_FOREACH(const shared_ptr<KsckTable>& table, cluster_->tables()) {
+  for (const shared_ptr<KsckTable>& table : cluster_->tables()) {
     VLOG(1) << "Table: " << table->name();
     if (!tables_filter.empty() && !ContainsKey(tables_filter, table->name())) continue;
-    BOOST_FOREACH(const shared_ptr<KsckTablet>& tablet, table->tablets()) {
+    for (const shared_ptr<KsckTablet>& tablet : table->tablets()) {
       VLOG(1) << "Tablet: " << tablet->id();
       if (!tablets_filter.empty() && !ContainsKey(tablets_filter, tablet->id())) continue;
       InsertOrDie(&tablet_table_map, tablet, table);
@@ -324,10 +323,10 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   scoped_refptr<ChecksumResultReporter> reporter(new ChecksumResultReporter(num_tablet_replicas));
 
   // Create a queue of checksum callbacks grouped by the tablet server.
-  BOOST_FOREACH(const TabletTableMap::value_type& entry, tablet_table_map) {
+  for (const TabletTableMap::value_type& entry : tablet_table_map) {
     const shared_ptr<KsckTablet>& tablet = entry.first;
     const shared_ptr<KsckTable>& table = entry.second;
-    BOOST_FOREACH(const shared_ptr<KsckTabletReplica>& replica, tablet->replicas()) {
+    for (const shared_ptr<KsckTabletReplica>& replica : tablet->replicas()) {
       const shared_ptr<KsckTabletServer>& ts =
           FindOrDie(cluster_->tablet_servers(), replica->ts_uuid());
 
@@ -346,7 +345,7 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   // Kick off checksum scans in parallel. For each tablet server, we start
   // scan_concurrency scans. Each callback then initiates one additional
   // scan when it returns if the queue for that TS is not empty.
-  BOOST_FOREACH(const TabletServerQueueMap::value_type& entry, tablet_server_queues) {
+  for (const TabletServerQueueMap::value_type& entry : tablet_server_queues) {
     const shared_ptr<KsckTabletServer>& tablet_server = entry.first;
     const TabletQueue& queue = entry.second;
     queue->Shutdown(); // Ensures that BlockingGet() will not block.
@@ -375,9 +374,9 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   int num_errors = 0;
   int num_mismatches = 0;
   int num_results = 0;
-  BOOST_FOREACH(const shared_ptr<KsckTable>& table, cluster_->tables()) {
+  for (const shared_ptr<KsckTable>& table : cluster_->tables()) {
     bool printed_table_name = false;
-    BOOST_FOREACH(const shared_ptr<KsckTablet>& tablet, table->tablets()) {
+    for (const shared_ptr<KsckTablet>& tablet : table->tablets()) {
       if (ContainsKey(checksums, tablet->id())) {
         if (!printed_table_name) {
           printed_table_name = true;
@@ -388,7 +387,7 @@ Status Ksck::ChecksumData(const vector<string>& tables,
         bool seen_first_replica = false;
         uint64_t first_checksum = 0;
 
-        BOOST_FOREACH(const ChecksumResultReporter::ReplicaResultMap::value_type& r,
+        for (const ChecksumResultReporter::ReplicaResultMap::value_type& r :
                       FindOrDie(checksums, tablet->id())) {
           const string& replica_uuid = r.first;
 
@@ -447,7 +446,7 @@ bool Ksck::VerifyTable(const shared_ptr<KsckTable>& table) {
                         tablets_count, table->name(), table_num_replicas);
   int bad_tablets_count = 0;
   // TODO check if the tablets are contiguous and in order.
-  BOOST_FOREACH(const shared_ptr<KsckTablet> &tablet, tablets) {
+  for (const shared_ptr<KsckTablet> &tablet : tablets) {
     if (!VerifyTablet(tablet, table_num_replicas)) {
       bad_tablets_count++;
     }
@@ -474,7 +473,7 @@ bool Ksck::VerifyTablet(const shared_ptr<KsckTablet>& tablet, int table_num_repl
   }
   int leaders_count = 0;
   int followers_count = 0;
-  BOOST_FOREACH(const shared_ptr<KsckTabletReplica> replica, replicas) {
+  for (const shared_ptr<KsckTabletReplica> replica : replicas) {
     if (replica->is_leader()) {
       VLOG(1) << Substitute("Replica at $0 is a LEADER", replica->ts_uuid());
       leaders_count++;

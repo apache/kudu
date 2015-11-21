@@ -18,7 +18,6 @@
 
 #include <vector>
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/wire_protocol.h"
@@ -136,7 +135,7 @@ TEST_F(ConsensusMetadataTest, TestFlush) {
 RaftConfigPB BuildConfig(const vector<string>& uuids) {
   RaftConfigPB config;
   config.set_local(false);
-  BOOST_FOREACH(const string& uuid, uuids) {
+  for (const string& uuid : uuids) {
     RaftPeerPB* peer = config.add_peers();
     peer->set_permanent_uuid(uuid);
     peer->set_member_type(RaftPeerPB::VOTER);

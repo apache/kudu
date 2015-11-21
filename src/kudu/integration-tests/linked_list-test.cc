@@ -135,7 +135,7 @@ class LinkedListTest : public tserver::TabletServerIntegrationTestBase {
       return;
     }
     vector<string> split_flags = strings::Split(flags_str, " ");
-    BOOST_FOREACH(const string& flag, split_flags) {
+    for (const string& flag : split_flags) {
       flags->push_back(flag);
     }
   }

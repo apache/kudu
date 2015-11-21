@@ -18,7 +18,6 @@
 #include "kudu/util/net/dns_resolver.h"
 
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <vector>
 
@@ -46,7 +45,7 @@ TEST_F(DnsResolverTest, TestResolution) {
   }
   ASSERT_OK(s.Wait());
   ASSERT_TRUE(!addrs.empty());
-  BOOST_FOREACH(const Sockaddr& addr, addrs) {
+  for (const Sockaddr& addr : addrs) {
     LOG(INFO) << "Address: " << addr.ToString();
     EXPECT_TRUE(HasPrefixString(addr.ToString(), "127."));
     EXPECT_TRUE(HasSuffixString(addr.ToString(), ":12345"));

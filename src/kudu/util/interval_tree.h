@@ -23,7 +23,6 @@
 #ifndef KUDU_UTIL_INTERVAL_TREE_H
 #define KUDU_UTIL_INTERVAL_TREE_H
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 
 #include <vector>

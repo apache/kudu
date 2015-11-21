@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
@@ -138,7 +137,7 @@ void TestWorkload::WriteThread() {
       bool overflow;
       session->GetPendingErrors(&errors, &overflow);
       CHECK(!overflow);
-      BOOST_FOREACH(const client::KuduError* e, errors) {
+      for (const client::KuduError* e : errors) {
         if (timeout_allowed_ && e->status().IsTimedOut()) {
           continue;
         }
@@ -237,7 +236,7 @@ void TestWorkload::Start() {
 void TestWorkload::StopAndJoin() {
   should_run_.Store(false);
   start_latch_.Reset(0);
-  BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+  for (scoped_refptr<kudu::Thread> thr : threads_) {
    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
   threads_.clear();

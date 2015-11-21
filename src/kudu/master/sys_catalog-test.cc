@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -78,7 +77,7 @@ class TableLoader : public TableVisitor {
   ~TableLoader() { Reset(); }
 
   void Reset() {
-    BOOST_FOREACH(TableInfo* ti, tables) {
+    for (TableInfo* ti : tables) {
       ti->Release();
     }
     tables.clear();
@@ -201,7 +200,7 @@ class TabletLoader : public TabletVisitor {
   ~TabletLoader() { Reset(); }
 
   void Reset() {
-    BOOST_FOREACH(TabletInfo* ti, tablets) {
+    for (TabletInfo* ti : tablets) {
       ti->Release();
     }
     tablets.clear();

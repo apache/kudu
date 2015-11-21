@@ -43,7 +43,7 @@ TEST_F(MTBloomFileTest, Benchmark) {
                             &new_thread));
     threads.push_back(new_thread);
   }
-  BOOST_FOREACH(scoped_refptr<kudu::Thread>& t, threads) {
+  for (scoped_refptr<kudu::Thread>& t : threads) {
     t->Join();
   }
 }

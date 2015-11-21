@@ -17,7 +17,6 @@
 
 #include "kudu/consensus/log_reader.h"
 
-#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <algorithm>
 
@@ -139,7 +138,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
   SegmentSequence read_segments;
 
   // build a log segment from each file
-  BOOST_FOREACH(const string &log_file, log_files) {
+  for (const string &log_file : log_files) {
     if (HasPrefixString(log_file, FsManager::kWalFileNamePrefix)) {
       string fqp = JoinPathSegments(tablet_wal_path, log_file);
       scoped_refptr<ReadableLogSegment> segment;
@@ -167,7 +166,7 @@ Status LogReader::Init(const string& tablet_wal_path) {
 
     string previous_seg_path;
     int64_t previous_seg_seqno = -1;
-    BOOST_FOREACH(const SegmentSequence::value_type& entry, read_segments) {
+    for (const SegmentSequence::value_type& entry : read_segments) {
       VLOG(1) << " Log Reader Indexed: " << entry->footer().ShortDebugString();
       // Check that the log segments are in sequence.
       if (previous_seg_seqno != -1 && entry->header().sequence_number() != previous_seg_seqno + 1) {
@@ -203,7 +202,7 @@ Status LogReader::GetSegmentPrefixNotIncluding(int64_t index,
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
 
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
+  for (const scoped_refptr<ReadableLogSegment>& segment : segments_) {
     // The last segment doesn't have a footer. Never include that one.
     if (!segment->HasFooter()) {
       break;
@@ -222,7 +221,7 @@ int64_t LogReader::GetMinReplicateIndex() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   int64_t min_remaining_op_idx = -1;
 
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
+  for (const scoped_refptr<ReadableLogSegment>& segment : segments_) {
     if (!segment->HasFooter()) continue;
     if (!segment->footer().has_min_replicate_index()) continue;
     if (min_remaining_op_idx == -1 ||
@@ -239,7 +238,7 @@ void LogReader::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx, int32_t segmen
                                               max_idx_to_segment_size) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   DCHECK_GE(segments_count, 0);
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_) {
+  for (const scoped_refptr<ReadableLogSegment>& segment : segments_) {
     if (max_idx_to_segment_size->size() == segments_count) {
       break;
     }
@@ -486,7 +485,7 @@ const int LogReader::num_segments() const {
 string LogReader::ToString() const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   string ret = "Reader's SegmentSequence: \n";
-  BOOST_FOREACH(const SegmentSequence::value_type& entry, segments_) {
+  for (const SegmentSequence::value_type& entry : segments_) {
     ret.append(Substitute("Segment: $0 Footer: $1\n",
                           entry->header().sequence_number(),
                           !entry->HasFooter() ? "NONE" : entry->footer().ShortDebugString()));

@@ -117,7 +117,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   int row_id = 0;
   int curr_timestamp = 0;
   int deltafile_idx = 0;
-  BOOST_FOREACH(const Schema& schema, schemas) {
+  for (const Schema& schema : schemas) {
     // Write the Deltas
     BlockId block_id;
     gscoped_ptr<DeltaFileWriter> dfw;
@@ -202,7 +202,7 @@ TEST_F(TestDeltaCompaction, TestMergeMultipleSchemas) {
   vector<string> results;
   ASSERT_OK(DebugDumpDeltaIterator(REDO, scoped_iter.get(), merge_schema,
                                           ITERATE_OVER_ALL_ROWS, &results));
-  BOOST_FOREACH(const string &str, results) {
+  for (const string &str : results) {
     VLOG(1) << str;
   }
   ASSERT_TRUE(is_sorted(results.begin(), results.end()));

@@ -16,7 +16,6 @@
 // under the License.
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <vector>
 
 #include <fcntl.h>
@@ -168,7 +167,7 @@ void WalHiccupBenchmarker::Run() {
     // Randomize the order of setups in each round.
     std::random_shuffle(setups.begin(), setups.end());
 
-    BOOST_FOREACH(uint32_t setup, setups) {
+    for (uint32_t setup : setups) {
       SetFlags(setup);
       if (!FLAGS_fdatasync_each_file && !FLAGS_fdatasync_at_end) {
         // Skip non-durable configuration
@@ -197,7 +196,7 @@ void WalHiccupBenchmarker::Run() {
     LOG(INFO) << "----------------------------------------------------------------------";
   }
 
-  BOOST_FOREACH(uint32_t setup, setups) {
+  for (uint32_t setup : setups) {
     SetFlags(setup);
     if (!FLAGS_fdatasync_each_file && !FLAGS_fdatasync_at_end) {
       // Skip non-durable configuration

@@ -18,7 +18,6 @@
 #include "kudu/client/client-test-util.h"
 #include "kudu/client/row_result.h"
 
-#include <boost/foreach.hpp>
 #include <vector>
 
 #include "kudu/gutil/stl_util.h"
@@ -39,7 +38,7 @@ void LogSessionErrorsAndDie(const sp::shared_ptr<KuduSession>& session,
   // Log only the first 10 errors.
   LOG(INFO) << errors.size() << " failed ops. First 10 errors follow";
   int i = 0;
-  BOOST_FOREACH(const KuduError* e, errors) {
+  for (const KuduError* e : errors) {
     if (i == 10) {
       break;
     }
@@ -63,7 +62,7 @@ void ScanToStrings(KuduScanner* scanner, vector<string>* row_strings) {
   vector<KuduRowResult> rows;
   while (scanner->HasMoreRows()) {
     ASSERT_OK(scanner->NextBatch(&rows));
-    BOOST_FOREACH(const KuduRowResult& row, rows) {
+    for (const KuduRowResult& row : rows) {
       row_strings->push_back(row.ToString());
     }
   }

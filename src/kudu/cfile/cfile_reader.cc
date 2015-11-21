@@ -17,7 +17,6 @@
 
 #include "kudu/cfile/cfile_reader.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 
 #include <algorithm>
@@ -423,13 +422,13 @@ Status CFileReader::CountRows(rowid_t *count) const {
 }
 
 bool CFileReader::GetMetadataEntry(const string &key, string *val) {
-  BOOST_FOREACH(const FileMetadataPairPB &pair, header().metadata()) {
+  for (const FileMetadataPairPB &pair : header().metadata()) {
     if (pair.key() == key) {
       *val = pair.value();
       return true;
     }
   }
-  BOOST_FOREACH(const FileMetadataPairPB &pair, footer().metadata()) {
+  for (const FileMetadataPairPB &pair : footer().metadata()) {
     if (pair.key() == key) {
       *val = pair.value();
       return true;
@@ -708,7 +707,7 @@ Status CFileIterator::PrepareForNewSeek() {
   }
 
   seeked_ = NULL;
-  BOOST_FOREACH(PreparedBlock *pb, prepared_blocks_) {
+  for (PreparedBlock *pb : prepared_blocks_) {
     prepared_block_pool_.Destroy(pb);
   }
   prepared_blocks_.clear();
@@ -839,7 +838,7 @@ Status CFileIterator::PrepareBatch(size_t *n) {
   if (PREDICT_FALSE(VLOG_IS_ON(1))) {
     VLOG(1) << "Prepared for " << (*n) << " rows"
             << " (" << start_idx << "-" << (start_idx + *n - 1) << ")";
-    BOOST_FOREACH(PreparedBlock *b, prepared_blocks_) {
+    for (PreparedBlock *b : prepared_blocks_) {
       VLOG(1) << "  " << b->ToString();
     }
     VLOG(1) << "-------------";
@@ -878,7 +877,7 @@ Status CFileIterator::FinishBatch() {
   #ifndef NDEBUG
   if (VLOG_IS_ON(1)) {
     VLOG(1) << "Left around following blocks:";
-    BOOST_FOREACH(PreparedBlock *b, prepared_blocks_) {
+    for (PreparedBlock *b : prepared_blocks_) {
       VLOG(1) << "  " << b->ToString();
     }
     VLOG(1) << "-------------";
@@ -900,7 +899,7 @@ Status CFileIterator::Scan(ColumnBlock *dst) {
   uint32_t rem = last_prepare_count_;
   DCHECK_LE(rem, dst->nrows());
 
-  BOOST_FOREACH(PreparedBlock *pb, prepared_blocks_) {
+  for (PreparedBlock *pb : prepared_blocks_) {
     if (pb->needs_rewind_) {
       // Seek back to the saved position.
       SeekToPositionInBlock(pb, pb->rewind_idx_);

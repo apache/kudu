@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <iterator>
@@ -186,7 +185,7 @@ Status Tablet::Open() {
   RowSetVector rowsets_opened;
 
   // open the tablet row-sets
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, metadata_->rowsets()) {
+  for (const shared_ptr<RowSetMetadata>& rowset_meta : metadata_->rowsets()) {
     shared_ptr<DiskRowSet> rowset;
     Status s = DiskRowSet::Open(rowset_meta, log_anchor_registry_.get(), &rowset, mem_tracker_);
     if (!s.ok()) {
@@ -286,7 +285,7 @@ Status Tablet::DecodeWriteOperations(const Schema* client_schema,
   // Create RowOp objects for each
   vector<RowOp*> row_ops;
   ops.reserve(ops.size());
-  BOOST_FOREACH(const DecodedRowOperation& op, ops) {
+  for (const DecodedRowOperation& op : ops) {
     row_ops.push_back(new RowOp(op));
   }
 
@@ -302,7 +301,7 @@ Status Tablet::AcquireRowLocks(WriteTransactionState* tx_state) {
   TRACE_EVENT1("tablet", "Tablet::AcquireRowLocks",
                "num_locks", tx_state->row_ops().size());
   TRACE("PREPARE: Acquiring locks for $0 operations", tx_state->row_ops().size());
-  BOOST_FOREACH(RowOp* op, tx_state->row_ops()) {
+  for (RowOp* op : tx_state->row_ops()) {
     RETURN_NOT_OK(AcquireLockForOp(tx_state, op));
   }
   TRACE("PREPARE: locks acquired");
@@ -379,7 +378,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
     comps->rowsets->FindRowSetsWithKeyInRange(insert->key_probe->encoded_key_slice(),
                                               &to_check);
 
-    BOOST_FOREACH(const RowSet *rowset, to_check) {
+    for (const RowSet *rowset : to_check) {
       bool present = false;
       RETURN_NOT_OK(rowset->CheckRowPresent(*insert->key_probe, &present, &stats));
       if (PREDICT_FALSE(present)) {
@@ -466,7 +465,7 @@ Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
   vector<RowSet *> to_check;
   comps->rowsets->FindRowSetsWithKeyInRange(mutate->key_probe->encoded_key_slice(),
                                             &to_check);
-  BOOST_FOREACH(RowSet *rs, to_check) {
+  for (RowSet *rs : to_check) {
     s = rs->MutateRow(ts,
                       *mutate->key_probe,
                       mutate->decoded_op.changelist,
@@ -496,7 +495,7 @@ void Tablet::StartApplying(WriteTransactionState* tx_state) {
 
 void Tablet::ApplyRowOperations(WriteTransactionState* tx_state) {
   StartApplying(tx_state);
-  BOOST_FOREACH(RowOp* row_op, tx_state->row_ops()) {
+  for (RowOp* row_op : tx_state->row_ops()) {
     ApplyRowOperation(tx_state, row_op);
   }
 }
@@ -528,10 +527,10 @@ void Tablet::ModifyRowSetTree(const RowSetTree& old_tree,
   // the rowsets that were included in the compaction
   int num_removed = 0;
 
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, old_tree.all_rowsets()) {
+  for (const shared_ptr<RowSet> &rs : old_tree.all_rowsets()) {
     // Determine if it should be removed
     bool should_remove = false;
-    BOOST_FOREACH(const shared_ptr<RowSet> &to_remove, rowsets_to_remove) {
+    for (const shared_ptr<RowSet> &to_remove : rowsets_to_remove) {
       if (to_remove == rs) {
         should_remove = true;
         num_removed++;
@@ -1026,7 +1025,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
 
   if (flags & FORCE_COMPACT_ALL) {
     // Compact all rowsets, regardless of policy.
-    BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_copy->all_rowsets()) {
+    for (const shared_ptr<RowSet>& rs : rowsets_copy->all_rowsets()) {
       if (rs->IsAvailableForCompaction()) {
         picked_set.insert(rs.get());
       }
@@ -1039,7 +1038,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   }
 
   boost::shared_lock<rw_spinlock> lock(component_lock_);
-  BOOST_FOREACH(const shared_ptr<RowSet>& rs, components_->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet>& rs : components_->rowsets->all_rowsets()) {
     if (picked_set.erase(rs.get()) == 0) {
       // Not picked.
       continue;
@@ -1064,7 +1063,7 @@ Status Tablet::PickRowSetsToCompact(RowSetsInCompaction *picked,
   // them out while we were making our selection decision -- that's not possible
   // since we only picked rowsets that were marked as available for compaction.
   if (!picked_set.empty()) {
-    BOOST_FOREACH(const RowSet* not_found, picked_set) {
+    for (const RowSet* not_found : picked_set) {
       LOG(ERROR) << "Rowset selected for compaction but not available anymore: "
                  << not_found->ToString();
     }
@@ -1079,7 +1078,7 @@ void Tablet::GetRowSetsForTests(RowSetVector* out) {
     boost::shared_lock<rw_spinlock> lock(component_lock_);
     rowsets_copy = components_->rowsets;
   }
-  BOOST_FOREACH(const shared_ptr<RowSet>& rs, rowsets_copy->all_rowsets()) {
+  for (const shared_ptr<RowSet>& rs : rowsets_copy->all_rowsets()) {
     out->push_back(rs);
   }
 }
@@ -1102,7 +1101,7 @@ void Tablet::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
 }
 
 void Tablet::UnregisterMaintenanceOps() {
-  BOOST_FOREACH(MaintenanceOp* op, maintenance_ops_) {
+  for (MaintenanceOp* op : maintenance_ops_) {
     op->Unregister();
   }
   STLDeleteElements(&maintenance_ops_);
@@ -1112,7 +1111,7 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
                              const RowSetMetadataVector& to_add,
                              int64_t mrs_being_flushed) {
   RowSetMetadataIds to_remove_meta;
-  BOOST_FOREACH(const shared_ptr<RowSet>& rowset, to_remove) {
+  for (const shared_ptr<RowSet>& rowset : to_remove) {
     // Skip MemRowSet & DuplicatingRowSets which don't have metadata.
     if (rowset->metadata().get() == NULL) {
       continue;
@@ -1183,7 +1182,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   CHECK(!new_drs_metas.empty());
   {
     TRACE_EVENT0("tablet", "Opening compaction results");
-    BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, new_drs_metas) {
+    for (const shared_ptr<RowSetMetadata>& meta : new_drs_metas) {
       shared_ptr<DiskRowSet> new_rowset;
       Status s = DiskRowSet::Open(meta, log_anchor_registry_.get(), &new_rowset, mem_tracker_);
       if (!s.ok()) {
@@ -1254,7 +1253,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
   if (VLOG_IS_ON(1) && !applying_during_swap.empty()) {
     VLOG(1) << "Waiting for " << applying_during_swap.size() << " mid-APPLY txns to commit "
             << "before finishing compaction...";
-    BOOST_FOREACH(const Timestamp& ts, applying_during_swap) {
+    for (const Timestamp& ts : applying_during_swap) {
       VLOG(1) << "  " << ts.value();
     }
   }
@@ -1381,7 +1380,7 @@ Status Tablet::DebugDump(vector<string> *lines) {
   LOG_STRING(INFO, lines) << "MRS " << components_->memrowset->ToString() << ":";
   RETURN_NOT_OK(components_->memrowset->DebugDump(lines));
 
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, components_->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
     LOG_STRING(INFO, lines) << "RowSet " << rs->ToString() << ":";
     RETURN_NOT_OK(rs->DebugDump(lines));
   }
@@ -1416,7 +1415,7 @@ Status Tablet::CaptureConsistentIterators(
         spec->lower_bound_key()->encoded_key(),
         spec->exclusive_upper_bound_key()->encoded_key(),
         &interval_sets);
-    BOOST_FOREACH(const RowSet *rs, interval_sets) {
+    for (const RowSet *rs : interval_sets) {
       gscoped_ptr<RowwiseIterator> row_it;
       RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, &row_it),
                             Substitute("Could not create iterator for rowset $0",
@@ -1429,7 +1428,7 @@ Status Tablet::CaptureConsistentIterators(
 
   // If there are no encoded predicates or they represent an open-ended range, then
   // fall back to grabbing all rowset iterators
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, components_->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet> &rs : components_->rowsets->all_rowsets()) {
     gscoped_ptr<RowwiseIterator> row_it;
     RETURN_NOT_OK_PREPEND(rs->NewRowIterator(projection, snap, &row_it),
                           Substitute("Could not create iterator for rowset $0",
@@ -1449,7 +1448,7 @@ Status Tablet::CountRows(uint64_t *count) const {
 
   // Now sum up the counts.
   *count = comps->memrowset->entry_count();
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
     rowid_t l_count;
     RETURN_NOT_OK(rowset->CountRows(&l_count));
     *count += l_count;
@@ -1490,7 +1489,7 @@ size_t Tablet::EstimateOnDiskSize() const {
   if (!comps) return 0;
 
   size_t ret = 0;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
     ret += rowset->EstimateOnDiskSize();
   }
 
@@ -1502,7 +1501,7 @@ size_t Tablet::DeltaMemStoresSize() const {
   GetComponents(&comps);
 
   size_t ret = 0;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
     ret += rowset->DeltaMemStoreSize();
   }
 
@@ -1513,7 +1512,7 @@ bool Tablet::DeltaMemRowSetEmpty() const {
   scoped_refptr<TabletComponents> comps;
   GetComponents(&comps);
 
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
     if (!rowset->DeltaMemStoreEmpty()) {
       return false;
     }
@@ -1552,7 +1551,7 @@ shared_ptr<RowSet> Tablet::FindBestDMSToFlush(const MaxIdxToSegmentMap&
   int64_t mem_size = 0;
   int64_t retention_size = 0;
   shared_ptr<RowSet> best_dms;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
     if (rowset->DeltaMemStoreEmpty()) {
       continue;
     }
@@ -1575,7 +1574,7 @@ int64_t Tablet::GetLogRetentionSizeForIndex(int64_t min_log_index,
     return 0;
   }
   int64_t total_size = 0;
-  BOOST_FOREACH(const MaxIdxToSegmentMap::value_type& entry, max_idx_to_segment_size) {
+  for (const MaxIdxToSegmentMap::value_type& entry : max_idx_to_segment_size) {
     if (min_log_index > entry.first) {
       continue; // We're not in this segment, probably someone else is retaining it.
     }
@@ -1591,7 +1590,7 @@ Status Tablet::FlushBiggestDMS() {
 
   int64_t max_size = -1;
   shared_ptr<RowSet> biggest_drs;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
     int64_t current = rowset->DeltaMemStoreSize();
     if (current > max_size) {
       max_size = current;
@@ -1648,7 +1647,7 @@ double Tablet::GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompac
   GetComponents(&comps);
   double worst_delta_perf = 0;
   shared_ptr<RowSet> worst_rs;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, comps->rowsets->all_rowsets()) {
+  for (const shared_ptr<RowSet> &rowset : comps->rowsets->all_rowsets()) {
     if (!rowset->IsAvailableForCompaction()) {
       continue;
     }
@@ -1701,7 +1700,7 @@ void Tablet::PrintRSLayout(ostream* o) {
   *o << "<h2>Compaction policy log</h2>" << std::endl;
 
   *o << "<pre>" << std::endl;
-  BOOST_FOREACH(const string& s, log) {
+  for (const string& s : log) {
     *o << EscapeForHtmlToString(s) << std::endl;
   }
   *o << "</pre>" << std::endl;

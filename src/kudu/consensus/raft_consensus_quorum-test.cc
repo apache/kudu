@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/schema.h"
@@ -196,7 +195,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     ConsensusBootstrapInfo boot_info;
 
     TestPeerMap all_peers = peers_->GetPeerMapCopy();
-    BOOST_FOREACH(const TestPeerMap::value_type& entry, all_peers) {
+    for (const TestPeerMap::value_type& entry : all_peers) {
       RETURN_NOT_OK(entry.second->Start(boot_info));
     }
     return Status::OK();
@@ -226,7 +225,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     CHECK_OK(peers_->GetPeerByIdx(peer_idx, &follower));
     scoped_refptr<RaftConsensus> leader;
     CHECK_OK(peers_->GetPeerByIdx(leader_idx, &leader));
-    BOOST_FOREACH(LocalTestPeerProxy* proxy, down_cast<LocalTestPeerProxyFactory*>(
+    for (LocalTestPeerProxy* proxy : down_cast<LocalTestPeerProxyFactory*>(
         leader->peer_proxy_factory_.get())->GetProxies()) {
       if (proxy->GetTarget() == follower->peer_uuid()) {
         return proxy;
@@ -339,7 +338,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     vector<string> lines;
     scoped_refptr<RaftConsensus> leader;
     CHECK_OK(peers_->GetPeerByIdx(leader_idx, &leader));
-    BOOST_FOREACH(const string& line, lines) {
+    for (const string& line : lines) {
       LOG(ERROR) << line;
     }
 
@@ -398,7 +397,7 @@ class RaftConsensusQuorumTest : public KuduTest {
 
       TestPeerMap all_peers = peers_->GetPeerMapCopy();
       int i = 0;
-      BOOST_FOREACH(const TestPeerMap::value_type& entry, all_peers) {
+      for (const TestPeerMap::value_type& entry : all_peers) {
         if (entry.second->peer_uuid() != leader->peer_uuid()) {
           WaitForReplicateIfNotAlreadyPresent(*last_op_id, i);
         }
@@ -421,7 +420,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     log::SegmentSequence segments;
     ASSERT_OK(log_reader->GetSegmentsSnapshot(&segments));
 
-    BOOST_FOREACH(const log::SegmentSequence::value_type& entry, segments) {
+    for (const log::SegmentSequence::value_type& entry : segments) {
       ASSERT_OK(entry->ReadEntries(&ret));
     }
 
@@ -434,13 +433,13 @@ class RaftConsensusQuorumTest : public KuduTest {
   void VerifyLogs(int leader_idx, int first_replica_idx, int last_replica_idx) {
     // Wait for in-flight transactions to be done. We're destroying the
     // peers next and leader transactions won't be able to commit anymore.
-    BOOST_FOREACH(TestTransactionFactory* factory, txn_factories_) {
+    for (TestTransactionFactory* factory : txn_factories_) {
       factory->WaitDone();
     }
 
     // Shut down all the peers.
     TestPeerMap all_peers = peers_->GetPeerMapCopy();
-    BOOST_FOREACH(const TestPeerMap::value_type& entry, all_peers) {
+    for (const TestPeerMap::value_type& entry : all_peers) {
       entry.second->Shutdown();
     }
 
@@ -467,7 +466,7 @@ class RaftConsensusQuorumTest : public KuduTest {
   void ExtractReplicateIds(const vector<LogEntryPB*>& entries,
                            vector<OpId>* ids) {
     ids->reserve(entries.size() / 2);
-    BOOST_FOREACH(const LogEntryPB* entry, entries) {
+    for (const LogEntryPB* entry : entries) {
       if (entry->has_replicate()) {
         ids->push_back(entry->replicate().id());
       }
@@ -491,7 +490,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                   OpIdHashFunctor,
                   OpIdEqualsFunctor> replication_ops;
 
-    BOOST_FOREACH(const LogEntryPB* entry, entries) {
+    for (const LogEntryPB* entry : entries) {
       if (entry->has_replicate()) {
         ASSERT_TRUE(InsertIfNotPresent(&replication_ops, entry->replicate().id()))
           << "REPLICATE op id showed up twice: " << entry->ShortDebugString();
@@ -523,7 +522,7 @@ class RaftConsensusQuorumTest : public KuduTest {
     string ret = "";
     SubstituteAndAppend(&ret, "$1 log entries for replica $0:\n",
                         replica_id, replica_entries.size());
-    BOOST_FOREACH(LogEntryPB* replica_entry, replica_entries) {
+    for (LogEntryPB* replica_entry : replica_entries) {
       StrAppend(&ret, "Replica log entry: ", replica_entry->ShortDebugString(), "\n");
     }
     return ret;
@@ -642,7 +641,7 @@ TEST_F(RaftConsensusQuorumTest, TestFollowersReplicateAndCommitSequence) {
                                  &commit_sync);
 
   // Commit the operations, but wait for the replicates to finish first
-  BOOST_FOREACH(const scoped_refptr<ConsensusRound>& round, rounds) {
+  for (const scoped_refptr<ConsensusRound>& round : rounds) {
     ASSERT_OK(CommitDummyMessage(kLeaderIdx, round.get(), &commit_sync));
   }
 

@@ -103,7 +103,7 @@ void Schema::CopyFrom(const Schema& other) {
   // reference the other Schema's ColumnSchema objects.
   name_to_index_.clear();
   int i = 0;
-  BOOST_FOREACH(const ColumnSchema &col, cols_) {
+  for (const ColumnSchema &col : cols_) {
     // The map uses the 'name' string from within the ColumnSchema object.
     name_to_index_[col.name()] = i++;
   }
@@ -156,7 +156,7 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
   size_t off = 0;
   size_t i = 0;
   name_to_index_.clear();
-  BOOST_FOREACH(const ColumnSchema &col, cols_) {
+  for (const ColumnSchema &col : cols_) {
     // The map uses the 'name' string from within the ColumnSchema object.
     if (!InsertIfNotPresent(&name_to_index_, col.name(), i++)) {
       return Status::InvalidArgument("Duplicate column name", col.name());
@@ -183,7 +183,7 @@ Status Schema::Reset(const vector<ColumnSchema>& cols,
 
   // Determine whether any column is nullable
   has_nullables_ = false;
-  BOOST_FOREACH(const ColumnSchema& col, cols_) {
+  for (const ColumnSchema& col : cols_) {
     if (col.is_nullable()) {
       has_nullables_ = true;
       break;
@@ -197,7 +197,7 @@ Status Schema::CreateProjectionByNames(const std::vector<StringPiece>& col_names
                                        Schema* out) const {
   vector<ColumnId> ids;
   vector<ColumnSchema> cols;
-  BOOST_FOREACH(const StringPiece& name, col_names) {
+  for (const StringPiece& name : col_names) {
     int idx = find_column(name);
     if (idx == -1) {
       return Status::NotFound("column not found", name);
@@ -214,7 +214,7 @@ Status Schema::CreateProjectionByIdsIgnoreMissing(const std::vector<ColumnId>& c
                                                   Schema* out) const {
   vector<ColumnSchema> cols;
   vector<ColumnId> filtered_col_ids;
-  BOOST_FOREACH(ColumnId id, col_ids) {
+  for (ColumnId id : col_ids) {
     int idx = find_column_by_id(id);
     if (idx == -1) {
       continue;
@@ -247,7 +247,7 @@ Status Schema::VerifyProjectionCompatibility(const Schema& projection) const {
   }
 
   vector<string> missing_columns;
-  BOOST_FOREACH(const ColumnSchema& pcol, projection.columns()) {
+  for (const ColumnSchema& pcol : projection.columns()) {
     int index = find_column(pcol.name());
     if (index < 0) {
       missing_columns.push_back(pcol.name());
@@ -283,7 +283,7 @@ Status Schema::GetMappedReadProjection(const Schema& projection,
   mapped_cols.reserve(projection.num_columns());
   mapped_ids.reserve(projection.num_columns());
 
-  BOOST_FOREACH(const ColumnSchema& col, projection.columns()) {
+  for (const ColumnSchema& col : projection.columns()) {
     int index = find_column(col.name());
     DCHECK_GE(index, 0) << col.name();
     mapped_cols.push_back(cols_[index]);
@@ -301,7 +301,7 @@ string Schema::ToString() const {
       col_strs.push_back(strings::Substitute("$0:$1", col_ids_[i], cols_[i].ToString()));
     }
   } else {
-    BOOST_FOREACH(const ColumnSchema &col, cols_) {
+    for (const ColumnSchema &col : cols_) {
       col_strs.push_back(col.ToString());
     }
   }
@@ -350,7 +350,7 @@ string Schema::DebugEncodedRowKey(Slice encoded_key, StartOrEnd start_or_end) co
 
 size_t Schema::memory_footprint_excluding_this() const {
   size_t size = kudu_malloc_usable_size(cols_.data());
-  BOOST_FOREACH(const ColumnSchema& col, cols_) {
+  for (const ColumnSchema& col : cols_) {
     size += col.memory_footprint_excluding_this();
   }
 
@@ -447,7 +447,7 @@ Status SchemaBuilder::RenameColumn(const string& old_name, const string& new_nam
   col_names_.erase(it_names);   // TODO: Should this one stay and marked as alias?
   col_names_.insert(new_name);
 
-  BOOST_FOREACH(ColumnSchema& col_schema, cols_) {
+  for (ColumnSchema& col_schema : cols_) {
     if (old_name == col_schema.name()) {
       col_schema.set_name(new_name);
       return Status::OK();

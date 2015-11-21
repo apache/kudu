@@ -18,7 +18,6 @@
 #include <string>
 #include <vector>
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/integral_types.h"
@@ -154,7 +153,7 @@ TEST(JsonReaderTest, NestedArray) {
   ASSERT_OK(r.ExtractObjectArray(r.root(), "foo", &foo));
   ASSERT_EQ(3, foo.size());
   int i = 0;
-  BOOST_FOREACH(const Value* v, foo) {
+  for (const Value* v : foo) {
     int32_t number;
     ASSERT_OK(r.ExtractInt32(v, "val", &number));
     ASSERT_EQ(i, number);

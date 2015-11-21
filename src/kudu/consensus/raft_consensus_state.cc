@@ -16,7 +16,6 @@
 // under the License.
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 
 #include "kudu/consensus/log_util.h"
 #include "kudu/consensus/quorum_util.h"
@@ -388,7 +387,7 @@ Status ReplicaState::CancelPendingTransactions() {
 
 void ReplicaState::GetUncommittedPendingOperationsUnlocked(
     vector<scoped_refptr<ConsensusRound> >* ops) {
-  BOOST_FOREACH(const IndexToRoundMap::value_type& entry, pending_txns_) {
+  for (const IndexToRoundMap::value_type& entry : pending_txns_) {
     if (entry.first > last_committed_index_.index()) {
       ops->push_back(entry.second);
     }

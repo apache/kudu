@@ -20,7 +20,6 @@
 #include <algorithm>
 #include <vector>
 #include <boost/lexical_cast.hpp>
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 extern "C" {
 #include <oauth.h>
@@ -85,7 +84,7 @@ string OAuthRequest::SignatureBaseString() const {
 
   string kvpairs;
   bool first = true;
-  BOOST_FOREACH(const StringPair& p, sorted_pairs) {
+  for (const StringPair& p : sorted_pairs) {
     if (!first) {
       kvpairs.append("&");
     }
@@ -114,7 +113,7 @@ string OAuthRequest::AuthHeader(const string& consumer_secret,
   string sig = Signature(consumer_secret, token_secret);
 
   string ret = "Authorization: OAuth realm=\"\"";
-  BOOST_FOREACH(const StringPair& p, kv_pairs_) {
+  for (const StringPair& p : kv_pairs_) {
     if (!HasPrefixString(p.first, "oauth_")) continue;
     ret.append(", ");
     ret.append(p.first).append("=\"").append(EscapeUrl(p.second)).append("\"");

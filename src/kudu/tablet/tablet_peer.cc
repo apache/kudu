@@ -398,7 +398,7 @@ void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
                                          vector<consensus::TransactionStatusPB>* out) const {
   vector<scoped_refptr<TransactionDriver> > pending_transactions;
   txn_tracker_.GetPendingTransactions(&pending_transactions);
-  BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, pending_transactions) {
+  for (const scoped_refptr<TransactionDriver>& driver : pending_transactions) {
     if (driver->state() != NULL) {
       consensus::TransactionStatusPB status_pb;
       status_pb.mutable_op_id()->CopyFrom(driver->GetOpId());
@@ -450,7 +450,7 @@ void TabletPeer::GetEarliestNeededLogIndex(int64_t* min_index) const {
   // Next, interrogate the TransactionTracker.
   vector<scoped_refptr<TransactionDriver> > pending_transactions;
   txn_tracker_.GetPendingTransactions(&pending_transactions);
-  BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, pending_transactions) {
+  for (const scoped_refptr<TransactionDriver>& driver : pending_transactions) {
     OpId tx_op_id = driver->GetOpId();
     // A transaction which doesn't have an opid hasn't been submitted for replication yet and
     // thus has no need to anchor the log.
@@ -589,7 +589,7 @@ void TabletPeer::RegisterMaintenanceOps(MaintenanceManager* maint_mgr) {
 
 void TabletPeer::UnregisterMaintenanceOps() {
   DCHECK(state_change_lock_.is_locked());
-  BOOST_FOREACH(MaintenanceOp* op, maintenance_ops_) {
+  for (MaintenanceOp* op : maintenance_ops_) {
     op->Unregister();
   }
   STLDeleteElements(&maintenance_ops_);

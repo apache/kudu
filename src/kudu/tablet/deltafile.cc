@@ -513,7 +513,7 @@ Status DeltaFileIterator::VisitMutations(Visitor *visitor) {
 
   rowid_t start_row = prepared_idx_;
 
-  BOOST_FOREACH(PreparedDeltaBlock &block, delta_blocks_) {
+  for (PreparedDeltaBlock &block : delta_blocks_) {
     BinaryPlainBlockDecoder &bpd = *block.decoder_;
     DVLOG(2) << "Visiting delta block " << block.first_updated_idx_ << "-"
       << block.last_updated_idx_ << " for row block starting at " << start_row;

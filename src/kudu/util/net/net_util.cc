@@ -21,7 +21,6 @@
 #include <netdb.h>
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -131,7 +130,7 @@ Status HostPort::ParseStrings(const string& comma_sep_addrs,
                               uint16_t default_port,
                               vector<HostPort>* res) {
   vector<string> addr_strings = strings::Split(comma_sep_addrs, ",", strings::SkipEmpty());
-  BOOST_FOREACH(const string& addr_string, addr_strings) {
+  for (const string& addr_string : addr_strings) {
     HostPort host_port;
     RETURN_NOT_OK(host_port.ParseString(addr_string, default_port));
     res->push_back(host_port);
@@ -145,7 +144,7 @@ string HostPort::ToString() const {
 
 string HostPort::ToCommaSeparatedString(const vector<HostPort>& hostports) {
   vector<string> hostport_strs;
-  BOOST_FOREACH(const HostPort& hostport, hostports) {
+  for (const HostPort& hostport : hostports) {
     hostport_strs.push_back(hostport.ToString());
   }
   return JoinStrings(hostport_strs, ",");
@@ -162,13 +161,13 @@ Status ParseAddressList(const std::string& addr_list,
   RETURN_NOT_OK(HostPort::ParseStrings(addr_list, default_port, &host_ports));
   unordered_set<Sockaddr> uniqued;
 
-  BOOST_FOREACH(const HostPort& host_port, host_ports) {
+  for (const HostPort& host_port : host_ports) {
     vector<Sockaddr> this_addresses;
     RETURN_NOT_OK(host_port.ResolveAddresses(&this_addresses));
 
     // Only add the unique ones -- the user may have specified
     // some IP addresses in multiple ways
-    BOOST_FOREACH(const Sockaddr& addr, this_addresses) {
+    for (const Sockaddr& addr : this_addresses) {
       if (InsertIfNotPresent(&uniqued, addr)) {
         addresses->push_back(addr);
       } else {

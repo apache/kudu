@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <list>
 #include <memory>
@@ -226,7 +225,7 @@ Status Master::ListMasters(std::vector<ServerEntryPB>* masters) const {
     return Status::OK();
   }
 
-  BOOST_FOREACH(const HostPort& peer_addr, opts_.master_addresses) {
+  for (const HostPort& peer_addr : opts_.master_addresses) {
     ServerEntryPB peer_entry;
     Status s = GetMasterEntryForHost(messenger_, peer_addr, &peer_entry);
     if (!s.ok()) {

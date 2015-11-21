@@ -17,7 +17,6 @@
 //
 // Tests for the kudu-admin command-line tool.
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/client/client.h"
@@ -82,7 +81,7 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   InsertOrDie(&active_tablet_servers, follower->uuid(), follower);
 
   TServerDetails* new_node = NULL;
-  BOOST_FOREACH(TServerDetails* ts, tservers) {
+  for (TServerDetails* ts : tservers) {
     if (!ContainsKey(active_tablet_servers, ts->uuid())) {
       new_node = ts;
       break;

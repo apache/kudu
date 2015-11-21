@@ -562,8 +562,7 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
 
       // TODO: this is slow, since it makes multiple passes through the rowchangelist.
       // Instead, we should keep the backwards mapping of columns.
-      BOOST_FOREACH(const RowProjector::ProjectionIdxMapping& mapping,
-                    projector_->base_cols_mapping()) {
+      for (const RowProjector::ProjectionIdxMapping& mapping : projector_->base_cols_mapping()) {
         RowChangeListDecoder decoder(mut->changelist());
         RETURN_NOT_OK(decoder.Init());
         ColumnBlock dst_col = dst_row->column_block(mapping.first);

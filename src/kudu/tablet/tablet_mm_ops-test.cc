@@ -72,7 +72,7 @@ class KuduTabletMmOpsTest : public TabletTestBase<IntKeyTestSetup<INT64>> {
                              scoped_refptr<Histogram>,
                              ScopedRefPtrHashFunctor<Histogram>,
                              ScopedRefPtrEqualToFunctor<Histogram> >& metrics) {
-    BOOST_FOREACH(const scoped_refptr<Histogram>& c, all_possible_metrics_) {
+    for (const scoped_refptr<Histogram>& c : all_possible_metrics_) {
       c->Increment(1); // value doesn't matter
       if (ContainsKey(metrics, c)) {
         NO_FATALS(StatsShouldChange(op));

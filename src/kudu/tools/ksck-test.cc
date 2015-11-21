@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <boost/lexical_cast.hpp>
 #include <gtest/gtest.h>
 #include <memory>
@@ -119,7 +118,7 @@ class KsckTest : public KuduTest {
  protected:
   void CreateDefaultAssignmentPlan(int tablets_count) {
     while (tablets_count > 0) {
-      BOOST_FOREACH(const KsckMaster::TSMap::value_type& entry, master_->tablet_servers_) {
+      for (const KsckMaster::TSMap::value_type& entry : master_->tablet_servers_) {
         if (tablets_count-- == 0) return;
         assignment_plan_.push_back(entry.second->uuid());
       }

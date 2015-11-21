@@ -34,7 +34,6 @@
 #include <boost/archive/iterators/base64_from_binary.hpp>
 #include <boost/archive/iterators/binary_from_base64.hpp>
 #include <boost/archive/iterators/transform_width.hpp>
-#include <boost/foreach.hpp>
 #include <exception>
 #include <sstream>
 
@@ -193,7 +192,7 @@ bool Base64Decode(const string& in, string* out) {
 
 void EscapeForHtml(const string& in, std::stringstream* out) {
   DCHECK(out != NULL);
-  BOOST_FOREACH(const char& c, in) {
+  for (const char& c : in) {
     switch (c) {
       case '<': (*out) << "&lt;";
                 break;

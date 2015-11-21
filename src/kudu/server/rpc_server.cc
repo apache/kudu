@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <list>
 #include <string>
 #include <vector>
@@ -96,7 +95,7 @@ Status RpcServer::Init(const shared_ptr<Messenger>& messenger) {
   RETURN_NOT_OK(ParseAddressList(options_.rpc_bind_addresses,
                                  options_.default_port,
                                  &rpc_bind_addresses_));
-  BOOST_FOREACH(const Sockaddr& addr, rpc_bind_addresses_) {
+  for (const Sockaddr& addr : rpc_bind_addresses_) {
     if (IsPrivilegedPort(addr.port())) {
       LOG(WARNING) << "May be unable to bind to privileged port for address "
                    << addr.ToString();
@@ -133,7 +132,7 @@ Status RpcServer::Bind() {
   // Create the Acceptor pools (one per bind address)
   vector<shared_ptr<AcceptorPool> > new_acceptor_pools;
   // Create the AcceptorPool for each bind address.
-  BOOST_FOREACH(const Sockaddr& bind_addr, rpc_bind_addresses_) {
+  for (const Sockaddr& bind_addr : rpc_bind_addresses_) {
     shared_ptr<rpc::AcceptorPool> pool;
     RETURN_NOT_OK(messenger_->AddAcceptorPool(
                     bind_addr,
@@ -153,14 +152,14 @@ Status RpcServer::Start() {
   CHECK_EQ(server_state_, BOUND);
   server_state_ = STARTED;
 
-  BOOST_FOREACH(const shared_ptr<AcceptorPool>& pool, acceptor_pools_) {
+  for (const shared_ptr<AcceptorPool>& pool : acceptor_pools_) {
     RETURN_NOT_OK(pool->Start(options_.num_acceptors_per_address));
   }
 
   vector<Sockaddr> bound_addrs;
   RETURN_NOT_OK(GetBoundAddresses(&bound_addrs));
   string bound_addrs_str;
-  BOOST_FOREACH(const Sockaddr& bind_addr, bound_addrs) {
+  for (const Sockaddr& bind_addr : bound_addrs) {
     if (!bound_addrs_str.empty()) bound_addrs_str += ", ";
     bound_addrs_str += bind_addr.ToString();
   }
@@ -170,7 +169,7 @@ Status RpcServer::Start() {
 }
 
 void RpcServer::Shutdown() {
-  BOOST_FOREACH(const shared_ptr<AcceptorPool>& pool, acceptor_pools_) {
+  for (const shared_ptr<AcceptorPool>& pool : acceptor_pools_) {
     pool->Shutdown();
   }
   acceptor_pools_.clear();
@@ -183,7 +182,7 @@ void RpcServer::Shutdown() {
 Status RpcServer::GetBoundAddresses(vector<Sockaddr>* addresses) const {
   CHECK(server_state_ == BOUND ||
         server_state_ == STARTED) << "bad state: " << server_state_;
-  BOOST_FOREACH(const shared_ptr<AcceptorPool>& pool, acceptor_pools_) {
+  for (const shared_ptr<AcceptorPool>& pool : acceptor_pools_) {
     Sockaddr bound_addr;
     RETURN_NOT_OK_PREPEND(pool->GetBoundAddress(&bound_addr),
                           "Unable to get bound address from AcceptorPool");

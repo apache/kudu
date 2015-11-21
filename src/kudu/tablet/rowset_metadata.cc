@@ -69,20 +69,20 @@ Status RowSetMetadata::InitFromPB(const RowSetDataPB& pb) {
   }
 
   // Load Column Files
-  BOOST_FOREACH(const ColumnDataPB& col_pb, pb.columns()) {
+  for (const ColumnDataPB& col_pb : pb.columns()) {
     ColumnId col_id = ColumnId(col_pb.column_id());
     blocks_by_col_id_[col_id] = BlockId::FromPB(col_pb.block());
   }
 
   // Load redo delta files
-  BOOST_FOREACH(const DeltaDataPB& redo_delta_pb, pb.redo_deltas()) {
+  for (const DeltaDataPB& redo_delta_pb : pb.redo_deltas()) {
     redo_delta_blocks_.push_back(BlockId::FromPB(redo_delta_pb.block()));
   }
 
   last_durable_redo_dms_id_ = pb.last_durable_dms_id();
 
   // Load undo delta files
-  BOOST_FOREACH(const DeltaDataPB& undo_delta_pb, pb.undo_deltas()) {
+  for (const DeltaDataPB& undo_delta_pb : pb.undo_deltas()) {
     undo_delta_blocks_.push_back(BlockId::FromPB(undo_delta_pb.block()));
   }
 
@@ -96,7 +96,7 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   lock_guard<LockType> l(&lock_);
 
   // Write Column Files
-  BOOST_FOREACH(const ColumnIdToBlockIdMap::value_type& e, blocks_by_col_id_) {
+  for (const ColumnIdToBlockIdMap::value_type& e : blocks_by_col_id_) {
     ColumnId col_id = e.first;
     const BlockId& block_id = e.second;
 
@@ -108,12 +108,12 @@ void RowSetMetadata::ToProtobuf(RowSetDataPB *pb) {
   // Write Delta Files
   pb->set_last_durable_dms_id(last_durable_redo_dms_id_);
 
-  BOOST_FOREACH(const BlockId& redo_delta_block, redo_delta_blocks_) {
+  for (const BlockId& redo_delta_block : redo_delta_blocks_) {
     DeltaDataPB *redo_delta_pb = pb->add_redo_deltas();
     redo_delta_block.CopyToPB(redo_delta_pb->mutable_block());
   }
 
-  BOOST_FOREACH(const BlockId& undo_delta_block, undo_delta_blocks_) {
+  for (const BlockId& undo_delta_block : undo_delta_blocks_) {
     DeltaDataPB *undo_delta_pb = pb->add_undo_deltas();
     undo_delta_block.CopyToPB(undo_delta_pb->mutable_block());
   }
@@ -157,7 +157,7 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
   {
     lock_guard<LockType> l(&lock_);
 
-    BOOST_FOREACH(const RowSetMetadataUpdate::ReplaceDeltaBlocks rep,
+    for (const RowSetMetadataUpdate::ReplaceDeltaBlocks rep :
                   update.replace_redo_blocks_) {
       CHECK(!rep.to_remove.empty());
 
@@ -166,7 +166,7 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
                     redo_delta_blocks_.end(), rep.to_remove[0]);
 
       vector<BlockId>::iterator end_it = start_it;
-      BOOST_FOREACH(const BlockId& b, rep.to_remove) {
+      for (const BlockId& b : rep.to_remove) {
         if (end_it == redo_delta_blocks_.end() || *end_it != b) {
           return Status::InvalidArgument(
               Substitute("Cannot find subsequence <$0> in <$1>",
@@ -182,7 +182,7 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
     }
 
     // Add new redo blocks
-    BOOST_FOREACH(const BlockId& b, update.new_redo_blocks_) {
+    for (const BlockId& b : update.new_redo_blocks_) {
       redo_delta_blocks_.push_back(b);
     }
 
@@ -191,7 +191,7 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
       undo_delta_blocks_.insert(undo_delta_blocks_.begin(), update.new_undo_block_);
     }
 
-    BOOST_FOREACH(const ColumnIdToBlockIdMap::value_type& e, update.cols_to_replace_) {
+    for (const ColumnIdToBlockIdMap::value_type& e : update.cols_to_replace_) {
       // If we are major-compacting deltas into a column which previously had no
       // base-data (e.g. because it was newly added), then there will be no original
       // block there to replace.
@@ -201,7 +201,7 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
       }
     }
 
-    BOOST_FOREACH(ColumnId col_id, update.col_ids_to_remove_) {
+    for (ColumnId col_id : update.col_ids_to_remove_) {
       BlockId old = FindOrDie(blocks_by_col_id_, col_id);
       CHECK_EQ(1, blocks_by_col_id_.erase(col_id));
       removed.push_back(old);

@@ -128,7 +128,7 @@ class TestRandomAccess : public KuduTabletTest {
       }
     }
     CHECK_OK(writer_->WriteBatch(pending));
-    BOOST_FOREACH(LocalTabletWriter::Op op, pending) {
+    for (LocalTabletWriter::Op op : pending) {
       delete op.row;
     }
   }
@@ -354,7 +354,7 @@ void GenerateTestCase(vector<TestOp>* ops, int len) {
 
 string DumpTestCase(const vector<TestOp>& ops) {
   vector<string> names;
-  BOOST_FOREACH(TestOp test_op, ops) {
+  for (TestOp test_op : ops) {
     names.push_back(TestOp_names[test_op]);
   }
   return JoinStrings(names, ",\n");
@@ -371,7 +371,7 @@ void TestRandomAccess::RunFuzzCase(const vector<TestOp>& test_ops,
   string pending_val = "";
 
   int i = 0;
-  BOOST_FOREACH(TestOp test_op, test_ops) {
+  for (TestOp test_op : test_ops) {
     string val_in_table = GetRow(1);
     ASSERT_EQ("(" + cur_val + ")", val_in_table);
 
@@ -391,7 +391,7 @@ void TestRandomAccess::RunFuzzCase(const vector<TestOp>& test_ops,
         break;
       case TEST_FLUSH_OPS:
         ASSERT_OK(writer.WriteBatch(ops));
-        BOOST_FOREACH(LocalTabletWriter::Op op, ops) {
+        for (LocalTabletWriter::Op op : ops) {
           delete op.row;
         }
         ops.clear();
@@ -416,7 +416,7 @@ void TestRandomAccess::RunFuzzCase(const vector<TestOp>& test_ops,
         LOG(FATAL) << test_op;
     }
   }
-  BOOST_FOREACH(LocalTabletWriter::Op op, ops) {
+  for (LocalTabletWriter::Op op : ops) {
     delete op.row;
   }
 }

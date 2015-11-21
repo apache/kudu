@@ -156,10 +156,9 @@ implementations.
 
 .Approved `boost` Libraries
 
-- `BOOST_FOREACH`
 - `boost::assign` (container literals)
-- `boost::mutex` and `boost::shared_mutex` (but prefer Kudu's
-  spin lock implementation for short critical sections)
+- `boost::shared_mutex` (but prefer Kudu's spin lock implementation for short
+  critical sections)
 
 Check that any features from `boost` you use are present in *`boost` 1.46*
 or earlier, for compatibility with RHEL 6.

@@ -28,7 +28,6 @@
 
 #include "kudu/consensus/log_index.h"
 
-#include <boost/foreach.hpp>
 #include <fcntl.h>
 #include <string>
 #include <sys/mman.h>
@@ -256,7 +255,7 @@ void LogIndex::GC(int64_t min_index_to_retain) {
   }
 
   // Outside of the lock, try to delete them (avoid holding the lock during IO).
-  BOOST_FOREACH(int64_t chunk_idx, chunks_to_delete) {
+  for (int64_t chunk_idx : chunks_to_delete) {
     string path = GetChunkPath(chunk_idx);
     int rc = unlink(path.c_str());
     if (rc != 0) {

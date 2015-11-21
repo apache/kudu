@@ -20,7 +20,6 @@
 #include <map>
 #include <set>
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 
 #include "kudu/gutil/atomicops.h"
@@ -181,7 +180,7 @@ namespace {
 
 bool MatchMetricInList(const string& metric_name,
                        const vector<string>& match_params) {
-  BOOST_FOREACH(const string& param, match_params) {
+  for (const string& param : match_params) {
     // Handle wildcard.
     if (param == "*") return true;
     // The parameter is a substring match of the metric name.
@@ -208,7 +207,7 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
     // Snapshot the metrics in this registry (not guaranteed to be a consistent snapshot)
     lock_guard<simple_spinlock> l(&lock_);
     attrs = attributes_;
-    BOOST_FOREACH(const MetricMap::value_type& val, metric_map_) {
+    for (const MetricMap::value_type& val : metric_map_) {
       const MetricPrototype* prototype = val.first;
       const scoped_refptr<Metric>& metric = val.second;
 
@@ -234,7 +233,7 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
 
   writer->String("attributes");
   writer->StartObject();
-  BOOST_FOREACH(const AttributeMap::value_type& val, attrs) {
+  for (const AttributeMap::value_type& val : attrs) {
     writer->String(val.first);
     writer->String(val.second);
   }
@@ -242,7 +241,7 @@ Status MetricEntity::WriteAsJson(JsonWriter* writer,
 
   writer->String("metrics");
   writer->StartArray();
-  BOOST_FOREACH(OrderedMetricMap::value_type& val, metrics) {
+  for (OrderedMetricMap::value_type& val : metrics) {
     WARN_NOT_OK(val.second->WriteAsJson(writer, opts),
                 strings::Substitute("Failed to write $0 as JSON", val.first));
 
@@ -336,7 +335,7 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
   }
 
   writer->StartArray();
-  BOOST_FOREACH(const EntityMap::value_type e, entities) {
+  for (const EntityMap::value_type e : entities) {
     WARN_NOT_OK(e.second->WriteAsJson(writer, requested_metrics, opts),
                 Substitute("Failed to write entity $0 as JSON", e.second->id()));
   }
@@ -396,7 +395,7 @@ void MetricPrototypeRegistry::WriteAsJson(JsonWriter* writer) const {
   // Dump metric prototypes.
   writer->String("metrics");
   writer->StartArray();
-  BOOST_FOREACH(const MetricPrototype* p, metrics_) {
+  for (const MetricPrototype* p : metrics_) {
     writer->StartObject();
     p->WriteFields(writer, opts);
     writer->String("entity_type");
@@ -408,7 +407,7 @@ void MetricPrototypeRegistry::WriteAsJson(JsonWriter* writer) const {
   // Dump entity prototypes.
   writer->String("entities");
   writer->StartArray();
-  BOOST_FOREACH(const MetricEntityPrototype* p, entities_) {
+  for (const MetricEntityPrototype* p : entities_) {
     writer->StartObject();
     writer->String("name");
     writer->String(p->name());
@@ -462,7 +461,7 @@ FunctionGaugeDetacher::FunctionGaugeDetacher() {
 }
 
 FunctionGaugeDetacher::~FunctionGaugeDetacher() {
-  BOOST_FOREACH(const Closure& c, callbacks_) {
+  for (const Closure& c : callbacks_) {
     c.Run();
   }
 }

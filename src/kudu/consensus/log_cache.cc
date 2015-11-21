@@ -18,7 +18,6 @@
 #include "kudu/consensus/log_cache.h"
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <google/protobuf/wire_format_lite.h>
 #include <google/protobuf/wire_format_lite_inl.h>
@@ -307,7 +306,7 @@ Status LogCache::ReadOps(int64_t after_op_index,
       LOG_WITH_PREFIX_UNLOCKED(INFO) << "Successfully read " << raw_replicate_ptrs.size() << " ops "
                             << "from disk.";
 
-      BOOST_FOREACH(ReplicateMsg* msg, raw_replicate_ptrs) {
+      for (ReplicateMsg* msg : raw_replicate_ptrs) {
         CHECK_EQ(next_index, msg->id().index());
 
         remaining_space -= TotalByteSizeForMessage(*msg);
@@ -431,7 +430,7 @@ std::string LogCache::LogPrefixUnlocked() const {
 void LogCache::DumpToLog() const {
   vector<string> strings;
   DumpToStrings(&strings);
-  BOOST_FOREACH(const string& s, strings) {
+  for (const string& s : strings) {
     LOG_WITH_PREFIX_UNLOCKED(INFO) << s;
   }
 }
@@ -441,7 +440,7 @@ void LogCache::DumpToStrings(vector<string>* lines) const {
   int counter = 0;
   lines->push_back(ToStringUnlocked());
   lines->push_back("Messages:");
-  BOOST_FOREACH(const MessageCache::value_type& entry, cache_) {
+  for (const MessageCache::value_type& entry : cache_) {
     const ReplicateMsg* msg = entry.second->get();
     lines->push_back(
       Substitute("Message[$0] $1.$2 : REPLICATE. Type: $3, Size: $4",
@@ -460,7 +459,7 @@ void LogCache::DumpToHtml(std::ostream& out) const {
   out << "<tr><th>Entry</th><th>OpId</th><th>Type</th><th>Size</th><th>Status</th></tr>" << endl;
 
   int counter = 0;
-  BOOST_FOREACH(const MessageCache::value_type& entry, cache_) {
+  for (const MessageCache::value_type& entry : cache_) {
     const ReplicateMsg* msg = entry.second->get();
     out << Substitute("<tr><th>$0</th><th>$1.$2</th><td>REPLICATE $3</td>"
                       "<td>$4</td><td>$5</td></tr>",

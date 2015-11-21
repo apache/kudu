@@ -17,7 +17,6 @@
 #ifndef KUDU_UTIL_BLOCKING_QUEUE_H
 #define KUDU_UTIL_BLOCKING_QUEUE_H
 
-#include <boost/foreach.hpp>
 #include <boost/type_traits/remove_pointer.hpp>
 #include <list>
 #include <string>
@@ -108,7 +107,7 @@ class BlockingQueue {
     while (true) {
       if (!list_.empty()) {
         out->reserve(list_.size());
-        BOOST_FOREACH(const T& elt, list_) {
+        for (const T& elt : list_) {
           out->push_back(elt);
           decrement_size_unlocked(elt);
         }
@@ -208,7 +207,7 @@ class BlockingQueue {
     std::string ret;
 
     MutexLock l(lock_);
-    BOOST_FOREACH(const T& t, list_) {
+    for (const T& t : list_) {
       ret.append(t->ToString());
       ret.append("\n");
     }

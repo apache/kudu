@@ -285,7 +285,7 @@ class RaftConsensusTest : public KuduTest {
 
   void DumpRounds() {
     LOG(INFO) << "Dumping rounds...";
-    BOOST_FOREACH(const scoped_refptr<ConsensusRound>& round, rounds_) {
+    for (const scoped_refptr<ConsensusRound>& round : rounds_) {
       LOG(INFO) << "Round: OpId " << round->id() << ", ReplicateMsg: "
                 << round->replicate_msg()->ShortDebugString();
     }

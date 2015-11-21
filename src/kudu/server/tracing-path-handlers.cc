@@ -22,7 +22,6 @@
 #include <vector>
 
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/rapidjson.h>
@@ -141,7 +140,7 @@ void GetCategories(stringstream* out) {
   kudu::debug::TraceLog::GetInstance()->GetKnownCategoryGroups(&groups);
   JsonWriter j(out, JsonWriter::COMPACT);
   j.StartArray();
-  BOOST_FOREACH(const string& g, groups) {
+  for (const string& g : groups) {
     j.String(g);
   }
   j.EndArray();
@@ -255,7 +254,7 @@ void TracingPathHandlers::RegisterHandlers(Webserver* server) {
     { "/tracing/json/simple_dump", kSimpleDump } };
 
   typedef pair<string, Handler> HandlerPair;
-  BOOST_FOREACH(const HandlerPair& e, handlers) {
+  for (const HandlerPair& e : handlers) {
     server->RegisterPathHandler(
       e.first, "",
       boost::bind(&HandleRequest, e.second, _1, _2),

@@ -134,7 +134,7 @@ void MultiColumnWriter::GetFlushedBlocksByColumnId(std::map<ColumnId, BlockId>* 
 
 size_t MultiColumnWriter::written_size() const {
   size_t size = 0;
-  BOOST_FOREACH(const CFileWriter *writer, cfile_writers_) {
+  for (const CFileWriter *writer : cfile_writers_) {
     size += writer->written_size();
   }
   return size;

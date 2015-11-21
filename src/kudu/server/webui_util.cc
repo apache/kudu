@@ -135,7 +135,7 @@ void HtmlOutputTaskList(const std::vector<scoped_refptr<MonitoredTask> >& tasks,
                         std::stringstream* output) {
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Task Name</th><th>State</th><th>Time</th><th>Description</th></tr>\n";
-  BOOST_FOREACH(const scoped_refptr<MonitoredTask>& task, tasks) {
+  for (const scoped_refptr<MonitoredTask>& task : tasks) {
     string state;
     switch (task->state()) {
       case MonitoredTask::kStatePreparing:

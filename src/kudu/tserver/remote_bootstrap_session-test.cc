@@ -16,7 +16,6 @@
 // under the License.
 #include "kudu/tablet/tablet-test-util.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <memory>
@@ -291,14 +290,14 @@ TEST_F(RemoteBootstrapTest, TestBlocksAreFetchableAfterBeingDeleted) {
 
   // Gather all the blocks.
   vector<BlockId> data_blocks;
-  BOOST_FOREACH(const RowSetDataPB& rowset, tablet_superblock.rowsets()) {
-    BOOST_FOREACH(const DeltaDataPB& redo, rowset.redo_deltas()) {
+  for (const RowSetDataPB& rowset : tablet_superblock.rowsets()) {
+    for (const DeltaDataPB& redo : rowset.redo_deltas()) {
       data_blocks.push_back(BlockId::FromPB(redo.block()));
     }
-    BOOST_FOREACH(const DeltaDataPB& undo, rowset.undo_deltas()) {
+    for (const DeltaDataPB& undo : rowset.undo_deltas()) {
       data_blocks.push_back(BlockId::FromPB(undo.block()));
     }
-    BOOST_FOREACH(const ColumnDataPB& column, rowset.columns()) {
+    for (const ColumnDataPB& column : rowset.columns()) {
       data_blocks.push_back(BlockId::FromPB(column.block()));
     }
     if (rowset.has_bloom_block()) {
@@ -310,12 +309,12 @@ TEST_F(RemoteBootstrapTest, TestBlocksAreFetchableAfterBeingDeleted) {
   }
 
   // Delete them.
-  BOOST_FOREACH(const BlockId& block_id, data_blocks) {
+  for (const BlockId& block_id : data_blocks) {
     ASSERT_OK(fs_manager()->DeleteBlock(block_id));
   }
 
   // Read them back.
-  BOOST_FOREACH(const BlockId& block_id, data_blocks) {
+  for (const BlockId& block_id : data_blocks) {
     ASSERT_TRUE(session_->IsBlockOpenForTests(block_id));
     string data;
     RemoteBootstrapErrorPB::Code error_code;

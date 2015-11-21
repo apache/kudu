@@ -19,7 +19,6 @@
 // First column is in ascending order, the rest are random data.
 // Helps make things like availability demos a little easier.
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iostream>
@@ -107,7 +106,7 @@ static int WriteRandomDataToTable(int argc, char** argv) {
       bool overflow;
       session->GetPendingErrors(&errors, &overflow);
       CHECK(!overflow);
-      BOOST_FOREACH(const client::KuduError* e, errors) {
+      for (const client::KuduError* e : errors) {
         if (e->status().IsAlreadyPresent()) {
           LOG(WARNING) << "Ignoring insert error: " << e->status().ToString();
         } else {

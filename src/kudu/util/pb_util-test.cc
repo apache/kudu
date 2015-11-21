@@ -23,7 +23,6 @@
 #include <vector>
 
 #include <boost/assign.hpp>
-#include <boost/foreach.hpp>
 #include <google/protobuf/descriptor.pb.h>
 #include <gtest/gtest.h>
 
@@ -162,7 +161,7 @@ TEST_F(TestPBUtil, TestPBContainerSimple) {
   // Exercise both the SYNC and NO_SYNC codepaths, despite the fact that we
   // aren't able to observe a difference in the test.
   vector<SyncMode> modes = { SYNC, NO_SYNC };
-  BOOST_FOREACH(SyncMode mode, modes) {
+  for (SyncMode mode : modes) {
 
     // Write the file.
     ASSERT_OK(CreateKnownGoodContainerFile(NO_OVERWRITE, mode));

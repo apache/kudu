@@ -23,7 +23,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/foreach.hpp>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Argument.h>
 #include <llvm/IR/BasicBlock.h>
@@ -175,8 +174,7 @@ llvm::Function* MakeProjection(const string& name,
   int success_update_number = 0;
 
   // Copy base data
-  BOOST_FOREACH(const kudu::RowProjector::ProjectionIdxMapping& pmap,
-                proj.base_cols_mapping()) {
+  for (const kudu::RowProjector::ProjectionIdxMapping& pmap : proj.base_cols_mapping()) {
     // Retrieve information regarding this column-to-column transformation
     size_t proj_idx = pmap.first;
     size_t base_idx = pmap.second;
@@ -211,7 +209,7 @@ llvm::Function* MakeProjection(const string& name,
     << "Value Adapter not supported yet";
 
   // Fill defaults
-  BOOST_FOREACH(size_t dfl_idx, proj.projection_defaults()) {
+  for (size_t dfl_idx : proj.projection_defaults()) {
     // Retrieve mapping information
     const ColumnSchema& col = projection.column(dfl_idx);
     const void* dfl = READ ? col.read_default_value() :
@@ -345,21 +343,20 @@ Status RowProjectorFunctions::EncodeKey(const Schema& base, const Schema& proj,
 
   AddNext(out, JITWrapper::ROW_PROJECTOR);
   AddNext(out, base.num_columns());
-  BOOST_FOREACH(const ColumnSchema& col, base.columns()) {
+  for (const ColumnSchema& col : base.columns()) {
     AddNext(out, col.type_info()->physical_type());
     AddNext(out, col.is_nullable());
   }
   AddNext(out, proj.num_columns());
-  BOOST_FOREACH(const ColumnSchema& col, proj.columns()) {
+  for (const ColumnSchema& col : proj.columns()) {
     AddNext(out, col.type_info()->physical_type());
     AddNext(out, col.is_nullable());
   }
   AddNext(out, projector.base_cols_mapping().size());
-  BOOST_FOREACH(const kudu::RowProjector::ProjectionIdxMapping& map,
-                projector.base_cols_mapping()) {
+  for (const kudu::RowProjector::ProjectionIdxMapping& map : projector.base_cols_mapping()) {
     AddNext(out, map);
   }
-  BOOST_FOREACH(size_t dfl_idx, projector.projection_defaults()) {
+  for (size_t dfl_idx : projector.projection_defaults()) {
     const ColumnSchema& col = proj.column(dfl_idx);
     AddNext(out, dfl_idx);
     AddNext(out, col.read_default_value());

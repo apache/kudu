@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <memory>
 #include <stdlib.h>
@@ -75,7 +74,7 @@ class TestDeltaMemStore : public KuduTest {
     faststring buf;
     RowChangeListEncoder update(&buf);
 
-    BOOST_FOREACH(uint32_t idx_to_update, indexes_to_update) {
+    for (uint32_t idx_to_update : indexes_to_update) {
       ScopedTransaction tx(&mvcc_);
       tx.StartApplying();
       update.Reset();

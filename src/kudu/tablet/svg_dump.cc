@@ -17,7 +17,6 @@
 
 #include "kudu/tablet/svg_dump.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <time.h>
 
@@ -66,14 +65,14 @@ void OrganizeSVGRows(const vector<RowSetInfo>& candidates,
                      vector<vector<const RowSetInfo*> >* rows) {
   rows->push_back(vector<const RowSetInfo *>());
 
-  BOOST_FOREACH(const RowSetInfo &candidate, candidates) {
+  for (const RowSetInfo &candidate : candidates) {
     // Slot into the first row of the output which fits it
     bool found_slot = false;
-    BOOST_FOREACH(vector<const RowSetInfo *> &row, *rows) {
+    for (vector<const RowSetInfo *> &row : *rows) {
       // If this candidate doesn't intersect any other candidates in this
       // row, we can put it here.
       bool fits_in_row = true;
-      BOOST_FOREACH(const RowSetInfo *already_in_row, row) {
+      for (const RowSetInfo *already_in_row : row) {
         if (candidate.Intersects(*already_in_row)) {
           fits_in_row = false;
           break;
@@ -127,7 +126,7 @@ void DumpSVG(const vector<RowSetInfo>& candidates,
     const vector<const RowSetInfo *> &row = svg_rows[row_index];
 
     int y = kRowHeight * row_index + kHeaderHeight;
-    BOOST_FOREACH(const RowSetInfo *cand, row) {
+    for (const RowSetInfo *cand : row) {
       bool was_picked = ContainsKey(picked, cand->rowset());
       const char *color = was_picked ? kPickedColor : kDefaultColor;
 

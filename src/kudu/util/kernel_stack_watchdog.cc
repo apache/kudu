@@ -18,7 +18,6 @@
 #include "kudu/util/kernel_stack_watchdog.h"
 
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gflags/gflags.h>
 #include <string>
@@ -101,7 +100,7 @@ void KernelStackWatchdog::RunThread() {
       MutexLock l(lock_);
       MicrosecondsInt64 now = GetMonoTimeMicros();
 
-      BOOST_FOREACH(const TLSMap::value_type& map_entry, tls_by_tid_) {
+      for (const TLSMap::value_type& map_entry : tls_by_tid_) {
         pid_t p = map_entry.first;
         const TLS::Data* tls = &map_entry.second->data_;
 

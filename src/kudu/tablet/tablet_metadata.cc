@@ -128,14 +128,14 @@ Status TabletMetadata::LoadOrCreate(FsManager* fs_manager,
 
 void TabletMetadata::CollectBlockIdPBs(const TabletSuperBlockPB& superblock,
                                        std::vector<BlockIdPB>* block_ids) {
-  BOOST_FOREACH(const RowSetDataPB& rowset, superblock.rowsets()) {
-    BOOST_FOREACH(const ColumnDataPB& column, rowset.columns()) {
+  for (const RowSetDataPB& rowset : superblock.rowsets()) {
+    for (const ColumnDataPB& column : rowset.columns()) {
       block_ids->push_back(column.block());
     }
-    BOOST_FOREACH(const DeltaDataPB& redo, rowset.redo_deltas()) {
+    for (const DeltaDataPB& redo : rowset.redo_deltas()) {
       block_ids->push_back(redo.block());
     }
-    BOOST_FOREACH(const DeltaDataPB& undo, rowset.undo_deltas()) {
+    for (const DeltaDataPB& undo : rowset.undo_deltas()) {
       block_ids->push_back(undo.block());
     }
     if (rowset.has_bloom_block()) {
@@ -162,7 +162,7 @@ Status TabletMetadata::DeleteTabletData(TabletDataState delete_type,
   // we have been deleted.
   {
     boost::lock_guard<LockType> l(data_lock_);
-    BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rsmd, rowsets_) {
+    for (const shared_ptr<RowSetMetadata>& rsmd : rowsets_) {
       AddOrphanedBlocksUnlocked(rsmd->GetAllBlocks());
     }
     rowsets_.clear();
@@ -315,14 +315,14 @@ Status TabletMetadata::LoadFromSuperBlock(const TabletSuperBlockPB& superblock) 
     tablet_data_state_ = superblock.tablet_data_state();
 
     rowsets_.clear();
-    BOOST_FOREACH(const RowSetDataPB& rowset_pb, superblock.rowsets()) {
+    for (const RowSetDataPB& rowset_pb : superblock.rowsets()) {
       gscoped_ptr<RowSetMetadata> rowset_meta;
       RETURN_NOT_OK(RowSetMetadata::Load(this, rowset_pb, &rowset_meta));
       next_rowset_idx_ = std::max(next_rowset_idx_, rowset_meta->id() + 1);
       rowsets_.push_back(shared_ptr<RowSetMetadata>(rowset_meta.release()));
     }
 
-    BOOST_FOREACH(const BlockIdPB& block_pb, superblock.orphaned_blocks()) {
+    for (const BlockIdPB& block_pb : superblock.orphaned_blocks()) {
       orphaned_blocks.push_back(BlockId::FromPB(block_pb));
     }
     AddOrphanedBlocksUnlocked(orphaned_blocks);
@@ -372,7 +372,7 @@ void TabletMetadata::DeleteOrphanedBlocks(const vector<BlockId>& blocks) {
   }
 
   vector<BlockId> deleted;
-  BOOST_FOREACH(const BlockId& b, blocks) {
+  for (const BlockId& b : blocks) {
     Status s = fs_manager()->DeleteBlock(b);
     // If we get NotFound, then the block was actually successfully
     // deleted before. So, we can remove it from our orphaned block list
@@ -388,7 +388,7 @@ void TabletMetadata::DeleteOrphanedBlocks(const vector<BlockId>& blocks) {
   // Remove the successfully-deleted blocks from the set.
   {
     boost::lock_guard<LockType> l(data_lock_);
-    BOOST_FOREACH(const BlockId& b, deleted) {
+    for (const BlockId& b : deleted) {
       orphaned_blocks_.erase(b);
     }
   }
@@ -475,7 +475,7 @@ Status TabletMetadata::UpdateUnlocked(
     }
   }
 
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, to_add) {
+  for (const shared_ptr<RowSetMetadata>& meta : to_add) {
     new_rowsets.push_back(meta);
   }
   rowsets_ = new_rowsets;
@@ -535,7 +535,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
   partition_schema_.ToPB(pb.mutable_partition_schema());
   pb.set_table_name(table_name_);
 
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& meta, rowsets) {
+  for (const shared_ptr<RowSetMetadata>& meta : rowsets) {
     meta->ToProtobuf(pb.add_rowsets());
   }
 
@@ -548,7 +548,7 @@ Status TabletMetadata::ToSuperBlockUnlocked(TabletSuperBlockPB* super_block,
     *pb.mutable_tombstone_last_logged_opid() = tombstone_last_logged_opid_;
   }
 
-  BOOST_FOREACH(const BlockId& block_id, orphaned_blocks_) {
+  for (const BlockId& block_id : orphaned_blocks_) {
     block_id.CopyToPB(pb.mutable_orphaned_blocks()->Add());
   }
 
@@ -566,7 +566,7 @@ Status TabletMetadata::CreateRowSet(shared_ptr<RowSetMetadata> *rowset,
 }
 
 const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, rowsets_) {
+  for (const shared_ptr<RowSetMetadata>& rowset_meta : rowsets_) {
     if (rowset_meta->id() == id) {
       return rowset_meta.get();
     }
@@ -576,7 +576,7 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
 
 RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
   boost::lock_guard<LockType> l(data_lock_);
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rowset_meta, rowsets_) {
+  for (const shared_ptr<RowSetMetadata>& rowset_meta : rowsets_) {
     if (rowset_meta->id() == id) {
       return rowset_meta.get();
     }

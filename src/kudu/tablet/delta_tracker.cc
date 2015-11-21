@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
-
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/strip.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -53,7 +51,7 @@ Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                       vector<shared_ptr<DeltaStore> >* stores,
                                       DeltaType type) {
   FsManager* fs = rowset_metadata_->fs_manager();
-  BOOST_FOREACH(const BlockId& block_id, blocks) {
+  for (const BlockId& block_id : blocks) {
     gscoped_ptr<ReadableBlock> block;
     Status s = fs->OpenBlock(block_id, &block);
     if (!s.ok()) {
@@ -135,7 +133,7 @@ namespace {
 
 string JoinDeltaStoreStrings(const SharedDeltaStoreVector& stores) {
   vector<string> strings;
-  BOOST_FOREACH(const shared_ptr<DeltaStore>& store, stores) {
+  for (const shared_ptr<DeltaStore>& store : stores) {
     strings.push_back(store->ToString());
   }
   return ::JoinStrings(strings, ",");
@@ -162,7 +160,7 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& to_remove,
         std::find(stores_to_update->begin(), stores_to_update->end(), to_remove[0]);
 
     SharedDeltaStoreVector::iterator end_it = start_it;
-    BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, to_remove) {
+    for (const shared_ptr<DeltaStore>& ds : to_remove) {
       if (end_it == stores_to_update->end() || *end_it != ds) {
         return Status::InvalidArgument(
             strings::Substitute("Cannot find deltastore sequence <$0> in <$1>",
@@ -279,7 +277,7 @@ Status DeltaTracker::CheckSnapshotComesAfterAllUndos(const MvccSnapshot& snap) c
     lock_guard<rw_spinlock> lock(&component_lock_);
     undos = undo_delta_stores_;
   }
-  BOOST_FOREACH(const shared_ptr<DeltaStore>& undo, undos) {
+  for (const shared_ptr<DeltaStore>& undo : undos) {
     DeltaFileReader* dfr = down_cast<DeltaFileReader*>(undo.get());
 
     // Even though IsRelevantForSnapshot() is safe to call without
@@ -327,7 +325,7 @@ Status DeltaTracker::NewDeltaFileIterator(
   // TODO: we need to somehow ensure this doesn't fail - we have to somehow coordinate
   // minor delta compaction against delta flush. Add a test case here to trigger this
   // condition.
-  BOOST_FOREACH(const shared_ptr<DeltaStore>& store, *included_stores) {
+  for (const shared_ptr<DeltaStore>& store : *included_stores) {
     ignore_result(down_cast<DeltaFileReader*>(store.get()));
   }
 
@@ -377,9 +375,9 @@ Status DeltaTracker::CheckRowDeleted(rowid_t row_idx, bool *deleted,
   }
 
   // Then check backwards through the list of trackers.
-  BOOST_REVERSE_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
+  for (auto ds = redo_delta_stores_.crbegin(); ds != redo_delta_stores_.crend(); ds++) {
     stats->deltas_consulted++;
-    RETURN_NOT_OK(ds->CheckRowDeleted(row_idx, deleted));
+    RETURN_NOT_OK((*ds)->CheckRowDeleted(row_idx, deleted));
     if (*deleted) {
       return Status::OK();
     }
@@ -506,7 +504,7 @@ size_t DeltaTracker::CountRedoDeltaStores() const {
 uint64_t DeltaTracker::EstimateOnDiskSize() const {
   shared_lock<rw_spinlock> lock(&component_lock_);
   uint64_t size = 0;
-  BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
+  for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
     size += ds->EstimateSize();
   }
   return size;
@@ -516,7 +514,7 @@ void DeltaTracker::GetColumnIdsWithUpdates(std::vector<ColumnId>* col_ids) const
   shared_lock<rw_spinlock> lock(&component_lock_);
 
   set<ColumnId> column_ids_with_updates;
-  BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, redo_delta_stores_) {
+  for (const shared_ptr<DeltaStore>& ds : redo_delta_stores_) {
     // We won't force open files just to read their stats.
     if (!ds->Initted()) {
       continue;

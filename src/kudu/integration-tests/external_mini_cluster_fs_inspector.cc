@@ -18,7 +18,6 @@
 #include "kudu/integration-tests/external_mini_cluster_fs_inspector.h"
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/strings/join.h"
@@ -75,7 +74,7 @@ int ExternalMiniClusterFsInspector::CountWALSegmentsOnTS(int index) {
   vector<string> tablets;
   CHECK_OK(ListFilesInDir(ts_wal_dir, &tablets));
   int total_segments = 0;
-  BOOST_FOREACH(const string& tablet, tablets) {
+  for (const string& tablet : tablets) {
     string tablet_wal_dir = JoinPathSegments(ts_wal_dir, tablet);
     total_segments += CountFilesInDir(tablet_wal_dir);
   }
@@ -284,9 +283,9 @@ Status ExternalMiniClusterFsInspector::WaitForFilePatternInTabletWalDirOnTs(
 
     error_msg = "";
     bool any_missing_required = false;
-    BOOST_FOREACH(const string& required_filter, substrings_required) {
+    for (const string& required_filter : substrings_required) {
       bool filter_matched = false;
-      BOOST_FOREACH(const string& entry, entries) {
+      for (const string& entry : entries) {
         if (entry.find(required_filter) != string::npos) {
           filter_matched = true;
           break;
@@ -300,9 +299,9 @@ Status ExternalMiniClusterFsInspector::WaitForFilePatternInTabletWalDirOnTs(
     }
 
     bool any_present_disallowed = false;
-    BOOST_FOREACH(const string& entry, entries) {
+    for (const string& entry : entries) {
       if (any_present_disallowed) break;
-      BOOST_FOREACH(const string& disallowed_filter, substrings_disallowed) {
+      for (const string& disallowed_filter : substrings_disallowed) {
         if (entry.find(disallowed_filter) != string::npos) {
           any_present_disallowed = true;
           error_msg += "present from substrings_disallowed: " + entry +

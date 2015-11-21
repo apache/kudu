@@ -144,7 +144,7 @@ double WidthByDataSize(const Slice& prev, const Slice& next,
                        const unordered_map<RowSet*, RowSetInfo*>& active) {
   double weight = 0;
 
-  BOOST_FOREACH(const RowSetRowSetInfoPair& rsi, active) {
+  for (const RowSetRowSetInfoPair& rsi : active) {
     RowSet* rs = rsi.first;
     double fraction = StringFractionInRange(rs, prev, next);
     weight += rs->EstimateOnDiskSize() * fraction;
@@ -173,7 +173,7 @@ void CheckCollectOrderedCorrectness(const vector<RowSetInfo>& min_key,
 
 void RowSetInfo::Collect(const RowSetTree& tree, vector<RowSetInfo>* rsvec) {
   rsvec->reserve(tree.all_rowsets().size());
-  BOOST_FOREACH(const shared_ptr<RowSet>& ptr, tree.all_rowsets()) {
+  for (const shared_ptr<RowSet>& ptr : tree.all_rowsets()) {
     rsvec->push_back(RowSetInfo(ptr.get(), 0));
   }
 }
@@ -209,7 +209,7 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
   // else there's a race since we see endpoints twice and a delta compaction might finish in
   // between.
   RowSetVector available_rowsets;
-  BOOST_FOREACH(const shared_ptr<RowSet> rs, tree.all_rowsets()) {
+  for (const shared_ptr<RowSet> rs : tree.all_rowsets()) {
     if (rs->IsAvailableForCompaction()) {
       available_rowsets.push_back(rs);
     }
@@ -217,14 +217,14 @@ void RowSetInfo::CollectOrdered(const RowSetTree& tree,
 
   RowSetTree available_rs_tree;
   available_rs_tree.Reset(available_rowsets);
-  BOOST_FOREACH(const RowSetTree::RSEndpoint& rse,
+  for (const RowSetTree::RSEndpoint& rse :
                 available_rs_tree.key_endpoints()) {
     RowSet* rs = rse.rowset_;
     const Slice& next = rse.slice_;
     double interval_width = WidthByDataSize(prev, next, active);
 
     // Increment active rowsets in min_key by the interval_width.
-    BOOST_FOREACH(const RowSetRowSetInfoPair& rsi, active) {
+    for (const RowSetRowSetInfoPair& rsi : active) {
       RowSetInfo& cdf_rs = *rsi.second;
       cdf_rs.cdf_max_key_ += interval_width;
     }
@@ -272,7 +272,7 @@ RowSetInfo::RowSetInfo(RowSet* rs, double init_cdf)
 void RowSetInfo::FinalizeCDFVector(vector<RowSetInfo>* vec,
                                  double quot) {
   if (quot == 0) return;
-  BOOST_FOREACH(RowSetInfo& cdf_rs, *vec) {
+  for (RowSetInfo& cdf_rs : *vec) {
     CHECK_GT(cdf_rs.size_mb_, 0) << "Expected file size to be at least 1MB "
                                  << "for RowSet " << cdf_rs.rowset_->ToString()
                                  << ", was " << cdf_rs.rowset_->EstimateOnDiskSize()

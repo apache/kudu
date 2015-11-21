@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
   cerr << "==================" << endl;
   cerr << "Errors:" << endl;
   cerr << "==================" << endl;
-  BOOST_FOREACH(const string& s, error_messages) {
+  for (const string& s : error_messages) {
     cerr << s << endl;
   }
   cerr << endl;

@@ -123,7 +123,7 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
       "Total time in-flight</th><th>Description</th></tr>\n";
   }
 
-  BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers) {
+  for (const scoped_refptr<TabletPeer>& peer : peers) {
     vector<TransactionStatusPB> inflight;
 
     if (peer->tablet() == NULL) {
@@ -131,7 +131,7 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
     }
 
     peer->GetInFlightTransactions(trace_type, &inflight);
-    BOOST_FOREACH(const TransactionStatusPB& inflight_tx, inflight) {
+    for (const TransactionStatusPB& inflight_tx : inflight) {
       string total_time_str = Substitute("$0 us.", inflight_tx.running_for_micros());
       string description;
       if (trace_type == Transaction::TRACE_TXNS) {
@@ -190,7 +190,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
   *output << "  <tr><th>Table name</th><th>Tablet ID</th>"
       "<th>Partition</th>"
       "<th>State</th><th>On-disk size</th><th>RaftConfig</th><th>Last status</th></tr>\n";
-  BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers) {
+  for (const scoped_refptr<TabletPeer>& peer : peers) {
     TabletStatusPB status;
     peer->GetTabletStatusPB(&status);
     string id = status.tablet_id();
@@ -245,7 +245,7 @@ string TabletServerPathHandlers::ConsensusStatePBToHtml(const ConsensusStatePB& 
   std::vector<RaftPeerPB> sorted_peers;
   sorted_peers.assign(cstate.config().peers().begin(), cstate.config().peers().end());
   std::sort(sorted_peers.begin(), sorted_peers.end(), &CompareByMemberType);
-  BOOST_FOREACH(const RaftPeerPB& peer, sorted_peers) {
+  for (const RaftPeerPB& peer : sorted_peers) {
     string peer_addr_or_uuid =
         peer.has_last_known_addr() ? peer.last_known_addr().host() : peer.permanent_uuid();
     peer_addr_or_uuid = EscapeForHtmlToString(peer_addr_or_uuid);
@@ -401,7 +401,7 @@ void TabletServerPathHandlers::HandleScansPage(const Webserver::WebRequest& req,
 
   vector<SharedScanner> scanners;
   tserver_->scanner_manager()->ListScanners(&scanners);
-  BOOST_FOREACH(const SharedScanner& scanner, scanners) {
+  for (const SharedScanner& scanner : scanners) {
     *output << ScannerToHtml(*scanner);
   }
   *output << "</table>";
@@ -444,7 +444,7 @@ string TabletServerPathHandlers::ScannerToHtml(const Scanner& scanner) const {
       range_pred_str = EncodedKey::RangeToString(spec.lower_bound_key(),
                                                  spec.exclusive_upper_bound_key());
     }
-    BOOST_FOREACH(const ColumnRangePredicate& pred, scanner.spec().predicates()) {
+    for (const ColumnRangePredicate& pred : scanner.spec().predicates()) {
       other_preds.push_back(pred.ToString());
     }
     string other_pred_str = JoinStrings(other_preds, "\n");

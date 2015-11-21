@@ -16,7 +16,6 @@
 // under the License.
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <iostream>
 #include <list>
@@ -303,7 +302,7 @@ class PeriodicWebUIChecker {
 
     // Generate list of urls for each master and tablet server
     for (int i = 0; i < cluster.num_masters(); i++) {
-      BOOST_FOREACH(std::string page, master_pages) {
+      for (std::string page : master_pages) {
         urls_.push_back(strings::Substitute(
             "http://$0$1",
             cluster.master(i)->bound_http_hostport().ToString(),
@@ -311,7 +310,7 @@ class PeriodicWebUIChecker {
       }
     }
     for (int i = 0; i < cluster.num_tablet_servers(); i++) {
-      BOOST_FOREACH(std::string page, ts_pages) {
+      for (std::string page : ts_pages) {
         urls_.push_back(strings::Substitute(
             "http://$0$1",
             cluster.tablet_server(i)->bound_http_hostport().ToString(),
@@ -336,7 +335,7 @@ class PeriodicWebUIChecker {
     faststring dst;
     LOG(INFO) << "Curl thread will poll the following URLs every " << period_.ToMilliseconds()
         << " ms: ";
-    BOOST_FOREACH(std::string url, urls_) {
+    for (std::string url : urls_) {
       LOG(INFO) << url;
     }
     for (int count = 0; is_running_.Load(); count++) {
@@ -402,7 +401,7 @@ class LinkedListVerifier {
 std::vector<const KuduPartialRow*> LinkedListTester::GenerateSplitRows(
     const client::KuduSchema& schema) {
   std::vector<const KuduPartialRow*> split_keys;
-  BOOST_FOREACH(int64_t val, GenerateSplitInts()) {
+  for (int64_t val : GenerateSplitInts()) {
     KuduPartialRow* row = schema.NewRow();
     CHECK_OK(row->SetInt64(kKeyColumnName, val));
     split_keys.push_back(row);
@@ -496,7 +495,7 @@ Status LinkedListTester::LoadLinkedList(
       }
       return Status::OK();
     }
-    BOOST_FOREACH(LinkedListChainGenerator* chain, chains) {
+    for (LinkedListChainGenerator* chain : chains) {
       RETURN_NOT_OK_PREPEND(chain->GenerateNextInsert(table.get(), session.get()),
                             "Unable to generate next insert into linked list chain");
     }
@@ -510,7 +509,7 @@ Status LinkedListTester::LoadLinkedList(
 
     if (enable_mutation_) {
       // Rows have been inserted; they're now safe to update.
-      BOOST_FOREACH(LinkedListChainGenerator* chain, chains) {
+      for (LinkedListChainGenerator* chain : chains) {
         updater.to_update()->Put(chain->prev_key());
       }
     }
@@ -611,7 +610,7 @@ Status LinkedListTester::VerifyLinkedListRemote(
       cb_called = true;
     }
     RETURN_NOT_OK_PREPEND(scanner.NextBatch(&rows), "Couldn't fetch next row batch");
-    BOOST_FOREACH(const client::KuduRowResult& row, rows) {
+    for (const client::KuduRowResult& row : rows) {
       int64_t key;
       int64_t link;
       bool updated;
@@ -802,7 +801,7 @@ void LinkedListVerifier::SummarizeBrokenLinks(const std::vector<int64_t>& broken
   int n_logged = 0;
   const int kMaxToLog = 100;
 
-  BOOST_FOREACH(int64_t broken, broken_links) {
+  for (int64_t broken : broken_links) {
     int tablet = std::upper_bound(split_key_ints_.begin(),
                                   split_key_ints_.end(),
                                   broken) - split_key_ints_.begin();

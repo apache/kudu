@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -187,12 +186,12 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
                                      replica_results.size());
 
     StrAppend(&ret, "Leader Results: \n");
-    BOOST_FOREACH(const string& result, leader_results) {
+    for (const string& result : leader_results) {
       StrAppend(&ret, result, "\n");
     }
 
     StrAppend(&ret, "Replica Results: \n");
-    BOOST_FOREACH(const string& result, replica_results) {
+    for (const string& result : replica_results) {
       StrAppend(&ret, result, "\n");
     }
 
@@ -237,13 +236,13 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
         bool overflow;
         session->GetPendingErrors(&errors, &overflow);
         CHECK(!overflow);
-        BOOST_FOREACH(const client::KuduError* e, errors) {
+        for (const client::KuduError* e : errors) {
           CHECK(e->status().IsAlreadyPresent()) << "Unexpected error: " << e->status().ToString();
         }
         inserted -= errors.size();
       }
 
-      BOOST_FOREACH(CountDownLatch* latch, latches) {
+      for (CountDownLatch* latch : latches) {
         latch->CountDown(inserted);
       }
     }
@@ -297,7 +296,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     vector<TServerDetails*> followers;
     GetOnlyLiveFollowerReplicas(tablet_id_, &followers);
 
-    BOOST_FOREACH(TServerDetails* ts, followers) {
+    for (TServerDetails* ts : followers) {
       ExternalTabletServer* ets = cluster_->tablet_server_by_uuid(ts->uuid());
       CHECK_OK(ets->Pause());
       SleepFor(MonoDelta::FromMilliseconds(100));
@@ -312,7 +311,7 @@ class RaftConsensusITest : public TabletServerIntegrationTestBase {
     }
 
     // Resume the replicas.
-    BOOST_FOREACH(TServerDetails* ts, followers) {
+    for (TServerDetails* ts : followers) {
       ExternalTabletServer* ets = cluster_->tablet_server_by_uuid(ts->uuid());
       CHECK_OK(ets->Resume());
     }
@@ -524,7 +523,7 @@ TEST_F(RaftConsensusITest, MultiThreadedMutateAndInsertThroughConsensus) {
                                   &new_thread));
     threads_.push_back(new_thread);
   }
-  BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+  for (scoped_refptr<kudu::Thread> thr : threads_) {
    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 
@@ -1004,12 +1003,12 @@ TEST_F(RaftConsensusITest, MultiThreadedInsertWithFailovers) {
     threads_.push_back(new_thread);
   }
 
-  BOOST_FOREACH(CountDownLatch* latch, latches) {
+  for (CountDownLatch* latch : latches) {
     latch->Wait();
     StopOrKillLeaderAndElectNewOne();
   }
 
-  BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+  for (scoped_refptr<kudu::Thread> thr : threads_) {
    CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 
@@ -1055,7 +1054,7 @@ TEST_F(RaftConsensusITest, TestAutomaticLeaderElection) {
   }
 
   // Restart every node that was killed, and wait for the nodes to converge
-  BOOST_FOREACH(TServerDetails* killed_node, killed_leaders) {
+  for (TServerDetails* killed_node : killed_leaders) {
     CHECK_OK(cluster_->tablet_server_by_uuid(killed_node->uuid())->Restart());
   }
   // Verify the data on the remaining replicas.
@@ -1140,7 +1139,7 @@ TEST_F(RaftConsensusITest, TestKUDU_597) {
   }
 
   finish.Store(true);
-  BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+  for (scoped_refptr<kudu::Thread> thr : threads_) {
     CHECK_OK(ThreadJoiner(thr.get()).Join());
   }
 }
@@ -1418,7 +1417,7 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
     int num_to_pause = config_size - minority_to_retain;
     LOG(INFO) << "Pausing " << num_to_pause << " tablet servers in config of size " << config_size;
     vector<string> paused_uuids;
-    BOOST_FOREACH(const TabletServerMap::value_type& entry, tablet_servers) {
+    for (const TabletServerMap::value_type& entry : tablet_servers) {
       if (paused_uuids.size() == num_to_pause) {
         continue;
       }
@@ -1450,7 +1449,7 @@ void RaftConsensusITest::AssertMajorityRequiredForElectionsAndWrites(
 
     // Resume the paused servers.
     LOG(INFO) << "Resuming " << num_to_pause << " tablet servers in config of size " << config_size;
-    BOOST_FOREACH(const string& replica_uuid, paused_uuids) {
+    for (const string& replica_uuid : paused_uuids) {
       ExternalTabletServer* replica_ts = cluster_->tablet_server_by_uuid(replica_uuid);
       ASSERT_OK(replica_ts->Resume());
     }
@@ -1503,7 +1502,7 @@ void RaftConsensusITest::WaitForReplicasReportedToMaster(
     ASSERT_OK(GetTabletLocations(tablet_id, timeout, tablet_locations));
     *has_leader = false;
     if (tablet_locations->replicas_size() == num_replicas) {
-      BOOST_FOREACH(const master::TabletLocationsPB_ReplicaPB& replica,
+      for (const master::TabletLocationsPB_ReplicaPB& replica :
                     tablet_locations->replicas()) {
         if (replica.role() == RaftPeerPB::LEADER) {
           *has_leader = true;
@@ -1566,7 +1565,7 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
 
   // Go from 3 tablet servers down to 1 in the configuration.
   vector<int> remove_list = { 2, 1 };
-  BOOST_FOREACH(int to_remove_idx, remove_list) {
+  for (int to_remove_idx : remove_list) {
     int num_servers = active_tablet_servers.size();
     LOG(INFO) << "Remove: Going from " << num_servers << " to " << num_servers - 1 << " replicas";
 
@@ -1586,7 +1585,7 @@ TEST_F(RaftConsensusITest, TestAddRemoveServer) {
 
   // Add the tablet servers back, in reverse order, going from 1 to 3 servers in the configuration.
   vector<int> add_list = { 1, 2 };
-  BOOST_FOREACH(int to_add_idx, add_list) {
+  for (int to_add_idx : add_list) {
     int num_servers = active_tablet_servers.size();
     LOG(INFO) << "Add: Going from " << num_servers << " to " << num_servers + 1 << " replicas";
 
@@ -1896,7 +1895,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   LOG(INFO) << "Removing servers...";
   // Go from 3 tablet servers down to 1 in the configuration.
   vector<int> remove_list = { 2, 1 };
-  BOOST_FOREACH(int to_remove_idx, remove_list) {
+  for (int to_remove_idx : remove_list) {
     int num_servers = active_tablet_servers.size();
     LOG(INFO) << "Remove: Going from " << num_servers << " to " << num_servers - 1 << " replicas";
 
@@ -1913,7 +1912,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
   LOG(INFO) << "Adding servers...";
   // Add the tablet servers back, in reverse order, going from 1 to 3 servers in the configuration.
   vector<int> add_list = { 1, 2 };
-  BOOST_FOREACH(int to_add_idx, add_list) {
+  for (int to_add_idx : add_list) {
     int num_servers = active_tablet_servers.size();
     LOG(INFO) << "Add: Going from " << num_servers << " to " << num_servers + 1 << " replicas";
 
@@ -1929,7 +1928,7 @@ TEST_F(RaftConsensusITest, TestConfigChangeUnderLoad) {
 
   LOG(INFO) << "Joining writer threads...";
   finish.Store(true);
-  BOOST_FOREACH(const scoped_refptr<Thread>& thread, threads) {
+  for (const scoped_refptr<Thread>& thread : threads) {
     ASSERT_OK(ThreadJoiner(thread.get()).Join());
   }
 
@@ -1967,7 +1966,7 @@ TEST_F(RaftConsensusITest, TestMasterNotifiedOnConfigChange) {
 
   // Determine the server to add to the config.
   string uuid_to_add;
-  BOOST_FOREACH(const TabletServerMap::value_type& entry, tablet_servers_) {
+  for (const TabletServerMap::value_type& entry : tablet_servers_) {
     if (!ContainsKey(active_tablet_servers, entry.second->uuid())) {
       uuid_to_add = entry.second->uuid();
     }
@@ -2130,7 +2129,7 @@ TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
   InsertOrDie(&active_tablet_servers, follower->uuid(), follower);
 
   TServerDetails* new_node = NULL;
-  BOOST_FOREACH(TServerDetails* ts, tservers) {
+  for (TServerDetails* ts : tservers) {
     if (!ContainsKey(active_tablet_servers, ts->uuid())) {
       new_node = ts;
       break;
@@ -2251,7 +2250,7 @@ static void EnableLogLatency(server::GenericServiceProxy* proxy) {
   FlagMap flags;
   InsertOrDie(&flags, "log_inject_latency", "true");
   InsertOrDie(&flags, "log_inject_latency_ms_mean", "1000");
-  BOOST_FOREACH(const FlagMap::value_type& e, flags) {
+  for (const FlagMap::value_type& e : flags) {
     SetFlagRequestPB req;
     SetFlagResponsePB resp;
     RpcController rpc;

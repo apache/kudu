@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
@@ -381,7 +380,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
   }
 
   void JoinThreads() {
-    BOOST_FOREACH(scoped_refptr<kudu::Thread> thr, threads_) {
+    for (scoped_refptr<kudu::Thread> thr : threads_) {
      CHECK_OK(ThreadJoiner(thr.get()).Join());
     }
   }

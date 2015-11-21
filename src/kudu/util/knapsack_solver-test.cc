@@ -134,7 +134,7 @@ TEST_F(TestKnapsack, Randomized) {
     // Verify that the max_val is equal to the sum of the chosen items' values.
     double sum_val = 0;
     int sum_weight = 0;
-    BOOST_FOREACH(int i, out) {
+    for (int i : out) {
       sum_val += in[i].value;
       sum_weight += in[i].weight;
     }

@@ -209,7 +209,7 @@ TEST_F(TestDeltaFile, TestDumpDeltaFileIterator) {
                                           schema_,
                                           ITERATE_OVER_ALL_ROWS,
                                           &it_contents));
-  BOOST_FOREACH(const string& str, it_contents) {
+  for (const string& str : it_contents) {
     VLOG(1) << str;
   }
   ASSERT_TRUE(is_sorted(it_contents.begin(), it_contents.end()));
@@ -246,7 +246,7 @@ TEST_F(TestDeltaFile, TestWriteDeltaFileIteratorToFile) {
                                           schema_,
                                           ITERATE_OVER_ALL_ROWS,
                                           &it_contents));
-  BOOST_FOREACH(const string& str, it_contents) {
+  for (const string& str : it_contents) {
     VLOG(1) << str;
   }
   ASSERT_TRUE(is_sorted(it_contents.begin(), it_contents.end()));

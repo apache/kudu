@@ -79,7 +79,7 @@ MajorDeltaCompaction::~MajorDeltaCompaction() {
 
 string MajorDeltaCompaction::ColumnNamesToString() const {
   std::string result;
-  BOOST_FOREACH(ColumnId col_id, column_ids_) {
+  for (ColumnId col_id : column_ids_) {
     int col_idx = base_schema_.find_column_by_id(col_id);
     if (col_idx != Schema::kColumnNotFound) {
       result += base_schema_.column_by_id(col_id).ToString() + " ";
@@ -187,7 +187,7 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
     }
 
     // 6) Write the deltas we're not compacting back into a delta file.
-    BOOST_FOREACH(const DeltaKeyAndUpdate& key_and_update, out) {
+    for (const DeltaKeyAndUpdate& key_and_update : out) {
       RowChangeList update(key_and_update.cell);
       RETURN_NOT_OK_PREPEND(new_redo_delta_writer_->AppendDelta<REDO>(key_and_update.key, update),
                             "Failed to append a delta");
@@ -255,7 +255,7 @@ Status MajorDeltaCompaction::Compact() {
   LOG(INFO) << "Starting major delta compaction for columns " << ColumnNamesToString();
   RETURN_NOT_OK(base_schema_.CreateProjectionByIdsIgnoreMissing(column_ids_, &partial_schema_));
 
-  BOOST_FOREACH(const shared_ptr<DeltaStore>& ds, included_stores_) {
+  for (const shared_ptr<DeltaStore>& ds : included_stores_) {
     LOG(INFO) << "Preparing to major compact delta file: " << ds->ToString();
   }
 
@@ -273,7 +273,7 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
   CHECK_EQ(state_, kFinished);
 
   vector<BlockId> compacted_delta_blocks;
-  BOOST_FOREACH(const shared_ptr<DeltaStore>& store, included_stores_) {
+  for (const shared_ptr<DeltaStore>& store : included_stores_) {
     DeltaFileReader* dfr = down_cast<DeltaFileReader*>(store.get());
     compacted_delta_blocks.push_back(dfr->block_id());
   }
@@ -299,7 +299,7 @@ Status MajorDeltaCompaction::CreateMetadataUpdate(
   // For those deleted columns, we just remove the old column data.
   CHECK_LE(new_column_blocks.size(), column_ids_.size());
 
-  BOOST_FOREACH(ColumnId col_id, column_ids_) {
+  for (ColumnId col_id : column_ids_) {
     BlockId new_block;
     if (FindCopy(new_column_blocks, col_id, &new_block)) {
       update->ReplaceColumnId(col_id, new_block);

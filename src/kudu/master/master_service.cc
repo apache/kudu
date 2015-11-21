@@ -17,7 +17,6 @@
 
 #include "kudu/master/master_service.h"
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <memory>
 #include <string>
@@ -217,7 +216,7 @@ void MasterServiceImpl::GetTabletLocations(const GetTabletLocationsRequestPB* re
 
   TSRegistrationPB reg;
   vector<TSDescriptor*> locs;
-  BOOST_FOREACH(const string& tablet_id, req->tablet_ids()) {
+  for (const string& tablet_id : req->tablet_ids()) {
     // TODO: once we have catalog data. ACL checks would also go here, probably.
     TabletLocationsPB* locs_pb = resp->add_tablet_locations();
     Status s = server_->catalog_manager()->GetTabletLocations(tablet_id, locs_pb);
@@ -340,7 +339,7 @@ void MasterServiceImpl::ListTabletServers(const ListTabletServersRequestPB* req,
 
   vector<std::shared_ptr<TSDescriptor> > descs;
   server_->ts_manager()->GetAllDescriptors(&descs);
-  BOOST_FOREACH(const std::shared_ptr<TSDescriptor>& desc, descs) {
+  for (const std::shared_ptr<TSDescriptor>& desc : descs) {
     ListTabletServersResponsePB::Entry* entry = resp->add_servers();
     desc->GetNodeInstancePB(entry->mutable_instance_id());
     desc->GetRegistration(entry->mutable_registration());
@@ -358,7 +357,7 @@ void MasterServiceImpl::ListMasters(const ListMastersRequestPB* req,
     StatusToPB(s, resp->mutable_error());
     resp->mutable_error()->set_code(AppStatusPB::UNKNOWN_ERROR);
   } else {
-    BOOST_FOREACH(const ServerEntryPB& master, masters) {
+    for (const ServerEntryPB& master : masters) {
       resp->add_masters()->CopyFrom(master);
     }
   }

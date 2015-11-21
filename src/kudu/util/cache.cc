@@ -19,7 +19,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <memory>
 #include <stdlib.h>
@@ -450,7 +449,7 @@ class ShardedLRUCache : public Cache {
 
   virtual void SetMetrics(const scoped_refptr<MetricEntity>& entity) OVERRIDE {
     metrics_.reset(new CacheMetrics(entity));
-    BOOST_FOREACH(LRUCache* cache, shards_) {
+    for (LRUCache* cache : shards_) {
       cache->SetMetrics(metrics_.get());
     }
   }

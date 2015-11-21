@@ -20,7 +20,6 @@
 #include <unordered_map>
 #include <utility>
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 
 #include "kudu/fs/fs.pb.h"
@@ -70,7 +69,7 @@ Status PathInstanceMetadataFile::Create(const string& uuid, const vector<string>
   PathSetPB* new_path_set = new_instance.mutable_path_set();
   new_path_set->set_uuid(uuid);
   new_path_set->mutable_all_uuids()->Reserve(all_uuids.size());
-  BOOST_FOREACH(const string& u, all_uuids) {
+  for (const string& u : all_uuids) {
     new_path_set->add_all_uuids(u);
   }
 
@@ -129,7 +128,7 @@ Status PathInstanceMetadataFile::CheckIntegrity(
   unordered_map<string, PathInstanceMetadataFile*> uuids;
   pair<string, PathInstanceMetadataFile*> first_all_uuids;
 
-  BOOST_FOREACH(PathInstanceMetadataFile* instance, instances) {
+  for (PathInstanceMetadataFile* instance : instances) {
     const PathSetPB& path_set = instance->metadata()->path_set();
 
     // Check that this instance's UUID wasn't already claimed.

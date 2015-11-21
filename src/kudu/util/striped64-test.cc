@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <memory>
@@ -78,7 +77,7 @@ class MultiThreadTest {
                      num_operations_, &ref);
       threads_.push_back(ref);
     }
-    BOOST_FOREACH(const scoped_refptr<Thread> &t, threads_) {
+    for (const scoped_refptr<Thread> &t : threads_) {
       t->Join();
     }
     ASSERT_EQ(num_threads_*num_operations_, adder_.Value());
@@ -91,7 +90,7 @@ class MultiThreadTest {
                      num_operations_, &ref);
       threads_.push_back(ref);
     }
-    BOOST_FOREACH(const scoped_refptr<Thread> &t, threads_) {
+    for (const scoped_refptr<Thread> &t : threads_) {
       t->Join();
     }
     ASSERT_EQ(0, adder_.Value());

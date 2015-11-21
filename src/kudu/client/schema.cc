@@ -17,7 +17,6 @@
 
 #include "kudu/client/schema.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <unordered_map>
 
@@ -282,7 +281,7 @@ KuduSchemaBuilder::KuduSchemaBuilder()
 }
 
 KuduSchemaBuilder::~KuduSchemaBuilder() {
-  BOOST_FOREACH(KuduColumnSpec* spec, data_->specs) {
+  for (KuduColumnSpec* spec : data_->specs) {
     // Can't use STLDeleteElements because KuduSchemaBuilder
     // is a friend of KuduColumnSpec in order to access its destructor.
     // STLDeleteElements is a free function and therefore can't access it.
@@ -343,7 +342,7 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
     // Build a map from name to index of all of the columns.
     unordered_map<string, int> name_to_idx_map;
     int i = 0;
-    BOOST_FOREACH(KuduColumnSpec* spec, data_->specs) {
+    for (KuduColumnSpec* spec : data_->specs) {
       // If they did pass the key column names, then we should not have explicitly
       // set it on any columns.
       if (spec->data_->primary_key) {
@@ -357,7 +356,7 @@ Status KuduSchemaBuilder::Build(KuduSchema* schema) {
 
     // Convert the key column names to a set of indexes.
     vector<int> key_col_indexes;
-    BOOST_FOREACH(const string& key_col_name, data_->key_col_names) {
+    for (const string& key_col_name : data_->key_col_names) {
       int idx;
       if (!FindCopy(name_to_idx_map, key_col_name, &idx)) {
         return Status::InvalidArgument("primary key column not defined", key_col_name);
@@ -486,7 +485,7 @@ void KuduSchema::CopyFrom(const KuduSchema& other) {
 
 Status KuduSchema::Reset(const vector<KuduColumnSchema>& columns, int key_columns) {
   vector<ColumnSchema> cols_private;
-  BOOST_FOREACH(const KuduColumnSchema& col, columns) {
+  for (const KuduColumnSchema& col : columns) {
     cols_private.push_back(*col.col_);
   }
   gscoped_ptr<Schema> new_schema(new Schema());

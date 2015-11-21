@@ -17,7 +17,6 @@
 
 #include "kudu/cfile/cfile_writer.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <string>
 #include <utility>
@@ -264,7 +263,7 @@ void CFileWriter::AddMetadataPair(const Slice &key, const Slice &value) {
 
 string CFileWriter::GetMetaValueOrDie(Slice key) const {
   typedef pair<string, string> ss_pair;
-  BOOST_FOREACH(const ss_pair& entry, unflushed_metadata_) {
+  for (const ss_pair& entry : unflushed_metadata_) {
     if (Slice(entry.first) == key) {
       return entry.second;
     }
@@ -274,7 +273,7 @@ string CFileWriter::GetMetaValueOrDie(Slice key) const {
 
 void CFileWriter::FlushMetadataToPB(RepeatedPtrField<FileMetadataPairPB> *field) {
   typedef pair<string, string> ss_pair;
-  BOOST_FOREACH(const ss_pair &entry, unflushed_metadata_) {
+  for (const ss_pair &entry : unflushed_metadata_) {
     FileMetadataPairPB *pb = field->Add();
     pb->set_key(entry.first);
     pb->set_value(entry.second);
@@ -457,7 +456,7 @@ Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
     RETURN_NOT_OK(WriteRawData(cdata));
   } else {
     // Write uncompressed block
-    BOOST_FOREACH(const Slice &data, data_slices) {
+    for (const Slice &data : data_slices) {
       RETURN_NOT_OK(WriteRawData(data));
     }
   }

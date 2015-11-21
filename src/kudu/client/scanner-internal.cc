@@ -221,7 +221,7 @@ Status KuduScanner::Data::OpenTablet(const string& partition_key,
 
   // Set up the predicates.
   scan->clear_range_predicates();
-  BOOST_FOREACH(const ColumnRangePredicate& pred, spec_.predicates()) {
+  for (const ColumnRangePredicate& pred : spec_.predicates()) {
     const ColumnSchema& col = pred.column();
     const ValueRange& range = pred.range();
     ColumnRangePredicatePB* pb = scan->add_range_predicates();

@@ -49,7 +49,7 @@ Status WaitForRunningTabletCount(MiniMaster* mini_master,
     RETURN_NOT_OK(mini_master->master()->catalog_manager()->GetTableLocations(&req, resp));
     if (resp->tablet_locations_size() >= expected_count) {
       bool is_stale = false;
-      BOOST_FOREACH(const TabletLocationsPB& loc, resp->tablet_locations()) {
+      for (const TabletLocationsPB& loc : resp->tablet_locations()) {
         is_stale |= loc.stale();
       }
 

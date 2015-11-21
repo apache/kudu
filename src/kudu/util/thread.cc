@@ -20,7 +20,6 @@
 #include "kudu/util/thread.h"
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <map>
 #include <memory>
 #include <set>
@@ -326,7 +325,7 @@ void ThreadMgr::RemoveThread(const pthread_t& pthread_id, const string& category
 
 void ThreadMgr::PrintThreadCategoryRows(const ThreadCategory& category,
     stringstream* output) {
-  BOOST_FOREACH(const ThreadCategory::value_type& thread, category) {
+  for (const ThreadCategory::value_type& thread : category) {
     ThreadStats stats;
     Status status = GetThreadStats(thread.second.thread_id(), &stats);
     if (!status.ok()) {
@@ -358,7 +357,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
       (*output) << "<h3>" << category->first << " : " << category->second.size()
                 << "</h3>";
     } else {
-      BOOST_FOREACH(const ThreadCategoryMap::value_type& category, thread_categories_) {
+      for (const ThreadCategoryMap::value_type& category : thread_categories_) {
         categories_to_print.push_back(&category.second);
       }
       (*output) << "<h3>All Threads : </h3>";
@@ -369,7 +368,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
               << "<th>Cumulative Kernel CPU(s)</th>"
               << "<th>Cumulative IO-wait(s)</th></tr>";
 
-    BOOST_FOREACH(const ThreadCategory* category, categories_to_print) {
+    for (const ThreadCategory* category : categories_to_print) {
       PrintThreadCategoryRows(*category, output);
     }
     (*output) << "</table>";
@@ -380,7 +379,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
     }
     (*output) << "<a href='/threadz?group=all'><h3>All Threads</h3>";
 
-    BOOST_FOREACH(const ThreadCategoryMap::value_type& category, thread_categories_) {
+    for (const ThreadCategoryMap::value_type& category : thread_categories_) {
       string category_arg;
       UrlEncode(category.first, &category_arg);
       (*output) << "<a href='/threadz?group=" << category_arg << "'><h3>"
@@ -586,7 +585,7 @@ void* Thread::SuperviseThread(void* arg) {
 void Thread::FinishThread(void* arg) {
   Thread* t = static_cast<Thread*>(arg);
 
-  BOOST_FOREACH(Closure& c, t->exit_callbacks_) {
+  for (Closure& c : t->exit_callbacks_) {
     c.Run();
   }
 

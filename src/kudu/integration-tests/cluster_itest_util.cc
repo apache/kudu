@@ -17,7 +17,6 @@
 
 #include <algorithm>
 #include <boost/optional.hpp>
-#include <boost/foreach.hpp>
 #include <glog/stl_logging.h>
 #include <limits>
 
@@ -114,7 +113,7 @@ Status GetLastOpIdForEachReplica(const string& tablet_id,
   RpcController controller;
 
   op_ids->clear();
-  BOOST_FOREACH(TServerDetails* ts, replicas) {
+  for (TServerDetails* ts : replicas) {
     controller.Reset();
     controller.set_timeout(MonoDelta::FromSeconds(3));
     opid_resp.Clear();
@@ -159,7 +158,7 @@ Status WaitForServersToAgree(const MonoDelta& timeout,
       bool any_behind = false;
       bool any_disagree = false;
       int64_t cur_index = kInvalidOpIdIndex;
-      BOOST_FOREACH(const OpId& id, ids) {
+      for (const OpId& id : ids) {
         if (cur_index == kInvalidOpIdIndex) {
           cur_index = id.index();
         }
@@ -200,7 +199,7 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
     Status s = GetLastOpIdForEachReplica(tablet_id, replicas, &op_ids);
     if (s.ok()) {
       bool any_behind = false;
-      BOOST_FOREACH(const OpId& op_id, op_ids) {
+      for (const OpId& op_id : op_ids) {
         if (op_id.index() < log_index) {
           any_behind = true;
           break;
@@ -217,7 +216,7 @@ Status WaitUntilAllReplicasHaveOp(const int64_t log_index,
     SleepFor(MonoDelta::FromMilliseconds(50));
   }
   string replicas_str;
-  BOOST_FOREACH(const TServerDetails* replica, replicas) {
+  for (const TServerDetails* replica : replicas) {
     if (!replicas_str.empty()) replicas_str += ", ";
     replicas_str += "{ " + replica->ToString() + " }";
   }
@@ -240,7 +239,7 @@ Status CreateTabletServerMap(MasterServiceProxy* master_proxy,
   }
 
   ts_map->clear();
-  BOOST_FOREACH(const ListTabletServersResponsePB::Entry& entry, resp.servers()) {
+  for (const ListTabletServersResponsePB::Entry& entry : resp.servers()) {
     HostPort host_port;
     RETURN_NOT_OK(HostPortFromPB(entry.registration().rpc_addresses(0), &host_port));
     vector<Sockaddr> addresses;
@@ -568,7 +567,7 @@ Status ListRunningTabletIds(const TServerDetails* ts,
   vector<ListTabletsResponsePB::StatusAndSchemaPB> tablets;
   RETURN_NOT_OK(ListTablets(ts, timeout, &tablets));
   tablet_ids->clear();
-  BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+  for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
     if (t.tablet_status().state() == tablet::RUNNING) {
       tablet_ids->push_back(t.tablet_status().tablet_id());
     }
@@ -628,7 +627,7 @@ Status WaitForNumVotersInConfigOnMaster(const shared_ptr<MasterServiceProxy>& ma
     s = GetTabletLocations(master_proxy, tablet_id, time_remaining, &tablet_locations);
     if (s.ok()) {
       num_voters_found = 0;
-      BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& r, tablet_locations.replicas()) {
+      for (const TabletLocationsPB::ReplicaPB& r : tablet_locations.replicas()) {
         if (r.role() == RaftPeerPB::LEADER || r.role() == RaftPeerPB::FOLLOWER) num_voters_found++;
       }
       if (num_voters_found == num_voters) break;
@@ -681,7 +680,7 @@ Status WaitUntilTabletInState(TServerDetails* ts,
     s = ListTablets(ts, MonoDelta::FromSeconds(10), &tablets);
     if (s.ok()) {
       bool seen = false;
-      BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+      for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
         if (t.tablet_status().tablet_id() == tablet_id) {
           seen = true;
           last_state = t.tablet_status().state();

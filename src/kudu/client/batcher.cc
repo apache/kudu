@@ -273,7 +273,7 @@ WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
   // Add the rows
   int ctr = 0;
   RowOperationsPBEncoder enc(requested);
-  BOOST_FOREACH(InFlightOp* op, ops_) {
+  for (InFlightOp* op : ops_) {
     const Partition& partition = op->tablet->partition();
     const PartitionSchema& partition_schema = table()->partition_schema();
     const KuduPartialRow& row = op->write_op->row();
@@ -343,7 +343,7 @@ void WriteRpc::SendRpc() {
     // Try to "guess" the next leader.
     vector<RemoteTabletServer*> replicas;
     tablet_->GetRemoteTabletServers(&replicas);
-    BOOST_FOREACH(RemoteTabletServer* ts, replicas) {
+    for (RemoteTabletServer* ts : replicas) {
       if (!ContainsKey(followers_, ts)) {
         current_ts_ = ts;
         break;
@@ -501,14 +501,14 @@ void Batcher::Abort() {
   state_ = kAborted;
 
   vector<InFlightOp*> to_abort;
-  BOOST_FOREACH(InFlightOp* op, ops_) {
+  for (InFlightOp* op : ops_) {
     lock_guard<simple_spinlock> l(&op->lock_);
     if (op->state == InFlightOp::kBufferedToTabletServer) {
       to_abort.push_back(op);
     }
   }
 
-  BOOST_FOREACH(InFlightOp* op, to_abort) {
+  for (InFlightOp* op : to_abort) {
     VLOG(1) << "Aborting op: " << op->ToString();
     MarkInFlightOpFailedUnlocked(op, Status::Aborted("Batch aborted"));
   }
@@ -522,7 +522,7 @@ void Batcher::Abort() {
 
 Batcher::~Batcher() {
   if (PREDICT_FALSE(!ops_.empty())) {
-    BOOST_FOREACH(InFlightOp* op, ops_) {
+    for (InFlightOp* op : ops_) {
       LOG(ERROR) << "Orphaned op: " << op->ToString();
     }
     LOG(FATAL) << "ops_ not empty";
@@ -782,7 +782,7 @@ void Batcher::FlushBuffersIfReady() {
   }
 
   // Now flush the ops for each tablet.
-  BOOST_FOREACH(const OpsMap::value_type& e, ops_copy) {
+  for (const OpsMap::value_type& e : ops_copy) {
     RemoteTablet* tablet = e.first;
     const vector<InFlightOp*>& ops = e.second;
 
@@ -821,7 +821,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
     }
   } else {
     // Mark each of the rows in the write op as failed, since the whole RPC failed.
-    BOOST_FOREACH(InFlightOp* op, rpc.ops()) {
+    for (InFlightOp* op : rpc.ops()) {
       gscoped_ptr<KuduError> error(new KuduError(op->write_op.release(), s));
       error_collector_->AddError(error.Pass());
     }
@@ -833,7 +833,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
   // Remove all the ops from the "in-flight" list.
   {
     lock_guard<simple_spinlock> l(&lock_);
-    BOOST_FOREACH(InFlightOp* op, rpc.ops()) {
+    for (InFlightOp* op : rpc.ops()) {
       CHECK_EQ(1, ops_.erase(op))
             << "Could not remove op " << op->ToString()
             << " from in-flight list";
@@ -841,7 +841,7 @@ void Batcher::ProcessWriteResponse(const WriteRpc& rpc,
   }
 
   // Check individual row errors.
-  BOOST_FOREACH(const WriteResponsePB_PerRowErrorPB& err_pb, rpc.resp().per_row_errors()) {
+  for (const WriteResponsePB_PerRowErrorPB& err_pb : rpc.resp().per_row_errors()) {
     // TODO: handle case where we get one of the more specific TS errors
     // like the tablet not being hosted?
 

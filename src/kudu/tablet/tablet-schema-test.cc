@@ -82,9 +82,9 @@ class TestTabletSchema : public KuduTabletTest {
 
     vector<string> rows;
     ASSERT_OK(DumpTablet(*tablet(), projection, &rows));
-    BOOST_FOREACH(const string& row, rows) {
+    for (const string& row : rows) {
       bool found = false;
-      BOOST_FOREACH(const StringPair& k, keys) {
+      for (const StringPair& k : keys) {
         if (row.find(k.first) != string::npos) {
           ASSERT_STR_CONTAINS(row, k.second);
           found = true;

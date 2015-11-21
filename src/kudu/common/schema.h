@@ -17,7 +17,6 @@
 #ifndef KUDU_COMMON_SCHEMA_H
 #define KUDU_COMMON_SCHEMA_H
 
-#include <boost/foreach.hpp>
 #include <functional>
 #include <glog/logging.h>
 #include <memory>

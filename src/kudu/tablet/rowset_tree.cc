@@ -89,7 +89,7 @@ Status RowSetTree::Reset(const RowSetVector &rowsets) {
 
   // Iterate over each of the provided RowSets, fetching their
   // bounds and adding them to the local vectors.
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets) {
+  for (const shared_ptr<RowSet> &rs : rowsets) {
     gscoped_ptr<RowSetWithBounds> rsit(new RowSetWithBounds());
     rsit->rowset = rs.get();
     Slice min_key, max_key;
@@ -139,7 +139,7 @@ void RowSetTree::FindRowSetsIntersectingInterval(const Slice &lower_bound,
   DCHECK(initted_);
 
   // All rowsets with unknown bounds need to be checked.
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, unbounded_rowsets_) {
+  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
     rowsets->push_back(rs.get());
   }
 
@@ -153,7 +153,7 @@ void RowSetTree::FindRowSetsIntersectingInterval(const Slice &lower_bound,
   from_tree.reserve(all_rowsets_.size());
   tree_->FindIntersectingInterval(&query, &from_tree);
   rowsets->reserve(rowsets->size() + from_tree.size());
-  BOOST_FOREACH(RowSetWithBounds *rs, from_tree) {
+  for (RowSetWithBounds *rs : from_tree) {
     rowsets->push_back(rs->rowset);
   }
 }
@@ -163,7 +163,7 @@ void RowSetTree::FindRowSetsWithKeyInRange(const Slice &encoded_key,
   DCHECK(initted_);
 
   // All rowsets with unknown bounds need to be checked.
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, unbounded_rowsets_) {
+  for (const shared_ptr<RowSet> &rs : unbounded_rowsets_) {
     rowsets->push_back(rs.get());
   }
 
@@ -173,7 +173,7 @@ void RowSetTree::FindRowSetsWithKeyInRange(const Slice &encoded_key,
   from_tree.reserve(all_rowsets_.size());
   tree_->FindContainingPoint(encoded_key, &from_tree);
   rowsets->reserve(rowsets->size() + from_tree.size());
-  BOOST_FOREACH(RowSetWithBounds *rs, from_tree) {
+  for (RowSetWithBounds *rs : from_tree) {
     rowsets->push_back(rs->rowset);
   }
 }

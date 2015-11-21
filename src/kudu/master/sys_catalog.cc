@@ -175,7 +175,7 @@ Status SysCatalogTable::SetupDistributedConfig(const MasterOptions& options,
   new_config.set_opid_index(consensus::kInvalidOpIdIndex);
 
   // Build the set of followers from our server options.
-  BOOST_FOREACH(const HostPort& host_port, options.master_addresses) {
+  for (const HostPort& host_port : options.master_addresses) {
     RaftPeerPB peer;
     HostPortPB peer_host_port_pb;
     RETURN_NOT_OK(HostPortToPB(host_port, &peer_host_port_pb));
@@ -190,7 +190,7 @@ Status SysCatalogTable::SetupDistributedConfig(const MasterOptions& options,
   DCHECK(master_->messenger());
   RaftConfigPB resolved_config = new_config;
   resolved_config.clear_peers();
-  BOOST_FOREACH(const RaftPeerPB& peer, new_config.peers()) {
+  for (const RaftPeerPB& peer : new_config.peers()) {
     if (peer.has_permanent_uuid()) {
       resolved_config.add_peers()->CopyFrom(peer);
     } else {
@@ -326,7 +326,7 @@ Status SysCatalogTable::SyncWrite(const WriteRequestPB *req, WriteResponsePB *re
     return StatusFromPB(resp->error().status());
   }
   if (resp->per_row_errors_size() > 0) {
-    BOOST_FOREACH(const WriteResponsePB::PerRowErrorPB& error, resp->per_row_errors()) {
+    for (const WriteResponsePB::PerRowErrorPB& error : resp->per_row_errors()) {
       LOG(WARNING) << "row " << error.row_index() << ": " << StatusFromPB(error.error()).ToString();
     }
     return Status::Corruption("One or more rows failed to write");
@@ -484,7 +484,7 @@ Status SysCatalogTable::AddTabletsToPB(const vector<TabletInfo*>& tablets,
   faststring metadata_buf;
   KuduPartialRow row(&schema_);
   RowOperationsPBEncoder enc(ops);
-  BOOST_FOREACH(const TabletInfo *tablet, tablets) {
+  for (const TabletInfo *tablet : tablets) {
     if (!pb_util::SerializeToString(tablet->metadata().dirty().pb, &metadata_buf)) {
       return Status::Corruption("Unable to serialize SysCatalogTabletsEntryPB for tablet",
                                 tablet->tablet_id());
@@ -545,7 +545,7 @@ Status SysCatalogTable::DeleteTablets(const vector<TabletInfo*>& tablets) {
 
   RowOperationsPBEncoder enc(req.mutable_row_operations());
   KuduPartialRow row(&schema_);
-  BOOST_FOREACH(const TabletInfo* tablet, tablets) {
+  for (const TabletInfo* tablet : tablets) {
     CHECK_OK(row.SetInt8(kSysCatalogTableColType, TABLETS_ENTRY));
     CHECK_OK(row.SetString(kSysCatalogTableColId, tablet->tablet_id()));
     enc.Add(RowOperationsPB::DELETE, row);

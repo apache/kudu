@@ -17,7 +17,6 @@
 
 #include "kudu/fs/file_block_manager.h"
 
-#include <boost/foreach.hpp>
 #include <deque>
 #include <string>
 #include <unordered_set>
@@ -484,7 +483,7 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
   vector<string> to_sync;
   {
     lock_guard<simple_spinlock> l(&lock_);
-    BOOST_FOREACH(const string& parent_dir, parent_dirs) {
+    for (const string& parent_dir : parent_dirs) {
       if (dirty_dirs_.erase(parent_dir)) {
         to_sync.push_back(parent_dir);
       }
@@ -493,7 +492,7 @@ Status FileBlockManager::SyncMetadata(const internal::FileBlockLocation& locatio
 
   // Sync them.
   if (FLAGS_enable_data_block_fsync) {
-    BOOST_FOREACH(const string& s, to_sync) {
+    for (const string& s : to_sync) {
       RETURN_NOT_OK(env_->SyncDir(s));
     }
   }
@@ -544,14 +543,14 @@ Status FileBlockManager::Create() {
   // The UUIDs and indices will be included in every instance file.
   ObjectIdGenerator oid_generator;
   vector<string> all_uuids(root_paths_.size());
-  BOOST_FOREACH(string& u, all_uuids) {
+  for (string& u : all_uuids) {
     u = oid_generator.Next();
   }
   int idx = 0;
 
   // Ensure the data paths exist and create the instance files.
   unordered_set<string> to_sync;
-  BOOST_FOREACH(const string& root_path, root_paths_) {
+  for (const string& root_path : root_paths_) {
     bool created;
     RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_path, &created),
                           Substitute("Could not create directory $0", root_path));
@@ -572,14 +571,14 @@ Status FileBlockManager::Create() {
 
   // Ensure newly created directories are synchronized to disk.
   if (FLAGS_enable_data_block_fsync) {
-    BOOST_FOREACH(const string& dir, to_sync) {
+    for (const string& dir : to_sync) {
       RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
                             Substitute("Unable to synchronize directory $0", dir));
     }
   }
 
   // Success: don't delete any files.
-  BOOST_FOREACH(ScopedFileDeleter* deleter, delete_on_failure) {
+  for (ScopedFileDeleter* deleter : delete_on_failure) {
     deleter->Cancel();
   }
   return Status::OK();
@@ -590,7 +589,7 @@ Status FileBlockManager::Open() {
   ElementDeleter deleter(&instances);
   instances.reserve(root_paths_.size());
 
-  BOOST_FOREACH(const string& root_path, root_paths_) {
+  for (const string& root_path : root_paths_) {
     if (!env_->FileExists(root_path)) {
       return Status::NotFound(Substitute(
           "FileBlockManager at $0 not found", root_path));
@@ -625,7 +624,7 @@ Status FileBlockManager::Open() {
                                    JoinStrings(root_paths_, ",")));
 
   PathMap instances_by_idx;
-  BOOST_FOREACH(PathInstanceMetadataFile* instance, instances) {
+  for (PathInstanceMetadataFile* instance : instances) {
     const PathSetPB& path_set = instance->metadata()->path_set();
     uint32_t idx = -1;
     for (int i = 0; i < path_set.all_uuids_size(); i++) {
@@ -696,7 +695,7 @@ Status FileBlockManager::CreateBlock(const CreateBlockOptions& opts,
       // directory, which may not have been created but is definitely dirty
       // (because we added a file to it).
       lock_guard<simple_spinlock> l(&lock_);
-      BOOST_FOREACH(const string& created, created_dirs) {
+      for (const string& created : created_dirs) {
         dirty_dirs_.insert(created);
       }
       dirty_dirs_.insert(DirName(path));
@@ -754,13 +753,13 @@ Status FileBlockManager::CloseBlocks(const vector<WritableBlock*>& blocks) {
     // Ask the kernel to begin writing out each block's dirty data. This is
     // done up-front to give the kernel opportunities to coalesce contiguous
     // dirty pages.
-    BOOST_FOREACH(WritableBlock* block, blocks) {
+    for (WritableBlock* block : blocks) {
       RETURN_NOT_OK(block->FlushDataAsync());
     }
   }
 
   // Now close each block, waiting for each to become durable.
-  BOOST_FOREACH(WritableBlock* block, blocks) {
+  for (WritableBlock* block : blocks) {
     RETURN_NOT_OK(block->Close());
   }
   return Status::OK();

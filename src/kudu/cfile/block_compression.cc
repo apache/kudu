@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <algorithm>
 
@@ -44,7 +43,7 @@ Status CompressedBlockBuilder::Compress(const Slice& data, Slice *result) {
 
 Status CompressedBlockBuilder::Compress(const vector<Slice> &data_slices, Slice *result) {
   size_t data_size = 0;
-  BOOST_FOREACH(const Slice& data, data_slices) {
+  for (const Slice& data : data_slices) {
     data_size += data.size();
   }
 

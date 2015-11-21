@@ -17,7 +17,6 @@
 
 #include "kudu/util/slice.h"
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/gutil/map-util.h"
@@ -40,7 +39,7 @@ TEST(SliceTest, TestSliceMap) {
   InsertOrDie(&my_map, b, 2);
 
   int expectedValue = 0;
-  BOOST_FOREACH(const MySliceMap::value_type& pair, my_map) {
+  for (const MySliceMap::value_type& pair : my_map) {
     int data = 'a' + expectedValue++;
     ASSERT_EQ(Slice(reinterpret_cast<uint8_t*>(&data), 1), pair.first);
     ASSERT_EQ(expectedValue, pair.second);

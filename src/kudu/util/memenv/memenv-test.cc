@@ -5,7 +5,6 @@
 // Modified for kudu:
 // - use gtest
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <string>
 #include <memory>
@@ -275,7 +274,7 @@ TEST_F(MemEnvTest, TempFile) {
   }
 
   // Delete the files we created.
-  BOOST_FOREACH(const string& p, paths) {
+  for (const string& p : paths) {
     ASSERT_OK(env_->DeleteFile(p));
   }
 }

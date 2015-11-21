@@ -17,7 +17,6 @@
 #ifndef KUDU_TABLET_LOCAL_TABLET_WRITER_H
 #define KUDU_TABLET_LOCAL_TABLET_WRITER_H
 
-#include <boost/foreach.hpp>
 #include <vector>
 
 #include "kudu/common/partial_row.h"
@@ -85,7 +84,7 @@ class LocalTabletWriter {
     req_.mutable_row_operations()->Clear();
     RowOperationsPBEncoder encoder(req_.mutable_row_operations());
 
-    BOOST_FOREACH(const Op& op, ops) {
+    for (const Op& op : ops) {
       encoder.Add(op.type, *op.row);
     }
 
@@ -106,7 +105,7 @@ class LocalTabletWriter {
 
     // Return the status of first failed op.
     int op_idx = 0;
-    BOOST_FOREACH(const OperationResultPB& result, result_.ops()) {
+    for (const OperationResultPB& result : result_.ops()) {
       if (result.has_failed_status()) {
         return StatusFromPB(result.failed_status())
           .CloneAndPrepend(ops[op_idx].row->ToString());

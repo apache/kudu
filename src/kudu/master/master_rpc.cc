@@ -20,7 +20,6 @@
 #include "kudu/master/master_rpc.h"
 
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/common/wire_protocol.pb.h"
@@ -128,7 +127,7 @@ GetLeaderMasterRpc::~GetLeaderMasterRpc() {
 
 string GetLeaderMasterRpc::ToString() const {
   vector<string> sockaddr_str;
-  BOOST_FOREACH(const Sockaddr& addr, addrs_) {
+  for (const Sockaddr& addr : addrs_) {
     sockaddr_str.push_back(addr.ToString());
   }
   return strings::Substitute("GetLeaderMasterRpc(addrs: $0, num_attempts: $1)",

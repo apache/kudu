@@ -91,7 +91,7 @@ class TabletPushdownTest : public KuduTabletTest,
       ASSERT_OK(IterateToStringList(iter.get(), &results));
     }
     std::sort(results.begin(), results.end());
-    BOOST_FOREACH(const string &str, results) {
+    for (const string &str : results) {
       LOG(INFO) << str;
     }
     ASSERT_EQ(11, results.size());
@@ -133,7 +133,7 @@ class TabletPushdownTest : public KuduTabletTest,
     if (check_stats) {
       vector<IteratorStats> stats;
       iter->GetIteratorStats(&stats);
-      BOOST_FOREACH(const IteratorStats& col_stats, stats) {
+      for (const IteratorStats& col_stats : stats) {
         EXPECT_EQ(expected_blocks_from_disk, col_stats.data_blocks_read_from_disk);
         EXPECT_EQ(expected_rows_from_disk, col_stats.cells_read_from_disk);
       }
@@ -153,7 +153,7 @@ class TabletPushdownTest : public KuduTabletTest,
     vector<string> results;
     ASSERT_OK(IterateToStringList(iter.get(), &results));
     ASSERT_EQ(11, results.size());
-    BOOST_FOREACH(const string& result, results) {
+    for (const string& result : results) {
       ASSERT_EQ("()", result);
     }
   }

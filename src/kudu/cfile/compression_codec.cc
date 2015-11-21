@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <snappy-sinksource.h>
 #include <snappy.h>
@@ -82,7 +81,7 @@ class SlicesSource : public snappy::Source {
 
   void Dump(faststring *buffer) {
     buffer->reserve(buffer->size() + TotalSize());
-    BOOST_FOREACH(const Slice& block, slices_) {
+    for (const Slice& block : slices_) {
       buffer->append(block.data(), block.size());
     }
   }
@@ -90,7 +89,7 @@ class SlicesSource : public snappy::Source {
  private:
   size_t TotalSize(void) const {
     size_t size = 0;
-    BOOST_FOREACH(const Slice& data, slices_) {
+    for (const Slice& data : slices_) {
       size += data.size();
     }
     return size;

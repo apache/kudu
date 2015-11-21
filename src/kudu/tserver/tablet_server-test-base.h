@@ -20,7 +20,6 @@
 
 #include <algorithm>
 #include <assert.h>
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
@@ -326,7 +325,7 @@ class TabletServerTestBase : public KuduTest {
     ASSERT_OK(ExtractRowsFromRowBlockPB(projection, *rrpb,
                                         indirect, &direct, &rows));
     VLOG(1) << "Round trip got " << rows.size() << " rows";
-    BOOST_FOREACH(const uint8_t* row_ptr, rows) {
+    for (const uint8_t* row_ptr : rows) {
       ConstContiguousRow row(&projection, row_ptr);
       results->push_back(projection.DebugRow(row));
     }

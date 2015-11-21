@@ -17,7 +17,6 @@
 
 #include "kudu/util/trace.h"
 
-#include <boost/foreach.hpp>
 #include <iomanip>
 #include <ios>
 #include <iostream>
@@ -138,7 +137,7 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
   std::ios::fmtflags save_flags(out->flags());
 
   int64_t prev_usecs = 0;
-  BOOST_FOREACH(TraceEntry* e, entries) {
+  for (TraceEntry* e : entries) {
     // Log format borrowed from glog/logging.cc
     time_t secs_since_epoch = e->timestamp_micros / 1000000;
     int usecs = e->timestamp_micros % 1000000;
@@ -172,7 +171,7 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
     *out << std::endl;
   }
 
-  BOOST_FOREACH(scoped_refptr<Trace> child_trace, child_traces) {
+  for (scoped_refptr<Trace> child_trace : child_traces) {
     *out << "Related trace:" << std::endl;
     *out << child_trace->DumpToString(include_time_deltas);
   }

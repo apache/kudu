@@ -190,7 +190,7 @@ Status TSTabletManager::Init() {
   // First, load all of the tablet metadata. We do this before we start
   // submitting the actual OpenTablet() tasks so that we don't have to compete
   // for disk resources, etc, with bootstrap processes and running tablets.
-  BOOST_FOREACH(const string& tablet_id, tablet_ids) {
+  for (const string& tablet_id : tablet_ids) {
     scoped_refptr<TabletMetadata> meta;
     RETURN_NOT_OK_PREPEND(OpenTabletMeta(tablet_id, &meta),
                           "Failed to open tablet metadata for tablet: " + tablet_id);
@@ -202,7 +202,7 @@ Status TSTabletManager::Init() {
   }
 
   // Now submit the "Open" task for each.
-  BOOST_FOREACH(const scoped_refptr<TabletMetadata>& meta, metas) {
+  for (const scoped_refptr<TabletMetadata>& meta : metas) {
     scoped_refptr<TransitionInProgressDeleter> deleter;
     {
       boost::lock_guard<rw_spinlock> lock(lock_);
@@ -230,7 +230,7 @@ Status TSTabletManager::WaitForAllBootstrapsToFinish() {
   Status s = Status::OK();
 
   boost::shared_lock<rw_spinlock> shared_lock(lock_);
-  BOOST_FOREACH(const TabletMap::value_type& entry, tablet_map_) {
+  for (const TabletMap::value_type& entry : tablet_map_) {
     if (entry.second->state() == tablet::FAILED) {
       if (s.ok()) {
         s = entry.second->error();
@@ -704,7 +704,7 @@ void TSTabletManager::Shutdown() {
   vector<scoped_refptr<TabletPeer> > peers_to_shutdown;
   GetTabletPeers(&peers_to_shutdown);
 
-  BOOST_FOREACH(const scoped_refptr<TabletPeer>& peer, peers_to_shutdown) {
+  for (const scoped_refptr<TabletPeer>& peer : peers_to_shutdown) {
     peer->Shutdown();
   }
 
@@ -837,7 +837,7 @@ void TSTabletManager::GenerateIncrementalTabletReport(TabletReportPB* report) {
   report->Clear();
   report->set_sequence_number(next_report_seq_++);
   report->set_is_incremental(true);
-  BOOST_FOREACH(const DirtyMap::value_type& dirty_entry, dirty_tablets_) {
+  for (const DirtyMap::value_type& dirty_entry : dirty_tablets_) {
     const string& tablet_id = dirty_entry.first;
     scoped_refptr<tablet::TabletPeer>* tablet_peer = FindOrNull(tablet_map_, tablet_id);
     if (tablet_peer) {
@@ -855,7 +855,7 @@ void TSTabletManager::GenerateFullTabletReport(TabletReportPB* report) {
   report->Clear();
   report->set_is_incremental(false);
   report->set_sequence_number(next_report_seq_++);
-  BOOST_FOREACH(const TabletMap::value_type& entry, tablet_map_) {
+  for (const TabletMap::value_type& entry : tablet_map_) {
     CreateReportedTabletPB(entry.first, entry.second, report->add_updated_tablets());
   }
   dirty_tablets_.clear();

@@ -17,7 +17,6 @@
 //
 // Tool to administer a cluster from the CLI.
 
-#include <boost/foreach.hpp>
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -278,7 +277,7 @@ Status ClusterAdminClient::GetTabletLeader(const string& tablet_id,
   RETURN_NOT_OK(GetTabletLocations(tablet_id, &locations));
   CHECK_EQ(tablet_id, locations.tablet_id()) << locations.ShortDebugString();
   bool found = false;
-  BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& replica, locations.replicas()) {
+  for (const TabletLocationsPB::ReplicaPB& replica : locations.replicas()) {
     if (replica.role() == RaftPeerPB::LEADER) {
       *ts_info = replica.ts_info();
       found = true;
@@ -311,7 +310,7 @@ Status ClusterAdminClient::ListTabletServers(
 Status ClusterAdminClient::GetFirstRpcAddressForTS(const std::string& uuid, HostPort* hp) {
   RepeatedPtrField<ListTabletServersResponsePB::Entry> servers;
   RETURN_NOT_OK(ListTabletServers(&servers));
-  BOOST_FOREACH(const ListTabletServersResponsePB::Entry& server, servers) {
+  for (const ListTabletServersResponsePB::Entry& server : servers) {
     if (server.instance_id().permanent_uuid() == uuid) {
       if (!server.has_registration() || server.registration().rpc_addresses_size() == 0) {
         break;
@@ -328,7 +327,7 @@ Status ClusterAdminClient::GetFirstRpcAddressForTS(const std::string& uuid, Host
 Status ClusterAdminClient::ListTables() {
   vector<string> tables;
   RETURN_NOT_OK(kudu_client_->ListTables(&tables));
-  BOOST_FOREACH(const string& table, tables) {
+  for (const string& table : tables) {
     std::cout << table << std::endl;
   }
   return Status::OK();

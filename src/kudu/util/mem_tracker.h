@@ -73,7 +73,7 @@ class MemTracker;
 //
 // NOTE: this class has been partially ported over from Impala with
 // several changes, and as a result the style differs somewhat from
-// the Kudu style (e.g., BOOST_FOREACH is not used).
+// the Kudu style.
 //
 // Changes from Impala:
 // 1) Id a string vs. a TUniqueId

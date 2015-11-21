@@ -21,7 +21,6 @@
 #include <string>
 #include <unordered_map>
 
-#include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <gtest/gtest.h>
 
@@ -374,7 +373,7 @@ TEST_F(TestRpc, TestServerShutsDown) {
   ASSERT_OK(listen_sock.Accept(&server_sock, &remote, 0));
 
   // The call is still in progress at this point.
-  BOOST_FOREACH(const RpcController &controller, controllers) {
+  for (const RpcController &controller : controllers) {
     ASSERT_FALSE(controller.finished());
   }
 
@@ -386,7 +385,7 @@ TEST_F(TestRpc, TestServerShutsDown) {
   latch.Wait();
 
   // Should get the appropriate error on the client for all calls;
-  BOOST_FOREACH(const RpcController &controller, controllers) {
+  for (const RpcController &controller : controllers) {
     ASSERT_TRUE(controller.finished());
     Status s = controller.status();
     ASSERT_TRUE(s.IsNetworkError()) <<

@@ -91,7 +91,7 @@ TEST_F(FsManagerTestBase, TestBaseOperations) {
 
 TEST_F(FsManagerTestBase, TestIllegalPaths) {
   vector<string> illegal = { "", "asdf", "/foo\n\t" };
-  BOOST_FOREACH(const string& path, illegal) {
+  for (const string& path : illegal) {
     ReinitFsManager(path, { path });
     ASSERT_TRUE(fs_manager()->CreateInitialFileSystemLayout().IsIOError());
   }

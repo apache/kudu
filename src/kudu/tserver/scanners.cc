@@ -136,7 +136,7 @@ bool ScannerManager::UnregisterScanner(const string& scanner_id) {
 
 size_t ScannerManager::CountActiveScanners() const {
   size_t total = 0;
-  BOOST_FOREACH(const ScannerMapStripe* e, scanner_maps_) {
+  for (const ScannerMapStripe* e : scanner_maps_) {
     boost::shared_lock<boost::shared_mutex> l(e->lock_);
     total += e->scanners_by_id_.size();
   }
@@ -144,9 +144,9 @@ size_t ScannerManager::CountActiveScanners() const {
 }
 
 void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) {
-  BOOST_FOREACH(const ScannerMapStripe* stripe, scanner_maps_) {
+  for (const ScannerMapStripe* stripe : scanner_maps_) {
     boost::shared_lock<boost::shared_mutex> l(stripe->lock_);
-    BOOST_FOREACH(const ScannerMapEntry& se, stripe->scanners_by_id_) {
+    for (const ScannerMapEntry& se : stripe->scanners_by_id_) {
       scanners->push_back(se.second);
     }
   }
@@ -155,7 +155,7 @@ void ScannerManager::ListScanners(std::vector<SharedScanner>* scanners) {
 void ScannerManager::RemoveExpiredScanners() {
   MonoDelta scanner_ttl = MonoDelta::FromMilliseconds(FLAGS_scanner_ttl_ms);
 
-  BOOST_FOREACH(ScannerMapStripe* stripe, scanner_maps_) {
+  for (ScannerMapStripe* stripe : scanner_maps_) {
     boost::lock_guard<boost::shared_mutex> l(stripe->lock_);
     for (ScannerMap::iterator it = stripe->scanners_by_id_.begin();
          it != stripe->scanners_by_id_.end(); ) {

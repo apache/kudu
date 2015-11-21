@@ -100,7 +100,7 @@ class CompositePushdownTest : public KuduTabletTest {
       ASSERT_OK(IterateToStringList(iter.get(), results));
     }
     std::sort(results->begin(), results->end(), SuffixComparator());
-    BOOST_FOREACH(const string &str, *results) {
+    for (const string &str : *results) {
       VLOG(1) << str;
     }
   }

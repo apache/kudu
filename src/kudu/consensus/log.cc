@@ -178,7 +178,7 @@ void Log::AppendThread::RunThread() {
     SCOPED_LATENCY_METRIC(log_->metrics_, group_commit_latency);
 
     bool is_all_commits = true;
-    BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
+    for (LogEntryBatch* entry_batch : entry_batches) {
       entry_batch->WaitForReady();
       TRACE_EVENT_FLOW_END0("log", "Batch", entry_batch);
       Status s = log_->DoAppend(entry_batch);
@@ -206,7 +206,7 @@ void Log::AppendThread::RunThread() {
     if (PREDICT_FALSE(!s.ok())) {
       LOG(ERROR) << "Error syncing log" << s.ToString();
       DLOG(FATAL) << "Aborting: " << s.ToString();
-      BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
+      for (LogEntryBatch* entry_batch : entry_batches) {
         if (!entry_batch->callback().is_null()) {
           entry_batch->callback().Run(s);
         }
@@ -215,7 +215,7 @@ void Log::AppendThread::RunThread() {
       TRACE_EVENT0("log", "Callbacks");
       VLOG(2) << "Synchronized " << entry_batches.size() << " entry batches";
       SCOPED_WATCH_STACK(100);
-      BOOST_FOREACH(LogEntryBatch* entry_batch, entry_batches) {
+      for (LogEntryBatch* entry_batch : entry_batches) {
         if (PREDICT_TRUE(!entry_batch->failed_to_append()
                          && !entry_batch->callback().is_null())) {
           entry_batch->callback().Run(Status::OK());
@@ -400,7 +400,7 @@ Status Log::Reserve(LogEntryTypePB type,
   // In DEBUG builds, verify that all of the entries in the batch match the specified type.
   // In non-debug builds the foreach loop gets optimized out.
   #ifndef NDEBUG
-  BOOST_FOREACH(const LogEntryPB& entry, entry_batch->entry()) {
+  for (const LogEntryPB& entry : entry_batch->entry()) {
     DCHECK_EQ(entry.type(), type) << "Bad batch: " << entry_batch->DebugString();
   }
   #endif
@@ -553,7 +553,7 @@ Status Log::UpdateIndexForBatch(const LogEntryBatch& batch,
     return Status::OK();
   }
 
-  BOOST_FOREACH(const LogEntryPB& entry_pb, batch.entry_batch_pb_->entry()) {
+  for (const LogEntryPB& entry_pb : batch.entry_batch_pb_->entry()) {
     LogIndexEntry index_entry;
 
     index_entry.op_id = entry_pb.replicate().id();
@@ -574,7 +574,7 @@ void Log::UpdateFooterForBatch(LogEntryBatch* batch) {
   // immediately.
   if (batch->type_ == REPLICATE) {
     // Update the index bounds for the current segment.
-    BOOST_FOREACH(const LogEntryPB& entry_pb, batch->entry_batch_pb_->entry()) {
+    for (const LogEntryPB& entry_pb : batch->entry_batch_pb_->entry()) {
       int64_t index = entry_pb.replicate().id().index();
       if (!footer_builder_.has_min_replicate_index() ||
           index < footer_builder_.min_replicate_index()) {
@@ -735,7 +735,7 @@ Status Log::GC(int64_t min_op_idx, int32_t* num_gced) {
 
     // Now that they are no longer referenced by the Log, delete the files.
     *num_gced = 0;
-    BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_to_delete) {
+    for (const scoped_refptr<ReadableLogSegment>& segment : segments_to_delete) {
       LOG(INFO) << "Deleting log segment in path: " << segment->path()
                 << " (GCed ops < " << min_op_idx << ")";
       RETURN_NOT_OK(fs_manager_->env()->DeleteFile(segment->path()));
@@ -765,7 +765,7 @@ void Log::GetGCableDataSize(int64_t min_op_idx, int64_t* total_size) const {
       return;
     }
   }
-  BOOST_FOREACH(const scoped_refptr<ReadableLogSegment>& segment, segments_to_delete) {
+  for (const scoped_refptr<ReadableLogSegment>& segment : segments_to_delete) {
     *total_size += segment->file_size();
   }
 }

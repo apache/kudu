@@ -18,7 +18,6 @@
 #include "kudu/client/meta_cache.h"
 
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 
 #include "kudu/client/client.h"
@@ -127,7 +126,7 @@ void RemoteTabletServer::Update(const master::TSInfoPB& pb) {
   lock_guard<simple_spinlock> l(&lock_);
 
   rpc_hostports_.clear();
-  BOOST_FOREACH(const HostPortPB& hostport_pb, pb.rpc_addresses()) {
+  for (const HostPortPB& hostport_pb : pb.rpc_addresses()) {
     rpc_hostports_.push_back(HostPort(hostport_pb.host(), hostport_pb.port()));
   }
 }
@@ -165,7 +164,7 @@ void RemoteTablet::Refresh(const TabletServerMap& tservers,
   // Adopt the data from the successful response.
   lock_guard<simple_spinlock> l(&lock_);
   replicas_.clear();
-  BOOST_FOREACH(const TabletLocationsPB_ReplicaPB& r, replicas) {
+  for (const TabletLocationsPB_ReplicaPB& r : replicas) {
     RemoteReplica rep;
     rep.ts = FindOrDie(tservers, r.ts_info().permanent_uuid());
     rep.role = r.role();
@@ -187,7 +186,7 @@ bool RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
           << ReplicasAsStringUnlocked();
   LOG(WARNING) << "Tablet " << tablet_id_ << ": Replica " << ts->ToString()
                << " has failed: " << status.ToString();
-  BOOST_FOREACH(RemoteReplica& rep, replicas_) {
+  for (RemoteReplica& rep : replicas_) {
     if (rep.ts == ts) {
       rep.failed = true;
       found = true;
@@ -199,7 +198,7 @@ bool RemoteTablet::MarkReplicaFailed(RemoteTabletServer *ts,
 int RemoteTablet::GetNumFailedReplicas() const {
   int failed = 0;
   lock_guard<simple_spinlock> l(&lock_);
-  BOOST_FOREACH(const RemoteReplica& rep, replicas_) {
+  for (const RemoteReplica& rep : replicas_) {
     if (rep.failed) {
       failed++;
     }
@@ -209,7 +208,7 @@ int RemoteTablet::GetNumFailedReplicas() const {
 
 RemoteTabletServer* RemoteTablet::LeaderTServer() const {
   lock_guard<simple_spinlock> l(&lock_);
-  BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
+  for (const RemoteReplica& replica : replicas_) {
     if (!replica.failed && replica.role == RaftPeerPB::LEADER) {
       return replica.ts;
     }
@@ -223,7 +222,7 @@ bool RemoteTablet::HasLeader() const {
 
 void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) const {
   lock_guard<simple_spinlock> l(&lock_);
-  BOOST_FOREACH(const RemoteReplica& replica, replicas_) {
+  for (const RemoteReplica& replica : replicas_) {
     if (replica.failed) {
       continue;
     }
@@ -234,7 +233,7 @@ void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) 
 void RemoteTablet::MarkTServerAsLeader(const RemoteTabletServer* server) {
   bool found = false;
   lock_guard<simple_spinlock> l(&lock_);
-  BOOST_FOREACH(RemoteReplica& replica, replicas_) {
+  for (RemoteReplica& replica : replicas_) {
     if (replica.ts == server) {
       replica.role = RaftPeerPB::LEADER;
       found = true;
@@ -250,7 +249,7 @@ void RemoteTablet::MarkTServerAsLeader(const RemoteTabletServer* server) {
 void RemoteTablet::MarkTServerAsFollower(const RemoteTabletServer* server) {
   bool found = false;
   lock_guard<simple_spinlock> l(&lock_);
-  BOOST_FOREACH(RemoteReplica& replica, replicas_) {
+  for (RemoteReplica& replica : replicas_) {
     if (replica.ts == server) {
       replica.role = RaftPeerPB::FOLLOWER;
       found = true;
@@ -269,7 +268,7 @@ std::string RemoteTablet::ReplicasAsString() const {
 std::string RemoteTablet::ReplicasAsStringUnlocked() const {
   DCHECK(lock_.is_locked());
   string replicas_str;
-  BOOST_FOREACH(const RemoteReplica& rep, replicas_) {
+  for (const RemoteReplica& rep : replicas_) {
     if (!replicas_str.empty()) replicas_str += ", ";
     strings::SubstituteAndAppend(&replicas_str, "$0 ($1, $2)",
                                 rep.ts->permanent_uuid(),
@@ -536,9 +535,9 @@ const scoped_refptr<RemoteTablet>& MetaCache::ProcessLookupResponse(const Lookup
   lock_guard<rw_spinlock> l(&lock_);
   TabletMap& tablets_by_key = LookupOrInsert(&tablets_by_table_and_key_,
                                              rpc.table_id(), TabletMap());
-  BOOST_FOREACH(const TabletLocationsPB& loc, rpc.resp().tablet_locations()) {
+  for (const TabletLocationsPB& loc : rpc.resp().tablet_locations()) {
     // First, update the tserver cache, needed for the Refresh calls below.
-    BOOST_FOREACH(const TabletLocationsPB_ReplicaPB& r, loc.replicas()) {
+    for (const TabletLocationsPB_ReplicaPB& r : loc.replicas()) {
       UpdateTabletServer(r.ts_info());
     }
 
@@ -627,7 +626,7 @@ void MetaCache::MarkTSFailed(RemoteTabletServer* ts,
   Status ts_status = status.CloneAndPrepend("TS failed");
 
   // TODO: replace with a ts->tablet multimap for faster lookup?
-  BOOST_FOREACH(const TabletMap::value_type& tablet, tablets_by_id_) {
+  for (const TabletMap::value_type& tablet : tablets_by_id_) {
     // We just loop on all tablets; if a tablet does not have a replica on this
     // TS, MarkReplicaFailed() returns false and we ignore the return value.
     tablet.second->MarkReplicaFailed(ts, ts_status);

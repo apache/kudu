@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <boost/optional.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
@@ -952,7 +951,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   NO_FATALS(WaitForTabletTombstonedOnTS(kTsIndex, tablet_id, CMETA_EXPECTED));
 
   ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 2, timeout, &tablets));
-  BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+  for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
     if (t.tablet_status().tablet_id() == tablet_id) {
       ASSERT_EQ(tablet::SHUTDOWN, t.tablet_status().state());
       ASSERT_EQ(TABLET_DATA_TOMBSTONED, t.tablet_status().tablet_data_state())
@@ -978,7 +977,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
   // just with their data state set as TOMBSTONED. They should also be listed
   // as NOT_STARTED because we restarted the server.
   ASSERT_OK(itest::WaitForNumTabletsOnTS(ts, 2, timeout, &tablets));
-  BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& t, tablets) {
+  for (const ListTabletsResponsePB::StatusAndSchemaPB& t : tablets) {
     ASSERT_EQ(tablet::NOT_STARTED, t.tablet_status().state());
     ASSERT_EQ(TABLET_DATA_TOMBSTONED, t.tablet_status().tablet_data_state())
         << t.tablet_status().tablet_id() << " not tombstoned";
@@ -986,7 +985,7 @@ TEST_P(DeleteTableTombstonedParamTest, TestTabletTombstone) {
 
   // Finally, delete all tablets on the TS, and wait for all data to be gone.
   LOG(INFO) << "Deleting all tablets...";
-  BOOST_FOREACH(const ListTabletsResponsePB::StatusAndSchemaPB& tablet, tablets) {
+  for (const ListTabletsResponsePB::StatusAndSchemaPB& tablet : tablets) {
     string tablet_id = tablet.tablet_status().tablet_id();
     // We need retries here, since some of the tablets may still be
     // bootstrapping after being restarted above.

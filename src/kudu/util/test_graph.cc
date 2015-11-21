@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 
 #include "kudu/gutil/ref_counted.h"
@@ -105,7 +104,7 @@ void TimeSeriesCollector::BuildMetricsString(
   dst_buf->append(StringPrintf("{ \"scope\": \"%s\", \"time\": %.3f",
                                scope_.c_str(), time_since_start));
 
-  BOOST_FOREACH(SeriesMap::const_reference entry, series_map_) {
+  for (SeriesMap::const_reference entry : series_map_) {
     dst_buf->append(StringPrintf(", \"%s\": %.3f",
                                  entry.first.c_str(),  entry.second->value()));
   }

@@ -228,7 +228,7 @@ void UpdateScanDeltaCompactionTest::RunThreads() {
   SleepFor(MonoDelta::FromSeconds(FLAGS_seconds_to_run * 1.0));
   stop_latch.CountDown();
 
-  BOOST_FOREACH(const scoped_refptr<Thread>& thread, threads) {
+  for (const scoped_refptr<Thread>& thread : threads) {
     ASSERT_OK(ThreadJoiner(thread.get())
               .warn_every_ms(500)
               .Join());
@@ -278,7 +278,7 @@ void UpdateScanDeltaCompactionTest::CurlWebPages(CountDownLatch* stop_latch) con
   EasyCurl curl;
   faststring dst;
   while (stop_latch->count() > 0) {
-    BOOST_FOREACH(const string& url, urls) {
+    for (const string& url : urls) {
       VLOG(1) << "Curling URL " << url;
       Status status = curl.FetchURL(url, &dst);
       if (status.ok()) {

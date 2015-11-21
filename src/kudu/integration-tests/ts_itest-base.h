@@ -17,7 +17,6 @@
 #ifndef KUDU_INTEGRATION_TESTS_ITEST_UTIL_H_
 #define KUDU_INTEGRATION_TESTS_ITEST_UTIL_H_
 
-#include <boost/foreach.hpp>
 #include <glog/stl_logging.h>
 #include <string>
 #include <utility>
@@ -79,7 +78,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       return;
     }
     std::vector<std::string> split_flags = strings::Split(flags_str, " ");
-    BOOST_FOREACH(const std::string& flag, split_flags) {
+    for (const std::string& flag : split_flags) {
       flags->push_back(flag);
     }
   }
@@ -105,11 +104,11 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       opts.extra_tserver_flags.push_back(strings::Substitute("--consensus_rpc_timeout_ms=$0",
                                                              FLAGS_consensus_rpc_timeout_ms));
     } else {
-      BOOST_FOREACH(const std::string& flag, non_default_ts_flags) {
+      for (const std::string& flag : non_default_ts_flags) {
         opts.extra_tserver_flags.push_back(flag);
       }
     }
-    BOOST_FOREACH(const std::string& flag, non_default_master_flags) {
+    for (const std::string& flag : non_default_master_flags) {
       opts.extra_master_flags.push_back(flag);
     }
 
@@ -148,8 +147,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       CHECK_OK(controller.status());
       CHECK(!resp.has_error()) << "Response had an error: " << resp.error().ShortDebugString();
 
-      BOOST_FOREACH(const master::TabletLocationsPB& location, resp.tablet_locations()) {
-        BOOST_FOREACH(const master::TabletLocationsPB_ReplicaPB& replica, location.replicas()) {
+      for (const master::TabletLocationsPB& location : resp.tablet_locations()) {
+        for (const master::TabletLocationsPB_ReplicaPB& replica : location.replicas()) {
           TServerDetails* server = FindOrDie(tablet_servers_, replica.ts_info().permanent_uuid());
           tablet_replicas.insert(pair<std::string, TServerDetails*>(location.tablet_id(), server));
         }
@@ -199,7 +198,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     }
 
     std::random_shuffle(replicas_copy.begin(), replicas_copy.end());
-    BOOST_FOREACH(TServerDetails* replica, replicas_copy) {
+    for (TServerDetails* replica : replicas_copy) {
       if (GetReplicaStatusAndCheckIfLeader(replica, tablet_id,
                                            MonoDelta::FromMilliseconds(100)).ok()) {
         return replica;
@@ -231,9 +230,9 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     req.mutable_table()->set_table_name(kTableId);
 
     RETURN_NOT_OK(cluster_->master_proxy()->GetTableLocations(req, &resp, &controller));
-    BOOST_FOREACH(const TabletLocationsPB& loc, resp.tablet_locations()) {
+    for (const TabletLocationsPB& loc : resp.tablet_locations()) {
       if (loc.tablet_id() == tablet_id) {
-        BOOST_FOREACH(const TabletLocationsPB::ReplicaPB& replica, loc.replicas()) {
+        for (const TabletLocationsPB::ReplicaPB& replica : loc.replicas()) {
           if (replica.role() == RaftPeerPB::LEADER) {
             *leader_uuid = replica.ts_info().permanent_uuid();
             return Status::OK();
@@ -290,7 +289,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       ++iter;
     }
 
-    BOOST_FOREACH(const std::string& uuid, uuids) {
+    for (const std::string& uuid : uuids) {
       delete EraseKeyReturnValuePtr(&tablet_servers_, uuid);
     }
   }
@@ -308,7 +307,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
       replicas.push_back((*range.first).second);
     }
 
-    BOOST_FOREACH(TServerDetails* replica, replicas) {
+    for (TServerDetails* replica : replicas) {
       if (leader != NULL &&
           replica->instance_id.permanent_uuid() == leader->instance_id.permanent_uuid()) {
         continue;
@@ -374,7 +373,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     std::string error = strings::Substitute("Fewer than $0 TabletServers were alive. Dead TSs: ",
                                             num_tablet_servers);
     RpcController controller;
-    BOOST_FOREACH(const TabletServerMap::value_type& entry, tablet_servers_) {
+    for (const TabletServerMap::value_type& entry : tablet_servers_) {
       controller.Reset();
       controller.set_timeout(MonoDelta::FromSeconds(10));
       PingRequestPB req;

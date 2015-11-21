@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
@@ -52,7 +51,7 @@ static void AllocateThread(ArenaType *arena, uint8_t thread_index) {
     ptrs.push_back(alloced);
   }
 
-  BOOST_FOREACH(void *p, ptrs) {
+  for (void *p : ptrs) {
     if (memcmp(buf, p, FLAGS_alloc_size) != 0) {
       FAIL() << StringPrintf("overwritten pointer at %p", p);
     }
@@ -84,7 +83,7 @@ TEST(TestArena, TestMultiThreaded) {
     threads.push_back(new boost::thread(AllocateThreadTSArena, &arena, (uint8_t)i));
   }
 
-  BOOST_FOREACH(boost::thread &thr, threads) {
+  for (boost::thread &thr : threads) {
     thr.join();
   }
 }

@@ -22,7 +22,6 @@
 #include <memory>
 #include <vector>
 
-#include <boost/foreach.hpp>
 #include <boost/function.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -126,7 +125,7 @@ Status FsTool::ListAllLogSegments() {
   vector<string> children;
   RETURN_NOT_OK_PREPEND(fs_manager_->ListDir(wals_dir, &children),
                         "Could not list log directories");
-  BOOST_FOREACH(const string& child, children) {
+  for (const string& child : children) {
     if (HasPrefixString(child, ".")) {
       // Hidden files or ./..
       VLOG(1) << "Ignoring hidden file in root log directory " << child;
@@ -167,7 +166,7 @@ Status FsTool::ListAllTablets() {
 
   vector<string> tablets;
   RETURN_NOT_OK(fs_manager_->ListTabletIds(&tablets));
-  BOOST_FOREACH(const string& tablet, tablets) {
+  for (const string& tablet : tablets) {
     if (detail_level_ >= HEADERS_ONLY) {
       std::cout << "Tablet: " << tablet << std::endl;
       RETURN_NOT_OK(PrintTabletMeta(tablet, 2));
@@ -183,7 +182,7 @@ Status FsTool::ListSegmentsInDir(const string& segments_dir) {
   RETURN_NOT_OK_PREPEND(fs_manager_->ListDir(segments_dir, &segments),
                         "Unable to list log segments");
   std::cout << "Segments in " << segments_dir << ":" << std::endl;
-  BOOST_FOREACH(const string& segment, segments) {
+  for (const string& segment : segments) {
     if (!log::IsLogFileName(segment)) {
       continue;
     }
@@ -249,7 +248,7 @@ Status FsTool::ListBlocksForAllTablets() {
 
   vector<string> tablets;
   RETURN_NOT_OK(fs_manager_->ListTabletIds(&tablets));
-  BOOST_FOREACH(string tablet, tablets) {
+  for (string tablet : tablets) {
     RETURN_NOT_OK(ListBlocksForTablet(tablet));
   }
   return Status::OK();
@@ -271,7 +270,7 @@ Status FsTool::ListBlocksForTablet(const string& tablet_id) {
   Schema schema = meta->schema();
 
   size_t idx = 0;
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rs_meta, meta->rowsets())  {
+  for (const shared_ptr<RowSetMetadata>& rs_meta : meta->rowsets())  {
     std::cout << "Rowset " << idx++ << std::endl;
     RETURN_NOT_OK(ListBlocksInRowSet(schema, *rs_meta));
   }
@@ -282,7 +281,7 @@ Status FsTool::ListBlocksForTablet(const string& tablet_id) {
 Status FsTool::ListBlocksInRowSet(const Schema& schema,
                                   const RowSetMetadata& rs_meta) {
   RowSetMetadata::ColumnIdToBlockIdMap col_blocks = rs_meta.GetColumnBlocksById();
-  BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e, col_blocks) {
+  for (const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e : col_blocks) {
     ColumnId col_id = e.first;
     const BlockId& block_id = e.second;
     std::cout << "Column block for column ID " << col_id;
@@ -294,11 +293,11 @@ Status FsTool::ListBlocksInRowSet(const Schema& schema,
     std::cout << block_id.ToString() << std::endl;
   }
 
-  BOOST_FOREACH(const BlockId& block, rs_meta.undo_delta_blocks()) {
+  for (const BlockId& block : rs_meta.undo_delta_blocks()) {
     std::cout << "UNDO: " << block.ToString() << std::endl;
   }
 
-  BOOST_FOREACH(const BlockId& block, rs_meta.redo_delta_blocks()) {
+  for (const BlockId& block : rs_meta.redo_delta_blocks()) {
     std::cout << "REDO: " << block.ToString() << std::endl;
   }
 
@@ -322,7 +321,7 @@ Status FsTool::DumpTabletBlocks(const std::string& tablet_id,
   Schema schema = meta->schema();
 
   size_t idx = 0;
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rs_meta, meta->rowsets())  {
+  for (const shared_ptr<RowSetMetadata>& rs_meta : meta->rowsets())  {
     std::cout << std::endl << Indent(indent) << "Dumping rowset " << idx++
               << std::endl << Indent(indent) << kSeparatorLine;
     RETURN_NOT_OK(DumpRowSetInternal(meta->schema(), rs_meta, opts, indent + 2));
@@ -341,7 +340,7 @@ Status FsTool::DumpTabletData(const std::string& tablet_id) {
   RETURN_NOT_OK_PREPEND(t.Open(), "Couldn't open tablet");
   vector<string> lines;
   RETURN_NOT_OK_PREPEND(t.DebugDump(&lines), "Couldn't dump tablet");
-  BOOST_FOREACH(const string& line, lines) {
+  for (const string& line : lines) {
     std::cout << line << std::endl;
   }
   return Status::OK();
@@ -356,7 +355,7 @@ Status FsTool::DumpRowSet(const string& tablet_id,
   scoped_refptr<TabletMetadata> meta;
   RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), tablet_id, &meta));
 
-  BOOST_FOREACH(const shared_ptr<RowSetMetadata>& rs_meta, meta->rowsets())  {
+  for (const shared_ptr<RowSetMetadata>& rs_meta : meta->rowsets())  {
     if (rs_meta->id() == rowset_id) {
       return DumpRowSetInternal(meta->schema(), rs_meta, opts, indent);
     }
@@ -377,7 +376,7 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
             << std::endl;
 
   RowSetMetadata::ColumnIdToBlockIdMap col_blocks = rs_meta->GetColumnBlocksById();
-  BOOST_FOREACH(const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e, col_blocks) {
+  for (const RowSetMetadata::ColumnIdToBlockIdMap::value_type& e : col_blocks) {
     ColumnId col_id = e.first;
     const BlockId& block_id = e.second;
 
@@ -394,7 +393,7 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
     std::cout << std::endl;
   }
 
-  BOOST_FOREACH(const BlockId& block, rs_meta->undo_delta_blocks()) {
+  for (const BlockId& block : rs_meta->undo_delta_blocks()) {
     std::cout << Indent(indent) << "Dumping undo delta block " << block << ":" << std::endl
               << Indent(indent) << kSeparatorLine;
     RETURN_NOT_OK(DumpDeltaCFileBlockInternal(schema,
@@ -407,7 +406,7 @@ Status FsTool::DumpRowSetInternal(const Schema& schema,
     std::cout << std::endl;
   }
 
-  BOOST_FOREACH(const BlockId& block, rs_meta->redo_delta_blocks()) {
+  for (const BlockId& block : rs_meta->redo_delta_blocks()) {
     std::cout << Indent(indent) << "Dumping redo delta block " << block << ":" << std::endl
               << Indent(indent) << kSeparatorLine;
     RETURN_NOT_OK(DumpDeltaCFileBlockInternal(schema,
@@ -557,7 +556,7 @@ Status FsTool::DumpDeltaCFileBlockInternal(const Schema& schema,
     RETURN_NOT_OK(delta_iter->FilterColumnIdsAndCollectDeltas(vector<ColumnId>(),
                                                               &out,
                                                               &arena));
-    BOOST_FOREACH(const DeltaKeyAndUpdate& upd, out) {
+    for (const DeltaKeyAndUpdate& upd : out) {
       if (detail_level_ > HEADERS_ONLY) {
         std::cout << Indent(indent) << upd.key.ToString() << " "
                   << RowChangeList(upd.cell).ToString(schema) << std::endl;

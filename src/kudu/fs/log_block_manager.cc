@@ -17,7 +17,6 @@
 
 #include "kudu/fs/log_block_manager.h"
 
-#include <boost/foreach.hpp>
 
 #include "kudu/fs/block_manager_metrics.h"
 #include "kudu/fs/block_manager_util.h"
@@ -1040,7 +1039,7 @@ LogBlockManager::~LogBlockManager() {
   LOG_SLOW_EXECUTION(INFO, 1000,
                      Substitute("waiting on $0 log block manager thread pools",
                                 thread_pools_by_root_path_.size())) {
-    BOOST_FOREACH(const ThreadPoolMap::value_type& e,
+    for (const ThreadPoolMap::value_type& e :
                   thread_pools_by_root_path_) {
       ThreadPool* p = e.second;
       p->Wait();
@@ -1072,14 +1071,14 @@ Status LogBlockManager::Create() {
 
   // The UUIDs and indices will be included in every instance file.
   vector<string> all_uuids(root_paths_.size());
-  BOOST_FOREACH(string& u, all_uuids) {
+  for (string& u : all_uuids) {
     u = oid_generator()->Next();
   }
   int idx = 0;
 
   // Ensure the data paths exist and create the instance files.
   unordered_set<string> to_sync;
-  BOOST_FOREACH(const string& root_path, root_paths_) {
+  for (const string& root_path : root_paths_) {
     bool created;
     RETURN_NOT_OK_PREPEND(env_util::CreateDirIfMissing(env_, root_path, &created),
                           Substitute("Could not create directory $0", root_path));
@@ -1103,14 +1102,14 @@ Status LogBlockManager::Create() {
 
   // Ensure newly created directories are synchronized to disk.
   if (FLAGS_enable_data_block_fsync) {
-    BOOST_FOREACH(const string& dir, to_sync) {
+    for (const string& dir : to_sync) {
       RETURN_NOT_OK_PREPEND(env_->SyncDir(dir),
                             Substitute("Unable to synchronize directory $0", dir));
     }
   }
 
   // Success: don't delete any files.
-  BOOST_FOREACH(ScopedFileDeleter* deleter, delete_on_failure) {
+  for (ScopedFileDeleter* deleter : delete_on_failure) {
     deleter->Cancel();
   }
   return Status::OK();
@@ -1122,13 +1121,13 @@ Status LogBlockManager::Open() {
   vector<Status> statuses(root_paths_.size());
   unordered_map<string, PathInstanceMetadataFile*> metadata_files;
   ValueDeleter deleter(&metadata_files);
-  BOOST_FOREACH(const string& root_path, root_paths_) {
+  for (const string& root_path : root_paths_) {
     InsertOrDie(&metadata_files, root_path, NULL);
   }
 
   // Submit each open to its own thread pool and wait for them to complete.
   int i = 0;
-  BOOST_FOREACH(const string& root_path, root_paths_) {
+  for (const string& root_path : root_paths_) {
     ThreadPool* pool = FindOrDie(thread_pools_by_root_path_, root_path);
     RETURN_NOT_OK_PREPEND(pool->SubmitClosure(
         Bind(&LogBlockManager::OpenRootPath,
@@ -1139,13 +1138,13 @@ Status LogBlockManager::Open() {
                           Substitute("Could not open root path $0", root_path));
     i++;
   }
-  BOOST_FOREACH(const ThreadPoolMap::value_type& e,
+  for (const ThreadPoolMap::value_type& e :
                 thread_pools_by_root_path_) {
     e.second->Wait();
   }
 
   // Ensure that no tasks failed.
-  BOOST_FOREACH(const Status& s, statuses) {
+  for (const Status& s : statuses) {
     if (!s.ok()) {
       return s;
     }
@@ -1268,13 +1267,13 @@ Status LogBlockManager::CloseBlocks(const std::vector<WritableBlock*>& blocks) {
     // Ask the kernel to begin writing out each block's dirty data. This is
     // done up-front to give the kernel opportunities to coalesce contiguous
     // dirty pages.
-    BOOST_FOREACH(WritableBlock* block, blocks) {
+    for (WritableBlock* block : blocks) {
       RETURN_NOT_OK(block->FlushDataAsync());
     }
   }
 
   // Now close each block, waiting for each to become durable.
-  BOOST_FOREACH(WritableBlock* block, blocks) {
+  for (WritableBlock* block : blocks) {
     RETURN_NOT_OK(block->Close());
   }
   return Status::OK();
@@ -1445,7 +1444,7 @@ void LogBlockManager::OpenRootPath(const string& root_path,
         "Could not list children of $0", root_path));
     return;
   }
-  BOOST_FOREACH(const string& child, children) {
+  for (const string& child : children) {
     string id;
     if (!TryStripSuffixString(child, LogBlockContainer::kMetadataFileSuffix, &id)) {
       continue;
@@ -1478,7 +1477,7 @@ void LogBlockManager::OpenRootPath(const string& root_path,
     // the container-local map first ensures that we discount deleted blocks
     // before checking for duplicate IDs.
     UntrackedBlockMap blocks_in_container;
-    BOOST_FOREACH(const BlockRecordPB& r, records) {
+    for (const BlockRecordPB& r : records) {
       ProcessBlockRecord(r, container.get(), &blocks_in_container);
     }
 
@@ -1486,7 +1485,7 @@ void LogBlockManager::OpenRootPath(const string& root_path,
     // the container.
     {
       lock_guard<simple_spinlock> l(&lock_);
-      BOOST_FOREACH(const UntrackedBlockMap::value_type& e, blocks_in_container) {
+      for (const UntrackedBlockMap::value_type& e : blocks_in_container) {
         if (!AddLogBlockUnlocked(e.second)) {
           LOG(FATAL) << "Found duplicate CREATE record for block " << e.first
                      << " which already is alive from another container when "
@@ -1590,7 +1589,7 @@ Status LogBlockManager::Init() {
   ThreadPoolMap pools;
   ValueDeleter d(&pools);
   int i = 0;
-  BOOST_FOREACH(const string& root, root_paths_) {
+  for (const string& root : root_paths_) {
     gscoped_ptr<ThreadPool> p;
     RETURN_NOT_OK_PREPEND(ThreadPoolBuilder(Substitute("lbm root $0", i++))
                           .set_max_threads(1)

@@ -17,7 +17,6 @@
 
 #include "kudu/consensus/leader_election.h"
 
-#include <boost/foreach.hpp>
 #include <string>
 #include <vector>
 
@@ -135,7 +134,7 @@ void LeaderElectionTest::InitUUIDs(int num_voters) {
 
 void LeaderElectionTest::InitNoOpPeerProxies() {
   config_.Clear();
-  BOOST_FOREACH(const string& uuid, voter_uuids_) {
+  for (const string& uuid : voter_uuids_) {
     RaftPeerPB* peer_pb = config_.add_peers();
     peer_pb->set_permanent_uuid(uuid);
     PeerProxy* proxy = new NoOpTestPeerProxy(pool_.get(), *peer_pb);
@@ -145,7 +144,7 @@ void LeaderElectionTest::InitNoOpPeerProxies() {
 
 void LeaderElectionTest::InitDelayableMockedProxies(bool enable_delay) {
   config_.Clear();
-  BOOST_FOREACH(const string& uuid, voter_uuids_) {
+  for (const string& uuid : voter_uuids_) {
     RaftPeerPB* peer_pb = config_.add_peers();
        peer_pb->set_permanent_uuid(uuid);
     DelayablePeerProxy<MockedPeerProxy>* proxy =
@@ -265,7 +264,7 @@ scoped_refptr<LeaderElection> LeaderElectionTest::SetUpElectionWithGrantDenyErro
 TEST_F(LeaderElectionTest, TestPerfectElection) {
   // Try configuration sizes of 1, 3, 5.
   vector<int> config_sizes = { 1, 3, 5 };
-  BOOST_FOREACH(int num_voters, config_sizes) {
+  for (int num_voters : config_sizes) {
     LOG(INFO) << "Testing election with config size of " << num_voters;
     int majority_size = (num_voters / 2) + 1;
     ConsensusTerm election_term = 10 + num_voters; // Just to be able to differentiate.

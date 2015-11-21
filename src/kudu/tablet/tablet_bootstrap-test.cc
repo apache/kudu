@@ -151,7 +151,7 @@ class BootstrapTest : public LogTestBase {
     ASSERT_OK(tablet->NewRowIterator(schema_, snap, Tablet::UNORDERED, &iter));
     ASSERT_OK(iter->Init(NULL));
     ASSERT_OK(IterateToStringList(iter.get(), results));
-    BOOST_FOREACH(const string& result, *results) {
+    for (const string& result : *results) {
       VLOG(1) << result;
     }
   }

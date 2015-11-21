@@ -17,7 +17,6 @@
 
 #include "kudu/util/failure_detector.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <unordered_map>
 
@@ -103,14 +102,14 @@ void TimedFailureDetector::CheckForFailures(const MonoTime& now) {
   CallbackMap callbacks;
   {
     lock_guard<simple_spinlock> lock(&lock_);
-    BOOST_FOREACH(const NodeMap::value_type& entry, nodes_) {
+    for (const NodeMap::value_type& entry : nodes_) {
       if (GetNodeStatusUnlocked(entry.first, now) == DEAD) {
         InsertOrDie(&callbacks, entry.first, entry.second->callback);
       }
     }
   }
   // Invoke failure callbacks outside of lock.
-  BOOST_FOREACH(const CallbackMap::value_type& entry, callbacks) {
+  for (const CallbackMap::value_type& entry : callbacks) {
     const string& node_name = entry.first;
     const FailureDetectedCallback& callback = entry.second;
     callback.Run(node_name, Status::RemoteError(Substitute("Node '$0' failed", node_name)));
@@ -206,7 +205,7 @@ void RandomizedFailureMonitor::RunThread() {
     }
 
     MonoTime now = MonoTime::Now(MonoTime::FINE);
-    BOOST_FOREACH(const FDMap::value_type& entry, fds_copy) {
+    for (const FDMap::value_type& entry : fds_copy) {
       entry.second->CheckForFailures(now);
     }
   }

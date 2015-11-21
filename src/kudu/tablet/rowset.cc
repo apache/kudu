@@ -48,7 +48,7 @@ DuplicatingRowSet::~DuplicatingRowSet() {
 static void AppendRowSetStrings(const RowSetVector &rowsets, string *dst) {
   bool first = true;
   dst->append("[");
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets) {
+  for (const shared_ptr<RowSet> &rs : rowsets) {
     if (!first) {
       dst->append(", ");
     }
@@ -79,7 +79,7 @@ Status DuplicatingRowSet::NewRowIterator(const Schema *projection,
     // Union between them
 
     vector<shared_ptr<RowwiseIterator> > iters;
-    BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
+    for (const shared_ptr<RowSet> &rowset : old_rowsets_) {
       gscoped_ptr<RowwiseIterator> iter;
       RETURN_NOT_OK_PREPEND(rowset->NewRowIterator(projection, snap, &iter),
                             Substitute("Could not create iterator for rowset $0",
@@ -116,7 +116,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
 
   // First mutate the relevant input rowset.
   bool updated = false;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
+  for (const shared_ptr<RowSet> &rowset : old_rowsets_) {
     Status s = rowset->MutateRow(timestamp, probe, update, op_id, stats, result);
     if (s.ok()) {
       updated = true;
@@ -136,7 +136,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
 
   // If it succeeded there, we also need to mirror into the new rowset.
   int mirrored_count = 0;
-  BOOST_FOREACH(const shared_ptr<RowSet> &new_rowset, new_rowsets_) {
+  for (const shared_ptr<RowSet> &new_rowset : new_rowsets_) {
     Status s = new_rowset->MutateRow(timestamp, probe, update, op_id, stats, result);
     if (s.ok()) {
       mirrored_count++;
@@ -162,7 +162,7 @@ Status DuplicatingRowSet::MutateRow(Timestamp timestamp,
 Status DuplicatingRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
                                           bool *present, ProbeStats* stats) const {
   *present = false;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rowset, old_rowsets_) {
+  for (const shared_ptr<RowSet> &rowset : old_rowsets_) {
     RETURN_NOT_OK(rowset->CheckRowPresent(probe, present, stats));
     if (*present) {
       return Status::OK();
@@ -173,7 +173,7 @@ Status DuplicatingRowSet::CheckRowPresent(const RowSetKeyProbe &probe,
 
 Status DuplicatingRowSet::CountRows(rowid_t *count) const {
   int64_t accumulated_count = 0;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, new_rowsets_) {
+  for (const shared_ptr<RowSet> &rs : new_rowsets_) {
     rowid_t this_count;
     RETURN_NOT_OK(rs->CountRows(&this_count));
     accumulated_count += this_count;
@@ -202,7 +202,7 @@ uint64_t DuplicatingRowSet::EstimateOnDiskSize() const {
   // The actual value of this doesn't matter, since it won't be selected
   // for compaction.
   uint64_t size = 0;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, new_rowsets_) {
+  for (const shared_ptr<RowSet> &rs : new_rowsets_) {
     size += rs->EstimateOnDiskSize();
   }
   return size;
@@ -214,14 +214,14 @@ shared_ptr<RowSetMetadata> DuplicatingRowSet::metadata() {
 
 Status DuplicatingRowSet::DebugDump(vector<string> *lines) {
   int i = 1;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, old_rowsets_) {
+  for (const shared_ptr<RowSet> &rs : old_rowsets_) {
     LOG_STRING(INFO, lines) << "Duplicating rowset input " << ToString() << " "
                             << i << "/" << old_rowsets_.size() << ":";
     RETURN_NOT_OK(rs->DebugDump(lines));
     i++;
   }
   i = 1;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, new_rowsets_) {
+  for (const shared_ptr<RowSet> &rs : new_rowsets_) {
     LOG_STRING(INFO, lines) << "Duplicating rowset output " << ToString() << " "
                             << i << "/" << new_rowsets_.size() << ":";
     RETURN_NOT_OK(rs->DebugDump(lines));

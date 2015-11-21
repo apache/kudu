@@ -17,7 +17,6 @@
 
 #include "kudu/rpc/acceptor_pool.h"
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <inttypes.h>
@@ -104,12 +103,12 @@ void AcceptorPool::Shutdown() {
   // Calling shutdown on an accepting (non-connected) socket is illegal on most
   // platforms (but not Linux). Instead, the accepting threads are interrupted
   // forcefully.
-  BOOST_FOREACH(const scoped_refptr<kudu::Thread>& thread, threads_) {
+  for (const scoped_refptr<kudu::Thread>& thread : threads_) {
     pthread_cancel(thread.get()->pthread_id());
   }
 #endif
 
-  BOOST_FOREACH(const scoped_refptr<kudu::Thread>& thread, threads_) {
+  for (const scoped_refptr<kudu::Thread>& thread : threads_) {
     CHECK_OK(ThreadJoiner(thread.get()).Join());
   }
   threads_.clear();

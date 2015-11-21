@@ -344,7 +344,7 @@ Status RemoteBootstrapClient::DownloadWALs() {
   int num_segments = wal_seqnos_.size();
   LOG_WITH_PREFIX(INFO) << "Starting download of " << num_segments << " WAL segments...";
   uint64_t counter = 0;
-  BOOST_FOREACH(uint64_t seg_seqno, wal_seqnos_) {
+  for (uint64_t seg_seqno : wal_seqnos_) {
     UpdateStatusMessage(Substitute("Downloading WAL segment with seq. number $0 ($1/$2)",
                                    seg_seqno, counter + 1, num_segments));
     RETURN_NOT_OK(DownloadWAL(seg_seqno));
@@ -360,7 +360,7 @@ Status RemoteBootstrapClient::DownloadBlocks() {
 
   // Count up the total number of blocks to download.
   int num_blocks = 0;
-  BOOST_FOREACH(const RowSetDataPB& rowset, superblock_->rowsets()) {
+  for (const RowSetDataPB& rowset : superblock_->rowsets()) {
     num_blocks += rowset.columns_size();
     num_blocks += rowset.redo_deltas_size();
     num_blocks += rowset.undo_deltas_size();
@@ -378,16 +378,16 @@ Status RemoteBootstrapClient::DownloadBlocks() {
   new_sb->CopyFrom(*superblock_);
   int block_count = 0;
   LOG_WITH_PREFIX(INFO) << "Starting download of " << num_blocks << " data blocks...";
-  BOOST_FOREACH(RowSetDataPB& rowset, *new_sb->mutable_rowsets()) {
-    BOOST_FOREACH(ColumnDataPB& col, *rowset.mutable_columns()) {
+  for (RowSetDataPB& rowset : *new_sb->mutable_rowsets()) {
+    for (ColumnDataPB& col : *rowset.mutable_columns()) {
       RETURN_NOT_OK(DownloadAndRewriteBlock(col.mutable_block(),
                                             &block_count, num_blocks));
     }
-    BOOST_FOREACH(DeltaDataPB& redo, *rowset.mutable_redo_deltas()) {
+    for (DeltaDataPB& redo : *rowset.mutable_redo_deltas()) {
       RETURN_NOT_OK(DownloadAndRewriteBlock(redo.mutable_block(),
                                             &block_count, num_blocks));
     }
-    BOOST_FOREACH(DeltaDataPB& undo, *rowset.mutable_undo_deltas()) {
+    for (DeltaDataPB& undo : *rowset.mutable_undo_deltas()) {
       RETURN_NOT_OK(DownloadAndRewriteBlock(undo.mutable_block(),
                                             &block_count, num_blocks));
     }

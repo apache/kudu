@@ -6,7 +6,6 @@
 #include "kudu/util/debug/trace_event_impl.h"
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <list>
 #include <vector>
@@ -1559,7 +1558,7 @@ void TraceLog::Flush(const TraceLog::OutputCallback& cb) {
     // Holding the active threads lock ensures that no thread will exit and
     // delete its own PerThreadInfo object.
     MutexLock l(active_threads_lock_);
-    BOOST_FOREACH(const ActiveThreadMap::value_type& entry, active_threads_) {
+    for (const ActiveThreadMap::value_type& entry : active_threads_) {
       int64_t tid = entry.first;
       PerThreadInfo* thr_info = entry.second;
 
@@ -2223,7 +2222,7 @@ bool CategoryFilter::DoesCategoryGroupContainCategory(
     const char* category) const {
   DCHECK(category);
   vector<string> pieces = strings::Split(category_group, ",");
-  BOOST_FOREACH(const string& category_group_token, pieces) {
+  for (const string& category_group_token : pieces) {
     // Don't allow empty tokens, nor tokens with leading or trailing space.
     DCHECK(!CategoryFilter::IsEmptyOrContainsLeadingOrTrailingWhitespace(
         category_group_token))
@@ -2267,7 +2266,7 @@ void CategoryFilter::Initialize(const std::string& filter_string) {
   // Tokenize list of categories, delimited by ','.
   vector<string> tokens = strings::Split(filter_string, ",");
   // Add each token to the appropriate list (included_,excluded_).
-  BOOST_FOREACH(string category, tokens) {
+  for (string category : tokens) {
     // Ignore empty categories.
     if (category.empty())
       continue;

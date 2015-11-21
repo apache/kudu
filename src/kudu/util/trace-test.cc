@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <string>
 #include <rapidjson/document.h>
@@ -45,7 +44,7 @@ class TraceTest : public KuduTest {
 static string XOutDigits(const string& s) {
   string ret;
   ret.reserve(s.size());
-  BOOST_FOREACH(char c, s) {
+  for (char c : s) {
     if (isdigit(c)) {
       ret.push_back('X');
     } else {
@@ -102,7 +101,7 @@ TEST_F(TraceTest, TestChildTrace) {
   EXPECT_EQ(XOutDigits(traceA->DumpToString(false)),
             "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceA\n"
             "Related trace:\n"
-            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XXX] hello from traceB\n");
+            "XXXX XX:XX:XX.XXXXXX trace-test.cc:XX] hello from traceB\n");
 }
 
 static void GenerateTraceEvents(int thread_id,

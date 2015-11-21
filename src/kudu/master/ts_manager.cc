@@ -17,7 +17,6 @@
 
 #include "kudu/master/ts_manager.h"
 
-#include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <vector>
@@ -103,7 +102,7 @@ void TSManager::GetAllLiveDescriptors(vector<shared_ptr<TSDescriptor> > *descs) 
 
   boost::shared_lock<rw_spinlock> l(lock_);
   descs->reserve(servers_by_id_.size());
-  BOOST_FOREACH(const TSDescriptorMap::value_type& entry, servers_by_id_) {
+  for (const TSDescriptorMap::value_type& entry : servers_by_id_) {
     const shared_ptr<TSDescriptor>& ts = entry.second;
     if (ts->TimeSinceHeartbeat().ToMilliseconds() < FLAGS_tserver_unresponsive_timeout_ms) {
       descs->push_back(ts);

@@ -181,14 +181,14 @@ namespace {
 vector<BlockId> GetAllSortedBlocks(const tablet::TabletSuperBlockPB& sb) {
   vector<BlockId> data_blocks;
 
-  BOOST_FOREACH(const tablet::RowSetDataPB& rowset, sb.rowsets()) {
-    BOOST_FOREACH(const tablet::DeltaDataPB& redo, rowset.redo_deltas()) {
+  for (const tablet::RowSetDataPB& rowset : sb.rowsets()) {
+    for (const tablet::DeltaDataPB& redo : rowset.redo_deltas()) {
       data_blocks.push_back(BlockId::FromPB(redo.block()));
     }
-    BOOST_FOREACH(const tablet::DeltaDataPB& undo, rowset.undo_deltas()) {
+    for (const tablet::DeltaDataPB& undo : rowset.undo_deltas()) {
       data_blocks.push_back(BlockId::FromPB(undo.block()));
     }
-    BOOST_FOREACH(const tablet::ColumnDataPB& column, rowset.columns()) {
+    for (const tablet::ColumnDataPB& column : rowset.columns()) {
       data_blocks.push_back(BlockId::FromPB(column.block()));
     }
     if (rowset.has_bloom_block()) {
@@ -226,13 +226,13 @@ TEST_F(RemoteBootstrapClientTest, TestDownloadAllBlocks) {
   // Verify that the old blocks aren't found. We're using a different
   // FsManager than 'tablet_peer', so the only way an old block could end
   // up in ours is due to a remote bootstrap client bug.
-  BOOST_FOREACH(const BlockId& block_id, old_data_blocks) {
+  for (const BlockId& block_id : old_data_blocks) {
     gscoped_ptr<fs::ReadableBlock> block;
     Status s = fs_manager_->OpenBlock(block_id, &block);
     ASSERT_TRUE(s.IsNotFound()) << "Expected block not found: " << s.ToString();
   }
   // And the new blocks are all present.
-  BOOST_FOREACH(const BlockId& block_id, new_data_blocks) {
+  for (const BlockId& block_id : new_data_blocks) {
     gscoped_ptr<fs::ReadableBlock> block;
     ASSERT_OK(fs_manager_->OpenBlock(block_id, &block));
   }

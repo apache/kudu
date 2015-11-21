@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <map>
 #include <string>
 #include <vector>
@@ -64,7 +63,7 @@ void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
 
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>UUID</th><th>Time since heartbeat</th><th>Registration</th></tr>\n";
-  BOOST_FOREACH(const std::shared_ptr<TSDescriptor>& desc, descs) {
+  for (const std::shared_ptr<TSDescriptor>& desc : descs) {
     const string time_since_hb = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
     TSRegistrationPB reg;
     desc->GetRegistration(&reg);
@@ -87,7 +86,7 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
   *output << "  <tr><th>Table Name</th><th>Table Id</th><th>State</th></tr>\n";
   typedef std::map<string, string> StringMap;
   StringMap ordered_tables;
-  BOOST_FOREACH(const scoped_refptr<TableInfo>& table, tables) {
+  for (const scoped_refptr<TableInfo>& table : tables) {
     TableMetadataLock l(table.get(), TableMetadataLock::READ);
     if (!l.data().is_running()) {
       continue;
@@ -101,7 +100,7 @@ void MasterPathHandlers::HandleCatalogManager(const Webserver::WebRequest& req,
         state,
         EscapeForHtmlToString(l.data().pb.state_msg()));
   }
-  BOOST_FOREACH(const StringMap::value_type& table, ordered_tables) {
+  for (const StringMap::value_type& table : ordered_tables) {
     *output << table.second;
   }
   *output << "</table>\n";
@@ -167,7 +166,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>Tablet ID</th><th>Partition</th><th>State</th>"
       "<th>Message</th><th>RaftConfig</th></tr>\n";
-  BOOST_FOREACH(const scoped_refptr<TabletInfo>& tablet, tablets) {
+  for (const scoped_refptr<TabletInfo>& tablet : tablets) {
     TabletInfo::ReplicaMap locations;
     tablet->GetReplicaLocations(&locations);
     vector<TabletReplica> sorted_locations;
@@ -196,7 +195,7 @@ void MasterPathHandlers::HandleTablePage(const Webserver::WebRequest& req,
   string master_addresses;
   if (master_->opts().IsDistributed()) {
     vector<string> all_addresses;
-    BOOST_FOREACH(const HostPort& hp, master_->opts().master_addresses) {
+    for (const HostPort& hp : master_->opts().master_addresses) {
       master_addresses.append(hp.ToString());
     }
     master_addresses = JoinElements(all_addresses, ",");
@@ -232,7 +231,7 @@ void MasterPathHandlers::HandleMasters(const Webserver::WebRequest& req,
   *output <<  "<table class='table table-striped'>\n";
   *output <<  "  <tr><th>Registration</th><th>Role</th></tr>\n";
 
-  BOOST_FOREACH(const ServerEntryPB& master, masters) {
+  for (const ServerEntryPB& master : masters) {
     if (master.has_error()) {
       Status error = StatusFromPB(master.error());
       *output << Substitute("  <tr><td colspan=2><font color='red'><b>$0</b></font></td></tr>\n",
@@ -316,7 +315,7 @@ class JsonDumper : public TableVisitor, public TabletVisitor {
       const consensus::ConsensusStatePB& cs = metadata.committed_consensus_state();
       jw_->String("replicas");
       jw_->StartArray();
-      BOOST_FOREACH(const RaftPeerPB& peer, cs.config().peers()) {
+      for (const RaftPeerPB& peer : cs.config().peers()) {
         jw_->StartObject();
         jw_->String("type");
         jw_->String(RaftPeerPB::MemberType_Name(peer.member_type()));
@@ -410,7 +409,7 @@ string MasterPathHandlers::RaftConfigToHtml(const std::vector<TabletReplica>& lo
   stringstream html;
 
   html << "<ul>\n";
-  BOOST_FOREACH(const TabletReplica& location, locations) {
+  for (const TabletReplica& location : locations) {
     string location_html = TSDescriptorToHtml(*location.ts_desc, tablet_id);
     if (location.role == RaftPeerPB::LEADER) {
       html << Substitute("  <li><b>LEADER: $0</b></li>\n", location_html);

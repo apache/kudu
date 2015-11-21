@@ -57,7 +57,6 @@
 // 'R','F',37719753,56568041380.90,53741292684.6,55889619119.8,25.5,38250.9,0.1,1478870
 // ====
 #include <boost/bind.hpp>
-#include <boost/foreach.hpp>
 #include <unordered_map>
 #include <stdlib.h>
 
@@ -164,7 +163,7 @@ void Tpch1(RpcLineItemDAO *dao) {
   vector<KuduRowResult> rows;
   while (scanner->HasMore()) {
     scanner->GetNext(&rows);
-    BOOST_FOREACH(const KuduRowResult& row, rows) {
+    for (const KuduRowResult& row : rows) {
       matching_rows++;
 
       SliceMapKey l_returnflag;

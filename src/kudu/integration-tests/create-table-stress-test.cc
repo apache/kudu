@@ -275,11 +275,11 @@ TEST_F(CreateTableStressTest, TestGetTableLocationsOptions) {
   LOG(INFO) << "========================================================";
   std::vector<scoped_refptr<master::TableInfo> > tables;
   cluster_->mini_master()->master()->catalog_manager()->GetAllTables(&tables);
-  BOOST_FOREACH(const scoped_refptr<master::TableInfo>& table_info, tables) {
+  for (const scoped_refptr<master::TableInfo>& table_info : tables) {
     LOG(INFO) << "Table: " << table_info->ToString();
     std::vector<scoped_refptr<master::TabletInfo> > tablets;
     table_info->GetAllTablets(&tablets);
-    BOOST_FOREACH(const scoped_refptr<master::TabletInfo>& tablet_info, tablets) {
+    for (const scoped_refptr<master::TabletInfo>& tablet_info : tablets) {
       master::TabletMetadataLock l_tablet(tablet_info.get(), master::TabletMetadataLock::READ);
       const master::SysTabletsEntryPB& metadata = tablet_info->metadata().state().pb;
       LOG(INFO) << "  Tablet: " << tablet_info->ToString()

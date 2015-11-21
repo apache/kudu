@@ -16,7 +16,6 @@
 // under the License.
 #include "kudu/consensus/raft_consensus_state.h"
 
-#include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <vector>
 

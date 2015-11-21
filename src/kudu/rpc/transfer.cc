@@ -17,7 +17,6 @@
 
 #include "kudu/rpc/transfer.h"
 
-#include <boost/foreach.hpp>
 #include <stdint.h>
 
 #include <iostream>

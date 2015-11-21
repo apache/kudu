@@ -99,7 +99,7 @@ class TransactionTrackerTest : public KuduTest {
       local_drivers.push_back(driver);
     }
 
-    BOOST_FOREACH(const scoped_refptr<TransactionDriver>& d, local_drivers) {
+    for (const scoped_refptr<TransactionDriver>& d : local_drivers) {
       drivers->push_back(d);
     }
     return Status::OK();
@@ -143,7 +143,7 @@ void TransactionTrackerTest::RunTransactionsThread(CountDownLatch* finish_latch)
   SleepFor(MonoDelta::FromMilliseconds(1));
 
   // Finish all the transactions
-  BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, drivers) {
+  for (const scoped_refptr<TransactionDriver>& driver : drivers) {
     // And mark the transaction as failed, which will cause it to unregister itself.
     driver->Abort(Status::Aborted(""));
   }
@@ -248,7 +248,7 @@ TEST_F(TransactionTrackerTest, TestTooManyTransactions) {
   NO_FATALS(CheckMemTracker(t));
 
   // Clean up.
-  BOOST_FOREACH(const scoped_refptr<TransactionDriver>& driver, drivers) {
+  for (const scoped_refptr<TransactionDriver>& driver : drivers) {
     driver->Abort(Status::Aborted(""));
   }
 }

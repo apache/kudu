@@ -268,7 +268,7 @@ class MergeCompactionInput : public CompactionInput {
   MergeCompactionInput(const vector<shared_ptr<CompactionInput> > &inputs,
                        const Schema* schema)
     : schema_(schema) {
-    BOOST_FOREACH(const shared_ptr<CompactionInput> &input, inputs) {
+    for (const shared_ptr<CompactionInput> &input : inputs) {
       gscoped_ptr<MergeState> state(new MergeState);
       state->input = input;
       states_.push_back(state.release());
@@ -280,7 +280,7 @@ class MergeCompactionInput : public CompactionInput {
   }
 
   virtual Status Init() OVERRIDE {
-    BOOST_FOREACH(MergeState *state, states_) {
+    for (MergeState *state : states_) {
       RETURN_NOT_OK(state->input->Init());
     }
 
@@ -292,7 +292,7 @@ class MergeCompactionInput : public CompactionInput {
   virtual bool HasMoreBlocks() OVERRIDE {
     // Return true if any of the input blocks has more rows pending
     // or more blocks which have yet to be pulled.
-    BOOST_FOREACH(MergeState *state, states_) {
+    for (MergeState *state : states_) {
       if (!state->empty() ||
           state->input->HasMoreBlocks()) {
         return true;
@@ -573,7 +573,7 @@ Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap,
   CHECK(schema->has_column_ids());
 
   vector<shared_ptr<CompactionInput> > inputs;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
+  for (const shared_ptr<RowSet> &rs : rowsets_) {
     gscoped_ptr<CompactionInput> input;
     RETURN_NOT_OK_PREPEND(rs->NewCompactionInput(schema, snap, &input),
                           Substitute("Could not create compaction input for rowset $0",
@@ -593,7 +593,7 @@ Status RowSetsInCompaction::CreateCompactionInput(const MvccSnapshot &snap,
 void RowSetsInCompaction::DumpToLog() const {
   LOG(INFO) << "Selected " << rowsets_.size() << " rowsets to compact:";
   // Dump the selected rowsets to the log, and collect corresponding iterators.
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, rowsets_) {
+  for (const shared_ptr<RowSet> &rs : rowsets_) {
     LOG(INFO) << rs->ToString() << "(current size on disk: ~"
               << rs->EstimateOnDiskSize() << " bytes)";
   }
@@ -760,7 +760,7 @@ Status FlushCompactionInput(CompactionInput* input,
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
     int n = 0;
-    BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
+    for (const CompactionInputRow &input_row : rows) {
       RETURN_NOT_OK(out->RollIfNecessary());
 
       const Schema* schema = input_row.row.schema();
@@ -853,7 +853,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
 
   // Collect the delta trackers that we'll push the updates into.
   deque<DeltaTracker *> delta_trackers;
-  BOOST_FOREACH(const shared_ptr<RowSet> &rs, output_rowsets) {
+  for (const shared_ptr<RowSet> &rs : output_rowsets) {
     delta_trackers.push_back(down_cast<DiskRowSet *>(rs.get())->delta_tracker());
   }
 
@@ -883,7 +883,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
-    BOOST_FOREACH(const CompactionInputRow &row, rows) {
+    for (const CompactionInputRow &row : rows) {
       DVLOG(2) << "Revisiting row: " << schema->DebugRow(row.row) <<
           " Redo Mutations: " << Mutation::StringifyMutationList(*schema, row.redo_head) <<
           " Undo Mutations: " << Mutation::StringifyMutationList(*schema, row.undo_head);
@@ -989,7 +989,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
 
   {
     TRACE_EVENT0("tablet", "Flushing missed deltas");
-    BOOST_FOREACH(DeltaTracker* tracker, updated_trackers) {
+    for (DeltaTracker* tracker : updated_trackers) {
       VLOG(1) << "Flushing DeltaTracker updated with missed deltas...";
       RETURN_NOT_OK_PREPEND(tracker->Flush(DeltaTracker::NO_FLUSH_METADATA),
                             "Could not flush delta tracker after missed delta update");
@@ -1007,7 +1007,7 @@ Status DebugDumpCompactionInput(CompactionInput *input, vector<string> *lines) {
   while (input->HasMoreBlocks()) {
     RETURN_NOT_OK(input->PrepareBlock(&rows));
 
-    BOOST_FOREACH(const CompactionInputRow &input_row, rows) {
+    for (const CompactionInputRow &input_row : rows) {
       const Schema* schema = input_row.row.schema();
       LOG_STRING(INFO, lines) << schema->DebugRow(input_row.row) <<
         " Undos: " + Mutation::StringifyMutationList(*schema, input_row.undo_head) <<

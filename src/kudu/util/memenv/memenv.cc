@@ -6,7 +6,6 @@
 // - use boost mutexes instead of port mutexes
 
 #include <string.h>
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <map>
 #include <string>
@@ -132,7 +131,7 @@ class FileState : public RefCountedThreadSafe<FileState> {
   size_t memory_footprint() const {
     size_t size = kudu_malloc_usable_size(this);
     size += kudu_malloc_usable_size(blocks_.data());
-    BOOST_FOREACH(uint8_t* block, blocks_) {
+    for (uint8_t* block : blocks_) {
       size += kudu_malloc_usable_size(block);
     }
     size += filename_.capacity();
@@ -146,7 +145,7 @@ class FileState : public RefCountedThreadSafe<FileState> {
 
   // Private since only Release() should be used to delete it.
   ~FileState() {
-    BOOST_FOREACH(uint8_t* block, blocks_) {
+    for (uint8_t* block : blocks_) {
       delete[] block;
     }
   }
@@ -254,7 +253,7 @@ class WritableFileImpl : public WritableFile {
   // This is a dummy implementation that simply serially appends all
   // slices using regular I/O.
   virtual Status AppendVector(const vector<Slice>& data_vector) OVERRIDE {
-    BOOST_FOREACH(const Slice& data, data_vector) {
+    for (const Slice& data : data_vector) {
       RETURN_NOT_OK(file_->Append(data));
     }
     return Status::OK();

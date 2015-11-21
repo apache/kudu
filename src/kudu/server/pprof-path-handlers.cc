@@ -30,7 +30,6 @@
 #include "kudu/server/pprof-path-handlers.h"
 
 #include <fstream>
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gperftools/heap-profiler.h>
 #include <gperftools/malloc_extension.h>
@@ -215,7 +214,7 @@ static void PprofSymbolHandler(const Webserver::WebRequest& req, stringstream* o
 
   // Symbolization request.
   vector<StringPiece> pieces = strings::Split(req.post_data, "+");
-  BOOST_FOREACH(StringPiece p, pieces) {
+  for (StringPiece p : pieces) {
     string hex_addr;
     if (!TryStripPrefixString(p, "0x", &hex_addr)) {
       invalid_addrs++;

@@ -17,7 +17,6 @@
 
 #include "kudu/twitter-demo/parser.h"
 
-#include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -57,7 +56,7 @@ static void EnsureFileParses(const char* file, TwitterEventType expected_type) {
   CHECK_OK(LoadFile(file, &jsons));
 
   int line_number = 1;
-  BOOST_FOREACH(const string& json, jsons) {
+  for (const string& json : jsons) {
     if (json.empty()) continue;
     SCOPED_TRACE(json);
     SCOPED_TRACE(line_number);

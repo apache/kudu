@@ -17,7 +17,6 @@
 
 #include "kudu/tablet/maintenance_manager.h"
 
-#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <memory>
 #include <stdint.h>
@@ -271,7 +270,7 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 
   double best_perf_improvement = 0;
   MaintenanceOp* best_perf_improvement_op = NULL;
-  BOOST_FOREACH(OpMapTy::value_type &val, ops_) {
+  for (OpMapTy::value_type &val : ops_) {
     MaintenanceOp* op(val.first);
     MaintenanceOpStats& stats(val.second);
     // Update op stats.
@@ -385,7 +384,7 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
   DCHECK(out_pb != NULL);
   lock_guard<Mutex> guard(&lock_);
   MaintenanceOp* best_op = FindBestOp();
-  BOOST_FOREACH(MaintenanceManager::OpMapTy::value_type& val, ops_) {
+  for (MaintenanceManager::OpMapTy::value_type& val : ops_) {
     MaintenanceManagerStatusPB_MaintenanceOpPB* op_pb = out_pb->add_registered_operations();
     MaintenanceOp* op(val.first);
     MaintenanceOpStats& stat(val.second);
@@ -401,7 +400,7 @@ void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatu
     }
   }
 
-  BOOST_FOREACH(const CompletedOp& completed_op, completed_ops_) {
+  for (const CompletedOp& completed_op : completed_ops_) {
     if (!completed_op.name.empty()) {
       MaintenanceManagerStatusPB_CompletedOpPB* completed_pb = out_pb->add_completed_operations();
       completed_pb->set_name(completed_op.name);

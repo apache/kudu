@@ -165,7 +165,7 @@ static inline void CollectRowsForSnapshots(Tablet* tablet,
                                            const Schema& schema,
                                            const vector<MvccSnapshot>& snaps,
                                            vector<vector<string>* >* collected_rows) {
-  BOOST_FOREACH(const MvccSnapshot& snapshot, snaps) {
+  for (const MvccSnapshot& snapshot : snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet->NewRowIterator(schema,
@@ -190,7 +190,7 @@ static inline void VerifySnapshotsHaveSameResult(Tablet* tablet,
                                                  const vector<vector<string>* >& expected_rows) {
   int idx = 0;
   // Now iterate again and make sure we get the same thing.
-  BOOST_FOREACH(const MvccSnapshot& snapshot, snaps) {
+  for (const MvccSnapshot& snapshot : snaps) {
     DVLOG(1) << "Snapshot: " <<  snapshot.ToString();
     gscoped_ptr<RowwiseIterator> iter;
     ASSERT_OK(tablet->NewRowIterator(schema,

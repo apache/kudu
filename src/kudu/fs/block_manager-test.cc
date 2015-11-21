@@ -17,7 +17,6 @@
 
 #include <memory>
 
-#include <boost/foreach.hpp>
 
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/log_block_manager.h"
@@ -117,11 +116,11 @@ class BlockManagerTest : public KuduTest {
 template <>
 void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& paths) {
   // Ensure that each path has an instance file and that it's well-formed.
-  BOOST_FOREACH(const string& path, paths) {
+  for (const string& path : paths) {
     vector<string> children;
     ASSERT_OK(env_->GetChildren(path, &children));
     ASSERT_EQ(3, children.size());
-    BOOST_FOREACH(const string& child, children) {
+    for (const string& child : children) {
       if (child == "." || child == "..") {
         continue;
       }
@@ -144,7 +143,7 @@ void BlockManagerTest<FileBlockManager>::RunMultipathTest(const vector<string>& 
   // Each path should now have some additional block subdirectories. We
   // can't know for sure exactly how many (depends on the block IDs
   // generated), but this ensures that at least some change were made.
-  BOOST_FOREACH(const string& path, paths) {
+  for (const string& path : paths) {
     vector<string> children;
     ASSERT_OK(env_->GetChildren(path, &children));
     ASSERT_GT(children.size(), 3);
@@ -169,7 +168,7 @@ void BlockManagerTest<LogBlockManager>::RunMultipathTest(const vector<string>& p
 
   // Verify the results: 7 children = dot, dotdot, instance file, and two
   // containers (two files per container).
-  BOOST_FOREACH(const string& path, paths) {
+  for (const string& path : paths) {
     vector<string> children;
     ASSERT_OK(env_->GetChildren(path, &children));
     ASSERT_EQ(children.size(), 7);
@@ -297,7 +296,7 @@ void BlockManagerTest<LogBlockManager>::RunLogContainerPreallocationTest() {
   // Instead, we expect the size to either be 0 (preallocation isn't
   // supported) or equal to the preallocation amount.
   bool found = false;
-  BOOST_FOREACH(const string& child, children) {
+  for (const string& child : children) {
     if (HasSuffixString(child, ".data")) {
       found = true;
       uint64_t size;
@@ -604,7 +603,7 @@ TYPED_TEST(BlockManagerTest, ConcurrentCloseReadableBlockTest) {
                              &CloseHelper, reader.get(), &t));
     threads.push_back(t);
   }
-  BOOST_FOREACH(const scoped_refptr<Thread>& t, threads) {
+  for (const scoped_refptr<Thread>& t : threads) {
     t->Join();
   }
 }
@@ -725,7 +724,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
   ASSERT_EQ(4, bm_->available_containers_.size());
 
   // Delete the original blocks.
-  BOOST_FOREACH(const BlockId& b, block_ids) {
+  for (const BlockId& b : block_ids) {
     ASSERT_OK(bm_->DeleteBlock(b));
   }
 

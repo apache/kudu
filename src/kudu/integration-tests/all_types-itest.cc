@@ -62,7 +62,7 @@ struct SliceKeysTestSetup {
       splits.push_back(StringPrintf("%08x", split));
     }
     vector<const KuduPartialRow*> rows;
-    BOOST_FOREACH(string val, splits) {
+    for (string val : splits) {
       Slice slice(val);
       KuduPartialRow* row = schema.NewRow();
       CHECK_OK(row->SetSliceCopy<TypeTraits<KeyTypeWrapper::type> >(0, slice));
@@ -139,7 +139,7 @@ struct IntKeysTestSetup {
       splits.push_back(i * increment_);
     }
     vector<const KuduPartialRow*> rows;
-    BOOST_FOREACH(CppType val, splits) {
+    for (CppType val : splits) {
       KuduPartialRow* row = schema.NewRow();
       CHECK_OK(row->Set<TypeTraits<KeyTypeWrapper::type> >(0, val));
       rows.push_back(row);
@@ -221,7 +221,7 @@ class AllTypesItest : public KuduTest {
     ExternalMiniClusterOptions opts;
     opts.num_tablet_servers = kNumTabletServers;
 
-    BOOST_FOREACH(const std::string& flag, ts_flags) {
+    for (const std::string& flag : ts_flags) {
       opts.extra_tserver_flags.push_back(flag);
     }
 
@@ -236,7 +236,7 @@ class AllTypesItest : public KuduTest {
     vector<const KuduPartialRow*> split_rows = setup_.GenerateSplitRows(schema_);
     gscoped_ptr<client::KuduTableCreator> table_creator(client_->NewTableCreator());
 
-    BOOST_FOREACH(const KuduPartialRow* row, split_rows) {
+    for (const KuduPartialRow* row : split_rows) {
       split_rows_.push_back(*row);
     }
 
@@ -292,7 +292,7 @@ class AllTypesItest : public KuduTest {
 
   void SetupProjection(vector<string>* projection) {
     vector<string> keys = setup_.GetKeyColumns();
-    BOOST_FOREACH(const string& key, keys) {
+    for (const string& key : keys) {
       projection->push_back(key);
     }
     projection->push_back("int8_val");
