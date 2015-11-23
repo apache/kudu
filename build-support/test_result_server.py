@@ -29,7 +29,8 @@
 #   AWS_SECRET_KEY     - AWS secret key
 #   TEST_RESULT_BUCKET - bucket to store results in (eg 'kudu-test-results')
 #
-# If these are not configured, the server is likely to crash.
+# If the AWS credentials are not configured, falls back to using Boto's
+# default configuration (http://boto.cloudhackers.com/en/latest/boto_config_tut.html)
 #
 # Installation instructions:
 #   You probably want to run this inside a virtualenv to avoid having
@@ -62,8 +63,8 @@ class TRServer(object):
     self.s3_bucket = self.s3.get_bucket(os.environ["TEST_RESULT_BUCKET"])
 
   def connect_s3(self):
-    access_key = os.environ["AWS_ACCESS_KEY"]
-    secret_key = os.environ["AWS_SECRET_KEY"]
+    access_key = os.environ.get("AWS_ACCESS_KEY")
+    secret_key = os.environ.get("AWS_SECRET_KEY")
     s3 = boto.connect_s3(access_key, secret_key)
     logging.info("Connected to S3 with access key %s" % access_key)
     return s3
@@ -90,6 +91,7 @@ class TRServer(object):
     pwd = os.environ["MYSQLPWD"]
     db = os.environ["MYSQLDB"]
     self.thread_local.db = MySQLdb.connect(host, user, pwd, db)
+    self.thread_local.db.autocommit(True)
     logging.info("Connected to MySQL at %s" % host)
     return self.thread_local.db
 
