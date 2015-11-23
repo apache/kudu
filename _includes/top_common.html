@@ -41,7 +41,7 @@
               <span class="icon-bar"></span>
             </button>
             {% if page.active_nav != 'home' %}
-            <a href="{{site.github.url}}/"><img src="{{site.github.url}}/img/logo_small.png" width="80" /></a>
+            <a class="logo" href="{{site.github.url}}/"><img src="{{site.github.url}}/img/logo_small.png" width="80" /></a>
             {% endif %}
           </div>
           <div id="navbar" class="navbar-collapse collapse navbar-right">
@@ -52,17 +52,20 @@
               <li {% if page.active_nav == 'overview' %}class="active"{% endif %}>
                 <a href="{{site.github.url}}/overview.html">Overview</a>
               </li>
-              <li {% if page.active_nav == 'faq' %}class="active"{% endif %}>
-                <a href="{{site.github.url}}/faq.html">FAQ</a>
-              </li>
               <li {% if page.active_nav == 'docs' %}class="active"{% endif %}>
                 <a href="{{site.github.url}}/docs/">Documentation</a>
+              </li>
+              <li {% if page.active_nav == 'download' %}class="active"{% endif %}>
+                <a href="{{site.github.url}}/releases/">Download</a>
               </li>
               <li {% if page.active_nav == 'contributing' %}class="active"{% endif %}>
                 <a href="{{site.github.url}}/contributing.html">Contributing</a>
               </li>
               <li {% if page.active_nav == 'community' %}class="active"{% endif %}>
                 <a href="{{site.github.url}}/community.html">Community</a>
+              </li>
+              <li {% if page.active_nav == 'faq' %}class="active"{% endif %}>
+                <a href="{{site.github.url}}/faq.html">FAQ</a>
               </li>
             </ul>
           </div><!--/.nav-collapse -->

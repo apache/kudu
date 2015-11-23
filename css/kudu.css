@@ -144,13 +144,21 @@ footer {
     margin-top: 10px;
 }
 
-@media (min-width: 768px) { .container-fluid {
-  width: 750px
-} }
-@media (min-width: 992px) { .container-fluid {
-  width: 970px
-} }
-
 @media (min-width: 1200px) { .container-fluid {
   width: 1170px
 } }
+
+@media (min-width: 768px) and (max-width:820px) {
+  /* The navigation layout breaks in this page width range, hide the FAQ link
+     until we can get a replacement for the navigation bar. */
+  nav.navbar-default ul.navbar-nav li:last-child {
+    display: none;
+  }
+}
+@media (min-width: 768px) and (max-width:870px) {
+  .navbar-right { padding-left:0; padding-right:0; }
+  .kudu-site .navbar-default .navbar-nav a {
+      /* The padding looks better at 15px but doesn't fit on the page due to so many links. */
+      padding: 13px;
+  }
+}
