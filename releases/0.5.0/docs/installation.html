@@ -1,0 +1,711 @@
+---
+title: Installing Kudu
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2015-10-21 20:58:02 PDT'
+---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Installing Kudu</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>You can deploy Kudu on a cluster using packages or you can build Kudu
+from source. To run Kudu without installing anything, use the <a href="quickstart.html#quickstart_vm">Kudu Quickstart VM</a>.</p>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+Kudu is currently easier to install and manage with <a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.html">Cloudera Manager</a>,
+version 5.4.7 or newer. If you use Cloudera Manager, see also Cloudera&#8217;s
+<a href="http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/0-5-0/topics/kudu_installation.html">Kudu documentation</a>.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_prerequisites_and_requirements"><a class="link" href="#_prerequisites_and_requirements">Prerequisites and Requirements</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<div class="title">Hardware</div>
+<ul>
+<li>
+<p>A host to run the Kudu master.</p>
+</li>
+<li>
+<p>One or more hosts to run Kudu tablet servers. When using replication, a minimum of
+three tablet servers is necessary.</p>
+</li>
+</ul>
+</div>
+<div class="ulist">
+<div class="title">Operating System</div>
+<ul>
+<li>
+<p>RHEL 6 or Ubuntu Trusty</p>
+</li>
+<li>
+<p>A kernel version and filesystem that support <em>hole punching</em>. On Linux, hole punching
+is the use of the <code>fallocate()</code> system call with the <code>FALLOC_FL_PUNCH_HOLE</code> option
+set. See <a href="troubleshooting.html#req_hole_punching">troubleshooting hole punching</a> for more
+information.</p>
+</li>
+<li>
+<p>ntp.</p>
+</li>
+<li>
+<p>OSX and Windows are not supported, even for building from source.</p>
+</li>
+</ul>
+</div>
+<div class="ulist">
+<div class="title">Storage</div>
+<ul>
+<li>
+<p>If solid state storage is available, storing Kudu WALs on such high-performance
+media may significantly improve latency when Kudu is configured for its highest
+durability levels.</p>
+</li>
+</ul>
+</div>
+<div class="ulist">
+<div class="title">Management</div>
+<ul>
+<li>
+<p>If you use Cloudera Manager and CDH, Cloudera Manager 5.4.3 or newer is required.
+Cloudera Manager 5.4.7 and newer provide better monitoring and administration options.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="install_packages"><a class="link" href="#install_packages">Install Using Packages</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>You can install Kudu using packages managed by the operating system.</p>
+</div>
+<table id="kudu_package_locations" class="tableblock frame-all grid-all spread">
+<caption class="title">Table 1. Kudu Package Locations</caption>
+<colgroup>
+<col style="width: 33%;">
+<col style="width: 33%;">
+<col style="width: 33%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-right valign-top">OS</th>
+<th class="tableblock halign-left valign-top">Repository</th>
+<th class="tableblock halign-left valign-top">Individual Packages</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-right valign-top"><p class="tableblock"><strong>RHEL</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/cloudera-kudu.repo">RHEL 6</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/redhat/6/x86_64/kudu/0.5.0/RPMS/x86_64/">RHEL 6</a></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-right valign-top"><p class="tableblock"><strong>Ubuntu</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/cloudera.list">Trusty</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/kudu/ubuntu/trusty/amd64/kudu/pool/contrib/k/kudu/">Trusty</a></p></td>
+</tr>
+</tbody>
+</table>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+For later versions of Ubuntu, the Ubuntu Trusty packages are reported to install, though they have not been extensively tested.
+</td>
+</tr>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_install_on_rhel_hosts"><a class="link" href="#_install_on_rhel_hosts">Install On RHEL Hosts</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Download and configure the Kudu repositories for your operating system, or manually
+download individual RPMs, the appropriate link from <a href="#kudu_package_locations">Kudu Package Locations</a>.</p>
+</li>
+<li>
+<p>If using a Yum repository, use the following commands to install Kudu packages on
+each host.</p>
+<div class="listingblock">
+<div class="content">
+<pre>sudo yum install kudu                         # Base Kudu files
+sudo yum install kudu-master                  # Kudu master init.d service script and default configuration
+sudo yum install kudu-tserver                 # Kudu tablet server init.d service script and default configuration
+sudo yum install kudu-client0                 # Kudu C++ client shared library
+sudo yum install kudu-client-devel            # Kudu C++ client SDK</pre>
+</div>
+</div>
+</li>
+<li>
+<p>To manually install the Kudu RPMs, first download them, then use the command
+<code>sudo rpm -ivh &lt;RPM to install&gt;</code> and install the
+<code>kudu-master</code> and <code>kudu-tserver</code> packages on the appropriate hosts. These packages
+provide the operating system commands to start and stop Kudu.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_install_on_ubuntu_or_debian_hosts"><a class="link" href="#_install_on_ubuntu_or_debian_hosts">Install On Ubuntu or Debian Hosts</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>If using an Ubuntu or Debian repository, use the following commands to install Kudu
+packages on each host.</p>
+<div class="listingblock">
+<div class="content">
+<pre>sudo apt-get install kudu                     # Base Kudu files
+sudo apt-get install kudu-master              # Service scripts for managing kudu-master
+sudo apt-get install kudu-tserver             # Service scripts for managing kudu-tserver
+sudo apt-get install libkuduclient0           # Kudu C++ client shared library
+sudo apt-get install libkuduclient-dev       # Kudu C++ client SDK</pre>
+</div>
+</div>
+</li>
+<li>
+<p>To manually install individual DEBs, first download them, then use the command
+<code>sudo dpkg -i &lt;DEB to install&gt;</code> to install them.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_verify_the_installation"><a class="link" href="#_verify_the_installation">Verify the Installation</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Verify that services are running using one of the following methods:</p>
+<div class="ulist">
+<ul>
+<li>
+<p>Examine the output of the <code>ps</code> command on servers to verify one or both of <code>kudu-master</code>
+or <code>kudu-tserver</code> processes is running.</p>
+</li>
+<li>
+<p>Access the Master or Tablet Server web UI by opening <code>http://&lt;_host_name_&gt;:8051/</code>
+for masters
+or <code>http://&lt;_host_name_&gt;:8050/</code> for tablet servers.</p>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>If Kudu isn&#8217;t running, have a look at the log files in '/var/log/kudu', and if there&#8217;s a file
+ending with '.FATAL' then it means Kudu wasn&#8217;t able to start.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>If the error is 'Error during hole punch test', it might be a problem
+<a href="troubleshooting.html#req_hole_punching">with your OS</a>.</p>
+</li>
+<li>
+<p>If the error is 'Couldn&#8217;t get the current time', it&#8217;s a
+<a href="troubleshooting.html#ntp">problem with ntp</a>.</p>
+</li>
+<li>
+<p>If it&#8217;s something else that doesn&#8217;t seem obvious or if you&#8217;ve tried the above solutions without
+luck, you can ask for help on the
+<a href="https://groups.google.com/forum/#!forum/kudu-user">user mailing list</a>.</p>
+</li>
+</ul>
+</div>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="required_config_without_cm"><a class="link" href="#required_config_without_cm">Required Configuration</a></h3>
+<div class="paragraph">
+<p>Additional configuration steps are required on each host before you can start Kudu services.</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>The packages create a <code>kudu-conf</code> entry in the operating system&#8217;s alternatives database,
+and they ship the built-in <code>conf.dist</code> alternative. To adjust your configuration,
+you can either edit the files in <code>/etc/kudu/conf/</code> directly, or create a new alternative
+using the operating system utilities, make sure it is the link pointed to by <code>/etc/kudu/conf/</code>,
+and create custom configuration files there. Some parts of the configuration are configured
+in <code>/etc/default/kudu-master</code> and <code>/etc/default/kudu-tserver</code> files as well. You
+should include or duplicate these configuration options if you create custom configuration files.</p>
+<div class="paragraph">
+<p>Review the configuration, including the default WAL and data directory locations,
+and adjust them according to your requirements.</p>
+</div>
+</li>
+</ol>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Start Kudu services using the following commands:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo service kudu-master start
+$ sudo service kudu-tserver start</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>To stop Kudu services, use the following commands:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo service kudu-master stop
+$ sudo service kudu-tserver stop</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Configure the Kudu services to start automatically when the server starts, by adding
+them to the default runlevel.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo chkconfig kudu-master on                # RHEL / CentOS
+$ sudo chkconfig kudu-tserver on               # RHEL / CentOS
+
+$ sudo update-rc.d kudu-master defaults        # Debian / Ubuntu
+$ sudo update-rc.d kudu-tserver defaults       # Debian / Ubuntu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>For additional configuration of Kudu services, see <a href="configuration.html">Configuring
+Kudu</a>.</p>
+</li>
+</ol>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_build_from_source"><a class="link" href="#_build_from_source">Build From Source</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If installing Kudu using parcels or packages does not provide the flexibility you
+need, you can build Kudu from source. You can build from source on any supported operating system.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+<div class="title">Known Build Issues</div>
+<div class="ulist">
+<ul>
+<li>
+<p>It is not possible to build Kudu on OSX or Microsoft Windows.</p>
+</li>
+<li>
+<p>Do not build Kudu using <code>gcc</code> 4.6. It is known to cause runtime and test failures.</p>
+</li>
+</ul>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="sect2">
+<h3 id="_rhel_or_centos"><a class="link" href="#_rhel_or_centos">RHEL or CentOS</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Install the prerequisite libraries, if they are not installed:</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo yum install boost-static boost-devel openssl-devel cyrus-sasl-devel</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Install the <code>asciidoctor</code> gem if you plan to build documentation.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo gem install asciidoctor</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Clone the Git repository and change to the new <code>kudu</code> directory.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone http://github.com/cloudera/kudu
+$ cd kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build any missing third-party requirements using the <code>build-if-necessary.sh</code> script.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ thirdparty/build-if-necessary.sh</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build Kudu, using the utilities installed in the previous step. Edit the install
+prefix to the location where you would like the Kudu binaries, libraries, and headers
+installed during the <code>make install</code> step. The default value is <code>/usr/local/</code>.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release -DCMAKE_INSTALL_PREFIX=/opt/kudu
+make -j4</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Install Kudu binaries, libraries, and headers.
+If you do not specify a <code>DESTDIR</code>, <code>/usr/local/</code> is the default.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">sudo make DESTDIR=/opt/kudu install</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Build the documentation. NOTE: This command builds local documentation that
+is not appropriate for uploading to the Kudu website.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ make docs</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+<div class="exampleblock">
+<div class="title">Example 1. RHEL / CentOS Build Script</div>
+<div class="content">
+<div class="paragraph">
+<p>This script provides an overview of the procedure to build Kudu on a
+newly-installed RHEL or CentOS host, and can be used as the basis for an
+automated deployment scenario. It skips the steps marked <strong>Optional</strong> above.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">#!/bin/bash
+
+sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel
+git clone http://github.com/cloudera/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+make -j4
+make install</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_ubuntu_or_debian"><a class="link" href="#_ubuntu_or_debian">Ubuntu or Debian</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Install the prerequisite libraries, if they are not installed:</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
+  libssl-dev libsasl2-dev libtool ntp</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Install the <code>asciidoctor</code> gem and xsltproc if you plan to build documentation.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ sudo apt-get -y install asciidoctor xsltproc</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Clone the Git repository and change to the new <code>kudu</code> directory.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone http://github.com/cloudera/kudu
+$ cd kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build any missing third-party requirements using the <code>build-if-necessary.sh</code> script.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ thirdparty/build-if-necessary.sh</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build Kudu.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+make -j4</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Optional: Build the documentation. NOTE: This command builds local documentation that
+is not appropriate for uploading to the Kudu website.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ make docs</pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+<div class="exampleblock">
+<div class="title">Example 2. Ubuntu / Debian Build Script</div>
+<div class="content">
+<div class="paragraph">
+<p>This script provides an overview of the procedure to build Kudu on RHEL or
+CentOS, and can be used as the basis for an automated deployment scenario. It skips
+the steps marked <strong>Optional</strong> above.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">#!/bin/bash
+
+sudo apt-get -y install git autoconf automake libboost-thread-dev curl \
+  gcc g++ libssl-dev libsasl2-dev libtool ntp
+git clone http://github.com/cloudera/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+make -j4
+make install</code></pre>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="build_cpp_client"><a class="link" href="#build_cpp_client">Installing the C++ Client Libraries</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>If you need access to the Kudu client libraries for development,
+install the <code>kudu-client</code> and <code>kudu-client-devel</code> package for your platform.
+See <a href="#install_packages">Install Using Packages</a>.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Only build against the client libraries and headers (<code>kudu_client.so</code> and <code>client.h</code>).
+Other libraries and headers are internal to Kudu and have no stability guarantees.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="build_java_client"><a class="link" href="#build_java_client">Build the Java Client</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<div class="title">Requirements</div>
+<ul>
+<li>
+<p>JDK 7</p>
+</li>
+<li>
+<p>Apache Maven 3.x</p>
+</li>
+<li>
+<p><code>protoc</code> 2.6 or newer installed in your path, or built from the <code>thirdparty/</code> directory.
+You can run the following commands to build <code>protoc</code> from the third-party dependencies:</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>$ thirdparty/download-thirdparty.sh
+$ thirdparty/build-thirdparty.sh protobuf</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>To build the Java client, clone the Kudu Git
+repository, change to the <code>java</code> directory, and issue the following command:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ mvn install -DskipTests</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>For more information about building the Java API, as well as Eclipse integration,
+see <code>java/README.md</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="view_api"><a class="link" href="#view_api">View API Documentation</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<div class="title">C++ API Documentation</div>
+<p>The documentation for the C++ client APIs is included in the header files in
+<code>/usr/include/kudu/</code> if you installed Kudu using packages or subdirectories
+of <code>src/kudu/client/</code> if you built Kudu from source. If you installed Kudu using parcels,
+no headers are included in your installation. and you will need to <a href="#build_kudu">build
+Kudu from source</a> in order to have access to the headers and shared libraries.</p>
+</div>
+<div class="paragraph">
+<p>The following command is a naive approach to finding relevant header files. Use
+of any APIs other than the client APIs is unsupported.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ find /usr/include/kudu -type f -name *.h</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<div class="title">Java API Documentation</div>
+<p>You can view the <a href="../apidocs/index.html">Java API documentation</a> online. Alternatively,
+after <a href="#build_java_client">building the Java client</a>, Java API documentation is available
+in <code>java/kudu-client/target/apidocs/index.html</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="next_steps"><a class="link" href="#next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+<li>
+<p><a href="administration.html">Kudu Administration</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Installation Guide</span>
+            <ul class="sectlevel1">
+<li><a href="#_prerequisites_and_requirements">Prerequisites and Requirements</a></li>
+<li><a href="#install_packages">Install Using Packages</a>
+<ul class="sectlevel2">
+<li><a href="#_install_on_rhel_hosts">Install On RHEL Hosts</a></li>
+<li><a href="#_install_on_ubuntu_or_debian_hosts">Install On Ubuntu or Debian Hosts</a></li>
+<li><a href="#_verify_the_installation">Verify the Installation</a></li>
+<li><a href="#required_config_without_cm">Required Configuration</a></li>
+</ul>
+</li>
+<li><a href="#_build_from_source">Build From Source</a>
+<ul class="sectlevel2">
+<li><a href="#_rhel_or_centos">RHEL or CentOS</a></li>
+<li><a href="#_ubuntu_or_debian">Ubuntu or Debian</a></li>
+</ul>
+</li>
+<li><a href="#build_cpp_client">Installing the C++ Client Libraries</a></li>
+<li><a href="#build_java_client">Build the Java Client</a></li>
+<li><a href="#view_api">View API Documentation</a></li>
+<li><a href="#next_steps">Next Steps</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Documentation Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
