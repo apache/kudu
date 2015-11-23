@@ -2,7 +2,7 @@
 title: Kudu Release Notes
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-10-21 20:58:02 PDT'
+last_updated: 'Last updated 2015-11-23 15:10:49 PST'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -81,6 +81,38 @@ High availability for masters is not supported during the public beta.
 <p>By combining all of these properties, Kudu targets support for families of
 applications that are difficult or impossible to implement on current-generation
 Hadoop storage technologies.</p>
+</div>
+<div class="sect2 6 0">
+<h3 id="_release_notes_specific_to_0_6_0"><a class="link" href="#_release_notes_specific_to_0_6_0">Release notes specific to 0.6.0</a></h3>
+<div class="paragraph">
+<p>The 0.6.0 release contains incremental improvements and bug fixes. The most notable
+changes are:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>The Java client&#8217;s CreateTableBuilder and AlterTableBuilder classes have been renamed
+to CreateTableOptions and AlterTableOptions. Their methods now also return <code>this</code> objects,
+allowing them to be used as builders.</p>
+</li>
+<li>
+<p>The Java client&#8217;s AbstractKuduScannerBuilder#maxNumBytes() setter is now called
+batchSizeBytes as is the corresponding property in AsyncKuduScanner. This makes it
+consistent with the C++ client.</p>
+</li>
+<li>
+<p>The "kudu-admin" tool can now list and delete tables via its new subcommands
+"list_tables" and "delete_table &lt;table_name&gt;".</p>
+</li>
+<li>
+<p>OSX is now supported for single node development. Please consult its specific installation
+instructions in <a href="installation.html#osx_from_source">OS X</a>.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>The upgrade instructions are situated at <a href="installation.html#upgrade">Upgrade from 0.5.0 to 0.6.0</a>.</p>
+</div>
 </div>
 <div class="sect2">
 <h3 id="_kudu_impala_integration_features"><a class="link" href="#_kudu_impala_integration_features">Kudu-Impala Integration Features</a></h3>
@@ -447,6 +479,7 @@ you can monitor the number of tablets per server in the web UI.</p>
             <ul class="sectlevel1">
 <li><a href="#_introducing_kudu">Introducing Kudu</a>
 <ul class="sectlevel2">
+<li><a href="#_release_notes_specific_to_0_6_0">Release notes specific to 0.6.0</a></li>
 <li><a href="#_kudu_impala_integration_features">Kudu-Impala Integration Features</a></li>
 </ul>
 </li>

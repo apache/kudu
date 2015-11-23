@@ -2,7 +2,7 @@
 title: Kudu Documentation Style Guide
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-10-21 20:58:02 PDT'
+last_updated: 'Last updated 2015-11-23 15:10:49 PST'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -141,47 +141,75 @@ with the following, adapted from the
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A paragraph</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">a paragraph</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>Just type some text with a blank line at the top and bottom.</p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Add line breaks within a paragraph without adding blank lines</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Manual line breaks</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>This will break + at the plus sign. Or prefix the whole paragraph with a line containing '[%hardbreaks]'</p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Give a title to anything</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Colored italic bold differently-sized text</p></td>
-<td class="tableblock halign-left valign-top"><div></div></td>
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+</div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">In-Line Code or commands</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">monospace</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>`text`</p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">In-line literal content (things to be typed exactly as shown)</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">bold mono</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>*`typethis`*</p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">In-line replaceable content (things to substitute with your own values)</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">bold italic mono</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>*_typesomething_*</p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Code blocks with highlighting</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">monospace, highlighted, preserve space</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="literalblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="literalblock">
 <div class="content">
 <pre>[source,java]
 ----
@@ -194,7 +222,11 @@ with the following, adapted from the
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Code block included from a separate file</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">included just as though it were part of the main file</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="literalblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="literalblock">
 <div class="content">
 <pre>[source,ruby]
 ----
@@ -206,21 +238,33 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Include only part of a separate file</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Similar to Javadoc</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>See <a href="http://asciidoctor.org/docs/user-manual/#by-tagged-regions" class="bare">http://asciidoctor.org/docs/user-manual/#by-tagged-regions</a></p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">File names, directory names, new terms</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">italic</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>_hbase-default.xml_</p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">External naked URLs</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A link with the URL as link text</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>http://www.google.com</pre>
 </div>
@@ -229,7 +273,11 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">External URLs with text</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A link with arbitrary link text</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>link:http://www.google.com[Google]</pre>
 </div>
@@ -238,7 +286,11 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Create an internal anchor to cross-reference</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">not rendered</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>[[anchor_name]]</pre>
 </div>
@@ -247,7 +299,11 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Cross-reference an existing anchor using its default title</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">an internal hyperlink using the element title if available, otherwise using the anchor name</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>&lt;&lt;anchor_name&gt;&gt;</pre>
 </div>
@@ -256,7 +312,11 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Cross-reference an existing anchor using custom text</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">an internal hyperlink using arbitrary text</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>&lt;&lt;anchor_name,Anchor Text&gt;&gt;</pre>
 </div>
@@ -265,7 +325,11 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A block image</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">The image with alt text</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>image::sunset.jpg[Alt Text]</pre>
 </div>
@@ -277,7 +341,11 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">An inline image</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">The image with alt text, as part of the text flow</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>image:sunset.jpg [Alt Text]</pre>
 </div>
@@ -289,7 +357,11 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Link to a remote image</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">show an image hosted elsewhere</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>image::http://inkscape.org/doc/examples/tux.svg[Tux,250,350]</pre>
 </div>
@@ -301,14 +373,22 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Add dimensions or a URL to the image</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">depends</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>inside the brackets after the alt text, specify width, height and/or link="http://my_link.com"</p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A footnote</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">subscript link which takes you to the footnote</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>Some text.footnote:[The footnote text.]</pre>
 </div>
@@ -317,7 +397,11 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A note or warning with no title</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">The admonition image followed by the admonition</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>NOTE: My note here</pre>
 </div>
@@ -331,7 +415,11 @@ include::path/to/app.rb[]
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A complex note</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">The note has a title and/or multiple paragraphs and/or code blocks or lists, etc</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="literalblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="literalblock">
 <div class="content">
 <pre>.The Title
 [NOTE]
@@ -349,7 +437,11 @@ some source code
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Bullet lists</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">bullet lists</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>* list item 1</pre>
 </div>
@@ -361,7 +453,11 @@ some source code
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Numbered lists</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">numbered list</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>. list item 2</pre>
 </div>
@@ -373,7 +469,11 @@ some source code
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Checklists</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Checked or unchecked boxes</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>Checked:</p>
 </div>
 <div class="listingblock">
@@ -393,7 +493,11 @@ some source code
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Multiple levels of lists</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">bulleted or numbered or combo</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>. Numbered (1), at top level
 * Bullet (2), nested under 1
@@ -408,7 +512,11 @@ some source code
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Labelled lists / variablelists</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">a list item title or summary followed by content</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>Title:: content
 
@@ -420,7 +528,11 @@ Title::
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">GUI menu cascades</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">bold text with arrows to show levels</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>Use an ASCII arrow.</p>
 </div>
 <div class="literalblock">
@@ -435,7 +547,11 @@ Title::
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Sidebars, quotes, or other blocks of text</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">a block of text, formatted differently from the default</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>Delimited using different delimiters, see <a href="http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary" class="bare">http://asciidoctor.org/docs/user-manual/#built-in-blocks-summary</a>. Some of the examples above use delimiters like ...., ----,====.</p>
 </div>
 <div class="literalblock">
@@ -468,7 +584,11 @@ ____</pre>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Nested Sections</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">chapter, section, sub-section, etc</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>= Book (or chapter if the chapter can be built alone, see leveloffset below)
 
@@ -486,7 +606,11 @@ ____</pre>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Include one file from another</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Content is included as though it were inline</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>include::[/path/to/file.adoc]</pre>
 </div>
@@ -498,21 +622,33 @@ ____</pre>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A table</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">a table</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p>See <a href="http://asciidoctor.org/docs/user-manual/#tables" class="bare">http://asciidoctor.org/docs/user-manual/#tables</a>. Generally rows are separated by newlines and columns by pipes</p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Comment out a single line</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A  line is skipped during rendering</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="paragraph">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="paragraph">
 <p><code>// This line won&#8217;t show up</code></p>
 </div></div></td>
 </tr>
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Comment out a block</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">A section of the file is skipped during rendering</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>////
 Nothing between the slashes will show up.
@@ -523,7 +659,11 @@ Nothing between the slashes will show up.
 <tr>
 <td class="tableblock halign-left valign-top"><p class="tableblock">Highlight text for review</p></td>
 <td class="tableblock halign-left valign-top"><p class="tableblock">text shows up with yellow background</p></td>
-<td class="tableblock halign-left valign-top"><div><div class="listingblock">
+<td class="tableblock halign-left valign-top"><div><div id="toc" class="toc">
+<div id="toctitle">Table of Contents</div>
+
+</div>
+<div class="listingblock">
 <div class="content">
 <pre>Test between #hash marks# is highlighted yellow.</pre>
 </div>

@@ -2,7 +2,7 @@
 title: Introducing Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-10-21 20:58:02 PDT'
+last_updated: 'Last updated 2015-11-23 15:10:49 PST'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -50,8 +50,7 @@ to using HDFS with Parquet.</p>
 </li>
 <li>
 <p>Strong but flexible consistency model, allowing you to choose consistency
-requirements on a per-request basis, including the option for strict
-serialized consistency.</p>
+requirements on a per-request basis, including the option for strict-serializable consistency.</p>
 </li>
 <li>
 <p>Strong performance for running sequential and random workloads simultaneously.</p>
@@ -133,16 +132,6 @@ you to fulfill your query while reading even fewer blocks from disk. See
 </dd>
 </dl>
 </div>
-<div id="raft" class="paragraph">
-<div class="title">Raft Consensus Algorithm</div>
-<p>The <a href="http://raftconsensus.github.io/">Raft consensus algorithm</a> provides a
-way to elect a <em>leader</em> for a distributed cluster from a pool of potential
-leaders, or <em>candidates</em>. Other cluster members are <em>followers</em>, who are not
-candidates or leaders, but always look to the current leader for consensus. Kudu
-uses the Raft Consensus Algorithm for the election of masters and leader
-tablets, as well as determining the success or failure of a given write
-operation.</p>
-</div>
 <div class="paragraph">
 <div class="title">Table</div>
 <p>A <em>table</em> is where your data is stored in Kudu. A table has a schema and
@@ -184,6 +173,15 @@ other candidate masters.</p>
 <div class="paragraph">
 <p>Tablet servers heartbeat to the master at a set interval (the default is once
 per second).</p>
+</div>
+<div id="raft" class="paragraph">
+<div class="title">Raft Consensus Algorithm</div>
+<p>Kudu uses the <a href="https://raft.github.io/">Raft consensus algorithm</a> as
+a means to guarantee fault-tolerance and consistency, both for regular tablets and for master
+data. Through Raft, multiple replicas of a tablet elect a <em>leader</em>, which is responsible
+for accepting and replicating writes to <em>follower</em> replicas. Once a write is persisted
+in a majority of replicas it is acknowledged to the client. A given group of <code>N</code> replicas
+(usually 3 or 5) is able to accept writes with at most <code>(N - 1)/2</code> faulty replicas.</p>
 </div>
 <div id="catalog_table" class="paragraph">
 <div class="title">Catalog Table</div>

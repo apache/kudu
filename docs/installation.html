@@ -2,7 +2,7 @@
 title: Installing Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-10-21 20:58:02 PDT'
+last_updated: 'Last updated 2015-11-23 15:10:49 PST'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -39,12 +39,16 @@ from source. To run Kudu without installing anything, use the <a href="quickstar
 <i class="fa icon-note" title="Note"></i>
 </td>
 <td class="content">
-Kudu is currently easier to install and manage with <a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.html">Cloudera Manager</a>,
+Kudu is currently easier to install and manage with <a href="http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html">Cloudera Manager</a>,
 version 5.4.7 or newer. If you use Cloudera Manager, see also Cloudera&#8217;s
-<a href="http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/0-5-0/topics/kudu_installation.html">Kudu documentation</a>.
+<a href="http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/latest/topics/kudu_installation.html">Kudu documentation</a>.
 </td>
 </tr>
 </table>
+</div>
+<div class="paragraph">
+<div class="title">Upgrading Kudu</div>
+<p>To upgrade Kudu from a previous version, see <a href="#upgrade">Upgrade from 0.5.0 to 0.6.0</a>.</p>
 </div>
 </div>
 </div>
@@ -63,25 +67,52 @@ three tablet servers is necessary.</p>
 </li>
 </ul>
 </div>
+<div class="dlist">
+<div class="title">Operating System Requirements</div>
+<dl>
+<dt class="hdlist1">Linux</dt>
+<dd>
 <div class="ulist">
-<div class="title">Operating System</div>
 <ul>
 <li>
-<p>RHEL 6 or Ubuntu Trusty</p>
+<p>RHEL 6 or Ubuntu 14.04 Trusty.</p>
 </li>
 <li>
-<p>A kernel version and filesystem that support <em>hole punching</em>. On Linux, hole punching
-is the use of the <code>fallocate()</code> system call with the <code>FALLOC_FL_PUNCH_HOLE</code> option
-set. See <a href="troubleshooting.html#req_hole_punching">troubleshooting hole punching</a> for more
+<p>A kernel and fileystem that support <em>hole punching</em>. Hole punching is the use of the
+<code>fallocate(2)</code> system call with the <code>FALLOC_FL_PUNCH_HOLE</code> option set. See
+<a href="troubleshooting.html#req_hole_punching">troubleshooting hole punching</a> for more
 information.</p>
 </li>
 <li>
 <p>ntp.</p>
 </li>
+</ul>
+</div>
+</dd>
+<dt class="hdlist1">OS X</dt>
+<dd>
+<div class="ulist">
+<ul>
 <li>
-<p>OSX and Windows are not supported, even for building from source.</p>
+<p>OS X 10.10 Yosemite or OS X 10.11 El Capitan.</p>
+</li>
+<li>
+<p>Prebuilt OS X packages are not provided.</p>
 </li>
 </ul>
+</div>
+</dd>
+<dt class="hdlist1">Windows</dt>
+<dd>
+<div class="ulist">
+<ul>
+<li>
+<p>Microsoft Windows is unsupported.</p>
+</li>
+</ul>
+</div>
+</dd>
+</dl>
 </div>
 <div class="ulist">
 <div class="title">Storage</div>
@@ -329,7 +360,7 @@ need, you can build Kudu from source. You can build from source on any supported
 <div class="ulist">
 <ul>
 <li>
-<p>It is not possible to build Kudu on OSX or Microsoft Windows.</p>
+<p>It is not possible to build Kudu on Microsoft Windows.</p>
 </li>
 <li>
 <p>Do not build Kudu using <code>gcc</code> 4.6. It is known to cause runtime and test failures.</p>
@@ -341,7 +372,7 @@ need, you can build Kudu from source. You can build from source on any supported
 </table>
 </div>
 <div class="sect2">
-<h3 id="_rhel_or_centos"><a class="link" href="#_rhel_or_centos">RHEL or CentOS</a></h3>
+<h3 id="rhel_from_source"><a class="link" href="#rhel_from_source">RHEL or CentOS</a></h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -433,7 +464,7 @@ make install</code></pre>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_ubuntu_or_debian"><a class="link" href="#_ubuntu_or_debian">Ubuntu or Debian</a></h3>
+<h3 id="ubuntu_from_source"><a class="link" href="#ubuntu_from_source">Ubuntu or Debian</a></h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -513,6 +544,79 @@ make install</code></pre>
 </div>
 </div>
 </div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="osx_from_source"><a class="link" href="#osx_from_source">OS X</a></h3>
+<div class="paragraph">
+<p>The Xcode toolchain is necessary for compiling Kudu. Use <code>xcode-select --install</code>
+to install the Xcode Command Line Tools if Xcode is not already installed. These
+instructions use <a href="http://brew.sh/">Homebrew</a> to install dependencies, but
+manual dependency installation is possible.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+<div class="title">OS X Known Issues</div>
+<div class="paragraph">
+<p>Kudu support for OS X is experimental, and should only be used for development.
+See <a href="https://issues.cloudera.org/browse/KUDU-1219">OS X Limitations &amp; Known Issues</a>
+for more information.</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Install the prerequisite libraries, if they are not installed:</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ brew install autoconf automake cmake libtool pkg-config boost pstree</pre>
+</div>
+</div>
+</li>
+<li>
+<p>OS X 10.11 El Capitan only: install OpenSSL.</p>
+<div class="listingblock">
+<div class="content">
+<pre>$ brew install openssl
+$ brew link -f openssl</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Clone the Git repository and change to the new <code>kudu</code> directory.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ git clone http://github.com/cloudera/kudu
+$ cd kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build any missing third-party requirements using the <code>build-if-necessary.sh</code> script.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ thirdparty/build-if-necessary.sh</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Build Kudu.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+make -j4</code></pre>
+</div>
+</div>
+</li>
+</ol>
 </div>
 </div>
 </div>
@@ -608,6 +712,105 @@ in <code>java/kudu-client/target/apidocs/index.html</code>.</p>
 </div>
 </div>
 <div class="sect1">
+<h2 id="upgrade"><a class="link" href="#upgrade">Upgrade from 0.5.0 to 0.6.0</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Before upgrading, see <a href="#0.6.0_client_compatibility">[0.6.0_client_compatibility]</a> and <a href="#0.6.0_api_compatibility">[0.6.0_api_compatibility]</a>.
+To upgrade from Kudu 0.5.0 to 0.6.0, perform the following high-level steps, which
+are detailed in <a href="#0.6.0_upgrade_procedure">[0.6.0_upgrade_procedure]</a>:</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Shut down all Kudu services.</p>
+</li>
+<li>
+<p>Install the new Kudu packages or parcels, or install Kudu 0.6.0 from source.</p>
+</li>
+<li>
+<p>Restart all Kudu services.</p>
+</li>
+</ol>
+</div>
+<div class="paragraph">
+<p>It is technically possible to upgrade Kudu using rolling restarts, but it has not
+been tested and is not recommended.</p>
+</div>
+<div class="paragraph">
+<p>[[0.6.0_client_compatibility]]
+=== Client compatibility</p>
+</div>
+<div class="paragraph">
+<p>Kudu 0.6.0 maintains wire compatibility with Kudu 0.5.0. This means that a Kudu 0.6.0
+client can communicate with a Kudu 0.5.0 cluster, and vice versa. For that reason,
+you do not need to upgrade client JARs at the same time the cluster is upgraded.</p>
+</div>
+<div class="paragraph">
+<p>The same wire compatibility guarantees apply to the Impala_Kudu fork that was released
+with Kudu 0.5.0.</p>
+</div>
+<div class="paragraph">
+<p>[[0.6.0_api_compatibility]]
+=== API Compatibility</p>
+</div>
+<div class="paragraph">
+<p>The Kudu 0.6.0 client API is not compatible with the Kudu 0.5.0 client API. See the
+<a href="release_notes.html#0.6.0">Kudu 0.6.0 release notes</a> for details.</p>
+</div>
+<div class="paragraph">
+<p>[[0.6.0_upgrade_procedure]]
+=== Upgrade procedure</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Stop the Kudu master and tablet server services:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo service kudu-master stop
+$ sudo service kudu-tserver stop</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Upgrade the packages.</p>
+<div class="ulist">
+<ul>
+<li>
+<p>On RHEL hosts:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">sudo yum clean all
+sudo yum upgrade kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>On Ubuntu or Debian hosts:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">sudo apt-get update
+sudo apt-get install kudu</code></pre>
+</div>
+</div>
+</li>
+</ul>
+</div>
+</li>
+<li>
+<p>Start the Kudu master and tablet server services:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ sudo service kudu-master start
+$ sudo service kudu-tserver start</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+</div>
+</div>
+<div class="sect1">
 <h2 id="next_steps"><a class="link" href="#next_steps">Next Steps</a></h2>
 <div class="sectionbody">
 <div class="ulist">
@@ -654,13 +857,15 @@ in <code>java/kudu-client/target/apidocs/index.html</code>.</p>
 </li>
 <li><a href="#_build_from_source">Build From Source</a>
 <ul class="sectlevel2">
-<li><a href="#_rhel_or_centos">RHEL or CentOS</a></li>
-<li><a href="#_ubuntu_or_debian">Ubuntu or Debian</a></li>
+<li><a href="#rhel_from_source">RHEL or CentOS</a></li>
+<li><a href="#ubuntu_from_source">Ubuntu or Debian</a></li>
+<li><a href="#osx_from_source">OS X</a></li>
 </ul>
 </li>
 <li><a href="#build_cpp_client">Installing the C++ Client Libraries</a></li>
 <li><a href="#build_java_client">Build the Java Client</a></li>
 <li><a href="#view_api">View API Documentation</a></li>
+<li><a href="#upgrade">Upgrade from 0.5.0 to 0.6.0</a></li>
 <li><a href="#next_steps">Next Steps</a></li>
 </ul> 
       </li> 

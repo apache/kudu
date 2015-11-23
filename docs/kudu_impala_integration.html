@@ -2,7 +2,7 @@
 title: Using Impala With Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-10-21 20:58:02 PDT'
+last_updated: 'Last updated 2015-11-23 15:10:49 PST'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -44,7 +44,7 @@ tool to your Kudu data, using Impala as the broker.</p>
 </td>
 <td class="content">
 The following instructions assume a
-<a href="http://www.cloudera.com/content/cloudera/en/products-and-services/cloudera-enterprise/cloudera-manager.html">Cloudera Manager</a>
+<a href="http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html">Cloudera Manager</a>
 deployment. However, you can use Kudu with Impala without Cloudera Manager.
 </td>
 </tr>
@@ -56,8 +56,8 @@ deployment. However, you can use Kudu with Impala without Cloudera Manager.
 <h2 id="_requirements_and_implications"><a class="link" href="#_requirements_and_implications">Requirements and Implications</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>This integration relies on features that released versions of Impala do not have yet,
-as of Impala 2.3, which is expected to ship in CDH 5.5. In the interim, you need
+<p>This integration relies on features that released versions of Impala do not have yet.
+In the interim, you need
 to install a fork of Impala, which this document will refer to as <em>Impala_Kudu</em>.</p>
 </div>
 <div class="ulist">
@@ -90,7 +90,7 @@ services for HDFS (though it is not used by Kudu), the Hive Metastore (where Imp
 stores its metadata), and <a href="installation.html">Kudu</a>. You may need HBase, YARN,
 Sentry, and ZooKeeper services as well. Meeting the Impala installation requirements
 is out of the scope of this document. See
-<a href="http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_prereqs.html">Impala Prequisites</a>
+<a href="http://www.cloudera.com/content/www/en-us/documentation/enterprise/latest/topics/impala_prereqs.html">Impala Prequisites</a>
 in the official Impala documentation for more information.</p>
 </li>
 </ul>
@@ -387,26 +387,51 @@ and start the service.</p>
 packages, using operating system utilities. For this reason, you cannot use Impala_Kudu
 alongside another Impala instance if you use packages.</p>
 </div>
+<table id="impala_kudu_package_locations" class="tableblock frame-all grid-all spread">
+<caption class="title">Table 1. Impala_Kudu Package Locations</caption>
+<colgroup>
+<col style="width: 33%;">
+<col style="width: 33%;">
+<col style="width: 33%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-right valign-top">OS</th>
+<th class="tableblock halign-left valign-top">Repository</th>
+<th class="tableblock halign-left valign-top">Individual Packages</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-right valign-top"><p class="tableblock"><strong>RHEL</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/cloudera-impala-kudu.repo">RHEL 6</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/0.5.0/RPMS/x86_64/">RHEL 6</a></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-right valign-top"><p class="tableblock"><strong>Ubuntu</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/cloudera.list">Trusty</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/pool/contrib/i/impala-kudu/">Trusty</a></p></td>
+</tr>
+</tbody>
+</table>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p>Obtain the Impala_Kudu packages for your operating system from one of the following
-locations:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>RHEL 6: <a href="http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/" class="bare">http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/</a></p>
+<p>Download and configure the Impala_Kudu repositories for your operating system, or manually
+download individual RPMs, the appropriate link from <a href="#impala_kudu_package_locations">Impala_Kudu Package Locations</a>.</p>
 </li>
 <li>
-<p>Ubuntu Trusty: <a href="http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/" class="bare">http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/</a></p>
+<p>An Impala cluster has at least one <code>impala-kudu-server</code> and at most one <code>impala-kudu-catalog</code>
+and <code>impala-kudu-state-store</code>.  To connect to Impala from the command line, install
+the <code>impala-kudu-shell</code> package.</p>
 </li>
-</ul>
+</ol>
 </div>
-</li>
-<li>
-<p>Install the packages on each host which will run a role in the Impala_Kudu service,
-using your operating system&#8217;s utilities.</p>
-</li>
+</div>
+<div class="sect2">
+<h3 id="_adding_impala_service_in_cloudera_manager"><a class="link" href="#_adding_impala_service_in_cloudera_manager">Adding Impala service in Cloudera Manager</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
 <li>
 <p>Add a new Impala service in Cloudera Manager.</p>
 <div class="ulist">
@@ -453,26 +478,50 @@ Instead, follow <a href="#install_impala_kudu_packages">Installing Impala_Kudu U
 </tr>
 </table>
 </div>
+<table id="impala_kudu_non-cm_locations" class="tableblock frame-all grid-all spread">
+<caption class="title">Table 2. Impala_Kudu Package Locations</caption>
+<colgroup>
+<col style="width: 33%;">
+<col style="width: 33%;">
+<col style="width: 33%;">
+</colgroup>
+<thead>
+<tr>
+<th class="tableblock halign-right valign-top">OS</th>
+<th class="tableblock halign-left valign-top">Repository</th>
+<th class="tableblock halign-left valign-top">Individual Packages</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td class="tableblock halign-right valign-top"><p class="tableblock"><strong>RHEL</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/cloudera-impala-kudu.repo">RHEL 6</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/0.5.0/RPMS/x86_64/">RHEL 6</a></p></td>
+</tr>
+<tr>
+<td class="tableblock halign-right valign-top"><p class="tableblock"><strong>Ubuntu</strong></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/cloudera.list">Trusty</a></p></td>
+<td class="tableblock halign-left valign-top"><p class="tableblock"><a href="http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/pool/contrib/i/impala-kudu/">Trusty</a></p></td>
+</tr>
+</tbody>
+</table>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
-<p>Obtain the Impala_Kudu packages for your operating system from one of the following
-locations:</p>
-<div class="ulist">
-<ul>
-<li>
-<p>RHEL 6: <a href="http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/" class="bare">http://archive.cloudera.com/beta/impala-kudu/redhat/6/x86_64/impala-kudu/</a></p>
+<p>Download and configure the Impala_Kudu repositories for your operating system, or manually
+download individual RPMs, the appropriate link from <a href="#impala_kudu_non-cm_locations">Impala_Kudu Package Locations</a>.</p>
 </li>
 <li>
-<p>Ubuntu Trusty: <a href="http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/" class="bare">http://archive.cloudera.com/beta/impala-kudu/ubuntu/trusty/amd64/impala-kudu/</a></p>
+<p>An Impala cluster has at least one <code>impala-kudu-server</code> and at most one <code>impala-kudu-catalog</code>
+and <code>impala-kudu-state-store</code>.  To connect to Impala from the command line, install
+the <code>impala-kudu-shell</code> package.</p>
 </li>
-</ul>
+</ol>
 </div>
-</li>
-<li>
-<p>Install the packages on each host which will run a role in the Impala_Kudu service,
-using your operating system&#8217;s utilities.</p>
-</li>
+<div class="sect2">
+<h3 id="_starting_impala_kudu_services"><a class="link" href="#_starting_impala_kudu_services">Starting Impala_Kudu Services</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
 <li>
 <p>Use the Impala start-up scripts to start each service on the relevant hosts:</p>
 <div class="listingblock">
@@ -486,6 +535,7 @@ $ sudo service impala-server start</pre>
 </div>
 </li>
 </ol>
+</div>
 </div>
 </div>
 </div>
@@ -649,22 +699,39 @@ should not be nullable.</p>
 <h4 id="__code_create_table_as_select_code"><a class="link" href="#__code_create_table_as_select_code"><code>CREATE TABLE AS SELECT</code></a></h4>
 <div class="paragraph">
 <p>You can create a table by querying any other table or tables in Impala, using a <code>CREATE
-TABLE AS SELECT</code> query. The following example imports all rows from an existing table
+TABLE &#8230;&#8203; AS SELECT</code> statement. The following example imports all rows from an existing table
 <code>old_table</code> into a Kudu table <code>new_table</code>. The columns in <code>new_table</code> will have the
 same names and types as the columns in <code>old_table</code>, but you need to populate the <code>kudu.key_columns</code>
 property. In this example, the primary key columns are <code>ts</code> and <code>name</code>.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE new_table AS
-SELECT * FROM old_table
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE new_table
 TBLPROPERTIES(
   'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
   'kudu.table_name' = 'new_table',
   'kudu.master_addresses' = 'kudu-master.example.com:7051',
   'kudu.key_columns' = 'ts, name'
-);</code></pre>
+) AS SELECT * FROM old_table;</code></pre>
 </div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>For <code>CREATE TABLE &#8230;&#8203; AS SELECT</code> we currently require that the first columns that are
+projected in the <code>SELECT</code> statement correspond to the Kudu table keys and are in the
+same order  (<code>ts</code> then <code>name</code> in the example above). If the default projection generated by <code><strong></code>
+does not meet this requirement, the user should avoid using <code></strong></code> and explicitly mention
+the columns to project, in the correct order.</p>
+</div>
+</td>
+</tr>
+</table>
 </div>
 <div class="paragraph">
 <p>You can refine the <code>SELECT</code> statement to only match the rows and columns you want
@@ -779,7 +846,7 @@ TBLPROPERTIES(
 <p>+
 The <code>my_first_table</code> table is created within the <code>impala_kudu</code> database. To refer
 to this database in the future, without using a specific <code>USE</code> statement, you can
-refer to the table using <code>&lt;database&gt;:&lt;table&gt;</code> syntax. For example, to specify the
+refer to the table using <code>&lt;database&gt;.&lt;table&gt;</code> syntax. For example, to specify the
 <code>my_first_table</code> table in database <code>impala_kudu</code>, as opposed to any other table with
 the same name in another database, use <code>impala_kudu:my_first_table</code>. This also applies
 to <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, and <code>DROP</code> statements.</p>
@@ -793,8 +860,8 @@ to <code>INSERT</code>, <code>UPDATE</code>, <code>DELETE</code>, and <code>DROP
 <td class="content">
 Currently, Kudu does not encode the Impala database into the table name
 in any way. This means that even though you can create Kudu tables within Impala databases,
-the actual Kudu tables need to be unique within Kudu. For example, if you create <code>database_1:my_kudu_table</code>
-and <code>database_2:my_kudu_table</code>, you will have a naming collision within Kudu, even
+the actual Kudu tables need to be unique within Kudu. For example, if you create <code>database_1.my_kudu_table</code>
+and <code>database_2.my_kudu_table</code>, you will have a naming collision within Kudu, even
 though this would not cause a problem in Impala. This can be resolved by specifying
 a unique Kudu table name in the <code>kudu.table_name</code> property.
 </td>
@@ -1397,10 +1464,10 @@ data.</p>
 <p>Learn about the <a href="http://impala.io">Impala project</a>.</p>
 </li>
 <li>
-<p>Read the <a href="http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala.html">Impala documentation</a>.</p>
+<p>Read the <a href="http://www.cloudera.com/content/www/en-us/documentation/enterprise/latest/topics/impala.html">Impala documentation</a>.</p>
 </li>
 <li>
-<p>View the <a href="http://www.cloudera.com/content/cloudera/en/documentation/core/latest/topics/impala_langref.html">Impala SQL reference</a>.</p>
+<p>View the <a href="http://www.cloudera.com/content/www/en-us/documentation/enterprise/latest/topics/impala_langref.html">Impala SQL reference</a>.</p>
 </li>
 <li>
 <p>Read about Impala internals or learn how to contribute to Impala on the <a href="https://github.com/cloudera/Impala/wiki">Impala Wiki</a>.</p>
@@ -1446,9 +1513,14 @@ data.</p>
 <ul class="sectlevel2">
 <li><a href="#install_impala_kudu_parcels">Installing the Impala_Kudu Service Using Parcels</a></li>
 <li><a href="#install_impala_kudu_packages">Installing Impala_Kudu Using Packages</a></li>
+<li><a href="#_adding_impala_service_in_cloudera_manager">Adding Impala service in Cloudera Manager</a></li>
 </ul>
 </li>
-<li><a href="#_installing_impala_kudu_without_cloudera_manager">Installing Impala_Kudu Without Cloudera Manager</a></li>
+<li><a href="#_installing_impala_kudu_without_cloudera_manager">Installing Impala_Kudu Without Cloudera Manager</a>
+<ul class="sectlevel2">
+<li><a href="#_starting_impala_kudu_services">Starting Impala_Kudu Services</a></li>
+</ul>
+</li>
 <li><a href="#_using_the_impala_shell">Using the Impala Shell</a>
 <ul class="sectlevel2">
 <li><a href="#_internal_and_external_impala_tables">Internal and External Impala Tables</a></li>
