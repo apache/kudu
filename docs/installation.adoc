@@ -30,7 +30,7 @@ from source. To run Kudu without installing anything, use the link:quickstart.ht
 
 NOTE: Kudu is currently easier to install and manage with link:http://www.cloudera.com/content/www/en-us/products/cloudera-manager.html[Cloudera Manager],
 version 5.4.7 or newer. If you use Cloudera Manager, see also Cloudera's
-link:http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/0-6-0/topics/kudu_installation.html[Kudu documentation].
+link:http://www.cloudera.com/content/www/en-us/documentation/betas/kudu/latest/topics/kudu_installation.html[Kudu documentation].
 
 .Upgrading Kudu
 To upgrade Kudu from a previous version, see <<upgrade>>.
