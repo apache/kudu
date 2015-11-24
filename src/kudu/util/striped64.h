@@ -166,7 +166,9 @@ class LongAdder : Striped64 {
   void Reset() { InternalReset(0); }
 
  private:
-  int64_t Fn(int64_t current_value, int64_t new_value) { return current_value + new_value; }
+  int64_t Fn(int64_t current_value, int64_t new_value) override {
+    return current_value + new_value;
+  }
 
   DISALLOW_COPY_AND_ASSIGN(LongAdder);
 };

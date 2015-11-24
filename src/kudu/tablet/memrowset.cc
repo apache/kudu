@@ -328,25 +328,24 @@ class MRSRowProjectorImpl : public MRSRowProjector {
   explicit MRSRowProjectorImpl(gscoped_ptr<ActualProjector> actual)
     : actual_(actual.Pass()) {}
 
-  virtual Status Init() {
-    return actual_->Init();
-  }
+  virtual Status Init() override { return actual_->Init(); }
 
-  virtual Status ProjectRowForRead(const MRSRow& src_row,
-                                   RowBlockRow* dst_row,
-                                   Arena* arena) {
+  virtual Status ProjectRowForRead(const MRSRow& src_row, RowBlockRow* dst_row,
+                                   Arena* arena) override {
     return actual_->ProjectRowForRead(src_row, dst_row, arena);
   }
   virtual Status ProjectRowForRead(const ConstContiguousRow& src_row,
                                    RowBlockRow* dst_row,
-                                   Arena* arena) {
+                                   Arena* arena) override {
     return actual_->ProjectRowForRead(src_row, dst_row, arena);
   }
 
-  virtual const vector<ProjectionIdxMapping>& base_cols_mapping() const {
+  virtual const vector<ProjectionIdxMapping>& base_cols_mapping()
+      const override {
     return actual_->base_cols_mapping();
   }
-  virtual const vector<ProjectionIdxMapping>& adapter_cols_mapping() const {
+  virtual const vector<ProjectionIdxMapping>& adapter_cols_mapping()
+      const override {
     return actual_->adapter_cols_mapping();
   }
 

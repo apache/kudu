@@ -42,7 +42,7 @@ METRIC_DEFINE_entity(test_entity);
 
 class MetricsTest : public KuduTest {
  public:
-  virtual void SetUp() {
+  virtual void SetUp() override {
     KuduTest::SetUp();
 
     entity_ = METRIC_ENTITY_test_entity.Instantiate(&registry_, "my-test");

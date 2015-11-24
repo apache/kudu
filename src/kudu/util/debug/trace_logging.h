@@ -85,8 +85,8 @@ class TraceVLog {
     explicit TraceLogSink(const char* category) : category_(category) {}
     virtual void send(google::LogSeverity severity, const char* full_filename,
                       const char* base_filename, int line,
-                      const struct ::tm* tm_time,
-                      const char* message, size_t message_len) {
+                      const struct ::tm* tm_time, const char* message,
+                      size_t message_len) override {
       // Rather than calling TRACE_EVENT_INSTANT here, we have to do it from
       // the destructor. This is because glog holds its internal mutex while
       // calling send(). So, if we try to use TRACE_EVENT here, and --trace_to_console

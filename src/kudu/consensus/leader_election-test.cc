@@ -66,7 +66,7 @@ class FromMapPeerProxyFactory : public PeerProxyFactory {
   }
 
   virtual Status NewProxy(const RaftPeerPB& peer_pb,
-                          gscoped_ptr<PeerProxy>* proxy) {
+                          gscoped_ptr<PeerProxy>* proxy) override {
     PeerProxy* proxy_ptr = FindPtrOrNull(*proxy_map_, peer_pb.permanent_uuid());
     if (!proxy_ptr) return Status::NotFound("No proxy for peer.");
     proxy->reset(proxy_ptr);

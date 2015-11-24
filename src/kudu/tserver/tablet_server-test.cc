@@ -2176,7 +2176,7 @@ class DelayFsyncLogHook : public log::Log::LogFaultHooks {
  public:
   DelayFsyncLogHook() : log_latch1_(1), test_latch1_(1) {}
 
-  virtual Status PostAppend() {
+  virtual Status PostAppend() override {
     test_latch1_.CountDown();
     log_latch1_.Wait();
     log_latch1_.Reset(1);
