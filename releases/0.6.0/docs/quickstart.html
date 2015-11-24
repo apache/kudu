@@ -1,0 +1,423 @@
+---
+title: Kudu Quickstart
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2015-11-23 15:10:49 PST'
+---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Kudu Quickstart</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Follow these instructions to set up and run the Kudu VM, and start with Kudu, Kudu_Impala,
+and CDH in minutes.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="quickstart_vm"><a class="link" href="#quickstart_vm">Get The Kudu Quickstart VM</a></h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_prerequisites"><a class="link" href="#_prerequisites">Prerequisites</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Install <a href="https://www.virtualbox.org/">Oracle Virtualbox</a>. The VM has been tested to work
+with VirtualBox version 4.3 on Ubuntu 14.04 and VirtualBox version 5 on OSX
+10.9. VirtualBox is also included in most package managers: apt-get, brew, etc.</p>
+</li>
+<li>
+<p>After the installation, make sure that <code>VBoxManage</code> is in your <code>PATH</code> by using the
+<code>which VBoxManage</code> command.</p>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_installation"><a class="link" href="#_installation">Installation</a></h3>
+<div class="paragraph">
+<p>To download and start the VM, execute the following command in a terminal window.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ curl -s https://raw.githubusercontent.com/cloudera/kudu-examples/master/demo-vm-setup/bootstrap.sh | bash</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>This command downloads a shell script which clones the <code>kudu-examples</code> Git repository and
+then downloads a VM image of about 1.2GB size into the current working
+directory.<sup class="footnote">[<a id="_footnoteref_1" class="footnote" href="#_footnote_1" title="View footnote.">1</a>]</sup> You can examine the script after downloading it by removing
+the <code>| bash</code> component of the command above. Once the setup is complete, you can verify
+that everything works by connecting to the guest via SSH:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ssh demo@quickstart.cloudera</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>The username and password for the demo account are both <code>demo</code>. In addition, the <code>demo</code>
+user has password-less <code>sudo</code> privileges so that you can install additional software or
+manage the guest OS. You can also access the <code>kudu-examples</code> as a shared folder in
+<code>/home/demo/kudu-examples/</code> on the guest or from your VirtualBox shared folder location on
+the host. This is a quick way to make scripts or data visible to the guest.</p>
+</div>
+<div class="paragraph">
+<p>You can quickly verify if Kudu and Impala are running by executing the following commands:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ ps aux | grep kudu
+$ ps aux | grep impalad</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you have issues connecting to the VM or one of the processes is not running, make sure
+to consult the <a href="#trouble">Troubleshooting</a> section.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_load_data"><a class="link" href="#_load_data">Load Data</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>To perform some typical operations with Kudu and Impala, you can load the
+<a href="http://www.flysfo.com/media/facts-statistics/air-traffic-statistics">SFO Passenger Data</a>
+into Impala and then load it into Kudu.</p>
+</div>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Upload the sample data from the home directory to HDFS.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ hdfs dfs -mkdir /data
+$ hdfs dfs -put examples/SFO_Passenger_Data/MonthlyPassengerData_200507_to_201506.csv /data</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Create a new external Impala table to access the plain text data. To connect to Impala
+in the virtual machine issue the following command:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">ssh demo@quickstart.cloudera -t impala-shell</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Now, you can execute the following commands:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE EXTERNAL TABLE passenger_data_raw (
+  id int,
+  activity_period int,
+  operating_airline string,
+  airline_iata_code string,
+  published_airline string,
+  published_airline_iata_code string,
+  geo_summary string,
+  geo_region string,
+  activity_type_code string,
+  price_category_code string,
+  terminal string,
+  boarding_area string,
+  passenger_count bigint
+)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ','
+LOCATION '/data/';</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Validate if the data was actually loaded run the following command:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">SELECT count(*) FROM passenger_data_raw;
+
++----------+
+| count(*) |
++----------+
+| 13901    |
++----------+</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>It&#8217;s easy to convert data from any Hadoop file format and store it Kudu using the
+<code>CREATE TABLE AS SELECT</code> statement.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">CREATE TABLE passenger_data
+TBLPROPERTIES(
+'storage_handler' = 'com.cloudera.kudu.hive.KuduStorageHandler',
+'kudu.table_name' = 'passenger_data',
+'kudu.master_addresses' = '127.0.0.1',
+'kudu.key_columns' = 'id'
+ ) AS SELECT * FROM passenger_data_raw;
+
++-----------------------+
+| summary               |
++-----------------------+
+| Inserted 13901 row(s) |
++-----------------------+
+Fetched 1 row(s) in 1.26s</code></pre>
+</div>
+</div>
+</li>
+</ol>
+</div>
+<div class="exampleblock">
+<div class="content">
+<div class="paragraph">
+<p>For <code>CREATE TABLE &#8230;&#8203; AS SELECT</code> we currently require that the first columns that are
+projected in the <code>SELECT</code> statement correspond to the Kudu table keys and are in the
+same order  (<code>id</code> in the example above). If the default projection generated by <code><strong></code>
+does not meet this requirement, the user should avoid using <code></strong></code> and explicitly mention
+the columns to project, in the correct order.</p>
+</div>
+</div>
+</div>
+<div class="paragraph">
+<p>+
+The created table uses a simple single column primary key. See
+<a href="kudu_impala_integration.html#kudu_impala">Kudu Impala Integration</a> for a more detailed
+introduction to the extended SQL syntax for Impala.</p>
+</div>
+<div class="paragraph">
+<p>+
+The columns of the created table are copied from the <code>passenger_data_raw</code> base table. See
+<a href="http://www.cloudera.com/content/www/en-us/documentation/enterprise/latest/topics/impala_create_table.html">Impala&#8217;s
+documentation</a> for more details about the extended SQL syntax for Impala.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_read_and_modify_data"><a class="link" href="#_read_and_modify_data">Read and Modify Data</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Now that the data is stored in Kudu, you can run queries against it. The following query
+lists the airline with the highest passenger volume over the entire reporting timeframe.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">SELECT sum(passenger_count) AS total, operating_airline FROM passenger_data
+  GROUP BY operating_airline
+  HAVING total IS NOT null
+  ORDER BY total DESC LIMIT 10;
+
++-----------+----------------------------------+
+| total     | operating_airline                |
++-----------+----------------------------------+
+| 105363917 | United Airlines - Pre 07/01/2013 |
+| 51319845  | United Airlines                  |
+| 32657456  | SkyWest Airlines                 |
+| 31727343  | American Airlines                |
+| 23801507  | Delta Air Lines                  |
+| 23685267  | Virgin America                   |
+| 22507320  | Southwest Airlines               |
+| 16235520  | US Airways                       |
+| 11860630  | Alaska Airlines                  |
+| 6706438   | JetBlue Airways                  |
++-----------+----------------------------------+</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Looking at the result, you can already see a problem with the dataset. There is a
+duplicate airline name. Since the data is stored in Kudu rather than HDFS, you can quickly
+change any individual record and fix the problem without having to rewrite the entire
+table.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-sql" data-lang="sql">UPDATE passenger_data
+  SET operating_airline="United Airlines"
+  WHERE operating_airline LIKE "United Airlines - Pre%";
+
+SELECT sum(passenger_count) AS total, operating_airline FROM passenger_data
+  GROUP BY operating_airline
+  HAVING total IS NOT null
+  ORDER BY total DESC LIMIT 10;
+
++-----------+--------------------+
+| total     | operating_airline  |
++-----------+--------------------+
+| 156683762 | United Airlines    |
+| 32657456  | SkyWest Airlines   |
+| 31727343  | American Airlines  |
+| 23801507  | Delta Air Lines    |
+| 23685267  | Virgin America     |
+| 22507320  | Southwest Airlines |
+| 16235520  | US Airways         |
+| 11860630  | Alaska Airlines    |
+| 6706438   | JetBlue Airways    |
+| 6266220   | Northwest Airlines |
++-----------+--------------------+</code></pre>
+</div>
+</div>
+<div class="sect2">
+<h3 id="trouble"><a class="link" href="#trouble">Troubleshooting</a></h3>
+<div class="sect3">
+<h4 id="_problems_accessing_the_vm_via_ssh"><a class="link" href="#_problems_accessing_the_vm_via_ssh">Problems accessing the VM via SSH</a></h4>
+<div class="ulist">
+<ul>
+<li>
+<p>Make sure the host has a SSH client installed.</p>
+</li>
+<li>
+<p>Make sure the VM is running, by running the following command and checking for a VM called <code>kudu-demo</code>:</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ VBoxManage list runningvms</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Verify that the VM&#8217;s IP address is included in the host&#8217;s <code>/etc/hosts</code> file. You should
+see a line that includes an IP address followed by the hostname
+<code>quickstart.cloudera</code>. To check the running VM&#8217;s IP address, use the <code>VBoxManage</code>
+command below.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ VBoxManage guestproperty get kudu-demo /VirtualBox/GuestInfo/Net/0/V4/IP
+Value: 192.168.56.100</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>If you&#8217;ve used a Cloudera Quickstart VM before, your <code>.ssh/known_hosts</code> file may
+contain references to the previous VM&#8217;s SSH credentials. Remove any references to
+<code>quickstart.cloudera</code> from this file.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_next_steps"><a class="link" href="#_next_steps">Next Steps</a></h2>
+<div class="sectionbody">
+<div class="ulist">
+<ul>
+<li>
+<p><a href="installation.html">Installing Kudu</a></p>
+</li>
+<li>
+<p><a href="configuration.html">Configuring Kudu</a></p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+<span class="active-toc">Getting Started with Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#quickstart_vm">Get The Kudu Quickstart VM</a>
+<ul class="sectlevel2">
+<li><a href="#_prerequisites">Prerequisites</a></li>
+<li><a href="#_installation">Installation</a></li>
+</ul>
+</li>
+<li><a href="#_load_data">Load Data</a></li>
+<li><a href="#_read_and_modify_data">Read and Modify Data</a>
+<ul class="sectlevel2">
+<li><a href="#trouble">Troubleshooting</a></li>
+</ul>
+</li>
+<li><a href="#_next_steps">Next Steps</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Documentation Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
+
+
+  <div id="footnotes">
+  <hr>
+      <div class="footnote" id="_footnote_1">
+      <a href="#_footnoteref_1">1</a>. In addition, the script will create a host-only network between host and guest and setup an enty in the <code>/etc/hosts</code> file with the name <code>quickstart.cloudera</code> and the guest&#8217;s IP address.
+      </div>
+  </div>

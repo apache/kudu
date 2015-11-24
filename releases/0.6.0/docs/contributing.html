@@ -1,0 +1,644 @@
+---
+title: Contributing to Kudu
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2015-11-23 15:10:48 PST'
+---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Contributing to Kudu</h1>
+      <div class="sect1">
+<h2 id="_contributing_patches_using_gerrit"><a class="link" href="#_contributing_patches_using_gerrit">Contributing Patches Using Gerrit</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>The Kudu team uses Gerrit for code review, rather than Github pull requests. Typically,
+you pull from Github but push to Gerrit, and Gerrit is used to review code and merge
+it into Github.</p>
+</div>
+<div class="paragraph">
+<p>See the <a href="https://www.mediawiki.org/wiki/Gerrit/Tutorial">Gerrit Tutorial</a>
+for an overview of using Gerrit for code review.</p>
+</div>
+<div class="sect2">
+<h3 id="_initial_setup_for_gerrit"><a class="link" href="#_initial_setup_for_gerrit">Initial Setup for Gerrit</a></h3>
+<div class="olist arabic">
+<ol class="arabic">
+<li>
+<p>Sign in to <a href="http://gerrit.cloudera.org:8080">Gerrit</a> using your Github username.</p>
+</li>
+<li>
+<p>Go to <a href="http://gerrit.cloudera.org:8080/#/settings/">Settings</a>. Update your name
+and email address on the <strong>Contact Information</strong> page, and upload a SSH public key.
+If you do not update your name, it will show up as "Anonymous Coward" in Gerrit reviews.</p>
+</li>
+<li>
+<p>If you have not done so, clone the main Kudu repository. By default, the main remote
+is called <code>origin</code>. When you fetch or pull, you will do so from <code>origin</code>.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">git clone https://github.com/cloudera/kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Change to the new <code>kudu</code> directory.</p>
+</li>
+<li>
+<p>Add a <code>gerrit</code> remote. In the following command, substitute &lt;username&gt; with your
+Github username.</p>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">git remote add gerrit ssh://&lt;username&gt;@gerrit.cloudera.org:29418/kudu</code></pre>
+</div>
+</div>
+</li>
+<li>
+<p>Run the following command to install the
+Gerrit <code>commit-msg</code> hook. Use the following command, replacing <code>&lt;username&gt;</code> with your
+Github username.</p>
+<div class="listingblock">
+<div class="content">
+<pre>gitdir=$(git rev-parse --git-dir); scp -p -P 29418 &lt;username&gt;@gerrit.cloudera.org:hooks/commit-msg ${gitdir}/hooks/</pre>
+</div>
+</div>
+</li>
+<li>
+<p>Be sure you have set the Kudu repository to use <code>pull --rebase</code> by default. You
+can use the following two commands, assuming you have only ever checked out <code>master</code>
+so far:</p>
+<div class="listingblock">
+<div class="content">
+<pre>git config branch.autosetuprebase always
+git config branch.master.rebase true</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If for some reason you had already checked out branches other than <code>master</code>, substitute
+<code>master</code> for the other branch names in the second command above.</p>
+</div>
+</li>
+</ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_submitting_patches"><a class="link" href="#_submitting_patches">Submitting Patches</a></h3>
+<div class="paragraph">
+<p>To submit a patch, first commit your change (using a descriptive multi-line
+commit message if possible), then push the request to the <code>gerrit</code> remote. For instance, to push a change
+to the <code>master</code> branch:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>git push gerrit HEAD:refs/for/master --no-thin</pre>
+</div>
+</div>
+<div class="paragraph">
+<p>or to push a change to the <code>gh-pages</code> branch (to update the website):</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>git push gerrit HEAD:refs/for/gh-pages --no-thin</pre>
+</div>
+</div>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-note" title="Note"></i>
+</td>
+<td class="content">
+The <code>--no-thin</code> argument is a workaround to prevent an error in Gerrit. See
+<a href="https://code.google.com/p/gerrit/issues/detail?id=1582" class="bare">https://code.google.com/p/gerrit/issues/detail?id=1582</a>.
+</td>
+</tr>
+</table>
+</div>
+<div class="admonitionblock tip">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-tip" title="Tip"></i>
+</td>
+<td class="content">
+Consider creating Git aliases for the above commands. Gerrit also includes
+a command-line tool called
+<a href="https://www.mediawiki.org/wiki/Gerrit/Tutorial#Installing_git-review">git-review</a>,
+which you may find helpful.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<p>Gerrit will add a change ID to your commit message and will create a Gerrit review,
+whose URL will be emitted as part of the push reply. If desired, you can send a message
+to the <code>kudu-dev</code> mailing list, explaining your patch and requesting review.</p>
+</div>
+<div class="paragraph">
+<p>After getting feedback, you can update or amend your commit, (for instance, using
+a command like <code>git commit --amend</code>) while leaving the Change
+ID intact. Push your change to Gerrit again, and this will create a new patch set
+in Gerrit and notify all reviewers about the change.</p>
+</div>
+<div class="paragraph">
+<p>When your code has been reviewed and is ready to be merged into the Kudu code base,
+a Kudu committer will merge it using Gerrit. You can discard your local branch.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_abandoning_a_review"><a class="link" href="#_abandoning_a_review">Abandoning a Review</a></h3>
+<div class="paragraph">
+<p>If your patch is not accepted or you decide to pull it from consideration, you can
+use the Gerrit UI to <strong>Abandon</strong> the patch. It will still show in Gerrit&#8217;s history,
+but will not be listed as a pending review.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_reviewing_patches_in_gerrit"><a class="link" href="#_reviewing_patches_in_gerrit">Reviewing Patches In Gerrit</a></h3>
+<div class="paragraph">
+<p>You can view a unified or side-by-side diff of changes in Gerrit using the web UI.
+To leave a comment, click the relevant line number or highlight the relevant part
+of the line, and type 'c' to bring up a comment box. To submit your comments and/or
+your review status, go up to the top level of the review and click <strong>Reply</strong>. You can
+add additional top-level comments here, and submit them.</p>
+</div>
+<div class="paragraph">
+<p>To check out code from a Gerrit review, click <strong>Download</strong> and paste the relevant Git
+commands into your Git client. You can then update the commit and push to Gerrit to
+submit a patch to the review, even if you were not the original reviewer.</p>
+</div>
+<div class="paragraph">
+<p>Gerrit allows you to vote on a review. A vote of <code>+2</code> from at least one committer
+(besides the submitter) is required before the patch can be merged.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_code_style"><a class="link" href="#_code_style">Code Style</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Get familiar with these guidelines so that your contributions can be reviewed and
+integrated quickly and easily.</p>
+</div>
+<div class="paragraph">
+<p>In general, Kudu follows the
+<a href="http://google-styleguide.googlecode.com/svn/trunk/cppguide.xml">Google C++ Style Guide</a>,
+with the following exceptions:</p>
+</div>
+<div class="sect2">
+<h3 id="_limitations_on_code_boost_code_library_use"><a class="link" href="#_limitations_on_code_boost_code_library_use">Limitations on <code>boost</code> Library Use</a></h3>
+<div class="paragraph">
+<p><code>boost</code> libraries can be used in cases where a suitable
+replacement does not exist in the Kudu code base. However, try to avoid introducing
+dependencies on new <code>boost</code> libraries, and use Kudu code in preference
+to <code>boost</code> where available. For example, do not use `boost&#8217;s scoped pointer
+implementations.</p>
+</div>
+<div class="ulist">
+<div class="title">Approved <code>boost</code> Libraries</div>
+<ul>
+<li>
+<p><code>BOOST_FOREACH</code></p>
+</li>
+<li>
+<p><code>boost::assign</code> (container literals)</p>
+</li>
+<li>
+<p><code>boost::mutex</code> and <code>boost::shared_mutex</code> (but prefer Kudu&#8217;s
+spin lock implementation for short critical sections)</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Check that any features from <code>boost</code> you use are present in <strong><code>boost</code> 1.46</strong>
+or earlier, for compatibility with RHEL 6.</p>
+</div>
+<div class="paragraph">
+<div class="title"><code>boost</code> Libraries and the Kudu C++ Client</div>
+<p>Do not use <code>boost</code> in any public headers for the Kudu C++ client, because
+<code>boost</code> commonly breaks backward compatibility, and passing data between two <code>boost</code>
+versions (one by the user, one by Kudu) causes serious issues.</p>
+</div>
+<div class="paragraph">
+<p>In addition, do not create dependencies from the Kudu C++ client to any <code>boost</code>
+libraries. <code>libboost_system</code> is particularly troublesome, as any <code>boost</code> code
+that throws exceptions will grow a dependency on it. Among other things, you
+cannot use <code>boost::{lock_guard,unique_lock,shared_lock}</code> in any code consumed
+by the C++ client (such as <em>common/</em> and <em>util/</em>).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_line_length"><a class="link" href="#_line_length">Line length</a></h3>
+<div class="paragraph">
+<p>The Kudu team allows line lengths of 100 characters per line, rather than Google&#8217;s standard of 80. Try to
+keep under 80 where possible, but you can spill over to 100 or so if necessary.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_pointers"><a class="link" href="#_pointers">Pointers</a></h3>
+<div class="paragraph">
+<div class="title">Smart Pointers and Singly-Owned Pointers</div>
+<p>Generally, most objects should have clear "single-owner" semantics.
+Most of the time, singly-owned objects can be wrapped in a <code>gscoped_ptr&lt;&gt;</code>
+which ensures deletion on scope exit and prevents accidental copying.
+<code>gscoped_ptr</code> is similar to C++11&#8217;s <code>unique_ptr</code> in that it has a <code>release</code>
+method and also provides emulated <code>move</code> semantics (see <em>gscoped_ptr.h</em> for
+example usage).</p>
+</div>
+<div class="paragraph">
+<p>If an object is singly owned, but referenced from multiple places, such as when
+the pointed-to object is known to be valid at least as long as the pointer itself,
+associate a comment with the constructor which takes and stores the raw pointer,
+as in the following example.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-c++" data-lang="c++">  // 'blah' must remain valid for the lifetime of this class
+  MyClass(const Blah* blah) :
+    blah_(blah) {
+  }</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>If you use raw pointers within STL collections or inside of vectors and other containers,
+associate a comment with the container, which explains the ownership
+semantics (owned or un-owned). Use utility code from <em>gutil/stl_util.h</em>, such as
+<code>STLDeleteElements</code> or <code>ElementDeleter</code>, to ease handling of deletion of the
+contained elements.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Using <code>std::auto_ptr</code> is strictly disallowed because of its difficult and
+bug-prone semantics.
+</td>
+</tr>
+</table>
+</div>
+<div class="paragraph">
+<div class="title">Smart Pointers for Multiply-Owned Pointers:</div>
+<p>Although single ownership is ideal, sometimes it is not possible, particularly
+when multiple threads are in play and the lifetimes of the pointers are not
+clearly defined. In these cases, you can use either <code>std::tr1::shared_ptr</code> or
+Kudu&#8217;s own <code>scoped_refptr</code> from <em>gutil/ref_counted.hpp</em>. Each of these mechanisms
+relies on reference counting to automatically delete the referent once no more
+pointers remain. The key difference between these two types of pointers is that
+<code>scoped_refptr</code> requires that the object extend a <code>RefCounted</code> base class, and
+stores its reference count inside the object storage itself, while <code>shared_ptr</code>
+maintains a separate reference count on the heap.</p>
+</div>
+<div class="paragraph">
+<p>The pros and cons are:</p>
+</div>
+<div class="ulist none">
+<div class="title"><code>shared_ptr</code></div>
+<ul class="none">
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle"></i></span> can be used with any type of object, without the
+object deriving from a special base class</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle"></i></span> part of the standard library and familiar to most
+C++ developers</p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle"></i></span> creating a new object requires two allocations instead
+of one (one to create the ref count, and one to create the object)</p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle"></i></span> the ref count may not be near the object on the heap,
+so extra cache misses may be incurred on access</p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle"></i></span> the <code>shared_ptr</code> instance itself requires 16 bytes
+(pointer to the ref count and pointer to the object)</p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle"></i></span> if you convert from the <code>shared_ptr</code> to a raw pointer,
+you can&#8217;t get back the <code>shared_ptr</code></p>
+</li>
+</ul>
+</div>
+<div class="ulist none">
+<div class="title"><code>scoped_refptr</code></div>
+<ul class="none">
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> only requires a single allocation, and ref count
+is on the same cache line as the object</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> the pointer only requires 8 bytes (since
+the ref count is within the object)</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> you can manually increase or decrease
+reference counts when more control is required</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> you can convert from a raw pointer back
+to a <code>scoped_refptr</code> safely without worrying about double freeing</p>
+</li>
+<li>
+<p><span class="icon green"><i class="fa fa-plus-circle fa-pro"></i></span> since we control the implementation, we
+can implement features, such as debug builds that capture the stack trace of every
+referent to help debug leaks.</p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle fa-con"></i></span> the referred-to object must inherit
+from <code>RefCounted</code></p>
+</li>
+<li>
+<p><span class="icon red"><i class="fa fa-minus-circle fa-con"></i></span> does not support <code>weak_ptr&lt;&gt;</code> use cases</p>
+</li>
+</ul>
+</div>
+<div class="paragraph">
+<p>Since <code>scoped_refptr</code> is generally faster and smaller, try to use it
+rather than <code>shared_ptr</code> in new code. Existing code uses <code>shared_ptr</code>
+in many places. When interfacing with that code, you can continue to use <code>shared_ptr</code>.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_function_binding_and_callbacks"><a class="link" href="#_function_binding_and_callbacks">Function Binding and Callbacks</a></h3>
+<div class="paragraph">
+<p>Existing code uses <code>boost::bind</code> and <code>boost::function</code> for function binding and
+callbacks. For new code, use the <code>Callback</code> and <code>Bind</code> classes in <code>gutil</code> instead.
+While less full-featured (<code>Bind</code> doesn&#8217;t support argument
+place holders, wrapped function pointers, or function objects), they provide
+more options by the way of argument lifecycle management. For example, a
+bound argument whose class extends <code>RefCounted</code> will be incremented during <code>Bind</code>
+and decremented when the <code>Callback</code> goes out of scope.</p>
+</div>
+<div class="paragraph">
+<p>See the large file comment in <em>gutil/callback.h</em> for more details, and
+<em>util/callback_bind-test.cc</em> for examples.</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="__code_cmake_code_style_guide"><a class="link" href="#__code_cmake_code_style_guide"><code>CMake</code> Style Guide</a></h3>
+<div class="paragraph">
+<p><code>CMake</code> allows commands in lower, upper, or mixed case. To keep
+the CMake files consistent, please use the following guidelines:</p>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>built-in commands</strong> in lowercase</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>add_subdirectory(some/path)</pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>built-in arguments</strong> in uppercase</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>message(STATUS "message goes here")</pre>
+</div>
+</div>
+<div class="ulist">
+<ul>
+<li>
+<p><strong>custom commands or macros</strong> in uppercase</p>
+</li>
+</ul>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre>ADD_KUDU_TEST(some-test)</pre>
+</div>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_gflags"><a class="link" href="#_gflags">GFlags</a></h3>
+<div class="paragraph">
+<p>Kudu uses gflags for both command-line and file-based configuration. Use these guidelines
+to add a new gflag. All new gflags must conform to these
+guidelines. Existing non-conformant ones will be made conformant in time.</p>
+</div>
+<div class="paragraph">
+<div class="title">Name</div>
+<p>The gflag&#8217;s name conveys a lot of information, so choose a good name. The name
+will propagate into other systems, such as the <a href="configuration_reference.html">Configuration
+Reference</a>.
+- The different parts of a multi-word name should be separated by underscores.
+  For example, <code>fs_data_dirs</code>.
+- The name should be prefixed with the context that it affects. For example,
+  <code>webserver_num_worker_threads</code> and <code>cfile_default_block_size</code>. Context can be
+  difficult to define, so bear in mind that this prefix will be
+  used to group similar gflags together. If the gflag affects the entire
+  process, it should not be prefixed.
+- If the gflag is for a quantity, the name should be suffixed with the units.
+  For example, <code>remote_bootstrap_idle_timeout_ms</code>.
+- Where possible, use short names. This will save time for those entering
+  command line options by hand.
+- The name is part of Kudu&#8217;s compatibility contract, and should not change
+  without very good reason.</p>
+</div>
+<div class="paragraph">
+<div class="title">Default value</div>
+<p>Choosing a default value is generally simple, but like the name, it propagates
+into other systems.
+- The default value is part of Kudu&#8217;s compatibility contract, and should not
+  change without very good reason.</p>
+</div>
+<div class="paragraph">
+<div class="title">Description</div>
+<p>The gflag&#8217;s description should supplement the name and provide additional
+context and information. Like the name, the description propagates into other
+systems.
+- The description may include multiple sentences. Each should begin with a
+  capital letter, end with a period, and begin one space after the previous.
+- The description should NOT include the gflag&#8217;s type or default value; they are
+  provided out-of-band.
+- The description should be in the third person. Do not use words like <code>you</code>.
+- A gflag description can be changed freely; it is not expected to remain the
+  same across Kudu releases.</p>
+</div>
+<div class="paragraph">
+<div class="title">Tags</div>
+<p>Kudu&#8217;s gflag tagging mechanism adds machine-readable context to each gflag, for
+use in consuming systems such as documentation or management tools. See the large block
+comment in <em>flag_tags.h</em> for guidelines.</p>
+</div>
+<div class="ulist">
+<div class="title">Miscellaneous</div>
+<ul>
+<li>
+<p>Avoid creating multiple gflags for the same logical parameter. For
+example, many Kudu binaries need to configure a WAL directory. Rather than
+creating <code>foo_wal_dir</code> and <code>bar_wal_dir</code> gflags, better to have a single
+<code>kudu_wal_dir</code> gflag for use universally.</p>
+</li>
+</ul>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_testing"><a class="link" href="#_testing">Testing</a></h2>
+<div class="sectionbody">
+<div class="dlist">
+<dl>
+<dt class="hdlist1">All new code should have tests.</dt>
+<dd>
+<p>Add new tests either in existing files, or create new test files as necessary.</p>
+</dd>
+<dt class="hdlist1">All bug fixes should have tests.</dt>
+<dd>
+<p>It&#8217;s OK to fix a bug without adding a
+new test if it&#8217;s triggered by an existing test case. For example, if a
+race shows up when running a multi-threaded system test after 20
+minutes or so, it&#8217;s worth trying to make a more targeted test case to
+trigger the bug. But if that&#8217;s hard to do, the existing system test
+should be enough.</p>
+</dd>
+<dt class="hdlist1">Tests should run quickly (&lt; 1s).</dt>
+<dd>
+<p>If you want to write a time-intensive
+test, make the runtime dependent on <code>KuduTest#AllowSlowTests</code>, which is
+enabled via the <code>KUDU_ALLOW_SLOW_TESTS</code> environment variable and is
+used by Jenkins test execution.</p>
+</dd>
+<dt class="hdlist1">Tests which run a number of iterations of some task should use a <code>gflags</code> command-line argument for the number of iterations.</dt>
+<dd>
+<p>This is handy for writing quick stress tests or performance tests.</p>
+</dd>
+<dt class="hdlist1">Commits which may affect performance should include before/after <code>perf-stat(1)</code> output.</dt>
+<dd>
+<p>This will show performance improvement or non-regression.
+Performance-sensitive code should include some test case which can be used as a
+targeted benchmark.</p>
+</dd>
+</dl>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_documentation"><a class="link" href="#_documentation">Documentation</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>See <a href="style_guide.html">Documentation Style Guide</a> for guidelines about contributing
+to the official Kudu documentation.</p>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="developing.html">Developing Applications with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+<span class="active-toc">Contributing to Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#_contributing_patches_using_gerrit">Contributing Patches Using Gerrit</a>
+<ul class="sectlevel2">
+<li><a href="#_initial_setup_for_gerrit">Initial Setup for Gerrit</a></li>
+<li><a href="#_submitting_patches">Submitting Patches</a></li>
+<li><a href="#_abandoning_a_review">Abandoning a Review</a></li>
+<li><a href="#_reviewing_patches_in_gerrit">Reviewing Patches In Gerrit</a></li>
+</ul>
+</li>
+<li><a href="#_code_style">Code Style</a>
+<ul class="sectlevel2">
+<li><a href="#_limitations_on_code_boost_code_library_use">Limitations on <code>boost</code> Library Use</a></li>
+<li><a href="#_line_length">Line length</a></li>
+<li><a href="#_pointers">Pointers</a></li>
+<li><a href="#_function_binding_and_callbacks">Function Binding and Callbacks</a></li>
+<li><a href="#__code_cmake_code_style_guide"><code>CMake</code> Style Guide</a></li>
+<li><a href="#_gflags">GFlags</a></li>
+</ul>
+</li>
+<li><a href="#_testing">Testing</a></li>
+<li><a href="#_documentation">Documentation</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Documentation Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>

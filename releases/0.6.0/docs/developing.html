@@ -1,0 +1,250 @@
+---
+title: Developing Applications With Kudu
+layout: default
+active_nav: docs
+last_updated: 'Last updated 2015-11-23 15:10:48 PST'
+---
+<!--
+Copyright 2015 Cloudera, Inc.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+<div class="container">
+  <div class="row">
+    <div class="col-md-9">
+
+<h1>Developing Applications With Kudu</h1>
+      <div id="preamble">
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu provides C++ and Java client APIs, as well as reference examples to illustrate
+their use. A Python API is included, but it is currently considered experimental,
+unstable, and subject to change at any time.</p>
+</div>
+<div class="admonitionblock warning">
+<table>
+<tr>
+<td class="icon">
+<i class="fa icon-warning" title="Warning"></i>
+</td>
+<td class="content">
+Use of server-side or private interfaces is not supported, and interfaces
+which are not part of public APIs have no stability guarantees.
+</td>
+</tr>
+</table>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_viewing_the_api_documentation"><a class="link" href="#_viewing_the_api_documentation">Viewing the API Documentation</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<div class="title">C++ API Documentation</div>
+<p>The documentation for the C++ client APIs is included in the header files in
+<code>/usr/include/kudu/</code> if you installed Kudu using packages or subdirectories
+of <code>src/kudu/client/</code> if you built Kudu from source. If you installed Kudu using parcels,
+no headers are included in your installation. and you will need to <a href="#build_kudu">build
+Kudu from source</a> in order to have access to the headers and shared libraries.</p>
+</div>
+<div class="paragraph">
+<p>The following command is a naive approach to finding relevant header files. Use
+of any APIs other than the client APIs is unsupported.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-bash" data-lang="bash">$ find /usr/include/kudu -type f -name *.h</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<div class="title">Java API Documentation</div>
+<p>You can view the <a href="../apidocs/index.html">Java API documentation</a> online. Alternatively,
+after <a href="#build_java_client">building the Java client</a>, Java API documentation is available
+in <code>java/kudu-client/target/apidocs/index.html</code>.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_working_examples"><a class="link" href="#_working_examples">Working Examples</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Several example applications are provided in the
+<a href="https://github.com/cloudera/kudu-examples">kudu-examples</a> Github
+repository. Each example includes a <code>README</code> that shows how to compile and run
+it. These examples illustrate correct usage of the Kudu APIs, as well as how to
+set up a virtual machine to run Kudu. The following list includes some of the
+examples that are available today. Check the repository itself in case this list goes
+out of date.</p>
+</div>
+<div class="dlist">
+<dl>
+<dt class="hdlist1"><code>java-example</code></dt>
+<dd>
+<p>A simple Java application which connects to a Kudu instance, creates a table, writes data to it, then drops the table.</p>
+</dd>
+<dt class="hdlist1"><code>collectl</code></dt>
+<dd>
+<p>A small Java application which listens on a TCP socket for time series data corresponding to the Collectl wire protocol.
+The commonly-available collectl tool can be used to send example data to the server.</p>
+</dd>
+<dt class="hdlist1"><code>clients/python</code></dt>
+<dd>
+<p>An experimental Python client for Kudu.</p>
+</dd>
+<dt class="hdlist1"><code>demo-vm-setup</code></dt>
+<dd>
+<p>Scripts to download and run a VirtualBox virtual machine with Kudu already installed.
+See <a href="quickstart.html">Quickstart</a> for more information.</p>
+</dd>
+</dl>
+</div>
+<div class="paragraph">
+<p>These examples should serve as helpful starting points for your own Kudu applications and integrations.</p>
+</div>
+<div class="sect2">
+<h3 id="_maven_artifacts"><a class="link" href="#_maven_artifacts">Maven Artifacts</a></h3>
+<div class="paragraph">
+<p>The following Maven <code>&lt;dependency&gt;</code> element is valid for the Kudu public beta:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml">&lt;dependency&gt;
+  &lt;groupId&gt;org.kududb&lt;/groupId&gt;
+  &lt;artifactId&gt;kudu-client&lt;/artifactId&gt;
+  &lt;version&gt;0.5.0&lt;/version&gt;
+&lt;/dependency&gt;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Because the Maven artifacts are not in Maven Central, use the following <code>&lt;repository&gt;</code>
+element:</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-xml" data-lang="xml">&lt;repository&gt;
+  &lt;id&gt;cdh.repo&lt;/id&gt;
+  &lt;name&gt;Cloudera Repositories&lt;/name&gt;
+  &lt;url&gt;https://repository.cloudera.com/artifactory/cloudera-repos&lt;/url&gt;
+  &lt;snapshots&gt;
+    &lt;enabled&gt;false&lt;/enabled&gt;
+  &lt;/snapshots&gt;
+&lt;/repository&gt;</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>See subdirectories of <a href="https://github.com/cloudera/kudu-examples/tree/master/java" class="bare">https://github.com/cloudera/kudu-examples/tree/master/java</a> for
+example Maven pom.xml files.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_example_impala_commands_with_kudu"><a class="link" href="#_example_impala_commands_with_kudu">Example Impala Commands With Kudu</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>See <a href="kudu_impala_integration.html">Using Impala With Kudu</a> for guidance on installing
+and using Impala with Kudu, including several <code>impala-shell</code> examples.</p>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_integration_with_mapreduce_yarn_and_other_frameworks"><a class="link" href="#_integration_with_mapreduce_yarn_and_other_frameworks">Integration with MapReduce, YARN, and Other Frameworks</a></h2>
+<div class="sectionbody">
+<div class="paragraph">
+<p>Kudu was designed to integrate with MapReduce, YARN, Spark, and other frameworks in
+the Hadoop ecosystem. See <a href="https://github.com/cloudera/kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/RowCounter.java">RowCounter.java</a>
+and
+<a href="https://github.com/cloudera/kudu/blob/master/java/kudu-client-tools/src/main/java/org/kududb/mapreduce/tools/ImportCsv.java">ImportCsv.java</a>
+for examples which you can model your own integrations on. Stay tuned for more examples
+using YARN and Spark in the future.</p>
+</div>
+</div>
+</div>
+    </div>
+    <div class="col-md-3">
+
+  <div id="toc" data-spy="affix" data-offset-top="70">
+  <ul>
+
+      <li>
+
+          <a href="introduction.html">Introducing Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="release_notes.html">Kudu Release Notes</a> 
+      </li> 
+      <li>
+
+          <a href="quickstart.html">Getting Started with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="installation.html">Installation Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration.html">Configuring Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="kudu_impala_integration.html">Using Impala with Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="administration.html">Administering Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="troubleshooting.html">Troubleshooting Kudu</a> 
+      </li> 
+      <li>
+<span class="active-toc">Developing Applications with Kudu</span>
+            <ul class="sectlevel1">
+<li><a href="#_viewing_the_api_documentation">Viewing the API Documentation</a></li>
+<li><a href="#_working_examples">Working Examples</a>
+<ul class="sectlevel2">
+<li><a href="#_maven_artifacts">Maven Artifacts</a></li>
+</ul>
+</li>
+<li><a href="#_example_impala_commands_with_kudu">Example Impala Commands With Kudu</a></li>
+<li><a href="#_integration_with_mapreduce_yarn_and_other_frameworks">Integration with MapReduce, YARN, and Other Frameworks</a></li>
+</ul> 
+      </li> 
+      <li>
+
+          <a href="schema_design.html">Kudu Schema Design</a> 
+      </li> 
+      <li>
+
+          <a href="transaction_semantics.html">Kudu Transaction Semantics</a> 
+      </li> 
+      <li>
+
+          <a href="contributing.html">Contributing to Kudu</a> 
+      </li> 
+      <li>
+
+          <a href="style_guide.html">Kudu Documentation Style Guide</a> 
+      </li> 
+      <li>
+
+          <a href="configuration_reference.html">Kudu Configuration Reference</a> 
+      </li> 
+  </ul>
+  </div>
+    </div>
+  </div>
+</div>
