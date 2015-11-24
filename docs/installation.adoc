@@ -385,7 +385,7 @@ $ thirdparty/build-if-necessary.sh
 +
 [source,bash]
 ----
-thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
+thirdparty/installed/bin/cmake .
 make -j4
 ----
 
