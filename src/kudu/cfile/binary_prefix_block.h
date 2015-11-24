@@ -83,7 +83,7 @@ class BinaryPrefixBlockBuilder : public BlockBuilder {
 // Decoder for BINARY type, PREFIX encoding
 class BinaryPrefixBlockDecoder : public BlockDecoder {
  public:
-  explicit BinaryPrefixBlockDecoder(const Slice &slice);
+  explicit BinaryPrefixBlockDecoder(Slice slice);
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;

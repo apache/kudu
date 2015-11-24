@@ -45,7 +45,7 @@ class SaslMessagePB_SaslAuth;
 class SaslClient {
  public:
   // Does not take ownership of the socket indicated by the fd.
-  SaslClient(const string& app_name, int fd);
+  SaslClient(string app_name, int fd);
   ~SaslClient();
 
   // Enable ANONYMOUS authentication.

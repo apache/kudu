@@ -58,14 +58,13 @@ TAG_FLAG(rpc_callback_max_cycles, runtime);
 OutboundCall::OutboundCall(const ConnectionId& conn_id,
                            const RemoteMethod& remote_method,
                            google::protobuf::Message* response_storage,
-                           RpcController* controller,
-                           const ResponseCallback& callback)
-  : state_(READY),
-    remote_method_(remote_method),
-    conn_id_(conn_id),
-    callback_(callback),
-    controller_(DCHECK_NOTNULL(controller)),
-    response_(DCHECK_NOTNULL(response_storage)) {
+                           RpcController* controller, ResponseCallback callback)
+    : state_(READY),
+      remote_method_(remote_method),
+      conn_id_(conn_id),
+      callback_(std::move(callback)),
+      controller_(DCHECK_NOTNULL(controller)),
+      response_(DCHECK_NOTNULL(response_storage)) {
   DVLOG(4) << "OutboundCall " << this << " constructed with state_: " << StateName(state_)
            << " and RPC timeout: "
            << (controller->timeout().Initialized() ? controller->timeout().ToString() : "none");

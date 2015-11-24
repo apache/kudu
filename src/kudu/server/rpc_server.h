@@ -47,7 +47,7 @@ struct RpcServerOptions {
 
 class RpcServer {
  public:
-  explicit RpcServer(const RpcServerOptions& opts);
+  explicit RpcServer(RpcServerOptions opts);
   ~RpcServer();
 
   Status Init(const std::shared_ptr<rpc::Messenger>& messenger);

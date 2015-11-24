@@ -94,8 +94,7 @@ class ReplicaState {
 
   typedef IndexToRoundMap::value_type IndexToRoundEntry;
 
-  ReplicaState(const ConsensusOptions& options,
-               const std::string& peer_uuid,
+  ReplicaState(ConsensusOptions options, std::string peer_uuid,
                gscoped_ptr<ConsensusMetadata> cmeta,
                ReplicaTransactionFactory* txn_factory);
 

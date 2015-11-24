@@ -37,10 +37,8 @@ class FileState : public RefCountedThreadSafe<FileState> {
  public:
   // FileStates are reference counted. The initial reference count is zero
   // and the caller must call Ref() at least once.
-  explicit FileState(const string& filename)
-    : filename_(filename),
-      size_(0) {
-  }
+  explicit FileState(string filename)
+      : filename_(std::move(filename)), size_(0) {}
 
   uint64_t Size() const { return size_; }
 

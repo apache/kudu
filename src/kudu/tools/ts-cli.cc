@@ -117,7 +117,7 @@ class TsAdminClient {
  public:
   // Creates an admin client for host/port combination e.g.,
   // "localhost" or "127.0.0.1:7050".
-  TsAdminClient(const std::string& addr, int64_t timeout_millis);
+  TsAdminClient(std::string addr, int64_t timeout_millis);
 
   // Initialized the client and connects to the specified tablet
   // server.
@@ -163,11 +163,10 @@ class TsAdminClient {
   DISALLOW_COPY_AND_ASSIGN(TsAdminClient);
 };
 
-TsAdminClient::TsAdminClient(const string& addr, int64_t timeout_millis)
-    : addr_(addr),
+TsAdminClient::TsAdminClient(string addr, int64_t timeout_millis)
+    : addr_(std::move(addr)),
       timeout_(MonoDelta::FromMilliseconds(timeout_millis)),
-      initted_(false) {
-}
+      initted_(false) {}
 
 Status TsAdminClient::Init() {
   CHECK(!initted_);

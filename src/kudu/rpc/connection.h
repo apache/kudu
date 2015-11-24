@@ -79,8 +79,8 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // remote: the address of the remote end
   // socket: the socket to take ownership of.
   // direction: whether we are the client or server side
-  Connection(ReactorThread *reactor_thread, const Sockaddr &remote,
-             int socket, Direction direction);
+  Connection(ReactorThread *reactor_thread, Sockaddr remote, int socket,
+             Direction direction);
 
   // Set underlying socket to non-blocking (or blocking) mode.
   Status SetNonBlocking(bool enabled);

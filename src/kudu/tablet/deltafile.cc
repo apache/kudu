@@ -198,13 +198,11 @@ Status DeltaFileReader::OpenNoInit(gscoped_ptr<ReadableBlock> block,
   return Status::OK();
 }
 
-DeltaFileReader::DeltaFileReader(const BlockId& block_id,
-                                 CFileReader *cf_reader,
+DeltaFileReader::DeltaFileReader(BlockId block_id, CFileReader *cf_reader,
                                  DeltaType delta_type)
-  : reader_(cf_reader),
-    block_id_(block_id),
-    delta_type_(delta_type) {
-}
+    : reader_(cf_reader),
+      block_id_(std::move(block_id)),
+      delta_type_(delta_type) {}
 
 Status DeltaFileReader::Init() {
   return init_once_.Init(&DeltaFileReader::InitOnce, this);
@@ -330,21 +328,19 @@ uint64_t DeltaFileReader::EstimateSize() const {
 // DeltaFileIterator
 ////////////////////////////////////////////////////////////
 
-DeltaFileIterator::DeltaFileIterator(const shared_ptr<DeltaFileReader>& dfr,
+DeltaFileIterator::DeltaFileIterator(shared_ptr<DeltaFileReader> dfr,
                                      const Schema *projection,
-                                     const MvccSnapshot &snap,
-                                     DeltaType delta_type) :
-  dfr_(dfr),
-  projection_(projection),
-  mvcc_snap_(snap),
-  prepared_idx_(0xdeadbeef),
-  prepared_count_(0),
-  prepared_(false),
-  exhausted_(false),
-  initted_(false),
-  delta_type_(delta_type),
-  cache_blocks_(CFileReader::CACHE_BLOCK)
-{}
+                                     MvccSnapshot snap, DeltaType delta_type)
+    : dfr_(std::move(dfr)),
+      projection_(projection),
+      mvcc_snap_(std::move(snap)),
+      prepared_idx_(0xdeadbeef),
+      prepared_count_(0),
+      prepared_(false),
+      exhausted_(false),
+      initted_(false),
+      delta_type_(delta_type),
+      cache_blocks_(CFileReader::CACHE_BLOCK) {}
 
 Status DeltaFileIterator::Init(ScanSpec *spec) {
   DCHECK(!initted_) << "Already initted";

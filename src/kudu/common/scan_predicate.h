@@ -90,8 +90,7 @@ class ColumnRangePredicate {
   // The range is inclusive on both ends.
   // If either optional is unspecified (i.e. NULL), then the range is
   // open on that end.
-  ColumnRangePredicate(const ColumnSchema &col,
-                       const void* lower_bound,
+  ColumnRangePredicate(ColumnSchema col, const void* lower_bound,
                        const void* upper_bound);
 
   const ColumnSchema &column() const {

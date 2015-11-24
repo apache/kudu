@@ -119,7 +119,7 @@ class CFileIterator;
 
 class BinaryDictBlockDecoder : public BlockDecoder {
  public:
-  explicit BinaryDictBlockDecoder(const Slice& slice, CFileIterator* iter);
+  explicit BinaryDictBlockDecoder(Slice slice, CFileIterator* iter);
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;

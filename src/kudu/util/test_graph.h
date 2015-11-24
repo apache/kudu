@@ -53,11 +53,8 @@ class TimeSeries {
 
 class TimeSeriesCollector {
  public:
-  explicit TimeSeriesCollector(const std::string &scope) :
-    scope_(scope),
-    exit_latch_(0),
-    started_(false)
-  {}
+  explicit TimeSeriesCollector(std::string scope)
+      : scope_(std::move(scope)), exit_latch_(0), started_(false) {}
 
   ~TimeSeriesCollector();
 

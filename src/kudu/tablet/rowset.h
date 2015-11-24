@@ -176,8 +176,8 @@ class RowSetKeyProbe {
   //
   // NOTE: row_key is not copied and must be valid for the lifetime
   // of this object.
-  explicit RowSetKeyProbe(const ConstContiguousRow& row_key)
-      : row_key_(row_key) {
+  explicit RowSetKeyProbe(ConstContiguousRow row_key)
+      : row_key_(std::move(row_key)) {
     encoded_key_ = EncodedKey::FromContiguousRow(row_key_);
     bloom_probe_ = BloomKeyProbe(encoded_key_slice());
   }
@@ -251,8 +251,7 @@ struct ProbeStats {
 // See compaction.txt for a little more detail on how this is used.
 class DuplicatingRowSet : public RowSet {
  public:
-  DuplicatingRowSet(const RowSetVector &old_rowsets,
-                    const RowSetVector &new_rowsets);
+  DuplicatingRowSet(RowSetVector old_rowsets, RowSetVector new_rowsets);
 
   virtual Status MutateRow(Timestamp timestamp,
                            const RowSetKeyProbe &probe,

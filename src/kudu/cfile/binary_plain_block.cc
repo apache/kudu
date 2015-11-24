@@ -133,12 +133,12 @@ Status BinaryPlainBlockBuilder::GetFirstKey(void *key_void) const {
 // Decoding
 ////////////////////////////////////////////////////////////
 
-BinaryPlainBlockDecoder::BinaryPlainBlockDecoder(const Slice &slice)
-  : data_(slice),
-    parsed_(false),
-    num_elems_(0),
-    ordinal_pos_base_(0),
-    cur_idx_(0) {
+BinaryPlainBlockDecoder::BinaryPlainBlockDecoder(Slice slice)
+    : data_(std::move(slice)),
+      parsed_(false),
+      num_elems_(0),
+      ordinal_pos_base_(0),
+      cur_idx_(0) {
 }
 
 Status BinaryPlainBlockDecoder::ParseHeader() {

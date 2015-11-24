@@ -46,11 +46,10 @@ namespace kudu {
 namespace rpc {
 
 Proxy::Proxy(const std::shared_ptr<Messenger>& messenger,
-             const Sockaddr& remote,
-             const string& service_name)
-  : service_name_(service_name),
-    messenger_(messenger),
-    is_started_(false) {
+             const Sockaddr& remote, string service_name)
+    : service_name_(std::move(service_name)),
+      messenger_(messenger),
+      is_started_(false) {
   CHECK(messenger != nullptr);
   DCHECK(!service_name_.empty()) << "Proxy service name must not be blank";
 

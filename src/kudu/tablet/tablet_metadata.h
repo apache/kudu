@@ -232,16 +232,13 @@ class TabletMetadata : public RefCountedThreadSafe<TabletMetadata> {
   //
   // TODO: get rid of this many-arg constructor in favor of just passing in a
   // SuperBlock, which already contains all of these fields.
-  TabletMetadata(FsManager *fs_manager,
-                 const std::string& tablet_id,
-                 const std::string& table_name,
-                 const Schema& schema,
-                 const PartitionSchema& partition_schema,
-                 const Partition& partition,
+  TabletMetadata(FsManager* fs_manager, std::string tablet_id,
+                 std::string table_name, const Schema& schema,
+                 PartitionSchema partition_schema, Partition partition,
                  const TabletDataState& tablet_data_state);
 
   // Constructor for loading an existing tablet.
-  TabletMetadata(FsManager *fs_manager, const std::string& tablet_id);
+  TabletMetadata(FsManager* fs_manager, std::string tablet_id);
 
   void SetSchemaUnlocked(gscoped_ptr<Schema> schema, uint32_t version);
 

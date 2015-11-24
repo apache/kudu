@@ -33,9 +33,8 @@ RefCountedStaticMemory::~RefCountedStaticMemory() {}
 
 RefCountedBytes::RefCountedBytes() {}
 
-RefCountedBytes::RefCountedBytes(const std::vector<unsigned char>& initializer)
-    : data_(initializer) {
-}
+RefCountedBytes::RefCountedBytes(std::vector<unsigned char> initializer)
+    : data_(std::move(initializer)) {}
 
 RefCountedBytes::RefCountedBytes(const unsigned char* p, size_t size)
     : data_(p, p + size) {}

@@ -26,9 +26,7 @@ using strings::Substitute;
 
 namespace kudu {
 
-JsonReader::JsonReader(const string& text)
-  : text_(text) {
-}
+JsonReader::JsonReader(string text) : text_(std::move(text)) {}
 
 JsonReader::~JsonReader() {
 }

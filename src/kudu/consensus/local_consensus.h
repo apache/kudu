@@ -46,9 +46,9 @@ namespace consensus {
 // This class is not thread safe.
 class LocalConsensus : public Consensus {
  public:
-  explicit LocalConsensus(const ConsensusOptions& options,
+  explicit LocalConsensus(ConsensusOptions options,
                           gscoped_ptr<ConsensusMetadata> cmeta,
-                          const std::string& peer_uuid,
+                          std::string peer_uuid,
                           const scoped_refptr<server::Clock>& clock,
                           ReplicaTransactionFactory* txn_factory,
                           log::Log* log);

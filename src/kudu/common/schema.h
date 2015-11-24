@@ -120,17 +120,15 @@ class ColumnSchema {
   //   ColumnSchema col_c("c", INT32, false, &default_i32);
   //   Slice default_str("Hello");
   //   ColumnSchema col_d("d", STRING, false, &default_str);
-  ColumnSchema(const string &name,
-               DataType type,
-               bool is_nullable = false,
-               const void *read_default = NULL,
-               const void *write_default = NULL,
-               ColumnStorageAttributes attributes = ColumnStorageAttributes()) :
-      name_(name),
-      type_info_(GetTypeInfo(type)),
-      is_nullable_(is_nullable),
-      read_default_(read_default ? new Variant(type, read_default) : NULL),
-      attributes_(attributes) {
+  ColumnSchema(string name, DataType type, bool is_nullable = false,
+               const void* read_default = NULL,
+               const void* write_default = NULL,
+               ColumnStorageAttributes attributes = ColumnStorageAttributes())
+      : name_(std::move(name)),
+        type_info_(GetTypeInfo(type)),
+        is_nullable_(is_nullable),
+        read_default_(read_default ? new Variant(type, read_default) : NULL),
+        attributes_(std::move(attributes)) {
     if (write_default == read_default) {
       write_default_ = read_default_;
     } else if (write_default != NULL) {

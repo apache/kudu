@@ -30,7 +30,7 @@ class Sockaddr;
 class HostPort {
  public:
   HostPort();
-  HostPort(const std::string& host, uint16_t port);
+  HostPort(std::string host, uint16_t port);
   explicit HostPort(const Sockaddr& addr);
 
   // Parse a "host:port" pair into this object.

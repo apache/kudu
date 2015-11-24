@@ -308,10 +308,10 @@ void MetaCache::UpdateTabletServer(const TSInfoPB& pb) {
 class LookupRpc : public Rpc {
  public:
   LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
-            const StatusCallback& user_cb,
+            StatusCallback user_cb,
             const KuduTable* table,
-            const string& partition_key,
-            scoped_refptr<RemoteTablet> *remote_tablet,
+            string partition_key,
+            scoped_refptr<RemoteTablet>* remote_tablet,
             const MonoTime& deadline,
             const shared_ptr<Messenger>& messenger);
   virtual ~LookupRpc();
@@ -366,19 +366,18 @@ class LookupRpc : public Rpc {
 };
 
 LookupRpc::LookupRpc(const scoped_refptr<MetaCache>& meta_cache,
-                     const StatusCallback& user_cb,
-                     const KuduTable* table,
-                     const string& partition_key,
-                     scoped_refptr<RemoteTablet> *remote_tablet,
+                     StatusCallback user_cb, const KuduTable* table,
+                     string partition_key,
+                     scoped_refptr<RemoteTablet>* remote_tablet,
                      const MonoTime& deadline,
                      const shared_ptr<Messenger>& messenger)
-  : Rpc(deadline, messenger),
-    meta_cache_(meta_cache),
-    user_cb_(user_cb),
-    table_(table),
-    partition_key_(partition_key),
-    remote_tablet_(remote_tablet),
-    has_permit_(false) {
+    : Rpc(deadline, messenger),
+      meta_cache_(meta_cache),
+      user_cb_(std::move(user_cb)),
+      table_(table),
+      partition_key_(std::move(partition_key)),
+      remote_tablet_(remote_tablet),
+      has_permit_(false) {
   DCHECK(deadline.Initialized());
 }
 

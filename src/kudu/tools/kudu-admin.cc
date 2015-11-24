@@ -91,7 +91,7 @@ class ClusterAdminClient {
  public:
   // Creates an admin client for host/port combination e.g.,
   // "localhost" or "127.0.0.1:7050".
-  ClusterAdminClient(const std::string& addrs, int64_t timeout_millis);
+  ClusterAdminClient(std::string addrs, int64_t timeout_millis);
 
   // Initialized the client and connects to the specified tablet
   // server.
@@ -134,11 +134,10 @@ class ClusterAdminClient {
   DISALLOW_COPY_AND_ASSIGN(ClusterAdminClient);
 };
 
-ClusterAdminClient::ClusterAdminClient(const string& addrs, int64_t timeout_millis)
-    : master_addr_list_(addrs),
+ClusterAdminClient::ClusterAdminClient(string addrs, int64_t timeout_millis)
+    : master_addr_list_(std::move(addrs)),
       timeout_(MonoDelta::FromMilliseconds(timeout_millis)),
-      initted_(false) {
-}
+      initted_(false) {}
 
 Status ClusterAdminClient::Init() {
   CHECK(!initted_);

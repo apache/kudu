@@ -84,18 +84,18 @@ shared_ptr<MemTracker> CreateMemTrackerForServer() {
 
 } // anonymous namespace
 
-ServerBase::ServerBase(const string& name,
-                       const ServerBaseOptions& options,
+ServerBase::ServerBase(string name, const ServerBaseOptions& options,
                        const string& metric_namespace)
-  : name_(name),
-    mem_tracker_(CreateMemTrackerForServer()),
-    metric_registry_(new MetricRegistry()),
-    metric_entity_(METRIC_ENTITY_server.Instantiate(metric_registry_.get(), metric_namespace)),
-    rpc_server_(new RpcServer(options.rpc_opts)),
-    web_server_(new Webserver(options.webserver_opts)),
-    is_first_run_(false),
-    options_(options),
-    stop_metrics_logging_latch_(1) {
+    : name_(std::move(name)),
+      mem_tracker_(CreateMemTrackerForServer()),
+      metric_registry_(new MetricRegistry()),
+      metric_entity_(METRIC_ENTITY_server.Instantiate(metric_registry_.get(),
+                                                      metric_namespace)),
+      rpc_server_(new RpcServer(options.rpc_opts)),
+      web_server_(new Webserver(options.webserver_opts)),
+      is_first_run_(false),
+      options_(options),
+      stop_metrics_logging_latch_(1) {
   FsManagerOpts fs_opts;
   fs_opts.metric_entity = metric_entity_;
   fs_opts.parent_mem_tracker = mem_tracker_;

@@ -41,7 +41,7 @@ struct MasterOptions;
 // having multiple Start methods.
 class MiniMaster {
  public:
-  MiniMaster(Env* env, const std::string& fs_root, uint16_t rpc_port);
+  MiniMaster(Env* env, std::string fs_root, uint16_t rpc_port);
   ~MiniMaster();
 
   // Start a master running on the loopback interface and

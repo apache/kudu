@@ -120,10 +120,10 @@ typedef std::unordered_map<std::string, RemoteTabletServer*> TabletServerMap;
 // This class is thread-safe.
 class RemoteTablet : public RefCountedThreadSafe<RemoteTablet> {
  public:
-  RemoteTablet(const std::string& tablet_id,
-               const Partition& partition)
-    : tablet_id_(tablet_id),
-      partition_(partition) {
+  RemoteTablet(std::string tablet_id,
+               Partition partition)
+      : tablet_id_(std::move(tablet_id)),
+        partition_(std::move(partition)) {
   }
 
   // Updates this tablet's replica locations.

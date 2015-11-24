@@ -972,13 +972,9 @@ void TSTabletManager::LogAndTombstone(const scoped_refptr<TabletMetadata>& meta,
   }
 }
 
-TransitionInProgressDeleter::TransitionInProgressDeleter(TransitionInProgressMap* map,
-                                                         rw_spinlock* lock,
-                                                         const string& entry)
-    : in_progress_(map),
-      lock_(lock),
-      entry_(entry) {
-}
+TransitionInProgressDeleter::TransitionInProgressDeleter(
+    TransitionInProgressMap* map, rw_spinlock* lock, string entry)
+    : in_progress_(map), lock_(lock), entry_(std::move(entry)) {}
 
 TransitionInProgressDeleter::~TransitionInProgressDeleter() {
   boost::lock_guard<rw_spinlock> lock(*lock_);

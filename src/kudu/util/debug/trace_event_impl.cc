@@ -996,14 +996,9 @@ void TraceSamplingThread::Stop() {
   cancellation_flag_.Store(true);
 }
 
-
-TraceBucketData::TraceBucketData(AtomicWord* bucket,
-                                 const char* name,
+TraceBucketData::TraceBucketData(AtomicWord* bucket, const char* name,
                                  TraceSampleCallback callback)
-    : bucket(bucket),
-      bucket_name(name),
-      callback(callback) {
-}
+    : bucket(bucket), bucket_name(name), callback(std::move(callback)) {}
 
 TraceBucketData::~TraceBucketData() {
 }

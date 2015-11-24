@@ -53,9 +53,7 @@ class WritableFile;
 // This class is not thread-safe and must be externally synchronized.
 class RollingLog {
  public:
-  RollingLog(Env* env,
-             const std::string& log_dir,
-             const std::string& log_name);
+  RollingLog(Env* env, std::string log_dir, std::string log_name);
 
   ~RollingLog();
 

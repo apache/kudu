@@ -56,13 +56,11 @@ bool ValueRange::ContainsCell(const void* cell) const {
 
 ////////////////////////////////////////////////////////////
 
-ColumnRangePredicate::ColumnRangePredicate(const ColumnSchema &col,
+ColumnRangePredicate::ColumnRangePredicate(ColumnSchema col,
                                            const void* lower_bound,
-                                           const void* upper_bound) :
-  col_(col),
-  range_(col_.type_info(), lower_bound, upper_bound) {
-}
-
+                                           const void* upper_bound)
+    : col_(std::move(col)),
+      range_(col_.type_info(), lower_bound, upper_bound) {}
 
 void ColumnRangePredicate::Evaluate(RowBlock* block, SelectionVector* vec) const {
   int col_idx = block->schema().find_column(col_.name());

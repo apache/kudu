@@ -22,9 +22,8 @@
 namespace kudu {
 namespace tablet {
 
-RowOp::RowOp(const DecodedRowOperation& decoded_op)
-  : decoded_op(decoded_op) {
-}
+RowOp::RowOp(DecodedRowOperation decoded_op)
+    : decoded_op(std::move(decoded_op)) {}
 
 RowOp::~RowOp() {
 }

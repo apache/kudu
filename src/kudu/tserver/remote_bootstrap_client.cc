@@ -84,22 +84,21 @@ using tablet::TabletMetadata;
 using tablet::TabletStatusListener;
 using tablet::TabletSuperBlockPB;
 
-RemoteBootstrapClient::RemoteBootstrapClient(const std::string& tablet_id,
+RemoteBootstrapClient::RemoteBootstrapClient(std::string tablet_id,
                                              FsManager* fs_manager,
-                                             const shared_ptr<Messenger>& messenger,
-                                             const string& client_permanent_uuid)
-  : tablet_id_(tablet_id),
-    fs_manager_(fs_manager),
-    messenger_(messenger),
-    permanent_uuid_(client_permanent_uuid),
-    started_(false),
-    downloaded_wal_(false),
-    downloaded_blocks_(false),
-    replace_tombstoned_tablet_(false),
-    status_listener_(nullptr),
-    session_idle_timeout_millis_(0),
-    start_time_micros_(0) {
-}
+                                             shared_ptr<Messenger> messenger,
+                                             string client_permanent_uuid)
+    : tablet_id_(std::move(tablet_id)),
+      fs_manager_(fs_manager),
+      messenger_(std::move(messenger)),
+      permanent_uuid_(std::move(client_permanent_uuid)),
+      started_(false),
+      downloaded_wal_(false),
+      downloaded_blocks_(false),
+      replace_tombstoned_tablet_(false),
+      status_listener_(nullptr),
+      session_idle_timeout_millis_(0),
+      start_time_micros_(0) {}
 
 RemoteBootstrapClient::~RemoteBootstrapClient() {
   // Note: Ending the remote bootstrap session releases anchors on the remote.

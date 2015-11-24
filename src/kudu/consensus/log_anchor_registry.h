@@ -127,7 +127,7 @@ class MinLogIndexAnchorer {
  public:
   // Construct anchorer for specified registry that will register anchors with
   // the specified owner name.
-  MinLogIndexAnchorer(LogAnchorRegistry* registry, const std::string& owner);
+  MinLogIndexAnchorer(LogAnchorRegistry* registry, std::string owner);
 
   // The destructor will unregister the anchor if it is registered.
   ~MinLogIndexAnchorer();

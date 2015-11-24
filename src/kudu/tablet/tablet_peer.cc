@@ -101,16 +101,15 @@ using tserver::TabletServerErrorPB;
 TabletPeer::TabletPeer(const scoped_refptr<TabletMetadata>& meta,
                        const consensus::RaftPeerPB& local_peer_pb,
                        ThreadPool* apply_pool,
-                       const Callback<void(const std::string& reason)>& mark_dirty_clbk)
-  : meta_(meta),
-    tablet_id_(meta->tablet_id()),
-    local_peer_pb_(local_peer_pb),
-    state_(NOT_STARTED),
-    status_listener_(new TabletStatusListener(meta)),
-    apply_pool_(apply_pool),
-    log_anchor_registry_(new LogAnchorRegistry()),
-    mark_dirty_clbk_(mark_dirty_clbk) {
-}
+                       Callback<void(const std::string& reason)> mark_dirty_clbk)
+    : meta_(meta),
+      tablet_id_(meta->tablet_id()),
+      local_peer_pb_(local_peer_pb),
+      state_(NOT_STARTED),
+      status_listener_(new TabletStatusListener(meta)),
+      apply_pool_(apply_pool),
+      log_anchor_registry_(new LogAnchorRegistry()),
+      mark_dirty_clbk_(std::move(mark_dirty_clbk)) {}
 
 TabletPeer::~TabletPeer() {
   boost::lock_guard<simple_spinlock> lock(lock_);

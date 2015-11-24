@@ -223,9 +223,8 @@ struct TableState {
 };
 
 struct MirrorTable {
-  explicit MirrorTable(const shared_ptr<KuduClient>& client)
-    : client_(client) {
-  }
+  explicit MirrorTable(shared_ptr<KuduClient> client)
+      : client_(std::move(client)) {}
 
   Status Create() {
     KuduSchema schema;

@@ -281,9 +281,8 @@ class ExternalMiniCluster {
 
 class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
  public:
-  ExternalDaemon(const std::shared_ptr<rpc::Messenger>& messenger,
-                 const std::string& exe, const std::string& data_dir,
-                 const std::vector<std::string>& extra_flags);
+  ExternalDaemon(std::shared_ptr<rpc::Messenger> messenger, std::string exe,
+                 std::string data_dir, std::vector<std::string> extra_flags);
 
   HostPort bound_rpc_hostport() const;
   Sockaddr bound_rpc_addr() const;
@@ -385,7 +384,7 @@ class ExternalMaster : public ExternalDaemon {
 
   ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
                  const std::string& exe, const std::string& data_dir,
-                 const std::string& rpc_bind_address,
+                 std::string rpc_bind_address,
                  const std::vector<std::string>& extra_flags);
 
   Status Start();
@@ -406,7 +405,7 @@ class ExternalTabletServer : public ExternalDaemon {
  public:
   ExternalTabletServer(const std::shared_ptr<rpc::Messenger>& messenger,
                        const std::string& exe, const std::string& data_dir,
-                       const std::string& bind_host,
+                       std::string bind_host,
                        const std::vector<HostPort>& master_addrs,
                        const std::vector<std::string>& extra_flags);
 

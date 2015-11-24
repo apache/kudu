@@ -68,9 +68,8 @@ class OperationResultPB;
 class DiskRowSetWriter {
  public:
   // TODO: document ownership of rowset_metadata
-  DiskRowSetWriter(RowSetMetadata *rowset_metadata,
-                   const Schema* schema,
-                   const BloomFilterSizing &bloom_sizing);
+  DiskRowSetWriter(RowSetMetadata* rowset_metadata, const Schema* schema,
+                   BloomFilterSizing bloom_sizing);
 
   ~DiskRowSetWriter();
 
@@ -144,9 +143,8 @@ class RollingDiskRowSetWriter {
   // Create a new rolling writer. The given 'tablet_metadata' must stay valid
   // for the lifetime of this writer, and is used to construct the new rowsets
   // that this RollingDiskRowSetWriter creates.
-  RollingDiskRowSetWriter(TabletMetadata* tablet_metadata,
-                          const Schema &schema,
-                          const BloomFilterSizing &bloom_sizing,
+  RollingDiskRowSetWriter(TabletMetadata* tablet_metadata, const Schema& schema,
+                          BloomFilterSizing bloom_sizing,
                           size_t target_rowset_size);
   ~RollingDiskRowSetWriter();
 
@@ -376,9 +374,9 @@ class DiskRowSet : public RowSet {
   friend class CompactionInput;
   friend class Tablet;
 
-  DiskRowSet(const std::shared_ptr<RowSetMetadata>& rowset_metadata,
+  DiskRowSet(std::shared_ptr<RowSetMetadata> rowset_metadata,
              log::LogAnchorRegistry* log_anchor_registry,
-             const std::shared_ptr<MemTracker>& parent_tracker);
+             std::shared_ptr<MemTracker> parent_tracker);
 
   Status Open();
 

@@ -57,7 +57,7 @@ class CFileSet : public std::enable_shared_from_this<CFileSet> {
  public:
   class Iterator;
 
-  explicit CFileSet(const std::shared_ptr<RowSetMetadata>& rowset_metadata);
+  explicit CFileSet(std::shared_ptr<RowSetMetadata> rowset_metadata);
 
   Status Open();
 
@@ -177,13 +177,12 @@ class CFileSet::Iterator : public ColumnwiseIterator {
   friend class CFileSet;
 
   // 'projection' must remain valid for the lifetime of this object.
-  Iterator(const std::shared_ptr<CFileSet const> &base_data,
-           const Schema *projection)
-    : base_data_(base_data),
-      projection_(projection),
-      initted_(false),
-      cur_idx_(0),
-      prepared_count_(0) {
+  Iterator(std::shared_ptr<CFileSet const> base_data, const Schema *projection)
+      : base_data_(std::move(base_data)),
+        projection_(projection),
+        initted_(false),
+        cur_idx_(0),
+        prepared_count_(0) {
     CHECK_OK(base_data_->CountRows(&row_count_));
   }
 

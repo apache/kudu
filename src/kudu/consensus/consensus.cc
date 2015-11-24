@@ -41,12 +41,11 @@ ConsensusBootstrapInfo::~ConsensusBootstrapInfo() {
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
                                gscoped_ptr<ReplicateMsg> replicate_msg,
-                               const ConsensusReplicatedCallback& replicated_cb)
+                               ConsensusReplicatedCallback replicated_cb)
     : consensus_(consensus),
       replicate_msg_(new RefCountedReplicate(replicate_msg.release())),
-      replicated_cb_(replicated_cb),
-      bound_term_(-1) {
-}
+      replicated_cb_(std::move(replicated_cb)),
+      bound_term_(-1) {}
 
 ConsensusRound::ConsensusRound(Consensus* consensus,
                                const ReplicateRefPtr& replicate_msg)

@@ -64,13 +64,13 @@ namespace rpc {
 class Messenger;
 class ServerBuilder;
 
-MessengerBuilder::MessengerBuilder(const std::string &name)
-  : name_(name),
-    connection_keepalive_time_(MonoDelta::FromMilliseconds(FLAGS_rpc_default_keepalive_time_ms)),
-    num_reactors_(4),
-    num_negotiation_threads_(4),
-    coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)) {
-}
+MessengerBuilder::MessengerBuilder(std::string name)
+    : name_(std::move(name)),
+      connection_keepalive_time_(
+          MonoDelta::FromMilliseconds(FLAGS_rpc_default_keepalive_time_ms)),
+      num_reactors_(4),
+      num_negotiation_threads_(4),
+      coarse_timer_granularity_(MonoDelta::FromMilliseconds(100)) {}
 
 MessengerBuilder& MessengerBuilder::set_connection_keepalive_time(const MonoDelta &keepalive) {
   connection_keepalive_time_ = keepalive;

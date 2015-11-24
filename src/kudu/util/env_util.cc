@@ -131,11 +131,8 @@ Status CopyFile(Env* env, const string& source_path, const string& dest_path,
   return Status::OK();
 }
 
-ScopedFileDeleter::ScopedFileDeleter(Env* env, const std::string& path)
-  : env_(DCHECK_NOTNULL(env)),
-    path_(path),
-    should_delete_(true) {
-}
+ScopedFileDeleter::ScopedFileDeleter(Env* env, std::string path)
+    : env_(DCHECK_NOTNULL(env)), path_(std::move(path)), should_delete_(true) {}
 
 ScopedFileDeleter::~ScopedFileDeleter() {
   if (should_delete_) {

@@ -33,7 +33,7 @@ class ErrorCollector;
 
 class KuduSession::Data {
  public:
-  explicit Data(const sp::shared_ptr<KuduClient>& client);
+  explicit Data(sp::shared_ptr<KuduClient> client);
   ~Data();
 
   void Init(const sp::shared_ptr<KuduSession>& session);

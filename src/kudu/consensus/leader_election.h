@@ -153,12 +153,10 @@ class LeaderElection : public RefCountedThreadSafe<LeaderElection> {
   // Set up a new leader election driver.
   //
   // The 'vote_counter' must be initialized with the candidate's own yes vote.
-  LeaderElection(const RaftConfigPB& config,
-                 PeerProxyFactory* proxy_factory,
+  LeaderElection(const RaftConfigPB& config, PeerProxyFactory* proxy_factory,
                  const VoteRequestPB& request,
-                 gscoped_ptr<VoteCounter> vote_counter,
-                 const MonoDelta& timeout,
-                 const ElectionDecisionCallback& decision_callback);
+                 gscoped_ptr<VoteCounter> vote_counter, MonoDelta timeout,
+                 ElectionDecisionCallback decision_callback);
 
   // Run the election: send the vote request to followers.
   void Run();

@@ -42,12 +42,11 @@ using std::vector;
 using strings::Substitute;
 
 PathInstanceMetadataFile::PathInstanceMetadataFile(Env* env,
-                                                   const string& block_manager_type,
-                                                   const string& filename)
-  : env_(env),
-    block_manager_type_(block_manager_type),
-    filename_(filename) {
-}
+                                                   string block_manager_type,
+                                                   string filename)
+    : env_(env),
+      block_manager_type_(std::move(block_manager_type)),
+      filename_(std::move(filename)) {}
 
 PathInstanceMetadataFile::~PathInstanceMetadataFile() {
   if (lock_) {

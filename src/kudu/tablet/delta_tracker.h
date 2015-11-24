@@ -67,10 +67,9 @@ class DeltaTracker {
     NO_FLUSH_METADATA
   };
 
-  DeltaTracker(const std::shared_ptr<RowSetMetadata>& rowset_metadata,
-               rowid_t num_rows,
-               log::LogAnchorRegistry* log_anchor_registry,
-               const std::shared_ptr<MemTracker>& parent_tracker);
+  DeltaTracker(std::shared_ptr<RowSetMetadata> rowset_metadata,
+               rowid_t num_rows, log::LogAnchorRegistry* log_anchor_registry,
+               std::shared_ptr<MemTracker> parent_tracker);
 
   Status WrapIterator(const std::shared_ptr<CFileSet::Iterator> &base,
                       const MvccSnapshot &mvcc_snap,

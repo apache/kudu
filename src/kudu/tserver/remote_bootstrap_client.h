@@ -72,10 +72,9 @@ class RemoteBootstrapClient {
   // Construct the remote bootstrap client.
   // 'fs_manager' and 'messenger' must remain valid until this object is destroyed.
   // 'client_permanent_uuid' is the permanent UUID of the caller server.
-  RemoteBootstrapClient(const std::string& tablet_id,
-                        FsManager* fs_manager,
-                        const std::shared_ptr<rpc::Messenger>& messenger,
-                        const std::string& client_permanent_uuid);
+  RemoteBootstrapClient(std::string tablet_id, FsManager* fs_manager,
+                        std::shared_ptr<rpc::Messenger> messenger,
+                        std::string client_permanent_uuid);
 
   // Attempt to clean up resources on the remote end by sending an
   // EndRemoteBootstrapSession() RPC

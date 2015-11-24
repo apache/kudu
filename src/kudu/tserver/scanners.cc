@@ -180,13 +180,11 @@ void ScannerManager::RemoveExpiredScanners() {
   }
 }
 
-Scanner::Scanner(const string& id,
-                 const scoped_refptr<TabletPeer>& tablet_peer,
-                 const string& requestor_string,
-                 ScannerMetrics* metrics)
-    : id_(id),
+Scanner::Scanner(string id, const scoped_refptr<TabletPeer>& tablet_peer,
+                 string requestor_string, ScannerMetrics* metrics)
+    : id_(std::move(id)),
       tablet_peer_(tablet_peer),
-      requestor_string_(requestor_string),
+      requestor_string_(std::move(requestor_string)),
       call_seq_id_(0),
       start_time_(MonoTime::Now(MonoTime::COARSE)),
       metrics_(metrics),

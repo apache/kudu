@@ -86,8 +86,7 @@ class ReactorTask : public boost::intrusive::list_base_hook<> {
 //    receives a Status as its first argument.
 class DelayedTask : public ReactorTask {
  public:
-  DelayedTask(const boost::function<void(const Status&)>& func,
-              MonoDelta when);
+  DelayedTask(boost::function<void(const Status &)> func, MonoDelta when);
 
   // Schedules the task for running later but doesn't actually run it yet.
   virtual void Run(ReactorThread* reactor) OVERRIDE;

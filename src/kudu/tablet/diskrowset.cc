@@ -63,14 +63,14 @@ using std::string;
 const char *DiskRowSet::kMinKeyMetaEntryName = "min_key";
 const char *DiskRowSet::kMaxKeyMetaEntryName = "max_key";
 
-DiskRowSetWriter::DiskRowSetWriter(RowSetMetadata *rowset_metadata,
+DiskRowSetWriter::DiskRowSetWriter(RowSetMetadata* rowset_metadata,
                                    const Schema* schema,
-                                   const BloomFilterSizing &bloom_sizing)
-  : rowset_metadata_(rowset_metadata),
-    schema_(schema),
-    bloom_sizing_(bloom_sizing),
-    finished_(false),
-    written_count_(0) {
+                                   BloomFilterSizing bloom_sizing)
+    : rowset_metadata_(rowset_metadata),
+      schema_(schema),
+      bloom_sizing_(std::move(bloom_sizing)),
+      finished_(false),
+      written_count_(0) {
   CHECK(schema->has_column_ids());
 }
 
@@ -265,19 +265,18 @@ size_t DiskRowSetWriter::written_size() const {
 DiskRowSetWriter::~DiskRowSetWriter() {
 }
 
-RollingDiskRowSetWriter::RollingDiskRowSetWriter(TabletMetadata* tablet_metadata,
-                                                 const Schema &schema,
-                                                 const BloomFilterSizing &bloom_sizing,
-                                                 size_t target_rowset_size)
-  : state_(kInitialized),
-    tablet_metadata_(DCHECK_NOTNULL(tablet_metadata)),
-    schema_(schema),
-    bloom_sizing_(bloom_sizing),
-    target_rowset_size_(target_rowset_size),
-    row_idx_in_cur_drs_(0),
-    can_roll_(false),
-    written_count_(0),
-    written_size_(0) {
+RollingDiskRowSetWriter::RollingDiskRowSetWriter(
+    TabletMetadata* tablet_metadata, const Schema& schema,
+    BloomFilterSizing bloom_sizing, size_t target_rowset_size)
+    : state_(kInitialized),
+      tablet_metadata_(DCHECK_NOTNULL(tablet_metadata)),
+      schema_(schema),
+      bloom_sizing_(std::move(bloom_sizing)),
+      target_rowset_size_(target_rowset_size),
+      row_idx_in_cur_drs_(0),
+      can_roll_(false),
+      written_count_(0),
+      written_size_(0) {
   CHECK(schema.has_column_ids());
 }
 
@@ -463,14 +462,13 @@ Status DiskRowSet::Open(const shared_ptr<RowSetMetadata>& rowset_metadata,
   return Status::OK();
 }
 
-DiskRowSet::DiskRowSet(const shared_ptr<RowSetMetadata>& rowset_metadata,
+DiskRowSet::DiskRowSet(shared_ptr<RowSetMetadata> rowset_metadata,
                        LogAnchorRegistry* log_anchor_registry,
-                       const shared_ptr<MemTracker>& parent_tracker)
-  : rowset_metadata_(rowset_metadata),
-    open_(false),
-    log_anchor_registry_(log_anchor_registry),
-    parent_tracker_(parent_tracker) {
-}
+                       shared_ptr<MemTracker> parent_tracker)
+    : rowset_metadata_(std::move(rowset_metadata)),
+      open_(false),
+      log_anchor_registry_(log_anchor_registry),
+      parent_tracker_(std::move(parent_tracker)) {}
 
 Status DiskRowSet::Open() {
   TRACE_EVENT0("tablet", "DiskRowSet::Open");

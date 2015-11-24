@@ -88,8 +88,7 @@ class ServerBase {
   void GetStatusPB(ServerStatusPB* status) const;
 
  protected:
-  ServerBase(const std::string& name,
-             const ServerBaseOptions& options,
+  ServerBase(std::string name, const ServerBaseOptions& options,
              const std::string& metrics_namespace);
   virtual ~ServerBase();
 

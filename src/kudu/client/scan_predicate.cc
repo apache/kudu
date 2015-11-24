@@ -48,12 +48,12 @@ KuduPredicate* KuduPredicate::Clone() const {
   return new KuduPredicate(data_->Clone());
 }
 
-ComparisonPredicateData::ComparisonPredicateData(const ColumnSchema& col,
+ComparisonPredicateData::ComparisonPredicateData(ColumnSchema col,
                                                  KuduPredicate::ComparisonOp op,
-                                                 KuduValue* val) :
-  col_(col),
-  op_(op),
-  val_(val) {
+                                                 KuduValue* val)
+    : col_(std::move(col)),
+      op_(op),
+      val_(val) {
 }
 ComparisonPredicateData::~ComparisonPredicateData() {
 }

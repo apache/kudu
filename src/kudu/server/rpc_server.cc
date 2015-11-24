@@ -74,10 +74,8 @@ RpcServerOptions::RpcServerOptions()
     service_queue_length(FLAGS_rpc_service_queue_length) {
 }
 
-RpcServer::RpcServer(const RpcServerOptions& opts)
-  : server_state_(UNINITIALIZED),
-    options_(opts) {
-}
+RpcServer::RpcServer(RpcServerOptions opts)
+    : server_state_(UNINITIALIZED), options_(std::move(opts)) {}
 
 RpcServer::~RpcServer() {
   Shutdown();

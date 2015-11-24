@@ -94,8 +94,8 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
                      scoped_refptr<ReadableLogSegment>* segment);
 
   // Build a readable segment to read entries from the provided path.
-  ReadableLogSegment(const std::string &path,
-                     const std::shared_ptr<RandomAccessFile>& readable_file);
+  ReadableLogSegment(std::string path,
+                     std::shared_ptr<RandomAccessFile> readable_file);
 
   // Initialize the ReadableLogSegment.
   // This initializer provides methods for avoiding disk IO when creating a
@@ -292,8 +292,8 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 // A writable log segment where state data is stored.
 class WritableLogSegment {
  public:
-  WritableLogSegment(const std::string &path,
-                     const std::shared_ptr<WritableFile>& writable_file);
+  WritableLogSegment(std::string path,
+                     std::shared_ptr<WritableFile> writable_file);
 
   // Opens the segment by writing the header.
   Status WriteHeaderAndOpen(const LogSegmentHeaderPB& new_header);

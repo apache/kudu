@@ -113,11 +113,8 @@ class FileBlockLocation {
   const BlockId& block_id() const { return block_id_; }
 
  private:
-  FileBlockLocation(const string& root_path,
-                    const BlockId& block_id)
-    : root_path_(root_path),
-      block_id_(block_id) {
-  }
+  FileBlockLocation(string root_path, BlockId block_id)
+      : root_path_(std::move(root_path)), block_id_(std::move(block_id)) {}
 
   // These per-byte accessors yield subdirectories in which blocks are grouped.
   string byte2() const {
@@ -215,9 +212,8 @@ void FileBlockLocation::GetAllParentDirs(vector<string>* parent_dirs) const {
 // FileWritableBlock instances is expected to be low.
 class FileWritableBlock : public WritableBlock {
  public:
-  FileWritableBlock(FileBlockManager* block_manager,
-                    const FileBlockLocation& location,
-                    const shared_ptr<WritableFile>& writer);
+  FileWritableBlock(FileBlockManager* block_manager, FileBlockLocation location,
+                    shared_ptr<WritableFile> writer);
 
   virtual ~FileWritableBlock();
 
@@ -266,13 +262,13 @@ class FileWritableBlock : public WritableBlock {
 };
 
 FileWritableBlock::FileWritableBlock(FileBlockManager* block_manager,
-                                     const FileBlockLocation& location,
-                                     const shared_ptr<WritableFile>& writer) :
-  block_manager_(block_manager),
-  location_(location),
-  writer_(writer),
-  state_(CLEAN),
-  bytes_appended_(0) {
+                                     FileBlockLocation location,
+                                     shared_ptr<WritableFile> writer)
+    : block_manager_(block_manager),
+      location_(std::move(location)),
+      writer_(std::move(writer)),
+      state_(CLEAN),
+      bytes_appended_(0) {
   if (block_manager_->metrics_) {
     block_manager_->metrics_->blocks_open_writing->Increment();
     block_manager_->metrics_->total_writable_blocks->Increment();
@@ -376,9 +372,8 @@ Status FileWritableBlock::Close(SyncMode mode) {
 // embed a FileBlockLocation, using the simpler BlockId instead.
 class FileReadableBlock : public ReadableBlock {
  public:
-  FileReadableBlock(const FileBlockManager* block_manager,
-                    const BlockId& block_id,
-                    const shared_ptr<RandomAccessFile>& reader);
+  FileReadableBlock(const FileBlockManager* block_manager, BlockId block_id,
+                    shared_ptr<RandomAccessFile> reader);
 
   virtual ~FileReadableBlock();
 
@@ -411,12 +406,12 @@ class FileReadableBlock : public ReadableBlock {
 };
 
 FileReadableBlock::FileReadableBlock(const FileBlockManager* block_manager,
-                                     const BlockId& block_id,
-                                     const shared_ptr<RandomAccessFile>& reader) :
-  block_manager_(block_manager),
-  block_id_(block_id),
-  reader_(reader),
-  closed_(false) {
+                                     BlockId block_id,
+                                     shared_ptr<RandomAccessFile> reader)
+    : block_manager_(block_manager),
+      block_id_(std::move(block_id)),
+      reader_(std::move(reader)),
+      closed_(false) {
   if (block_manager_->metrics_) {
     block_manager_->metrics_->blocks_open_reading->Increment();
     block_manager_->metrics_->total_readable_blocks->Increment();

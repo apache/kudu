@@ -237,16 +237,16 @@ size_t BinaryPrefixBlockBuilder::CommonPrefixLength(const Slice& slice_a,
 // StringPrefixBlockDecoder
 ////////////////////////////////////////////////////////////
 
-BinaryPrefixBlockDecoder::BinaryPrefixBlockDecoder(const Slice &slice)
-  : data_(slice),
-    parsed_(false),
-    num_elems_(0),
-    ordinal_pos_base_(0),
-    num_restarts_(0),
-    restarts_(nullptr),
-    data_start_(nullptr),
-    cur_idx_(0),
-    next_ptr_(nullptr) {
+BinaryPrefixBlockDecoder::BinaryPrefixBlockDecoder(Slice slice)
+    : data_(std::move(slice)),
+      parsed_(false),
+      num_elems_(0),
+      ordinal_pos_base_(0),
+      num_restarts_(0),
+      restarts_(nullptr),
+      data_start_(nullptr),
+      cur_idx_(0),
+      next_ptr_(nullptr) {
 }
 
 Status BinaryPrefixBlockDecoder::ParseHeader() {

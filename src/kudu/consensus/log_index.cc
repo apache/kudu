@@ -73,7 +73,7 @@ static const int64_t kChunkFileSize = kEntriesPerIndexChunk * sizeof(PhysicalEnt
 // This class maintains the open file descriptor and mapped memory.
 class LogIndex::IndexChunk : public RefCountedThreadSafe<LogIndex::IndexChunk> {
  public:
-  explicit IndexChunk(const string& path);
+  explicit IndexChunk(string path);
   ~IndexChunk();
 
   // Open and map the memory.
@@ -97,11 +97,8 @@ Status CheckError(int rc, const char* operation) {
 }
 } // anonymous namespace
 
-LogIndex::IndexChunk::IndexChunk(const std::string& path)
-  : path_(path),
-    fd_(-1),
-    mapping_(nullptr) {
-}
+LogIndex::IndexChunk::IndexChunk(std::string path)
+    : path_(std::move(path)), fd_(-1), mapping_(nullptr) {}
 
 LogIndex::IndexChunk::~IndexChunk() {
   if (mapping_ != nullptr) {
@@ -149,9 +146,7 @@ void LogIndex::IndexChunk::SetEntry(int entry_index, const PhysicalEntry& phys) 
 // LogIndex
 ////////////////////////////////////////////////////////////
 
-LogIndex::LogIndex(const std::string& base_dir)
-  : base_dir_(base_dir) {
-}
+LogIndex::LogIndex(std::string base_dir) : base_dir_(std::move(base_dir)) {}
 
 LogIndex::~LogIndex() {
 }

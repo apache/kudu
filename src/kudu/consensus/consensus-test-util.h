@@ -420,14 +420,12 @@ class TestPeerMapManager {
 // asynchronously in a ThreadPool.
 class LocalTestPeerProxy : public TestPeerProxy {
  public:
-  LocalTestPeerProxy(const std::string& peer_uuid,
-                     ThreadPool* pool,
+  LocalTestPeerProxy(std::string peer_uuid, ThreadPool* pool,
                      TestPeerMapManager* peers)
-    : TestPeerProxy(pool),
-      peer_uuid_(peer_uuid),
-      peers_(peers),
-      miss_comm_(false) {
-  }
+      : TestPeerProxy(pool),
+        peer_uuid_(std::move(peer_uuid)),
+        peers_(peers),
+        miss_comm_(false) {}
 
   virtual void UpdateAsync(const ConsensusRequestPB* request,
                            ConsensusResponsePB* response,
@@ -692,8 +690,9 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
 // If non-null, the passed hook instance will be called first for all methods.
 class CounterHooks : public Consensus::ConsensusFaultHooks {
  public:
-  explicit CounterHooks(const std::shared_ptr<Consensus::ConsensusFaultHooks>& current_hook)
-      : current_hook_(current_hook),
+  explicit CounterHooks(
+      std::shared_ptr<Consensus::ConsensusFaultHooks> current_hook)
+      : current_hook_(std::move(current_hook)),
         pre_start_calls_(0),
         post_start_calls_(0),
         pre_config_change_calls_(0),
@@ -703,8 +702,7 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
         pre_update_calls_(0),
         post_update_calls_(0),
         pre_shutdown_calls_(0),
-        post_shutdown_calls_(0) {
-  }
+        post_shutdown_calls_(0) {}
 
   virtual Status PreStart() OVERRIDE {
     if (current_hook_.get()) RETURN_NOT_OK(current_hook_->PreStart());

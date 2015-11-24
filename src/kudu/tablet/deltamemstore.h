@@ -215,8 +215,7 @@ class DMSIterator : public DeltaIterator {
   // RowBlocks which are passed in, or else bad things will happen.
   // The pointer must also remain valid for the lifetime of the iterator.
   DMSIterator(const std::shared_ptr<const DeltaMemStore> &dms,
-              const Schema *projection,
-              const MvccSnapshot &snapshot);
+              const Schema *projection, MvccSnapshot snapshot);
 
   const std::shared_ptr<const DeltaMemStore> dms_;
 

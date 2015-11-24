@@ -88,18 +88,15 @@ class ChecksumCallbackHandler {
 // After the ChecksumStepper reports its results to the reporter, it deletes itself.
 class ChecksumStepper {
  public:
-  ChecksumStepper(const string& tablet_id,
-                  const Schema& schema,
-                  const string& server_uuid,
-                  const ChecksumOptions& options,
-                  const ReportResultCallback& callback,
-                  const shared_ptr<tserver::TabletServerServiceProxy>& proxy)
+  ChecksumStepper(string tablet_id, const Schema& schema, string server_uuid,
+                  ChecksumOptions options, ReportResultCallback callback,
+                  shared_ptr<tserver::TabletServerServiceProxy> proxy)
       : schema_(schema),
-        tablet_id_(tablet_id),
-        server_uuid_(server_uuid),
-        options_(options),
-        reporter_callback_(callback),
-        proxy_(proxy),
+        tablet_id_(std::move(tablet_id)),
+        server_uuid_(std::move(server_uuid)),
+        options_(std::move(options)),
+        reporter_callback_(std::move(callback)),
+        proxy_(std::move(proxy)),
         call_seq_id_(0),
         checksum_(0) {
     DCHECK(proxy_);

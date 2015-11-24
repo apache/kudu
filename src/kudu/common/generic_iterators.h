@@ -139,7 +139,7 @@ class UnionIterator : public RowwiseIterator {
 // an entire batch, then other columns may avoid doing any IO.
 class MaterializingIterator : public RowwiseIterator {
  public:
-  explicit MaterializingIterator(const std::shared_ptr<ColumnwiseIterator> &iter);
+  explicit MaterializingIterator(std::shared_ptr<ColumnwiseIterator> iter);
 
   // Initialize the iterator, performing predicate pushdown as described above.
   Status Init(ScanSpec *spec) OVERRIDE;
@@ -213,8 +213,8 @@ class PredicateEvaluatingIterator : public RowwiseIterator {
   // Construct the evaluating iterator.
   // This is only called from ::InitAndMaybeWrap()
   // REQUIRES: base_iter is already Init()ed.
-  explicit PredicateEvaluatingIterator(const std::shared_ptr<RowwiseIterator> &base_iter);
-
+  explicit PredicateEvaluatingIterator(
+      std::shared_ptr<RowwiseIterator> base_iter);
 
   FRIEND_TEST(TestPredicateEvaluatingIterator, TestPredicateEvaluation);
 

@@ -159,16 +159,14 @@ shared_ptr<MemTracker> MemTracker::CreateTrackerUnlocked(int64_t byte_limit,
   return tracker;
 }
 
-MemTracker::MemTracker(const ConsumptionFunction& consumption_func,
-                       int64_t byte_limit,
-                       const string& id,
-                       const shared_ptr<MemTracker>& parent)
+MemTracker::MemTracker(ConsumptionFunction consumption_func, int64_t byte_limit,
+                       const string& id, shared_ptr<MemTracker> parent)
     : limit_(byte_limit),
       id_(id),
       descr_(Substitute("memory consumption for $0", id)),
-      parent_(parent),
+      parent_(std::move(parent)),
       consumption_(0),
-      consumption_func_(consumption_func),
+      consumption_func_(std::move(consumption_func)),
       rand_(GetRandomSeed32()),
       enable_logging_(false),
       log_stack_(false) {

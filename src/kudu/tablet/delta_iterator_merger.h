@@ -60,7 +60,7 @@ class DeltaIteratorMerger : public DeltaIterator {
   virtual std::string ToString() const OVERRIDE;
 
  private:
-  explicit DeltaIteratorMerger(const vector<std::shared_ptr<DeltaIterator> > &iters);
+  explicit DeltaIteratorMerger(vector<std::shared_ptr<DeltaIterator> > iters);
 
   std::vector<std::shared_ptr<DeltaIterator> > iters_;
 };

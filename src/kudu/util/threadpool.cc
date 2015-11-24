@@ -40,9 +40,7 @@ using strings::Substitute;
 
 class FunctionRunnable : public Runnable {
  public:
-  FunctionRunnable(const boost::function<void()>& func)
-    : func_(func) {
-  }
+  FunctionRunnable(boost::function<void()> func) : func_(std::move(func)) {}
 
   void Run() OVERRIDE {
     func_();
@@ -56,13 +54,12 @@ class FunctionRunnable : public Runnable {
 // ThreadPoolBuilder
 ////////////////////////////////////////////////////////
 
-ThreadPoolBuilder::ThreadPoolBuilder(const std::string& name)
-  : name_(name),
-    min_threads_(0),
-    max_threads_(base::NumCPUs()),
-    max_queue_size_(std::numeric_limits<int>::max()),
-    idle_timeout_(MonoDelta::FromMilliseconds(500)) {
-}
+ThreadPoolBuilder::ThreadPoolBuilder(std::string name)
+    : name_(std::move(name)),
+      min_threads_(0),
+      max_threads_(base::NumCPUs()),
+      max_queue_size_(std::numeric_limits<int>::max()),
+      idle_timeout_(MonoDelta::FromMilliseconds(500)) {}
 
 ThreadPoolBuilder& ThreadPoolBuilder::set_min_threads(int min_threads) {
   CHECK_GE(min_threads, 0);

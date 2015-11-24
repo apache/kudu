@@ -45,16 +45,13 @@ namespace master {
 // GetMasterRegistrationRpc
 ////////////////////////////////////////////////////////////
 
-GetMasterRegistrationRpc::GetMasterRegistrationRpc(const StatusCallback& user_cb,
-                                                   const Sockaddr& addr,
-                                                   const MonoTime& deadline,
-                                                   const shared_ptr<Messenger>& messenger,
-                                                   ServerEntryPB* out)
+GetMasterRegistrationRpc::GetMasterRegistrationRpc(
+    StatusCallback user_cb, Sockaddr addr, const MonoTime& deadline,
+    const shared_ptr<Messenger>& messenger, ServerEntryPB* out)
     : Rpc(deadline, messenger),
-      user_cb_(user_cb),
-      addr_(addr),
-      out_(DCHECK_NOTNULL(out)) {
-}
+      user_cb_(std::move(user_cb)),
+      addr_(std::move(addr)),
+      out_(DCHECK_NOTNULL(out)) {}
 
 GetMasterRegistrationRpc::~GetMasterRegistrationRpc() {
 }
@@ -106,13 +103,13 @@ void GetMasterRegistrationRpc::SendRpcCb(const Status& status) {
 // GetLeaderMasterRpc
 ////////////////////////////////////////////////////////////
 
-GetLeaderMasterRpc::GetLeaderMasterRpc(const LeaderCallback& user_cb,
-                                       const vector<Sockaddr>& addrs,
+GetLeaderMasterRpc::GetLeaderMasterRpc(LeaderCallback user_cb,
+                                       vector<Sockaddr> addrs,
                                        const MonoTime& deadline,
                                        const shared_ptr<Messenger>& messenger)
     : Rpc(deadline, messenger),
-      user_cb_(user_cb),
-      addrs_(addrs),
+      user_cb_(std::move(user_cb)),
+      addrs_(std::move(addrs)),
       pending_responses_(0),
       completed_(false) {
   DCHECK(deadline.Initialized());

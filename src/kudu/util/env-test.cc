@@ -336,9 +336,8 @@ TEST_F(TestEnv, TestHolePunch) {
 
 class ShortReadRandomAccessFile : public RandomAccessFile {
  public:
-  explicit ShortReadRandomAccessFile(const shared_ptr<RandomAccessFile>& wrapped)
-    : wrapped_(wrapped) {
-  }
+  explicit ShortReadRandomAccessFile(shared_ptr<RandomAccessFile> wrapped)
+      : wrapped_(std::move(wrapped)) {}
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
                       uint8_t *scratch) const OVERRIDE {

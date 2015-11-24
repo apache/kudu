@@ -46,8 +46,7 @@ class GetMasterRegistrationRpc : public rpc::Rpc {
   // pointer for the lifetime of this object.
   //
   // Invokes 'user_cb' upon failure or success of the RPC call.
-  GetMasterRegistrationRpc(const StatusCallback& user_cb,
-                           const Sockaddr& addr,
+  GetMasterRegistrationRpc(StatusCallback user_cb, Sockaddr addr,
                            const MonoTime& deadline,
                            const std::shared_ptr<rpc::Messenger>& messenger,
                            ServerEntryPB* out);
@@ -97,8 +96,7 @@ class GetLeaderMasterRpc : public rpc::Rpc,
   //
   // Calls 'user_cb' when the leader is found, or if no leader can be
   // found until 'deadline' passes.
-  GetLeaderMasterRpc(const LeaderCallback& user_cb,
-                     const std::vector<Sockaddr>& addrs,
+  GetLeaderMasterRpc(LeaderCallback user_cb, std::vector<Sockaddr> addrs,
                      const MonoTime& deadline,
                      const std::shared_ptr<rpc::Messenger>& messenger);
 

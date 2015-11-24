@@ -32,11 +32,10 @@ namespace client {
 using master::AlterTableRequestPB;
 using master::AlterTableRequestPB_AlterColumn;
 
-KuduTableAlterer::Data::Data(
-    KuduClient* client, const string& name)
-  : client_(client),
-    table_name_(name),
-    wait_(true) {
+KuduTableAlterer::Data::Data(KuduClient* client, string name)
+    : client_(client),
+      table_name_(std::move(name)),
+      wait_(true) {
 }
 
 KuduTableAlterer::Data::~Data() {

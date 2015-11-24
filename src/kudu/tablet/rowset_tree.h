@@ -52,10 +52,8 @@ class RowSetTree {
     STOP
   };
   struct RSEndpoint {
-    RSEndpoint(RowSet* rowset, EndpointType endpoint, const Slice& slice)
-    : rowset_(rowset),
-      endpoint_(endpoint),
-      slice_(slice) {}
+    RSEndpoint(RowSet *rowset, EndpointType endpoint, Slice slice)
+        : rowset_(rowset), endpoint_(endpoint), slice_(std::move(slice)) {}
 
     RowSet* rowset_;
     enum EndpointType endpoint_;

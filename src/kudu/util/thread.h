@@ -265,15 +265,14 @@ class Thread : public RefCountedThreadSafe<Thread> {
   // Function object that wraps the user-supplied function to run in a separate thread.
   typedef boost::function<void ()> ThreadFunctor;
 
-  Thread(const std::string& category, const std::string& name, const ThreadFunctor& functor)
-    : thread_(0),
-      category_(category),
-      name_(name),
-      tid_(CHILD_WAITING_TID),
-      functor_(functor),
-      done_(1),
-      joinable_(false) {
-  }
+  Thread(std::string category, std::string name, ThreadFunctor functor)
+      : thread_(0),
+        category_(std::move(category)),
+        name_(std::move(name)),
+        tid_(CHILD_WAITING_TID),
+        functor_(std::move(functor)),
+        done_(1),
+        joinable_(false) {}
 
   // Library-specific thread ID.
   pthread_t thread_;

@@ -37,10 +37,8 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
-PstackWatcher::PstackWatcher(const MonoDelta& timeout)
-  : timeout_(timeout),
-    running_(true),
-    cond_(&lock_) {
+PstackWatcher::PstackWatcher(MonoDelta timeout)
+    : timeout_(std::move(timeout)), running_(true), cond_(&lock_) {
   CHECK_OK(Thread::Create("pstack_watcher", "pstack_watcher",
                  boost::bind(&PstackWatcher::Run, this), &thread_));
 }

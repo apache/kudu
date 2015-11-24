@@ -33,7 +33,7 @@ namespace tablet {
 // Structure tracking the progress of a single row operation within a WriteTransaction.
 struct RowOp {
  public:
-  explicit RowOp(const DecodedRowOperation& decoded_op);
+  explicit RowOp(DecodedRowOperation decoded_op);
   ~RowOp();
 
   // Functions to set the result of the mutation.

@@ -67,7 +67,7 @@ class ErrorPredicateData : public KuduPredicate::Data {
 // a constant.
 class ComparisonPredicateData : public KuduPredicate::Data {
  public:
-  ComparisonPredicateData(const ColumnSchema& col,
+  ComparisonPredicateData(ColumnSchema col,
                           KuduPredicate::ComparisonOp op,
                           KuduValue* value);
   virtual ~ComparisonPredicateData();

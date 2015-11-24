@@ -67,12 +67,11 @@ static const char* const kSysCatalogTableColType = "entry_type";
 static const char* const kSysCatalogTableColId = "entry_id";
 static const char* const kSysCatalogTableColMetadata = "metadata";
 
-SysCatalogTable::SysCatalogTable(Master* master,
-                                 MetricRegistry* metrics,
-                                 const ElectedLeaderCallback& leader_cb)
+SysCatalogTable::SysCatalogTable(Master* master, MetricRegistry* metrics,
+                                 ElectedLeaderCallback leader_cb)
     : metric_registry_(metrics),
       master_(master),
-      leader_cb_(leader_cb),
+      leader_cb_(std::move(leader_cb)),
       old_role_(RaftPeerPB::FOLLOWER) {
   CHECK_OK(ThreadPoolBuilder("apply").Build(&apply_pool_));
 }

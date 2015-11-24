@@ -155,12 +155,10 @@ scoped_refptr<MetricEntity> MetricEntityPrototype::Instantiate(
 //
 
 MetricEntity::MetricEntity(const MetricEntityPrototype* prototype,
-                           const std::string& id,
-                           const AttributeMap& attributes)
-  : prototype_(prototype),
-    id_(id),
-    attributes_(attributes) {
-}
+                           std::string id, AttributeMap attributes)
+    : prototype_(prototype),
+      id_(std::move(id)),
+      attributes_(std::move(attributes)) {}
 
 MetricEntity::~MetricEntity() {
 }
@@ -429,7 +427,7 @@ void MetricPrototypeRegistry::WriteAsJsonAndExit() const {
 //
 // MetricPrototype
 //
-MetricPrototype::MetricPrototype(const CtorArgs& args) : args_(args) {
+MetricPrototype::MetricPrototype(CtorArgs args) : args_(std::move(args)) {
   MetricPrototypeRegistry::get()->AddMetric(this);
 }
 
@@ -513,10 +511,8 @@ Status Gauge::WriteAsJson(JsonWriter* writer,
 //
 
 StringGauge::StringGauge(const GaugePrototype<string>* proto,
-                         const string& initial_value)
-  : Gauge(proto),
-    value_(initial_value) {
-}
+                         string initial_value)
+    : Gauge(proto), value_(std::move(initial_value)) {}
 
 std::string StringGauge::value() const {
   lock_guard<simple_spinlock> l(&lock_);

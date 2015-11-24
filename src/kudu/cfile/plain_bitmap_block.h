@@ -99,12 +99,12 @@ class PlainBitMapBlockBuilder : public BlockBuilder {
 //
 class PlainBitMapBlockDecoder : public BlockDecoder {
  public:
-  explicit PlainBitMapBlockDecoder(const Slice& slice)
-  : data_(slice),
-    parsed_(false),
-    num_elems_(0),
-    ordinal_pos_base_(0),
-    cur_idx_(0)  {
+  explicit PlainBitMapBlockDecoder(Slice slice)
+      : data_(std::move(slice)),
+        parsed_(false),
+        num_elems_(0),
+        ordinal_pos_base_(0),
+        cur_idx_(0) {
   }
 
   virtual Status ParseHeader() OVERRIDE {

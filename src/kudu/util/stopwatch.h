@@ -264,17 +264,17 @@ namespace sw_internal {
 // Internal class used by the LOG_TIMING macro.
 class LogTiming {
  public:
-  LogTiming(const char* file, int line, google::LogSeverity severity,
-            const std::string& prefix, const std::string& description,
+  LogTiming(const char *file, int line, google::LogSeverity severity,
+            std::string prefix, std::string description,
             int64_t max_expected_millis, bool should_print)
-    : file_(file),
-      line_(line),
-      severity_(severity),
-      prefix_(prefix),
-      description_(description),
-      max_expected_millis_(max_expected_millis),
-      should_print_(should_print),
-      has_run_(false) {
+      : file_(file),
+        line_(line),
+        severity_(severity),
+        prefix_(std::move(prefix)),
+        description_(std::move(description)),
+        max_expected_millis_(max_expected_millis),
+        should_print_(should_print),
+        has_run_(false) {
     stopwatch_.start();
   }
 

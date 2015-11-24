@@ -268,8 +268,7 @@ class LogBlockContainer {
   };
 
   LogBlockContainer(LogBlockManager* block_manager,
-                    PathInstanceMetadataPB* instance,
-                    const std::string& path,
+                    PathInstanceMetadataPB* instance, std::string path,
                     gscoped_ptr<WritablePBContainerFile> metadata_writer,
                     gscoped_ptr<RWFile> data_file);
 
@@ -309,19 +308,17 @@ class LogBlockContainer {
 const std::string LogBlockContainer::kMetadataFileSuffix(".metadata");
 const std::string LogBlockContainer::kDataFileSuffix(".data");
 
-LogBlockContainer::LogBlockContainer(LogBlockManager* block_manager,
-                                     PathInstanceMetadataPB* instance,
-                                     const string& path,
-                                     gscoped_ptr<WritablePBContainerFile> metadata_writer,
-                                     gscoped_ptr<RWFile> data_file)
-  : block_manager_(block_manager),
-    path_(path),
-    metadata_pb_writer_(metadata_writer.Pass()),
-    data_file_(data_file.Pass()),
-    total_bytes_written_(0),
-    metrics_(block_manager->metrics()),
-    instance_(instance) {
-}
+LogBlockContainer::LogBlockContainer(
+    LogBlockManager* block_manager, PathInstanceMetadataPB* instance,
+    string path, gscoped_ptr<WritablePBContainerFile> metadata_writer,
+    gscoped_ptr<RWFile> data_file)
+    : block_manager_(block_manager),
+      path_(std::move(path)),
+      metadata_pb_writer_(metadata_writer.Pass()),
+      data_file_(data_file.Pass()),
+      total_bytes_written_(0),
+      metrics_(block_manager->metrics()),
+      instance_(instance) {}
 
 Status LogBlockContainer::Create(LogBlockManager* block_manager,
                                  PathInstanceMetadataPB* instance,
@@ -606,8 +603,8 @@ void LogBlockContainer::ExecClosure(const Closure& task) {
 // the simpler RefCounted).
 class LogBlock : public RefCountedThreadSafe<LogBlock> {
  public:
-  LogBlock(LogBlockContainer* container, const BlockId& block_id,
-           int64_t offset, int64_t length);
+  LogBlock(LogBlockContainer* container, BlockId block_id, int64_t offset,
+           int64_t length);
   ~LogBlock();
 
   const BlockId& block_id() const { return block_id_; }
@@ -638,14 +635,13 @@ class LogBlock : public RefCountedThreadSafe<LogBlock> {
   DISALLOW_COPY_AND_ASSIGN(LogBlock);
 };
 
-LogBlock::LogBlock(LogBlockContainer* container,
-                   const BlockId& block_id,
+LogBlock::LogBlock(LogBlockContainer* container, BlockId block_id,
                    int64_t offset, int64_t length)
-  : container_(container),
-    block_id_(block_id),
-    offset_(offset),
-    length_(length),
-    deleted_(false) {
+    : container_(container),
+      block_id_(std::move(block_id)),
+      offset_(offset),
+      length_(length),
+      deleted_(false) {
   DCHECK_GE(offset, 0);
   DCHECK_GE(length, 0);
 
@@ -692,7 +688,7 @@ class LogWritableBlock : public WritableBlock {
     NO_SYNC
   };
 
-  LogWritableBlock(LogBlockContainer* container, const BlockId& block_id,
+  LogWritableBlock(LogBlockContainer* container, BlockId block_id,
                    int64_t block_offset);
 
   virtual ~LogWritableBlock();
@@ -762,13 +758,12 @@ class LogWritableBlock : public WritableBlock {
 };
 
 LogWritableBlock::LogWritableBlock(LogBlockContainer* container,
-                                   const BlockId& block_id,
-                                   int64_t block_offset)
-  : container_(container),
-    block_id_(block_id),
-    block_offset_(block_offset),
-    block_length_(0),
-    state_(CLEAN) {
+                                   BlockId block_id, int64_t block_offset)
+    : container_(container),
+      block_id_(std::move(block_id)),
+      block_offset_(block_offset),
+      block_length_(0),
+      state_(CLEAN) {
   DCHECK_GE(block_offset, 0);
   DCHECK_EQ(0, block_offset % container->instance()->filesystem_block_size_bytes());
   if (container->metrics()) {

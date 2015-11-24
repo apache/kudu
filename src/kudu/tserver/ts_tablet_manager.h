@@ -346,9 +346,8 @@ class TSTabletManager : public tserver::TabletPeerLookupIf {
 // when tablet boostrap, create, and delete operations complete.
 class TransitionInProgressDeleter : public RefCountedThreadSafe<TransitionInProgressDeleter> {
  public:
-  TransitionInProgressDeleter(TransitionInProgressMap* map,
-                              rw_spinlock* lock,
-                              const string& entry);
+  TransitionInProgressDeleter(TransitionInProgressMap* map, rw_spinlock* lock,
+                              string entry);
 
  private:
   friend class RefCountedThreadSafe<TransitionInProgressDeleter>;

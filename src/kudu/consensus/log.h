@@ -251,12 +251,8 @@ class Log : public RefCountedThreadSafe<Log> {
     kAllocationFinished // Next segment ready
   };
 
-  Log(const LogOptions &options,
-      FsManager *fs_manager,
-      const std::string& log_path,
-      const std::string& tablet_id,
-      const Schema& schema,
-      uint32_t schema_version,
+  Log(LogOptions options, FsManager* fs_manager, std::string log_path,
+      std::string tablet_id, const Schema& schema, uint32_t schema_version,
       const scoped_refptr<MetricEntity>& metric_entity);
 
   // Initializes a new one or continues an existing log.

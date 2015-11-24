@@ -56,15 +56,14 @@ TAG_FLAG(rpc_acceptor_listen_backlog, advanced);
 namespace kudu {
 namespace rpc {
 
-AcceptorPool::AcceptorPool(Messenger *messenger,
-                           Socket *socket, const Sockaddr &bind_address)
- : messenger_(messenger),
-   socket_(socket->Release()),
-   bind_address_(bind_address),
-   rpc_connections_accepted_(METRIC_rpc_connections_accepted.Instantiate(
-                                 messenger->metric_entity())),
-   closing_(false) {
-}
+AcceptorPool::AcceptorPool(Messenger* messenger, Socket* socket,
+                           Sockaddr bind_address)
+    : messenger_(messenger),
+      socket_(socket->Release()),
+      bind_address_(std::move(bind_address)),
+      rpc_connections_accepted_(METRIC_rpc_connections_accepted.Instantiate(
+          messenger->metric_entity())),
+      closing_(false) {}
 
 AcceptorPool::~AcceptorPool() {
   Shutdown();

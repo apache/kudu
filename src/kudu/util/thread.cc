@@ -167,9 +167,10 @@ class ThreadMgr {
   class ThreadDescriptor {
    public:
     ThreadDescriptor() { }
-    ThreadDescriptor(const string& category, const string& name, int64_t thread_id)
-        : name_(name), category_(category), thread_id_(thread_id) {
-    }
+    ThreadDescriptor(string category, string name, int64_t thread_id)
+        : name_(std::move(name)),
+          category_(std::move(category)),
+          thread_id_(thread_id) {}
 
     const string& name() const { return name_; }
     const string& category() const { return category_; }

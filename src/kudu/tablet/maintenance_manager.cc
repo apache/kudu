@@ -74,11 +74,8 @@ void MaintenanceOpStats::Clear() {
   perf_improvement_ = 0;
 }
 
-MaintenanceOp::MaintenanceOp(const std::string &name, IOUsage io_usage)
-  : name_(name),
-    running_(0),
-    io_usage_(io_usage) {
-}
+MaintenanceOp::MaintenanceOp(std::string name, IOUsage io_usage)
+    : name_(std::move(name)), running_(0), io_usage_(io_usage) {}
 
 MaintenanceOp::~MaintenanceOp() {
   CHECK(!manager_.get()) << "You must unregister the " << name_

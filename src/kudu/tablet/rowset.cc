@@ -33,10 +33,10 @@ using strings::Substitute;
 
 namespace kudu { namespace tablet {
 
-DuplicatingRowSet::DuplicatingRowSet(const RowSetVector &old_rowsets,
-                                     const RowSetVector &new_rowsets)
-  : old_rowsets_(old_rowsets),
-    new_rowsets_(new_rowsets) {
+DuplicatingRowSet::DuplicatingRowSet(RowSetVector old_rowsets,
+                                     RowSetVector new_rowsets)
+    : old_rowsets_(std::move(old_rowsets)),
+      new_rowsets_(std::move(new_rowsets)) {
   CHECK_GT(old_rowsets_.size(), 0);
   CHECK_GT(new_rowsets_.size(), 0);
 }

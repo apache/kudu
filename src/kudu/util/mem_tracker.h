@@ -243,10 +243,8 @@ class MemTracker : public std::enable_shared_from_this<MemTracker> {
   // Consume()/Release() can still be called.
   // byte_limit < 0 means no limit
   // 'id' is the label for LogUsage() and web UI.
-  MemTracker(const ConsumptionFunction& consumption_func,
-             int64_t byte_limit,
-             const std::string& id,
-             const std::shared_ptr<MemTracker>& parent);
+  MemTracker(ConsumptionFunction consumption_func, int64_t byte_limit,
+             const std::string& id, std::shared_ptr<MemTracker> parent);
 
   bool CheckLimitExceeded() const {
     return limit_ >= 0 && limit_ < consumption();
@@ -351,9 +349,8 @@ class MemTrackerAllocator : public Alloc {
   typedef typename Alloc::const_pointer const_pointer;
   typedef typename Alloc::size_type size_type;
 
-  explicit MemTrackerAllocator(const std::shared_ptr<MemTracker>& mem_tracker)
-      : mem_tracker_(mem_tracker) {
-  }
+  explicit MemTrackerAllocator(std::shared_ptr<MemTracker> mem_tracker)
+      : mem_tracker_(std::move(mem_tracker)) {}
 
   // This constructor is used for rebinding.
   template <typename U>
@@ -394,10 +391,9 @@ class MemTrackerAllocator : public Alloc {
 // releasing it when the end of scope is reached.
 class ScopedTrackedConsumption {
  public:
-  ScopedTrackedConsumption(const std::shared_ptr<MemTracker>& tracker,
+  ScopedTrackedConsumption(std::shared_ptr<MemTracker> tracker,
                            int64_t to_consume)
-    : tracker_(tracker),
-      consumption_(to_consume) {
+      : tracker_(std::move(tracker)), consumption_(to_consume) {
     DCHECK(tracker_);
     tracker_->Consume(consumption_);
   }

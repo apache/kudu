@@ -599,9 +599,7 @@ class Tablet::Iterator : public RowwiseIterator {
 
   DISALLOW_COPY_AND_ASSIGN(Iterator);
 
-  Iterator(const Tablet *tablet,
-           const Schema &projection,
-           const MvccSnapshot &snap,
+  Iterator(const Tablet* tablet, const Schema& projection, MvccSnapshot snap,
            const OrderMode order);
 
   const Tablet *tablet_;
@@ -620,8 +618,8 @@ class Tablet::Iterator : public RowwiseIterator {
 // This structure is immutable -- a transaction can grab it and be sure
 // that it won't change.
 struct TabletComponents : public RefCountedThreadSafe<TabletComponents> {
-  TabletComponents(const std::shared_ptr<MemRowSet>& mrs,
-                   const std::shared_ptr<RowSetTree>& rs_tree);
+  TabletComponents(std::shared_ptr<MemRowSet> mrs,
+                   std::shared_ptr<RowSetTree> rs_tree);
   const std::shared_ptr<MemRowSet> memrowset;
   const std::shared_ptr<RowSetTree> rowsets;
 };

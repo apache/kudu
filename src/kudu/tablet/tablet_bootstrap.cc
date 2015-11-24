@@ -145,7 +145,7 @@ class TabletBootstrap {
  public:
   TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
                   const scoped_refptr<Clock>& clock,
-                  const shared_ptr<MemTracker>& mem_tracker,
+                  shared_ptr<MemTracker> mem_tracker,
                   MetricRegistry* metric_registry,
                   TabletStatusListener* listener,
                   const scoped_refptr<LogAnchorRegistry>& log_anchor_registry);
@@ -403,20 +403,18 @@ static string DebugInfo(const string& tablet_id,
                     segment_path, debug_str);
 }
 
-TabletBootstrap::TabletBootstrap(const scoped_refptr<TabletMetadata>& meta,
-                                 const scoped_refptr<Clock>& clock,
-                                 const shared_ptr<MemTracker>& mem_tracker,
-                                 MetricRegistry* metric_registry,
-                                 TabletStatusListener* listener,
-                                 const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
+TabletBootstrap::TabletBootstrap(
+    const scoped_refptr<TabletMetadata>& meta,
+    const scoped_refptr<Clock>& clock, shared_ptr<MemTracker> mem_tracker,
+    MetricRegistry* metric_registry, TabletStatusListener* listener,
+    const scoped_refptr<LogAnchorRegistry>& log_anchor_registry)
     : meta_(meta),
       clock_(clock),
-      mem_tracker_(mem_tracker),
+      mem_tracker_(std::move(mem_tracker)),
       metric_registry_(metric_registry),
       listener_(listener),
       log_anchor_registry_(log_anchor_registry),
-      arena_(256*1024, 4*1024*1024) {
-}
+      arena_(256 * 1024, 4 * 1024 * 1024) {}
 
 Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                                   scoped_refptr<Log>* rebuilt_log,

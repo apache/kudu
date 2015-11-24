@@ -52,12 +52,11 @@ class MajorDeltaCompaction {
   //
   // TODO: is base_schema supposed to be the same as base_data->schema()? how about
   // in an ALTER scenario?
-  MajorDeltaCompaction(FsManager* fs_manager,
-                       const Schema& base_schema,
-                       CFileSet* base_data,
-                       const std::shared_ptr<DeltaIterator>& delta_iter,
-                       const std::vector<std::shared_ptr<DeltaStore> >& included_stores,
-                       const std::vector<ColumnId>& col_ids);
+  MajorDeltaCompaction(
+      FsManager* fs_manager, const Schema& base_schema, CFileSet* base_data,
+      std::shared_ptr<DeltaIterator> delta_iter,
+      std::vector<std::shared_ptr<DeltaStore> > included_stores,
+      const std::vector<ColumnId>& col_ids);
   ~MajorDeltaCompaction();
 
   // Executes the compaction.

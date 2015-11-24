@@ -54,19 +54,18 @@ namespace rpc {
 ///
 /// Connection
 ///
-Connection::Connection(ReactorThread *reactor_thread, const Sockaddr &remote,
+Connection::Connection(ReactorThread *reactor_thread, Sockaddr remote,
                        int socket, Direction direction)
-  : reactor_thread_(reactor_thread),
-    socket_(socket),
-    remote_(remote),
-    direction_(direction),
-    last_activity_time_(MonoTime::Now(MonoTime::FINE)),
-    is_epoll_registered_(false),
-    next_call_id_(1),
-    sasl_client_(kSaslAppName, socket),
-    sasl_server_(kSaslAppName, socket),
-    negotiation_complete_(false) {
-}
+    : reactor_thread_(reactor_thread),
+      socket_(socket),
+      remote_(std::move(remote)),
+      direction_(direction),
+      last_activity_time_(MonoTime::Now(MonoTime::FINE)),
+      is_epoll_registered_(false),
+      next_call_id_(1),
+      sasl_client_(kSaslAppName, socket),
+      sasl_server_(kSaslAppName, socket),
+      negotiation_complete_(false) {}
 
 Status Connection::SetNonBlocking(bool enabled) {
   return socket_.SetNonBlocking(enabled);
@@ -221,9 +220,8 @@ void Connection::HandleOutboundCallTimeout(CallAwaitingResponse *car) {
 // has been fully transmitted.
 struct CallTransferCallbacks : public TransferCallbacks {
  public:
-  explicit CallTransferCallbacks(const shared_ptr<OutboundCall> &call)
-    : call_(call) {
-  }
+  explicit CallTransferCallbacks(shared_ptr<OutboundCall> call)
+      : call_(std::move(call)) {}
 
   virtual void NotifyTransferFinished() OVERRIDE {
     // TODO: would be better to cancel the transfer while it is still on the queue if we

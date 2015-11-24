@@ -171,10 +171,8 @@ class LogReader {
                                   faststring* tmp_buf,
                                   gscoped_ptr<LogEntryBatchPB>* batch) const;
 
-
-  LogReader(FsManager *fs_manager,
-            const scoped_refptr<LogIndex>& index,
-            const std::string& tablet_name,
+  LogReader(FsManager* fs_manager, const scoped_refptr<LogIndex>& index,
+            std::string tablet_name,
             const scoped_refptr<MetricEntity>& metric_entity);
 
   // Reads the headers of all segments in 'path_'.

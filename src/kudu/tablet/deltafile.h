@@ -162,8 +162,7 @@ class DeltaFileReader : public DeltaStore,
     return reader_;
   }
 
-  DeltaFileReader(const BlockId& block_id,
-                  cfile::CFileReader *cf_reader,
+  DeltaFileReader(BlockId block_id, cfile::CFileReader *cf_reader,
                   DeltaType delta_type);
 
   // Callback used in 'init_once_' to initialize this delta file.
@@ -251,9 +250,8 @@ class DeltaFileIterator : public DeltaIterator {
 
   // The passed 'projection' and 'dfr' must remain valid for the lifetime
   // of the iterator.
-  DeltaFileIterator(const std::shared_ptr<DeltaFileReader>& dfr,
-                    const Schema *projection,
-                    const MvccSnapshot &snap,
+  DeltaFileIterator(std::shared_ptr<DeltaFileReader> dfr,
+                    const Schema *projection, MvccSnapshot snap,
                     DeltaType delta_type);
 
   // Determine the row index of the first update in the block currently

@@ -401,7 +401,7 @@ template <typename Delimiter>
 class LimitImpl {
  public:
   LimitImpl(Delimiter delimiter, int limit)
-      : delimiter_(delimiter), limit_(limit), count_(0) {}
+      : delimiter_(std::move(delimiter)), limit_(limit), count_(0) {}
   StringPiece Find(StringPiece text) {
     if (count_++ == limit_) {
       return StringPiece(text.end(), 0);  // No more matches.

@@ -491,15 +491,13 @@ Status ExternalMiniCluster::SetFlag(ExternalDaemon* daemon,
 // ExternalDaemon
 //------------------------------------------------------------
 
-ExternalDaemon::ExternalDaemon(const std::shared_ptr<rpc::Messenger>& messenger,
-                               const string& exe,
-                               const string& data_dir,
-                               const vector<string>& extra_flags) :
-  messenger_(messenger),
-  exe_(exe),
-  data_dir_(data_dir),
-  extra_flags_(extra_flags) {
-}
+ExternalDaemon::ExternalDaemon(std::shared_ptr<rpc::Messenger> messenger,
+                               string exe, string data_dir,
+                               vector<string> extra_flags)
+    : messenger_(std::move(messenger)),
+      exe_(std::move(exe)),
+      data_dir_(std::move(data_dir)),
+      extra_flags_(std::move(extra_flags)) {}
 
 ExternalDaemon::~ExternalDaemon() {
 }
@@ -782,13 +780,11 @@ ExternalMaster::ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
 }
 
 ExternalMaster::ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
-                               const string& exe,
-                               const string& data_dir,
-                               const string& rpc_bind_address,
+                               const string& exe, const string& data_dir,
+                               string rpc_bind_address,
                                const std::vector<string>& extra_flags)
     : ExternalDaemon(messenger, exe, data_dir, extra_flags),
-      rpc_bind_address_(rpc_bind_address) {
-}
+      rpc_bind_address_(std::move(rpc_bind_address)) {}
 
 ExternalMaster::~ExternalMaster() {
 }
@@ -824,16 +820,13 @@ Status ExternalMaster::Restart() {
 // ExternalTabletServer
 //------------------------------------------------------------
 
-ExternalTabletServer::ExternalTabletServer(const std::shared_ptr<rpc::Messenger>& messenger,
-                                           const string& exe,
-                                           const string& data_dir,
-                                           const string& bind_host,
-                                           const vector<HostPort>& master_addrs,
-                                           const vector<string>& extra_flags)
-  : ExternalDaemon(messenger, exe, data_dir, extra_flags),
-    master_addrs_(HostPort::ToCommaSeparatedString(master_addrs)),
-    bind_host_(bind_host) {
-}
+ExternalTabletServer::ExternalTabletServer(
+    const std::shared_ptr<rpc::Messenger>& messenger, const string& exe,
+    const string& data_dir, string bind_host,
+    const vector<HostPort>& master_addrs, const vector<string>& extra_flags)
+    : ExternalDaemon(messenger, exe, data_dir, extra_flags),
+      master_addrs_(HostPort::ToCommaSeparatedString(master_addrs)),
+      bind_host_(std::move(bind_host)) {}
 
 ExternalTabletServer::~ExternalTabletServer() {
 }

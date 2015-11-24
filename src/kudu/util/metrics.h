@@ -494,9 +494,8 @@ class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
   friend class MetricRegistry;
   friend class RefCountedThreadSafe<MetricEntity>;
 
-  MetricEntity(const MetricEntityPrototype* prototype,
-               const std::string& id,
-               const AttributeMap& attributes);
+  MetricEntity(const MetricEntityPrototype* prototype, std::string id,
+               AttributeMap attributes);
   ~MetricEntity();
 
   // Ensure that the given metric prototype is allowed to be instantiated
@@ -679,7 +678,7 @@ class MetricPrototype {
                    const MetricJsonOptions& opts) const;
 
  protected:
-  explicit MetricPrototype(const CtorArgs& args);
+  explicit MetricPrototype(CtorArgs args);
   virtual ~MetricPrototype() {
   }
 
@@ -741,7 +740,8 @@ class Gauge : public Metric {
 // Gauge implementation for string that uses locks to ensure thread safety.
 class StringGauge : public Gauge {
  public:
-  StringGauge(const GaugePrototype<std::string>* proto, const std::string& initial_value);
+  StringGauge(const GaugePrototype<std::string>* proto,
+              std::string initial_value);
   std::string value() const;
   void set_value(const std::string& value);
  protected:
@@ -897,11 +897,8 @@ class FunctionGauge : public Gauge {
  private:
   friend class MetricEntity;
 
-  FunctionGauge(const GaugePrototype<T>* proto,
-                const Callback<T()>& function)
-    : Gauge(proto),
-      function_(function) {
-  }
+  FunctionGauge(const GaugePrototype<T>* proto, Callback<T()> function)
+      : Gauge(proto), function_(std::move(function)) {}
 
   static T Return(T v) {
     return v;

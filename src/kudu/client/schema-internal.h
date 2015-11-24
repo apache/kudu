@@ -45,18 +45,18 @@ KuduColumnSchema::DataType FromInternalDataType(
 
 class KuduColumnSpec::Data {
  public:
-  explicit Data(const std::string& name)
-    : name(name),
-      has_type(false),
-      has_encoding(false),
-      has_compression(false),
-      has_block_size(false),
-      has_nullable(false),
-      primary_key(false),
-      has_default(false),
-      default_val(NULL),
-      remove_default(false),
-      has_rename_to(false) {
+  explicit Data(std::string name)
+      : name(std::move(name)),
+        has_type(false),
+        has_encoding(false),
+        has_compression(false),
+        has_block_size(false),
+        has_nullable(false),
+        primary_key(false),
+        has_default(false),
+        default_val(NULL),
+        remove_default(false),
+        has_rename_to(false) {
   }
 
   ~Data() {

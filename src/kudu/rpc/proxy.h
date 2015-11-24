@@ -55,9 +55,8 @@ class Messenger;
 // After initialization, multiple threads may make calls using the same proxy object.
 class Proxy {
  public:
-  Proxy(const std::shared_ptr<Messenger>& messenger,
-        const Sockaddr& remote,
-        const std::string& service_name);
+  Proxy(const std::shared_ptr<Messenger>& messenger, const Sockaddr& remote,
+        std::string service_name);
   ~Proxy();
 
   // Call a remote method asynchronously.

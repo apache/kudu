@@ -145,10 +145,7 @@ class LmTestThread {
  public:
   LmTestThread(LockManager* manager, vector<const Slice*> keys,
                const vector<LmTestResource*> resources)
-    : manager_(manager),
-      keys_(keys),
-      resources_(resources) {
-  }
+      : manager_(manager), keys_(std::move(keys)), resources_(resources) {}
 
   void Start() {
     CHECK_OK(kudu::Thread::Create("test", "test", &LmTestThread::Run, this, &thread_));

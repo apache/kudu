@@ -28,10 +28,8 @@ using std::vector;
 #ifndef NDEBUG
 namespace kudu {
 
-SyncPoint::Dependency::Dependency(const string& predecessor, const string &successor)
-  : predecessor_(predecessor),
-    successor_(successor) {
-}
+SyncPoint::Dependency::Dependency(string predecessor, string successor)
+    : predecessor_(std::move(predecessor)), successor_(std::move(successor)) {}
 
 SyncPoint::SyncPoint()
   : cv_(&mutex_),

@@ -59,21 +59,18 @@ typedef vector<pair<uint64_t, int64_t> > SnapsAndCounts;
 // facilitates checking for data integrity.
 class LinkedListTester {
  public:
-  LinkedListTester(const client::sp::shared_ptr<client::KuduClient>& client,
-                   const std::string& table_name,
-                   int num_chains,
-                   int num_tablets,
-                   int num_replicas,
-                   bool enable_mutation)
-    : verify_projection_({ kKeyColumnName, kLinkColumnName, kUpdatedColumnName }),
-      table_name_(table_name),
-      num_chains_(num_chains),
-      num_tablets_(num_tablets),
-      num_replicas_(num_replicas),
-      enable_mutation_(enable_mutation),
-      latency_histogram_(1000000, 3),
-      client_(client) {
-
+  LinkedListTester(client::sp::shared_ptr<client::KuduClient> client,
+                   std::string table_name, int num_chains, int num_tablets,
+                   int num_replicas, bool enable_mutation)
+      : verify_projection_(
+            {kKeyColumnName, kLinkColumnName, kUpdatedColumnName}),
+        table_name_(std::move(table_name)),
+        num_chains_(num_chains),
+        num_tablets_(num_tablets),
+        num_replicas_(num_replicas),
+        enable_mutation_(enable_mutation),
+        latency_histogram_(1000000, 3),
+        client_(std::move(client)) {
     client::KuduSchemaBuilder b;
 
     b.AddColumn(kKeyColumnName)->Type(client::KuduColumnSchema::INT64)->NotNull()->PrimaryKey();
@@ -281,12 +278,9 @@ class ScopedRowUpdater {
 // linked list test.
 class PeriodicWebUIChecker {
  public:
-
   PeriodicWebUIChecker(const ExternalMiniCluster& cluster,
-                       const std::string& tablet_id,
-                       const MonoDelta& period)
-    : period_(period),
-      is_running_(true) {
+                       const std::string& tablet_id, MonoDelta period)
+      : period_(std::move(period)), is_running_(true) {
     // List of master and ts web pages to fetch
     vector<std::string> master_pages, ts_pages;
 
@@ -367,7 +361,7 @@ class PeriodicWebUIChecker {
 class LinkedListVerifier {
  public:
   LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected,
-                     const std::vector<int64_t>& split_key_ints);
+                     std::vector<int64_t> split_key_ints);
 
   // Start the scan timer. The duration between starting the scan and verifying
   // the data is logged in the VerifyData() step, so this should be called
@@ -763,13 +757,14 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run,
 // LinkedListVerifier
 /////////////////////////////////////////////////////////////
 
-LinkedListVerifier::LinkedListVerifier(int num_chains, bool enable_mutation, int64_t expected,
-                                       const std::vector<int64_t>& split_key_ints)
-  : num_chains_(num_chains),
-    expected_(expected),
-    enable_mutation_(enable_mutation),
-    split_key_ints_(split_key_ints),
-    errors_(0) {
+LinkedListVerifier::LinkedListVerifier(int num_chains, bool enable_mutation,
+                                       int64_t expected,
+                                       std::vector<int64_t> split_key_ints)
+    : num_chains_(num_chains),
+      expected_(expected),
+      enable_mutation_(enable_mutation),
+      split_key_ints_(std::move(split_key_ints)),
+      errors_(0) {
   if (expected != kNoParticularCountExpected) {
     DCHECK_GE(expected, 0);
     seen_key_.reserve(expected);

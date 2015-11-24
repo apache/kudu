@@ -67,17 +67,16 @@ extern const char kConsensusQueueParentTrackerId[];
 class PeerMessageQueue {
  public:
   struct TrackedPeer {
-    explicit TrackedPeer(const std::string& uuid)
-      : uuid(uuid),
-        is_new(true),
-        next_index(kInvalidOpIdIndex),
-        last_received(MinimumOpId()),
-        last_known_committed_idx(MinimumOpId().index()),
-        is_last_exchange_successful(false),
-        last_successful_communication_time(MonoTime::Now(MonoTime::FINE)),
-        needs_remote_bootstrap(false),
-        last_seen_term_(0) {
-    }
+    explicit TrackedPeer(std::string uuid)
+        : uuid(std::move(uuid)),
+          is_new(true),
+          next_index(kInvalidOpIdIndex),
+          last_received(MinimumOpId()),
+          last_known_committed_idx(MinimumOpId().index()),
+          is_last_exchange_successful(false),
+          last_successful_communication_time(MonoTime::Now(MonoTime::FINE)),
+          needs_remote_bootstrap(false),
+          last_seen_term_(0) {}
 
     // Check that the terms seen from a given peer only increase
     // monotonically.

@@ -101,12 +101,12 @@ class RleBitMapBlockBuilder : public BlockBuilder {
 //
 class RleBitMapBlockDecoder : public BlockDecoder {
  public:
-  explicit RleBitMapBlockDecoder(const Slice& slice)
-    : data_(slice),
-      parsed_(false),
-      num_elems_(0),
-      ordinal_pos_base_(0),
-      cur_idx_(0) {
+  explicit RleBitMapBlockDecoder(Slice slice)
+      : data_(std::move(slice)),
+        parsed_(false),
+        num_elems_(0),
+        ordinal_pos_base_(0),
+        cur_idx_(0) {
   }
 
   virtual Status ParseHeader() OVERRIDE {
@@ -276,12 +276,12 @@ class RleIntBlockBuilder : public BlockBuilder {
 template <DataType IntType>
 class RleIntBlockDecoder : public BlockDecoder {
  public:
-  explicit RleIntBlockDecoder(const Slice& slice)
-  :  data_(slice),
-     parsed_(false),
-     num_elems_(0),
-     ordinal_pos_base_(0),
-     cur_idx_(0) {
+  explicit RleIntBlockDecoder(Slice slice)
+      : data_(std::move(slice)),
+        parsed_(false),
+        num_elems_(0),
+        ordinal_pos_base_(0),
+        cur_idx_(0) {
   }
 
   virtual Status ParseHeader() OVERRIDE {

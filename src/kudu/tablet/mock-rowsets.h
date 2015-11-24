@@ -126,11 +126,11 @@ class MockRowSet : public RowSet {
 // Mock which implements GetBounds() with constant provided bonuds.
 class MockDiskRowSet : public MockRowSet {
  public:
-  MockDiskRowSet(std::string first_key, std::string last_key, int size = 1000000)
-    : first_key_(first_key),
-      last_key_(last_key),
-      size_(size) {
-  }
+  MockDiskRowSet(std::string first_key, std::string last_key,
+                 int size = 1000000)
+      : first_key_(std::move(first_key)),
+        last_key_(std::move(last_key)),
+        size_(size) {}
 
   virtual Status GetBounds(Slice *min_encoded_key,
                            Slice *max_encoded_key) const OVERRIDE {

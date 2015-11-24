@@ -209,8 +209,8 @@ class PosixSequentialFile: public SequentialFile {
   FILE* file_;
 
  public:
-  PosixSequentialFile(const std::string& fname, FILE* f)
-      : filename_(fname), file_(f) { }
+  PosixSequentialFile(std::string fname, FILE* f)
+      : filename_(std::move(fname)), file_(f) {}
   virtual ~PosixSequentialFile() { fclose(file_); }
 
   virtual Status Read(size_t n, Slice* result, uint8_t* scratch) OVERRIDE {
@@ -248,8 +248,8 @@ class PosixRandomAccessFile: public RandomAccessFile {
   int fd_;
 
  public:
-  PosixRandomAccessFile(const std::string& fname, int fd)
-      : filename_(fname), fd_(fd) { }
+  PosixRandomAccessFile(std::string fname, int fd)
+      : filename_(std::move(fname)), fd_(fd) {}
   virtual ~PosixRandomAccessFile() { close(fd_); }
 
   virtual Status Read(uint64_t offset, size_t n, Slice* result,
@@ -289,17 +289,14 @@ class PosixRandomAccessFile: public RandomAccessFile {
 // order to further improve Sync() performance.
 class PosixWritableFile : public WritableFile {
  public:
-  PosixWritableFile(const std::string& fname,
-                    int fd,
-                    uint64_t file_size,
+  PosixWritableFile(std::string fname, int fd, uint64_t file_size,
                     bool sync_on_close)
-      : filename_(fname),
+      : filename_(std::move(fname)),
         fd_(fd),
         sync_on_close_(sync_on_close),
         filesize_(file_size),
         pre_allocated_size_(0),
-        pending_sync_(false) {
-  }
+        pending_sync_(false) {}
 
   ~PosixWritableFile() {
     if (fd_ >= 0) {
@@ -483,14 +480,11 @@ class PosixWritableFile : public WritableFile {
 class PosixRWFile : public RWFile {
 // is not employed.
  public:
-  PosixRWFile(const string& fname,
-              int fd,
-              bool sync_on_close)
-  : filename_(fname),
-    fd_(fd),
-    sync_on_close_(sync_on_close),
-    pending_sync_(false) {
-  }
+  PosixRWFile(string fname, int fd, bool sync_on_close)
+      : filename_(std::move(fname)),
+        fd_(fd),
+        sync_on_close_(sync_on_close),
+        pending_sync_(false) {}
 
   ~PosixRWFile() {
     if (fd_ >= 0) {

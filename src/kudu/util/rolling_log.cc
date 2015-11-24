@@ -43,15 +43,12 @@ static const int kDefaultSizeLimitBytes = 64 * 1024 * 1024; // 64MB
 
 namespace kudu {
 
-RollingLog::RollingLog(Env* env,
-                       const string& log_dir,
-                       const string& log_name)
-  : env_(env),
-    log_dir_(log_dir),
-    log_name_(log_name),
-    size_limit_bytes_(kDefaultSizeLimitBytes),
-    compress_after_close_(true) {
-}
+RollingLog::RollingLog(Env* env, string log_dir, string log_name)
+    : env_(env),
+      log_dir_(std::move(log_dir)),
+      log_name_(std::move(log_name)),
+      size_limit_bytes_(kDefaultSizeLimitBytes),
+      compress_after_close_(true) {}
 
 RollingLog::~RollingLog() {
   WARN_NOT_OK(Close(), "Unable to close RollingLog");

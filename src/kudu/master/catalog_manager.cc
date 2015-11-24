@@ -1722,10 +1722,8 @@ class TSPicker {
 // identified by its UUID.
 class PickSpecificUUID : public TSPicker {
  public:
-  PickSpecificUUID(Master* master, const string& ts_uuid) :
-    master_(master),
-    ts_uuid_(ts_uuid) {
-  }
+  PickSpecificUUID(Master* master, string ts_uuid)
+      : master_(master), ts_uuid_(std::move(ts_uuid)) {}
 
   virtual Status PickReplica(TSDescriptor** ts_desc) OVERRIDE {
     shared_ptr<TSDescriptor> ts;
@@ -2080,20 +2078,18 @@ class AsyncCreateReplica : public RetrySpecificTSRpcTask {
 // Send a DeleteTablet() RPC request.
 class AsyncDeleteReplica : public RetrySpecificTSRpcTask {
  public:
-  AsyncDeleteReplica(Master *master,
-                     ThreadPool* callback_pool,
-                     const string& permanent_uuid,
-                     const scoped_refptr<TableInfo>& table,
-                     const std::string& tablet_id,
-                     TabletDataState delete_type,
-                     const boost::optional<int64_t>& cas_config_opid_index_less_or_equal,
-                     const string& reason)
-    : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, table),
-      tablet_id_(tablet_id),
-      delete_type_(delete_type),
-      cas_config_opid_index_less_or_equal_(cas_config_opid_index_less_or_equal),
-      reason_(reason) {
-  }
+  AsyncDeleteReplica(
+      Master* master, ThreadPool* callback_pool, const string& permanent_uuid,
+      const scoped_refptr<TableInfo>& table, std::string tablet_id,
+      TabletDataState delete_type,
+      boost::optional<int64_t> cas_config_opid_index_less_or_equal,
+      string reason)
+      : RetrySpecificTSRpcTask(master, callback_pool, permanent_uuid, table),
+        tablet_id_(std::move(tablet_id)),
+        delete_type_(delete_type),
+        cas_config_opid_index_less_or_equal_(
+            std::move(cas_config_opid_index_less_or_equal)),
+        reason_(std::move(reason)) {}
 
   virtual string type_name() const OVERRIDE { return "Delete Tablet"; }
 
@@ -3039,11 +3035,11 @@ std::string CatalogManager::LogPrefix() const {
 ////////////////////////////////////////////////////////////
 
 TabletInfo::TabletInfo(const scoped_refptr<TableInfo>& table,
-                       const std::string& tablet_id)
-  : tablet_id_(tablet_id), table_(table),
-    last_update_time_(MonoTime::Now(MonoTime::FINE)),
-    reported_schema_version_(0) {
-}
+                       std::string tablet_id)
+    : tablet_id_(std::move(tablet_id)),
+      table_(table),
+      last_update_time_(MonoTime::Now(MonoTime::FINE)),
+      reported_schema_version_(0) {}
 
 TabletInfo::~TabletInfo() {
 }
@@ -3102,9 +3098,7 @@ void PersistentTabletInfo::set_state(SysTabletsEntryPB::State state, const strin
 // TableInfo
 ////////////////////////////////////////////////////////////
 
-TableInfo::TableInfo(const std::string& table_id)
-  : table_id_(table_id) {
-}
+TableInfo::TableInfo(std::string table_id) : table_id_(std::move(table_id)) {}
 
 TableInfo::~TableInfo() {
 }

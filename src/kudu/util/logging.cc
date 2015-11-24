@@ -63,9 +63,7 @@ namespace {
 
 class SimpleSink : public google::LogSink {
  public:
-  explicit SimpleSink(const LoggingCallback& cb)
-    : cb_(cb) {
-  }
+  explicit SimpleSink(LoggingCallback cb) : cb_(std::move(cb)) {}
 
   virtual ~SimpleSink() OVERRIDE {
   }

@@ -673,12 +673,11 @@ class MemoryTrackingBufferAllocator : public BufferAllocator {
   // through an Arena) must be able to handle the case when allocation
   // fails. If 'enforce_limit' is false (this is the default), then
   // allocation will always succeed.
-  MemoryTrackingBufferAllocator(
-      BufferAllocator* const delegate,
-      const std::shared_ptr<MemTracker>& mem_tracker,
-      bool enforce_limit = false)
+  MemoryTrackingBufferAllocator(BufferAllocator* const delegate,
+                                std::shared_ptr<MemTracker> mem_tracker,
+                                bool enforce_limit = false)
       : delegate_(delegate),
-        mem_tracker_(mem_tracker),
+        mem_tracker_(std::move(mem_tracker)),
         enforce_limit_(enforce_limit) {}
 
   virtual ~MemoryTrackingBufferAllocator() {}

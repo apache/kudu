@@ -94,9 +94,7 @@ class KsckTabletReplica {
 class KsckTablet {
  public:
   // TODO add start/end keys, stale.
-  explicit KsckTablet(const std::string& id)
-      : id_(id) {
-  }
+  explicit KsckTablet(std::string id) : id_(std::move(id)) {}
 
   const std::string& id() const {
     return id_;
@@ -118,11 +116,8 @@ class KsckTablet {
 // Representation of a table. Composed of tablets.
 class KsckTable {
  public:
-  KsckTable(const std::string& name, const Schema& schema, int num_replicas)
-      : name_(name),
-        schema_(schema),
-        num_replicas_(num_replicas) {
-  }
+  KsckTable(std::string name, const Schema& schema, int num_replicas)
+      : name_(std::move(name)), schema_(schema), num_replicas_(num_replicas) {}
 
   const std::string& name() const {
     return name_;
@@ -162,9 +157,7 @@ typedef Callback<void(const Status& status, uint64_t checksum)> ReportResultCall
 // Class that must be extended to represent a tablet server.
 class KsckTabletServer {
  public:
-  explicit KsckTabletServer(const std::string& uuid)
-      : uuid_(uuid) {
-  }
+  explicit KsckTabletServer(std::string uuid) : uuid_(std::move(uuid)) {}
   virtual ~KsckTabletServer() { }
 
   // Connects to the configured Tablet Server.
@@ -224,9 +217,8 @@ class KsckMaster {
 // Class used to communicate with the cluster. It bootstraps this by using the provided master.
 class KsckCluster {
  public:
-  explicit KsckCluster(const std::shared_ptr<KsckMaster>& master)
-      : master_(master) {
-  }
+  explicit KsckCluster(std::shared_ptr<KsckMaster> master)
+      : master_(std::move(master)) {}
   ~KsckCluster();
 
   // Fetches list of tables, tablets, and tablet servers from the master and
@@ -265,9 +257,8 @@ class KsckCluster {
 // Externally facing class to run checks against the provided cluster.
 class Ksck {
  public:
-  explicit Ksck(const std::shared_ptr<KsckCluster>& cluster)
-      : cluster_(cluster) {
-  }
+  explicit Ksck(std::shared_ptr<KsckCluster> cluster)
+      : cluster_(std::move(cluster)) {}
   ~Ksck() {}
 
   // Verifies that it can connect to the Master.

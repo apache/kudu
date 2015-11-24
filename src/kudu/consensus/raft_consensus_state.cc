@@ -40,19 +40,18 @@ using strings::SubstituteAndAppend;
 // ReplicaState
 //////////////////////////////////////////////////
 
-ReplicaState::ReplicaState(const ConsensusOptions& options,
-                           const string& peer_uuid,
+ReplicaState::ReplicaState(ConsensusOptions options, string peer_uuid,
                            gscoped_ptr<ConsensusMetadata> cmeta,
                            ReplicaTransactionFactory* txn_factory)
-  : options_(options),
-    peer_uuid_(peer_uuid),
-    cmeta_(cmeta.Pass()),
-    next_index_(0),
-    txn_factory_(txn_factory),
-    last_received_op_id_(MinimumOpId()),
-    last_received_op_id_current_leader_(MinimumOpId()),
-    last_committed_index_(MinimumOpId()),
-    state_(kInitialized) {
+    : options_(std::move(options)),
+      peer_uuid_(std::move(peer_uuid)),
+      cmeta_(cmeta.Pass()),
+      next_index_(0),
+      txn_factory_(txn_factory),
+      last_received_op_id_(MinimumOpId()),
+      last_received_op_id_current_leader_(MinimumOpId()),
+      last_committed_index_(MinimumOpId()),
+      state_(kInitialized) {
   CHECK(cmeta_) << "ConsensusMeta passed as NULL";
 }
 

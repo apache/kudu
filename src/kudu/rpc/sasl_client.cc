@@ -80,14 +80,13 @@ static Status StatusFromRpcError(const ErrorStatusPB& error) {
   }
 }
 
-SaslClient::SaslClient(const string& app_name, int fd)
-  : app_name_(app_name),
-    sock_(fd),
-    helper_(SaslHelper::CLIENT),
-    client_state_(SaslNegotiationState::NEW),
-    negotiated_mech_(SaslMechanism::INVALID),
-    deadline_(MonoTime::Max()) {
-
+SaslClient::SaslClient(string app_name, int fd)
+    : app_name_(std::move(app_name)),
+      sock_(fd),
+      helper_(SaslHelper::CLIENT),
+      client_state_(SaslNegotiationState::NEW),
+      negotiated_mech_(SaslMechanism::INVALID),
+      deadline_(MonoTime::Max()) {
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
       reinterpret_cast<int (*)()>(&SaslClientGetoptCb), this));
   callbacks_.push_back(SaslBuildCallback(SASL_CB_AUTHNAME,

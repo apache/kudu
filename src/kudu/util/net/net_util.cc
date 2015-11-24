@@ -64,10 +64,8 @@ HostPort::HostPort()
     port_(0) {
 }
 
-HostPort::HostPort(const std::string& host, uint16_t port)
-  : host_(host),
-    port_(port) {
-}
+HostPort::HostPort(std::string host, uint16_t port)
+    : host_(std::move(host)), port_(port) {}
 
 HostPort::HostPort(const Sockaddr& addr)
   : host_(addr.host()),

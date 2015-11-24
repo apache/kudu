@@ -65,9 +65,8 @@ static Status OpenReader(const shared_ptr<RowSetMetadata>& rowset_metadata,
 // CFile Base
 ////////////////////////////////////////////////////////////
 
-CFileSet::CFileSet(const shared_ptr<RowSetMetadata>& rowset_metadata)
-  : rowset_metadata_(rowset_metadata) {
-}
+CFileSet::CFileSet(shared_ptr<RowSetMetadata> rowset_metadata)
+    : rowset_metadata_(std::move(rowset_metadata)) {}
 
 CFileSet::~CFileSet() {
 }

@@ -815,12 +815,8 @@ class PreparedMutation {
   //
   // The data referred to by the 'key' Slice passed in themust remain
   // valid for the lifetime of the PreparedMutation object.
-  explicit PreparedMutation(const Slice &key) :
-    key_(key),
-    tree_(NULL),
-    leaf_(NULL),
-    needs_unlock_(false)
-  {}
+  explicit PreparedMutation(Slice key)
+      : key_(std::move(key)), tree_(NULL), leaf_(NULL), needs_unlock_(false) {}
 
   ~PreparedMutation() {
     UnPrepare();
@@ -940,11 +936,8 @@ class CBTree {
       frozen_(false) {
   }
 
-  explicit CBTree(const std::shared_ptr<typename Traits::ArenaType>& arena)
-      : arena_(arena),
-        root_(NewLeaf(false)),
-        frozen_(false) {
-  }
+  explicit CBTree(std::shared_ptr<typename Traits::ArenaType> arena)
+      : arena_(std::move(arena)), root_(NewLeaf(false)), frozen_(false) {}
 
   ~CBTree() {
     RecursiveDelete(root_);

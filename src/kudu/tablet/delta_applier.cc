@@ -31,12 +31,11 @@ namespace kudu {
 namespace tablet {
 
   // Construct. The base_iter and delta_iter should not be Initted.
-DeltaApplier::DeltaApplier(const shared_ptr<CFileSet::Iterator>& base_iter,
-                           const shared_ptr<DeltaIterator>& delta_iter)
-  : base_iter_(base_iter),
-    delta_iter_(delta_iter),
-    first_prepare_(true) {
-}
+DeltaApplier::DeltaApplier(shared_ptr<CFileSet::Iterator> base_iter,
+                           shared_ptr<DeltaIterator> delta_iter)
+    : base_iter_(std::move(base_iter)),
+      delta_iter_(std::move(delta_iter)),
+      first_prepare_(true) {}
 
 DeltaApplier::~DeltaApplier() {
 }

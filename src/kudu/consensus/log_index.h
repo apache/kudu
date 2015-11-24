@@ -58,7 +58,7 @@ struct LogIndexEntry {
 // See .cc file for implementation notes.
 class LogIndex : public RefCountedThreadSafe<LogIndex> {
  public:
-  explicit LogIndex(const std::string& base_dir);
+  explicit LogIndex(std::string base_dir);
 
   // Record an index entry in the index.
   Status AddEntry(const LogIndexEntry& entry);

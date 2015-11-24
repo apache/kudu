@@ -173,14 +173,14 @@ Slice BShufBlockBuilder<UINT32>::Finish(rowid_t ordinal_pos);
 template<DataType Type>
 class BShufBlockDecoder : public BlockDecoder {
  public:
-  explicit BShufBlockDecoder(const Slice& slice)
-    : data_(slice),
-      parsed_(false),
-      ordinal_pos_base_(0),
-      num_elems_(0),
-      compressed_size_(0),
-      num_elems_after_padding_(0),
-      cur_idx_(0) {
+  explicit BShufBlockDecoder(Slice slice)
+      : data_(std::move(slice)),
+        parsed_(false),
+        ordinal_pos_base_(0),
+        num_elems_(0),
+        compressed_size_(0),
+        num_elems_after_padding_(0),
+        cur_idx_(0) {
   }
 
   Status ParseHeader() OVERRIDE {

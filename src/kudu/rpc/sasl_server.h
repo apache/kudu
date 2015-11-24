@@ -46,7 +46,7 @@ class AuthStore;
 class SaslServer {
  public:
   // Does not take ownership of the socket indicated by the fd.
-  SaslServer(const string& app_name, int fd);
+  SaslServer(string app_name, int fd);
   ~SaslServer();
 
   // Enable ANONYMOUS authentication.

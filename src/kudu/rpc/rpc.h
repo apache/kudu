@@ -37,11 +37,10 @@ class Rpc;
 // All RPCs should use HandleResponse() to retry certain generic errors.
 class RpcRetrier {
  public:
-  RpcRetrier(const MonoTime& deadline,
-             const std::shared_ptr<rpc::Messenger>& messenger)
-    : attempt_num_(1),
-      deadline_(deadline),
-      messenger_(messenger) {
+  RpcRetrier(MonoTime deadline, std::shared_ptr<rpc::Messenger> messenger)
+      : attempt_num_(1),
+        deadline_(std::move(deadline)),
+        messenger_(std::move(messenger)) {
     if (deadline_.Initialized()) {
       controller_.set_deadline(deadline_);
     }

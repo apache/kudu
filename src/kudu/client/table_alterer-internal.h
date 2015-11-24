@@ -35,7 +35,7 @@ class KuduColumnSpec;
 
 class KuduTableAlterer::Data {
  public:
-  Data(KuduClient* client, const std::string& name);
+  Data(KuduClient* client, std::string name);
   ~Data();
   Status ToRequest(master::AlterTableRequestPB* req);
 

@@ -425,9 +425,9 @@ void UnionIterator::GetIteratorStats(std::vector<IteratorStats>* stats) const {
 // Materializing iterator
 ////////////////////////////////////////////////////////////
 
-MaterializingIterator::MaterializingIterator(const shared_ptr<ColumnwiseIterator> &iter)
-  : iter_(iter),
-    disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown) {
+MaterializingIterator::MaterializingIterator(shared_ptr<ColumnwiseIterator> iter)
+    : iter_(std::move(iter)),
+      disallow_pushdown_for_tests_(!FLAGS_materializing_iterator_do_pushdown) {
 }
 
 Status MaterializingIterator::Init(ScanSpec *spec) {
@@ -541,10 +541,8 @@ string MaterializingIterator::ToString() const {
 // PredicateEvaluatingIterator
 ////////////////////////////////////////////////////////////
 
-
-PredicateEvaluatingIterator::PredicateEvaluatingIterator(
-  const shared_ptr<RowwiseIterator> &base_iter) :
-  base_iter_(base_iter) {
+PredicateEvaluatingIterator::PredicateEvaluatingIterator(shared_ptr<RowwiseIterator> base_iter)
+    : base_iter_(std::move(base_iter)) {
 }
 
 Status PredicateEvaluatingIterator::InitAndMaybeWrap(

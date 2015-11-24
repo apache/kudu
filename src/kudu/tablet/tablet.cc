@@ -117,11 +117,9 @@ static CompactionPolicy *CreateCompactionPolicy() {
 // TabletComponents
 ////////////////////////////////////////////////////////////
 
-TabletComponents::TabletComponents(const shared_ptr<MemRowSet>& mrs,
-                                   const shared_ptr<RowSetTree>& rs_tree)
-  : memrowset(mrs),
-    rowsets(rs_tree) {
-}
+TabletComponents::TabletComponents(shared_ptr<MemRowSet> mrs,
+                                   shared_ptr<RowSetTree> rs_tree)
+    : memrowset(std::move(mrs)), rowsets(std::move(rs_tree)) {}
 
 ////////////////////////////////////////////////////////////
 // Tablet
@@ -1710,17 +1708,14 @@ void Tablet::PrintRSLayout(ostream* o) {
 // Tablet::Iterator
 ////////////////////////////////////////////////////////////
 
-Tablet::Iterator::Iterator(const Tablet *tablet,
-                           const Schema &projection,
-                           const MvccSnapshot &snap,
-                           const OrderMode order)
+Tablet::Iterator::Iterator(const Tablet* tablet, const Schema& projection,
+                           MvccSnapshot snap, const OrderMode order)
     : tablet_(tablet),
       projection_(projection),
-      snap_(snap),
+      snap_(std::move(snap)),
       order_(order),
       arena_(256, 4096),
-      encoder_(&tablet_->key_schema(), &arena_) {
-}
+      encoder_(&tablet_->key_schema(), &arena_) {}
 
 Tablet::Iterator::~Iterator() {}
 

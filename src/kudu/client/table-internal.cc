@@ -39,16 +39,16 @@ namespace client {
 
 using sp::shared_ptr;
 
-KuduTable::Data::Data(const shared_ptr<KuduClient>& client,
-                      const string& name,
-                      const string& id,
+KuduTable::Data::Data(shared_ptr<KuduClient> client,
+                      string name,
+                      string id,
                       const KuduSchema& schema,
-                      const PartitionSchema& partition_schema)
-  : client_(client),
-    name_(name),
-    id_(id),
-    schema_(schema),
-    partition_schema_(partition_schema) {
+                      PartitionSchema partition_schema)
+    : client_(std::move(client)),
+      name_(std::move(name)),
+      id_(std::move(id)),
+      schema_(schema),
+      partition_schema_(std::move(partition_schema)) {
 }
 
 KuduTable::Data::~Data() {

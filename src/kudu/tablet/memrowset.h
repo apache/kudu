@@ -463,9 +463,8 @@ class MemRowSet::Iterator : public RowwiseIterator {
   DISALLOW_COPY_AND_ASSIGN(Iterator);
 
   Iterator(const std::shared_ptr<const MemRowSet> &mrs,
-           MemRowSet::MSBTIter *iter,
-           const Schema *projection,
-           const MvccSnapshot &mvcc_snap);
+           MemRowSet::MSBTIter *iter, const Schema *projection,
+           MvccSnapshot mvcc_snap);
 
   // Various helper functions called while getting the next RowBlock
   Status FetchRows(RowBlock* dst, size_t* fetched);

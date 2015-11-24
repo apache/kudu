@@ -328,9 +328,8 @@ class LatchTransactionCompletionCallback : public TransactionCompletionCallback 
 // calls it with the transaction status when it completes.
 class StatusTransactionCompletionCallback : public TransactionCompletionCallback {
  public:
-  explicit StatusTransactionCompletionCallback(const StatusCallback& callback)
-   : callback_(callback) {
-  }
+  explicit StatusTransactionCompletionCallback(StatusCallback callback)
+      : callback_(std::move(callback)) {}
 
   virtual void TransactionCompleted() OVERRIDE {
     callback_.Run(status());

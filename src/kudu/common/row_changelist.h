@@ -95,9 +95,7 @@ class RowChangeList {
     : encoded_data_(fs) {
   }
 
-  explicit RowChangeList(const Slice &s)
-    : encoded_data_(s) {
-  }
+  explicit RowChangeList(Slice s) : encoded_data_(std::move(s)) {}
 
   // Create a RowChangeList which represents a delete.
   // This points to static (const) memory and should not be

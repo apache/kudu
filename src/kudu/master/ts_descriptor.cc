@@ -42,12 +42,11 @@ Status TSDescriptor::RegisterNew(const NodeInstancePB& instance,
   return Status::OK();
 }
 
-TSDescriptor::TSDescriptor(const std::string& perm_id)
-  : permanent_uuid_(perm_id),
-    latest_seqno_(-1),
-    last_heartbeat_(MonoTime::Now(MonoTime::FINE)),
-    has_tablet_report_(false) {
-}
+TSDescriptor::TSDescriptor(std::string perm_id)
+    : permanent_uuid_(std::move(perm_id)),
+      latest_seqno_(-1),
+      last_heartbeat_(MonoTime::Now(MonoTime::FINE)),
+      has_tablet_report_(false) {}
 
 TSDescriptor::~TSDescriptor() {
 }

@@ -116,14 +116,12 @@ Slice GVIntBlockBuilder::Finish(rowid_t ordinal_pos) {
 // Decoder
 ////////////////////////////////////////////////////////////
 
-
-GVIntBlockDecoder::GVIntBlockDecoder(const Slice &slice)
-  : data_(slice),
-    parsed_(false),
-    cur_pos_(nullptr),
-    cur_idx_(0) {
+GVIntBlockDecoder::GVIntBlockDecoder(Slice slice)
+    : data_(std::move(slice)),
+      parsed_(false),
+      cur_pos_(nullptr),
+      cur_idx_(0) {
 }
-
 
 Status GVIntBlockDecoder::ParseHeader() {
   // TODO: better range check

@@ -285,7 +285,7 @@ class gscoped_ptr_impl {
   // discussion of this technique.
   struct Data : public D {
     explicit Data(T* ptr_in) : ptr(ptr_in) {}
-    Data(T* ptr_in, const D& other) : D(other), ptr(ptr_in) {}
+    Data(T* ptr_in, D other) : D(std::move(other)), ptr(ptr_in) {}
     T* ptr;
   };
 

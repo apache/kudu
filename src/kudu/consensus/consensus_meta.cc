@@ -214,13 +214,12 @@ Status ConsensusMetadata::Flush() {
 }
 
 ConsensusMetadata::ConsensusMetadata(FsManager* fs_manager,
-                                     const std::string& tablet_id,
-                                     const std::string& peer_uuid)
+                                     std::string tablet_id,
+                                     std::string peer_uuid)
     : fs_manager_(CHECK_NOTNULL(fs_manager)),
-      tablet_id_(tablet_id),
-      peer_uuid_(peer_uuid),
-      has_pending_config_(false) {
-}
+      tablet_id_(std::move(tablet_id)),
+      peer_uuid_(std::move(peer_uuid)),
+      has_pending_config_(false) {}
 
 std::string ConsensusMetadata::LogPrefix() const {
   return Substitute("T $0 P $1: ", tablet_id_, peer_uuid_);

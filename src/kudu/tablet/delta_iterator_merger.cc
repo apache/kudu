@@ -32,9 +32,9 @@ using std::string;
 using std::vector;
 using strings::Substitute;
 
-DeltaIteratorMerger::DeltaIteratorMerger(const vector<shared_ptr<DeltaIterator> > &iters)
-  : iters_(iters) {
-}
+DeltaIteratorMerger::DeltaIteratorMerger(
+    vector<shared_ptr<DeltaIterator> > iters)
+    : iters_(std::move(iters)) {}
 
 Status DeltaIteratorMerger::Init(ScanSpec *spec) {
   for (const shared_ptr<DeltaIterator> &iter : iters_) {

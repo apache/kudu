@@ -145,14 +145,13 @@ void CloseNonStandardFDs(DIR* fd_dir) {
 
 } // anonymous namespace
 
-Subprocess::Subprocess(const string& program,
-                       const vector<string>& argv)
-  : program_(program),
-    argv_(argv),
-    state_(kNotStarted),
-    child_pid_(-1),
-    fd_state_(),
-    child_fds_() {
+Subprocess::Subprocess(string program, vector<string> argv)
+    : program_(std::move(program)),
+      argv_(std::move(argv)),
+      state_(kNotStarted),
+      child_pid_(-1),
+      fd_state_(),
+      child_fds_() {
   fd_state_[STDIN_FILENO]   = PIPED;
   fd_state_[STDOUT_FILENO]  = SHARED;
   fd_state_[STDERR_FILENO]  = SHARED;

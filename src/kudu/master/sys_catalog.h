@@ -79,9 +79,8 @@ class SysCatalogTable {
   // the consensus configuration's progress, any long running tasks (e.g., scanning
   // tablets) should be performed asynchronously (by, e.g., submitting
   // them to a to a separate threadpool).
-  SysCatalogTable(Master* master,
-                  MetricRegistry* metrics,
-                  const ElectedLeaderCallback& leader_cb);
+  SysCatalogTable(Master* master, MetricRegistry* metrics,
+                  ElectedLeaderCallback leader_cb);
 
   ~SysCatalogTable();
 

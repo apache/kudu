@@ -175,19 +175,17 @@ void DeltaMemStore::DebugPrint() const {
 // DMSIterator
 ////////////////////////////////////////////////////////////
 
-DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore> &dms,
-                         const Schema *projection,
-                         const MvccSnapshot &snapshot)
-  : dms_(dms),
-    mvcc_snapshot_(snapshot),
-    iter_(dms->tree_->NewIterator()),
-    initted_(false),
-    prepared_idx_(0),
-    prepared_count_(0),
-    prepared_for_(NOT_PREPARED),
-    seeked_(false),
-    projection_(projection) {
-}
+DMSIterator::DMSIterator(const shared_ptr<const DeltaMemStore>& dms,
+                         const Schema* projection, MvccSnapshot snapshot)
+    : dms_(dms),
+      mvcc_snapshot_(std::move(snapshot)),
+      iter_(dms->tree_->NewIterator()),
+      initted_(false),
+      prepared_idx_(0),
+      prepared_count_(0),
+      prepared_for_(NOT_PREPARED),
+      seeked_(false),
+      projection_(projection) {}
 
 Status DMSIterator::Init(ScanSpec *spec) {
   initted_ = true;

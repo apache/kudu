@@ -37,14 +37,13 @@ using log::Log;
 using log::LogEntryBatch;
 using strings::Substitute;
 
-LocalConsensus::LocalConsensus(const ConsensusOptions& options,
+LocalConsensus::LocalConsensus(ConsensusOptions options,
                                gscoped_ptr<ConsensusMetadata> cmeta,
-                               const string& peer_uuid,
+                               string peer_uuid,
                                const scoped_refptr<server::Clock>& clock,
-                               ReplicaTransactionFactory* txn_factory,
-                               Log* log)
-    : peer_uuid_(peer_uuid),
-      options_(options),
+                               ReplicaTransactionFactory* txn_factory, Log* log)
+    : peer_uuid_(std::move(peer_uuid)),
+      options_(std::move(options)),
       cmeta_(cmeta.Pass()),
       txn_factory_(DCHECK_NOTNULL(txn_factory)),
       log_(DCHECK_NOTNULL(log)),

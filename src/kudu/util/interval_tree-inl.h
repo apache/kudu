@@ -191,14 +191,11 @@ bool ITNode<Traits>::SortByDescRight(const interval_type &a, const interval_type
   return Traits::compare(Traits::get_right(a), Traits::get_right(b)) > 0;
 }
 
-template<class Traits>
+template <class Traits>
 ITNode<Traits>::ITNode(typename Traits::point_type split_point,
-                       ITNode<Traits> *left,
-                       const IntervalVector &overlap,
+                       ITNode<Traits> *left, const IntervalVector &overlap,
                        ITNode<Traits> *right)
-  : split_point_(split_point),
-    left_(left),
-    right_(right) {
+    : split_point_(std::move(split_point)), left_(left), right_(right) {
   // Store two copies of the set of intervals which overlap the split point:
   // 1) Sorted by ascending left boundary
   overlapping_by_asc_left_.assign(overlap.begin(), overlap.end());

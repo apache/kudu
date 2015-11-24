@@ -158,12 +158,9 @@ class ConnectionIdEqual {
 // of different threads, making it tricky to enforce single ownership.
 class OutboundCall {
  public:
-
-  OutboundCall(const ConnectionId& conn_id,
-               const RemoteMethod& remote_method,
+  OutboundCall(const ConnectionId& conn_id, const RemoteMethod& remote_method,
                google::protobuf::Message* response_storage,
-               RpcController* controller,
-               const ResponseCallback& callback);
+               RpcController* controller, ResponseCallback callback);
 
   ~OutboundCall();
 

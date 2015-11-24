@@ -173,9 +173,9 @@ Status BinaryDictBlockBuilder::GetFirstKey(void* key_void) const {
 // Decoding
 ////////////////////////////////////////////////////////////
 
-BinaryDictBlockDecoder::BinaryDictBlockDecoder(const Slice& slice, CFileIterator* iter)
-  : data_(slice),
-    parsed_(false) {
+BinaryDictBlockDecoder::BinaryDictBlockDecoder(Slice slice, CFileIterator* iter)
+    : data_(std::move(slice)),
+      parsed_(false) {
   dict_decoder_ = iter->GetDictDecoder();
 }
 

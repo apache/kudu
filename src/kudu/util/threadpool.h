@@ -69,7 +69,7 @@ class Runnable {
 //
 class ThreadPoolBuilder {
  public:
-  explicit ThreadPoolBuilder(const std::string& name);
+  explicit ThreadPoolBuilder(std::string name);
 
   // Note: We violate the style guide by returning mutable references here
   // in order to provide traditional Builder pattern conveniences.

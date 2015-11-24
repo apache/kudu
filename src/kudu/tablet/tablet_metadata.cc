@@ -206,28 +206,26 @@ Status TabletMetadata::DeleteSuperBlock() {
   return Status::OK();
 }
 
-TabletMetadata::TabletMetadata(FsManager *fs_manager,
-                               const string& tablet_id,
-                               const string& table_name,
-                               const Schema& schema,
-                               const PartitionSchema& partition_schema,
-                               const Partition& partition,
+TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id,
+                               string table_name, const Schema& schema,
+                               PartitionSchema partition_schema,
+                               Partition partition,
                                const TabletDataState& tablet_data_state)
-  : state_(kNotWrittenYet),
-    tablet_id_(tablet_id),
-    partition_(partition),
-    fs_manager_(fs_manager),
-    next_rowset_idx_(0),
-    last_durable_mrs_id_(kNoDurableMemStore),
-    schema_(new Schema(schema)),
-    schema_version_(0),
-    table_name_(table_name),
-    partition_schema_(partition_schema),
-    tablet_data_state_(tablet_data_state),
-    tombstone_last_logged_opid_(MinimumOpId()),
-    num_flush_pins_(0),
-    needs_flush_(false),
-    pre_flush_callback_(Bind(DoNothingStatusClosure)) {
+    : state_(kNotWrittenYet),
+      tablet_id_(std::move(tablet_id)),
+      partition_(std::move(partition)),
+      fs_manager_(fs_manager),
+      next_rowset_idx_(0),
+      last_durable_mrs_id_(kNoDurableMemStore),
+      schema_(new Schema(schema)),
+      schema_version_(0),
+      table_name_(std::move(table_name)),
+      partition_schema_(std::move(partition_schema)),
+      tablet_data_state_(tablet_data_state),
+      tombstone_last_logged_opid_(MinimumOpId()),
+      num_flush_pins_(0),
+      needs_flush_(false),
+      pre_flush_callback_(Bind(DoNothingStatusClosure)) {
   CHECK(schema_->has_column_ids());
   CHECK_GT(schema_->num_key_columns(), 0);
 }
@@ -237,17 +235,16 @@ TabletMetadata::~TabletMetadata() {
   delete schema_;
 }
 
-TabletMetadata::TabletMetadata(FsManager *fs_manager, const string& tablet_id)
-  : state_(kNotLoadedYet),
-    tablet_id_(tablet_id),
-    fs_manager_(fs_manager),
-    next_rowset_idx_(0),
-    schema_(nullptr),
-    tombstone_last_logged_opid_(MinimumOpId()),
-    num_flush_pins_(0),
-    needs_flush_(false),
-    pre_flush_callback_(Bind(DoNothingStatusClosure)) {
-}
+TabletMetadata::TabletMetadata(FsManager* fs_manager, string tablet_id)
+    : state_(kNotLoadedYet),
+      tablet_id_(std::move(tablet_id)),
+      fs_manager_(fs_manager),
+      next_rowset_idx_(0),
+      schema_(nullptr),
+      tombstone_last_logged_opid_(MinimumOpId()),
+      num_flush_pins_(0),
+      needs_flush_(false),
+      pre_flush_callback_(Bind(DoNothingStatusClosure)) {}
 
 Status TabletMetadata::LoadFromDisk() {
   TRACE_EVENT1("tablet", "TabletMetadata::LoadFromDisk",

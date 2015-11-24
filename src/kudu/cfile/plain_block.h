@@ -104,12 +104,12 @@ class PlainBlockBuilder : public BlockBuilder {
 template<DataType Type>
 class PlainBlockDecoder : public BlockDecoder {
  public:
-  explicit PlainBlockDecoder(const Slice &slice)
-    : data_(slice),
-      parsed_(false),
-      num_elems_(0),
-      ordinal_pos_base_(0),
-      cur_idx_(0) {
+  explicit PlainBlockDecoder(Slice slice)
+      : data_(std::move(slice)),
+        parsed_(false),
+        num_elems_(0),
+        ordinal_pos_base_(0),
+        cur_idx_(0) {
   }
 
   virtual Status ParseHeader() OVERRIDE {

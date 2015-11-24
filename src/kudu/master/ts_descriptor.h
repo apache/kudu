@@ -91,7 +91,7 @@ class TSDescriptor {
                            std::shared_ptr<consensus::ConsensusServiceProxy>* proxy);
 
  private:
-  explicit TSDescriptor(const std::string& perm_id);
+  explicit TSDescriptor(std::string perm_id);
 
   // Uses DNS to resolve registered hosts to a single Sockaddr.
   Status ResolveSockaddr(Sockaddr* addr) const;

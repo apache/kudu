@@ -54,11 +54,9 @@ struct ImmutableRandomAccessFileInfo {
   std::shared_ptr<RandomAccessFile> readable;
   int64_t size;
 
-  ImmutableRandomAccessFileInfo(const std::shared_ptr<RandomAccessFile>& readable,
+  ImmutableRandomAccessFileInfo(std::shared_ptr<RandomAccessFile> readable,
                                 int64_t size)
-  : readable(readable),
-    size(size) {
-  }
+      : readable(std::move(readable)), size(size) {}
 
   Status ReadFully(uint64_t offset, int64_t size, Slice* data, uint8_t* scratch) const {
     return env_util::ReadFully(readable.get(), offset, size, data, scratch);
@@ -89,8 +87,7 @@ struct ImmutableReadableBlockInfo {
 class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSession> {
  public:
   RemoteBootstrapSession(const scoped_refptr<tablet::TabletPeer>& tablet_peer,
-                         const std::string& session_id,
-                         const std::string& requestor_uuid,
+                         std::string session_id, std::string requestor_uuid,
                          FsManager* fs_manager);
 
   // Initialize the session, including anchoring files (TODO) and fetching the

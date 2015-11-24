@@ -110,15 +110,14 @@ Status ReadableLogSegment::Open(Env* env,
   return Status::OK();
 }
 
-ReadableLogSegment::ReadableLogSegment(const std::string &path,
-                                       const shared_ptr<RandomAccessFile>& readable_file)
-  : path_(path),
-    file_size_(0),
-    readable_to_offset_(0),
-    readable_file_(readable_file),
-    is_initialized_(false),
-    footer_was_rebuilt_(false) {
-}
+ReadableLogSegment::ReadableLogSegment(
+    std::string path, shared_ptr<RandomAccessFile> readable_file)
+    : path_(std::move(path)),
+      file_size_(0),
+      readable_to_offset_(0),
+      readable_file_(std::move(readable_file)),
+      is_initialized_(false),
+      footer_was_rebuilt_(false) {}
 
 Status ReadableLogSegment::Init(const LogSegmentHeaderPB& header,
                                 const LogSegmentFooterPB& footer,
@@ -685,16 +684,13 @@ Status ReadableLogSegment::ReadEntryBatch(int64_t *offset,
   return Status::OK();
 }
 
-
-WritableLogSegment::WritableLogSegment(
-    const string &path,
-    const shared_ptr<WritableFile>& writable_file)
-: path_(path),
-  writable_file_(writable_file),
-  is_header_written_(false),
-  is_footer_written_(false),
-  written_offset_(0) {
-}
+WritableLogSegment::WritableLogSegment(string path,
+                                       shared_ptr<WritableFile> writable_file)
+    : path_(std::move(path)),
+      writable_file_(std::move(writable_file)),
+      is_header_written_(false),
+      is_footer_written_(false),
+      written_offset_(0) {}
 
 Status WritableLogSegment::WriteHeaderAndOpen(const LogSegmentHeaderPB& new_header) {
   DCHECK(!IsHeaderWritten()) << "Can only call WriteHeader() once";

@@ -446,12 +446,9 @@ void ReactorThread::DestroyConnection(Connection *conn,
   }
 }
 
-DelayedTask::DelayedTask(const boost::function<void(const Status&)>& func,
+DelayedTask::DelayedTask(boost::function<void(const Status &)> func,
                          MonoDelta when)
-  : func_(func),
-    when_(when),
-    thread_(nullptr) {
-}
+    : func_(std::move(func)), when_(std::move(when)), thread_(nullptr) {}
 
 void DelayedTask::Run(ReactorThread* thread) {
   DCHECK(thread_ == nullptr) << "Task has already been scheduled";
@@ -535,10 +532,8 @@ bool Reactor::closing() const {
 // Task to call an arbitrary function within the reactor thread.
 class RunFunctionTask : public ReactorTask {
  public:
-  explicit RunFunctionTask(const boost::function<Status()>& f) :
-    function_(f),
-    latch_(1)
-  {}
+  explicit RunFunctionTask(boost::function<Status()> f)
+      : function_(std::move(f)), latch_(1) {}
 
   virtual void Run(ReactorThread *reactor) OVERRIDE {
     status_ = function_();
@@ -612,9 +607,8 @@ void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr &remote) {
 // to a connection.
 class AssignOutboundCallTask : public ReactorTask {
  public:
-  explicit AssignOutboundCallTask(const shared_ptr<OutboundCall> &call) :
-    call_(call)
-  {}
+  explicit AssignOutboundCallTask(shared_ptr<OutboundCall> call)
+      : call_(std::move(call)) {}
 
   virtual void Run(ReactorThread *reactor) OVERRIDE {
     reactor->AssignOutboundCall(call_);

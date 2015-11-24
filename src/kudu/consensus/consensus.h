@@ -329,9 +329,8 @@ class ConsensusRound : public RefCountedThreadSafe<ConsensusRound> {
  public:
   // Ctor used for leader transactions. Leader transactions can and must specify the
   // callbacks prior to initiating the consensus round.
-  ConsensusRound(Consensus* consensus,
-                 gscoped_ptr<ReplicateMsg> replicate_msg,
-                 const ConsensusReplicatedCallback& replicated_cb);
+  ConsensusRound(Consensus* consensus, gscoped_ptr<ReplicateMsg> replicate_msg,
+                 ConsensusReplicatedCallback replicated_cb);
 
   // Ctor used for follower/learner transactions. These transactions do not use the
   // replicate callback and the commit callback is set later, after the transaction

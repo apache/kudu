@@ -75,7 +75,7 @@ Status CopyFile(Env* env, const std::string& source_path, const std::string& des
 // creation of the tmp file may fail.
 class ScopedFileDeleter {
  public:
-  ScopedFileDeleter(Env* env, const std::string& path);
+  ScopedFileDeleter(Env* env, std::string path);
   ~ScopedFileDeleter();
 
   // Do not delete the file when this object goes out of scope.

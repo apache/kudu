@@ -92,25 +92,22 @@ Status Peer::NewRemotePeer(const RaftPeerPB& peer_pb,
   return Status::OK();
 }
 
-Peer::Peer(const RaftPeerPB& peer_pb,
-           const string& tablet_id,
-           const string& leader_uuid,
-           gscoped_ptr<PeerProxy> proxy,
-           PeerMessageQueue* queue,
+Peer::Peer(const RaftPeerPB& peer_pb, string tablet_id, string leader_uuid,
+           gscoped_ptr<PeerProxy> proxy, PeerMessageQueue* queue,
            ThreadPool* thread_pool)
-    : tablet_id_(tablet_id),
-      leader_uuid_(leader_uuid),
+    : tablet_id_(std::move(tablet_id)),
+      leader_uuid_(std::move(leader_uuid)),
       peer_pb_(peer_pb),
       proxy_(proxy.Pass()),
       queue_(queue),
       failed_attempts_(0),
       sem_(1),
-      heartbeater_(peer_pb.permanent_uuid(),
-                   MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms),
-                   boost::bind(&Peer::SignalRequest, this, true)),
+      heartbeater_(
+          peer_pb.permanent_uuid(),
+          MonoDelta::FromMilliseconds(FLAGS_raft_heartbeat_interval_ms),
+          boost::bind(&Peer::SignalRequest, this, true)),
       thread_pool_(thread_pool),
-      state_(kPeerCreated) {
-}
+      state_(kPeerCreated) {}
 
 void Peer::SetTermForTest(int term) {
   response_.set_responder_term(term);
@@ -399,9 +396,8 @@ Status CreateConsensusServiceProxyForHost(const shared_ptr<Messenger>& messenger
 
 } // anonymous namespace
 
-RpcPeerProxyFactory::RpcPeerProxyFactory(const shared_ptr<Messenger>& messenger)
-    : messenger_(messenger) {
-}
+RpcPeerProxyFactory::RpcPeerProxyFactory(shared_ptr<Messenger> messenger)
+    : messenger_(std::move(messenger)) {}
 
 Status RpcPeerProxyFactory::NewProxy(const RaftPeerPB& peer_pb,
                                      gscoped_ptr<PeerProxy>* proxy) {

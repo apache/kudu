@@ -60,12 +60,11 @@ static std::pair<PartitionSchema, Partition> CreateDefaultPartition(const Schema
 class TabletHarness {
  public:
   struct Options {
-    explicit Options(const string& root_dir)
-      : env(Env::Default()),
-        tablet_id("test_tablet_id"),
-        root_dir(root_dir),
-        enable_metrics(true) {
-    }
+    explicit Options(string root_dir)
+        : env(Env::Default()),
+          tablet_id("test_tablet_id"),
+          root_dir(std::move(root_dir)),
+          enable_metrics(true) {}
 
     Env* env;
     string tablet_id;
@@ -73,11 +72,8 @@ class TabletHarness {
     bool enable_metrics;
   };
 
-  TabletHarness(const Schema& schema,
-                const Options& options)
-    : options_(options),
-      schema_(schema) {
-  }
+  TabletHarness(const Schema& schema, Options options)
+      : options_(std::move(options)), schema_(schema) {}
 
   Status Create(bool first_time) {
     std::pair<PartitionSchema, Partition> partition(CreateDefaultPartition(schema_));

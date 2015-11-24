@@ -55,9 +55,8 @@ class RpcService;
 
 struct AcceptorPoolInfo {
  public:
-  explicit AcceptorPoolInfo(const Sockaddr &bind_address)
-    : bind_address_(bind_address) {
-  }
+  explicit AcceptorPoolInfo(Sockaddr bind_address)
+      : bind_address_(std::move(bind_address)) {}
 
   Sockaddr bind_address() const {
     return bind_address_;
@@ -73,7 +72,7 @@ class MessengerBuilder {
   friend class Messenger;
   friend class ReactorThread;
 
-  explicit MessengerBuilder(const std::string &name);
+  explicit MessengerBuilder(std::string name);
 
   // Set the length of time we will keep a TCP connection will alive with no traffic.
   MessengerBuilder &set_connection_keepalive_time(const MonoDelta &keepalive);

@@ -2436,9 +2436,7 @@ struct BindState<Runnable, RunType, void()> : public BindStateBase {
 
   typedef Invoker<0, BindState, RunType> InvokerType;
   typedef typename InvokerType::UnboundRunType UnboundRunType;
-  explicit BindState(const Runnable& runnable)
-      : runnable_(runnable) {
-  }
+  explicit BindState(Runnable runnable) : runnable_(std::move(runnable)) {}
 
   virtual ~BindState() {  }
 
@@ -2457,9 +2455,8 @@ struct BindState<Runnable, RunType, void(P1)> : public BindStateBase {
   // Convenience typedefs for bound argument types.
   typedef UnwrapTraits<P1> Bound1UnwrapTraits;
 
-  BindState(const Runnable& runnable, const P1& p1)
-      : runnable_(runnable),
-        p1_(p1) {
+  BindState(Runnable runnable, P1 p1)
+      : runnable_(std::move(runnable)), p1_(std::move(p1)) {
     MaybeRefcount<HasIsMethodTag<Runnable>::value, P1>::AddRef(p1_);
   }
 
@@ -2483,10 +2480,8 @@ struct BindState<Runnable, RunType, void(P1, P2)> : public BindStateBase {
   typedef UnwrapTraits<P1> Bound1UnwrapTraits;
   typedef UnwrapTraits<P2> Bound2UnwrapTraits;
 
-  BindState(const Runnable& runnable, const P1& p1, const P2& p2)
-      : runnable_(runnable),
-        p1_(p1),
-        p2_(p2) {
+  BindState(Runnable runnable, P1 p1, P2 p2)
+      : runnable_(std::move(runnable)), p1_(std::move(p1)), p2_(std::move(p2)) {
     MaybeRefcount<HasIsMethodTag<Runnable>::value, P1>::AddRef(p1_);
   }
 
@@ -2513,11 +2508,11 @@ struct BindState<Runnable, RunType, void(P1, P2, P3)> : public BindStateBase {
   typedef UnwrapTraits<P2> Bound2UnwrapTraits;
   typedef UnwrapTraits<P3> Bound3UnwrapTraits;
 
-  BindState(const Runnable& runnable, const P1& p1, const P2& p2, const P3& p3)
-      : runnable_(runnable),
-        p1_(p1),
-        p2_(p2),
-        p3_(p3) {
+  BindState(Runnable runnable, P1 p1, P2 p2, P3 p3)
+      : runnable_(std::move(runnable)),
+        p1_(std::move(p1)),
+        p2_(std::move(p2)),
+        p3_(std::move(p3)) {
     MaybeRefcount<HasIsMethodTag<Runnable>::value, P1>::AddRef(p1_);
   }
 
@@ -2547,13 +2542,12 @@ struct BindState<Runnable, RunType, void(P1, P2, P3,
   typedef UnwrapTraits<P3> Bound3UnwrapTraits;
   typedef UnwrapTraits<P4> Bound4UnwrapTraits;
 
-  BindState(const Runnable& runnable, const P1& p1, const P2& p2, const P3& p3,
-      const P4& p4)
-      : runnable_(runnable),
-        p1_(p1),
-        p2_(p2),
+  BindState(Runnable runnable, P1 p1, P2 p2, const P3& p3, P4 p4)
+      : runnable_(std::move(runnable)),
+        p1_(std::move(p1)),
+        p2_(std::move(p2)),
         p3_(p3),
-        p4_(p4) {
+        p4_(std::move(p4)) {
     MaybeRefcount<HasIsMethodTag<Runnable>::value, P1>::AddRef(p1_);
   }
 
@@ -2585,14 +2579,13 @@ struct BindState<Runnable, RunType, void(P1, P2, P3, P4,
   typedef UnwrapTraits<P4> Bound4UnwrapTraits;
   typedef UnwrapTraits<P5> Bound5UnwrapTraits;
 
-  BindState(const Runnable& runnable, const P1& p1, const P2& p2, const P3& p3,
-      const P4& p4, const P5& p5)
-      : runnable_(runnable),
-        p1_(p1),
-        p2_(p2),
-        p3_(p3),
-        p4_(p4),
-        p5_(p5) {
+  BindState(Runnable runnable, P1 p1, P2 p2, P3 p3, P4 p4, P5 p5)
+      : runnable_(std::move(runnable)),
+        p1_(std::move(p1)),
+        p2_(std::move(p2)),
+        p3_(std::move(p3)),
+        p4_(std::move(p4)),
+        p5_(std::move(p5)) {
     MaybeRefcount<HasIsMethodTag<Runnable>::value, P1>::AddRef(p1_);
   }
 

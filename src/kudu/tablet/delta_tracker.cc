@@ -36,16 +36,15 @@ using std::shared_ptr;
 using std::string;
 using strings::Substitute;
 
-DeltaTracker::DeltaTracker(const shared_ptr<RowSetMetadata>& rowset_metadata,
+DeltaTracker::DeltaTracker(shared_ptr<RowSetMetadata> rowset_metadata,
                            rowid_t num_rows,
                            log::LogAnchorRegistry* log_anchor_registry,
-                           const shared_ptr<MemTracker>& parent_tracker) :
-  rowset_metadata_(rowset_metadata),
-  num_rows_(num_rows),
-  open_(false),
-  log_anchor_registry_(log_anchor_registry),
-  parent_tracker_(parent_tracker) {
-}
+                           shared_ptr<MemTracker> parent_tracker)
+    : rowset_metadata_(std::move(rowset_metadata)),
+      num_rows_(num_rows),
+      open_(false),
+      log_anchor_registry_(log_anchor_registry),
+      parent_tracker_(std::move(parent_tracker)) {}
 
 Status DeltaTracker::OpenDeltaReaders(const vector<BlockId>& blocks,
                                       vector<shared_ptr<DeltaStore> >* stores,

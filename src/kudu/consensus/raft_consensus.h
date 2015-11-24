@@ -85,8 +85,8 @@ class RaftConsensus : public Consensus,
                 const scoped_refptr<server::Clock>& clock,
                 ReplicaTransactionFactory* txn_factory,
                 const scoped_refptr<log::Log>& log,
-                const std::shared_ptr<MemTracker>& parent_mem_tracker,
-                const Callback<void(const std::string& reason)>& mark_dirty_clbk);
+                std::shared_ptr<MemTracker> parent_mem_tracker,
+                Callback<void(const std::string& reason)> mark_dirty_clbk);
 
   virtual ~RaftConsensus();
 

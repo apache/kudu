@@ -97,14 +97,14 @@ Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
   return Status::OK();
 }
 
-LogReader::LogReader(FsManager *fs_manager,
+LogReader::LogReader(FsManager* fs_manager,
                      const scoped_refptr<LogIndex>& index,
-                     const string& tablet_id,
+                     string tablet_id,
                      const scoped_refptr<MetricEntity>& metric_entity)
-  : fs_manager_(fs_manager),
-    log_index_(index),
-    tablet_id_(tablet_id),
-    state_(kLogReaderInitialized) {
+    : fs_manager_(fs_manager),
+      log_index_(index),
+      tablet_id_(std::move(tablet_id)),
+      state_(kLogReaderInitialized) {
   if (metric_entity) {
     bytes_read_ = METRIC_log_reader_bytes_read.Instantiate(metric_entity);
     entries_read_ = METRIC_log_reader_entries_read.Instantiate(metric_entity);

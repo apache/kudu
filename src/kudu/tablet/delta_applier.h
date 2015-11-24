@@ -70,8 +70,8 @@ class DeltaApplier : public ColumnwiseIterator {
   DISALLOW_COPY_AND_ASSIGN(DeltaApplier);
 
   // Construct. The base_iter and delta_iter should not be Initted.
-  DeltaApplier(const std::shared_ptr<CFileSet::Iterator>& base_iter,
-               const std::shared_ptr<DeltaIterator>& delta_iter);
+  DeltaApplier(std::shared_ptr<CFileSet::Iterator> base_iter,
+               std::shared_ptr<DeltaIterator> delta_iter);
   virtual ~DeltaApplier();
 
   std::shared_ptr<CFileSet::Iterator> base_iter_;

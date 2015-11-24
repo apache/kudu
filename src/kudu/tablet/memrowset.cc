@@ -376,18 +376,17 @@ gscoped_ptr<MRSRowProjector> GenerateAppropriateProjector(
 
 } // anonymous namespace
 
-MemRowSet::Iterator::Iterator(const std::shared_ptr<const MemRowSet> &mrs,
-                              MemRowSet::MSBTIter *iter,
-                              const Schema *projection,
-                              const MvccSnapshot &mvcc_snap)
-  : memrowset_(mrs),
-    iter_(iter),
-    mvcc_snap_(mvcc_snap),
-    projection_(projection),
-    projector_(GenerateAppropriateProjector(&mrs->schema_nonvirtual(),
-                                            projection)),
-    delta_projector_(&mrs->schema_nonvirtual(), projection),
-    state_(kUninitialized) {
+MemRowSet::Iterator::Iterator(const std::shared_ptr<const MemRowSet>& mrs,
+                              MemRowSet::MSBTIter* iter,
+                              const Schema* projection, MvccSnapshot mvcc_snap)
+    : memrowset_(mrs),
+      iter_(iter),
+      mvcc_snap_(std::move(mvcc_snap)),
+      projection_(projection),
+      projector_(
+          GenerateAppropriateProjector(&mrs->schema_nonvirtual(), projection)),
+      delta_projector_(&mrs->schema_nonvirtual(), projection),
+      state_(kUninitialized) {
   // TODO: various code assumes that a newly constructed iterator
   // is pointed at the beginning of the dataset. This causes a redundant
   // seek. Could make this lazy instead, or change the semantics so that

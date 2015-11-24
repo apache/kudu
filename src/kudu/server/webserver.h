@@ -80,11 +80,10 @@ class Webserver : public WebCallbackRegistry {
   // Container class for a list of path handler callbacks for a single URL.
   class PathHandler {
    public:
-    PathHandler(bool is_styled, bool is_on_nav_bar, const std::string& alias)
+    PathHandler(bool is_styled, bool is_on_nav_bar, std::string alias)
         : is_styled_(is_styled),
           is_on_nav_bar_(is_on_nav_bar),
-          alias_(alias) {
-    }
+          alias_(std::move(alias)) {}
 
     void AddCallback(const PathHandlerCallback& callback) {
       callbacks_.push_back(callback);

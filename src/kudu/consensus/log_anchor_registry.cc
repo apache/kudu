@@ -142,11 +142,11 @@ LogAnchor::~LogAnchor() {
   CHECK(!is_registered) << "Attempted to destruct a registered LogAnchor";
 }
 
-MinLogIndexAnchorer::MinLogIndexAnchorer(LogAnchorRegistry* registry, const string& owner)
-  : registry_(DCHECK_NOTNULL(registry)),
-    owner_(owner),
-    minimum_log_index_(kInvalidOpIdIndex) {
-}
+MinLogIndexAnchorer::MinLogIndexAnchorer(LogAnchorRegistry* registry,
+                                         string owner)
+    : registry_(DCHECK_NOTNULL(registry)),
+      owner_(std::move(owner)),
+      minimum_log_index_(kInvalidOpIdIndex) {}
 
 MinLogIndexAnchorer::~MinLogIndexAnchorer() {
   CHECK_OK(ReleaseAnchor());

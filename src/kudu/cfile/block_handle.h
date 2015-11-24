@@ -71,10 +71,10 @@ class BlockHandle {
   Slice data_;
   bool is_data_owner_;
 
-  explicit BlockHandle(const Slice &data)
-  // We copy the slice but not the data itself.
-    : data_(data),
-      is_data_owner_(true) { }
+  explicit BlockHandle(Slice data)
+      : data_(std::move(data)),
+        is_data_owner_(true) {
+  }
 
   explicit BlockHandle(BlockCacheHandle *dblk_data)
     : is_data_owner_(false) {

@@ -82,7 +82,7 @@ class BinaryPlainBlockBuilder : public BlockBuilder {
 
 class BinaryPlainBlockDecoder : public BlockDecoder {
  public:
-  explicit BinaryPlainBlockDecoder(const Slice &slice);
+  explicit BinaryPlainBlockDecoder(Slice slice);
 
   virtual Status ParseHeader() OVERRIDE;
   virtual void SeekToPositionInBlock(uint pos) OVERRIDE;

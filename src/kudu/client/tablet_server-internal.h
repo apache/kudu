@@ -27,8 +27,7 @@ namespace client {
 
 class KuduTabletServer::Data {
  public:
-  Data(const std::string& uuid,
-       const std::string& hostname);
+  Data(std::string uuid, std::string hostname);
   ~Data();
 
   const std::string uuid_;

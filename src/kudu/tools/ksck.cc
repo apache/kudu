@@ -76,15 +76,12 @@ ChecksumOptions::ChecksumOptions()
       snapshot_timestamp(FLAGS_checksum_snapshot_timestamp) {
 }
 
-ChecksumOptions::ChecksumOptions(MonoDelta timeout,
-                                 int scan_concurrency,
-                                 bool use_snapshot,
-                                 uint64_t snapshot_timestamp)
-    : timeout(timeout),
+ChecksumOptions::ChecksumOptions(MonoDelta timeout, int scan_concurrency,
+                                 bool use_snapshot, uint64_t snapshot_timestamp)
+    : timeout(std::move(timeout)),
       scan_concurrency(scan_concurrency),
       use_snapshot(use_snapshot),
-      snapshot_timestamp(snapshot_timestamp) {
-}
+      snapshot_timestamp(snapshot_timestamp) {}
 
 const uint64_t ChecksumOptions::kCurrentTimestamp = 0;
 

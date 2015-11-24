@@ -145,11 +145,8 @@ class Peer {
                               gscoped_ptr<Peer>* peer);
 
  private:
-  Peer(const RaftPeerPB& peer,
-       const std::string& tablet_id,
-       const std::string& leader_uuid,
-       gscoped_ptr<PeerProxy> proxy,
-       PeerMessageQueue* queue,
+  Peer(const RaftPeerPB& peer, std::string tablet_id, std::string leader_uuid,
+       gscoped_ptr<PeerProxy> proxy, PeerMessageQueue* queue,
        ThreadPool* thread_pool);
 
   void SendNextRequest(bool even_if_queue_empty);
@@ -305,7 +302,7 @@ class RpcPeerProxy : public PeerProxy {
 // PeerProxyFactory implementation that generates RPCPeerProxies
 class RpcPeerProxyFactory : public PeerProxyFactory {
  public:
-  explicit RpcPeerProxyFactory(const std::shared_ptr<rpc::Messenger>& messenger);
+  explicit RpcPeerProxyFactory(std::shared_ptr<rpc::Messenger> messenger);
 
   virtual Status NewProxy(const RaftPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE;

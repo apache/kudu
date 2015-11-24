@@ -96,7 +96,7 @@ class GVIntBlockBuilder : public BlockBuilder {
 // Decoder for UINT32 type, GROUP_VARINT coding
 class GVIntBlockDecoder : public BlockDecoder {
  public:
-  explicit GVIntBlockDecoder(const Slice &slice);
+  explicit GVIntBlockDecoder(Slice slice);
 
   Status ParseHeader() OVERRIDE;
   void SeekToStart() {

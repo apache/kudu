@@ -55,11 +55,8 @@ struct CommandHandler {
   string name_;
   string desc_;
 
-  CommandHandler(CommandType type, const string& name, const string& desc)
-      : type_(type),
-        name_(name),
-        desc_(desc) {
-  }
+  CommandHandler(CommandType type, string name, string desc)
+      : type_(type), name_(std::move(name)), desc_(std::move(desc)) {}
 };
 
 const vector<CommandHandler> kCommandHandlers = {

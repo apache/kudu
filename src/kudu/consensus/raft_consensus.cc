@@ -196,19 +196,16 @@ scoped_refptr<RaftConsensus> RaftConsensus::Create(
                               mark_dirty_clbk));
 }
 
-RaftConsensus::RaftConsensus(const ConsensusOptions& options,
-                             gscoped_ptr<ConsensusMetadata> cmeta,
-                             gscoped_ptr<PeerProxyFactory> proxy_factory,
-                             gscoped_ptr<PeerMessageQueue> queue,
-                             gscoped_ptr<PeerManager> peer_manager,
-                             gscoped_ptr<ThreadPool> thread_pool,
-                             const scoped_refptr<MetricEntity>& metric_entity,
-                             const std::string& peer_uuid,
-                             const scoped_refptr<server::Clock>& clock,
-                             ReplicaTransactionFactory* txn_factory,
-                             const scoped_refptr<log::Log>& log,
-                             const shared_ptr<MemTracker>& parent_mem_tracker,
-                             const Callback<void(const std::string& reason)>& mark_dirty_clbk)
+RaftConsensus::RaftConsensus(
+    const ConsensusOptions& options, gscoped_ptr<ConsensusMetadata> cmeta,
+    gscoped_ptr<PeerProxyFactory> proxy_factory,
+    gscoped_ptr<PeerMessageQueue> queue, gscoped_ptr<PeerManager> peer_manager,
+    gscoped_ptr<ThreadPool> thread_pool,
+    const scoped_refptr<MetricEntity>& metric_entity,
+    const std::string& peer_uuid, const scoped_refptr<server::Clock>& clock,
+    ReplicaTransactionFactory* txn_factory, const scoped_refptr<log::Log>& log,
+    shared_ptr<MemTracker> parent_mem_tracker,
+    Callback<void(const std::string& reason)> mark_dirty_clbk)
     : thread_pool_(thread_pool.Pass()),
       log_(log),
       clock_(clock),
@@ -216,21 +213,19 @@ RaftConsensus::RaftConsensus(const ConsensusOptions& options,
       peer_manager_(peer_manager.Pass()),
       queue_(queue.Pass()),
       rng_(GetRandomSeed32()),
-      failure_monitor_(GetRandomSeed32(),
-                       GetFailureMonitorCheckMeanMs(),
+      failure_monitor_(GetRandomSeed32(), GetFailureMonitorCheckMeanMs(),
                        GetFailureMonitorCheckStddevMs()),
-      failure_detector_(new TimedFailureDetector(
-          MonoDelta::FromMilliseconds(
-              FLAGS_raft_heartbeat_interval_ms *
-              FLAGS_leader_failure_max_missed_heartbeat_periods))),
+      failure_detector_(new TimedFailureDetector(MonoDelta::FromMilliseconds(
+          FLAGS_raft_heartbeat_interval_ms *
+          FLAGS_leader_failure_max_missed_heartbeat_periods))),
       withhold_votes_until_(MonoTime::Min()),
-      mark_dirty_clbk_(mark_dirty_clbk),
+      mark_dirty_clbk_(std::move(mark_dirty_clbk)),
       shutdown_(false),
       follower_memory_pressure_rejections_(metric_entity->FindOrCreateCounter(
           &METRIC_follower_memory_pressure_rejections)),
       term_metric_(metric_entity->FindOrCreateGauge(&METRIC_raft_term,
                                                     cmeta->current_term())),
-      parent_mem_tracker_(parent_mem_tracker) {
+      parent_mem_tracker_(std::move(parent_mem_tracker)) {
   DCHECK_NOTNULL(log_.get());
   state_.reset(new ReplicaState(options,
                                 peer_uuid,

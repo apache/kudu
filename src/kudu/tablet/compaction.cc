@@ -134,17 +134,16 @@ class MemRowSetCompactionInput : public CompactionInput {
 class DiskRowSetCompactionInput : public CompactionInput {
  public:
   DiskRowSetCompactionInput(gscoped_ptr<RowwiseIterator> base_iter,
-                        shared_ptr<DeltaIterator> redo_delta_iter,
-                        shared_ptr<DeltaIterator> undo_delta_iter) :
-    base_iter_(base_iter.Pass()),
-    redo_delta_iter_(redo_delta_iter),
-    undo_delta_iter_(undo_delta_iter),
-    arena_(32*1024, 128*1024),
-    block_(base_iter_->schema(), kRowsPerBlock, &arena_),
-    redo_mutation_block_(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL)),
-    undo_mutation_block_(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL)),
-    first_rowid_in_block_(0)
-  {}
+                            shared_ptr<DeltaIterator> redo_delta_iter,
+                            shared_ptr<DeltaIterator> undo_delta_iter)
+      : base_iter_(base_iter.Pass()),
+        redo_delta_iter_(std::move(redo_delta_iter)),
+        undo_delta_iter_(std::move(undo_delta_iter)),
+        arena_(32 * 1024, 128 * 1024),
+        block_(base_iter_->schema(), kRowsPerBlock, &arena_),
+        redo_mutation_block_(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL)),
+        undo_mutation_block_(kRowsPerBlock, reinterpret_cast<Mutation *>(NULL)),
+        first_rowid_in_block_(0) {}
 
   virtual Status Init() OVERRIDE {
     ScanSpec spec;

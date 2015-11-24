@@ -56,21 +56,20 @@ const size_t kRowsPerBlock = 100; // Number of rows per block of columns
 
 // TODO: can you major-delta-compact a new column after an alter table in order
 // to materialize it? should write a test for this.
-MajorDeltaCompaction::MajorDeltaCompaction(FsManager* fs_manager,
-                                           const Schema& base_schema,
-                                           CFileSet* base_data,
-                                           const shared_ptr<DeltaIterator>& delta_iter,
-                                           const vector<shared_ptr<DeltaStore> >& included_stores,
-                                           const vector<ColumnId>& col_ids)
-  : fs_manager_(fs_manager),
-    base_schema_(base_schema),
-    column_ids_(col_ids),
-    base_data_(base_data),
-    included_stores_(included_stores),
-    delta_iter_(delta_iter),
-    redo_delta_mutations_written_(0),
-    undo_delta_mutations_written_(0),
-    state_(kInitialized) {
+MajorDeltaCompaction::MajorDeltaCompaction(
+    FsManager* fs_manager, const Schema& base_schema, CFileSet* base_data,
+    shared_ptr<DeltaIterator> delta_iter,
+    vector<shared_ptr<DeltaStore> > included_stores,
+    const vector<ColumnId>& col_ids)
+    : fs_manager_(fs_manager),
+      base_schema_(base_schema),
+      column_ids_(col_ids),
+      base_data_(base_data),
+      included_stores_(std::move(included_stores)),
+      delta_iter_(std::move(delta_iter)),
+      redo_delta_mutations_written_(0),
+      undo_delta_mutations_written_(0),
+      state_(kInitialized) {
   CHECK(!col_ids.empty());
 }
 

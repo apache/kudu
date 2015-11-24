@@ -142,12 +142,8 @@ class ScannerManager {
 // RAII wrapper to unregister a scanner upon scope exit.
 class ScopedUnregisterScanner {
  public:
-  ScopedUnregisterScanner(ScannerManager* mgr,
-                          const std::string& id)
-    : mgr_(mgr),
-      id_(id),
-      cancelled_(false) {
-  }
+  ScopedUnregisterScanner(ScannerManager* mgr, std::string id)
+      : mgr_(mgr), id_(std::move(id)), cancelled_(false) {}
 
   ~ScopedUnregisterScanner() {
     if (!cancelled_) {
@@ -169,10 +165,9 @@ class ScopedUnregisterScanner {
 // An open scanner on the server side.
 class Scanner {
  public:
-  explicit Scanner(const std::string& id,
+  explicit Scanner(std::string id,
                    const scoped_refptr<tablet::TabletPeer>& tablet_peer,
-                   const std::string& requestor_string,
-                   ScannerMetrics* metrics);
+                   std::string requestor_string, ScannerMetrics* metrics);
   ~Scanner();
 
   // Attach an actual iterator and a ScanSpec to this Scanner.

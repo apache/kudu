@@ -51,14 +51,13 @@ static int SaslServerPlainAuthCb(sasl_conn_t *conn, void *sasl_server, const cha
     ->PlainAuthCb(conn, user, pass, passlen, propctx);
 }
 
-SaslServer::SaslServer(const string& app_name, int fd)
-  : app_name_(app_name),
-    sock_(fd),
-    helper_(SaslHelper::SERVER),
-    server_state_(SaslNegotiationState::NEW),
-    negotiated_mech_(SaslMechanism::INVALID),
-    deadline_(MonoTime::Max()) {
-
+SaslServer::SaslServer(string app_name, int fd)
+    : app_name_(std::move(app_name)),
+      sock_(fd),
+      helper_(SaslHelper::SERVER),
+      server_state_(SaslNegotiationState::NEW),
+      negotiated_mech_(SaslMechanism::INVALID),
+      deadline_(MonoTime::Max()) {
   callbacks_.push_back(SaslBuildCallback(SASL_CB_GETOPT,
       reinterpret_cast<int (*)()>(&SaslServerGetoptCb), this));
   callbacks_.push_back(SaslBuildCallback(SASL_CB_SERVER_USERDB_CHECKPASS,

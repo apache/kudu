@@ -36,12 +36,11 @@ class RpcLineItemDAO {
  public:
   class Scanner;
 
-  RpcLineItemDAO(const std::string& master_address,
-                 const std::string& table_name,
+  RpcLineItemDAO(std::string master_address,
+                 std::string table_name,
                  int batch_size,
                  int mstimeout = 5000,
-                 const std::vector<const KuduPartialRow*>& tablet_splits =
-                    std::vector<const KuduPartialRow*>());
+                 std::vector<const KuduPartialRow*> tablet_splits = {});
   ~RpcLineItemDAO();
   void WriteLine(boost::function<void(KuduPartialRow*)> f);
   void MutateLine(boost::function<void(KuduPartialRow*)> f);

@@ -44,10 +44,10 @@ static const Schema kIntSchema({ ColumnSchema("val", UINT32) }, 1);
 // vector.
 class VectorIterator : public ColumnwiseIterator {
  public:
-  explicit VectorIterator(const vector<uint32_t> &ints) :
-    ints_(ints),
-    cur_idx_(0)
-  {}
+  explicit VectorIterator(vector<uint32_t> ints)
+      : ints_(std::move(ints)),
+        cur_idx_(0) {
+  }
 
   Status Init(ScanSpec *spec) OVERRIDE {
     return Status::OK();

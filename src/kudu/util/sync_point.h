@@ -48,7 +48,7 @@ class SyncPoint {
   static SyncPoint* GetInstance();
 
   struct Dependency {
-    Dependency(const std::string& predecessor, const std::string& successor);
+    Dependency(std::string predecessor, std::string successor);
 
     std::string predecessor_;
     std::string successor_;

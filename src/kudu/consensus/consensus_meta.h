@@ -139,9 +139,8 @@ class ConsensusMetadata {
   Status Flush();
 
  private:
-  ConsensusMetadata(FsManager* fs_manager,
-                    const std::string& tablet_id,
-                    const std::string& peer_uuid);
+  ConsensusMetadata(FsManager* fs_manager, std::string tablet_id,
+                    std::string peer_uuid);
 
   std::string LogPrefix() const;
 

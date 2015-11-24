@@ -556,9 +556,9 @@ namespace internal {
 class GetTableSchemaRpc : public Rpc {
  public:
   GetTableSchemaRpc(KuduClient* client,
-                    const StatusCallback& user_cb,
-                    const string& table_name,
-                    KuduSchema *out_schema,
+                    StatusCallback user_cb,
+                    string table_name,
+                    KuduSchema* out_schema,
                     PartitionSchema* out_partition_schema,
                     string* out_id,
                     const MonoTime& deadline,
@@ -587,8 +587,8 @@ class GetTableSchemaRpc : public Rpc {
 };
 
 GetTableSchemaRpc::GetTableSchemaRpc(KuduClient* client,
-                                     const StatusCallback& user_cb,
-                                     const string& table_name,
+                                     StatusCallback user_cb,
+                                     string table_name,
                                      KuduSchema* out_schema,
                                      PartitionSchema* out_partition_schema,
                                      string* out_id,
@@ -596,8 +596,8 @@ GetTableSchemaRpc::GetTableSchemaRpc(KuduClient* client,
                                      const shared_ptr<rpc::Messenger>& messenger)
     : Rpc(deadline, messenger),
       client_(DCHECK_NOTNULL(client)),
-      user_cb_(user_cb),
-      table_name_(table_name),
+      user_cb_(std::move(user_cb)),
+      table_name_(std::move(table_name)),
       out_schema_(DCHECK_NOTNULL(out_schema)),
       out_partition_schema_(DCHECK_NOTNULL(out_partition_schema)),
       out_id_(DCHECK_NOTNULL(out_id)) {

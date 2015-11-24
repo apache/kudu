@@ -38,9 +38,8 @@ namespace fs {
 class PathInstanceMetadataFile {
  public:
   // 'env' must remain valid for the lifetime of this class.
-  PathInstanceMetadataFile(Env* env,
-                           const std::string& block_manager_type,
-                           const std::string& filename);
+  PathInstanceMetadataFile(Env* env, std::string block_manager_type,
+                           std::string filename);
 
   ~PathInstanceMetadataFile();
 

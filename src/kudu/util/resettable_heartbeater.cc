@@ -32,8 +32,7 @@ using std::string;
 
 class ResettableHeartbeaterThread {
  public:
-  ResettableHeartbeaterThread(const std::string& name,
-                              MonoDelta period,
+  ResettableHeartbeaterThread(std::string name, MonoDelta period,
                               HeartbeatFunction function);
 
   Status Start();
@@ -87,15 +86,13 @@ ResettableHeartbeater::~ResettableHeartbeater() {
   WARN_NOT_OK(Stop(), "Unable to stop heartbeater thread");
 }
 
-ResettableHeartbeaterThread::ResettableHeartbeaterThread(const std::string& name,
-                                                         MonoDelta period,
-                                                         HeartbeatFunction function)
-    : name_(name),
-      period_(period),
-      function_(function),
+ResettableHeartbeaterThread::ResettableHeartbeaterThread(
+    std::string name, MonoDelta period, HeartbeatFunction function)
+    : name_(std::move(name)),
+      period_(std::move(period)),
+      function_(std::move(function)),
       run_latch_(0),
-      shutdown_(false) {
-}
+      shutdown_(false) {}
 
 void ResettableHeartbeaterThread::RunThread() {
   CHECK(IsCurrentThread());

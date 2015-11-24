@@ -49,7 +49,7 @@ class PstackWatcher {
 
   // Instantiate a watcher that writes a pstack to stdout after the given
   // timeout expires.
-  explicit PstackWatcher(const MonoDelta& timeout);
+  explicit PstackWatcher(MonoDelta timeout);
 
   ~PstackWatcher();
 

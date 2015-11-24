@@ -154,14 +154,13 @@ LeaderElection::LeaderElection(const RaftConfigPB& config,
                                PeerProxyFactory* proxy_factory,
                                const VoteRequestPB& request,
                                gscoped_ptr<VoteCounter> vote_counter,
-                               const MonoDelta& timeout,
-                               const ElectionDecisionCallback& decision_callback)
-  : has_responded_(false),
-    request_(request),
-    vote_counter_(vote_counter.Pass()),
-    timeout_(timeout),
-    decision_callback_(decision_callback) {
-
+                               MonoDelta timeout,
+                               ElectionDecisionCallback decision_callback)
+    : has_responded_(false),
+      request_(request),
+      vote_counter_(vote_counter.Pass()),
+      timeout_(std::move(timeout)),
+      decision_callback_(std::move(decision_callback)) {
   for (const RaftPeerPB& peer : config.peers()) {
     if (request.candidate_uuid() == peer.permanent_uuid()) continue;
     follower_uuids_.push_back(peer.permanent_uuid());

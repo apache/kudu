@@ -109,7 +109,7 @@ class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
   typedef PersistentTabletInfo cow_state;
   typedef std::unordered_map<std::string, TabletReplica> ReplicaMap;
 
-  TabletInfo(const scoped_refptr<TableInfo>& table, const std::string& tablet_id);
+  TabletInfo(const scoped_refptr<TableInfo>& table, std::string tablet_id);
 
   const std::string& tablet_id() const { return tablet_id_; }
   const scoped_refptr<TableInfo>& table() const { return table_; }
@@ -202,7 +202,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
  public:
   typedef PersistentTableInfo cow_state;
 
-  explicit TableInfo(const std::string& table_id);
+  explicit TableInfo(std::string table_id);
 
   std::string ToString() const;
 

@@ -143,7 +143,7 @@ class MaintenanceOp {
     HIGH_IO_USAGE // Everything else.
   };
 
-  explicit MaintenanceOp(const std::string& name, IOUsage io_usage);
+  explicit MaintenanceOp(std::string name, IOUsage io_usage);
   virtual ~MaintenanceOp();
 
   // Unregister this op, if it is currently registered.

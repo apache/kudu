@@ -182,7 +182,7 @@ class WriteRpc : public Rpc {
  public:
   WriteRpc(const scoped_refptr<Batcher>& batcher,
            RemoteTablet* const tablet,
-           const vector<InFlightOp*>& ops,
+           vector<InFlightOp*> ops,
            const MonoTime& deadline,
            const shared_ptr<Messenger>& messenger);
   virtual ~WriteRpc();
@@ -240,15 +240,14 @@ class WriteRpc : public Rpc {
 
 WriteRpc::WriteRpc(const scoped_refptr<Batcher>& batcher,
                    RemoteTablet* const tablet,
-                   const vector<InFlightOp*>& ops,
+                   vector<InFlightOp*> ops,
                    const MonoTime& deadline,
                    const shared_ptr<Messenger>& messenger)
-  : Rpc(deadline, messenger),
-    batcher_(batcher),
-    tablet_(tablet),
-    current_ts_(NULL),
-    ops_(ops) {
-
+    : Rpc(deadline, messenger),
+      batcher_(batcher),
+      tablet_(tablet),
+      current_ts_(NULL),
+      ops_(std::move(ops)) {
   const Schema* schema = table()->schema().schema_;
 
   req_.set_tablet_id(tablet->tablet_id());

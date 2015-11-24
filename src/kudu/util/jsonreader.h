@@ -37,7 +37,7 @@ namespace kudu {
 // error-handling wrapper for reading and parsing.
 class JsonReader {
  public:
-  explicit JsonReader(const std::string& text);
+  explicit JsonReader(std::string text);
   ~JsonReader();
 
   Status Init();

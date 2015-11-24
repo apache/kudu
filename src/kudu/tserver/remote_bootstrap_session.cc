@@ -47,17 +47,15 @@ using tablet::TabletMetadata;
 using tablet::TabletPeer;
 using tablet::TabletSuperBlockPB;
 
-RemoteBootstrapSession::RemoteBootstrapSession(const scoped_refptr<TabletPeer>& tablet_peer,
-                                               const std::string& session_id,
-                                               const std::string& requestor_uuid,
-                                               FsManager* fs_manager)
-  : tablet_peer_(tablet_peer),
-    session_id_(session_id),
-    requestor_uuid_(requestor_uuid),
-    fs_manager_(fs_manager),
-    blocks_deleter_(&blocks_),
-    logs_deleter_(&logs_) {
-}
+RemoteBootstrapSession::RemoteBootstrapSession(
+    const scoped_refptr<TabletPeer>& tablet_peer, std::string session_id,
+    std::string requestor_uuid, FsManager* fs_manager)
+    : tablet_peer_(tablet_peer),
+      session_id_(std::move(session_id)),
+      requestor_uuid_(std::move(requestor_uuid)),
+      fs_manager_(fs_manager),
+      blocks_deleter_(&blocks_),
+      logs_deleter_(&logs_) {}
 
 RemoteBootstrapSession::~RemoteBootstrapSession() {
   // No lock taken in the destructor, should only be 1 thread with access now.

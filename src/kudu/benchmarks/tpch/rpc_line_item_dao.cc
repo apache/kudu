@@ -59,9 +59,9 @@ namespace {
 
 class FlushCallback : public KuduStatusCallback {
  public:
-  FlushCallback(client::sp::shared_ptr<KuduSession> session, Semaphore *sem)
-    : session_(session),
-      sem_(sem) {
+  FlushCallback(client::sp::shared_ptr<KuduSession> session, Semaphore* sem)
+      : session_(std::move(session)),
+        sem_(sem) {
     sem_->Acquire();
   }
 
@@ -220,18 +220,16 @@ RpcLineItemDAO::~RpcLineItemDAO() {
   FinishWriting();
 }
 
-RpcLineItemDAO::RpcLineItemDAO(const string& master_address,
-                               const string& table_name,
-                               int batch_size,
-                               int mstimeout,
-                               const vector<const KuduPartialRow*>& tablet_splits)
-  : master_address_(master_address),
-    table_name_(table_name),
-    timeout_(MonoDelta::FromMilliseconds(mstimeout)),
-    batch_max_(batch_size),
-    tablet_splits_(tablet_splits),
-    batch_size_(0),
-    semaphore_(1) {
+RpcLineItemDAO::RpcLineItemDAO(string master_address, string table_name,
+                               int batch_size, int mstimeout,
+                               vector<const KuduPartialRow*> tablet_splits)
+    : master_address_(std::move(master_address)),
+      table_name_(std::move(table_name)),
+      timeout_(MonoDelta::FromMilliseconds(mstimeout)),
+      batch_max_(batch_size),
+      tablet_splits_(std::move(tablet_splits)),
+      batch_size_(0),
+      semaphore_(1) {
 }
 
 } // namespace kudu
