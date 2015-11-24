@@ -2,7 +2,7 @@
 title: Installing Kudu
 layout: default
 active_nav: docs
-last_updated: 'Last updated 2015-11-23 15:10:49 PST'
+last_updated: 'Last updated 2015-11-23 18:09:05 PST'
 ---
 <!--
 Copyright 2015 Cloudera, Inc.
@@ -715,9 +715,9 @@ in <code>java/kudu-client/target/apidocs/index.html</code>.</p>
 <h2 id="upgrade"><a class="link" href="#upgrade">Upgrade from 0.5.0 to 0.6.0</a></h2>
 <div class="sectionbody">
 <div class="paragraph">
-<p>Before upgrading, see <a href="#0.6.0_client_compatibility">[0.6.0_client_compatibility]</a> and <a href="#0.6.0_api_compatibility">[0.6.0_api_compatibility]</a>.
+<p>Before upgrading, see <a href="#client_compatibility_0.6.0">Client compatibility</a> and <a href="#api_compatibility_0.6.0">API Compatibility</a>.
 To upgrade from Kudu 0.5.0 to 0.6.0, perform the following high-level steps, which
-are detailed in <a href="#0.6.0_upgrade_procedure">[0.6.0_upgrade_procedure]</a>:</p>
+are detailed in <a href="#upgrade_procedure_0.6.0">Upgrade procedure</a>:</p>
 </div>
 <div class="olist arabic">
 <ol class="arabic">
@@ -736,10 +736,8 @@ are detailed in <a href="#0.6.0_upgrade_procedure">[0.6.0_upgrade_procedure]</a>
 <p>It is technically possible to upgrade Kudu using rolling restarts, but it has not
 been tested and is not recommended.</p>
 </div>
-<div class="paragraph">
-<p>[[0.6.0_client_compatibility]]
-=== Client compatibility</p>
-</div>
+<div class="sect2">
+<h3 id="client_compatibility_0.6.0"><a class="link" href="#client_compatibility_0.6.0">Client compatibility</a></h3>
 <div class="paragraph">
 <p>Kudu 0.6.0 maintains wire compatibility with Kudu 0.5.0. This means that a Kudu 0.6.0
 client can communicate with a Kudu 0.5.0 cluster, and vice versa. For that reason,
@@ -749,18 +747,16 @@ you do not need to upgrade client JARs at the same time the cluster is upgraded.
 <p>The same wire compatibility guarantees apply to the Impala_Kudu fork that was released
 with Kudu 0.5.0.</p>
 </div>
-<div class="paragraph">
-<p>[[0.6.0_api_compatibility]]
-=== API Compatibility</p>
 </div>
+<div class="sect2">
+<h3 id="api_compatibility_0.6.0"><a class="link" href="#api_compatibility_0.6.0">API Compatibility</a></h3>
 <div class="paragraph">
 <p>The Kudu 0.6.0 client API is not compatible with the Kudu 0.5.0 client API. See the
 <a href="release_notes.html#0.6.0">Kudu 0.6.0 release notes</a> for details.</p>
 </div>
-<div class="paragraph">
-<p>[[0.6.0_upgrade_procedure]]
-=== Upgrade procedure</p>
 </div>
+<div class="sect2">
+<h3 id="upgrade_procedure_0.6.0"><a class="link" href="#upgrade_procedure_0.6.0">Upgrade procedure</a></h3>
 <div class="olist arabic">
 <ol class="arabic">
 <li>
@@ -807,6 +803,7 @@ $ sudo service kudu-tserver start</code></pre>
 </div>
 </li>
 </ol>
+</div>
 </div>
 </div>
 </div>
@@ -865,7 +862,13 @@ $ sudo service kudu-tserver start</code></pre>
 <li><a href="#build_cpp_client">Installing the C++ Client Libraries</a></li>
 <li><a href="#build_java_client">Build the Java Client</a></li>
 <li><a href="#view_api">View API Documentation</a></li>
-<li><a href="#upgrade">Upgrade from 0.5.0 to 0.6.0</a></li>
+<li><a href="#upgrade">Upgrade from 0.5.0 to 0.6.0</a>
+<ul class="sectlevel2">
+<li><a href="#client_compatibility_0.6.0">Client compatibility</a></li>
+<li><a href="#api_compatibility_0.6.0">API Compatibility</a></li>
+<li><a href="#upgrade_procedure_0.6.0">Upgrade procedure</a></li>
+</ul>
+</li>
 <li><a href="#next_steps">Next Steps</a></li>
 </ul> 
       </li> 
