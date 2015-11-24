@@ -249,67 +249,38 @@ scan of the source tree, you may use the `lint` target instead.
 
 Kudu's documentation is written in asciidoc and lives in the _docs_ subdirectory.
 
-To build the documentation, use the `docs` target:
+To build the documentation (this is primarily useful if you would like to
+inspect your changes before submitting them to Gerrit), use the `docs` target:
 
 [source,bash]
 ----
 $ make docs
 ----
 
-This will invoke `asciidoctor` to process the doc sources and produce the HTML
-documentation, emitted to _build/docs_. The target expects to find `asciidoctor`
-on the system path. To install it, make sure you have Ruby installed first, then
-issue the following command as root:
+This will invoke `docs/support/scripts/make_docs.sh`, which requires
+`asciidoctor` to process the doc sources and produce the HTML documentation,
+emitted to _build/docs_. This script requires `ruby` and `gem` to be installed
+on the system path, and will attempt to install `asciidoctor` and other related
+dependencies into `$HOME/.gems` using http://bundler.io/[bundler].
+
+=== Updating the documentation on the Kudu web site
+
+To update the documentation that is integrated into the Kudu web site,
+including Javadoc documentation, you may run the following command:
 
 [source,bash]
 ----
-$ gem install asciidoctor
+$ ./docs/support/script/make_site.sh build/site # here, build/site is your desired output directory
 ----
 
-Or, if you'd prefer to install asciidoctor without root, do:
-
-[source,bash]
-----
-$ gem install --user-install asciidoctor
-----
-
-
-If asciidoctor is installed in your user directory, it probably won't be found
-in your `PATH`. You'll need to modify `PATH` when building the docs, using
-something like this (make sure to replace 2.1.0 with your Ruby version):
-
-[source,bash]
-----
-$ PATH=$HOME/.gem/ruby/2.1.0/bin:$PATH make docs
-----
-
-=== Updating the documentation in the Kudu web site
-
-To update the documentation that is integrated into the Kudu web site, you
-need to first check out another copy of this repository, with the 'gh-pages'
-branch checked out.
-
-For example, you can check out a shallow clone which shares its objects with
-your main repository using a command like:
-
-[source,bash]
-----
-$ git clone $(git config --get remote.origin.url) --reference $(pwd) -b gh-pages --depth 1 /tmp/kudu-pages
-----
-
-Additionally, you'll need to ensure that the `tilt` and `jekyll` Ruby gems are
-installed on your machine. Refer to the `asciidoctor` instructions above for
-instructions.
-
-Now you can build the docs and pass the path to this checked-out repository:
-
-[source,bash]
-----
-$ ./docs/support/scripts/make_docs.sh  --site /tmp/kudu-pages/
-----
+This script will use your local Git repository to check out a shallow clone of
+the 'gh-pages' branch and use `make_docs.sh` to generate the HTML documentation
+for the web site. It will also build the Javadoc documentation. These will be
+placed inside the checked-out web site, along with a tarball containing only
+the generated documentation (the _docs/_ and _apidocs/_ paths on the web site).
 
 You can proceed to commit the changes in the pages repository and send a code
-review for your changes. In the future, this step will be automated whenever
+review for your changes. In the future, this step may be automated whenever
 changes are checked into the main Kudu repository.
 
 == Improving build times

@@ -1,5 +1,4 @@
 #!/bin/bash
-
 ########################################################################
 # Copyright 2015 Cloudera, Inc.
 #
@@ -25,21 +24,48 @@
 #
 # Usage: make_docs.sh <output_dir>
 ########################################################################
-
-THIS_DIR=$(dirname $BASH_SOURCE)
-ROOT=$(cd $THIS_DIR ; cd ../../.. ; pwd)
-
-GEN_DOC_DIR=$ROOT/build/gen-docs
-OUTPUT_DIR=$ROOT/build/docs
+set -e
 
 usage() {
   echo usage: "$0 [--site <path to gh-pages checkout>]"
 }
 
-# We need asciidoctor and xsltproc binaries
-for requirement in "asciidoctor" "xsltproc"; do
-  which $requirement > /dev/null
-  if [ $? -ne 0 ]; then
+ROOT=$(cd $(dirname $0)/../../..; pwd)
+
+GEN_DOC_DIR=$ROOT/build/gen-docs
+OUTPUT_DIR=$ROOT/build/docs
+
+if ! which ruby > /dev/null; then
+  echo "ruby must be installed in order to build the docs."
+  echo 1
+fi
+
+DOCS_SCRIPTS="$ROOT/docs/support/scripts"
+
+# We must set GEM_PATH because bundler depends on it to find its own libraries.
+export GEM_PATH="$DOCS_SCRIPTS/.gem"
+echo GEM_PATH="$DOCS_SCRIPTS/.gem"
+
+export PATH="$GEM_PATH/bin:$PATH"
+echo PATH="$GEM_PATH/bin:$PATH"
+
+BUNDLE="$GEM_PATH/bin/bundle"
+
+echo "Locally Installing ruby gems needed to build docs."
+if [ ! -x "$BUNDLE" ]; then
+  set -x
+  gem install --no-ri --no-rdoc -q --install-dir "$GEM_PATH" bundler
+  set +x
+fi
+
+set -x
+cd "$DOCS_SCRIPTS"
+"$BUNDLE" install --no-color --path "$GEM_PATH" --jobs 4
+set +x
+
+# We need the xsltproc package.
+for requirement in "xsltproc"; do
+  if ! which $requirement > /dev/null; then
     echo "$requirement is required, but cannot be found. Make sure it is in your path."
     exit 1
   fi
@@ -89,14 +115,14 @@ for binary in ${binaries[@]}; do
 
   (
     # Reset environment to avoid affecting the default flag values.
-    set -x
     for var in $(env | awk -F= '{print $1}' | egrep -i 'KUDU|GLOG'); do
+      echo "unset $var"
       eval "unset $var"
     done
-    set +x
 
-    # Create the XML file
-    $ROOT/build/latest/$binary --helpxml > ${GEN_DOC_DIR}/$(basename $binary).xml
+    # Create the XML file.
+    # This command exits with a nonzero value.
+    $ROOT/build/latest/$binary --helpxml > ${GEN_DOC_DIR}/$(basename $binary).xml || true
   )
 
   # Create the supported config reference
@@ -131,11 +157,9 @@ else
     TEMPLATE_FLAG=""
 fi
 
-asciidoctor -d book $TEMPLATE_FLAG $ROOT/docs/*.adoc ${GEN_DOC_DIR}/*.adoc -D "$OUTPUT_DIR"
-RESULT=$?
-if [ $RESULT -ne 0 ]; then
-  exit $RESULT
-fi
+bundle exec asciidoctor -d book $TEMPLATE_FLAG \
+    $ROOT/docs/*.adoc ${GEN_DOC_DIR}/*.adoc -D "$OUTPUT_DIR"
+
 mkdir -p "$OUTPUT_DIR/images"
 cp $ROOT/docs/images/* "$OUTPUT_DIR/images/"
 
@@ -146,7 +170,7 @@ echo "Docs built in $OUTPUT_DIR."
 
 # If we're building the site, try to run Jekyll for them to make
 # it a bit easier to quickly preview the results.
-if [ -n "$SITE" ] && ! [ -n "$NO_JEKYLL" ]; then
+if [ -n "$SITE" ] && [ -z "$NO_JEKYLL" ]; then
   # We need to generate a config file which fakes the "github.url" property
   # so that relative links within the site work.
   BASE_URL="file://$SITE/_site/"
@@ -156,15 +180,12 @@ if [ -n "$SITE" ] && ! [ -n "$NO_JEKYLL" ]; then
 
   # Now rebuild the site itself.
   echo Attempting to re-build via Jekyll...
-  cd $SITE
-  jekyll build --config $TMP_CONFIG
-  jekyll_result=$?
-  if [ $jekyll_result -eq 0 ]; then
-    # Output the URL so it's easy to click on from the terminal.
-    echo ----------------------
-    echo Rebuild successful. View your site at
-    echo $BASE_URL/index.html
-    echo ----------------------
-  fi
+  bundle exec jekyll build --source "$SITE" --config "$TMP_CONFIG"
+
+  # Output the URL so it's easy to click on from the terminal.
+  echo ----------------------
+  echo Rebuild successful. View your site at
+  echo $BASE_URL/index.html
+  echo ----------------------
 fi
 
