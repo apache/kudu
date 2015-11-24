@@ -403,7 +403,7 @@ Status LogReader::GetSegmentsSnapshot(SegmentSequence* segments) const {
 Status LogReader::TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number) {
   boost::lock_guard<simple_spinlock> lock(lock_);
   CHECK_EQ(state_, kLogReaderReading);
-  SegmentSequence::iterator iter = segments_.begin();
+  auto iter = segments_.begin();
   int num_deleted_segments = 0;
 
   while (iter != segments_.end()) {

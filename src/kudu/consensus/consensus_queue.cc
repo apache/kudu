@@ -741,8 +741,7 @@ string PeerMessageQueue::ToStringUnlocked() const {
 
 void PeerMessageQueue::RegisterObserver(PeerMessageQueueObserver* observer) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  std::vector<PeerMessageQueueObserver*>::iterator iter =
-        std::find(observers_.begin(), observers_.end(), observer);
+  auto iter = std::find(observers_.begin(), observers_.end(), observer);
   if (iter == observers_.end()) {
     observers_.push_back(observer);
   }
@@ -750,8 +749,7 @@ void PeerMessageQueue::RegisterObserver(PeerMessageQueueObserver* observer) {
 
 Status PeerMessageQueue::UnRegisterObserver(PeerMessageQueueObserver* observer) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
-  std::vector<PeerMessageQueueObserver*>::iterator iter =
-      std::find(observers_.begin(), observers_.end(), observer);
+  auto iter = std::find(observers_.begin(), observers_.end(), observer);
   if (iter == observers_.end()) {
     return Status::NotFound("Can't find observer.");
   }

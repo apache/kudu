@@ -161,7 +161,7 @@ class LockTable {
 };
 
 LockEntry *LockTable::GetLockEntry(const Slice& key) {
-  LockEntry *new_entry = new LockEntry(key);
+  auto new_entry = new LockEntry(key);
   LockEntry *old_entry;
 
   {

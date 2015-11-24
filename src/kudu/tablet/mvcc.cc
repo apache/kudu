@@ -92,7 +92,7 @@ Status MvccManager::StartTransactionAtTimestamp(Timestamp timestamp) {
 
 void MvccManager::StartApplyingTransaction(Timestamp timestamp) {
   boost::lock_guard<LockType> l(lock_);
-  InFlightMap::iterator it = timestamps_in_flight_.find(timestamp.value());
+  auto it = timestamps_in_flight_.find(timestamp.value());
   if (PREDICT_FALSE(it == timestamps_in_flight_.end())) {
     LOG(FATAL) << "Cannot mark timestamp " << timestamp.ToString() << " as APPLYING: "
                << "not in the in-flight map.";
@@ -182,7 +182,7 @@ void MvccManager::OfflineCommitTransaction(Timestamp timestamp) {
 MvccManager::TxnState MvccManager::RemoveInFlightAndGetStateUnlocked(Timestamp ts) {
   DCHECK(lock_.is_locked());
 
-  InFlightMap::iterator it = timestamps_in_flight_.find(ts.value());
+  auto it = timestamps_in_flight_.find(ts.value());
   if (it == timestamps_in_flight_.end()) {
     LOG(FATAL) << "Trying to remove timestamp which isn't in the in-flight set: "
                << ts.ToString();
@@ -276,7 +276,7 @@ void MvccManager::AdjustCleanTime() {
   // it may also have unblocked some waiters.
   // Check if someone is waiting for transactions to be committed.
   if (PREDICT_FALSE(!waiters_.empty())) {
-    vector<WaitingState*>::iterator iter = waiters_.begin();
+    auto iter = waiters_.begin();
     while (iter != waiters_.end()) {
       WaitingState* waiter = *iter;
       if (IsDoneWaitingUnlocked(*waiter)) {

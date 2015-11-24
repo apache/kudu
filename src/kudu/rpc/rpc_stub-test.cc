@@ -103,9 +103,9 @@ TEST_F(RpcStubTest, TestBigCallData) {
 
   CountDownLatch latch(kNumSentAtOnce);
   for (int i = 0; i < kNumSentAtOnce; i++) {
-    EchoResponsePB *resp = new EchoResponsePB;
+    auto resp = new EchoResponsePB;
     resps.push_back(resp);
-    RpcController *controller = new RpcController;
+    auto controller = new RpcController;
     controllers.push_back(controller);
 
     p.EchoAsync(req, resp, controller,

@@ -73,7 +73,7 @@ static void StringAppendStrftime(string* dst,
   int length = sizeof(space);
   for (int sanity = 0; sanity < 5; ++sanity) {
     length *= 2;
-    char* buf = new char[length];
+    auto buf = new char[length];
 
     result = strftime(buf, length, format, tm);
     if ((result >= 0) && (result < length)) {

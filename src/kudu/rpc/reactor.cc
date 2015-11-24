@@ -113,8 +113,8 @@ void ReactorThread::ShutdownInternal() {
   // Tear down any outbound TCP connections.
   Status service_unavailable = ShutdownError(false);
   VLOG(1) << name() << ": tearing down outbound TCP connections...";
-  for (conn_map_t::iterator c = client_conns_.begin();
-       c != client_conns_.end(); c = client_conns_.begin()) {
+  for (auto c = client_conns_.begin(); c != client_conns_.end();
+       c = client_conns_.begin()) {
     const scoped_refptr<Connection>& conn = (*c).second;
     VLOG(1) << name() << ": shutting down " << conn->ToString();
     conn->Shutdown(service_unavailable);
@@ -261,8 +261,8 @@ void ReactorThread::RegisterTimeout(ev::timer *watcher) {
 void ReactorThread::ScanIdleConnections() {
   DCHECK(IsCurrentThread());
   // enforce TCP connection timeouts
-  conn_list_t::iterator c = server_conns_.begin();
-  conn_list_t::iterator c_end = server_conns_.end();
+  auto c = server_conns_.begin();
+  auto c_end = server_conns_.end();
   uint64_t timed_out = 0;
   for (; c != c_end; ) {
     const scoped_refptr<Connection>& conn = *c;
@@ -431,11 +431,11 @@ void ReactorThread::DestroyConnection(Connection *conn,
   // Unlink connection from lists.
   if (conn->direction() == Connection::CLIENT) {
     ConnectionId conn_id(conn->remote(), conn->user_credentials());
-    conn_map_t::iterator it = client_conns_.find(conn_id);
+    auto it = client_conns_.find(conn_id);
     CHECK(it != client_conns_.end()) << "Couldn't find connection " << conn->ToString();
     client_conns_.erase(it);
   } else if (conn->direction() == Connection::SERVER) {
-    conn_list_t::iterator it = server_conns_.begin();
+    auto it = server_conns_.begin();
     while (it != server_conns_.end()) {
       if ((*it).get() == conn) {
         server_conns_.erase(it);
@@ -599,7 +599,7 @@ void Reactor::RegisterInboundSocket(Socket *socket, const Sockaddr &remote) {
   VLOG(3) << name_ << ": new inbound connection to " << remote.ToString();
   scoped_refptr<Connection> conn(
     new Connection(&thread_, remote, socket->Release(), Connection::SERVER));
-  RegisterConnectionTask *task = new RegisterConnectionTask(conn);
+  auto task = new RegisterConnectionTask(conn);
   ScheduleReactorTask(task);
 }
 

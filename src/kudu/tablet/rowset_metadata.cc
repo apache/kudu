@@ -161,11 +161,10 @@ Status RowSetMetadata::CommitUpdate(const RowSetMetadataUpdate& update) {
                   update.replace_redo_blocks_) {
       CHECK(!rep.to_remove.empty());
 
-      vector<BlockId>::iterator start_it =
-          std::find(redo_delta_blocks_.begin(),
-                    redo_delta_blocks_.end(), rep.to_remove[0]);
+      auto start_it = std::find(redo_delta_blocks_.begin(),
+                                redo_delta_blocks_.end(), rep.to_remove[0]);
 
-      vector<BlockId>::iterator end_it = start_it;
+      auto end_it = start_it;
       for (const BlockId& b : rep.to_remove) {
         if (end_it == redo_delta_blocks_.end() || *end_it != b) {
           return Status::InvalidArgument(

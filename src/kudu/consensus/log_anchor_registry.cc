@@ -69,7 +69,7 @@ Status LogAnchorRegistry::UnregisterIfAnchored(LogAnchor* anchor) {
 
 Status LogAnchorRegistry::GetEarliestRegisteredLogIndex(int64_t* log_index) {
   boost::lock_guard<simple_spinlock> l(lock_);
-  AnchorMultiMap::iterator iter = anchors_.begin();
+  auto iter = anchors_.begin();
   if (iter == anchors_.end()) {
     return Status::NotFound("No anchors in registry");
   }
@@ -118,7 +118,7 @@ Status LogAnchorRegistry::UnregisterUnlocked(LogAnchor* anchor) {
   DCHECK(anchor != nullptr);
   DCHECK(anchor->is_registered);
 
-  AnchorMultiMap::iterator iter = anchors_.find(anchor->log_index);
+  auto iter = anchors_.find(anchor->log_index);
   while (iter != anchors_.end()) {
     if (iter->second == anchor) {
       anchor->is_registered = false;

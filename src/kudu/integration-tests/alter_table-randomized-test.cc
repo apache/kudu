@@ -154,7 +154,7 @@ struct TableState {
     int32_t key = data[0].second;
     if (ContainsKey(rows_, key)) return false;
 
-    RowState* r = new RowState;
+    auto r = new RowState;
     r->cols = data;
     rows_[key] = r;
     return true;
@@ -185,7 +185,7 @@ struct TableState {
   }
 
   void DropColumn(const string& name) {
-    std::vector<string>::iterator col_it = std::find(col_names_.begin(), col_names_.end(), name);
+    auto col_it = std::find(col_names_.begin(), col_names_.end(), name);
     int index = col_it - col_names_.begin();
     col_names_.erase(col_it);
     col_nullable_.erase(col_nullable_.begin() + index);

@@ -34,7 +34,7 @@ class CrcTest : public KuduTest {
     const uint32_t kNumNumbers = 1000000;
     const uint32_t kBytesPerNumber = sizeof(uint32_t);
     const uint32_t kLength = kNumNumbers * kBytesPerNumber;
-    uint8_t *buf = new uint8_t[kLength];
+    auto buf = new uint8_t[kLength];
     for (uint32_t i = 0; i < kNumNumbers; i++) {
       memcpy(buf + (i * kBytesPerNumber), &i, kBytesPerNumber);
     }

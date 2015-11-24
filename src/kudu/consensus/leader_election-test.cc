@@ -146,10 +146,9 @@ void LeaderElectionTest::InitDelayableMockedProxies(bool enable_delay) {
   config_.Clear();
   for (const string& uuid : voter_uuids_) {
     RaftPeerPB* peer_pb = config_.add_peers();
-       peer_pb->set_permanent_uuid(uuid);
-    DelayablePeerProxy<MockedPeerProxy>* proxy =
-        new DelayablePeerProxy<MockedPeerProxy>(pool_.get(),
-                                                new MockedPeerProxy(pool_.get()));
+    peer_pb->set_permanent_uuid(uuid);
+    auto proxy = new DelayablePeerProxy<MockedPeerProxy>(pool_.get(),
+                                                         new MockedPeerProxy(pool_.get()));
     if (enable_delay) {
       proxy->DelayResponse();
     }

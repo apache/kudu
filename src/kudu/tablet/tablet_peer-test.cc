@@ -188,8 +188,7 @@ class TabletPeerTest : public KuduTabletTest {
 
   Status ExecuteWriteAndRollLog(TabletPeer* tablet_peer, const WriteRequestPB& req) {
     gscoped_ptr<WriteResponsePB> resp(new WriteResponsePB());
-    WriteTransactionState* tx_state =
-        new WriteTransactionState(tablet_peer, &req, resp.get());
+    auto tx_state = new WriteTransactionState(tablet_peer, &req, resp.get());
 
     CountDownLatch rpc_latch(1);
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
@@ -458,8 +457,7 @@ TEST_F(TabletPeerTest, TestActiveTransactionPreventsLogGC) {
   {
     // Long-running mutation.
     ASSERT_OK(GenerateSequentialDeleteRequest(req.get()));
-    WriteTransactionState* tx_state =
-      new WriteTransactionState(tablet_peer_.get(), req.get(), resp.get());
+    auto tx_state = new WriteTransactionState(tablet_peer_.get(), req.get(), resp.get());
 
     tx_state->set_completion_callback(gscoped_ptr<TransactionCompletionCallback>(
           new LatchTransactionCompletionCallback<WriteResponsePB>(&rpc_latch, resp.get())).Pass());

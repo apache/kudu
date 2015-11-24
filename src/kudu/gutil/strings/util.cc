@@ -688,7 +688,7 @@ char* strndup_with_new(const char* the_string, int max_length) {
   if (the_string == nullptr)
     return nullptr;
 
-  char* result = new char[max_length + 1];
+  auto result = new char[max_length + 1];
   result[max_length] = '\0';  // terminate the string because strncpy might not
   return strncpy(result, the_string, max_length);
 }
@@ -999,7 +999,7 @@ void InsertString(string *const s,
   tmp.reserve(s_len + separator_len * num_indices);
 
   vector<uint32>::const_iterator const ind_end(indices.end());
-  vector<uint32>::const_iterator ind_pos(indices.begin());
+  auto ind_pos(indices.begin());
 
   uint32 last_pos(0);
   while (ind_pos != ind_end) {

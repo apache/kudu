@@ -401,7 +401,7 @@ Status ReplicaState::AbortOpsAfterUnlocked(int64_t new_preceding_idx) {
   DCHECK_GE(new_preceding_idx, 0);
   OpId new_preceding;
 
-  IndexToRoundMap::iterator iter = pending_txns_.lower_bound(new_preceding_idx);
+  auto iter = pending_txns_.lower_bound(new_preceding_idx);
 
   // Either the new preceding id is in the pendings set or it must be equal to the
   // committed index since we can't truncate already committed operations.
@@ -554,9 +554,9 @@ Status ReplicaState::AdvanceCommittedIndexUnlocked(const OpId& committed_index,
   }
 
   // Start at the operation after the last committed one.
-  IndexToRoundMap::iterator iter = pending_txns_.upper_bound(last_committed_index_.index());
+  auto iter = pending_txns_.upper_bound(last_committed_index_.index());
   // Stop at the operation after the last one we must commit.
-  IndexToRoundMap::iterator end_iter = pending_txns_.upper_bound(committed_index.index());
+  auto end_iter = pending_txns_.upper_bound(committed_index.index());
   CHECK(iter != pending_txns_.end());
 
   VLOG_WITH_PREFIX_UNLOCKED(1) << "Last triggered apply was: "

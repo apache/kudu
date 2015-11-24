@@ -255,8 +255,7 @@ void MetricEntity::RetireOldMetrics() {
   MonoTime now(MonoTime::Now(MonoTime::FINE));
 
   lock_guard<simple_spinlock> l(&lock_);
-  for (MetricMap::iterator it = metric_map_.begin();
-       it != metric_map_.end();) {
+  for (auto it = metric_map_.begin(); it != metric_map_.end();) {
     const scoped_refptr<Metric>& metric = it->second;
 
     if (PREDICT_TRUE(!metric->HasOneRef())) {
@@ -351,8 +350,7 @@ Status MetricRegistry::WriteAsJson(JsonWriter* writer,
 
 void MetricRegistry::RetireOldMetrics() {
   lock_guard<simple_spinlock> l(&lock_);
-  for (EntityMap::iterator it = entities_.begin();
-       it != entities_.end();) {
+  for (auto it = entities_.begin(); it != entities_.end();) {
     it->second->RetireOldMetrics();
 
     if (it->second->num_metrics() == 0 && it->second->HasOneRef()) {

@@ -100,9 +100,9 @@ void MultiThreadedMetricsTest::RegisterCounters(
     ScopedLeakCheckDisabler disabler;
 
     string name = strings::Substitute("$0-$1-$2", name_prefix, tid, i);
-    CounterPrototype* proto = new CounterPrototype(
-        MetricPrototype::CtorArgs("test_entity", strdup(name.c_str()), "Test Counter",
-                                  MetricUnit::kOperations, "test counter"));
+    auto proto = new CounterPrototype(MetricPrototype::CtorArgs(
+        "test_entity", strdup(name.c_str()), "Test Counter",
+        MetricUnit::kOperations, "test counter"));
     proto->Instantiate(metric_entity)->Increment();
   }
 }

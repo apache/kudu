@@ -464,7 +464,7 @@ void SplitStringPieceToVector(const StringPiece& full,
 // ----------------------------------------------------------------------
 
 vector<char*>* SplitUsing(char* full, const char* delim) {
-  vector<char*>* vec = new vector<char*>;
+  auto vec = new vector<char*>;
   SplitToVector(full, delim, vec, true);        // Omit empty strings
   return vec;
 }

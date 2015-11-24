@@ -140,10 +140,10 @@ class RaftConsensusQuorumTest : public KuduTest {
   void BuildPeers() {
     vector<LocalTestPeerProxyFactory*> proxy_factories;
     for (int i = 0; i < config_.peers_size(); i++) {
-      LocalTestPeerProxyFactory* proxy_factory = new LocalTestPeerProxyFactory(peers_.get());
+      auto proxy_factory = new LocalTestPeerProxyFactory(peers_.get());
       proxy_factories.push_back(proxy_factory);
 
-      TestTransactionFactory* txn_factory = new TestTransactionFactory(logs_[i].get());
+      auto txn_factory = new TestTransactionFactory(logs_[i].get());
 
       string peer_uuid = Substitute("peer-$0", i);
 

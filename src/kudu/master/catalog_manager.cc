@@ -2404,7 +2404,7 @@ void CatalogManager::SendAlterTableRequest(const scoped_refptr<TableInfo>& table
 }
 
 void CatalogManager::SendAlterTabletRequest(const scoped_refptr<TabletInfo>& tablet) {
-  AsyncAlterTable* call = new AsyncAlterTable(master_, worker_pool_.get(), tablet);
+  auto call = new AsyncAlterTable(master_, worker_pool_.get(), tablet);
   tablet->table()->AddTask(call);
   WARN_NOT_OK(call->Run(), "Failed to send alter table request");
 }
@@ -2460,10 +2460,7 @@ void CatalogManager::SendDeleteTabletRequest(
 
 void CatalogManager::SendAddServerRequest(const scoped_refptr<TabletInfo>& tablet,
                                           const ConsensusStatePB& cstate) {
-  AsyncAddServerTask* task = new AsyncAddServerTask(master_,
-                                                    worker_pool_.get(),
-                                                    tablet,
-                                                    cstate);
+  auto task = new AsyncAddServerTask(master_, worker_pool_.get(), tablet, cstate);
   tablet->table()->AddTask(task);
   WARN_NOT_OK(task->Run(), "Failed to send new AddServer request");
 

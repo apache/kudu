@@ -128,7 +128,7 @@ class ObjectPool {
 
       return static_cast<ManualConstructor<T> *>(tmp);
     }
-    ListNode *new_node = new ListNode();
+    auto new_node = new ListNode();
     new_node->next_on_free_list = NULL;
     new_node->next_on_alloc_list = alloc_list_head_;
     new_node->is_on_freelist = false;

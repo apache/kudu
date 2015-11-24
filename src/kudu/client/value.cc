@@ -52,7 +52,7 @@ KuduValue* KuduValue::Clone() const {
 }
 
 KuduValue* KuduValue::FromInt(int64_t v) {
-  Data* d = new Data;
+  auto d = new Data;
   d->type_ = Data::INT;
   d->int_val_ = v;
 
@@ -60,7 +60,7 @@ KuduValue* KuduValue::FromInt(int64_t v) {
 }
 
 KuduValue* KuduValue::FromDouble(double v) {
-  Data* d = new Data;
+  auto d = new Data;
   d->type_ = Data::DOUBLE;
   d->double_val_ = v;
 
@@ -69,7 +69,7 @@ KuduValue* KuduValue::FromDouble(double v) {
 
 
 KuduValue* KuduValue::FromFloat(float v) {
-  Data* d = new Data;
+  auto d = new Data;
   d->type_ = Data::FLOAT;
   d->float_val_ = v;
 
@@ -77,7 +77,7 @@ KuduValue* KuduValue::FromFloat(float v) {
 }
 
 KuduValue* KuduValue::FromBool(bool v) {
-  Data* d = new Data;
+  auto d = new Data;
   d->type_ = Data::INT;
   d->int_val_ = v ? 1 : 0;
 
@@ -85,10 +85,10 @@ KuduValue* KuduValue::FromBool(bool v) {
 }
 
 KuduValue* KuduValue::CopyString(Slice s) {
-  uint8_t* copy = new uint8_t[s.size()];
+  auto copy = new uint8_t[s.size()];
   memcpy(copy, s.data(), s.size());
 
-  Data* d = new Data;
+  auto d = new Data;
   d->type_ = Data::SLICE;
   d->slice_val_ = Slice(copy, s.size());
 

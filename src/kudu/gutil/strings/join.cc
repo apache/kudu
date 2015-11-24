@@ -30,7 +30,7 @@ char* JoinUsing(const vector<const char*>& components,
   for (int i = 0; i < num_components; ++i)
     num_chars += strlen(components[i]);
 
-  char* res_buffer = new char[num_chars+1];
+  auto res_buffer = new char[num_chars + 1];
   return JoinUsingToBuffer(components, delim, num_chars+1,
                            res_buffer, result_length_p);
 }

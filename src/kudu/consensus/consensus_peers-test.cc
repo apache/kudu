@@ -83,9 +83,8 @@ class ConsensusPeersTest : public KuduTest {
       gscoped_ptr<Peer>* peer) {
     RaftPeerPB peer_pb;
     peer_pb.set_permanent_uuid(peer_name);
-    DelayablePeerProxy<NoOpTestPeerProxy>* proxy_ptr =
-        new DelayablePeerProxy<NoOpTestPeerProxy>(pool_.get(),
-            new NoOpTestPeerProxy(pool_.get(), peer_pb));
+    auto proxy_ptr = new DelayablePeerProxy<NoOpTestPeerProxy>(
+        pool_.get(), new NoOpTestPeerProxy(pool_.get(), peer_pb));
     gscoped_ptr<PeerProxy> proxy(proxy_ptr);
     CHECK_OK(Peer::NewRemotePeer(peer_pb,
                                  kTabletId,
@@ -238,7 +237,7 @@ TEST_F(ConsensusPeersTest, TestCloseWhenRemotePeerDoesntMakeProgress) {
                                 MinimumOpId().term(),
                                 BuildRaftConfigPBForTests(3));
 
-  MockedPeerProxy* mock_proxy = new MockedPeerProxy(pool_.get());
+  auto mock_proxy = new MockedPeerProxy(pool_.get());
   gscoped_ptr<Peer> peer;
   ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
                                 kTabletId,
@@ -276,7 +275,7 @@ TEST_F(ConsensusPeersTest, TestDontSendOneRpcPerWriteWhenPeerIsDown) {
                                 MinimumOpId().term(),
                                 BuildRaftConfigPBForTests(3));
 
-  MockedPeerProxy* mock_proxy = new MockedPeerProxy(pool_.get());
+  auto mock_proxy = new MockedPeerProxy(pool_.get());
   gscoped_ptr<Peer> peer;
   ASSERT_OK(Peer::NewRemotePeer(FakeRaftPeerPB(kFollowerUuid),
                                 kTabletId,

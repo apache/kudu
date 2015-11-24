@@ -242,9 +242,8 @@ void LogIndex::GC(int64_t min_index_to_retain) {
   vector<int64_t> chunks_to_delete;
   {
     lock_guard<simple_spinlock> l(&open_chunks_lock_);
-    for (ChunkMap::iterator it = open_chunks_.begin();
-         it != open_chunks_.lower_bound(min_chunk_to_retain);
-         ++it) {
+    for (auto it = open_chunks_.begin();
+         it != open_chunks_.lower_bound(min_chunk_to_retain); ++it) {
       chunks_to_delete.push_back(it->first);
     }
   }

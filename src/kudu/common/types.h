@@ -444,7 +444,7 @@ class Variant {
           // set vstr_ to Slice(""). Otherwise, we need to allocate and copy the
           // user's data.
           if (str->size() > 0) {
-            uint8_t *blob = new uint8_t[str->size()];
+            auto blob = new uint8_t[str->size()];
             memcpy(blob, str->data(), str->size());
             vstr_ = Slice(blob, str->size());
           }

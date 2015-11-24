@@ -95,7 +95,7 @@ LogCache::LogCache(const scoped_refptr<MetricEntity>& metric_entity,
 
   // Put a fake message at index 0, since this simplifies a lot of our
   // code paths elsewhere.
-  ReplicateMsg* zero_op = new ReplicateMsg();
+  auto zero_op = new ReplicateMsg();
   *zero_op->mutable_id() = MinimumOpId();
   InsertOrDie(&cache_, 0, make_scoped_refptr_replicate(zero_op));
 }
@@ -245,7 +245,7 @@ Status LogCache::LookupOpId(int64_t op_index, OpId* op_id) const {
                                            "(next sequential op: $1)",
                                            op_index, next_sequential_op_index_));
     }
-    MessageCache::const_iterator iter = cache_.find(op_index);
+    auto iter = cache_.find(op_index);
     if (iter != cache_.end()) {
       *op_id = iter->second->get()->id();
       return Status::OK();
@@ -355,8 +355,7 @@ void LogCache::EvictSomeUnlocked(int64_t stop_after_index, int64_t bytes_to_evic
                       << ": before state: " << ToStringUnlocked();
 
   int64_t bytes_evicted = 0;
-  for (MessageCache::iterator iter = cache_.begin();
-       iter != cache_.end();) {
+  for (auto iter = cache_.begin(); iter != cache_.end();) {
     const ReplicateRefPtr& msg = (*iter).second;
     VLOG_WITH_PREFIX_UNLOCKED(2) << "considering for eviction: " << msg->get()->id();
     int64_t msg_index = msg->get()->id().index();

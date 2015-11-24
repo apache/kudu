@@ -59,7 +59,7 @@ TEST_F(MtHdrHistogramTest, ConcurrentWriteTest) {
 
   HdrHistogram hist(100000LU, 3);
 
-  scoped_refptr<kudu::Thread>* threads = new scoped_refptr<kudu::Thread>[num_threads_];
+  auto threads = new scoped_refptr<kudu::Thread>[num_threads_];
   for (int i = 0; i < num_threads_; i++) {
     CHECK_OK(kudu::Thread::Create("test", strings::Substitute("thread-$0", i),
         IncrementSameHistValue, &hist, kValue, num_times_, &threads[i]));
@@ -81,7 +81,7 @@ TEST_F(MtHdrHistogramTest, ConcurrentCopyWhileWritingTest) {
 
   HdrHistogram hist(100000LU, 3);
 
-  scoped_refptr<kudu::Thread>* threads = new scoped_refptr<kudu::Thread>[num_threads_];
+  auto threads = new scoped_refptr<kudu::Thread>[num_threads_];
   for (int i = 0; i < num_threads_; i++) {
     CHECK_OK(kudu::Thread::Create("test", strings::Substitute("thread-$0", i),
         IncrementSameHistValue, &hist, kValue, num_times_, &threads[i]));

@@ -291,7 +291,7 @@ KuduSchemaBuilder::~KuduSchemaBuilder() {
 }
 
 KuduColumnSpec* KuduSchemaBuilder::AddColumn(const std::string& name) {
-  KuduColumnSpec* c = new KuduColumnSpec(name);
+  auto c = new KuduColumnSpec(name);
   data_->specs.push_back(c);
   return c;
 }

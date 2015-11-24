@@ -117,7 +117,7 @@ struct SliceMapKey {
 
   // This copies the string out of the result buffer
   void RelocateSlice() {
-    uint8_t *buf = new uint8_t[slice.size()];
+    auto buf = new uint8_t[slice.size()];
     slice.relocate(buf);
   }
 
@@ -180,7 +180,7 @@ void Tpch1(RpcLineItemDAO *dao) {
       CHECK_OK(row.GetDouble(6, &l_tax));
 
       slice_map *linestatus_map;
-      slice_map_map::iterator it = results.find(l_returnflag);
+      auto it = results.find(l_returnflag);
       if (it == results.end()) {
         linestatus_map = new slice_map;
         l_returnflag.RelocateSlice();
@@ -189,7 +189,7 @@ void Tpch1(RpcLineItemDAO *dao) {
         linestatus_map = it->second;
       }
 
-      slice_map::iterator inner_it = linestatus_map->find(l_linestatus);
+      auto inner_it = linestatus_map->find(l_linestatus);
       if (inner_it == linestatus_map->end()) {
         r = new Result();
         l_linestatus.RelocateSlice();

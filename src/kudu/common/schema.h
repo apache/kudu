@@ -430,7 +430,7 @@ class Schema {
   // Return the column index corresponding to the given column,
   // or kColumnNotFound if the column is not in this schema.
   int find_column(const StringPiece col_name) const {
-    NameToIndexMap::const_iterator iter = name_to_index_.find(col_name);
+    auto iter = name_to_index_.find(col_name);
     if (PREDICT_FALSE(iter == name_to_index_.end())) {
       return kColumnNotFound;
     } else {

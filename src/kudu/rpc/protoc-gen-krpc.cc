@@ -273,7 +273,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
         const std::string &/* parameter */,
         google::protobuf::compiler::GeneratorContext *gen_context,
         std::string *error) const OVERRIDE {
-    FileSubstitutions *name_info = new FileSubstitutions();
+    auto name_info = new FileSubstitutions();
     Status ret = name_info->Init(file);
     if (!ret.ok()) {
       *error = "name_info.Init failed: " + ret.ToString();

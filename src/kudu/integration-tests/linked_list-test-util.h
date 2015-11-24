@@ -687,7 +687,7 @@ Status LinkedListTester::WaitAndVerify(int seconds_to_run,
     const int kBaseTimeToWaitSecs = 5;
     bool last_attempt = sw.elapsed().wall_seconds() > kBaseTimeToWaitSecs + seconds_to_run;
     s = Status::OK();
-    std::list<pair<int64_t, int64_t> >::iterator iter = samples_as_list.begin();
+    auto iter = samples_as_list.begin();
 
     while (iter != samples_as_list.end()) {
       // Only call the callback once, on the first verify pass, since it may be destructive.

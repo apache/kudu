@@ -50,9 +50,7 @@ class FlagTagRegistry {
     tags->clear();
     pair<TagMap::const_iterator, TagMap::const_iterator> range =
       tag_map_.equal_range(name);
-    for (TagMap::const_iterator it = range.first;
-         it != range.second;
-         ++it) {
+    for (auto it = range.first; it != range.second; ++it) {
       if (!InsertIfNotPresent(tags, it->second)) {
         LOG(DFATAL) << "Flag " << name << " was tagged more than once with the tag '"
                     << it->second << "'";

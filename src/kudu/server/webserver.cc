@@ -379,7 +379,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
 void Webserver::RegisterPathHandler(const string& path, const string& alias,
     const PathHandlerCallback& callback, bool is_styled, bool is_on_nav_bar) {
   boost::lock_guard<boost::shared_mutex> lock(lock_);
-  PathHandlerMap::iterator it = path_handlers_.find(path);
+  auto it = path_handlers_.find(path);
   if (it == path_handlers_.end()) {
     it = path_handlers_.insert(
         make_pair(path, new PathHandler(is_styled, is_on_nav_bar, alias))).first;

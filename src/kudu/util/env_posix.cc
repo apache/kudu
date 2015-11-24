@@ -884,7 +884,7 @@ class PosixEnv : public Env {
       result = IOError("lock " + fname, errno);
       close(fd);
     } else {
-      PosixFileLock* my_lock = new PosixFileLock;
+      auto my_lock = new PosixFileLock;
       my_lock->fd_ = fd;
       *lock = my_lock;
     }

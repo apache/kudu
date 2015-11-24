@@ -1427,19 +1427,15 @@ void TraceLog::AddEnabledStateObserver(EnabledStateObserver* listener) {
 }
 
 void TraceLog::RemoveEnabledStateObserver(EnabledStateObserver* listener) {
-  std::vector<EnabledStateObserver*>::iterator it =
-      std::find(enabled_state_observer_list_.begin(),
-                enabled_state_observer_list_.end(),
-                listener);
+  auto it = std::find(enabled_state_observer_list_.begin(),
+                      enabled_state_observer_list_.end(), listener);
   if (it != enabled_state_observer_list_.end())
     enabled_state_observer_list_.erase(it);
 }
 
 bool TraceLog::HasEnabledStateObserver(EnabledStateObserver* listener) const {
-  std::vector<EnabledStateObserver*>::const_iterator it =
-      std::find(enabled_state_observer_list_.begin(),
-                enabled_state_observer_list_.end(),
-                listener);
+  auto it = std::find(enabled_state_observer_list_.begin(),
+                      enabled_state_observer_list_.end(), listener);
   return it != enabled_state_observer_list_.end();
 }
 
@@ -1703,7 +1699,7 @@ TraceEventHandle TraceLog::AddTraceEvent(
 TraceLog::PerThreadInfo* TraceLog::SetupThreadLocalBuffer() {
   int64_t cur_tid = Thread::UniqueThreadId();
 
-  PerThreadInfo* thr_info = new PerThreadInfo();
+  auto thr_info = new PerThreadInfo();
   thr_info->event_buffer_ = nullptr;
   thr_info->is_in_trace_event_ = 0;
   thread_local_info_ = thr_info;
@@ -1825,8 +1821,7 @@ TraceEventHandle TraceLog::AddTraceEventWithThreadIdAndTimestamp(
 
         SpinLockHolder thread_info_lock(&thread_info_lock_);
 
-        std::unordered_map<int, std::string>::iterator existing_name =
-          thread_names_.find(thread_id);
+        auto existing_name = thread_names_.find(thread_id);
         if (existing_name == thread_names_.end()) {
           // This is a new thread id, and a new name.
           thread_names_[thread_id] = new_name;
@@ -2184,8 +2179,7 @@ void TraceLog::UpdateProcessLabel(
 
 void TraceLog::RemoveProcessLabel(int label_id) {
   SpinLockHolder lock(&lock_);
-  std::unordered_map<int, std::string>::iterator it = process_labels_.find(
-      label_id);
+  auto it = process_labels_.find(label_id);
   if (it == process_labels_.end())
     return;
 

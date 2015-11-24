@@ -114,7 +114,7 @@ void RemoteTabletServer::RefreshProxy(KuduClient* client,
     hp = rpc_hostports_[0];
   }
 
-  vector<Sockaddr>* addrs = new vector<Sockaddr>();
+  auto addrs = new vector<Sockaddr>();
   client->data_->dns_resolver_->ResolveAddresses(
     hp, addrs, Bind(&RemoteTabletServer::DnsResolutionFinished,
                     Unretained(this), hp, addrs, client, cb));

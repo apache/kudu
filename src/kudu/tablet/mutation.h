@@ -98,7 +98,7 @@ inline Mutation *Mutation::CreateInArena(
   size_t size = sizeof(Mutation) + rcl.slice().size();
   void *storage = arena->AllocateBytesAligned(size, BASE_PORT_H_ALIGN_OF(Mutation));
   CHECK(storage) << "failed to allocate storage from arena";
-  Mutation *ret = new(storage) Mutation();
+  auto ret = new (storage) Mutation();
   ret->timestamp_ = timestamp;
   ret->next_ = NULL;
   ret->changelist_size_ = rcl.slice().size();

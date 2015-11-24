@@ -158,7 +158,7 @@ Status DeltaTracker::AtomicUpdateStores(const SharedDeltaStoreVector& to_remove,
     start_it =
         std::find(stores_to_update->begin(), stores_to_update->end(), to_remove[0]);
 
-    SharedDeltaStoreVector::iterator end_it = start_it;
+    auto end_it = start_it;
     for (const shared_ptr<DeltaStore>& ds : to_remove) {
       if (end_it == stores_to_update->end() || *end_it != ds) {
         return Status::InvalidArgument(

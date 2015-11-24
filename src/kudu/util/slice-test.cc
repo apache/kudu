@@ -46,7 +46,7 @@ TEST(SliceTest, TestSliceMap) {
   }
 
   expectedValue = 0;
-  for (MySliceMap::iterator iter = my_map.begin(); iter != my_map.end(); iter++) {
+  for (auto iter = my_map.begin(); iter != my_map.end(); iter++) {
     int data = 'a' + expectedValue++;
     ASSERT_EQ(Slice(reinterpret_cast<uint8_t*>(&data), 1), iter->first);
     ASSERT_EQ(expectedValue, iter->second);

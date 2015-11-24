@@ -98,7 +98,7 @@ template <class Collection>
 const typename Collection::value_type::second_type&
 FindOrDie(const Collection& collection,
           const typename Collection::value_type::first_type& key) {
-  typename Collection::const_iterator it = collection.find(key);
+  auto it = collection.find(key);
   CHECK(it != collection.end()) << "Map key not found: " << key;
   return it->second;
 }
@@ -108,7 +108,7 @@ template <class Collection>
 typename Collection::value_type::second_type&
 FindOrDie(Collection& collection,  // NOLINT
           const typename Collection::value_type::first_type& key) {
-  typename Collection::iterator it = collection.find(key);
+  auto it = collection.find(key);
   CHECK(it != collection.end()) << "Map key not found: " << key;
   return it->second;
 }
@@ -147,7 +147,7 @@ const typename Collection::value_type::second_type&
 FindWithDefault(const Collection& collection,
                 const typename Collection::value_type::first_type& key,
                 const typename Collection::value_type::second_type& value) {
-  typename Collection::const_iterator it = collection.find(key);
+  auto it = collection.find(key);
   if (it == collection.end()) {
     return value;
   }
@@ -160,7 +160,7 @@ template <class Collection>
 const typename Collection::value_type::second_type*
 FindOrNull(const Collection& collection,
            const typename Collection::value_type::first_type& key) {
-  typename Collection::const_iterator it = collection.find(key);
+  auto it = collection.find(key);
   if (it == collection.end()) {
     return 0;
   }
@@ -172,7 +172,7 @@ template <class Collection>
 typename Collection::value_type::second_type*
 FindOrNull(Collection& collection,  // NOLINT
            const typename Collection::value_type::first_type& key) {
-  typename Collection::iterator it = collection.find(key);
+  auto it = collection.find(key);
   if (it == collection.end()) {
     return 0;
   }
@@ -185,7 +185,7 @@ template <class Collection>
 const typename Collection::value_type::second_type*
 FindFloorOrNull(const Collection& collection,
                 const typename Collection::value_type::first_type& key) {
-  typename Collection::const_iterator it = collection.upper_bound(key);
+  auto it = collection.upper_bound(key);
   if (it == collection.begin()) {
     return 0;
   }
@@ -197,7 +197,7 @@ template <class Collection>
 typename Collection::value_type::second_type*
 FindFloorOrNull(Collection& collection,  // NOLINT
                 const typename Collection::value_type::first_type& key) {
-  typename Collection::iterator it = collection.upper_bound(key);
+  auto it = collection.upper_bound(key);
   if (it == collection.begin()) {
     return 0;
   }
@@ -214,7 +214,7 @@ template <class Collection>
 typename Collection::value_type::second_type
 FindPtrOrNull(const Collection& collection,
               const typename Collection::value_type::first_type& key) {
-  typename Collection::const_iterator it = collection.find(key);
+  auto it = collection.find(key);
   if (it == collection.end()) {
     return typename Collection::value_type::second_type(0);
   }
@@ -229,7 +229,7 @@ template <class Collection>
 typename Collection::value_type::second_type
 FindPtrOrNull(Collection& collection,  // NOLINT
               const typename Collection::value_type::first_type& key) {
-  typename Collection::iterator it = collection.find(key);
+  auto it = collection.find(key);
   if (it == collection.end()) {
     return typename Collection::value_type::second_type(0);
   }
@@ -242,7 +242,7 @@ template <class Collection, class Key, class Value>
 bool FindCopy(const Collection& collection,
               const Key& key,
               Value* const value) {
-  typename Collection::const_iterator it = collection.find(key);
+  auto it = collection.find(key);
   if (it == collection.end()) {
     return false;
   }
@@ -259,7 +259,7 @@ bool FindCopy(const Collection& collection,
 // Returns true iff the given collection contains the given key.
 template <class Collection, class Key>
 bool ContainsKey(const Collection& collection, const Key& key) {
-  typename Collection::const_iterator it = collection.find(key);
+  auto it = collection.find(key);
   return it != collection.end();
 }
 
@@ -666,7 +666,7 @@ template <class Collection>
 typename Collection::value_type::second_type EraseKeyReturnValuePtr(
     Collection* const collection,
     const typename Collection::value_type::first_type& key) {
-  typename Collection::iterator it = collection->find(key);
+  auto it = collection->find(key);
   if (it == collection->end()) {
     return NULL;
   }

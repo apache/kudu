@@ -447,7 +447,7 @@ Status RaftConsensus::BecomeLeaderUnlocked() {
 
   // Initiate a NO_OP transaction that is sent at the beginning of every term
   // change in raft.
-  ReplicateMsg* replicate = new ReplicateMsg;
+  auto replicate = new ReplicateMsg;
   replicate->set_op_type(NO_OP);
   replicate->mutable_noop_request(); // Define the no-op request field.
 
@@ -1065,7 +1065,7 @@ Status RaftConsensus::UpdateReplica(const ConsensusRequestPB* request,
     TRACE("Triggering prepare for $0 ops", deduped_req.messages.size());
 
     Status prepare_status;
-    std::vector<ReplicateRefPtr>::iterator iter = deduped_req.messages.begin();
+    auto iter = deduped_req.messages.begin();
 
     if (PREDICT_TRUE(deduped_req.messages.size() > 0)) {
       // TODO Temporary until the leader explicitly propagates the safe timestamp.
@@ -1651,7 +1651,7 @@ void RaftConsensus::SetLeaderUuidUnlocked(const string& uuid) {
 Status RaftConsensus::ReplicateConfigChangeUnlocked(const RaftConfigPB& old_config,
                                                     const RaftConfigPB& new_config,
                                                     const StatusCallback& client_cb) {
-  ReplicateMsg* cc_replicate = new ReplicateMsg();
+  auto cc_replicate = new ReplicateMsg();
   cc_replicate->set_op_type(CHANGE_CONFIG_OP);
   ChangeConfigRecordPB* cc_req = cc_replicate->mutable_change_config_record();
   cc_req->set_tablet_id(tablet_id());

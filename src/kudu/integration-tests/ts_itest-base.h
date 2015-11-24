@@ -280,7 +280,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // Removes a set of servers from the replicas_ list.
   // Handy for controlling who to validate against after killing servers.
   void PruneFromReplicas(const unordered_set<std::string>& uuids) {
-    TabletReplicaMap::iterator iter = tablet_replicas_.begin();
+    auto iter = tablet_replicas_.begin();
     while (iter != tablet_replicas_.end()) {
       if (uuids.count((*iter).second->instance_id.permanent_uuid()) != 0) {
         iter = tablet_replicas_.erase(iter);

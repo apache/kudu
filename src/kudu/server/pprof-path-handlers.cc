@@ -96,7 +96,7 @@ static void PprofHeapHandler(const Webserver::WebRequest& req, stringstream* out
     return;
   }
 
-  Webserver::ArgumentMap::const_iterator it = req.parsed_args.find("seconds");
+  auto it = req.parsed_args.find("seconds");
   int seconds = PPROF_DEFAULT_SAMPLE_SECS;
   if (it != req.parsed_args.end()) {
     seconds = atoi(it->second.c_str());
@@ -119,7 +119,7 @@ static void PprofCpuProfileHandler(const Webserver::WebRequest& req, stringstrea
 #ifndef TCMALLOC_ENABLED
   (*output) << "CPU profiling is not available without tcmalloc.";
 #else
-  Webserver::ArgumentMap::const_iterator it = req.parsed_args.find("seconds");
+  auto it = req.parsed_args.find("seconds");
   int seconds = PPROF_DEFAULT_SAMPLE_SECS;
   if (it != req.parsed_args.end()) {
     seconds = atoi(it->second.c_str());

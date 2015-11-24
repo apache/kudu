@@ -86,15 +86,16 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
 
 void PeerManager::SignalRequest(bool force_if_queue_empty) {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  PeersMap::iterator iter = peers_.begin();
-    for (; iter != peers_.end(); iter++) {
-      Status s = (*iter).second->SignalRequest(force_if_queue_empty);
-      if (PREDICT_FALSE(!s.ok())) {
-        LOG(WARNING) << GetLogPrefix() << "Peer was closed, removing from peers. Peer: "
-            << (*iter).second->peer_pb().ShortDebugString();
-        peers_.erase(iter);
-      }
+  auto iter = peers_.begin();
+  for (; iter != peers_.end(); iter++) {
+    Status s = (*iter).second->SignalRequest(force_if_queue_empty);
+    if (PREDICT_FALSE(!s.ok())) {
+      LOG(WARNING) << GetLogPrefix()
+                   << "Peer was closed, removing from peers. Peer: "
+                   << (*iter).second->peer_pb().ShortDebugString();
+      peers_.erase(iter);
     }
+  }
 }
 
 void PeerManager::Close() {

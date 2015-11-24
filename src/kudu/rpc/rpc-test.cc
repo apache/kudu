@@ -361,7 +361,7 @@ TEST_F(TestRpc, TestServerShutsDown) {
 
   CountDownLatch latch(n_calls);
   for (int i = 0; i < n_calls; i++) {
-    RpcController *controller = new RpcController();
+    auto controller = new RpcController();
     controllers.push_back(controller);
     p.AsyncRequest(GenericCalculatorService::kAddMethodName, req, &resp, controller,
                    boost::bind(&CountDownLatch::CountDown, boost::ref(latch)));

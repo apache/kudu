@@ -97,7 +97,7 @@ class TestEncoding : public ::testing::Test {
   }
 
   WriterOptions* NewWriterOptions() {
-    WriterOptions* ret = new WriterOptions();
+    auto ret = new WriterOptions();
     ret->storage_attributes.cfile_block_size = 256 * 1024;
     return ret;
   }
@@ -640,7 +640,7 @@ TEST_F(TestEncoding, TestIntBlockEncoder) {
   gscoped_ptr<WriterOptions> opts(NewWriterOptions());
   GVIntBlockBuilder ibb(opts.get());
 
-  int *ints = new int[10000];
+  auto ints = new int[10000];
   for (int i = 0; i < 10000; i++) {
     ints[i] = random();
   }

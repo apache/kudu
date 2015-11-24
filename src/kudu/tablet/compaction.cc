@@ -420,9 +420,7 @@ class MergeCompactionInput : public CompactionInput {
       // it no longer dominates the inputs in it 'dominated' list. Re-check
       // all of those dominance relations and remove any that are no longer
       // valid.
-      for (vector<MergeState *>::iterator it = state->dominated.begin();
-           it != state->dominated.end();
-           ++it) {
+      for (auto it = state->dominated.begin(); it != state->dominated.end(); ++it) {
         MergeState *dominated = *it;
         if (!state->Dominates(*dominated, *schema_)) {
           states_.push_back(dominated);

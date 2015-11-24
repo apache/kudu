@@ -85,7 +85,7 @@ class FileState : public RefCountedThreadSafe<FileState> {
   }
 
   Status PreAllocate(uint64_t size) {
-    uint8_t *padding = new uint8_t[size];
+    auto padding = new uint8_t[size];
     // TODO optimize me
     memset(&padding, 0, sizeof(uint8_t));
     Status s = AppendRaw(padding, size);
@@ -481,7 +481,7 @@ class InMemoryEnv : public EnvWrapper {
 
     MutexLock lock(mutex_);
 
-    for (FileSystem::iterator i = file_map_.begin(); i != file_map_.end(); ) {
+    for (auto i = file_map_.begin(); i != file_map_.end();) {
       const std::string& filename = i->first;
 
       if (filename.size() >= dir.size() && Slice(filename).starts_with(Slice(dir))) {

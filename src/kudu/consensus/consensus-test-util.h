@@ -655,7 +655,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
   }
 
   Status StartReplicaTransaction(const scoped_refptr<ConsensusRound>& round) OVERRIDE {
-    TestDriver* txn = new TestDriver(pool_.get(), log_, round);
+    auto txn = new TestDriver(pool_.get(), log_, round);
     txn->round_->SetConsensusReplicatedCallback(Bind(&TestDriver::ReplicationFinished,
                                                      Unretained(txn)));
     return Status::OK();

@@ -575,8 +575,7 @@ class NegotiationCompletedTask : public ReactorTask {
 };
 
 void Connection::CompleteNegotiation(const Status& negotiation_status) {
-  NegotiationCompletedTask *task =
-      new NegotiationCompletedTask(this, negotiation_status);
+  auto task = new NegotiationCompletedTask(this, negotiation_status);
   reactor_thread_->reactor()->ScheduleReactorTask(task);
 }
 

@@ -160,7 +160,7 @@ void MaintenanceManager::UnregisterOp(MaintenanceOp* op) {
     lock_guard<Mutex> guard(&lock_);
     CHECK(op->manager_.get() == this) << "Tried to unregister " << op->name()
           << ", but it is not currently registered with this maintenance manager.";
-    OpMapTy::iterator iter = ops_.find(op);
+    auto iter = ops_.find(op);
     CHECK(iter != ops_.end()) << "Tried to unregister " << op->name()
         << ", but it was never registered";
     // While the op is running, wait for it to be finished.

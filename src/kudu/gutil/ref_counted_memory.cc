@@ -41,7 +41,7 @@ RefCountedBytes::RefCountedBytes(const unsigned char* p, size_t size)
 
 RefCountedBytes* RefCountedBytes::TakeVector(
     std::vector<unsigned char>* to_destroy) {
-  RefCountedBytes* bytes = new RefCountedBytes;
+  auto bytes = new RefCountedBytes;
   bytes->data_.swap(*to_destroy);
   return bytes;
 }
@@ -64,7 +64,7 @@ RefCountedString::~RefCountedString() {}
 
 // static
 RefCountedString* RefCountedString::TakeString(std::string* to_destroy) {
-  RefCountedString* self = new RefCountedString;
+  auto self = new RefCountedString;
   to_destroy->swap(self->data_);
   return self;
 }

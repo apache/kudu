@@ -50,7 +50,7 @@ ExternalMiniClusterFsInspector::~ExternalMiniClusterFsInspector() {}
 Status ExternalMiniClusterFsInspector::ListFilesInDir(const string& path,
                                                       vector<string>* entries) {
   RETURN_NOT_OK(env_->GetChildren(path, entries));
-  vector<string>::iterator iter = entries->begin();
+  auto iter = entries->begin();
   while (iter != entries->end()) {
     if (*iter == "." || *iter == ".." || iter->find(".tmp.") != string::npos) {
       iter = entries->erase(iter);

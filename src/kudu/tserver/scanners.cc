@@ -157,8 +157,7 @@ void ScannerManager::RemoveExpiredScanners() {
 
   for (ScannerMapStripe* stripe : scanner_maps_) {
     boost::lock_guard<boost::shared_mutex> l(stripe->lock_);
-    for (ScannerMap::iterator it = stripe->scanners_by_id_.begin();
-         it != stripe->scanners_by_id_.end(); ) {
+    for (auto it = stripe->scanners_by_id_.begin(); it != stripe->scanners_by_id_.end();) {
       SharedScanner& scanner = it->second;
       MonoDelta time_live =
           scanner->TimeSinceLastAccess(MonoTime::Now(MonoTime::COARSE));

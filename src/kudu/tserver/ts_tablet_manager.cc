@@ -869,7 +869,7 @@ void TSTabletManager::MarkTabletReportAcknowledged(const TabletReportPB& report)
 
   // Clear the "dirty" state for any tablets which have not changed since
   // this report.
-  DirtyMap::iterator it = dirty_tablets_.begin();
+  auto it = dirty_tablets_.begin();
   while (it != dirty_tablets_.end()) {
     const TabletReportState& state = it->second;
     if (state.change_seq <= acked_seq) {

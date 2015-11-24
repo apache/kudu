@@ -101,7 +101,7 @@ TEST_F(RpcBench, BenchmarkCalls) {
 
   boost::ptr_vector<ClientThread> threads;
   for (int i = 0; i < 16; i++) {
-    ClientThread *thr = new ClientThread(this);
+    auto thr = new ClientThread(this);
     thr->Start();
     threads.push_back(thr);
   }

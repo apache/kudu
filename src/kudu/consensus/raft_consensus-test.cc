@@ -439,7 +439,7 @@ TEST_F(RaftConsensusTest, TestPendingTransactions) {
   ConsensusBootstrapInfo info;
   info.last_id.set_term(10);
   for (int i = 0; i < 10; i++) {
-    ReplicateMsg* replicate = new ReplicateMsg();
+    auto replicate = new ReplicateMsg();
     replicate->set_op_type(NO_OP);
     info.last_id.set_index(100 + i);
     replicate->mutable_id()->CopyFrom(info.last_id);

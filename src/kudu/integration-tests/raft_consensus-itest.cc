@@ -870,9 +870,7 @@ TEST_F(RaftConsensusITest, InsertWithCrashyNodes) {
     ExternalTabletServer* ts = cluster_->tablet_server(i);
     vector<string>* flags = ts->mutable_flags();
     bool removed_flag = false;
-    for (vector<string>::iterator it = flags->begin();
-         it != flags->end();
-         ++it) {
+    for (auto it = flags->begin(); it != flags->end(); ++it) {
       if (HasPrefixString(*it, "--fault_crash")) {
         flags->erase(it);
         removed_flag = true;

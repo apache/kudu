@@ -37,7 +37,7 @@ Status AuthStore::Add(const string& user, const string& pass) {
 }
 
 Status AuthStore::Authenticate(const string& user, const string& pass) const {
-  unordered_map<string, string>::const_iterator it = user_cred_map_.find(user);
+  auto it = user_cred_map_.find(user);
   if (it == user_cred_map_.end()) {
     return Status::NotFound("Unknown user", user);
   }

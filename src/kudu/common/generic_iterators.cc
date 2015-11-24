@@ -436,8 +436,7 @@ Status MaterializingIterator::Init(ScanSpec *spec) {
   if (spec != nullptr && !disallow_pushdown_for_tests_) {
     // Gather any single-column predicates.
     ScanSpec::PredicateList *preds = spec->mutable_predicates();
-    for (ScanSpec::PredicateList::iterator iter = preds->begin();
-         iter != preds->end();) {
+    for (auto iter = preds->begin(); iter != preds->end();) {
       const ColumnRangePredicate &pred = *iter;
       const string &col_name = pred.column().name();
       int idx = schema().find_column(col_name);

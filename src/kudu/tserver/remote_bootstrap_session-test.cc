@@ -160,8 +160,7 @@ class RemoteBootstrapTest : public KuduTabletTest {
       WriteResponsePB resp;
       CountDownLatch latch(1);
 
-      WriteTransactionState* state =
-          new WriteTransactionState(tablet_peer_.get(), &req, &resp);
+      auto state = new WriteTransactionState(tablet_peer_.get(), &req, &resp);
       state->set_completion_callback(gscoped_ptr<tablet::TransactionCompletionCallback>(
           new tablet::LatchTransactionCompletionCallback<WriteResponsePB>(&latch, &resp)).Pass());
       ASSERT_OK(tablet_peer_->SubmitWrite(state));

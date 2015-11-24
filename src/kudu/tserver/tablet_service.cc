@@ -710,8 +710,7 @@ void TabletServiceImpl::Write(const WriteRequestPB* req,
     return;
   }
 
-  WriteTransactionState *tx_state =
-    new WriteTransactionState(tablet_peer.get(), req, resp);
+  auto tx_state = new WriteTransactionState(tablet_peer.get(), req, resp);
 
   // If the client sent us a timestamp, decode it and update the clock so that all future
   // timestamps are greater than the passed timestamp.

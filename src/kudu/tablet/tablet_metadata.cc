@@ -462,7 +462,7 @@ Status TabletMetadata::UpdateUnlocked(
   }
 
   RowSetMetadataVector new_rowsets = rowsets_;
-  RowSetMetadataVector::iterator it = new_rowsets.begin();
+  auto it = new_rowsets.begin();
   while (it != new_rowsets.end()) {
     if (ContainsKey(to_remove, (*it)->id())) {
       AddOrphanedBlocksUnlocked((*it)->GetAllBlocks());

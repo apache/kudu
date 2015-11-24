@@ -786,7 +786,7 @@ Status TabletBootstrap::HandleReplicateMessage(ReplayState* state, LogEntryPB* r
   if (existing_entry_ptr) {
     LogEntryPB* existing_entry = *existing_entry_ptr;
 
-    OpIndexToEntryMap::iterator iter = state->pending_replicates.lower_bound(index);
+    auto iter = state->pending_replicates.lower_bound(index);
     DCHECK(OpIdEquals((*iter).second->replicate().id(), existing_entry->replicate().id()));
 
     LogEntryPB* last_entry = (*state->pending_replicates.rbegin()).second;
@@ -843,7 +843,7 @@ Status TabletBootstrap::HandleCommitMessage(ReplayState* state, LogEntryPB* comm
   RETURN_NOT_OK(ApplyCommitMessage(state, commit_entry));
   delete commit_entry;
 
-  OpIndexToEntryMap::iterator iter = state->pending_commits.begin();
+  auto iter = state->pending_commits.begin();
   while (iter != state->pending_commits.end()) {
     if ((*iter).first == last_applied.index() + 1) {
       gscoped_ptr<LogEntryPB> buffered_commit_entry((*iter).second);

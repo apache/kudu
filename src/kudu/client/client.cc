@@ -299,7 +299,7 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
   }
   for (int i = 0; i < resp.servers_size(); i++) {
     const ListTabletServersResponsePB_Entry& e = resp.servers(i);
-    KuduTabletServer* ts = new KuduTabletServer();
+    auto ts = new KuduTabletServer();
     ts->data_ = new KuduTabletServer::Data(e.instance_id().permanent_uuid(),
                                            e.registration().rpc_addresses(0).host());
     tablet_servers->push_back(ts);

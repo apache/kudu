@@ -313,7 +313,7 @@ void ThreadMgr::RemoveThread(const pthread_t& pthread_id, const string& category
   ANNOTATE_IGNORE_READS_AND_WRITES_BEGIN();
   {
     MutexLock l(lock_);
-    ThreadCategoryMap::iterator category_it = thread_categories_.find(category);
+    auto category_it = thread_categories_.find(category);
     DCHECK(category_it != thread_categories_.end());
     category_it->second.erase(pthread_id);
     if (metrics_enabled_) {
@@ -344,7 +344,7 @@ void ThreadMgr::ThreadPathHandler(const WebCallbackRegistry::WebRequest& req,
     stringstream* output) {
   MutexLock l(lock_);
   vector<const ThreadCategory*> categories_to_print;
-  WebCallbackRegistry::ArgumentMap::const_iterator category_name = req.parsed_args.find("group");
+  auto category_name = req.parsed_args.find("group");
   if (category_name != req.parsed_args.end()) {
     string group = EscapeForHtmlToString(category_name->second);
     (*output) << "<h2>Thread Group: " << group << "</h2>" << endl;
