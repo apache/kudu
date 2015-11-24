@@ -109,7 +109,7 @@ int BinaryDictBlockBuilder::AddCodeWords(const uint8_t* vals, size_t count) {
         break;
       }
       const uint8_t* s_ptr = dictionary_strings_arena_.AddSlice(*src);
-      if (s_ptr == NULL) {
+      if (s_ptr == nullptr) {
         // Arena does not have enough space for string content
         // Ideally, it should not happen.
         LOG(ERROR) << "Arena of Dictionary Encoder does not have enough memory for strings";
@@ -215,7 +215,7 @@ void BinaryDictBlockDecoder::SeekToPositionInBlock(uint pos) {
 
 Status BinaryDictBlockDecoder::SeekAtOrAfterValue(const void* value_void, bool* exact) {
   if (mode_ == kCodeWordMode) {
-    DCHECK(value_void != NULL);
+    DCHECK(value_void != nullptr);
     Status s = dict_decoder_->SeekAtOrAfterValue(value_void, exact);
     if (!s.ok()) {
       // This case means the value_void is larger that the largest key

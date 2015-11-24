@@ -191,7 +191,7 @@ bool Base64Decode(const string& in, string* out) {
 }
 
 void EscapeForHtml(const string& in, std::stringstream* out) {
-  DCHECK(out != NULL);
+  DCHECK(out != nullptr);
   for (const char& c : in) {
     switch (c) {
       case '<': (*out) << "&lt;";

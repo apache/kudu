@@ -528,8 +528,8 @@ TEST_F(RemoteBootstrapITest, TestDeleteLeaderDuringRemoteBootstrapStressTest) {
 
   int leader_index = -1;
   int follower_index = -1;
-  TServerDetails* leader_ts = NULL;
-  TServerDetails* follower_ts = NULL;
+  TServerDetails* leader_ts = nullptr;
+  TServerDetails* follower_ts = nullptr;
 
   for (int i = 0; i < FLAGS_test_delete_leader_num_iters; i++) {
     LOG(INFO) << "Iteration " << (i + 1);

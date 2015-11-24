@@ -877,7 +877,7 @@ Status RaftConsensus::CheckLeaderRequestUnlocked(const ConsensusRequestPB* reque
     mutable_req->mutable_ops()->ExtractSubrange(
         deduped_req->first_message_idx,
         deduped_req->messages.size(),
-        NULL);
+        nullptr);
   }
 
   RETURN_NOT_OK(s);

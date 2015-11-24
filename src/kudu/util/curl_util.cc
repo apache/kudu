@@ -54,7 +54,7 @@ EasyCurl::~EasyCurl() {
 }
 
 Status EasyCurl::FetchURL(const std::string& url, faststring* buf) {
-  return DoRequest(url, NULL, buf);
+  return DoRequest(url, nullptr, buf);
 }
 
 Status EasyCurl::PostToURL(const std::string& url,

@@ -34,7 +34,7 @@ void GoogleOnceInternalInit(Atomic32 *control, void (*func)(),
           GOOGLE_ONCE_INTERNAL_RUNNING) == GOOGLE_ONCE_INTERNAL_INIT ||
       base::internal::SpinLockWait(control, ARRAYSIZE(trans), trans) ==
       GOOGLE_ONCE_INTERNAL_INIT) {
-    if (func != 0) {
+    if (func != nullptr) {
       (*func)();
     } else {
       (*func_with_arg)(arg);

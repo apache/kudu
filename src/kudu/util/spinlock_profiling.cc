@@ -53,7 +53,7 @@ namespace kudu {
 
 static const double kMicrosPerSecond = 1000000.0;
 
-static LongAdder* g_contended_cycles = NULL;
+static LongAdder* g_contended_cycles = nullptr;
 
 namespace {
 
@@ -131,7 +131,7 @@ class ContentionStacks {
 };
 
 Atomic32 g_profiling_enabled = 0;
-ContentionStacks* g_contention_stacks = NULL;
+ContentionStacks* g_contention_stacks = nullptr;
 
 void ContentionStacks::AddStack(const StackTrace& s, int64_t cycles) {
   uint64_t hash = s.HashCode();

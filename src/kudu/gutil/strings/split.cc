@@ -472,12 +472,12 @@ vector<char*>* SplitUsing(char* full, const char* delim) {
 void SplitToVector(char* full, const char* delim, vector<char*>* vec,
                    bool omit_empty_strings) {
   char* next  = full;
-  while ((next = gstrsep(&full, delim)) != NULL) {
+  while ((next = gstrsep(&full, delim)) != nullptr) {
     if (omit_empty_strings && next[0] == '\0') continue;
     vec->push_back(next);
   }
   // Add last element (or full string if no delimeter found):
-  if (full != NULL) {
+  if (full != nullptr) {
     vec->push_back(full);
   }
 }
@@ -485,12 +485,12 @@ void SplitToVector(char* full, const char* delim, vector<char*>* vec,
 void SplitToVector(char* full, const char* delim, vector<const char*>* vec,
                    bool omit_empty_strings) {
   char* next  = full;
-  while ((next = gstrsep(&full, delim)) != NULL) {
+  while ((next = gstrsep(&full, delim)) != nullptr) {
     if (omit_empty_strings && next[0] == '\0') continue;
     vec->push_back(next);
   }
   // Add last element (or full string if no delimeter found):
-  if (full != NULL) {
+  if (full != nullptr) {
     vec->push_back(full);
   }
 }
@@ -691,7 +691,7 @@ DEFINE_SPLIT_ONE_NUMBER_TOKEN(HexUint64, uint64, strtou64_16)
 bool SplitRange(const char* rangestr, int* from, int* to) {
   // We need to do the const-cast because strol takes a char**, not const char**
   char* val = const_cast<char*>(rangestr);
-  if (val == NULL || EOS(*val))  return true;  // we'll say nothingness is ok
+  if (val == nullptr || EOS(*val))  return true;  // we'll say nothingness is ok
 
   if ( val[0] == '-' && EOS(val[1]) )    // CASE 1: -
     return true;                         // nothing changes
@@ -871,7 +871,7 @@ char* SplitStructuredLineInternal(char* line,
   if (!expected_to_close.empty()) {
     return current;  // Missing closing symbol(s)
   }
-  return NULL;  // Success
+  return nullptr;  // Success
 }
 
 bool SplitStructuredLineInternal(StringPiece line,
@@ -1033,7 +1033,7 @@ bool SplitStringIntoKeyValuePairs(const string& line,
 // --------------------------------------------------------------------
 const char* SplitLeadingDec32Values(const char *str, vector<int32> *result) {
   for (;;) {
-    char *end = NULL;
+    char *end = nullptr;
     long value = strtol(str, &end, 10);
     if (end == str)
       break;
@@ -1053,7 +1053,7 @@ const char* SplitLeadingDec32Values(const char *str, vector<int32> *result) {
 
 const char* SplitLeadingDec64Values(const char *str, vector<int64> *result) {
   for (;;) {
-    char *end = NULL;
+    char *end = nullptr;
     const int64 value = strtoll(str, &end, 10);
     if (end == str)
       break;

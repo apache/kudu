@@ -314,7 +314,7 @@ TEST_F(TestPBUtil, TestInterleavedReadWrite) {
 
   // After closing the writer, the reader should be out of data.
   ASSERT_OK(pb_writer.Close());
-  ASSERT_TRUE(pb_reader.ReadNextPB(NULL).IsEndOfFile());
+  ASSERT_TRUE(pb_reader.ReadNextPB(nullptr).IsEndOfFile());
   ASSERT_OK(pb_reader.Close());
 }
 

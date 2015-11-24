@@ -85,7 +85,7 @@ using strings::Substitute;
 const char* const kChangeConfigOp = "change_config";
 const char* const kListTablesOp = "list_tables";
 const char* const kDeleteTableOp = "delete_table";
-static const char* g_progname = NULL;
+static const char* g_progname = nullptr;
 
 class ClusterAdminClient {
  public:

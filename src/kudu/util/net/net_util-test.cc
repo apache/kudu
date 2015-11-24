@@ -89,7 +89,7 @@ TEST_F(NetUtilTest, TestResolveAddresses) {
     EXPECT_TRUE(addr.IsAnyLocalAddress());
   }
 
-  ASSERT_OK(hp.ResolveAddresses(NULL));
+  ASSERT_OK(hp.ResolveAddresses(nullptr));
 }
 
 // Ensure that we are able to do a reverse DNS lookup on various IP addresses.

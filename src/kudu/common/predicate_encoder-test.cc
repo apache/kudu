@@ -45,8 +45,8 @@ class TestRangePredicateEncoder : public KuduTest {
     int idx = schema_.find_column(col);
     CHECK_GE(idx, 0);
 
-    void* upper = NULL;
-    void* lower = NULL;
+    void* upper = nullptr;
+    void* lower = nullptr;
     void* val_void = arena_.AllocateBytes(sizeof(val));
     memcpy(val_void, &val, sizeof(val));
 

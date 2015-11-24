@@ -318,7 +318,7 @@ Status BudgetedCompactionPolicy::PickRowSets(const RowSetTree &tree,
   }
 
   // Log the input and output of the selection.
-  if (VLOG_IS_ON(1) || log != NULL) {
+  if (VLOG_IS_ON(1) || log != nullptr) {
     LOG_STRING(INFO, log) << "Budgeted compaction selection:";
     for (RowSetInfo &cand : asc_min_key) {
       const char *checkbox = "[ ]";

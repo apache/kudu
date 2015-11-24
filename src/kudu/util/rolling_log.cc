@@ -204,7 +204,7 @@ class ScopedGzipCloser {
   }
 
   void Cancel() {
-    file_ = NULL;
+    file_ = nullptr;
   }
 
  private:

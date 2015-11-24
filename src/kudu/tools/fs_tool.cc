@@ -336,7 +336,8 @@ Status FsTool::DumpTabletData(const std::string& tablet_id) {
   RETURN_NOT_OK(TabletMetadata::Load(fs_manager_.get(), tablet_id, &meta));
 
   scoped_refptr<log::LogAnchorRegistry> reg(new log::LogAnchorRegistry());
-  Tablet t(meta, scoped_refptr<server::Clock>(NULL), shared_ptr<MemTracker>(), NULL, reg.get());
+  Tablet t(meta, scoped_refptr<server::Clock>(nullptr), shared_ptr<MemTracker>(),
+           nullptr, reg.get());
   RETURN_NOT_OK_PREPEND(t.Open(), "Couldn't open tablet");
   vector<string> lines;
   RETURN_NOT_OK_PREPEND(t.DebugDump(&lines), "Couldn't dump tablet");

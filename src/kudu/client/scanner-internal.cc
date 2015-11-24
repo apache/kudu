@@ -450,7 +450,7 @@ bool KuduScanner::Data::MoreTablets() const {
     return true;
   }
 
-  if (spec_.exclusive_upper_bound_key() == NULL) {
+  if (spec_.exclusive_upper_bound_key() == nullptr) {
     // No upper bound - keep going!
     return true;
   }

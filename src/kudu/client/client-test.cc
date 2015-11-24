@@ -1031,7 +1031,7 @@ TEST_F(ClientTest, TestGetTabletServerBlacklist) {
     client_->data_->meta_cache_->LookupTabletByKey(table.get(), "", MonoTime::Max(), &rt,
                                                   sync.AsStatusCallback());
     ASSERT_OK(sync.Wait());
-    ASSERT_TRUE(rt.get() != NULL);
+    ASSERT_TRUE(rt.get() != nullptr);
     vector<internal::RemoteTabletServer*> tservers;
     rt->GetRemoteTabletServers(&tservers);
     if (tservers.size() == 3) {
@@ -1418,7 +1418,7 @@ TEST_F(ClientTest, TestInsertSingleRowManualBatch) {
   // Retry
   ASSERT_OK(insert->mutable_row()->SetInt32("key", 12345));
   ASSERT_OK(session->Apply(insert.release()));
-  ASSERT_TRUE(insert == NULL) << "Successful insert should take ownership";
+  ASSERT_TRUE(insert == nullptr) << "Successful insert should take ownership";
   ASSERT_TRUE(session->HasPendingOperations()) << "Should be pending until we Flush";
 
   FlushSessionOrDie(session);
@@ -2190,7 +2190,7 @@ TEST_F(ClientTest, TestReplicatedTabletWritesWithLeaderElection) {
   ASSERT_NE(-1, new_leader_idx);
 
   MiniTabletServer* new_leader = cluster_->mini_tablet_server(new_leader_idx);
-  ASSERT_TRUE(new_leader != NULL);
+  ASSERT_TRUE(new_leader != nullptr);
   new_leader_proxy.reset(
       new consensus::ConsensusServiceProxy(client_messenger,
                                            new_leader->bound_rpc_addr()));

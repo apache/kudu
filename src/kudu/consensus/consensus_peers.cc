@@ -343,7 +343,7 @@ void Peer::Close() {
   boost::lock_guard<Semaphore> l(sem_);
   queue_->UntrackPeer(peer_pb_.permanent_uuid());
   // We don't own the ops (the queue does).
-  request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), NULL);
+  request_.mutable_ops()->ExtractSubrange(0, request_.ops_size(), nullptr);
 }
 
 Peer::~Peer() {

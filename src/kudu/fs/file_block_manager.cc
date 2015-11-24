@@ -507,7 +507,7 @@ bool FileBlockManager::FindBlockPath(const BlockId& block_id,
     *path = internal::FileBlockLocation::FromBlockId(
         metadata_file->path(), block_id).GetFullPath();
   }
-  return metadata_file != NULL;
+  return metadata_file != nullptr;
 }
 
 FileBlockManager::FileBlockManager(Env* env, const BlockManagerOptions& opts)

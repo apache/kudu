@@ -96,7 +96,7 @@ class TestCompression : public CFileTestBase {
 TEST_F(TestCompression, TestNoCompressionCodec) {
   const CompressionCodec* codec;
   ASSERT_OK(GetCompressionCodec(NO_COMPRESSION, &codec));
-  ASSERT_EQ(NULL, codec);
+  ASSERT_EQ(nullptr, codec);
 }
 
 TEST_F(TestCompression, TestSnappyCompressionCodec) {

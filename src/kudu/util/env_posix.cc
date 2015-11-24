@@ -677,7 +677,7 @@ class PosixEnv : public Env {
     TRACE_EVENT1("io", "PosixEnv::NewSequentialFile", "path", fname);
     ThreadRestrictions::AssertIOAllowed();
     FILE* f = fopen(fname.c_str(), "r");
-    if (f == NULL) {
+    if (f == nullptr) {
       return IOError(fname, errno);
     } else {
       result->reset(new PosixSequentialFile(fname, f));
@@ -762,12 +762,12 @@ class PosixEnv : public Env {
     ThreadRestrictions::AssertIOAllowed();
     result->clear();
     DIR* d = opendir(dir.c_str());
-    if (d == NULL) {
+    if (d == nullptr) {
       return IOError(dir, errno);
     }
     struct dirent* entry;
     // TODO: lint: Consider using readdir_r(...) instead of readdir(...) for improved thread safety.
-    while ((entry = readdir(d)) != NULL) {
+    while ((entry = readdir(d)) != nullptr) {
       result->push_back(entry->d_name);
     }
     closedir(d);
@@ -881,7 +881,7 @@ class PosixEnv : public Env {
   virtual Status LockFile(const std::string& fname, FileLock** lock) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::LockFile", "path", fname);
     ThreadRestrictions::AssertIOAllowed();
-    *lock = NULL;
+    *lock = nullptr;
     Status result;
     int fd = open(fname.c_str(), O_RDWR | O_CREAT, 0644);
     if (fd < 0) {
@@ -938,7 +938,7 @@ class PosixEnv : public Env {
 
   virtual uint64_t NowMicros() OVERRIDE {
     struct timeval tv;
-    gettimeofday(&tv, NULL);
+    gettimeofday(&tv, nullptr);
     return static_cast<uint64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
   }
 
@@ -1003,18 +1003,18 @@ class PosixEnv : public Env {
     // FTS requires a non-const copy of the name. strdup it and free() when
     // we leave scope.
     gscoped_ptr<char, FreeDeleter> name_dup(strdup(root.c_str()));
-    char *(paths[]) = { name_dup.get(), NULL };
+    char *(paths[]) = { name_dup.get(), nullptr };
 
     // FTS_NOCHDIR is important here to make this thread-safe.
     gscoped_ptr<FTS, FtsCloser> tree(
-        fts_open(paths, FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR, NULL));
+        fts_open(paths, FTS_PHYSICAL | FTS_XDEV | FTS_NOCHDIR, nullptr));
     if (!tree.get()) {
       return IOError(root, errno);
     }
 
-    FTSENT *ent = NULL;
+    FTSENT *ent = nullptr;
     bool had_errors = false;
-    while ((ent = fts_read(tree.get())) != NULL) {
+    while ((ent = fts_read(tree.get())) != nullptr) {
       bool doCb = false;
       FileType type = DIRECTORY_TYPE;
       switch (ent->fts_info) {
@@ -1063,7 +1063,7 @@ class PosixEnv : public Env {
   virtual Status Canonicalize(const string& path, string* result) OVERRIDE {
     TRACE_EVENT1("io", "PosixEnv::Canonicalize", "path", path);
     ThreadRestrictions::AssertIOAllowed();
-    gscoped_ptr<char[], FreeDeleter> r(realpath(path.c_str(), NULL));
+    gscoped_ptr<char[], FreeDeleter> r(realpath(path.c_str(), nullptr));
     if (!r) {
       return IOError(path, errno);
     }
@@ -1079,7 +1079,7 @@ class PosixEnv : public Env {
     // Get the Physical memory size
     mib[0] = CTL_HW;
     mib[1] = HW_MEMSIZE;
-    CHECK_ERR(sysctl(mib, 2, ram, &length, NULL, 0)) << "sysctl CTL_HW HW_MEMSIZE failed";
+    CHECK_ERR(sysctl(mib, 2, ram, &length, nullptr, 0)) << "sysctl CTL_HW HW_MEMSIZE failed";
 #else
     struct sysinfo info;
     if (sysinfo(&info) < 0) {

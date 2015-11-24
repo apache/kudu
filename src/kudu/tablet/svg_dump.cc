@@ -161,7 +161,7 @@ gscoped_ptr<ostream> PrepareOstream() {
   // Get default file name
   const string &pattern = FLAGS_compaction_policy_dump_svgs_pattern;
   if (pattern.empty()) return gscoped_ptr<ostream>();
-  const string path = StringReplace(pattern, "TIME", StringPrintf("%ld", time(NULL)), true);
+  const string path = StringReplace(pattern, "TIME", StringPrintf("%ld", time(nullptr)), true);
 
   // Open
   out.reset(new ofstream(path.c_str()));

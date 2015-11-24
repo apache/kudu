@@ -223,11 +223,11 @@ llvm::Function* MakeProjection(const string& name,
 
     // Handle default columns that are nullable
     if (col.is_nullable()) {
-      Value* is_null = builder->getInt1(dfl == NULL);
+      Value* is_null = builder->getInt1(dfl == nullptr);
       vector<Value*> args = { rbrow, col_idx, is_null };
       builder->CreateCall(row_block_set_null, args);
       // If dfl was NULL, we're done
-      if (dfl == NULL) continue;
+      if (dfl == nullptr) continue;
     }
 
     // Make the copy cell call and check the return value
@@ -261,9 +261,9 @@ RowProjectorFunctions::RowProjectorFunctions(const Schema& base_schema,
     projection_(projection),
     read_f_(read_f),
     write_f_(write_f) {
-  CHECK(read_f != NULL)
+  CHECK(read_f != nullptr)
     << "Promise to compile read function not fulfilled by ModuleBuilder";
-  CHECK(write_f != NULL)
+  CHECK(write_f != nullptr)
     << "Promise to compile write function not fulfilled by ModuleBuilder";
 }
 

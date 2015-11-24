@@ -235,7 +235,7 @@ TEST_F(ConsensusQueueTest, TestStartTrackingAfterStart) {
   ASSERT_EQ(0, request.ops_size());
 
   // extract the ops from the request to avoid double free
-  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
+  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), nullptr);
 }
 
 // Tests that the peers gets the messages pages, with the size of a page
@@ -302,7 +302,7 @@ TEST_F(ConsensusQueueTest, TestGetPagedMessages) {
   ASSERT_FALSE(more_pending);
 
   // extract the ops from the request to avoid double free
-  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
+  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), nullptr);
 }
 
 TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
@@ -371,7 +371,7 @@ TEST_F(ConsensusQueueTest, TestPeersDontAckBeyondWatermarks) {
   ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), expected);
 
   // extract the ops from the request to avoid double free
-  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), NULL);
+  request.mutable_ops()->ExtractSubrange(0, request.ops_size(), nullptr);
 }
 
 TEST_F(ConsensusQueueTest, TestQueueAdvancesCommittedIndex) {
@@ -505,7 +505,7 @@ TEST_F(ConsensusQueueTest, TestQueueLoadsOperationsForPeer) {
   ASSERT_EQ(request.ops_size(), 50);
 
   // The messages still belong to the queue so we have to release them.
-  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
+  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), nullptr);
 }
 
 // This tests that the queue is able to handle operation overwriting, i.e. when a
@@ -612,7 +612,7 @@ TEST_F(ConsensusQueueTest, TestQueueHandlesOperationOverwriting) {
   ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), MakeOpId(2, 21));
 
   // The messages still belong to the queue so we have to release them.
-  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
+  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), nullptr);
 }
 
 // Test for a bug where we wouldn't move any watermark back, when overwriting
@@ -735,7 +735,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
 
   // Another request for this peer should get another page of messages. Still not
   // on the queue's term (and thus without advancing watermarks).
-  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
+  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), nullptr);
   ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs, &needs_remote_bootstrap));
   ASSERT_FALSE(needs_remote_bootstrap);
   ASSERT_EQ(request.ops_size(), 9);
@@ -754,7 +754,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
 
   // The last page of request should overwrite the peer's operations and the
   // response should finally advance the watermarks.
-  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
+  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), nullptr);
   ASSERT_OK(queue_->RequestForPeer(kPeerUuid, &request, &refs, &needs_remote_bootstrap));
   ASSERT_FALSE(needs_remote_bootstrap);
   ASSERT_EQ(request.ops_size(), 4);
@@ -771,7 +771,7 @@ TEST_F(ConsensusQueueTest, TestOnlyAdvancesWatermarkWhenPeerHasAPrefixOfOurLog) 
   ASSERT_OPID_EQ(queue_->GetMajorityReplicatedOpIdForTests(), expected_majority_replicated);
   ASSERT_OPID_EQ(queue_->GetAllReplicatedIndexForTests(), expected_all_replicated);
 
-  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), NULL);
+  request.mutable_ops()->ExtractSubrange(0, request.ops().size(), nullptr);
 }
 
 // Test that remote bootstrap is triggered when a "tablet not found" error occurs.

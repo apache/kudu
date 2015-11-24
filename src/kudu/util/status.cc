@@ -40,7 +40,7 @@ Status::Status(Code code, const Slice& msg, const Slice& msg2,
 }
 
 std::string Status::CodeAsString() const {
-  if (state_ == NULL) {
+  if (state_ == nullptr) {
     return "OK";
   }
 
@@ -109,7 +109,7 @@ std::string Status::CodeAsString() const {
 
 std::string Status::ToString() const {
   std::string result(CodeAsString());
-  if (state_ == NULL) {
+  if (state_ == nullptr) {
     return result;
   }
 
@@ -126,7 +126,7 @@ std::string Status::ToString() const {
 }
 
 Slice Status::message() const {
-  if (state_ == NULL) {
+  if (state_ == nullptr) {
     return Slice();
   }
 
@@ -136,7 +136,7 @@ Slice Status::message() const {
 }
 
 int16_t Status::posix_code() const {
-  if (state_ == NULL) {
+  if (state_ == nullptr) {
     return 0;
   }
   int16_t posix_code;

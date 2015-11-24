@@ -99,11 +99,11 @@ consensus::OpId TransactionDriver::GetOpId() {
 }
 
 const TransactionState* TransactionDriver::state() const {
-  return transaction_ != NULL ? transaction_->state() : NULL;
+  return transaction_ != nullptr ? transaction_->state() : nullptr;
 }
 
 TransactionState* TransactionDriver::mutable_state() {
-  return transaction_ != NULL ? transaction_->state() : NULL;
+  return transaction_ != nullptr ? transaction_->state() : nullptr;
 }
 
 Transaction::TransactionType TransactionDriver::tx_type() const {
@@ -117,7 +117,7 @@ string TransactionDriver::ToString() const {
 
 string TransactionDriver::ToStringUnlocked() const {
   string ret = StateString(replication_state_, prepare_state_);
-  if (transaction_ != NULL) {
+  if (transaction_ != nullptr) {
     ret += " " + transaction_->ToString();
   } else {
     ret += "[unknown txn]";

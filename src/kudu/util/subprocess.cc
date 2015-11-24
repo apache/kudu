@@ -73,7 +73,7 @@ void DisableSigPipe() {
   act.sa_handler = SIG_IGN;
   sigemptyset(&act.sa_mask);
   act.sa_flags = 0;
-  PCHECK(sigaction(SIGPIPE, &act, NULL) == 0);
+  PCHECK(sigaction(SIGPIPE, &act, nullptr) == 0);
 }
 
 void EnsureSigPipeDisabled() {
@@ -85,7 +85,7 @@ void EnsureSigPipeDisabled() {
 // This function is not async-signal-safe.
 Status OpenProcFdDir(DIR** dir) {
   *dir = opendir(kProcSelfFd);
-  if (PREDICT_FALSE(dir == NULL)) {
+  if (PREDICT_FALSE(dir == nullptr)) {
     return Status::IOError(Substitute("opendir(\"$0\") failed", kProcSelfFd),
                            ErrnoToString(errno), errno);
   }
@@ -119,7 +119,7 @@ void CloseNonStandardFDs(DIR* fd_dir) {
   // make it as lean and mean as possible -- this runs in the subprocess
   // after a fork, so there's some possibility that various global locks
   // inside malloc() might be held, so allocating memory is a no-no.
-  PCHECK(fd_dir != NULL);
+  PCHECK(fd_dir != nullptr);
   int dir_fd = dirfd(fd_dir);
 
   struct DIRENT* ent;
@@ -131,7 +131,7 @@ void CloseNonStandardFDs(DIR* fd_dir) {
   // malloc() or free(). We could use readdir64_r() instead, but all that
   // buys us is reentrancy, and not async-signal-safety, due to the use of
   // dir->lock, so seems not worth the added complexity in lifecycle & plumbing.
-  while ((ent = READDIR(fd_dir)) != NULL) {
+  while ((ent = READDIR(fd_dir)) != nullptr) {
     uint32_t fd;
     if (!safe_strtou32(ent->d_name, &fd)) continue;
     if (!(fd == STDIN_FILENO  ||
@@ -243,7 +243,7 @@ Status Subprocess::Start() {
   for (const string& arg : argv_) {
     argv_ptrs.push_back(const_cast<char*>(arg.c_str()));
   }
-  argv_ptrs.push_back(NULL);
+  argv_ptrs.push_back(nullptr);
 
   // Pipe from caller process to child's stdin
   // [0] = stdin for child, [1] = how parent writes to it
@@ -264,7 +264,7 @@ Status Subprocess::Start() {
     PCHECK(pipe2(child_stderr, O_CLOEXEC) == 0);
   }
 
-  DIR* fd_dir = NULL;
+  DIR* fd_dir = nullptr;
   RETURN_NOT_OK_PREPEND(OpenProcFdDir(&fd_dir), "Unable to open fd dir");
   shared_ptr<DIR> fd_dir_closer(fd_dir, CloseProcFdDir);
 

@@ -157,7 +157,7 @@ static void MemTrackersHandler(const Webserver::WebRequest& req, std::stringstre
   vector<shared_ptr<MemTracker> > trackers;
   MemTracker::ListTrackers(&trackers);
   for (const shared_ptr<MemTracker>& tracker : trackers) {
-    string parent = tracker->parent() == NULL ? "none" : tracker->parent()->id();
+    string parent = tracker->parent() == nullptr ? "none" : tracker->parent()->id();
     string limit_str = tracker->limit() == -1 ? "none" :
                        HumanReadableNumBytes::ToString(tracker->limit());
     string current_consumption_str = HumanReadableNumBytes::ToString(tracker->consumption());
@@ -203,7 +203,7 @@ static void WriteMetricsAsJson(const MetricRegistry* const metrics,
 
   JsonWriter writer(output, json_mode);
 
-  if (requested_metrics_param != NULL) {
+  if (requested_metrics_param != nullptr) {
     SplitStringUsing(*requested_metrics_param, ",", &requested_metrics);
   } else {
     // Default to including all metrics.

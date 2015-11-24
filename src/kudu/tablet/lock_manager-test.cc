@@ -182,7 +182,7 @@ class LmTestThread {
              warn_after_ms(1000).
              warn_every_ms(5000).
              Join());
-    thread_ = NULL;
+    thread_ = nullptr;
   }
 
  private:

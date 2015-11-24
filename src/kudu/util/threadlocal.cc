@@ -37,7 +37,7 @@ static GoogleOnceType once = GOOGLE_ONCE_INIT;
 // thread.
 static void InvokeDestructors(void* t) {
   PerThreadDestructorList* d = reinterpret_cast<PerThreadDestructorList*>(t);
-  while (d != NULL) {
+  while (d != nullptr) {
     d->destructor(d->arg);
     PerThreadDestructorList* next = d->next;
     delete d;

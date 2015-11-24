@@ -263,7 +263,7 @@ string ExternalMiniCluster::GetBindIpForTabletServer(int index) const {
 }
 
 Status ExternalMiniCluster::AddTabletServer() {
-  CHECK(leader_master() != NULL)
+  CHECK(leader_master() != nullptr)
       << "Must have started at least 1 master before adding tablet servers";
 
   int idx = tablet_servers_.size();
@@ -418,7 +418,7 @@ ExternalTabletServer* ExternalMiniCluster::tablet_server_by_uuid(const std::stri
       return ts.get();
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 int ExternalMiniCluster::tablet_server_index_by_uuid(const std::string& uuid) const {
@@ -601,7 +601,7 @@ Status ExternalDaemon::Resume() {
 }
 
 bool ExternalDaemon::IsShutdown() const {
-  return process_.get() == NULL;
+  return process_.get() == nullptr;
 }
 
 bool ExternalDaemon::IsProcessAlive() const {

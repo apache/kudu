@@ -48,7 +48,7 @@ class TransactionTrackerTest : public KuduTest {
  public:
   class NoOpTransactionState : public TransactionState {
    public:
-    NoOpTransactionState() : TransactionState(NULL) {}
+    NoOpTransactionState() : TransactionState(nullptr) {}
     virtual const google::protobuf::Message* request() const OVERRIDE { return &req_; }
     virtual std::string ToString() const OVERRIDE { return "NoOpTransactionState"; }
    private:
@@ -89,11 +89,11 @@ class TransactionTrackerTest : public KuduTest {
     vector<scoped_refptr<TransactionDriver> > local_drivers;
     for (int i = 0; i < num_drivers; i++) {
       scoped_refptr<TransactionDriver> driver(new TransactionDriver(&tracker_,
-                                                                    NULL,
-                                                                    NULL,
-                                                                    NULL,
-                                                                    NULL,
-                                                                    NULL));
+                                                                    nullptr,
+                                                                    nullptr,
+                                                                    nullptr,
+                                                                    nullptr,
+                                                                    nullptr));
       gscoped_ptr<NoOpTransaction> tx(new NoOpTransaction(new NoOpTransactionState));
       RETURN_NOT_OK(driver->Init(tx.PassAs<Transaction>(), consensus::LEADER));
       local_drivers.push_back(driver);

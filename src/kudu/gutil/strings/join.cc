@@ -50,7 +50,7 @@ char* JoinUsingToBuffer(const vector<const char*>& components,
                          int result_buffer_size,
                          char* result_buffer,
                          int*  result_length_p) {
-  CHECK(result_buffer != NULL);
+  CHECK(result_buffer != nullptr);
   const int num_components = components.size();
   const int max_str_len = result_buffer_size - 1;
   char* curr_dest = result_buffer;
@@ -76,7 +76,7 @@ char* JoinUsingToBuffer(const vector<const char*>& components,
 
   if (result_buffer_size > 0)
     *curr_dest = '\0';  // add null termination
-  if (result_length_p != NULL)  // set string length value
+  if (result_length_p != nullptr)  // set string length value
     *result_length_p = num_chars;
 
   return result_buffer;
@@ -95,7 +95,7 @@ void JoinStringsInArray(string const* const* components,
                         int num_components,
                         const char* delim,
                         string * result) {
-  CHECK(result != NULL);
+  CHECK(result != nullptr);
   result->clear();
   for (int i = 0; i < num_components; i++) {
     if (i>0) {

@@ -36,8 +36,8 @@ __thread Trace* Trace::threadlocal_trace_;
 
 Trace::Trace()
   : arena_(new ThreadSafeArena(1024, 128*1024)),
-    entries_head_(NULL),
-    entries_tail_(NULL) {
+    entries_head_(nullptr),
+    entries_tail_(nullptr) {
 }
 
 Trace::~Trace() {
@@ -82,7 +82,7 @@ void Trace::SubstituteAndTrace(const char* file_path,
                                const SubstituteArg& arg6, const SubstituteArg& arg7,
                                const SubstituteArg& arg8, const SubstituteArg& arg9) {
   const SubstituteArg* const args_array[] = {
-    &arg0, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8, &arg9, NULL
+    &arg0, &arg1, &arg2, &arg3, &arg4, &arg5, &arg6, &arg7, &arg8, &arg9, nullptr
   };
 
   int msg_len = strings::internal::SubstitutedSize(format, args_array);
@@ -104,12 +104,12 @@ TraceEntry* Trace::NewEntry(int msg_len, const char* file_path, int line_number)
 
 void Trace::AddEntry(TraceEntry* entry) {
   lock_guard<simple_spinlock> l(&lock_);
-  entry->next = NULL;
+  entry->next = nullptr;
 
-  if (entries_tail_ != NULL) {
+  if (entries_tail_ != nullptr) {
     entries_tail_->next = entry;
   } else {
-    DCHECK(entries_head_ == NULL);
+    DCHECK(entries_head_ == nullptr);
     entries_head_ = entry;
   }
   entries_tail_ = entry;
@@ -125,7 +125,7 @@ void Trace::Dump(std::ostream* out, bool include_time_deltas) const {
   {
     lock_guard<simple_spinlock> l(&lock_);
     for (TraceEntry* cur = entries_head_;
-         cur != NULL;
+         cur != nullptr;
          cur = cur->next) {
       entries.push_back(cur);
     }
@@ -188,7 +188,7 @@ string Trace::DumpToString(bool include_time_deltas) const {
 
 void Trace::DumpCurrentTrace() {
   Trace* t = CurrentTrace();
-  if (t == NULL) {
+  if (t == nullptr) {
     LOG(INFO) << "No trace is currently active.";
     return;
   }

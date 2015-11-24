@@ -152,7 +152,7 @@ TEST_F(TestRowSetTree, TestEndpointsConsistency) {
     enum RowSetTree::EndpointType ept = rse.endpoint_;
     const Slice& slice = rse.slice_;
 
-    ASSERT_TRUE(rs != NULL) << "RowSetTree has an endpoint with no rowset";
+    ASSERT_TRUE(rs != nullptr) << "RowSetTree has an endpoint with no rowset";
     ASSERT_TRUE(!slice.empty()) << "RowSetTree has an endpoint with no key";
 
     if (!prev.empty()) {

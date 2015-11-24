@@ -36,7 +36,7 @@ class TestCFileSet : public KuduRowSetTest {
  public:
   TestCFileSet() :
     KuduRowSetTest(Schema({ ColumnSchema("c0", UINT32),
-                            ColumnSchema("c1", UINT32, false, NULL, NULL, GetRLEStorage()),
+                            ColumnSchema("c1", UINT32, false, nullptr, nullptr, GetRLEStorage()),
                             ColumnSchema("c2", UINT32) }, 1))
   {}
 
@@ -82,8 +82,8 @@ class TestCFileSet : public KuduRowSetTest {
     ScanSpec spec;
     ColumnRangePredicate pred1(
       schema_.column(0),
-      lower != kNoBound ? &lower : NULL,
-      upper != kNoBound ? &upper : NULL);
+      lower != kNoBound ? &lower : nullptr,
+      upper != kNoBound ? &upper : nullptr);
     spec.AddPredicate(pred1);
     ASSERT_OK(iter->Init(&spec));
 
@@ -128,7 +128,7 @@ TEST_F(TestCFileSet, TestPartiallyMaterialize) {
   ASSERT_OK(fileset->Open());
 
   gscoped_ptr<CFileSet::Iterator> iter(fileset->NewIterator(&schema_));
-  ASSERT_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(nullptr));
 
   Arena arena(4096, 1024*1024);
   RowBlock block(schema_, 100, &arena);
@@ -212,7 +212,7 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
 
-  ASSERT_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(nullptr));
 
   // Read all the results.
   vector<string> results;

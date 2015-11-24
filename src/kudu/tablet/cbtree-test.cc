@@ -241,7 +241,7 @@ void InsertAndVerify(boost::barrier *go_barrier,
   while (true) {
     go_barrier->wait();
 
-    if (tree->get() == NULL) return;
+    if (tree->get() == nullptr) return;
 
     InsertRange(tree->get(), start_idx, end_idx);
     VerifyRange(*tree->get(), start_idx, end_idx);
@@ -443,7 +443,7 @@ TEST_F(TestCBTree, TestConcurrentInsert) {
     }
   }
 
-  tree.reset(NULL);
+  tree.reset(nullptr);
   go_barrier.wait();
 
   for (boost::thread &thr : threads) {
@@ -623,7 +623,7 @@ static void ScanThread(boost::barrier *go_barrier,
                        gscoped_ptr<CBTree<T> > *tree) {
   while (true) {
     go_barrier->wait();
-    if (tree->get() == NULL) return;
+    if (tree->get() == nullptr) return;
 
     int prev_count = 0;
     int count = 0;
@@ -710,7 +710,7 @@ TEST_F(TestCBTree, TestConcurrentIterateAndInsert) {
     }
   }
 
-  tree.reset(NULL);
+  tree.reset(nullptr);
   go_barrier.wait();
 
   for (boost::thread &thr : threads) {

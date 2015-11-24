@@ -79,7 +79,7 @@ TEST_F(TraceTest, TestAttach) {
     EXPECT_EQ(traceA.get(), Trace::CurrentTrace());
     TRACE("hello from traceA");
   }
-  EXPECT_TRUE(Trace::CurrentTrace() == NULL);
+  EXPECT_TRUE(Trace::CurrentTrace() == nullptr);
   TRACE("this goes nowhere");
 
   EXPECT_EQ(XOutDigits(traceA->DumpToString(false)),
@@ -313,7 +313,7 @@ class TraceEventCallbackTest : public KuduTest {
  public:
   virtual void SetUp() OVERRIDE {
     KuduTest::SetUp();
-    ASSERT_EQ(NULL, s_instance);
+    ASSERT_EQ(nullptr, s_instance);
     s_instance = this;
   }
   virtual void TearDown() OVERRIDE {
@@ -324,7 +324,7 @@ class TraceEventCallbackTest : public KuduTest {
     TraceResultBuffer::FlushTraceLogToString();
 
     ASSERT_TRUE(!!s_instance);
-    s_instance = NULL;
+    s_instance = nullptr;
     KuduTest::TearDown();
 
   }
@@ -380,15 +380,15 @@ class TraceEventCallbackTest : public KuduTest {
       for (Value::ConstMemberIterator it = value.MemberBegin();
            it != value.MemberEnd();
            ++it) {
-        if (it->name.IsString() && strstr(it->name.GetString(), string_to_match) != NULL) {
+        if (it->name.IsString() && strstr(it->name.GetString(), string_to_match) != nullptr) {
           return &value;
         }
-        if (it->value.IsString() && strstr(it->value.GetString(), string_to_match) != NULL) {
+        if (it->value.IsString() && strstr(it->value.GetString(), string_to_match) != nullptr) {
           return &value;
         }
       }
     }
-    return NULL;
+    return nullptr;
   }
 
   // For TraceEventCallbackAndRecordingX tests.

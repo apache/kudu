@@ -100,11 +100,11 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
   memset(&hints, 0, sizeof(hints));
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
-  struct addrinfo* res = NULL;
+  struct addrinfo* res = nullptr;
   int rc;
   LOG_SLOW_EXECUTION(WARNING, 200,
                      Substitute("resolving address for $0", host_)) {
-    rc = getaddrinfo(host_.c_str(), NULL, &hints, &res);
+    rc = getaddrinfo(host_.c_str(), nullptr, &hints, &res);
   }
   if (rc != 0) {
     return Status::NetworkError(
@@ -112,7 +112,7 @@ Status HostPort::ResolveAddresses(vector<Sockaddr>* addresses) const {
       gai_strerror(rc));
   }
   gscoped_ptr<addrinfo, AddrinfoDeleter> scoped_res(res);
-  for (; res != NULL; res = res->ai_next) {
+  for (; res != nullptr; res = res->ai_next) {
     CHECK_EQ(res->ai_family, AF_INET);
     struct sockaddr_in* addr = reinterpret_cast<struct sockaddr_in*>(res->ai_addr);
     addr->sin_port = htons(port_);
@@ -201,7 +201,7 @@ Status GetFQDN(string* hostname) {
   hints.ai_flags = AI_CANONNAME;
 
   struct addrinfo* result;
-  int rc = getaddrinfo(hostname->c_str(), NULL, &hints, &result);
+  int rc = getaddrinfo(hostname->c_str(), nullptr, &hints, &result);
   if (rc != 0) {
     return Status::NetworkError("Unable to lookup FQDN", ErrnoToString(errno), errno);
   }

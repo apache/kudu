@@ -116,7 +116,7 @@ TEST(TestMergeIterator, TestMergeEmpty) {
   to_merge.push_back(iter);
 
   MergeIterator merger(kIntSchema, to_merge);
-  ASSERT_OK(merger.Init(NULL));
+  ASSERT_OK(merger.Init(nullptr));
   ASSERT_FALSE(merger.HasNext());
 }
 
@@ -176,7 +176,7 @@ void TestMerge(const TestIntRangePredicate &predicate) {
       MergeIterator merger(kIntSchema, to_merge);
       ASSERT_OK(merger.Init(&spec));
 
-      RowBlock dst(kIntSchema, 100, NULL);
+      RowBlock dst(kIntSchema, 100, nullptr);
       size_t total_idx = 0;
       while (merger.HasNext()) {
         ASSERT_OK(merger.NextBlock(&dst));

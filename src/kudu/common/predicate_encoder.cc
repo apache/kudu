@@ -190,7 +190,7 @@ void RangePredicateEncoder::SimplifyBounds(const ScanSpec& spec,
     if (pred.range().has_upper_bound()) {
       // If we haven't seen any upper bound, or this upper bound is tighter than
       // (less than) the one we've seen already, replace it.
-      if ((*key_bounds)[idx].upper == NULL ||
+      if ((*key_bounds)[idx].upper == nullptr ||
           col.type_info()->Compare(pred.range().upper_bound(),
                                    (*key_bounds)[idx].upper) < 0) {
         (*key_bounds)[idx].upper = pred.range().upper_bound();
@@ -200,7 +200,7 @@ void RangePredicateEncoder::SimplifyBounds(const ScanSpec& spec,
     if (pred.range().has_lower_bound()) {
       // If we haven't seen any lower bound, or this lower bound is tighter than
       // (greater than) the one we've seen already, replace it.
-      if ((*key_bounds)[idx].lower == NULL ||
+      if ((*key_bounds)[idx].lower == nullptr ||
           col.type_info()->Compare(pred.range().lower_bound(),
                                    (*key_bounds)[idx].lower) > 0) {
         (*key_bounds)[idx].lower = pred.range().lower_bound();

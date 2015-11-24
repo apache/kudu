@@ -391,7 +391,7 @@ Status Log::Reserve(LogEntryTypePB type,
                     gscoped_ptr<LogEntryBatchPB> entry_batch,
                     LogEntryBatch** reserved_entry) {
   TRACE_EVENT0("log", "Log::Reserve");
-  DCHECK(reserved_entry != NULL);
+  DCHECK(reserved_entry != nullptr);
   {
     boost::shared_lock<rw_spinlock> read_lock(state_lock_.get_lock());
     CHECK_EQ(kLogWriting, log_state_);
@@ -684,7 +684,7 @@ Status Log::Append(LogEntryPB* phys_entry) {
       s = Sync();
     }
   }
-  entry_batch.entry_batch_pb_->mutable_entry()->ExtractSubrange(0, 1, NULL);
+  entry_batch.entry_batch_pb_->mutable_entry()->ExtractSubrange(0, 1, nullptr);
   return s;
 }
 
@@ -905,7 +905,7 @@ Status Log::SwitchToAllocatedSegment() {
   // Transform the currently-active segment into a readable one, since we
   // need to be able to replay the segments for other peers.
   {
-    if (active_segment_.get() != NULL) {
+    if (active_segment_.get() != nullptr) {
       boost::lock_guard<percpu_rwlock> l(state_lock_);
       CHECK_OK(ReplaceSegmentInReaderUnlocked());
     }

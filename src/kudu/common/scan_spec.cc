@@ -33,13 +33,13 @@ void ScanSpec::AddPredicate(const ColumnRangePredicate &pred) {
 }
 
 void ScanSpec::SetLowerBoundKey(const EncodedKey* key) {
-  if (lower_bound_key_ == NULL ||
+  if (lower_bound_key_ == nullptr ||
       key->encoded_key().compare(lower_bound_key_->encoded_key()) > 0) {
     lower_bound_key_ = key;
   }
 }
 void ScanSpec::SetExclusiveUpperBoundKey(const EncodedKey* key) {
-  if (exclusive_upper_bound_key_ == NULL ||
+  if (exclusive_upper_bound_key_ == nullptr ||
       key->encoded_key().compare(exclusive_upper_bound_key_->encoded_key()) < 0) {
     exclusive_upper_bound_key_ = key;
   }
@@ -59,7 +59,7 @@ void ScanSpec::SetExclusiveUpperBoundPartitionKey(const Slice& partitionKey) {
 }
 
 string ScanSpec::ToString() const {
-  return ToStringWithOptionalSchema(NULL);
+  return ToStringWithOptionalSchema(nullptr);
 }
 
 string ScanSpec::ToStringWithSchema(const Schema& s) const {

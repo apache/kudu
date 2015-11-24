@@ -58,7 +58,7 @@ Status PeerManager::UpdateRaftConfig(const RaftConfigPB& config) {
   for (const RaftPeerPB& peer_pb : config.peers()) {
     new_peers.insert(peer_pb.permanent_uuid());
     Peer* peer = FindPtrOrNull(peers_, peer_pb.permanent_uuid());
-    if (peer != NULL) {
+    if (peer != nullptr) {
       continue;
     }
     if (peer_pb.permanent_uuid() == local_uuid_) {

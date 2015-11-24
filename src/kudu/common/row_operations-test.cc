@@ -274,12 +274,12 @@ TEST_F(RowOperationsTest, SchemaFuzz) {
 // One case from SchemaFuzz which failed previously.
 TEST_F(RowOperationsTest, TestFuzz1) {
   SchemaBuilder client_schema_builder;
-  client_schema_builder.AddColumn("c1", INT32, false, NULL, NULL);
-  client_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
+  client_schema_builder.AddColumn("c1", INT32, false, nullptr, nullptr);
+  client_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr);
   Schema client_schema = client_schema_builder.BuildWithoutIds();
   SchemaBuilder server_schema_builder;
-  server_schema_builder.AddColumn("c1", INT32, false, NULL, NULL);
-  server_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
+  server_schema_builder.AddColumn("c1", INT32, false, nullptr, nullptr);
+  server_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr);
   Schema server_schema = server_schema_builder.Build();
   KuduPartialRow row(&client_schema);
   CHECK_OK(row.SetInt32(0, 12345));
@@ -290,12 +290,12 @@ TEST_F(RowOperationsTest, TestFuzz1) {
 // Another case from SchemaFuzz which failed previously.
 TEST_F(RowOperationsTest, TestFuzz2) {
   SchemaBuilder client_schema_builder;
-  client_schema_builder.AddColumn("c1", STRING, true, NULL, NULL);
-  client_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
+  client_schema_builder.AddColumn("c1", STRING, true, nullptr, nullptr);
+  client_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr);
   Schema client_schema = client_schema_builder.BuildWithoutIds();
   SchemaBuilder server_schema_builder;
-  server_schema_builder.AddColumn("c1", STRING, true, NULL, NULL);
-  server_schema_builder.AddColumn("c2", STRING, false, NULL, NULL);
+  server_schema_builder.AddColumn("c1", STRING, true, nullptr, nullptr);
+  server_schema_builder.AddColumn("c2", STRING, false, nullptr, nullptr);
   Schema server_schema = server_schema_builder.Build();
   KuduPartialRow row(&client_schema);
   CHECK_OK(row.SetNull(0));
@@ -634,7 +634,7 @@ TEST_F(RowOperationsTest, SplitKeyRoundTrip) {
   RowOperationsPBEncoder(&pb).Add(RowOperationsPB::SPLIT_ROW, row);
 
   Schema schema = client_schema.CopyWithColumnIds();
-  RowOperationsPBDecoder decoder(&pb, &client_schema, &schema, NULL);
+  RowOperationsPBDecoder decoder(&pb, &client_schema, &schema, nullptr);
   vector<DecodedRowOperation> ops;
   ASSERT_OK(decoder.DecodeOperations(&ops));
   ASSERT_EQ(1, ops.size());

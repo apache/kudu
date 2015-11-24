@@ -137,7 +137,7 @@ Status LogCache::AppendOperations(const vector<ReplicateRefPtr>& msgs,
     // Now remove the overwritten operations.
     for (int64_t i = first_idx_in_batch; i < next_sequential_op_index_; ++i) {
       ReplicateRefPtr msg = EraseKeyReturnValuePtr(&cache_, i);
-      if (msg != NULL) {
+      if (msg != nullptr) {
         AccountForMessageRemovalUnlocked(msg);
       }
     }

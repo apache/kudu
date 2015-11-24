@@ -86,16 +86,16 @@ void SimpleMerge(const vector<vector<MergeType> > &in_lists,
   }
 
   while (true) {
-    MergeTypeIter *smallest = NULL;
+    MergeTypeIter *smallest = nullptr;
     for (int i = 0; i < in_lists.size(); i++) {
       if (iters[i] == in_lists[i].end()) continue;
-      if (smallest == NULL ||
+      if (smallest == nullptr ||
           *iters[i] < **smallest) {
         smallest = &iters[i];
       }
     }
 
-    if (smallest == NULL) break;
+    if (smallest == nullptr) break;
 
     out->push_back(**smallest);
     (*smallest)++;

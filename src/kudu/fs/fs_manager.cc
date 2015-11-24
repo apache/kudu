@@ -113,7 +113,7 @@ FsManager::FsManager(Env* env, const string& root_path)
     read_only_(false),
     wal_fs_root_(root_path),
     data_fs_roots_({ root_path }),
-    metric_entity_(NULL),
+    metric_entity_(nullptr),
     initted_(false) {
 }
 
@@ -324,7 +324,7 @@ void FsManager::CreateInstanceMetadata(InstanceMetadataPB* metadata) {
   metadata->set_uuid(oid_generator.Next());
 
   string time_str;
-  StringAppendStrftime(&time_str, "%Y-%m-%d %H:%M:%S", time(NULL), false);
+  StringAppendStrftime(&time_str, "%Y-%m-%d %H:%M:%S", time(nullptr), false);
   string hostname;
   if (!GetHostname(&hostname).ok()) {
     hostname = "<unknown host>";

@@ -50,7 +50,7 @@ class TypeInfoResolver {
  public:
   const TypeInfo* GetTypeInfo(DataType t) {
     const TypeInfo *type_info = mapping_[t].get();
-    CHECK(type_info != NULL) <<
+    CHECK(type_info != nullptr) <<
       "Bad type: " << t;
     return type_info;
   }

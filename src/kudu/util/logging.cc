@@ -104,7 +104,7 @@ SpinLock logging_mutex(base::LINKER_INITIALIZED);
 // There can only be a single instance of a SimpleSink.
 //
 // Protected by 'logging_mutex'.
-SimpleSink* registered_sink = NULL;
+SimpleSink* registered_sink = nullptr;
 
 // Records the logging severity after the first call to
 // InitGoogleLoggingSafe{Basic}. Calls to UnregisterLoggingCallback()
@@ -122,7 +122,7 @@ void UnregisterLoggingCallbackUnlocked() {
   google::SetStderrLogging(initial_stderr_severity);
   google::RemoveLogSink(registered_sink);
   delete registered_sink;
-  registered_sink = NULL;
+  registered_sink = nullptr;
 }
 
 } // anonymous namespace

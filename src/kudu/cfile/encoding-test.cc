@@ -59,7 +59,7 @@ class TestEncoding : public ::testing::Test {
   template<DataType type>
   void CopyOne(BlockDecoder *decoder,
                typename TypeTraits<type>::cpp_type *ret) {
-    ColumnBlock cb(GetTypeInfo(type), NULL, ret, 1, &arena_);
+    ColumnBlock cb(GetTypeInfo(type), nullptr, ret, 1, &arena_);
     ColumnDataView cdv(&cb);
     size_t n = 1;
     ASSERT_OK(decoder->CopyNextValues(&n, &cdv));
@@ -372,7 +372,7 @@ class TestEncoding : public ::testing::Test {
     std::vector<CppType> decoded;
     decoded.resize(size);
 
-    ColumnBlock dst_block(GetTypeInfo(Type), NULL, &decoded[0], size, &arena_);
+    ColumnBlock dst_block(GetTypeInfo(Type), nullptr, &decoded[0], size, &arena_);
     ColumnDataView view(&dst_block);
     int dec_count = 0;
     while (pbd.HasNext()) {
@@ -466,7 +466,7 @@ class TestEncoding : public ::testing::Test {
     std::vector<CppType> decoded;
     decoded.resize(to_insert.size());
 
-    ColumnBlock dst_block(GetTypeInfo(IntType), NULL,
+    ColumnBlock dst_block(GetTypeInfo(IntType), nullptr,
                           &decoded[0],
                           to_insert.size(),
                           &arena_);
@@ -543,7 +543,7 @@ class TestEncoding : public ::testing::Test {
     std::vector<uint8_t> decoded;
     decoded.resize(to_insert.size());
 
-    ColumnBlock dst_block(GetTypeInfo(BOOL), NULL,
+    ColumnBlock dst_block(GetTypeInfo(BOOL), nullptr,
                           &decoded[0],
                           to_insert.size(),
                           &arena_);

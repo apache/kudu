@@ -323,7 +323,7 @@ TEST_F(TabletServerTest, TestInsert) {
   // get the clock's current timestamp
   Timestamp now_before = mini_server_->server()->clock()->Now();
 
-  rows_inserted = NULL;
+  rows_inserted = nullptr;
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(schema_, { KeyValue(1, 1), KeyValue(2, 1), KeyValue(1234, 5678) });
 
@@ -604,8 +604,8 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   // get the clock's current timestamp
   Timestamp now_before = mini_server_->server()->clock()->Now();
 
-  rows_inserted = NULL;
-  rows_updated = NULL;
+  rows_inserted = nullptr;
+  rows_updated = nullptr;
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
   VerifyRows(schema_, { KeyValue(2, 3), KeyValue(3, 4), KeyValue(4, 4), KeyValue(6, 6) });
 
@@ -993,7 +993,8 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
   vector<uint64_t> write_timestamps_collector;
 
   // perform a series of writes and collect the timestamps
-  InsertTestRowsRemote(0, 0, num_rows, num_batches, NULL, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, num_rows, num_batches, nullptr,
+                       kTabletId, &write_timestamps_collector);
 
   // now perform snapshot scans.
   ScanRequestPB req;
@@ -1057,7 +1058,7 @@ TEST_F(TabletServerTest, TestSnapshotScan) {
 TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, NULL, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1092,7 +1093,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_WithoutSnapshotTimestamp) {
 TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, NULL, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1129,9 +1130,9 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureFails) {
 TEST_F(TabletServerTest, TestSnapshotScan_OpenScanner) {
   vector<uint64_t> write_timestamps_collector;
   // Write and flush and write, so we have some rows in MRS and DRS
-  InsertTestRowsRemote(0, 0, 100, 2, NULL, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
   ASSERT_OK(tablet_peer_->tablet()->Flush());
-  InsertTestRowsRemote(0, 100, 100, 2, NULL, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 100, 100, 2, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1248,7 +1249,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_LastRow) {
 TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimestamp) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, NULL, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1306,7 +1307,7 @@ TEST_F(TabletServerTest, TestSnapshotScan_SnapshotInTheFutureWithPropagatedTimes
 TEST_F(TabletServerTest, TestSnapshotScan__SnapshotInTheFutureBeyondPropagatedTimestampFails) {
   vector<uint64_t> write_timestamps_collector;
   // perform a write
-  InsertTestRowsRemote(0, 0, 1, 1, NULL, kTabletId, &write_timestamps_collector);
+  InsertTestRowsRemote(0, 0, 1, 1, nullptr, kTabletId, &write_timestamps_collector);
 
   ScanRequestPB req;
   ScanResponsePB resp;
@@ -1776,7 +1777,7 @@ TEST_F(TabletServerTest, TestAlterSchema_AddColWithoutWriteDefault) {
   // Add a column with a read-default but no write-default.
   const uint32_t c2_read_default = 7;
   SchemaBuilder builder(schema_);
-  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, NULL));
+  ASSERT_OK(builder.AddColumn("c2", INT32, false, &c2_read_default, nullptr));
   Schema s2 = builder.Build();
 
   req.set_dest_uuid(mini_server_->server()->fs_manager()->uuid());
@@ -2046,7 +2047,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
       "TestWriteOutOfBoundsTable", tabletId,
       partitions[1],
       tabletId, schema, partition_schema,
-      mini_server_->CreateLocalConfig(), NULL));
+      mini_server_->CreateLocalConfig(), nullptr));
 
   ASSERT_OK(WaitForTabletRunning(tabletId));
 
@@ -2082,18 +2083,18 @@ static uint32_t CalcTestRowChecksum(int32_t key, uint8_t string_field_defined = 
 
   string strval = strings::Substitute("original$0", key);
   uint32_t index = 0;
-  crc->Compute(&index, sizeof(index), &row_crc, NULL);
-  crc->Compute(&key, sizeof(int32_t), &row_crc, NULL);
+  crc->Compute(&index, sizeof(index), &row_crc, nullptr);
+  crc->Compute(&key, sizeof(int32_t), &row_crc, nullptr);
 
   index = 1;
-  crc->Compute(&index, sizeof(index), &row_crc, NULL);
-  crc->Compute(&key, sizeof(int32_t), &row_crc, NULL);
+  crc->Compute(&index, sizeof(index), &row_crc, nullptr);
+  crc->Compute(&key, sizeof(int32_t), &row_crc, nullptr);
 
   index = 2;
-  crc->Compute(&index, sizeof(index), &row_crc, NULL);
-  crc->Compute(&string_field_defined, sizeof(string_field_defined), &row_crc, NULL);
+  crc->Compute(&index, sizeof(index), &row_crc, nullptr);
+  crc->Compute(&string_field_defined, sizeof(string_field_defined), &row_crc, nullptr);
   if (string_field_defined) {
-    crc->Compute(strval.c_str(), strval.size(), &row_crc, NULL);
+    crc->Compute(strval.c_str(), strval.size(), &row_crc, nullptr);
   }
   return static_cast<uint32_t>(row_crc);
 }
@@ -2132,7 +2133,7 @@ TEST_F(TabletServerTest, TestChecksumScan) {
 
   // Second row (null string field).
   key = 2;
-  InsertTestRowsRemote(0, key, 1, 1, NULL, kTabletId, NULL, NULL, false);
+  InsertTestRowsRemote(0, key, 1, 1, nullptr, kTabletId, nullptr, nullptr, false);
   controller.Reset();
   ASSERT_OK(proxy_->Checksum(req, &resp, &controller));
   total_crc += CalcTestRowChecksum(key, false);

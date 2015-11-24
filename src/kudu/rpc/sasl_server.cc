@@ -63,7 +63,7 @@ SaslServer::SaslServer(const string& app_name, int fd)
       reinterpret_cast<int (*)()>(&SaslServerGetoptCb), this));
   callbacks_.push_back(SaslBuildCallback(SASL_CB_SERVER_USERDB_CHECKPASS,
       reinterpret_cast<int (*)()>(&SaslServerPlainAuthCb), this));
-  callbacks_.push_back(SaslBuildCallback(SASL_CB_LIST_END, NULL, NULL));
+  callbacks_.push_back(SaslBuildCallback(SASL_CB_LIST_END, nullptr, nullptr));
 }
 
 SaslServer::~SaslServer() {
@@ -125,11 +125,11 @@ Status SaslServer::Init(const string& service_type) {
   // TODO: Support security flags.
   unsigned secflags = 0;
 
-  sasl_conn_t* sasl_conn = NULL;
+  sasl_conn_t* sasl_conn = nullptr;
   int result = sasl_server_new(
       service_type.c_str(),         // Registered name of the service using SASL. Required.
       helper_.server_fqdn(),        // The fully qualified domain name of this server.
-      NULL,                         // Permits multiple user realms on server. NULL == use default.
+      nullptr,                      // Permits multiple user realms on server. NULL == use default.
       helper_.local_addr_string(),  // Local and remote IP address strings. (NULL disables
       helper_.remote_addr_string(), //   mechanisms which require this info.)
       &callbacks_[0],               // Connection-specific callbacks.
@@ -326,7 +326,7 @@ Status SaslServer::HandleInitiateRequest(const SaslMessagePB& request) {
   // Security issue to display this. Commented out but left for debugging purposes.
   //DVLOG(3) << "SASL server: Client token: " << request.token();
 
-  const char* server_out = NULL;
+  const char* server_out = nullptr;
   uint32_t server_out_len = 0;
   TRACE("SASL Server: Calling sasl_server_start()");
   int result = sasl_server_start(
@@ -391,7 +391,7 @@ Status SaslServer::HandleResponseRequest(const SaslMessagePB& request) {
     return s;
   }
 
-  const char* server_out = NULL;
+  const char* server_out = nullptr;
   uint32_t server_out_len = 0;
   TRACE("SASL Server: Calling sasl_server_step()");
   int result = sasl_server_step(

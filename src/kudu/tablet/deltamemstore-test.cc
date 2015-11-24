@@ -103,7 +103,7 @@ class TestDeltaMemStore : public KuduTest {
     }
     ASSERT_OK(s);
     gscoped_ptr<DeltaIterator> iter(raw_iter);
-    ASSERT_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(nullptr));
     ASSERT_OK(iter->SeekToOrdinal(row_idx));
     ASSERT_OK(iter->PrepareBatch(cb->nrows(), DeltaIterator::PREPARE_FOR_APPLY));
     ASSERT_OK(iter->ApplyUpdates(0, cb));
@@ -418,7 +418,7 @@ TEST_F(TestDeltaMemStore, TestIteratorDoesUpdates) {
   ASSERT_OK(s);
 
   gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(raw_iter));
-  ASSERT_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(nullptr));
 
   int block_start_row = 50;
   ASSERT_OK(iter->SeekToOrdinal(block_start_row));
@@ -466,7 +466,7 @@ TEST_F(TestDeltaMemStore, TestCollectMutations) {
 
   gscoped_ptr<DMSIterator> iter(down_cast<DMSIterator *>(raw_iter));
 
-  ASSERT_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(nullptr));
   ASSERT_OK(iter->SeekToOrdinal(0));
   ASSERT_OK(iter->PrepareBatch(kBatchSize, DeltaIterator::PREPARE_FOR_COLLECT));
   ASSERT_OK(iter->CollectMutations(&mutations, &arena));

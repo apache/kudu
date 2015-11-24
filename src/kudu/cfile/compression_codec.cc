@@ -53,7 +53,7 @@ class SlicesSource : public snappy::Source {
   const char* Peek(size_t* len) OVERRIDE {
     if (available_ == 0) {
       *len = 0;
-      return NULL;
+      return nullptr;
     }
 
     const Slice& data = slices_[slice_index_];
@@ -229,7 +229,7 @@ Status GetCompressionCodec(CompressionType compression,
                            const CompressionCodec** codec) {
   switch (compression) {
     case NO_COMPRESSION:
-      *codec = NULL;
+      *codec = nullptr;
       break;
     case SNAPPY:
       *codec = SnappyCodec::GetSingleton();

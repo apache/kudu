@@ -210,7 +210,7 @@ class TabletLoader : public TabletVisitor {
                              const std::string& tablet_id,
                              const SysTabletsEntryPB& metadata) OVERRIDE {
     // Setup the tablet info
-    TabletInfo *tablet = new TabletInfo(NULL, tablet_id);
+    TabletInfo *tablet = new TabletInfo(nullptr, tablet_id);
     TabletMetadataLock l(tablet, TabletMetadataLock::WRITE);
     l.mutable_data()->pb.CopyFrom(metadata);
     l.Commit();
@@ -333,7 +333,7 @@ TEST_F(SysCatalogTest, TestSysCatalogTabletsOperations) {
 
 // Verify that data mutations are not available from metadata() until commit.
 TEST_F(SysCatalogTest, TestTabletInfoCommit) {
-  scoped_refptr<TabletInfo> tablet(new TabletInfo(NULL, "123"));
+  scoped_refptr<TabletInfo> tablet(new TabletInfo(nullptr, "123"));
 
   // Mutate the tablet, the changes should not be visible
   TabletMetadataLock l(tablet.get(), TabletMetadataLock::WRITE);

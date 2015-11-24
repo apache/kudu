@@ -254,7 +254,7 @@ TEST(MemTrackerTest, SoftLimitExceeded) {
 
   // Consumption is 0; the soft limit is never exceeded.
   for (int i = 0; i < kNumIters; i++) {
-    ASSERT_FALSE(m->SoftLimitExceeded(NULL));
+    ASSERT_FALSE(m->SoftLimitExceeded(nullptr));
   }
 
   // Consumption is half of the actual limit, so we expect to exceed the soft

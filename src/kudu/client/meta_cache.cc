@@ -213,11 +213,11 @@ RemoteTabletServer* RemoteTablet::LeaderTServer() const {
       return replica.ts;
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 bool RemoteTablet::HasLeader() const {
-  return LeaderTServer() != NULL;
+  return LeaderTServer() != nullptr;
 }
 
 void RemoteTablet::GetRemoteTabletServers(vector<RemoteTabletServer*>* servers) const {
@@ -544,7 +544,7 @@ const scoped_refptr<RemoteTablet>& MetaCache::ProcessLookupResponse(const Lookup
     // Next, update the tablet caches.
     string tablet_id = loc.tablet_id();
     scoped_refptr<RemoteTablet> remote = FindPtrOrNull(tablets_by_id_, tablet_id);
-    if (remote.get() != NULL) {
+    if (remote.get() != nullptr) {
       // Partition should not have changed.
       DCHECK_EQ(loc.partition().partition_key_start(), remote->partition().partition_key_start());
       DCHECK_EQ(loc.partition().partition_key_end(), remote->partition().partition_key_end());

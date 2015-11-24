@@ -29,7 +29,7 @@ string Mutation::StringifyMutationList(const Schema &schema, const Mutation *hea
   ret.append("[");
 
   bool first = true;
-  while (head != NULL) {
+  while (head != nullptr) {
     if (!first) {
       ret.append(", ");
     }
@@ -73,13 +73,13 @@ inline void Store<false>(Mutation** pointer, Mutation* val) {
 
 template<bool ATOMIC>
 inline void Mutation::DoAppendToList(Mutation **list) {
-  next_ = NULL;
-  if (*list == NULL) {
+  next_ = nullptr;
+  if (*list == nullptr) {
     Store<ATOMIC>(list, this);
   } else {
     // Find tail and append.
     Mutation *tail = *list;
-    while (tail->next_ != NULL) {
+    while (tail->next_ != nullptr) {
       tail = tail->next_;
     }
     Store<ATOMIC>(&tail->next_, this);

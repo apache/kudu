@@ -78,7 +78,7 @@ void ColumnRangePredicate::Evaluate(RowBlock* block, SelectionVector* vec) const
     for (size_t i = 0; i < block->nrows(); i++) {
       if (!vec->IsRowSelected(i)) continue;
       const void *cell = cblock.nullable_cell_ptr(i);
-      if (cell == NULL || !range_.ContainsCell(cell)) {
+      if (cell == nullptr || !range_.ContainsCell(cell)) {
         BitmapClear(vec->mutable_bitmap(), i);
       }
     }

@@ -185,14 +185,14 @@ bool MergeIterator::HasNext() const {
 Status MergeIterator::InitSubIterators(ScanSpec *spec) {
   // Initialize all the sub iterators.
   for (shared_ptr<RowwiseIterator> &iter : orig_iters_) {
-    ScanSpec *spec_copy = spec != NULL ? scan_spec_copies_.Construct(*spec) : NULL;
+    ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
     RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, spec_copy));
     iters_.push_back(shared_ptr<MergeIterState>(new MergeIterState(iter)));
   }
 
   // Since we handle predicates in all the wrapped iterators, we can clear
   // them here.
-  if (spec != NULL) {
+  if (spec != nullptr) {
     spec->mutable_predicates()->clear();
   }
   return Status::OK();
@@ -234,7 +234,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     RowBlockRow dst_row = dst->row(dst_row_idx);
 
     // Find the sub-iterator which is currently smallest
-    MergeIterState *smallest = NULL;
+    MergeIterState *smallest = nullptr;
     ssize_t smallest_idx = -1;
 
     // Typically the number of iters_ is not that large, so using a priority
@@ -242,7 +242,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     for (size_t i = 0; i < iters_.size(); i++) {
       shared_ptr<MergeIterState> &state = iters_[i];
 
-      if (smallest == NULL ||
+      if (smallest == nullptr ||
           schema_.Compare(state->next_row(), smallest->next_row()) < 0) {
         smallest = state.get();
         smallest_idx = i;
@@ -250,7 +250,7 @@ Status MergeIterator::MaterializeBlock(RowBlock *dst) {
     }
 
     // If no iterators had any row left, then we're done iterating.
-    if (PREDICT_FALSE(smallest == NULL)) break;
+    if (PREDICT_FALSE(smallest == nullptr)) break;
 
     // Otherwise, copy the row from the smallest one, and advance it
     RETURN_NOT_OK(CopyRow(smallest->next_row(), &dst_row, dst->arena()));
@@ -340,12 +340,12 @@ Status UnionIterator::Init(ScanSpec *spec) {
 
 Status UnionIterator::InitSubIterators(ScanSpec *spec) {
   for (shared_ptr<RowwiseIterator> &iter : iters_) {
-    ScanSpec *spec_copy = spec != NULL ? scan_spec_copies_.Construct(*spec) : NULL;
+    ScanSpec *spec_copy = spec != nullptr ? scan_spec_copies_.Construct(*spec) : nullptr;
     RETURN_NOT_OK(PredicateEvaluatingIterator::InitAndMaybeWrap(&iter, spec_copy));
   }
   // Since we handle predicates in all the wrapped iterators, we can clear
   // them here.
-  if (spec != NULL) {
+  if (spec != nullptr) {
     spec->mutable_predicates()->clear();
   }
   return Status::OK();
@@ -433,7 +433,7 @@ MaterializingIterator::MaterializingIterator(const shared_ptr<ColumnwiseIterator
 Status MaterializingIterator::Init(ScanSpec *spec) {
   RETURN_NOT_OK(iter_->Init(spec));
 
-  if (spec != NULL && !disallow_pushdown_for_tests_) {
+  if (spec != nullptr && !disallow_pushdown_for_tests_) {
     // Gather any single-column predicates.
     ScanSpec::PredicateList *preds = spec->mutable_predicates();
     for (ScanSpec::PredicateList::iterator iter = preds->begin();
@@ -550,7 +550,7 @@ PredicateEvaluatingIterator::PredicateEvaluatingIterator(
 Status PredicateEvaluatingIterator::InitAndMaybeWrap(
   shared_ptr<RowwiseIterator> *base_iter, ScanSpec *spec) {
   RETURN_NOT_OK((*base_iter)->Init(spec));
-  if (spec != NULL &&
+  if (spec != nullptr &&
       !spec->predicates().empty()) {
     // Underlying iterator did not accept all predicates. Wrap it.
     shared_ptr<RowwiseIterator> wrapper(

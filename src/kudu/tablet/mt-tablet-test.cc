@@ -147,7 +147,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
           // Issue an update. In the NullableValue setup, many of the rows start with
           // NULL here, so we have to check for it.
           int32_t new_val;
-          if (old_val != NULL) {
+          if (old_val != nullptr) {
             new_val = *old_val + 1;
           } else {
             new_val = 0;

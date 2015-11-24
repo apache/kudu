@@ -280,7 +280,7 @@ bool DictionaryInt32Decode(hash_map<string, int32>* dictionary,
 
   dictionary->clear();
   for (int i = 0; i < items.size(); ++i) {
-    char *error = NULL;
+    char *error = nullptr;
     const int32 value = strto32(items[i].second.c_str(), &error, 0);
     if (error == items[i].second.c_str() || *error != '\0') {
       // parsing error
@@ -299,7 +299,7 @@ bool DictionaryInt64Decode(hash_map<string, int64>* dictionary,
 
   dictionary->clear();
   for (int i = 0; i < items.size(); ++i) {
-    char *error = NULL;
+    char *error = nullptr;
     const int64 value = strto64(items[i].second.c_str(), &error, 0);
     if (error == items[i].second.c_str() || *error != '\0')  {
       // parsing error
@@ -319,7 +319,7 @@ bool DictionaryDoubleDecode(hash_map<string, double>* dictionary,
 
   dictionary->clear();
   for (int i = 0; i < items.size(); ++i) {
-    char *error = NULL;
+    char *error = nullptr;
     const double value = strtod(items[i].second.c_str(), &error);
     if (error == items[i].second.c_str() || *error != '\0') {
       // parsing error

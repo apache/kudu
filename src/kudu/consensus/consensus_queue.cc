@@ -194,7 +194,7 @@ void PeerMessageQueue::TrackPeerUnlocked(const string& uuid) {
 void PeerMessageQueue::UntrackPeer(const string& uuid) {
   boost::lock_guard<simple_spinlock> lock(queue_lock_);
   TrackedPeer* peer = EraseKeyReturnValuePtr(&peers_map_, uuid);
-  if (peer != NULL) {
+  if (peer != nullptr) {
     delete peer;
   }
 }
@@ -275,7 +275,7 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
                                         ConsensusRequestPB* request,
                                         vector<ReplicateRefPtr>* msg_refs,
                                         bool* needs_remote_bootstrap) {
-  TrackedPeer* peer = NULL;
+  TrackedPeer* peer = nullptr;
   OpId preceding_id;
   {
     lock_guard<simple_spinlock> lock(&queue_lock_);
@@ -283,12 +283,12 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
     DCHECK_NE(uuid, local_peer_pb_.permanent_uuid());
 
     peer = FindPtrOrNull(peers_map_, uuid);
-    if (PREDICT_FALSE(peer == NULL || queue_state_.mode == NON_LEADER)) {
+    if (PREDICT_FALSE(peer == nullptr || queue_state_.mode == NON_LEADER)) {
       return Status::NotFound("Peer not tracked or queue not in leader mode.");
     }
 
     // Clear the requests without deleting the entries, as they may be in use by other peers.
-    request->mutable_ops()->ExtractSubrange(0, request->ops_size(), NULL);
+    request->mutable_ops()->ExtractSubrange(0, request->ops_size(), nullptr);
 
     // This is initialized to the queue's last appended op but gets set to the id of the
     // log entry preceding the first one in 'messages' if messages are found for the peer.
@@ -388,13 +388,13 @@ Status PeerMessageQueue::RequestForPeer(const string& uuid,
 
 Status PeerMessageQueue::GetRemoteBootstrapRequestForPeer(const string& uuid,
                                                           StartRemoteBootstrapRequestPB* req) {
-  TrackedPeer* peer = NULL;
+  TrackedPeer* peer = nullptr;
   {
     lock_guard<simple_spinlock> lock(&queue_lock_);
     DCHECK_EQ(queue_state_.state, kQueueOpen);
     DCHECK_NE(uuid, local_peer_pb_.permanent_uuid());
     peer = FindPtrOrNull(peers_map_, uuid);
-    if (PREDICT_FALSE(peer == NULL || queue_state_.mode == NON_LEADER)) {
+    if (PREDICT_FALSE(peer == nullptr || queue_state_.mode == NON_LEADER)) {
       return Status::NotFound("Peer not tracked or queue not in leader mode.");
     }
   }
@@ -485,7 +485,7 @@ void PeerMessageQueue::ResponseFromPeer(const std::string& peer_uuid,
     DCHECK_NE(kQueueConstructed, queue_state_.state);
 
     TrackedPeer* peer = FindPtrOrNull(peers_map_, peer_uuid);
-    if (PREDICT_FALSE(queue_state_.state != kQueueOpen || peer == NULL)) {
+    if (PREDICT_FALSE(queue_state_.state != kQueueOpen || peer == nullptr)) {
       LOG_WITH_PREFIX_UNLOCKED(WARNING) << "Queue is closed or peer was untracked, disregarding "
           "peer response. Response: " << response.ShortDebugString();
       *more_pending = false;

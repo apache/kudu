@@ -116,7 +116,7 @@ TEST_F(TestTabletSchema, TestRead) {
   gscoped_ptr<RowwiseIterator> iter;
   ASSERT_OK(tablet()->NewRowIterator(projection, &iter));
 
-  Status s = iter->Init(NULL);
+  Status s = iter->Init(nullptr);
   ASSERT_TRUE(s.IsInvalidArgument());
   ASSERT_STR_CONTAINS(s.message().ToString(),
                       "Some columns are not present in the current schema: c2, c3");

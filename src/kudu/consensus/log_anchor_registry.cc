@@ -103,7 +103,7 @@ std::string LogAnchorRegistry::DumpAnchorInfo() const {
 void LogAnchorRegistry::RegisterUnlocked(int64_t log_index,
                                          const std::string& owner,
                                          LogAnchor* anchor) {
-  DCHECK(anchor != NULL);
+  DCHECK(anchor != nullptr);
   DCHECK(!anchor->is_registered);
 
   anchor->log_index = log_index;
@@ -115,7 +115,7 @@ void LogAnchorRegistry::RegisterUnlocked(int64_t log_index,
 }
 
 Status LogAnchorRegistry::UnregisterUnlocked(LogAnchor* anchor) {
-  DCHECK(anchor != NULL);
+  DCHECK(anchor != nullptr);
   DCHECK(anchor->is_registered);
 
   AnchorMultiMap::iterator iter = anchors_.find(anchor->log_index);

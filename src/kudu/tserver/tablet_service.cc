@@ -451,7 +451,7 @@ class ScanResultChecksummer : public ScanResultCollector {
     }
 
     uint64_t row_crc = 0;
-    crc_->Compute(tmp_buf_.data(), tmp_buf_.size(), &row_crc, NULL);
+    crc_->Compute(tmp_buf_.data(), tmp_buf_.size(), &row_crc, nullptr);
     return static_cast<uint32_t>(row_crc); // CRC32 only uses the lower 32 bits.
   }
 
@@ -611,7 +611,7 @@ void TabletServiceAdminImpl::CreateTablet(const CreateTabletRequestPB* req,
                                                  schema,
                                                  partition_schema,
                                                  req->config(),
-                                                 NULL);
+                                                 nullptr);
   if (PREDICT_FALSE(!s.ok())) {
     TabletServerErrorPB::Code code;
     if (s.IsAlreadyPresent()) {
@@ -1251,8 +1251,8 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
       InsertOrDie(&missing_col_names, col.name());
     }
 
-    const void* lower_bound = NULL;
-    const void* upper_bound = NULL;
+    const void* lower_bound = nullptr;
+    const void* upper_bound = nullptr;
     if (pred_pb.has_lower_bound()) {
       const void* val;
       RETURN_NOT_OK(ExtractPredicateValue(col, pred_pb.lower_bound(),
@@ -1260,7 +1260,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
                                           &val));
       lower_bound = val;
     } else {
-      lower_bound = NULL;
+      lower_bound = nullptr;
     }
     if (pred_pb.has_upper_bound()) {
       const void* val;
@@ -1269,7 +1269,7 @@ static Status SetupScanSpec(const NewScanRequestPB& scan_pb,
                                           &val));
       upper_bound = val;
     } else {
-      upper_bound = NULL;
+      upper_bound = nullptr;
     }
 
     ColumnRangePredicate pred(col, lower_bound, upper_bound);
@@ -1308,8 +1308,8 @@ Status TabletServiceImpl::HandleNewScanRequest(TabletPeer* tablet_peer,
                                                Timestamp* snap_timestamp,
                                                bool* has_more_results,
                                                TabletServerErrorPB::Code* error_code) {
-  DCHECK(result_collector != NULL);
-  DCHECK(error_code != NULL);
+  DCHECK(result_collector != nullptr);
+  DCHECK(error_code != nullptr);
   DCHECK(req->has_new_scan_request());
   const NewScanRequestPB& scan_pb = req->new_scan_request();
   TRACE_EVENT1("tserver", "TabletServiceImpl::HandleNewScanRequest",

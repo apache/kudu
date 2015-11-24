@@ -135,14 +135,14 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
       CompactionInputRow &input_row = input_rows.at(i);
       input_row.row.Reset(&block, i);
       input_row.redo_head = redo_mutation_block[i];
-      input_row.undo_head = NULL;
+      input_row.undo_head = nullptr;
 
       RowBlockRow dst_row = block.row(i);
       RETURN_NOT_OK(CopyRow(input_row.row, &dst_row, reinterpret_cast<Arena*>(NULL)));
 
-      Mutation* new_undos_head = NULL;
+      Mutation* new_undos_head = nullptr;
       // We're ignoring the result from new_redos_head because we'll find them later at step 5).
-      Mutation* new_redos_head = NULL;
+      Mutation* new_redos_head = nullptr;
 
       bool is_garbage_collected;
 
@@ -161,10 +161,10 @@ Status MajorDeltaCompaction::FlushRowSetAndDeltas() {
         << " Redo Mutations: " << Mutation::StringifyMutationList(partial_schema_, new_redos_head);
 
       // We only create a new undo delta file if we need to.
-      if (new_undos_head != NULL && !new_undo_delta_writer_) {
+      if (new_undos_head != nullptr && !new_undo_delta_writer_) {
         RETURN_NOT_OK(OpenUndoDeltaFileWriter());
       }
-      for (const Mutation *mut = new_undos_head; mut != NULL; mut = mut->next()) {
+      for (const Mutation *mut = new_undos_head; mut != nullptr; mut = mut->next()) {
         DeltaKey undo_key(nrows + dst_row.row_index(), mut->timestamp());
         RETURN_NOT_OK(new_undo_delta_writer_->AppendDelta<UNDO>(undo_key, mut->changelist()));
         undo_stats.UpdateStats(mut->timestamp(), mut->changelist());

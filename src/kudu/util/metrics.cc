@@ -680,7 +680,7 @@ ScopedLatencyMetric::ScopedLatencyMetric(Histogram* latency_hist)
 }
 
 ScopedLatencyMetric::~ScopedLatencyMetric() {
-  if (latency_hist_ != NULL) {
+  if (latency_hist_ != nullptr) {
     MonoTime time_now = MonoTime::Now(MonoTime::FINE);
     latency_hist_->Increment(time_now.GetDeltaSince(time_started_).ToMicroseconds());
   }

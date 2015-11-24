@@ -57,14 +57,14 @@ static void CreateAndStartTimer() {
   // Create the test-timeout timer.
   memset(&action, 0, sizeof(action));
   action.sa_handler = &KillTestOnTimeout;
-  CHECK_ERR(sigaction(SIGALRM, &action, NULL)) << "Unable to set timeout action";
+  CHECK_ERR(sigaction(SIGALRM, &action, nullptr)) << "Unable to set timeout action";
 
   timer.it_interval.tv_sec = 0;                      // No repeat.
   timer.it_interval.tv_usec = 0;
   timer.it_value.tv_sec = FLAGS_test_timeout_after;  // Fire in timeout seconds.
   timer.it_value.tv_usec = 0;
 
-  CHECK_ERR(setitimer(ITIMER_REAL, &timer, NULL)) << "Unable to set timeout timer";
+  CHECK_ERR(setitimer(ITIMER_REAL, &timer, nullptr)) << "Unable to set timeout timer";
 }
 
 static void KillTestOnTimeout(int signum) {

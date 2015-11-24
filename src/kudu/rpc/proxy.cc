@@ -51,7 +51,7 @@ Proxy::Proxy(const std::shared_ptr<Messenger>& messenger,
   : service_name_(service_name),
     messenger_(messenger),
     is_started_(false) {
-  CHECK(messenger != NULL);
+  CHECK(messenger != nullptr);
   DCHECK(!service_name_.empty()) << "Proxy service name must not be blank";
 
   // By default, we set the real user to the currently logged-in user.
@@ -75,7 +75,7 @@ void Proxy::AsyncRequest(const string& method,
                          google::protobuf::Message* response,
                          RpcController* controller,
                          const ResponseCallback& callback) const {
-  CHECK(controller->call_.get() == NULL) << "Controller should be reset";
+  CHECK(controller->call_.get() == nullptr) << "Controller should be reset";
   base::subtle::NoBarrier_Store(&is_started_, true);
   RemoteMethod remote_method(service_name_, method);
   OutboundCall* call = new OutboundCall(conn_id_, remote_method, response, controller, callback);

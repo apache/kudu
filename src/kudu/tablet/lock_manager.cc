@@ -95,7 +95,7 @@ class LockTable {
     simple_spinlock lock;
     // First entry chained from this bucket, or NULL if the bucket is empty.
     LockEntry *chain_head;
-    Bucket() : chain_head(NULL) {}
+    Bucket() : chain_head(nullptr) {}
   };
 
  public:
@@ -108,8 +108,8 @@ class LockTable {
     // Sanity checks: The table shouldn't be destructed when there are any entries in it.
     DCHECK_EQ(0, NoBarrier_Load(&(item_count_))) << "There are some unreleased locks";
     for (size_t i = 0; i < size_; ++i) {
-      for (LockEntry *p = buckets_[i].chain_head; p != NULL; p = p->ht_next_) {
-        DCHECK(p == NULL) << "The entry " << p->ToString() << " was not released";
+      for (LockEntry *p = buckets_[i].chain_head; p != nullptr; p = p->ht_next_) {
+        DCHECK(p == nullptr) << "The entry " << p->ToString() << " was not released";
       }
     }
   }
@@ -137,12 +137,12 @@ class LockTable {
   // matches the specified 'entry'.
   // If there is no such lock entry, NULL is returned.
   LockEntry **FindEntry(Bucket *bucket, LockEntry *entry) const {
-    for (LockEntry **node = &(bucket->chain_head); *node != NULL; node = &((*node)->ht_next_)) {
+    for (LockEntry **node = &(bucket->chain_head); *node != nullptr; node = &((*node)->ht_next_)) {
       if (*node == entry) {
         return node;
       }
     }
-    return NULL;
+    return nullptr;
   }
 
   void Resize();
@@ -171,17 +171,17 @@ LockEntry *LockTable::GetLockEntry(const Slice& key) {
       boost::lock_guard<simple_spinlock> bucket_lock(bucket->lock);
       LockEntry **node = FindSlot(bucket, new_entry->key_, new_entry->key_hash_);
       old_entry = *node;
-      if (old_entry != NULL) {
+      if (old_entry != nullptr) {
         old_entry->refs_++;
       } else {
-        new_entry->ht_next_ = NULL;
+        new_entry->ht_next_ = nullptr;
         new_entry->CopyKey();
         *node = new_entry;
       }
     }
   }
 
-  if (old_entry != NULL) {
+  if (old_entry != nullptr) {
     delete new_entry;
     return old_entry;
   }
@@ -206,7 +206,7 @@ void LockTable::ReleaseLockEntry(LockEntry *entry) {
     {
       boost::lock_guard<simple_spinlock> bucket_lock(bucket->lock);
       LockEntry **node = FindEntry(bucket, entry);
-      if (node != NULL) {
+      if (node != nullptr) {
         // ASSUMPTION: There are few updates, so locking the same row at the same time is rare
         // TODO: Move out this if we're going with the TryLock
         if (--entry->refs_ > 0)
@@ -240,7 +240,7 @@ void LockTable::Resize() {
   // Copy entries
   for (size_t i = 0; i < size_; ++i) {
     LockEntry *p = buckets_[i].chain_head;
-    while (p != NULL) {
+    while (p != nullptr) {
       LockEntry *next = p->ht_next_;
 
       // Insert Entry
@@ -295,7 +295,7 @@ void ScopedRowLock::TakeState(ScopedRowLock* other) {
   ls_ = other->ls_;
 
   other->acquired_ = false;
-  other->entry_ = NULL;
+  other->entry_ = nullptr;
 }
 
 ScopedRowLock::~ScopedRowLock() {
@@ -306,7 +306,7 @@ void ScopedRowLock::Release() {
   if (entry_) {
     manager_->Release(entry_, ls_);
     acquired_ = false;
-    entry_ = NULL;
+    entry_ = nullptr;
   }
 }
 
@@ -385,7 +385,7 @@ LockManager::LockStatus LockManager::TryLock(const Slice& key,
 }
 
 void LockManager::Release(LockEntry *lock, LockStatus ls) {
-  DCHECK_NOTNULL(lock)->holder_ = NULL;
+  DCHECK_NOTNULL(lock)->holder_ = nullptr;
   if (ls == LOCK_ACQUIRED) {
     if (lock->recursion_ > 0) {
       lock->recursion_--;

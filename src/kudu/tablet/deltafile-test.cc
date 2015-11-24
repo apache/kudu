@@ -147,7 +147,7 @@ class TestDeltaFile : public ::testing::Test {
       FAIL() << "Iterator fell outside of the range of an include-all snapshot";
     }
     ASSERT_OK(s);
-    ASSERT_OK(it->Init(NULL));
+    ASSERT_OK(it->Init(nullptr));
 
     RowBlock block(schema_, 100, &arena_);
 
@@ -277,7 +277,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
     }
     ASSERT_OK(s);
 
-    ASSERT_OK(it->Init(NULL));
+    ASSERT_OK(it->Init(nullptr));
     ASSERT_OK(it->SeekToOrdinal(0));
 
     vector<Mutation *> mutations;
@@ -293,7 +293,7 @@ TEST_F(TestDeltaFile, TestCollectMutations) {
 
       for (int i = 0; i < mutations.size(); i++) {
         Mutation *mut_head = mutations[i];
-        if (mut_head != NULL) {
+        if (mut_head != nullptr) {
           rowid_t row = start_row + i;
           string str = Mutation::StringifyMutationList(schema_, mut_head);
           VLOG(1) << "Mutation on row " << row << ": " << str;
@@ -316,23 +316,23 @@ TEST_F(TestDeltaFile, TestSkipsDeltasOutOfRange) {
   // should skip
   MvccSnapshot snap1(Timestamp(9));
   ASSERT_FALSE(snap1.MayHaveCommittedTransactionsAtOrAfter(Timestamp(10)));
-  DeltaIterator* raw_iter = NULL;
+  DeltaIterator* raw_iter = nullptr;
   Status s = reader->NewDeltaIterator(&schema_, snap1, &raw_iter);
   ASSERT_TRUE(s.IsNotFound());
-  ASSERT_TRUE(raw_iter == NULL);
+  ASSERT_TRUE(raw_iter == nullptr);
 
   // should include
-  raw_iter = NULL;
+  raw_iter = nullptr;
   MvccSnapshot snap2(Timestamp(15));
   ASSERT_OK(reader->NewDeltaIterator(&schema_, snap2, &raw_iter));
-  ASSERT_TRUE(raw_iter != NULL);
+  ASSERT_TRUE(raw_iter != nullptr);
   iter.reset(raw_iter);
 
   // should include
-  raw_iter = NULL;
+  raw_iter = nullptr;
   MvccSnapshot snap3(Timestamp(21));
   ASSERT_OK(reader->NewDeltaIterator(&schema_, snap3, &raw_iter));
-  ASSERT_TRUE(raw_iter != NULL);
+  ASSERT_TRUE(raw_iter != nullptr);
   iter.reset(raw_iter);
 }
 

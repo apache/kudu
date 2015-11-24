@@ -176,7 +176,7 @@ Status TabletPeer::Init(const shared_ptr<Tablet>& tablet,
     }
   }
 
-  if (tablet_->metrics() != NULL) {
+  if (tablet_->metrics() != nullptr) {
     TRACE("Starting instrumentation");
     txn_tracker_.StartInstrumentation(tablet_->GetMetricEntity());
   }
@@ -348,8 +348,8 @@ Status TabletPeer::SubmitAlterSchema(gscoped_ptr<AlterSchemaTransactionState> st
 
 void TabletPeer::GetTabletStatusPB(TabletStatusPB* status_pb_out) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
-  DCHECK(status_pb_out != NULL);
-  DCHECK(status_listener_.get() != NULL);
+  DCHECK(status_pb_out != nullptr);
+  DCHECK(status_listener_.get() != nullptr);
   status_pb_out->set_tablet_id(status_listener_->tablet_id());
   status_pb_out->set_table_name(status_listener_->table_name());
   status_pb_out->set_last_status(status_listener_->last_status());
@@ -399,7 +399,7 @@ void TabletPeer::GetInFlightTransactions(Transaction::TraceType trace_type,
   vector<scoped_refptr<TransactionDriver> > pending_transactions;
   txn_tracker_.GetPendingTransactions(&pending_transactions);
   for (const scoped_refptr<TransactionDriver>& driver : pending_transactions) {
-    if (driver->state() != NULL) {
+    if (driver->state() != nullptr) {
       consensus::TransactionStatusPB status_pb;
       status_pb.mutable_op_id()->CopyFrom(driver->GetOpId());
       switch (driver->tx_type()) {
@@ -503,7 +503,8 @@ Status TabletPeer::StartReplicaTransaction(const scoped_refptr<ConsensusRound>& 
           " transaction must receive an AlterSchemaRequestPB";
       transaction.reset(
           new AlterSchemaTransaction(
-              new AlterSchemaTransactionState(this, &replicate_msg->alter_schema_request(), NULL),
+              new AlterSchemaTransactionState(this, &replicate_msg->alter_schema_request(),
+                                              nullptr),
               consensus::REPLICA));
       break;
     }

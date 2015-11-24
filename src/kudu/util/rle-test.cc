@@ -198,7 +198,7 @@ void ValidateRle(const vector<T>& values, int bit_width,
   if (expected_len != -1) {
     EXPECT_EQ(encoded_len, expected_len);
   }
-  if (expected_encoding != NULL) {
+  if (expected_encoding != nullptr) {
     EXPECT_EQ(memcmp(buffer.data(), expected_encoding, expected_len), 0)
       << "\n"
       << "Expected: " << HexDump(Slice(expected_encoding, expected_len)) << "\n"
@@ -239,7 +239,7 @@ TEST(Rle, SpecificSequences) {
   }
 
   for (int width = 9; width <= MAX_WIDTH; ++width) {
-    ValidateRle(values, width, NULL, 2 * (1 + BitUtil::Ceil(width, 8)));
+    ValidateRle(values, width, nullptr, 2 * (1 + BitUtil::Ceil(width, 8)));
   }
 
   // Test 100 0's and 1's alternating
@@ -257,7 +257,7 @@ TEST(Rle, SpecificSequences) {
   // num_groups and expected_buffer only valid for bit width = 1
   ValidateRle(values, 1, expected_buffer, 1 + num_groups);
   for (int width = 2; width <= MAX_WIDTH; ++width) {
-    ValidateRle(values, width, NULL, 1 + BitUtil::Ceil(width * 100, 8));
+    ValidateRle(values, width, nullptr, 1 + BitUtil::Ceil(width * 100, 8));
   }
 }
 
@@ -269,7 +269,7 @@ void TestRleValues(int bit_width, int num_vals, int value = -1) {
   for (int v = 0; v < num_vals; ++v) {
     values.push_back((value != -1) ? value : (v % mod));
   }
-  ValidateRle(values, bit_width, NULL, -1);
+  ValidateRle(values, bit_width, nullptr, -1);
 }
 
 TEST(Rle, TestValues) {
@@ -295,7 +295,7 @@ TEST_F(BitRle, AllSame) {
       values.push_back(v ? true : false);
     }
 
-    ValidateRle(values, 1, NULL, 3);
+    ValidateRle(values, 1, nullptr, 3);
   }
 }
 
@@ -305,13 +305,13 @@ TEST_F(BitRle, Flush) {
   vector<bool> values;
   for (int i = 0; i < 16; ++i) values.push_back(1);
   values.push_back(false);
-  ValidateRle(values, 1, NULL, -1);
+  ValidateRle(values, 1, nullptr, -1);
   values.push_back(true);
-  ValidateRle(values, 1, NULL, -1);
+  ValidateRle(values, 1, nullptr, -1);
   values.push_back(true);
-  ValidateRle(values, 1, NULL, -1);
+  ValidateRle(values, 1, nullptr, -1);
   values.push_back(true);
-  ValidateRle(values, 1, NULL, -1);
+  ValidateRle(values, 1, nullptr, -1);
 }
 
 // Test some random sequences.
@@ -333,7 +333,7 @@ TEST_F(BitRle, Random) {
       }
       parity = !parity;
     }
-    ValidateRle(values, (iters % MAX_WIDTH) + 1, NULL, -1);
+    ValidateRle(values, (iters % MAX_WIDTH) + 1, nullptr, -1);
   }
 }
 
@@ -359,7 +359,7 @@ TEST_F(BitRle, RepeatedPattern) {
     }
   }
 
-  ValidateRle(values, 1, NULL, -1);
+  ValidateRle(values, 1, nullptr, -1);
 }
 
 TEST_F(TestRle, TestBulkPut) {

@@ -376,7 +376,7 @@ TYPED_TEST(BlockManagerTest, EndToEndTest) {
 
   // Delete the block.
   ASSERT_OK(this->bm_->DeleteBlock(written_block->id()));
-  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
+  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
               .IsNotFound());
 }
 
@@ -394,7 +394,7 @@ TYPED_TEST(BlockManagerTest, ReadAfterDeleteTest) {
   gscoped_ptr<ReadableBlock> read_block;
   ASSERT_OK(this->bm_->OpenBlock(written_block->id(), &read_block));
   ASSERT_OK(this->bm_->DeleteBlock(written_block->id()));
-  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
+  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
               .IsNotFound());
 
   // But we should still be able to read from the opened block.
@@ -507,7 +507,7 @@ TYPED_TEST(BlockManagerTest, AbortTest) {
   ASSERT_OK(written_block->Append(test_data));
   ASSERT_OK(written_block->Abort());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
-  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
+  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
               .IsNotFound());
 
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
@@ -515,7 +515,7 @@ TYPED_TEST(BlockManagerTest, AbortTest) {
   ASSERT_OK(written_block->FlushDataAsync());
   ASSERT_OK(written_block->Abort());
   ASSERT_EQ(WritableBlock::CLOSED, written_block->state());
-  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), NULL)
+  ASSERT_TRUE(this->bm_->OpenBlock(written_block->id(), nullptr)
               .IsNotFound());
 }
 
@@ -564,7 +564,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   ASSERT_OK(read_block->Read(0, test_data.length(), &data, scratch.get()));
   ASSERT_EQ(test_data, data);
   ASSERT_OK(read_block->Close());
-  ASSERT_TRUE(new_bm->OpenBlock(written_block3->id(), NULL)
+  ASSERT_TRUE(new_bm->OpenBlock(written_block3->id(), nullptr)
               .IsNotFound());
 }
 

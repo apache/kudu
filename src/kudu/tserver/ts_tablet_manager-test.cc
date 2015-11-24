@@ -170,7 +170,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a tablet and do another incremental report - should include the tablet.
-  ASSERT_OK(CreateNewTablet("tablet-1", schema_, NULL));
+  ASSERT_OK(CreateNewTablet("tablet-1", schema_, nullptr));
   int updated_tablets = 0;
   while (updated_tablets != 1) {
     tablet_manager_->GenerateIncrementalTabletReport(&report);
@@ -198,7 +198,7 @@ TEST_F(TsTabletManagerTest, TestTabletReports) {
   tablet_manager_->MarkTabletReportAcknowledged(report);
 
   // Create a second tablet, and ensure the incremental report shows it.
-  ASSERT_OK(CreateNewTablet("tablet-2", schema_, NULL));
+  ASSERT_OK(CreateNewTablet("tablet-2", schema_, nullptr));
 
   // Wait up to 10 seconds to get a tablet report from tablet-2.
   // TabletPeer does not mark tablets dirty until after it commits the

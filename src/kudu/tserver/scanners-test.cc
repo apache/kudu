@@ -35,8 +35,8 @@ namespace tserver {
 using std::vector;
 
 TEST(ScannersTest, TestManager) {
-  scoped_refptr<TabletPeer> null_peer(NULL);
-  ScannerManager mgr(NULL);
+  scoped_refptr<TabletPeer> null_peer(nullptr);
+  ScannerManager mgr(nullptr);
 
   // Create two scanners, make sure their ids are different.
   SharedScanner s1, s2;
@@ -64,7 +64,7 @@ TEST(ScannersTest, TestManager) {
 }
 
 TEST(ScannerTest, TestExpire) {
-  scoped_refptr<TabletPeer> null_peer(NULL);
+  scoped_refptr<TabletPeer> null_peer(nullptr);
   FLAGS_scanner_ttl_ms = 100;
   MetricRegistry registry;
   ScannerManager mgr(METRIC_ENTITY_server.Instantiate(&registry, "test"));

@@ -148,7 +148,7 @@ class TestMajorDeltaCompaction : public KuduRowSetTest {
       gscoped_ptr<RowwiseIterator> row_iter;
       ASSERT_OK(tablet()->NewRowIterator(client_schema_, snap,
                                                 Tablet::UNORDERED, &row_iter));
-      ASSERT_OK(row_iter->Init(NULL));
+      ASSERT_OK(row_iter->Init(nullptr));
 
       vector<string> results;
       ASSERT_OK(IterateToStringList(row_iter.get(), &results));

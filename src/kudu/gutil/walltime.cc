@@ -141,7 +141,7 @@ bool WallTime_Parse_Timezone(const char* time_spec,
      memset(&split_time, 0, sizeof(split_time));
   }
   const char* parsed = strptime(time_spec, format, &split_time);
-  if (parsed == NULL) return false;
+  if (parsed == nullptr) return false;
 
   // If format ends with "%S", match fractional seconds
   double fraction = 0.0;
@@ -190,9 +190,9 @@ void StringAppendStrftime(string* dst,
   struct tm tm;
   bool conversion_error;
   if (local) {
-    conversion_error = (localtime_r(&when, &tm) == NULL);
+    conversion_error = (localtime_r(&when, &tm) == nullptr);
   } else {
-    conversion_error = (gmtime_r(&when, &tm) == NULL);
+    conversion_error = (gmtime_r(&when, &tm) == nullptr);
   }
   if (conversion_error) {
     // If we couldn't convert the time, don't append anything.
@@ -203,6 +203,6 @@ void StringAppendStrftime(string* dst,
 
 string LocalTimeAsString() {
   string ret;
-  StringAppendStrftime(&ret, "%Y-%m-%d %H:%M:%S %Z", time(NULL), true);
+  StringAppendStrftime(&ret, "%Y-%m-%d %H:%M:%S %Z", time(nullptr), true);
   return ret;
 }

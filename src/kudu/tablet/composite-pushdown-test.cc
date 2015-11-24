@@ -27,7 +27,7 @@
 namespace kudu {
 namespace tablet {
 
-const char* const kTestHostnames[] = { "foo", "foobar", "baz", NULL };
+const char* const kTestHostnames[] = { "foo", "foobar", "baz", nullptr };
 
 class CompositePushdownTest : public KuduTabletTest {
  public:
@@ -55,7 +55,7 @@ class CompositePushdownTest : public KuduTabletTest {
     for (int16_t year = 2000; year <= 2010; year++) {
       for (int8_t month = 1; month <= 12; month++) {
         for (int8_t day = 1; day <= 28; day++) {
-          for (int host_idx = 0; kTestHostnames[host_idx] != NULL; host_idx++) {
+          for (int host_idx = 0; kTestHostnames[host_idx] != nullptr; host_idx++) {
             CHECK_OK(row.SetInt16(0, year));
             CHECK_OK(row.SetInt8(1, month));
             CHECK_OK(row.SetInt8(2, day));
@@ -141,7 +141,7 @@ TEST_F(CompositePushdownTest, TestPushDownStringInequality) {
   ColumnRangePredicate pred_year(schema_.column(0), &year, &year);
   ColumnRangePredicate pred_month(schema_.column(1), &month, &month);
   ColumnRangePredicate pred_day(schema_.column(2), &day, &day);
-  ColumnRangePredicate pred_host(schema_.column(3), NULL, &host);
+  ColumnRangePredicate pred_host(schema_.column(3), nullptr, &host);
   spec.AddPredicate(pred_year);
   spec.AddPredicate(pred_month);
   spec.AddPredicate(pred_day);
@@ -237,11 +237,11 @@ TEST_F(CompositePushdownTest, TestPushDownPrefixEqualitySuffixInequality) {
 
   ColumnRangePredicate pred_month_eq(schema_.column(1), &month_l, &month_l);
   ColumnRangePredicate pred_month_ge_le(schema_.column(1), &month_l, &month_u);
-  ColumnRangePredicate pred_month_le(schema_.column(1), NULL, &month_l);
+  ColumnRangePredicate pred_month_le(schema_.column(1), nullptr, &month_l);
 
   ColumnRangePredicate pred_day_ge_le(schema_.column(2), &day_l, &day_u);
-  ColumnRangePredicate pred_day_ge(schema_.column(2), &day_l, NULL);
-  ColumnRangePredicate pred_day_le(schema_.column(2), NULL, &day_u);
+  ColumnRangePredicate pred_day_ge(schema_.column(2), &day_l, nullptr);
+  ColumnRangePredicate pred_day_le(schema_.column(2), nullptr, &day_u);
 
   {
     // year=2001, month=9, day >= 1 && day <= 15
@@ -349,7 +349,7 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
 
   {
     // year >= 2001
-    ColumnRangePredicate pred_year(schema_.column(0), &year_2001, NULL);
+    ColumnRangePredicate pred_year(schema_.column(0), &year_2001, nullptr);
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     vector<string> results;
@@ -367,7 +367,7 @@ TEST_F(CompositePushdownTest, TestPushdownPrefixInequality) {
 
   {
     // year <= 2003
-    ColumnRangePredicate pred_year(schema_.column(0), NULL, &year_2003);
+    ColumnRangePredicate pred_year(schema_.column(0), nullptr, &year_2003);
     ScanSpec spec;
     spec.AddPredicate(pred_year);
     vector<string> results;

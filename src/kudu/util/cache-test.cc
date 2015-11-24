@@ -93,8 +93,8 @@ class CacheTest : public KuduTest,
 
   int Lookup(int key) {
     Cache::Handle* handle = cache_->Lookup(EncodeKey(key), Cache::EXPECT_IN_CACHE);
-    const int r = (handle == NULL) ? -1 : DecodeValue(cache_->Value(handle));
-    if (handle != NULL) {
+    const int r = (handle == nullptr) ? -1 : DecodeValue(cache_->Value(handle));
+    if (handle != nullptr) {
       cache_->Release(handle);
     }
     return r;

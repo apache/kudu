@@ -66,7 +66,7 @@ class TestMemRowSet : public ::testing::Test {
   void CheckValue(const shared_ptr<MemRowSet> &mrs, string key,
                   const string &expected_row) {
     gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
-    ASSERT_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(nullptr));
 
     Slice keystr_slice(key);
     Slice key_slice(reinterpret_cast<const char *>(&keystr_slice), sizeof(Slice));
@@ -197,7 +197,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterate) {
   ASSERT_EQ(2, mrs->entry_count());
 
   gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
-  ASSERT_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(nullptr));
 
   // The first row returned from the iterator should
   // be "goodbye" because 'g' sorts before 'h'
@@ -264,7 +264,7 @@ TEST_F(TestMemRowSet, TestInsertAndIterateCompoundKey) {
   ASSERT_EQ(3, mrs->entry_count());
 
   gscoped_ptr<MemRowSet::Iterator> iter(mrs->NewIterator());
-  ASSERT_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(nullptr));
 
   // The first row returned from the iterator should
   // be "goodbye" (row3) sorted on the second key

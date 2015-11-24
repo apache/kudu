@@ -46,7 +46,7 @@ static inline bool EatADouble(const char** text, int* len, bool allow_question,
   const char* pos = *text;
   int rem = *len;  // remaining length, or -1 if null-terminated
 
-  if (pos == NULL || rem == 0)
+  if (pos == nullptr || rem == 0)
     return false;
 
   if (allow_question && (*pos == '?')) {
@@ -138,7 +138,7 @@ bool ParseDoubleRange(const char* text, int len, const char** end,
     *from = -HUGE_VAL;
     *to = HUGE_VAL;
   }
-  if (opts.allow_currency && (is_currency != NULL))
+  if (opts.allow_currency && (is_currency != nullptr))
     *is_currency = false;
 
   assert(len >= -1);
@@ -155,10 +155,10 @@ bool ParseDoubleRange(const char* text, int len, const char** end,
       double* dest = (comparator == '>') ? from : to;
       EatAChar(&text, &len, "=", true, false);
       if (opts.allow_currency && EatAChar(&text, &len, "$", true, false))
-        if (is_currency != NULL)
+        if (is_currency != nullptr)
           *is_currency = true;
-      if (!EatADouble(&text, &len, opts.allow_unbounded_markers, dest, NULL,
-                      NULL))
+      if (!EatADouble(&text, &len, opts.allow_unbounded_markers, dest, nullptr,
+                      nullptr))
         return false;
       *end = text;
       return EatAChar(&text, &len, opts.acceptable_terminators, false,
@@ -179,9 +179,9 @@ bool ParseDoubleRange(const char* text, int len, const char** end,
   bool final_period = false;
   bool* check_initial_minus = (strchr(opts.separators, '-') && !seen_dollar
                                && (opts.num_required_bounds < 2)) ?
-                              (&initial_minus_sign) : NULL;
+                              (&initial_minus_sign) : nullptr;
   bool* check_final_period = strchr(opts.separators, '.') ? (&final_period)
-                             : NULL;
+                             : nullptr;
   bool double_seen = EatADouble(&text, &len, opts.allow_unbounded_markers,
                                 from, check_initial_minus, check_final_period);
 
@@ -235,7 +235,7 @@ bool ParseDoubleRange(const char* text, int len, const char** end,
                                || (opts.allow_currency && !double_seen))
                               && EatAChar(&text, &len, "$", true, false);
     bool second_double_seen = EatADouble(
-      &text, &len, opts.allow_unbounded_markers, to, NULL, NULL);
+      &text, &len, opts.allow_unbounded_markers, to, nullptr, nullptr);
     if (opts.num_required_bounds > double_seen + second_double_seen)
       return false;
     if (second_dollar_seen && !second_double_seen) {
@@ -247,7 +247,7 @@ bool ParseDoubleRange(const char* text, int len, const char** end,
     seen_dollar = seen_dollar || second_dollar_seen;
   }
 
-  if (seen_dollar && (is_currency != NULL))
+  if (seen_dollar && (is_currency != nullptr))
     *is_currency = true;
   // We're done. But we have to check that the next char is a proper
   // terminator.
@@ -293,7 +293,7 @@ void ConsumeStrayLeadingZeroes(string *const str) {
 // --------------------------------------------------------------------
 
 int32 ParseLeadingInt32Value(const char *str, int32 deflt) {
-  char *error = NULL;
+  char *error = nullptr;
   long value = strtol(str, &error, 0);
   // Limit long values to int32 min/max.  Needed for lp64; no-op on 32 bits.
   if (value > numeric_limits<int32>::max()) {
@@ -307,7 +307,7 @@ int32 ParseLeadingInt32Value(const char *str, int32 deflt) {
 uint32 ParseLeadingUInt32Value(const char *str, uint32 deflt) {
   if (numeric_limits<unsigned long>::max() == numeric_limits<uint32>::max()) {
     // When long is 32 bits, we can use strtoul.
-    char *error = NULL;
+    char *error = nullptr;
     const uint32 value = strtoul(str, &error, 0);
     return (error == str) ? deflt : value;
   } else {
@@ -316,7 +316,7 @@ uint32 ParseLeadingUInt32Value(const char *str, uint32 deflt) {
     // it would be impossible to differentiate "-2" (that should wrap
     // around to the value UINT_MAX-1) from a string with ULONG_MAX-1
     // (that should be pegged to UINT_MAX due to overflow).
-    char *error = NULL;
+    char *error = nullptr;
     int64 value = strto64(str, &error, 0);
     if (value > numeric_limits<uint32>::max() ||
         value < -static_cast<int64>(numeric_limits<uint32>::max())) {
@@ -337,7 +337,7 @@ uint32 ParseLeadingUInt32Value(const char *str, uint32 deflt) {
 // --------------------------------------------------------------------
 
 int32 ParseLeadingDec32Value(const char *str, int32 deflt) {
-  char *error = NULL;
+  char *error = nullptr;
   long value = strtol(str, &error, 10);
   // Limit long values to int32 min/max.  Needed for lp64; no-op on 32 bits.
   if (value > numeric_limits<int32>::max()) {
@@ -351,7 +351,7 @@ int32 ParseLeadingDec32Value(const char *str, int32 deflt) {
 uint32 ParseLeadingUDec32Value(const char *str, uint32 deflt) {
   if (numeric_limits<unsigned long>::max() == numeric_limits<uint32>::max()) {
     // When long is 32 bits, we can use strtoul.
-    char *error = NULL;
+    char *error = nullptr;
     const uint32 value = strtoul(str, &error, 10);
     return (error == str) ? deflt : value;
   } else {
@@ -360,7 +360,7 @@ uint32 ParseLeadingUDec32Value(const char *str, uint32 deflt) {
     // it would be impossible to differentiate "-2" (that should wrap
     // around to the value UINT_MAX-1) from a string with ULONG_MAX-1
     // (that should be pegged to UINT_MAX due to overflow).
-    char *error = NULL;
+    char *error = nullptr;
     int64 value = strto64(str, &error, 10);
     if (value > numeric_limits<uint32>::max() ||
         value < -static_cast<int64>(numeric_limits<uint32>::max())) {
@@ -380,19 +380,19 @@ uint32 ParseLeadingUDec32Value(const char *str, uint32 deflt) {
 //    UInt64 and Int64 cannot handle decimal numbers with leading 0s.
 // --------------------------------------------------------------------
 uint64 ParseLeadingUInt64Value(const char *str, uint64 deflt) {
-  char *error = NULL;
+  char *error = nullptr;
   const uint64 value = strtou64(str, &error, 0);
   return (error == str) ? deflt : value;
 }
 
 int64 ParseLeadingInt64Value(const char *str, int64 deflt) {
-  char *error = NULL;
+  char *error = nullptr;
   const int64 value = strto64(str, &error, 0);
   return (error == str) ? deflt : value;
 }
 
 uint64 ParseLeadingHex64Value(const char *str, uint64 deflt) {
-  char *error = NULL;
+  char *error = nullptr;
   const uint64 value = strtou64(str, &error, 16);
   return (error == str) ? deflt : value;
 }
@@ -407,13 +407,13 @@ uint64 ParseLeadingHex64Value(const char *str, uint64 deflt) {
 // --------------------------------------------------------------------
 
 int64 ParseLeadingDec64Value(const char *str, int64 deflt) {
-  char *error = NULL;
+  char *error = nullptr;
   const int64 value = strto64(str, &error, 10);
   return (error == str) ? deflt : value;
 }
 
 uint64 ParseLeadingUDec64Value(const char *str, uint64 deflt) {
-  char *error = NULL;
+  char *error = nullptr;
   const uint64 value = strtou64(str, &error, 10);
   return (error == str) ? deflt : value;
 }
@@ -425,7 +425,7 @@ uint64 ParseLeadingUDec64Value(const char *str, uint64 deflt) {
 // --------------------------------------------------------------------
 
 double ParseLeadingDoubleValue(const char *str, double deflt) {
-  char *error = NULL;
+  char *error = nullptr;
   errno = 0;
   const double value = strtod(str, &error);
   if (errno != 0 ||  // overflow/underflow happened
@@ -926,7 +926,7 @@ extern const char two_ASCII_digits[100][2];  // from strutil.cc
 
 char* FastUInt32ToBufferLeft(uint32 u, char* buffer) {
   uint digits;
-  const char *ASCII_digits = NULL;
+  const char *ASCII_digits = nullptr;
   // The idea of this implementation is to trim the number of divides to as few
   // as possible by using multiplication and subtraction rather than mod (%),
   // and by outputting two digits at a time rather than one.
@@ -1020,7 +1020,7 @@ char* FastInt32ToBufferLeft(int32 i, char* buffer) {
 
 char* FastUInt64ToBufferLeft(uint64 u64, char* buffer) {
   uint digits;
-  const char *ASCII_digits = NULL;
+  const char *ASCII_digits = nullptr;
 
   uint32 u = static_cast<uint32>(u64);
   if (u == u64) return FastUInt32ToBufferLeft(u, buffer);
@@ -1248,7 +1248,7 @@ char* DoubleToBuffer(double value, char* buffer) {
   // larger than the precision we asked for.
   DCHECK(snprintf_result > 0 && snprintf_result < kDoubleToBufferSize);
 
-  if (strtod(buffer, NULL) != value) {
+  if (strtod(buffer, nullptr) != value) {
     snprintf_result =
       snprintf(buffer, kDoubleToBufferSize, "%.*g", DBL_DIG+2, value);
 

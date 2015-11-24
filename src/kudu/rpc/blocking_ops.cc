@@ -49,7 +49,7 @@ Status EnsureBlockingMode(const Socket* const sock) {
 
 Status SendFramedMessageBlocking(Socket* sock, const MessageLite& header, const MessageLite& msg,
     const MonoTime& deadline) {
-  DCHECK(sock != NULL);
+  DCHECK(sock != nullptr);
   DCHECK(header.IsInitialized()) << "header protobuf must be initialized";
   DCHECK(msg.IsInitialized()) << "msg protobuf must be initialized";
 
@@ -79,10 +79,10 @@ Status SendFramedMessageBlocking(Socket* sock, const MessageLite& header, const 
 
 Status ReceiveFramedMessageBlocking(Socket* sock, faststring* recv_buf,
     MessageLite* header, Slice* param_buf, const MonoTime& deadline) {
-  DCHECK(sock != NULL);
-  DCHECK(recv_buf != NULL);
-  DCHECK(header != NULL);
-  DCHECK(param_buf != NULL);
+  DCHECK(sock != nullptr);
+  DCHECK(recv_buf != nullptr);
+  DCHECK(header != nullptr);
+  DCHECK(param_buf != nullptr);
 
   RETURN_NOT_OK(EnsureBlockingMode(sock));
 

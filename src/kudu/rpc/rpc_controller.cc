@@ -56,7 +56,7 @@ const ErrorStatusPB* RpcController::error_response() const {
   if (call_) {
     return call_->error_pb();
   }
-  return NULL;
+  return nullptr;
 }
 
 Status RpcController::GetSidecar(int idx, Slice* sidecar) const {

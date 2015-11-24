@@ -59,7 +59,7 @@ static bool BasicCopyCell(uint64_t size, uint8_t* src, uint8_t* dst,
                           bool is_string, Arena* arena) {
   // Relocate indirect data
   if (is_string) {
-    if (PREDICT_TRUE(arena != NULL)) {
+    if (PREDICT_TRUE(arena != nullptr)) {
       return PREDICT_TRUE(arena->RelocateSlice(*reinterpret_cast<Slice*>(src),
                                                reinterpret_cast<Slice*>(dst)));
     }

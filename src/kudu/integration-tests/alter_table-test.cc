@@ -146,7 +146,7 @@ class AlterTableTest : public KuduTest {
     // we'll end up calling the destructor from the test code instead of the
     // normal location, which can cause crashes, etc.
     tablet_peer_.reset();
-    if (cluster_->mini_tablet_server(0)->server() != NULL) {
+    if (cluster_->mini_tablet_server(0)->server() != nullptr) {
       cluster_->mini_tablet_server(0)->Shutdown();
     }
   }
@@ -299,7 +299,7 @@ TEST_F(AlterTableTest, TestAddNotNullableColumnWithoutDefaults) {
                      step->mutable_add_column()->mutable_schema());
     AlterTableResponsePB resp;
     Status s = cluster_->mini_master()->master()->catalog_manager()->AlterTable(
-      &req, &resp, NULL);
+      &req, &resp, nullptr);
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(), "column `c2`: NOT NULL columns must have a default");
   }

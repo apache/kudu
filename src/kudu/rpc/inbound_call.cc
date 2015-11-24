@@ -103,7 +103,7 @@ void InboundCall::ApplicationErrorToPB(int error_ext_id, const std::string& mess
   err->set_message(message);
   const FieldDescriptor* app_error_field =
     err->GetReflection()->FindKnownExtensionByNumber(error_ext_id);
-  if (app_error_field != NULL) {
+  if (app_error_field != nullptr) {
     err->GetReflection()->MutableMessage(err, app_error_field)->CheckTypeAndMergeFrom(app_error_pb);
   } else {
     LOG(DFATAL) << "Unable to find application error extension ID " << error_ext_id
@@ -240,7 +240,7 @@ void InboundCall::RecordCallReceived() {
 }
 
 void InboundCall::RecordHandlingStarted(scoped_refptr<Histogram> incoming_queue_time) {
-  DCHECK(incoming_queue_time != NULL);
+  DCHECK(incoming_queue_time != nullptr);
   DCHECK(!timing_.time_handled.Initialized());  // Protect against multiple calls.
   timing_.time_handled = MonoTime::Now(MonoTime::FINE);
   incoming_queue_time->Increment(
@@ -248,7 +248,7 @@ void InboundCall::RecordHandlingStarted(scoped_refptr<Histogram> incoming_queue_
 }
 
 void InboundCall::RecordHandlingCompleted(scoped_refptr<Histogram> handler_run_time) {
-  DCHECK(handler_run_time != NULL);
+  DCHECK(handler_run_time != nullptr);
   DCHECK(!timing_.time_completed.Initialized());  // Protect against multiple calls.
   timing_.time_completed = MonoTime::Now(MonoTime::FINE);
   handler_run_time->Increment(

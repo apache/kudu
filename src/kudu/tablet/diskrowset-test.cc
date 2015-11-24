@@ -400,7 +400,7 @@ TEST_F(TestRowSet, TestDeltaApplicationPerformance) {
       StringPrintf("Reading %zd rows prior to updates %d times",
                    n_rows_, FLAGS_n_read_passes));
 
-    UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
+    UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
 
     BenchmarkIterationPerformance(*rs.get(),
       StringPrintf("Reading %zd rows with %.2f%% updates %d times (updates in DMS)",
@@ -441,7 +441,7 @@ TEST_F(TestRowSet, TestMakeDeltaIteratorMergerUnlocked) {
   // Now open the DiskRowSet for read
   shared_ptr<DiskRowSet> rs;
   ASSERT_OK(OpenTestRowSet(&rs));
-  UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
   ASSERT_OK(rs->FlushDeltas());
   DeltaTracker *dt = rs->delta_tracker();
   int num_stores = dt->redo_delta_stores_.size();
@@ -486,21 +486,21 @@ TEST_F(TestRowSet, TestCompactStores) {
   ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MAJOR_DELTA_COMPACTION));
 
   // Write a first delta file.
-  UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
   ASSERT_OK(rs->FlushDeltas());
   // One file isn't enough for minor compactions, but a major compaction can run.
   ASSERT_EQ(0, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));
   BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MAJOR_DELTA_COMPACTION));
 
   // Write a second delta file.
-  UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
   ASSERT_OK(rs->FlushDeltas());
   // Two files is enough for all delta compactions.
   BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));
   BetweenZeroAndOne(rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MAJOR_DELTA_COMPACTION));
 
   // Write a third delta file.
-  UpdateExistingRows(rs.get(), FLAGS_update_fraction, NULL);
+  UpdateExistingRows(rs.get(), FLAGS_update_fraction, nullptr);
   ASSERT_OK(rs->FlushDeltas());
   // We're hitting the max for minor compactions but not for major compactions.
   ASSERT_EQ(1, rs->DeltaStoresCompactionPerfImprovementScore(RowSet::MINOR_DELTA_COMPACTION));

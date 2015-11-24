@@ -221,7 +221,7 @@ Status KuduColumnSpec::ToColumnSchema(KuduColumnSchema* col) const {
 
   bool nullable = data_->has_nullable ? data_->nullable : true;
 
-  void* default_val = NULL;
+  void* default_val = nullptr;
   // TODO: distinguish between DEFAULT NULL and no default?
   if (data_->has_default) {
     RETURN_NOT_OK(data_->default_val->data_->CheckTypeAndGetPointer(
@@ -404,11 +404,11 @@ KuduColumnSchema::KuduColumnSchema(const std::string &name,
 }
 
 KuduColumnSchema::KuduColumnSchema(const KuduColumnSchema& other)
-  : col_(NULL) {
+  : col_(nullptr) {
   CopyFrom(other);
 }
 
-KuduColumnSchema::KuduColumnSchema() : col_(NULL) {
+KuduColumnSchema::KuduColumnSchema() : col_(nullptr) {
 }
 
 KuduColumnSchema::~KuduColumnSchema() {
@@ -427,14 +427,14 @@ void KuduColumnSchema::CopyFrom(const KuduColumnSchema& other) {
   if (other.col_) {
     col_ = new ColumnSchema(*other.col_);
   } else {
-    col_ = NULL;
+    col_ = nullptr;
   }
 }
 
 bool KuduColumnSchema::Equals(const KuduColumnSchema& other) const {
   return this == &other ||
     col_ == other.col_ ||
-    (col_ != NULL && col_->Equals(*other.col_, true));
+    (col_ != nullptr && col_->Equals(*other.col_, true));
 }
 
 const std::string& KuduColumnSchema::name() const {
@@ -455,11 +455,11 @@ KuduColumnSchema::DataType KuduColumnSchema::type() const {
 ////////////////////////////////////////////////////////////
 
 KuduSchema::KuduSchema()
-  : schema_(NULL) {
+  : schema_(nullptr) {
 }
 
 KuduSchema::KuduSchema(const KuduSchema& other)
-  : schema_(NULL) {
+  : schema_(nullptr) {
   CopyFrom(other);
 }
 

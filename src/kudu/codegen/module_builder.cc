@@ -276,7 +276,7 @@ Status ModuleBuilder::Compile(unique_ptr<ExecutionEngine>* out) {
   // Satisfy the promises
   for (JITFuture& fut : futures_) {
     *fut.actual_f_ = local_engine->getPointerToFunction(fut.llvm_f_);
-    if (*fut.actual_f_ == NULL) {
+    if (*fut.actual_f_ == nullptr) {
       return Status::NotFound(
         "Code generation for module failed. Could not find function \""
         + ToString(fut.llvm_f_) + "\".");

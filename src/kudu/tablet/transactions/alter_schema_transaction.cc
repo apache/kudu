@@ -45,8 +45,8 @@ string AlterSchemaTransactionState::ToString() const {
   return Substitute("AlterSchemaTransactionState "
                     "[timestamp=$0, schema=$1, request=$2]",
                     timestamp().ToString(),
-                    schema_ == NULL ? "(none)" : schema_->ToString(),
-                    request_ == NULL ? "(none)" : request_->ShortDebugString());
+                    schema_ == nullptr ? "(none)" : schema_->ToString(),
+                    request_ == nullptr ? "(none)" : request_->ShortDebugString());
 }
 
 void AlterSchemaTransactionState::AcquireSchemaLock(rw_semaphore* l) {

@@ -278,13 +278,13 @@ void Messenger::ScheduleOnReactor(const boost::function<void(const Status&)>& fu
   DCHECK(!reactors_.empty());
 
   // If we're already running on a reactor thread, reuse it.
-  Reactor* chosen = NULL;
+  Reactor* chosen = nullptr;
   for (Reactor* r : reactors_) {
     if (r->IsCurrentThread()) {
       chosen = r;
     }
   }
-  if (chosen == NULL) {
+  if (chosen == nullptr) {
     // Not running on a reactor thread, pick one at random.
     chosen = reactors_[rand() % reactors_.size()];
   }
@@ -299,7 +299,7 @@ const scoped_refptr<RpcService> Messenger::rpc_service(const string& service_nam
   if (FindCopy(rpc_services_, service_name, &service)) {
     return service;
   } else {
-    return scoped_refptr<RpcService>(NULL);
+    return scoped_refptr<RpcService>(nullptr);
   }
 }
 

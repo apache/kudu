@@ -53,7 +53,7 @@ static const int kMaxArenaBufferSize = 8*1024*1024;
 bool MRSRow::IsGhost() const {
   bool is_ghost = false;
   for (const Mutation *mut = header_->redo_head;
-       mut != NULL;
+       mut != nullptr;
        mut = mut->next()) {
     RowChangeListDecoder decoder(mut->changelist());
     Status s = decoder.Init();
@@ -159,7 +159,7 @@ Status MemRowSet::Insert(Timestamp timestamp,
     // to mutate it when we relocate its Slices into our arena.
     DEFINE_MRSROW_ON_STACK(this, mrsrow, mrsrow_slice);
     mrsrow.header_->insertion_timestamp = timestamp;
-    mrsrow.header_->redo_head = NULL;
+    mrsrow.header_->redo_head = nullptr;
     RETURN_NOT_OK(mrsrow.CopyRow(row, arena_.get()));
 
     CHECK(mutation.Insert(mrsrow_slice))
@@ -527,14 +527,14 @@ Status MemRowSet::Iterator::ApplyMutationsToProjectedRow(
   const Mutation *mutation_head, RowBlockRow *dst_row, Arena *dst_arena) {
   // Fast short-circuit the likely case of a row which was inserted and never
   // updated.
-  if (PREDICT_TRUE(mutation_head == NULL)) {
+  if (PREDICT_TRUE(mutation_head == nullptr)) {
     return Status::OK();
   }
 
   bool is_deleted = false;
 
   for (const Mutation *mut = mutation_head;
-       mut != NULL;
+       mut != nullptr;
        mut = mut->next_) {
     if (!mvcc_snap_.IsCommitted(mut->timestamp_)) {
       // Transaction which wasn't committed yet in the reader's snapshot.
@@ -592,7 +592,7 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
                                           Arena* mutation_arena,
                                           Timestamp* insertion_timestamp) {
 
-  DCHECK(redo_head != NULL);
+  DCHECK(redo_head != nullptr);
 
   // Get the row from the MemRowSet. It may have a different schema from the iterator projection.
   const MRSRow src_row = GetCurrentRow();
@@ -602,11 +602,11 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
   // Project the RowChangeList if required
   *redo_head = src_row.redo_head();
   if (!delta_projector_.is_identity()) {
-    DCHECK(mutation_arena != NULL);
+    DCHECK(mutation_arena != nullptr);
 
-    Mutation *prev_redo = NULL;
-    *redo_head = NULL;
-    for (const Mutation *mut = src_row.redo_head(); mut != NULL; mut = mut->next()) {
+    Mutation *prev_redo = nullptr;
+    *redo_head = nullptr;
+    for (const Mutation *mut = src_row.redo_head(); mut != nullptr; mut = mut->next()) {
       RETURN_NOT_OK(RowChangeListDecoder::ProjectUpdate(delta_projector_,
                                                         mut->changelist(),
                                                         &delta_buf_));
@@ -617,7 +617,7 @@ Status MemRowSet::Iterator::GetCurrentRow(RowBlockRow* dst_row,
       Mutation *mutation = Mutation::CreateInArena(mutation_arena,
                                                    mut->timestamp(),
                                                    RowChangeList(delta_buf_));
-      if (prev_redo != NULL) {
+      if (prev_redo != nullptr) {
         prev_redo->set_next(mutation);
       } else {
         *redo_head = mutation;

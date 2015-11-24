@@ -95,7 +95,7 @@ CFileWriter::CFileWriter(const WriterOptions &options,
     options_(options),
     is_nullable_(is_nullable),
     typeinfo_(typeinfo),
-    key_encoder_(NULL),
+    key_encoder_(nullptr),
     state_(kWriterInitialized) {
   EncodingType encoding = options_.storage_attributes.encoding;
   Status s = TypeEncodingInfo::Get(typeinfo_, encoding, &type_encoding_info_);
@@ -308,7 +308,7 @@ Status CFileWriter::AppendEntries(const void *entries, size_t count) {
 Status CFileWriter::AppendNullableEntries(const uint8_t *bitmap,
                                           const void *entries,
                                           size_t count) {
-  DCHECK(is_nullable_ && bitmap != NULL);
+  DCHECK(is_nullable_ && bitmap != nullptr);
 
   const uint8_t *ptr = reinterpret_cast<const uint8_t *>(entries);
 
@@ -363,7 +363,7 @@ Status CFileWriter::FinishCurDataBlock() {
 
   uint8_t key_tmp_space[typeinfo_->size()];
 
-  if (validx_builder_ != NULL) {
+  if (validx_builder_ != nullptr) {
     // If we're building an index, we need to copy the first
     // key from the block locally, so we can write it into that index.
     RETURN_NOT_OK(data_block_->GetFirstKey(key_tmp_space));
@@ -407,14 +407,14 @@ Status CFileWriter::AppendRawBlock(const vector<Slice> &data_slices,
   }
 
   // Now add to the index blocks
-  if (posidx_builder_ != NULL) {
+  if (posidx_builder_ != nullptr) {
     tmp_buf_.clear();
     KeyEncoderTraits<UINT32, faststring>::Encode(ordinal_pos, &tmp_buf_);
     RETURN_NOT_OK(posidx_builder_->Append(Slice(tmp_buf_), ptr));
   }
 
-  if (validx_builder_ != NULL) {
-    CHECK(validx_key != NULL) <<
+  if (validx_builder_ != nullptr) {
+    CHECK(validx_key != nullptr) <<
       "must pass a  key for raw block if validx is configured";
     VLOG(1) << "Appending validx entry\n" <<
       kudu::HexDump(Slice(reinterpret_cast<const uint8_t *>(validx_key),
@@ -442,7 +442,7 @@ Status CFileWriter::AddBlock(const vector<Slice> &data_slices,
                              const char *name_for_log) {
   uint64_t start_offset = off_;
 
-  if (block_compressor_ != NULL) {
+  if (block_compressor_ != nullptr) {
     // Write compressed block
     Slice cdata;
     Status s = block_compressor_->Compress(data_slices, &cdata);

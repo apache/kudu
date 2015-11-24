@@ -75,7 +75,7 @@ class MemRowSetCompactionInput : public CompactionInput {
     // Realloc the internal block storage if we don't have enough space to
     // copy the whole leaf node's worth of data into it.
     if (PREDICT_FALSE(!row_block_ || num_in_block > row_block_->nrows())) {
-      row_block_.reset(new RowBlock(iter_->schema(), num_in_block, NULL));
+      row_block_.reset(new RowBlock(iter_->schema(), num_in_block, nullptr));
     }
 
     arena_.Reset();
@@ -473,13 +473,13 @@ class MergeCompactionInput : public CompactionInput {
   // Returns -1 if latest_version(left) < latest_version(right)
   static int CompareLatestLiveVersion(const CompactionInputRow& left,
                                       const CompactionInputRow& right) {
-    if (left.redo_head == NULL) {
+    if (left.redo_head == nullptr) {
       // left must still be alive
-      DCHECK(right.redo_head != NULL);
+      DCHECK(right.redo_head != nullptr);
       return 1;
     }
-    if (right.redo_head == NULL) {
-      DCHECK(left.redo_head != NULL);
+    if (right.redo_head == nullptr) {
+      DCHECK(left.redo_head != nullptr);
       return -1;
     }
 
@@ -506,7 +506,7 @@ class MergeCompactionInput : public CompactionInput {
   }
 
   static void AdvanceToLastInList(const Mutation** m) {
-    while ((*m)->next() != NULL) {
+    while ((*m)->next() != nullptr) {
       *m = (*m)->next();
     }
   }
@@ -632,10 +632,10 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
   // which doesn't actually mutate it and having Mutation::set_next()
   // take a non-const value is required in other places.
   Mutation* undo_head = const_cast<Mutation*>(src_row.undo_head);
-  Mutation* redo_head = NULL;
+  Mutation* redo_head = nullptr;
 
   for (const Mutation *redo_mut = src_row.redo_head;
-       redo_mut != NULL;
+       redo_mut != nullptr;
        redo_mut = redo_mut->next()) {
 
     // Skip anything not committed.
@@ -679,7 +679,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 
       // In the case where the previous undo was NULL just make this one
       // the head.
-      if (undo_head == NULL) {
+      if (undo_head == nullptr) {
         undo_head = current_undo;
       } else {
         current_undo->set_next(undo_head);
@@ -699,7 +699,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
         RETURN_NOT_OK(redo_decoder.GetReinsertedRowSlice(*dst_schema, &reinserted_slice));
         ConstContiguousRow reinserted(dst_schema, reinserted_slice.data());
         // No need to copy into an arena -- can refer to the mutation's arena.
-        Arena* null_arena = NULL;
+        Arena* null_arena = nullptr;
         RETURN_NOT_OK(CopyRow(reinserted, dst_row, null_arena));
 
         // Create an undo for the REINSERT
@@ -711,7 +711,7 @@ Status ApplyMutationsAndGenerateUndos(const MvccSnapshot& snap,
 
         // Also reset the previous redo head since it stored the delete which was nullified
         // by this reinsert
-        redo_head = NULL;
+        redo_head = nullptr;
 
         if ((*num_rows_history_truncated)++ == 0) {
           LOG(WARNING) << "Found REINSERT REDO truncating row history for "
@@ -752,7 +752,7 @@ Status FlushCompactionInput(CompactionInput* input,
 
   DCHECK(out->schema().has_column_ids());
 
-  RowBlock block(out->schema(), 100, NULL);
+  RowBlock block(out->schema(), 100, nullptr);
 
   uint64_t num_rows_history_truncated = 0;
 
@@ -776,8 +776,8 @@ Status FlushCompactionInput(CompactionInput* input,
         " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.redo_head);
 
       // Collect the new UNDO/REDO mutations.
-      Mutation* new_undos_head = NULL;
-      Mutation* new_redos_head = NULL;
+      Mutation* new_undos_head = nullptr;
+      Mutation* new_redos_head = nullptr;
 
       bool is_garbage_collected;
       RETURN_NOT_OK(ApplyMutationsAndGenerateUndos(snap,
@@ -801,7 +801,7 @@ Status FlushCompactionInput(CompactionInput* input,
 
       // We should always have UNDO deltas, until we implement delta GC. For now,
       // this is a convenient assertion to catch bugs like KUDU-632.
-      CHECK(new_undos_head != NULL) <<
+      CHECK(new_undos_head != nullptr) <<
         "Writing an output row with no UNDOs: "
         "Input Row: " << dst_row.schema()->DebugRow(dst_row) <<
         " RowId: " << input_row.row.row_index() <<
@@ -809,7 +809,7 @@ Status FlushCompactionInput(CompactionInput* input,
         " Redo Mutations: " << Mutation::StringifyMutationList(*schema, input_row.redo_head);
       out->AppendUndoDeltas(dst_row.row_index(), new_undos_head, &index_in_current_drs_);
 
-      if (new_redos_head != NULL) {
+      if (new_redos_head != nullptr) {
         out->AppendRedoDeltas(dst_row.row_index(), new_redos_head, &index_in_current_drs_);
       }
 
@@ -889,7 +889,7 @@ Status ReupdateMissedDeltas(const string &tablet_name,
           " Undo Mutations: " << Mutation::StringifyMutationList(*schema, row.undo_head);
 
       for (const Mutation *mut = row.redo_head;
-           mut != NULL;
+           mut != nullptr;
            mut = mut->next()) {
         RowChangeListDecoder decoder(mut->changelist());
         RETURN_NOT_OK(decoder.Init());

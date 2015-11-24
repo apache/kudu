@@ -371,7 +371,7 @@ TYPED_TEST(TestTablet, TestRowIteratorSimple) {
   // Now iterate the tablet and make sure the rows show up
   gscoped_ptr<RowwiseIterator> iter;
   ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_, &iter));
-  ASSERT_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(nullptr));
 
   ASSERT_TRUE(iter->HasNext());
 
@@ -421,7 +421,7 @@ TYPED_TEST(TestTablet, TestRowIteratorOrdered) {
     gscoped_ptr<RowwiseIterator> iter;
 
     ASSERT_OK(this->tablet()->NewRowIterator(this->client_schema_, snap, Tablet::ORDERED, &iter));
-    ASSERT_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(nullptr));
 
     // Iterate the tablet collecting rows.
     vector<shared_ptr<faststring> > rows;
@@ -504,7 +504,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
   gscoped_ptr<RowwiseIterator> iter;
   const Schema& schema = this->client_schema_;
   ASSERT_OK(this->tablet()->NewRowIterator(schema, &iter));
-  ASSERT_OK(iter->Init(NULL));
+  ASSERT_OK(iter->Init(nullptr));
   LOG(INFO) << "Created iter: " << iter->ToString();
 
   vector<bool> seen(max_rows, false);
@@ -530,7 +530,7 @@ TYPED_TEST(TestTablet, TestRowIteratorComplex) {
 
       bool set_to_null = TestSetupExpectsNulls<TypeParam>(key_idx);
       bool should_update = (key_idx % 2 == 1);
-      if (val == NULL) {
+      if (val == nullptr) {
         ASSERT_TRUE(set_to_null);
       } else if (should_update) {
         ASSERT_EQ(key_idx, *val);
@@ -680,7 +680,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
     ASSERT_EQ(n_rows * 3, this->TabletCount());
 
     const RowSetMetadata *rowset_meta = this->tablet()->metadata()->GetRowSetForTests(3);
-    ASSERT_TRUE(rowset_meta != NULL);
+    ASSERT_TRUE(rowset_meta != nullptr);
     ASSERT_TRUE(rowset_meta->HasDataForColumnIdForTests(this->schema_.column_id(0)));
     ASSERT_TRUE(rowset_meta->HasBloomDataBlockForTests());
   }
@@ -688,7 +688,7 @@ TYPED_TEST(TestTablet, TestCompaction) {
   // Old rowsets should not exist anymore
   for (int i = 0; i <= 2; i++) {
     const RowSetMetadata *rowset_meta = this->tablet()->metadata()->GetRowSetForTests(i);
-    ASSERT_TRUE(rowset_meta == NULL);
+    ASSERT_TRUE(rowset_meta == nullptr);
   }
 }
 

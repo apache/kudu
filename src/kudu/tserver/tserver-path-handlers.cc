@@ -126,7 +126,7 @@ void TabletServerPathHandlers::HandleTransactionsPage(const Webserver::WebReques
   for (const scoped_refptr<TabletPeer>& peer : peers) {
     vector<TransactionStatusPB> inflight;
 
-    if (peer->tablet() == NULL) {
+    if (peer->tablet() == nullptr) {
       continue;
     }
 
@@ -196,7 +196,7 @@ void TabletServerPathHandlers::HandleTabletsPage(const Webserver::WebRequest& re
     string id = status.tablet_id();
     string table_name = status.table_name();
     string tablet_id_or_link;
-    if (peer->tablet() != NULL) {
+    if (peer->tablet() != nullptr) {
       tablet_id_or_link = TabletLink(id);
     } else {
       tablet_id_or_link = EscapeForHtmlToString(id);

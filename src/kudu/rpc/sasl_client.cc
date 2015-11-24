@@ -94,7 +94,7 @@ SaslClient::SaslClient(const string& app_name, int fd)
       reinterpret_cast<int (*)()>(&SaslClientSimpleCb), this));
   callbacks_.push_back(SaslBuildCallback(SASL_CB_PASS,
       reinterpret_cast<int (*)()>(&SaslClientSecretCb), this));
-  callbacks_.push_back(SaslBuildCallback(SASL_CB_LIST_END, NULL, NULL));
+  callbacks_.push_back(SaslBuildCallback(SASL_CB_LIST_END, nullptr, nullptr));
 }
 
 SaslClient::~SaslClient() {
@@ -151,7 +151,7 @@ Status SaslClient::Init(const string& service_type) {
   // TODO: Support security flags.
   unsigned secflags = 0;
 
-  sasl_conn_t* sasl_conn = NULL;
+  sasl_conn_t* sasl_conn = nullptr;
   int result = sasl_client_new(
       service_type.c_str(),         // Registered name of the service using SASL. Required.
       helper_.server_fqdn(),        // The fully qualified domain name of the remote server.
@@ -287,7 +287,7 @@ Status SaslClient::SendResponseMessage(const char* resp_msg, unsigned resp_msg_l
 
 Status SaslClient::DoSaslStep(const string& in, const char** out, unsigned* out_len, int* result) {
   TRACE("SASL Client: Calling sasl_client_step()");
-  int res = sasl_client_step(sasl_conn_.get(), in.c_str(), in.length(), NULL, out, out_len);
+  int res = sasl_client_step(sasl_conn_.get(), in.c_str(), in.length(), nullptr, out, out_len);
   *result = res;
   if (res == SASL_OK) {
     nego_ok_ = true;
@@ -313,9 +313,9 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
   }
   TRACE("SASL Client: Server mech list: $0", mech_list);
 
-  const char* init_msg = NULL;
+  const char* init_msg = nullptr;
   unsigned init_msg_len = 0;
-  const char* negotiated_mech = NULL;
+  const char* negotiated_mech = nullptr;
 
   /* select a mechanism for a connection
    *  mechlist      -- mechanisms server has available (punctuation ignored)
@@ -335,7 +335,7 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
   int result = sasl_client_start(
       sasl_conn_.get(),     // The SASL connection context created by init()
       mech_list.c_str(),    // The list of mechanisms from the server.
-      NULL,                 // Disables INTERACT return if NULL.
+      nullptr,              // Disables INTERACT return if NULL.
       &init_msg,            // Filled in on success.
       &init_msg_len,        // Filled in on success.
       &negotiated_mech);    // Filled in on success.
@@ -349,7 +349,7 @@ Status SaslClient::HandleNegotiateResponse(const SaslMessagePB& response) {
 
   // The server matched one of our mechanisms.
   SaslMessagePB::SaslAuth* auth = FindOrNull(mech_auth_map, negotiated_mech);
-  if (PREDICT_FALSE(auth == NULL)) {
+  if (PREDICT_FALSE(auth == nullptr)) {
     return Status::IllegalState("Unable to find auth in map, unexpected error", negotiated_mech);
   }
   negotiated_mech_ = SaslMechanism::value_of(negotiated_mech);
@@ -376,7 +376,7 @@ Status SaslClient::HandleChallengeResponse(const SaslMessagePB& response) {
     return Status::InvalidArgument("No token in CHALLENGE response from server");
   }
 
-  const char* out = NULL;
+  const char* out = nullptr;
   unsigned out_len = 0;
   int result = 0;
   RETURN_NOT_OK(DoSaslStep(response.token(), &out, &out_len, &result));
@@ -388,7 +388,7 @@ Status SaslClient::HandleChallengeResponse(const SaslMessagePB& response) {
 Status SaslClient::HandleSuccessResponse(const SaslMessagePB& response) {
   TRACE("SASL Client: Received SUCCESS response from server");
   if (!nego_ok_) {
-    const char* out = NULL;
+    const char* out = nullptr;
     unsigned out_len = 0;
     int result = 0;
     RETURN_NOT_OK(DoSaslStep(response.token(), &out, &out_len, &result));
@@ -425,7 +425,7 @@ int SaslClient::GetOptionCb(const char* plugin_name, const char* option,
 // Used for PLAIN and ANONYMOUS.
 // SASL callback for SASL_CB_USER, SASL_CB_AUTHNAME, SASL_CB_LANGUAGE
 int SaslClient::SimpleCb(int id, const char** result, unsigned* len) {
-  if (PREDICT_FALSE(result == NULL)) {
+  if (PREDICT_FALSE(result == nullptr)) {
     LOG(DFATAL) << "SASL Client: result outparam is NULL";
     return SASL_BADPARAM;
   }
@@ -436,16 +436,16 @@ int SaslClient::SimpleCb(int id, const char** result, unsigned* len) {
       TRACE("SASL Client: callback for SASL_CB_USER");
       if (helper_.IsPlainEnabled()) {
         *result = plain_auth_user_.c_str();
-        if (len != NULL) *len = plain_auth_user_.length();
+        if (len != nullptr) *len = plain_auth_user_.length();
       } else if (helper_.IsAnonymousEnabled()) {
-        *result = NULL;
+        *result = nullptr;
       }
       break;
     case SASL_CB_AUTHNAME:
       TRACE("SASL Client: callback for SASL_CB_AUTHNAME");
       if (helper_.IsPlainEnabled()) {
         *result = plain_auth_user_.c_str();
-        if (len != NULL) *len = plain_auth_user_.length();
+        if (len != nullptr) *len = plain_auth_user_.length();
       }
       break;
     case SASL_CB_LANGUAGE:

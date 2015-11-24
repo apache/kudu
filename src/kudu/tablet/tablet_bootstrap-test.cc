@@ -82,7 +82,7 @@ class BootstrapTest : public LogTestBase {
                                                TABLET_DATA_READY,
                                                meta));
     (*meta)->SetLastDurableMrsIdForTests(mrs_id);
-    if ((*meta)->GetRowSetForTests(0) != NULL) {
+    if ((*meta)->GetRowSetForTests(0) != nullptr) {
       (*meta)->GetRowSetForTests(0)->SetLastDurableRedoDmsIdForTests(delta_id);
     }
     return (*meta)->Flush();
@@ -149,7 +149,7 @@ class BootstrapTest : public LogTestBase {
     // we aren't properly setting up the clock after bootstrap.
     MvccSnapshot snap = MvccSnapshot::CreateSnapshotIncludingAllTransactions();
     ASSERT_OK(tablet->NewRowIterator(schema_, snap, Tablet::UNORDERED, &iter));
-    ASSERT_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(nullptr));
     ASSERT_OK(IterateToStringList(iter.get(), results));
     for (const string& result : *results) {
       VLOG(1) << result;

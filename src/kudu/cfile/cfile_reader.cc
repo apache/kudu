@@ -227,7 +227,7 @@ namespace {
 // the memory can be released using 'release()'.
 class ScratchMemory {
  public:
-  ScratchMemory() : cache_(NULL), ptr_(NULL), size_(-1) {}
+  ScratchMemory() : cache_(nullptr), ptr_(nullptr), size_(-1) {}
   ~ScratchMemory() {
     if (!ptr_) return;
     if (cache_) {
@@ -254,7 +254,7 @@ class ScratchMemory {
 
   void AllocateFromHeap(int size) {
     DCHECK(!ptr_);
-    cache_ = NULL;
+    cache_ = nullptr;
     ptr_ = new uint8_t[size];
     size_ = size;
   }
@@ -268,12 +268,12 @@ class ScratchMemory {
     if (cache_) {
       ptr_ = cache_->MoveToHeap(ptr_, size_);
     }
-    cache_ = NULL;
+    cache_ = nullptr;
   }
 
   // Return true if the current scratch memory was allocated from the cache.
   bool IsFromCache() const {
-    return cache_ != NULL;
+    return cache_ != nullptr;
   }
 
   uint8_t* get() {
@@ -282,7 +282,7 @@ class ScratchMemory {
 
   uint8_t* release() {
     uint8_t* ret = ptr_;
-    ptr_ = NULL;
+    ptr_ = nullptr;
     size_ = -1;
     return ret;
   }
@@ -331,7 +331,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   // then we should allocate our scratch memory directly from the cache.
   // This avoids an extra memory copy in the case of an NVM cache.
   ScratchMemory scratch;
-  if (block_uncompressor_ == NULL && cache_control == CACHE_BLOCK) {
+  if (block_uncompressor_ == nullptr && cache_control == CACHE_BLOCK) {
     scratch.TryAllocateFromCache(cache, ptr.size());
   } else {
     scratch.AllocateFromHeap(ptr.size());
@@ -344,7 +344,7 @@ Status CFileReader::ReadBlock(const BlockPointer &ptr, CacheControl cache_contro
   }
 
   // Decompress the block
-  if (block_uncompressor_ != NULL) {
+  if (block_uncompressor_ != nullptr) {
     // Get the size required for the uncompressed buffer
     uint32_t uncompressed_size;
     Status s = block_uncompressor_->ValidateHeader(block, &uncompressed_size);
@@ -478,9 +478,9 @@ Status DefaultColumnValueIterator::PrepareBatch(size_t *n) {
 Status DefaultColumnValueIterator::Scan(ColumnBlock *dst)  {
   if (dst->is_nullable()) {
     ColumnDataView dst_view(dst);
-    dst_view.SetNullBits(dst->nrows(), value_ != NULL);
+    dst_view.SetNullBits(dst->nrows(), value_ != nullptr);
   }
-  if (value_ != NULL) {
+  if (value_ != nullptr) {
     if (typeinfo_->physical_type() == BINARY) {
       const Slice *src_slice = reinterpret_cast<const Slice *>(value_);
       Slice dst_slice;
@@ -510,7 +510,7 @@ Status DefaultColumnValueIterator::FinishBatch() {
 CFileIterator::CFileIterator(CFileReader* reader,
                              CFileReader::CacheControl cache_control)
   : reader_(reader),
-    seeked_(NULL),
+    seeked_(nullptr),
     prepared_(false),
     cache_control_(cache_control),
     last_prepare_idx_(-1),
@@ -522,7 +522,7 @@ CFileIterator::~CFileIterator() {
 
 Status CFileIterator::SeekToOrdinal(rowid_t ord_idx) {
   RETURN_NOT_OK(PrepareForNewSeek());
-  if (PREDICT_FALSE(posidx_iter_ == NULL)) {
+  if (PREDICT_FALSE(posidx_iter_ == nullptr)) {
     return Status::NotSupported("no positional index in file");
   }
 
@@ -589,10 +589,10 @@ void CFileIterator::SeekToPositionInBlock(PreparedBlock *pb, uint32_t idx_in_blo
 Status CFileIterator::SeekToFirst() {
   RETURN_NOT_OK(PrepareForNewSeek());
   IndexTreeIterator *idx_iter;
-  if (PREDICT_TRUE(posidx_iter_ != NULL)) {
+  if (PREDICT_TRUE(posidx_iter_ != nullptr)) {
     RETURN_NOT_OK(posidx_iter_->SeekToFirst());
     idx_iter = posidx_iter_.get();
-  } else if (PREDICT_TRUE(validx_iter_ != NULL)) {
+  } else if (PREDICT_TRUE(validx_iter_ != nullptr)) {
     RETURN_NOT_OK(validx_iter_->SeekToFirst());
     idx_iter = validx_iter_.get();
   } else {
@@ -619,7 +619,7 @@ Status CFileIterator::SeekAtOrAfter(const EncodedKey &key,
   RETURN_NOT_OK(PrepareForNewSeek());
   DCHECK_EQ(reader_->is_nullable(), false);
 
-  if (PREDICT_FALSE(validx_iter_ == NULL)) {
+  if (PREDICT_FALSE(validx_iter_ == nullptr)) {
     return Status::NotSupported("no value index present");
   }
 
@@ -706,7 +706,7 @@ Status CFileIterator::PrepareForNewSeek() {
     RETURN_NOT_OK_PREPEND(dict_decoder_->ParseHeader(), "Couldn't parse dictionary block header");
   }
 
-  seeked_ = NULL;
+  seeked_ = nullptr;
   for (PreparedBlock *pb : prepared_blocks_) {
     prepared_block_pool_.Destroy(pb);
   }
@@ -798,7 +798,7 @@ bool CFileIterator::HasNext() const {
 
 Status CFileIterator::PrepareBatch(size_t *n) {
   CHECK(!prepared_) << "Should call FinishBatch() first";
-  CHECK(seeked_ != NULL) << "must be seeked";
+  CHECK(seeked_ != nullptr) << "must be seeked";
 
   CHECK(!prepared_blocks_.empty());
 

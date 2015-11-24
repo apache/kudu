@@ -8,14 +8,14 @@ namespace kudu {
 namespace internal {
 
 bool CallbackBase::is_null() const {
-  return bind_state_.get() == NULL;
+  return bind_state_.get() == nullptr;
 }
 
 void CallbackBase::Reset() {
-  polymorphic_invoke_ = NULL;
+  polymorphic_invoke_ = nullptr;
   // NULL the bind_state_ last, since it may be holding the last ref to whatever
   // object owns us, and we may be deleted after that.
-  bind_state_ = NULL;
+  bind_state_ = nullptr;
 }
 
 bool CallbackBase::Equals(const CallbackBase& other) const {
@@ -25,7 +25,7 @@ bool CallbackBase::Equals(const CallbackBase& other) const {
 
 CallbackBase::CallbackBase(BindStateBase* bind_state)
     : bind_state_(bind_state),
-      polymorphic_invoke_(NULL) {
+      polymorphic_invoke_(nullptr) {
   DCHECK(!bind_state_.get() || bind_state_->HasOneRef());
 }
 

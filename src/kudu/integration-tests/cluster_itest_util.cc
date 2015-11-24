@@ -452,7 +452,7 @@ Status LeaderStepDown(const TServerDetails* replica,
   rpc.set_timeout(timeout);
   RETURN_NOT_OK(replica->consensus_proxy->LeaderStepDown(req, &resp, &rpc));
   if (resp.has_error()) {
-    if (error != NULL) {
+    if (error != nullptr) {
       *error = resp.error();
     }
     return StatusFromPB(resp.error().status())

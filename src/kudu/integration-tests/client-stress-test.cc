@@ -243,7 +243,7 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
       int64_t value;
       Status s = cluster_->tablet_server(i)->GetInt64Metric(
           &METRIC_ENTITY_tablet,
-          NULL,
+          nullptr,
           &METRIC_leader_memory_pressure_rejections,
           "value",
           &value);
@@ -253,7 +253,7 @@ TEST_F(ClientStressTest_LowMemory, TestMemoryThrottling) {
       }
       s = cluster_->tablet_server(i)->GetInt64Metric(
           &METRIC_ENTITY_tablet,
-          NULL,
+          nullptr,
           &METRIC_follower_memory_pressure_rejections,
           "value",
           &value);

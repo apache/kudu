@@ -242,7 +242,7 @@ TabletMetadata::TabletMetadata(FsManager *fs_manager, const string& tablet_id)
     tablet_id_(tablet_id),
     fs_manager_(fs_manager),
     next_rowset_idx_(0),
-    schema_(NULL),
+    schema_(nullptr),
     tombstone_last_logged_opid_(MinimumOpId()),
     num_flush_pins_(0),
     needs_flush_(false),
@@ -571,7 +571,7 @@ const RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) const {
       return rowset_meta.get();
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
@@ -581,7 +581,7 @@ RowSetMetadata *TabletMetadata::GetRowSetForTests(int64_t id) {
       return rowset_meta.get();
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 void TabletMetadata::SetSchema(const Schema& schema, uint32_t version) {

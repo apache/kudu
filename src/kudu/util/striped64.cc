@@ -55,8 +55,8 @@ DEFINE_STATIC_THREAD_LOCAL(HashCode, Striped64, hashcode_);
 
 Striped64::Striped64()
     : busy_(false),
-      cell_buffer_(NULL),
-      cells_(NULL),
+      cell_buffer_(nullptr),
+      cells_(nullptr),
       num_cells_(0) {
 }
 

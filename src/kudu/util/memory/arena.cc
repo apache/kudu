@@ -69,7 +69,7 @@ void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size, const size
   // a new component, in which case we should try the "fast path" again
   Component* cur = AcquireLoadCurrent();
   void * result = cur->AllocateBytesAligned(size, align);
-  if (PREDICT_FALSE(result != NULL)) return result;
+  if (PREDICT_FALSE(result != nullptr)) return result;
 
   // Really need to allocate more space.
   size_t next_component_size = min(2 * cur->size(), max_buffer_size_);
@@ -89,14 +89,14 @@ void *ArenaBase<THREADSAFE>::AllocateBytesFallback(const size_t size, const size
   CHECK_LE(minimal, next_component_size);
   // Now, just make sure we can actually get the memory.
   Component* component = NewComponent(next_component_size, minimal);
-  if (component == NULL) {
+  if (component == nullptr) {
     component = NewComponent(next_component_size, size);
   }
-  if (!component) return NULL;
+  if (!component) return nullptr;
 
   // Now, must succeed. The component has at least 'size' bytes.
   result = component->AllocateBytesAligned(size, align);
-  CHECK(result != NULL);
+  CHECK(result != nullptr);
 
   // Now add it to the arena.
   AddComponent(component);
@@ -110,7 +110,7 @@ typename ArenaBase<THREADSAFE>::Component* ArenaBase<THREADSAFE>::NewComponent(
   size_t minimum_size) {
   Buffer* buffer = buffer_allocator_->BestEffortAllocate(requested_size,
                                                          minimum_size);
-  if (buffer == NULL) return NULL;
+  if (buffer == nullptr) return nullptr;
 
   CHECK_EQ(reinterpret_cast<uintptr_t>(buffer->data()) & (16 - 1), 0)
     << "Components should be 16-byte aligned: " << buffer->data();

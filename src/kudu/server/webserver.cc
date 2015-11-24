@@ -75,7 +75,7 @@ namespace kudu {
 
 Webserver::Webserver(const WebserverOptions& opts)
   : opts_(opts),
-    context_(NULL) {
+    context_(nullptr) {
   string host = opts.bind_interface.empty() ? "0.0.0.0" : opts.bind_interface;
   http_address_ = host + ":" + boost::lexical_cast<string>(opts.port);
 }
@@ -181,7 +181,7 @@ Status Webserver::Start() {
   options.push_back(num_threads_str.c_str());
 
   // Options must be a NULL-terminated list
-  options.push_back(NULL);
+  options.push_back(nullptr);
 
   // mongoose ignores SIGCHLD and we need it to run kinit. This means that since
   // mongoose does not reap its own children CGI programs must be avoided.
@@ -202,7 +202,7 @@ Status Webserver::Start() {
   // Restore the child signal handler so wait() works properly.
   signal(SIGCHLD, sig_chld);
 
-  if (context_ == NULL) {
+  if (context_ == nullptr) {
     stringstream error_msg;
     error_msg << "Webserver: Could not start on address " << http_address_;
     Sockaddr addr;
@@ -231,9 +231,9 @@ Status Webserver::Start() {
 }
 
 void Webserver::Stop() {
-  if (context_ != NULL) {
+  if (context_ != nullptr) {
     sq_stop(context_);
-    context_ = NULL;
+    context_ = nullptr;
   }
 }
 
@@ -262,7 +262,7 @@ Status Webserver::GetBoundAddresses(std::vector<Sockaddr>* addrs) const {
 
 int Webserver::LogMessageCallbackStatic(const struct sq_connection* connection,
                                         const char* message) {
-  if (message != NULL) {
+  if (message != nullptr) {
     LOG(INFO) << "Webserver: " << message;
     return 1;
   }
@@ -308,7 +308,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
   bool use_style = true;
 
   WebRequest req;
-  if (request_info->query_string != NULL) {
+  if (request_info->query_string != nullptr) {
     req.query_string = request_info->query_string;
     BuildArgumentMap(request_info->query_string, &req.parsed_args);
   }
@@ -316,7 +316,7 @@ int Webserver::RunPathHandler(const PathHandler& handler,
   if (req.request_method == "POST") {
     const char* content_len_str = sq_get_header(connection, "Content-Length");
     int32_t content_len = 0;
-    if (content_len_str == NULL ||
+    if (content_len_str == nullptr ||
         !safe_strto32(content_len_str, &content_len)) {
       sq_printf(connection, "HTTP/1.1 411 Length Required\r\n");
       return 1;

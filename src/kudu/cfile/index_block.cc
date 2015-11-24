@@ -32,14 +32,14 @@ inline const uint8_t *SliceDecode(const uint8_t *encoded_ptr, const uint8_t *lim
                          Slice *retptr) {
   uint32_t len;
   const uint8_t *data_start = GetVarint32Ptr(encoded_ptr, limit, &len);
-  if (data_start == NULL) {
+  if (data_start == nullptr) {
     // bad varint
-    return NULL;
+    return nullptr;
   }
 
   if (data_start + len > limit) {
     // length extends past end of valid area
-    return NULL;
+    return nullptr;
   }
 
   *retptr = Slice(data_start, len);
@@ -95,7 +95,7 @@ Status IndexBlockBuilder::GetFirstKey(Slice *key) const {
     return Status::NotFound("no keys in builder");
   }
 
-  bool success = NULL != SliceDecode(buffer_.data(),buffer_.data() + buffer_.size(),key);
+  bool success = nullptr != SliceDecode(buffer_.data(),buffer_.data() + buffer_.size(),key);
 
   if (success) {
     return Status::OK();
@@ -187,7 +187,7 @@ int IndexBlockReader::CompareKey(int idx_in_block,
   const uint8_t *key_ptr, *limit;
   GetKeyPointer(idx_in_block, &key_ptr, &limit);
   Slice this_slice;
-  if (PREDICT_FALSE(SliceDecode(key_ptr, limit, &this_slice) == NULL)) {
+  if (PREDICT_FALSE(SliceDecode(key_ptr, limit, &this_slice) == nullptr)) {
     LOG(WARNING)<< "Invalid data in block!";
     return 0;
   }
@@ -207,7 +207,7 @@ Status IndexBlockReader::ReadEntry(size_t idx, Slice *key, BlockPointer *block_p
   GetKeyPointer(idx, &ptr, &limit);
 
   ptr = SliceDecode(ptr, limit, key);
-  if (ptr == NULL) {
+  if (ptr == nullptr) {
     return Status::Corruption("Invalid key in index");
   }
 

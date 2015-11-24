@@ -100,11 +100,11 @@ Status CheckError(int rc, const char* operation) {
 LogIndex::IndexChunk::IndexChunk(const std::string& path)
   : path_(path),
     fd_(-1),
-    mapping_(NULL) {
+    mapping_(nullptr) {
 }
 
 LogIndex::IndexChunk::~IndexChunk() {
-  if (mapping_ != NULL) {
+  if (mapping_ != nullptr) {
     munmap(mapping_, kChunkFileSize);
   }
 
@@ -121,9 +121,9 @@ Status LogIndex::IndexChunk::Open() {
   RETRY_ON_EINTR(err, ftruncate(fd_, kChunkFileSize));
   RETURN_NOT_OK(CheckError(fd_, "truncate"));
 
-  mapping_ = static_cast<uint8_t*>(mmap(NULL, kChunkFileSize, PROT_READ | PROT_WRITE,
+  mapping_ = static_cast<uint8_t*>(mmap(nullptr, kChunkFileSize, PROT_READ | PROT_WRITE,
                                         MAP_SHARED, fd_, 0));
-  if (mapping_ == NULL) {
+  if (mapping_ == nullptr) {
     int err = errno;
     return Status::IOError("Unable to mmap()", ErrnoToString(err), err);
   }

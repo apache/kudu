@@ -280,8 +280,8 @@ Status DMSIterator::PrepareBatch(size_t nrows, PrepareFlag flag) {
 
           ColumnUpdate& cu = updates_by_col_[col_idx].back();
           cu.row_id = key.row_idx();
-          if (col_val == NULL) {
-            cu.new_val_ptr = NULL;
+          if (col_val == nullptr) {
+            cu.new_val_ptr = nullptr;
           } else {
             memcpy(cu.new_val_buf, col_val, col_size);
             // NOTE: we're constructing a pointer here to an element inside the deque.

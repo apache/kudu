@@ -81,7 +81,7 @@ ReactorThread::ReactorThread(Reactor *reactor, const MessengerBuilder &bld)
 }
 
 Status ReactorThread::Init() {
-  DCHECK(thread_.get() == NULL) << "Already started";
+  DCHECK(thread_.get() == nullptr) << "Already started";
   DVLOG(6) << "Called ReactorThread::Init()";
   // Register to get async notifications in our epoll loop.
   async_.set(loop_);
@@ -450,11 +450,11 @@ DelayedTask::DelayedTask(const boost::function<void(const Status&)>& func,
                          MonoDelta when)
   : func_(func),
     when_(when),
-    thread_(NULL) {
+    thread_(nullptr) {
 }
 
 void DelayedTask::Run(ReactorThread* thread) {
-  DCHECK(thread_ == NULL) << "Task has already been scheduled";
+  DCHECK(thread_ == nullptr) << "Task has already been scheduled";
   DCHECK(thread->IsCurrentThread());
 
   // Schedule the task to run later.

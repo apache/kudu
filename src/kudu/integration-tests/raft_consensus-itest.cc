@@ -417,7 +417,7 @@ TEST_F(RaftConsensusITest, TestGetPermanentUuid) {
   BuildAndStart(vector<string>());
 
   RaftPeerPB peer;
-  TServerDetails* leader = NULL;
+  TServerDetails* leader = nullptr;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
   peer.mutable_last_known_addr()->CopyFrom(leader->registration.rpc_addresses(0));
   const string expected_uuid = leader->instance_id.permanent_uuid();
@@ -466,7 +466,7 @@ TEST_F(RaftConsensusITest, TestFailedTransaction) {
   RpcController controller;
   controller.set_timeout(MonoDelta::FromSeconds(FLAGS_rpc_timeout));
 
-  TServerDetails* leader = NULL;
+  TServerDetails* leader = nullptr;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
   ASSERT_OK(DCHECK_NOTNULL(leader->tserver_proxy.get())->Write(req, &resp, &controller));
@@ -606,7 +606,7 @@ TEST_F(RaftConsensusITest, TestRunLeaderElection) {
 }
 
 void RaftConsensusITest::Write128KOpsToLeader(int num_writes) {
-  TServerDetails* leader = NULL;
+  TServerDetails* leader = nullptr;
   ASSERT_OK(GetLeaderReplicaWithRetries(tablet_id_, &leader));
 
   WriteRequestPB req;
@@ -641,7 +641,7 @@ TEST_F(RaftConsensusITest, TestCatchupAfterOpsEvicted) {
   extra_flags.push_back("--consensus_max_batch_size_bytes=500000");
   BuildAndStart(extra_flags);
   TServerDetails* replica = (*tablet_replicas_.begin()).second;
-  ASSERT_TRUE(replica != NULL);
+  ASSERT_TRUE(replica != nullptr);
   ExternalTabletServer* replica_ets = cluster_->tablet_server_by_uuid(replica->uuid());
 
   // Pause a replica
@@ -674,10 +674,10 @@ void RaftConsensusITest::CauseFollowerToFallBehindLogGC(string* leader_uuid,
 
   // Find a leader. In case we paused the leader above, this will wait until
   // we have elected a new one.
-  TServerDetails* leader = NULL;
+  TServerDetails* leader = nullptr;
   while (true) {
     Status s = GetLeaderReplicaWithRetries(tablet_id_, &leader);
-    if (s.ok() && leader != NULL && leader != replica) {
+    if (s.ok() && leader != nullptr && leader != replica) {
       break;
     }
     SleepFor(MonoDelta::FromMilliseconds(10));
@@ -1196,7 +1196,7 @@ TEST_F(RaftConsensusITest, TestReplicaBehaviorViaRPC) {
     int64_t term_from_metric = -1;
     ASSERT_OK(cluster_->tablet_server_by_uuid(replica_ts->uuid())->GetInt64Metric(
                   &METRIC_ENTITY_tablet,
-                  NULL,
+                  nullptr,
                   &METRIC_raft_term,
                   "value",
                   &term_from_metric));
@@ -2135,14 +2135,14 @@ TEST_F(RaftConsensusITest, TestAutoCreateReplica) {
   InsertOrDie(&active_tablet_servers, leader->uuid(), leader);
   InsertOrDie(&active_tablet_servers, follower->uuid(), follower);
 
-  TServerDetails* new_node = NULL;
+  TServerDetails* new_node = nullptr;
   for (TServerDetails* ts : tservers) {
     if (!ContainsKey(active_tablet_servers, ts->uuid())) {
       new_node = ts;
       break;
     }
   }
-  ASSERT_TRUE(new_node != NULL);
+  ASSERT_TRUE(new_node != nullptr);
 
   // Elect the leader (still only a consensus config size of 2).
   ASSERT_OK(StartElection(leader, tablet_id_, MonoDelta::FromSeconds(10)));
@@ -2239,7 +2239,7 @@ TEST_F(RaftConsensusITest, TestMemoryRemainsConstantDespiteTwoDeadFollowers) {
     int64_t num_rejections = 0;
     ASSERT_OK(cluster_->tablet_server(leader_ts_idx)->GetInt64Metric(
         &METRIC_ENTITY_tablet,
-        NULL,
+        nullptr,
         &METRIC_transaction_memory_pressure_rejections,
         "value",
         &num_rejections));

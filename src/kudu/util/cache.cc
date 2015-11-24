@@ -88,7 +88,7 @@ struct LRUHandle {
 // 4.4.3's builtin hashtable.
 class HandleTable {
  public:
-  HandleTable() : length_(0), elems_(0), list_(NULL) { Resize(); }
+  HandleTable() : length_(0), elems_(0), list_(nullptr) { Resize(); }
   ~HandleTable() { delete[] list_; }
 
   LRUHandle* Lookup(const Slice& key, uint32_t hash) {
@@ -98,9 +98,9 @@ class HandleTable {
   LRUHandle* Insert(LRUHandle* h) {
     LRUHandle** ptr = FindPointer(h->key(), h->hash);
     LRUHandle* old = *ptr;
-    h->next_hash = (old == NULL ? NULL : old->next_hash);
+    h->next_hash = (old == nullptr ? nullptr : old->next_hash);
     *ptr = h;
-    if (old == NULL) {
+    if (old == nullptr) {
       ++elems_;
       if (elems_ > length_) {
         // Since each cache entry is fairly large, we aim for a small
@@ -114,7 +114,7 @@ class HandleTable {
   LRUHandle* Remove(const Slice& key, uint32_t hash) {
     LRUHandle** ptr = FindPointer(key, hash);
     LRUHandle* result = *ptr;
-    if (result != NULL) {
+    if (result != nullptr) {
       *ptr = result->next_hash;
       --elems_;
     }
@@ -133,7 +133,7 @@ class HandleTable {
   // pointer to the trailing slot in the corresponding linked list.
   LRUHandle** FindPointer(const Slice& key, uint32_t hash) {
     LRUHandle** ptr = &list_[hash & (length_ - 1)];
-    while (*ptr != NULL &&
+    while (*ptr != nullptr &&
            ((*ptr)->hash != hash || key != (*ptr)->key())) {
       ptr = &(*ptr)->next_hash;
     }
@@ -150,7 +150,7 @@ class HandleTable {
     uint32_t count = 0;
     for (uint32_t i = 0; i < length_; i++) {
       LRUHandle* h = list_[i];
-      while (h != NULL) {
+      while (h != nullptr) {
         LRUHandle* next = h->next_hash;
         uint32_t hash = h->hash;
         LRUHandle** ptr = &new_list[hash & (new_length - 1)];
@@ -216,7 +216,7 @@ class LRUCache {
 LRUCache::LRUCache(MemTracker* tracker)
  : usage_(0),
    mem_tracker_(tracker),
-   metrics_(NULL) {
+   metrics_(nullptr) {
   // Make empty circular linked list
   lru_.next = &lru_;
   lru_.prev = &lru_;
@@ -269,7 +269,7 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
   {
     lock_guard<MutexType> l(&mutex_);
     e = table_.Lookup(key, hash);
-    if (e != NULL) {
+    if (e != nullptr) {
       base::RefCountInc(&e->refs);
       LRU_Remove(e);
       LRU_Append(e);
@@ -279,7 +279,7 @@ Cache::Handle* LRUCache::Lookup(const Slice& key, uint32_t hash, bool caching) {
   // Do the metrics outside of the lock.
   if (metrics_) {
     metrics_->lookups->Increment();
-    bool was_hit = (e != NULL);
+    bool was_hit = (e != nullptr);
     if (was_hit) {
       if (caching) {
         metrics_->cache_hits_caching->Increment();
@@ -312,7 +312,7 @@ Cache::Handle* LRUCache::Insert(
 
   LRUHandle* e = reinterpret_cast<LRUHandle*>(
       malloc(sizeof(LRUHandle)-1 + key.size()));
-  LRUHandle* to_remove_head = NULL;
+  LRUHandle* to_remove_head = nullptr;
 
   e->value = value;
   e->deleter = deleter;
@@ -333,7 +333,7 @@ Cache::Handle* LRUCache::Insert(
     LRU_Append(e);
 
     LRUHandle* old = table_.Insert(e);
-    if (old != NULL) {
+    if (old != nullptr) {
       LRU_Remove(old);
       if (Unref(old)) {
         old->next = to_remove_head;
@@ -354,7 +354,7 @@ Cache::Handle* LRUCache::Insert(
 
   // we free the entries here outside of mutex for
   // performance reasons
-  while (to_remove_head != NULL) {
+  while (to_remove_head != nullptr) {
     LRUHandle* next = to_remove_head->next;
     FreeEntry(to_remove_head);
     to_remove_head = next;
@@ -369,7 +369,7 @@ void LRUCache::Erase(const Slice& key, uint32_t hash) {
   {
     lock_guard<MutexType> l(&mutex_);
     e = table_.Remove(key, hash);
-    if (e != NULL) {
+    if (e != nullptr) {
       LRU_Remove(e);
       last_reference = Unref(e);
     }

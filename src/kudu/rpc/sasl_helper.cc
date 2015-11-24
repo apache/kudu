@@ -58,21 +58,21 @@ void SaslHelper::set_local_addr(const Sockaddr& addr) {
   local_addr_ = SaslIpPortString(addr);
 }
 const char* SaslHelper::local_addr_string() const {
-  return local_addr_.empty() ? NULL : local_addr_.c_str();
+  return local_addr_.empty() ? nullptr : local_addr_.c_str();
 }
 
 void SaslHelper::set_remote_addr(const Sockaddr& addr) {
   remote_addr_ = SaslIpPortString(addr);
 }
 const char* SaslHelper::remote_addr_string() const {
-  return remote_addr_.empty() ? NULL : remote_addr_.c_str();
+  return remote_addr_.empty() ? nullptr : remote_addr_.c_str();
 }
 
 void SaslHelper::set_server_fqdn(const string& domain_name) {
   server_fqdn_ = domain_name;
 }
 const char* SaslHelper::server_fqdn() const {
-  return server_fqdn_.empty() ? NULL : server_fqdn_.c_str();
+  return server_fqdn_.empty() ? nullptr : server_fqdn_.c_str();
 }
 
 const std::set<std::string>& SaslHelper::GlobalMechs() const {
@@ -92,7 +92,7 @@ const std::set<std::string>& SaslHelper::LocalMechs() const {
 
 const char* SaslHelper::LocalMechListString() const {
   JoinStrings(mechs_, " ", &mech_list_);
-  return mech_list_.empty() ? NULL : mech_list_.c_str();
+  return mech_list_.empty() ? nullptr : mech_list_.c_str();
 }
 
 
@@ -107,16 +107,16 @@ int SaslHelper::GetOptionCb(const char* plugin_name, const char* option,
   DVLOG(4) << tag_ << ": GetOption Plugin name: " << plugin_name;
   DVLOG(4) << tag_ << ": GetOption Option name: " << option;
 
-  if (PREDICT_FALSE(result == NULL)) {
+  if (PREDICT_FALSE(result == nullptr)) {
     LOG(DFATAL) << tag_ << ": SASL Library passed NULL result out-param to GetOption callback!";
     return SASL_BADPARAM;
   }
 
-  if (plugin_name == NULL) {
+  if (plugin_name == nullptr) {
     // SASL library option, not a plugin option
     if (cb_name == option) {
       *result = LocalMechListString();
-      if (len != NULL) *len = strlen(*result);
+      if (len != nullptr) *len = strlen(*result);
       DVLOG(3) << tag_ << ": Enabled mech list: " << *result;
       return SASL_OK;
     }
@@ -175,7 +175,7 @@ Status SaslHelper::ParseSaslMessage(const Slice& param_buf, SaslMessagePB* msg) 
 
 Status SaslHelper::SendSaslMessage(Socket* sock, const MessageLite& header, const MessageLite& msg,
       const MonoTime& deadline) {
-  DCHECK(sock != NULL);
+  DCHECK(sock != nullptr);
   DCHECK(header.IsInitialized()) << tag_ << ": Header must be initialized";
   DCHECK(msg.IsInitialized()) << tag_ << ": Message must be initialized";
 

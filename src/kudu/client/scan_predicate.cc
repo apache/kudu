@@ -65,8 +65,8 @@ Status ComparisonPredicateData::AddToScanSpec(ScanSpec* spec) {
                                                     col_.type_info()->physical_type(),
                                                     &val_void));
 
-  void* lower_bound = NULL;
-  void* upper_bound = NULL;
+  void* lower_bound = nullptr;
+  void* upper_bound = nullptr;
   switch (op_) {
     case KuduPredicate::LESS_EQUAL:
       upper_bound = val_void;

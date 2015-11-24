@@ -1122,7 +1122,7 @@ Status LogBlockManager::Open() {
   unordered_map<string, PathInstanceMetadataFile*> metadata_files;
   ValueDeleter deleter(&metadata_files);
   for (const string& root_path : root_paths_) {
-    InsertOrDie(&metadata_files, root_path, NULL);
+    InsertOrDie(&metadata_files, root_path, nullptr);
   }
 
   // Submit each open to its own thread pool and wait for them to complete.
@@ -1296,7 +1296,7 @@ void LogBlockManager::AddNewContainerUnlocked(LogBlockContainer* container) {
 }
 
 LogBlockContainer* LogBlockManager::GetAvailableContainer() {
-  LogBlockContainer* container = NULL;
+  LogBlockContainer* container = nullptr;
   lock_guard<simple_spinlock> l(&lock_);
   if (!available_containers_.empty()) {
     container = available_containers_.front();

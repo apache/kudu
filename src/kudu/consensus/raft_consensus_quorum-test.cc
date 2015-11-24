@@ -232,7 +232,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       }
     }
     CHECK(false) << "Proxy not found";
-    return NULL;
+    return nullptr;
   }
 
   Status AppendDummyMessage(int peer_idx,
@@ -260,9 +260,9 @@ class RaftConsensusQuorumTest : public KuduTest {
 
   Status CommitDummyMessage(int peer_idx,
                             ConsensusRound* round,
-                            shared_ptr<Synchronizer>* commit_sync = NULL) {
+                            shared_ptr<Synchronizer>* commit_sync = nullptr) {
     StatusCallback commit_callback;
-    if (commit_sync != NULL) {
+    if (commit_sync != nullptr) {
       commit_sync->reset(new Synchronizer());
       commit_callback = Bind(&FireSharedSynchronizer, *commit_sync);
     } else {
@@ -379,7 +379,7 @@ class RaftConsensusQuorumTest : public KuduTest {
                                    CommitMode commit_mode,
                                    OpId* last_op_id,
                                    vector<scoped_refptr<ConsensusRound> >* rounds,
-                                   shared_ptr<Synchronizer>* commit_sync = NULL) {
+                                   shared_ptr<Synchronizer>* commit_sync = nullptr) {
     for (int i = 0; i < seq_size; i++) {
       scoped_refptr<ConsensusRound> round;
       ASSERT_OK(AppendDummyMessage(leader_idx, &round));

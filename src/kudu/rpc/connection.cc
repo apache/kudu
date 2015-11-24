@@ -460,7 +460,7 @@ void Connection::HandleCallResponse(gscoped_ptr<InboundTransfer> transfer) {
 
   CallAwaitingResponse *car_ptr =
     EraseKeyReturnValuePtr(&awaiting_response_, resp->call_id());
-  if (PREDICT_FALSE(car_ptr == NULL)) {
+  if (PREDICT_FALSE(car_ptr == nullptr)) {
     LOG(WARNING) << ToString() << ": Got a response for call id " << resp->call_id() << " which "
                  << "was not pending! Ignoring.";
     return;
@@ -469,7 +469,7 @@ void Connection::HandleCallResponse(gscoped_ptr<InboundTransfer> transfer) {
   // The car->timeout_timer ev::timer will be stopped automatically by its destructor.
   scoped_car car(car_pool_.make_scoped_ptr(car_ptr));
 
-  if (PREDICT_FALSE(car->call.get() == NULL)) {
+  if (PREDICT_FALSE(car->call.get() == nullptr)) {
     // The call already failed due to a timeout.
     VLOG(1) << "Got response to call id " << resp->call_id() << " after client already timed out";
     return;

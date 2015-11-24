@@ -286,7 +286,7 @@ int StripDupCharacters(string* s, char dup_char, int start_pos) {
 //   Remove leading, trailing, and duplicate internal whitespace.
 // ----------------------------------------------------------------------
 void RemoveExtraWhitespace(string* s) {
-  assert(s != NULL);
+  assert(s != nullptr);
   // Empty strings clearly have no whitespace, and this code assumes that
   // string length is greater than 0
   if (s->empty())
@@ -324,7 +324,7 @@ void RemoveExtraWhitespace(string* s) {
 void StripLeadingWhiteSpace(string* str) {
   char const* const leading = StripLeadingWhiteSpace(
       const_cast<char*>(str->c_str()));
-  if (leading != NULL) {
+  if (leading != nullptr) {
     string const tmp(leading);
     str->assign(tmp);
   } else {

@@ -62,7 +62,7 @@ struct RefCountable {
 TEST(CallbackBindTest, TestClassMethod) {
   scoped_refptr<Ref> ref = new Ref();
   Callback<int(void)> ref_cb = Bind(&Ref::Foo, ref);
-  ref = NULL;
+  ref = nullptr;
   ASSERT_EQ(3, ref_cb.Run());
 }
 

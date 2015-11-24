@@ -44,7 +44,7 @@ const char* const kSaslMechPlain = "PLAIN";
 // message: message to output;
 static int SaslLogCallback(void* context, int level, const char* message) {
 
-  if (message == NULL) return SASL_BADPARAM;
+  if (message == nullptr) return SASL_BADPARAM;
 
   switch (level) {
     case SASL_LOG_NONE:
@@ -87,7 +87,7 @@ static int SaslLogCallback(void* context, int level, const char* message) {
 static int SaslGetOption(void* context, const char* plugin_name, const char* option,
                          const char** result, unsigned* len) {
   // Handle Sasl Library options
-  if (plugin_name == NULL) {
+  if (plugin_name == nullptr) {
     // Return the logging level that we want the sasl library to use.
     if (strcmp("log_level", option) == 0) {
       int level = SASL_LOG_NOTE;
@@ -102,7 +102,7 @@ static int SaslGetOption(void* context, const char* plugin_name, const char* opt
       static __thread char buf[4];
       snprintf(buf, arraysize(buf), "%d", level);
       *result = buf;
-      if (len != NULL) *len = strlen(buf);
+      if (len != nullptr) *len = strlen(buf);
       return SASL_OK;
     }
     // Options can default so don't complain.
@@ -115,9 +115,9 @@ static int SaslGetOption(void* context, const char* plugin_name, const char* opt
 
 // Array of callbacks for the sasl library.
 static sasl_callback_t callbacks[] = {
-  { SASL_CB_LOG, reinterpret_cast<int (*)()>(&SaslLogCallback), NULL },
-  { SASL_CB_GETOPT, reinterpret_cast<int (*)()>(&SaslGetOption), NULL },
-  { SASL_CB_LIST_END, NULL, NULL }
+  { SASL_CB_LOG, reinterpret_cast<int (*)()>(&SaslLogCallback), nullptr },
+  { SASL_CB_GETOPT, reinterpret_cast<int (*)()>(&SaslGetOption), nullptr },
+  { SASL_CB_LIST_END, nullptr, nullptr }
 };
 
 // Determine whether initialization was ever called
@@ -141,14 +141,14 @@ static void DoSaslInit(void* app_name_char_array) {
   int result = sasl_client_init(&callbacks[0]);
   if (result != SASL_OK) {
     sasl_init_data->status = Status::RuntimeError("Could not initialize SASL client",
-        sasl_errstring(result, NULL, NULL));
+        sasl_errstring(result, nullptr, nullptr));
     return;
   }
 
   result = sasl_server_init(&callbacks[0], sasl_init_data->app_name.c_str());
   if (result != SASL_OK) {
     sasl_init_data->status = Status::RuntimeError("Could not initialize SASL server",
-        sasl_errstring(result, NULL, NULL));
+        sasl_errstring(result, nullptr, nullptr));
     return;
   }
 
@@ -171,12 +171,12 @@ Status SaslInit(const char* const app_name) {
 }
 
 string SaslErrDesc(int status, sasl_conn_t* conn) {
-  if (conn != NULL) {
+  if (conn != nullptr) {
     return StringPrintf("SASL result code: %s, error: %s",
-        sasl_errstring(status, NULL, NULL),
+        sasl_errstring(status, nullptr, nullptr),
         sasl_errdetail(conn));
   }
-  return StringPrintf("SASL result code: %s", sasl_errstring(status, NULL, NULL));
+  return StringPrintf("SASL result code: %s", sasl_errstring(status, nullptr, nullptr));
 }
 
 string SaslIpPortString(const Sockaddr& addr) {
@@ -193,7 +193,7 @@ set<string> SaslListAvailableMechs() {
 
   // Array of NULL-terminated strings. Array terminated with NULL.
   const char** mech_strings = sasl_global_listmech();
-  while (mech_strings != NULL && *mech_strings != NULL) {
+  while (mech_strings != nullptr && *mech_strings != nullptr) {
     mechs.insert(*mech_strings);
     mech_strings++;
   }

@@ -80,14 +80,14 @@ TEST_F(AdminCliTest, TestChangeConfig) {
   InsertOrDie(&active_tablet_servers, leader->uuid(), leader);
   InsertOrDie(&active_tablet_servers, follower->uuid(), follower);
 
-  TServerDetails* new_node = NULL;
+  TServerDetails* new_node = nullptr;
   for (TServerDetails* ts : tservers) {
     if (!ContainsKey(active_tablet_servers, ts->uuid())) {
       new_node = ts;
       break;
     }
   }
-  ASSERT_TRUE(new_node != NULL);
+  ASSERT_TRUE(new_node != nullptr);
 
   // Elect the leader (still only a consensus config size of 2).
   ASSERT_OK(StartElection(leader, tablet_id_, MonoDelta::FromSeconds(10)));

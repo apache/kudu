@@ -291,7 +291,7 @@ Status KuduClient::ListTabletServers(vector<KuduTabletServer*>* tablet_servers) 
           this,
           req,
           &resp,
-          NULL,
+          nullptr,
           &MasterServiceProxy::ListTabletServers);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
@@ -323,7 +323,7 @@ Status KuduClient::ListTables(vector<string>* tables,
           this,
           req,
           &resp,
-          NULL,
+          nullptr,
           &MasterServiceProxy::ListTables);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {
@@ -1041,7 +1041,7 @@ string KuduScanner::ToString() const {
 
 Status KuduScanner::Open() {
   CHECK(!data_->open_) << "Scanner already open";
-  CHECK(data_->projection_ != NULL) << "No projection provided";
+  CHECK(data_->projection_ != nullptr) << "No projection provided";
 
   // Find the first tablet.
   data_->spec_encoder_.EncodeRangePredicates(&data_->spec_, false);
@@ -1056,8 +1056,8 @@ Status KuduScanner::Open() {
     data_->table_->partition_schema().IsSimplePKRangePartitioning(*data_->table_->schema().schema_);
 
   if (!is_simple_range_partitioned &&
-      (data_->spec_.lower_bound_key() != NULL ||
-       data_->spec_.exclusive_upper_bound_key() != NULL ||
+      (data_->spec_.lower_bound_key() != nullptr ||
+       data_->spec_.exclusive_upper_bound_key() != nullptr ||
        !data_->spec_.predicates().empty())) {
     KLOG_FIRST_N(WARNING, 1) << "Starting full table scan. In the future this scan may be "
                                 "automatically optimized with partition pruning.";
@@ -1069,9 +1069,9 @@ Status KuduScanner::Open() {
     // length by only scanning the intersection of the primary key range and the
     // partition key range. This is a stop-gap until real partition pruning is
     // in place that will work across any partition type.
-    Slice start_primary_key = data_->spec_.lower_bound_key() == NULL ? Slice()
+    Slice start_primary_key = data_->spec_.lower_bound_key() == nullptr ? Slice()
                             : data_->spec_.lower_bound_key()->encoded_key();
-    Slice end_primary_key = data_->spec_.exclusive_upper_bound_key() == NULL ? Slice()
+    Slice end_primary_key = data_->spec_.exclusive_upper_bound_key() == nullptr ? Slice()
                           : data_->spec_.exclusive_upper_bound_key()->encoded_key();
     Slice start_partition_key = data_->spec_.lower_bound_partition_key();
     Slice end_partition_key = data_->spec_.exclusive_upper_bound_partition_key();
@@ -1239,7 +1239,7 @@ Status KuduScanner::GetCurrentServer(KuduTabletServer** server) {
 }
 
 KuduTabletServer::KuduTabletServer()
-  : data_(NULL) {
+  : data_(nullptr) {
 }
 
 KuduTabletServer::~KuduTabletServer() {

@@ -117,7 +117,7 @@ Status PstackWatcher::DumpPidStacks(pid_t pid, int flags) {
   }
 
   // Otherwise, try to use pstack or gstack.
-  const char *progname = NULL;
+  const char *progname = nullptr;
   if (HasProgram("pstack").ok()) {
     progname = "pstack";
   } else if (HasProgram("gstack").ok()) {

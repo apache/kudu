@@ -48,7 +48,7 @@ class MvccTest : public KuduTest {
 
   bool HasResultSnapshot() {
     boost::lock_guard<simple_spinlock> lock(lock_);
-    return result_snapshot_ != NULL;
+    return result_snapshot_ != nullptr;
   }
 
  protected:

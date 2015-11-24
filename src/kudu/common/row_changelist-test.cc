@@ -67,7 +67,7 @@ TEST_F(TestRowChangeList, TestEncodeDecodeUpdates) {
   rcl.AddColumnUpdate(schema_.column(0), c0_id, &update1);
   rcl.AddColumnUpdate(schema_.column(1), c1_id, &update2);
   rcl.AddColumnUpdate(schema_.column(2), c2_id, &update3);
-  rcl.AddColumnUpdate(schema_.column(3), c3_id, NULL);
+  rcl.AddColumnUpdate(schema_.column(3), c3_id, nullptr);
 
   LOG(INFO) << "Encoded: " << HexDump(buf);
 

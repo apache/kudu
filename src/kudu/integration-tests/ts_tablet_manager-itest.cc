@@ -96,7 +96,7 @@ void TsTabletManagerITest::SetUp() {
   opts.num_tablet_servers = kNumReplicas;
   cluster_.reset(new MiniCluster(env_.get(), opts));
   ASSERT_OK(cluster_->Start());
-  ASSERT_OK(cluster_->CreateClient(NULL, &client_));
+  ASSERT_OK(cluster_->CreateClient(nullptr, &client_));
 }
 
 void TsTabletManagerITest::TearDown() {

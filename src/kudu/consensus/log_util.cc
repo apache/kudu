@@ -430,7 +430,7 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries,
       file_size() - footer_.ByteSize() - kLogSegmentFooterMagicAndFooterLength :
       readable_to_offset;
 
-  if (end_offset != NULL) {
+  if (end_offset != nullptr) {
     *end_offset = offset;
   }
 
@@ -498,8 +498,8 @@ Status ReadableLogSegment::ReadEntries(vector<LogEntryPB*>* entries,
     }
     current_batch->mutable_entry()->ExtractSubrange(0,
                                                     current_batch->entry_size(),
-                                                    NULL);
-    if (end_offset != NULL) {
+                                                    nullptr);
+    if (end_offset != nullptr) {
       *end_offset = offset;
     }
   }

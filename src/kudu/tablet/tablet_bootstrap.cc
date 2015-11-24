@@ -904,7 +904,7 @@ Status TabletBootstrap::ApplyCommitMessage(ReplayState* state, LogEntryPB* commi
   pending_replicate_entry.reset(EraseKeyReturnValuePtr(&state->pending_replicates,
                                                        committed_op_id.index()));
 
-  if (pending_replicate_entry != NULL) {
+  if (pending_replicate_entry != nullptr) {
     // We found a replicate with the same index, make sure it also has the same
     // term.
     if (!OpIdEquals(committed_op_id, pending_replicate_entry->replicate().id())) {
@@ -1051,7 +1051,7 @@ Status TabletBootstrap::PlaySegments(ConsensusBootstrapInfo* consensus_info) {
       // If HandleEntry returns OK, then it has taken ownership of the entry.
       // So, we have to remove it from the entries vector to avoid it getting
       // freed by ElementDeleter.
-      entries[entry_idx] = NULL;
+      entries[entry_idx] = nullptr;
     }
 
     // If the LogReader failed to read for some reason, we'll still try to
@@ -1163,7 +1163,7 @@ Status TabletBootstrap::PlayWriteRequest(ReplicateMsg* replicate_msg,
   DCHECK(replicate_msg->has_timestamp());
   WriteRequestPB* write = replicate_msg->mutable_write_request();
 
-  WriteTransactionState tx_state(NULL, write, NULL);
+  WriteTransactionState tx_state(nullptr, write, nullptr);
   tx_state.mutable_op_id()->CopyFrom(replicate_msg->id());
   tx_state.set_timestamp(Timestamp(replicate_msg->timestamp()));
 
@@ -1200,7 +1200,7 @@ Status TabletBootstrap::PlayAlterSchemaRequest(ReplicateMsg* replicate_msg,
   Schema schema;
   RETURN_NOT_OK(SchemaFromPB(alter_schema->schema(), &schema));
 
-  AlterSchemaTransactionState tx_state(NULL, alter_schema, NULL);
+  AlterSchemaTransactionState tx_state(nullptr, alter_schema, nullptr);
 
   // TODO(KUDU-860): we should somehow distinguish if an alter table failed on its original
   // attempt (e.g due to being an invalid request, or a request with a too-early
@@ -1319,13 +1319,13 @@ Status TabletBootstrap::FilterAndApplyOperations(WriteTransactionState* tx_state
         LOG_WITH_PREFIX(FATAL) << "Bad op type: " << op->decoded_op.type;
         break;
     }
-    if (op->result != NULL) {
+    if (op->result != nullptr) {
       continue;
     }
 
     // Actually apply it.
     tablet_->ApplyRowOperation(tx_state, op);
-    DCHECK(op->result != NULL);
+    DCHECK(op->result != nullptr);
 
     // We expect that the above Apply() will always succeed, because we're
     // applying an operation that we know succeeded before the server

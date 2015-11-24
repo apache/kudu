@@ -221,8 +221,8 @@ void ColumnSchemaToPB(const ColumnSchema& col_schema, ColumnSchemaPB *pb, int fl
 }
 
 ColumnSchema ColumnSchemaFromPB(const ColumnSchemaPB& pb) {
-  const void *write_default_ptr = NULL;
-  const void *read_default_ptr = NULL;
+  const void *write_default_ptr = nullptr;
+  const void *read_default_ptr = nullptr;
   Slice write_default;
   Slice read_default;
   const TypeInfo* typeinfo = GetTypeInfo(pb.type());
@@ -514,7 +514,7 @@ void SerializeRowBlock(const RowBlock& block, RowwiseRowBlockPB* rowblock_pb,
   DCHECK_GT(block.nrows(), 0);
   const Schema& tablet_schema = block.schema();
 
-  if (projection_schema == NULL) {
+  if (projection_schema == nullptr) {
     projection_schema = &tablet_schema;
   }
 

@@ -789,7 +789,7 @@ int TSTabletManager::GetNumDirtyTabletsForTests() const {
 
 void TSTabletManager::MarkDirtyUnlocked(const std::string& tablet_id, const std::string& reason) {
   TabletReportState* state = FindOrNull(dirty_tablets_, tablet_id);
-  if (state != NULL) {
+  if (state != nullptr) {
     CHECK_GE(next_report_seq_, state->change_seq);
     state->change_seq = next_report_seq_;
   } else {

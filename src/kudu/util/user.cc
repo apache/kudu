@@ -35,7 +35,7 @@ using std::string;
 namespace kudu {
 
 Status GetLoggedInUser(string* user_name) {
-  DCHECK(user_name != NULL);
+  DCHECK(user_name != nullptr);
 
   struct passwd pwd;
   struct passwd *result;
@@ -46,12 +46,12 @@ Status GetLoggedInUser(string* user_name) {
   }
 
   gscoped_ptr<char[], FreeDeleter> buf(static_cast<char *>(malloc(bufsize)));
-  if (buf.get() == NULL) {
+  if (buf.get() == nullptr) {
     return Status::RuntimeError("Malloc failed", ErrnoToString(errno), errno);
   }
 
   int ret = getpwuid_r(getuid(), &pwd, buf.get(), bufsize, &result);
-  if (result == NULL) {
+  if (result == nullptr) {
     if (ret == 0) {
       return Status::NotFound("Current logged-in user not found! This is an unexpected error.");
     } else {

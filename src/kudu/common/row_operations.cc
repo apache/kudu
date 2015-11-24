@@ -145,7 +145,7 @@ Status RowOperationsPBDecoder::ReadOpType(RowOperationsPB::Type* type) {
 
 Status RowOperationsPBDecoder::ReadIssetBitmap(const uint8_t** bitmap) {
   if (PREDICT_FALSE(src_.size() < bm_size_)) {
-    *bitmap = NULL;
+    *bitmap = nullptr;
     return Status::Corruption("Cannot find isset bitmap");
   }
   *bitmap = src_.data();
@@ -155,7 +155,7 @@ Status RowOperationsPBDecoder::ReadIssetBitmap(const uint8_t** bitmap) {
 
 Status RowOperationsPBDecoder::ReadNullBitmap(const uint8_t** null_bm) {
   if (PREDICT_FALSE(src_.size() < bm_size_)) {
-    *null_bm = NULL;
+    *null_bm = nullptr;
     return Status::Corruption("Cannot find null bitmap");
   }
   *null_bm = src_.data();
@@ -445,7 +445,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
             return Status::InvalidArgument("NULL value not allowed for non-nullable column",
                                            col.ToString());
           }
-          val_to_add = NULL;
+          val_to_add = nullptr;
         }
         rcl_encoder.AddColumnUpdate(col, tablet_schema_->column_id(tablet_col_idx), val_to_add);
       }
@@ -460,7 +460,7 @@ Status RowOperationsPBDecoder::DecodeUpdateOrDelete(const ClientServerMapping& m
     // Copy the row-changelist to the arena.
     uint8_t* rcl_in_arena = reinterpret_cast<uint8_t*>(
       dst_arena_->AllocateBytesAligned(buf.size(), 8));
-    if (PREDICT_FALSE(rcl_in_arena == NULL)) {
+    if (PREDICT_FALSE(rcl_in_arena == nullptr)) {
       return Status::RuntimeError("Out of memory allocating RCL");
     }
     memcpy(rcl_in_arena, buf.data(), buf.size());

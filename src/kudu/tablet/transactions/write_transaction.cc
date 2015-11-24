@@ -126,7 +126,7 @@ Status WriteTransaction::Apply(gscoped_ptr<CommitMsg>* commit_msg) {
   // Add per-row errors to the result, update metrics.
   int i = 0;
   for (const RowOp* op : state()->row_ops()) {
-    if (state()->response() != NULL && op->result->has_failed_status()) {
+    if (state()->response() != nullptr && op->result->has_failed_status()) {
       // Replicas disregard the per row errors, for now
       // TODO check the per-row errors against the leader's, at least in debug mode
       WriteResponsePB::PerRowErrorPB* error = state()->response()->add_per_row_errors();
@@ -212,8 +212,8 @@ WriteTransactionState::WriteTransactionState(TabletPeer* tablet_peer,
   : TransactionState(tablet_peer),
     request_(request),
     response_(response),
-    mvcc_tx_(NULL),
-    schema_at_decode_time_(NULL) {
+    mvcc_tx_(nullptr),
+    schema_at_decode_time_(nullptr) {
   if (request) {
     external_consistency_mode_ = request->external_consistency_mode();
   } else {
@@ -257,7 +257,7 @@ void WriteTransactionState::StartApplying() {
 }
 
 void WriteTransactionState::Abort() {
-  if (mvcc_tx_.get() != NULL) {
+  if (mvcc_tx_.get() != nullptr) {
     // Abort the transaction.
     mvcc_tx_->Abort();
   }
@@ -271,7 +271,7 @@ void WriteTransactionState::Abort() {
   ResetRpcFields();
 }
 void WriteTransactionState::Commit() {
-  if (mvcc_tx_.get() != NULL) {
+  if (mvcc_tx_.get() != nullptr) {
     // Commit the transaction.
     mvcc_tx_->Commit();
   }
@@ -326,14 +326,14 @@ void WriteTransactionState::Reset() {
   Commit();
   tx_metrics_.Reset();
   timestamp_ = Timestamp::kInvalidTimestamp;
-  tablet_components_ = NULL;
-  schema_at_decode_time_ = NULL;
+  tablet_components_ = nullptr;
+  schema_at_decode_time_ = nullptr;
 }
 
 void WriteTransactionState::ResetRpcFields() {
   lock_guard<simple_spinlock> l(&txn_state_lock_);
-  request_ = NULL;
-  response_ = NULL;
+  request_ = nullptr;
+  response_ = nullptr;
   STLDeleteElements(&row_ops_);
 }
 

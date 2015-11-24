@@ -75,7 +75,7 @@ int EscapeStrForCSV(const char* src, char* dest, int dest_len) {
 #define IS_OCTAL_DIGIT(c) (((c) >= '0') && ((c) <= '7'))
 
 int UnescapeCEscapeSequences(const char* source, char* dest) {
-  return UnescapeCEscapeSequences(source, dest, NULL);
+  return UnescapeCEscapeSequences(source, dest, nullptr);
 }
 
 int UnescapeCEscapeSequences(const char* source, char* dest,
@@ -215,7 +215,7 @@ int UnescapeCEscapeSequences(const char* source, char* dest,
 //
 // ----------------------------------------------------------------------
 int UnescapeCEscapeString(const string& src, string* dest) {
-  return UnescapeCEscapeString(src, dest, NULL);
+  return UnescapeCEscapeString(src, dest, nullptr);
 }
 
 int UnescapeCEscapeString(const string& src, string* dest,
@@ -230,7 +230,7 @@ int UnescapeCEscapeString(const string& src, string* dest,
 
 string UnescapeCEscapeString(const string& src) {
   gscoped_array<char> unescaped(new char[src.size() + 1]);
-  int len = UnescapeCEscapeSequences(src.c_str(), unescaped.get(), NULL);
+  int len = UnescapeCEscapeSequences(src.c_str(), unescaped.get(), nullptr);
   return string(unescaped.get(), len);
 }
 

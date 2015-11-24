@@ -95,7 +95,7 @@ class TestMultiThreadedRowSetDeltaCompaction : public TestRowSet {
                                  MvccSnapshot::CreateSnapshotIncludingAllTransactions(),
                                  &iter));
     uint32_t expected = NoBarrier_Load(&update_counter_);
-    ASSERT_OK(iter->Init(NULL));
+    ASSERT_OK(iter->Init(nullptr));
     while (iter->HasNext()) {
       ASSERT_OK_FAST(iter->NextBlock(&dst));
       size_t n = dst.nrows();

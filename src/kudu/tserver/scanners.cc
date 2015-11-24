@@ -70,7 +70,7 @@ ScannerManager::~ScannerManager() {
     shutdown_ = true;
     shutdown_cv_.notify_all();
   }
-  if (removal_thread_.get() != NULL) {
+  if (removal_thread_.get() != nullptr) {
     CHECK_OK(ThreadJoiner(removal_thread_.get()).Join());
   }
   STLDeleteElements(&scanner_maps_);

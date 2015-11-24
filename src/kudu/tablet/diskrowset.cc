@@ -172,7 +172,7 @@ Status DiskRowSetWriter::AppendBlock(const RowBlock &block) {
     RETURN_NOT_OK(bloom_writer_->AppendKeys(&enc_key, 1));
 
     // Write the batch to the ad hoc index if we're using one
-    if (ad_hoc_index_writer_ != NULL) {
+    if (ad_hoc_index_writer_ != nullptr) {
       RETURN_NOT_OK(ad_hoc_index_writer_->AppendEntries(&enc_key, 1));
     }
 
@@ -221,7 +221,7 @@ Status DiskRowSetWriter::FinishAndReleaseBlocks(ScopedWritableBlockCloser* close
   col_writer_->GetFlushedBlocksByColumnId(&flushed_blocks);
   rowset_metadata_->SetColumnDataBlocks(flushed_blocks);
 
-  if (ad_hoc_index_writer_ != NULL) {
+  if (ad_hoc_index_writer_ != nullptr) {
     Status s = ad_hoc_index_writer_->FinishAndReleaseBlock(closer);
     if (!s.ok()) {
       LOG(WARNING) << "Unable to Finish ad hoc index writer: " << s.ToString();
@@ -365,7 +365,7 @@ Status RollingDiskRowSetWriter::AppendDeltas(rowid_t row_idx_in_block,
   can_roll_ = false;
 
   *row_idx = row_idx_in_cur_drs_ + row_idx_in_block;
-  for (const Mutation *mut = delta_head; mut != NULL; mut = mut->next()) {
+  for (const Mutation *mut = delta_head; mut != nullptr; mut = mut->next()) {
     DeltaKey undo_key(*row_idx, mut->timestamp());
     RETURN_NOT_OK(writer->AppendDelta<Type>(undo_key, mut->changelist()));
     delta_stats->UpdateStats(mut->timestamp(), mut->changelist());
@@ -399,14 +399,14 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
 
     // If the writer is not null _AND_ we've written something to the undo
     // delta store commit the undo delta block.
-    if (cur_undo_writer_.get() != NULL &&
+    if (cur_undo_writer_.get() != nullptr &&
         cur_undo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
       cur_drs_metadata_->CommitUndoDeltaDataBlock(cur_undo_ds_block_id_);
     }
 
     // If the writer is not null _AND_ we've written something to the redo
     // delta store commit the redo delta block.
-    if (cur_redo_writer_.get() != NULL &&
+    if (cur_redo_writer_.get() != nullptr &&
         cur_redo_delta_stats->min_timestamp().CompareTo(Timestamp::kMax) != 0) {
       cur_drs_metadata_->CommitRedoDeltaDataBlock(0, cur_redo_ds_block_id_);
     } else {
@@ -419,9 +419,9 @@ Status RollingDiskRowSetWriter::FinishCurrentWriter() {
     written_drs_metas_.push_back(cur_drs_metadata_);
   }
 
-  cur_writer_.reset(NULL);
-  cur_undo_writer_.reset(NULL);
-  cur_redo_writer_.reset(NULL);
+  cur_writer_.reset(nullptr);
+  cur_undo_writer_.reset(nullptr);
+  cur_redo_writer_.reset(nullptr);
 
   cur_drs_metadata_.reset();
 

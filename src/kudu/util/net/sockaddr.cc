@@ -119,7 +119,7 @@ Status Sockaddr::LookupHostname(string* hostname) const {
                      Substitute("DNS reverse-lookup for $0", ToString())) {
     rc = getnameinfo((struct sockaddr *) &addr_, sizeof(sockaddr_in),
                      host, NI_MAXHOST,
-                     NULL, 0, flags);
+                     nullptr, 0, flags);
   }
   if (PREDICT_FALSE(rc != 0)) {
     if (rc == EAI_SYSTEM) {

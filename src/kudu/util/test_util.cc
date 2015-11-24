@@ -91,7 +91,7 @@ string KuduTest::GetTestPath(const string& relative_path) {
 
 bool AllowSlowTests() {
   char *e = getenv(kSlowTestsEnvVariable);
-  if ((e == NULL) ||
+  if ((e == nullptr) ||
       (strlen(e) == 0) ||
       (strcasecmp(e, "false") == 0) ||
       (strcasecmp(e, "0") == 0) ||

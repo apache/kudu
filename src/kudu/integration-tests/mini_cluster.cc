@@ -196,7 +196,7 @@ MiniMaster* MiniCluster::leader_mini_master() {
   }
   LOG(ERROR) << "No leader master elected after " << kMasterLeaderElectionWaitTimeSeconds
              << " seconds.";
-  return NULL;
+  return nullptr;
 }
 
 void MiniCluster::Shutdown() {
@@ -304,7 +304,7 @@ Status MiniCluster::WaitForTabletServerCount(int count,
 Status MiniCluster::CreateClient(KuduClientBuilder* builder,
                                  client::sp::shared_ptr<KuduClient>* client) {
   KuduClientBuilder default_builder;
-  if (builder == NULL) {
+  if (builder == nullptr) {
     builder = &default_builder;
   }
   builder->clear_master_server_addrs();

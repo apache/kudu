@@ -250,26 +250,26 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
 
   if (!FLAGS_enable_maintenance_manager) {
     VLOG_AND_TRACE("maintenance", 1) << "Maintenance manager is disabled. Doing nothing";
-    return NULL;
+    return nullptr;
   }
   size_t free_threads = num_threads_ - running_ops_;
   if (free_threads == 0) {
     VLOG_AND_TRACE("maintenance", 1) << "there are no free threads, so we can't run anything.";
-    return NULL;
+    return nullptr;
   }
 
   int64_t low_io_most_logs_retained_bytes = 0;
-  MaintenanceOp* low_io_most_logs_retained_bytes_op = NULL;
+  MaintenanceOp* low_io_most_logs_retained_bytes_op = nullptr;
 
   uint64_t most_mem_anchored = 0;
-  MaintenanceOp* most_mem_anchored_op = NULL;
+  MaintenanceOp* most_mem_anchored_op = nullptr;
 
   int64_t most_logs_retained_bytes = 0;
   int64_t most_logs_retained_bytes_ram_anchored = 0;
-  MaintenanceOp* most_logs_retained_bytes_op = NULL;
+  MaintenanceOp* most_logs_retained_bytes_op = nullptr;
 
   double best_perf_improvement = 0;
-  MaintenanceOp* best_perf_improvement_op = NULL;
+  MaintenanceOp* best_perf_improvement_op = nullptr;
   for (OpMapTy::value_type &val : ops_) {
     MaintenanceOp* op(val.first);
     MaintenanceOpStats& stats(val.second);
@@ -327,7 +327,7 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
           "(current capacity is %.2f%%).  However, there are no ops currently "
           "runnable which would free memory.", capacity_pct);
       LOG(INFO) << msg;
-      return NULL;
+      return nullptr;
     }
     VLOG_AND_TRACE("maintenance", 1) << "we have exceeded our soft memory limit "
             << "(current capacity is " << capacity_pct << "%).  Running the op "
@@ -351,7 +351,7 @@ MaintenanceOp* MaintenanceManager::FindBestOp() {
       return best_perf_improvement_op;
     }
   }
-  return NULL;
+  return nullptr;
 }
 
 void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
@@ -381,7 +381,7 @@ void MaintenanceManager::LaunchOp(MaintenanceOp* op) {
 }
 
 void MaintenanceManager::GetMaintenanceManagerStatusDump(MaintenanceManagerStatusPB* out_pb) {
-  DCHECK(out_pb != NULL);
+  DCHECK(out_pb != nullptr);
   lock_guard<Mutex> guard(&lock_);
   MaintenanceOp* best_op = FindBestOp();
   for (MaintenanceManager::OpMapTy::value_type& val : ops_) {

@@ -59,7 +59,7 @@ void fake_signal_handler(int signum) {}
 
 bool IsSignalHandlerRegistered(int signum) {
   struct sigaction cur_action;
-  CHECK_EQ(0, sigaction(signum, NULL, &cur_action));
+  CHECK_EQ(0, sigaction(signum, nullptr, &cur_action));
   return cur_action.sa_handler != SIG_DFL;
 }
 } // anonymous namespace

@@ -96,7 +96,7 @@ RemoteBootstrapClient::RemoteBootstrapClient(const std::string& tablet_id,
     downloaded_wal_(false),
     downloaded_blocks_(false),
     replace_tombstoned_tablet_(false),
-    status_listener_(NULL),
+    status_listener_(nullptr),
     session_idle_timeout_millis_(0),
     start_time_micros_(0) {
 }
@@ -303,7 +303,7 @@ Status RemoteBootstrapClient::UnwindRemoteError(const Status& status,
 }
 
 void RemoteBootstrapClient::UpdateStatusMessage(const string& message) {
-  if (status_listener_ != NULL) {
+  if (status_listener_ != nullptr) {
     status_listener_->StatusMessage("RemoteBootstrap: " + message);
   }
 }

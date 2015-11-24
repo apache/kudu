@@ -224,7 +224,7 @@ void BinaryPlainBlockDecoder::SeekToPositionInBlock(uint pos) {
 }
 
 Status BinaryPlainBlockDecoder::SeekAtOrAfterValue(const void *value_void, bool *exact) {
-  DCHECK(value_void != NULL);
+  DCHECK(value_void != nullptr);
 
   const Slice &target = *reinterpret_cast<const Slice *>(value_void);
 

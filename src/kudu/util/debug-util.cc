@@ -140,7 +140,7 @@ bool InitSignalHandlerUnlocked(int signum) {
   // change our signal, unregister the old one.
   if (signum != g_stack_trace_signum && state == INITIALIZED) {
     struct sigaction old_act;
-    PCHECK(sigaction(g_stack_trace_signum, NULL, &old_act) == 0);
+    PCHECK(sigaction(g_stack_trace_signum, nullptr, &old_act) == 0);
     if (old_act.sa_handler == &HandleStackTraceSignal) {
       signal(g_stack_trace_signum, SIG_DFL);
     }
@@ -155,7 +155,7 @@ bool InitSignalHandlerUnlocked(int signum) {
 
   if (state == UNINITIALIZED) {
     struct sigaction old_act;
-    PCHECK(sigaction(g_stack_trace_signum, NULL, &old_act) == 0);
+    PCHECK(sigaction(g_stack_trace_signum, nullptr, &old_act) == 0);
     if (old_act.sa_handler != SIG_DFL &&
         old_act.sa_handler != SIG_IGN) {
       state = INIT_ERROR;

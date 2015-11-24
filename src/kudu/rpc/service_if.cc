@@ -32,7 +32,7 @@ namespace kudu {
 namespace rpc {
 
 RpcMethodMetrics::RpcMethodMetrics()
-  : handler_latency(NULL) {
+  : handler_latency(nullptr) {
 }
 
 RpcMethodMetrics::~RpcMethodMetrics() {

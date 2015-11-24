@@ -678,7 +678,7 @@ TEST_F(TestEnv, TestCanonicalize) {
   ASSERT_OK(env_->Canonicalize(dir + "/", &result));
   ASSERT_EQ(dir, result);
 
-  ASSERT_TRUE(env_->Canonicalize(dir + "/bar", NULL).IsNotFound());
+  ASSERT_TRUE(env_->Canonicalize(dir + "/bar", nullptr).IsNotFound());
 }
 
 TEST_F(TestEnv, TestGetTotalRAMBytes) {

@@ -47,7 +47,7 @@ TEST(TestCompactionPolicy, TestBudgetedSelection) {
 
   unordered_set<RowSet*> picked;
   double quality = 0;
-  ASSERT_OK(policy.PickRowSets(tree, &picked, &quality, NULL));
+  ASSERT_OK(policy.PickRowSets(tree, &picked, &quality, nullptr));
   ASSERT_EQ(3, picked.size());
   ASSERT_GE(quality, 1.0);
 }

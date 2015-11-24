@@ -155,7 +155,7 @@ Status KuduClient::Data::SyncLeaderMasterRpc(
     rpc_deadline.AddDelta(client->default_rpc_timeout());
     rpc.set_deadline(MonoTime::Earliest(rpc_deadline, deadline));
 
-    if (num_attempts != NULL) {
+    if (num_attempts != nullptr) {
       ++*num_attempts;
     }
     Status s = func(master_proxy_.get(), req, resp, &rpc);
@@ -241,15 +241,15 @@ RemoteTabletServer* KuduClient::Data::SelectTServer(const scoped_refptr<RemoteTa
                                                     const ReplicaSelection selection,
                                                     const set<string>& blacklist,
                                                     vector<RemoteTabletServer*>* candidates) const {
-  RemoteTabletServer* ret = NULL;
+  RemoteTabletServer* ret = nullptr;
   candidates->clear();
   switch (selection) {
     case LEADER_ONLY: {
       ret = rt->LeaderTServer();
-      if (ret != NULL) {
+      if (ret != nullptr) {
         candidates->push_back(ret);
         if (ContainsKey(blacklist, ret->permanent_uuid())) {
-          ret = NULL;
+          ret = nullptr;
         }
       }
       break;
@@ -279,7 +279,7 @@ RemoteTabletServer* KuduClient::Data::SelectTServer(const scoped_refptr<RemoteTa
           }
         }
         // Fallback to a random replica if none are local.
-        if (ret == NULL && !filtered.empty()) {
+        if (ret == nullptr && !filtered.empty()) {
           ret = filtered[rand() % filtered.size()];
         }
       }
@@ -305,7 +305,7 @@ Status KuduClient::Data::GetTabletServer(KuduClient* client,
   meta_cache_->LookupTabletByID(tablet_id, &remote_tablet);
 
   RemoteTabletServer* ret = SelectTServer(remote_tablet, selection, blacklist, candidates);
-  if (PREDICT_FALSE(ret == NULL)) {
+  if (PREDICT_FALSE(ret == nullptr)) {
     // Construct a blacklist string if applicable.
     string blacklist_string = "";
     if (!blacklist.empty()) {
@@ -393,7 +393,7 @@ Status KuduClient::Data::IsCreateTableInProgress(KuduClient* client,
           client,
           req,
           &resp,
-          NULL,
+          nullptr,
           &MasterServiceProxy::IsCreateTableDone);
   // RETURN_NOT_OK macro can't take templated function call as param,
   // and SyncLeaderMasterRpc must be explicitly instantiated, else the
@@ -451,7 +451,7 @@ Status KuduClient::Data::AlterTable(KuduClient* client,
           client,
           req,
           &resp,
-          NULL,
+          nullptr,
           &MasterServiceProxy::AlterTable);
   RETURN_NOT_OK(s);
   // TODO: Consider the situation where the request is sent to the
@@ -479,7 +479,7 @@ Status KuduClient::Data::IsAlterTableInProgress(KuduClient* client,
           client,
           req,
           &resp,
-          NULL,
+          nullptr,
           &MasterServiceProxy::IsAlterTableDone);
   RETURN_NOT_OK(s);
   if (resp.has_error()) {

@@ -43,7 +43,7 @@ Status DumpIterator(const CFileReader& reader,
   const TypeInfo *type = reader.type_info();
   size_t max_rows = kBufSize/type->size();
   uint8_t nulls[BitmapSize(max_rows)];
-  ColumnBlock cb(type, reader.is_nullable() ? nulls : NULL, buf, max_rows, &arena);
+  ColumnBlock cb(type, reader.is_nullable() ? nulls : nullptr, buf, max_rows, &arena);
 
   string strbuf;
   size_t count = 0;
@@ -58,7 +58,7 @@ Status DumpIterator(const CFileReader& reader,
         for (size_t i = 0; i < n; i++) {
           strbuf.append(indent, ' ');
           const void *ptr = cb.nullable_cell_ptr(i);
-          if (ptr != NULL) {
+          if (ptr != nullptr) {
             type->AppendDebugStringForValue(ptr, &strbuf);
           } else {
             strbuf.append("NULL");

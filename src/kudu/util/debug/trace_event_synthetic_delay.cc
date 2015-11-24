@@ -39,7 +39,7 @@ class TraceEventSyntheticDelayRegistry : public TraceEventSyntheticDelayClock {
 };
 
 TraceEventSyntheticDelay::TraceEventSyntheticDelay()
-    : mode_(STATIC), begin_count_(0), trigger_count_(0), clock_(NULL) {}
+    : mode_(STATIC), begin_count_(0), trigger_count_(0), clock_(nullptr) {}
 
 TraceEventSyntheticDelay::~TraceEventSyntheticDelay() {}
 

@@ -111,7 +111,7 @@ class TestCompaction : public KuduRowSetTest {
       ContiguousRow dst_row(&mrs->schema(), rowbuf);
       ASSERT_OK_FAST(projector.Init());
       ASSERT_OK_FAST(projector.ProjectRowForWrite(row_builder_.row(),
-                            &dst_row, static_cast<Arena*>(NULL)));
+                            &dst_row, static_cast<Arena*>(nullptr)));
       ASSERT_OK_FAST(mrs->Insert(tx.timestamp(), ConstContiguousRow(dst_row), op_id_));
     } else {
       ASSERT_OK_FAST(mrs->Insert(tx.timestamp(), row_builder_.row(), op_id_));
@@ -141,7 +141,7 @@ class TestCompaction : public KuduRowSetTest {
       update.AddColumnUpdate(schema_.column_by_id(col_id), col_id, &new_val);
       if (new_val % 2 == 0) {
         update.AddColumnUpdate(schema_.column_by_id(nullable_col_id),
-                               nullable_col_id, NULL);
+                               nullable_col_id, nullptr);
       } else {
         update.AddColumnUpdate(schema_.column_by_id(nullable_col_id),
                                nullable_col_id, &new_val);
@@ -620,7 +620,7 @@ TEST_F(TestCompaction, TestOneToOne) {
   MvccSnapshot snap3(mvcc_);
   gscoped_ptr<CompactionInput> compact_input;
   ASSERT_OK(CompactionInput::Create(*rs, &schema_, snap3, &compact_input));
-  DoFlushAndReopen(compact_input.get(), schema_, snap3, kLargeRollThreshold, NULL);
+  DoFlushAndReopen(compact_input.get(), schema_, snap3, kLargeRollThreshold, nullptr);
 }
 
 // Test merging two row sets and the second one has updates, KUDU-102

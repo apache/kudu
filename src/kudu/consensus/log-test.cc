@@ -300,7 +300,7 @@ void LogTest::DoCorruptionTest(CorruptionType type, CorruptionPosition place,
   gscoped_ptr<LogReader> reader;
   ASSERT_OK(LogReader::Open(fs_manager_.get(),
                             make_scoped_refptr(new LogIndex(log_->log_dir_)),
-                            kTestTablet, NULL, &reader));
+                            kTestTablet, nullptr, &reader));
   ASSERT_EQ(1, reader->num_segments());
 
   SegmentSequence segments;
@@ -550,7 +550,7 @@ TEST_F(LogTest, TestGCOfIndexChunks) {
   const int kNumOpsPerSegment = 5;
   OpId op_id = MakeOpId(1, 999990);
   ASSERT_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
-                                              &op_id, NULL));
+                                              &op_id, nullptr));
 
   // Run a GC on an op in the second index chunk. We should remove only the
   // earliest segment, because we are set to retain 4.
@@ -712,7 +712,7 @@ TEST_F(LogTest, TestLogReader) {
   LogReader reader(fs_manager_.get(),
                    scoped_refptr<LogIndex>(),
                    kTestTablet,
-                   NULL);
+                   nullptr);
   reader.InitEmptyReaderForTests();
   ASSERT_OK(AppendNewEmptySegmentToReader(2, 10, &reader));
   ASSERT_OK(AppendNewEmptySegmentToReader(3, 20, &reader));
@@ -761,7 +761,7 @@ TEST_F(LogTest, TestLogReader) {
   ASSERT_EQ(4, segment->header().sequence_number());
 
   segment = reader.GetSegmentBySequenceNumber(5);
-  ASSERT_TRUE(segment.get() == NULL);
+  ASSERT_TRUE(segment.get() == nullptr);
 }
 
 // Test that, even if the LogReader's index is empty because no segments
@@ -1000,7 +1000,7 @@ TEST_F(LogTest, TestGetMaxIndexesToSegmentSizeMap) {
   OpId op_id = MakeOpId(1, 10);
   // Create 5 segments, starting from log index 10, with 5 ops per segment.
   ASSERT_OK(AppendMultiSegmentSequence(kNumTotalSegments, kNumOpsPerSegment,
-                                              &op_id, NULL));
+                                              &op_id, nullptr));
 
   std::map<int64_t, int64_t> max_idx_to_segment_size;
 

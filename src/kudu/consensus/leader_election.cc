@@ -197,7 +197,7 @@ void LeaderElection::Run() {
 
   // The rest of the code below is for a typical multi-node configuration.
   for (const std::string& voter_uuid : follower_uuids_) {
-    VoterState* state = NULL;
+    VoterState* state = nullptr;
     {
       lock_guard<Lock> guard(&lock_);
       state = FindOrDie(voter_state_, voter_uuid);

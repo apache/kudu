@@ -88,7 +88,7 @@ Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
 
   // When recovering, we don't want to have any log index -- since it isn't fsynced()
   // during writing, its contents are useless to us.
-  scoped_refptr<LogIndex> index(NULL);
+  scoped_refptr<LogIndex> index(nullptr);
   gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, index, tablet_id,
                                                   metric_entity));
   RETURN_NOT_OK_PREPEND(log_reader->Init(recovery_path),
@@ -262,7 +262,7 @@ void LogReader::GetMaxIndexesToSegmentSizeMap(int64_t min_op_idx, int32_t segmen
 scoped_refptr<ReadableLogSegment> LogReader::GetSegmentBySequenceNumber(int64_t seq) const {
   boost::lock_guard<simple_spinlock> lock(lock_);
   if (segments_.empty()) {
-    return NULL;
+    return nullptr;
   }
 
   // We always have a contiguous set of log segments, so we can find the requested
@@ -270,7 +270,7 @@ scoped_refptr<ReadableLogSegment> LogReader::GetSegmentBySequenceNumber(int64_t 
   int64_t first_seqno = segments_[0]->header().sequence_number();
   int64_t relative = seq - first_seqno;
   if (relative < 0 || relative >= segments_.size()) {
-    return NULL;
+    return nullptr;
   }
 
   DCHECK_EQ(segments_[relative]->header().sequence_number(), seq);

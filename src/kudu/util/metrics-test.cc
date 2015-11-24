@@ -217,7 +217,7 @@ TEST_F(MetricsTest, RetirementTest) {
   // When we de-ref it, it should not get immediately retired, either, because
   // we keep retirable metrics around for some amount of time. We try retiring
   // a number of times to hit all the cases.
-  counter = NULL;
+  counter = nullptr;
   for (int i = 0; i < 3; i++) {
     entity_->RetireOldMetrics();
     ASSERT_EQ(1, entity_->UnsafeMetricsMapForTests().size());

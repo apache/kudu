@@ -84,7 +84,7 @@ string RowChangeList::ToString(const Schema &schema) const {
       const ColumnSchema& col_schema = schema.column(col_idx);
       ret.append(col_schema.name());
       ret.append("=");
-      if (value == NULL) {
+      if (value == nullptr) {
         ret.append("NULL");
       } else {
         ret.append(col_schema.Stringify(value));
@@ -116,7 +116,7 @@ void RowChangeListEncoder::AddColumnUpdate(const ColumnSchema& col_schema,
                                            int col_id,
                                            const void* cell_ptr) {
   Slice val_slice;
-  if (cell_ptr != NULL) {
+  if (cell_ptr != nullptr) {
     if (col_schema.type_info()->physical_type() == BINARY) {
       memcpy(&val_slice, cell_ptr, sizeof(val_slice));
     } else {
@@ -128,7 +128,7 @@ void RowChangeListEncoder::AddColumnUpdate(const ColumnSchema& col_schema,
     DCHECK(col_schema.is_nullable());
   }
 
-  AddRawColumnUpdate(col_id, cell_ptr == NULL, val_slice);
+  AddRawColumnUpdate(col_id, cell_ptr == nullptr, val_slice);
 }
 
 Status RowChangeListDecoder::Init() {
@@ -336,7 +336,7 @@ Status RowChangeListDecoder::DecodedUpdate::Validate(const Schema& schema,
       return Status::Corruption("decoded set-to-NULL for non-nullable column",
                                 col.ToString());
     }
-    *value = NULL;
+    *value = nullptr;
     return Status::OK();
   }
 

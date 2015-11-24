@@ -431,7 +431,7 @@ bool Heartbeater::Thread::IsCurrentThread() const {
 }
 
 Status Heartbeater::Thread::Start() {
-  CHECK(thread_ == NULL);
+  CHECK(thread_ == nullptr);
 
   should_run_ = true;
   return kudu::Thread::Create("heartbeater", "heartbeat",
@@ -449,7 +449,7 @@ Status Heartbeater::Thread::Stop() {
     cond_.Signal();
   }
   RETURN_NOT_OK(ThreadJoiner(thread_.get()).Join());
-  thread_ = NULL;
+  thread_ = nullptr;
   return Status::OK();
 }
 

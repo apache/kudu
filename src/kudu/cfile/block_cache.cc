@@ -115,10 +115,10 @@ bool BlockCache::Lookup(FileId file_id, uint64_t offset, Cache::CacheBehavior be
                         BlockCacheHandle *handle) {
   CacheKey key(file_id, offset);
   Cache::Handle *h = cache_->Lookup(key.slice(), behavior);
-  if (h != NULL) {
+  if (h != nullptr) {
     handle->SetHandle(cache_.get(), h);
   }
-  return h != NULL;
+  return h != nullptr;
 }
 
 bool BlockCache::Insert(FileId file_id, uint64_t offset, const Slice &block_data,
@@ -129,11 +129,11 @@ bool BlockCache::Insert(FileId file_id, uint64_t offset, const Slice &block_data
   gscoped_ptr<Slice> value(new Slice(block_data));
   Cache::Handle *h = cache_->Insert(key.slice(), value.get(), value->size(),
                                     deleter_.get());
-  if (h != NULL) {
+  if (h != nullptr) {
     inserted->SetHandle(cache_.get(), h);
     ignore_result(value.release());
   }
-  return h != NULL;
+  return h != nullptr;
 }
 
 void BlockCache::StartInstrumentation(const scoped_refptr<MetricEntity>& metric_entity) {

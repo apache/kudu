@@ -36,7 +36,7 @@ ConditionVariable::ConditionVariable(Mutex* user_lock)
   rv = pthread_cond_init(&condition_, &attrs);
   pthread_condattr_destroy(&attrs);
 #else
-  rv = pthread_cond_init(&condition_, NULL);
+  rv = pthread_cond_init(&condition_, nullptr);
 #endif
   DCHECK_EQ(0, rv);
 }

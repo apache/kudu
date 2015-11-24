@@ -100,7 +100,7 @@ Status ReadFully(RandomAccessFile* file, uint64_t offset, size_t n,
 
 Status CreateDirIfMissing(Env* env, const string& path, bool* created) {
   Status s = env->CreateDir(path);
-  if (created != NULL) {
+  if (created != nullptr) {
     *created = s.ok();
   }
   return s.IsAlreadyPresent() ? Status::OK() : s;

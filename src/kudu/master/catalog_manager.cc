@@ -234,7 +234,7 @@ class TabletLoader : public TabletVisitor {
     // Add the tablet to the tablet manager
     catalog_manager_->tablet_map_[tablet->tablet_id()] = tablet;
 
-    if (table == NULL) {
+    if (table == nullptr) {
       // if the table is missing and the tablet is in "preparing" state
       // may mean that the table was not created (maybe due to a failed write
       // for the sys-tablets). The cleaner will remove
@@ -282,7 +282,7 @@ class CatalogManagerBgTasks {
  public:
   explicit CatalogManagerBgTasks(CatalogManager *catalog_manager)
     : closing_(false), pending_updates_(false),
-      thread_(NULL), catalog_manager_(catalog_manager) {
+      thread_(nullptr), catalog_manager_(catalog_manager) {
   }
 
   ~CatalogManagerBgTasks() {}
@@ -338,7 +338,7 @@ void CatalogManagerBgTasks::Shutdown() {
   }
 
   Wake();
-  if (thread_ != NULL) {
+  if (thread_ != nullptr) {
     CHECK_OK(ThreadJoiner(thread_.get()).Join());
   }
 }
@@ -710,7 +710,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
   // Decode split rows.
   vector<KuduPartialRow> split_rows;
 
-  RowOperationsPBDecoder decoder(&req.split_rows(), &client_schema, &schema, NULL);
+  RowOperationsPBDecoder decoder(&req.split_rows(), &client_schema, &schema, nullptr);
   vector<DecodedRowOperation> ops;
   RETURN_NOT_OK(decoder.DecodeOperations(&ops));
 
@@ -766,7 +766,7 @@ Status CatalogManager::CreateTable(const CreateTableRequestPB* orig_req,
 
     // b. Verify that the table does not exist.
     table = FindPtrOrNull(table_names_map_, req.name());
-    if (table != NULL) {
+    if (table != nullptr) {
       s = Status::AlreadyPresent("Table already exists", table->id());
       SetupError(resp->mutable_error(), MasterErrorPB::TABLE_ALREADY_PRESENT, s);
       return s;
@@ -848,7 +848,7 @@ Status CatalogManager::IsCreateTableDone(const IsCreateTableDoneRequestPB* req,
   // 1. Lookup the table and verify if it exists
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
-  if (table == NULL) {
+  if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", req->table().DebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
@@ -932,7 +932,7 @@ Status CatalogManager::DeleteTable(const DeleteTableRequestPB* req,
   // 1. Lookup the table and verify if it exists
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
-  if (table == NULL) {
+  if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", req->table().DebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
@@ -1084,7 +1084,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
   // 1. Lookup the table and verify if it exists
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
-  if (table == NULL) {
+  if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", req->table().DebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
@@ -1125,7 +1125,7 @@ Status CatalogManager::AlterTable(const AlterTableRequestPB* req,
 
     // Verify that the table does not exist
     scoped_refptr<TableInfo> other_table = FindPtrOrNull(table_names_map_, req->new_table_name());
-    if (other_table != NULL) {
+    if (other_table != nullptr) {
       Status s = Status::AlreadyPresent("Table already exists", other_table->id());
       SetupError(resp->mutable_error(), MasterErrorPB::TABLE_ALREADY_PRESENT, s);
       return s;
@@ -1202,7 +1202,7 @@ Status CatalogManager::IsAlterTableDone(const IsAlterTableDoneRequestPB* req,
   // 1. Lookup the table and verify if it exists
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
-  if (table == NULL) {
+  if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", req->table().DebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
@@ -1233,7 +1233,7 @@ Status CatalogManager::GetTableSchema(const GetTableSchemaRequestPB* req,
   // 1. Lookup the table and verify if it exists
   TRACE("Looking up table");
   RETURN_NOT_OK(FindTable(req->table(), &table));
-  if (table == NULL) {
+  if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist", req->table().DebugString());
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
@@ -1292,7 +1292,7 @@ Status CatalogManager::ListTables(const ListTablesRequestPB* req,
 bool CatalogManager::GetTableInfo(const string& table_id, scoped_refptr<TableInfo> *table) {
   boost::shared_lock<LockType> l(lock_);
   *table = FindPtrOrNull(table_ids_map_, table_id);
-  return *table != NULL;
+  return *table != nullptr;
 }
 
 void CatalogManager::GetAllTables(std::vector<scoped_refptr<TableInfo> > *tables) {
@@ -1388,13 +1388,13 @@ Status CatalogManager::HandleReportedTablet(TSDescriptor* ts_desc,
   if (!tablet) {
     LOG(INFO) << "Got report from unknown tablet " << report.tablet_id()
               << ": Sending delete request for this orphan tablet";
-    SendDeleteTabletRequest(report.tablet_id(), TABLET_DATA_DELETED, boost::none, NULL, ts_desc,
+    SendDeleteTabletRequest(report.tablet_id(), TABLET_DATA_DELETED, boost::none, nullptr, ts_desc,
                             "Report from unknown tablet");
     return Status::OK();
   }
   if (!tablet->table()) {
     LOG(INFO) << "Got report from an orphaned tablet " << report.tablet_id();
-    SendDeleteTabletRequest(report.tablet_id(), TABLET_DATA_DELETED, boost::none, NULL, ts_desc,
+    SendDeleteTabletRequest(report.tablet_id(), TABLET_DATA_DELETED, boost::none, nullptr, ts_desc,
                             "Report from an orphaned tablet");
     return Status::OK();
   }
@@ -1683,7 +1683,7 @@ Status CatalogManager::GetTabletPeer(const string& tablet_id,
   // Note: CatalogManager has only one table, 'sys_catalog', with only
   // one tablet.
   boost::shared_lock<LockType> l(lock_);
-  CHECK(sys_catalog_.get() != NULL) << "sys_catalog_ must be initialized!";
+  CHECK(sys_catalog_.get() != nullptr) << "sys_catalog_ must be initialized!";
   if (sys_catalog_->tablet_id() == tablet_id) {
     *tablet_peer = sys_catalog_->tablet_peer();
   } else {
@@ -1961,7 +1961,7 @@ class RetryingTSRpcTask : public MonitoredTask {
   // Clean up request and release resources. May call 'delete this'.
   void UnregisterAsyncTask() {
     end_ts_ = MonoTime::Now(MonoTime::FINE);
-    if (table_ != NULL) {
+    if (table_ != nullptr) {
       table_->RemoveTask(this);
     } else {
       // This is a floating task (since the table does not exist)
@@ -2452,7 +2452,7 @@ void CatalogManager::SendDeleteTabletRequest(
       new AsyncDeleteReplica(master_, worker_pool_.get(), ts_desc->permanent_uuid(), table,
                              tablet_id, delete_type, cas_config_opid_index_less_or_equal,
                              reason);
-  if (table != NULL) {
+  if (table != nullptr) {
     table->AddTask(call);
   } else {
     // This is a floating task (since the table does not exist)
@@ -2931,7 +2931,7 @@ Status CatalogManager::GetTableLocations(const GetTableLocationsRequestPB* req,
   scoped_refptr<TableInfo> table;
   RETURN_NOT_OK(FindTable(req->table(), &table));
 
-  if (table == NULL) {
+  if (table == nullptr) {
     Status s = Status::NotFound("The table does not exist");
     SetupError(resp->mutable_error(), MasterErrorPB::TABLE_NOT_FOUND, s);
     return s;
@@ -3090,7 +3090,7 @@ uint32_t TabletInfo::reported_schema_version() const {
 
 std::string TabletInfo::ToString() const {
   return Substitute("$0 (table $1)", tablet_id_,
-                    (table_ != NULL ? table_->ToString() : "MISSING"));
+                    (table_ != nullptr ? table_->ToString() : "MISSING"));
 }
 
 void PersistentTabletInfo::set_state(SysTabletsEntryPB::State state, const string& msg) {
@@ -3132,7 +3132,7 @@ void TableInfo::AddTablets(const vector<TabletInfo*>& tablets) {
 }
 
 void TableInfo::AddTabletUnlocked(TabletInfo* tablet) {
-  TabletInfo* old = NULL;
+  TabletInfo* old = nullptr;
   if (UpdateReturnCopy(&tablet_map_,
                        tablet->metadata().dirty().pb.partition().partition_key_start(),
                        tablet, &old)) {

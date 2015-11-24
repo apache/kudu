@@ -90,7 +90,7 @@ class MockQueue : public PeerMessageQueue {
 
 class MockPeerManager : public PeerManager {
  public:
-  MockPeerManager() : PeerManager("", "", NULL, NULL, NULL, NULL) {}
+  MockPeerManager() : PeerManager("", "", nullptr, nullptr, nullptr, nullptr) {}
   MOCK_METHOD1(UpdateRaftConfig, Status(const consensus::RaftConfigPB& config));
   MOCK_METHOD1(SignalRequest, void(bool force_if_queue_empty));
   MOCK_METHOD0(Close, void());
@@ -201,7 +201,7 @@ class RaftConsensusTest : public KuduTest {
     config_ = BuildRaftConfigPBForTests(num_peers);
     config_.set_opid_index(kInvalidOpIdIndex);
 
-    gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(NULL));
+    gscoped_ptr<PeerProxyFactory> proxy_factory(new LocalTestPeerProxyFactory(nullptr));
 
     string peer_uuid = config_.peers(num_peers - 1).permanent_uuid();
 

@@ -218,7 +218,7 @@ void Tablet::Shutdown() {
   UnregisterMaintenanceOps();
 
   boost::lock_guard<rw_spinlock> lock(component_lock_);
-  components_ = NULL;
+  components_ = nullptr;
   state_ = kShutdown;
 
   // In the case of deleting a tablet, we still keep the metadata around after
@@ -414,7 +414,7 @@ Status Tablet::InsertUnlocked(WriteTransactionState *tx_state,
 
 Status Tablet::MutateRowUnlocked(WriteTransactionState *tx_state,
                                  RowOp* mutate) {
-  DCHECK(tx_state != NULL) << "you must have a WriteTransactionState";
+  DCHECK(tx_state != nullptr) << "you must have a WriteTransactionState";
   DCHECK(tx_state->op_id().IsInitialized()) << "TransactionState OpId needed for anchoring";
   DCHECK_EQ(tx_state->schema_at_decode_time(), schema());
 
@@ -897,7 +897,7 @@ void MinorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
   }
 
   double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
-      RowSet::MINOR_DELTA_COMPACTION, NULL);
+      RowSet::MINOR_DELTA_COMPACTION, nullptr);
   prev_stats_.set_perf_improvement(perf_improv);
   prev_stats_.set_runnable(perf_improv > 0);
   *stats = prev_stats_;
@@ -973,7 +973,7 @@ void MajorDeltaCompactionOp::UpdateStats(MaintenanceOpStats* stats) {
   }
 
   double perf_improv = tablet_->GetPerfImprovementForBestDeltaCompact(
-      RowSet::MAJOR_DELTA_COMPACTION, NULL);
+      RowSet::MAJOR_DELTA_COMPACTION, nullptr);
   prev_stats_.set_perf_improvement(perf_improv);
   prev_stats_.set_runnable(perf_improv > 0);
   *stats = prev_stats_;
@@ -1113,7 +1113,7 @@ Status Tablet::FlushMetadata(const RowSetVector& to_remove,
   RowSetMetadataIds to_remove_meta;
   for (const shared_ptr<RowSet>& rowset : to_remove) {
     // Skip MemRowSet & DuplicatingRowSets which don't have metadata.
-    if (rowset->metadata().get() == NULL) {
+    if (rowset->metadata().get() == nullptr) {
       continue;
     }
     to_remove_meta.insert(rowset->metadata()->id());
@@ -1405,7 +1405,7 @@ Status Tablet::CaptureConsistentIterators(
   ret.push_back(shared_ptr<RowwiseIterator>(ms_iter.release()));
 
   // Cull row-sets in the case of key-range queries.
-  if (spec != NULL && spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
+  if (spec != nullptr && spec->lower_bound_key() && spec->exclusive_upper_bound_key()) {
     // TODO : support open-ended intervals
     // TODO: the upper bound key is exclusive, but the RowSetTree function takes
     // an inclusive interval. So, we might end up fetching one more rowset than
@@ -1725,12 +1725,12 @@ Tablet::Iterator::Iterator(const Tablet *tablet,
 Tablet::Iterator::~Iterator() {}
 
 Status Tablet::Iterator::Init(ScanSpec *spec) {
-  DCHECK(iter_.get() == NULL);
+  DCHECK(iter_.get() == nullptr);
 
   RETURN_NOT_OK(tablet_->GetMappedReadProjection(projection_, &projection_));
 
   vector<shared_ptr<RowwiseIterator> > iters;
-  if (spec != NULL) {
+  if (spec != nullptr) {
     VLOG(3) << "Before encoding range preds: " << spec->ToString();
     encoder_.EncodeRangePredicates(spec, true);
     VLOG(3) << "After encoding range preds: " << spec->ToString();
@@ -1754,19 +1754,19 @@ Status Tablet::Iterator::Init(ScanSpec *spec) {
 }
 
 bool Tablet::Iterator::HasNext() const {
-  DCHECK(iter_.get() != NULL) << "Not initialized!";
+  DCHECK(iter_.get() != nullptr) << "Not initialized!";
   return iter_->HasNext();
 }
 
 Status Tablet::Iterator::NextBlock(RowBlock *dst) {
-  DCHECK(iter_.get() != NULL) << "Not initialized!";
+  DCHECK(iter_.get() != nullptr) << "Not initialized!";
   return iter_->NextBlock(dst);
 }
 
 string Tablet::Iterator::ToString() const {
   string s;
   s.append("tablet iterator: ");
-  if (iter_.get() == NULL) {
+  if (iter_.get() == nullptr) {
     s.append("NULL");
   } else {
     s.append(iter_->ToString());

@@ -105,7 +105,7 @@ Status CFileSet::Open() {
 }
 
 Status CFileSet::OpenAdHocIndexReader() {
-  if (ad_hoc_idx_reader_ != NULL) {
+  if (ad_hoc_idx_reader_ != nullptr) {
     return Status::OK();
   }
 
@@ -119,7 +119,7 @@ Status CFileSet::OpenAdHocIndexReader() {
 
 
 Status CFileSet::OpenBloomReader() {
-  if (bloom_reader_ != NULL) {
+  if (bloom_reader_ != nullptr) {
     return Status::OK();
   }
 
@@ -198,7 +198,7 @@ uint64_t CFileSet::EstimateOnDiskSize() const {
 
 Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx,
                          ProbeStats* stats) const {
-  if (bloom_reader_ != NULL && FLAGS_consult_bloom_filters) {
+  if (bloom_reader_ != nullptr && FLAGS_consult_bloom_filters) {
     // Fully open the BloomFileReader if it was lazily opened earlier.
     //
     // If it's already initialized, this is a no-op.
@@ -212,13 +212,13 @@ Status CFileSet::FindRow(const RowSetKeyProbe &probe, rowid_t *idx,
     } else if (!s.ok()) {
       LOG(WARNING) << "Unable to query bloom: " << s.ToString()
                    << " (disabling bloom for this rowset from this point forward)";
-      const_cast<CFileSet *>(this)->bloom_reader_.reset(NULL);
+      const_cast<CFileSet *>(this)->bloom_reader_.reset(nullptr);
       // Continue with the slow path
     }
   }
 
   stats->keys_consulted++;
-  CFileIterator *key_iter = NULL;
+  CFileIterator *key_iter = nullptr;
   RETURN_NOT_OK(NewKeyIterator(&key_iter));
 
   gscoped_ptr<CFileIterator> key_iter_scoped(key_iter); // free on return
@@ -329,7 +329,7 @@ Status CFileSet::Iterator::PushdownRangeScanPredicate(ScanSpec *spec) {
   lower_bound_idx_ = 0;
   upper_bound_idx_ = row_count_;
 
-  if (spec == NULL) {
+  if (spec == nullptr) {
     // No predicate.
     return Status::OK();
   }
