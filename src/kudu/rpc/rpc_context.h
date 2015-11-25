@@ -24,7 +24,6 @@
 namespace google {
 namespace protobuf {
 class Message;
-class MessageLite;
 } // namespace protobuf
 } // namespace google
 
@@ -133,7 +132,7 @@ class RpcContext {
   // After this method returns, this RpcContext object is destroyed. The request
   // and response protobufs are also destroyed.
   void RespondApplicationError(int error_ext_id, const std::string& message,
-                               const google::protobuf::MessageLite& app_error_pb);
+                               const google::protobuf::Message& app_error_pb);
 
 
   // Adds an RpcSidecar to the response. This is the preferred method for

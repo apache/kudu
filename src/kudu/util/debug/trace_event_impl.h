@@ -61,7 +61,7 @@ namespace debug {
 
 // For any argument of type TRACE_VALUE_TYPE_CONVERTABLE the provided
 // class must implement this interface.
-class ConvertableToTraceFormat : public kudu::RefCounted<ConvertableToTraceFormat> {
+class ConvertableToTraceFormat : public kudu::RefCountedThreadSafe<ConvertableToTraceFormat> {
  public:
   // Append the class info to the provided |out| string. The appended
   // data must be a valid JSON object. Strings must be properly quoted, and
@@ -73,7 +73,7 @@ class ConvertableToTraceFormat : public kudu::RefCounted<ConvertableToTraceForma
   virtual ~ConvertableToTraceFormat() {}
 
  private:
-  friend class kudu::RefCounted<ConvertableToTraceFormat>;
+  friend class kudu::RefCountedThreadSafe<ConvertableToTraceFormat>;
 };
 
 struct TraceEventHandle {
