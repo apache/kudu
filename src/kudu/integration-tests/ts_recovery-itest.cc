@@ -48,10 +48,10 @@ void TsRecoveryITest::StartCluster(const vector<string>& extra_tserver_flags,
   ASSERT_OK(cluster_->Start());
 }
 
-// Stress test a case where most of the operations are expected to time out.
-// This is a regression test for various bugs we've seen in timeout handling,
-// especially with concurrent requests.
-TEST_F(TsRecoveryITest, TestLookupTimeouts) {
+// Test crashing a server just before appending a COMMIT message.
+// We then restart the server and ensure that all rows successfully
+// inserted before the crash are recovered.
+TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
   NO_FATALS(StartCluster());
   cluster_->SetFlag(cluster_->tablet_server(0),
                     "fault_crash_before_append_commit", "0.05");
