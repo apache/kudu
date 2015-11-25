@@ -138,6 +138,8 @@ Status Webserver::Start() {
     LOG(INFO) << "Document root: " << opts_.doc_root;
     options.push_back("document_root");
     options.push_back(opts_.doc_root.c_str());
+    options.push_back("enable_directory_listing");
+    options.push_back("no");
   } else {
     LOG(INFO)<< "Document root disabled";
   }
