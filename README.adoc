@@ -1,8 +1,29 @@
+= Viewing the web site locally without pushing to GitHub
+
+To serve the Kudu web site locally, use
+[https://help.github.com/articles/using-jekyll-with-pages/] via
+bundler[https://bundler.io]:
+
+[source,bash]
+----
+bundle install --path .gem/ # download jekyll dependencies to .gem/
+bundle exec jekyll serve
+----
+
+This will start a local web server on http://localhost:4000/ where you can view
+the site just like it renders on GitHub Pages.
+
+In addition to serving static content, GitHub Pages is also able to render
+https://help.github.com/articles/github-flavored-markdown/[GitHub Flavored
+Markdown]. It does not support AsciiDoc yet.
+
 = Updating the Kudu Website
 
-To update HTML pages in this directory, edit them and commit, and push your changes
-to gerrit by issuing a command like:
+To update HTML or MarkDown pages in this directory, edit them and git commit, then
+push your changes to http://getkudu.io/docs/contributing.html#_contributing_patches_using_gerrit[Gerrit]
+by issuing a command like:
 
+[source,bash]
 ----
 git push gerrit HEAD:refs/for/gh-pages --no-thin
 ----
@@ -13,6 +34,7 @@ To update the site navigation or overall page layout, edit `_layouts/default.htm
 changes to Gerrit, as above.
 
 == Updating the CSS
+
 See the `css/` directory.
 
 `kudu.css`:: Styles for the overall website.
