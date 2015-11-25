@@ -202,7 +202,8 @@ need, you can build Kudu from source. You can build from source on any supported
 . Install the prerequisite libraries, if they are not installed:
 +
 ----
-$ sudo yum install boost-static boost-devel openssl-devel cyrus-sasl-devel
+$ sudo yum install boost-static boost-devel openssl-devel cyrus-sasl-devel \
+  cyrus-sasl-plain patch pkg-config make rsync vim-common gdb
 ----
 
 . Optional: Install the `asciidoctor` gem if you plan to build documentation.
@@ -261,8 +262,8 @@ automated deployment scenario. It skips the steps marked *Optional* above.
 ----
 #!/bin/bash
 
-sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel
-git clone http://github.com/cloudera/kudu
+sudo yum -y install boost-static boost-devel openssl-devel cyrus-sasl-devel \
+  cyrus-sasl-plain patch pkg-config make rsync vim-common gdb
 cd kudu
 thirdparty/build-if-necessary.sh
 thirdparty/installed/bin/cmake . -DCMAKE_BUILD_TYPE=release
@@ -278,7 +279,8 @@ make install
 +
 ----
 $ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
-  libssl-dev libsasl2-dev libtool ntp
+  libssl-dev libsasl2-dev libsasl2-modules libtool ntp patch pkg-config make rsync \
+  vim-common gdb
 ----
 
 . Optional: Install the `asciidoctor` gem and xsltproc if you plan to build documentation.
@@ -319,16 +321,17 @@ $ make docs
 
 .Ubuntu / Debian Build Script
 ====
-This script provides an overview of the procedure to build Kudu on RHEL or
-CentOS, and can be used as the basis for an automated deployment scenario. It skips
+This script provides an overview of the procedure to build Kudu on Ubuntu, and
+can be used as the basis for an automated deployment scenario. It skips
 the steps marked *Optional* above.
 
 [source,bash]
 ----
 #!/bin/bash
 
-sudo apt-get -y install git autoconf automake libboost-thread-dev curl \
-  gcc g++ libssl-dev libsasl2-dev libtool ntp
+sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
+  libssl-dev libsasl2-dev libsasl2-modules libtool ntp patch pkg-config make rsync \
+  vim-common gdb
 git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
@@ -388,6 +391,26 @@ $ thirdparty/build-if-necessary.sh
 thirdparty/installed/bin/cmake .
 make -j4
 ----
+
+.OSX Build Script
+====
+This script provides an overview of the procedure to build Kudu on OSX, and can
+be used as the basis for an automated deployment scenario. It assumes Xcode and Homebrew
+are installed.
+
+----
+#!/bin/bash
+
+brew install autoconf automake cmake libtool pkg-config boost pstree
+brew install openssl
+brew link -f openssl
+git clone http://github.com/cloudera/kudu
+cd kudu
+thirdparty/build-if-necessary.sh
+thirdparty/installed/bin/cmake .
+make -j4
+----
+====
 
 [[build_cpp_client]]
 == Installing the C++ Client Libraries
