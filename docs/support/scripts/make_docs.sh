@@ -87,8 +87,17 @@ binaries=("kudu-master" \
 for binary in ${binaries[@]}; do
   echo "Running $(basename $binary) --helpxml"
 
-  # Create the XML file
-  $ROOT/build/latest/$binary --helpxml  > ${GEN_DOC_DIR}/$(basename $binary).xml
+  (
+    # Reset environment to avoid affecting the default flag values.
+    set -x
+    for var in $(env | awk -F= '{print $1}' | egrep -i 'KUDU|GLOG'); do
+      eval "unset $var"
+    done
+    set +x
+
+    # Create the XML file
+    $ROOT/build/latest/$binary --helpxml > ${GEN_DOC_DIR}/$(basename $binary).xml
+  )
 
   # Create the supported config reference
   xsltproc \
