@@ -181,7 +181,7 @@ Status PrintSegment(const scoped_refptr<ReadableLogSegment>& segment) {
   return Status::OK();
 }
 
-Status DumpLog(const string& tablet_oid) {
+Status DumpLog(const string& tablet_id) {
   Env *env = Env::Default();
   gscoped_ptr<LogReader> reader;
   FsManagerOpts fs_opts;
@@ -190,7 +190,7 @@ Status DumpLog(const string& tablet_oid) {
   RETURN_NOT_OK(fs_manager.Open());
   RETURN_NOT_OK(LogReader::Open(&fs_manager,
                                 scoped_refptr<LogIndex>(),
-                                tablet_oid,
+                                tablet_id,
                                 scoped_refptr<MetricEntity>(),
                                 &reader));
 

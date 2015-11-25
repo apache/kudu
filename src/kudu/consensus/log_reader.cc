@@ -65,13 +65,13 @@ const int LogReader::kNoSizeLimit = -1;
 
 Status LogReader::Open(FsManager *fs_manager,
                        const scoped_refptr<LogIndex>& index,
-                       const string& tablet_oid,
+                       const string& tablet_id,
                        const scoped_refptr<MetricEntity>& metric_entity,
                        gscoped_ptr<LogReader> *reader) {
-  gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, index, tablet_oid,
+  gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, index, tablet_id,
                                                   metric_entity));
 
-  string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_oid);
+  string tablet_wal_path = fs_manager->GetTabletWalDir(tablet_id);
 
   RETURN_NOT_OK(log_reader->Init(tablet_wal_path))
   reader->reset(log_reader.release());
@@ -79,15 +79,15 @@ Status LogReader::Open(FsManager *fs_manager,
 }
 
 Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
-                                      const string& tablet_oid,
+                                      const string& tablet_id,
                                       const scoped_refptr<MetricEntity>& metric_entity,
                                       gscoped_ptr<LogReader>* reader) {
-  string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_oid);
+  string recovery_path = fs_manager->GetTabletWalRecoveryDir(tablet_id);
 
   // When recovering, we don't want to have any log index -- since it isn't fsynced()
   // during writing, its contents are useless to us.
   scoped_refptr<LogIndex> index(NULL);
-  gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, index, tablet_oid,
+  gscoped_ptr<LogReader> log_reader(new LogReader(fs_manager, index, tablet_id,
                                                   metric_entity));
   RETURN_NOT_OK_PREPEND(log_reader->Init(recovery_path),
                         "Unable to initialize log reader");
@@ -97,11 +97,11 @@ Status LogReader::OpenFromRecoveryDir(FsManager *fs_manager,
 
 LogReader::LogReader(FsManager *fs_manager,
                      const scoped_refptr<LogIndex>& index,
-                     const string& tablet_oid,
+                     const string& tablet_id,
                      const scoped_refptr<MetricEntity>& metric_entity)
   : fs_manager_(fs_manager),
     log_index_(index),
-    tablet_oid_(tablet_oid),
+    tablet_id_(tablet_id),
     state_(kLogReaderInitialized) {
   if (metric_entity) {
     bytes_read_ = METRIC_log_reader_bytes_read.Instantiate(metric_entity);
@@ -412,7 +412,7 @@ Status LogReader::TrimSegmentsUpToAndIncluding(int64_t segment_sequence_number) 
     }
     break;
   }
-  LOG(INFO) << "T " << tablet_oid_ << ": removed " << num_deleted_segments
+  LOG(INFO) << "T " << tablet_id_ << ": removed " << num_deleted_segments
             << " log segments from log reader";
   return Status::OK();
 }

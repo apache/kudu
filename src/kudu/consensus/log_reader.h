@@ -48,14 +48,14 @@ class LogReader {
   // be used.
   static Status Open(FsManager *fs_manager,
                      const scoped_refptr<LogIndex>& index,
-                     const std::string& tablet_oid,
+                     const std::string& tablet_id,
                      const scoped_refptr<MetricEntity>& metric_entity,
                      gscoped_ptr<LogReader> *reader);
 
   // Opens a LogReader on a specific tablet log recovery directory, and sets
   // 'reader' to the newly created LogReader.
   static Status OpenFromRecoveryDir(FsManager *fs_manager,
-                                    const std::string& tablet_oid,
+                                    const std::string& tablet_id,
                                     const scoped_refptr<MetricEntity>& metric_entity,
                                     gscoped_ptr<LogReader> *reader);
 
@@ -182,7 +182,7 @@ class LogReader {
 
   FsManager *fs_manager_;
   const scoped_refptr<LogIndex> log_index_;
-  const std::string tablet_oid_;
+  const std::string tablet_id_;
 
   // Metrics
   scoped_refptr<Counter> bytes_read_;
