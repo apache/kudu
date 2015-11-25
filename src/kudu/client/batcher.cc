@@ -397,7 +397,7 @@ void WriteRpc::LookupTabletCb(const Status& status) {
   // but unnecessary the first time through. Seeing as leader failures are
   // rare, perhaps this doesn't matter.
   followers_.clear();
-  mutable_retrier()->DelayedRetry(this);
+  mutable_retrier()->DelayedRetry(this, status);
 }
 
 void WriteRpc::RefreshTSProxyCb(const Status& status) {
@@ -422,7 +422,7 @@ void WriteRpc::FailToNewReplica(const Status& reason) {
       << "Tablet " << tablet_->tablet_id() << ": Unable to mark replica " << current_ts_->ToString()
       << " as failed. Replicas: " << tablet_->ReplicasAsString();
 
-  mutable_retrier()->DelayedRetry(this);
+  mutable_retrier()->DelayedRetry(this, reason);
 }
 
 void WriteRpc::SendRpcCb(const Status& status) {
@@ -454,7 +454,7 @@ void WriteRpc::SendRpcCb(const Status& status) {
   // this case.
   if (new_status.IsIllegalState() || new_status.IsAborted()) {
     followers_.insert(current_ts_);
-    mutable_retrier()->DelayedRetry(this);
+    mutable_retrier()->DelayedRetry(this, new_status);
     return;
   }
 

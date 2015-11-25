@@ -1642,6 +1642,7 @@ void ClientTest::DoTestWriteWithDeadServer(WhichServerToKill which) {
       break;
     case DEAD_TSERVER:
       ASSERT_TRUE(error->status().IsTimedOut());
+      ASSERT_STR_CONTAINS(error->status().ToString(), "Connection refused");
       break;
   }
 

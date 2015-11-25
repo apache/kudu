@@ -415,7 +415,8 @@ void LookupRpc::SendRpc() {
   }
   if (!has_permit_) {
     // Couldn't get a permit, try again in a little while.
-    mutable_retrier()->DelayedRetry(this);
+    mutable_retrier()->DelayedRetry(this, Status::TimedOut(
+        "client has too many outstanding requests to the master"));
     return;
   }
 
@@ -459,7 +460,7 @@ void LookupRpc::NewLeaderMasterDeterminedCb(const Status& status) {
     SendRpc();
   } else {
     LOG(WARNING) << "Failed to determine new Master: " << status.ToString();
-    mutable_retrier()->DelayedRetry(this);
+    mutable_retrier()->DelayedRetry(this, status);
   }
 }
 

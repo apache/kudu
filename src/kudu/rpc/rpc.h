@@ -53,14 +53,16 @@ class RpcRetrier {
   // 'out_status'.
   bool HandleResponse(Rpc* rpc, Status* out_status);
 
-  // Retries an RPC at some point in the near future.
+  // Retries an RPC at some point in the near future. If 'why_status' is not OK,
+  // records it as the most recent error causing the RPC to retry. This is
+  // reported to the caller eventually if the RPC never succeeds.
   //
   // If the RPC's deadline expires, the callback will fire with a timeout
   // error when the RPC comes up for retrying. This is true even if the
   // deadline has already expired at the time that Retry() was called.
   //
   // Callers should ensure that 'rpc' remains alive.
-  void DelayedRetry(Rpc* rpc);
+  void DelayedRetry(Rpc* rpc, const Status& why_status);
 
   RpcController* mutable_controller() { return &controller_; }
   const RpcController& controller() const { return controller_; }
@@ -91,6 +93,10 @@ class RpcRetrier {
 
   // RPC controller to use when sending the RPC.
   RpcController controller_;
+
+  // In case any retries have already happened, remembers the last error.
+  // Errors from the server take precedence over timeout errors.
+  Status last_error_;
 
   DISALLOW_COPY_AND_ASSIGN(RpcRetrier);
 };

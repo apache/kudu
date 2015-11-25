@@ -638,7 +638,7 @@ void GetTableSchemaRpc::NewLeaderMasterDeterminedCb(const Status& status) {
     SendRpc();
   } else {
     LOG(WARNING) << "Failed to determine new Master: " << status.ToString();
-    mutable_retrier()->DelayedRetry(this);
+    mutable_retrier()->DelayedRetry(this, status);
   }
 }
 
