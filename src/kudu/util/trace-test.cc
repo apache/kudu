@@ -222,7 +222,7 @@ TEST_F(TraceTest, TestJsonEncodingString) {
                  TraceLog::RECORDING_MODE,
                  TraceLog::RECORD_CONTINUOUSLY);
   {
-    TRACE_EVENT1("test", "test", "arg", "this is a test with \"'\"' characters");
+    TRACE_EVENT1("test", "test", "arg", "this is a test with \"'\"' and characters\nand new lines");
   }
   tl->SetDisabled();
   string trace_json = TraceResultBuffer::FlushTraceLogToString();

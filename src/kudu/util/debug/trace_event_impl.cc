@@ -639,10 +639,36 @@ void TraceEvent::UpdateDuration(const MicrosecondsInt64& now,
 namespace {
 // Escape the given string using JSON rules.
 void JsonEscape(StringPiece s, string* out) {
-  // Only the following characters need to be escaped, according to json.org.
-  // In particular, it's illegal to escape the single-quote character, and
-  // JSON does not support the "\x" escape sequence like C/Java.
-  strings::BackslashEscape(s, "\"\\/\b\f\n\r\t", out);
+  out->reserve(out->size() + s.size() * 2);
+  const char* p_end = s.data() + s.size();
+  for (const char* p = s.data(); p != p_end; p++) {
+    // Only the following characters need to be escaped, according to json.org.
+    // In particular, it's illegal to escape the single-quote character, and
+    // JSON does not support the "\x" escape sequence like C/Java.
+    switch (*p) {
+      case '"':
+      case '\\':
+        out->push_back('\\');
+        out->push_back(*p);
+        break;
+      case '\b':
+        out->append("\\b");
+        break;
+      case '\f':
+        out->append("\\f");
+        break;
+      case '\n':
+        out->append("\\n");
+      case '\r':
+        out->append("\\r");
+        break;
+      case '\t':
+        out->append("\\t");
+        break;
+      default:
+        out->push_back(*p);
+    }
+  }
 }
 } // anonymous namespace
 
