@@ -21,6 +21,8 @@
 #include <string>
 #include <vector>
 
+#include "kudu/client/row_result.h"
+#include "kudu/client/scan_batch.h"
 #include "kudu/client/scan_predicate.h"
 #include "kudu/client/schema.h"
 #include "kudu/client/shared_ptr.h"
@@ -41,14 +43,9 @@ namespace kudu {
 class LinkedListTester;
 class PartitionSchema;
 
-namespace tools {
-class TsAdminClient;
-} // namespace tools
-
 namespace client {
 
 class KuduLoggingCallback;
-class KuduRowResult;
 class KuduSession;
 class KuduStatusCallback;
 class KuduTable;
@@ -973,7 +970,16 @@ class KUDU_EXPORT KuduScanner {
   // Clears 'rows' and populates it with the next batch of rows from the tablet server.
   // A call to NextBatch() invalidates all previously fetched results which might
   // now be pointing to garbage memory.
+  //
+  // DEPRECATED: Use NextBatch(KuduScanBatch*) instead.
   Status NextBatch(std::vector<KuduRowResult>* rows);
+
+  // Fetches the next batch of results for this scanner.
+  //
+  // A single KuduScanBatch instance may be reused. Each subsequent call replaces the data
+  // from the previous call, and invalidates any KuduScanBatch::RowPtr objects previously
+  // obtained from the batch.
+  Status NextBatch(KuduScanBatch* batch);
 
   // Get the KuduTabletServer that is currently handling the scan.
   // More concretely, this is the server that handled the most recent Open or NextBatch
@@ -1022,7 +1028,6 @@ class KUDU_EXPORT KuduScanner {
   std::string ToString() const;
  private:
   class KUDU_NO_EXPORT Data;
-  friend class kudu::tools::TsAdminClient;
 
   FRIEND_TEST(ClientTest, TestScanCloseProxy);
   FRIEND_TEST(ClientTest, TestScanFaultTolerance);

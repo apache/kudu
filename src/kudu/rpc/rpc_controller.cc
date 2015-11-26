@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include <algorithm>
 #include <glog/logging.h>
 
 #include "kudu/rpc/rpc_controller.h"
@@ -28,6 +29,19 @@ RpcController::RpcController() {
 
 RpcController::~RpcController() {
   DVLOG(4) << "RpcController " << this << " destroyed";
+}
+
+void RpcController::Swap(RpcController* other) {
+  // Cannot swap RPC controllers while they are in-flight.
+  if (call_) {
+    CHECK(finished());
+  }
+  if (other->call_) {
+    CHECK(other->finished());
+  }
+
+  std::swap(timeout_, other->timeout_);
+  std::swap(call_, other->call_);
 }
 
 void RpcController::Reset() {

@@ -1132,6 +1132,12 @@ bool KuduScanner::HasMoreRows() const {
 }
 
 Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
+  RETURN_NOT_OK(NextBatch(&data_->batch_for_old_api_));
+  data_->batch_for_old_api_.data_->ExtractRows(rows);
+  return Status::OK();
+}
+
+Status KuduScanner::NextBatch(KuduScanBatch* result) {
   // TODO: do some double-buffering here -- when we return this batch
   // we should already have fired off the RPC for the next batch, but
   // need to do some swapping of the response objects around to avoid
@@ -1139,13 +1145,15 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
   CHECK(data_->open_);
   CHECK(data_->proxy_);
 
-  rows->clear();
+  result->data_->Clear();
 
   if (data_->data_in_open_) {
     // We have data from a previous scan.
     VLOG(1) << "Extracting data from scan " << ToString();
     data_->data_in_open_ = false;
-    return data_->ExtractRows(rows);
+    return result->data_->Reset(&data_->controller_,
+                                data_->projection_,
+                                make_gscoped_ptr(data_->last_response_.release_data()));
   } else if (data_->last_response_.has_more_results()) {
     // More data is available in this tablet.
     VLOG(1) << "Continuing scan " << ToString();
@@ -1184,7 +1192,9 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
         data_->last_primary_key_ = data_->last_response_.last_primary_key();
       }
       data_->scan_attempts_ = 0;
-      return data_->ExtractRows(rows);
+      return result->data_->Reset(&data_->controller_,
+                                  data_->projection_,
+                                  make_gscoped_ptr(data_->last_response_.release_data()));
     }
 
     data_->scan_attempts_++;
@@ -1213,7 +1223,6 @@ Status KuduScanner::NextBatch(vector<KuduRowResult>* rows) {
     set<string> blacklist;
     RETURN_NOT_OK(data_->OpenTablet(data_->remote_->partition().partition_key_end(),
                                     deadline, &blacklist));
-
     // No rows written, the next invocation will pick them up.
     return Status::OK();
   } else {
@@ -1237,6 +1246,10 @@ Status KuduScanner::GetCurrentServer(KuduTabletServer** server) {
                                                 host_ports[0].host());
   return Status::OK();
 }
+
+////////////////////////////////////////////////////////////
+// KuduTabletServer
+////////////////////////////////////////////////////////////
 
 KuduTabletServer::KuduTabletServer()
   : data_(nullptr) {

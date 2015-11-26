@@ -23,6 +23,7 @@
 
 #include "kudu/gutil/macros.h"
 #include "kudu/client/client.h"
+#include "kudu/client/row_result.h"
 #include "kudu/common/scan_spec.h"
 #include "kudu/common/predicate_encoder.h"
 #include "kudu/tserver/tserver_service.proxy.h"
@@ -65,16 +66,6 @@ class KuduScanner::Data {
                     const MonoTime& deadline,
                     std::set<std::string>* blacklist);
 
-  // Extracts data from the last scan response and adds them to 'rows'.
-  Status ExtractRows(std::vector<KuduRowResult>* rows);
-
-  // Static implementation of ExtractRows. This is used by some external
-  // tools.
-  static Status ExtractRows(const rpc::RpcController& controller,
-                            const Schema* projection,
-                            tserver::ScanResponsePB* resp,
-                            std::vector<KuduRowResult>* rows);
-
   Status KeepAlive();
 
   // Returns whether there exist more tablets we should scan.
@@ -98,9 +89,6 @@ class KuduScanner::Data {
 
   // Modifies fields in 'next_req_' in preparation for a new request.
   void PrepareRequest(RequestType state);
-
-  // Returns the size of a row for the given projection 'proj'.
-  static size_t CalculateProjectedRowSize(const Schema& proj);
 
   bool open_;
   bool data_in_open_;
@@ -154,7 +142,58 @@ class KuduScanner::Data {
   // Number of attempts since the last successful scan.
   int scan_attempts_;
 
+  // The deprecated "NextBatch(vector<KuduRowResult>*) API requires some local
+  // storage for the actual row data. If that API is used, this member keeps the
+  // actual storage for the batch that is returned.
+  KuduScanBatch batch_for_old_api_;
+
   DISALLOW_COPY_AND_ASSIGN(Data);
+};
+
+class KuduScanBatch::Data {
+ public:
+  Data();
+  ~Data();
+
+  Status Reset(rpc::RpcController* controller,
+               const Schema* projection,
+               gscoped_ptr<RowwiseRowBlockPB> resp_data);
+
+  int num_rows() const {
+    return resp_data_.num_rows();
+  }
+
+  KuduRowResult row(int idx) {
+    DCHECK_GE(idx, 0);
+    DCHECK_LT(idx, num_rows());
+    int offset = idx * projected_row_size_;
+    return KuduRowResult(projection_, &direct_data_[offset]);
+  }
+
+  void ExtractRows(vector<KuduScanBatch::RowPtr>* rows);
+
+  void Clear();
+
+  // Returns the size of a row for the given projection 'proj'.
+  static size_t CalculateProjectedRowSize(const Schema& proj);
+
+  // The RPC controller for the RPC which returned this batch.
+  // Holding on to the controller ensures we hold on to the indirect data
+  // which contains the rows.
+  rpc::RpcController controller_;
+
+  // The PB which contains the "direct data" slice.
+  RowwiseRowBlockPB resp_data_;
+
+  // Slices into the direct and indirect row data, whose lifetime is ensured
+  // by the members above.
+  Slice direct_data_, indirect_data_;
+
+  // The projection being scanned.
+  const Schema* projection_;
+
+  // The number of bytes of direct data for each row.
+  size_t projected_row_size_;
 };
 
 } // namespace client

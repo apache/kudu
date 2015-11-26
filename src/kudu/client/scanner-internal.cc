@@ -369,67 +369,6 @@ Status KuduScanner::Data::KeepAlive() {
   return Status::OK();
 }
 
-Status KuduScanner::Data::ExtractRows(vector<KuduRowResult>* rows) {
-  return ExtractRows(controller_, projection_, &last_response_, rows);
-}
-
-Status KuduScanner::Data::ExtractRows(const RpcController& controller,
-                                      const Schema* projection,
-                                      ScanResponsePB* resp,
-                                      vector<KuduRowResult>* rows) {
-  // First, rewrite the relative addresses into absolute ones.
-  RowwiseRowBlockPB* rowblock_pb = resp->mutable_data();
-  Slice direct, indirect;
-
-  if (PREDICT_FALSE(!rowblock_pb->has_rows_sidecar())) {
-    return Status::Corruption("Server sent invalid response: no row data");
-  } else {
-    Status s = controller.GetSidecar(rowblock_pb->rows_sidecar(), &direct);
-    if (!s.ok()) {
-      return Status::Corruption("Server sent invalid response: row data "
-                                "sidecar index corrupt", s.ToString());
-    }
-  }
-
-  if (rowblock_pb->has_indirect_data_sidecar()) {
-    Status s = controller.GetSidecar(rowblock_pb->indirect_data_sidecar(),
-                                      &indirect);
-    if (!s.ok()) {
-      return Status::Corruption("Server sent invalid response: indirect data "
-                                "sidecar index corrupt", s.ToString());
-    }
-  }
-
-  RETURN_NOT_OK(RewriteRowBlockPointers(*projection, *rowblock_pb, indirect, &direct));
-
-  int n_rows = rowblock_pb->num_rows();
-  if (PREDICT_FALSE(n_rows == 0)) {
-    // Early-out here to avoid a UBSAN failure.
-    VLOG(1) << "Extracted 0 rows";
-    return Status::OK();
-  }
-
-  // Next, allocate a block of KuduRowResults in 'rows'.
-  size_t before = rows->size();
-  rows->resize(before + n_rows);
-
-  // Lastly, initialize each KuduRowResult with data from the response.
-  //
-  // Doing this resize and array indexing turns out to be noticeably faster
-  // than using reserve and push_back.
-  int projected_row_size = CalculateProjectedRowSize(*projection);
-  const uint8_t* src = direct.data();
-  KuduRowResult* dst = &(*rows)[before];
-  while (n_rows > 0) {
-    dst->Init(projection, src);
-    dst++;
-    src += projected_row_size;
-    n_rows--;
-  }
-  VLOG(1) << "Extracted " << rows->size() - before << " rows";
-  return Status::OK();
-}
-
 bool KuduScanner::Data::MoreTablets() const {
   CHECK(open_);
   // TODO(KUDU-565): add a test which has a scan end on a tablet boundary
@@ -476,9 +415,81 @@ void KuduScanner::Data::PrepareRequest(RequestType state) {
   }
 }
 
-size_t KuduScanner::Data::CalculateProjectedRowSize(const Schema& proj) {
+
+////////////////////////////////////////////////////////////
+// KuduScanBatch
+////////////////////////////////////////////////////////////
+
+KuduScanBatch::Data::Data() : projection_(NULL) {}
+
+KuduScanBatch::Data::~Data() {}
+
+size_t KuduScanBatch::Data::CalculateProjectedRowSize(const Schema& proj) {
   return proj.byte_size() +
         (proj.has_nullables() ? BitmapSize(proj.num_columns()) : 0);
+}
+
+Status KuduScanBatch::Data::Reset(RpcController* controller,
+                                  const Schema* projection,
+                                  gscoped_ptr<RowwiseRowBlockPB> data) {
+  CHECK(controller->finished());
+  controller_.Swap(controller);
+  projection_ = projection;
+  resp_data_.Swap(data.get());
+
+  // First, rewrite the relative addresses into absolute ones.
+  if (PREDICT_FALSE(!resp_data_.has_rows_sidecar())) {
+    return Status::Corruption("Server sent invalid response: no row data");
+  } else {
+    Status s = controller_.GetSidecar(resp_data_.rows_sidecar(), &direct_data_);
+    if (!s.ok()) {
+      return Status::Corruption("Server sent invalid response: row data "
+                                "sidecar index corrupt", s.ToString());
+    }
+  }
+
+  if (resp_data_.has_indirect_data_sidecar()) {
+    Status s = controller_.GetSidecar(resp_data_.indirect_data_sidecar(),
+                                      &indirect_data_);
+    if (!s.ok()) {
+      return Status::Corruption("Server sent invalid response: indirect data "
+                                "sidecar index corrupt", s.ToString());
+    }
+  }
+
+  RETURN_NOT_OK(RewriteRowBlockPointers(*projection_, resp_data_, indirect_data_, &direct_data_));
+  projected_row_size_ = CalculateProjectedRowSize(*projection_);
+  return Status::OK();
+}
+
+void KuduScanBatch::Data::ExtractRows(vector<KuduScanBatch::RowPtr>* rows) {
+  int n_rows = resp_data_.num_rows();
+  rows->resize(n_rows);
+
+  if (PREDICT_FALSE(n_rows == 0)) {
+    // Early-out here to avoid a UBSAN failure.
+    VLOG(1) << "Extracted 0 rows";
+    return;
+  }
+
+  // Initialize each RowPtr with data from the response.
+  //
+  // Doing this resize and array indexing turns out to be noticeably faster
+  // than using reserve and push_back.
+  const uint8_t* src = direct_data_.data();
+  KuduScanBatch::RowPtr* dst = &(*rows)[0];
+  while (n_rows > 0) {
+    *dst = KuduScanBatch::RowPtr(projection_, src);
+    dst++;
+    src += projected_row_size_;
+    n_rows--;
+  }
+  VLOG(1) << "Extracted " << rows->size() << " rows";
+}
+
+void KuduScanBatch::Data::Clear() {
+  resp_data_.Clear();
+  controller_.Reset();
 }
 
 } // namespace client

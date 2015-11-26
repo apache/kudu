@@ -23,7 +23,7 @@ set(CLIENT_SRCS
   error_collector.cc
   error-internal.cc
   meta_cache.cc
-  row_result.cc
+  scan_batch.cc
   scan_predicate.cc
   scanner-internal.cc
   session-internal.cc
@@ -154,6 +154,7 @@ install(FILES
   callbacks.h
   client.h
   row_result.h
+  scan_batch.h
   scan_predicate.h
   schema.h
   shared_ptr.h

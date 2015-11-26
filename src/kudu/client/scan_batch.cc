@@ -16,6 +16,8 @@
 // under the License.
 
 #include "kudu/client/row_result.h"
+#include "kudu/client/scan_batch.h"
+#include "kudu/client/scanner-internal.h"
 
 #include <string>
 
@@ -29,6 +31,28 @@ using strings::Substitute;
 namespace kudu {
 namespace client {
 
+////////////////////////////////////////////////////////////
+// KuduScanBatch
+////////////////////////////////////////////////////////////
+
+KuduScanBatch::KuduScanBatch() : data_(new Data()) {}
+
+KuduScanBatch::~KuduScanBatch() {
+  delete data_;
+}
+
+int KuduScanBatch::NumRows() const {
+  return data_->num_rows();
+}
+
+KuduRowResult KuduScanBatch::Row(int idx) const {
+  return data_->row(idx);
+}
+
+////////////////////////////////////////////////////////////
+// KuduScanBatch::RowPtr
+////////////////////////////////////////////////////////////
+
 namespace {
 
 inline Status FindColumn(const Schema& schema, const Slice& col_name, int* idx) {
@@ -41,10 +65,10 @@ inline Status FindColumn(const Schema& schema, const Slice& col_name, int* idx) 
 }
 
 // Just enough of a "cell" to support the Schema::DebugCellAppend calls
-// made by KuduRowResult::ToString.
+// made by KuduScanBatch::RowPtr::ToString.
 class RowCell {
  public:
-  RowCell(const KuduRowResult* row, int idx)
+  RowCell(const KuduScanBatch::RowPtr* row, int idx)
     : row_(row),
       col_idx_(idx) {
   }
@@ -57,13 +81,13 @@ class RowCell {
   }
 
  private:
-  const KuduRowResult* row_;
+  const KuduScanBatch::RowPtr* row_;
   const int col_idx_;
 };
 
 } // anonymous namespace
 
-bool KuduRowResult::IsNull(int col_idx) const {
+bool KuduScanBatch::RowPtr::IsNull(int col_idx) const {
   const ColumnSchema& col = schema_->column(col_idx);
   if (!col.is_nullable()) {
     return false;
@@ -72,101 +96,101 @@ bool KuduRowResult::IsNull(int col_idx) const {
   return BitmapTest(row_data_ + schema_->byte_size(), col_idx);
 }
 
-bool KuduRowResult::IsNull(const Slice& col_name) const {
+bool KuduScanBatch::RowPtr::IsNull(const Slice& col_name) const {
   int col_idx;
   CHECK_OK(FindColumn(*schema_, col_name, &col_idx));
   return IsNull(col_idx);
 }
 
-Status KuduRowResult::GetBool(const Slice& col_name, bool* val) const {
+Status KuduScanBatch::RowPtr::GetBool(const Slice& col_name, bool* val) const {
   return Get<TypeTraits<BOOL> >(col_name, val);
 }
 
-Status KuduRowResult::GetInt8(const Slice& col_name, int8_t* val) const {
+Status KuduScanBatch::RowPtr::GetInt8(const Slice& col_name, int8_t* val) const {
   return Get<TypeTraits<INT8> >(col_name, val);
 }
 
-Status KuduRowResult::GetInt16(const Slice& col_name, int16_t* val) const {
+Status KuduScanBatch::RowPtr::GetInt16(const Slice& col_name, int16_t* val) const {
   return Get<TypeTraits<INT16> >(col_name, val);
 }
 
-Status KuduRowResult::GetInt32(const Slice& col_name, int32_t* val) const {
+Status KuduScanBatch::RowPtr::GetInt32(const Slice& col_name, int32_t* val) const {
   return Get<TypeTraits<INT32> >(col_name, val);
 }
 
-Status KuduRowResult::GetInt64(const Slice& col_name, int64_t* val) const {
+Status KuduScanBatch::RowPtr::GetInt64(const Slice& col_name, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_name, val);
 }
 
-Status KuduRowResult::GetTimestamp(const Slice& col_name, int64_t* val) const {
+Status KuduScanBatch::RowPtr::GetTimestamp(const Slice& col_name, int64_t* val) const {
   return Get<TypeTraits<TIMESTAMP> >(col_name, val);
 }
 
-Status KuduRowResult::GetFloat(const Slice& col_name, float* val) const {
+Status KuduScanBatch::RowPtr::GetFloat(const Slice& col_name, float* val) const {
   return Get<TypeTraits<FLOAT> >(col_name, val);
 }
 
-Status KuduRowResult::GetDouble(const Slice& col_name, double* val) const {
+Status KuduScanBatch::RowPtr::GetDouble(const Slice& col_name, double* val) const {
   return Get<TypeTraits<DOUBLE> >(col_name, val);
 }
 
-Status KuduRowResult::GetString(const Slice& col_name, Slice* val) const {
+Status KuduScanBatch::RowPtr::GetString(const Slice& col_name, Slice* val) const {
   return Get<TypeTraits<STRING> >(col_name, val);
 }
 
-Status KuduRowResult::GetBinary(const Slice& col_name, Slice* val) const {
+Status KuduScanBatch::RowPtr::GetBinary(const Slice& col_name, Slice* val) const {
   return Get<TypeTraits<BINARY> >(col_name, val);
 }
 
-Status KuduRowResult::GetBool(int col_idx, bool* val) const {
+Status KuduScanBatch::RowPtr::GetBool(int col_idx, bool* val) const {
   return Get<TypeTraits<BOOL> >(col_idx, val);
 }
 
-Status KuduRowResult::GetInt8(int col_idx, int8_t* val) const {
+Status KuduScanBatch::RowPtr::GetInt8(int col_idx, int8_t* val) const {
   return Get<TypeTraits<INT8> >(col_idx, val);
 }
 
-Status KuduRowResult::GetInt16(int col_idx, int16_t* val) const {
+Status KuduScanBatch::RowPtr::GetInt16(int col_idx, int16_t* val) const {
   return Get<TypeTraits<INT16> >(col_idx, val);
 }
 
-Status KuduRowResult::GetInt32(int col_idx, int32_t* val) const {
+Status KuduScanBatch::RowPtr::GetInt32(int col_idx, int32_t* val) const {
   return Get<TypeTraits<INT32> >(col_idx, val);
 }
 
-Status KuduRowResult::GetInt64(int col_idx, int64_t* val) const {
+Status KuduScanBatch::RowPtr::GetInt64(int col_idx, int64_t* val) const {
   return Get<TypeTraits<INT64> >(col_idx, val);
 }
 
-Status KuduRowResult::GetTimestamp(int col_idx, int64_t* val) const {
+Status KuduScanBatch::RowPtr::GetTimestamp(int col_idx, int64_t* val) const {
   return Get<TypeTraits<TIMESTAMP> >(col_idx, val);
 }
 
-Status KuduRowResult::GetFloat(int col_idx, float* val) const {
+Status KuduScanBatch::RowPtr::GetFloat(int col_idx, float* val) const {
   return Get<TypeTraits<FLOAT> >(col_idx, val);
 }
 
-Status KuduRowResult::GetDouble(int col_idx, double* val) const {
+Status KuduScanBatch::RowPtr::GetDouble(int col_idx, double* val) const {
   return Get<TypeTraits<DOUBLE> >(col_idx, val);
 }
 
-Status KuduRowResult::GetString(int col_idx, Slice* val) const {
+Status KuduScanBatch::RowPtr::GetString(int col_idx, Slice* val) const {
   return Get<TypeTraits<STRING> >(col_idx, val);
 }
 
-Status KuduRowResult::GetBinary(int col_idx, Slice* val) const {
+Status KuduScanBatch::RowPtr::GetBinary(int col_idx, Slice* val) const {
   return Get<TypeTraits<BINARY> >(col_idx, val);
 }
 
 template<typename T>
-Status KuduRowResult::Get(const Slice& col_name, typename T::cpp_type* val) const {
+Status KuduScanBatch::RowPtr::Get(const Slice& col_name, typename T::cpp_type* val) const {
   int col_idx;
   RETURN_NOT_OK(FindColumn(*schema_, col_name, &col_idx));
   return Get<T>(col_idx, val);
 }
 
 template<typename T>
-Status KuduRowResult::Get(int col_idx, typename T::cpp_type* val) const {
+Status KuduScanBatch::RowPtr::Get(int col_idx, typename T::cpp_type* val) const {
   const ColumnSchema& col = schema_->column(col_idx);
   if (PREDICT_FALSE(col.type_info()->type() != T::type)) {
     // TODO: at some point we could allow type coercion here.
@@ -184,7 +208,7 @@ Status KuduRowResult::Get(int col_idx, typename T::cpp_type* val) const {
   return Status::OK();
 }
 
-const void* KuduRowResult::cell(int col_idx) const {
+const void* KuduScanBatch::RowPtr::cell(int col_idx) const {
   return row_data_ + schema_->column_offset(col_idx);
 }
 
@@ -195,66 +219,67 @@ const void* KuduRowResult::cell(int col_idx) const {
 //------------------------------------------------------------
 
 template
-Status KuduRowResult::Get<TypeTraits<BOOL> >(const Slice& col_name, bool* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<BOOL> >(const Slice& col_name, bool* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<INT8> >(const Slice& col_name, int8_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT8> >(const Slice& col_name, int8_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<INT16> >(const Slice& col_name, int16_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT16> >(const Slice& col_name, int16_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<INT32> >(const Slice& col_name, int32_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT32> >(const Slice& col_name, int32_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<INT64> >(const Slice& col_name, int64_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT64> >(const Slice& col_name, int64_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<TIMESTAMP> >(const Slice& col_name, int64_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<TIMESTAMP> >(
+    const Slice& col_name, int64_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<FLOAT> >(const Slice& col_name, float* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<FLOAT> >(const Slice& col_name, float* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<DOUBLE> >(const Slice& col_name, double* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<DOUBLE> >(const Slice& col_name, double* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<STRING> >(const Slice& col_name, Slice* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<STRING> >(const Slice& col_name, Slice* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<BINARY> >(const Slice& col_name, Slice* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<BINARY> >(const Slice& col_name, Slice* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<BOOL> >(int col_idx, bool* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<BOOL> >(int col_idx, bool* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<INT8> >(int col_idx, int8_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT8> >(int col_idx, int8_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<INT16> >(int col_idx, int16_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT16> >(int col_idx, int16_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<INT32> >(int col_idx, int32_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT32> >(int col_idx, int32_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<INT64> >(int col_idx, int64_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<INT64> >(int col_idx, int64_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<TIMESTAMP> >(int col_idx, int64_t* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<TIMESTAMP> >(int col_idx, int64_t* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<FLOAT> >(int col_idx, float* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<FLOAT> >(int col_idx, float* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<DOUBLE> >(int col_idx, double* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<DOUBLE> >(int col_idx, double* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<STRING> >(int col_idx, Slice* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<STRING> >(int col_idx, Slice* val) const;
 
 template
-Status KuduRowResult::Get<TypeTraits<BINARY> >(int col_idx, Slice* val) const;
+Status KuduScanBatch::RowPtr::Get<TypeTraits<BINARY> >(int col_idx, Slice* val) const;
 
-string KuduRowResult::ToString() const {
+string KuduScanBatch::RowPtr::ToString() const {
   string ret;
   ret.append("(");
   bool first = true;

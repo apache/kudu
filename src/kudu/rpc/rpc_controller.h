@@ -46,6 +46,10 @@ class RpcController {
   RpcController();
   ~RpcController();
 
+  // Swap the state of the controller (including ownership of sidecars, buffers,
+  // etc) with another one.
+  void Swap(RpcController* other);
+
   // Reset this controller so it may be used with another call.
   void Reset();
 
