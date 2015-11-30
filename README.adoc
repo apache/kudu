@@ -1,8 +1,8 @@
-= Viewing the web site locally without pushing to GitHub
+= Viewing the Kudu web site locally
 
-To serve the Kudu web site locally, use
-[https://help.github.com/articles/using-jekyll-with-pages/] via
-bundler[https://bundler.io]:
+To serve the Kudu web site locally, install and run
+https://help.github.com/articles/using-jekyll-with-pages/[Jekyll] via
+http://bundler.io/[Bundler]:
 
 [source,bash]
 ----
@@ -16,6 +16,23 @@ the site just like it renders on GitHub Pages.
 In addition to serving static content, GitHub Pages is also able to render
 https://help.github.com/articles/github-flavored-markdown/[GitHub Flavored
 Markdown]. It does not support AsciiDoc yet.
+
+If the `bundle` command is not available, install it like so:
+
+[source,bash]
+----
+gem install --user-install bundler
+----
+
+In order to add the `bundle` command to your path, add this to your
+`~/.bash_profile`:
+
+[source,bash]
+----
+if which ruby >/dev/null && which gem >/dev/null; then
+  PATH="$(ruby -rubygems -e 'puts Gem.user_dir')/bin:$PATH"
+fi
+----
 
 = Updating the Kudu Website
 
