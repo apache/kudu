@@ -15,10 +15,10 @@
 // Tool to query tablet server operational data
 
 #include <boost/foreach.hpp>
-#include <glog/logging.h>
 #include <gflags/gflags.h>
-#include <tr1/memory>
+#include <glog/logging.h>
 #include <iostream>
+#include <memory>
 #include <strstream>
 
 #include "kudu/client/row_result.h"
@@ -43,7 +43,7 @@
 
 using std::ostringstream;
 using std::string;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using std::vector;
 using kudu::client::KuduRowResult;
 using kudu::client::KuduScanner;

@@ -14,9 +14,10 @@
 
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
+#include <mutex>
 #include <sched.h>
-#include <unistd.h>
 #include <string>
+#include <unistd.h>
 
 #include "kudu/cfile/bloomfile.h"
 #include "kudu/cfile/cfile_writer.h"
@@ -244,9 +245,9 @@ Status BloomFileReader::CheckKeyPresent(const BloomKeyProbe &probe,
 #endif
   BlockPointer bblk_ptr;
   {
-    boost::unique_lock<simple_spinlock> lock;
+    std::unique_lock<simple_spinlock> lock;
     while (true) {
-      boost::unique_lock<simple_spinlock> l(iter_locks_[cpu], boost::try_to_lock);
+      std::unique_lock<simple_spinlock> l(iter_locks_[cpu], std::try_to_lock);
       if (l.owns_lock()) {
         lock.swap(l);
         break;

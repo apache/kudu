@@ -15,8 +15,8 @@
 #define KUDU_TABLET_MEMROWSET_H
 
 #include <boost/optional.hpp>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/scan_spec.h"
@@ -167,15 +167,15 @@ struct MSBTreeTraits : public btree::BTreeTraits {
 //
 // The data is kept sorted.
 class MemRowSet : public RowSet,
-                  public std::tr1::enable_shared_from_this<MemRowSet> {
+                  public std::enable_shared_from_this<MemRowSet> {
  public:
   class Iterator;
 
   MemRowSet(int64_t id,
             const Schema &schema,
             log::LogAnchorRegistry* log_anchor_registry,
-            const std::tr1::shared_ptr<MemTracker>& parent_tracker =
-            std::tr1::shared_ptr<MemTracker>());
+            const std::shared_ptr<MemTracker>& parent_tracker =
+            std::shared_ptr<MemTracker>());
 
   ~MemRowSet();
 
@@ -285,8 +285,8 @@ class MemRowSet : public RowSet,
     return id_;
   }
 
-  std::tr1::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
-    return std::tr1::shared_ptr<RowSetMetadata>(
+  std::shared_ptr<RowSetMetadata> metadata() OVERRIDE {
+    return std::shared_ptr<RowSetMetadata>(
         reinterpret_cast<RowSetMetadata *>(NULL));
   }
 
@@ -342,10 +342,10 @@ class MemRowSet : public RowSet,
   int64_t id_;
 
   const Schema schema_;
-  std::tr1::shared_ptr<MemTracker> parent_tracker_;
-  std::tr1::shared_ptr<MemTracker> mem_tracker_;
-  std::tr1::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
-  std::tr1::shared_ptr<ThreadSafeMemoryTrackingArena> arena_;
+  std::shared_ptr<MemTracker> parent_tracker_;
+  std::shared_ptr<MemTracker> mem_tracker_;
+  std::shared_ptr<MemoryTrackingBufferAllocator> allocator_;
+  std::shared_ptr<ThreadSafeMemoryTrackingArena> arena_;
 
   typedef btree::CBTreeIterator<MSBTreeTraits> MSBTIter;
 
@@ -459,7 +459,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
 
   DISALLOW_COPY_AND_ASSIGN(Iterator);
 
-  Iterator(const std::tr1::shared_ptr<const MemRowSet> &mrs,
+  Iterator(const std::shared_ptr<const MemRowSet> &mrs,
            MemRowSet::MSBTIter *iter,
            const Schema *projection,
            const MvccSnapshot &mvcc_snap);
@@ -470,7 +470,7 @@ class MemRowSet::Iterator : public RowwiseIterator {
                                       RowBlockRow *dst_row,
                                       Arena *dst_arena);
 
-  const std::tr1::shared_ptr<const MemRowSet> memrowset_;
+  const std::shared_ptr<const MemRowSet> memrowset_;
   gscoped_ptr<MemRowSet::MSBTIter> iter_;
 
   // The MVCC snapshot which determines which rows and mutations are visible to

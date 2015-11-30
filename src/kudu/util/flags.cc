@@ -16,7 +16,7 @@
 
 #include <iostream>
 #include <string>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/foreach.hpp>
@@ -35,7 +35,7 @@ using google::CommandLineFlagInfo;
 using std::cout;
 using std::endl;
 using std::string;
-using std::tr1::unordered_set;
+using std::unordered_set;
 
 // Because every binary initializes its flags here, we use it as a convenient place
 // to offer some global flags as well.

@@ -16,9 +16,9 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/thread/thread.hpp>
 #include <gflags/gflags.h>
-#include <gtest/gtest.h>
 #include <glog/logging.h>
-#include <tr1/memory>
+#include <gtest/gtest.h>
+#include <memory>
 #include <vector>
 
 #include "kudu/gutil/stringprintf.h"
@@ -32,7 +32,7 @@ DEFINE_int32(alloc_size, 4, "number of bytes in each allocation");
 
 namespace kudu {
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 template<class ArenaType>
 static void AllocateThread(ArenaType *arena, uint8_t thread_index) {

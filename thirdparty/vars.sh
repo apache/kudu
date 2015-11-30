@@ -97,18 +97,18 @@ LIBUNWIND_DIR=$TP_DIR/libunwind-${LIBUNWIND_VERSION}
 #
 # See http://clang.llvm.org/get_started.html for details on how they're laid
 # out in the llvm tarball.
-LLVM_VERSION=3.4.2
+LLVM_VERSION=3.7.0
 LLVM_DIR=$TP_DIR/llvm-${LLVM_VERSION}.src
 LLVM_BUILD=$TP_DIR/llvm-${LLVM_VERSION}.build
 
-# We have a separate clang package which we use for sanitizer builds. We're
-# stuck on llvm 3.4.2 to link against (because later versions require C++11)
-# but it's fine to use a much more recent version as a compiler.
-#
-# The binary packages we use here are built by the impala-deps repository:
-# http://github.mtv.cloudera.com/mgrund/impala-deps
-CLANG_TOOLCHAIN_VERSION=233105
-CLANG_TOOLCHAIN_DIR=clang-$CLANG_TOOLCHAIN_VERSION
+# Python 2.7 is required to build LLVM 3.6+. We install it if the system Python
+# version is wrong.
+PYTHON_VERSION=2.7.10
+PYTHON_DIR=$TP_DIR/python-${PYTHON_VERSION}
+
+GCC_VERSION=4.9.3
+GCC_DIR=${TP_DIR}/gcc-${GCC_VERSION}
+GCC_BUILD=${GCC_DIR}.build
 
 # Our trace-viewer repository is separate since it's quite large and
 # shouldn't change frequently. We upload the built artifacts (HTML/JS)

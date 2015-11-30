@@ -16,10 +16,10 @@
 
 #include <boost/foreach.hpp>
 #include <boost/type_traits/remove_pointer.hpp>
-#include <unistd.h>
 #include <list>
 #include <string>
-#include <tr1/type_traits>
+#include <type_traits>
+#include <unistd.h>
 #include <vector>
 
 #include "kudu/gutil/basictypes.h"
@@ -63,7 +63,7 @@ class BlockingQueue {
   // If the queue holds a bare pointer, it must be empty on destruction, since
   // it may have ownership of the pointer.
   ~BlockingQueue() {
-    DCHECK(list_.empty() || !std::tr1::is_pointer<T>::value)
+    DCHECK(list_.empty() || !std::is_pointer<T>::value)
         << "BlockingQueue holds bare pointers at destruction time";
   }
 

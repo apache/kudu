@@ -15,7 +15,7 @@
 #ifndef KUDU_RPC_PROXY_H
 #define KUDU_RPC_PROXY_H
 
-#include <tr1/memory>
+#include <memory>
 #include <string>
 
 #include "kudu/gutil/atomicops.h"
@@ -52,7 +52,7 @@ class Messenger;
 // After initialization, multiple threads may make calls using the same proxy object.
 class Proxy {
  public:
-  Proxy(const std::tr1::shared_ptr<Messenger>& messenger,
+  Proxy(const std::shared_ptr<Messenger>& messenger,
         const Sockaddr& remote,
         const std::string& service_name);
   ~Proxy();
@@ -104,7 +104,7 @@ class Proxy {
 
  private:
   const std::string service_name_;
-  std::tr1::shared_ptr<Messenger> messenger_;
+  std::shared_ptr<Messenger> messenger_;
   ConnectionId conn_id_;
   mutable Atomic32 is_started_;
 

@@ -15,7 +15,7 @@
 #define KUDU_TABLET_DELTAFILE_H
 
 #include <boost/ptr_container/ptr_deque.hpp>
-#include <tr1/memory>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -96,7 +96,7 @@ class DeltaFileWriter {
 };
 
 class DeltaFileReader : public DeltaStore,
-                        public std::tr1::enable_shared_from_this<DeltaFileReader> {
+                        public std::enable_shared_from_this<DeltaFileReader> {
  public:
   static const char * const kDeltaStatsEntryName;
 
@@ -105,7 +105,7 @@ class DeltaFileReader : public DeltaStore,
   // After this call, the delta reader is safe for use.
   static Status Open(gscoped_ptr<fs::ReadableBlock> file,
                      const BlockId& block_id,
-                     std::tr1::shared_ptr<DeltaFileReader>* reader_out,
+                     std::shared_ptr<DeltaFileReader>* reader_out,
                      DeltaType delta_type);
 
   // Lazily opens a delta file using a previously opened block. A lazy open
@@ -115,7 +115,7 @@ class DeltaFileReader : public DeltaStore,
   // Init() must be called before using the file's stats.
   static Status OpenNoInit(gscoped_ptr<fs::ReadableBlock> file,
                            const BlockId& block_id,
-                           std::tr1::shared_ptr<DeltaFileReader>* reader_out,
+                           std::shared_ptr<DeltaFileReader>* reader_out,
                            DeltaType delta_type);
 
   virtual Status Init() OVERRIDE;
@@ -155,7 +155,7 @@ class DeltaFileReader : public DeltaStore,
 
   DISALLOW_COPY_AND_ASSIGN(DeltaFileReader);
 
-  const std::tr1::shared_ptr<cfile::CFileReader> &cfile_reader() const {
+  const std::shared_ptr<cfile::CFileReader> &cfile_reader() const {
     return reader_;
   }
 
@@ -168,7 +168,7 @@ class DeltaFileReader : public DeltaStore,
 
   Status ReadDeltaStats();
 
-  std::tr1::shared_ptr<cfile::CFileReader> reader_;
+  std::shared_ptr<cfile::CFileReader> reader_;
   gscoped_ptr<DeltaStats> delta_stats_;
 
   const BlockId block_id_;
@@ -248,7 +248,7 @@ class DeltaFileIterator : public DeltaIterator {
 
   // The passed 'projection' and 'dfr' must remain valid for the lifetime
   // of the iterator.
-  DeltaFileIterator(const std::tr1::shared_ptr<DeltaFileReader>& dfr,
+  DeltaFileIterator(const std::shared_ptr<DeltaFileReader>& dfr,
                     const Schema *projection,
                     const MvccSnapshot &snap,
                     DeltaType delta_type);
@@ -273,7 +273,7 @@ class DeltaFileIterator : public DeltaIterator {
   // Log a FATAL error message about a bad delta.
   void FatalUnexpectedDelta(const DeltaKey &key, const Slice &deltas, const string &msg);
 
-  std::tr1::shared_ptr<DeltaFileReader> dfr_;
+  std::shared_ptr<DeltaFileReader> dfr_;
 
   // Schema used during projection.
   const Schema* projection_;

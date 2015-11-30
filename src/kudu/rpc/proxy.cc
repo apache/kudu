@@ -17,8 +17,8 @@
 #include <boost/bind.hpp>
 #include <glog/logging.h>
 #include <inttypes.h>
+#include <memory>
 #include <stdint.h>
-#include <tr1/memory>
 
 #include <iostream>
 #include <sstream>
@@ -37,12 +37,12 @@
 
 using google::protobuf::Message;
 using std::string;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace kudu {
 namespace rpc {
 
-Proxy::Proxy(const std::tr1::shared_ptr<Messenger>& messenger,
+Proxy::Proxy(const std::shared_ptr<Messenger>& messenger,
              const Sockaddr& remote,
              const string& service_name)
   : service_name_(service_name),

@@ -17,6 +17,7 @@
 #include <boost/function.hpp>
 #include <set>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -148,7 +149,7 @@ class KuduClient::Data {
   Status SetMasterServerProxy(KuduClient* client,
                               const MonoTime& deadline);
 
-  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy() const;
+  std::shared_ptr<master::MasterServiceProxy> master_proxy() const;
 
   HostPort leader_master_hostport() const;
 
@@ -180,13 +181,13 @@ class KuduClient::Data {
                                    const ReqClass&, RespClass*,
                                    rpc::RpcController*)>& func);
 
-  std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  std::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<DnsResolver> dns_resolver_;
   scoped_refptr<internal::MetaCache> meta_cache_;
 
   // Set of hostnames and IPs on the local host.
   // This is initialized at client startup.
-  std::tr1::unordered_set<std::string> local_host_names_;
+  std::unordered_set<std::string> local_host_names_;
 
   // Options the client was built with.
   std::vector<std::string> master_server_addrs_;
@@ -199,7 +200,7 @@ class KuduClient::Data {
   HostPort leader_master_hostport_;
 
   // Proxy to the leader master.
-  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy_;
+  std::shared_ptr<master::MasterServiceProxy> master_proxy_;
 
   // Ref-counted RPC instance: since 'SetMasterServerProxyAsync' call
   // is asynchronous, we need to hold a reference in this class

@@ -18,7 +18,6 @@
 #include <utility>
 #include <vector>
 
-#include <boost/assign/list_of.hpp>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <rapidjson/document.h>
@@ -241,16 +240,16 @@ void HandleRequest(Handler handler,
 
 void TracingPathHandlers::RegisterHandlers(Webserver* server) {
   // All of the tracing-related hand
-  std::map<string, Handler> handlers = boost::assign::map_list_of
-    ("/tracing/json/begin_monitoring", kBeginMonitoring)
-    ("/tracing/json/end_monitoring", kEndMonitoring)
-    ("/tracing/json/capture_monitoring", kCaptureMonitoring)
-    ("/tracing/json/get_monitoring_status", kGetMonitoringStatus)
-    ("/tracing/json/categories", kCategories)
-    ("/tracing/json/begin_recording", kBeginRecording)
-    ("/tracing/json/get_buffer_percent_full", kGetBufferPercentFull)
-    ("/tracing/json/end_recording", kEndRecording)
-    ("/tracing/json/simple_dump", kSimpleDump);
+  std::map<string, Handler> handlers = {
+    { "/tracing/json/begin_monitoring", kBeginMonitoring },
+    { "/tracing/json/end_monitoring", kEndMonitoring },
+    { "/tracing/json/capture_monitoring", kCaptureMonitoring },
+    { "/tracing/json/get_monitoring_status", kGetMonitoringStatus },
+    { "/tracing/json/categories", kCategories },
+    { "/tracing/json/begin_recording", kBeginRecording },
+    { "/tracing/json/get_buffer_percent_full", kGetBufferPercentFull },
+    { "/tracing/json/end_recording", kEndRecording },
+    { "/tracing/json/simple_dump", kSimpleDump } };
 
   typedef pair<string, Handler> HandlerPair;
   BOOST_FOREACH(const HandlerPair& e, handlers) {

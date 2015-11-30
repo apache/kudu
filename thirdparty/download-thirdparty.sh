@@ -186,18 +186,25 @@ if [ ! -d $LIBUNWIND_DIR ]; then
   fetch_and_expand libunwind-${LIBUNWIND_VERSION}.tar.gz
 fi
 
-LLVM_PATCHLEVEL=3
+if [ ! -d $PYTHON_DIR ]; then
+  fetch_and_expand python-${PYTHON_VERSION}.tar.gz
+fi
+
+LLVM_PATCHLEVEL=2
 delete_if_wrong_patchlevel $LLVM_DIR $LLVM_PATCHLEVEL
 if [ ! -d $LLVM_DIR ]; then
   fetch_and_expand llvm-${LLVM_VERSION}.src.tar.gz
 
   pushd $LLVM_DIR
-  patch -p1 < $TP_DIR/patches/llvm-stop-including-msan_interface.patch
-  patch -p1 < $TP_DIR/patches/llvm-fix-jit-debugging.patch
   patch -p1 < $TP_DIR/patches/llvm-fix-amazon-linux.patch
+  patch -p1 < $TP_DIR/patches/llvm-devtoolset-toolchain.patch
   touch patchlevel-$LLVM_PATCHLEVEL
   popd
   echo
+fi
+
+if [ -n "$KUDU_USE_TSAN" ] && [ ! -d $GCC_DIR ]; then
+  fetch_and_expand gcc-${GCC_VERSION}.tar.gz
 fi
 
 LZ4_PATCHLEVEL=1
@@ -213,17 +220,6 @@ fi
 
 if [ ! -d $BITSHUFFLE_DIR ]; then
   fetch_and_expand bitshuffle-${BITSHUFFLE_VERSION}.tar.gz
-fi
-
-if [ -n "$OS_LINUX" ]; then
-  if [ ! -d $CLANG_TOOLCHAIN_DIR ]; then
-    fetch_and_expand clang-${CLANG_TOOLCHAIN_VERSION}.tgz
-  fi
-  # Make a link to the current version of the toolchain clang.
-  # We don't want to put this in the thirdparty install directory, because then
-  # clang assumes that it's installed system-wide, and no longer adds 'rpath'
-  # entries for the other thirdparty libraries when building.
-  ln -sf -T $CLANG_TOOLCHAIN_DIR clang-toolchain
 fi
 
 if [ ! -d $TRACE_VIEWER_DIR ]; then

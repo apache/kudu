@@ -13,11 +13,9 @@
 // limitations under the License.
 
 #include <boost/foreach.hpp>
-#include <boost/assign/list_of.hpp>
 
 #include <algorithm>
 #include <map>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/client/client-test-util.h"
@@ -48,7 +46,6 @@ using client::KuduWriteOperation;
 using std::make_pair;
 using std::map;
 using std::pair;
-using std::tr1::shared_ptr;
 using std::vector;
 using strings::SubstituteAndAppend;
 
@@ -91,7 +88,7 @@ class AlterTableRandomized : public KuduTest {
 
  protected:
   gscoped_ptr<ExternalMiniCluster> cluster_;
-  shared_ptr<KuduClient> client_;
+  client::sp::shared_ptr<KuduClient> client_;
 };
 
 struct RowState {
@@ -223,7 +220,7 @@ struct TableState {
 };
 
 struct MirrorTable {
-  explicit MirrorTable(const shared_ptr<KuduClient>& client)
+  explicit MirrorTable(const client::sp::shared_ptr<KuduClient>& client)
     : client_(client) {
   }
 
@@ -335,7 +332,7 @@ struct MirrorTable {
     // First scan the real table
     vector<string> rows;
     {
-      shared_ptr<KuduTable> table;
+      client::sp::shared_ptr<KuduTable> table;
       CHECK_OK(client_->OpenTable(kTableName, &table));
       client::ScanTableToStrings(table.get(), &rows);
     }
@@ -356,8 +353,8 @@ struct MirrorTable {
 
   Status DoRealOp(const vector<pair<string, int32_t> >& data,
                   OpType op_type) {
-    shared_ptr<KuduSession> session = client_->NewSession();
-    shared_ptr<KuduTable> table;
+    client::sp::shared_ptr<KuduSession> session = client_->NewSession();
+    client::sp::shared_ptr<KuduTable> table;
     RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     session->SetTimeoutMillis(15 * 1000);
     RETURN_NOT_OK(client_->OpenTable(kTableName, &table));
@@ -388,7 +385,7 @@ struct MirrorTable {
     return errors[0]->status();
   }
 
-  shared_ptr<KuduClient> client_;
+  client::sp::shared_ptr<KuduClient> client_;
   TableState ts_;
 };
 

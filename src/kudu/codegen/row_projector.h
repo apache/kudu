@@ -16,13 +16,13 @@
 #define KUDU_CODEGEN_ROW_PROJECTOR_H
 
 #include <iosfwd>
+#include <memory>
 #include <vector>
 
 #include "kudu/codegen/jit_wrapper.h"
 #include "kudu/common/row.h"
 #include "kudu/common/rowblock.h"
 #include "kudu/common/schema.h"
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/util/slice.h"
 #include "kudu/util/status.h"
@@ -67,7 +67,7 @@ class RowProjectorFunctions : public JITWrapper {
  private:
   RowProjectorFunctions(const Schema& base_schema, const Schema& projection,
                         ProjectionFunction read_f, ProjectionFunction write_f,
-                        gscoped_ptr<JITCodeOwner> owner);
+                        std::unique_ptr<JITCodeOwner> owner);
 
   const Schema base_schema_, projection_;
   const ProjectionFunction read_f_, write_f_;

@@ -14,7 +14,6 @@
 
 #include "kudu/util/atomic.h"
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <limits>
@@ -24,7 +23,6 @@ namespace kudu {
 
 using std::numeric_limits;
 using std::vector;
-using boost::assign::list_of;
 
 // TODO Add some multi-threaded tests; currently AtomicInt is just a
 // wrapper around 'atomicops.h', but should the underlying
@@ -38,8 +36,8 @@ class AtomicIntTest : public ::testing::Test {
   AtomicIntTest()
       : max_(numeric_limits<T>::max()),
         min_(numeric_limits<T>::min()) {
-    acquire_release_ = list_of(kMemOrderNoBarrier)(kMemOrderAcquire)(kMemOrderRelease);
-    barrier_ = list_of(kMemOrderNoBarrier)(kMemOrderBarrier);
+    acquire_release_ = { kMemOrderNoBarrier, kMemOrderAcquire, kMemOrderRelease };
+    barrier_ = { kMemOrderNoBarrier, kMemOrderBarrier };
   }
 
   vector<MemoryOrder> acquire_release_;
@@ -112,9 +110,7 @@ TYPED_TEST(AtomicIntTest, Increment) {
 }
 
 TEST(Atomic, AtomicBool) {
-  vector<MemoryOrder> memory_orders =
-      list_of(kMemOrderNoBarrier)(kMemOrderRelease)(kMemOrderAcquire);
-
+  vector<MemoryOrder> memory_orders = { kMemOrderNoBarrier, kMemOrderRelease, kMemOrderAcquire };
   BOOST_FOREACH(const MemoryOrder mem_order, memory_orders) {
     AtomicBool b(false);
     EXPECT_FALSE(b.Load(mem_order));

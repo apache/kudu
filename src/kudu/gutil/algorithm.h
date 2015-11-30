@@ -213,33 +213,6 @@ inline std::pair<ForwardIter, ForwardIter> minmax_element(ForwardIter first,
   return util::gtl::minmax_element(first, last, std::less<value_type>());
 }
 
-// Returns true if [first, last) is sorted in nondescending order by
-// pred.  Complexity: for nonempty ranges, at most last-first - 1
-// applications of comp.
-template <typename ForwardIterator, typename Compare>
-bool is_sorted(ForwardIterator first, ForwardIterator last, Compare comp) {
-  if (first != last) {
-    ForwardIterator next(first);
-    ++next;
-    while (next != last) {
-      if (comp(*next, *first))
-        return false;
-      first = next;
-      ++next;
-    }
-  }
-  return true;
-}
-
-// Returns true if [first, last) is sorted in nondescending order by
-// operator<.  Complexity: for nonempty ranges, exactly last-first - 1
-// applications of operator<.
-template <typename ForwardIterator>
-inline bool is_sorted(ForwardIterator first, ForwardIterator last) {
-  typedef typename std::iterator_traits<ForwardIterator>::value_type value_type;
-  return util::gtl::is_sorted(first, last, std::less<value_type>());
-}
-
 // Returns true if [first, last) is partitioned by pred, i.e. if all
 // elements that satisfy pred appear before those that do
 // not. Complexity: linear.

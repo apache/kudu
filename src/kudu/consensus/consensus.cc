@@ -25,7 +25,7 @@
 namespace kudu {
 namespace consensus {
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using strings::Substitute;
 
 ConsensusBootstrapInfo::ConsensusBootstrapInfo()
@@ -76,11 +76,11 @@ scoped_refptr<ConsensusRound> Consensus::NewRound(
   return make_scoped_refptr(new ConsensusRound(this, replicate_msg.Pass(), replicated_cb));
 }
 
-void Consensus::SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks) {
+void Consensus::SetFaultHooks(const shared_ptr<ConsensusFaultHooks>& hooks) {
   fault_hooks_ = hooks;
 }
 
-const std::tr1::shared_ptr<Consensus::ConsensusFaultHooks>& Consensus::GetFaultHooks() const {
+const shared_ptr<Consensus::ConsensusFaultHooks>& Consensus::GetFaultHooks() const {
   return fault_hooks_;
 }
 

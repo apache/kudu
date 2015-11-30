@@ -16,7 +16,6 @@
 #ifndef KUDU_BENCHMARKS_TPCH_SCHEMAS_H
 #define KUDU_BENCHMARKS_TPCH_SCHEMAS_H
 
-#include <boost/assign/list_of.hpp>
 #include <string>
 #include <vector>
 
@@ -95,21 +94,20 @@ inline client::KuduSchema CreateLineItemSchema() {
   b.AddColumn(kShipModeColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
   b.AddColumn(kCommentColName)->Type(kString)->NotNull()->Encoding(kPlainEncoding);
 
-  b.SetPrimaryKey(boost::assign::list_of<std::string>(kOrderKeyColName)(kLineNumberColName));
+  b.SetPrimaryKey({ kOrderKeyColName, kLineNumberColName });
 
   CHECK_OK(b.Build(&s));
   return s;
 }
 
 inline std::vector<std::string> GetTpchQ1QueryColumns() {
-  return boost::assign::list_of<std::string>
-    (kShipDateColName)
-    (kReturnFlagColName)
-    (kLineStatusColName)
-    (kQuantityColName)
-    (kExtendedPriceColName)
-    (kDiscountColName)
-    (kTaxColName);
+  return { kShipDateColName,
+           kReturnFlagColName,
+           kLineStatusColName,
+           kQuantityColName,
+           kExtendedPriceColName,
+           kDiscountColName,
+           kTaxColName };
 }
 
 } // namespace tpch

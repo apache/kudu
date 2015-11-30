@@ -14,7 +14,7 @@
 #ifndef KUDU_CFILE_BLOCK_COMPRESSION_H
 #define KUDU_CFILE_BLOCK_COMPRESSION_H
 
-#include <tr1/memory>
+#include <memory>
 #include <vector>
 
 #include "kudu/cfile/cfile.pb.h"

@@ -21,9 +21,9 @@
 #include "kudu/util/pb_util.h"
 
 #include <deque>
+#include <memory>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/foreach.hpp>
@@ -75,8 +75,8 @@ using kudu::pb_util::internal::WritableFileOutputStream;
 using std::deque;
 using std::endl;
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::shared_ptr;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 using strings::Utf8SafeCEscape;

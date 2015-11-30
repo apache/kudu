@@ -39,7 +39,7 @@ DEFINE_int32(deltafile_default_block_size, 32*1024,
              "on a per-table basis.");
 TAG_FLAG(deltafile_default_block_size, experimental);
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace kudu {
 

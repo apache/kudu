@@ -61,7 +61,7 @@ namespace log {
 using consensus::OpId;
 using env_util::ReadFully;
 using std::vector;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 

@@ -17,7 +17,7 @@
 #include <algorithm>
 #include <gflags/gflags.h>
 #include <string>
-#include <tr1/memory>
+#include <memory>
 #include <vector>
 
 #include "kudu/common/iterator.h"
@@ -101,7 +101,7 @@ class KuduTabletTest : public KuduTest {
     tx_state.Finish();
   }
 
-  const std::tr1::shared_ptr<Tablet>& tablet() const {
+  const std::shared_ptr<Tablet>& tablet() const {
     return harness_->tablet();
   }
 
@@ -133,7 +133,7 @@ class KuduRowSetTest : public KuduTabletTest {
   }
 
  protected:
-  std::tr1::shared_ptr<RowSetMetadata> rowset_meta_;
+  std::shared_ptr<RowSetMetadata> rowset_meta_;
 };
 
 static inline Status IterateToStringList(RowwiseIterator *iter,

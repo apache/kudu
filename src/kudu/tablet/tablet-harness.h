@@ -14,8 +14,8 @@
 #ifndef KUDU_TABLET_TABLET_PEER_HARNESS_H
 #define KUDU_TABLET_TABLET_PEER_HARNESS_H
 
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <utility>
 #include <vector>
 
@@ -102,7 +102,7 @@ class TabletHarness {
     clock_ = server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp);
     tablet_.reset(new Tablet(metadata,
                              clock_,
-                             std::tr1::shared_ptr<MemTracker>(),
+                             std::shared_ptr<MemTracker>(),
                              metrics_registry_.get(),
                              new log::LogAnchorRegistry()));
     return Status::OK();
@@ -118,7 +118,7 @@ class TabletHarness {
     return clock_.get();
   }
 
-  const std::tr1::shared_ptr<Tablet>& tablet() {
+  const std::shared_ptr<Tablet>& tablet() {
     return tablet_;
   }
 
@@ -138,7 +138,7 @@ class TabletHarness {
   scoped_refptr<server::Clock> clock_;
   Schema schema_;
   gscoped_ptr<FsManager> fs_manager_;
-  std::tr1::shared_ptr<Tablet> tablet_;
+  std::shared_ptr<Tablet> tablet_;
 };
 
 } // namespace tablet

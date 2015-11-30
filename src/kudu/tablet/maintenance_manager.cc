@@ -17,7 +17,7 @@
 #include <boost/foreach.hpp>
 #include <stdint.h>
 #include <string>
-#include <tr1/memory>
+#include <memory>
 #include <utility>
 
 #include <gflags/gflags.h>
@@ -33,7 +33,7 @@
 #include "kudu/util/thread.h"
 
 using std::pair;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using strings::Substitute;
 
 DEFINE_int32(maintenance_manager_num_threads, 1,

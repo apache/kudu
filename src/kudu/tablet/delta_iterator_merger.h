@@ -15,7 +15,7 @@
 #define KUDU_TABLET_DELTA_ITERATOR_MERGER_H
 
 #include <string>
-#include <tr1/memory>
+#include <memory>
 #include <vector>
 
 #include "kudu/tablet/delta_store.h"
@@ -36,10 +36,10 @@ class DeltaIteratorMerger : public DeltaIterator {
   // If only one store is input, this will automatically return an unwrapped
   // iterator for greater efficiency.
   static Status Create(
-      const std::vector<std::tr1::shared_ptr<DeltaStore> > &stores,
+      const std::vector<std::shared_ptr<DeltaStore> > &stores,
       const Schema* projection,
       const MvccSnapshot &snapshot,
-      std::tr1::shared_ptr<DeltaIterator>* out);
+      std::shared_ptr<DeltaIterator>* out);
 
   ////////////////////////////////////////////////////////////
   // Implementations of DeltaIterator
@@ -57,9 +57,9 @@ class DeltaIteratorMerger : public DeltaIterator {
   virtual std::string ToString() const OVERRIDE;
 
  private:
-  explicit DeltaIteratorMerger(const vector<std::tr1::shared_ptr<DeltaIterator> > &iters);
+  explicit DeltaIteratorMerger(const vector<std::shared_ptr<DeltaIterator> > &iters);
 
-  std::vector<std::tr1::shared_ptr<DeltaIterator> > iters_;
+  std::vector<std::shared_ptr<DeltaIterator> > iters_;
 };
 
 } // namespace tablet

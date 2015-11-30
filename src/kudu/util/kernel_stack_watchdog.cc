@@ -18,7 +18,6 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gflags/gflags.h>
-#include <tr1/unordered_set>
 #include <string>
 
 #include "kudu/util/debug-util.h"
@@ -33,7 +32,6 @@ DEFINE_int32(hung_task_check_interval_ms, 200,
              "Number of milliseconds in between checks for hung threads");
 TAG_FLAG(hung_task_check_interval_ms, hidden);
 
-using std::tr1::unordered_set;
 using strings::Substitute;
 
 namespace kudu {

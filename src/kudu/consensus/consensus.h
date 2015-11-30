@@ -16,8 +16,8 @@
 
 #include <boost/optional/optional_fwd.hpp>
 #include <iosfwd>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
@@ -238,9 +238,9 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
 
   virtual void DumpStatusHtml(std::ostream& out) const = 0;
 
-  void SetFaultHooks(const std::tr1::shared_ptr<ConsensusFaultHooks>& hooks);
+  void SetFaultHooks(const std::shared_ptr<ConsensusFaultHooks>& hooks);
 
-  const std::tr1::shared_ptr<ConsensusFaultHooks>& GetFaultHooks() const;
+  const std::shared_ptr<ConsensusFaultHooks>& GetFaultHooks() const;
 
   // Stops running the consensus algorithm.
   virtual void Shutdown() = 0;
@@ -258,7 +258,7 @@ class Consensus : public RefCountedThreadSafe<Consensus> {
   virtual ~Consensus() {}
 
   // Fault hooks for tests. In production code this will always be null.
-  std::tr1::shared_ptr<ConsensusFaultHooks> fault_hooks_;
+  std::shared_ptr<ConsensusFaultHooks> fault_hooks_;
 
   enum HookPoint {
     PRE_START,

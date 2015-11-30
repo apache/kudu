@@ -14,9 +14,9 @@
 #ifndef KUDU_RPC_MESSENGER_H
 #define KUDU_RPC_MESSENGER_H
 
+#include <memory>
 #include <stdint.h>
-#include <tr1/memory>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include <list>
 #include <string>
@@ -89,7 +89,7 @@ class MessengerBuilder {
   // Set metric entity for use by RPC systems.
   MessengerBuilder &set_metric_entity(const scoped_refptr<MetricEntity>& metric_entity);
 
-  Status Build(std::tr1::shared_ptr<Messenger> *msgr);
+  Status Build(std::shared_ptr<Messenger> *msgr);
 
  private:
   Status Build(Messenger **msgr);
@@ -116,8 +116,8 @@ class Messenger {
   friend class MessengerBuilder;
   friend class Proxy;
   friend class Reactor;
-  typedef std::vector<std::tr1::shared_ptr<AcceptorPool> > acceptor_vec_t;
-  typedef std::tr1::unordered_map<std::string, scoped_refptr<RpcService> > RpcServicesMap;
+  typedef std::vector<std::shared_ptr<AcceptorPool> > acceptor_vec_t;
+  typedef std::unordered_map<std::string, scoped_refptr<RpcService> > RpcServicesMap;
 
   static const uint64_t UNKNOWN_CALL_ID = 0;
 
@@ -138,7 +138,7 @@ class Messenger {
   // NOTE: the returned pool is not initially started. You must call
   // pool->Start(...) to begin accepting connections.
   Status AddAcceptorPool(const Sockaddr &accept_addr,
-                         std::tr1::shared_ptr<AcceptorPool>* pool);
+                         std::shared_ptr<AcceptorPool>* pool);
 
   // Register a new RpcService to handle inbound requests.
   Status RegisterService(const std::string& service_name,
@@ -151,7 +151,7 @@ class Messenger {
 
   // Queue a call for transmission. This will pick the appropriate reactor,
   // and enqueue a task on that reactor to assign and send the call.
-  void QueueOutboundCall(const std::tr1::shared_ptr<OutboundCall> &call);
+  void QueueOutboundCall(const std::shared_ptr<OutboundCall> &call);
 
   // Enqueue a call for processing on the server.
   void QueueInboundCall(gscoped_ptr<InboundCall> call);
@@ -262,7 +262,7 @@ class Messenger {
   // do so. So, handing out a normal shared_ptr to users would force the Messenger
   // destructor to Join() the reactor threads, which causes a problem if the user
   // tries to destruct the Messenger from within a Reactor thread itself.
-  std::tr1::shared_ptr<Messenger> retain_self_;
+  std::shared_ptr<Messenger> retain_self_;
 
   DISALLOW_COPY_AND_ASSIGN(Messenger);
 };

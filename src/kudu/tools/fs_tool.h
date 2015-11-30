@@ -16,11 +16,11 @@
 #ifndef KUDU_TOOLS_FS_TOOL_H
 #define KUDU_TOOLS_FS_TOOL_H
 
-#include <tr1/memory>
 #include <iostream>
-#include <vector>
+#include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/status.h"
@@ -124,7 +124,7 @@ class FsTool {
                             const tablet::RowSetMetadata& rs_meta);
 
   Status DumpRowSetInternal(const Schema& schema,
-                            const std::tr1::shared_ptr<tablet::RowSetMetadata>& rs_meta,
+                            const std::shared_ptr<tablet::RowSetMetadata>& rs_meta,
                             const DumpOptions& opts,
                             int indent);
 
@@ -133,7 +133,7 @@ class FsTool {
                                 int indent);
 
   Status DumpDeltaCFileBlockInternal(const Schema& schema,
-                                     const std::tr1::shared_ptr<tablet::RowSetMetadata>& rs_meta,
+                                     const std::shared_ptr<tablet::RowSetMetadata>& rs_meta,
                                      const BlockId& block_id,
                                      tablet::DeltaType delta_type,
                                      const DumpOptions& opts,
@@ -142,7 +142,7 @@ class FsTool {
 
   Status OpenBlockAsFile(const BlockId& block_id,
                          uint64_t* file_size,
-                         std::tr1::shared_ptr<RandomAccessFile>* block_reader);
+                         std::shared_ptr<RandomAccessFile>* block_reader);
 
   bool initialized_;
   const DetailLevel detail_level_;

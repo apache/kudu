@@ -15,7 +15,7 @@
 #include "kudu/cfile/bloomfile-test-base.h"
 #include "kudu/fs/fs-test-util.h"
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace kudu {
 namespace cfile {

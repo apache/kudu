@@ -22,7 +22,7 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_header.pb.h"
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 

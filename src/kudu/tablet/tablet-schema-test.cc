@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/lexical_cast.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -95,10 +94,8 @@ class TestTabletSchema : public KuduTabletTest {
 
  private:
   Schema CreateBaseSchema() {
-    return Schema(boost::assign::list_of
-                   (ColumnSchema("key", INT32))
-                   (ColumnSchema("c1", INT32)),
-                   1);
+    return Schema({ ColumnSchema("key", INT32),
+                    ColumnSchema("c1", INT32) }, 1);
   }
 };
 
@@ -106,10 +103,9 @@ class TestTabletSchema : public KuduTabletTest {
 // the original schema. Verify that the server reject the request.
 TEST_F(TestTabletSchema, TestRead) {
   const size_t kNumRows = 10;
-  Schema projection(boost::assign::list_of
-                    (ColumnSchema("key", INT32))
-                    (ColumnSchema("c2", INT64))
-                    (ColumnSchema("c3", STRING)),
+  Schema projection({ ColumnSchema("key", INT32),
+                      ColumnSchema("c2", INT64),
+                      ColumnSchema("c3", STRING) },
                     1);
 
   InsertRows(client_schema_, 0, kNumRows);

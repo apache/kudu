@@ -21,8 +21,8 @@
 #include "kudu/tablet/delta_store.h"
 #include "kudu/util/status.h"
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 
 namespace kudu {
 namespace tablet {

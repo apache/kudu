@@ -4,33 +4,30 @@
 
 #include "kudu/gutil/strings/stringpiece.h"
 
-#include <string.h>
 #include <algorithm>
+#include <climits>
+#include <glog/logging.h>
+#include <string.h>
+#include <string>
+
+#include "kudu/gutil/hash/hash.h"
+#include "kudu/gutil/logging-inl.h"
+#include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/memutil.h"
+
 using std::copy;
 using std::max;
 using std::min;
 using std::reverse;
 using std::sort;
 using std::swap;
-#include <climits>
-#include <string>
 using std::string;
 
-#include <glog/logging.h>
-#include "kudu/gutil/logging-inl.h"
-#include "kudu/gutil/strings/memutil.h"
-#include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/hash/hash.h"
-
-#include <ext/hash_set>
-namespace __gnu_cxx {
-
-size_t hash<StringPiece>::operator()(StringPiece s) const {
-  return HashTo32(s.data(), s.size());
-}
-
-}  // namespace __gnu_cxx
-
+namespace std {
+  size_t hash<StringPiece>::operator()(StringPiece s) const {
+    return HashTo32(s.data(), s.size());
+  }
+} // namespace std
 
 std::ostream& operator<<(std::ostream& o, StringPiece piece) {
   o.write(piece.data(), piece.size());

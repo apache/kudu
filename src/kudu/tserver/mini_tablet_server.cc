@@ -14,7 +14,6 @@
 
 #include "kudu/tserver/mini_tablet_server.h"
 
-#include <boost/assign/list_of.hpp>
 #include <utility>
 
 #include <glog/logging.h>
@@ -64,7 +63,7 @@ MiniTabletServer::MiniTabletServer(const string& fs_root,
   opts_.rpc_opts.rpc_bind_addresses = Substitute("127.0.0.1:$0", rpc_port);
   opts_.webserver_opts.port = 0;
   opts_.fs_opts.wal_path = fs_root;
-  opts_.fs_opts.data_paths = boost::assign::list_of(fs_root);
+  opts_.fs_opts.data_paths = { fs_root };
 }
 
 MiniTabletServer::~MiniTabletServer() {

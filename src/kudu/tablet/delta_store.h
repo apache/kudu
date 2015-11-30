@@ -14,9 +14,9 @@
 #ifndef KUDU_TABLET_DELTA_STORE_H
 #define KUDU_TABLET_DELTA_STORE_H
 
+#include <memory>
 #include <string>
 #include <vector>
-#include <tr1/memory>
 
 #include "kudu/common/columnblock.h"
 #include "kudu/common/schema.h"
@@ -79,7 +79,7 @@ class DeltaStore {
   virtual ~DeltaStore() {}
 };
 
-typedef std::vector<std::tr1::shared_ptr<DeltaStore> > SharedDeltaStoreVector;
+typedef std::vector<std::shared_ptr<DeltaStore> > SharedDeltaStoreVector;
 
 // Iterator over deltas.
 // For each rowset, this iterator is constructed alongside the base data iterator,

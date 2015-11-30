@@ -17,7 +17,7 @@
 #include <boost/foreach.hpp>
 #include <deque>
 #include <string>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/fs/block_manager_metrics.h"
@@ -38,9 +38,9 @@
 #include "kudu/util/status.h"
 
 using kudu::env_util::ScopedFileDeleter;
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 

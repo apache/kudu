@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -38,7 +37,7 @@ class EMCTest : public KuduTest {
     // Hard-coded RPC ports for the masters. This is safe, as this unit test
     // runs under a resource lock (see CMakeLists.txt in this directory).
     // TODO we should have a generic method to obtain n free ports.
-    master_peer_ports_ = boost::assign::list_of(11010)(11011)(11012);
+    master_peer_ports_ = { 11010, 11011, 11012 };
   }
 
  protected:

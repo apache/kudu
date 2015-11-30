@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/bind.hpp>
 #include <boost/thread/thread.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
-#include <tr1/memory>
+#include <memory>
 
 #include "kudu/client/client.h"
 #include "kudu/common/schema.h"
@@ -33,8 +32,6 @@
 #include "kudu/tserver/tablet_server.h"
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
-
-using std::tr1::shared_ptr;
 
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
@@ -111,10 +108,10 @@ class CreateTableStressTest : public KuduTest {
   void CreateBigTable(const string& table_name, int num_tablets);
 
  protected:
-  shared_ptr<KuduClient> client_;
+  client::sp::shared_ptr<KuduClient> client_;
   gscoped_ptr<MiniCluster> cluster_;
   KuduSchema schema_;
-  shared_ptr<Messenger> messenger_;
+  std::shared_ptr<Messenger> messenger_;
   gscoped_ptr<MasterServiceProxy> master_proxy_;
   TabletServerMap ts_map_;
 };

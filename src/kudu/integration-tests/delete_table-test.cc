@@ -12,14 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <boost/optional.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
-#include <tr1/memory>
-#include <tr1/unordered_map>
+#include <memory>
 #include <string>
+#include <unordered_map>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
@@ -37,29 +36,32 @@
 #include "kudu/util/pstack_watcher.h"
 #include "kudu/util/test_util.h"
 
-using boost::assign::list_of;
 using kudu::client::KuduClient;
 using kudu::client::KuduClientBuilder;
+using kudu::client::KuduClientBuilder;
+using kudu::client::KuduSchema;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
+using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
+using kudu::client::KuduTableCreator;
+using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::TServerDetails;
-using kudu::tablet::TabletDataState;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_READY;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
+using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletSuperBlockPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerErrorPB;
 using std::numeric_limits;
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 
@@ -144,7 +146,7 @@ class DeleteTableTest : public KuduTest {
 
   gscoped_ptr<ExternalMiniCluster> cluster_;
   gscoped_ptr<itest::ExternalMiniClusterFsInspector> inspect_;
-  shared_ptr<KuduClient> client_;
+  client::sp::shared_ptr<KuduClient> client_;
   unordered_map<string, TServerDetails*> ts_map_;
 };
 

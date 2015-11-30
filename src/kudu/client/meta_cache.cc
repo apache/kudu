@@ -35,7 +35,7 @@
 
 using std::string;
 using std::map;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using strings::Substitute;
 
 namespace kudu {
@@ -323,7 +323,7 @@ class LookupRpc : public Rpc {
  private:
   virtual void SendRpcCb(const Status& status) OVERRIDE;
 
-  std::tr1::shared_ptr<MasterServiceProxy> master_proxy() const {
+  std::shared_ptr<MasterServiceProxy> master_proxy() const {
     return table_->client()->data_->master_proxy();
   }
 

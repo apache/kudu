@@ -19,7 +19,7 @@
 #include <string>
 #include <utility>
 #include <vector>
-#include <tr1/memory>
+#include <memory>
 
 #include "kudu/consensus/consensus.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -66,9 +66,9 @@ class RaftConsensus : public Consensus,
     const scoped_refptr<MetricEntity>& metric_entity,
     const scoped_refptr<server::Clock>& clock,
     ReplicaTransactionFactory* txn_factory,
-    const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+    const std::shared_ptr<rpc::Messenger>& messenger,
     const scoped_refptr<log::Log>& log,
-    const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
+    const std::shared_ptr<MemTracker>& parent_mem_tracker,
     const Callback<void(const std::string& reason)>& mark_dirty_clbk);
 
   RaftConsensus(const ConsensusOptions& options,
@@ -82,7 +82,7 @@ class RaftConsensus : public Consensus,
                 const scoped_refptr<server::Clock>& clock,
                 ReplicaTransactionFactory* txn_factory,
                 const scoped_refptr<log::Log>& log,
-                const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
+                const std::shared_ptr<MemTracker>& parent_mem_tracker,
                 const Callback<void(const std::string& reason)>& mark_dirty_clbk);
 
   virtual ~RaftConsensus();
@@ -453,7 +453,7 @@ class RaftConsensus : public Consensus,
   scoped_refptr<Counter> follower_memory_pressure_rejections_;
   scoped_refptr<AtomicGauge<int64_t> > term_metric_;
 
-  std::tr1::shared_ptr<MemTracker> parent_mem_tracker_;
+  std::shared_ptr<MemTracker> parent_mem_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(RaftConsensus);
 };

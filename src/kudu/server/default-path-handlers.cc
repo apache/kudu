@@ -26,15 +26,15 @@
 
 #include "kudu/server/default-path-handlers.h"
 
-#include <sstream>
-#include <string>
-#include <fstream>
-#include <sys/stat.h>
 #include <boost/algorithm/string.hpp>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
+#include <fstream>
 #include <gperftools/malloc_extension.h>
-#include <tr1/memory>
+#include <memory>
+#include <sstream>
+#include <string>
+#include <sys/stat.h>
 #include <vector>
 
 #include "kudu/gutil/map-util.h"
@@ -64,7 +64,7 @@ TAG_FLAG(web_log_bytes, runtime);
 
 namespace kudu {
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace {
 // Html/Text formatting tags

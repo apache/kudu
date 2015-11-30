@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
-#include <boost/assign/list_of.hpp>
 
 #include "kudu/common/partial_row.h"
 #include "kudu/common/row.h"
@@ -25,11 +24,10 @@ namespace kudu {
 class PartialRowTest : public KuduTest {
  public:
   PartialRowTest()
-    : schema_(boost::assign::list_of
-              (ColumnSchema("key", INT32))
-              (ColumnSchema("int_val", INT32))
-              (ColumnSchema("string_val", STRING, true))
-              (ColumnSchema("binary_val", BINARY, true)),
+    : schema_({ ColumnSchema("key", INT32),
+                ColumnSchema("int_val", INT32),
+                ColumnSchema("string_val", STRING, true),
+                ColumnSchema("binary_val", BINARY, true) },
               1) {
     SeedRandom();
   }

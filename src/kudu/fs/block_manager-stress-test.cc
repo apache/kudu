@@ -14,8 +14,8 @@
 
 #include <boost/foreach.hpp>
 #include <cmath>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/fs/file_block_manager.h"
@@ -44,7 +44,7 @@ DEFINE_string(block_manager_paths, "", "Comma-separated list of paths to "
               "test path");
 
 using std::string;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using std::vector;
 using strings::Substitute;
 

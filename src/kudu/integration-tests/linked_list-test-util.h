@@ -13,13 +13,11 @@
 // limitations under the License.
 
 #include <algorithm>
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <iostream>
 #include <list>
 #include <string>
-#include <tr1/memory>
 #include <utility>
 #include <vector>
 
@@ -59,15 +57,13 @@ typedef vector<pair<uint64_t, int64_t> > SnapsAndCounts;
 // facilitates checking for data integrity.
 class LinkedListTester {
  public:
-  LinkedListTester(const std::tr1::shared_ptr<client::KuduClient>& client,
+  LinkedListTester(const client::sp::shared_ptr<client::KuduClient>& client,
                    const std::string& table_name,
                    int num_chains,
                    int num_tablets,
                    int num_replicas,
                    bool enable_mutation)
-    : verify_projection_(boost::assign::list_of
-                         (kKeyColumnName)(kLinkColumnName)(kUpdatedColumnName)
-                         .convert_to_container<vector<string> >()),
+    : verify_projection_({ kKeyColumnName, kLinkColumnName, kUpdatedColumnName }),
       table_name_(table_name),
       num_chains_(num_chains),
       num_tablets_(num_tablets),
@@ -167,7 +163,7 @@ class LinkedListTester {
   const int num_replicas_;
   const bool enable_mutation_;
   HdrHistogram latency_histogram_;
-  std::tr1::shared_ptr<client::KuduClient> client_;
+  client::sp::shared_ptr<client::KuduClient> client_;
   SnapsAndCounts sampled_timestamps_and_counts_;
 
  private:
@@ -255,7 +251,7 @@ class ScopedRowUpdater {
 
  private:
   void RowUpdaterThread() {
-    std::tr1::shared_ptr<client::KuduSession> session(table_->client()->NewSession());
+    client::sp::shared_ptr<client::KuduSession> session(table_->client()->NewSession());
     session->SetTimeoutMillis(15000);
     CHECK_OK(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH));
 
@@ -438,7 +434,7 @@ Status LinkedListTester::LoadLinkedList(
     int64_t *written_count) {
 
   sampled_timestamps_and_counts_.clear();
-  std::tr1::shared_ptr<client::KuduTable> table;
+  client::sp::shared_ptr<client::KuduTable> table;
   RETURN_NOT_OK_PREPEND(client_->OpenTable(table_name_, &table),
                         "Could not open table " + table_name_);
 
@@ -454,7 +450,7 @@ Status LinkedListTester::LoadLinkedList(
   MonoTime deadline = start;
   deadline.AddDelta(run_for);
 
-  std::tr1::shared_ptr<client::KuduSession> session = client_->NewSession();
+  client::sp::shared_ptr<client::KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(15000);
   RETURN_NOT_OK_PREPEND(session->SetFlushMode(client::KuduSession::MANUAL_FLUSH),
                         "Couldn't set flush mode");
@@ -567,7 +563,7 @@ Status LinkedListTester::VerifyLinkedListRemote(
     const uint64_t snapshot_timestamp, const int64_t expected, bool log_errors,
     const boost::function<Status(const std::string&)>& cb, int64_t* verified_count) {
 
-  std::tr1::shared_ptr<client::KuduTable> table;
+  client::sp::shared_ptr<client::KuduTable> table;
   RETURN_NOT_OK(client_->OpenTable(table_name_, &table));
 
   string snapshot_str;

@@ -39,7 +39,7 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/threadpool.h"
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 DEFINE_bool(codegen_time_compilation, false, "Whether to print time that each code "
             "generation request took.");

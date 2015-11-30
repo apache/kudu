@@ -15,8 +15,6 @@
 #ifndef KUDU_MASTER_TEST_UTIL_H_
 #define KUDU_MASTER_TEST_UTIL_H_
 
-#include <boost/assign/list_of.hpp>
-
 #include <algorithm>
 #include <string>
 

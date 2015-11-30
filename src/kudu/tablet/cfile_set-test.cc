@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <memory>
 #include <gtest/gtest.h>
 #include <glog/logging.h>
-#include <tr1/memory>
 
 #include "kudu/common/generic_iterators.h"
 #include "kudu/tablet/cfile_set.h"
@@ -24,7 +24,7 @@
 
 DECLARE_int32(cfile_default_block_size);
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -32,10 +32,9 @@ namespace tablet {
 class TestCFileSet : public KuduRowSetTest {
  public:
   TestCFileSet() :
-    KuduRowSetTest(Schema(boost::assign::list_of
-            (ColumnSchema("c0", UINT32))
-            (ColumnSchema("c1", UINT32, false, NULL, NULL, GetRLEStorage()))
-            (ColumnSchema("c2", UINT32)), 1))
+    KuduRowSetTest(Schema({ ColumnSchema("c0", UINT32),
+                            ColumnSchema("c1", UINT32, false, NULL, NULL, GetRLEStorage()),
+                            ColumnSchema("c2", UINT32) }, 1))
   {}
 
   virtual void SetUp() OVERRIDE {
@@ -206,7 +205,7 @@ TEST_F(TestCFileSet, TestIteratePartialSchema) {
   ASSERT_OK(fileset->Open());
 
   Schema new_schema;
-  ASSERT_OK(schema_.CreateProjectionByNames(list_of("c0")("c2"), &new_schema));
+  ASSERT_OK(schema_.CreateProjectionByNames({ "c0", "c2" }, &new_schema));
   shared_ptr<CFileSet::Iterator> cfile_iter(fileset->NewIterator(&new_schema));
   gscoped_ptr<RowwiseIterator> iter(new MaterializingIterator(cfile_iter));
 

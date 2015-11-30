@@ -14,7 +14,6 @@
 //
 // Tests for the kudu-admin command-line tool.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
@@ -34,8 +33,6 @@ using kudu::client::KuduClientBuilder;
 using itest::TabletServerMap;
 using itest::TServerDetails;
 using strings::Substitute;
-
-using std::tr1::shared_ptr;
 
 static const char* const kAdminToolName = "kudu-admin";
 
@@ -165,7 +162,7 @@ TEST_F(AdminCliTest, TestDeleteTable) {
   BuildAndStart(ts_flags, master_flags);
   string master_address = cluster_->master()->bound_rpc_addr().ToString();
 
-  shared_ptr<KuduClient> client;
+  client::sp::shared_ptr<KuduClient> client;
   CHECK_OK(KuduClientBuilder()
         .add_master_server_addr(master_address)
         .Build(&client));

@@ -23,13 +23,12 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/Instructions.h>
-#include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
 #include <llvm/MC/MCDisassembler.h>
 #include <llvm/MC/MCInst.h>
 #include <llvm/MC/MCInstPrinter.h>
+#include <llvm/MC/MCContext.h>
 #include <llvm/Support/raw_os_ostream.h>
-#include <llvm/Support/StringRefMemoryObject.h>
 #include <llvm/Support/TargetRegistry.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/Target/TargetInstrInfo.h>
@@ -60,25 +59,24 @@ namespace llvm {
 class MCAsmInfo;
 class MCInstrInfo;
 class MCRegisterInfo;
-class MCSubtargetInfo;
 } // namespace llvm
 
+using llvm::ArrayRef;
 using llvm::ExecutionEngine;
-using llvm::LLVMContext;
 using llvm::MCAsmInfo;
+using llvm::MCContext;
 using llvm::MCDisassembler;
 using llvm::MCInst;
 using llvm::MCInstPrinter;
 using llvm::MCInstrInfo;
-using llvm::MCSubtargetInfo;
-using llvm::Module;
 using llvm::MCRegisterInfo;
 using llvm::MCSubtargetInfo;
-using llvm::raw_os_ostream;
+using llvm::Module;
 using llvm::StringRef;
-using llvm::StringRefMemoryObject;
 using llvm::Target;
 using llvm::TargetMachine;
+using llvm::Triple;
+using llvm::raw_os_ostream;
 using std::string;
 
 namespace kudu {
@@ -99,11 +97,10 @@ Status CheckCodegenEnabled() {
 #endif
 }
 
-const char* ptr_from_i64(uint64_t addr) {
-  COMPILE_ASSERT(sizeof(uint64_t) <= sizeof(uintptr_t),
-                 cannot_represent_address_as_pointer);
+const uint8_t* ptr_from_i64(uint64_t addr) {
+  COMPILE_ASSERT(sizeof(uint64_t) <= sizeof(uintptr_t), cannot_represent_address_as_pointer);
   uintptr_t iptr = addr;
-  return reinterpret_cast<char*>(iptr);
+  return reinterpret_cast<const uint8_t*>(iptr);
 }
 
 template<class FuncPtr>
@@ -123,16 +120,19 @@ uint64_t i64_from_ptr(FuncPtr ptr) {
 //
 // Returns number of lines printed.
 template<class FuncPtr>
-int DumpAsm(FuncPtr fptr, const TargetMachine& tm,
-            std::ostream* out, int max_instr) {
+int DumpAsm(FuncPtr fptr, const TargetMachine& tm, std::ostream* out, int max_instr) {
   uint64_t base_addr = i64_from_ptr(fptr);
 
-  const MCInstrInfo& instr_info = *CHECK_NOTNULL(tm.getInstrInfo());
-  const MCRegisterInfo& register_info = *CHECK_NOTNULL(tm.getRegisterInfo());
-  const MCAsmInfo& asm_info = *CHECK_NOTNULL(tm.getMCAsmInfo());
-  const MCSubtargetInfo& subtarget_info = tm.getSubtarget<MCSubtargetInfo>();
+  const MCInstrInfo& instr_info = *CHECK_NOTNULL(tm.getMCInstrInfo());
+  const MCRegisterInfo* register_info = CHECK_NOTNULL(tm.getMCRegisterInfo());
+  const MCAsmInfo* asm_info = CHECK_NOTNULL(tm.getMCAsmInfo());
+  const MCSubtargetInfo subtarget_info = *CHECK_NOTNULL(tm.getMCSubtargetInfo());
+  const Triple& triple = tm.getTargetTriple();
+
+  MCContext context(asm_info, register_info, nullptr);
+
   gscoped_ptr<MCDisassembler> disas(
-    CHECK_NOTNULL(tm.getTarget().createMCDisassembler(subtarget_info)));
+    CHECK_NOTNULL(tm.getTarget().createMCDisassembler(subtarget_info, context)));
 
   // LLVM uses these completely undocumented magic syntax constants which had
   // to be found in lib/Target/$ARCH/MCTargetDesc/$(ARCH)TargetDesc.cpp.
@@ -143,15 +143,13 @@ int DumpAsm(FuncPtr fptr, const TargetMachine& tm,
   // will always be defined, so that's what we use.
   static const unsigned kSyntaxVariant = 0;
   gscoped_ptr<MCInstPrinter> printer(
-    CHECK_NOTNULL(tm.getTarget().createMCInstPrinter(kSyntaxVariant, asm_info,
-                                                     instr_info, register_info,
-                                                     subtarget_info)));
+    CHECK_NOTNULL(tm.getTarget().createMCInstPrinter(triple, kSyntaxVariant, *asm_info,
+                                                     instr_info, *register_info)));
 
   // Make a memory object referring to the bytes with addresses ranging from
   // base_addr to base_addr + (maximum number of bytes instructions take).
   const size_t kInstrSizeMax = 16; // max on x86 is 15 bytes
-  StringRefMemoryObject mem_obj(StringRef(ptr_from_i64(base_addr),
-                                          max_instr * kInstrSizeMax));
+  ArrayRef<uint8_t> mem_obj(ptr_from_i64(base_addr), max_instr * kInstrSizeMax);
   uint64_t addr = 0;
 
   for (int i = 0; i < max_instr; ++i) {
@@ -159,14 +157,14 @@ int DumpAsm(FuncPtr fptr, const TargetMachine& tm,
     MCInst inst;
     uint64_t size;
     MCDisassembler::DecodeStatus stat =
-    disas->getInstruction(inst, size, mem_obj, addr, llvm::nulls(), llvm::nulls());
+      disas->getInstruction(inst, size, mem_obj.slice(addr), addr, llvm::nulls(), llvm::nulls());
     if (stat != MCDisassembler::Success) {
       *out << "<ERROR at 0x" << std::hex << addr
            << " (absolute 0x" << (addr + base_addr) << ")"
            << ", skipping instruction>\n" << std::dec;
     } else {
       string annotations;
-      printer->printInst(&inst, os, annotations);
+      printer->printInst(&inst, os, annotations, subtarget_info);
       os << " " << annotations << "\n";
       // We need to check the opcode name for "RET" instead of comparing
       // the opcode to llvm::ReturnInst::getOpcode() because the native

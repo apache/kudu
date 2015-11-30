@@ -14,11 +14,11 @@
 
 #include "kudu/tablet/compaction.h"
 
-#include <glog/logging.h>
 #include <deque>
+#include <glog/logging.h>
+#include <memory>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
@@ -35,8 +35,8 @@
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/debug/trace_event.h"
 
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::shared_ptr;
+using std::unordered_set;
 using strings::Substitute;
 
 namespace kudu {

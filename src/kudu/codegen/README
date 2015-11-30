@@ -64,7 +64,7 @@ two items when retrieving a row projector.
 Code Generation Implementation Details
 ================================================================================
 
-Code generation works by creating what is essentially an assembly languange
+Code generation works by creating what is essentially an assembly language
 file for the desired object, then handing off that assembly to the LLVM
 MCJIT compiler. The LLVM backend handles generating target-dependent machine
 code. After code generation, the machine code, which is represented as a

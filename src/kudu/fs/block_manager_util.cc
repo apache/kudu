@@ -14,7 +14,7 @@
 #include "kudu/fs/block_manager_util.h"
 
 #include <set>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <utility>
 
 #include <boost/foreach.hpp>
@@ -35,7 +35,7 @@ namespace fs {
 
 using std::set;
 using std::string;
-using std::tr1::unordered_map;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 

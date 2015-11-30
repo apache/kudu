@@ -47,11 +47,11 @@ cd $ROOT
 
 $ROOT/thirdparty/installed/bin/cpplint.py \
   --verbose=4 \
-  --filter=-whitespace/comments,-readability/todo,-build/header_guard,-build/include_order \
+  --filter=-whitespace/comments,-readability/todo,-build/header_guard,-build/include_order,-build/c++11 \
   $FILES 2>&1 | grep -v 'Done processing' | tee $TMP
 
 NUM_ERRORS=$(grep "Total errors found" $TMP | awk '{print $4}')
 
-if [ "$NUM_ERRORS" -ne 0 ]; then
+if [[ "$NUM_ERRORS" -ne 0 ]]; then
   exit 1
 fi

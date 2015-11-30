@@ -36,7 +36,7 @@ DEFINE_bool(mrs_use_codegen, true, "whether the memrowset should use code "
 TAG_FLAG(mrs_use_codegen, hidden);
 
 using std::pair;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace kudu { namespace tablet {
 
@@ -373,7 +373,7 @@ gscoped_ptr<MRSRowProjector> GenerateAppropriateProjector(
 
 } // anonymous namespace
 
-MemRowSet::Iterator::Iterator(const std::tr1::shared_ptr<const MemRowSet> &mrs,
+MemRowSet::Iterator::Iterator(const std::shared_ptr<const MemRowSet> &mrs,
                               MemRowSet::MSBTIter *iter,
                               const Schema *projection,
                               const MvccSnapshot &mvcc_snap)

@@ -24,14 +24,18 @@ TP_DIR=$(cd "$(dirname "$BASH_SOURCE")"; pwd)
 # We also enable -fno-omit-frame-pointer so that profiling tools which
 # use frame-pointer based stack unwinding can function correctly.
 DEBUG_CFLAGS="-g -fno-omit-frame-pointer"
-EXTRA_CXXFLAGS="-O2 $DEBUG_CFLAGS $CXXFLAGS "
+EXTRA_CXXFLAGS="-O2 $DEBUG_CFLAGS $CXXFLAGS"
+EXTRA_LIBS="${LIBS}"
+
 if [[ "$OSTYPE" =~ ^linux ]]; then
   OS_LINUX=1
   DYLIB_SUFFIX="so"
 elif [[ "$OSTYPE" == "darwin"* ]]; then
   OS_OSX=1
-  EXTRA_CXXFLAGS="$EXTRA_CXXFLAGS -stdlib=libstdc++"
   DYLIB_SUFFIX="dylib"
+  EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS} -stdlib=libc++"
+  EXTRA_LDFLAGS="-stdlib=libc++"
+  EXTRA_LIBS="${EXTRA_LIBS} -lc++ -lc++abi"
 fi
 
 source $TP_DIR/vars.sh
@@ -63,6 +67,7 @@ else
       "crcutil")    F_CRCUTIL=1 ;;
       "libunwind")  F_LIBUNWIND=1 ;;
       "llvm")       F_LLVM=1 ;;
+      "gcc")        F_GCC=1 ;;
       "trace-viewer") F_TRACE_VIEWER=1 ;;
       "nvml")       F_NVML=1 ;;
       *)            echo "Unknown module: $arg"; exit 1 ;;
@@ -101,10 +106,91 @@ if [ -n "$F_ALL" -o -n "$F_CMAKE" ]; then
   make install
 fi
 
+# build llvm
+if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
+
+  # Install Python if necessary.
+  if [[ $(python -V 2>&1) =~ "Python 2.7." ]]; then
+    PYTHON_EXECUTABLE=$(which python)
+  else
+    cd $PYTHON_DIR
+    ./configure --prefix=$PREFIX
+    make -j$PARALLEL
+    make install
+    PYTHON_EXECUTABLE=$PREFIX/bin/python
+  fi
+
+  mkdir -p $LLVM_BUILD
+  cd $LLVM_BUILD
+
+  # Rebuild the CMake cache every time.
+  rm -Rf CMakeCache.txt CMakeFiles/
+
+  $PREFIX/bin/cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX=$PREFIX \
+    -DLLVM_TARGETS_TO_BUILD=X86 \
+    -DLLVM_ENABLE_RTTI=ON \
+    -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS" \
+    -DPYTHON_EXECUTABLE=$PYTHON_EXECUTABLE \
+    $LLVM_DIR
+
+  make -j$PARALLEL install
+
+  # Create a link from Clang to thirdparty/clang-toolchain. This path is used
+  # for compiling Kudu with sanitizers. The link can't point to the Clang
+  # installed in the prefix directory, since this confuses CMake into believing
+  # the thirdparty prefix directory is the system-wide prefix, and it omits the
+  # thirdparty prefix directory from the rpath of built binaries.
+  ln -sfn $LLVM_BUILD $TP_DIR/clang-toolchain
+fi
+
+if [ -n "$KUDU_USE_TSAN" ]; then
+
+  # TODO(KUDU-1285): Fix thirdparty TSAN builds to allow ccache
+  export CC="${TP_DIR}/clang-toolchain/bin/clang"
+  export CXX="${TP_DIR}/clang-toolchain/bin/clang++"
+
+  # Build vanilla libstdc++.
+  if [ -n "$F_ALL" -o -n "$F_GCC" ]; then
+    mkdir -p $GCC_BUILD
+    cd $GCC_BUILD
+
+    $GCC_DIR/libstdc++-v3/configure \
+      --enable-multilib=no \
+      --prefix="${PREFIX}/gcc"
+    make -j$PARALLEL install
+  fi
+
+  # Build TSAN instrumented libstdc++.
+  if [ -n "$F_ALL" -o -n "$F_GCC" ]; then
+    mkdir -p $GCC_BUILD.tsan
+    cd $GCC_BUILD.tsan
+
+    CFLAGS="-fsanitize=thread"
+    CXXFLAGS="-fsanitize=thread" \
+      $GCC_DIR/libstdc++-v3/configure \
+      --enable-multilib=no \
+      --prefix="${PREFIX}/gcc.tsan"
+    make -j$PARALLEL install
+  fi
+
+  TSAN_LDFLAGS="${LDFLAGS} -Wl,-rpath,${PREFIX}/gcc.tsan/lib"
+  TSAN_CXXFLAGS="${EXTRA_CXXFLAGS} -L${PREFIX}/gcc.tsan/lib -isystem ${PREFIX}/gcc.tsan/include/c++/${GCC_VERSION} -isystem ${PREFIX}/gcc.tsan/include/c++/${GCC_VERSION}/backward -nostdinc++ -fsanitize=thread"
+  TSAN_CFLAGS="${EXTRA_CFLAGS} -fsanitize=thread"
+
+  EXTRA_LDFLAGS="${LDFLAGS} -Wl,-rpath,${PREFIX}/gcc/lib"
+  EXTRA_CXXFLAGS="${EXTRA_CXXFLAGS} -L${PREFIX}/gcc/lib -isystem ${PREFIX}/gcc/include/c++/${GCC_VERSION} -isystem ${PREFIX}/gcc/include/c++/${GCC_VERSION}/backward -nostdinc++"
+fi
+
 # build gflags
 if [ -n "$F_ALL" -o -n "$F_GFLAGS" ]; then
   cd $GFLAGS_DIR
-  CXXFLAGS=$EXTRA_CXXFLAGS ./configure --with-pic --prefix=$PREFIX
+  CFLAGS="${EXTRA_CFLAGS}" \
+    CXXFLAGS="${EXTRA_CXXFLAGS}" \
+    LDFLAGS="-L${PREFIX}/lib ${EXTRA_LDFLAGS}" \
+    LIBS="${EXTRA_LIBS}" \
+    ./configure --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
@@ -125,9 +211,10 @@ if [ -n "$F_ALL" -o -n "$F_GLOG" ]; then
   cd $GLOG_DIR
   # We need to set "-g -O2" because glog only provides those flags when CXXFLAGS is unset.
   # Help glog find libunwind.
-  CXXFLAGS="$EXTRA_CXXFLAGS" \
-    CPPFLAGS=-I$PREFIX/include \
-    LDFLAGS=-L$PREFIX/lib \
+    CXXFLAGS="${EXTRA_CXXFLAGS}" \
+    LDFLAGS="-L${PREFIX}/lib ${EXTRA_LDFLAGS}" \
+    CPPFLAGS="-I${PREFIX}/include" \
+    LIBS="${EXTRA_LIBS}" \
     ./configure --with-pic --prefix=$PREFIX --with-gflags=$PREFIX
   make -j$PARALLEL install
 fi
@@ -135,8 +222,11 @@ fi
 # build gperftools
 if [ -n "$F_ALL" -o -n "$F_GPERFTOOLS" ]; then
   cd $GPERFTOOLS_DIR
-  CXXFLAGS=$EXTRA_CXXFLAGS ./configure \
-    --enable-frame-pointers --enable-heap-checker --with-pic --prefix=$PREFIX
+  CFLAGS="${EXTRA_CFLAGS}" \
+    CXXFLAGS="${EXTRA_CXXFLAGS}" \
+    LDFLAGS="${EXTRA_LDFLAGS}" \
+    LIBS="${EXTRA_LIBS}" \
+    ./configure --enable-frame-pointers --enable-heap-checker --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
@@ -146,8 +236,11 @@ if [ -n "$F_ALL" -o -n "$F_GMOCK" ]; then
   # Run the static library build, then the shared library build.
   for SHARED in OFF ON; do
     rm -rf CMakeCache.txt CMakeFiles/
-    CXXFLAGS="-fPIC -g $EXTRA_CXXFLAGS" \
-      $PREFIX/bin/cmake -DBUILD_SHARED_LIBS=$SHARED .
+    CXXFLAGS="${EXTRA_CXXFLAGS} ${EXTRA_LDFLAGS} ${EXTRA_LIBS}" \
+      $PREFIX/bin/cmake \
+      -DCMAKE_BUILD_TYPE=Debug \
+      -DCMAKE_POSITION_INDEPENDENT_CODE=On \
+      -DBUILD_SHARED_LIBS=$SHARED .
     make -j$PARALLEL
   done
   echo Installing gmock...
@@ -159,7 +252,11 @@ fi
 # build protobuf
 if [ -n "$F_ALL" -o -n "$F_PROTOBUF" ]; then
   cd $PROTOBUF_DIR
-  CXXFLAGS="$EXTRA_CXXFLAGS" ./configure \
+  CFLAGS="${TSAN_CFLAGS}" \
+    CXXFLAGS="${TSAN_CXXFLAGS}" \
+    LDFLAGS="${TSAN_LDFLAGS}" \
+    LIBS="${EXTRA_LIBS}" \
+    ./configure \
     --with-pic \
     --enable-shared \
     --enable-static \
@@ -170,7 +267,10 @@ fi
 # build snappy
 if [ -n "$F_ALL" -o -n "$F_SNAPPY" ]; then
   cd $SNAPPY_DIR
-  CXXFLAGS=$EXTRA_CXXFLAGS \
+  CFLAGS="${EXTRA_CFLAGS}" \
+    CXXFLAGS="${EXTRA_CXXFLAGS}" \
+    LDFLAGS="${EXTRA_LDFLAGS}" \
+    LIBS="${EXTRA_LIBS}" \
     ./configure --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
 fi
@@ -178,14 +278,14 @@ fi
 # build zlib
 if [ -n "$F_ALL" -o -n "$F_ZLIB" ]; then
   cd $ZLIB_DIR
-  CFLAGS="$EXTRA_CXXFLAGS -fPIC" ./configure --prefix=$PREFIX
+  CFLAGS="${EXTRA_CFLAGS} -fPIC" ./configure --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
 # build lz4
 if [ -n "$F_ALL" -o -n "$F_LZ4" ]; then
   cd $LZ4_DIR
-  CFLAGS=-fno-omit-frame-pointer cmake -DCMAKE_BUILD_TYPE=release \
+  CFLAGS="${EXTRA_CFLAGS} -fno-omit-frame-pointer" cmake -DCMAKE_BUILD_TYPE=release \
     -DBUILD_TOOLS=0 -DCMAKE_INSTALL_PREFIX:PATH=$PREFIX cmake_unofficial/
   make -j$PARALLEL install
 fi
@@ -194,7 +294,7 @@ fi
 if [ -n "$F_ALL" -o -n "$F_BITSHUFFLE" ]; then
   cd $BITSHUFFLE_DIR
   # bitshuffle depends on lz4, therefore set the flag I$PREFIX/include
-  ${CC:-gcc} -fno-omit-frame-pointer -std=c99 -I$PREFIX/include -O3 -DNDEBUG -fPIC -c bitshuffle.c
+  ${CC:-gcc} ${EXTRA_CFLAGS} -fno-omit-frame-pointer -std=c99 -I$PREFIX/include -O3 -DNDEBUG -fPIC -c bitshuffle.c
   ar rs bitshuffle.a bitshuffle.o
   cp bitshuffle.a $PREFIX/lib/
   cp bitshuffle.h $PREFIX/include/
@@ -203,7 +303,9 @@ fi
 # build libev
 if [ -n "$F_ALL" -o -n "$F_LIBEV" ]; then
   cd $LIBEV_DIR
-  ./configure --with-pic --prefix=$PREFIX
+  CFLAGS="${EXTRA_CFLAGS}" \
+    CXXFLAGS="${EXTRA_CXXFLAGS}" \
+    ./configure --with-pic --prefix=$PREFIX
   make -j$PARALLEL install
 fi
 
@@ -220,7 +322,7 @@ if [ -n "$F_ALL" -o -n "$F_SQUEASEL" ]; then
   # Mongoose's Makefile builds a standalone web server, whereas we just want
   # a static lib
   cd $SQUEASEL_DIR
-  ${CC:-gcc} -fno-omit-frame-pointer -std=c99 -O3 -DNDEBUG -DNO_SSL_DL -fPIC -c squeasel.c
+  ${CC:-gcc} ${EXTRA_CFLAGS} -fno-omit-frame-pointer -std=c99 -O3 -DNDEBUG -DNO_SSL_DL -fPIC -c squeasel.c
   ar rs libsqueasel.a squeasel.o
   cp libsqueasel.a $PREFIX/lib/
   cp squeasel.h $PREFIX/include/
@@ -256,7 +358,10 @@ fi
 if [ -n "$F_ALL" -o -n "$F_CRCUTIL" ]; then
   cd $CRCUTIL_DIR
   ./autogen.sh
-  CXXFLAGS=$EXTRA_CXXFLAGS \
+  CFLAGS="${EXTRA_CFLAGS}" \
+    CXXFLAGS="${EXTRA_CXXFLAGS}" \
+    LDFLAGS="${EXTRA_LDFLAGS}" \
+    LIBS="${EXTRA_LIBS}" \
     ./configure --prefix=$PREFIX
   make -j$PARALLEL install
 fi
@@ -275,48 +380,6 @@ fi
 # Copy gcovr tool into bin directory
 if [ -n "$F_ALL" -o -n "$F_GCOVR" ]; then
   cp -a $GCOVR_DIR/scripts/gcovr $PREFIX/bin/gcovr
-fi
-
-# build llvm
-if [ -n "$F_ALL" -o -n "$F_LLVM" ]; then
-  mkdir -p $LLVM_BUILD
-  cd $LLVM_BUILD
-
-  if [ -n "$OS_LINUX" ]; then
-    # Build LLVM with the toolchain version of clang.
-    #
-    # We always use our own clang to build LLVM because gcc 4.4 and earlier
-    # are unable to build compiler-rt:
-    # - http://llvm.org/bugs/show_bug.cgi?id=16532
-    # - http://code.google.com/p/address-sanitizer/issues/detail?id=146
-    old_cc=$CC
-    old_cxx=$CXX
-    export CC=$TP_DIR/clang-toolchain/bin/clang
-    export CXX=${CC}++
-  fi
-
-  # Rebuild the CMake cache every time.
-  rm -Rf CMakeCache.txt CMakeFiles/
-
-  $PREFIX/bin/cmake \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_INSTALL_PREFIX=$PREFIX \
-    -DLLVM_TARGETS_TO_BUILD=X86 \
-    -DCMAKE_CXX_FLAGS="$EXTRA_CXXFLAGS" \
-    $LLVM_DIR
-
-  if [ -n "$old_cc" ]; then
-    export CC=$old_cc
-  else
-    unset CC
-  fi
-  if [ -n "$old_cxx" ]; then
-    export CXX=$old_cxx
-  else
-    unset CXX
-  fi
-
-  make -j$PARALLEL install
 fi
 
 # Build trace-viewer (by copying it into www/)

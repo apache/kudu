@@ -15,13 +15,12 @@
 #ifndef KUDU_FS_FS_MANAGER_H
 #define KUDU_FS_FS_MANAGER_H
 
+#include <gtest/gtest_prod.h>
 #include <iosfwd>
+#include <memory>
 #include <set>
 #include <string>
-#include <tr1/memory>
 #include <vector>
-
-#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
@@ -66,7 +65,7 @@ struct FsManagerOpts {
 
   // The memory tracker under which all new memory trackers will be parented.
   // If NULL, new memory trackers will be parented to the root tracker.
-  std::tr1::shared_ptr<MemTracker> parent_mem_tracker;
+  std::shared_ptr<MemTracker> parent_mem_tracker;
 
   // The path where WALs will be stored. Cannot be empty.
   std::string wal_path;
@@ -252,7 +251,7 @@ class FsManager {
 
   scoped_refptr<MetricEntity> metric_entity_;
 
-  std::tr1::shared_ptr<MemTracker> parent_mem_tracker_;
+  std::shared_ptr<MemTracker> parent_mem_tracker_;
 
   // Canonicalized forms of 'wal_fs_root_ and 'data_fs_roots_'. Constructed
   // during Init().

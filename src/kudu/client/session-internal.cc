@@ -16,8 +16,7 @@
 
 #include "kudu/client/batcher.h"
 #include "kudu/client/error_collector.h"
-
-using std::tr1::shared_ptr;
+#include "kudu/client/shared_ptr.h"
 
 namespace kudu {
 
@@ -26,7 +25,7 @@ namespace client {
 using internal::Batcher;
 using internal::ErrorCollector;
 
-KuduSession::Data::Data(const shared_ptr<KuduClient>& client)
+KuduSession::Data::Data(const sp::shared_ptr<KuduClient>& client)
   : client_(client),
     error_collector_(new ErrorCollector()),
     flush_mode_(AUTO_FLUSH_SYNC),
@@ -36,13 +35,13 @@ KuduSession::Data::Data(const shared_ptr<KuduClient>& client)
 KuduSession::Data::~Data() {
 }
 
-void KuduSession::Data::Init(const shared_ptr<KuduSession>& session) {
+void KuduSession::Data::Init(const sp::shared_ptr<KuduSession>& session) {
   lock_guard<simple_spinlock> l(&lock_);
   CHECK(!batcher_);
   NewBatcher(session, NULL);
 }
 
-void KuduSession::Data::NewBatcher(const shared_ptr<KuduSession>& session,
+void KuduSession::Data::NewBatcher(const sp::shared_ptr<KuduSession>& session,
                                    scoped_refptr<Batcher>* old_batcher) {
   DCHECK(lock_.is_locked());
 

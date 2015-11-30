@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <memory>
+#include <unordered_set>
 
 #include "kudu/common/generic_iterators.h"
 #include "kudu/common/partial_row.h"
@@ -30,25 +31,22 @@
 #include "kudu/util/test_util.h"
 #include "kudu/gutil/algorithm.h"
 
-using boost::assign::list_of;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::shared_ptr;
+using std::unordered_set;
 
 namespace kudu {
 namespace tablet {
 
 using strings::Substitute;
-using util::gtl::is_sorted;
 
 class TestMajorDeltaCompaction : public KuduRowSetTest {
  public:
   TestMajorDeltaCompaction() :
-      KuduRowSetTest(Schema(list_of
-                            (ColumnSchema("key", STRING))
-                            (ColumnSchema("val1", INT32))
-                            (ColumnSchema("val2", STRING))
-                            (ColumnSchema("val3", INT32))
-                            (ColumnSchema("val4", STRING)), 1)),
+      KuduRowSetTest(Schema({ ColumnSchema("key", STRING),
+                              ColumnSchema("val1", INT32),
+                              ColumnSchema("val2", STRING),
+                              ColumnSchema("val3", INT32),
+                              ColumnSchema("val4", STRING) }, 1)),
       mvcc_(scoped_refptr<server::Clock>(
           server::LogicalClock::CreateStartingAt(Timestamp::kInitialTimestamp))) {
   }
@@ -178,10 +176,9 @@ TEST_F(TestMajorDeltaCompaction, TestCompact) {
 
   shared_ptr<RowSet> rs = all_rowsets.front();
 
-  vector<ColumnId> col_ids_to_compact = list_of
-    (schema_.column_id(1))
-    (schema_.column_id(3))
-    (schema_.column_id(4));
+  vector<ColumnId> col_ids_to_compact = { schema_.column_id(1),
+                                          schema_.column_id(3),
+                                          schema_.column_id(4) };
 
   // We'll run a few rounds of update/compact to make sure
   // that we don't get into some funny state (regression test for
@@ -238,10 +235,9 @@ TEST_F(TestMajorDeltaCompaction, TestUndos) {
   ASSERT_NO_FATAL_FAILURE(VerifyDataWithMvccAndExpectedState(snap, old_state));
 
   // Major compact, check we still have the old data.
-  vector<ColumnId> col_ids_to_compact = list_of
-    (schema_.column_id(1))
-    (schema_.column_id(3))
-    (schema_.column_id(4));
+  vector<ColumnId> col_ids_to_compact = { schema_.column_id(1),
+                                          schema_.column_id(3),
+                                          schema_.column_id(4) };
   ASSERT_OK(tablet()->DoMajorDeltaCompaction(col_ids_to_compact, rs));
   ASSERT_NO_FATAL_FAILURE(VerifyDataWithMvccAndExpectedState(snap, old_state));
 
@@ -282,7 +278,7 @@ TEST_F(TestMajorDeltaCompaction, TestCarryDeletesOver) {
   ASSERT_NO_FATAL_FAILURE(DeleteRows(kNumRows));
   ASSERT_OK(tablet()->FlushBiggestDMS());
 
-  vector<ColumnId> col_ids_to_compact = list_of(schema_.column_id(4));
+  vector<ColumnId> col_ids_to_compact = { schema_.column_id(4) };
   ASSERT_OK(tablet()->DoMajorDeltaCompaction(col_ids_to_compact, rs));
 
   ASSERT_NO_FATAL_FAILURE(VerifyData());
@@ -328,7 +324,7 @@ TEST_F(TestMajorDeltaCompaction, TestReinserts) {
 
   // Now we'll push some of the updates down.
   shared_ptr<RowSet> rs = all_rowsets.front();
-  vector<ColumnId> col_ids_to_compact = list_of(schema_.column_id(4));
+  vector<ColumnId> col_ids_to_compact = { schema_.column_id(4) };
   ASSERT_OK(tablet()->DoMajorDeltaCompaction(col_ids_to_compact, rs));
 
   // The data we'll see here is the 3rd batch of inserts, doesn't have updates.

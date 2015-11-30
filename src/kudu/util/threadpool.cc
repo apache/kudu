@@ -160,10 +160,10 @@ Status ThreadPool::SubmitClosure(const Closure& task) {
 }
 
 Status ThreadPool::SubmitFunc(const boost::function<void()>& func) {
-  return Submit(std::tr1::shared_ptr<Runnable>(new FunctionRunnable(func)));
+  return Submit(std::shared_ptr<Runnable>(new FunctionRunnable(func)));
 }
 
-Status ThreadPool::Submit(const std::tr1::shared_ptr<Runnable>& task) {
+Status ThreadPool::Submit(const std::shared_ptr<Runnable>& task) {
   MonoTime submit_time = MonoTime::Now(MonoTime::FINE);
 
   MutexLock guard(lock_);

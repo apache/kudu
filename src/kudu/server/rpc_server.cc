@@ -32,12 +32,12 @@
 #include "kudu/util/net/sockaddr.h"
 #include "kudu/util/status.h"
 
-using std::string;
-using std::tr1::shared_ptr;
-using std::vector;
 using kudu::rpc::AcceptorPool;
 using kudu::rpc::Messenger;
 using kudu::rpc::ServiceIf;
+using std::shared_ptr;
+using std::string;
+using std::vector;
 using strings::Substitute;
 
 DEFINE_string(rpc_bind_addresses, "0.0.0.0",
@@ -86,7 +86,7 @@ string RpcServer::ToString() const {
   return "RpcServer";
 }
 
-Status RpcServer::Init(const std::tr1::shared_ptr<Messenger>& messenger) {
+Status RpcServer::Init(const shared_ptr<Messenger>& messenger) {
   CHECK_EQ(server_state_, UNINITIALIZED);
   messenger_ = messenger;
 

@@ -16,10 +16,9 @@
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <string>
-#include <tr1/memory>
-#include <utility>
 #include <map>
+#include <string>
+#include <utility>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
@@ -53,10 +52,6 @@ DECLARE_bool(use_hybrid_clock);
 
 namespace kudu {
 
-using std::map;
-using std::pair;
-using std::vector;
-using std::tr1::shared_ptr;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
@@ -72,9 +67,12 @@ using client::KuduTableAlterer;
 using client::KuduTableCreator;
 using client::KuduUpdate;
 using client::KuduValue;
-using master::MiniMaster;
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
+using master::MiniMaster;
+using std::map;
+using std::pair;
+using std::vector;
 using tablet::TabletPeer;
 using tserver::MiniTabletServer;
 
@@ -236,7 +234,7 @@ class AlterTableTest : public KuduTest {
   static const char *kTableName;
 
   gscoped_ptr<MiniCluster> cluster_;
-  std::tr1::shared_ptr<KuduClient> client_;
+  client::sp::shared_ptr<KuduClient> client_;
 
   KuduSchema schema_;
 
@@ -405,8 +403,8 @@ TEST_F(AlterTableTest, TestGetSchemaAfterAlterTable) {
 }
 
 void AlterTableTest::InsertRows(int start_row, int num_rows) {
-  shared_ptr<KuduSession> session = client_->NewSession();
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduSession> session = client_->NewSession();
+  client::sp::shared_ptr<KuduTable> table;
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15 * 1000);
   CHECK_OK(client_->OpenTable(kTableName, &table));
@@ -436,8 +434,8 @@ void AlterTableTest::InsertRows(int start_row, int num_rows) {
 
 void AlterTableTest::UpdateRow(int32_t row_key,
                                const map<string, int32_t>& updates) {
-  shared_ptr<KuduSession> session = client_->NewSession();
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduSession> session = client_->NewSession();
+  client::sp::shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15 * 1000);
@@ -453,7 +451,7 @@ void AlterTableTest::UpdateRow(int32_t row_key,
 }
 
 void AlterTableTest::ScanToStrings(vector<string>* rows) {
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
   ScanTableToStrings(table.get(), rows);
   std::sort(rows->begin(), rows->end());
@@ -463,7 +461,7 @@ void AlterTableTest::ScanToStrings(vector<string>* rows) {
 // Note that the 'start_row' here is not a row key, but the pre-transformation row
 // key (InsertRows swaps endianness so that we random-write instead of sequential-write)
 void AlterTableTest::VerifyRows(int start_row, int num_rows, VerifyPattern pattern) {
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
   KuduScanner scanner(table.get());
   CHECK_OK(scanner.SetSelection(KuduClient::LEADER_ONLY));
@@ -555,8 +553,8 @@ TEST_F(AlterTableTest, TestBootstrapAfterAlters) {
   ASSERT_OK(tablet_peer_->tablet()->Flush());
   InsertRows(1, 1);
 
-  UpdateRow(0, boost::assign::map_list_of("c1", 10001));
-  UpdateRow(1, boost::assign::map_list_of("c1", 10002));
+  UpdateRow(0, { {"c1", 10001} });
+  UpdateRow(1, { {"c1", 10002} });
 
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(2, rows.size());
@@ -615,7 +613,7 @@ TEST_F(AlterTableTest, TestCompactAfterUpdatingRemovedColumn) {
   ASSERT_EQ("(int32 c0=16777216, int32 c1=1, int32 c2=12345)", rows[1]);
 
   // Add a delta for c1.
-  UpdateRow(0, boost::assign::map_list_of("c1", 54321));
+  UpdateRow(0, { {"c1", 54321} });
 
   // Drop c1.
   LOG(INFO) << "Dropping c1";
@@ -648,7 +646,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterUpdatingRemovedColumn) {
   ASSERT_EQ("(int32 c0=0, int32 c1=0, int32 c2=12345)", rows[0]);
 
   // Add a delta for c1.
-  UpdateRow(0, boost::assign::map_list_of("c1", 54321));
+  UpdateRow(0, { {"c1", 54321} });
 
   // Make sure the delta is in a delta-file.
   ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
@@ -697,7 +695,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasIntoMissingBaseData) {
   ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
 
   // Add a delta for c2.
-  UpdateRow(0, boost::assign::map_list_of("c2", 54321));
+  UpdateRow(0, { {"c2", 54321} });
 
   // Make sure the delta is in a delta-file.
   ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
@@ -746,7 +744,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
   ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
 
   // Add a delta for c2.
-  UpdateRow(0, boost::assign::map_list_of("c2", 54321));
+  UpdateRow(0, { {"c2", 54321} });
 
   // Make sure the delta is in a delta-file.
   ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
@@ -785,8 +783,8 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
 // to communicate how much data has been written (and should now be
 // updateable)
 void AlterTableTest::InserterThread() {
-  shared_ptr<KuduSession> session = client_->NewSession();
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduSession> session = client_->NewSession();
+  client::sp::shared_ptr<KuduTable> table;
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15 * 1000);
 
@@ -815,8 +813,8 @@ void AlterTableTest::InserterThread() {
 // Thread which follows behind the InserterThread and generates random
 // updates across the previously inserted rows.
 void AlterTableTest::UpdaterThread() {
-  shared_ptr<KuduSession> session = client_->NewSession();
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduSession> session = client_->NewSession();
+  client::sp::shared_ptr<KuduTable> table;
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15 * 1000);
 
@@ -851,7 +849,7 @@ void AlterTableTest::UpdaterThread() {
 // Thread which loops reading data from the table.
 // No verification is performed.
 void AlterTableTest::ScannerThread() {
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduTable> table;
   CHECK_OK(client_->OpenTable(kTableName, &table));
   while (!stop_threads_.Load()) {
     KuduScanner scanner(table.get());
@@ -926,13 +924,13 @@ TEST_F(AlterTableTest, TestInsertAfterAlterTable) {
   // Add a column, and immediately try to insert a row including that
   // new column.
   ASSERT_OK(AddNewI32Column(kSplitTableName, "new-i32", 10));
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduTable> table;
   ASSERT_OK(client_->OpenTable(kSplitTableName, &table));
   gscoped_ptr<KuduInsert> insert(table->NewInsert());
   ASSERT_OK(insert->mutable_row()->SetInt32("c0", 1));
   ASSERT_OK(insert->mutable_row()->SetInt32("c1", 1));
   ASSERT_OK(insert->mutable_row()->SetInt32("new-i32", 1));
-  shared_ptr<KuduSession> session = client_->NewSession();
+  client::sp::shared_ptr<KuduSession> session = client_->NewSession();
   ASSERT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
   session->SetTimeoutMillis(15000);
   ASSERT_OK(session->Apply(insert.release()));

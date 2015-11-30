@@ -14,7 +14,6 @@
 //
 // Tests for the client which are true unit tests and don't require a cluster, etc.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/bind.hpp>
 #include <gtest/gtest.h>
 #include <string>
@@ -23,7 +22,6 @@
 #include "kudu/client/client.h"
 #include "kudu/client/client-internal.h"
 
-using boost::assign::list_of;
 using std::string;
 using std::vector;
 
@@ -80,7 +78,7 @@ TEST(ClientUnitTest, TestSchemaBuilder_PrimaryKeyOnColumnAndSet) {
   KuduSchemaBuilder b;
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->PrimaryKey();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32);
-  b.SetPrimaryKey(list_of<string>("a")("b"));
+  b.SetPrimaryKey({ "a", "b" });
   ASSERT_EQ("Invalid argument: primary key specified by both "
             "SetPrimaryKey() and on a specific column: a",
             b.Build(&s).ToString());
@@ -100,12 +98,12 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_GoodSchema) {
   KuduSchemaBuilder b;
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
-  b.SetPrimaryKey(list_of<string>("a")("b"));
+  b.SetPrimaryKey({ "a", "b" });
   ASSERT_EQ("OK", b.Build(&s).ToString());
 
   vector<int> key_columns;
   s.GetPrimaryKeyColumnIndexes(&key_columns);
-  ASSERT_EQ(list_of<int>(0)(1), key_columns);
+  ASSERT_EQ(vector<int>({ 0, 1 }), key_columns);
 }
 
 TEST(ClientUnitTest, TestSchemaBuilder_DefaultValues) {
@@ -134,7 +132,7 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_KeyNotFirst) {
   b.AddColumn("x")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
-  b.SetPrimaryKey(list_of<string>("a")("b"));
+  b.SetPrimaryKey({ "a", "b" });
   ASSERT_EQ("Invalid argument: primary key columns must be listed "
             "first in the schema: a",
             b.Build(&s).ToString());
@@ -145,7 +143,7 @@ TEST(ClientUnitTest, TestSchemaBuilder_CompoundKey_BadColumnName) {
   KuduSchemaBuilder b;
   b.AddColumn("a")->Type(KuduColumnSchema::INT32)->NotNull();
   b.AddColumn("b")->Type(KuduColumnSchema::INT32)->NotNull();
-  b.SetPrimaryKey(list_of<string>("foo"));
+  b.SetPrimaryKey({ "foo" });
   ASSERT_EQ("Invalid argument: primary key column not defined: foo",
             b.Build(&s).ToString());
 }

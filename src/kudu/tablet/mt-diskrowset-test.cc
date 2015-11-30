@@ -15,17 +15,18 @@
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <boost/thread/thread.hpp>
-#include <tr1/memory>
+#include <memory>
 
 #include "kudu/tablet/diskrowset-test-base.h"
 
 DEFINE_int32(num_threads, 2, "Number of threads to test");
 
+using std::shared_ptr;
+using std::unordered_set;
+
 namespace kudu {
 namespace tablet {
 
-using std::tr1::unordered_set;
-using std::tr1::shared_ptr;
 
 class TestMultiThreadedRowSet : public TestRowSet {
  public:

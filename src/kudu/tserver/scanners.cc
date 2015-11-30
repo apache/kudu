@@ -16,7 +16,6 @@
 #include <boost/bind.hpp>
 #include <boost/thread/locks.hpp>
 #include <gflags/gflags.h>
-#include <tr1/memory>
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/scan_spec.h"

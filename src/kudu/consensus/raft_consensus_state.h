@@ -17,8 +17,6 @@
 #include <map>
 #include <set>
 #include <string>
-#include <tr1/unordered_set>
-#include <tr1/unordered_map>
 #include <utility>
 #include <vector>
 

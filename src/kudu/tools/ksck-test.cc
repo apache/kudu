@@ -12,10 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/lexical_cast.hpp>
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
+#include <boost/lexical_cast.hpp>
 #include <gtest/gtest.h>
+#include <memory>
+#include <unordered_map>
 
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/map-util.h"
@@ -25,9 +26,9 @@
 namespace kudu {
 namespace tools {
 
-using std::tr1::shared_ptr;
-using std::tr1::static_pointer_cast;
-using std::tr1::unordered_map;
+using std::shared_ptr;
+using std::static_pointer_cast;
+using std::unordered_map;
 using std::string;
 using std::vector;
 
@@ -82,7 +83,7 @@ class MockKsckMaster : public KsckMaster {
     return Status::OK();
   }
 
-  virtual Status RetrieveTablesList(vector<shared_ptr<KsckTable> >* tables) OVERRIDE {
+  virtual Status RetrieveTablesList(vector<shared_ptr<KsckTable>>* tables) OVERRIDE {
     tables->assign(tables_.begin(), tables_.end());
     return Status::OK();
   }
@@ -94,7 +95,7 @@ class MockKsckMaster : public KsckMaster {
   // Public because the unit tests mutate these variables directly.
   Status connect_status_;
   TSMap tablet_servers_;
-  vector<shared_ptr<KsckTable> > tables_;
+  vector<shared_ptr<KsckTable>> tables_;
 };
 
 class KsckTest : public KuduTest {
@@ -103,7 +104,7 @@ class KsckTest : public KuduTest {
       : master_(new MockKsckMaster()),
         cluster_(new KsckCluster(static_pointer_cast<KsckMaster>(master_))),
         ksck_(new Ksck(cluster_)) {
-    unordered_map<string, shared_ptr<KsckTabletServer> > tablet_servers;
+    unordered_map<string, shared_ptr<KsckTabletServer>> tablet_servers;
     for (int i = 0; i < 3; i++) {
       string name = strings::Substitute("$0", i);
       shared_ptr<MockKsckTabletServer> ts(new MockKsckTabletServer(name));
@@ -128,13 +129,13 @@ class KsckTest : public KuduTest {
     shared_ptr<KsckTablet> tablet(new KsckTablet("1"));
     CreateAndFillTablet(tablet, 1, true);
 
-    CreateAndAddTable(boost::assign::list_of(tablet), "test", 1);
+    CreateAndAddTable({ tablet }, "test", 1);
   }
 
   void CreateOneSmallReplicatedTable() {
     int num_replicas = 3;
     int num_tablets = 3;
-    vector<shared_ptr<KsckTablet> > tablets;
+    vector<shared_ptr<KsckTablet>> tablets;
     CreateDefaultAssignmentPlan(num_replicas * num_tablets);
     for (int i = 0; i < num_tablets; i++) {
       shared_ptr<KsckTablet> tablet(new KsckTablet(boost::lexical_cast<string>(i)));
@@ -152,20 +153,20 @@ class KsckTest : public KuduTest {
     shared_ptr<KsckTablet> tablet(new KsckTablet("1"));
     CreateAndFillTablet(tablet, 2, false);
 
-    CreateAndAddTable(boost::assign::list_of(tablet), "test", 3);
+    CreateAndAddTable({ tablet }, "test", 3);
   }
 
-  void CreateAndAddTable(vector<shared_ptr<KsckTablet> > tablets,
+  void CreateAndAddTable(vector<shared_ptr<KsckTablet>> tablets,
                          const string& name, int num_replicas) {
     shared_ptr<KsckTable> table(new KsckTable(name, Schema(), num_replicas));
     table->set_tablets(tablets);
 
-    vector<shared_ptr<KsckTable> > tables = boost::assign::list_of(table);
+    vector<shared_ptr<KsckTable>> tables = { table };
     master_->tables_.assign(tables.begin(), tables.end());
   }
 
   void CreateAndFillTablet(shared_ptr<KsckTablet>& tablet, int num_replicas, bool has_leader) {
-    vector<shared_ptr<KsckTabletReplica> > replicas;
+    vector<shared_ptr<KsckTabletReplica>> replicas;
     if (has_leader) {
       CreateReplicaAndAdd(replicas, true);
       num_replicas--;
@@ -176,7 +177,7 @@ class KsckTest : public KuduTest {
     tablet->set_replicas(replicas);
   }
 
-  void CreateReplicaAndAdd(vector<shared_ptr<KsckTabletReplica> >& replicas, bool is_leader) {
+  void CreateReplicaAndAdd(vector<shared_ptr<KsckTabletReplica>>& replicas, bool is_leader) {
     shared_ptr<KsckTabletReplica> replica(new KsckTabletReplica(assignment_plan_.back(),
                                                                 is_leader, !is_leader));
     assignment_plan_.pop_back();

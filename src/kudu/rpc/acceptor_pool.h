@@ -15,7 +15,6 @@
 #ifndef KUDU_RPC_ACCEPTOR_POOL_H
 #define KUDU_RPC_ACCEPTOR_POOL_H
 
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/atomicops.h"

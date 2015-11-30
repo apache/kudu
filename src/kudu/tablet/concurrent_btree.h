@@ -35,10 +35,12 @@
 #ifndef KUDU_TABLET_CONCURRENT_BTREE_H
 #define KUDU_TABLET_CONCURRENT_BTREE_H
 
+#include <algorithm>
 #include <boost/smart_ptr/detail/yield_k.hpp>
 #include <boost/utility/binary.hpp>
-#include <algorithm>
+#include <memory>
 #include <string>
+
 #include "kudu/util/inline_slice.h"
 #include "kudu/util/memory/arena.h"
 #include "kudu/util/status.h"
@@ -935,7 +937,7 @@ class CBTree {
       frozen_(false) {
   }
 
-  explicit CBTree(const std::tr1::shared_ptr<typename Traits::ArenaType>& arena)
+  explicit CBTree(const std::shared_ptr<typename Traits::ArenaType>& arena)
       : arena_(arena),
         root_(NewLeaf(false)),
         frozen_(false) {
@@ -1576,7 +1578,7 @@ class CBTree {
     // No need to actually free, since it came from the arena
   }
 
-  std::tr1::shared_ptr<typename Traits::ArenaType> arena_;
+  std::shared_ptr<typename Traits::ArenaType> arena_;
 
   // marked 'mutable' because readers will lazy-update the root
   // when they encounter a stale root pointer.

@@ -24,8 +24,6 @@
 #include "kudu/util/curl_util.h"
 #include "kudu/util/url-coding.h"
 
-using std::string;
-using std::tr1::shared_ptr;
 using kudu::consensus::RaftConfigPB;
 using kudu::consensus::RaftPeerPB;
 using kudu::rpc::Messenger;
@@ -35,6 +33,8 @@ using kudu::server::Clock;
 using kudu::server::HybridClock;
 using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
+using std::shared_ptr;
+using std::string;
 using strings::Substitute;
 
 DEFINE_int32(single_threaded_insert_latency_bench_warmup_rows, 100,
@@ -322,9 +322,7 @@ TEST_F(TabletServerTest, TestInsert) {
 
   rows_inserted = NULL;
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))
-                                            (KeyValue(2, 1))
-                                            (KeyValue(1234, 5678)));
+  VerifyRows(schema_, { KeyValue(1, 1), KeyValue(2, 1), KeyValue(1234, 5678) });
 
   // get the clock's timestamp after replay
   Timestamp now_after = mini_server_->server()->clock()->Now();
@@ -569,8 +567,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   ASSERT_EQ(3, rows_updated->value());
 
   // At this point, we have two rows left (row key 2 and 3).
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(2, 3))
-                                            (KeyValue(3, 4)));
+  VerifyRows(schema_, { KeyValue(2, 3), KeyValue(3, 4) });
 
   // Do a mixed operation (some insert, update, and delete, some of which fail)
   {
@@ -607,10 +604,7 @@ TEST_F(TabletServerTest, TestInsertAndMutate) {
   rows_inserted = NULL;
   rows_updated = NULL;
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(2, 3))
-                                            (KeyValue(3, 4))
-                                            (KeyValue(4, 4))
-                                            (KeyValue(6, 6)));
+  VerifyRows(schema_, { KeyValue(2, 3), KeyValue(3, 4), KeyValue(4, 4), KeyValue(6, 6) });
 
   // get the clock's timestamp after replay
   Timestamp now_after = mini_server_->server()->clock()->Now();
@@ -750,26 +744,26 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushing) {
   // produced on recovery (recovery flushed no state, but produced a new
   // log).
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 10))
-                                            (KeyValue(2, 20))
-                                            (KeyValue(3, 30))
-                                            (KeyValue(4, 40))
-                                            (KeyValue(5, 50))
-                                            (KeyValue(6, 60))
-                                            // the last hook only fires on compaction
-                                            // so this isn't mutated
-                                            (KeyValue(7, 7)));
+  VerifyRows(schema_, { KeyValue(1, 10),
+                        KeyValue(2, 20),
+                        KeyValue(3, 30),
+                        KeyValue(4, 40),
+                        KeyValue(5, 50),
+                        KeyValue(6, 60),
+                        // the last hook only fires on compaction
+                        // so this isn't mutated
+                        KeyValue(7, 7) });
 
   // Shutdown and rebuild again to test that the log generated during
   // the previous recovery allows to perform recovery again.
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 10))
-                                            (KeyValue(2, 20))
-                                            (KeyValue(3, 30))
-                                            (KeyValue(4, 40))
-                                            (KeyValue(5, 50))
-                                            (KeyValue(6, 60))
-                                            (KeyValue(7, 7)));
+  VerifyRows(schema_, { KeyValue(1, 10),
+                        KeyValue(2, 20),
+                        KeyValue(3, 30),
+                        KeyValue(4, 40),
+                        KeyValue(5, 50),
+                        KeyValue(6, 60),
+                        KeyValue(7, 7) });
 }
 
 // Tests performing mutations that are going to a DMS or to the following
@@ -788,13 +782,13 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   ASSERT_OK(tablet_peer_->tablet()->Flush());
 
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 10))
-                                            (KeyValue(2, 20))
-                                            (KeyValue(3, 30))
-                                            (KeyValue(4, 40))
-                                            (KeyValue(5, 50))
-                                            (KeyValue(6, 60))
-                                            (KeyValue(7, 7)));
+  VerifyRows(schema_, { KeyValue(1, 10),
+                        KeyValue(2, 20),
+                        KeyValue(3, 30),
+                        KeyValue(4, 40),
+                        KeyValue(5, 50),
+                        KeyValue(6, 60),
+                        KeyValue(7, 7) });
   hooks->increment_iteration();
 
   // set the hooks on the new tablet
@@ -809,14 +803,14 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   // them making sure that mutations executed mid compaction are replayed as
   // expected
   ASSERT_OK(tablet_peer_->tablet()->Flush());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 11))
-                                            (KeyValue(2, 21))
-                                            (KeyValue(3, 31))
-                                            (KeyValue(4, 41))
-                                            (KeyValue(5, 51))
-                                            (KeyValue(6, 61))
-                                            (KeyValue(7, 7))
-                                            (KeyValue(8, 8)));
+  VerifyRows(schema_, { KeyValue(1, 11),
+                        KeyValue(2, 21),
+                        KeyValue(3, 31),
+                        KeyValue(4, 41),
+                        KeyValue(5, 51),
+                        KeyValue(6, 61),
+                        KeyValue(7, 7),
+                        KeyValue(8, 8) });
 
   hooks->increment_iteration();
   ASSERT_OK(tablet_peer_->tablet()->Compact(Tablet::FORCE_COMPACT_ALL));
@@ -828,14 +822,14 @@ TEST_F(TabletServerTest, TestRecoveryWithMutationsWhileFlushingAndCompacting) {
   // produced on recovery (recovery flushed no state, but produced a new
   // log).
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 11))
-                                            (KeyValue(2, 22))
-                                            (KeyValue(3, 32))
-                                            (KeyValue(4, 42))
-                                            (KeyValue(5, 52))
-                                            (KeyValue(6, 62))
-                                            (KeyValue(7, 72))
-                                            (KeyValue(8, 8)));
+  VerifyRows(schema_, { KeyValue(1, 11),
+                        KeyValue(2, 22),
+                        KeyValue(3, 32),
+                        KeyValue(4, 42),
+                        KeyValue(5, 52),
+                        KeyValue(6, 62),
+                        KeyValue(7, 72),
+                        KeyValue(8, 8) });
 
   // get the clock's timestamp after replay
   Timestamp now_after = mini_server_->server()->clock()->Now();
@@ -853,29 +847,28 @@ TEST_F(TabletServerTest, TestKUDU_176_RecoveryAfterMajorDeltaCompaction) {
   // Flush a DRS with 1 rows.
   ASSERT_NO_FATAL_FAILURE(InsertTestRowsRemote(0, 1, 1));
   ASSERT_OK(tablet_peer_->tablet()->Flush());
-  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))));
+  ANFF(VerifyRows(schema_, { KeyValue(1, 1) }));
 
   // Update it, flush deltas.
   ANFF(UpdateTestRowRemote(0, 1, 2));
   ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
-  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
+  ANFF(VerifyRows(schema_, { KeyValue(1, 2) }));
 
   // Major compact deltas.
   {
     vector<shared_ptr<tablet::RowSet> > rsets;
     tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-    vector<ColumnId> col_ids = boost::assign::list_of
-      (tablet_peer_->tablet()->schema()->column_id(1))
-      (tablet_peer_->tablet()->schema()->column_id(2));
+    vector<ColumnId> col_ids = { tablet_peer_->tablet()->schema()->column_id(1),
+                                 tablet_peer_->tablet()->schema()->column_id(2) };
     ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]))
   }
 
   // Verify that data is still the same.
-  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
+  ANFF(VerifyRows(schema_, { KeyValue(1, 2) }));
 
   // Verify that data remains after a restart.
   ASSERT_OK(ShutdownAndRebuildTablet());
-  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 2))));
+  ANFF(VerifyRows(schema_, { KeyValue(1, 2) }));
 }
 
 // Regression test for KUDU-177. Ensures that after a major delta compaction,
@@ -884,7 +877,7 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
   // Flush a DRS with 1 rows.
   ANFF(InsertTestRowsRemote(0, 1, 1));
   ASSERT_OK(tablet_peer_->tablet()->Flush());
-  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 1))));
+  ANFF(VerifyRows(schema_, { KeyValue(1, 1) }));
 
   // Update it, flush deltas.
   ANFF(UpdateTestRowRemote(0, 1, 2));
@@ -892,24 +885,23 @@ TEST_F(TabletServerTest, TestKUDU_177_RecoveryOfDMSEditsAfterMajorDeltaCompactio
 
   // Update it again, so this last update is in the DMS.
   ANFF(UpdateTestRowRemote(0, 1, 3));
-  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
+  ANFF(VerifyRows(schema_, { KeyValue(1, 3) }));
 
   // Major compact deltas. This doesn't include the DMS, but the old
   // DMS should "move over" to the output of the delta compaction.
   {
     vector<shared_ptr<tablet::RowSet> > rsets;
     tablet_peer_->tablet()->GetRowSetsForTests(&rsets);
-    vector<ColumnId> col_ids = boost::assign::list_of
-      (tablet_peer_->tablet()->schema()->column_id(1))
-      (tablet_peer_->tablet()->schema()->column_id(2));
+    vector<ColumnId> col_ids = { tablet_peer_->tablet()->schema()->column_id(1),
+                                 tablet_peer_->tablet()->schema()->column_id(2) };
     ASSERT_OK(tablet_peer_->tablet()->DoMajorDeltaCompaction(col_ids, rsets[0]));
   }
   // Verify that data is still the same.
-  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
+  ANFF(VerifyRows(schema_, { KeyValue(1, 3) }));
 
   // Verify that the update remains after a restart.
   ASSERT_OK(ShutdownAndRebuildTablet());
-  ANFF(VerifyRows(schema_, boost::assign::list_of(KeyValue(1, 3))));
+  ANFF(VerifyRows(schema_, { KeyValue(1, 3) }));
 }
 
 TEST_F(TabletServerTest, TestClientGetsErrorBackWhenRecoveryFailed) {
@@ -1515,9 +1507,7 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_NewScanAndScannerID) {
 // Test that passing a projection with fields not present in the tablet schema
 // throws an exception.
 TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjection) {
-  const Schema projection(boost::assign::list_of
-                          (ColumnSchema("col_doesnt_exist", INT32)),
-                          0);
+  const Schema projection({ ColumnSchema("col_doesnt_exist", INT32) }, 0);
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "Some columns are not present in the current schema: col_doesnt_exist");
@@ -1529,9 +1519,8 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
 
   // Verify mismatched nullability for the not-null int field
   ASSERT_OK(
-    projection.Reset(boost::assign::list_of
-      (ColumnSchema("int_val", INT32, true)),     // should be NOT NULL
-      0));
+    projection.Reset({ ColumnSchema("int_val", INT32, true) }, // should be NOT NULL
+                     0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'int_val' must have type int32 NOT "
@@ -1539,9 +1528,8 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
 
   // Verify mismatched nullability for the nullable string field
   ASSERT_OK(
-    projection.Reset(boost::assign::list_of
-      (ColumnSchema("string_val", STRING, false)), // should be NULLABLE
-      0));
+    projection.Reset({ ColumnSchema("string_val", STRING, false) }, // should be NULLABLE
+                     0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'string_val' must have type string "
@@ -1549,19 +1537,17 @@ TEST_F(TabletServerTest, TestInvalidScanRequest_BadProjectionTypes) {
 
   // Verify mismatched type for the not-null int field
   ASSERT_OK(
-    projection.Reset(boost::assign::list_of
-      (ColumnSchema("int_val", INT16, false)),     // should be INT32 NOT NULL
-      0));
+    projection.Reset({ ColumnSchema("int_val", INT16, false) },     // should be INT32 NOT NULL
+                     0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'int_val' must have type int32 NOT "
                            "NULL found int16 NOT NULL");
 
   // Verify mismatched type for the nullable string field
-  ASSERT_OK(
-    projection.Reset(boost::assign::list_of
-      (ColumnSchema("string_val", INT32, true)), // should be STRING NULLABLE
-      0));
+  ASSERT_OK(projection.Reset(
+        { ColumnSchema("string_val", INT32, true) }, // should be STRING NULLABLE
+        0));
   VerifyScanRequestFailure(projection,
                            TabletServerErrorPB::MISMATCHED_SCHEMA,
                            "The column 'string_val' must have type string "
@@ -1755,24 +1741,21 @@ TEST_F(TabletServerTest, TestAlterSchema) {
     ASSERT_OK(tablet->tablet()->Flush());
   }
 
-  const Schema projection(boost::assign::list_of
-                          (ColumnSchema("key", INT32))
-                          (ColumnSchema("c2", INT32)),
-                          1);
+  const Schema projection({ ColumnSchema("key", INT32), (ColumnSchema("c2", INT32)) }, 1);
 
   // Try recovering from the original log
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
-                                               (KeyValue(1, 7))
-                                               (KeyValue(2, 5))
-                                               (KeyValue(3, 5)));
+  VerifyRows(projection, { KeyValue(0, 7),
+                           KeyValue(1, 7),
+                           KeyValue(2, 5),
+                           KeyValue(3, 5) });
 
   // Try recovering from the log generated on recovery
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
-                                               (KeyValue(1, 7))
-                                               (KeyValue(2, 5))
-                                               (KeyValue(3, 5)));
+  VerifyRows(projection, { KeyValue(0, 7),
+                           KeyValue(1, 7),
+                           KeyValue(2, 5),
+                           KeyValue(3, 5) });
 }
 
 // Adds a new column with no "write default", and then restarts the tablet
@@ -1808,22 +1791,16 @@ TEST_F(TabletServerTest, TestAlterSchema_AddColWithoutWriteDefault) {
 
   // Verify that the old data picked up the read default.
 
-  const Schema projection(boost::assign::list_of
-                          (ColumnSchema("key", INT32))
-                          (ColumnSchema("c2", INT32)),
-                          1);
-  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
-                                               (KeyValue(1, 7)));
+  const Schema projection({ ColumnSchema("key", INT32), ColumnSchema("c2", INT32) }, 1);
+  VerifyRows(projection, { KeyValue(0, 7), KeyValue(1, 7) });
 
   // Try recovering from the original log
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
-                                               (KeyValue(1, 7)));
+  VerifyRows(projection, { KeyValue(0, 7), KeyValue(1, 7) });
 
   // Try recovering from the log generated on recovery
   ASSERT_NO_FATAL_FAILURE(ShutdownAndRebuildTablet());
-  VerifyRows(projection, boost::assign::list_of(KeyValue(0, 7))
-                                               (KeyValue(1, 7)));
+  VerifyRows(projection, { KeyValue(0, 7), KeyValue(1, 7) });
 }
 
 TEST_F(TabletServerTest, TestCreateTablet_TabletExists) {
@@ -2058,8 +2035,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
   ASSERT_OK(end_row.SetInt32("key", 20));
 
   vector<Partition> partitions;
-  ASSERT_OK(partition_schema.CreatePartitions(boost::assign::list_of(start_row)(end_row),
-                                              schema, &partitions));
+  ASSERT_OK(partition_schema.CreatePartitions({ start_row, end_row }, schema, &partitions));
 
   ASSERT_EQ(3, partitions.size());
 
@@ -2077,8 +2053,7 @@ TEST_F(TabletServerTest, TestWriteOutOfBounds) {
   req.set_tablet_id(tabletId);
   ASSERT_OK(SchemaToPB(schema_, req.mutable_schema()));
 
-  vector<RowOperationsPB::Type> ops =
-      boost::assign::list_of(RowOperationsPB::INSERT)(RowOperationsPB::UPDATE);
+  vector<RowOperationsPB::Type> ops = { RowOperationsPB::INSERT, RowOperationsPB::UPDATE };
 
   BOOST_FOREACH(const RowOperationsPB::Type &op, ops) {
     RowOperationsPB* data = req.mutable_row_operations();

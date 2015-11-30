@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include <gtest/gtest.h>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -24,7 +23,6 @@
 
 DEFINE_int32(num_rows_per_tablet, 100, "The number of rows to be inserted into each tablet");
 
-using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {
@@ -272,7 +270,7 @@ class AllTypesItest : public KuduTest {
   // perfectly partitioned table, if the encoding of the keys was correct and the rows
   // ended up in the right place.
   Status InsertRows() {
-    shared_ptr<KuduSession> session = client_->NewSession();
+    sp::shared_ptr<KuduSession> session = client_->NewSession();
     RETURN_NOT_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
     int max_rows_per_tablet = setup_.GetRowsPerTablet();
     for (int i = 0; i < kNumTablets; ++i) {
@@ -416,9 +414,9 @@ class AllTypesItest : public KuduTest {
   TestSetup setup_;
   KuduSchema schema_;
   vector<KuduPartialRow> split_rows_;
-  std::tr1::shared_ptr<KuduClient> client_;
+  sp::shared_ptr<KuduClient> client_;
   gscoped_ptr<ExternalMiniCluster> cluster_;
-  shared_ptr<KuduTable> table_;
+  sp::shared_ptr<KuduTable> table_;
 };
 
 // Wrap the actual DataType so that we can have the setup structs be friends of other classes

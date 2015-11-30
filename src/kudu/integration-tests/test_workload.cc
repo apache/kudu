@@ -44,7 +44,6 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
 using client::KuduUpdate;
-using std::tr1::shared_ptr;
 
 const char* const TestWorkload::kDefaultTableName = "test-workload";
 
@@ -73,7 +72,7 @@ TestWorkload::~TestWorkload() {
 void TestWorkload::WriteThread() {
   Random r(Env::Default()->gettid());
 
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduTable> table;
   // Loop trying to open up the table. In some tests we set up very
   // low RPC timeouts to test those behaviors, so this might fail and
   // need retrying.
@@ -89,7 +88,7 @@ void TestWorkload::WriteThread() {
     CHECK_OK(s);
   }
 
-  shared_ptr<KuduSession> session = client_->NewSession();
+  client::sp::shared_ptr<KuduSession> session = client_->NewSession();
   session->SetTimeoutMillis(write_timeout_millis_);
   CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
 
@@ -203,10 +202,10 @@ void TestWorkload::Setup() {
 
 
   if (pathological_one_row_enabled_) {
-    shared_ptr<KuduSession> session = client_->NewSession();
+    client::sp::shared_ptr<KuduSession> session = client_->NewSession();
     session->SetTimeoutMillis(20000);
     CHECK_OK(session->SetFlushMode(KuduSession::MANUAL_FLUSH));
-    shared_ptr<KuduTable> table;
+    client::sp::shared_ptr<KuduTable> table;
     CHECK_OK(client_->OpenTable(table_name_, &table));
     gscoped_ptr<KuduInsert> insert(table->NewInsert());
     KuduPartialRow* row = insert->mutable_row();

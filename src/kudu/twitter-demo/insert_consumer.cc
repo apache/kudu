@@ -14,13 +14,11 @@
 
 #include "kudu/twitter-demo/insert_consumer.h"
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <glog/logging.h>
 #include <string>
 #include <time.h>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
@@ -38,7 +36,6 @@
 namespace kudu {
 namespace twitter_demo {
 
-using std::tr1::shared_ptr;
 using tserver::TabletServerServiceProxy;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
@@ -61,7 +58,7 @@ void FlushCB::Run(const Status& status) {
   consumer_->BatchFinished(status);
 }
 
-InsertConsumer::InsertConsumer(const shared_ptr<KuduClient> &client)
+InsertConsumer::InsertConsumer(const client::sp::shared_ptr<KuduClient> &client)
   : initted_(false),
     schema_(CreateTwitterSchema()),
     flush_cb_(this),

@@ -18,7 +18,7 @@
 #include <iosfwd>
 #include <map>
 #include <string>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -331,7 +331,7 @@ class PeerMessageQueue {
                                            int64_t term,
                                            const std::string& reason);
 
-  typedef std::tr1::unordered_map<std::string, TrackedPeer*> PeersMap;
+  typedef std::unordered_map<std::string, TrackedPeer*> PeersMap;
 
   std::string ToStringUnlocked() const;
 

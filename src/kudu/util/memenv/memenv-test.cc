@@ -8,8 +8,8 @@
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/gutil/map-util.h"
@@ -19,8 +19,8 @@
 #include "kudu/util/test_macros.h"
 
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::shared_ptr;
+using std::unordered_set;
 
 namespace kudu {
 

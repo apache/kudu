@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <string>
-#include <vector>
-
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
+#include <gmock/gmock.h>
+#include <string>
+#include <vector>
 
 #include "kudu/codegen/code_generator.h"
 #include "kudu/codegen/row_projector.h"
@@ -30,10 +29,12 @@
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
+#include "kudu/util/logging_test_util.h"
 
-using boost::assign::list_of;
 using std::string;
 using std::vector;
+
+DECLARE_bool(codegen_dump_mc);
 
 namespace kudu {
 
@@ -48,14 +49,13 @@ class CodegenTest : public KuduTest {
       // for its initial size and its eventual max size.
       projections_arena_(16, kIndirectPerProjection * 2) {
     // Create the base schema.
-    vector<ColumnSchema> cols = list_of
-      (ColumnSchema("key           ", UINT64       ))
-      (ColumnSchema("int32         ",  INT32, false))
-      (ColumnSchema("int32-null-val",  INT32,  true))
-      (ColumnSchema("int32-null    ",  INT32,  true))
-      (ColumnSchema("str32         ", STRING, false))
-      (ColumnSchema("str32-null-val", STRING,  true))
-      (ColumnSchema("str32-null    ", STRING,  true));
+    vector<ColumnSchema> cols = { ColumnSchema("key           ", UINT64, false),
+                                  ColumnSchema("int32         ",  INT32, false),
+                                  ColumnSchema("int32-null-val",  INT32,  true),
+                                  ColumnSchema("int32-null    ",  INT32,  true),
+                                  ColumnSchema("str32         ", STRING, false),
+                                  ColumnSchema("str32-null-val", STRING,  true),
+                                  ColumnSchema("str32-null    ", STRING,  true) };
     base_.Reset(cols, 1);
     base_ = SchemaBuilder(base_).Build(); // add IDs
 
@@ -259,8 +259,7 @@ TEST_F(CodegenTest, TestKey) {
 // Test int projection
 TEST_F(CodegenTest, TestInts) {
   Schema ints;
-  vector<size_t> part_cols = list_of<size_t>
-    (kI32Col)(kI32NullValCol)(kI32NullCol);
+  vector<size_t> part_cols = { kI32Col, kI32NullValCol, kI32NullCol };
   ASSERT_OK(CreatePartialSchema(part_cols, &ints));
 
   TestProjection<true>(&ints);
@@ -270,8 +269,7 @@ TEST_F(CodegenTest, TestInts) {
 // Test string projection
 TEST_F(CodegenTest, TestStrings) {
   Schema strs;
-  vector<size_t> part_cols = list_of<size_t>
-    (kStrCol)(kStrNullValCol)(kStrNullCol);
+  vector<size_t> part_cols = { kStrCol, kStrNullValCol, kStrNullCol };
   ASSERT_OK(CreatePartialSchema(part_cols, &strs));
 
   TestProjection<true>(&strs);
@@ -281,7 +279,7 @@ TEST_F(CodegenTest, TestStrings) {
 // Tests the projection of every non-nullable column
 TEST_F(CodegenTest, TestNonNullables) {
   Schema non_null;
-  vector<size_t> part_cols = list_of<size_t>(kKeyCol)(kI32Col)(kStrCol);
+  vector<size_t> part_cols = { kKeyCol, kI32Col, kStrCol };
   ASSERT_OK(CreatePartialSchema(part_cols, &non_null));
 
   TestProjection<true>(&non_null);
@@ -291,8 +289,7 @@ TEST_F(CodegenTest, TestNonNullables) {
 // Tests the projection of every nullable column
 TEST_F(CodegenTest, TestNullables) {
   Schema nullables;
-  vector<size_t> part_cols = list_of<size_t>
-    (kI32NullValCol)(kI32NullCol)(kStrNullValCol)(kStrNullCol);
+  vector<size_t> part_cols = { kI32NullValCol, kI32NullCol, kStrNullValCol, kStrNullCol };
   ASSERT_OK(CreatePartialSchema(part_cols, &nullables));
 
   TestProjection<true>(&nullables);
@@ -310,14 +307,13 @@ TEST_F(CodegenTest, TestDefaultsOnly) {
   Schema pure_defaults;
 
   // Default read projections
-  vector<size_t> part_cols = list_of<size_t>
-    (kI32RCol)(kI32RWCol)(kStrRCol)(kStrRWCol);
+  vector<size_t> part_cols = { kI32RCol, kI32RWCol, kStrRCol, kStrRWCol };
   ASSERT_OK(CreatePartialSchema(part_cols, &pure_defaults));
 
   TestProjection<true>(&pure_defaults);
 
   // Default write projections
-  part_cols = list_of<size_t>(kI32RWCol)(kStrRWCol);
+  part_cols = { kI32RWCol, kStrRWCol };
   ASSERT_OK(CreatePartialSchema(part_cols, &pure_defaults));
 
   TestProjection<false>(&pure_defaults);
@@ -329,11 +325,35 @@ TEST_F(CodegenTest, TestFullSchemaWithDefaults) {
 
   // Default write projection
   Schema full_write;
-  vector<size_t> part_cols = list_of<size_t>(kKeyCol)(kI32Col)(kI32NullValCol)
-    (kI32NullCol)(kStrCol)(kStrNullValCol)(kStrNullCol)(kI32RWCol)(kStrRWCol);
+  vector<size_t> part_cols = { kKeyCol,
+                               kI32Col,
+                               kI32NullValCol,
+                               kI32NullCol,
+                               kStrCol,
+                               kStrNullValCol,
+                               kStrNullCol,
+                               kI32RWCol,
+                               kStrRWCol };
   ASSERT_OK(CreatePartialSchema(part_cols, &full_write));
 
   TestProjection<false>(&full_write);
+}
+
+// Test the codegen_dump_mc flag works properly.
+TEST_F(CodegenTest, TestDumpMC) {
+  FLAGS_codegen_dump_mc = true;
+
+  StringVectorSink sink;
+  ScopedRegisterSink srs(&sink);
+
+  Schema ints;
+  vector<size_t> part_cols = { kI32Col, kI32NullValCol, kI32NullCol };
+  ASSERT_OK(CreatePartialSchema(part_cols, &ints));
+  TestProjection<true>(&ints);
+
+  const vector<string>& msgs = sink.logged_msgs();
+  ASSERT_EQ(msgs.size(), 1);
+  EXPECT_THAT(msgs[0], testing::ContainsRegex("retq"));
 }
 
 } // namespace kudu

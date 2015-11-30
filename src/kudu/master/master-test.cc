@@ -12,12 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <tr1/memory>
+#include <memory>
 #include <vector>
 
 #include "kudu/common/partial_row.h"
@@ -35,12 +34,11 @@
 #include "kudu/util/status.h"
 #include "kudu/util/test_util.h"
 
-using boost::assign::list_of;
-using std::string;
-using std::tr1::shared_ptr;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
+using std::shared_ptr;
+using std::string;
 
 DECLARE_bool(catalog_manager_check_ts_count_for_create_table);
 
@@ -219,7 +217,7 @@ Status MasterTest::CreateTable(const string& table_name,
   KuduPartialRow split2(&schema);
   RETURN_NOT_OK(split2.SetInt32("key", 20));
 
-  return CreateTable(table_name, schema, list_of(split1)(split2));
+  return CreateTable(table_name, schema, { split1, split2 });
 }
 
 Status MasterTest::CreateTable(const string& table_name,
@@ -259,9 +257,9 @@ void MasterTest::DoListAllTables(ListTablesResponsePB* resp) {
 TEST_F(MasterTest, TestCatalog) {
   const char *kTableName = "testtb";
   const char *kOtherTableName = "tbtest";
-  const Schema kTableSchema(list_of(ColumnSchema("key", INT32))
-                                   (ColumnSchema("v1", UINT64))
-                                   (ColumnSchema("v2", STRING)),
+  const Schema kTableSchema({ ColumnSchema("key", INT32),
+                              ColumnSchema("v1", UINT64),
+                              ColumnSchema("v2", STRING) },
                             1);
 
   ASSERT_OK(CreateTable(kTableName, kTableSchema));
@@ -342,7 +340,7 @@ TEST_F(MasterTest, TestCatalog) {
 
 TEST_F(MasterTest, TestCreateTableCheckSplitRows) {
   const char *kTableName = "testtb";
-  const Schema kTableSchema(list_of(ColumnSchema("key", INT32))(ColumnSchema("val", INT32)), 1);
+  const Schema kTableSchema({ ColumnSchema("key", INT32), ColumnSchema("val", INT32) }, 1);
 
   // No duplicate split rows.
   {
@@ -350,7 +348,7 @@ TEST_F(MasterTest, TestCreateTableCheckSplitRows) {
     ASSERT_OK(split1.SetInt32("key", 1));
     KuduPartialRow split2(&kTableSchema);
     ASSERT_OK(split2.SetInt32("key", 2));
-    Status s = CreateTable(kTableName, kTableSchema, list_of(split1)(split1)(split2));
+    Status s = CreateTable(kTableName, kTableSchema, { split1, split1, split2 });
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(), "Duplicate split row");
   }
@@ -360,7 +358,7 @@ TEST_F(MasterTest, TestCreateTableCheckSplitRows) {
     KuduPartialRow split1 = KuduPartialRow(&kTableSchema);
     ASSERT_OK(split1.SetInt32("key", 1));
     KuduPartialRow split2(&kTableSchema);
-    Status s = CreateTable(kTableName, kTableSchema, list_of(split1)(split2));
+    Status s = CreateTable(kTableName, kTableSchema, { split1, split2 });
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: Split rows must contain a value for at "
@@ -372,7 +370,7 @@ TEST_F(MasterTest, TestCreateTableCheckSplitRows) {
     KuduPartialRow split = KuduPartialRow(&kTableSchema);
     ASSERT_OK(split.SetInt32("key", 1));
     ASSERT_OK(split.SetInt32("val", 1));
-    Status s = CreateTable(kTableName, kTableSchema, list_of(split));
+    Status s = CreateTable(kTableName, kTableSchema, { split });
     ASSERT_TRUE(s.IsInvalidArgument());
     ASSERT_STR_CONTAINS(s.ToString(),
                         "Invalid argument: Split rows may only contain values "
@@ -384,7 +382,7 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
   const char *kTableName = "testtb";
 
   {
-    const Schema kTableSchema(list_of(ColumnSchema("key", BOOL)), 1);
+    const Schema kTableSchema({ ColumnSchema("key", BOOL) }, 1);
     Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
@@ -392,7 +390,7 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
   }
 
   {
-    const Schema kTableSchema(list_of(ColumnSchema("key", FLOAT)), 1);
+    const Schema kTableSchema({ ColumnSchema("key", FLOAT) }, 1);
     Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
@@ -400,7 +398,7 @@ TEST_F(MasterTest, TestCreateTableInvalidKeyType) {
   }
 
   {
-    const Schema kTableSchema(list_of(ColumnSchema("key", DOUBLE)), 1);
+    const Schema kTableSchema({ ColumnSchema("key", DOUBLE) }, 1);
     Status s = CreateTable(kTableName, kTableSchema, vector<KuduPartialRow>());
     ASSERT_TRUE(s.IsInvalidArgument()) << s.ToString();
     ASSERT_STR_CONTAINS(s.ToString(),
@@ -434,7 +432,7 @@ TEST_F(MasterTest, TestCreateTableInvalidSchema) {
 // invalid.
 TEST_F(MasterTest, TestInvalidGetTableLocations) {
   const string kTableName = "test";
-  Schema schema(list_of(ColumnSchema("key", INT32)), 1);
+  Schema schema({ ColumnSchema("key", INT32) }, 1);
   ASSERT_OK(CreateTable(kTableName, schema));
   {
     GetTableLocationsRequestPB req;

@@ -15,9 +15,9 @@
 #include "kudu/tablet/rowset.h"
 
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
-#include <tr1/memory>
 
 #include "kudu/common/generic_iterators.h"
 #include "kudu/gutil/stl_util.h"
@@ -25,7 +25,7 @@
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/rowset_metadata.h"
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using strings::Substitute;
 
 namespace kudu { namespace tablet {

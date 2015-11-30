@@ -20,11 +20,10 @@
 
 #include <boost/signals2/dummy_mutex.hpp>
 #include <glog/logging.h>
-#include <stddef.h>
-#include <string.h>
-#include <tr1/memory>
 #include <memory>
 #include <new>
+#include <stddef.h>
+#include <string.h>
 #include <vector>
 
 #include "kudu/gutil/dynamic_annotations.h"
@@ -181,7 +180,7 @@ class ArenaBase {
   }
 
   BufferAllocator* const buffer_allocator_;
-  vector<std::tr1::shared_ptr<Component> > arena_;
+  vector<std::shared_ptr<Component> > arena_;
 
   // The current component to allocate from.
   // Use AcquireLoadCurrent and ReleaseStoreCurrent to load/store.
@@ -284,7 +283,7 @@ class MemoryTrackingArena : public ArenaBase<false> {
   MemoryTrackingArena(
       size_t initial_buffer_size,
       size_t max_buffer_size,
-      const std::tr1::shared_ptr<MemoryTrackingBufferAllocator>& tracking_allocator)
+      const std::shared_ptr<MemoryTrackingBufferAllocator>& tracking_allocator)
       : ArenaBase<false>(tracking_allocator.get(), initial_buffer_size, max_buffer_size),
         tracking_allocator_(tracking_allocator) {}
 
@@ -295,7 +294,7 @@ class MemoryTrackingArena : public ArenaBase<false> {
 
   // This is required in order for the Arena to survive even after tablet is shut down,
   // e.g., in the case of Scanners running scanners (see tablet_server-test.cc)
-  std::tr1::shared_ptr<MemoryTrackingBufferAllocator> tracking_allocator_;
+  std::shared_ptr<MemoryTrackingBufferAllocator> tracking_allocator_;
 };
 
 class ThreadSafeMemoryTrackingArena : public ArenaBase<true> {
@@ -304,7 +303,7 @@ class ThreadSafeMemoryTrackingArena : public ArenaBase<true> {
   ThreadSafeMemoryTrackingArena(
       size_t initial_buffer_size,
       size_t max_buffer_size,
-      const std::tr1::shared_ptr<MemoryTrackingBufferAllocator>& tracking_allocator)
+      const std::shared_ptr<MemoryTrackingBufferAllocator>& tracking_allocator)
       : ArenaBase<true>(tracking_allocator.get(), initial_buffer_size, max_buffer_size),
         tracking_allocator_(tracking_allocator) {}
 
@@ -314,7 +313,7 @@ class ThreadSafeMemoryTrackingArena : public ArenaBase<true> {
  private:
 
   // See comment in MemoryTrackingArena above.
-  std::tr1::shared_ptr<MemoryTrackingBufferAllocator> tracking_allocator_;
+  std::shared_ptr<MemoryTrackingBufferAllocator> tracking_allocator_;
 };
 
 // Implementation of inline and template methods

@@ -14,10 +14,10 @@
 
 #include "kudu/util/pstack_watcher.h"
 
+#include <memory>
 #include <stdio.h>
 #include <string>
 #include <sys/types.h>
-#include <tr1/memory>
 #include <unistd.h>
 #include <vector>
 
@@ -30,7 +30,7 @@
 namespace kudu {
 
 using std::string;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using std::vector;
 using strings::Substitute;
 

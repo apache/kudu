@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -38,11 +37,9 @@ class TabletPushdownTest : public KuduTabletTest,
                            public ::testing::WithParamInterface<Setup> {
  public:
   TabletPushdownTest()
-    : KuduTabletTest(Schema(boost::assign::list_of
-              (ColumnSchema("key", INT32))
-              (ColumnSchema("int_val", INT32))
-              (ColumnSchema("string_val", STRING)),
-              1)) {
+    : KuduTabletTest(Schema({ ColumnSchema("key", INT32),
+                              ColumnSchema("int_val", INT32),
+                              ColumnSchema("string_val", STRING) }, 1)) {
   }
 
   virtual void SetUp() OVERRIDE {

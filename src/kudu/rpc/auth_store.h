@@ -15,8 +15,8 @@
 #ifndef KUDU_RPC_AUTH_STORE_H
 #define KUDU_RPC_AUTH_STORE_H
 
+#include <unordered_map>
 #include <string>
-#include <tr1/unordered_map>
 
 #include "kudu/gutil/macros.h"
 
@@ -27,7 +27,7 @@ class Status;
 namespace rpc {
 
 using std::string;
-using std::tr1::unordered_map;
+using std::unordered_map;
 
 // This class stores username / password pairs in memory for use in PLAIN SASL auth.
 // Add() is NOT thread safe.

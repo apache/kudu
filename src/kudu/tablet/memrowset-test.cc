@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -36,7 +35,7 @@ DEFINE_int32(num_scan_passes, 1,
 namespace kudu {
 namespace tablet {
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using log::LogAnchorRegistry;
 using consensus::OpId;
 

@@ -14,10 +14,8 @@
 
 #include "kudu/tserver/ts_tablet_manager.h"
 
-#include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 #include <string>
-#include <tr1/memory>
 
 #include "kudu/common/partition.h"
 #include "kudu/common/schema.h"
@@ -43,7 +41,6 @@ using consensus::kInvalidOpIdIndex;
 using consensus::RaftConfigPB;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
-using std::tr1::shared_ptr;
 using tablet::TabletPeer;
 
 static const char* const kTabletId = "my-tablet-id";
@@ -52,9 +49,7 @@ static const char* const kTabletId = "my-tablet-id";
 class TsTabletManagerTest : public KuduTest {
  public:
   TsTabletManagerTest()
-    : schema_(boost::assign::list_of
-             (ColumnSchema("key", UINT32)),
-              1) {
+    : schema_({ ColumnSchema("key", UINT32) }, 1) {
   }
 
   virtual void SetUp() OVERRIDE {

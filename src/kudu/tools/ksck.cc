@@ -15,7 +15,7 @@
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <iostream>
-#include <tr1/unordered_set>
+#include <unordered_set>
 
 #include "kudu/tools/ksck.h"
 
@@ -26,7 +26,6 @@
 #include "kudu/util/blocking_queue.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
-#include "kudu/util/shared_ptr_util.h"
 
 namespace kudu {
 namespace tools {
@@ -36,8 +35,8 @@ using std::cout;
 using std::endl;
 using std::ostream;
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
+using std::shared_ptr;
+using std::unordered_map;
 using strings::Substitute;
 
 DEFINE_int32(checksum_timeout_sec, 120,
@@ -198,8 +197,8 @@ Status Ksck::CheckTablesConsistency() {
 class ChecksumResultReporter : public RefCountedThreadSafe<ChecksumResultReporter> {
  public:
   typedef std::pair<Status, uint64_t> ResultPair;
-  typedef std::tr1::unordered_map<std::string, ResultPair> ReplicaResultMap;
-  typedef std::tr1::unordered_map<std::string, ReplicaResultMap> TabletResultMap;
+  typedef std::unordered_map<std::string, ResultPair> ReplicaResultMap;
+  typedef std::unordered_map<std::string, ReplicaResultMap> TabletResultMap;
 
   // Initialize reporter with the number of replicas being queried.
   explicit ChecksumResultReporter(int num_tablet_replicas)
@@ -287,8 +286,7 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   // Copy options so that local modifications can be made and passed on.
   ChecksumOptions options = opts;
 
-  typedef unordered_map<shared_ptr<KsckTablet>, shared_ptr<KsckTable>,
-                        SharedPtrHashFunctor<KsckTablet> > TabletTableMap;
+  typedef unordered_map<shared_ptr<KsckTablet>, shared_ptr<KsckTable>> TabletTableMap;
   TabletTableMap tablet_table_map;
 
   int num_tablet_replicas = 0;
@@ -317,9 +315,7 @@ Status Ksck::ChecksumData(const vector<string>& tables,
   }
 
   // Map of tablet servers to tablet queue.
-  typedef unordered_map<shared_ptr<KsckTabletServer>,
-                        TabletQueue,
-                        SharedPtrHashFunctor<KsckTabletServer> > TabletServerQueueMap;
+  typedef unordered_map<shared_ptr<KsckTabletServer>, TabletQueue> TabletServerQueueMap;
 
   TabletServerQueueMap tablet_server_queues;
   scoped_refptr<ChecksumResultReporter> reporter(new ChecksumResultReporter(num_tablet_replicas));

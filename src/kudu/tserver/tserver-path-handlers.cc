@@ -15,9 +15,9 @@
 #include "kudu/tserver/tserver-path-handlers.h"
 
 #include <algorithm>
+#include <memory>
 #include <sstream>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/consensus/log_anchor_registry.h"
@@ -49,8 +49,8 @@ using kudu::tablet::Tablet;
 using kudu::tablet::TabletPeer;
 using kudu::tablet::TabletStatusPB;
 using kudu::tablet::Transaction;
-using std::tr1::shared_ptr;
 using std::endl;
+using std::shared_ptr;
 using std::vector;
 using strings::Substitute;
 

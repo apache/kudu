@@ -18,10 +18,10 @@
 #include <glog/logging.h>
 #include <time.h>
 
-#include <iostream>
 #include <fstream>
+#include <iostream>
 #include <string>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/common/encoded_key.h"
@@ -33,7 +33,7 @@
 #include "kudu/util/flag_tags.h"
 
 using std::ostream;
-using std::tr1::unordered_set;
+using std::unordered_set;
 using std::vector;
 
 namespace kudu {

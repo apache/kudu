@@ -14,16 +14,13 @@
 
 #include "kudu/rpc/sasl_server.h"
 
-#include <string.h>
-
-#include <limits>
-#include <set>
-#include <string>
-
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <google/protobuf/message_lite.h>
+#include <limits>
 #include <sasl/sasl.h>
+#include <set>
+#include <string>
 
 #include "kudu/gutil/endian.h"
 #include "kudu/gutil/map-util.h"

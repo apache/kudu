@@ -45,7 +45,7 @@ TAG_FLAG(enable_tablet_orphaned_block_deletion, advanced);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, hidden);
 TAG_FLAG(enable_tablet_orphaned_block_deletion, runtime);
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 using base::subtle::Barrier_AtomicIncrement;
 using strings::Substitute;

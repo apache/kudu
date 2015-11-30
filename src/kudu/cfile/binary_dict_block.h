@@ -34,7 +34,7 @@
 #define KUDU_CFILE_BINARY_DICT_BLOCK_H
 
 #include <string>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <vector>
 
 #include "kudu/cfile/block_encodings.h"
@@ -97,7 +97,7 @@ class BinaryDictBlockBuilder : public BlockBuilder {
   // They should NOT be clear in the Reset() method.
   BinaryPlainBlockBuilder dict_block_;
 
-  std::tr1::unordered_map<StringPiece, uint32_t, GoodFastHash<StringPiece> > dictionary_;
+  std::unordered_map<StringPiece, uint32_t, GoodFastHash<StringPiece> > dictionary_;
   // Memory to hold the actual content for strings in the dictionary_.
   //
   // The size of it should be bigger than the size limit for dictionary block

@@ -25,7 +25,7 @@ namespace client {
 
 class KuduTable::Data {
  public:
-  Data(const std::tr1::shared_ptr<KuduClient>& client,
+  Data(const sp::shared_ptr<KuduClient>& client,
        const std::string& name,
        const std::string& table_id,
        const KuduSchema& schema,
@@ -34,7 +34,7 @@ class KuduTable::Data {
 
   Status Open();
 
-  std::tr1::shared_ptr<KuduClient> client_;
+  sp::shared_ptr<KuduClient> client_;
 
   std::string name_;
   const std::string id_;

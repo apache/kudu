@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
@@ -51,7 +50,7 @@ METRIC_DECLARE_entity(tablet);
 #define REPLICATE_SEQUENCE_OF_MESSAGES(a, b, c, d, e, f, g) \
   ASSERT_NO_FATAL_FAILURE(ReplicateSequenceOfMessages(a, b, c, d, e, f, g))
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace kudu {
 
@@ -117,7 +116,7 @@ class RaftConsensusQuorumTest : public KuduTest {
       FsManagerOpts opts;
       opts.parent_mem_tracker = parent_mem_tracker;
       opts.wal_path = test_path;
-      opts.data_paths = boost::assign::list_of(test_path);
+      opts.data_paths = { test_path };
       gscoped_ptr<FsManager> fs_manager(new FsManager(env_.get(), opts));
       RETURN_NOT_OK(fs_manager->CreateInitialFileSystemLayout());
       RETURN_NOT_OK(fs_manager->Open());

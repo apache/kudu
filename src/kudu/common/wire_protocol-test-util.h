@@ -17,7 +17,6 @@
 
 #include "kudu/common/wire_protocol.h"
 
-#include <boost/assign/list_of.hpp>
 #include <string>
 
 #include "kudu/common/partial_row.h"
@@ -27,11 +26,10 @@
 namespace kudu {
 
 inline Schema GetSimpleTestSchema() {
-  return Schema(boost::assign::list_of
-      (ColumnSchema("key", INT32))
-      (ColumnSchema("int_val", INT32))
-      (ColumnSchema("string_val", STRING, true)),
-      1);
+  return Schema({ ColumnSchema("key", INT32),
+                  ColumnSchema("int_val", INT32),
+                  ColumnSchema("string_val", STRING, true) },
+                1);
 }
 
 inline void AddTestRowWithNullableStringToPB(RowOperationsPB::Type op_type,

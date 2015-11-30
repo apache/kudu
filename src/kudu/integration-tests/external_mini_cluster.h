@@ -14,9 +14,9 @@
 #ifndef KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H
 #define KUDU_INTEGRATION_TESTS_EXTERNAL_MINI_CLUSTER_H
 
+#include <memory>
 #include <string>
 #include <sys/types.h>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -208,16 +208,16 @@ class ExternalMiniCluster {
   }
 
   // Return the client messenger used by the ExternalMiniCluster.
-  std::tr1::shared_ptr<rpc::Messenger> messenger();
+  std::shared_ptr<rpc::Messenger> messenger();
 
   // If the cluster is configured for a single non-distributed master,
   // return a proxy to that master. Requires that the single master is
   // running.
-  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy();
+  std::shared_ptr<master::MasterServiceProxy> master_proxy();
 
   // Returns an RPC proxy to the master at 'idx'. Requires that the
   // master at 'idx' is running.
-  std::tr1::shared_ptr<master::MasterServiceProxy> master_proxy(int idx);
+  std::shared_ptr<master::MasterServiceProxy> master_proxy(int idx);
 
   // Wait until the number of registered tablet servers reaches the
   // given count on at least one of the running masters.  Returns
@@ -238,7 +238,7 @@ class ExternalMiniCluster {
   //
   // REQUIRES: the cluster must have already been Start()ed.
   Status CreateClient(client::KuduClientBuilder& builder,
-                      std::tr1::shared_ptr<client::KuduClient>* client);
+                      client::sp::shared_ptr<client::KuduClient>* client);
 
   // Sets the given flag on the given daemon, which must be running.
   //
@@ -271,14 +271,14 @@ class ExternalMiniCluster {
   std::vector<scoped_refptr<ExternalMaster> > masters_;
   std::vector<scoped_refptr<ExternalTabletServer> > tablet_servers_;
 
-  std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  std::shared_ptr<rpc::Messenger> messenger_;
 
   DISALLOW_COPY_AND_ASSIGN(ExternalMiniCluster);
 };
 
 class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
  public:
-  ExternalDaemon(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+  ExternalDaemon(const std::shared_ptr<rpc::Messenger>& messenger,
                  const std::string& exe, const std::string& data_dir,
                  const std::vector<std::string>& extra_flags);
 
@@ -339,7 +339,7 @@ class ExternalDaemon : public RefCountedThreadSafe<ExternalDaemon> {
   // In a non-coverage build, this does nothing.
   void FlushCoverage();
 
-  const std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  const std::shared_ptr<rpc::Messenger> messenger_;
   const std::string exe_;
   const std::string data_dir_;
   std::vector<std::string> extra_flags_;
@@ -376,11 +376,11 @@ class ScopedResumeExternalDaemon {
 
 class ExternalMaster : public ExternalDaemon {
  public:
-  ExternalMaster(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+  ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
                  const std::string& exe, const std::string& data_dir,
                  const std::vector<std::string>& extra_flags);
 
-  ExternalMaster(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+  ExternalMaster(const std::shared_ptr<rpc::Messenger>& messenger,
                  const std::string& exe, const std::string& data_dir,
                  const std::string& rpc_bind_address,
                  const std::vector<std::string>& extra_flags);
@@ -401,7 +401,7 @@ class ExternalMaster : public ExternalDaemon {
 
 class ExternalTabletServer : public ExternalDaemon {
  public:
-  ExternalTabletServer(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+  ExternalTabletServer(const std::shared_ptr<rpc::Messenger>& messenger,
                        const std::string& exe, const std::string& data_dir,
                        const std::string& bind_host,
                        const std::vector<HostPort>& master_addrs,

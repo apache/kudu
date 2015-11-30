@@ -26,8 +26,13 @@ cd $TP_DIR
 NEEDS_BUILD=
 
 # Determine whether this subtree in the git repo has changed since thirdparty
-# was last built
+# was last built. Add a special suffix when building with TSAN enabled to
+# distinguish the build types.
 CUR_THIRDPARTY_HASH=$(cd .. && git ls-tree -d HEAD thirdparty | awk '{print $3}')
+if [ -n "$KUDU_USE_TSAN" ]; then
+  CUR_THIDPARTY_HASH="${CUR_THIRDPARTY_HASH}-tsan"
+fi
+
 LAST_BUILD_HASH=$(cat .build-hash || :)
 if [ "$CUR_THIRDPARTY_HASH" != "$LAST_BUILD_HASH" ]; then
   echo "Rebuilding thirdparty: the repository has changed since thirdparty was last built."
