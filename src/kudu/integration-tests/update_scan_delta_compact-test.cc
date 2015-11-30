@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -42,9 +42,6 @@ DEFINE_int32(row_count, 2000, "How many rows will be used in this test for the b
 DEFINE_int32(seconds_to_run, 4,
              "How long this test runs for, after inserting the base data, in seconds");
 
-using boost::assign::list_of;
-using std::tr1::shared_ptr;
-
 namespace kudu {
 namespace tablet {
 
@@ -62,6 +59,7 @@ using client::KuduStatusMemberCallback;
 using client::KuduTable;
 using client::KuduTableCreator;
 using client::KuduUpdate;
+using client::sp::shared_ptr;
 
 // This integration test tries to trigger all the update-related bits while also serving as a
 // foundation for benchmarking. It first inserts 'row_count' rows and then starts two threads,
@@ -150,7 +148,7 @@ class UpdateScanDeltaCompactionTest : public KuduTest {
                                   shared_ptr<KuduSession> session);
 
   KuduSchema schema_;
-  shared_ptr<MiniCluster> cluster_;
+  std::shared_ptr<MiniCluster> cluster_;
   shared_ptr<KuduTable> table_;
   shared_ptr<KuduClient> client_;
 };

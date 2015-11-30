@@ -19,7 +19,7 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
@@ -31,7 +31,7 @@
 
 namespace kudu {
 
-using std::tr1::unordered_map;
+using std::unordered_map;
 using strings::Substitute;
 
 const int64_t RandomizedFailureMonitor::kMinWakeUpTimeMillis = 10;

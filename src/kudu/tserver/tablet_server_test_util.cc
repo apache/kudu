@@ -28,7 +28,7 @@ namespace tserver {
 
 using consensus::ConsensusServiceProxy;
 using rpc::Messenger;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 void CreateTsClientProxies(const Sockaddr& addr,
                            const shared_ptr<Messenger>& messenger,

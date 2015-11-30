@@ -27,67 +27,31 @@
 # This module defines
 # GMOCK_INCLUDE_DIR, where to find gmock include files, etc.
 # GTEST_INCLUDE_DIR, where to find gtest include files
-# GMock_FOUND, If false, do not try to use gmock.
-# GMOCK_STATIC_LIBRARY, Location of libgmock.a
-# GMOCK_SHARED_LIBRARY, Location of libttest's shared library
+# GMOCK_SHARED_LIBRARY, Location of libgmock's shared library
+# GMOCK_STATIC_LIBRARY, Location of libgmock's static library
+# GMOCK_FOUND, If false, do not try to use gmock.
 
-# also defined, but not for general use are
-# GMOCK_LIBRARY, where to find the GMock library.
+find_path(GMOCK_INCLUDE_DIR gmock/gmock.h
+          DOC   "Path to the gmock header file"
+          NO_CMAKE_SYSTEM_PATH
+          NO_SYSTEM_ENVIRONMENT_PATH)
 
-set(GMOCK_SEARCH_PATH ${CMAKE_SOURCE_DIR}/thirdparty/installed)
+find_path(GTEST_INCLUDE_DIR gtest/gtest.h
+          DOC   "Path to the gtest header file"
+          NO_CMAKE_SYSTEM_PATH
+          NO_SYSTEM_ENVIRONMENT_PATH)
 
-set(GMOCK_H gmock/gmock.h)
-set(GTEST_H gtest/gtest.h)
+find_library(GMOCK_SHARED_LIBRARY gmock
+             DOC   "Google's framework for writing C++ tests (gmock)"
+             NO_CMAKE_SYSTEM_PATH
+             NO_SYSTEM_ENVIRONMENT_PATH)
 
-find_path(GMOCK_INCLUDE_DIR ${GMOCK_H}
-  PATHS ${GMOCK_SEARCH_PATH}/include
-        NO_DEFAULT_PATH
-  DOC   "Path to the ${GMOCK_H} file"
-)
-find_path(GTEST_INCLUDE_DIR ${GTEST_H}
-  PATHS ${GMOCK_SEARCH_PATH}/include
-        NO_DEFAULT_PATH
-  DOC   "Path to the ${GTEST_H} file"
-)
-find_library(GMOCK_LIBRARY
-  NAMES gmock
-  PATHS ${GMOCK_SEARCH_PATH}/lib/
-        NO_DEFAULT_PATH
-  DOC   "Google's framework for writing C++ tests (gmock)"
-)
+find_library(GMOCK_STATIC_LIBRARY libgmock.a
+             DOC   "Google's framework for writing C++ tests (gmock) static"
+             NO_CMAKE_SYSTEM_PATH
+             NO_SYSTEM_ENVIRONMENT_PATH)
 
-set(GMOCK_LIB_NAME libgmock)
-if(GMOCK_INCLUDE_DIR AND GTEST_INCLUDE_DIR AND GMOCK_LIBRARY)
-  set(GMOCK_STATIC_LIBRARY ${GMOCK_SEARCH_PATH}/lib/${GMOCK_LIB_NAME}.a)
-  if(EXISTS "${GMOCK_STATIC_LIBRARY}")
-    set(GMOCK_FOUND TRUE)
-  endif()
 
-  set(GMOCK_SHARED_LIBRARY ${GMOCK_SEARCH_PATH}/lib/${GMOCK_LIB_NAME}${CMAKE_SHARED_LIBRARY_SUFFIX})
-  if(EXISTS "${GMOCK_SHARED_LIBRARY}")
-    set(GMOCK_FOUND TRUE)
-  endif()
-else()
-  set(GMOCK_FOUND FALSE)
-endif()
-
-if(GMOCK_FOUND)
-  if(NOT GMock_FIND_QUIETLY)
-    message(STATUS "Found the GMock library: ${GMOCK_STATIC_LIBRARY} ${GMOCK_SHARED_LIBRARY}")
-  endif(NOT GMock_FIND_QUIETLY)
-else(GMOCK_FOUND)
-  if(NOT GMock_FIND_QUIETLY)
-    if(GMock_FIND_REQUIRED)
-      message(FATAL_ERROR "Could not find the GMock library")
-    else(GMock_FIND_REQUIRED)
-      message(STATUS "Could not find the GMock library")
-    endif(GMock_FIND_REQUIRED)
-  endif(NOT GMock_FIND_QUIETLY)
-endif(GMOCK_FOUND)
-
-mark_as_advanced(
-  GMOCK_INCLUDE_DIR
-  GTEST_INCLUDE_DIR
-  GMOCK_STATIC_LIBRARY
-  GMOCK_SHARED_LIBRARY)
-
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(GMOCK REQUIRED_VARS
+  GMOCK_SHARED_LIBRARY GMOCK_STATIC_LIBRARY GMOCK_INCLUDE_DIR GTEST_INCLUDE_DIR)

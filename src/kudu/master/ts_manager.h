@@ -17,9 +17,9 @@
 #ifndef KUDU_MASTER_TS_MANAGER_H
 #define KUDU_MASTER_TS_MANAGER_H
 
+#include <memory>
 #include <string>
-#include <tr1/unordered_map>
-#include <tr1/memory>
+#include <unordered_map>
 #include <vector>
 
 #include "kudu/gutil/macros.h"
@@ -36,7 +36,7 @@ namespace master {
 class TSDescriptor;
 class TSRegistrationPB;
 
-typedef std::vector<std::tr1::shared_ptr<TSDescriptor> > TSDescriptorVector;
+typedef std::vector<std::shared_ptr<TSDescriptor> > TSDescriptorVector;
 
 // Tracks the servers that the master has heard from, along with their
 // last heartbeat, etc.
@@ -58,28 +58,28 @@ class TSManager {
   // current instance ID for the TS, then a NotFound status is returned.
   // Otherwise, *desc is set and OK is returned.
   Status LookupTS(const NodeInstancePB& instance,
-                  std::tr1::shared_ptr<TSDescriptor>* desc);
+                  std::shared_ptr<TSDescriptor>* desc);
 
   // Lookup the tablet server descriptor for the given UUID.
   // Returns false if the TS has never registered.
   // Otherwise, *desc is set and returns true.
   bool LookupTSByUUID(const std::string& uuid,
-                        std::tr1::shared_ptr<TSDescriptor>* desc);
+                        std::shared_ptr<TSDescriptor>* desc);
 
   // Register or re-register a tablet server with the manager.
   //
   // If successful, *desc reset to the registered descriptor.
   Status RegisterTS(const NodeInstancePB& instance,
                     const TSRegistrationPB& registration,
-                    std::tr1::shared_ptr<TSDescriptor>* desc);
+                    std::shared_ptr<TSDescriptor>* desc);
 
   // Return all of the currently registered TS descriptors into the provided
   // list.
-  void GetAllDescriptors(std::vector<std::tr1::shared_ptr<TSDescriptor> >* descs) const;
+  void GetAllDescriptors(std::vector<std::shared_ptr<TSDescriptor> >* descs) const;
 
   // Return all of the currently registered TS descriptors that have sent a
   // heartbeat recently, indicating that they're alive and well.
-  void GetAllLiveDescriptors(std::vector<std::tr1::shared_ptr<TSDescriptor> >* descs) const;
+  void GetAllLiveDescriptors(std::vector<std::shared_ptr<TSDescriptor> >* descs) const;
 
   // Get the TS count.
   int GetCount() const;
@@ -87,8 +87,8 @@ class TSManager {
  private:
   mutable rw_spinlock lock_;
 
-  typedef std::tr1::unordered_map<
-    std::string, std::tr1::shared_ptr<TSDescriptor> > TSDescriptorMap;
+  typedef std::unordered_map<
+    std::string, std::shared_ptr<TSDescriptor> > TSDescriptorMap;
   TSDescriptorMap servers_by_id_;
 
   DISALLOW_COPY_AND_ASSIGN(TSManager);

@@ -18,7 +18,7 @@
 #include <boost/bind.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <tr1/memory>
+#include <memory>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/bind.h"
@@ -29,7 +29,7 @@
 #include "kudu/util/test_macros.h"
 #include "kudu/util/trace.h"
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace kudu {
 
@@ -74,7 +74,7 @@ TEST(TestThreadPool, TestSimpleTasks) {
   ASSERT_OK(BuildMinMaxTestPool(4, 4, &thread_pool));
 
   Atomic32 counter(0);
-  std::tr1::shared_ptr<Runnable> task(new SimpleTask(15, &counter));
+  std::shared_ptr<Runnable> task(new SimpleTask(15, &counter));
 
   ASSERT_OK(thread_pool->SubmitFunc(boost::bind(&SimpleTaskMethod, 10, &counter)));
   ASSERT_OK(thread_pool->Submit(task));

@@ -14,9 +14,10 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
-#include <gtest/gtest.h>
+
 #include <gflags/gflags.h>
-#include <tr1/memory>
+#include <gtest/gtest.h>
+#include <memory>
 #include <vector>
 
 #include "kudu/gutil/strings/substitute.h"
@@ -28,10 +29,10 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-using std::tr1::shared_ptr;
+using kudu::tablet::MaintenanceManagerStatusPB;
+using std::shared_ptr;
 using std::vector;
 using strings::Substitute;
-using kudu::tablet::MaintenanceManagerStatusPB;
 
 METRIC_DEFINE_entity(test);
 METRIC_DEFINE_gauge_uint32(test, maintenance_ops_running,

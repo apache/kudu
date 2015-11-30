@@ -8,8 +8,8 @@
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <memory>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/gutil/map-util.h"
@@ -18,9 +18,10 @@
 #include "kudu/util/memenv/memenv.h"
 #include "kudu/util/test_macros.h"
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::unordered_set;
+using std::vector;
 
 namespace kudu {
 
@@ -39,7 +40,7 @@ class MemEnvTest : public ::testing::Test {
 TEST_F(MemEnvTest, Basics) {
   uint64_t file_size;
   gscoped_ptr<WritableFile> writable_file;
-  std::vector<std::string> children;
+  vector<string> children;
 
   // Create the directory.
   ASSERT_FALSE(env_->FileExists("/dir"));
@@ -153,7 +154,7 @@ TEST_F(MemEnvTest, Locks) {
 }
 
 TEST_F(MemEnvTest, Misc) {
-  std::string test_dir;
+  string test_dir;
   ASSERT_OK(env_->GetTestDirectory(&test_dir));
   ASSERT_TRUE(!test_dir.empty());
 
@@ -171,7 +172,7 @@ TEST_F(MemEnvTest, LargeWrite) {
   const size_t kWriteSize = 300 * 1024;
   gscoped_ptr<uint8_t[]> scratch(new uint8_t[kWriteSize * 2]);
 
-  std::string write_data;
+  string write_data;
   for (size_t i = 0; i < kWriteSize; ++i) {
     write_data.append(1, static_cast<char>(i));
   }
@@ -189,7 +190,7 @@ TEST_F(MemEnvTest, LargeWrite) {
   ASSERT_EQ(0, result.compare("foo"));
 
   size_t read = 0;
-  std::string read_data;
+  string read_data;
   while (read < kWriteSize) {
     ASSERT_OK(seq_file->Read(kWriteSize - read, &result, scratch.get()));
     read_data.append(reinterpret_cast<const char *>(result.data()),

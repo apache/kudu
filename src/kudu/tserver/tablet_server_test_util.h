@@ -17,7 +17,8 @@
 #ifndef KUDU_TSERVER_TABLET_SERVER_TEST_UTIL_H_
 #define KUDU_TSERVER_TABLET_SERVER_TEST_UTIL_H_
 
-#include <tr1/memory>
+#include <memory>
+
 #include "kudu/gutil/gscoped_ptr.h"
 
 namespace kudu {
@@ -41,7 +42,7 @@ class TabletServerServiceProxy;
 
 // Create tablet server client proxies for tests.
 void CreateTsClientProxies(const Sockaddr& addr,
-                           const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                           const std::shared_ptr<rpc::Messenger>& messenger,
                            gscoped_ptr<TabletServerServiceProxy>* proxy,
                            gscoped_ptr<TabletServerAdminServiceProxy>* admin_proxy,
                            gscoped_ptr<consensus::ConsensusServiceProxy>* consensus_proxy,

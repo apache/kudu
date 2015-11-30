@@ -33,19 +33,19 @@
 namespace kudu {
 namespace tserver {
 
-using consensus::OpId;
 using consensus::MinimumOpId;
+using consensus::OpId;
 using fs::ReadableBlock;
 using log::LogAnchorRegistry;
 using log::ReadableLogSegment;
-using tablet::DeltaDataPB;
+using std::shared_ptr;
+using strings::Substitute;
 using tablet::ColumnDataPB;
+using tablet::DeltaDataPB;
 using tablet::RowSetDataPB;
 using tablet::TabletMetadata;
-using tablet::TabletSuperBlockPB;
-using std::tr1::shared_ptr;
-using strings::Substitute;
 using tablet::TabletPeer;
+using tablet::TabletSuperBlockPB;
 
 RemoteBootstrapSession::RemoteBootstrapSession(const scoped_refptr<TabletPeer>& tablet_peer,
                                                const std::string& session_id,

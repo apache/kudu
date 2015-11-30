@@ -19,16 +19,16 @@
 
 #include <algorithm>
 #include <gflags/gflags.h>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/iterator.h"
-#include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/casts.h"
+#include "kudu/gutil/strings/join.h"
 #include "kudu/tablet/row_op.h"
-#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet-harness.h"
+#include "kudu/tablet/tablet.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/metrics.h"
@@ -104,7 +104,7 @@ class KuduTabletTest : public KuduTest {
     tx_state.Finish();
   }
 
-  const std::tr1::shared_ptr<Tablet>& tablet() const {
+  const std::shared_ptr<Tablet>& tablet() const {
     return harness_->tablet();
   }
 
@@ -136,7 +136,7 @@ class KuduRowSetTest : public KuduTabletTest {
   }
 
  protected:
-  std::tr1::shared_ptr<RowSetMetadata> rowset_meta_;
+  std::shared_ptr<RowSetMetadata> rowset_meta_;
 };
 
 static inline Status IterateToStringList(RowwiseIterator *iter,

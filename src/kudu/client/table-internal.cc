@@ -34,9 +34,10 @@ using master::GetTableLocationsRequestPB;
 using master::GetTableLocationsResponsePB;
 using rpc::RpcController;
 using std::string;
-using std::tr1::shared_ptr;
 
 namespace client {
+
+using sp::shared_ptr;
 
 KuduTable::Data::Data(const shared_ptr<KuduClient>& client,
                       const string& name,

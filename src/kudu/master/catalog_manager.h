@@ -17,12 +17,12 @@
 #ifndef KUDU_MASTER_CATALOG_MANAGER_H
 #define KUDU_MASTER_CATALOG_MANAGER_H
 
-#include <boost/thread/mutex.hpp>
 #include <boost/optional/optional_fwd.hpp>
+#include <boost/thread/mutex.hpp>
 #include <map>
 #include <string>
-#include <tr1/unordered_map>
-#include <tr1/unordered_set>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/common/partition.h"
@@ -30,14 +30,14 @@
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/master/ts_manager.h"
-#include "kudu/tserver/tablet_peer_lookup.h"
 #include "kudu/server/monitored_task.h"
+#include "kudu/tserver/tablet_peer_lookup.h"
 #include "kudu/util/cow_object.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/monotime.h"
 #include "kudu/util/oid_generator.h"
-#include "kudu/util/status.h"
 #include "kudu/util/promise.h"
+#include "kudu/util/status.h"
 
 namespace kudu {
 
@@ -107,7 +107,7 @@ struct TabletReplica {
 class TabletInfo : public RefCountedThreadSafe<TabletInfo> {
  public:
   typedef PersistentTabletInfo cow_state;
-  typedef std::tr1::unordered_map<std::string, TabletReplica> ReplicaMap;
+  typedef std::unordered_map<std::string, TabletReplica> ReplicaMap;
 
   TabletInfo(const scoped_refptr<TableInfo>& table, const std::string& tablet_id);
 
@@ -262,7 +262,7 @@ class TableInfo : public RefCountedThreadSafe<TableInfo> {
   CowObject<PersistentTableInfo> metadata_;
 
   // List of pending tasks (e.g. create/alter tablet requests)
-  std::tr1::unordered_set<MonitoredTask*> pending_tasks_;
+  std::unordered_set<MonitoredTask*> pending_tasks_;
 
   DISALLOW_COPY_AND_ASSIGN(TableInfo);
 };
@@ -599,12 +599,12 @@ class CatalogManager : public tserver::TabletPeerLookupIf {
   mutable LockType lock_;
 
   // Table maps: table-id -> TableInfo and table-name -> TableInfo
-  typedef std::tr1::unordered_map<std::string, scoped_refptr<TableInfo> > TableInfoMap;
+  typedef std::unordered_map<std::string, scoped_refptr<TableInfo> > TableInfoMap;
   TableInfoMap table_ids_map_;
   TableInfoMap table_names_map_;
 
   // Tablet maps: tablet-id -> TabletInfo
-  typedef std::tr1::unordered_map<std::string, scoped_refptr<TabletInfo> > TabletInfoMap;
+  typedef std::unordered_map<std::string, scoped_refptr<TabletInfo> > TabletInfoMap;
   TabletInfoMap tablet_map_;
 
   Master *master_;

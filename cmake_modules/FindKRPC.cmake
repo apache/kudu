@@ -17,7 +17,7 @@
 #
 # Kudu RPC generator support
 #########
-find_package( Protobuf REQUIRED )
+find_package(Protobuf REQUIRED)
 
 #
 # Generate the KRPC files for a given .proto file.

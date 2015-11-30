@@ -79,9 +79,8 @@ METRIC_DEFINE_counter(server, log_block_manager_full_containers,
                       kudu::MetricUnit::kLogBlockContainers,
                       "Number of full log block containers");
 
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
-using std::tr1::unordered_set;
+using std::unordered_map;
+using std::unordered_set;
 using strings::Substitute;
 using kudu::env_util::ScopedFileDeleter;
 using kudu::fs::internal::LogBlock;

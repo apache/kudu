@@ -20,10 +20,8 @@
 #include "kudu/integration-tests/test_workload.h"
 #include "kudu/util/test_util.h"
 
-#include <boost/assign/list_of.hpp>
 #include <string>
 
-using boost::assign::list_of;
 using std::string;
 
 namespace kudu {
@@ -94,7 +92,7 @@ TEST_F(TsRecoveryITest, TestRestartWithOrphanedReplicates) {
 
 // Test that we replay from the recovery directory, if it exists.
 TEST_F(TsRecoveryITest, TestCrashDuringLogReplay) {
-  NO_FATALS(StartCluster(list_of("--fault_crash_during_log_replay=0.05")));
+  NO_FATALS(StartCluster({ "--fault_crash_during_log_replay=0.05" }));
 
   TestWorkload work(cluster_.get());
   work.set_num_replicas(1);

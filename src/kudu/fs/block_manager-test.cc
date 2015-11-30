@@ -15,9 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <tr1/memory>
+#include <memory>
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 
 #include "kudu/fs/file_block_manager.h"
@@ -35,9 +34,8 @@
 #include "kudu/util/test_util.h"
 #include "kudu/util/thread.h"
 
-using boost::assign::list_of;
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 
@@ -73,7 +71,7 @@ class BlockManagerTest : public KuduTest {
   BlockManagerTest() :
     bm_(CreateBlockManager(scoped_refptr<MetricEntity>(),
                            shared_ptr<MemTracker>(),
-                           list_of(GetTestDataDirectory()))) {
+                           { GetTestDataDirectory() })) {
   }
 
   virtual void SetUp() OVERRIDE {
@@ -206,7 +204,7 @@ void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
   this->ReopenBlockManager(entity,
                            shared_ptr<MemTracker>(),
-                           list_of(GetTestDataDirectory()),
+                           { GetTestDataDirectory() },
                            false);
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(entity, 0, 0, 0, 0));
 
@@ -255,7 +253,7 @@ void BlockManagerTest<LogBlockManager>::RunLogMetricsTest() {
   scoped_refptr<MetricEntity> new_entity = METRIC_ENTITY_server.Instantiate(&new_registry, "test");
   ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(new_entity,
                                                    shared_ptr<MemTracker>(),
-                                                   list_of(GetTestDataDirectory()),
+                                                   { GetTestDataDirectory() },
                                                    false));
   ASSERT_NO_FATAL_FAILURE(CheckLogMetrics(new_entity, 10 * 1024, 11, 10, 10));
 
@@ -282,7 +280,7 @@ void BlockManagerTest<LogBlockManager>::RunLogContainerPreallocationTest() {
   // not from the end of the file.
   ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
                                                    shared_ptr<MemTracker>(),
-                                                   list_of(GetTestDataDirectory()),
+                                                   { GetTestDataDirectory() },
                                                    false));
   ASSERT_OK(this->bm_->CreateBlock(&written_block));
   ASSERT_OK(written_block->Close());
@@ -316,7 +314,7 @@ void BlockManagerTest<FileBlockManager>::RunMemTrackerTest() {
   shared_ptr<MemTracker> tracker = MemTracker::CreateTracker(-1, "test tracker");
   ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
                                                    tracker,
-                                                   list_of(GetTestDataDirectory()),
+                                                   { GetTestDataDirectory() },
                                                    false));
 
   // The file block manager does not allocate memory for persistent data.
@@ -333,7 +331,7 @@ void BlockManagerTest<LogBlockManager>::RunMemTrackerTest() {
   shared_ptr<MemTracker> tracker = MemTracker::CreateTracker(-1, "test tracker");
   ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(scoped_refptr<MetricEntity>(),
                                                    tracker,
-                                                   list_of(GetTestDataDirectory()),
+                                                   { GetTestDataDirectory() },
                                                    false));
 
   // The initial consumption should be non-zero due to the block map.
@@ -549,7 +547,7 @@ TYPED_TEST(BlockManagerTest, PersistenceTest) {
   gscoped_ptr<BlockManager> new_bm(this->CreateBlockManager(
       scoped_refptr<MetricEntity>(),
       MemTracker::CreateTracker(-1, "other tracker"),
-      list_of(GetTestDataDirectory())));
+      { GetTestDataDirectory() }));
   ASSERT_OK(new_bm->Open());
 
   // Test that the state of all three blocks is properly reflected.
@@ -635,7 +633,7 @@ TYPED_TEST(BlockManagerTest, MetricsTest) {
   scoped_refptr<MetricEntity> entity = METRIC_ENTITY_server.Instantiate(&registry, "test");
   ASSERT_NO_FATAL_FAILURE(this->ReopenBlockManager(entity,
                                                    shared_ptr<MemTracker>(),
-                                                   list_of(GetTestDataDirectory()),
+                                                   { GetTestDataDirectory() },
                                                    false));
   ASSERT_NO_FATAL_FAILURE(CheckMetrics(entity, 0, 0, 0, 0, 0, 0));
 
@@ -752,7 +750,7 @@ TEST_F(LogBlockManagerTest, TestReuseBlockIds) {
   NO_FATALS(ReopenBlockManager(
       scoped_refptr<MetricEntity>(),
       shared_ptr<MemTracker>(),
-      list_of(GetTestDataDirectory()),
+      { GetTestDataDirectory() },
       false));
 }
 #endif // defined(__linux__)

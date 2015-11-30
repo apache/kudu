@@ -18,7 +18,6 @@
 #include "kudu/consensus/local_consensus.h"
 
 #include <boost/thread/locks.hpp>
-#include <boost/assign/list_of.hpp>
 #include <iostream>
 
 #include "kudu/consensus/log.h"
@@ -36,7 +35,6 @@ namespace consensus {
 using base::subtle::Barrier_AtomicIncrement;
 using log::Log;
 using log::LogEntryBatch;
-using std::tr1::shared_ptr;
 using strings::Substitute;
 
 LocalConsensus::LocalConsensus(const ConsensusOptions& options,
@@ -128,8 +126,7 @@ Status LocalConsensus::Replicate(const scoped_refptr<ConsensusRound>& round) {
     // It's important that we do this under the same lock as we generate
     // the op id, so that we log things in-order.
     gscoped_ptr<log::LogEntryBatchPB> entry_batch;
-    log::CreateBatchFromAllocatedOperations(
-        boost::assign::list_of(round->replicate_scoped_refptr()), &entry_batch);
+    log::CreateBatchFromAllocatedOperations({ round->replicate_scoped_refptr() }, &entry_batch);
 
     RETURN_NOT_OK(log_->Reserve(log::REPLICATE, entry_batch.Pass(),
                                 &reserved_entry_batch));

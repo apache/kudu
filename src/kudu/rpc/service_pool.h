@@ -18,7 +18,6 @@
 #ifndef KUDU_SERVICE_POOL_H
 #define KUDU_SERVICE_POOL_H
 
-#include <tr1/memory>
 #include <string>
 #include <vector>
 

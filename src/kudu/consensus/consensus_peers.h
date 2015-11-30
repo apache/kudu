@@ -18,8 +18,8 @@
 #ifndef KUDU_CONSENSUS_CONSENSUS_PEERS_H_
 #define KUDU_CONSENSUS_CONSENSUS_PEERS_H_
 
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/consensus/consensus.pb.h"
@@ -305,20 +305,20 @@ class RpcPeerProxy : public PeerProxy {
 // PeerProxyFactory implementation that generates RPCPeerProxies
 class RpcPeerProxyFactory : public PeerProxyFactory {
  public:
-  explicit RpcPeerProxyFactory(const std::tr1::shared_ptr<rpc::Messenger>& messenger);
+  explicit RpcPeerProxyFactory(const std::shared_ptr<rpc::Messenger>& messenger);
 
   virtual Status NewProxy(const RaftPeerPB& peer_pb,
                           gscoped_ptr<PeerProxy>* proxy) OVERRIDE;
 
   virtual ~RpcPeerProxyFactory();
  private:
-  std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  std::shared_ptr<rpc::Messenger> messenger_;
 };
 
 // Query the consensus service at last known host/port that is
 // specified in 'remote_peer' and set the 'permanent_uuid' field based
 // on the response.
-Status SetPermanentUuidForRemotePeer(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+Status SetPermanentUuidForRemotePeer(const std::shared_ptr<rpc::Messenger>& messenger,
                                      RaftPeerPB* remote_peer);
 
 }  // namespace consensus

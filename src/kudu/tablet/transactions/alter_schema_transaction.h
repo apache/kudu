@@ -18,9 +18,8 @@
 #ifndef KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_
 #define KUDU_TABLET_ALTER_SCHEMA_TRANSACTION_H_
 
+#include <mutex>
 #include <string>
-
-#include <boost/thread/shared_mutex.hpp>
 
 #include "kudu/gutil/macros.h"
 #include "kudu/tablet/transactions/transaction.h"
@@ -97,7 +96,7 @@ class AlterSchemaTransactionState : public TransactionState {
   tserver::AlterSchemaResponsePB *response_;
 
   // The lock held on the tablet's schema_lock_.
-  boost::unique_lock<rw_semaphore> schema_lock_;
+  std::unique_lock<rw_semaphore> schema_lock_;
 };
 
 // Executes the alter schema transaction,.

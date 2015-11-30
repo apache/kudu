@@ -18,10 +18,10 @@
 // Tool to query tablet server operational data
 
 #include <boost/foreach.hpp>
-#include <glog/logging.h>
 #include <gflags/gflags.h>
-#include <tr1/memory>
+#include <glog/logging.h>
 #include <iostream>
+#include <memory>
 #include <strstream>
 
 #include "kudu/client/row_result.h"
@@ -44,15 +44,15 @@
 #include "kudu/rpc/messenger.h"
 #include "kudu/rpc/rpc_controller.h"
 
-using std::ostringstream;
-using std::string;
-using std::tr1::shared_ptr;
-using std::vector;
 using kudu::client::KuduRowResult;
 using kudu::client::KuduScanner;
+using kudu::HostPort;
+using kudu::rpc::Messenger;
+using kudu::rpc::MessengerBuilder;
+using kudu::rpc::RpcController;
+using kudu::server::ServerStatusPB;
+using kudu::Sockaddr;
 using kudu::tablet::TabletStatusPB;
-using kudu::tserver::TabletServerAdminServiceProxy;
-using kudu::tserver::TabletServerServiceProxy;
 using kudu::tserver::DeleteTabletRequestPB;
 using kudu::tserver::DeleteTabletResponsePB;
 using kudu::tserver::ListTabletsRequestPB;
@@ -60,12 +60,12 @@ using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::NewScanRequestPB;
 using kudu::tserver::ScanRequestPB;
 using kudu::tserver::ScanResponsePB;
-using kudu::rpc::Messenger;
-using kudu::rpc::MessengerBuilder;
-using kudu::rpc::RpcController;
-using kudu::server::ServerStatusPB;
-using kudu::HostPort;
-using kudu::Sockaddr;
+using kudu::tserver::TabletServerAdminServiceProxy;
+using kudu::tserver::TabletServerServiceProxy;
+using std::ostringstream;
+using std::shared_ptr;
+using std::string;
+using std::vector;
 
 const char* const kListTabletsOp = "list_tablets";
 const char* const kAreTabletsRunningOp = "are_tablets_running";

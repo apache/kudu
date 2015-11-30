@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <tr1/memory>
 #include <vector>
 
 #include <boost/bind.hpp>
@@ -42,7 +41,6 @@ METRIC_DEFINE_entity(test_entity);
 namespace kudu {
 
 using debug::ScopedLeakCheckDisabler;
-using std::tr1::shared_ptr;
 using std::vector;
 
 class MultiThreadedMetricsTest : public KuduTest {

@@ -17,9 +17,9 @@
 #ifndef KUDU_TABLET_DELTA_COMPACTION_H
 #define KUDU_TABLET_DELTA_COMPACTION_H
 
+#include <memory>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -55,8 +55,8 @@ class MajorDeltaCompaction {
   MajorDeltaCompaction(FsManager* fs_manager,
                        const Schema& base_schema,
                        CFileSet* base_data,
-                       const std::tr1::shared_ptr<DeltaIterator>& delta_iter,
-                       const std::vector<std::tr1::shared_ptr<DeltaStore> >& included_stores,
+                       const std::shared_ptr<DeltaIterator>& delta_iter,
+                       const std::vector<std::shared_ptr<DeltaStore> >& included_stores,
                        const std::vector<ColumnId>& col_ids);
   ~MajorDeltaCompaction();
 
@@ -114,7 +114,7 @@ class MajorDeltaCompaction {
   const SharedDeltaStoreVector included_stores_;
 
   // The merged view of the deltas from included_stores_.
-  const std::tr1::shared_ptr<DeltaIterator> delta_iter_;
+  const std::shared_ptr<DeltaIterator> delta_iter_;
 
   // Outputs:
   gscoped_ptr<MultiColumnWriter> base_data_writer_;

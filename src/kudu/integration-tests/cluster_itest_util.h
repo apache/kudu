@@ -28,9 +28,9 @@
 #define KUDU_INTEGRATION_TESTS_CLUSTER_ITEST_UTIL_H_
 
 #include <boost/optional/optional_fwd.hpp>
+#include <memory>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -86,10 +86,10 @@ struct TServerDetails {
 };
 
 // tablet_id -> replica map.
-typedef std::tr1::unordered_multimap<std::string, TServerDetails*> TabletReplicaMap;
+typedef std::unordered_multimap<std::string, TServerDetails*> TabletReplicaMap;
 
 // uuid -> tablet server map.
-typedef std::tr1::unordered_map<std::string, TServerDetails*> TabletServerMap;
+typedef std::unordered_map<std::string, TServerDetails*> TabletServerMap;
 
 // Returns possibly the simplest imaginable schema, with a single int key column.
 client::KuduSchema SimpleIntKeyKuduSchema();
@@ -98,8 +98,8 @@ client::KuduSchema SimpleIntKeyKuduSchema();
 // Note: The bare-pointer TServerDetails values must be deleted by the caller!
 // Consider using ValueDeleter (in gutil/stl_util.h) for that.
 Status CreateTabletServerMap(master::MasterServiceProxy* master_proxy,
-                             const std::tr1::shared_ptr<rpc::Messenger>& messenger,
-                             std::tr1::unordered_map<std::string, TServerDetails*>* ts_map);
+                             const std::shared_ptr<rpc::Messenger>& messenger,
+                             std::unordered_map<std::string, TServerDetails*>* ts_map);
 
 // Gets a vector containing the latest OpId for each of the given replicas.
 // Returns a bad Status if any replica cannot be reached.
@@ -231,13 +231,13 @@ Status ListRunningTabletIds(const TServerDetails* ts,
                             std::vector<std::string>* tablet_ids);
 
 // Get the list of tablet locations for the specified tablet from the Master.
-Status GetTabletLocations(const std::tr1::shared_ptr<master::MasterServiceProxy>& master_proxy,
+Status GetTabletLocations(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
                           const std::string& tablet_id,
                           const MonoDelta& timeout,
                           master::TabletLocationsPB* tablet_locations);
 
 // Get the list of tablet locations for all tablets in the specified table from the Master.
-Status GetTableLocations(const std::tr1::shared_ptr<master::MasterServiceProxy>& master_proxy,
+Status GetTableLocations(const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
                          const std::string& table_name,
                          const MonoDelta& timeout,
                          master::GetTableLocationsResponsePB* table_locations);
@@ -245,7 +245,7 @@ Status GetTableLocations(const std::tr1::shared_ptr<master::MasterServiceProxy>&
 // Wait for the specified number of voters to be reported to the config on the
 // master for the specified tablet.
 Status WaitForNumVotersInConfigOnMaster(
-    const std::tr1::shared_ptr<master::MasterServiceProxy>& master_proxy,
+    const std::shared_ptr<master::MasterServiceProxy>& master_proxy,
     const std::string& tablet_id,
     int num_voters,
     const MonoDelta& timeout);

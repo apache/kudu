@@ -22,12 +22,12 @@
 #include <algorithm>
 #include <boost/foreach.hpp>
 #include <map>
+#include <memory>
 #include <set>
 #include <sys/resource.h>
 #include <sys/syscall.h>
 #include <sys/time.h>
 #include <sys/types.h>
-#include <tr1/memory>
 #include <unistd.h>
 #include <vector>
 
@@ -45,16 +45,16 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/mutex.h"
-#include "kudu/util/url-coding.h"
 #include "kudu/util/os-util.h"
 #include "kudu/util/stopwatch.h"
+#include "kudu/util/url-coding.h"
 #include "kudu/util/web_callback_registry.h"
 
 using boost::bind;
 using boost::mem_fn;
-using std::tr1::shared_ptr;
 using std::endl;
 using std::map;
+using std::shared_ptr;
 using std::stringstream;
 using strings::Substitute;
 

@@ -156,6 +156,7 @@ install(FILES
   row_result.h
   scan_predicate.h
   schema.h
+  shared_ptr.h
   stubs.h
   value.h
   write_op.h

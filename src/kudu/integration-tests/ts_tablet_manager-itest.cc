@@ -16,8 +16,8 @@
 // under the License.
 
 #include <gtest/gtest.h>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 
 #include "kudu/client/client.h"
 #include "kudu/consensus/consensus.proxy.h"
@@ -62,7 +62,6 @@ using master::ReportedTabletPB;
 using master::TabletReportPB;
 using rpc::Messenger;
 using rpc::MessengerBuilder;
-using std::tr1::shared_ptr;
 using strings::Substitute;
 using tablet::TabletPeer;
 using tserver::MiniTabletServer;
@@ -83,8 +82,8 @@ class TsTabletManagerITest : public KuduTest {
   const KuduSchema schema_;
 
   gscoped_ptr<MiniCluster> cluster_;
-  shared_ptr<KuduClient> client_;
-  shared_ptr<Messenger> client_messenger_;
+  client::sp::shared_ptr<KuduClient> client_;
+  std::shared_ptr<Messenger> client_messenger_;
 };
 
 void TsTabletManagerITest::SetUp() {
@@ -117,7 +116,7 @@ TEST_F(TsTabletManagerITest, TestReportNewLeaderOnLeaderChange) {
   OverrideFlagForSlowTests("num_election_test_loops", "10");
 
   // Create the table.
-  shared_ptr<KuduTable> table;
+  client::sp::shared_ptr<KuduTable> table;
   gscoped_ptr<KuduTableCreator> table_creator(client_->NewTableCreator());
   ASSERT_OK(table_creator->table_name(kTableName)
             .schema(&schema_)

@@ -18,7 +18,6 @@
 
 #include <vector>
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
@@ -38,7 +37,6 @@
 namespace kudu {
 namespace consensus {
 
-using boost::assign::list_of;
 using std::string;
 using std::vector;
 
@@ -149,7 +147,7 @@ RaftConfigPB BuildConfig(const vector<string>& uuids) {
 
 // Test ConsensusMetadata active role calculation.
 TEST_F(ConsensusMetadataTest, TestActiveRole) {
-  vector<string> uuids = list_of("a")("b")("c")("d");
+  vector<string> uuids = { "a", "b", "c", "d" };
   string peer_uuid = "e";
   RaftConfigPB config1 = BuildConfig(uuids); // We aren't a member of this config...
   config1.set_opid_index(1);
@@ -194,7 +192,7 @@ TEST_F(ConsensusMetadataTest, TestActiveRole) {
 // Ensure that invocations of ToConsensusStatePB() return the expected state
 // in the returned object.
 TEST_F(ConsensusMetadataTest, TestToConsensusStatePB) {
-  vector<string> uuids = list_of("a")("b")("c")("d");
+  vector<string> uuids = { "a", "b", "c", "d" };
   string peer_uuid = "e";
 
   RaftConfigPB committed_config = BuildConfig(uuids); // We aren't a member of this config...
@@ -250,7 +248,7 @@ static void AssertConsensusMergeExpected(const gscoped_ptr<ConsensusMetadata>& c
 
 // Ensure that MergeCommittedConsensusStatePB() works as advertised.
 TEST_F(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB) {
-  vector<string> uuids = list_of("a")("b")("c")("d");
+  vector<string> uuids = { "a", "b", "c", "d" };
 
   RaftConfigPB committed_config = BuildConfig(uuids); // We aren't a member of this config...
   committed_config.set_opid_index(1);
@@ -267,19 +265,19 @@ TEST_F(ConsensusMetadataTest, TestMergeCommittedConsensusStatePB) {
   // Keep the term and votes because the merged term is lower.
   ConsensusStatePB remote_state;
   remote_state.set_current_term(0);
-  *remote_state.mutable_config() = BuildConfig(list_of("x")("y")("z"));
+  *remote_state.mutable_config() = BuildConfig({ "x", "y", "z" });
   cmeta->MergeCommittedConsensusStatePB(remote_state);
   NO_FATALS(AssertConsensusMergeExpected(cmeta, remote_state, 1, "e"));
 
   // Same as above because the merged term is the same as the cmeta term.
   remote_state.set_current_term(1);
-  *remote_state.mutable_config() = BuildConfig(list_of("f")("g")("h"));
+  *remote_state.mutable_config() = BuildConfig({ "f", "g", "h" });
   cmeta->MergeCommittedConsensusStatePB(remote_state);
   NO_FATALS(AssertConsensusMergeExpected(cmeta, remote_state, 1, "e"));
 
   // Higher term, so wipe out the prior state.
   remote_state.set_current_term(2);
-  *remote_state.mutable_config() = BuildConfig(list_of("i")("j")("k"));
+  *remote_state.mutable_config() = BuildConfig({ "i", "j", "k" });
   cmeta->set_pending_config(pending_config);
   cmeta->MergeCommittedConsensusStatePB(remote_state);
   NO_FATALS(AssertConsensusMergeExpected(cmeta, remote_state, 2, ""));

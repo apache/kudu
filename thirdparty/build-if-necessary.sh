@@ -54,4 +54,3 @@ if [ -n "$NEEDS_BUILD" ]; then
 else
   echo Not rebuilding thirdparty. No changes since last build.
 fi
-

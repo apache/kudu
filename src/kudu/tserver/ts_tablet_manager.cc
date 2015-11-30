@@ -23,8 +23,8 @@
 #include <boost/thread/mutex.hpp>
 #include <boost/thread/shared_mutex.hpp>
 #include <glog/logging.h>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/wire_protocol.h"
@@ -38,8 +38,8 @@
 #include "kudu/gutil/strings/util.h"
 #include "kudu/master/master.pb.h"
 #include "kudu/tablet/metadata.pb.h"
-#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet.h"
+#include "kudu/tablet/tablet.pb.h"
 #include "kudu/tablet/tablet_bootstrap.h"
 #include "kudu/tablet/tablet_metadata.h"
 #include "kudu/tablet/tablet_peer.h"
@@ -127,15 +127,15 @@ using consensus::StartRemoteBootstrapRequestPB;
 using log::Log;
 using master::ReportedTabletPB;
 using master::TabletReportPB;
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
+using tablet::Tablet;
 using tablet::TABLET_DATA_COPYING;
 using tablet::TABLET_DATA_DELETED;
 using tablet::TABLET_DATA_READY;
 using tablet::TABLET_DATA_TOMBSTONED;
-using tablet::Tablet;
 using tablet::TabletDataState;
 using tablet::TabletMetadata;
 using tablet::TabletPeer;

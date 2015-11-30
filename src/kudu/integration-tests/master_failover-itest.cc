@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <string>
@@ -39,15 +38,8 @@ namespace client {
 
 const int kNumTabletServerReplicas = 3;
 
-using client::KuduClient;
-using client::KuduClientBuilder;
-using client::KuduColumnSchema;
-using client::KuduScanner;
-using client::KuduSchema;
-using client::KuduSchemaBuilder;
-using client::KuduTable;
+using sp::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 
 class MasterFailoverTest : public KuduTest {
@@ -58,7 +50,7 @@ class MasterFailoverTest : public KuduTest {
   };
 
   MasterFailoverTest() {
-    opts_.master_rpc_ports = boost::assign::list_of(11010)(11011)(11012);
+    opts_.master_rpc_ports = { 11010, 11011, 11012 };
     opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
     opts_.num_tablet_servers = kNumTabletServerReplicas;
 

@@ -16,7 +16,6 @@
 // under the License.
 
 #include <gtest/gtest.h>
-#include <boost/assign/list_of.hpp>
 
 #include "kudu/client/client.h"
 #include "kudu/gutil/strings/substitute.h"
@@ -35,14 +34,14 @@ namespace tools {
 
 using client::KuduColumnSchema;
 using client::KuduInsert;
-using client::KuduSession;
 using client::KuduSchemaBuilder;
+using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
-using std::tr1::static_pointer_cast;
-using std::tr1::shared_ptr;
-using std::vector;
+using client::sp::shared_ptr;
+using std::static_pointer_cast;
 using std::string;
+using std::vector;
 using strings::Substitute;
 
 static const char *kTableName = "ksck-test-table";
@@ -137,7 +136,7 @@ class RemoteKsckTest : public KuduTest {
   // Generate a set of split rows for tablets used in this test.
   vector<const KuduPartialRow*> GenerateSplitRows() {
     vector<const KuduPartialRow*> split_rows;
-    vector<int> split_nums = boost::assign::list_of(33)(66);
+    vector<int> split_nums = { 33, 66 };
     BOOST_FOREACH(int i, split_nums) {
       KuduPartialRow* row = schema_.NewRow();
       CHECK_OK(row->SetInt32(0, i));
@@ -166,16 +165,16 @@ class RemoteKsckTest : public KuduTest {
     return Status::OK();
   }
 
-  shared_ptr<Ksck> ksck_;
+  std::shared_ptr<Ksck> ksck_;
   shared_ptr<client::KuduClient> client_;
 
  private:
   Sockaddr master_rpc_addr_;
-  shared_ptr<MiniCluster> mini_cluster_;
+  std::shared_ptr<MiniCluster> mini_cluster_;
   client::KuduSchema schema_;
   shared_ptr<client::KuduTable> client_table_;
-  shared_ptr<KsckMaster> master_;
-  shared_ptr<KsckCluster> cluster_;
+  std::shared_ptr<KsckMaster> master_;
+  std::shared_ptr<KsckCluster> cluster_;
   Random random_;
 };
 

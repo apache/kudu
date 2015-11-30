@@ -23,7 +23,7 @@
 #include <set>
 #include <stdint.h>
 #include <string>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/map-util.h"
@@ -93,7 +93,7 @@ class DeltaStats {
   void AddColumnIdsWithUpdates(std::set<ColumnId>* col_ids) const;
 
  private:
-  std::tr1::unordered_map<ColumnId, int64_t> update_counts_by_col_id_;
+  std::unordered_map<ColumnId, int64_t> update_counts_by_col_id_;
   uint64_t delete_count_;
   Timestamp max_timestamp_;
   Timestamp min_timestamp_;

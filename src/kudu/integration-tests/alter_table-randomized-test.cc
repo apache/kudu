@@ -16,19 +16,17 @@
 // under the License.
 
 #include <boost/foreach.hpp>
-#include <boost/assign/list_of.hpp>
 
 #include <algorithm>
 #include <map>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/client/client-test-util.h"
-#include "kudu/integration-tests/cluster_verifier.h"
-#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/substitute.h"
+#include "kudu/integration-tests/cluster_verifier.h"
+#include "kudu/integration-tests/external_mini_cluster.h"
 #include "kudu/util/random.h"
 #include "kudu/util/random_util.h"
 #include "kudu/util/test_util.h"
@@ -48,10 +46,10 @@ using client::KuduTableAlterer;
 using client::KuduTableCreator;
 using client::KuduValue;
 using client::KuduWriteOperation;
+using client::sp::shared_ptr;
 using std::make_pair;
 using std::map;
 using std::pair;
-using std::tr1::shared_ptr;
 using std::vector;
 using strings::SubstituteAndAppend;
 

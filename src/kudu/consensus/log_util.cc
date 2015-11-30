@@ -18,11 +18,11 @@
 #include "kudu/consensus/log_util.h"
 
 #include <algorithm>
-#include <boost/foreach.hpp>
 #include <iostream>
 #include <limits>
 #include <utility>
 
+#include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 
@@ -31,11 +31,11 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/map-util.h"
 #include "kudu/gutil/stl_util.h"
+#include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
-#include "kudu/gutil/strings/split.h"
-#include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
+#include "kudu/util/coding.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env_util.h"
@@ -64,7 +64,7 @@ namespace log {
 using consensus::OpId;
 using env_util::ReadFully;
 using std::vector;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using strings::Substitute;
 using strings::SubstituteAndAppend;
 

@@ -16,26 +16,25 @@
 // under the License.
 
 #include <fcntl.h>
+#include <memory>
 #include <string>
 #include <sys/types.h>
-#include <tr1/memory>
 
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 
 #include "kudu/gutil/bind.h"
-#include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/path_util.h"
-#include "kudu/util/stopwatch.h"
-#include "kudu/util/status.h"
-#include "kudu/util/test_util.h"
+#include "kudu/gutil/strings/util.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/malloc.h"
 #include "kudu/util/memenv/memenv.h"
+#include "kudu/util/path_util.h"
+#include "kudu/util/status.h"
+#include "kudu/util/stopwatch.h"
+#include "kudu/util/test_util.h"
 
 #if !defined(__APPLE__)
 #include <linux/falloc.h>
@@ -51,8 +50,8 @@
 
 namespace kudu {
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 
 static const uint64_t kOneMb = 1024 * 1024;
@@ -667,10 +666,7 @@ TEST_F(TestEnv, TestRWFile) {
 }
 
 TEST_F(TestEnv, TestCanonicalize) {
-  vector<string> synonyms = boost::assign::list_of
-      (GetTestPath("."))
-      (GetTestPath("./."))
-      (GetTestPath(".//./"));
+  vector<string> synonyms = { GetTestPath("."), GetTestPath("./."), GetTestPath(".//./") };
   BOOST_FOREACH(const string& synonym, synonyms) {
     string result;
     ASSERT_OK(env_->Canonicalize(synonym, &result));

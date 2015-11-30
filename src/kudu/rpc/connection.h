@@ -20,9 +20,9 @@
 
 #include <boost/intrusive/list.hpp>
 #include <ev++.h>
+#include <memory>
 #include <stdint.h>
-#include <tr1/memory>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include <limits>
 #include <string>
@@ -108,7 +108,7 @@ class Connection : public RefCountedThreadSafe<Connection> {
   // marked failed.
   // Takes ownership of the 'call' object regardless of whether it succeeds or fails.
   // This may be called from a non-reactor thread.
-  void QueueOutboundCall(const std::tr1::shared_ptr<OutboundCall> &call);
+  void QueueOutboundCall(const std::shared_ptr<OutboundCall> &call);
 
   // Queue a call response back to the client on the server side.
   //
@@ -177,12 +177,12 @@ class Connection : public RefCountedThreadSafe<Connection> {
     void HandleTimeout(ev::timer &watcher, int revents);
 
     Connection *conn;
-    std::tr1::shared_ptr<OutboundCall> call;
+    std::shared_ptr<OutboundCall> call;
     ev::timer timeout_timer;
   };
 
-  typedef std::tr1::unordered_map<uint64_t, CallAwaitingResponse*> car_map_t;
-  typedef std::tr1::unordered_map<uint64_t, InboundCall*> inbound_call_map_t;
+  typedef std::unordered_map<uint64_t, CallAwaitingResponse*> car_map_t;
+  typedef std::unordered_map<uint64_t, InboundCall*> inbound_call_map_t;
 
   // Returns the next valid (positive) sequential call ID by incrementing a counter
   // and ensuring we roll over from INT32_MAX to 0.

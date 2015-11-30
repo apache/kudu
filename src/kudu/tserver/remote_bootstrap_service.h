@@ -17,8 +17,8 @@
 #ifndef KUDU_TSERVER_REMOTE_BOOTSTRAP_SERVICE_H_
 #define KUDU_TSERVER_REMOTE_BOOTSTRAP_SERVICE_H_
 
-#include <tr1/unordered_map>
 #include <string>
+#include <unordered_map>
 
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/ref_counted.h"
@@ -67,8 +67,8 @@ class RemoteBootstrapServiceImpl : public RemoteBootstrapServiceIf {
   virtual void Shutdown() OVERRIDE;
 
  private:
-  typedef std::tr1::unordered_map<std::string, scoped_refptr<RemoteBootstrapSession> > SessionMap;
-  typedef std::tr1::unordered_map<std::string, MonoTime> MonoTimeMap;
+  typedef std::unordered_map<std::string, scoped_refptr<RemoteBootstrapSession> > SessionMap;
+  typedef std::unordered_map<std::string, MonoTime> MonoTimeMap;
 
   // Look up session in session map.
   Status FindSessionUnlocked(const std::string& session_id,

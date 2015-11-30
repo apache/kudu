@@ -34,7 +34,6 @@
 
 namespace kudu {
 
-using boost::assign::list_of;
 using client::KuduRowResult;
 using client::KuduSchema;
 using std::string;
@@ -152,7 +151,7 @@ TEST_F(RpcLineItemDAOTest, TestUpdate) {
   dao_->MutateLine(boost::bind(UpdateTestRow, 1, 1, 12345, _1));
   dao_->FinishWriting();
   gscoped_ptr<RpcLineItemDAO::Scanner> scanner;
-  dao_->OpenScanner(list_of<string>(tpch::kQuantityColName), &scanner);
+  dao_->OpenScanner({ tpch::kQuantityColName }, &scanner);
   vector<KuduRowResult> rows;
   while (scanner->HasMore()) {
     scanner->GetNext(&rows);

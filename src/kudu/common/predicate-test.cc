@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <gtest/gtest.h>
 
 #include "kudu/common/scan_predicate.h"
@@ -29,10 +28,9 @@ class TestPredicate : public KuduTest {
   TestPredicate() :
     arena_(1024, 4096),
     n_rows_(100),
-    schema_(boost::assign::list_of
-            (ColumnSchema("col0", UINT32))
-            (ColumnSchema("col1", UINT32))
-            (ColumnSchema("col2", STRING)),
+    schema_({ ColumnSchema("col0", UINT32),
+              ColumnSchema("col1", UINT32),
+              ColumnSchema("col2", STRING) },
             1),
     row_block_(schema_, n_rows_, &arena_)
   {}

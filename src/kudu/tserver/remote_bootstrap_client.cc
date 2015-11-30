@@ -14,6 +14,7 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include "kudu/tserver/remote_bootstrap_client.h"
 
 #include <gflags/gflags.h>
@@ -70,8 +71,8 @@ using consensus::RaftPeerPB;
 using env_util::CopyFile;
 using fs::WritableBlock;
 using rpc::Messenger;
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 using tablet::ColumnDataPB;

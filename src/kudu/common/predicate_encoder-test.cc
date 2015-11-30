@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 #include <vector>
@@ -78,10 +77,9 @@ class CompositeIntKeysTest : public TestRangePredicateEncoder {
  public:
   CompositeIntKeysTest() :
     TestRangePredicateEncoder(
-        Schema(boost::assign::list_of
-               (ColumnSchema("a", UINT8))
-               (ColumnSchema("b", UINT8))
-               (ColumnSchema("c", UINT8)),
+        Schema({ ColumnSchema("a", UINT8),
+                 ColumnSchema("b", UINT8),
+                 ColumnSchema("c", UINT8) },
                3)) {
   }
 };
@@ -236,10 +234,9 @@ class CompositeIntStringKeysTest : public TestRangePredicateEncoder {
  public:
   CompositeIntStringKeysTest() :
     TestRangePredicateEncoder(
-        Schema(boost::assign::list_of
-               (ColumnSchema("a", UINT8))
-               (ColumnSchema("b", STRING))
-               (ColumnSchema("c", STRING)),
+        Schema({ ColumnSchema("a", UINT8),
+                 ColumnSchema("b", STRING),
+                 ColumnSchema("c", STRING) },
                3)) {
   }
 };
@@ -275,9 +272,7 @@ class SingleIntKeyTest : public TestRangePredicateEncoder {
  public:
   SingleIntKeyTest() :
     TestRangePredicateEncoder(
-        Schema(boost::assign::list_of
-               (ColumnSchema("a", UINT8)),
-                1)) {
+        Schema({ ColumnSchema("a", UINT8) }, 1)) {
     }
 };
 

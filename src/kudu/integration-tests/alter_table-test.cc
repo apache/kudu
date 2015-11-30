@@ -19,10 +19,9 @@
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <string>
-#include <tr1/memory>
-#include <utility>
 #include <map>
+#include <string>
+#include <utility>
 
 #include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
@@ -56,10 +55,6 @@ DECLARE_bool(use_hybrid_clock);
 
 namespace kudu {
 
-using std::map;
-using std::pair;
-using std::vector;
-using std::tr1::shared_ptr;
 using client::KuduClient;
 using client::KuduClientBuilder;
 using client::KuduColumnSchema;
@@ -75,9 +70,13 @@ using client::KuduTableAlterer;
 using client::KuduTableCreator;
 using client::KuduUpdate;
 using client::KuduValue;
-using master::MiniMaster;
+using client::sp::shared_ptr;
 using master::AlterTableRequestPB;
 using master::AlterTableResponsePB;
+using master::MiniMaster;
+using std::map;
+using std::pair;
+using std::vector;
 using tablet::TabletPeer;
 using tserver::MiniTabletServer;
 
@@ -239,7 +238,7 @@ class AlterTableTest : public KuduTest {
   static const char *kTableName;
 
   gscoped_ptr<MiniCluster> cluster_;
-  std::tr1::shared_ptr<KuduClient> client_;
+  shared_ptr<KuduClient> client_;
 
   KuduSchema schema_;
 
@@ -558,8 +557,8 @@ TEST_F(AlterTableTest, TestBootstrapAfterAlters) {
   ASSERT_OK(tablet_peer_->tablet()->Flush());
   InsertRows(1, 1);
 
-  UpdateRow(0, boost::assign::map_list_of("c1", 10001));
-  UpdateRow(1, boost::assign::map_list_of("c1", 10002));
+  UpdateRow(0, { {"c1", 10001} });
+  UpdateRow(1, { {"c1", 10002} });
 
   NO_FATALS(ScanToStrings(&rows));
   ASSERT_EQ(2, rows.size());
@@ -618,7 +617,7 @@ TEST_F(AlterTableTest, TestCompactAfterUpdatingRemovedColumn) {
   ASSERT_EQ("(int32 c0=16777216, int32 c1=1, int32 c2=12345)", rows[1]);
 
   // Add a delta for c1.
-  UpdateRow(0, boost::assign::map_list_of("c1", 54321));
+  UpdateRow(0, { {"c1", 54321} });
 
   // Drop c1.
   LOG(INFO) << "Dropping c1";
@@ -651,7 +650,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterUpdatingRemovedColumn) {
   ASSERT_EQ("(int32 c0=0, int32 c1=0, int32 c2=12345)", rows[0]);
 
   // Add a delta for c1.
-  UpdateRow(0, boost::assign::map_list_of("c1", 54321));
+  UpdateRow(0, { {"c1", 54321} });
 
   // Make sure the delta is in a delta-file.
   ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
@@ -700,7 +699,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasIntoMissingBaseData) {
   ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
 
   // Add a delta for c2.
-  UpdateRow(0, boost::assign::map_list_of("c2", 54321));
+  UpdateRow(0, { {"c2", 54321} });
 
   // Make sure the delta is in a delta-file.
   ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());
@@ -749,7 +748,7 @@ TEST_F(AlterTableTest, TestMajorCompactDeltasAfterAddUpdateRemoveColumn) {
   ASSERT_OK(AddNewI32Column(kTableName, "c2", 12345));
 
   // Add a delta for c2.
-  UpdateRow(0, boost::assign::map_list_of("c2", 54321));
+  UpdateRow(0, { {"c2", 54321} });
 
   // Make sure the delta is in a delta-file.
   ASSERT_OK(tablet_peer_->tablet()->FlushBiggestDMS());

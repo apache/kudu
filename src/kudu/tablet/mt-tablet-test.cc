@@ -19,8 +19,7 @@
 #include <boost/ptr_container/ptr_vector.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <memory>
 
 #include "kudu/codegen/compilation_manager.h"
 #include "kudu/gutil/macros.h"
@@ -52,8 +51,7 @@ DEFINE_int32(tablet_test_flush_threshold_mb, 0, "Minimum memrowset size to flush
 DEFINE_double(flusher_backoff, 2.0f, "Ratio to backoff the flusher thread");
 DEFINE_int32(flusher_initial_frequency_ms, 30, "Number of ms to wait between flushes");
 
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::shared_ptr;
 
 namespace kudu {
 namespace tablet {
@@ -78,7 +76,7 @@ class MultiThreadedTabletTest : public TabletTestBase<SETUP> {
     CHECK_OK(tablet()->CountRows(&count));
     const Schema* schema = tablet()->schema();
     ColumnSchema valcol = schema->column(schema->find_column("val"));
-    valcol_projection_ = Schema(boost::assign::list_of(valcol), 0);
+    valcol_projection_ = Schema({ valcol }, 0);
     CHECK_OK(tablet()->NewRowIterator(valcol_projection_, &iter));
     codegen::CompilationManager::GetSingleton()->Wait();
 

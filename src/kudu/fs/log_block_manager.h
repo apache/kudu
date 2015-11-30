@@ -20,10 +20,10 @@
 
 #include <deque>
 #include <gtest/gtest_prod.h>
-#include <tr1/memory>
-#include <tr1/unordered_map>
-#include <tr1/unordered_set>
+#include <memory>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -180,7 +180,7 @@ class LogBlockManager : public BlockManager {
 
   // Simpler typedef for a block map which isn't tracked in the memory tracker.
   // Used during startup.
-  typedef std::tr1::unordered_map<
+  typedef std::unordered_map<
       const BlockId,
       scoped_refptr<internal::LogBlock>,
       BlockIdHash,
@@ -188,7 +188,7 @@ class LogBlockManager : public BlockManager {
 
   typedef MemTrackerAllocator<
       std::pair<const BlockId, scoped_refptr<internal::LogBlock> > > BlockAllocator;
-  typedef std::tr1::unordered_map<
+  typedef std::unordered_map<
       const BlockId,
       scoped_refptr<internal::LogBlock>,
       BlockIdHash,
@@ -271,7 +271,7 @@ class LogBlockManager : public BlockManager {
 
   // Tracks memory consumption of any allocations numerous enough to be
   // interesting (e.g. LogBlocks).
-  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  std::shared_ptr<MemTracker> mem_tracker_;
 
   // Protects the block map, container structures, and 'dirty_dirs'.
   mutable simple_spinlock lock_;
@@ -286,7 +286,7 @@ class LogBlockManager : public BlockManager {
   //
   // Together with blocks_by_block_id's keys, used to prevent collisions
   // when creating new anonymous blocks.
-  std::tr1::unordered_set<BlockId, BlockIdHash> open_block_ids_;
+  std::unordered_set<BlockId, BlockIdHash> open_block_ids_;
 
   // Holds (and owns) all containers loaded from disk.
   std::vector<internal::LogBlockContainer*> all_containers_;
@@ -300,7 +300,7 @@ class LogBlockManager : public BlockManager {
   // Tracks dirty container directories.
   //
   // Synced and cleared by SyncMetadata().
-  std::tr1::unordered_set<std::string> dirty_dirs_;
+  std::unordered_set<std::string> dirty_dirs_;
 
   // For manipulating files.
   Env* env_;
@@ -315,12 +315,12 @@ class LogBlockManager : public BlockManager {
   AtomicInt<int32> root_paths_idx_;
 
   // Maps root paths to instance metadata files found in each root path.
-  typedef std::tr1::unordered_map<std::string, PathInstanceMetadataFile*> InstanceMap;
+  typedef std::unordered_map<std::string, PathInstanceMetadataFile*> InstanceMap;
   InstanceMap instances_by_root_path_;
 
   // Maps root paths to thread pools. Each pool runs at most one thread, and
   // so serves as a "work queue" for that particular disk.
-  typedef std::tr1::unordered_map<std::string, ThreadPool*> ThreadPoolMap;
+  typedef std::unordered_map<std::string, ThreadPool*> ThreadPoolMap;
   ThreadPoolMap thread_pools_by_root_path_;
 
   // For generating container names.

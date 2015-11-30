@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -121,13 +120,11 @@ TEST_F(TestMemcmpableVarint, TestCompositeKeys) {
 // tests "interesting" values -- i.e values around the boundaries of where
 // the encoding changes its number of bytes.
 TEST_F(TestMemcmpableVarint, TestInterestingCompositeKeys) {
-  vector<uint64_t> interesting_values =
-    boost::assign::list_of
-    (0)(1)(240) // 1 byte
-    (241)(2000)(2287) // 2 bytes
-    (2288)(40000)(67823) // 3 bytes
-    (67824)(1ULL << 23)((1ULL << 24) - 1) // 4 bytes
-    (1ULL << 24)(1ULL << 30)((1ULL << 32) - 1); // 5 bytes
+  vector<uint64_t> interesting_values = { 0, 1, 240, // 1 byte
+                                          241, 2000, 2287, // 2 bytes
+                                          2288, 40000, 67823, // 3 bytes
+                                          67824, 1ULL << 23, (1ULL << 24) - 1, // 4 bytes
+                                          1ULL << 24, 1ULL << 30, (1ULL << 32) - 1 }; // 5 bytes
 
   faststring buf1;
   faststring buf2;

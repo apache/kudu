@@ -20,10 +20,10 @@
 #include <boost/foreach.hpp>
 #include <functional>
 #include <glog/logging.h>
+#include <memory>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_map>
-#include <tr1/unordered_set>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -52,8 +52,8 @@
 namespace kudu {
 
 using std::vector;
-using std::tr1::unordered_map;
-using std::tr1::unordered_set;
+using std::unordered_map;
+using std::unordered_set;
 
 // The ID of a column. Each column in a table has a unique ID.
 struct ColumnId {
@@ -280,8 +280,8 @@ class ColumnSchema {
   const TypeInfo *type_info_;
   bool is_nullable_;
   // use shared_ptr since the ColumnSchema is always copied around.
-  std::tr1::shared_ptr<Variant> read_default_;
-  std::tr1::shared_ptr<Variant> write_default_;
+  std::shared_ptr<Variant> read_default_;
+  std::shared_ptr<Variant> write_default_;
   ColumnStorageAttributes attributes_;
 };
 
@@ -768,12 +768,12 @@ class Schema {
   // The map is instrumented with a counting allocator so that we can accurately
   // measure its memory footprint.
   int64_t name_to_index_bytes_;
-  typedef STLCountingAllocator<std::pair<StringPiece, size_t> > NameToIndexMapAllocator;
+  typedef STLCountingAllocator<std::pair<const StringPiece, size_t> > NameToIndexMapAllocator;
   typedef unordered_map<
       StringPiece,
       size_t,
-      __gnu_cxx::hash<StringPiece>,
-      __gnu_cxx::equal_to<StringPiece>,
+      std::hash<StringPiece>,
+      std::equal_to<StringPiece>,
       NameToIndexMapAllocator> NameToIndexMap;
   NameToIndexMap name_to_index_;
 
@@ -854,15 +854,14 @@ class SchemaBuilder {
 
 } // namespace kudu
 
-// Specialize std::tr1::hash for ColumnId
-namespace std { namespace tr1 {
+// Specialize std::hash for ColumnId
+namespace std {
 template<>
 struct hash<kudu::ColumnId> {
   int operator()(const kudu::ColumnId& col_id) const {
     return col_id;
   }
 };
-} // namespace tr1
 } // namespace std
 
 #endif

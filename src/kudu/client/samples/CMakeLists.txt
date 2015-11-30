@@ -22,12 +22,6 @@ cmake_minimum_required(VERSION 2.8)
 find_package(kuduClient REQUIRED)
 include_directories(${KUDU_CLIENT_INCLUDE_DIR})
 
-if ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang")
-  # Use libstdc++ and not libc++. The latter lacks support for tr1 in OSX
-  # and since 10.9 is now the default.
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
-endif()
-
 # The Kudu client library always uses the old gcc ABI.
 add_definitions(-D_GLIBCXX_USE_CXX11_ABI=0)
 

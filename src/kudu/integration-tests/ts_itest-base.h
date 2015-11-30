@@ -20,13 +20,12 @@
 #include <boost/foreach.hpp>
 #include <glog/stl_logging.h>
 #include <string>
-#include <tr1/memory>
 #include <utility>
 #include <vector>
 
 #include "kudu/client/client-test-util.h"
-#include "kudu/consensus/quorum_util.h"
 #include "kudu/client/schema-internal.h"
+#include "kudu/consensus/quorum_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/integration-tests/cluster_itest_util.h"
 #include "kudu/integration-tests/cluster_verifier.h"
@@ -139,7 +138,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
 
     bool replicas_missing = true;
     do {
-      std::tr1::unordered_multimap<std::string, TServerDetails*> tablet_replicas;
+      std::unordered_multimap<std::string, TServerDetails*> tablet_replicas;
       GetTableLocationsRequestPB req;
       GetTableLocationsResponsePB resp;
       RpcController controller;
@@ -400,7 +399,7 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
     STLDeleteValues(&tablet_servers_);
   }
 
-  void CreateClient(std::tr1::shared_ptr<client::KuduClient>* client) {
+  void CreateClient(client::sp::shared_ptr<client::KuduClient>* client) {
     // Connect to the cluster.
     ASSERT_OK(client::KuduClientBuilder()
                      .add_master_server_addr(cluster_->master()->bound_rpc_addr().ToString())
@@ -452,8 +451,8 @@ class TabletServerIntegrationTestBase : public TabletServerTestBase {
   // Maps tablet to all replicas.
   TabletReplicaMap tablet_replicas_;
 
-  std::tr1::shared_ptr<client::KuduClient> client_;
-  std::tr1::shared_ptr<client::KuduTable> table_;
+  client::sp::shared_ptr<client::KuduClient> client_;
+  client::sp::shared_ptr<client::KuduTable> table_;
   std::string tablet_id_;
 
   ThreadSafeRandom random_;

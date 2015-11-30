@@ -225,7 +225,7 @@
 
 #include <algorithm>
 #include <string>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -421,7 +421,7 @@ class MetricEntityPrototype {
   scoped_refptr<MetricEntity> Instantiate(
       MetricRegistry* registry,
       const std::string& id) const {
-    return Instantiate(registry, id, std::tr1::unordered_map<std::string, std::string>());
+    return Instantiate(registry, id, std::unordered_map<std::string, std::string>());
   }
 
   // If the entity already exists, then 'initial_attrs' will replace all existing
@@ -429,7 +429,7 @@ class MetricEntityPrototype {
   scoped_refptr<MetricEntity> Instantiate(
       MetricRegistry* registry,
       const std::string& id,
-      const std::tr1::unordered_map<std::string, std::string>& initial_attrs) const;
+      const std::unordered_map<std::string, std::string>& initial_attrs) const;
 
  private:
   const char* const name_;
@@ -439,8 +439,8 @@ class MetricEntityPrototype {
 
 class MetricEntity : public RefCountedThreadSafe<MetricEntity> {
  public:
-  typedef std::tr1::unordered_map<const MetricPrototype*, scoped_refptr<Metric> > MetricMap;
-  typedef std::tr1::unordered_map<std::string, std::string> AttributeMap;
+  typedef std::unordered_map<const MetricPrototype*, scoped_refptr<Metric> > MetricMap;
+  typedef std::unordered_map<std::string, std::string> AttributeMap;
 
   scoped_refptr<Counter> FindOrCreateCounter(const CounterPrototype* proto);
   scoped_refptr<Histogram> FindOrCreateHistogram(const HistogramPrototype* proto);
@@ -586,7 +586,7 @@ class MetricRegistry {
   }
 
  private:
-  typedef std::tr1::unordered_map<std::string, scoped_refptr<MetricEntity> > EntityMap;
+  typedef std::unordered_map<std::string, scoped_refptr<MetricEntity> > EntityMap;
   EntityMap entities_;
 
   mutable simple_spinlock lock_;

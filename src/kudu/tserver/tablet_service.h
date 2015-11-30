@@ -17,14 +17,14 @@
 #ifndef KUDU_TSERVER_TABLET_SERVICE_H
 #define KUDU_TSERVER_TABLET_SERVICE_H
 
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
-#include "kudu/gutil/ref_counted.h"
-#include "kudu/tserver/tserver_service.service.h"
-#include "kudu/tserver/tserver_admin.service.h"
 #include "kudu/consensus/consensus.service.h"
+#include "kudu/gutil/ref_counted.h"
+#include "kudu/tserver/tserver_admin.service.h"
+#include "kudu/tserver/tserver_service.service.h"
 
 namespace kudu {
 class RowwiseIterator;
@@ -91,7 +91,7 @@ class TabletServiceImpl : public TabletServerServiceIf {
   Status HandleScanAtSnapshot(const NewScanRequestPB& scan_pb,
                               const rpc::RpcContext* rpc_context,
                               const Schema& projection,
-                              const std::tr1::shared_ptr<tablet::Tablet>& tablet,
+                              const std::shared_ptr<tablet::Tablet>& tablet,
                               gscoped_ptr<RowwiseIterator>* iter,
                               Timestamp* snap_timestamp);
 

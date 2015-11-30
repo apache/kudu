@@ -297,18 +297,28 @@ class unique_lock {
   DISALLOW_COPY_AND_ASSIGN(unique_lock<Mutex>);
 };
 
-// Simpler version of boost::shared_lock. Only supports the basic object
-// lifecycle and defers any error checking to the underlying mutex.
+// Simpler version of boost::shared_lock. Defers error checking to the
+// underlying mutex.
 template <typename Mutex>
 class shared_lock {
  public:
+  explicit shared_lock()
+    : m_(NULL) {
+  }
+
   explicit shared_lock(Mutex* m)
     : m_(DCHECK_NOTNULL(m)) {
     m_->lock_shared();
   }
 
+  void swap(shared_lock& other) {
+    std::swap(m_,other.m_);
+  }
+
   ~shared_lock() {
-    m_->unlock_shared();
+    if (m_ != NULL) {
+      m_->unlock_shared();
+    }
   }
 
  private:

@@ -14,17 +14,17 @@
 // KIND, either express or implied.  See the License for the
 // specific language governing permissions and limitations
 // under the License.
+
 #include <algorithm>
-#include <boost/assign/list_of.hpp>
 #include <boost/bind.hpp>
 #include <boost/foreach.hpp>
 #include <boost/thread/locks.hpp>
 #include <boost/thread/mutex.hpp>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <ostream>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -47,13 +47,13 @@
 #include "kudu/tablet/delta_compaction.h"
 #include "kudu/tablet/diskrowset.h"
 #include "kudu/tablet/maintenance_manager.h"
+#include "kudu/tablet/row_op.h"
+#include "kudu/tablet/rowset_info.h"
+#include "kudu/tablet/rowset_tree.h"
+#include "kudu/tablet/svg_dump.h"
 #include "kudu/tablet/tablet.h"
 #include "kudu/tablet/tablet_metrics.h"
 #include "kudu/tablet/tablet_mm_ops.h"
-#include "kudu/tablet/rowset_info.h"
-#include "kudu/tablet/rowset_tree.h"
-#include "kudu/tablet/row_op.h"
-#include "kudu/tablet/svg_dump.h"
 #include "kudu/tablet/transactions/alter_schema_transaction.h"
 #include "kudu/tablet/transactions/write_transaction.h"
 #include "kudu/util/bloom_filter.h"
@@ -63,9 +63,9 @@
 #include "kudu/util/locks.h"
 #include "kudu/util/mem_tracker.h"
 #include "kudu/util/metrics.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/trace.h"
 #include "kudu/util/url-coding.h"
-#include "kudu/util/stopwatch.h"
 
 DEFINE_bool(tablet_do_dup_key_checks, true,
             "Whether to check primary keys for duplicate on insertion. "
@@ -95,11 +95,10 @@ METRIC_DEFINE_gauge_size(tablet, on_disk_size, "Tablet Size On Disk",
                          kudu::MetricUnit::kBytes,
                          "Size of this tablet on disk.");
 
+using std::shared_ptr;
 using std::string;
-using std::set;
+using std::unordered_set;
 using std::vector;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
 
 namespace kudu {
 namespace tablet {
@@ -620,7 +619,7 @@ Status Tablet::ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
   shared_ptr<RowSetTree> new_rst(new RowSetTree());
   ModifyRowSetTree(*components_->rowsets,
                    RowSetVector(), // remove nothing
-                   boost::assign::list_of(*old_ms), // add the old MRS
+                   { *old_ms }, // add the old MRS
                    new_rst.get());
 
   // Swap it in
@@ -1237,7 +1236,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
     // Taking component_lock_ in write mode ensures that no new transactions
     // can StartApplying() (or snapshot components_) during this block.
     boost::lock_guard<rw_spinlock> lock(component_lock_);
-    AtomicSwapRowSetsUnlocked(input.rowsets(), boost::assign::list_of(inprogress_rowset));
+    AtomicSwapRowSetsUnlocked(input.rowsets(), { inprogress_rowset });
 
     // NOTE: transactions may *commit* in between these two lines.
     // We need to make sure all such transactions end up in the
@@ -1309,7 +1308,7 @@ Status Tablet::DoCompactionOrFlush(const RowSetsInCompaction &input, int64_t mrs
 
   // Replace the compacted rowsets with the new on-disk rowsets, making them visible now that
   // their metadata was written to disk.
-  AtomicSwapRowSets(boost::assign::list_of(inprogress_rowset), new_disk_rowsets);
+  AtomicSwapRowSets({ inprogress_rowset }, new_disk_rowsets);
 
   LOG(INFO) << op_name << " successful on " << drsw.written_count()
             << " rows " << "(" << drsw.written_size() << " bytes)";

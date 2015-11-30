@@ -18,12 +18,11 @@
 #include <boost/optional.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
-#include <tr1/memory>
-#include <tr1/unordered_map>
 #include <string>
+#include <unordered_map>
 
-#include "kudu/client/client.h"
 #include "kudu/client/client-test-util.h"
+#include "kudu/client/client.h"
 #include "kudu/common/wire_protocol-test-util.h"
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/stl_util.h"
@@ -54,14 +53,14 @@ using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
+using kudu::client::sp::shared_ptr;
 using kudu::consensus::CONSENSUS_CONFIG_COMMITTED;
 using kudu::itest::TServerDetails;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::RemoteBootstrapClient;
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 

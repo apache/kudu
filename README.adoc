@@ -166,9 +166,20 @@ limited utility.
 
 === Running tests with ThreadSanitizer enabled
 
-ThreadSanitizer (TSAN) is a clang feature which can detect improperly synchronized access to data
-along with many other threading bugs. To enable TSAN, pass `-DKUDU_USE_TSAN=1` to the `cmake`
-invocation, recompile, and run tests.
+ThreadSanitizer (TSAN) is a feature of recent Clang and GCC compilers which can
+detect improperly synchronized access to data along with many other threading
+bugs. To enable TSAN, pass `-DKUDU_USE_TSAN=1` to the `cmake` invocation,
+recompile, and run tests. For example:
+
+[source,bash]
+----
+$ rm -Rf CMakeCache.txt CMakeFiles/
+$ CC=$(pwd)/thirdparty/clang-toolchain/bin/clang \
+    CXX=$(pwd)/thirdparty/clang-toolchain/bin/clang++ \
+    cmake -DKUDU_USE_TSAN=1 .
+$ make -j8
+$ ctest -j8
+----
 
 . Enabling TSAN supressions while running tests
 [NOTE]

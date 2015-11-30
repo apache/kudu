@@ -51,7 +51,7 @@
 #include "kudu/util/trace.h"
 
 using std::string;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using strings::Substitute;
 
 DEFINE_int32(rpc_default_keepalive_time_ms, 65000,

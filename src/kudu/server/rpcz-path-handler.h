@@ -17,7 +17,7 @@
 #ifndef KUDU_SERVER_RPCZ_PATH_HANDLER_H
 #define KUDU_SERVER_RPCZ_PATH_HANDLER_H
 
-#include <tr1/memory>
+#include <memory>
 
 namespace kudu {
 
@@ -27,7 +27,7 @@ class Messenger;
 
 class Webserver;
 
-void AddRpczPathHandlers(const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+void AddRpczPathHandlers(const std::shared_ptr<rpc::Messenger>& messenger,
                          Webserver* webserver);
 
 } // namespace kudu

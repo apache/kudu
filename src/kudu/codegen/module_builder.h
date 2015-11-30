@@ -18,13 +18,13 @@
 #ifndef KUDU_CODEGEN_FUNCTION_BUILDER_H
 #define KUDU_CODEGEN_FUNCTION_BUILDER_H
 
+#include <memory>
 #include <string>
 #include <vector>
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/status.h"
 
 namespace llvm {
@@ -109,7 +109,7 @@ class ModuleBuilder {
   // After this method has been called, the jit-compiled code may be
   // called as long as 'out' remains alive. Once 'out' destructs,
   // the code will be freed.
-  Status Compile(gscoped_ptr<llvm::ExecutionEngine>* out);
+  Status Compile(std::unique_ptr<llvm::ExecutionEngine>* out);
 
   // Retrieves the TargetMachine that the engine builder guessed was
   // the native target. Requires compilation is complete.
@@ -138,8 +138,8 @@ class ModuleBuilder {
 
   MBState state_;
   std::vector<JITFuture> futures_;
-  gscoped_ptr<llvm::LLVMContext> context_;
-  gscoped_ptr<llvm::Module> module_;
+  std::unique_ptr<llvm::LLVMContext> context_;
+  std::unique_ptr<llvm::Module> module_;
   LLVMBuilder builder_;
   llvm::TargetMachine* target_; // not owned
 

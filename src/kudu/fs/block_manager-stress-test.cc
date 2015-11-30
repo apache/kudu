@@ -17,15 +17,15 @@
 
 #include <boost/foreach.hpp>
 #include <cmath>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/fs/file_block_manager.h"
 #include "kudu/fs/log_block_manager.h"
+#include "kudu/gutil/stl_util.h"
 #include "kudu/gutil/strings/split.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/gutil/stl_util.h"
 #include "kudu/util/atomic.h"
 #include "kudu/util/metrics.h"
 #include "kudu/util/random.h"
@@ -46,8 +46,8 @@ DEFINE_string(block_manager_paths, "", "Comma-separated list of paths to "
               "use for block storage. If empty, will use the default unit "
               "test path");
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 

@@ -53,7 +53,7 @@
 #include "kudu/util/net/socket.h"
 
 using std::string;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 DEFINE_int64(rpc_negotiation_timeout_ms, 3000,
              "Timeout for negotiating an RPC connection.");

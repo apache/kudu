@@ -27,8 +27,8 @@
 namespace kudu {
 namespace tablet {
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 using strings::Substitute;
 

@@ -29,7 +29,7 @@
 
 #include <vector>
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace kudu {
 namespace master {

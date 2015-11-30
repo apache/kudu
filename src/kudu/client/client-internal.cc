@@ -42,8 +42,8 @@
 #include "kudu/util/thread_restrictions.h"
 
 using std::set;
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {

@@ -47,7 +47,7 @@ using client::KuduSession;
 using client::KuduTable;
 using client::KuduTableCreator;
 using client::KuduUpdate;
-using std::tr1::shared_ptr;
+using client::sp::shared_ptr;
 
 const char* const TestWorkload::kDefaultTableName = "test-workload";
 

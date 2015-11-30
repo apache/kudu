@@ -19,8 +19,8 @@
 
 #include <iosfwd>
 #include <map>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include <boost/thread/shared_mutex.hpp>
@@ -91,7 +91,7 @@ class Tablet {
   // within the provided registry. Otherwise, no metrics are collected.
   Tablet(const scoped_refptr<TabletMetadata>& metadata,
          const scoped_refptr<server::Clock>& clock,
-         const std::tr1::shared_ptr<MemTracker>& parent_mem_tracker,
+         const std::shared_ptr<MemTracker>& parent_mem_tracker,
          MetricRegistry* metric_registry,
          const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry);
 
@@ -291,12 +291,12 @@ class Tablet {
   // then 'rs' isn't set. Callers who already own compact_select_lock_
   // can call GetPerfImprovementForBestDeltaCompactUnlocked().
   double GetPerfImprovementForBestDeltaCompact(RowSet::DeltaCompactionType type,
-                                               std::tr1::shared_ptr<RowSet>* rs) const;
+                                               std::shared_ptr<RowSet>* rs) const;
 
   // Same as GetPerfImprovementForBestDeltaCompact(), but doesn't take a lock on
   // compact_select_lock_.
   double GetPerfImprovementForBestDeltaCompactUnlocked(RowSet::DeltaCompactionType type,
-                                                       std::tr1::shared_ptr<RowSet>* rs) const;
+                                                       std::shared_ptr<RowSet>* rs) const;
 
   // Return the current number of rowsets in the tablet.
   size_t num_rowsets() const;
@@ -329,10 +329,10 @@ class Tablet {
   const TabletMetadata *metadata() const { return metadata_.get(); }
   TabletMetadata *metadata() { return metadata_.get(); }
 
-  void SetCompactionHooksForTests(const std::tr1::shared_ptr<CompactionFaultHooks> &hooks);
-  void SetFlushHooksForTests(const std::tr1::shared_ptr<FlushFaultHooks> &hooks);
+  void SetCompactionHooksForTests(const std::shared_ptr<CompactionFaultHooks> &hooks);
+  void SetFlushHooksForTests(const std::shared_ptr<FlushFaultHooks> &hooks);
   void SetFlushCompactCommonHooksForTests(
-      const std::tr1::shared_ptr<FlushCompactCommonHooks> &hooks);
+      const std::shared_ptr<FlushCompactCommonHooks> &hooks);
 
   // Returns the current MemRowSet id, for tests.
   // This method takes a read lock on component_lock_ and is thread-safe.
@@ -344,12 +344,12 @@ class Tablet {
   //
   // TODO: Handle MVCC to support MemRowSet and handle deltas in DeltaMemStore
   Status DoMajorDeltaCompaction(const std::vector<ColumnId>& column_ids,
-                                std::tr1::shared_ptr<RowSet> input_rowset);
+                                std::shared_ptr<RowSet> input_rowset);
 
   // Method used by tests to retrieve all rowsets of this table. This
   // will be removed once code for selecting the appropriate RowSet is
   // finished and delta files is finished is part of Tablet class.
-  void GetRowSetsForTests(vector<std::tr1::shared_ptr<RowSet> >* out);
+  void GetRowSetsForTests(vector<std::shared_ptr<RowSet> >* out);
 
   // Register the maintenance ops associated with this tablet
   void RegisterMaintenanceOps(MaintenanceManager* maintenance_manager);
@@ -368,7 +368,7 @@ class Tablet {
   const scoped_refptr<MetricEntity>& GetMetricEntity() const { return metric_entity_; }
 
   // Returns a reference to this tablet's memory tracker.
-  const std::tr1::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
+  const std::shared_ptr<MemTracker>& mem_tracker() const { return mem_tracker_; }
 
   static const char* kDMSMemTrackerId;
  private:
@@ -401,7 +401,7 @@ class Tablet {
   Status CaptureConsistentIterators(const Schema *projection,
                                     const MvccSnapshot &snap,
                                     const ScanSpec *spec,
-                                    vector<std::tr1::shared_ptr<RowwiseIterator> > *iters) const;
+                                    vector<std::shared_ptr<RowwiseIterator> > *iters) const;
 
   Status PickRowSetsToCompact(RowSetsInCompaction *picked,
                               CompactFlags flags) const;
@@ -439,11 +439,11 @@ class Tablet {
   // and the MemRowSet compaction lock will be taken to prevent the inclusion
   // in any concurrent compactions.
   Status ReplaceMemRowSetUnlocked(RowSetsInCompaction *compaction,
-                                  std::tr1::shared_ptr<MemRowSet> *old_ms);
+                                  std::shared_ptr<MemRowSet> *old_ms);
 
   // TODO: Document me.
   Status FlushInternal(const RowSetsInCompaction& input,
-                       const std::tr1::shared_ptr<MemRowSet>& old_ms);
+                       const std::shared_ptr<MemRowSet>& old_ms);
 
   BloomFilterSizing bloom_sizing() const;
 
@@ -455,7 +455,7 @@ class Tablet {
   Status CheckRowInTablet(const ConstContiguousRow& probe) const;
 
   // Helper method to find the rowset that has the DMS with the highest retention.
-  std::tr1::shared_ptr<RowSet> FindBestDMSToFlush(
+  std::shared_ptr<RowSet> FindBestDMSToFlush(
       const MaxIdxToSegmentMap& max_idx_to_segment_size) const;
 
   // Helper method to find how many bytes this index retains.
@@ -503,8 +503,8 @@ class Tablet {
   scoped_refptr<TabletComponents> components_;
 
   scoped_refptr<log::LogAnchorRegistry> log_anchor_registry_;
-  std::tr1::shared_ptr<MemTracker> mem_tracker_;
-  std::tr1::shared_ptr<MemTracker> dms_mem_tracker_;
+  std::shared_ptr<MemTracker> mem_tracker_;
+  std::shared_ptr<MemTracker> dms_mem_tracker_;
 
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<TabletMetrics> metrics_;
@@ -540,9 +540,9 @@ class Tablet {
   State state_;
 
   // Fault hooks. In production code, these will always be NULL.
-  std::tr1::shared_ptr<CompactionFaultHooks> compaction_hooks_;
-  std::tr1::shared_ptr<FlushFaultHooks> flush_hooks_;
-  std::tr1::shared_ptr<FlushCompactCommonHooks> common_hooks_;
+  std::shared_ptr<CompactionFaultHooks> compaction_hooks_;
+  std::shared_ptr<FlushFaultHooks> flush_hooks_;
+  std::shared_ptr<FlushCompactCommonHooks> common_hooks_;
 
   std::vector<MaintenanceOp*> maintenance_ops_;
 
@@ -620,10 +620,10 @@ class Tablet::Iterator : public RowwiseIterator {
 // This structure is immutable -- a transaction can grab it and be sure
 // that it won't change.
 struct TabletComponents : public RefCountedThreadSafe<TabletComponents> {
-  TabletComponents(const std::tr1::shared_ptr<MemRowSet>& mrs,
-                   const std::tr1::shared_ptr<RowSetTree>& rs_tree);
-  const std::tr1::shared_ptr<MemRowSet> memrowset;
-  const std::tr1::shared_ptr<RowSetTree> rowsets;
+  TabletComponents(const std::shared_ptr<MemRowSet>& mrs,
+                   const std::shared_ptr<RowSetTree>& rs_tree);
+  const std::shared_ptr<MemRowSet> memrowset;
+  const std::shared_ptr<RowSetTree> rowsets;
 };
 
 } // namespace tablet

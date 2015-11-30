@@ -32,22 +32,12 @@
 #ifndef KUDU_UTIL_MEMORY_MEMORY_H_
 #define KUDU_UTIL_MEMORY_MEMORY_H_
 
-#include <stddef.h>
-
-#include <glog/logging.h>
-#include <tr1/memory>
-
 #include <algorithm>
-using std::copy;
-using std::max;
-using std::min;
-using std::reverse;
-using std::sort;
-using std::swap;
+#include <glog/logging.h>
 #include <limits>
-using std::numeric_limits;
+#include <memory>
+#include <stddef.h>
 #include <vector>
-using std::vector;
 
 #include "kudu/util/boost_mutex_utils.h"
 #include "kudu/util/mutex.h"
@@ -56,6 +46,15 @@ using std::vector;
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/strings/stringpiece.h"
 #include "kudu/gutil/singleton.h"
+
+using std::copy;
+using std::max;
+using std::min;
+using std::numeric_limits;
+using std::reverse;
+using std::sort;
+using std::swap;
+using std::vector;
 
 namespace kudu {
 
@@ -676,7 +675,7 @@ class MemoryTrackingBufferAllocator : public BufferAllocator {
   // allocation will always succeed.
   MemoryTrackingBufferAllocator(
       BufferAllocator* const delegate,
-      const std::tr1::shared_ptr<MemTracker>& mem_tracker,
+      const std::shared_ptr<MemTracker>& mem_tracker,
       bool enforce_limit = false)
       : delegate_(delegate),
         mem_tracker_(mem_tracker),
@@ -709,7 +708,7 @@ class MemoryTrackingBufferAllocator : public BufferAllocator {
   virtual void FreeInternal(Buffer* buffer) OVERRIDE;
 
   BufferAllocator* delegate_;
-  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  std::shared_ptr<MemTracker> mem_tracker_;
   bool enforce_limit_;
 };
 

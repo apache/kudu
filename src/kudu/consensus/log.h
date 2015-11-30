@@ -20,6 +20,7 @@
 
 #include <boost/thread/shared_mutex.hpp>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -43,11 +44,11 @@ class ThreadPool;
 
 namespace log {
 
+struct LogEntryBatchLogicalSize;
+struct LogMetrics;
+class LogEntryBatch;
 class LogIndex;
 class LogReader;
-class LogEntryBatch;
-struct LogMetrics;
-struct LogEntryBatchLogicalSize;
 
 typedef BlockingQueue<LogEntryBatch*, LogEntryBatchLogicalSize> LogEntryBatchQueue;
 
@@ -218,7 +219,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // Returns this Log's FsManager.
   FsManager* GetFsManager();
 
-  void SetLogFaultHooksForTests(const std::tr1::shared_ptr<LogFaultHooks> &hooks) {
+  void SetLogFaultHooksForTests(const std::shared_ptr<LogFaultHooks> &hooks) {
     log_hooks_ = hooks;
   }
 
@@ -273,7 +274,7 @@ class Log : public RefCountedThreadSafe<Log> {
   // created for the segment.
   Status CreatePlaceholderSegment(const WritableFileOptions& opts,
                                   std::string* result_path,
-                                  std::tr1::shared_ptr<WritableFile>* out);
+                                  std::shared_ptr<WritableFile>* out);
 
   // Creates a new WAL segment on disk, writes the next_segment_header_ to
   // disk as the header, and sets active_segment_ to point to this new segment.
@@ -339,7 +340,7 @@ class Log : public RefCountedThreadSafe<Log> {
   uint64_t active_segment_sequence_number_;
 
   // The writable file for the next allocated segment
-  std::tr1::shared_ptr<WritableFile> next_segment_file_;
+  std::shared_ptr<WritableFile> next_segment_file_;
 
   // The path for the next allocated segment.
   std::string next_segment_path_;
@@ -397,7 +398,7 @@ class Log : public RefCountedThreadSafe<Log> {
   scoped_refptr<MetricEntity> metric_entity_;
   gscoped_ptr<LogMetrics> metrics_;
 
-  std::tr1::shared_ptr<LogFaultHooks> log_hooks_;
+  std::shared_ptr<LogFaultHooks> log_hooks_;
 
   DISALLOW_COPY_AND_ASSIGN(Log);
 };

@@ -17,8 +17,8 @@
 #ifndef KUDU_TABLET_COMPACTION_H
 #define KUDU_TABLET_COMPACTION_H
 
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/generic_iterators.h"
@@ -56,7 +56,7 @@ class CompactionInput {
 
   // Create an input which merges several other compaction inputs. The inputs are merged
   // in key-order according to the given schema. All inputs must have matching schemas.
-  static CompactionInput *Merge(const vector<std::tr1::shared_ptr<CompactionInput> > &inputs,
+  static CompactionInput *Merge(const vector<std::shared_ptr<CompactionInput> > &inputs,
                                 const Schema *schema);
 
   virtual Status Init() = 0;
@@ -77,8 +77,8 @@ class CompactionInput {
 // The set of rowsets which are taking part in a given compaction.
 class RowSetsInCompaction {
  public:
-  void AddRowSet(const std::tr1::shared_ptr<RowSet> &rowset,
-                const std::tr1::shared_ptr<boost::mutex::scoped_try_lock> &lock) {
+  void AddRowSet(const std::shared_ptr<RowSet> &rowset,
+                 const std::shared_ptr<boost::mutex::scoped_try_lock> &lock) {
     CHECK(lock->owns_lock());
 
     locks_.push_back(lock);
@@ -92,7 +92,7 @@ class RowSetsInCompaction {
   // for the lifetime of the returned CompactionInput.
   Status CreateCompactionInput(const MvccSnapshot &snap,
                                const Schema* schema,
-                               std::tr1::shared_ptr<CompactionInput> *out) const;
+                               std::shared_ptr<CompactionInput> *out) const;
 
   // Dump a log message indicating the chosen rowsets.
   void DumpToLog() const;
@@ -104,7 +104,7 @@ class RowSetsInCompaction {
   }
 
  private:
-  typedef vector<std::tr1::shared_ptr<boost::mutex::scoped_try_lock> > LockVector;
+  typedef vector<std::shared_ptr<boost::mutex::scoped_try_lock> > LockVector;
 
   RowSetVector rowsets_;
   LockVector locks_;

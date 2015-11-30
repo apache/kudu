@@ -18,7 +18,7 @@
 #include "kudu/rpc/auth_store.h"
 
 #include <string>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include "kudu/util/status.h"
 

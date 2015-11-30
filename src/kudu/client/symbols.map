@@ -19,11 +19,19 @@
     zError;
     zlib*;
 
+    # devtoolset
+    __cxa_throw_bad_array*;
+
     extern "C++" {
       # glog, gflags, and protobuf
       *google::*;
       fL*::FLAGS_*;
       gflags_mutex_namespace::*;
-      glog_internal_namespace_::*
+      glog_internal_namespace_::*;
+
+      # devtoolset - the Red Hat devtoolset statically links c++11 symbols
+      # into binaries so that the result may be executed on a system with an
+      # older libstdc++ which doesn't include the necessary c++11 symbols.
+      std::*;
     };
 };

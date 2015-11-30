@@ -17,7 +17,6 @@
 #ifndef KUDU_TABLET_ROWSET_MANAGER_H
 #define KUDU_TABLET_ROWSET_MANAGER_H
 
-#include <tr1/memory>
 #include <vector>
 #include <utility>
 

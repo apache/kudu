@@ -72,7 +72,7 @@ struct ReaderOptions {
   // The MemTracker that should account for this reader's memory consumption.
   //
   // Default: the root tracker.
-  std::tr1::shared_ptr<MemTracker> parent_mem_tracker;
+  std::shared_ptr<MemTracker> parent_mem_tracker;
 };
 
 struct DumpIteratorOptions {

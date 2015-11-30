@@ -19,7 +19,7 @@
 #define KUDU_CFILE_CFILE_WRITER_H
 
 #include <boost/utility.hpp>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <stdint.h>
 #include <string>
 #include <utility>
@@ -45,7 +45,7 @@ namespace kudu {
 class Arena;
 
 namespace cfile {
-using std::tr1::unordered_map;
+using std::unordered_map;
 
 class BlockPointer;
 class BTreeInfoPB;

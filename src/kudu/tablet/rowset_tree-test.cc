@@ -15,12 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <gtest/gtest.h>
 #include <glog/logging.h>
-
+#include <gtest/gtest.h>
+#include <memory>
 #include <stdio.h>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <unordered_set>
 
 #include "kudu/gutil/map-util.h"
 #include "kudu/tablet/mock-rowsets.h"
@@ -29,9 +28,9 @@
 #include "kudu/util/stopwatch.h"
 #include "kudu/util/test_util.h"
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::unordered_set;
 
 namespace kudu { namespace tablet {
 

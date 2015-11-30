@@ -19,8 +19,7 @@
 
 #include "kudu/client/batcher.h"
 #include "kudu/client/error_collector.h"
-
-using std::tr1::shared_ptr;
+#include "kudu/client/shared_ptr.h"
 
 namespace kudu {
 
@@ -28,6 +27,8 @@ namespace client {
 
 using internal::Batcher;
 using internal::ErrorCollector;
+
+using sp::shared_ptr;
 
 KuduSession::Data::Data(const shared_ptr<KuduClient>& client)
   : client_(client),

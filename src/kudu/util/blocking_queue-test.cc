@@ -18,15 +18,16 @@
 #include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/util/countdown_latch.h"
 #include "kudu/util/blocking_queue.h"
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using std::string;
+using std::vector;
 
 namespace kudu {
 
@@ -54,7 +55,7 @@ TEST(BlockingQueueTest, TestBlockingDrainTo) {
   ASSERT_EQ(test_queue.Put(1), QUEUE_SUCCESS);
   ASSERT_EQ(test_queue.Put(2), QUEUE_SUCCESS);
   ASSERT_EQ(test_queue.Put(3), QUEUE_SUCCESS);
-  std::vector<int32_t> out;
+  vector<int32_t> out;
   ASSERT_TRUE(test_queue.BlockingDrainTo(&out));
   ASSERT_EQ(1, out[0]);
   ASSERT_EQ(2, out[1]);
@@ -127,7 +128,7 @@ TEST(BlockingQueueTest, TestGscopedPtrMethods) {
 
 class MultiThreadTest {
  public:
-  typedef std::vector<std::tr1::shared_ptr<boost::thread> > thread_vec_t;
+  typedef vector<shared_ptr<boost::thread> > thread_vec_t;
 
   MultiThreadTest()
    :  puts_(4),

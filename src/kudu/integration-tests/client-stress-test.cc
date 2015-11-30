@@ -15,10 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 
-#include <tr1/memory>
+#include <memory>
 #include <vector>
 
 #include "kudu/client/client-test-util.h"
@@ -36,7 +35,6 @@ METRIC_DECLARE_counter(leader_memory_pressure_rejections);
 METRIC_DECLARE_counter(follower_memory_pressure_rejections);
 
 using strings::Substitute;
-using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {
@@ -54,7 +52,7 @@ class ClientStressTest : public KuduTest {
     ExternalMiniClusterOptions opts = default_opts();
     if (multi_master()) {
       opts.num_masters = 3;
-      opts.master_rpc_ports = boost::assign::list_of(11010)(11011)(11012);
+      opts.master_rpc_ports = { 11010, 11011, 11012 };
     }
     opts.num_tablet_servers = 3;
     cluster_.reset(new ExternalMiniCluster(opts));
@@ -69,7 +67,7 @@ class ClientStressTest : public KuduTest {
 
  protected:
   void ScannerThread(KuduClient* client, const CountDownLatch* go_latch, int32_t start_key) {
-    shared_ptr<KuduTable> table;
+    client::sp::shared_ptr<KuduTable> table;
     CHECK_OK(client->OpenTable(TestWorkload::kDefaultTableName, &table));
     vector<string> rows;
 
@@ -129,7 +127,7 @@ TEST_F(ClientStressTest, TestStartScans) {
   for (int run = 1; run <= (AllowSlowTests() ? 10 : 2); run++) {
     LOG(INFO) << "Starting run " << run;
     KuduClientBuilder builder;
-    shared_ptr<KuduClient> client;
+    client::sp::shared_ptr<KuduClient> client;
     CHECK_OK(cluster_->CreateClient(builder, &client));
 
     CountDownLatch go_latch(1);

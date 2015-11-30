@@ -19,16 +19,16 @@
 
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 
-#include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/util/faststring.h"
 
 using llvm::ExecutionEngine;
+using std::unique_ptr;
 
 namespace kudu {
 namespace codegen {
 
-JITWrapper::JITWrapper(gscoped_ptr<JITCodeOwner> owner)
-  : owner_(owner.Pass()) {}
+JITWrapper::JITWrapper(unique_ptr<JITCodeOwner> owner)
+  : owner_(std::move(owner)) {}
 
 JITWrapper::~JITWrapper() {}
 

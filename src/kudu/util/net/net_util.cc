@@ -21,9 +21,8 @@
 #include <netdb.h>
 
 #include <algorithm>
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -47,7 +46,7 @@
 #define HOST_NAME_MAX 64
 #endif
 
-using std::tr1::unordered_set;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 
@@ -268,7 +267,7 @@ void TryRunLsof(const Sockaddr& addr, vector<string>* log) {
                            << "Trying to use lsof to find any processes listening "
                            << "on the same port:";
   LOG_STRING(INFO, log) << "$ " << cmd;
-  vector<string> argv = boost::assign::list_of<string>("/bin/bash")("-c")(cmd);
+  vector<string> argv = { "bash", "-c", cmd };
   string results;
   Status s = Subprocess::Call(argv, &results);
   if (PREDICT_FALSE(!s.ok())) {

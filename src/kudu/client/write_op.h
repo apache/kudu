@@ -18,8 +18,8 @@
 #define KUDU_CLIENT_WRITE_OP_H
 
 #include <string>
-#include <tr1/memory>
 
+#include "kudu/client/shared_ptr.h"
 #include "kudu/common/partial_row.h"
 #include "kudu/util/kudu_export.h"
 
@@ -60,10 +60,10 @@ class KUDU_EXPORT KuduWriteOperation {
 
   virtual std::string ToString() const = 0;
  protected:
-  explicit KuduWriteOperation(const std::tr1::shared_ptr<KuduTable>& table);
+  explicit KuduWriteOperation(const sp::shared_ptr<KuduTable>& table);
   virtual Type type() const = 0;
 
-  std::tr1::shared_ptr<KuduTable> const table_;
+  sp::shared_ptr<KuduTable> const table_;
   KuduPartialRow row_;
 
  private:
@@ -101,7 +101,7 @@ class KUDU_EXPORT KuduInsert : public KuduWriteOperation {
 
  private:
   friend class KuduTable;
-  explicit KuduInsert(const std::tr1::shared_ptr<KuduTable>& table);
+  explicit KuduInsert(const sp::shared_ptr<KuduTable>& table);
 };
 
 
@@ -123,7 +123,7 @@ class KUDU_EXPORT KuduUpdate : public KuduWriteOperation {
 
  private:
   friend class KuduTable;
-  explicit KuduUpdate(const std::tr1::shared_ptr<KuduTable>& table);
+  explicit KuduUpdate(const sp::shared_ptr<KuduTable>& table);
 };
 
 
@@ -144,7 +144,7 @@ class KUDU_EXPORT KuduDelete : public KuduWriteOperation {
 
  private:
   friend class KuduTable;
-  explicit KuduDelete(const std::tr1::shared_ptr<KuduTable>& table);
+  explicit KuduDelete(const sp::shared_ptr<KuduTable>& table);
 };
 
 } // namespace client

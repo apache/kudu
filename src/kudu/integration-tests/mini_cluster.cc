@@ -22,9 +22,9 @@
 #include "kudu/client/client.h"
 #include "kudu/gutil/strings/join.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/master/mini_master.h"
 #include "kudu/master/catalog_manager.h"
 #include "kudu/master/master.h"
+#include "kudu/master/mini_master.h"
 #include "kudu/master/ts_descriptor.h"
 #include "kudu/master/ts_manager.h"
 #include "kudu/rpc/messenger.h"
@@ -42,9 +42,9 @@ namespace kudu {
 using client::KuduClient;
 using client::KuduClientBuilder;
 using master::MiniMaster;
-using master::TSDescriptor;
 using master::TabletLocationsPB;
-using std::tr1::shared_ptr;
+using master::TSDescriptor;
+using std::shared_ptr;
 using tserver::MiniTabletServer;
 using tserver::TabletServer;
 
@@ -303,7 +303,7 @@ Status MiniCluster::WaitForTabletServerCount(int count,
 }
 
 Status MiniCluster::CreateClient(KuduClientBuilder* builder,
-                                 shared_ptr<KuduClient>* client) {
+                                 client::sp::shared_ptr<KuduClient>* client) {
   KuduClientBuilder default_builder;
   if (builder == NULL) {
     builder = &default_builder;

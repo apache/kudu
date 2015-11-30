@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#include "kudu/consensus/consensus.proxy.h"
+
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <gflags/gflags.h>
@@ -25,7 +27,6 @@
 
 #include "kudu/common/wire_protocol.h"
 #include "kudu/consensus/consensus_peers.h"
-#include "kudu/consensus/consensus.proxy.h"
 #include "kudu/consensus/consensus_queue.h"
 #include "kudu/consensus/log.h"
 #include "kudu/gutil/map-util.h"
@@ -67,7 +68,7 @@ namespace consensus {
 
 using log::Log;
 using log::LogEntryBatch;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using rpc::Messenger;
 using rpc::RpcController;
 using strings::Substitute;

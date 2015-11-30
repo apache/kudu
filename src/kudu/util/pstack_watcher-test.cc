@@ -18,9 +18,9 @@
 #include "kudu/util/pstack_watcher.h"
 
 #include <gtest/gtest.h>
+#include <memory>
 #include <poll.h>
 #include <stdio.h>
-#include <tr1/memory>
 #include <unistd.h>
 #include <vector>
 
@@ -30,8 +30,8 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/test_macros.h"
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using strings::Substitute;
 
 namespace kudu {

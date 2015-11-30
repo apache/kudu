@@ -17,8 +17,7 @@
 #ifndef KUDU_CLIENT_SESSION_INTERNAL_H
 #define KUDU_CLIENT_SESSION_INTERNAL_H
 
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <unordered_set>
 
 #include "kudu/client/client.h"
 #include "kudu/util/locks.h"
@@ -34,14 +33,14 @@ class ErrorCollector;
 
 class KuduSession::Data {
  public:
-  explicit Data(const std::tr1::shared_ptr<KuduClient>& client);
+  explicit Data(const sp::shared_ptr<KuduClient>& client);
   ~Data();
 
-  void Init(const std::tr1::shared_ptr<KuduSession>& session);
+  void Init(const sp::shared_ptr<KuduSession>& session);
 
   // Swap in a new Batcher instance, returning the old one in '*old_batcher', unless it is
   // NULL.
-  void NewBatcher(const std::tr1::shared_ptr<KuduSession>& session,
+  void NewBatcher(const sp::shared_ptr<KuduSession>& session,
                   scoped_refptr<internal::Batcher>* old_batcher);
 
   // Called by Batcher when a flush has finished.
@@ -53,7 +52,7 @@ class KuduSession::Data {
   Status Close(bool force);
 
   // The client that this session is associated with.
-  const std::tr1::shared_ptr<KuduClient> client_;
+  const sp::shared_ptr<KuduClient> client_;
 
   // Lock protecting internal state.
   // Note that this lock should not be taken if the thread is already holding
@@ -73,7 +72,7 @@ class KuduSession::Data {
   // the flush is active, the batcher manages its own refcount. The Batcher will always
   // call FlushFinished() before it destructs itself, so we're guaranteed that these
   // pointers stay valid.
-  std::tr1::unordered_set<internal::Batcher*> flushed_batchers_;
+  std::unordered_set<internal::Batcher*> flushed_batchers_;
 
   FlushMode flush_mode_;
   kudu::client::KuduSession::ExternalConsistencyMode external_consistency_mode_;

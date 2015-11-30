@@ -18,8 +18,6 @@
 #define KUDU_RPC_INBOUND_CALL_H
 
 #include <glog/logging.h>
-#include <tr1/memory>
-
 #include <string>
 #include <vector>
 

@@ -20,7 +20,6 @@
 #include <stdlib.h>
 #include <list>
 
-#include <boost/assign/list_of.hpp>
 #include "kudu/cfile/cfile-test-base.h"
 #include "kudu/cfile/cfile_reader.h"
 #include "kudu/cfile/cfile_writer.h"
@@ -47,7 +46,7 @@ METRIC_DECLARE_counter(block_cache_hits_caching);
 
 METRIC_DECLARE_entity(server);
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 namespace kudu {
 namespace cfile {
@@ -472,9 +471,7 @@ void EncodeStringKey(const Schema &schema, const Slice& key,
 }
 
 void TestCFile::TestReadWriteStrings(EncodingType encoding) {
-  Schema schema(boost::assign::list_of
-                (ColumnSchema("key", STRING)),
-                1);
+  Schema schema({ ColumnSchema("key", STRING) }, 1);
 
   const int nrows = 10000;
   BlockId block_id;

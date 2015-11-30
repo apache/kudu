@@ -17,8 +17,8 @@
 #ifndef KUDU_RPC_SERVER_H
 #define KUDU_RPC_SERVER_H
 
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -50,7 +50,7 @@ class RpcServer {
   explicit RpcServer(const RpcServerOptions& opts);
   ~RpcServer();
 
-  Status Init(const std::tr1::shared_ptr<rpc::Messenger>& messenger);
+  Status Init(const std::shared_ptr<rpc::Messenger>& messenger);
   // Services need to be registered after Init'ing, but before Start'ing.
   // The service's ownership will be given to a ServicePool.
   Status RegisterService(gscoped_ptr<rpc::ServiceIf> service);
@@ -80,12 +80,12 @@ class RpcServer {
   ServerState server_state_;
 
   const RpcServerOptions options_;
-  std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  std::shared_ptr<rpc::Messenger> messenger_;
 
   // Parsed addresses to bind RPC to. Set by Init()
   std::vector<Sockaddr> rpc_bind_addresses_;
 
-  std::vector<std::tr1::shared_ptr<rpc::AcceptorPool> > acceptor_pools_;
+  std::vector<std::shared_ptr<rpc::AcceptorPool> > acceptor_pools_;
 
   DISALLOW_COPY_AND_ASSIGN(RpcServer);
 };

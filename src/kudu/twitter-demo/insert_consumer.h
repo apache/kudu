@@ -20,10 +20,10 @@
 #include "kudu/twitter-demo/twitter_streamer.h"
 
 #include <string>
-#include <tr1/memory>
 
 #include "kudu/client/callbacks.h"
 #include "kudu/client/schema.h"
+#include "kudu/client/shared_ptr.h"
 #include "kudu/rpc/rpc_controller.h"
 #include "kudu/tserver/tserver_service.proxy.h"
 #include "kudu/twitter-demo/parser.h"
@@ -42,7 +42,7 @@ namespace twitter_demo {
 
 class InsertConsumer;
 
-class FlushCB : public kudu::client::KuduStatusCallback {
+class FlushCB : public client::KuduStatusCallback {
  public:
   explicit FlushCB(InsertConsumer* consumer);
 
@@ -58,7 +58,7 @@ class FlushCB : public kudu::client::KuduStatusCallback {
 class InsertConsumer : public TwitterConsumer {
  public:
   explicit InsertConsumer(
-    const std::tr1::shared_ptr<kudu::client::KuduClient> &client);
+    const client::sp::shared_ptr<client::KuduClient> &client);
   ~InsertConsumer();
 
   Status Init();
@@ -79,9 +79,9 @@ class InsertConsumer : public TwitterConsumer {
   // Reusable object for latest event.
   TwitterEvent event_;
 
-  std::tr1::shared_ptr<client::KuduClient> client_;
-  std::tr1::shared_ptr<client::KuduSession> session_;
-  std::tr1::shared_ptr<client::KuduTable> table_;
+  client::sp::shared_ptr<client::KuduClient> client_;
+  client::sp::shared_ptr<client::KuduSession> session_;
+  client::sp::shared_ptr<client::KuduTable> table_;
 
   simple_spinlock lock_;
   bool request_pending_;

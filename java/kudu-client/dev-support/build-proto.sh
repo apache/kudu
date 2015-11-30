@@ -23,7 +23,7 @@
 #
 
 KUDU_DIR=`dirname $0`/../../..
-PROTOC_BIN=$KUDU_DIR/thirdparty/installed/bin/protoc
+PROTOC_BIN=$KUDU_DIR/thirdparty/installed-deps/bin/protoc
 if [ ! -f "$PROTOC_BIN" ] ; then
   if which protoc > /dev/null; then
     PROTOC_BIN=`which protoc`

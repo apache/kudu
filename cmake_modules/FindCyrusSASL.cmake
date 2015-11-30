@@ -19,8 +19,7 @@
 #
 # This module defines
 #  CYRUS_SASL_INCLUDE_DIR, directory containing headers
-#  CYRUS_SASL_SHARED_LIB, path to libsasl2.so
-#  CYRUS_SASL_LIB_DEPS other libraries that SASL depends on
+#  CYRUS_SASL_SHARED_LIB, path to Cyrus SASL's shared library
 #  CYRUS_SASL_FOUND, whether Cyrus SASL and its plugins have been found
 #
 # N.B: we do _not_ include sasl in thirdparty, for a fairly subtle reason. The
@@ -36,38 +35,8 @@
 
 
 find_path(CYRUS_SASL_INCLUDE_DIR sasl/sasl.h)
-find_library(CYRUS_SASL_SHARED_LIB NAMES "libsasl2${CMAKE_SHARED_LIBRARY_SUFFIX}")
+find_library(CYRUS_SASL_SHARED_LIB sasl2)
 
-if (CYRUS_SASL_INCLUDE_DIR AND CYRUS_SASL_SHARED_LIB)
-  set(CYRUS_SASL_FOUND TRUE)
-else ()
-  set(CYRUS_SASL_FOUND FALSE)
-endif ()
-
-if (CYRUS_SASL_FOUND)
-  if (NOT APPLE)
-    set(CYRUS_SASL_LIB_DEPS dl crypt)
-  else ()
-    # the crypt function is in the system C library: no special linker options required.
-    set(CYRUS_SASL_LIB_DEPS dl)
-  endif ()
-  if (NOT CyrusSASL_FIND_QUIETLY)
-    message(STATUS "Found the CyrusSASL library: ${CYRUS_SASL_SHARED_LIB}")
-  endif ()
-else ()
-  if (NOT CyrusSASL_FIND_QUIETLY)
-    set(CYRUS_SASL_ERR_MSG "Could not find the CyrusSASL Library.")
-    set(CYRUS_SASL_ERR_MSG "Install libsasl2-dev or cyrus-sasl-devel packages to build.")
-    if (CyrusSASL_FIND_REQUIRED)
-      message(FATAL_ERROR "${CYRUS_SASL_ERR_MSG}")
-    else (CyrusSASL_FIND_REQUIRED)
-      message(STATUS "${CYRUS_SASL_ERR_MSG}")
-    endif (CyrusSASL_FIND_REQUIRED)
-  endif ()
-endif ()
-
-mark_as_advanced(
-  CYRUS_SASL_INCLUDE_DIR
-  CYRUS_SASL_SHARED_LIB
-  CYRUS_SASL_LIB_DEPS
-)
+include(FindPackageHandleStandardArgs)
+find_package_handle_standard_args(CYRUS_SASL REQUIRED_VARS
+  CYRUS_SASL_SHARED_LIB CYRUS_SASL_INCLUDE_DIR)

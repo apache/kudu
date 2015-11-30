@@ -18,7 +18,7 @@
 #define KUDU_TSERVER_REMOTE_BOOTSTRAP_CLIENT_H
 
 #include <string>
-#include <tr1/memory>
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -74,7 +74,7 @@ class RemoteBootstrapClient {
   // 'client_permanent_uuid' is the permanent UUID of the caller server.
   RemoteBootstrapClient(const std::string& tablet_id,
                         FsManager* fs_manager,
-                        const std::tr1::shared_ptr<rpc::Messenger>& messenger,
+                        const std::shared_ptr<rpc::Messenger>& messenger,
                         const std::string& client_permanent_uuid);
 
   // Attempt to clean up resources on the remote end by sending an
@@ -180,7 +180,7 @@ class RemoteBootstrapClient {
   // Set-once members.
   const std::string tablet_id_;
   FsManager* const fs_manager_;
-  const std::tr1::shared_ptr<rpc::Messenger> messenger_;
+  const std::shared_ptr<rpc::Messenger> messenger_;
   const std::string permanent_uuid_;
 
   // State flags that enforce the progress of remote bootstrap.
@@ -199,7 +199,7 @@ class RemoteBootstrapClient {
   gscoped_ptr<consensus::ConsensusMetadata> cmeta_;
 
   tablet::TabletStatusListener* status_listener_;
-  std::tr1::shared_ptr<RemoteBootstrapServiceProxy> proxy_;
+  std::shared_ptr<RemoteBootstrapServiceProxy> proxy_;
   std::string session_id_;
   uint64_t session_idle_timeout_millis_;
   gscoped_ptr<tablet::TabletSuperBlockPB> superblock_;

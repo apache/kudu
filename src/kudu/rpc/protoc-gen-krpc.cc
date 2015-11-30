@@ -29,10 +29,9 @@
 #include <google/protobuf/io/printer.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/stubs/common.h>
-#include <tr1/memory>
-
 #include <iostream>
 #include <map>
+#include <memory>
 #include <sstream>
 #include <string>
 
@@ -48,12 +47,12 @@
 #include "kudu/util/string_case.h"
 
 using google::protobuf::FileDescriptor;
+using google::protobuf::io::Printer;
 using google::protobuf::MethodDescriptor;
 using google::protobuf::ServiceDescriptor;
-using google::protobuf::io::Printer;
 using std::map;
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {
@@ -573,7 +572,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       Print(printer, *subs,
         "class $service_name$Proxy {\n"
         " public:\n"
-        "  $service_name$Proxy(const std::tr1::shared_ptr< ::kudu::rpc::Messenger>\n"
+        "  $service_name$Proxy(const std::shared_ptr< ::kudu::rpc::Messenger>\n"
         "                &messenger, const ::kudu::Sockaddr &sockaddr);\n"
         "  ~$service_name$Proxy();\n"
         "\n"
@@ -636,7 +635,7 @@ class CodeGenerator : public ::google::protobuf::compiler::CodeGenerator {
       subs->PushService(service);
       Print(printer, *subs,
         "$service_name$Proxy::$service_name$Proxy(\n"
-        "   const std::tr1::shared_ptr< ::kudu::rpc::Messenger> &messenger,\n"
+        "   const std::shared_ptr< ::kudu::rpc::Messenger> &messenger,\n"
         "   const ::kudu::Sockaddr &remote)\n"
         "  : proxy_(messenger, remote, \"$full_service_name$\") {\n"
         "}\n"

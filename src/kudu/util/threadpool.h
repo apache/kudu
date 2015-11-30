@@ -18,20 +18,19 @@
 #define KUDU_UTIL_THREAD_POOL_H
 
 #include <boost/function.hpp>
-#include <tr1/memory>
+#include <gtest/gtest_prod.h>
 #include <list>
+#include <memory>
 #include <string>
 #include <vector>
-
-#include <gtest/gtest_prod.h>
 
 #include "kudu/gutil/callback_forward.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
 #include "kudu/gutil/port.h"
 #include "kudu/gutil/ref_counted.h"
-#include "kudu/util/monotime.h"
 #include "kudu/util/condition_variable.h"
+#include "kudu/util/monotime.h"
 #include "kudu/util/mutex.h"
 #include "kudu/util/status.h"
 
@@ -137,7 +136,7 @@ class ThreadPool {
       WARN_UNUSED_RESULT;
 
   // Submit a Runnable class
-  Status Submit(const std::tr1::shared_ptr<Runnable>& task)
+  Status Submit(const std::shared_ptr<Runnable>& task)
       WARN_UNUSED_RESULT;
 
   // Wait until all the tasks are completed.
@@ -191,7 +190,7 @@ class ThreadPool {
   FRIEND_TEST(TestThreadPool, TestVariableSizeThreadPool);
 
   struct QueueEntry {
-    std::tr1::shared_ptr<Runnable> runnable;
+    std::shared_ptr<Runnable> runnable;
     Trace* trace;
 
     // Time at which the entry was submitted to the pool.

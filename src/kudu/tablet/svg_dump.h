@@ -18,7 +18,7 @@
 #define KUDU_TABLET_COMPACTION_SVG_DUMP_H_
 
 #include <ostream>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <vector>
 
 namespace kudu {
@@ -36,7 +36,7 @@ class RowSetInfo;
 // the file. If true, prints the header (xml tag and DOCTYPE). Otherwise, only
 // the <svg>...</svg> section is printed.
 void DumpCompactionSVG(const std::vector<RowSetInfo>& candidates,
-                       const std::tr1::unordered_set<RowSet*>& picked,
+                       const std::unordered_set<RowSet*>& picked,
                        std::ostream* out = NULL,
                        bool print_xml = true);
 

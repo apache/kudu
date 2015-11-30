@@ -26,8 +26,8 @@
 #include "kudu/util/test_graph.h"
 #include "kudu/util/thread.h"
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 
 namespace kudu {
 

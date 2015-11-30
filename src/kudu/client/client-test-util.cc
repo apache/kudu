@@ -27,7 +27,7 @@
 namespace kudu {
 namespace client {
 
-void LogSessionErrorsAndDie(const std::tr1::shared_ptr<KuduSession>& session,
+void LogSessionErrorsAndDie(const sp::shared_ptr<KuduSession>& session,
                             const Status& s) {
   CHECK(!s.ok());
   std::vector<KuduError*> errors;

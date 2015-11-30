@@ -39,8 +39,7 @@ DECLARE_int32(log_min_segments_to_retain);
 namespace kudu {
 namespace log {
 
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
+using std::shared_ptr;
 using consensus::MakeOpId;
 using strings::Substitute;
 

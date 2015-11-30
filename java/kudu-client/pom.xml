@@ -113,7 +113,7 @@
                     <protocExecutable>${project.basedir}/dev-support/build-proto.sh</protocExecutable>
                     <additionalProtoPathElements>
                       <additionalProtoPathElement>
-                        ${project.basedir}/../../thirdparty/installed/include
+                        ${project.basedir}/../../thirdparty/installed-deps/include
                       </additionalProtoPathElement>
                     </additionalProtoPathElements>
                     <excludes>

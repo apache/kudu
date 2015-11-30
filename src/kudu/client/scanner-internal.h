@@ -118,7 +118,7 @@ class KuduScanner::Data {
   internal::RemoteTabletServer* ts_;
   // The proxy can be derived from the RemoteTabletServer, but this involves retaking the
   // meta cache lock. Keeping our own shared_ptr avoids this overhead.
-  std::tr1::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
+  std::shared_ptr<tserver::TabletServerServiceProxy> proxy_;
 
   // The next scan request to be sent. This is cached as a field
   // since most scan requests will share the scanner ID with the previous

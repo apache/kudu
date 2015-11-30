@@ -17,8 +17,8 @@
 #ifndef KUDU_COMMON_ROW_OPERATIONS_H
 #define KUDU_COMMON_ROW_OPERATIONS_H
 
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/common/row_changelist.h"
@@ -59,7 +59,7 @@ struct DecodedRowOperation {
   RowChangeList changelist;
 
   // For SPLIT_ROW, the partial row to split on.
-  std::tr1::shared_ptr<KuduPartialRow> split_row;
+  std::shared_ptr<KuduPartialRow> split_row;
 
   std::string ToString(const Schema& schema) const;
 };

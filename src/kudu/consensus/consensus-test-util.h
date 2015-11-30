@@ -19,11 +19,11 @@
 #include <boost/thread/locks.hpp>
 #include <gmock/gmock.h>
 #include <map>
+#include <memory>
 #include <string>
-#include <tr1/unordered_map>
-#include <tr1/memory>
-#include <vector>
+#include <unordered_map>
 #include <utility>
+#include <vector>
 
 #include "kudu/common/timestamp.h"
 #include "kudu/common/wire_protocol.h"
@@ -360,7 +360,7 @@ class NoOpTestPeerProxyFactory : public PeerProxyFactory {
   gscoped_ptr<ThreadPool> pool_;
 };
 
-typedef std::tr1::unordered_map<std::string, scoped_refptr<RaftConsensus> > TestPeerMap;
+typedef std::unordered_map<std::string, scoped_refptr<RaftConsensus> > TestPeerMap;
 
 // Thread-safe manager for list of peers being used in tests.
 class TestPeerMapManager {
@@ -693,7 +693,7 @@ class TestTransactionFactory : public ReplicaTransactionFactory {
 // If non-null, the passed hook instance will be called first for all methods.
 class CounterHooks : public Consensus::ConsensusFaultHooks {
  public:
-  explicit CounterHooks(const std::tr1::shared_ptr<Consensus::ConsensusFaultHooks>& current_hook)
+  explicit CounterHooks(const std::shared_ptr<Consensus::ConsensusFaultHooks>& current_hook)
       : current_hook_(current_hook),
         pre_start_calls_(0),
         post_start_calls_(0),
@@ -828,7 +828,7 @@ class CounterHooks : public Consensus::ConsensusFaultHooks {
   }
 
  private:
-  std::tr1::shared_ptr<Consensus::ConsensusFaultHooks> current_hook_;
+  std::shared_ptr<Consensus::ConsensusFaultHooks> current_hook_;
   int pre_start_calls_;
   int post_start_calls_;
   int pre_config_change_calls_;

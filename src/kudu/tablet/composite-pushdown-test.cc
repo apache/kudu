@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -33,12 +32,11 @@ const char* const kTestHostnames[] = { "foo", "foobar", "baz", NULL };
 class CompositePushdownTest : public KuduTabletTest {
  public:
   CompositePushdownTest()
-      : KuduTabletTest(Schema(boost::assign::list_of
-                              (ColumnSchema("year", INT16))
-                              (ColumnSchema("month", INT8))
-                              (ColumnSchema("day", INT8))
-                              (ColumnSchema("hostname", STRING))
-                              (ColumnSchema("data", STRING)),
+      : KuduTabletTest(Schema({ ColumnSchema("year", INT16),
+                                ColumnSchema("month", INT8),
+                                ColumnSchema("day", INT8),
+                                ColumnSchema("hostname", STRING),
+                                ColumnSchema("data", STRING) },
                               4)) {
   }
 

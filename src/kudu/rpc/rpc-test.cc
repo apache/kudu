@@ -17,8 +17,9 @@
 
 #include "kudu/rpc/rpc-test-base.h"
 
+#include <memory>
 #include <string>
-#include <tr1/unordered_map>
+#include <unordered_map>
 
 #include <boost/foreach.hpp>
 #include <boost/ptr_container/ptr_vector.hpp>
@@ -35,8 +36,8 @@ METRIC_DECLARE_histogram(handler_latency_kudu_rpc_test_CalculatorService_Sleep);
 METRIC_DECLARE_histogram(rpc_incoming_queue_time);
 
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
+using std::shared_ptr;
+using std::unordered_map;
 
 namespace kudu {
 namespace rpc {

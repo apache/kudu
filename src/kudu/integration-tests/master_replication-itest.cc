@@ -15,11 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <gflags/gflags.h>
 #include <gtest/gtest.h>
 
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -31,7 +29,6 @@
 #include "kudu/master/mini_master.h"
 #include "kudu/util/test_util.h"
 
-using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {
@@ -45,6 +42,7 @@ using client::KuduSchema;
 using client::KuduSchemaBuilder;
 using client::KuduTable;
 using client::KuduTableCreator;
+using client::sp::shared_ptr;
 
 const char * const kTableId1 = "testMasterReplication-1";
 const char * const kTableId2 = "testMasterReplication-2";
@@ -57,7 +55,7 @@ class MasterReplicationTest : public KuduTest {
     // Hard-coded ports for the masters. This is safe, as this unit test
     // runs under a resource lock (see CMakeLists.txt in this directory).
     // TODO we should have a generic method to obtain n free ports.
-    opts_.master_rpc_ports = boost::assign::list_of(11010)(11011)(11012);
+    opts_.master_rpc_ports = { 11010, 11011, 11012 };
 
     opts_.num_masters = num_masters_ = opts_.master_rpc_ports.size();
     opts_.num_tablet_servers = kNumTabletServerReplicas;

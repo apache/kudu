@@ -28,13 +28,9 @@ if(NOT DEFINED CLANG_ROOT)
   set(CLANG_ROOT $ENV{CLANG_ROOT})
 endif()
 
-foreach(prog_name llvm-config llvm-config-3.4)
-  find_program(LLVM_CONFIG_EXECUTABLE ${prog_name} DOC "${prog_name} executable"
-    HINTS ${CLANG_ROOT}/bin)
-  if(LLVM_CONFIG_EXECUTABLE)
-    break()
-  endif()
-endforeach(prog_name)
+find_program(LLVM_CONFIG_EXECUTABLE llvm-config
+  DOC "llvm-config executable"
+  HINTS ${CLANG_ROOT}/bin)
 
 if(LLVM_CONFIG_EXECUTABLE)
   message(STATUS "LLVM llvm-config found at: ${LLVM_CONFIG_EXECUTABLE}")
@@ -48,11 +44,8 @@ execute_process(
   OUTPUT_STRIP_TRAILING_WHITESPACE
 )
 
-string(REGEX REPLACE "^([0-9]+)\\.([0-9]+).*" "\\1" LLVM_VERSION_MAJOR
-	     "${LLVM_VERSION}")
-
-string(REGEX REPLACE "^([0-9]+)\\.([0-9]+).*" "\\2" LLVM_VERSION_MINOR
-	     "${LLVM_VERSION}")
+string(REGEX REPLACE "^([0-9]+)\\.([0-9]+).*" "\\1" LLVM_VERSION_MAJOR ${LLVM_VERSION})
+string(REGEX REPLACE "^([0-9]+)\\.([0-9]+).*" "\\2" LLVM_VERSION_MINOR ${LLVM_VERSION})
 
 execute_process(
   COMMAND ${LLVM_CONFIG_EXECUTABLE} --includedir
@@ -82,6 +75,6 @@ execute_process(
   COMMAND ${LLVM_CONFIG_EXECUTABLE} --libs ${LLVM_FIND_COMPONENTS}
   OUTPUT_VARIABLE LLVM_LIBS
   OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
+)
 
 set(LLVM_FOUND TRUE)

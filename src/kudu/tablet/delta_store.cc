@@ -19,15 +19,15 @@
 
 #include <algorithm>
 
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/tablet/deltafile.h"
 
 namespace kudu {
 namespace tablet {
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using strings::Substitute;
 
 string DeltaKeyAndUpdate::Stringify(DeltaType type, const Schema& schema) const {

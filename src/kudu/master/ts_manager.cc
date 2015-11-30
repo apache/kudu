@@ -33,8 +33,8 @@ DEFINE_int32(tserver_unresponsive_timeout_ms, 60 * 1000,
              "selected when assigning replicas during table creation or re-replication.");
 TAG_FLAG(tserver_unresponsive_timeout_ms, advanced);
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 
 namespace kudu {
@@ -65,14 +65,14 @@ Status TSManager::LookupTS(const NodeInstancePB& instance,
 }
 
 bool TSManager::LookupTSByUUID(const string& uuid,
-                               std::tr1::shared_ptr<TSDescriptor>* ts_desc) {
+                               std::shared_ptr<TSDescriptor>* ts_desc) {
   boost::shared_lock<rw_spinlock> l(lock_);
   return FindCopy(servers_by_id_, uuid, ts_desc);
 }
 
 Status TSManager::RegisterTS(const NodeInstancePB& instance,
                              const TSRegistrationPB& registration,
-                             std::tr1::shared_ptr<TSDescriptor>* desc) {
+                             std::shared_ptr<TSDescriptor>* desc) {
   boost::lock_guard<rw_spinlock> l(lock_);
   const string& uuid = instance.permanent_uuid();
 

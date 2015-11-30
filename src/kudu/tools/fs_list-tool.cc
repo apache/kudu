@@ -21,10 +21,8 @@
 
 #include <iostream>
 #include <sstream>
-#include <tr1/memory>
 #include <vector>
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -65,13 +63,13 @@ struct CommandHandler {
   }
 };
 
-const vector<CommandHandler> kCommandHandlers = boost::assign::list_of
-    (CommandHandler(FS_TREE, "tree", "Print out a file system tree." ))
-    (CommandHandler(LIST_LOGS, "list_logs",
-                      "List file system logs (optionally accepts a tablet id)."))
-    (CommandHandler(LIST_TABLETS, "list_tablets", "List tablets." ))
-    (CommandHandler(LIST_BLOCKS, "list_blocks",
-                    "List block for tablet (optionally accepts a tablet id)."));
+const vector<CommandHandler> kCommandHandlers = {
+    CommandHandler(FS_TREE, "tree", "Print out a file system tree." ),
+    CommandHandler(LIST_LOGS, "list_logs",
+                   "List file system logs (optionally accepts a tablet id)."),
+    CommandHandler(LIST_TABLETS, "list_tablets", "List tablets." ),
+    CommandHandler(LIST_BLOCKS, "list_blocks",
+                   "List block for tablet (optionally accepts a tablet id).") };
 
 void PrintUsageToStream(const string& prog_name, std::ostream* out) {
   *out << "Usage: " << prog_name << " [-verbose] "

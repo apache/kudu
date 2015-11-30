@@ -159,12 +159,6 @@ set(CMAKE_CXX_FLAGS "${CXX_COMMON_FLAGS} ${CMAKE_CXX_FLAGS}")
 include(CompilerInfo)
 
 if ("${COMPILER_FAMILY}" STREQUAL "clang")
-  # Clang helpfully provides a few extensions from C++11 such as the 'override'
-  # keyword on methods. This doesn't change behavior, and we selectively enable
-  # it in src/gutil/port.h only on clang. So, we can safely use it, and don't want
-  # to trigger warnings when we do so.
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-c++11-extensions")
-
   # Using Clang with ccache causes a bunch of spurious warnings that are
   # purportedly fixed in the next version of ccache. See the following for details:
   #
@@ -187,10 +181,6 @@ if ("${COMPILER_FAMILY}" STREQUAL "clang")
   else()
     message("Running without a controlling terminal or in a dumb terminal")
   endif()
-
-  # Use libstdc++ and not libc++. The latter lacks support for tr1 in OSX
-  # and since 10.9 is now the default.
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -stdlib=libstdc++")
 endif()
 
 # Sanity check linking option.
@@ -241,6 +231,7 @@ endif()
 
 # For any C code, use the same flags.
 set(CMAKE_C_FLAGS "${CMAKE_CXX_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 # Flag to enable clang undefined behavior sanitizer
 # We explicitly don't enable all of the sanitizer flags:
@@ -275,7 +266,9 @@ if (${KUDU_USE_TSAN})
   add_definitions("-D_GLIBCXX_EXTERN_TEMPLATE=0")
 
   # Some of the above also need to be passed to the linker.
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -fsanitize=thread")
+  set(TSAN_LIB_DIR "${CMAKE_SOURCE_DIR}/thirdparty/installed-deps-tsan/gcc/lib")
+  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-rpath,${TSAN_LIB_DIR} -fsanitize=thread")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -L${TSAN_LIB_DIR}")
 
   # Strictly speaking, TSAN doesn't require dynamic linking. But it does
   # require all code to be position independent, and the easiest way to
@@ -638,9 +631,14 @@ function(ADD_THIRDPARTY_LIB LIB_NAME)
   endif()
 endfunction()
 
-# Look in thirdparty/installed before anywhere else for system dependencies.
+# Look in thirdparty prefix paths before anywhere else for system dependencies.
 set(THIRDPARTY_PREFIX ${CMAKE_SOURCE_DIR}/thirdparty/installed)
-set(CMAKE_PREFIX_PATH ${THIRDPARTY_PREFIX})
+set(CMAKE_PREFIX_PATH ${THIRDPARTY_PREFIX} ${CMAKE_PREFIX_PATH})
+if (${KUDU_USE_TSAN})
+  set(CMAKE_PREFIX_PATH ${CMAKE_SOURCE_DIR}/thirdparty/installed-deps-tsan ${CMAKE_PREFIX_PATH})
+else()
+  set(CMAKE_PREFIX_PATH ${CMAKE_SOURCE_DIR}/thirdparty/installed-deps ${CMAKE_PREFIX_PATH})
+endif()
 
 ## Cyrus SASL
 find_package(CyrusSASL REQUIRED)
@@ -686,11 +684,11 @@ ADD_THIRDPARTY_LIB(gmock
 ## Protobuf
 set(PROTO_SRC_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/src)
 set(PROTO_DST_ROOT ${CMAKE_CURRENT_BINARY_DIR}/src)
-find_package( Protobuf REQUIRED )
+find_package(Protobuf REQUIRED)
 include_directories(SYSTEM ${PROTOBUF_INCLUDE_DIR})
 ADD_THIRDPARTY_LIB(protobuf
   STATIC_LIB "${PROTOBUF_STATIC_LIBRARY}"
-  SHARED_LIB "${PROTOBUF_LIBRARY}")
+  SHARED_LIB "${PROTOBUF_SHARED_LIBRARY}")
 ADD_THIRDPARTY_LIB(protoc
   STATIC_LIB "${PROTOBUF_PROTOC_STATIC_LIBRARY}"
   SHARED_LIB "${PROTOBUF_PROTOC_LIBRARY}"

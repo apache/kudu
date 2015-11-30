@@ -16,6 +16,8 @@ gcovr-*
 rapidjson-*
 squeasel-*
 installed/
+installed-deps/
+installed-deps-tsan/
 install_manifest.txt
 .build-hash
 google-styleguide*
@@ -25,3 +27,5 @@ clang-*
 bitshuffle-*
 lz4-lz4-*
 nvml-*
+python-*
+gcc-*

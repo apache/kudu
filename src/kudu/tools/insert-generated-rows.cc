@@ -20,10 +20,10 @@
 // Helps make things like availability demos a little easier.
 
 #include <boost/foreach.hpp>
-#include <glog/logging.h>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <iostream>
-#include <tr1/memory>
+#include <memory>
 #include <vector>
 
 #include "kudu/client/client.h"
@@ -43,7 +43,6 @@ namespace kudu {
 namespace tools {
 
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 
 using client::KuduClient;
@@ -53,6 +52,7 @@ using client::KuduInsert;
 using client::KuduSchema;
 using client::KuduSession;
 using client::KuduTable;
+using client::sp::shared_ptr;
 
 void PrintUsage(char** argv) {
   std::cerr << "usage: " << argv[0] << " [--master_address localhost] <table_name>"

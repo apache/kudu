@@ -16,8 +16,8 @@
 // under the License.
 
 #include <gtest/gtest.h>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <memory>
+#include <unordered_set>
 
 #include "kudu/util/test_util.h"
 #include "kudu/tablet/mock-rowsets.h"
@@ -25,8 +25,8 @@
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/tablet/compaction_policy.h"
 
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::shared_ptr;
+using std::unordered_set;
 
 namespace kudu {
 namespace tablet {
@@ -45,7 +45,7 @@ TEST(TestCompactionPolicy, TestBudgetedSelection) {
   const int kBudgetMb = 1000; // enough to select all
   BudgetedCompactionPolicy policy(kBudgetMb);
 
-  std::tr1::unordered_set<RowSet*> picked;
+  unordered_set<RowSet*> picked;
   double quality = 0;
   ASSERT_OK(policy.PickRowSets(tree, &picked, &quality, NULL));
   ASSERT_EQ(3, picked.size());

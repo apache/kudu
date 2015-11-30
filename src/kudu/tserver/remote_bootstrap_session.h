@@ -17,9 +17,9 @@
 #ifndef KUDU_TSERVER_REMOTE_BOOTSTRAP_SESSION_H_
 #define KUDU_TSERVER_REMOTE_BOOTSTRAP_SESSION_H_
 
+#include <memory>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <vector>
 
 #include "kudu/consensus/log_anchor_registry.h"
@@ -51,10 +51,10 @@ class TabletPeerLookupIf;
 // Caches file size and holds a shared_ptr reference to a RandomAccessFile.
 // Assumes that the file underlying the RandomAccessFile is immutable.
 struct ImmutableRandomAccessFileInfo {
-  std::tr1::shared_ptr<RandomAccessFile> readable;
+  std::shared_ptr<RandomAccessFile> readable;
   int64_t size;
 
-  ImmutableRandomAccessFileInfo(const std::tr1::shared_ptr<RandomAccessFile>& readable,
+  ImmutableRandomAccessFileInfo(const std::shared_ptr<RandomAccessFile>& readable,
                                 int64_t size)
   : readable(readable),
     size(size) {
@@ -138,9 +138,8 @@ class RemoteBootstrapSession : public RefCountedThreadSafe<RemoteBootstrapSessio
  private:
   friend class RefCountedThreadSafe<RemoteBootstrapSession>;
 
-  typedef std::tr1::unordered_map<BlockId, ImmutableReadableBlockInfo*,
-                                  BlockIdHash> BlockMap;
-  typedef std::tr1::unordered_map<uint64_t, ImmutableRandomAccessFileInfo*> LogMap;
+  typedef std::unordered_map<BlockId, ImmutableReadableBlockInfo*, BlockIdHash> BlockMap;
+  typedef std::unordered_map<uint64_t, ImmutableRandomAccessFileInfo*> LogMap;
 
   ~RemoteBootstrapSession();
 

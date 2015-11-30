@@ -19,8 +19,6 @@
 #ifndef KUDU_TWITTER_DEMO_TWITTER_SCHEMA_H
 #define KUDU_TWITTER_DEMO_TWITTER_SCHEMA_H
 
-#include <boost/assign/list_of.hpp>
-
 #include "kudu/client/schema.h"
 
 namespace kudu {

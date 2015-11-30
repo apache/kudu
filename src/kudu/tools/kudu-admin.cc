@@ -19,10 +19,10 @@
 
 #include <boost/foreach.hpp>
 #include <boost/optional.hpp>
-#include <glog/logging.h>
 #include <gflags/gflags.h>
-#include <tr1/memory>
+#include <glog/logging.h>
 #include <iostream>
+#include <memory>
 #include <strstream>
 
 #include "kudu/client/client.h"
@@ -63,7 +63,6 @@ namespace tools {
 
 using std::ostringstream;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 
 using google::protobuf::RepeatedPtrField;
@@ -129,9 +128,9 @@ class ClusterAdminClient {
   const MonoDelta timeout_;
 
   bool initted_;
-  shared_ptr<rpc::Messenger> messenger_;
+  std::shared_ptr<rpc::Messenger> messenger_;
   gscoped_ptr<MasterServiceProxy> master_proxy_;
-  shared_ptr<KuduClient> kudu_client_;
+  client::sp::shared_ptr<KuduClient> kudu_client_;
 
   DISALLOW_COPY_AND_ASSIGN(ClusterAdminClient);
 };

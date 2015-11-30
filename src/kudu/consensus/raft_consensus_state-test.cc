@@ -16,7 +16,6 @@
 // under the License.
 #include "kudu/consensus/raft_consensus_state.h"
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 #include <vector>
@@ -31,7 +30,6 @@
 namespace kudu {
 namespace consensus {
 
-using boost::assign::list_of;
 using std::vector;
 
 // TODO: Share a test harness with ConsensusMetadataTest?

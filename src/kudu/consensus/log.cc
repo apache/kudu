@@ -42,10 +42,10 @@
 #include "kudu/util/path_util.h"
 #include "kudu/util/pb_util.h"
 #include "kudu/util/random.h"
+#include "kudu/util/stopwatch.h"
 #include "kudu/util/thread.h"
 #include "kudu/util/threadpool.h"
 #include "kudu/util/trace.h"
-#include "kudu/util/stopwatch.h"
 
 // Log retention configuration.
 // -----------------------------
@@ -114,8 +114,8 @@ using consensus::CommitMsg;
 using consensus::OpId;
 using consensus::ReplicateRefPtr;
 using env_util::OpenFileForRandom;
+using std::shared_ptr;
 using strings::Substitute;
-using std::tr1::shared_ptr;
 
 // This class is responsible for managing the thread that appends to
 // the log file.

@@ -17,8 +17,6 @@
 #ifndef KUDU_MASTER_MASTER_SERVICE_H
 #define KUDU_MASTER_MASTER_SERVICE_H
 
-#include <tr1/memory>
-
 #include "kudu/gutil/macros.h"
 #include "kudu/master/master.service.h"
 #include "kudu/util/metrics.h"

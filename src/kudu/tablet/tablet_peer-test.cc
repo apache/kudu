@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
-
 #include <glog/logging.h>
 #include <gtest/gtest.h>
 
@@ -54,9 +52,9 @@ DECLARE_int32(log_min_seconds_to_retain);
 namespace kudu {
 namespace tablet {
 
-using consensus::ConsensusBootstrapInfo;
 using consensus::CommitMsg;
 using consensus::Consensus;
+using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::MakeOpId;
 using consensus::MinimumOpId;
@@ -65,19 +63,19 @@ using consensus::OpIdEquals;
 using consensus::RaftPeerPB;
 using consensus::WRITE_OP;
 using log::Log;
-using log::LogOptions;
 using log::LogAnchorRegistry;
+using log::LogOptions;
 using rpc::Messenger;
 using server::Clock;
 using server::LogicalClock;
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using strings::Substitute;
 using tserver::WriteRequestPB;
 using tserver::WriteResponsePB;
 
 static Schema GetTestSchema() {
-  return Schema(boost::assign::list_of(ColumnSchema("key", INT32)), 1);
+  return Schema({ ColumnSchema("key", INT32) }, 1);
 }
 
 class TabletPeerTest : public KuduTabletTest {

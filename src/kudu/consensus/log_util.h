@@ -18,11 +18,11 @@
 #ifndef KUDU_CONSENSUS_LOG_UTIL_H_
 #define KUDU_CONSENSUS_LOG_UTIL_H_
 
-#include <iosfwd>
 #include <gtest/gtest.h>
+#include <iosfwd>
 #include <map>
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <utility>
 #include <vector>
 
@@ -95,7 +95,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 
   // Build a readable segment to read entries from the provided path.
   ReadableLogSegment(const std::string &path,
-                     const std::tr1::shared_ptr<RandomAccessFile>& readable_file);
+                     const std::shared_ptr<RandomAccessFile>& readable_file);
 
   // Initialize the ReadableLogSegment.
   // This initializer provides methods for avoiding disk IO when creating a
@@ -167,7 +167,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
     return footer_;
   }
 
-  const std::tr1::shared_ptr<RandomAccessFile> readable_file() const {
+  const std::shared_ptr<RandomAccessFile> readable_file() const {
     return readable_file_;
   }
 
@@ -272,7 +272,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
   AtomicInt<int64_t> readable_to_offset_;
 
   // a readable file for a log segment (used on replay)
-  const std::tr1::shared_ptr<RandomAccessFile> readable_file_;
+  const std::shared_ptr<RandomAccessFile> readable_file_;
 
   bool is_initialized_;
 
@@ -293,7 +293,7 @@ class ReadableLogSegment : public RefCountedThreadSafe<ReadableLogSegment> {
 class WritableLogSegment {
  public:
   WritableLogSegment(const std::string &path,
-                     const std::tr1::shared_ptr<WritableFile>& writable_file);
+                     const std::shared_ptr<WritableFile>& writable_file);
 
   // Opens the segment by writing the header.
   Status WriteHeaderAndOpen(const LogSegmentHeaderPB& new_header);
@@ -354,7 +354,7 @@ class WritableLogSegment {
 
  private:
 
-  const std::tr1::shared_ptr<WritableFile>& writable_file() const {
+  const std::shared_ptr<WritableFile>& writable_file() const {
     return writable_file_;
   }
 
@@ -362,7 +362,7 @@ class WritableLogSegment {
   const std::string path_;
 
   // The writable file to which this LogSegment will be written.
-  const std::tr1::shared_ptr<WritableFile> writable_file_;
+  const std::shared_ptr<WritableFile> writable_file_;
 
   bool is_header_written_;
 

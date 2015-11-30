@@ -108,7 +108,7 @@
 #include "kudu/gutil/macros.h"
 
 #include <string>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <vector>
 
 namespace kudu {
@@ -144,7 +144,7 @@ struct FlagTags {
 //
 // If the flag is invalid or has no tags, sets 'tags' to be empty.
 void GetFlagTags(const std::string& flag_name,
-                 std::tr1::unordered_set<std::string>* tags);
+                 std::unordered_set<std::string>* tags);
 
 // ------------------------------------------------------------
 // Internal implementation details

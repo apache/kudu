@@ -19,8 +19,7 @@
 
 #include <boost/foreach.hpp>
 #include <glog/logging.h>
-#include <tr1/memory>
-
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -35,7 +34,7 @@
 #include "kudu/util/thread.h"
 #include "kudu/util/trace.h"
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 using strings::Substitute;
 
 METRIC_DEFINE_histogram(server, rpc_incoming_queue_time,

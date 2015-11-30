@@ -19,9 +19,9 @@
 #define KUDU_FS_FILE_BLOCK_MANAGER_H
 
 #include <map>
+#include <memory>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <vector>
 
 #include "kudu/fs/block_id.h"
@@ -131,7 +131,7 @@ class FileBlockManager : public BlockManager {
 
   // Tracks the block directories which are dirty from block creation. This
   // lets us perform some simple coalescing when synchronizing metadata.
-  std::tr1::unordered_set<std::string> dirty_dirs_;
+  std::unordered_set<std::string> dirty_dirs_;
 
   // Points to the filesystem path to be used when creating the next block.
   PathMap::iterator next_root_path_;
@@ -142,7 +142,7 @@ class FileBlockManager : public BlockManager {
 
   // Tracks memory consumption of any allocations numerous enough to be
   // interesting.
-  std::tr1::shared_ptr<MemTracker> mem_tracker_;
+  std::shared_ptr<MemTracker> mem_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(FileBlockManager);
 };

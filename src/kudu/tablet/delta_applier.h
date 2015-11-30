@@ -18,7 +18,7 @@
 #define KUDU_TABLET_DELTA_APPLIER_H
 
 #include <string>
-#include <tr1/memory>
+#include <memory>
 #include <vector>
 
 #include <gtest/gtest_prod.h>
@@ -70,12 +70,12 @@ class DeltaApplier : public ColumnwiseIterator {
   DISALLOW_COPY_AND_ASSIGN(DeltaApplier);
 
   // Construct. The base_iter and delta_iter should not be Initted.
-  DeltaApplier(const std::tr1::shared_ptr<CFileSet::Iterator>& base_iter,
-               const std::tr1::shared_ptr<DeltaIterator>& delta_iter);
+  DeltaApplier(const std::shared_ptr<CFileSet::Iterator>& base_iter,
+               const std::shared_ptr<DeltaIterator>& delta_iter);
   virtual ~DeltaApplier();
 
-  std::tr1::shared_ptr<CFileSet::Iterator> base_iter_;
-  std::tr1::shared_ptr<DeltaIterator> delta_iter_;
+  std::shared_ptr<CFileSet::Iterator> base_iter_;
+  std::shared_ptr<DeltaIterator> delta_iter_;
 
   bool first_prepare_;
 };

@@ -36,8 +36,8 @@
 #include "kudu/fs/fs_manager.h"
 #include "kudu/gutil/ref_counted.h"
 #include "kudu/gutil/stl_util.h"
-#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/strcat.h"
+#include "kudu/gutil/strings/substitute.h"
 #include "kudu/gutil/strings/util.h"
 #include "kudu/gutil/walltime.h"
 #include "kudu/server/clock.h"
@@ -52,9 +52,9 @@
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/fault_injection.h"
 #include "kudu/util/flag_tags.h"
-#include "kudu/util/path_util.h"
 #include "kudu/util/locks.h"
 #include "kudu/util/logging.h"
+#include "kudu/util/path_util.h"
 #include "kudu/util/stopwatch.h"
 
 DEFINE_bool(skip_remove_old_recovery_dir, false,
@@ -73,12 +73,15 @@ namespace kudu {
 namespace tablet {
 
 using boost::shared_lock;
+using consensus::ALTER_SCHEMA_OP;
+using consensus::CHANGE_CONFIG_OP;
 using consensus::ChangeConfigRecordPB;
 using consensus::CommitMsg;
 using consensus::ConsensusBootstrapInfo;
 using consensus::ConsensusMetadata;
 using consensus::ConsensusRound;
 using consensus::MinimumOpId;
+using consensus::NO_OP;
 using consensus::OperationType;
 using consensus::OperationType_Name;
 using consensus::OpId;
@@ -88,21 +91,21 @@ using consensus::OpIdHashFunctor;
 using consensus::OpIdToString;
 using consensus::RaftConfigPB;
 using consensus::ReplicateMsg;
-using consensus::ALTER_SCHEMA_OP;
-using consensus::CHANGE_CONFIG_OP;
-using consensus::NO_OP;
 using consensus::WRITE_OP;
 using log::Log;
+using log::LogAnchorRegistry;
 using log::LogEntryPB;
 using log::LogOptions;
 using log::LogReader;
-using log::LogAnchorRegistry;
 using log::ReadableLogSegment;
 using server::Clock;
+using std::map;
+using std::shared_ptr;
+using std::string;
+using std::unordered_map;
+using strings::Substitute;
 using tserver::AlterSchemaRequestPB;
 using tserver::WriteRequestPB;
-using std::tr1::shared_ptr;
-using strings::Substitute;
 
 struct ReplayState;
 
@@ -121,7 +124,7 @@ class FlushedStoresSnapshot {
 
  private:
   int64_t last_durable_mrs_id_;
-  std::tr1::unordered_map<int64_t, int64_t> flushed_dms_by_drs_id_;
+  unordered_map<int64_t, int64_t> flushed_dms_by_drs_id_;
 
   DISALLOW_COPY_AND_ASSIGN(FlushedStoresSnapshot);
 };
@@ -152,7 +155,7 @@ class TabletBootstrap {
   // state that is present in the log (additional soft state may be present
   // in other replicas).
   // A successful call will yield the rebuilt tablet and the rebuilt log.
-  Status Bootstrap(std::tr1::shared_ptr<Tablet>* rebuilt_tablet,
+  Status Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
                    scoped_refptr<Log>* rebuilt_log,
                    ConsensusBootstrapInfo* results);
 
@@ -190,7 +193,7 @@ class TabletBootstrap {
   Status OpenNewLog();
 
   // Finishes bootstrap, setting 'rebuilt_log' and 'rebuilt_tablet'.
-  Status FinishBootstrap(const std::string& message,
+  Status FinishBootstrap(const string& message,
                          scoped_refptr<log::Log>* rebuilt_log,
                          shared_ptr<Tablet>* rebuilt_tablet);
 
@@ -369,7 +372,7 @@ Status BootstrapTablet(const scoped_refptr<TabletMetadata>& meta,
                        const shared_ptr<MemTracker>& mem_tracker,
                        MetricRegistry* metric_registry,
                        TabletStatusListener* listener,
-                       std::tr1::shared_ptr<tablet::Tablet>* rebuilt_tablet,
+                       shared_ptr<tablet::Tablet>* rebuilt_tablet,
                        scoped_refptr<log::Log>* rebuilt_log,
                        const scoped_refptr<log::LogAnchorRegistry>& log_anchor_registry,
                        ConsensusBootstrapInfo* consensus_info) {
@@ -494,7 +497,7 @@ Status TabletBootstrap::Bootstrap(shared_ptr<Tablet>* rebuilt_tablet,
   return Status::OK();
 }
 
-Status TabletBootstrap::FinishBootstrap(const std::string& message,
+Status TabletBootstrap::FinishBootstrap(const string& message,
                                         scoped_refptr<log::Log>* rebuilt_log,
                                         shared_ptr<Tablet>* rebuilt_tablet) {
   // Add a callback to TabletMetadata that makes sure that each time we flush the metadata
@@ -652,7 +655,7 @@ Status TabletBootstrap::OpenNewLog() {
   return Status::OK();
 }
 
-typedef std::map<int64_t, LogEntryPB*> OpIndexToEntryMap;
+typedef map<int64_t, LogEntryPB*> OpIndexToEntryMap;
 
 // State kept during replay.
 struct ReplayState {

@@ -16,9 +16,9 @@
 // under the License.
 
 #include <boost/noncopyable.hpp>
+#include <functional>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <vector>
 
 #include "kudu/common/common.pb.h"
@@ -27,8 +27,8 @@
 #include "kudu/gutil/singleton.h"
 #include "kudu/util/faststring.h"
 
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
+using std::shared_ptr;
+using std::unordered_map;
 
 namespace kudu {
 
@@ -64,7 +64,7 @@ class EncoderResolver {
   }
 
   friend class Singleton<EncoderResolver<Buffer> >;
-  unordered_map<DataType, shared_ptr<KeyEncoder<Buffer> >, std::tr1::hash<size_t> > encoders_;
+  unordered_map<DataType, shared_ptr<KeyEncoder<Buffer> >, std::hash<size_t> > encoders_;
 };
 
 template <typename Buffer>

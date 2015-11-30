@@ -20,7 +20,6 @@
 #include <boost/function.hpp>
 #include <set>
 #include <string>
-#include <tr1/memory>
 #include <utility>
 #include <vector>
 
@@ -90,9 +89,9 @@ class RpcLineItemDAO {
                    gscoped_ptr<Scanner>* scanner);
 
   simple_spinlock lock_;
-  std::tr1::shared_ptr<client::KuduClient> client_;
-  std::tr1::shared_ptr<client::KuduSession> session_;
-  std::tr1::shared_ptr<client::KuduTable> client_table_;
+  client::sp::shared_ptr<client::KuduClient> client_;
+  client::sp::shared_ptr<client::KuduSession> session_;
+  client::sp::shared_ptr<client::KuduTable> client_table_;
   const std::string master_address_;
   const std::string table_name_;
   const MonoDelta timeout_;

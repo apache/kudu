@@ -15,11 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
+#include <memory>
 #include <stdlib.h>
-#include <tr1/unordered_set>
+#include <unordered_set>
 
 #include "kudu/common/schema.h"
 #include "kudu/consensus/consensus.pb.h"
@@ -36,8 +36,8 @@
 
 DEFINE_int32(benchmark_num_passes, 100, "Number of passes to apply deltas in the benchmark");
 
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::shared_ptr;
+using std::unordered_set;
 
 namespace kudu {
 namespace tablet {
@@ -93,8 +93,8 @@ class TestDeltaMemStore : public KuduTest {
                     size_t col_idx,
                     ColumnBlock *cb) {
     ColumnSchema col_schema(schema_.column(col_idx));
-    Schema single_col_projection(boost::assign::list_of(col_schema),
-                                 boost::assign::list_of(schema_.column_id(col_idx)),
+    Schema single_col_projection({ col_schema },
+                                 { schema_.column_id(col_idx) },
                                  0);
 
     DeltaIterator* raw_iter;

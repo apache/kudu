@@ -18,8 +18,8 @@
 #include "kudu/tablet/rowset_info.h"
 
 #include <algorithm>
-#include <tr1/memory>
-#include <tr1/unordered_map>
+#include <memory>
+#include <unordered_map>
 #include <string>
 #include <utility>
 
@@ -35,8 +35,8 @@
 #include "kudu/tablet/rowset_tree.h"
 #include "kudu/util/slice.h"
 
-using std::tr1::shared_ptr;
-using std::tr1::unordered_map;
+using std::shared_ptr;
+using std::unordered_map;
 using std::vector;
 
 // Enforce a minimum size of 1MB, since otherwise the knapsack algorithm
@@ -163,8 +163,8 @@ void CheckCollectOrderedCorrectness(const vector<RowSetInfo>& min_key,
     CHECK_EQ(min_key.front().cdf_min_key(), 0.0f);
     CHECK_EQ(max_key.back().cdf_max_key(), total_width);
   }
-  DCHECK(util::gtl::is_sorted(min_key.begin(), min_key.end(), LessCDFAndRSMin));
-  DCHECK(util::gtl::is_sorted(max_key.begin(), max_key.end(), LessCDFAndRSMax));
+  DCHECK(std::is_sorted(min_key.begin(), min_key.end(), LessCDFAndRSMin));
+  DCHECK(std::is_sorted(max_key.begin(), max_key.end(), LessCDFAndRSMax));
 }
 
 } // anonymous namespace

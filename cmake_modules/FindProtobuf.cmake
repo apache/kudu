@@ -8,22 +8,19 @@
 # Locate and configure the Google Protocol Buffers library.
 # Defines the following variables:
 #
-#   PROTOBUF_FOUND - Found the Google Protocol Buffers library
-#   PROTOBUF_INCLUDE_DIRS - Include directories for Google Protocol Buffers
-#   PROTOBUF_LIBRARIES - The protobuf library
-#
-# The following cache variables are also defined:
-#   PROTOBUF_LIBRARY - The protobuf library
-#   PROTOBUF_STATIC_LIBRARY - The protobuf library (static link)
-#   PROTOBUF_PROTOC_LIBRARY   - The protoc library
-#   PROTOBUF_INCLUDE_DIR - The include directory for protocol buffers
-#   PROTOBUF_PROTOC_EXECUTABLE - The protoc compiler
+#   PROTOBUF_INCLUDE_DIR - the include directory for protocol buffers
+#   PROTOBUF_SHARED_LIBRARY - path to protobuf's shared library
+#   PROTOBUF_STATIC_LIBRARY - path to protobuf's static library
+#   PROTOBUF_PROTOC_SHARED_LIBRARY - path to protoc's shared library
+#   PROTOBUF_PROTOC_STATIC_LIBRARY - path to protoc's static library
+#   PROTOBUF_PROTOC_EXECUTABLE - the protoc compiler
+#   PROTOBUF_FOUND - whether the Protocol Buffers library has been found
 #
 #  ====================================================================
 #  Example:
 #
 #   find_package(Protobuf REQUIRED)
-#   include_directories(${PROTOBUF_INCLUDE_DIRS})
+#   include_directories(${PROTOBUF_INCLUDE_DIR})
 #
 #   include_directories(${CMAKE_CURRENT_BINARY_DIR})
 #   PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS PROTO_TGTS
@@ -31,7 +28,7 @@
 #     [BINARY_ROOT <root into which binaries are built>]
 #     PROTO_FILES foo.proto)
 #   add_executable(bar bar.cc ${PROTO_SRCS} ${PROTO_HDRS})
-#   target_link_libraries(bar ${PROTOBUF_LIBRARY})
+#   target_link_libraries(bar ${PROTOBUF_SHARED_LIBRARY})
 #
 # NOTE: You may need to link against pthreads, depending
 # on the platform.
@@ -47,7 +44,6 @@
 #          libraries, those libraries should depend on these targets
 #          in order to "serialize" the protoc invocations
 #  ====================================================================
-
 
 #=============================================================================
 # Copyright 2011 Kirill A. Korinskiy <catap@catap.ru>
@@ -154,60 +150,36 @@ endfunction()
 
 
 find_path(PROTOBUF_INCLUDE_DIR google/protobuf/service.h
-  ${THIRDPARTY_PREFIX}/include
-  NO_DEFAULT_PATH
-)
+  NO_CMAKE_SYSTEM_PATH
+  NO_SYSTEM_ENVIRONMENT_PATH)
 
-# Google's provided vcproj files generate libraries with a "lib"
-# prefix on Windows
-if(WIN32)
-    set(PROTOBUF_ORIG_FIND_LIBRARY_PREFIXES "${CMAKE_FIND_LIBRARY_PREFIXES}")
-    set(CMAKE_FIND_LIBRARY_PREFIXES "lib" "")
-endif()
-
-find_library(PROTOBUF_LIBRARY NAMES libprotobuf${CMAKE_SHARED_LIBRARY_SUFFIX}
+find_library(PROTOBUF_SHARED_LIBRARY protobuf
              DOC "The Google Protocol Buffers Library"
-             PATHS ${THIRDPARTY_PREFIX}/lib
-             NO_DEFAULT_PATH
-)
-find_file(PROTOBUF_STATIC_LIBRARY libprotobuf.a
-         DOC "Static version of the Google Protocol Buffers Library"
-         PATHS ${THIRDPARTY_PREFIX}/lib
-         NO_DEFAULT_PATH)
+             NO_CMAKE_SYSTEM_PATH
+             NO_SYSTEM_ENVIRONMENT_PATH)
 
-find_library(PROTOBUF_PROTOC_LIBRARY NAMES libprotoc${CMAKE_SHARED_LIBRARY_SUFFIX}
+find_library(PROTOBUF_STATIC_LIBRARY libprotobuf.a
+             DOC "Static version of the Google Protocol Buffers Library"
+             NO_CMAKE_SYSTEM_PATH
+             NO_SYSTEM_ENVIRONMENT_PATH)
+
+find_library(PROTOBUF_PROTOC_SHARED_LIBRARY protoc
              DOC "The Google Protocol Buffers Compiler Library"
-             PATHS ${THIRDPARTY_PREFIX}/lib
-             NO_DEFAULT_PATH
-)
-find_library(PROTOBUF_PROTOC_STATIC_LIBRARY NAMES libprotoc.a
-         DOC "Static version of the Google Protocol Buffers Compiler Library"
-         PATHS ${THIRDPARTY_PREFIX}/lib
-         NO_DEFAULT_PATH)
+             NO_CMAKE_SYSTEM_PATH
+             NO_SYSTEM_ENVIRONMENT_PATH)
 
-find_program(PROTOBUF_PROTOC_EXECUTABLE NAMES protoc
+find_library(PROTOBUF_PROTOC_STATIC_LIBRARY libprotoc.a
+             DOC "Static version of the Google Protocol Buffers Compiler Library"
+             NO_CMAKE_SYSTEM_PATH
+             NO_SYSTEM_ENVIRONMENT_PATH)
+
+find_program(PROTOBUF_PROTOC_EXECUTABLE protoc
              DOC "The Google Protocol Buffers Compiler"
-             PATHS ${THIRDPARTY_PREFIX}/bin
-             NO_DEFAULT_PATH
-)
-
-mark_as_advanced(PROTOBUF_INCLUDE_DIR
-                 PROTOBUF_LIBRARY
-                 PROTOBUF_STATIC_LIBRARY
-                 PROTOBUF_PROTOC_LIBRARY
-                 PROTOBUF_PROTOC_STATIC_LIBRARY
-                 PROTOBUF_PROTOC_EXECUTABLE)
-
-# Restore original find library prefixes
-if(WIN32)
-    set(CMAKE_FIND_LIBRARY_PREFIXES "${PROTOBUF_ORIG_FIND_LIBRARY_PREFIXES}")
-endif()
+             NO_CMAKE_SYSTEM_PATH
+             NO_SYSTEM_ENVIRONMENT_PATH)
 
 include(FindPackageHandleStandardArgs)
-FIND_PACKAGE_HANDLE_STANDARD_ARGS(PROTOBUF DEFAULT_MSG
-    PROTOBUF_LIBRARY PROTOBUF_INCLUDE_DIR)
-
-if(PROTOBUF_FOUND)
-    set(PROTOBUF_INCLUDE_DIRS ${PROTOBUF_INCLUDE_DIR})
-    set(PROTOBUF_LIBRARIES    ${PROTOBUF_LIBRARY})
-endif()
+find_package_handle_standard_args(PROTOBUF REQUIRED_VARS
+  PROTOBUF_SHARED_LIBRARY PROTOBUF_STATIC_LIBRARY
+  PROTOBUF_PROTOC_SHARED_LIBRARY PROTOBUF_PROTOC_STATIC_LIBRARY
+  PROTOBUF_INCLUDE_DIR PROTOBUF_PROTOC_EXECUTABLE)

@@ -20,16 +20,15 @@
 #include <algorithm>
 #include <boost/bind.hpp>
 #include <set>
-#include <tr1/memory>
-#include <tr1/unordered_map>
+#include <unordered_map>
 #include <vector>
 
 #include "kudu/client/batcher.h"
 #include "kudu/client/callbacks.h"
 #include "kudu/client/client-internal.h"
 #include "kudu/client/client_builder-internal.h"
-#include "kudu/client/error_collector.h"
 #include "kudu/client/error-internal.h"
+#include "kudu/client/error_collector.h"
 #include "kudu/client/meta_cache.h"
 #include "kudu/client/row_result.h"
 #include "kudu/client/scan_predicate-internal.h"
@@ -55,10 +54,6 @@
 #include "kudu/util/logging.h"
 #include "kudu/util/net/dns_resolver.h"
 
-using std::set;
-using std::string;
-using std::tr1::shared_ptr;
-using std::vector;
 using kudu::master::AlterTableRequestPB;
 using kudu::master::AlterTableRequestPB_Step;
 using kudu::master::AlterTableResponsePB;
@@ -68,17 +63,20 @@ using kudu::master::DeleteTableRequestPB;
 using kudu::master::DeleteTableResponsePB;
 using kudu::master::GetTableSchemaRequestPB;
 using kudu::master::GetTableSchemaResponsePB;
+using kudu::master::ListTablesRequestPB;
+using kudu::master::ListTablesResponsePB;
 using kudu::master::ListTabletServersRequestPB;
 using kudu::master::ListTabletServersResponsePB;
 using kudu::master::ListTabletServersResponsePB_Entry;
-using kudu::master::ListTablesRequestPB;
-using kudu::master::ListTablesResponsePB;
 using kudu::master::MasterServiceProxy;
 using kudu::master::TabletLocationsPB;
 using kudu::rpc::Messenger;
 using kudu::rpc::MessengerBuilder;
 using kudu::rpc::RpcController;
 using kudu::tserver::ScanResponsePB;
+using std::set;
+using std::string;
+using std::vector;
 
 MAKE_ENUM_LIMITS(kudu::client::KuduSession::FlushMode,
                  kudu::client::KuduSession::AUTO_FLUSH_SYNC,
@@ -102,6 +100,7 @@ namespace client {
 using internal::Batcher;
 using internal::ErrorCollector;
 using internal::MetaCache;
+using sp::shared_ptr;
 
 static const int kHtTimestampBitsToShift = 12;
 static const char* kProgName = "kudu_client";

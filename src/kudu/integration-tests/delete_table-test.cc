@@ -19,8 +19,9 @@
 #include <boost/optional.hpp>
 #include <glog/stl_logging.h>
 #include <gtest/gtest.h>
-#include <tr1/memory>
+#include <memory>
 #include <string>
+#include <unordered_map>
 
 #include "kudu/client/client-test-util.h"
 #include "kudu/common/wire_protocol-test-util.h"
@@ -33,6 +34,8 @@
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/curl_util.h"
 
+using kudu::client::KuduClient;
+using kudu::client::KuduClientBuilder;
 using kudu::client::KuduSchema;
 using kudu::client::KuduSchemaFromSchema;
 using kudu::client::KuduTableCreator;
@@ -41,16 +44,17 @@ using kudu::consensus::ConsensusMetadataPB;
 using kudu::consensus::ConsensusStatePB;
 using kudu::consensus::RaftPeerPB;
 using kudu::itest::TServerDetails;
-using kudu::tablet::TabletDataState;
 using kudu::tablet::TABLET_DATA_COPYING;
 using kudu::tablet::TABLET_DATA_DELETED;
 using kudu::tablet::TABLET_DATA_READY;
 using kudu::tablet::TABLET_DATA_TOMBSTONED;
+using kudu::tablet::TabletDataState;
 using kudu::tablet::TabletSuperBlockPB;
 using kudu::tserver::ListTabletsResponsePB;
 using kudu::tserver::TabletServerErrorPB;
 using std::numeric_limits;
 using std::string;
+using std::unordered_map;
 using std::vector;
 using strings::Substitute;
 

@@ -19,7 +19,6 @@
 
 #include <string>
 #include <vector>
-#include <tr1/memory>
 
 #include <glog/logging.h>
 

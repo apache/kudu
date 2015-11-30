@@ -24,9 +24,9 @@
 #include "kudu/util/pb_util.h"
 
 #include <deque>
+#include <memory>
 #include <string>
-#include <tr1/memory>
-#include <tr1/unordered_set>
+#include <unordered_set>
 #include <vector>
 
 #include <boost/foreach.hpp>
@@ -38,8 +38,8 @@
 #include <google/protobuf/io/coded_stream.h>
 #include <google/protobuf/io/zero_copy_stream.h>
 #include <google/protobuf/io/zero_copy_stream_impl_lite.h>
-#include <google/protobuf/message_lite.h>
 #include <google/protobuf/message.h>
+#include <google/protobuf/message_lite.h>
 
 #include "kudu/gutil/bind.h"
 #include "kudu/gutil/callback.h"
@@ -47,16 +47,16 @@
 #include "kudu/gutil/strings/escaping.h"
 #include "kudu/gutil/strings/fastmem.h"
 #include "kudu/gutil/strings/substitute.h"
-#include "kudu/util/coding.h"
 #include "kudu/util/coding-inl.h"
+#include "kudu/util/coding.h"
 #include "kudu/util/crc.h"
 #include "kudu/util/debug/sanitizer_scopes.h"
 #include "kudu/util/debug/trace_event.h"
 #include "kudu/util/env.h"
 #include "kudu/util/env_util.h"
 #include "kudu/util/path_util.h"
-#include "kudu/util/pb_util.pb.h"
 #include "kudu/util/pb_util-internal.h"
+#include "kudu/util/pb_util.pb.h"
 #include "kudu/util/status.h"
 
 using google::protobuf::Descriptor;
@@ -77,9 +77,9 @@ using kudu::pb_util::internal::SequentialFileFileInputStream;
 using kudu::pb_util::internal::WritableFileOutputStream;
 using std::deque;
 using std::endl;
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
-using std::tr1::unordered_set;
+using std::unordered_set;
 using std::vector;
 using strings::Substitute;
 using strings::Utf8SafeCEscape;

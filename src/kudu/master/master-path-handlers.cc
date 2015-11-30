@@ -57,14 +57,14 @@ MasterPathHandlers::~MasterPathHandlers() {
 
 void MasterPathHandlers::HandleTabletServers(const Webserver::WebRequest& req,
                                              stringstream* output) {
-  vector<std::tr1::shared_ptr<TSDescriptor> > descs;
+  vector<std::shared_ptr<TSDescriptor> > descs;
   master_->ts_manager()->GetAllDescriptors(&descs);
 
   *output << "<h1>Tablet Servers</h1>\n";
 
   *output << "<table class='table table-striped'>\n";
   *output << "  <tr><th>UUID</th><th>Time since heartbeat</th><th>Registration</th></tr>\n";
-  BOOST_FOREACH(const std::tr1::shared_ptr<TSDescriptor>& desc, descs) {
+  BOOST_FOREACH(const std::shared_ptr<TSDescriptor>& desc, descs) {
     const string time_since_hb = StringPrintf("%.1fs", desc->TimeSinceHeartbeat().ToSeconds());
     TSRegistrationPB reg;
     desc->GetRegistration(&reg);

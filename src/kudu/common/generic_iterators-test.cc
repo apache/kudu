@@ -15,11 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#include <boost/assign/list_of.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <tr1/memory>
-#include <algorithm>
+#include <memory>
 
 #include "kudu/common/iterator.h"
 #include "kudu/common/generic_iterators.h"
@@ -38,11 +36,9 @@ DEFINE_int32(num_iters, 1, "Number of times to run merge");
 
 namespace kudu {
 
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
-static const Schema kIntSchema(
-  boost::assign::list_of(ColumnSchema("val", UINT32)), 1);
-
+static const Schema kIntSchema({ ColumnSchema("val", UINT32) }, 1);
 
 // Test iterator which just yields integer rows from a provided
 // vector.

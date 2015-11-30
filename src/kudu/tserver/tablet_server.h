@@ -17,16 +17,16 @@
 #ifndef KUDU_TSERVER_TABLET_SERVER_H
 #define KUDU_TSERVER_TABLET_SERVER_H
 
+#include <memory>
 #include <string>
-#include <tr1/memory>
 #include <vector>
 
 #include "kudu/consensus/metadata.pb.h"
 #include "kudu/gutil/atomicops.h"
 #include "kudu/gutil/gscoped_ptr.h"
 #include "kudu/gutil/macros.h"
-#include "kudu/server/webserver_options.h"
 #include "kudu/server/server_base.h"
+#include "kudu/server/webserver_options.h"
 #include "kudu/tserver/tablet_server_options.h"
 #include "kudu/tserver/tserver.pb.h"
 #include "kudu/util/net/net_util.h"
@@ -115,7 +115,7 @@ class TabletServer : public server::ServerBase {
   gscoped_ptr<TabletServerPathHandlers> path_handlers_;
 
   // The maintenance manager for this tablet server
-  std::tr1::shared_ptr<MaintenanceManager> maintenance_manager_;
+  std::shared_ptr<MaintenanceManager> maintenance_manager_;
 
   DISALLOW_COPY_AND_ASSIGN(TabletServer);
 };

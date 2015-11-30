@@ -20,7 +20,7 @@
 #include <boost/thread/thread.hpp>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
-#include <tr1/memory>
+#include <memory>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -31,7 +31,7 @@
 #include "kudu/util/thread.h"
 
 using std::vector;
-using std::tr1::shared_ptr;
+using std::shared_ptr;
 
 DEFINE_int32(num_test_threads, 10, "number of stress test client threads");
 DEFINE_int32(num_iterations, 1000, "number of iterations per client thread");

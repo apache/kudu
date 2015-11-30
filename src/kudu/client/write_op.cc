@@ -22,10 +22,10 @@
 #include "kudu/common/row.h"
 #include "kudu/common/wire_protocol.pb.h"
 
-using std::tr1::shared_ptr;
-
 namespace kudu {
 namespace client {
+
+using sp::shared_ptr;
 
 RowOperationsPB_Type ToInternalWriteType(KuduWriteOperation::Type type) {
   switch (type) {

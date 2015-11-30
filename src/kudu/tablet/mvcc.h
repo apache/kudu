@@ -18,8 +18,8 @@
 #define KUDU_TABLET_MVCC_H
 
 #include <gtest/gtest_prod.h>
-#include <tr1/unordered_map>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "kudu/gutil/gscoped_ptr.h"
@@ -377,7 +377,7 @@ class MvccManager {
   MvccSnapshot cur_snap_;
 
   // The set of timestamps corresponding to currently in-flight transactions.
-  typedef std::tr1::unordered_map<Timestamp::val_type, TxnState> InFlightMap;
+  typedef std::unordered_map<Timestamp::val_type, TxnState> InFlightMap;
   InFlightMap timestamps_in_flight_;
 
   // A transaction ID below which all transactions are either committed or in-flight,

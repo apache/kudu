@@ -19,15 +19,15 @@
 
 #include <boost/foreach.hpp>
 #include <dirent.h>
-#include <glog/logging.h>
 #include <fcntl.h>
-#include <tr1/memory>
-#include <string>
-#include <vector>
+#include <glog/logging.h>
+#include <memory>
 #include <signal.h>
-#include <unistd.h>
+#include <string>
 #include <sys/types.h>
 #include <sys/wait.h>
+#include <unistd.h>
+#include <vector>
 
 #if defined(__linux__)
 #include <sys/prctl.h>
@@ -43,8 +43,8 @@
 #include "kudu/util/errno.h"
 #include "kudu/util/status.h"
 
+using std::shared_ptr;
 using std::string;
-using std::tr1::shared_ptr;
 using std::vector;
 using strings::Split;
 using strings::Substitute;

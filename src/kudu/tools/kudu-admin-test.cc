@@ -17,7 +17,6 @@
 //
 // Tests for the kudu-admin command-line tool.
 
-#include <boost/assign/list_of.hpp>
 #include <boost/foreach.hpp>
 #include <gtest/gtest.h>
 
@@ -32,13 +31,12 @@
 namespace kudu {
 namespace tools {
 
-using kudu::client::KuduClient;
-using kudu::client::KuduClientBuilder;
+using client::KuduClient;
+using client::KuduClientBuilder;
+using client::sp::shared_ptr;
 using itest::TabletServerMap;
 using itest::TServerDetails;
 using strings::Substitute;
-
-using std::tr1::shared_ptr;
 
 static const char* const kAdminToolName = "kudu-admin";
 
