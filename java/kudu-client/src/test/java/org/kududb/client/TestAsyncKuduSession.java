@@ -14,8 +14,11 @@
 package org.kududb.client;
 
 import org.kududb.Schema;
+import org.kududb.WireProtocol.AppStatusPB;
+import org.kududb.tserver.Tserver.TabletServerErrorPB;
 import com.stumbleupon.async.Callback;
 import com.stumbleupon.async.Deferred;
+import com.stumbleupon.async.TimeoutException;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -49,6 +52,56 @@ public class TestAsyncKuduSession extends BaseKuduTest {
   public static void setUpBeforeClass() throws Exception {
     BaseKuduTest.setUpBeforeClass();
     table = createTable(TABLE_NAME, schema, new CreateTableOptions());
+  }
+
+  /**
+   * Regression test for case where an error in the previous batch could cause the next
+   * batch to hang in flush()
+   */
+  @Test(timeout = 100000)
+  public void testBatchErrorCauseSessionStuck() throws Exception {
+    try {
+      AsyncKuduSession session = client.newSession();
+      session.setFlushMode(AsyncKuduSession.FlushMode.AUTO_FLUSH_BACKGROUND);
+      session.setFlushInterval(100);
+      TabletServerErrorPB error = TabletServerErrorPB.newBuilder()
+          .setCode(TabletServerErrorPB.Code.UNKNOWN_ERROR)
+          .setStatus(AppStatusPB.newBuilder()
+              .setCode(AppStatusPB.ErrorCode.UNKNOWN_ERROR)
+              .setMessage("injected error for test")
+              .build())
+          .build();
+      Batch.injectTabletServerErrorAndLatency(error, 200);
+      // 0ms: insert first row, which will be the first batch.
+      Deferred<OperationResponse> resp1 = session.apply(createInsert(1));
+      Thread.sleep(120);
+      // 100ms: start to send first batch.
+      // 100ms+: first batch got response from ts,
+      //         will wait 200s and throw erorr.
+      // 120ms: insert another row, which will be the second batch.
+      Deferred<OperationResponse> resp2 = session.apply(createInsert(2));
+      // 220ms: start to send the second batch, but first batch is inflight,
+      //        so add callback to retry after first batch finishes.
+      // 300ms: first batch's callback handles error, retry second batch.
+      try {
+        resp1.join(2000);
+      } catch (TimeoutException e) {
+        fail("First batch should not timeout in case of tablet server error");
+      } catch (TabletServerErrorException e) {
+        // Expected.
+        assertTrue(e.getMessage().contains("injected error for test"));
+      }
+      try {
+        resp2.join(2000);
+      } catch (TimeoutException e) {
+        fail("Second batch should not timeout in case of tablet server error");
+      } catch (TabletServerErrorException e) {
+        // expected
+        assertTrue(e.getMessage().contains("injected error for test"));
+      }
+    } finally {
+      Batch.injectTabletServerErrorAndLatency(null, 0);
+    }
   }
 
   @Test(timeout = 100000)

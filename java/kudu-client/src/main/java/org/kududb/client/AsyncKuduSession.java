@@ -627,14 +627,27 @@ public class AsyncKuduSession implements SessionConfiguration {
       // was already flushed.
       if (operations.get(tablet) != expectedBatch) {
         LOG.trace("Had to flush a tablet but it was already flushed: " + Bytes.getString(tablet));
+        // It is OK to return null here, since we currently do not use the returned value
+        // when doing background flush or auto flushing when buffer is full.
+        // The returned value is used when doing manual flush, but it will not run into this
+        // condition, or there is a bug.
         return Deferred.fromResult(null);
       }
 
       if (operationsInFlight.containsKey(tablet)) {
-        LOG.trace("This tablet is already in flight, attaching a callback to retry later: " +
-            Bytes.getString(tablet));
-        return operationsInFlight.get(tablet).addCallbackDeferring(
-            new FlushRetryCallback(tablet, operations.get(tablet)));
+        if (LOG.isTraceEnabled()) {
+          LOG.trace("Tablet " + Bytes.getString(tablet)
+              + " is already in flight, attaching a callback to retry "
+              + expectedBatch.toDebugString() + " later.");
+        }
+        // No matter previous batch get error or not, we still have to flush this batch.
+        FlushRetryCallback retryCallback = new FlushRetryCallback(tablet, operations.get(tablet));
+        FlushRetryErrback retryErrback = new FlushRetryErrback(tablet, operations.get(tablet));
+        // Note that if we do manual flushing multiple times when previous batch is still inflight,
+        // we may add the same callback multiple times, later retry of flushTablet will return null
+        // immediately. Since it is an illegal use case, we do not handle this currently.
+        operationsInFlight.get(tablet).addCallbacks(retryCallback, retryErrback);
+        return expectedBatch.getDeferred();
       }
 
       batch = operations.remove(tablet);
@@ -660,7 +673,7 @@ public class AsyncKuduSession implements SessionConfiguration {
    * Simple callback so that we try to flush this tablet again if we were waiting on the previous
    * Batch to finish.
    */
-  class FlushRetryCallback implements Callback<Deferred<BatchResponse>, BatchResponse> {
+  class FlushRetryCallback implements Callback<BatchResponse, BatchResponse> {
     private final Slice tablet;
     private final Batch expectedBatch;
     public FlushRetryCallback(Slice tablet, Batch expectedBatch) {
@@ -669,10 +682,45 @@ public class AsyncKuduSession implements SessionConfiguration {
     }
 
     @Override
-    public Deferred<BatchResponse> call(BatchResponse o) throws Exception {
-      LOG.trace("Previous batch in flight is done, flushing this tablet again: " +
-          Bytes.getString(tablet));
-      return flushTablet(tablet, expectedBatch);
+    public BatchResponse call(BatchResponse o) throws Exception {
+      if (LOG.isTraceEnabled()) {
+        LOG.trace("Previous batch in flight is done. " + toString());
+      }
+      flushTablet(tablet, expectedBatch);
+      return o;
+    }
+
+    @Override
+    public String toString() {
+      return String.format("FlushRetryCallback: retry flush tablet %s %s", Bytes.getString(tablet),
+          expectedBatch.toDebugString());
+    }
+  }
+
+  /**
+   * Same callback as above FlushRetryCallback, for the case that previous batch has error.
+   */
+  class FlushRetryErrback implements Callback<Exception, Exception> {
+    private final Slice tablet;
+    private final Batch expectedBatch;
+    public FlushRetryErrback(Slice tablet, Batch expectedBatch) {
+      this.tablet = tablet;
+      this.expectedBatch = expectedBatch;
+    }
+
+    @Override
+    public Exception call(Exception e) throws Exception {
+      if (LOG.isTraceEnabled()) {
+        LOG.trace("Previous batch ended with an error. " + toString());
+      }
+      flushTablet(tablet, expectedBatch);
+      return e;
+    }
+
+    @Override
+    public String toString() {
+      return String.format("FlushRetryErrback: retry flush tablet %s %s", Bytes.getString(tablet),
+          expectedBatch.toDebugString());
     }
   }
 
@@ -686,6 +734,11 @@ public class AsyncKuduSession implements SessionConfiguration {
       public BatchResponse call(BatchResponse o) throws Exception {
         tabletInFlightDone(tablet);
         return o;
+      }
+
+      @Override
+      public String toString() {
+        return "callback: mark tablet " + Bytes.getString(tablet) + " inflight done";
       }
     };
   }
@@ -701,6 +754,11 @@ public class AsyncKuduSession implements SessionConfiguration {
       public Exception call(Exception e) throws Exception {
         tabletInFlightDone(tablet);
         return e;
+      }
+
+      @Override
+      public String toString() {
+        return "errback: mark tablet " + Bytes.getString(tablet) + " inflight done";
       }
     };
   }

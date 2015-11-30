@@ -13,11 +13,14 @@
 // limitations under the License.
 package org.kududb.client;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.Message;
 import com.google.protobuf.ZeroCopyLiteralByteString;
+
 import org.kududb.WireProtocol;
 import org.kududb.annotations.InterfaceAudience;
 import org.kududb.tserver.Tserver;
+import org.kududb.tserver.Tserver.TabletServerErrorPB;
 import org.kududb.util.Pair;
 import org.jboss.netty.buffer.ChannelBuffer;
 
@@ -100,6 +103,17 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
 
     BatchResponse response = new BatchResponse(deadlineTracker.getElapsedMillis(), tsUUID,
         builder.getTimestamp(), errorsPB, ops);
+
+    if (injectedError != null) {
+      if (injectedlatencyMs > 0) {
+        try {
+          Thread.sleep(injectedlatencyMs);
+        } catch (InterruptedException e) {
+        }
+      }
+      return new Pair<BatchResponse, Object>(response, injectedError);
+    }
+
     return new Pair<BatchResponse, Object>(response, builder.hasError() ? builder.getError() : null);
   }
 
@@ -107,6 +121,10 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
   public byte[] partitionKey() {
     assert this.ops.size() > 0;
     return this.ops.get(0).partitionKey();
+  }
+
+  public String toDebugString() {
+    return "Batch(" + ops.size() + " ops)@" + Integer.toHexString(hashCode());
   }
 
   /**
@@ -117,5 +135,20 @@ class Batch extends KuduRpc<BatchResponse> implements KuduRpc.HasKey {
     public int compare(Operation o1, Operation o2) {
       return Long.compare(o1.getSequenceNumber(), o2.getSequenceNumber());
     }
+  }
+
+  private static TabletServerErrorPB injectedError;
+  private static int injectedlatencyMs;
+
+  /**
+   * Inject tablet server side error for Batch rpc related tests.
+   * @param error error response from tablet server
+   * @param latencyMs blocks response handling thread for some time to simulate
+   * write latency
+   */
+  @VisibleForTesting
+  static void injectTabletServerErrorAndLatency(TabletServerErrorPB error, int latencyMs) {
+    injectedError = error;
+    injectedlatencyMs = latencyMs;
   }
 }
