@@ -389,15 +389,19 @@ TEST_F(TestEnv, TestHolePunch) {
   ASSERT_EQ(kOneMb, sz);
   uint64_t size_on_disk;
   ASSERT_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
-  ASSERT_EQ(kOneMb, size_on_disk);
+  // Some kernels and filesystems (e.g. Centos 6.6 with XFS) aggressively
+  // preallocate file disk space when writing to files, so the disk space may be
+  // greater than 1MiB.
+  ASSERT_LE(kOneMb, size_on_disk);
 
   // Punch some data out at byte marker 4096. Now the two sizes diverge.
   uint64_t punch_amount = 4096 * 4;
+  uint64_t new_size_on_disk;
   ASSERT_OK(file->PunchHole(4096, punch_amount));
   ASSERT_OK(file->Size(&sz));
   ASSERT_EQ(kOneMb, sz);
-  ASSERT_OK(env_->GetFileSizeOnDisk(test_path, &size_on_disk));
-  ASSERT_EQ(kOneMb - punch_amount, size_on_disk);
+  ASSERT_OK(env_->GetFileSizeOnDisk(test_path, &new_size_on_disk));
+  ASSERT_EQ(size_on_disk - punch_amount, new_size_on_disk);
 }
 
 class ShortReadRandomAccessFile : public RandomAccessFile {
