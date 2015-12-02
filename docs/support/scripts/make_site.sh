@@ -42,8 +42,8 @@ set -x
 cd "$ROOT"
 
 # Build Kudu thirdparty
-./thirdparty/build-if-necessary.sh > /dev/null 2>&1
-echo "Successfully third-party dependencies."
+./thirdparty/build-if-necessary.sh
+echo "Successfully built third-party dependencies."
 
 # Build the binaries so we can auto-generate the command-line references
 rm -rf CMakeCache.txt CMakeFiles
