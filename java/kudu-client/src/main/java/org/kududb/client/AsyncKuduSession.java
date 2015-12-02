@@ -54,6 +54,8 @@ import static org.kududb.client.ExternalConsistencyMode.CLIENT_PROPAGATED;
  * transaction. Meanwhile another concurrent Session object can safely run
  * non-transactional work or other transactions without interfering.<p>
  *
+ * Therefore, this class is <b>not</b> thread-safe.<p>
+ *
  * Additionally, there is a guarantee that writes from different sessions do not
  * get batched together into the same RPCs -- this means that latency-sensitive
  * clients can run through the same AsyncKuduClient object as throughput-oriented

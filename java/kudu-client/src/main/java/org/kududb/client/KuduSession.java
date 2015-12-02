@@ -22,7 +22,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Synchronous version of {@link AsyncKuduSession}. Offers the same API but with blocking methods.
+ * Synchronous version of {@link AsyncKuduSession}.
+ * Offers the same API but with blocking methods.<p>
+ *
+ * This class is <b>not</b> thread-safe.<p>
  *
  * A major difference with {@link AsyncKuduSession} is that the time spent waiting on operations is
  * defined by {@link #setTimeoutMillis(long)} which defaults to getting it from
