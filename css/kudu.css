@@ -144,6 +144,20 @@ footer {
     margin-top: 10px;
 }
 
+/* We style the ol like a ul because we are working within the bounds of what
+   is possible within markdown, and there are other uls on the page that we
+   don't want to affect. */
+.community ol {
+    list-style-type: disc;
+}
+.community ol li {
+    padding: 0 0 10px 0;
+    margin: 0;
+}
+.community ol li:last-child {
+    padding-bottom: 0;
+}
+
 @media (min-width: 1200px) { .container-fluid {
   width: 1170px
 } }
