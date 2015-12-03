@@ -280,7 +280,7 @@ make install
 ----
 $ sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
   libssl-dev libsasl2-dev libsasl2-modules libtool ntp patch pkg-config make rsync \
-  vim-common gdb
+  unzip vim-common gdb python
 ----
 
 . Optional: Install the `asciidoctor` gem and xsltproc if you plan to build documentation.
@@ -331,7 +331,7 @@ the steps marked *Optional* above.
 
 sudo apt-get -y install git autoconf automake libboost-thread-dev curl gcc g++ \
   libssl-dev libsasl2-dev libsasl2-modules libtool ntp patch pkg-config make rsync \
-  vim-common gdb
+  unzip vim-common gdb python
 git clone http://github.com/cloudera/kudu
 cd kudu
 thirdparty/build-if-necessary.sh
