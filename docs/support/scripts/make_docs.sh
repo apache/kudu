@@ -86,9 +86,9 @@ while [[ $# > 0 ]] ; do
         fi
         shift
         shift
-        if [ ! -d "$SITE"/.git ] || [ ! -d "$SITE/docs/" ]; then
+        if [ ! -d "$SITE"/.git ] || [ ! -d "$SITE/_layouts/" ]; then
           echo "path $SITE doesn't appear to be the root of a git checkout "
-          echo "of the Kudu site. Expected to find .git/ and docs/ directories"
+          echo "of the Kudu site. Expected to find .git/ and _layouts/ directories"
           exit 1
         fi
         SITE=$(cd $SITE && pwd)

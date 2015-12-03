@@ -1,5 +1,11 @@
 source 'https://rubygems.org'
 
-gem 'github-pages'
+# Note: Intended to be compat w/ stock Ubuntu 14.04, which has Ruby 1.9.3
+# github-pages versions > 33 require Ruby 2.0
+gem 'github-pages', '~> 33'
+# public_suffix versions > 1.4.x requires Ruby 2.0
+gem 'public_suffix', '~> 1.4.0'
+gem 'therubyracer' # V8 runtime installer for Jekyll
+
 gem 'asciidoctor'
 gem 'tilt'

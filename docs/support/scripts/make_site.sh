@@ -55,6 +55,7 @@ rm -rf CMakeCache.txt CMakeFiles
 git clone -q $(git config --get remote.origin.url) --reference $(pwd) -b gh-pages --depth 1 "$SITE_OUTPUT_DIR"
 
 # Build the docs using the styles from the Jekyll site
+rm -Rf "$SITE_OUTPUT_DIR/docs"
 ./docs/support/scripts/make_docs.sh --site "$SITE_OUTPUT_DIR"
 if [ -f "$SITE_OUTPUT_DIR/docs/index.html" ]; then
   echo "Successfully built docs."
@@ -74,6 +75,7 @@ else
   exit 1
 fi
 
+rm -Rf "$SITE_OUTPUT_DIR/apidocs"
 cp -au "$ROOT/java/target/site/apidocs" "$SITE_OUTPUT_DIR/"
 
 cd "$SITE_OUTPUT_DIR"
