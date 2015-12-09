@@ -11,7 +11,8 @@ single_col_extra_classes: faq
 1. TOC
 {:toc}
 
-### Is Kudu ready to be deployed into production yet?
+### Is Apache Kudu (incubating) ready to be deployed into production yet?
+
 We don't yet recommend this -- Kudu is currently in Beta. During the next few months we
 might have to break backwards compatibility with our current on-the-wire or on-disk
 formats or change public APIs. There is also still work to do to improve data durability

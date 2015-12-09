@@ -1,11 +1,14 @@
 ---
-title: Kudu Releases
+title: Releases
 layout: single_col
 active_nav: download
 single_col_extra_classes: releases
 ---
 
-## Kudu Releases
+## Apache Kudu (incubating) releases
+
+Kudu has not yet had a release since entering the Apache incubator.
+Kudu 0.6.0 is the latest release.
 
 Kudu is currently in a beta period. It is not yet considered to be production-ready.
 

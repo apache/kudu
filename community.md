@@ -5,7 +5,7 @@ active_nav: community
 single_col_extra_classes: community
 ---
 
-### Kudu Discussion Lists and Chat Rooms
+### Apache Kudu (incubating) Discussion Lists and Chat Rooms
 
 Discussion about Kudu can be found in the following locations:
 
