@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[documentation_style_guide]]
-= Kudu Documentation Style Guide
+= Apache Kudu (incubating) Documentation Style Guide
 
 :author: Kudu Team
 :imagesdir: ./images

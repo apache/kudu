@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-= Kudu Documentation
+= Apache Kudu (incubating) Documentation
 
 // License Header Here //
 :author: Kudu Team
@@ -43,7 +43,7 @@ link:installation.html[Installation Guide]::
 link:configuration.html[Configuring Kudu]::
   Find out how to customize your Kudu cluster.
 
-link:kudu_impala_integration.html[Using Impala With Kudu]::
+link:kudu_impala_integration.html[Using Kudu with Apache Impala (incubating)]::
   Learn about using Impala to create, query, and update your Kudu tables.
 
 link:administration.html[Administering Kudu]::

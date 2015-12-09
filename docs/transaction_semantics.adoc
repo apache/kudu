@@ -1,5 +1,5 @@
 [[installation]]
-= Transaction Semantics in Kudu
+= Transaction Semantics in Apache Kudu (incubating)
 
 :author: Kudu Team
 :imagesdir: ./images

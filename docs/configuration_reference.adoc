@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[configuration_reference]]
-= Kudu Configuration Reference
+= Apache Kudu (incubating) Configuration Reference
 
 :author: Kudu Team
 :imagesdir: ./images

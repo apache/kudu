@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[schema_design]]
-= Kudu Schema Design
+= Apache Kudu (incubating) Schema Design
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[developing]]
-= Developing Applications With Kudu
+= Developing Applications With Apache Kudu (incubating)
 
 :author: Kudu Team
 :imagesdir: ./images

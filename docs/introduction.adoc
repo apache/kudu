@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[introduction]]
-= Introducing Kudu
+= Introducing Apache Kudu (incubating)
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font

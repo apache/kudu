@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[release_notes]]
-= Kudu Release Notes
+= Apache Kudu (incubating) Release Notes
 
 :author: Kudu Team
 :imagesdir: ./images
@@ -35,7 +35,7 @@ Kudu’s design sets it apart. Some of Kudu’s benefits include:
 
 * Fast processing of OLAP workloads.
 * Integration with MapReduce, Spark, and other Hadoop ecosystem components.
-* Tight integration with Cloudera Impala, making it a good, mutable alternative to
+* Tight integration with Apache Impala (incubating), making it a good, mutable alternative to
 using HDFS with Parquet. See link:kudu_impala_integration.html[Kudu Impala Integration].
 * Strong but flexible consistency model.
 * Strong performance for running sequential and random workloads simultaneously.

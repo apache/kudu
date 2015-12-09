@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[contributing]]
-= Contributing to Kudu
+= Contributing to Apache Kudu (incubating)
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font

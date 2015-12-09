@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[quickstart]]
-= Kudu Quickstart
+= Apache Kudu (incubating) Quickstart
 :author: Kudu Team
 :imagesdir: ./images
 :icons: font

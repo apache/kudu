@@ -13,7 +13,7 @@
 // limitations under the License.
 
 [[administration]]
-= Kudu Administration
+= Apache Kudu (incubating) Administration
 
 :author: Kudu Team
 :imagesdir: ./images
